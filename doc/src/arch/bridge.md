@@ -229,6 +229,94 @@ WithdrawParams {
 }
 ```
 
+## Correctness, Security, and Operation Ordering
+
+### Basic Bridge Criteria
+
+| Criterion | How It's Satisfied |
+|-----------|-------------------|
+| **Funds are accounted for** | Every deposit creates a commitment in the Merkle tree. Every withdrawal nullifies a deposit. Arithmetic is verified in ZK. |
+| **Operations are atomic** | Contract state changes happen in a single transaction. If proof verification fails, nothing is committed. |
+| **No fund creation** | Withdrawals can only use deposited funds (proven via membership in deposit tree). |
+| **No fund destruction** | Burned deposits emit nullifiers. Unspent deposits remain. |
+
+### Security: Who Can Spend Bridged Funds?
+
+**Deposit direction (External → DarkFi):**
+
+```
+User deposits to bridge_address → Oracle/light client verifies →
+User submits ZK proof → Contract verifies proof → Deposit registered
+```
+
+Only the user knows `secret`. The withdrawal ZK proof requires demonstrating
+knowledge of `secret` corresponding to commitment `C = H(secret, amount, bridge_address)`.
+
+**Withdrawal direction (DarkFi → External):**
+
+```
+User computes nullifier = H(secret) → User generates ZK proof →
+Contract verifies proof + nullifier not spent → Mark nullifier spent → Emit event
+```
+
+Bridge nodes cannot steal funds because they never see `secret`.
+
+### Operation Ordering: Deposit (External → DarkFi)
+
+```
+1. User computes bridge_address from identity + nonce
+2. User deposits to bridge_address on external chain
+3. Oracle/light client verifies Merkle proof of deposit
+4. User submits DepositV1 with commitment + ZK proof
+5. Contract verifies: deposit exists + commitment valid
+6. Contract inserts commitment into deposit Merkle tree
+```
+
+**Why each step first:**
+- Step 2 must precede 3: Cannot verify non-existent deposit
+- Step 3 must precede 5: Cannot register unverified deposit
+- Step 5 must precede 6: Cannot finalize before verification
+
+### Operation Ordering: Withdrawal (DarkFi → External)
+
+```
+1. User computes nullifier = H(secret)
+2. User generates ZK proof: membership + ownership + amount
+3. User submits WithdrawV1 with nullifier + proof
+4. Contract verifies: ZK proof valid + nullifier unspent
+5. Contract marks nullifier as spent
+6. Relayer broadcasts to external chain
+```
+
+**Why each step first:**
+- Step 2 must precede 3: Cannot submit invalid proof
+- Step 4 must precede 5: Cannot spend before verification
+- Step 5 must precede 6: Cannot broadcast before state update
+
+### Trustless Verification
+
+Traditional bridges require trusted oracles. This design uses:
+
+- **ZK proofs**: User proves deposit existence without revealing which deposit
+- **Merkle trees**: Efficient proof of inclusion
+- **Light client headers**: Trustless state verification
+
+For deposits: User's ZK proof includes Merkle proof against external chain state root.
+For withdrawals: DarkFi contract handles verification locally.
+
+### Consistency Guarantees
+
+**External chain reorg:**
+- Deposit's block reorged → Merkle proof fails → Deposit rejected
+
+**Withdrawal tx fails on external chain:**
+- Withdrawal already recorded on DarkFi (nullifier spent)
+- Relayer retries or user broadcasts directly
+
+**Relayer censorship:**
+- User can broadcast directly
+- Withdrawal was pre-authorized by ZK proof
+
 ## Open Questions
 
 * **External chain finality**: How many confirmations before deposit is trusted?

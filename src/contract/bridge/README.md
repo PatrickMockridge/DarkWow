@@ -202,6 +202,160 @@ This contract is a **draft/placeholder**. The following items need implementatio
 - **Nullifiers**: Double-spend prevention without revealing identity
 - **Fresh addresses**: Temporal privacy via per-deposit nonce
 
+## How the Bridge Ensures Correctness, Security, and Ordered Operations
+
+This section explains how the design guarantees basic bridge criteria,
+bridged fund security, and correct operation ordering in both directions.
+
+### 1. Basic Bridge Criteria
+
+A functional bridge requires:
+
+| Criterion | How It's Satisfied |
+|-----------|-------------------|
+| **Funds are accounted for** | Every deposit creates a commitment in the Merkle tree. Every withdrawal deducts from a nullified deposit. Arithmetic is verified in ZK. |
+| **Operations are atomic** | Contract state changes happen in a single transaction. If proof verification fails, nothing is committed. |
+| **No fund creation** | Withdrawals can only use deposited funds (proven via membership in deposit tree). Total minted ≤ total deposited. |
+| **No fund destruction** | Burned deposits emit nullifiers. Unspent deposits remain in tree. |
+
+### 2. Bridged Funds Security
+
+**Who can spend user's deposit?**
+
+Only the user knows `secret`. The withdrawal ZK proof requires demonstrating knowledge of `secret` corresponding to a commitment `C = H(secret, amount, bridge_address)`.
+
+```
+Attack: Can bridge nodes steal?
+Answer: No. Bridge nodes never see secret. They only verify proofs.
+        Even if all nodes are malicious, they cannot derive secret.
+
+Attack: Can user double-spend?
+Answer: No. Withdrawal reveals nullifier = H(secret).
+        Contract tracks spent nullifiers. Second withdrawal fails.
+```
+
+**What prevents fake deposits?**
+
+ZK proof in `deposit_v1` verifies:
+1. Deposit exists in external chain (Merkle proof)
+2. Commitment matches: `H(secret, amount, bridge_address)`
+
+Without valid proof, no deposit is registered.
+
+### 3. Operation Ordering: Deposit Direction (External Chain → DarkFi)
+
+```
+Step 1: User computes bridge_address
+        bridge_address = H(secret * G) using user's identity
+
+Step 2: User deposits to bridge_address on external chain
+        (This happens outside DarkFi, on Ethereum)
+
+Step 3: Oracle/light client detects deposit
+        - Verifies Merkle proof of inclusion
+        - Verifies block has sufficient confirmations
+
+Step 4: User submits DepositV1 to DarkFi bridge contract
+        - Submits commitment = H(secret, amount, bridge_address)
+        - Submits ZK proof proving:
+          a) Deposit exists on external chain
+          b) User knows secret for this deposit
+          c) Commitment is correctly formed
+
+Step 5: Contract verifies proof
+        - If valid: Inserts commitment into deposit Merkle tree
+        - If invalid: Rejects, no state change
+
+Correctness:
+- Only real deposits get registered (external chain verification)
+- Only commitment holder can later withdraw (secret knowledge required)
+- Deposit order matches external chain order (block hash + height)
+```
+
+### 4. Operation Ordering: Withdrawal Direction (DarkFi → External Chain)
+
+```
+Step 1: User computes nullifier
+        nullifier = H(secret)
+
+Step 2: User generates withdrawal ZK proof proving:
+        a) Commitment is in deposit Merkle tree
+        b) User knows secret for this commitment
+        c) nullifier = H(secret)
+        d) Amount is valid (<= deposited amount)
+        e) Recipient hash matches
+
+Step 3: User submits WithdrawV1 to DarkFi bridge contract
+
+Step 4: Contract verifies:
+        a) ZK proof is valid
+        b) nullifier has NOT been spent
+        (Both must pass)
+
+Step 5: Contract marks nullifier as spent
+        - Inserts nullifier into spent_nullifiers tree
+        - Records withdrawal
+
+Step 6: Relayer broadcasts withdrawal tx to external chain
+        (User can also broadcast directly)
+
+Correctness:
+- Proof verifies deposit exists without revealing which one
+- Nullifier prevents double-spend
+- Contract state and external state remain consistent
+```
+
+### 5. Why Each Step Must Happen in Order
+
+| Direction | Step | Why It Must Come First |
+|-----------|------|------------------------|
+| Deposit | User deposits on external chain | Cannot register deposit before it exists |
+| Deposit | Oracle confirms | Cannot register without proof of existence |
+| Deposit | ZK proof verified | Cannot register invalid deposit |
+| Deposit | Insert into Merkle tree | Finalizes deposit for withdrawals |
+| Withdraw | ZK proof verified | Cannot withdraw without proving ownership |
+| Withdraw | Nullifier check | Cannot withdraw if already withdrawn |
+| Withdraw | Mark nullifier spent | Prevents double-withdrawal |
+| Withdraw | Emit event | Triggers external chain broadcast |
+
+### 6. Trustless Verification Without Oracles
+
+**Problem**: Traditional bridges require trusted oracles to verify deposits.
+
+**Solution**: ZK proofs + light client verification
+
+For deposit:
+- User proves deposit exists in external chain state
+- Proof is verified by DarkFi contract (no oracle needed)
+- Merkle root from block header commits to state
+
+For withdrawal:
+- No external verification needed
+- DarkFi contract handles everything
+- Relayer only broadcasts pre-authorized transaction
+
+### 7. Consistency Guarantees
+
+**What if external chain reorganizes?**
+
+If a deposit's block is reorged out:
+1. The deposit never existed on the canonical chain
+2. The Merkle proof fails (root no longer matches)
+3. Deposit registration fails → no funds minted
+
+**What if withdrawal tx fails on external chain?**
+
+Withdrawal is already recorded on DarkFi (nullifier spent).
+User's funds are "gone" from DarkFi perspective.
+Relayer can retry or user can submit direct tx.
+(Trust model: relayer is trustless - withdrawal was pre-authorized)
+
+**What if relayer censors withdrawal?**
+
+User can broadcast directly to external chain.
+Withdrawal was pre-authorized by ZK proof.
+No threshold needed to release funds.
+
 ## Open Questions
 
 1. **External chain finality**: How many confirmations before deposit is trustless?
