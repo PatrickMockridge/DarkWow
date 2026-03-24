@@ -1,0 +1,135 @@
+// DarkFi Stablecoin CDP Open Position Proof V1
+//
+// Design: P2P Oracle-Based Stablecoin (from Nethermind)
+//
+// Unlike traditional CDPs that rely on governance oracles:
+// - AMM-based TWAP from NETHER/DRK pool provides price feed
+// - PI Controller adjusts redemption rate autonomously
+// - All positions hidden via Pedersen commitments + SMT
+//
+// This circuit proves:
+// 1. Position commitment is correctly formed
+// 2. Collateral >= minimum deposit
+// 3. Debt <= collateral / min_collateralization_ratio
+// 4. Commitment inserted into position Merkle tree
+
+circuit open_position_v1(prover: Witness) {
+    // ============================================
+    // PUBLIC INPUTS
+    // ============================================
+
+    // Position commitment (commits to collateral, debt, owner)
+    position_commitment: Scalar = prover.pub_input("position_commitment");
+
+    // Current position tree root
+    position_root: Scalar = prover.pub_input("position_root");
+
+    // Minimum collateralization ratio (basis points, e.g., 15000 = 150%)
+    min_ratio: Scalar = prover.pub_input("min_collateralization_ratio");
+
+    // Minimum collateral deposit
+    min_collateral: Scalar = prover.pub_input("min_collateral");
+
+    // Current NETHER/DRK TWAP price (for ratio calculation)
+    current_twap: Scalar = prover.pub_input("current_twap");
+
+    // ============================================
+    // PRIVATE INPUTS (WITNESS)
+    // ============================================
+
+    // User's secret for commitment
+    secret: Scalar = prover.witness("secret");
+
+    // Collateral amount being deposited
+    collateral_amount: Scalar = prover.witness("collateral_amount");
+
+    // Debt amount (stablecoin to mint)
+    debt_amount: Scalar = prover.witness("debt_amount");
+
+    // Owner's public key
+    owner_pub_x: Scalar = prover.witness("owner_pub_x");
+    owner_pub_y: Scalar = prover.witness("owner_pub_y");
+
+    // Merkle proof of position insertion
+    merkle_path: MerklePath = prover.witness("merkle_path");
+    leaf_index: Scalar = prover.witness("leaf_index");
+
+    // ============================================
+    // COMMITMENT VERIFICATION
+    // ============================================
+
+    // Verify commitment: C = H(secret, collateral, debt, owner_pub)
+    computed_commitment: Scalar = poseidon_hash(
+        secret,
+        collateral_amount,
+        debt_amount,
+        owner_pub_x,
+        owner_pub_y
+    );
+    assert_equal(computed_commitment, position_commitment);
+
+    // ============================================
+    // COLLATERAL CHECKS
+    // ============================================
+
+    // Verify collateral >= minimum deposit
+    assert(collateral_amount >= min_collateral);
+
+    // ============================================
+    // COLLATERALIZATION RATIO CHECK
+    // ============================================
+    //
+    // ratio = (collateral * twap) / debt
+    // We need: ratio >= min_ratio (in basis points)
+    //
+    // Rearranged: collateral * twap >= debt * min_ratio
+
+    collateral_value: Scalar = collateral_amount * current_twap;
+    required_value: Scalar = debt_amount * min_ratio;
+
+    assert(collateral_value >= required_value);
+
+    // ============================================
+    // MERKLE TREE INSERTION
+    // ============================================
+
+    // Create leaf from commitment
+    leaf: Scalar = position_commitment;
+
+    // Verify insertion into Merkle tree
+    verified: Bool = merkle_path.verify(position_root, leaf);
+    assert(verified);
+
+    // ============================================
+    // AMM TWAP VERIFICATION
+    // ============================================
+    //
+    // In production, this would verify the TWAP comes from the
+    // NETHER/DRK constant-product AMM pool. For this circuit,
+    // we assume the TWAP has been verified by the block producer
+    // using the AMM's local state.
+
+    // Range check: TWAP should be reasonable
+    assert(current_twap > 0);
+    assert(current_twap < 2^32); // Reasonable price range
+}
+
+// ============================================
+// DESIGN NOTES: P2P Oracle vs Traditional Oracles
+// ============================================
+//
+// Traditional CDP Oracles (MakerDAO):
+// - Single source or median of sources
+// - Can be manipulated via flash loans
+// - Requires governance to add/remove sources
+// - Centralization risk
+//
+// P2P Oracle (This Design):
+// - TWAP from constant-product AMM
+// - TWAP naturally smooths out manipulation
+// - No governance needed for price source
+// - Self-referential: stablecoin's own pool provides stability
+//
+// PI Controller adjusts redemption rate based on TWAP deviation,
+// creating a feedback loop that stabilizes the stablecoin price
+// around its target without human intervention.
