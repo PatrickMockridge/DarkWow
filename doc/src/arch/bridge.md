@@ -82,66 +82,122 @@ Proving knowledge of a statement without revealing the witness.
 
 ## Design
 
-### Bridge Address Derivation
+### Clarification: UTXO vs Account Model
 
-Instead of VSS-generated addresses, bridge addresses are derived
-deterministically from user identity:
+DarkFi is a **UTXO-based blockchain** (like Bitcoin), not account-based
+(like Ethereum). This distinction is critical for bridge design:
 
-```
-bridge_secret = poseidon_hash(recipient_pub_x, recipient_pub_y, bridge_nonce)
-bridge_pub = bridge_secret * G
-bridge_address = poseidon_hash(ec_get_x(bridge_pub), ec_get_y(bridge_pub))
-```
+| Model | State | How to "Prove Balance" |
+|-------|-------|----------------------|
+| Account (Ethereum) | Balances at addresses | Show signature proving you control address |
+| UTXO (DarkFi) | Unspent transaction outputs | Prove output exists and is unspent |
 
-Where:
-- `recipient_pub` is the user's public key on the external chain
-- `bridge_nonce` ensures fresh address per deposit (temporal privacy)
-- `G` is the generator point (NULLIFIER_K)
+In our bridge design:
+- **On external chain**: User proves they sent funds (account or UTXO model)
+- **On DarkFi**: User receives a UTXO (note) representing bridged value
 
-**Security Properties:**
-- Fresh address per deposit (nonce ensures unlinkability)
-- Only user knows bridge_secret (no VSS shards to steal)
-- Bridge cannot derive user's address without user identity + nonce
+The "bridging" happens via **ZK proofs of external chain state**,
+not via a single transaction spanning both chains.
 
-### Deposit Flow
+### Two Models for External Chain Interaction
 
-```
-1. Alice computes bridge_address from her identity + nonce
-2. Alice deposits to bridge_address on external chain
-3. Oracle/light client verifies deposit exists
-4. Alice registers deposit on DarkFi with commitment:
-   commitment = poseidon_hash(secret, amount, bridge_address)
-5. Deposit is recorded in bridge's Merkle tree
-```
+**Model A: User Controls Deposit Address (Current Design)**
 
-The commitment proves Alice knows `secret`. Only someone knowing `secret`
-can later withdraw.
-
-### Withdrawal Flow
+User derives a fresh address on the external chain. They deposit there,
+then prove to DarkFi that they deposited. DarkFi mints corresponding tokens.
 
 ```
-1. Alice computes nullifier = poseidon_hash(secret)
-2. Alice generates ZK proof demonstrating:
-   - Knowledge of secret corresponding to a deposit
-   - Deposit exists in bridge's Merkle tree (without revealing which one)
-   - Amount is valid
-   - Recipient hash matches
-3. Bridge verifies ZK proof
-4. Bridge checks nullifier hasn't been spent
-5. Bridge marks nullifier as spent, records withdrawal
+1. User computes: bridge_address = H(user_identity, nonce)
+2. User deposits ETH to this address (they control the private key)
+3. User proves to DarkFi: "I deposited X ETH to this address"
+4. DarkFi mints tokens to user
 ```
 
-**No threshold signing required!** Alice alone authorizes via her secret.
+**Problem**: User can withdraw ETH from the address before step 3,
+causing DarkFi to mint tokens without backing.
 
-### Double-Spend Prevention
+**Solution**: For Model A to work, the "deposit" must be irreversible.
+This requires either:
+- The address is a contract that cannot withdraw (one-way deposit)
+- The user proves they burned/locked funds permanently
+
+**Model B: Locked Deposit Contract**
 
 ```
-nullifier = poseidon_hash(secret)
+1. User sends ETH to BridgeDeposit contract on Ethereum
+2. Contract emits event with deposit details
+3. User proves to DarkFi: "I locked X ETH in bridge contract"
+4. DarkFi mints tokens to user
 ```
 
-When Alice withdraws, she reveals `nullifier` but not `secret`. The
-bridge tracks spent nullifiers. Revealing nullifier doesn't compromise
-the deposit (secret is still needed to claim).
+This is more like "wrapped asset" bridging (WBTC, WETH model).
+Problem: Someone must hold the ETH backing the minted tokens.
+
+### Current Design: Commitment-Based Deposit (Model B Refined)
+
+The design uses **commitment-based deposits** where the external chain
+deposit is verifiable but not directly controlled by user:
+
+```
+1. User computes secret S and commitment C = H(S, amount)
+2. User deposits ETH + C to bridge deposit address on Ethereum
+3. User (or oracle) submits ZK proof to DarkFi:
+   - External deposit exists (Merkle proof of ETH tx)
+   - Commitment C is correctly formed
+   - User knows S
+4. DarkFi verifies proof, mints tokens to user
+5. User can later prove they know S to withdraw (burn tokens on DarkFi)
+```
+
+**Key insight**: The "deposit" on Ethereum is NOT to an address the user
+controls after the fact. The commitment `C` is revealed AT THE TIME of deposit,
+binding the user to that deposit.
+
+### Bridge Address Derivation (For Withdrawal)
+
+For withdrawal (DarkFi → External Chain), we use deterministic derivation:
+
+```
+withdrawal_address = H(user_external_pubkey, nonce)
+```
+
+User burns tokens on DarkFi, proves knowledge of secret, and receives
+authorization to claim ETH at `withdrawal_address` on Ethereum.
+
+### Deposit Flow (Refined)
+
+```
+1. User generates secret S
+2. User computes commitment C = H(S, amount, bridge_nonce)
+3. User deposits ETH + C to bridge deposit contract on Ethereum
+4. Bridge oracle/indexer detects deposit, verifies:
+   - ETH amount matches
+   - Commitment C is included in deposit data
+   - Sufficient confirmations
+5. User submits DepositV1 to DarkFi with:
+   - Commitment C
+   - ZK proof: external deposit exists + commitment valid + knows S
+6. DarkFi verifies proof, mints tokens
+```
+
+### Withdrawal Flow (Refined)
+
+```
+1. User wants to withdraw ETH from DarkFi to Ethereum
+2. User computes nullifier N = H(S)
+3. User burns tokens on DarkFi, revealing N
+4. User generates ZK proof:
+   - N is derived from known S
+   - User knows S (controls the original deposit)
+5. User submits WithdrawV1 to DarkFi
+6. DarkFi verifies proof, records nullifier N as spent
+7. Relayer sees withdrawal request, sends ETH to user's Ethereum address
+```
+
+**Note on Roles**:
+- "User" is the same party on both sides - they control funds on both chains
+- The ZK proof cryptographically links the two actions without trust
+- No threshold signing needed because user alone authorizes via secret S
 
 ## Comparison: VSS vs Object Capability
 
@@ -244,54 +300,70 @@ WithdrawParams {
 
 **Deposit direction (External → DarkFi):**
 
-```
-User deposits to bridge_address → Oracle/light client verifies →
-User submits ZK proof → Contract verifies proof → Deposit registered
-```
-
-Only the user knows `secret`. The withdrawal ZK proof requires demonstrating
-knowledge of `secret` corresponding to commitment `C = H(secret, amount, bridge_address)`.
+The "bridging" happens via cryptographic proof, not via a single
+cross-chain transaction. The user:
+1. Locks ETH in a deposit contract on Ethereum (irreversible once confirmed)
+2. Proves to DarkFi: "I locked X ETH" via ZK proof
+3. DarkFi mints corresponding tokens
 
 **Withdrawal direction (DarkFi → External):**
 
-```
-User computes nullifier = H(secret) → User generates ZK proof →
-Contract verifies proof + nullifier not spent → Mark nullifier spent → Emit event
-```
+The user:
+1. Burns tokens on DarkFi (irreversible)
+2. Proves to Ethereum: "I burned X tokens" via ZK proof
+3. Bridge contract on Ethereum releases ETH to user
+
+**Key point**: The "bridge" is the cryptographic proof, not a single transaction.
+Each chain independently verifies proofs. No threshold signing.
 
 Bridge nodes cannot steal funds because they never see `secret`.
 
 ### Operation Ordering: Deposit (External → DarkFi)
 
 ```
-1. User computes bridge_address from identity + nonce
-2. User deposits to bridge_address on external chain
-3. Oracle/light client verifies Merkle proof of deposit
-4. User submits DepositV1 with commitment + ZK proof
-5. Contract verifies: deposit exists + commitment valid
-6. Contract inserts commitment into deposit Merkle tree
+1. User generates secret S
+2. User computes commitment C = H(S, amount, nonce)
+3. User deposits ETH + C to bridge deposit contract on Ethereum
+4. Ethereum emits event with deposit details
+5. Oracle/indexer detects deposit, verifies confirmations
+6. User submits DepositV1 with commitment C + ZK proof proving:
+   - Deposit exists on Ethereum (Merkle proof)
+   - User knows S
+   - Commitment C is correctly formed
+7. DarkFi verifies proof
+8. DarkFi mints tokens to user
 ```
 
+**The "bridging" is step 6-8**: User proves to DarkFi that ETH was locked.
+This is ZK verification, not a direct transaction.
+
 **Why each step first:**
-- Step 2 must precede 3: Cannot verify non-existent deposit
-- Step 3 must precede 5: Cannot register unverified deposit
-- Step 5 must precede 6: Cannot finalize before verification
+- Step 3 must precede 5: Cannot verify non-existent deposit
+- Step 5 must precede 7: Cannot register unverified deposit
+- Step 7 must precede 8: Cannot mint before verification
 
 ### Operation Ordering: Withdrawal (DarkFi → External)
 
 ```
-1. User computes nullifier = H(secret)
-2. User generates ZK proof: membership + ownership + amount
-3. User submits WithdrawV1 with nullifier + proof
-4. Contract verifies: ZK proof valid + nullifier unspent
-5. Contract marks nullifier as spent
-6. Relayer broadcasts to external chain
+1. User generates ZK proof of token burn:
+   - Proves user owns tokens
+   - Proves tokens are being burned
+   - Computes nullifier N = H(S)
+2. User submits WithdrawV1 to DarkFi
+3. DarkFi verifies proof + nullifier not spent
+4. DarkFi marks nullifier N as spent
+5. User receives authorization proof
+6. Relayer sees withdrawal request + proof
+7. Relayer sends ETH to user's Ethereum address
 ```
 
+**The "bridging" is step 2-5**: User proves to DarkFi that tokens were burned.
+DarkFi records this, and the proof serves as authorization for step 7.
+
 **Why each step first:**
-- Step 2 must precede 3: Cannot submit invalid proof
-- Step 4 must precede 5: Cannot spend before verification
-- Step 5 must precede 6: Cannot broadcast before state update
+- Step 1 must precede 2: Cannot submit without proof
+- Step 3 must precede 4: Cannot spend before verification
+- Step 4 must precede 6: Cannot release funds before state update
 
 ### Trustless Verification
 
@@ -299,7 +371,7 @@ Traditional bridges require trusted oracles. This design uses:
 
 - **ZK proofs**: User proves deposit existence without revealing which deposit
 - **Merkle trees**: Efficient proof of inclusion
-- **Light client headers**: Trustless state verification
+- **Light client headers**: Trustless state verification (or trusted indexer for v1)
 
 For deposits: User's ZK proof includes Merkle proof against external chain state root.
 For withdrawals: DarkFi contract handles verification locally.
