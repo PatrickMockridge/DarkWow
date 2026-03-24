@@ -423,6 +423,21 @@ For withdrawals: DarkFi contract handles verification locally.
 * **Deposit to external chain**: How does user send funds anonymously to
   derived bridge address? External chain privacy required.
 
+## Glossary
+
+| Term | Definition |
+|------|------------|
+| **Pool** (UTXO) | In DarkFi's UTXO model, a "pool" refers to the collection of unspent transaction outputs (notes) held by the bridge contract. Unlike account-based systems where balances are stored at addresses, in UTXO systems, the pool tracks unspent outputs. When bridging assets, the bridge contract maintains a pool of notes representing deposited value. |
+| **Note** | A UTXO representing a specific amount of value. In DarkFi, notes are encrypted commitments that can be spent by their owner using a zero-knowledge proof of knowledge of the secret. |
+| **Asset Bridging** | The process of transferring value (tokens, coins) between chains. Requires liquidity on the destination chain and involves wrapping/unwraping assets. Example: Wrapping ETH to create WETH on DarkFi. |
+| **Data Bridging** | The process of passing arbitrary data (oracle data, state proofs, computations) between chains without value transfer. No liquidity required. Example: Passing a price feed from Ethereum to DarkFi. |
+| **Merkle Inclusion Proof** | A cryptographic proof demonstrating that a specific element exists within a Merkle tree, without revealing all other elements. Used in the bridge to verify deposits exist on the external chain. |
+| **OCap (Object Capability)** | A security model where access to objects is determined by capabilities (unforgeable references). In this bridge design, the "capability" is knowledge of the secret - no threshold signing needed. |
+| **VSS (Verifiable Secret Sharing)** | A cryptographic scheme where a secret is split into shards distributed among participants. Withdrawal requires threshold signatures. Used in traditional bridges but avoided in this design due to centralization and key extraction risks. |
+| **Nullifier** | A hash of the deposit secret, used to prevent double-spending. When a note is spent, its nullifier is recorded to prevent reuse. |
+| **Commitment** | A cryptographic binding to a value. In this design: `C = H(secret, amount, bridge_address)`. |
+| **Relayer** | An entity that broadcasts pre-authorized withdrawal transactions to the external chain on behalf of users, enabling user sovereignty without requiring users to hold ETH for gas. |
+
 ## References
 
 [^1]: <https://en.wikipedia.org/wiki/Commitment_scheme>
