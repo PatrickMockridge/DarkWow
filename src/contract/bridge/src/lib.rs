@@ -19,7 +19,9 @@
 //! DarkFi Bridge Contract
 //!
 //! Smart contract implementing anonymous bridging between DarkFi and external
-//! blockchains using verifiable secret sharing and threshold cryptography.
+//! blockchains using Object Capability Security. Unlike VSS-based bridges,
+//! this design uses deterministic address derivation - users control their
+//! own funds via secrets, no threshold signing required.
 
 use darkfi_sdk::error::ContractError;
 

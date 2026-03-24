@@ -59,10 +59,10 @@ User knows secret → Compute nullifier = H(secret) → Withdraw (self-signed)
 bridge/
 ├── proof/          # ZK proof circuits (.zk files)
 ├── src/
-│   ├── client/     # Client-side transaction builders
-│   ├── entrypoint/ # WASM contract entrypoint
-│   ├── model/      # Data structures for contract calls
-│   └── lib.rs      # Contract definitions and constants
+│   ├── client/     # Client-side transaction builders (DepositBuilder, WithdrawBuilder)
+│   ├── entrypoint/ # WASM contract entrypoint (expanded with step-by-step logic)
+│   ├── model/      # Data structures (DepositParams, WithdrawParams, Deposit, Withdrawal)
+│   └── lib.rs      # Contract definitions (BridgeFunction enum) and constants
 ├── tests/          # Integration tests
 ├── Cargo.toml
 └── Makefile
@@ -89,6 +89,107 @@ cargo test
 | DepositV1 | 0x01 | Register external chain deposit |
 | WithdrawV1 | 0x02 | Claim withdrawal to external chain |
 | UpdateConfigV1 | 0x03 | Update bridge operators/threshold |
+
+## Implementation Flow
+
+### How Deposit Works (Client-Side)
+
+```rust
+// 1. Derive bridge address for recipient
+let bridge_address = derive_bridge_address(recipient_pub_x, recipient_pub_y, nonce);
+
+// 2. User deposits ETH to bridge_address on Ethereum
+//    (done via external wallet/interface)
+
+// 3. Wait for confirmations, get Merkle proof from indexer
+let merkle_proof = indexer.get_deposit_proof(tx_hash).await?;
+
+// 4. Build deposit using DepositBuilder
+let deposit = DepositBuilder::new()
+    .secret(secret)
+    .amount(eth_amount)
+    .recipient_pub(recipient_pub_x, recipient_pub_y)
+    .nonce(nonce)
+    .merkle_proof(merkle_proof)
+    .external_block_hash(block_hash)
+    .build()?;
+
+// 5. Submit to DarkFi bridge contract
+client.submit(deposit).await?;
+```
+
+### How Withdrawal Works (Client-Side)
+
+```rust
+// 1. User has a note from a previous deposit
+let note = user.get_bridged_note();
+
+// 2. Compute nullifier = H(secret)
+let nullifier = compute_nullifier(note.secret);
+
+// 3. Determine recipient on Ethereum
+let recipient_hash = hash(ethereum_address);
+
+// 4. Build withdrawal using WithdrawBuilder
+let withdrawal = WithdrawBuilder::new()
+    .nullifier(nullifier)
+    .recipient_hash(recipient_hash)
+    .amount(withdraw_amount)
+    .build()?;
+
+// 5. Submit to DarkFi bridge contract
+client.submit(withdrawal).await?;
+
+// 6. Relayer sees event, broadcasts ETH tx to Ethereum
+```
+
+### How Deposit is Processed (Contract-Side)
+
+```
+1. Verify Merkle proof of deposit on external chain
+   └── Ensures deposit actually exists and is confirmed
+
+2. Verify minimum confirmations reached
+   └── Prevents reorg attacks
+
+3. Verify deposit hasn't already been registered
+   └── Prevents double-deposit
+
+4. Derive bridge_address from params
+   └── commitment = H(secret, amount, bridge_address)
+
+5. Store deposit commitment in Merkle tree
+   └── Makes deposit "claimable" by user
+
+6. Emit DepositRegistered event
+   └── Notifies indexers of new deposit
+```
+
+### How Withdrawal is Processed (Contract-Side)
+
+```
+1. Verify ZK proof of withdrawal authorization
+   └── Proves user knows secret for a committed deposit
+
+2. Check nullifier not yet spent
+   └── Prevents double-spend
+
+3. Mark nullifier as spent
+   └── Permanently prevents reuse of this deposit
+
+4. Emit WithdrawalRequested event
+   └── Authorizes relayer to send ETH to user
+```
+
+### Security Checks at Each Step
+
+| Step | Check | Why |
+|------|-------|-----|
+| Deposit | Merkle proof verification | Ensures deposit exists on external chain |
+| Deposit | Minimum confirmations | Prevents reorg attacks |
+| Deposit | Not already registered | Prevents double-deposit |
+| Withdraw | ZK proof valid | Proves ownership without revealing secret |
+| Withdraw | Nullifier not spent | Prevents double-spend |
 
 ## Design Principles
 
@@ -129,7 +230,14 @@ depositing multiple times produces unlinkable addresses.
 
 ## Implementation Status
 
-This contract is a **draft/placeholder**. The following items need implementation:
+The contract **skeleton is expanded** to show actual implementation flow:
+
+- `entrypoint.rs`: Contains step-by-step deposit/withdrawal processing with security checks
+- `client/mod.rs`: Contains DepositBuilder and WithdrawBuilder with full transaction construction
+
+### What Remains to Implement
+
+The following items need actual Halo2/zkas circuit implementation:
 
 ### Phase 1: Core Deposit/Withdraw
 
