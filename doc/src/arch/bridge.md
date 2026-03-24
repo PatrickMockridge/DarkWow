@@ -7,8 +7,13 @@ Anonymous Bridge (DRAFT v2)
 ## Abstract
 
 We present an overview of an anonymous bridge from any blockchain network
-that has tokens/balances on some address owned by a secret key. Unlike
-traditional bridge designs that rely on Verifiable Secret Sharing (VSS),
+that has tokens/balances on some address owned by a secret key. This is a
+**universal bridge** for assets and arbitrary data, serving multiple use cases:
+- **Value transfer**: Moving tokens between chains
+- **Data bridging**: Passing arbitrary data (oracle data, state proofs, etc.)
+- **Cross-chain computation**: Enabling contracts on one chain to verify state on another
+
+Unlike traditional bridge designs that rely on Verifiable Secret Sharing (VSS),
 this design uses **Object Capability Security** (OCap) to achieve:
 
 - No VSS key shards that can be stolen
@@ -104,7 +109,7 @@ not via a single transaction spanning both chains.
 **Model A: User Controls Deposit Address (Current Design)**
 
 User derives a fresh address on the external chain. They deposit there,
-then prove to DarkFi that they deposited. DarkFi mints corresponding tokens.
+then prove to DarkFi that they deposited. DarkFi releases notes from its pool.
 
 ```
 1. User computes: bridge_address = H(user_identity, nonce)
@@ -123,15 +128,24 @@ This requires either:
 
 **Model B: Locked Deposit Contract**
 
+This model uses a bridge contract that holds deposits and provides
+Merkle inclusion proofs to secure the bridged asset:
+
 ```
 1. User sends ETH to BridgeDeposit contract on Ethereum
 2. Contract emits event with deposit details
 3. User proves to DarkFi: "I locked X ETH in bridge contract"
-4. DarkFi mints tokens to user
+4. Bridge provides Merkle inclusion proof securing the deposit
+5. User receives note on DarkFi with verified backing
 ```
 
-This is more like "wrapped asset" bridging (WBTC, WETH model).
-Problem: Someone must hold the ETH backing the minted tokens.
+The Merkle inclusion proof demonstrates:
+- The deposit exists in the bridge contract's state
+- The bridge contract holds sufficient backing for the issued note
+- The note's value is cryptographically linked to the deposited assets
+
+This is similar to "wrapped asset" bridging (WBTC, WETH model), but with
+ZK proofs providing cryptographic verification instead of trusted custodians.
 
 ### Current Design: Commitment-Based Deposit (Model B Refined)
 
@@ -145,13 +159,15 @@ deposit is verifiable but not directly controlled by user:
    - External deposit exists (Merkle proof of ETH tx)
    - Commitment C is correctly formed
    - User knows S
-4. DarkFi verifies proof, mints tokens to user
-5. User can later prove they know S to withdraw (burn tokens on DarkFi)
+4. DarkFi verifies proof and provides Merkle inclusion proof
+5. User receives note on DarkFi with verified backing
+6. User can later prove they know S to withdraw (spend note on DarkFi)
 ```
 
 **Key insight**: The "deposit" on Ethereum is NOT to an address the user
 controls after the fact. The commitment `C` is revealed AT THE TIME of deposit,
-binding the user to that deposit.
+binding the user to that deposit. The bridge provides Merkle inclusion proofs
+that mathematically guarantee the security of the bridged asset.
 
 ### Bridge Address Derivation (For Withdrawal)
 
