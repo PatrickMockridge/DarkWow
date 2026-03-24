@@ -3,6 +3,7 @@
 # About
 
 - [DarkFi](README.md)
+- [DarkFi for Dummies](about/for-dummies.md)
 - [Start Here](start-here.md)
 - [Philosophy](philosophy/philosophy.md)
   - [Discussion](philosophy/meetings.md)
