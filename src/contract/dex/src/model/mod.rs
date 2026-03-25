@@ -34,6 +34,10 @@
 //! ```
 
 use darkfi_serial::{SerialDecodable, SerialEncodable};
+use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier};
+
+/// Namespace for DEX intents (used with generic intent primitives)
+pub const DEX_NAMESPACE: u64 = 0x0003;
 
 /// Initialize contract parameters
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -62,9 +66,9 @@ pub struct CreateSwapParams {
     /// Amount Alice wants in return
     pub request_amount: u64,
 
-    /// Commitment that Alice's funds are locked
-    /// lock_commitment = H(secret, offer_token, offer_amount)
-    pub lock_commitment: [u8; 32],
+    /// Commitment that Alice's funds are locked (uses generic PrivateIntent commitment)
+    /// lock_commitment = poseidon_hash([9001, owner_x, owner_y, namespace, payload_hash, expiry, nonce, blind])
+    pub lock_commitment: IntentCommitment,
 
     /// Merkle proof that lock commitment is valid
     pub lock_proof: Vec<[u8; 32]>,
@@ -82,8 +86,8 @@ pub struct AcceptSwapParams {
     /// Swap ID being accepted
     pub swap_id: [u8; 32],
 
-    /// Commitment that Bob's funds are locked
-    pub lock_commitment: [u8; 32],
+    /// Commitment that Bob's funds are locked (uses generic PrivateIntent commitment)
+    pub lock_commitment: IntentCommitment,
 
     /// Merkle proof that Bob's lock is valid
     pub lock_proof: Vec<[u8; 32]>,
@@ -172,11 +176,11 @@ pub struct Swap {
     pub request_token: [u8; 32],
     pub request_amount: u64,
 
-    /// Proposer's lock commitment
-    pub proposer_lock: [u8; 32],
+    /// Proposer's lock commitment (uses generic PrivateIntent commitment)
+    pub proposer_lock: IntentCommitment,
 
     /// Acceptor's lock commitment (set when accepted)
-    pub acceptor_lock: [u8; 32],
+    pub acceptor_lock: IntentCommitment,
 
     /// Current state
     pub state: SwapState,

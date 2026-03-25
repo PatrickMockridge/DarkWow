@@ -101,14 +101,15 @@ fn identity_issue_credential(rt: &mut Runtime, call: BridgeCall) -> ContractResu
     // STEP 2: Verify credential doesn't already exist
     // =========================================================================
 
-    let existing = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, &params.nullifier)?;
+    let nullifier_bytes = params.nullifier.to_bytes();
+    let existing = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, nullifier_bytes)?;
     if existing.is_some() {
         msg!("[identity_issue_credential] ERROR: Credential already exists");
         return Err(IdentityError::CredentialAlreadyExists.into())
     }
 
     // Check nullifier hasn't been used
-    let nullifier_used = rt.load(IDENTITY_CONTRACT_NULLIFIERS_TREE, &params.nullifier)?;
+    let nullifier_used = rt.load(IDENTITY_CONTRACT_NULLIFIERS_TREE, nullifier_bytes)?;
     if nullifier_used.is_some() {
         msg!("[identity_issue_credential] ERROR: Nullifier already used");
         return Err(IdentityError::NullifierAlreadySpent.into())
@@ -131,12 +132,12 @@ fn identity_issue_credential(rt: &mut Runtime, call: BridgeCall) -> ContractResu
 
     rt.store_set(
         IDENTITY_CONTRACT_CREDENTIALS_TREE,
-        &params.nullifier,
+        nullifier_bytes,
         &credential.encode()?,
     )?;
 
     // Store nullifier (prevents double-issuance for same holder)
-    rt.store_set(IDENTITY_CONTRACT_NULLIFIERS_TREE, &params.nullifier, &[])?;
+    rt.store_set(IDENTITY_CONTRACT_NULLIFIERS_TREE, nullifier_bytes, &[])?;
 
     // =========================================================================
     // STEP 4: Emit event
@@ -180,7 +181,8 @@ fn identity_revoke_credential(rt: &mut Runtime, call: BridgeCall) -> ContractRes
     // STEP 2: Load and verify credential exists
     // =========================================================================
 
-    let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, &params.nullifier)?;
+    let nullifier_bytes = params.nullifier.to_bytes();
+    let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, nullifier_bytes)?;
     let mut credential: Credential = match cred_data {
         Some(data) => Credential::decode(&mut std::io::Cursor::new(&data))
             .map_err(|_| ContractError::DecodeError)?,
@@ -197,14 +199,14 @@ fn identity_revoke_credential(rt: &mut Runtime, call: BridgeCall) -> ContractRes
     credential.revoked = true;
     rt.store_set(
         IDENTITY_CONTRACT_CREDENTIALS_TREE,
-        &params.nullifier,
+        nullifier_bytes,
         &credential.encode()?,
     )?;
 
     // Add to revocation list
     rt.store_set(
         IDENTITY_CONTRACT_NULLIFIERS_TREE,
-        &params.nullifier,
+        nullifier_bytes,
         &params.reason,
     )?;
 
@@ -243,7 +245,8 @@ fn identity_create_claim(rt: &mut Runtime, call: BridgeCall) -> ContractResult<(
     // STEP 1: Load and verify credential
     // =========================================================================
 
-    let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, &params.nullifier)?;
+    let nullifier_bytes = params.nullifier.to_bytes();
+    let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, nullifier_bytes)?;
     let credential: Credential = match cred_data {
         Some(data) => Credential::decode(&mut std::io::Cursor::new(&data))
             .map_err(|_| ContractError::DecodeError)?,
@@ -311,7 +314,8 @@ fn identity_verify_claim(rt: &mut Runtime, call: BridgeCall) -> ContractResult<(
     // STEP 1: Load and verify credential
     // =========================================================================
 
-    let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, &params.claim.nullifier)?;
+    let nullifier_bytes = params.claim.nullifier.to_bytes();
+    let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, nullifier_bytes)?;
     let credential: Credential = match cred_data {
         Some(data) => Credential::decode(&mut std::io::Cursor::new(&data))
             .map_err(|_| ContractError::DecodeError)?,

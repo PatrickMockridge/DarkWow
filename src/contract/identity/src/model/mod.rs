@@ -38,6 +38,10 @@
 // ============================================================================
 
 use darkfi_serial::{SerialDecodable, SerialEncodable};
+use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier};
+
+/// Namespace for identity intents (used with generic intent primitives)
+pub const IDENTITY_NAMESPACE: u64 = 0x0001;
 
 /// Supported attribute types for credentials
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -105,13 +109,13 @@ pub struct IssueCredentialParams {
     /// Only holder can decrypt and use
     pub encrypted_attributes: Vec<u8>,
 
-    /// Credential commitment
-    /// commitment = H(issuer_pub, holder_pub, schema_hash, encrypted_attributes)
-    pub commitment: [u8; 32],
+    /// Credential commitment (uses generic PrivateIntent commitment)
+    /// commitment = poseidon_hash([9001, owner_x, owner_y, namespace, payload_hash, expiry, nonce, blind])
+    pub commitment: IntentCommitment,
 
-    /// Credential nullifier (for non-revocation)
-    /// nullifier = H(holder_secret, credential_secret)
-    pub nullifier: [u8; 32],
+    /// Credential nullifier (for non-revocation/consumption)
+    /// nullifier = poseidon_hash([9002, owner_secret, namespace, nonce, commitment])
+    pub nullifier: IntentNullifier,
 
     /// Issuance timestamp
     pub issued_at: u64,
@@ -133,7 +137,7 @@ pub struct RevokeCredentialParams {
     pub issuer_sig: Vec<u8>,
 
     /// The nullifier of the credential being revoked
-    pub nullifier: [u8; 32],
+    pub nullifier: IntentNullifier,
 
     /// Reason for revocation (encrypted)
     pub reason: Vec<u8>,
@@ -147,7 +151,7 @@ pub struct RevokeCredentialParams {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CreateClaimParams {
     /// The credential nullifier
-    pub nullifier: [u8; 32],
+    pub nullifier: IntentNullifier,
 
     /// The claim type (e.g., "age_over_18", "dao_member")
     pub claim_type: Vec<u8>,
@@ -184,7 +188,7 @@ pub struct VerifyClaimParams {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Claim {
     /// Credential nullifier (proves credential exists)
-    pub nullifier: [u8; 32],
+    pub nullifier: IntentNullifier,
 
     /// Issuer's public key (who issued this credential)
     pub issuer_pub: [u8; 32],
@@ -214,7 +218,7 @@ pub struct Claim {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Credential {
     /// Credential nullifier
-    pub nullifier: [u8; 32],
+    pub nullifier: IntentNullifier,
 
     /// Issuer's public key
     pub issuer_pub: [u8; 32],
@@ -226,7 +230,7 @@ pub struct Credential {
     pub schema_hash: [u8; 32],
 
     /// Commitment
-    pub commitment: [u8; 32],
+    pub commitment: IntentCommitment,
 
     /// Whether this credential is revoked
     pub revoked: bool,

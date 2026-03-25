@@ -26,6 +26,10 @@
 //! 4. **Self-sovereign**: No trusted price oracles, no governance can freeze
 
 use darkfi_serial::{SerialDecodable, SerialEncodable};
+use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier};
+
+/// Namespace for stablecoin intents (used with generic intent primitives)
+pub const STABLECOIN_NAMESPACE: u64 = 0x0004;
 
 /// Collateral type identifier
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -67,9 +71,9 @@ pub struct InitializeParams {
 /// Open a new CDP (Collateralized Debt Position)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct OpenPositionParams {
-    /// Pedersen commitment to collateral amount + debt
-    /// commitment = H(secret, collateral_amount, debt_amount, owner_pubkey)
-    pub position_commitment: [u8; 32],
+    /// Pedersen commitment to collateral amount + debt (uses generic PrivateIntent commitment)
+    /// commitment = poseidon_hash([9001, owner_x, owner_y, namespace, payload_hash, expiry, nonce, blind])
+    pub position_commitment: IntentCommitment,
 
     /// Owner's public key for the position
     pub owner_pub_x: [u8; 32],
@@ -100,11 +104,11 @@ pub struct OpenPositionParams {
 /// Add collateral to an existing CDP
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct AddCollateralParams {
-    /// Nullifier to identify the position
-    pub position_nullifier: [u8; 32],
+    /// Nullifier to identify the position (uses generic PrivateIntent nullifier)
+    pub position_nullifier: IntentNullifier,
 
-    /// New collateral commitment (cumulative)
-    pub new_commitment: [u8; 32],
+    /// New collateral commitment (cumulative) - uses generic PrivateIntent commitment
+    pub new_commitment: IntentCommitment,
 
     /// Amount of collateral being added (hidden in new commitment)
     pub added_collateral: u64,
@@ -125,11 +129,11 @@ pub struct AddCollateralParams {
 /// Remove collateral from a CDP (only if collateralization ratio allows)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RemoveCollateralParams {
-    /// Nullifier to identify the position
-    pub position_nullifier: [u8; 32],
+    /// Nullifier to identify the position (uses generic PrivateIntent nullifier)
+    pub position_nullifier: IntentNullifier,
 
-    /// New commitment after removal
-    pub new_commitment: [u8; 32],
+    /// New commitment after removal (uses generic PrivateIntent commitment)
+    pub new_commitment: IntentCommitment,
 
     /// Amount of collateral to remove
     pub removed_collateral: u64,
@@ -153,11 +157,11 @@ pub struct RemoveCollateralParams {
 /// Mint stablecoin against collateral
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct MintStableParams {
-    /// Nullifier identifying the position
-    pub position_nullifier: [u8; 32],
+    /// Nullifier identifying the position (uses generic PrivateIntent nullifier)
+    pub position_nullifier: IntentNullifier,
 
-    /// New commitment with increased debt
-    pub new_commitment: [u8; 32],
+    /// New commitment with increased debt (uses generic PrivateIntent commitment)
+    pub new_commitment: IntentCommitment,
 
     /// Amount of stablecoin to mint
     pub mint_amount: u64,
@@ -181,11 +185,11 @@ pub struct MintStableParams {
 /// Repay stablecoin debt to unlock collateral
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RepayStableParams {
-    /// Nullifier identifying the position
-    pub position_nullifier: [u8; 32],
+    /// Nullifier identifying the position (uses generic PrivateIntent nullifier)
+    pub position_nullifier: IntentNullifier,
 
-    /// New commitment with reduced debt
-    pub new_commitment: [u8; 32],
+    /// New commitment with reduced debt (uses generic PrivateIntent commitment)
+    pub new_commitment: IntentCommitment,
 
     /// Amount of stablecoin to burn (repay)
     pub repay_amount: u64,
@@ -212,11 +216,11 @@ pub struct RepayStableParams {
 /// Liquidate an undercollateralized CDP
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct LiquidateParams {
-    /// Nullifier of the position being liquidated
-    pub position_nullifier: [u8; 32],
+    /// Nullifier of the position being liquidated (uses generic PrivateIntent nullifier)
+    pub position_nullifier: IntentNullifier,
 
-    /// New commitment after liquidation
-    pub new_commitment: [u8; 32],
+    /// New commitment after liquidation (uses generic PrivateIntent commitment)
+    pub new_commitment: IntentCommitment,
 
     /// Current collateral in position
     pub collateral_amount: u64,
@@ -274,8 +278,8 @@ pub struct UpdateConfigParams {
 /// Stored CDP position record
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Position {
-    /// Position commitment hash
-    pub commitment: [u8; 32],
+    /// Position commitment hash (uses generic PrivateIntent commitment)
+    pub commitment: IntentCommitment,
 
     /// Owner's public key
     pub owner_pub_x: [u8; 32],
@@ -306,8 +310,8 @@ pub struct Position {
 /// Stored liquidation record
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Liquidation {
-    /// Position nullifier
-    pub position_nullifier: [u8; 32],
+    /// Position nullifier (uses generic PrivateIntent nullifier)
+    pub position_nullifier: IntentNullifier,
 
     /// Liquidator public key
     pub liquidator_pub_x: [u8; 32],

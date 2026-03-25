@@ -26,6 +26,10 @@
 //! - User alone controls withdrawal via their secret
 
 use darkfi_serial::{SerialDecodable, SerialEncodable};
+use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier};
+
+/// Namespace for bridge intents (used with generic intent primitives)
+pub const BRIDGE_NAMESPACE: u64 = 0x0002;
 
 /// External chain identifier
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -42,9 +46,9 @@ pub enum ExternalChain {
 /// Only the depositor knows `secret`, so only they can later withdraw.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DepositParams {
-    /// Commitment hash from user's secret
-    /// commitment = H(secret, amount, bridge_address)
-    pub commitment: [u8; 32],
+    /// Commitment hash from user's secret (uses generic PrivateIntent commitment)
+    /// commitment = poseidon_hash([9001, owner_x, owner_y, namespace, payload_hash, expiry, nonce, blind])
+    pub commitment: IntentCommitment,
 
     /// Recipient public key for address derivation
     /// Used to compute: bridge_address = H(H(secret)*G, recipient_pub)
@@ -85,8 +89,8 @@ pub struct DepositParams {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct WithdrawParams {
     /// Nullifier = H(secret) - proves deposit exists and hasn't been withdrawn
-    /// Double-spend prevention without revealing which deposit
-    pub nullifier: [u8; 32],
+    /// Uses generic PrivateIntent nullifier: poseidon_hash([9002, owner_secret, namespace, nonce, commitment])
+    pub nullifier: IntentNullifier,
 
     /// Recipient address hash on external chain
     /// Hash of actual address for privacy
@@ -135,8 +139,8 @@ pub struct UpdateConfigParams {
 /// which requires knowledge of secret to claim.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Deposit {
-    /// Commitment hash
-    pub commitment: [u8; 32],
+    /// Commitment hash (uses generic PrivateIntent commitment)
+    pub commitment: IntentCommitment,
 
     /// Amount deposited
     pub amount: u64,
@@ -161,8 +165,8 @@ pub struct Deposit {
 /// only that some deposit was spent.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Withdrawal {
-    /// Nullifier (proves deposit was spent)
-    pub nullifier: [u8; 32],
+    /// Nullifier (proves deposit was spent) - uses generic PrivateIntent nullifier
+    pub nullifier: IntentNullifier,
 
     /// Recipient on external chain (hashed)
     pub recipient_hash: [u8; 32],
