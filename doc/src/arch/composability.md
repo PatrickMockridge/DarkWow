@@ -234,6 +234,57 @@ Cross-contract composition follows specific patterns:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## SDK Primitives
+
+The DarkFi SDK provides reusable primitives in `src/sdk/src/primitives.rs`:
+
+### Contract Function Macro
+
+Use `define_contract_function!` to define contract functions with automatic `TryFrom<u8>`:
+
+```rust
+use darkfi_sdk::define_contract_function;
+
+define_contract_function!(MyContract {
+    InitializeV1 = 0x00,
+    DoActionV1 = 0x01,
+    UpdateStateV1 = 0x02,
+});
+```
+
+This expands to the full enum with `TryFrom<u8>` implementation.
+
+### Commitment and Nullifier Helpers
+
+The SDK provides Poseidon hash-based commitment and nullifier computation:
+
+```rust
+use darkfi_sdk::primitives::{compute_commitment, compute_nullifier};
+
+// Compute commitment: H(secret, params...)
+let commitment = compute_commitment::<2>([secret, param1]);
+
+// Compute nullifier: H(secret, commitment)
+let nullifier = compute_nullifier(secret, commitment);
+
+// State nullifier: H(secret, state_hash)
+let state_nullifier = compute_state_nullifier(secret, state_hash);
+
+// Revocation nullifier: H(issuer_secret, commitment)
+let revocation = compute_revocation_nullifier(issuer_secret, commitment);
+```
+
+### Tree Name Helper
+
+Generate consistent tree names:
+
+```rust
+use darkfi_sdk::primitives::tree_name;
+
+pub const MY_STATE_TREE: &str = tree_name!("mycontract", "state");
+// Results in: "mycontract_state"
+```
+
 ## Designing New Contracts: General Primitive Checklist
 
 When designing a new DarkFi contract:

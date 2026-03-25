@@ -27,6 +27,10 @@ pub mod blockchain;
 /// DarkTree structures
 pub mod dark_tree;
 
+/// Shared primitives for contracts (commitment, nullifier, macros)
+pub mod primitives;
+pub use primitives::*;
+
 /// Native (non-wasm, non-ff) Sparse Merkle Tree
 pub mod monotree;
 

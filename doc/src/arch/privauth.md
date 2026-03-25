@@ -168,6 +168,8 @@ When designing commitments for a new contract:
 3. **Bind to context**: Include state hash or other context when needed
 4. **Consider nullifier computation**: What data should the nullifier bind to?
 
+**SDK Helper**: Use `compute_commitment::<N>([secret, param1, ...])` from `darkfi_sdk::primitives`.
+
 ### Nullifier Design
 
 When designing nullifiers:
@@ -175,6 +177,8 @@ When designing nullifiers:
 1. **Bind to commitment**: `H(secret, commitment)` prevents cross-commitment replay
 2. **Include state**: `H(secret, commitment, state_hash)` prevents state-transition replay
 3. **Use unique derivation**: Same secret + different context = different nullifier
+
+**SDK Helper**: Use `compute_nullifier(secret, commitment)` from `darkfi_sdk::primitives`.
 
 ### Proof Design
 

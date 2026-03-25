@@ -27,47 +27,19 @@
 //! - **Pedersen commitments**: Collateral and debt amounts hidden in SMT
 //! - **CDP Notes**: Special Money contract coins with spend_hook to CDP Engine
 
-use darkfi_sdk::error::ContractError;
+use darkfi_sdk::define_contract_function;
 
 /// Functions available in the stablecoin contract
-#[repr(u8)]
-#[derive(Debug)]
-pub enum StablecoinFunction {
-    /// Initialize the CDP engine with initial parameters
+define_contract_function!(StablecoinFunction {
     InitializeV1 = 0x00,
-    /// Open a new collateralized debt position
     OpenPositionV1 = 0x01,
-    /// Add collateral to an existing position
     AddCollateralV1 = 0x02,
-    /// Remove collateral from a position
     RemoveCollateralV1 = 0x03,
-    /// Mint stablecoin against collateral
     MintStableV1 = 0x04,
-    /// Repay stablecoin debt
     RepayStableV1 = 0x05,
-    /// Liquidate an undercollateralized position
     LiquidateV1 = 0x06,
-    /// Update CDP engine parameters (PI controller, rates)
     UpdateConfigV1 = 0x07,
-}
-
-impl TryFrom<u8> for StablecoinFunction {
-    type Error = ContractError;
-
-    fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
-        match b {
-            0x00 => Ok(Self::InitializeV1),
-            0x01 => Ok(Self::OpenPositionV1),
-            0x02 => Ok(Self::AddCollateralV1),
-            0x03 => Ok(Self::RemoveCollateralV1),
-            0x04 => Ok(Self::MintStableV1),
-            0x05 => Ok(Self::RepayStableV1),
-            0x06 => Ok(Self::LiquidateV1),
-            0x07 => Ok(Self::UpdateConfigV1),
-            _ => Err(ContractError::InvalidFunction),
-        }
-    }
-}
+});
 
 /// Internal contract errors
 pub mod error;

@@ -23,35 +23,15 @@
 //! this design uses deterministic address derivation - users control their
 //! own funds via secrets, no threshold signing required.
 
-use darkfi_sdk::error::ContractError;
+use darkfi_sdk::define_contract_function;
 
 /// Functions available in the contract
-#[repr(u8)]
-#[derive(Debug)]
-pub enum BridgeFunction {
-    /// Initialize bridge state
+define_contract_function!(BridgeFunction {
     InitializeV1 = 0x00,
-    /// Register a new bridge deposit
     DepositV1 = 0x01,
-    /// Claim a bridged withdrawal
     WithdrawV1 = 0x02,
-    /// Update bridge configuration
     UpdateConfigV1 = 0x03,
-}
-
-impl TryFrom<u8> for BridgeFunction {
-    type Error = ContractError;
-
-    fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
-        match b {
-            0x00 => Ok(Self::InitializeV1),
-            0x01 => Ok(Self::DepositV1),
-            0x02 => Ok(Self::WithdrawV1),
-            0x03 => Ok(Self::UpdateConfigV1),
-            _ => Err(ContractError::InvalidFunction),
-        }
-    }
-}
+});
 
 /// Internal contract errors
 pub mod error;

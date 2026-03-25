@@ -118,38 +118,16 @@
 //! - Level 2: Anonymous credentials (CL signatures)
 //! - Level 3: Self-sovereign identity with revocation
 
-use darkfi_sdk::error::ContractError;
+use darkfi_sdk::define_contract_function;
 
 /// Functions available in the Identity contract
-#[repr(u8)]
-#[derive(Debug)]
-pub enum IdentityFunction {
-    /// Initialize identity registry
+define_contract_function!(IdentityFunction {
     InitializeV1 = 0x00,
-    /// Issue a new credential
     IssueCredentialV1 = 0x01,
-    /// Revoke a credential
     RevokeCredentialV1 = 0x02,
-    /// Create a claim (ZK proof)
     CreateClaimV1 = 0x03,
-    /// Verify a claim on-chain
     VerifyClaimV1 = 0x04,
-}
-
-impl TryFrom<u8> for IdentityFunction {
-    type Error = ContractError;
-
-    fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
-        match b {
-            0x00 => Ok(Self::InitializeV1),
-            0x01 => Ok(Self::IssueCredentialV1),
-            0x02 => Ok(Self::RevokeCredentialV1),
-            0x03 => Ok(Self::CreateClaimV1),
-            0x04 => Ok(Self::VerifyClaimV1),
-            _ => Err(ContractError::InvalidFunction),
-        }
-    }
-}
+});
 
 /// Internal contract errors
 pub mod error;

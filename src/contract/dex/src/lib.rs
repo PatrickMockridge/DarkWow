@@ -33,41 +33,17 @@
 //! - No price discovery (parties agree bilaterally)
 //! - No information leakage (swap either happens or refunds)
 
-use darkfi_sdk::error::ContractError;
+use darkfi_sdk::define_contract_function;
 
 /// Functions available in the DEX contract
-#[repr(u8)]
-#[derive(Debug)]
-pub enum DexFunction {
-    /// Initialize swap contract
+define_contract_function!(DexFunction {
     InitializeV1 = 0x00,
-    /// Create atomic swap proposal
     CreateSwapV1 = 0x01,
-    /// Accept and lock funds for swap
     AcceptSwapV1 = 0x02,
-    /// Execute atomic swap
     ExecuteSwapV1 = 0x03,
-    /// Cancel swap and refund
     CancelSwapV1 = 0x04,
-    /// Update contract configuration
     UpdateConfigV1 = 0x05,
-}
-
-impl TryFrom<u8> for DexFunction {
-    type Error = ContractError;
-
-    fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
-        match b {
-            0x00 => Ok(Self::InitializeV1),
-            0x01 => Ok(Self::CreateSwapV1),
-            0x02 => Ok(Self::AcceptSwapV1),
-            0x03 => Ok(Self::ExecuteSwapV1),
-            0x04 => Ok(Self::CancelSwapV1),
-            0x05 => Ok(Self::UpdateConfigV1),
-            _ => Err(ContractError::InvalidFunction),
-        }
-    }
-}
+});
 
 /// Internal contract errors
 pub mod error;
