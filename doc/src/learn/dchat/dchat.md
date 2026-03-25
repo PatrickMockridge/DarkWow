@@ -14,5 +14,11 @@ the p2p network, in particular:
 * Writing and registering a custom `Protocol`.
 * Creating and subscribing to a custom `Message` type.
 
+## Prerequisites
+
+Before starting this tutorial, ensure you're familiar with Rust async
+programming. If you need a refresher, read the
+[Async Rust Fundamentals](async-rust-fundamentals.md) preamble.
+
 The source code for this tutorial can be found at
 [example/dchat](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/example/dchat).

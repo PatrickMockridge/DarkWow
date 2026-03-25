@@ -52,7 +52,42 @@ method `register` which passes a protocol constructor and a session
 for. The `ProtocolRegistry` then spawns new protocols for different channels
 depending on the session.
 
-TODO: document which protocols are included or excluded depending on the session.
+**Session Bitflags**
+
+The `ProtocolRegistry` uses session bitflags to control which protocols are
+activated for different session types. The available sessions are:
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `SESSION_INBOUND` | `0b000001` | Incoming connections from peers |
+| `SESSION_OUTBOUND` | `0b000010` | Outgoing connections to peers |
+| `SESSION_MANUAL` | `0b000100` | Manually established connections |
+| `SESSION_SEED` | `0b001000` | Connections to seed nodes |
+| `SESSION_REFINE` | `0b010000` | State synchronization sessions |
+| `SESSION_DIRECT` | `0b100000` | Direct peer-to-peer connections |
+
+Two composite constants simplify common configurations:
+
+| Constant | Value | Includes |
+|----------|-------|----------|
+| `SESSION_DEFAULT` | `0b100111` | INBOUND, OUTBOUND, MANUAL, DIRECT |
+| `SESSION_ALL` | `0b111111` | All session types |
+
+**Protocol Registration Examples**
+
+Looking at the DarkFi protocol registry:
+
+```rust
+registry.register(SESSION_DEFAULT | SESSION_SEED, ProtocolPing::init).await;
+registry.register(SESSION_DEFAULT, ProtocolAddress::init).await;
+```
+
+* `ProtocolPing` runs on: INBOUND, OUTBOUND, MANUAL, DIRECT (from DEFAULT), plus SEED
+* `ProtocolAddress` runs on: INBOUND, OUTBOUND, MANUAL, DIRECT
+
+This means `ProtocolPing` runs on all sessions including seed, while
+`ProtocolAddress` runs only on the default sessions (excluding REFINE and SEED
+connections).
 
 **ProtocolJobsManager**
 
