@@ -16,18 +16,22 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! DarkFi DEX Contract
+//! DarkFi DEX Contract - Level 0 MVP: Atomic Swap DAO
 //!
-//! Anonymous decentralized exchange for privacy-preserving token swaps.
-//! Built on DarkFi's ZK and object capability principles.
+//! This is the minimal viable DEX: a DAO that coordinates atomic swaps
+//! between two parties without revealing amounts, identities, or trade data.
 //!
-//! ## Core Design
+//! ## How It Works
 //!
-//! Unlike traditional AMMs (UniSwap, Curve) that reveal everything,
-//! the DarkFi DEX keeps orders, amounts, and identities hidden using:
-//! - Sparse Merkle Tree for order book commitments
-//! - Pedersen commitments for hidden values
-//! - ZK proofs for order matching
+//! 1. **Create Swap**: Proposer locks funds, specifies swap params
+//! 2. **Accept Swap**: Acceptor locks matching funds
+//! 3. **Execute**: Atomic swap executes (or timeout refund)
+//!
+//! ## Privacy
+//!
+//! - No order book (no one knows what swaps are possible)
+//! - No price discovery (parties agree bilaterally)
+//! - No information leakage (swap either happens or refunds)
 
 use darkfi_sdk::error::ContractError;
 
@@ -35,20 +39,18 @@ use darkfi_sdk::error::ContractError;
 #[repr(u8)]
 #[derive(Debug)]
 pub enum DexFunction {
-    /// Initialize DEX state
+    /// Initialize swap contract
     InitializeV1 = 0x00,
-    /// Place an order (add to order book)
-    PlaceOrderV1 = 0x01,
-    /// Cancel an order
-    CancelOrderV1 = 0x02,
-    /// Match two orders (swap)
-    MatchOrdersV1 = 0x03,
-    /// Add liquidity to pool
-    AddLiquidityV1 = 0x04,
-    /// Remove liquidity from pool
-    RemoveLiquidityV1 = 0x05,
-    /// Update DEX configuration
-    UpdateConfigV1 = 0x06,
+    /// Create atomic swap proposal
+    CreateSwapV1 = 0x01,
+    /// Accept and lock funds for swap
+    AcceptSwapV1 = 0x02,
+    /// Execute atomic swap
+    ExecuteSwapV1 = 0x03,
+    /// Cancel swap and refund
+    CancelSwapV1 = 0x04,
+    /// Update contract configuration
+    UpdateConfigV1 = 0x05,
 }
 
 impl TryFrom<u8> for DexFunction {
@@ -57,12 +59,11 @@ impl TryFrom<u8> for DexFunction {
     fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
         match b {
             0x00 => Ok(Self::InitializeV1),
-            0x01 => Ok(Self::PlaceOrderV1),
-            0x02 => Ok(Self::CancelOrderV1),
-            0x03 => Ok(Self::MatchOrdersV1),
-            0x04 => Ok(Self::AddLiquidityV1),
-            0x05 => Ok(Self::RemoveLiquidityV1),
-            0x06 => Ok(Self::UpdateConfigV1),
+            0x01 => Ok(Self::CreateSwapV1),
+            0x02 => Ok(Self::AcceptSwapV1),
+            0x03 => Ok(Self::ExecuteSwapV1),
+            0x04 => Ok(Self::CancelSwapV1),
+            0x05 => Ok(Self::UpdateConfigV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }
@@ -86,13 +87,11 @@ pub mod client;
 // DATABASE TREES
 // ============================================================================
 
-/// Tree for order book (SMT of order commitments)
-pub const DEX_CONTRACT_ORDERBOOK_TREE: &str = "orderbook";
-/// Tree for spent order nullifiers
-pub const DEX_CONTRACT_NULLIFIERS_TREE: &str = "order_nullifiers";
-/// Tree for liquidity positions
-pub const DEX_CONTRACT_LIQUIDITY_TREE: &str = "liquidity";
-/// Tree for DEX configuration
+/// Tree for active swaps
+pub const DEX_CONTRACT_SWAPS_TREE: &str = "swaps";
+/// Tree for swap participants (nullifiers)
+pub const DEX_CONTRACT_PARTICIPANTS_TREE: &str = "participants";
+/// Tree for configuration
 pub const DEX_CONTRACT_CONFIG_TREE: &str = "config";
 /// Tree for DEX info
 pub const DEX_CONTRACT_INFO_TREE: &str = "info";
@@ -103,24 +102,20 @@ pub const DEX_CONTRACT_INFO_TREE: &str = "info";
 
 /// Database version key
 pub const DEX_CONTRACT_DB_VERSION: &[u8] = b"db_version";
-/// Current order book root
-pub const DEX_CONTRACT_ORDERBOOK_ROOT: &[u8] = b"orderbook_root";
+/// Swap timeout (in blocks)
+pub const DEX_CONTRACT_TIMEOUT: &[u8] = b"swap_timeout";
 /// DEX fee parameter
 pub const DEX_CONTRACT_FEE: &[u8] = b"dex_fee";
-/// Minimum order size
-pub const DEX_CONTRACT_MIN_ORDER: &[u8] = b"min_order";
 
 // ============================================================================
 // ZK CIRCUIT NAMESPACES
 // ============================================================================
 
-/// Place order circuit namespace
-pub const DEX_CONTRACT_ZKAS_PLACE_ORDER_NS_V1: &str = "PlaceOrder_V1";
-/// Cancel order circuit namespace
-pub const DEX_CONTRACT_ZKAS_CANCEL_ORDER_NS_V1: &str = "CancelOrder_V1";
-/// Match orders circuit namespace
-pub const DEX_CONTRACT_ZKAS_MATCH_ORDERS_NS_V1: &str = "MatchOrders_V1";
-/// Add liquidity circuit namespace
-pub const DEX_CONTRACT_ZKAS_ADD_LIQUIDITY_NS_V1: &str = "AddLiquidity_V1";
-/// Remove liquidity circuit namespace
-pub const DEX_CONTRACT_ZKAS_REMOVE_LIQUIDITY_NS_V1: &str = "RemoveLiquidity_V1";
+/// Create swap circuit namespace
+pub const DEX_CONTRACT_ZKAS_CREATE_SWAP_NS_V1: &str = "CreateSwap_V1";
+/// Accept swap circuit namespace
+pub const DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V1: &str = "AcceptSwap_V1";
+/// Execute swap circuit namespace
+pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1: &str = "ExecuteSwap_V1";
+/// Cancel swap circuit namespace
+pub const DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1: &str = "CancelSwap_V1";

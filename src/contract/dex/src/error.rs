@@ -21,38 +21,50 @@ use darkfi_sdk::error::ContractError;
 /// DEX contract errors
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum DexError {
-    #[error("Order not found")]
-    OrderNotFound,
+    #[error("Swap not found")]
+    SwapNotFound,
 
-    #[error("Order already exists")]
-    OrderAlreadyExists,
+    #[error("Swap already exists")]
+    SwapAlreadyExists,
 
-    #[error("Order already spent")]
-    OrderAlreadySpent,
+    #[error("Invalid swap state")]
+    InvalidSwapState,
 
-    #[error("Invalid order commitment")]
-    InvalidOrderCommitment,
+    #[error("Swap expired")]
+    SwapExpired,
+
+    #[error("Unauthorized cancellation")]
+    UnauthorizedCancellation,
+
+    #[error("Unauthorized execution")]
+    UnauthorizedExecution,
+
+    #[error("Invalid lock commitment")]
+    InvalidLockCommitment,
 
     #[error("Invalid nullifier")]
     InvalidNullifier,
 
+    #[error("Invalid signature")]
+    InvalidSignature,
+
+    #[error("Invalid ZK proof")]
+    InvalidZkProof,
+
+    #[error("Invalid Merkle proof")]
+    InvalidMerkleProof,
+
     #[error("Insufficient balance")]
     InsufficientBalance,
-
-    #[error("Insufficient liquidity")]
-    InsufficientLiquidity,
-
-    #[error("Price mismatch")]
-    PriceMismatch,
 
     #[error("Amount mismatch")]
     AmountMismatch,
 
-    #[error("Invalid merkle proof")]
-    InvalidMerkleProof,
+    #[error("Token mismatch")]
+    TokenMismatch,
 
-    #[error("Invalid ZK proof")]
-    InvalidZkProof,
+    #[error("Swap timeout")]
+    SwapTimeout,
 
     #[error("DEX not initialized")]
     DexNotInitialized,
@@ -60,55 +72,31 @@ pub enum DexError {
     #[error("Invalid configuration")]
     InvalidConfiguration,
 
-    #[error("Unauthorized cancellation")]
-    UnauthorizedCancellation,
-
-    #[error("Unauthorized match")]
-    UnauthorizedMatch,
-
-    #[error("Order too small")]
-    OrderTooSmall,
-
     #[error("Fee too low")]
     FeeTooLow,
-
-    #[error("Slippage exceeded")]
-    SlippageExceeded,
-
-    #[error("Pool not found")]
-    PoolNotFound,
-
-    #[error("Invalid LP share")]
-    InvalidLpShare,
-
-    #[error("Zero liquidity")]
-    ZeroLiquidity,
 }
 
 impl From<DexError> for ContractError {
     fn from(e: DexError) -> Self {
         match e {
-            DexError::OrderNotFound => Self::Custom(1),
-            DexError::OrderAlreadyExists => Self::Custom(2),
-            DexError::OrderAlreadySpent => Self::Custom(3),
-            DexError::InvalidOrderCommitment => Self::Custom(4),
-            DexError::InvalidNullifier => Self::Custom(5),
-            DexError::InsufficientBalance => Self::Custom(6),
-            DexError::InsufficientLiquidity => Self::Custom(7),
-            DexError::PriceMismatch => Self::Custom(8),
-            DexError::AmountMismatch => Self::Custom(9),
-            DexError::InvalidMerkleProof => Self::Custom(10),
-            DexError::InvalidZkProof => Self::Custom(11),
-            DexError::DexNotInitialized => Self::Custom(12),
-            DexError::InvalidConfiguration => Self::Custom(13),
-            DexError::UnauthorizedCancellation => Self::Custom(14),
-            DexError::UnauthorizedMatch => Self::Custom(15),
-            DexError::OrderTooSmall => Self::Custom(16),
-            DexError::FeeTooLow => Self::Custom(17),
-            DexError::SlippageExceeded => Self::Custom(18),
-            DexError::PoolNotFound => Self::Custom(19),
-            DexError::InvalidLpShare => Self::Custom(20),
-            DexError::ZeroLiquidity => Self::Custom(21),
+            DexError::SwapNotFound => Self::Custom(1),
+            DexError::SwapAlreadyExists => Self::Custom(2),
+            DexError::InvalidSwapState => Self::Custom(3),
+            DexError::SwapExpired => Self::Custom(4),
+            DexError::UnauthorizedCancellation => Self::Custom(5),
+            DexError::UnauthorizedExecution => Self::Custom(6),
+            DexError::InvalidLockCommitment => Self::Custom(7),
+            DexError::InvalidNullifier => Self::Custom(8),
+            DexError::InvalidSignature => Self::Custom(9),
+            DexError::InvalidZkProof => Self::Custom(10),
+            DexError::InvalidMerkleProof => Self::Custom(11),
+            DexError::InsufficientBalance => Self::Custom(12),
+            DexError::AmountMismatch => Self::Custom(13),
+            DexError::TokenMismatch => Self::Custom(14),
+            DexError::SwapTimeout => Self::Custom(15),
+            DexError::DexNotInitialized => Self::Custom(16),
+            DexError::InvalidConfiguration => Self::Custom(17),
+            DexError::FeeTooLow => Self::Custom(18),
         }
     }
 }

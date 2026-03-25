@@ -16,41 +16,32 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Client-side transaction builders for DEX contract
+//! Client-side transaction builders for DEX atomic swap contract
 //!
-//! ## How to Place an Order
-//!
-//! ```ignore
-//! // 1. Create order parameters
-//! let order = PlaceOrderBuilder::new()
-//!     .secret(secret)
-//!     .amount(1000)
-//!     .price(0_01_0000) // 0.01 ETH
-//!     .token(token_drk)
-//!     .side(OrderSide::Sell)
-//!     .order_type(OrderType::GTC)
-//!     .build()?;
-//!
-//! // 2. Submit to DEX contract
-//! client.submit(order).await?;
-//! ```
-//!
-//! ## How to Match Orders
+//! ## How to Create and Execute an Atomic Swap
 //!
 //! ```ignore
-//! // 1. Solver finds compatible orders
-//! let (order_a, order_b) = solver.find_match(buy_order, sell_order)?;
-//!
-//! // 2. Build match transaction
-//! let match_tx = MatchOrdersBuilder::new()
-//!     .order_a(order_a.commitment)
-//!     .order_b(order_b.commitment)
-//!     .match_amount(500) // partial fill
-//!     .execution_price(0_01_1000) // slight premium
+//! // Alice creates swap proposal
+//! let create = CreateSwapBuilder::new()
+//!     .secret(alice_secret)
+//!     .offer_token(drk_token)
+//!     .offer_amount(1000)
+//!     .request_token(eth_token)
+//!     .request_amount(1)
 //!     .build()?;
 //!
-//! // 3. Submit match to DEX
-//! client.submit(match_tx).await?;
+//! // Bob accepts swap
+//! let accept = AcceptSwapBuilder::new()
+//!     .swap_id(create.swap_id())
+//!     .secret(bob_secret)
+//!     .build()?;
+//!
+//! // Anyone executes (with both parties' secrets)
+//! let execute = ExecuteSwapBuilder::new()
+//!     .swap_id(swap_id)
+//!     .alice_secret(alice_secret)
+//!     .bob_secret(bob_secret)
+//!     .build()?;
 //! ```
 
 use darkfi_sdk::error::ClientError;
@@ -58,107 +49,107 @@ use darkfi_sdk::error::ClientError;
 /// DEX client errors
 #[derive(Debug, thiserror::Error)]
 pub enum DexClientError {
-    #[error("Invalid order: {0}")]
-    InvalidOrder(String),
+    #[error("Invalid swap: {0}")]
+    InvalidSwap(String),
 
-    #[error("Invalid match: {0}")]
-    InvalidMatch(String),
+    #[error("Invalid lock: {0}")]
+    InvalidLock(String),
 
-    #[error("Insufficient funds")]
-    InsufficientFunds,
-
-    #[error("Price out of range")]
-    PriceOutOfRange,
+    #[error("Missing required field: {0}")]
+    MissingField(String),
 
     #[error("Invalid ZK proof: {0}")]
     InvalidProof(String),
 }
 
 // ============================================================================
-// PLACE ORDER BUILDER
+// CREATE SWAP BUILDER
 // ============================================================================
 
-/// Builder for placing an order
-pub struct PlaceOrderBuilder {
+/// Builder for creating an atomic swap proposal
+pub struct CreateSwapBuilder {
     secret: Option<[u8; 32]>,
-    amount: Option<u64>,
-    price: Option<u64>,
-    token: Option<[u8; 32]>,
-    side: Option<OrderSide>,
-    order_type: Option<OrderType>,
+    offer_token: Option<[u8; 32]>,
+    offer_amount: Option<u64>,
+    request_token: Option<[u8; 32]>,
+    request_amount: Option<u64>,
 }
 
-impl PlaceOrderBuilder {
+impl CreateSwapBuilder {
     pub fn new() -> Self {
         Self {
             secret: None,
-            amount: None,
-            price: None,
-            token: None,
-            side: None,
-            order_type: None,
+            offer_token: None,
+            offer_amount: None,
+            request_token: None,
+            request_amount: None,
         }
     }
 
+    /// Set the secret for the lock
     pub fn secret(&mut self, secret: [u8; 32]) -> &mut Self {
         self.secret = Some(secret);
         self
     }
 
-    pub fn amount(&mut self, amount: u64) -> &mut Self {
-        self.amount = Some(amount);
+    /// Set the token being offered
+    pub fn offer_token(&mut self, token: [u8; 32]) -> &mut Self {
+        self.offer_token = Some(token);
         self
     }
 
-    pub fn price(&mut self, price: u64) -> &mut Self {
-        self.price = Some(price);
+    /// Set the offer amount
+    pub fn offer_amount(&mut self, amount: u64) -> &mut Self {
+        self.offer_amount = Some(amount);
         self
     }
 
-    pub fn token(&mut self, token: [u8; 32]) -> &mut Self {
-        self.token = Some(token);
+    /// Set the token being requested
+    pub fn request_token(&mut self, token: [u8; 32]) -> &mut Self {
+        self.request_token = Some(token);
         self
     }
 
-    pub fn side(&mut self, side: OrderSide) -> &mut Self {
-        self.side = Some(side);
+    /// Set the request amount
+    pub fn request_amount(&mut self, amount: u64) -> &mut Self {
+        self.request_amount = Some(amount);
         self
     }
 
-    pub fn order_type(&mut self, order_type: OrderType) -> &mut Self {
-        self.order_type = Some(order_type);
-        self
-    }
-
-    /// Build the place order transaction
+    /// Build the create swap transaction
     ///
-    /// commitment = H(secret, amount, price, token, side)
+    /// lock_commitment = H(secret, offer_token, offer_amount)
+    /// swap_id = H(lock_commitment, request_token, request_amount, nonce)
     pub fn build(&self) -> Result<Vec<u8>, ClientError> {
         let secret = self.secret.ok_or_else(|| ClientError::InvalidInput("secret required".into()))?;
-        let amount = self.amount.ok_or_else(|| ClientError::InvalidInput("amount required".into()))?;
-        let price = self.price.ok_or_else(|| ClientError::InvalidInput("price required".into()))?;
-        let token = self.token.ok_or_else(|| ClientError::InvalidInput("token required".into()))?;
-        let side = self.side.clone().ok_or_else(|| ClientError::InvalidInput("side required".into()))?;
+        let offer_token = self.offer_token.ok_or_else(|| ClientError::InvalidInput("offer_token required".into()))?;
+        let offer_amount = self.offer_amount.ok_or_else(|| ClientError::InvalidInput("offer_amount required".into()))?;
+        let request_token = self.request_token.ok_or_else(|| ClientError::InvalidInput("request_token required".into()))?;
+        let request_amount = self.request_amount.ok_or_else(|| ClientError::InvalidInput("request_amount required".into()))?;
 
-        // Compute order commitment
-        let commitment = compute_order_commitment(secret, amount, price, token, &side);
+        // Compute lock commitment
+        let lock_commitment = compute_lock_commitment(secret, offer_token, offer_amount);
 
-        // Generate ZK proof
-        // In production: generate place_order.zk proof
-        let proof = vec![0u8; 64];
+        // Compute swap ID
+        let swap_id = compute_swap_id(lock_commitment, request_token, request_amount);
 
-        // TODO: Generate non-existence proof
-        let non_existence_proof = vec![];
+        // TODO: Generate Merkle proof for lock
+        let lock_proof = vec![];
 
         // TODO: Generate signature
         let signature = vec![];
 
         // Encode call data
         let mut call_data = Vec::new();
-        call_data.push(0x01); // PlaceOrderV1
-        call_data.extend_from_slice(&commitment);
-        call_data.extend_from_slice(&(non_existence_proof.len() as u32).to_le_bytes());
-        for p in &non_existence_proof {
+        call_data.push(0x01); // CreateSwapV1
+        call_data.extend_from_slice(&swap_id);
+        call_data.extend_from_slice(&offer_token);
+        call_data.extend_from_slice(&offer_amount.to_le_bytes());
+        call_data.extend_from_slice(&request_token);
+        call_data.extend_from_slice(&request_amount.to_le_bytes());
+        call_data.extend_from_slice(&lock_commitment);
+        call_data.extend_from_slice(&(lock_proof.len() as u32).to_le_bytes());
+        for p in &lock_proof {
             call_data.extend_from_slice(p);
         }
         call_data.extend_from_slice(&(signature.len() as u32).to_le_bytes());
@@ -169,65 +160,97 @@ impl PlaceOrderBuilder {
     }
 }
 
-/// Compute order commitment
-fn compute_order_commitment(
-    secret: [u8; 32],
-    amount: u64,
-    price: u64,
-    token: [u8; 32],
-    side: &OrderSide,
+/// Compute lock commitment
+fn compute_lock_commitment(secret: [u8; 32], token: [u8; 32], amount: u64) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"lock_commitment");
+    hasher.update(&secret);
+    hasher.update(&token);
+    hasher.update(&amount.to_le_bytes());
+    *hasher.finalize().as_bytes()
+}
+
+/// Compute swap ID
+fn compute_swap_id(
+    lock_commitment: [u8; 32],
+    request_token: [u8; 32],
+    request_amount: u64,
 ) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"order_commitment");
-    hasher.update(&secret);
-    hasher.update(&amount.to_le_bytes());
-    hasher.update(&price.to_le_bytes());
-    hasher.update(&token);
-    hasher.update(match side {
-        OrderSide::Buy => b"buy",
-        OrderSide::Sell => b"sell",
-    });
+    hasher.update(b"swap_id");
+    hasher.update(&lock_commitment);
+    hasher.update(&request_token);
+    hasher.update(&request_amount.to_le_bytes());
     *hasher.finalize().as_bytes()
 }
 
 // ============================================================================
-// CANCEL ORDER BUILDER
+// ACCEPT SWAP BUILDER
 // ============================================================================
 
-/// Builder for canceling an order
-pub struct CancelOrderBuilder {
+/// Builder for accepting an atomic swap
+pub struct AcceptSwapBuilder {
+    swap_id: Option<[u8; 32]>,
     secret: Option<[u8; 32]>,
+    offer_token: Option<[u8; 32]>,
+    offer_amount: Option<u64>,
 }
 
-impl CancelOrderBuilder {
+impl AcceptSwapBuilder {
     pub fn new() -> Self {
-        Self { secret: None }
+        Self {
+            swap_id: None,
+            secret: None,
+            offer_token: None,
+            offer_amount: None,
+        }
     }
 
+    /// Set the swap ID to accept
+    pub fn swap_id(&mut self, swap_id: [u8; 32]) -> &mut Self {
+        self.swap_id = Some(swap_id);
+        self
+    }
+
+    /// Set the secret for the lock
     pub fn secret(&mut self, secret: [u8; 32]) -> &mut Self {
         self.secret = Some(secret);
         self
     }
 
-    /// Build the cancel order transaction
-    ///
-    /// nullifier = H(secret)
+    /// Set the token being offered (should match request)
+    pub fn offer_token(&mut self, token: [u8; 32]) -> &mut Self {
+        self.offer_token = Some(token);
+        self
+    }
+
+    /// Set the offer amount
+    pub fn offer_amount(&mut self, amount: u64) -> &mut Self {
+        self.offer_amount = Some(amount);
+        self
+    }
+
+    /// Build the accept swap transaction
     pub fn build(&self) -> Result<Vec<u8>, ClientError> {
+        let swap_id = self.swap_id.ok_or_else(|| ClientError::InvalidInput("swap_id required".into()))?;
         let secret = self.secret.ok_or_else(|| ClientError::InvalidInput("secret required".into()))?;
+        let offer_token = self.offer_token.ok_or_else(|| ClientError::InvalidInput("offer_token required".into()))?;
+        let offer_amount = self.offer_amount.ok_or_else(|| ClientError::InvalidInput("offer_amount required".into()))?;
 
-        let nullifier = compute_nullifier(secret);
+        let lock_commitment = compute_lock_commitment(secret, offer_token, offer_amount);
 
-        // TODO: Generate existence proof
-        let existence_proof = vec![];
+        // TODO: Generate Merkle proof
+        let lock_proof = vec![];
 
         // TODO: Generate signature
         let signature = vec![];
 
         let mut call_data = Vec::new();
-        call_data.push(0x02); // CancelOrderV1
-        call_data.extend_from_slice(&nullifier);
-        call_data.extend_from_slice(&(existence_proof.len() as u32).to_le_bytes());
-        for p in &existence_proof {
+        call_data.push(0x02); // AcceptSwapV1
+        call_data.extend_from_slice(&swap_id);
+        call_data.extend_from_slice(&lock_commitment);
+        call_data.extend_from_slice(&(lock_proof.len() as u32).to_le_bytes());
+        for p in &lock_proof {
             call_data.extend_from_slice(p);
         }
         call_data.extend_from_slice(&(signature.len() as u32).to_le_bytes());
@@ -238,154 +261,55 @@ impl CancelOrderBuilder {
     }
 }
 
-/// Compute nullifier from secret
-fn compute_nullifier(secret: [u8; 32]) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"order_nullifier");
-    hasher.update(&secret);
-    *hasher.finalize().as_bytes()
-}
-
 // ============================================================================
-// MATCH ORDERS BUILDER
+// EXECUTE SWAP BUILDER
 // ============================================================================
 
-/// Builder for matching two orders
-pub struct MatchOrdersBuilder {
-    order_a_commitment: Option<[u8; 32]>,
-    order_b_commitment: Option<[u8; 32]>,
-    match_amount: Option<u64>,
-    execution_price: Option<u64>,
+/// Builder for executing an atomic swap
+pub struct ExecuteSwapBuilder {
+    swap_id: Option<[u8; 32]>,
+    alice_secret: Option<[u8; 32]>,
+    bob_secret: Option<[u8; 32]>,
 }
 
-impl MatchOrdersBuilder {
+impl ExecuteSwapBuilder {
     pub fn new() -> Self {
         Self {
-            order_a_commitment: None,
-            order_b_commitment: None,
-            match_amount: None,
-            execution_price: None,
+            swap_id: None,
+            alice_secret: None,
+            bob_secret: None,
         }
     }
 
-    pub fn order_a(&mut self, commitment: [u8; 32]) -> &mut Self {
-        self.order_a_commitment = Some(commitment);
+    pub fn swap_id(&mut self, swap_id: [u8; 32]) -> &mut Self {
+        self.swap_id = Some(swap_id);
         self
     }
 
-    pub fn order_b(&mut self, commitment: [u8; 32]) -> &mut Self {
-        self.order_b_commitment = Some(commitment);
+    pub fn alice_secret(&mut self, secret: [u8; 32]) -> &mut Self {
+        self.alice_secret = Some(secret);
         self
     }
 
-    pub fn match_amount(&mut self, amount: u64) -> &mut Self {
-        self.match_amount = Some(amount);
+    pub fn bob_secret(&mut self, secret: [u8; 32]) -> &mut Self {
+        self.bob_secret = Some(secret);
         self
     }
 
-    pub fn execution_price(&mut self, price: u64) -> &mut Self {
-        self.execution_price = Some(price);
-        self
-    }
-
-    /// Build the match orders transaction
+    /// Build the execute swap transaction
     pub fn build(&self) -> Result<Vec<u8>, ClientError> {
-        let order_a = self.order_a_commitment.ok_or_else(|| ClientError::InvalidInput("order_a required".into()))?;
-        let order_b = self.order_b_commitment.ok_or_else(|| ClientError::InvalidInput("order_b required".into()))?;
-        let amount = self.match_amount.ok_or_else(|| ClientError::InvalidInput("match_amount required".into()))?;
-        let price = self.execution_price.ok_or_else(|| ClientError::InvalidInput("execution_price required".into()))?;
-
-        // Generate ZK proof
-        // In production: generate match_orders.zk proof
-        let match_proof = vec![0u8; 64];
-
-        // TODO: Generate SMT proofs
-        let proof_a = vec![];
-        let proof_b = vec![];
-
-        let mut call_data = Vec::new();
-        call_data.push(0x03); // MatchOrdersV1
-        call_data.extend_from_slice(&order_a);
-        call_data.extend_from_slice(&order_b);
-        call_data.extend_from_slice(&amount.to_le_bytes());
-        call_data.extend_from_slice(&price.to_le_bytes());
-        call_data.extend_from_slice(&(proof_a.len() as u32).to_le_bytes());
-        for p in &proof_a {
-            call_data.extend_from_slice(p);
-        }
-        call_data.extend_from_slice(&(proof_b.len() as u32).to_le_bytes());
-        for p in &proof_b {
-            call_data.extend_from_slice(p);
-        }
-        call_data.extend_from_slice(&(match_proof.len() as u32).to_le_bytes());
-        call_data.extend_from_slice(&match_proof);
-        call_data.extend_from_slice(&0u64.to_le_bytes()); // fee
-
-        Ok(call_data)
-    }
-}
-
-// ============================================================================
-// ADD LIQUIDITY BUILDER
-// ============================================================================
-
-/// Builder for adding liquidity
-pub struct AddLiquidityBuilder {
-    base_token: Option<[u8; 32]>,
-    quote_token: Option<[u8; 32]>,
-    base_amount: Option<u64>,
-    quote_amount: Option<u64>,
-    secret: Option<[u8; 32]>,
-}
-
-impl AddLiquidityBuilder {
-    pub fn new() -> Self {
-        Self {
-            base_token: None,
-            quote_token: None,
-            base_amount: None,
-            quote_amount: None,
-            secret: None,
-        }
-    }
-
-    pub fn pool(&mut self, base_token: [u8; 32], quote_token: [u8; 32]) -> &mut Self {
-        self.base_token = Some(base_token);
-        self.quote_token = Some(quote_token);
-        self
-    }
-
-    pub fn amounts(&mut self, base: u64, quote: u64) -> &mut Self {
-        self.base_amount = Some(base);
-        self.quote_amount = Some(quote);
-        self
-    }
-
-    pub fn secret(&mut self, secret: [u8; 32]) -> &mut Self {
-        self.secret = Some(secret);
-        self
-    }
-
-    /// Build the add liquidity transaction
-    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
-        let base_token = self.base_token.ok_or_else(|| ClientError::InvalidInput("base_token required".into()))?;
-        let quote_token = self.quote_token.ok_or_else(|| ClientError::InvalidInput("quote_token required".into()))?;
-        let base_amount = self.base_amount.ok_or_else(|| ClientError::InvalidInput("base_amount required".into()))?;
-        let quote_amount = self.quote_amount.ok_or_else(|| ClientError::InvalidInput("quote_amount required".into()))?;
-        let secret = self.secret.ok_or_else(|| ClientError::InvalidInput("secret required".into()))?;
-
-        let lp_commitment = compute_lp_commitment(secret, base_amount, quote_amount);
+        let swap_id = self.swap_id.ok_or_else(|| ClientError::InvalidInput("swap_id required".into()))?;
+        let alice_secret = self.alice_secret.ok_or_else(|| ClientError::InvalidInput("alice_secret required".into()))?;
+        let bob_secret = self.bob_secret.ok_or_else(|| ClientError::InvalidInput("bob_secret required".into()))?;
 
         // TODO: Generate ZK proof
         let proof = vec![0u8; 64];
 
         let mut call_data = Vec::new();
-        call_data.push(0x04); // AddLiquidityV1
-        call_data.extend_from_slice(&base_token);
-        call_data.extend_from_slice(&quote_token);
-        call_data.extend_from_slice(&base_amount.to_le_bytes());
-        call_data.extend_from_slice(&quote_amount.to_le_bytes());
-        call_data.extend_from_slice(&lp_commitment);
+        call_data.push(0x03); // ExecuteSwapV1
+        call_data.extend_from_slice(&swap_id);
+        call_data.extend_from_slice(&alice_secret);
+        call_data.extend_from_slice(&bob_secret);
         call_data.extend_from_slice(&(proof.len() as u32).to_le_bytes());
         call_data.extend_from_slice(&proof);
         call_data.extend_from_slice(&0u64.to_le_bytes()); // fee
@@ -394,48 +318,26 @@ impl AddLiquidityBuilder {
     }
 }
 
-/// Compute LP share commitment
-fn compute_lp_commitment(secret: [u8; 32], base_amount: u64, quote_amount: u64) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"lp_commitment");
-    hasher.update(&secret);
-    hasher.update(&base_amount.to_le_bytes());
-    hasher.update(&quote_amount.to_le_bytes());
-    *hasher.finalize().as_bytes()
-}
-
 // ============================================================================
-// REMOVE LIQUIDITY BUILDER
+// CANCEL SWAP BUILDER
 // ============================================================================
 
-/// Builder for removing liquidity
-pub struct RemoveLiquidityBuilder {
-    base_token: Option<[u8; 32]>,
-    quote_token: Option<[u8; 32]>,
-    share_amount: Option<u64>,
+/// Builder for cancelling an atomic swap
+pub struct CancelSwapBuilder {
+    swap_id: Option<[u8; 32]>,
     secret: Option<[u8; 32]>,
-    recipient_secret: Option<[u8; 32]>,
 }
 
-impl RemoveLiquidityBuilder {
+impl CancelSwapBuilder {
     pub fn new() -> Self {
         Self {
-            base_token: None,
-            quote_token: None,
-            share_amount: None,
+            swap_id: None,
             secret: None,
-            recipient_secret: None,
         }
     }
 
-    pub fn pool(&mut self, base_token: [u8; 32], quote_token: [u8; 32]) -> &mut Self {
-        self.base_token = Some(base_token);
-        self.quote_token = Some(quote_token);
-        self
-    }
-
-    pub fn share_amount(&mut self, amount: u64) -> &mut Self {
-        self.share_amount = Some(amount);
+    pub fn swap_id(&mut self, swap_id: [u8; 32]) -> &mut Self {
+        self.swap_id = Some(swap_id);
         self
     }
 
@@ -444,44 +346,22 @@ impl RemoveLiquidityBuilder {
         self
     }
 
-    pub fn recipient(&mut self, secret: [u8; 32]) -> &mut Self {
-        self.recipient_secret = Some(secret);
-        self
-    }
-
-    /// Build the remove liquidity transaction
+    /// Build the cancel swap transaction
     pub fn build(&self) -> Result<Vec<u8>, ClientError> {
-        let base_token = self.base_token.ok_or_else(|| ClientError::InvalidInput("base_token required".into()))?;
-        let quote_token = self.quote_token.ok_or_else(|| ClientError::InvalidInput("quote_token required".into()))?;
-        let share_amount = self.share_amount.ok_or_else(|| ClientError::InvalidInput("share_amount required".into()))?;
+        let swap_id = self.swap_id.ok_or_else(|| ClientError::InvalidInput("swap_id required".into()))?;
         let secret = self.secret.ok_or_else(|| ClientError::InvalidInput("secret required".into()))?;
-        let recipient_secret = self.recipient_secret.ok_or_else(|| ClientError::InvalidInput("recipient_secret required".into()))?;
-
-        let lp_nullifier = compute_nullifier(secret);
-        let recipient_commitment = compute_recipient_commitment(recipient_secret);
 
         // TODO: Generate ZK proof
         let proof = vec![0u8; 64];
 
         let mut call_data = Vec::new();
-        call_data.push(0x05); // RemoveLiquidityV1
-        call_data.extend_from_slice(&base_token);
-        call_data.extend_from_slice(&quote_token);
-        call_data.extend_from_slice(&share_amount.to_le_bytes());
-        call_data.extend_from_slice(&lp_nullifier);
-        call_data.extend_from_slice(&recipient_commitment);
+        call_data.push(0x04); // CancelSwapV1
+        call_data.extend_from_slice(&swap_id);
+        call_data.extend_from_slice(&secret);
         call_data.extend_from_slice(&(proof.len() as u32).to_le_bytes());
         call_data.extend_from_slice(&proof);
         call_data.extend_from_slice(&0u64.to_le_bytes()); // fee
 
         Ok(call_data)
     }
-}
-
-/// Compute recipient commitment
-fn compute_recipient_commitment(secret: [u8; 32]) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"recipient_commitment");
-    hasher.update(&secret);
-    *hasher.finalize().as_bytes()
 }

@@ -16,287 +16,189 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Data structures for DEX contract calls
+//! Data structures for DEX atomic swap contract
 //!
-//! ## Order Model
+//! ## Atomic Swap Flow
 //!
-//! Orders are stored as commitments in a Sparse Merkle Tree:
-//! - order_commitment = H(secret, amount, price, token, side)
-//! - nullifier = H(secret) when order is spent
+//! ```text
+//! 1. Alice creates swap: lock(A_token, amount_A, B_token, amount_B)
+//!    → swap_id = H(lock_proof, params)
 //!
-//! ## Matching Logic
+//! 2. Bob accepts swap: lock(B_token, amount_B, swap_id)
+//!    → swap marked as "accepted"
 //!
-//! Two orders match when:
-//! - They are on opposite sides (buy vs sell)
-//! - Buy price >= Sell price
-//! - Amounts are compatible
+//! 3. Execute: verify both locks valid
+//!    → Atomic: Alice gets B_token, Bob gets A_token
+//!
+//! 4. OR Cancel/Timeout: refund both
+//! ```
 
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 
-/// Token pair identifier
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct TokenPair {
-    /// Base token (e.g., DRK)
-    pub base_token: [u8; 32],
-    /// Quote token (e.g., ETH)
-    pub quote_token: [u8; 32],
-}
-
-/// Order side (buy or sell)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub enum OrderSide {
-    Buy,
-    Sell,
-}
-
-/// Order type
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub enum OrderType {
-    /// Immediate-or-cancel
-    IOC,
-    /// Good-till-cancel
-    GTC,
-    /// Fill-or-kill
-    FOK,
-}
-
-/// Initialize DEX parameters
+/// Initialize contract parameters
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeParams {
-    /// DEX trading fee (basis points)
-    pub fee: u64,
-
-    /// Minimum order size
-    pub min_order: u64,
-
-    /// Maximum slippage tolerance (basis points)
-    pub max_slippage: u64,
-}
-
-/// Place order parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct PlaceOrderParams {
-    /// Commitment to the order parameters
-    /// commitment = H(secret, amount, price, token, side)
-    pub order_commitment: [u8; 32],
-
-    /// Merkle proof that commitment doesn't already exist
-    pub non_existence_proof: Vec<[u8; 32]>,
-
-    /// Order signature (proves ownership)
-    pub signature: Vec<u8>,
-
-    /// Fee paid for placing the order
+    /// Swap timeout in blocks
+    pub timeout: u32,
+    /// DEX fee (basis points)
     pub fee: u64,
 }
 
-/// Cancel order parameters
+/// Create swap proposal parameters
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct CancelOrderParams {
-    /// Nullifier = H(secret) - proves ownership
-    pub nullifier: [u8; 32],
+pub struct CreateSwapParams {
+    /// Swap ID (computed from commitment)
+    pub swap_id: [u8; 32],
 
-    /// Merkle proof that order exists in book
-    pub existence_proof: Vec<[u8; 32]>,
+    /// Token Alice is offering
+    pub offer_token: [u8; 32],
 
-    /// Signature authorizing cancellation
+    /// Amount Alice is offering
+    pub offer_amount: u64,
+
+    /// Token Alice wants in return
+    pub request_token: [u8; 32],
+
+    /// Amount Alice wants in return
+    pub request_amount: u64,
+
+    /// Commitment that Alice's funds are locked
+    /// lock_commitment = H(secret, offer_token, offer_amount)
+    pub lock_commitment: [u8; 32],
+
+    /// Merkle proof that lock commitment is valid
+    pub lock_proof: Vec<[u8; 32]>,
+
+    /// Signature authorizing swap creation
     pub signature: Vec<u8>,
+
+    /// Fee paid for swap creation
+    pub fee: u64,
+}
+
+/// Accept swap parameters
+#[derive(Debug, Clone, SerialDecodable, SerialEncodable)]
+pub struct AcceptSwapParams {
+    /// Swap ID being accepted
+    pub swap_id: [u8; 32],
+
+    /// Commitment that Bob's funds are locked
+    pub lock_commitment: [u8; 32],
+
+    /// Merkle proof that Bob's lock is valid
+    pub lock_proof: Vec<[u8; 32]>,
+
+    /// Signature authorizing acceptance
+    pub signature: Vec<u8>,
+
+    /// Fee paid for acceptance
+    pub fee: u64,
+}
+
+/// Execute swap parameters
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ExecuteSwapParams {
+    /// Swap ID to execute
+    pub swap_id: [u8; 32],
+
+    /// Prover's secret for Alice's lock
+    pub alice_secret: [u8; 32],
+
+    /// Prover's secret for Bob's lock
+    pub bob_secret: [u8; 32],
+
+    /// ZK proof that swap is valid
+    pub proof: Vec<u8>,
+
+    /// Fee paid for execution
+    pub fee: u64,
+}
+
+/// Cancel swap parameters
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CancelSwapParams {
+    /// Swap ID to cancel
+    pub swap_id: [u8; 32],
+
+    /// Secret to unlock the lock
+    pub secret: [u8; 32],
+
+    /// ZK proof of ownership
+    pub proof: Vec<u8>,
 
     /// Fee paid for cancellation
-    pub fee: u64,
-}
-
-/// Match orders parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct MatchOrdersParams {
-    /// Commitment for order A
-    pub order_a_commitment: [u8; 32],
-
-    /// Commitment for order B
-    pub order_b_commitment: [u8; 32],
-
-    /// Amount to match (may be partial)
-    pub match_amount: u64,
-
-    /// Execution price
-    pub execution_price: u64,
-
-    /// Merkle proofs for both orders
-    pub proof_a: Vec<[u8; 32]>,
-    pub proof_b: Vec<[u8; 32]>,
-
-    /// ZK proof of valid match
-    pub match_proof: Vec<u8>,
-
-    /// Fee paid for the match
-    pub fee: u64,
-}
-
-/// Add liquidity parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct AddLiquidityParams {
-    /// Pool identifier
-    pub pool_id: TokenPair,
-
-    /// Amount of base token to add
-    pub base_amount: u64,
-
-    /// Amount of quote token to add
-    pub quote_amount: u64,
-
-    /// LP share commitment
-    pub lp_commitment: [u8; 32],
-
-    /// ZK proof of liquidity addition
-    pub proof: Vec<u8>,
-
-    /// Fee paid
-    pub fee: u64,
-}
-
-/// Remove liquidity parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct RemoveLiquidityParams {
-    /// Pool identifier
-    pub pool_id: TokenPair,
-
-    /// LP share nullifier
-    pub lp_nullifier: [u8; 32],
-
-    /// Amount of LP shares to burn
-    pub share_amount: u64,
-
-    /// Recipient commitment for withdrawal
-    pub recipient_commitment: [u8; 32],
-
-    /// ZK proof of valid withdrawal
-    pub proof: Vec<u8>,
-
-    /// Fee paid
     pub fee: u64,
 }
 
 /// Update configuration parameters
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct UpdateConfigParams {
-    /// New trading fee
+    /// New timeout (in blocks)
+    pub timeout: u32,
+    /// New fee (basis points)
     pub fee: u64,
-
-    /// New minimum order size
-    pub min_order: u64,
-
-    /// New maximum slippage
-    pub max_slippage: u64,
 }
 
-/// Stored order record
+/// Swap state
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct Order {
-    /// Order commitment
-    pub commitment: [u8; 32],
+pub enum SwapState {
+    /// Swap created, waiting for acceptor
+    Created,
+    /// Acceptor has locked funds
+    Accepted,
+    /// Swap executed successfully
+    Executed,
+    /// Swap cancelled or timed out
+    Cancelled,
+}
 
-    /// Owner public key
-    pub owner_pub_x: [u8; 32],
-    pub owner_pub_y: [u8; 32],
+/// Stored swap record
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct Swap {
+    /// Unique swap ID
+    pub swap_id: [u8; 32],
 
-    /// Token pair
-    pub pair: TokenPair,
+    /// Proposer's public key
+    pub proposer_pub_x: [u8; 32],
+    pub proposer_pub_y: [u8; 32],
 
-    /// Order side
-    pub side: OrderSide,
+    /// Acceptor's public key (set when accepted)
+    pub acceptor_pub_x: [u8; 32],
+    pub acceptor_pub_y: [u8; 32],
 
-    /// Order type
-    pub order_type: OrderType,
+    /// Swap details
+    pub offer_token: [u8; 32],
+    pub offer_amount: u64,
+    pub request_token: [u8; 32],
+    pub request_amount: u64,
 
-    /// Order amount (hidden in commitment)
-    pub amount: u64,
+    /// Proposer's lock commitment
+    pub proposer_lock: [u8; 32],
 
-    /// Limit price (hidden in commitment)
-    pub price: u64,
+    /// Acceptor's lock commitment (set when accepted)
+    pub acceptor_lock: [u8; 32],
 
-    /// Whether order has been filled/spent
-    pub spent: bool,
+    /// Current state
+    pub state: SwapState,
 
     /// Creation timestamp
     pub created_at: u64,
-}
 
-/// Stored liquidity position
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct LiquidityPosition {
-    /// LP commitment
-    pub commitment: [u8; 32],
-
-    /// Pool identifier
-    pub pool_id: TokenPair,
-
-    /// Owner public key
-    pub owner_pub_x: [u8; 32],
-    pub owner_pub_y: [u8; 32],
-
-    /// LP share amount
-    pub share_amount: u64,
-
-    /// Base token amount in pool
-    pub base_amount: u64,
-
-    /// Quote token amount in pool
-    pub quote_amount: u64,
-
-    /// Whether position has been withdrawn
-    pub withdrawn: bool,
-
-    /// Creation timestamp
-    pub created_at: u64,
-}
-
-/// Trade pair (for looking up pools)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct Pool {
-    /// Pool identifier
-    pub pair: TokenPair,
-
-    /// Total base token liquidity
-    pub total_base: u64,
-
-    /// Total quote token liquidity
-    pub total_quote: u64,
-
-    /// Accumulated fees
-    pub accumulated_fees: u64,
-
-    /// Pool creation timestamp
-    pub created_at: u64,
+    /// Expiration timestamp
+    pub expires_at: u64,
 }
 
 // ============================================================================
-// ZK CIRCUIT SPECIFICATIONS
+// COMMITMENTS AND NULLIFIERS
 // ============================================================================
 //
-// PlaceOrder Circuit:
-//   - Verifies order commitment = H(secret, amount, price, token, side)
-//   - Verifies non-existence in order book
-//   - Verifies signature from owner
+// Lock Commitment:
+//   lock_commitment = H(secret, token, amount)
 //
-// CancelOrder Circuit:
-//   - Verifies nullifier = H(secret)
-//   - Verifies order exists in book
-//   - Verifies ownership via signature
+// Swap ID:
+//   swap_id = H(proposer_lock, request_token, request_amount, nonce)
 //
-// MatchOrders Circuit:
-//   - Verifies both orders exist in SMT
-//   - Verifies prices compatible (buy_price >= sell_price)
-//   - Verifies amounts sufficient
-//   - Verifies output notes correctly computed
-//
-// AddLiquidity Circuit:
-//   - Verifies LP commitment well-formed
-//   - Verifies token amounts match
-//   - Updates pool totals
-//
-// RemoveLiquidity Circuit:
-//   - Verifies LP nullifier not spent
-//   - Verifies share amount valid
-//   - Computes withdrawal amounts
+// Nullifier (for cancellation):
+//   nullifier = H(secret)
 //
 // ============================================================================
