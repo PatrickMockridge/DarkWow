@@ -5,6 +5,22 @@
 [![Manifesto - unsystem](https://img.shields.io/badge/Manifesto-unsystem-informational?logo=minutemailer&logoColor=white&style=flat-square)](https://dark.fi/manifesto.html)
 [![Book - mdbook](https://img.shields.io/badge/Book-mdbook-orange?logo=gitbook&logoColor=white&style=flat-square)](https://dark.fi/book/)
 
+## Development Fork
+
+This is a development fork of the official DarkFi repository.
+
+**The `dev` branch** (`PatrickM123/darkfi:dev`) contains all additions compared to official DarkFi master:
+
+- **New smart contracts**: Bridge, DEX, Identity, Stablecoin (not in official DarkFi)
+- **Expanded architecture documentation**: Additional analysis and design approaches
+- **Work-in-progress implementations**: Skeleton code and alternative approaches
+
+The official DarkFi repository (`darkrenaissance/darkfi`) should be consulted for the canonical state.
+
+---
+
+
+
 We aim to proliferate [anonymous digital
 markets](https://dark.fi/manifesto.html) by means of strong cryptography
 and peer-to-peer networks. We are establishing an online zone of freedom
