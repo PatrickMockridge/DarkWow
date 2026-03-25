@@ -1,0 +1,443 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Client API for bridge contract interaction
+//!
+//! This module provides transaction builders for the bridge contract.
+//! It shows how users construct bridge deposits and withdrawals.
+//!
+//! ## How Deposits Work
+//!
+//! 1. User derives bridge_address = H(recipient_identity, nonce)
+//! 2. User deposits funds to bridge_address on external chain
+//! 3. User waits for confirmations
+//! 4. User constructs ZK proof demonstrating:
+//!    - Deposit exists on external chain (Merkle proof)
+//!    - User knows secret
+//!    - Commitment is correctly formed
+//! 5. User submits DepositV1 to DarkFi
+//! 6. DarkFi verifies proof, provides note from pool
+//!
+//! ## How Withdrawals Work
+//!
+//! 1. User computes nullifier = H(secret)
+//! 2. User burns tokens on DarkFi
+//! 3. User constructs ZK proof demonstrating:
+//!    - User knows secret for a deposited commitment
+//!    - Commitment is in bridge's Merkle tree
+//!    - Amount is valid
+//! 4. User submits WithdrawV1 to DarkFi
+//! 5. DarkFi verifies proof, marks nullifier spent
+//! 6. Relayer broadcasts withdrawal to external chain
+
+use darkfi_sdk::error::ClientError;
+
+/// Bridge client errors
+#[derive(Debug, thiserror::Error)]
+pub enum BridgeClientError {
+    #[error("Invalid deposit proof: {0}")]
+    InvalidDepositProof(String),
+
+    #[error("Invalid withdrawal proof: {0}")]
+    InvalidWithdrawalProof(String),
+
+    #[error("Merkle proof verification failed")]
+    MerkleProofFailed,
+
+    #[error("No VSS - using Object Capability model")]
+    OCapError(String),
+
+    #[error("No bridge operators available")]
+    NoOperatorsAvailable,
+}
+
+// ============================================================================
+// DEPOSIT BUILDER
+// ============================================================================
+
+/// DepositBuilder constructs a bridge deposit transaction
+///
+/// # Example: How to Bridge ETH to DarkFi
+///
+/// ```ignore
+/// // 1. Derive bridge address for recipient
+/// let recipient_pub = user.public_key();
+/// let nonce = generate_fresh_nonce();
+/// let bridge_address = derive_bridge_address(recipient_pub, nonce);
+///
+/// // 2. User deposits ETH to bridge_address on Ethereum
+/// //    This is done via external wallet/interface
+///
+/// // 3. Wait for confirmations, get Merkle proof from indexer
+/// let merkle_proof = indexer.get_deposit_proof(tx_hash).await?;
+///
+/// // 4. Build the deposit transaction
+/// let deposit = DepositBuilder::new()
+///     .secret(secret)
+///     .amount(eth_amount)
+///     .recipient_pub(recipient_pub)
+///     .nonce(nonce)
+///     .merkle_proof(merkle_proof)
+///     .external_block_hash(block_hash)
+///     .build()?;
+///
+/// // 5. Submit to DarkFi bridge contract
+/// client.submit(deposit).await?;
+/// ```
+pub struct DepositBuilder {
+    /// User's secret for the deposit
+    secret: Option<[u8; 32]>,
+    /// Amount being deposited
+    amount: Option<u64>,
+    /// Recipient's public key on DarkFi
+    recipient_pub_x: Option<[u8; 32]>,
+    recipient_pub_y: Option<[u8; 32]>,
+    /// Nonce for temporal privacy (fresh address per deposit)
+    bridge_nonce: Option<u64>,
+    /// External chain being bridged from
+    chain: Option<u8>,
+    /// Merkle proof of deposit on external chain
+    merkle_proof: Option<Vec<[u8; 32]>>,
+    /// Block hash containing the deposit
+    external_block_hash: Option<[u8; 32]>,
+    /// State root of external chain at that block
+    external_state_root: Option<[u8; 32]>,
+    /// Fee for the bridge service
+    fee: Option<u64>,
+}
+
+impl DepositBuilder {
+    /// Create a new deposit builder
+    pub fn new() -> Self {
+        Self {
+            secret: None,
+            amount: None,
+            recipient_pub_x: None,
+            recipient_pub_y: None,
+            bridge_nonce: None,
+            chain: None,
+            merkle_proof: None,
+            external_block_hash: None,
+            external_state_root: None,
+            fee: None,
+        }
+    }
+
+    /// Set the secret (known only to user)
+    pub fn secret(&mut self, secret: [u8; 32]) -> &mut Self {
+        self.secret = Some(secret);
+        self
+    }
+
+    /// Set the amount to deposit
+    pub fn amount(&mut self, amount: u64) -> &mut Self {
+        self.amount = Some(amount);
+        self
+    }
+
+    /// Set the recipient public key on DarkFi
+    pub fn recipient_pub(&mut self, pub_x: [u8; 32], pub_y: [u8; 32]) -> &mut Self {
+        self.recipient_pub_x = Some(pub_x);
+        self.recipient_pub_y = Some(pub_y);
+        self
+    }
+
+    /// Set the bridge nonce (for temporal privacy)
+    pub fn nonce(&mut self, nonce: u64) -> &mut Self {
+        self.bridge_nonce = Some(nonce);
+        self
+    }
+
+    /// Set the external chain
+    pub fn chain(&mut self, chain: u8) -> &mut Self {
+        self.chain = Some(chain);
+        self
+    }
+
+    /// Set the Merkle proof from external chain indexer
+    pub fn merkle_proof(&mut self, proof: Vec<[u8; 32]>) -> &mut Self {
+        self.merkle_proof = Some(proof);
+        self
+    }
+
+    /// Set the external block hash
+    pub fn external_block_hash(&mut self, hash: [u8; 32]) -> &mut Self {
+        self.external_block_hash = Some(hash);
+        self
+    }
+
+    /// Set the external state root
+    pub fn external_state_root(&mut self, root: [u8; 32]) -> &mut Self {
+        self.external_state_root = Some(root);
+        self
+    }
+
+    /// Set the bridge fee
+    pub fn fee(&mut self, fee: u64) -> &mut Self {
+        self.fee = Some(fee);
+        self
+    }
+
+    /// Build the deposit call data
+    ///
+    /// This constructs:
+    /// 1. bridge_address = H(recipient_pub, nonce)
+    /// 2. commitment = H(secret, amount, bridge_address)
+    /// 3. ZK proof that proves deposit exists and commitment is valid
+    /// 4. Encoded call data for the bridge contract
+    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
+        // Validate all required fields
+        let secret = self.secret.ok_or_else(|| ClientError::InvalidInput("secret required".into()))?;
+        let amount = self.amount.ok_or_else(|| ClientError::InvalidInput("amount required".into()))?;
+        let recipient_pub_x = self.recipient_pub_x.ok_or_else(|| ClientError::InvalidInput("recipient_pub_x required".into()))?;
+        let recipient_pub_y = self.recipient_pub_y.ok_or_else(|| ClientError::InvalidInput("recipient_pub_y required".into()))?;
+        let nonce = self.bridge_nonce.ok_or_else(|| ClientError::InvalidInput("nonce required".into()))?;
+        let chain = self.chain.ok_or_else(|| ClientError::InvalidInput("chain required".into()))?;
+        let merkle_proof = self.merkle_proof.ok_or_else(|| ClientError::InvalidInput("merkle_proof required".into()))?;
+        let block_hash = self.external_block_hash.ok_or_else(|| ClientError::InvalidInput("external_block_hash required".into()))?;
+        let state_root = self.external_state_root.ok_or_else(|| ClientError::InvalidInput("external_state_root required".into()))?;
+        let fee = self.fee.unwrap_or(1000); // Default fee
+
+        // Step 1: Derive bridge_address
+        // bridge_secret = poseidon_hash(recipient_pub_x, recipient_pub_y, nonce)
+        // bridge_pub = bridge_secret * G
+        // bridge_address = poseidon_hash(bridge_pub.x, bridge_pub.y)
+        let bridge_address = derive_bridge_address(recipient_pub_x, recipient_pub_y, nonce);
+
+        // Step 2: Compute commitment
+        // commitment = H(secret, amount, bridge_address)
+        let commitment = compute_commitment(secret, amount, bridge_address);
+
+        // Step 3: Generate ZK proof
+        // The proof demonstrates:
+        // - User knows secret
+        // - Deposit exists in external chain (Merkle proof verified)
+        // - commitment = H(secret, amount, bridge_address)
+        //
+        // In production: call the zkas proving system
+        // let proof = generate_deposit_proof(secret, amount, bridge_address, merkle_proof)?;
+        let proof = vec![0u8; 64]; // Placeholder for ZK proof
+
+        // Step 4: Encode call data
+        // The bridge contract expects:
+        // [function_id, commitment, recipient_pub_x, recipient_pub_y, nonce, chain, block_hash, merkle_proof, state_root, fee, proof]
+        let mut call_data = Vec::new();
+        call_data.push(0x01); // DepositV1 function ID
+        call_data.extend_from_slice(&commitment);
+        call_data.extend_from_slice(&recipient_pub_x);
+        call_data.extend_from_slice(&recipient_pub_y);
+        call_data.extend_from_slice(&nonce.to_le_bytes());
+        call_data.push(chain);
+        call_data.extend_from_slice(&block_hash);
+        // Merkle proof length and data
+        call_data.extend_from_slice(&(merkle_proof.len() as u32).to_le_bytes());
+        for proof_element in &merkle_proof {
+            call_data.extend_from_slice(proof_element);
+        }
+        call_data.extend_from_slice(&state_root);
+        call_data.extend_from_slice(&fee.to_le_bytes());
+        // Proof length and data
+        call_data.extend_from_slice(&(proof.len() as u32).to_le_bytes());
+        call_data.extend_from_slice(&proof);
+
+        Ok(call_data)
+    }
+}
+
+/// Derive bridge address from recipient identity and nonce
+fn derive_bridge_address(recipient_pub_x: [u8; 32], recipient_pub_y: [u8; 32], nonce: u64) -> [u8; 32] {
+    // In production: poseidon_hash(recipient_pub_x, recipient_pub_y, nonce)
+    // Then elliptic curve mul_base to get point, then hash of coordinates
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"bridge_address");
+    hasher.update(&recipient_pub_x);
+    hasher.update(&recipient_pub_y);
+    hasher.update(&nonce.to_le_bytes());
+    *hasher.finalize().as_bytes()
+}
+
+/// Compute commitment from secret, amount, and bridge address
+fn compute_commitment(secret: [u8; 32], amount: u64, bridge_address: [u8; 32]) -> [u8; 32] {
+    // commitment = H(secret, amount, bridge_address)
+    // In production: poseidon_hash(secret, amount, bridge_address)
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"commitment");
+    hasher.update(&secret);
+    hasher.update(&amount.to_le_bytes());
+    hasher.update(&bridge_address);
+    *hasher.finalize().as_bytes()
+}
+
+// ============================================================================
+// WITHDRAWAL BUILDER
+// ============================================================================
+
+/// WithdrawBuilder constructs a bridge withdrawal transaction
+///
+/// # Example: How to Withdraw from DarkFi to Ethereum
+///
+/// ```ignore
+/// // 1. User has a note from a previous deposit
+/// let note = user.get_bridged_note();
+///
+/// // 2. Compute nullifier = H(secret)
+/// let nullifier = compute_nullifier(note.secret);
+///
+/// // 3. Determine recipient on Ethereum
+/// let recipient_hash = hash(ethereum_address);
+///
+/// // 4. Build withdrawal
+/// let withdrawal = WithdrawBuilder::new()
+///     .nullifier(nullifier)
+///     .recipient_hash(recipient_hash)
+///     .amount(withdraw_amount)
+///     .build()?;
+///
+/// // 5. Submit to DarkFi bridge contract
+/// client.submit(withdrawal).await?;
+///
+/// // 6. Relayer sees event, broadcasts ETH tx to Ethereum
+/// ```
+pub struct WithdrawBuilder {
+    /// Nullifier = H(secret) - proves ownership without revealing secret
+    nullifier: Option<[u8; 32]>,
+    /// Recipient address hash on external chain
+    recipient_hash: Option<[u8; 32]>,
+    /// Amount to withdraw
+    amount: Option<u64>,
+    /// Fee for the bridge service
+    fee: Option<u64>,
+}
+
+impl WithdrawBuilder {
+    /// Create a new withdrawal builder
+    pub fn new() -> Self {
+        Self {
+            nullifier: None,
+            recipient_hash: None,
+            amount: None,
+            fee: None,
+        }
+    }
+
+    /// Set the nullifier (computed from deposit secret)
+    pub fn nullifier(&mut self, nullifier: [u8; 32]) -> &mut Self {
+        self.nullifier = Some(nullifier);
+        self
+    }
+
+    /// Set the recipient address hash on external chain
+    pub fn recipient_hash(&mut self, hash: [u8; 32]) -> &mut Self {
+        self.recipient_hash = Some(hash);
+        self
+    }
+
+    /// Set the amount to withdraw
+    pub fn amount(&mut self, amount: u64) -> &mut Self {
+        self.amount = Some(amount);
+        self
+    }
+
+    /// Set the bridge fee
+    pub fn fee(&mut self, fee: u64) -> &mut Self {
+        self.fee = Some(fee);
+        self
+    }
+
+    /// Build the withdrawal call data
+    ///
+    /// This constructs:
+    /// 1. ZK proof demonstrating:
+    ///    - User knows secret for a commitment in the Merkle tree
+    ///    - Deposit hasn't been spent (nullifier not in spent tree)
+    ///    - Amount is valid (<= deposited amount)
+    /// 2. Encoded call data for the bridge contract
+    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
+        let nullifier = self.nullifier.ok_or_else(|| ClientError::InvalidInput("nullifier required".into()))?;
+        let recipient_hash = self.recipient_hash.ok_or_else(|| ClientError::InvalidInput("recipient_hash required".into()))?;
+        let amount = self.amount.ok_or_else(|| ClientError::InvalidInput("amount required".into()))?;
+        let fee = self.fee.unwrap_or(1000);
+
+        // Generate ZK proof
+        // The proof demonstrates:
+        // - User knows secret S where nullifier = H(S)
+        // - There exists a commitment C = H(S, amount, address) in the deposit Merkle tree
+        // - The nullifier hasn't been spent
+        // - Amount is valid
+        //
+        // In production: call the zkas proving system
+        // let proof = generate_withdrawal_proof(secret, amount, recipient_hash)?;
+        let proof = vec![0u8; 64]; // Placeholder for ZK proof
+
+        // Encode call data
+        let mut call_data = Vec::new();
+        call_data.push(0x02); // WithdrawV1 function ID
+        call_data.extend_from_slice(&nullifier);
+        call_data.extend_from_slice(&recipient_hash);
+        call_data.extend_from_slice(&amount.to_le_bytes());
+        call_data.extend_from_slice(&fee.to_le_bytes());
+        // Proof length and data
+        call_data.extend_from_slice(&(proof.len() as u32).to_le_bytes());
+        call_data.extend_from_slice(&proof);
+
+        Ok(call_data)
+    }
+}
+
+/// Compute nullifier from secret
+pub fn compute_nullifier(secret: [u8; 32]) -> [u8; 32] {
+    // nullifier = poseidon_hash(secret)
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"nullifier");
+    hasher.update(&secret);
+    *hasher.finalize().as_bytes()
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/// Derive a bridge address for receiving bridged funds
+///
+/// # Arguments
+/// * `user_pub_x` - User's DarkFi public key X coordinate
+/// * `user_pub_y` - User's DarkFi public key Y coordinate
+/// * `nonce` - Fresh nonce for this deposit (ensures unlinkability)
+///
+/// # Returns
+/// The bridge address on the external chain
+///
+/// # Example
+/// ```
+/// let bridge_addr = derive_bridge_address(user_pub_x, user_pub_y, deposit_nonce);
+/// // User sends ETH to bridge_addr on Ethereum
+/// ```
+pub fn derive_bridge_address_external(
+    user_pub_x: [u8; 32],
+    user_pub_y: [u8; 32],
+    nonce: u64,
+) -> [u8; 32] {
+    // In production this uses poseidon for ZK-friendly hashing
+    // and elliptic curve multiplication for key derivation
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"external_bridge_addr");
+    hasher.update(&user_pub_x);
+    hasher.update(&user_pub_y);
+    hasher.update(&nonce.to_le_bytes());
+    *hasher.finalize().as_bytes()
+}
