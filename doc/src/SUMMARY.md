@@ -2,6 +2,7 @@
 
 # About
 
+- [Development Fork Info](intro.md)
 - [DarkFi](README.md)
 - [DarkFi for Dummies](about/for-dummies.md)
 - [Start Here](start-here.md)
@@ -51,8 +52,16 @@
     - [Transaction lifetime](arch/sc/tx-lifetime.md)
   - [DAO](arch/dao.md)
   - [DEX](arch/dex.md)
+  - [Identity](arch/identity.md)
+  - [Stablecoin](arch/stablecoin.md)
+  - [Private Authorization Layer](arch/privauth.md)
   - [Wallet](arch/wallet.md)
   - [Chat](arch/chat.md)
+- [Smart Contracts](dev/contracts.md)
+  - [Bridge Contract](dev/contracts/bridge.md)
+  - [DEX Contract](dev/contracts/dex.md)
+  - [Identity Contract](dev/contracts/identity.md)
+  - [Stablecoin Contract](dev/contracts/stablecoin.md)
 - [zkas](zkas/index.md)
   - [Writing ZK Proofs](zkas/writing-zk-proofs.md)
   - [Bincode](zkas/bincode.md)
@@ -110,6 +119,7 @@
 # P2P API Tutorial
 
 - [P2P API Tutorial](learn/dchat/dchat.md)
+ - [Async Rust Fundamentals](learn/dchat/async-rust-fundamentals.md)
  - [Deployment](learn/dchat/deployment/part-1.md)
    - [Getting started](learn/dchat/deployment/getting-started.md)
    - [Writing a daemon](learn/dchat/deployment/writing-a-daemon.md)
