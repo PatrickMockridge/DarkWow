@@ -55,6 +55,7 @@
   - [Identity](arch/identity.md)
   - [Stablecoin](arch/stablecoin.md)
   - [Private Authorization Layer](arch/privauth.md)
+  - [Composability](arch/composability.md)
   - [Wallet](arch/wallet.md)
   - [Chat](arch/chat.md)
 - [Smart Contracts](dev/contracts.md)
