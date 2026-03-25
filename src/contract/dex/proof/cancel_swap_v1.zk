@@ -1,0 +1,67 @@
+// DarkFi DEX CancelSwap Proof V1
+//
+// Circuit for cancelling an atomic swap.
+// Proves the caller owns one of the locks.
+
+circuit cancel_swap_v1(prover: Witness) {
+    // ============================================
+    // PUBLIC INPUTS
+    // ============================================
+
+    // Swap ID to cancel
+    swap_id: Scalar = prover.pub_input("swap_id");
+
+    // The lock being cancelled
+    lock_commitment: Scalar = prover.pub_input("lock_commitment");
+
+    // Nullifier to prove the lock hasn't been spent
+    nullifier: Scalar = prover.pub_input("nullifier");
+
+    // ============================================
+    // PRIVATE INPUTS (WITNESS)
+    // ============================================
+
+    // Caller's secret
+    secret: Scalar = prover.witness("secret");
+
+    // Original lock parameters
+    token: Scalar = prover.witness("token");
+    amount: Scalar = prover.witness("amount");
+
+    // ============================================
+    // COMMITMENT VERIFICATION
+    // ============================================
+
+    // Verify lock_commitment = H(secret, token, amount)
+    computed_lock: Scalar = poseidon_hash(secret, token, amount);
+    assert_equal(computed_lock, lock_commitment);
+
+    // ============================================
+    // NULLIFIER VERIFICATION
+    // ============================================
+
+    // Verify nullifier = H(secret)
+    computed_nullifier: Scalar = poseidon_hash(secret);
+    assert_equal(computed_nullifier, nullifier);
+
+    // ============================================
+    // AMOUNT CHECKS
+    // ============================================
+
+    // Amount should be positive
+    assert(amount > 0);
+}
+
+// ============================================
+// NOTES
+// ============================================
+//
+// The cancel_swap circuit proves:
+// - Caller knows the secret for the lock
+// - Lock hasn't been spent (nullifier check)
+// - Original lock parameters
+//
+// What is revealed:
+// - Which lock is being cancelled
+// - Nullifier for the lock
+// ============================================

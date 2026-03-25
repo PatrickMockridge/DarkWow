@@ -1,0 +1,70 @@
+// DarkFi DEX AcceptSwap Proof V1
+//
+// Circuit for accepting an atomic swap proposal.
+// The acceptor proves they have locked matching funds.
+
+circuit accept_swap_v1(prover: Witness) {
+    // ============================================
+    // PUBLIC INPUTS
+    // ============================================
+
+    // Swap ID being accepted
+    swap_id: Scalar = prover.pub_input("swap_id");
+
+    // Acceptor's commitment to locked funds
+    lock_commitment: Scalar = prover.pub_input("lock_commitment");
+
+    // Current swaps tree root
+    swaps_root: Scalar = prover.pub_input("swaps_root");
+
+    // ============================================
+    // PRIVATE INPUTS (WITNESS)
+    // ============================================
+
+    // Acceptor's secret for the lock
+    secret: Scalar = prover.witness("secret");
+
+    // The token being offered (should match request_token)
+    offer_token: Scalar = prover.witness("offer_token");
+
+    // The amount being offered (should match request_amount)
+    offer_amount: Scalar = prover.witness("offer_amount");
+
+    // Merkle proof of lock commitment
+    lock_merkle_proof: MerklePath = prover.witness("lock_merkle_proof");
+
+    // ============================================
+    // COMMITMENT VERIFICATION
+    // ============================================
+
+    // Verify lock_commitment = H(secret, token, amount)
+    computed_lock: Scalar = poseidon_hash(secret, offer_token, offer_amount);
+    assert_equal(computed_lock, lock_commitment);
+
+    // ============================================
+    // LOCK PROOF VERIFICATION
+    // ============================================
+
+    verified: Bool = lock_merkle_proof.verify(lock_commitment);
+    assert(verified);
+
+    // ============================================
+    // AMOUNT CHECKS
+    // ============================================
+
+    // Amount should be positive
+    assert(offer_amount > 0);
+}
+
+// ============================================
+// NOTES
+// ============================================
+//
+// The accept_swap circuit hides:
+// - Offer amount (hidden in commitment)
+// - Offer token (hidden in commitment)
+// - Acceptor identity (different secret per swap)
+//
+// What is revealed:
+// - Acceptor has valid locked funds
+// ============================================

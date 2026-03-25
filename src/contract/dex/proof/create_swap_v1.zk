@@ -1,0 +1,84 @@
+// DarkFi DEX CreateSwap Proof V1
+//
+// Circuit for creating an atomic swap proposal.
+// The proposer proves they have locked funds without revealing amount.
+
+circuit create_swap_v1(prover: Witness) {
+    // ============================================
+    // PUBLIC INPUTS
+    // ============================================
+
+    // Commitment to the locked funds
+    // lock_commitment = H(secret, offer_token, offer_amount)
+    lock_commitment: Scalar = prover.pub_input("lock_commitment");
+
+    // Swap ID derived from commitment and request params
+    swap_id: Scalar = prover.pub_input("swap_id");
+
+    // Current swaps tree root
+    swaps_root: Scalar = prover.pub_input("swaps_root");
+
+    // ============================================
+    // PRIVATE INPUTS (WITNESS)
+    // ============================================
+
+    // User's secret for the lock
+    secret: Scalar = prover.witness("secret");
+
+    // Offer parameters
+    offer_token: Scalar = prover.witness("offer_token");
+    offer_amount: Scalar = prover.witness("offer_amount");
+
+    // Request parameters (for swap_id computation)
+    request_token: Scalar = prover.witness("request_token");
+    request_amount: Scalar = prover.witness("request_amount");
+
+    // Merkle proof of lock commitment in money contract
+    lock_merkle_proof: MerklePath = prover.witness("lock_merkle_proof");
+
+    // ============================================
+    // COMMITMENT VERIFICATION
+    // ============================================
+
+    // Verify lock_commitment = H(secret, offer_token, offer_amount)
+    computed_lock: Scalar = poseidon_hash(secret, offer_token, offer_amount);
+    assert_equal(computed_lock, lock_commitment);
+
+    // Verify swap_id = H(lock_commitment, request_token, request_amount)
+    computed_swap_id: Scalar = poseidon_hash(lock_commitment, request_token, request_amount);
+    assert_equal(computed_swap_id, swap_id);
+
+    // ============================================
+    // LOCK PROOF VERIFICATION
+    // ============================================
+    //
+    // The proposer must prove the lock commitment exists in the
+    // money contract's coin tree without revealing the parameters.
+
+    verified: Bool = lock_merkle_proof.verify(lock_commitment);
+    assert(verified);
+
+    // ============================================
+    // AMOUNT CHECKS
+    // ============================================
+
+    // Amounts should be positive
+    assert(offer_amount > 0);
+    assert(request_amount > 0);
+}
+
+// ============================================
+// NOTES
+// ============================================
+//
+// The create_swap circuit hides:
+// - Offer amount (hidden in commitment)
+// - Offer token (hidden in commitment)
+// - Request amount (hidden in swap_id)
+// - Request token (hidden in swap_id)
+// - Proposer identity (different secret per swap)
+//
+// What is revealed:
+// - Swap proposal exists
+// - Proposer has valid locked funds
+// ============================================
