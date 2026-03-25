@@ -5,6 +5,26 @@ competency verification system on DarkFi, based on ZK-verified competency
 DAGs. It enables selective disclosure of capabilities without revealing
 unnecessary personal information.*
 
+## Reusable Private Authorization Layer
+
+**This is not just about "identity" or "credentials".**
+
+The structure described here (commitment, nullifier, revocation, proof-carrying call parameters) is a **reusable private authorization layer** that applies uniformly across DarkFi contracts:
+
+| Contract | Commitment | Nullifier | Revocation |
+|----------|------------|------------| ------------|
+| **Bridge** | `DepositParams.commitment` | `WithdrawParams.nullifier` | None |
+| **DEX** | `CreateSwapParams.lock_commitment` | `AcceptSwapParams.lock_commitment` | `CancelSwapParams.secret` |
+| **Identity** | `IssueCredentialParams.commitment` | `Credential.nullifier` | `RevokeCredentialParams.nullifier` |
+| **Stablecoin** | `OpenPositionParams.commitment` | `LiquidateParams.nullifier` | None |
+
+**The shared pattern** is:
+1. Create a private capability (commitment)
+2. Consume it atomically once (nullifier)
+3. Optionally revoke it before use (issuer revocation)
+
+This structure appears in all privacy-heavy DarkFi contracts. The identity contract demonstrates it in the "credential" domain, but the same pattern applies to bridge deposits, DEX swaps, and stablecoin positions.
+
 ## The Problem: Identity Verification Destroys Privacy
 
 Traditional identity systems require revealing everything:
