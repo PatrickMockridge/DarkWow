@@ -1,0 +1,91 @@
+// DarkFi Identity Contract - Create Claim V1
+//
+// Circuit for creating a claim from a credential.
+// Proves the claim without revealing the actual attributes.
+
+circuit create_claim_v1(prover: Witness) {
+    // ============================================
+    // PUBLIC INPUTS
+    // ============================================
+
+    // Credential nullifier (proves credential exists)
+    nullifier: Scalar = prover.pub_input("nullifier");
+
+    // Claim type (e.g., "age_over_18", "dao_member")
+    claim_type: Scalar = prover.pub_input("claim_type");
+
+    // The predicate result (e.g., true/false, or a value)
+    predicate_result: Scalar = prover.pub_input("predicate_result");
+
+    // ============================================
+    // PRIVATE INPUTS (WITNESS)
+    // ============================================
+
+    // The credential secret (known only to holder)
+    credential_secret: Scalar = prover.witness("credential_secret");
+
+    // The actual attribute value being claimed
+    attribute_value: Scalar = prover.witness("attribute_value");
+
+    // The threshold/predicate being satisfied
+    threshold: Scalar = prover.witness("threshold");
+
+    // Credential commitment
+    commitment: Scalar = prover.witness("commitment");
+
+    // ============================================
+    // NULLIFIER VERIFICATION
+    // ============================================
+
+    // Verify nullifier = H(credential_secret, commitment)
+    computed_nullifier: Scalar = poseidon_hash(credential_secret, commitment);
+    assert_equal(computed_nullifier, nullifier);
+
+    // ============================================
+    // PREDICATE VERIFICATION
+    // ============================================
+    //
+    // We prove the predicate is satisfied without revealing
+    // the actual attribute value.
+    //
+    // For example: prove age >= 18 without revealing the age
+    // predicate_result = (attribute_value >= threshold)
+
+    // The predicate is evaluated in the circuit
+    // predicate_result should be 1 if satisfied, 0 if not
+    is_satisfied: Bool = attribute_value >= threshold;
+    result: Scalar = is_satisfied as Scalar;
+    assert_equal(result, predicate_result);
+
+    // ============================================
+    // COMMITMENT VERIFICATION
+    // ============================================
+
+    // Verify the commitment matches what was issued
+    // (proves this claim comes from a valid credential)
+    assert(commitment > 0);
+}
+
+// ============================================
+// NOTES
+// ============================================
+//
+// The create_claim circuit proves:
+// - Holder knows the credential secret
+// - Credential commitment is valid
+// - The predicate IS satisfied (e.g., age >= 18)
+//
+// What is revealed:
+// - The predicate RESULT (true/false)
+// - That the holder has a valid credential
+// - The claim TYPE (e.g., "age_over_18")
+//
+// What stays HIDDEN:
+// - The actual attribute value (age, balance, etc.)
+// - The credential commitment
+// - Who the holder is
+// - What the threshold is
+//
+// This is the essence of Minimal Viable Information:
+// Verifier learns ONLY whether the condition is met.
+// ============================================

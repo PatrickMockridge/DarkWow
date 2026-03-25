@@ -1,0 +1,20 @@
+[package]
+name = "darkfi-identity-contract"
+version = "0.1.0"
+edition = "2021"
+authors = ["DarkFi <research@dark.fi>"]
+description = "Minimal credential proofs for selective disclosure"
+
+[dependencies]
+darkfi-sdk = { path = "../../../sdk", features = ["no-entrypoint"] }
+darkfi_serial = { path = "../../../serial" }
+thiserror = "1.0"
+
+[features]
+default = ["no-entrypoint"]
+no-entrypoint = []
+client = []
+
+[profile.release]
+opt-level = "z"
+lto = true
