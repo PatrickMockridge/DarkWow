@@ -110,38 +110,125 @@ The key is **not revealing what you're looking for**:
 
 ## Contract Functions
 
-### MVP (Implemented)
+### InitializeV1 (0x00)
 
-| Function | ID | Description |
-|----------|-----|-------------|
-| InitializeV1 | 0x00 | Initialize swap contract |
-| CreateSwapV1 | 0x01 | Create atomic swap proposal |
-| AcceptSwapV1 | 0x02 | Accept swap (provide liquidity) |
-| CancelSwapV1 | 0x03 | Cancel and refund |
-| ExecuteSwapV1 | 0x04 | Execute atomic swap |
+Initializes the DEX swap contract:
+- Creates `swaps` tree for active swaps
+- Creates `participants` tree for tracking locked funds (nullifiers)
+- Creates `config` tree for settings
+- Stores `swap_timeout` and `dex_fee` configuration
 
-### Future (Planned)
+### CreateSwapV1 (0x01)
 
-| Function | ID | Description |
-|----------|-----|-------------|
-| PlaceOrderV1 | 0x05 | Add order to hidden book |
-| CancelOrderV1 | 0x06 | Cancel order |
-| MatchOrdersV1 | 0x07 | Match orders (ZK proof) |
-| AddLiquidityV1 | 0x08 | Add LP liquidity |
+Alice creates a swap proposal:
+- Computes `lock_commitment = H(secret, offer_token, offer_amount)`
+- Computes `swap_id = H(lock_commitment, request_token, request_amount)`
+- Verifies swap doesn't already exist
+- Stores swap in `Created` state
+- Stores proposer's nullifier to prevent double-spend
+- Emits `SwapCreated` event (only swap_id, no amounts revealed)
+
+### AcceptSwapV1 (0x02)
+
+Bob accepts the swap:
+- Loads swap and verifies it's in `Created` state
+- Verifies swap hasn't expired
+- Stores Bob's `lock_commitment` and nullifier
+- Updates swap to `Accepted` state
+- Emits `SwapAccepted` event
+
+### ExecuteSwapV1 (0x03)
+
+Execute the atomic swap:
+- Verifies swap is in `Accepted` state
+- Verifies ZK proof of both secrets known
+- Atomically transfers: Alice gets Bob's funds, Bob gets Alice's funds
+- Updates swap to `Executed` state
+- Removes both nullifiers (funds transferred)
+- Emits `SwapExecuted` event
+
+### CancelSwapV1 (0x04)
+
+Either party cancels:
+- Verifies swap is in `Created` or `Accepted` state
+- Verifies caller owns one of the locks via nullifier
+- Refunds caller's locked funds
+- Updates swap to `Cancelled` state
+- Emits `SwapCancelled` event
+
+### UpdateConfigV1 (0x05)
+
+Update contract configuration (governance):
+- Update `swap_timeout` (in blocks)
+- Update `dex_fee` (in basis points)
 
 ## ZK Circuits
 
-### MVP Circuits
+The DEX uses four ZK circuits for the atomic swap flow:
 
-- `create_swap.zk`: Proves swap parameters valid
-- `accept_swap.zk`: Proves acceptor has funds
-- `execute_swap.zk`: Proves atomic swap conditions met
+### create_swap_v1.zk
 
-### Future Circuits
+Proves the proposer has locked valid funds:
+- **Public inputs**: lock_commitment, swap_id, swaps_root
+- **Private inputs**: secret, offer_token, offer_amount, request_token, request_amount, merkle_proof
+- **Verification**: Commitment valid, swap_id derived correctly, lock exists in money contract tree
 
-- `place_order.zk`: Order commitment + SMT non-existence
-- `match_orders.zk`: Order compatibility without revealing prices
-- `cancel_order.zk`: Order cancellation proof
+### accept_swap_v1.zk
+
+Proves the acceptor has locked matching funds:
+- **Public inputs**: swap_id, lock_commitment, swaps_root
+- **Private inputs**: secret, offer_token, offer_amount, merkle_proof
+- **Verification**: Lock commitment valid, funds exist
+
+### execute_swap_v1.zk
+
+Proves both parties' secrets and locks are valid:
+- **Public inputs**: swap_id, alice_lock, bob_lock, alice_nullifier, bob_nullifier
+- **Private inputs**: alice_secret, bob_secret, alice_token, alice_amount, bob_token, bob_amount
+- **Verification**: Both secrets known, both locks valid, both nullifiers unspent, swap consistency
+
+### cancel_swap_v1.zk
+
+Proves ownership of a lock for cancellation:
+- **Public inputs**: swap_id, lock_commitment, nullifier
+- **Private inputs**: secret, token, amount
+- **Verification**: Caller knows secret, lock valid, not already spent
+
+## Roadmap: From MVP to Full Order Book
+
+```
+Level 0 (MVP)          Level 1              Level 2              Level 3
+─────────────────────────────────────────────────────────────────────────
+Atomic swaps only      SMT order book       ZK matching          Differential privacy
+Bilateral agreement    Hidden commitments   Anonymized trades    Aggregate market data
+No price discovery     ZK proof of match    Unlinkable           Noise for protection
+                       Partial fills        Partial fills        Full opt-in transparency
+```
+
+### Why This Roadmap?
+
+**Level 0 (NOW)**: Atomic swaps via DAO
+- Minimal blast radius for bugs
+- Auditable core logic
+- No information leakage
+- Foundation for everything else
+
+**Level 1 (Future)**: Add SMT order book
+- Orders stored as Pedersen commitments
+- Solver matches orders via ZK proofs
+- No price/amount revealed until match
+- Challenge: Encrypted search / ORAM for queries
+
+**Level 2 (Future)**: Anonymized market data
+- Differential privacy for aggregate stats
+- Time-bucketed volume with noise
+- Price bands instead of exact prices
+- LPs can model risk without seeing orders
+
+**Level 3 (Future)**: Opt-in transparency
+- Traders can choose to reveal their trades
+- For regulatory compliance
+- Without affecting others' privacy
 
 ## Privacy Properties
 
@@ -165,9 +252,10 @@ The key is **not revealing what you're looking for**:
 ## Implementation Status
 
 - [x] Contract structure and entrypoint
-- [x] MVP function definitions
-- [ ] Atomic swap DAO implementation
-- [ ] ZK circuits for swap verification
+- [x] MVP function definitions (CreateSwap, AcceptSwap, ExecuteSwap, CancelSwap, UpdateConfig)
+- [x] Atomic swap DAO implementation (full on-chain logic)
+- [x] ZK circuits for swap verification (create_swap, accept_swap, execute_swap, cancel_swap)
+- [ ] Integration with money contract for actual token transfers
 - [ ] Order book expansion (future)
 
 ## References

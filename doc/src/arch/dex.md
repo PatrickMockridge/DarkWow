@@ -99,9 +99,9 @@ DarkFi already has OTC swaps. The MVP extends this to:
 2. **Timeout mechanism**: Automatic refunds if counterparty doesn't appear
 3. **ZK proofs**: Prove swap validity without revealing amounts
 
-## Level 1: Order Book with Hidden Commitments
+## Level 1: Order Book with Hidden Commitments (Future)
 
-After MVP, we add a **Sparse Merkle Tree order book** where orders are
+After MVP, we expand to a **Sparse Merkle Tree order book** where orders are
 stored as commitments:
 
 ```
@@ -195,59 +195,71 @@ If Alice uses the same key for all orders, they're linkable.
 ## Expanding from MVP
 
 ```
-MVP (Level 0)
-    │
-    │ Add SMT order book
-    │ Add ZK matching
-    │
-Level 1: Hidden order book with ZK matching
-    │
-    │ Add aggregate depth proofs
-    │ Add time-bucketed volume
-    │
-Level 2: Anonymized market data
-    │
-    │ Add opt-in transparency
-    │
-Level 3: Full transparency (audit mode)
+Level 0 (MVP - NOW)
+├── Atomic swaps via DAO
+├── No order book
+├── Bilateral price agreement
+└── ZK proofs for validity
+
+Level 1 (Future)
+├── Add SMT order book
+├── Hidden order commitments
+└── ZK proof of order matching
+
+Level 2 (Future)
+├── Aggregate depth proofs
+├── Time-bucketed volume bands
+└── Differential privacy noise
+
+Level 3 (Future)
+└── Opt-in full transparency
 ```
 
 ## Key Components
 
-### ZK Circuits
+### ZK Circuits for Atomic Swaps
 
-**place_order.zk**: Proves order commitment is valid and doesn't exist in book
+**create_swap_v1.zk**: Proves proposer has locked valid funds for swap
 
-**match_orders.zk**: Proves two orders are compatible without revealing prices
+**accept_swap_v1.zk**: Proves acceptor has locked matching funds
 
-**cancel_order.zk**: Proves ownership and cancels order
+**execute_swap_v1.zk**: Proves both secrets known, locks valid, swap consistent
+
+**cancel_swap_v1.zk**: Proves ownership of lock for cancellation
 
 ### Data Structures
 
 ```
-Order Commitment = H(secret, amount, price, token, side)
-Order Nullifier = H(secret)
-LP Share = H(secret, pool_id, share_amount)
+Lock Commitment = H(secret, token, amount)
+Swap ID = H(lock_commitment, request_token, request_amount)
+Swap Nullifier = H(secret)
 ```
+
+The atomic swap uses:
+- **Lock commitment**: Proves funds are locked without revealing amount/token
+- **Swap ID**: Unique identifier derived from proposer's lock and requested swap
+- **Nullifier**: Prevents double-spend / ensures lock hasn't been used
 
 ### The DAO Layer
 
-The Swap DAO handles:
-- Swap proposal creation
-- Counterparty acceptance
-- Atomic execution
-- Timeout refunds
-- Governance (fee updates, etc.)
+The Swap DAO contract handles:
+- **Swap proposal creation**: Alice locks funds, creates swap proposal
+- **Counterparty acceptance**: Bob locks matching funds, accepts swap
+- **Atomic execution**: ZK proof verifies both secrets, contract executes atomically
+- **Timeout refunds**: If swap not executed in time, either party can cancel and refund
+- **Governance**: Update timeout and fee parameters
 
 ## Comparison
 
-| Feature | UniSwap | Curve | DarkFi MVP | DarkFi L1+ |
-|---------|---------|-------|------------|------------|
-| Order visibility | Full | Full | None | Hidden |
-| Amount privacy | None | None | ZK | ZK |
-| Identity privacy | Pseudonym | Pseudonym | Hidden | Hidden |
-| Price discovery | AMM formula | AMM formula | Bilateral | ZK match |
-| Front-running | Vulnerable | Vulnerable | Resistant | Resistant |
+| Feature | UniSwap | Curve | DarkFi MVP (Atomic Swaps) |
+|---------|---------|-------|---------------------------|
+| Order visibility | Full | Full | None |
+| Amount privacy | None | None | ZK (commitments) |
+| Identity privacy | Pseudonym | Pseudonym | Hidden |
+| Price discovery | AMM formula | AMM formula | Bilateral agreement |
+| Front-running | Vulnerable | Vulnerable | Resistant (atomic) |
+| Order book | Yes | Yes | No (Level 0) |
+| Liquidity model | AMM | AMM | Bilateral locks |
 
 ## Open Questions
 
