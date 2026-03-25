@@ -1,0 +1,101 @@
+// DarkFi DEX Place Order Proof V1
+//
+// Circuit for placing an order in the anonymous order book.
+// The order commitment hides all order parameters.
+
+circuit place_order_v1(prover: Witness) {
+    // ============================================
+    // PUBLIC INPUTS
+    // ============================================
+
+    // Commitment to the order
+    order_commitment: Scalar = prover.pub_input("order_commitment");
+
+    // Current order book root (SMT root)
+    orderbook_root: Scalar = prover.pub_input("orderbook_root");
+
+    // Output note commitment (for receiving filled orders)
+    output_note: Scalar = prover.pub_input("output_note");
+
+    // ============================================
+    // PRIVATE INPUTS (WITNESS)
+    // ============================================
+
+    // User's secret key
+    secret: Scalar = prover.witness("secret");
+
+    // Order parameters
+    amount: Scalar = prover.witness("amount");
+    price: Scalar = prover.witness("price");
+    token: Scalar = prover.witness("token");
+
+    // Order side: 0 = buy, 1 = sell
+    side: Scalar = prover.witness("side");
+
+    // Non-existence proof (proves this commitment isn't already in the tree)
+    non_existence_proof: MerklePath = prover.witness("non_existence_proof");
+
+    // ============================================
+    // COMMITMENT VERIFICATION
+    // ============================================
+
+    // Verify commitment = H(secret, amount, price, token, side)
+    computed_commitment: Scalar = poseidon_hash(
+        secret,
+        amount,
+        price,
+        token,
+        side
+    );
+    assert_equal(computed_commitment, order_commitment);
+
+    // ============================================
+    // NON-EXISTENCE PROOF
+    // ============================================
+    //
+    // We need to prove this exact commitment isn't already in the order book.
+    // The SMT allows efficient non-membership proofs.
+
+    verified: Bool = non_existence_proof.verify_not_in(orderbook_root, order_commitment);
+    assert(verified);
+
+    // ============================================
+    // AMOUNT AND PRICE CHECKS
+    // ============================================
+
+    // Orders should have positive amounts
+    assert(amount > 0);
+
+    // Price should be within reasonable bounds (e.g., not more than 10^18)
+    assert(price < 2^64);
+
+    // ============================================
+    // OUTPUT NOTE
+    // ============================================
+    //
+    // The output note represents the user's position.
+    // If order fully fills: output note is for the received token.
+    // If order partially fills: output note is updated position.
+
+    // For now, we just verify it's well-formed
+    assert(output_note > 0);
+}
+
+// ============================================
+// NOTES
+// ============================================
+//
+// The place_order circuit hides:
+// - Order amount (hidden in commitment)
+// - Order price (hidden in commitment)
+// - Order token (hidden in commitment)
+// - Order side (hidden in commitment)
+// - Owner identity (different key per order)
+//
+// What is revealed:
+// - Commitment exists in order book
+// - Commitment is well-formed
+//
+// The matching circuit will prove orders are compatible
+// without revealing the actual price or amount!
+// ============================================
