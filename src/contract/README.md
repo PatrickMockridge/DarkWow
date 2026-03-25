@@ -1,13 +1,18 @@
-This directory contains native WASM contracts on DarkFi:
+This directory contains native WASM contracts on DarkFi.
 
-## Money
+## Official Contracts
 
-* https://dark.fi/book/dev/darkfi_money_contract/index.html
+- **Money**: Private token transfers and basic operations
+- **DAO**: Decentralized autonomous organization with governance
+- **Deployooor**: Contract deployment and management
 
-## DAO
+## Development Fork Contracts
 
-* https://dark.fi/book/dev/darkfi_dao_contract/index.html
+The `dev` branch contains additional contracts not yet in official DarkFi:
 
-## Deployooor
+- **Bridge**: Cross-chain asset transfers with Object Capability Security (no VSS)
+- **DEX**: Atomic swap DAO with incremental transparency roadmap
+- **Identity**: Minimal credential proofs using ZK-verified competency DAGs
+- **Stablecoin**: Monero-collateralized stablecoin with P2P Oracle design
 
-* https://dark.fi/book/dev/darkfi_deployooor_contract/index.html
+See the [contract documentation](https://dark.fi/book/dev/contracts.html) for details.
