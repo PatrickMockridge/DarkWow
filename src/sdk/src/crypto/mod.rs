@@ -42,6 +42,25 @@ pub use contract_id::{ContractId, DAO_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID, MONEY
 pub mod func_ref;
 pub use func_ref::{FuncId, FuncRef};
 
+/// Generic private intent primitives (commitment/nullifier lifecycle)
+pub mod intent;
+pub use intent::{IntentCommitment, IntentNullifier, PrivateIntent};
+
+/// Generic intent-set state machine and transition types
+pub mod intent_set;
+pub use intent_set::{
+    IntentConsumeCallV1, IntentConsumeTransitionV1, IntentPostTransitionV1, IntentSetIndexV1,
+    IntentSetState,
+};
+
+/// Transition payload encoding/decoding helpers
+pub mod transition_payload;
+pub use transition_payload::{
+    decode_intent_set_cancel_v1, decode_intent_set_fill_v1, decode_intent_set_post_v1,
+    encode_intent_set_cancel_v1, encode_intent_set_fill_v1, encode_intent_set_post_v1,
+    IntentSetFunctionV1,
+};
+
 /// Merkle node definitions
 pub mod merkle_node;
 pub use merkle_node::{MerkleNode, MerkleTree};

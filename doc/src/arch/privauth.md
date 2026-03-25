@@ -197,6 +197,76 @@ When adding revocation:
 2. **Revocation is separate**: Revoked commitments can still exist, just can't be consumed
 3. **Consider expiration**: Time-based revocation reduces issuer burden
 
+## SDK Primitives
+
+The DarkFi SDK provides reusable implementations of this pattern in `src/sdk/src/crypto/intent.rs` and `src/sdk/src/crypto/intent_set.rs`:
+
+### PrivateIntent
+
+A generic private intent object with:
+
+| Field | Purpose |
+|-------|---------|
+| `owner` | PublicKey of who can consume |
+| `namespace` | Scopes intent to specific application |
+| `payload_hash` | Commits to application-specific data |
+| `expiry` | Block height when intent expires |
+| `nonce` | Prevents nullifier replay |
+| `blind` | Additional blinding factor |
+
+```rust
+use darkfi_sdk::crypto::{PrivateIntent, IntentCommitment, IntentNullifier};
+
+// Create intent
+let intent = PrivateIntent::new(
+    owner_pubkey,
+    namespace,       // e.g., IDENTITY_NAMESPACE
+    payload_hash,    // H(credential data)
+    expiry,         // block height
+    nonce,          // fresh random
+    blind,          // blinding
+);
+
+// Compute commitment for on-chain storage
+let commitment = intent.commitment();  // IntentCommitment
+
+// Derive nullifier when consuming
+let nullifier = intent.derive_nullifier(owner_secret)?;  // IntentNullifier
+```
+
+### IntentSetIndexV1
+
+A generic state machine for managing intent lifecycle:
+
+```rust
+use darkfi_sdk::crypto::{IntentSetIndexV1, IntentPostTransitionV1, IntentConsumeTransitionV1};
+
+let mut index = IntentSetIndexV1::new();
+
+// Post new intent
+let post = IntentPostTransitionV1 { ... };
+index.validate_post(&post)?;
+index.apply_post(&post)?;
+
+// Consume intent
+let consume = IntentConsumeTransitionV1 { ... };
+index.validate_consume(&consume)?;
+index.apply_consume(&consume)?;
+```
+
+### Namespace Constants
+
+Each application should define its own namespace:
+
+| Application | Namespace (example) |
+|------------|-------------------|
+| Identity | `0x0001` |
+| Bridge | `0x0002` |
+| DEX | `0x0003` |
+| Stablecoin | `0x0004` |
+
+This allows the same primitives to work across all privacy-preserving contracts.
+
 ## Related Patterns
 
 ### Intent Pattern

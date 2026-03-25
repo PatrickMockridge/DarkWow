@@ -236,11 +236,55 @@ Cross-contract composition follows specific patterns:
 
 ## SDK Primitives
 
-The DarkFi SDK provides reusable primitives in `src/sdk/src/primitives.rs`:
+The DarkFi SDK provides reusable primitives for contracts:
 
-### Contract Function Macro
+### Generic Intent Primitives (`src/sdk/src/crypto/intent.rs`)
 
-Use `define_contract_function!` to define contract functions with automatic `TryFrom<u8>`:
+The `PrivateIntent` struct provides a reusable authorization pattern:
+
+```rust
+use darkfi_sdk::crypto::{PrivateIntent, IntentCommitment, IntentNullifier};
+
+// Create an intent
+let intent = PrivateIntent::new(
+    owner_pubkey,
+    namespace,        // Scopes to identity/bridge/DEX/etc.
+    payload_hash,   // H(application-specific data)
+    expiry,         // Block height expiration
+    nonce,          // Prevents replay
+    blind,          // Additional blinding
+);
+
+// Get commitment for on-chain storage
+let commitment = intent.commitment();  // IntentCommitment
+
+// Derive nullifier when consuming
+let nullifier = intent.derive_nullifier(owner_secret)?;  // IntentNullifier
+```
+
+### Intent-Set State Machine (`src/sdk/src/crypto/intent_set.rs`)
+
+The `IntentSetIndexV1` provides a generic state machine:
+
+```rust
+use darkfi_sdk::crypto::{IntentSetIndexV1, IntentPostTransitionV1, IntentConsumeTransitionV1};
+
+let mut index = IntentSetIndexV1::new();
+
+// Post new intent
+let post = IntentPostTransitionV1 { ... };
+index.validate_post(&post)?;
+index.apply_post(&post)?;
+
+// Consume intent (fill/cancel)
+let consume = IntentConsumeTransitionV1 { ... };
+index.validate_consume(&consume)?;
+index.apply_consume(&consume)?;
+```
+
+### Contract Function Macro (`src/sdk/src/primitives.rs`)
+
+Use `define_contract_function!` to define contract functions:
 
 ```rust
 use darkfi_sdk::define_contract_function;
@@ -248,33 +292,32 @@ use darkfi_sdk::define_contract_function;
 define_contract_function!(MyContract {
     InitializeV1 = 0x00,
     DoActionV1 = 0x01,
-    UpdateStateV1 = 0x02,
 });
 ```
 
-This expands to the full enum with `TryFrom<u8>` implementation.
+### Commitment/Nullifier Helpers (`src/sdk/src/primitives.rs`)
 
-### Commitment and Nullifier Helpers
-
-The SDK provides Poseidon hash-based commitment and nullifier computation:
+Low-level commitment and nullifier computation:
 
 ```rust
 use darkfi_sdk::primitives::{compute_commitment, compute_nullifier};
 
-// Compute commitment: H(secret, params...)
 let commitment = compute_commitment::<2>([secret, param1]);
-
-// Compute nullifier: H(secret, commitment)
 let nullifier = compute_nullifier(secret, commitment);
-
-// State nullifier: H(secret, state_hash)
-let state_nullifier = compute_state_nullifier(secret, state_hash);
-
-// Revocation nullifier: H(issuer_secret, commitment)
-let revocation = compute_revocation_nullifier(issuer_secret, commitment);
 ```
 
-### Tree Name Helper
+### Transition Payload Encoding (`src/sdk/src/crypto/transition_payload.rs`)
+
+Helper functions for encoding/decoding transition payloads:
+
+```rust
+use darkfi_sdk::crypto::{encode_intent_set_post_v1, decode_intent_set_post_v1};
+
+let payload = encode_intent_set_post_v1(&transition)?;
+let decoded = decode_intent_set_post_v1(&payload)?;
+```
+
+### Tree Name Helper (`src/sdk/src/primitives.rs`)
 
 Generate consistent tree names:
 
