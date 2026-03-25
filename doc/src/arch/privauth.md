@@ -131,12 +131,17 @@ Purpose:
 
 ## Cross-Contract Pattern Mapping
 
-| Contract | Commitment | Nullifier | Revocation |
-|----------|------------|------------| ------------|
-| **Bridge** | `DepositParams.commitment = H(recipient_secret, amount)` | `WithdrawParams.nullifier = H(recipient_secret)` | None |
-| **DEX** | `CreateSwapParams.lock_commitment = H(secret, token, amount)` | `AcceptSwapParams.lock_commitment` (reused) | `CancelSwapParams.secret` |
-| **Identity** | `IssueCredentialParams.commitment = H(issuer_key, holder_key, schema, attrs)` | `Credential.nullifier = H(holder_secret, credential_secret)` | `RevokeCredentialParams.nullifier` |
-| **Stablecoin** | `OpenPositionParams.commitment = H(owner_secret, collateral, debt)` | `LiquidateParams.nullifier = H(position_secret)` | None |
+All contracts now use domain-separated poseidon hashing for strong separation:
+
+| Contract | Commitment Hash | Nullifier Hash | Revocation |
+|----------|-----------------|----------------|------------|
+| **Bridge** | `poseidon_hash([9001, owner_x, owner_y, 0x0002, payload_hash, expiry, nonce, blind])` | `poseidon_hash([9002, owner_secret, 0x0002, nonce, commitment])` | None |
+| **DEX** | `poseidon_hash([9001, owner_x, owner_y, 0x0003, payload_hash, expiry, nonce, blind])` | `poseidon_hash([9002, owner_secret, 0x0003, nonce, commitment])` | `CancelSwapParams.secret` |
+| **Identity** | `poseidon_hash([9001, owner_x, owner_y, 0x0001, payload_hash, expiry, nonce, blind])` | `poseidon_hash([9002, owner_secret, 0x0001, nonce, commitment])` | `RevokeCredentialParams.nullifier` |
+| **Stablecoin** | `poseidon_hash([9001, owner_x, owner_y, 0x0004, payload_hash, expiry, nonce, blind])` | `poseidon_hash([9002, owner_secret, 0x0004, nonce, commitment])` | None |
+
+Domain separators (9001 for commitment, 9002 for nullifier) prevent cross-protocol collision.
+Namespace constants (0x0001-0x0004) scope intents per application.
 
 ## Security Properties
 
@@ -269,14 +274,17 @@ This allows the same primitives to work across all privacy-preserving contracts.
 
 ## Related Patterns
 
-### Intent Pattern
+### Intent Pattern (Integrated)
 
-The [intent-amm fork](https://codeberg.org/rusticml/darkfi-intent-amm-proposal) explores extending this pattern with:
-- `PrivateIntent`: Reusable intent lifecycle
-- `IntentPostTransitionV1`: Post-creation transition
-- `IntentConsumeTransitionV1`: Consumption transition
+The [intent-amm fork](https://codeberg.org/rusticml/darkfi-intent-amm-proposal) explored reusable primitives that have been integrated into the DarkFi SDK:
 
-This provides a more formal framework for the lifecycle described here.
+- `PrivateIntent`: Reusable private authorization object with domain-separated hashing
+- `IntentSetIndexV1`: Generic state machine for post/consume lifecycle
+- `IntentPostTransitionV1`: Post-creation transition with Merkle root validation
+- `IntentConsumeTransitionV1`: Consumption transition with nullifier tracking
+- `Transition payload encoding`: Typed function codes (Post=0x00, Cancel=0x01, Fill=0x02)
+
+This provides a formally verified framework for the lifecycle described here. See [Composability](composability.md) for implementation details.
 
 ### Predicate-Based Authorization
 
@@ -289,9 +297,21 @@ The predicate is verified in the ZK circuit, and only the result (true/false) is
 
 ## References
 
+- [Composability & General Primitives](composability.md)
 - [Identity Contract](../../src/contract/identity/)
 - [Bridge Contract](../../src/contract/bridge/)
 - [DEX Contract](../../src/contract/dex/)
 - [Stablecoin Contract](../../src/contract/stablecoin/)
 - [Intent AMM Proposal](https://codeberg.org/rusticml/darkfi-intent-amm-proposal)
+- [Response to PatrickM123 (Intent AMM)](https://codeberg.org/rusticml/darkfi-intent-amm-proposal/src/branch/main/docs/response-to-patrickm123.md)
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)
+
+## Optional Core Enhancement: `is_equal_base`
+
+For cleaner predicate-bearing ZK circuits, a small optional opcode enhancement helps:
+
+- **Opcode**: `is_equal_base` in `src/zkas/opcode.rs`
+- **Purpose**: Returns `0` or `1` for equality comparison (reusable boolean result)
+- **Benefit**: Enables generic templates to express "require this on fill, bypass it on cancel" logic
+
+This is **optional** and does not block the current authorization layer from functioning. It makes complex predicate circuits cleaner.

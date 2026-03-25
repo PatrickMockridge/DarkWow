@@ -328,6 +328,86 @@ pub const MY_STATE_TREE: &str = tree_name!("mycontract", "state");
 // Results in: "mycontract_state"
 ```
 
+## Relationship to Existing DarkFi Work
+
+This framework builds on and integrates with existing DarkFi patterns:
+
+### Existing Groundwork in DarkFi
+
+DarkFi `master` already contains relevant foundational work:
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| Anonymous bridge draft | `doc/src/arch/bridge.md` | Early design for cross-chain privacy |
+| DEX direction | `doc/src/arch/dex.md` | Uses `spend_hook` and `auth_otc` |
+| OTC swap settlement | `src/contract/money/src/entrypoint/swap_v1.rs` | Real swap plumbing in money contract |
+
+### Broader Framing: Private Authorization Layer
+
+The intent primitives in this SDK are **not** specific to AMM or DEX. They implement a **private authorization layer** that appears across all DarkFi privacy-heavy contracts:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│        The Shared Pattern Across All Privacy Contracts                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Bridge:                                                          │
+│    DepositParams.commitment → WithdrawParams.nullifier            │
+│    "I know the secret for this deposit"                          │
+│                                                                   │
+│  Identity:                                                        │
+│    IssueCredentialParams.commitment → Claim.nullifier             │
+│    "I hold a valid credential from this issuer"                  │
+│                                                                   │
+│  DEX:                                                             │
+│    CreateSwapParams.lock_commitment → AcceptSwapParams.lock_commitment │
+│    "I have locked funds for this swap"                           │
+│                                                                   │
+│  Stablecoin:                                                      │
+│    OpenPositionParams.commitment → LiquidateParams.nullifier       │
+│    "I own this CDP"                                              │
+│                                                                   │
+│  KEY INSIGHT: Same lifecycle, different predicates.                │
+│               The machinery is reusable; the proof is not.         │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+This suggests DarkFi's privacy architecture benefits from **reusable private authorization / claim machinery** rather than ad-hoc commitment/nullifier patterns per contract.
+
+### Namespace Scoping
+
+Each application domain uses a namespace constant to scope intents:
+
+| Contract | Namespace | Purpose |
+|----------|-----------|---------|
+| Identity | `0x0001` | Credential claims and verifications |
+| Bridge | `0x0002` | Cross-chain deposit/withdrawal |
+| DEX | `0x0003` | Atomic swaps and exchange |
+| Stablecoin | `0x0004` | CDP positions and liquidation |
+
+Namespace separation allows the same `PrivateIntent` primitives to work across all privacy-preserving contracts without collision.
+
+### Optional Core Improvement: `is_equal_base` Opcode
+
+A small optional opcode enhancement can make predicate-bearing templates cleaner:
+
+- Location: `src/zkas/opcode.rs`
+- Purpose: Turns equality comparison into a reusable `0/1` result
+- Benefit: Enables generic templates to express "require this on fill, bypass it on cancel" style logic
+
+This is **not required** for the current primitives to work, but it helps keep ZK circuits cleaner for complex predicate logic.
+
+### Relationship to AMM/DEX Work
+
+The DEX contract uses these primitives but is **not limited to AMM-style exchange**:
+
+- The intent-set lifecycle supports: atomic swaps, intent-based matching, order book styles
+- The `IntentSetIndexV1` state machine validates: post/consume transitions generically
+- Actual AMM semantics (constant-product, TWAP pricing) are **application-specific**, built on top of these primitives
+
+The primitives solve the **authorization and lifecycle problem**; the application layer solves the **pricing and matching problem**.
+
 ## Designing New Contracts: General Primitive Checklist
 
 When designing a new DarkFi contract:
@@ -403,3 +483,5 @@ All DarkFi contracts should support incremental transparency (see [Identity](ide
 - [Bridge Contract](../src/contract/bridge/)
 - [DEX Contract](../src/contract/dex/)
 - [Stablecoin Contract](../src/contract/stablecoin/)
+- [Intent AMM Proposal](https://codeberg.org/rusticml/darkfi-intent-amm-proposal)
+- [Response to PatrickM123](https://codeberg.org/rusticml/darkfi-intent-amm-proposal/src/branch/main/docs/response-to-patrickm123.md)
