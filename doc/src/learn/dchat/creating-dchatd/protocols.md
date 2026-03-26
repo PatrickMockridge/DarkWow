@@ -99,3 +99,5 @@ nodes is dropped and the channel closes, all protocols are also shutdown.
 **ProtocolBase**
 
 A generic protocol trait that all protocols must implement.
+
+**Further reading**: [Async Rust in Practice: The DarkFi Experience (Part 5)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-e16) covers the Protocol trait, Message trait, and ProtocolJobsManager in depth.

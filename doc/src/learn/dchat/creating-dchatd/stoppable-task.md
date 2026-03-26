@@ -4,10 +4,22 @@ Implementing a `JSON-RPC` `RequestHandler` also requires that we implement
 a method called `connections_mut`. This introduces us to an important
 `darkfi` type called `StoppableTask`.
 
-`StoppableTask` is a async task that can be prematurely (and safely)
-stopped at any time. We've already encountered this method when we
-discussed `p2p.stop`, which triggers `StoppableTask` to cleanly shutdown
-any inbound, outbound or manual sessions which are running.
+`StoppableTask` is an async task wrapper that enables **cooperative
+graceful shutdown**. Unlike forceful `abort` which can leave resources in
+bad states, `StoppableTask` uses a `watch` channel to signal tasks
+to exit cleanly.
+
+> **Why cooperative shutdown?**
+> Forceful `abort` can leave resources in bad states (locks held, files
+> open, partial writes). Cooperative shutdown lets tasks clean up properly
+> before exiting. This is critical for security-critical blockchain software
+> where state corruption could lead to consensus failures.
+
+We've already encountered this pattern when we discussed `p2p.stop`, which
+triggers `StoppableTask` to cleanly shutdown any inbound, outbound or
+manual sessions which are running.
+
+**Further reading**: [Async Rust in Practice: The DarkFi Experience (Part 4)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-d66)
 
 This is the basic usage of `StoppableTask`:
 

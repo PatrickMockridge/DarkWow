@@ -47,8 +47,15 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
 
 Behind the scenes, `async_daemonize` uses `structopt` and `structopt_toml`
 crates to build command line arguments as a struct called `Args`. It spins
-up a async executor using parallel threads, and implements signal handling
+up a `smol::Executor` for async task management, and implements signal handling
 to properly terminate the daemon on receipt of a stop signal.
+
+> **How async_daemonize! works**: Under the hood, the macro expands to create
+> an `Arc<smol::Executor<'static>>` for shared task spawning, uses
+> `async_channel::bounded(1)` for shutdown signal communication, and calls
+> `smol::block_on()` to bridge synchronous and asynchronous code.
+>
+> See [Async Rust in Practice: The DarkFi Experience (Part 6)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-a6a) for a detailed macro expansion walkthrough.
 
 `async_daemonize` allow us to spawn the config data we specify at
 `CONFIG_FILE_CONTENTS` into a directory either specified using the

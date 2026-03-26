@@ -9,6 +9,11 @@ The behavior of these nodes is defined in what is called a
 [Session](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/net/session/mod.rs#L119).
 There are five types of sessions: `Manual`, `Inbound`, `Outbound`, `SeedSync` and `Direct`.
 
+> **Session Types Architecture**: Different node configurations run different
+> session combinations. A seed node runs only `InboundSession`. A full node
+> typically combines `InboundSession`, `OutboundSession`, and `SeedSyncSession`.
+> See [Async Rust in Practice: The DarkFi Experience (Part 2)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-3f9) for details.
+
 There behavior is as follows: 
 
 **Inbound**: Uses an `Acceptor` to accept connections on the inbound connect
