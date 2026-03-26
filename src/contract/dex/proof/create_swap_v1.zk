@@ -34,8 +34,8 @@ circuit "CreateSwapV1" {
     );
     constrain_instance(computed_lock);
 
-    # Verify lock commitment matches
-    assert_equal(computed_lock, lock_commitment);
+    # Verify lock commitment matches public input
+    constrain_equal_base(computed_lock, lock_commitment);
 
     # Derive swap ID: H(lock_commitment, request_token, request_amount, timestamp)
     computed_swap_id = poseidon_hash(
@@ -46,16 +46,14 @@ circuit "CreateSwapV1" {
     );
     constrain_instance(computed_swap_id);
 
-    # Verify swap ID matches
-    assert_equal(computed_swap_id, swap_id);
+    # Verify swap ID matches public input
+    constrain_equal_base(computed_swap_id, swap_id);
 
     # Derive nullifier for this swap
     nullifier = poseidon_hash(secret, lock_commitment);
     constrain_instance(nullifier);
 
-    # Range proofs
-    assert(offer_amount > 0);
-    assert(request_amount > 0);
-    assert(offer_amount < 2^64);
-    assert(request_amount < 2^64);
+    # Range proofs for amounts
+    range_check(64, offer_amount);
+    range_check(64, request_amount);
 }

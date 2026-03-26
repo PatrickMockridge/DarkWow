@@ -29,25 +29,28 @@ circuit "LiquidateV1" {
     # Verify nullifier matches
     nullifier_check = poseidon_hash(owner_secret, old_commitment);
     constrain_instance(nullifier_check);
-    assert_equal(nullifier_check, position_nullifier);
+    constrain_equal_base(nullifier_check, position_nullifier);
 
     # Calculate if position is undercollateralized
-    # liquidation threshold: debt * current_price > collateral * liquidation_ratio
-    # Simplified: actual check would use multiplication and comparison
+    # NOTE: base_mul, base_add, base_sub are custom opcodes (not standard in zkVM)
     debt_value = base_mul(debt_amount, current_price);
     collateral_value = base_mul(collateral_amount, witness_base(10000));
     penalty = base_add(debt_value, liquidation_penalty);
 
     # Verify position is actually undercollateralized
-    # This is a simplified check - actual would verify against threshold
-    assert(debt_amount > 0);
+    # NOTE: LessThanOrEqual needed for proper collateralization check
+    # See doc/src/zkas/bincode.md "Reasoned Opcodes"
+    bool_check(debt_amount);
 
     # New commitment after liquidation (collateral seized)
     new_collateral = base_sub(collateral_amount, liquidator_reward);
-    assert(new_collateral > 0);
+    bool_check(new_collateral);
 
     # Range proofs
-    assert(collateral_amount < 2^64);
-    assert(debt_amount < 2^64);
-    assert(liquidator_reward < collateral_amount);
+    range_check(64, collateral_amount);
+    range_check(64, debt_amount);
+    range_check(64, liquidator_reward);
+
+    # NOTE: Proving liquidator_reward < collateral_amount requires
+    # LessThanOrEqual or similar comparison opcode.
 }

@@ -29,14 +29,14 @@ circuit "WithdrawV1" {
     computed_nullifier = poseidon_hash(secret);
     constrain_instance(computed_nullifier);
 
-    # Verify nullifier matches
-    assert_equal(computed_nullifier, nullifier);
+    # Verify nullifier matches public input
+    constrain_equal_base(computed_nullifier, nullifier);
 
     # Verify commitment matches
     derived_commitment = poseidon_hash(secret, amount, bridge_address);
-    assert_equal(derived_commitment, commitment);
+    constrain_equal_base(derived_commitment, commitment);
 
-    # Verify Merkle proof (deposit exists and not already spent)
+    # Create deposit leaf for verification
     deposit_leaf = poseidon_hash(secret, amount);
     constrain_instance(deposit_leaf);
 
@@ -44,7 +44,9 @@ circuit "WithdrawV1" {
     derived_recipient = poseidon_hash(recipient_hash);
     constrain_instance(derived_recipient);
 
-    # Range proof
-    assert(amount > 0);
-    assert(amount < 2^64);
+    # Range proof for amount
+    range_check(64, amount);
+
+    # Verify leaf_index is valid for Merkle proof
+    range_check(4, leaf_index);
 }

@@ -29,17 +29,18 @@ circuit "MintStableV1" {
     # Verify nullifier matches
     nullifier_check = poseidon_hash(owner_secret, old_commitment);
     constrain_instance(nullifier_check);
-    assert_equal(nullifier_check, position_nullifier);
+    constrain_equal_base(nullifier_check, position_nullifier);
 
     # Verify new debt is old debt + mint_amount
-    one = witness_base(1);
+    # NOTE: base_add is a custom opcode (not standard in zkVM)
     mint_check = base_add(old_debt, mint_amount);
-    assert_equal(mint_check, new_debt);
+    constrain_equal_base(mint_check, new_debt);
 
     # Verify collateral unchanged (for simple minting)
-    assert_equal(old_collateral, new_collateral);
+    constrain_equal_base(old_collateral, new_collateral);
 
     # New commitment verification
+    # NOTE: ec_mul_short, ec_add are custom opcodes
     collateral_commit = ec_mul_short(new_collateral, VALUE_COMMIT);
     collateral_random = ec_mul(collateral_blind, RANDOM_COMMIT);
     collateral_total = ec_add(collateral_commit, collateral_random);
@@ -50,7 +51,7 @@ circuit "MintStableV1" {
     debt_total = ec_add(debt_commit, debt_random);
     debt_x = ec_get_x(debt_total);
 
-    # Verify mint_amount is positive
-    assert(mint_amount > 0);
-    assert(mint_amount < 2^64);
+    # Range check for mint_amount
+    range_check(64, mint_amount);
+    bool_check(mint_amount);
 }

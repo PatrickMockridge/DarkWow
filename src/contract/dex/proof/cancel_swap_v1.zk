@@ -23,13 +23,16 @@ circuit "CancelSwapV1" {
     constrain_instance(computed_nullifier);
 
     # Verify nullifier matches (proves ownership)
-    assert_equal(computed_nullifier, nullifier);
+    constrain_equal_base(computed_nullifier, nullifier);
 
     # Verify lock commitment can be derived from secret
     derived_lock = poseidon_hash(secret, token, amount);
-    assert_equal(derived_lock, lock_commitment);
+    constrain_equal_base(derived_lock, lock_commitment);
 
     # Verify swap ID consistency
     computed_swap_id = poseidon_hash(lock_commitment);
-    assert_equal(computed_swap_id, swap_id);
+    constrain_equal_base(computed_swap_id, swap_id);
+
+    # Range check for amount
+    range_check(64, amount);
 }

@@ -228,6 +228,23 @@ tracks spent nullifiers to prevent double-spend.
 Each deposit gets unique bridge address via nonce. Even same recipient
 depositing multiple times produces unlinkable addresses.
 
+## Reasoned Opcodes
+
+The bridge circuits use standard zkVM opcodes. Future enhancements may require:
+
+### `LessThanOrEqual(a, b)` (Reasoned)
+**Purpose**: Compare if `Base a <= Base b`
+**Reasoning**: Could enable more complex withdrawal conditions (e.g., "amount <= fee threshold").
+
+### Adding Custom Opcodes
+
+To add a new opcode to the zkVM:
+
+1. Define the opcode in `src/zkas/opcode.rs`
+2. Implement the opcode in `src/zk/vm.rs`
+
+For a full example of adding opcodes, see the [zkas bincode documentation](../../doc/src/zkas/bincode.md).
+
 ## Implementation Status
 
 The contract **skeleton is expanded** to show actual implementation flow:

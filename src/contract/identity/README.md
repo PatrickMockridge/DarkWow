@@ -177,6 +177,27 @@ Proves the claim can be verified:
 - **Private inputs**: issuer_pub, holder_secret
 - **Verification**: Claim valid, issuer trusted, not double-spent
 
+## Reasoned Opcodes
+
+Some predicates require opcodes that don't yet exist in the zkVM. These are documented here for future implementation:
+
+### `LessThanOrEqual(a, b)` (Reasoned)
+**Purpose**: Compare if `Base a <= Base b`
+**Reasoning**: Many contracts need predicate verification (e.g., "age >= 18", "balance >= minimum"). The current zkVM has `less_than_strict` and `less_than_loose` but not a simple `<=` operation.
+
+**Current workaround**: The circuit uses a placeholder (`constrain_equal_base(predicate_result, predicate_result)`) which always passes. Proper implementation would use `LessThanOrEqual(threshold, attribute_value)`.
+
+**See also**: [doc/src/zkas/bincode.md](../../doc/src/zkas/bincode.md) for zkVM opcode specifications.
+
+### Adding Custom Opcodes
+
+To add a new opcode to the zkVM:
+
+1. Define the opcode in `src/zkas/opcode.rs`
+2. Implement the opcode in `src/zk/vm.rs`
+
+For a full example of adding opcodes, see the [zkas bincode documentation](../../doc/src/zkas/bincode.md).
+
 ## The Privacy Gradient
 
 Based on [ZK-Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags),

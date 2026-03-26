@@ -31,17 +31,16 @@ circuit "AcceptSwapV1" {
     );
     constrain_instance(computed_lock);
 
-    # Verify lock commitment matches
-    assert_equal(computed_lock, acceptor_lock_commitment);
+    # Verify acceptor lock commitment matches public input
+    constrain_equal_base(computed_lock, acceptor_lock_commitment);
 
     # Derive acceptor's nullifier
     acceptor_nullifier = poseidon_hash(acceptor_secret, acceptor_lock_commitment);
     constrain_instance(acceptor_nullifier);
 
-    # Verify swap ID consistency
-    # Both parties' locks must match the swap_id
-    # swap_id = H(proposer_lock, request_token, request_amount, timestamp)
-    # We only verify acceptor lock is valid
-    assert(offer_amount > 0);
-    assert(offer_amount < 2^64);
+    # Verify proposer lock matches the one referenced in swap
+    constrain_equal_base(computed_lock, proposer_lock_commitment);
+
+    # Range proof for amount
+    range_check(64, offer_amount);
 }

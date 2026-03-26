@@ -194,6 +194,27 @@ Proves ownership of a lock for cancellation:
 - **Private inputs**: secret, token, amount
 - **Verification**: Caller knows secret, lock valid, not already spent
 
+## Reasoned Opcodes
+
+The DEX circuits primarily use standard zkVM opcodes. Future expansions may require:
+
+### `LessThanOrEqual(a, b)` (Reasoned)
+**Purpose**: Compare if `Base a <= Base b`
+**Reasoning**: Could enable minimum amount checks, swap size limits, or partial fill conditions.
+
+### `IsEqualBase(a, b)` (Reasoned)
+**Purpose**: Returns `0` or `1` for equality comparison
+**Reasoning**: From intent-amm experimentation. Enables "require this on fill, bypass it on cancel" logic.
+
+### Adding Custom Opcodes
+
+To add a new opcode to the zkVM:
+
+1. Define the opcode in `src/zkas/opcode.rs`
+2. Implement the opcode in `src/zk/vm.rs`
+
+For a full example of adding opcodes, see the [zkas bincode documentation](../../doc/src/zkas/bincode.md).
+
 ## Roadmap: From MVP to Full Order Book
 
 ```

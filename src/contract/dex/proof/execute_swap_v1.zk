@@ -30,7 +30,7 @@ circuit "ExecuteSwapV1" {
         alice_token,
         alice_amount,
     );
-    assert_equal(alice_lock_check, alice_lock);
+    constrain_equal_base(alice_lock_check, alice_lock);
 
     # Verify Bob's lock
     bob_lock_check = poseidon_hash(
@@ -38,23 +38,23 @@ circuit "ExecuteSwapV1" {
         bob_token,
         bob_amount,
     );
-    assert_equal(bob_lock_check, bob_lock);
+    constrain_equal_base(bob_lock_check, bob_lock);
 
     # Derive nullifiers
     alice_nullifier_check = poseidon_hash(alice_secret, alice_lock);
     bob_nullifier_check = poseidon_hash(bob_secret, bob_lock);
 
     # Verify nullifiers
-    assert_equal(alice_nullifier_check, alice_nullifier);
-    assert_equal(bob_nullifier_check, bob_nullifier);
+    constrain_equal_base(alice_nullifier_check, alice_nullifier);
+    constrain_equal_base(bob_nullifier_check, bob_nullifier);
 
     # Verify swap ID consistency
     computed_swap_id = poseidon_hash(alice_lock, bob_token, bob_amount);
-    assert_equal(computed_swap_id, swap_id);
+    constrain_equal_base(computed_swap_id, swap_id);
 
-    # Both amounts must be valid
-    assert(alice_amount > 0);
-    assert(bob_amount > 0);
-    assert(alice_amount < 2^64);
-    assert(bob_amount < 2^64);
+    # Both amounts must be valid (use range_check for upper bound)
+    range_check(64, alice_amount);
+    range_check(64, bob_amount);
+    bool_check(alice_amount);
+    bool_check(bob_amount);
 }

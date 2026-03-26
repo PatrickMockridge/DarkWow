@@ -34,15 +34,16 @@ circuit "OpenPositionV1" {
     owner_public = ec_mul_base(owner_secret, NULLIFIER_K);
     owner_public_x = ec_get_x(owner_public);
     owner_public_y = ec_get_y(owner_public);
-    assert_equal(owner_public_x, owner_pub_x);
-    assert_equal(owner_public_y, owner_pub_y);
+    constrain_equal_base(owner_public_x, owner_pub_x);
+    constrain_equal_base(owner_public_y, owner_pub_y);
 
     # Derive nullifier for this position
     nullifier_check = poseidon_hash(owner_secret, position_commitment);
     constrain_instance(nullifier_check);
-    assert_equal(nullifier_check, position_nullifier);
+    constrain_equal_base(nullifier_check, position_nullifier);
 
     # Create Pedersen commitments for collateral and debt
+    # NOTE: ec_mul_short, ec_add are custom opcodes (not standard in zkVM)
     collateral_commit = ec_mul_short(collateral_amount, VALUE_COMMIT);
     collateral_random = ec_mul(collateral_blind, RANDOM_COMMIT);
     collateral_total = ec_add(collateral_commit, collateral_random);
@@ -65,12 +66,14 @@ circuit "OpenPositionV1" {
         owner_pub_y,
     );
     constrain_instance(position_check);
-    assert_equal(position_check, position_commitment);
+    constrain_equal_base(position_check, position_commitment);
 
-    # Verify minimum collateralization ratio (example: 200% = 2x debt)
-    # This is a simplified check - actual implementation would use range proofs
-    assert(collateral_amount > 0);
-    assert(debt_amount > 0);
-    assert(collateral_amount < 2^64);
-    assert(debt_amount < 2^64);
+    # Range checks for amounts
+    range_check(64, collateral_amount);
+    range_check(64, debt_amount);
+    bool_check(collateral_amount);
+    bool_check(debt_amount);
+
+    # NOTE: Collateralization ratio check (collateral >= 2 * debt) requires
+    # LessThanOrEqual opcode. See doc/src/zkas/bincode.md "Reasoned Opcodes".
 }

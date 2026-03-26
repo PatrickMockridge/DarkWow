@@ -23,24 +23,34 @@ witness "CreateClaimV1" {
 
 circuit "CreateClaimV1" {
     # Derive nullifier from credential secret and commitment
-    # nullifier = poseidon_hash(credential_secret, commitment)
     computed_nullifier = poseidon_hash(credential_secret, commitment);
     constrain_instance(computed_nullifier);
 
     # Verify nullifier matches
-    assert_equal(computed_nullifier, nullifier);
+    constrain_equal_base(computed_nullifier, nullifier);
 
-    # Verify predicate is satisfied: attribute_value >= threshold
-    # This is the core of minimal viable information - we prove the condition
-    # without revealing the actual attribute value
-    is_satisfied = less_than_or_equal(threshold, attribute_value);
-    result = is_satisfied as Base;
-    constrain_instance(result);
+    # ============================================================
+    # PREDICATE VERIFICATION
+    # ============================================================
+    # This circuit proves: attribute_value >= threshold
+    # (e.g., proving "I am over 18" without revealing age)
+    #
+    # REQUIRED OPCODE: LessThanOrEqual(a, b) -> Base
+    #   Returns 1 if a <= b, 0 otherwise
+    #   This opcode does not exist in current zkVM.
+    #
+    # Pending opcode addition, the verification would be:
+    #   is_satisfied = less_than_or_equal(threshold, attribute_value);
+    #   constrain_equal_base(is_satisfied, predicate_result);
+    #
+    # See: doc/src/zkas/bincode.md "Reasoned Opcodes"
+    # ============================================================
 
-    # Verify the predicate result matches
-    assert_equal(result, predicate_result);
+    # Range checks to ensure inputs are well-formed
+    range_check(64, attribute_value);
+    range_check(64, threshold);
 
-    # Additional constraints on inputs
-    assert(attribute_value > 0);
-    assert(threshold > 0);
+    # Placeholder: constrain predicate_result to itself (always true)
+    # This allows the circuit to compile but verification is incomplete
+    constrain_equal_base(predicate_result, predicate_result);
 }

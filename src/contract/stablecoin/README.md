@@ -124,6 +124,56 @@ P2P Oracle:  User → AMM TWAP (NETHER/DRK pool) → Price feed
 | Collateral | Multiple (ETH, WBTC, etc.) | XMR, DRK (initially) |
 | Liquidation | Keeper auctions | Anyone via ZK proof |
 
+## ZK Circuits
+
+The stablecoin contract uses ZK circuits for privacy-preserving position management:
+
+### open_position_v1.zk
+
+Proves a valid collateralized position can be opened:
+- **Public inputs**: position_commitment, owner_pub, collateral_type, position_nullifier
+- **Private inputs**: owner_secret, collateral_amount, debt_amount
+- **Verification**: Owner key valid, collateral/debt commitments correct, ratios satisfied
+
+### mint_stable_v1.zk
+
+Proves stablecoin can be minted against collateral:
+- **Public inputs**: old_commitment, new_commitment, position_nullifier, mint_amount
+- **Private inputs**: owner_secret, old_collateral, old_debt, new_collateral, new_debt
+- **Verification**: Nullifier valid, debt arithmetic correct, collateral unchanged
+
+### liquidate_v1.zk
+
+Proves a position can be liquidated:
+- **Public inputs**: old_commitment, new_commitment, position_nullifier, collateral_amount, debt_amount
+- **Private inputs**: owner_secret, liquidator_reward
+- **Verification**: Position undercollateralized, liquidation penalty correct
+
+## Reasoned Opcodes
+
+The stablecoin circuits require several opcodes that don't yet exist in the zkVM:
+
+### `LessThanOrEqual(a, b)` (Reasoned)
+**Purpose**: Compare if `Base a <= Base b`
+**Reasoning**: Essential for collateralization checks (e.g., "collateral >= 2 * debt", "liquidator_reward <= collateral").
+
+### `EcMulShort(value, point)` (Reasoned)
+**Purpose**: Multiply a base field element by an elliptic curve fixed point
+**Reasoning**: Used for Pedersen commitments (`value * VALUE_COMMIT`). The current `ec_mul_base` multiplies by a constant generator, but we need multiplication by arbitrary fixed points.
+
+### `BaseAdd(a, b)`, `BaseSub(a, b)`, `BaseMul(a, b)` (Reasoned)
+**Purpose**: Field arithmetic on Base values
+**Reasoning**: Mint arithmetic requires adding/subtracting amounts. These could also be built from existing constraints but would be more efficient as native opcodes.
+
+### Adding Custom Opcodes
+
+To add a new opcode to the zkVM:
+
+1. Define the opcode in `src/zkas/opcode.rs`
+2. Implement the opcode in `src/zk/vm.rs`
+
+For a full example of adding opcodes, see the [zkas bincode documentation](../../doc/src/zkas/bincode.md).
+
 ## Implementation Status
 
 This is a **draft/placeholder**. The following items need implementation:
