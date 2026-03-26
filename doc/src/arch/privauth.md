@@ -295,9 +295,39 @@ This pattern naturally extends to predicate-based authorization:
 
 The predicate is verified in the ZK circuit, and only the result (true/false) is revealed.
 
+## Predicate Verification and the Opcode Layer
+
+The authorization pattern above (commitment → proof → nullifier) works for any predicate.
+But the **expressiveness of the predicate** is constrained by the zkVM opcode layer.
+
+Simple predicates like `amount > 0` or `balance == 0` can be expressed with existing
+opcodes. More complex predicates require comparison opcodes that return values:
+
+| Predicate | Required Opcodes |
+|-----------|-----------------|
+| `attribute >= threshold` (identity) | `LessThanOrEqual` |
+| `collateral >= 2 * debt` (stablecoin) | `LessThanOrEqual`, `BaseMul` |
+| `fill_amount <= requested_amount` (DEX) | `LessThanOrEqual` |
+| `price <= market_price` (AMM) | `LessThanOrEqual`, `IsEqualBase` |
+
+See [zkVM Primitive Layer](zkvm_primitives.md) for the full analysis of why comparison
+opcodes that return values are the core gap, and how they compose into higher-level
+constructions.
+
+### The Gap: Opcodes That Constrain vs. Opcodes That Return
+
+The existing zkVM has `LessThanStrict` and `LessThanLoose`, but both **constrain only**
+— they fail the circuit if `a >= b`, they don't return a value you can use in further
+computation. This is why `LessThanOrEqual` (returning 0 or 1) and `IsEqualBase`
+(returning 0 or 1) are systematically needed.
+
+The authorization pattern is complete without these opcodes — but the **predicate
+expressiveness is limited**. Current circuits use placeholders that always pass.
+
 ## References
 
 - [Composability & General Primitives](composability.md)
+- [zkVM Primitive Layer](zkvm_primitives.md) — opcode-level analysis of why comparison opcodes are foundational
 - [Identity Contract](../../src/contract/identity/)
 - [Bridge Contract](../../src/contract/bridge/)
 - [DEX Contract](../../src/contract/dex/)
@@ -305,13 +335,3 @@ The predicate is verified in the ZK circuit, and only the result (true/false) is
 - [Intent AMM Proposal](https://codeberg.org/rusticml/darkfi-intent-amm-proposal)
 - [Response to PatrickM123 (Intent AMM)](https://codeberg.org/rusticml/darkfi-intent-amm-proposal/src/branch/main/docs/response-to-patrickm123.md)
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)
-
-## Optional Core Enhancement: `is_equal_base`
-
-For cleaner predicate-bearing ZK circuits, a small optional opcode enhancement helps:
-
-- **Opcode**: `is_equal_base` in `src/zkas/opcode.rs`
-- **Purpose**: Returns `0` or `1` for equality comparison (reusable boolean result)
-- **Benefit**: Enables generic templates to express "require this on fill, bypass it on cancel" logic
-
-This is **optional** and does not block the current authorization layer from functioning. It makes complex predicate circuits cleaner.

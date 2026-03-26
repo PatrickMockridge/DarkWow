@@ -388,15 +388,27 @@ Each application domain uses a namespace constant to scope intents:
 
 Namespace separation allows the same `PrivateIntent` primitives to work across all privacy-preserving contracts without collision.
 
-### Optional Core Improvement: `is_equal_base` Opcode
+### Predicate Expressiveness and the Opcode Layer
 
-A small optional opcode enhancement can make predicate-bearing templates cleaner:
+The authorization primitives above define the **structure** of how contracts authorize actions.
+The **expressiveness** of what predicates can be verified is determined by the zkVM opcode layer.
 
-- Location: `src/zkas/opcode.rs`
-- Purpose: Turns equality comparison into a reusable `0/1` result
-- Benefit: Enables generic templates to express "require this on fill, bypass it on cancel" style logic
+Current ZK circuits can verify:
+- `amount > 0` (via `BoolCheck` and `RangeCheck`)
+- Commitment validity (via `ConstrainEqualBase`)
+- Merkle membership (via `MerkleRoot`)
 
-This is **not required** for the current primitives to work, but it helps keep ZK circuits cleaner for complex predicate logic.
+But predicates like `attribute >= threshold` or `collateral >= 2 * debt` require comparison
+opcodes that return values — currently missing from the zkVM.
+
+See [zkVM Primitive Layer](zkvm_primitives.md) for the full analysis of:
+- Why `LessThanOrEqual` and `IsEqualBase` are systematically needed
+- How they compose with existing opcodes
+- What each opcode unlocks across identity, stablecoin, DEX, and AMM use cases
+
+This is **not blocking** current contracts from functioning — they use placeholder constraints
+that always pass. But unlocking full predicate expressiveness requires implementing these
+opcodes in the zkVM.
 
 ### Relationship to AMM/DEX Work
 
@@ -479,6 +491,7 @@ All DarkFi contracts should support incremental transparency (see [Identity](ide
 ## References
 
 - [Private Authorization Layer](privauth.md)
+- [zkVM Primitive Layer](zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
 - [Identity Contract](../src/contract/identity/)
 - [Bridge Contract](../src/contract/bridge/)
 - [DEX Contract](../src/contract/dex/)
