@@ -61,6 +61,7 @@ use super::{
     gadget::{
         arithmetic::{ArithChip, ArithConfig, ArithInstruction},
         cond_select::{ConditionalSelectChip, ConditionalSelectConfig},
+        is_equal::{IsEqualChip, IsEqualConfig},
         less_than::{LessThanChip, LessThanConfig},
         native_range_check::{NativeRangeCheckChip, NativeRangeCheckConfig},
         small_range_check::{SmallRangeCheckChip, SmallRangeCheckConfig},
@@ -117,6 +118,9 @@ enum VmChip {
 
     /// Boolean check
     BoolCheck(SmallRangeCheckConfig),
+
+    /// Base-field equality check that outputs a boolean
+    IsEqual(IsEqualConfig<pallas::Base>),
 
     /// Conditional selection
     CondSelect(ConditionalSelectConfig<pallas::Base>),
@@ -260,6 +264,16 @@ impl VmConfig {
 
         Some(SmallRangeCheckChip::construct(boolcheck_config.clone()))
     }
+
+    fn isequal_chip(&self) -> Option<IsEqualChip<pallas::Base>> {
+        let Some(VmChip::IsEqual(isequal_config)) =
+            self.chips.iter().find(|&c| matches!(c, VmChip::IsEqual(_)))
+        else {
+            return None
+        };
+
+        Some(IsEqualChip::construct(isequal_config.clone()))
+    }
 }
 
 /// Configuration parameters for the circuit.
@@ -274,6 +288,7 @@ pub struct ZkParams {
     init_nativerange: bool,
     init_lessthan: bool,
     init_boolcheck: bool,
+    init_isequal: bool,
     init_condselect: bool,
     init_zerocond: bool,
 }
@@ -357,20 +372,29 @@ impl Circuit<pallas::Base> for ZkCircuit {
         // Conditions on which we enable the base field Arithmetic chip
         let init_arithmetic = opcodes.contains(&Opcode::BaseAdd) ||
             opcodes.contains(&Opcode::BaseSub) ||
-            opcodes.contains(&Opcode::BaseMul);
+            opcodes.contains(&Opcode::BaseMul) ||
+            opcodes.contains(&Opcode::NotBase);
 
         // Conditions on which we enable the native range check chips
         // TODO: Separate 253 and 64.
         let init_nativerange = opcodes.contains(&Opcode::RangeCheck) ||
             opcodes.contains(&Opcode::LessThanLoose) ||
-            opcodes.contains(&Opcode::LessThanStrict);
+            opcodes.contains(&Opcode::LessThanStrict) ||
+            opcodes.contains(&Opcode::LessThanOrEqual) ||
+            opcodes.contains(&Opcode::BaseLtStrict);
 
         // Conditions on which we enable the less than comparison chip
-        let init_lessthan =
-            opcodes.contains(&Opcode::LessThanLoose) || opcodes.contains(&Opcode::LessThanStrict);
+        let init_lessthan = opcodes.contains(&Opcode::LessThanLoose) ||
+            opcodes.contains(&Opcode::LessThanStrict) ||
+            opcodes.contains(&Opcode::LessThanOrEqual) ||
+            opcodes.contains(&Opcode::BaseLtStrict);
 
         // Conditions on which we enable the boolean check chip
-        let init_boolcheck = opcodes.contains(&Opcode::BoolCheck);
+        let init_boolcheck =
+            opcodes.contains(&Opcode::BoolCheck) || opcodes.contains(&Opcode::NotBase);
+
+        // Conditions on which we enable the base-field equality check chip
+        let init_isequal = opcodes.contains(&Opcode::IsEqualBase);
 
         // Conditions on which we enable the conditional selection chip
         let init_condselect = opcodes.contains(&Opcode::CondSelect);
@@ -386,6 +410,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
             init_nativerange,
             init_lessthan,
             init_boolcheck,
+            init_isequal,
             init_condselect,
             init_zerocond,
         }
@@ -509,14 +534,18 @@ impl Circuit<pallas::Base> for ZkCircuit {
         // TODO: FIXME: Configure these better, this is just a stop-gap
         let z1 = meta.advice_column();
         let z2 = meta.advice_column();
+        let out = meta.advice_column();
 
         let lessthan_config = LessThanChip::<K, 253>::configure(
-            meta, advices[6], advices[7], advices[8], z1, z2, table_idx,
+            meta, advices[6], advices[7], advices[8], z1, z2, out, table_idx,
         );
 
         // Configuration for boolean checks, it uses the small_range_check
         // chip with a range of 2, which enforces one bit, i.e. 0 or 1.
         let boolcheck_config = SmallRangeCheckChip::configure(meta, advices[9], 2);
+
+        // Configuration for the base-field equality check chip
+        let is_equal_config = IsEqualChip::configure(meta, advices[1..5].try_into().unwrap());
 
         // Configuration for the conditional selection chip
         let condselect_config =
@@ -537,6 +566,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
             VmChip::NativeRange253(native_253_range_check_config),
             VmChip::LessThan(lessthan_config),
             VmChip::BoolCheck(boolcheck_config),
+            VmChip::IsEqual(is_equal_config),
             VmChip::CondSelect(condselect_config),
             VmChip::ZeroCond(zerocond_config),
         ];
@@ -619,6 +649,9 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
         // Construct the boolean check chip.
         let boolcheck_chip = config.boolcheck_chip();
+
+        // Construct the base-field equality check chip.
+        let isequal_chip = config.isequal_chip();
 
         // Construct the conditional selection chip
         let condselect_chip = config.condselect_chip();
@@ -1169,6 +1202,89 @@ impl Circuit<pallas::Base> for ZkCircuit {
                         .unwrap()
                         .small_range_check(layouter.namespace(|| "copy boolean check"), w)?;
                     self.tracer.push_void();
+                }
+
+                Opcode::IsEqualBase => {
+                    trace!(target: "zk::vm", "Executing `IsEqualBase{:?}` opcode", opcode.1);
+                    let args = &opcode.1;
+
+                    let lhs: AssignedCell<Fp, Fp> = heap[args[0].1].clone().try_into()?;
+                    let rhs: AssignedCell<Fp, Fp> = heap[args[1].1].clone().try_into()?;
+
+                    let out: AssignedCell<Fp, Fp> = isequal_chip
+                        .as_ref()
+                        .unwrap()
+                        .is_eq_with_output(layouter.namespace(|| "is_equal_base"), lhs, rhs)?;
+
+                    trace!(target: "zk::vm", "Pushing assignment to heap address {}", heap.len());
+                    self.tracer.push_base(&out);
+                    heap.push(HeapVar::Base(out));
+                }
+
+                Opcode::LessThanOrEqual => {
+                    trace!(target: "zk::vm", "Executing `LessThanOrEqual{:?}` opcode", opcode.1);
+                    let args = &opcode.1;
+
+                    let lhs = heap[args[0].1].clone().try_into()?;
+                    let rhs = heap[args[1].1].clone().try_into()?;
+
+                    let out = lessthan_chip
+                        .as_ref()
+                        .unwrap()
+                        .copy_less_than_or_equal_with_output(
+                            layouter.namespace(|| "less_than_or_equal"),
+                            lhs,
+                            rhs,
+                            0,
+                        )?;
+
+                    trace!(target: "zk::vm", "Pushing result to heap address {}", heap.len());
+                    self.tracer.push_base(&out);
+                    heap.push(HeapVar::Base(out));
+                }
+
+                Opcode::NotBase => {
+                    trace!(target: "zk::vm", "Executing `NotBase{:?}` opcode", opcode.1);
+                    let args = &opcode.1;
+
+                    let value: AssignedCell<Fp, Fp> = heap[args[0].1].clone().try_into()?;
+
+                    boolcheck_chip.as_ref().unwrap().small_range_check(
+                        layouter.namespace(|| "not_base bool_check"),
+                        value.clone(),
+                    )?;
+
+                    let out = arith_chip.as_ref().unwrap().sub(
+                        layouter.namespace(|| "NotBase()"),
+                        &one,
+                        &value,
+                    )?;
+
+                    trace!(target: "zk::vm", "Pushing assignment to heap address {}", heap.len());
+                    self.tracer.push_base(&out);
+                    heap.push(HeapVar::Base(out));
+                }
+
+                Opcode::BaseLtStrict => {
+                    trace!(target: "zk::vm", "Executing `BaseLtStrict{:?}` opcode", opcode.1);
+                    let args = &opcode.1;
+
+                    let lhs = heap[args[0].1].clone().try_into()?;
+                    let rhs = heap[args[1].1].clone().try_into()?;
+
+                    let out = lessthan_chip
+                        .as_ref()
+                        .unwrap()
+                        .copy_less_than_strict_with_output(
+                            layouter.namespace(|| "base_lt_strict"),
+                            lhs,
+                            rhs,
+                            0,
+                        )?;
+
+                    trace!(target: "zk::vm", "Pushing result to heap address {}", heap.len());
+                    self.tracer.push_base(&out);
+                    heap.push(HeapVar::Base(out));
                 }
 
                 Opcode::CondSelect => {

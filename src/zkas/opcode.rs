@@ -174,6 +174,22 @@ define_opcodes! {
     BoolCheck = 0x53, "bool_check",
         (), (VarType::Base);
 
+    /// Compare two Base field elements and return 1 if equal, 0 otherwise
+    IsEqualBase = 0x54, "is_equal_base",
+        (VarType::Base), (VarType::Base, VarType::Base);
+
+    /// Compare two Base field elements and return 1 if lhs <= rhs, 0 otherwise
+    LessThanOrEqual = 0x55, "less_than_or_equal",
+        (VarType::Base), (VarType::Base, VarType::Base);
+
+    /// Negate a boolean base field element and return 1 - a
+    NotBase = 0x56, "not_base",
+        (VarType::Base), (VarType::Base);
+
+    /// Compare two Base field elements and return 1 if lhs < rhs, 0 otherwise
+    BaseLtStrict = 0x57, "base_lt_strict",
+        (VarType::Base), (VarType::Base, VarType::Base);
+
     /// Conditionally select between two base field elements given a boolean
     CondSelect = 0x60, "cond_select",
         (VarType::Base), (VarType::Base, VarType::Base, VarType::Base);

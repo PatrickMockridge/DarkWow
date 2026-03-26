@@ -39,9 +39,12 @@ use super::native_range_check::{NativeRangeCheckChip, NativeRangeCheckConfig};
 pub struct LessThanConfig<const WINDOW_SIZE: usize, const NUM_OF_BITS: usize> {
     pub s_lt: Selector,
     pub s_leq: Selector,
+    pub s_leq_out: Selector,
+    pub s_lt_out: Selector,
     pub a: Column<Advice>,
     pub b: Column<Advice>,
     pub a_offset: Column<Advice>,
+    pub out: Column<Advice>,
     pub range_a_config: NativeRangeCheckConfig<WINDOW_SIZE, NUM_OF_BITS>,
     pub range_a_offset_config: NativeRangeCheckConfig<WINDOW_SIZE, NUM_OF_BITS>,
     pub k_values_table: TableColumn,
@@ -79,16 +82,20 @@ impl<const WINDOW_SIZE: usize, const NUM_OF_BITS: usize> LessThanChip<WINDOW_SIZ
         a_offset: Column<Advice>,
         z1: Column<Advice>,
         z2: Column<Advice>,
+        out: Column<Advice>,
         k_values_table: TableColumn,
     ) -> LessThanConfig<WINDOW_SIZE, NUM_OF_BITS> {
         let s_lt = meta.selector();
         let s_leq = meta.selector();
+        let s_leq_out = meta.selector();
+        let s_lt_out = meta.selector();
 
         meta.enable_equality(a);
         meta.enable_equality(b);
         meta.enable_equality(a_offset);
         meta.enable_equality(z1);
         meta.enable_equality(z2);
+        meta.enable_equality(out);
 
         // configure range check for `a` and `offset`
         let range_a_config =
@@ -100,9 +107,12 @@ impl<const WINDOW_SIZE: usize, const NUM_OF_BITS: usize> LessThanChip<WINDOW_SIZ
         let config = LessThanConfig {
             s_lt,
             s_leq,
+            s_leq_out,
+            s_lt_out,
             a,
             b,
             a_offset,
+            out,
             range_a_config,
             range_a_offset_config,
             k_values_table,
@@ -125,6 +135,42 @@ impl<const WINDOW_SIZE: usize, const NUM_OF_BITS: usize> LessThanChip<WINDOW_SIZ
                 s_leq * (a_offset - two_pow_m + b - a + Expression::Constant(pallas::Base::one()));
 
             vec![strict_check, leq_check]
+        });
+
+        meta.create_gate("a_less_than_or_equal_b_with_output", |meta| {
+            let s_leq_out = meta.query_selector(config.s_leq_out);
+            let a = meta.query_advice(config.a, Rotation::cur());
+            let b = meta.query_advice(config.b, Rotation::cur());
+            let a_offset = meta.query_advice(config.a_offset, Rotation::cur());
+            let out = meta.query_advice(config.out, Rotation::cur());
+            let one = Expression::Constant(pallas::Base::ONE);
+
+            let expected_offset = out.clone() * (b.clone() - a.clone()) +
+                (one.clone() - out.clone()) *
+                    (a.clone() - b.clone() - Expression::Constant(pallas::Base::ONE));
+
+            vec![
+                s_leq_out.clone() * out.clone() * (one.clone() - out.clone()),
+                s_leq_out * (a_offset - expected_offset),
+            ]
+        });
+
+        meta.create_gate("a_less_than_b_with_output", |meta| {
+            let s_lt_out = meta.query_selector(config.s_lt_out);
+            let a = meta.query_advice(config.a, Rotation::cur());
+            let b = meta.query_advice(config.b, Rotation::cur());
+            let a_offset = meta.query_advice(config.a_offset, Rotation::cur());
+            let out = meta.query_advice(config.out, Rotation::cur());
+            let one = Expression::Constant(pallas::Base::ONE);
+
+            let expected_offset = out.clone() *
+                (b.clone() - a.clone() - Expression::Constant(pallas::Base::ONE)) +
+                (one.clone() - out.clone()) * (a.clone() - b.clone());
+
+            vec![
+                s_lt_out.clone() * out.clone() * (one.clone() - out.clone()),
+                s_lt_out * (a_offset - expected_offset),
+            ]
         });
 
         config
@@ -199,6 +245,106 @@ impl<const WINDOW_SIZE: usize, const NUM_OF_BITS: usize> LessThanChip<WINDOW_SIZ
         self.less_than_range_check(layouter, a, a_offset)?;
 
         Ok(())
+    }
+
+    pub fn copy_less_than_or_equal_with_output(
+        &self,
+        mut layouter: impl Layouter<pallas::Base>,
+        a: AssignedCell<pallas::Base, pallas::Base>,
+        b: AssignedCell<pallas::Base, pallas::Base>,
+        offset: usize,
+    ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
+        let (a, a_offset, out) = layouter.assign_region(
+            || "a less than or equal to b with output",
+            |mut region: Region<'_, pallas::Base>| {
+                self.config.s_leq_out.enable(&mut region, offset)?;
+
+                let a = a.copy_advice(|| "a", &mut region, self.config.a, offset)?;
+                let b = b.copy_advice(|| "b", &mut region, self.config.b, offset)?;
+
+                let out_value = a.value().zip(b.value()).map(|(lhs, rhs)| {
+                    if lhs <= rhs {
+                        pallas::Base::ONE
+                    } else {
+                        pallas::Base::ZERO
+                    }
+                });
+                let out =
+                    region.assign_advice(|| "a <= b", self.config.out, offset, || out_value)?;
+
+                let a_offset_value = a.value().zip(b.value()).zip(out.value()).map(
+                    |((lhs, rhs), out)| {
+                        if out == pallas::Base::ONE {
+                            *rhs - *lhs
+                        } else {
+                            *lhs - *rhs - pallas::Base::ONE
+                        }
+                    },
+                );
+                let a_offset = region.assign_advice(
+                    || "a_offset",
+                    self.config.a_offset,
+                    offset,
+                    || a_offset_value,
+                )?;
+
+                Ok((a, a_offset, out))
+            },
+        )?;
+
+        self.less_than_range_check(layouter, a, a_offset)?;
+
+        Ok(out)
+    }
+
+    pub fn copy_less_than_strict_with_output(
+        &self,
+        mut layouter: impl Layouter<pallas::Base>,
+        a: AssignedCell<pallas::Base, pallas::Base>,
+        b: AssignedCell<pallas::Base, pallas::Base>,
+        offset: usize,
+    ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
+        let (a, a_offset, out) = layouter.assign_region(
+            || "a less than b with output",
+            |mut region: Region<'_, pallas::Base>| {
+                self.config.s_lt_out.enable(&mut region, offset)?;
+
+                let a = a.copy_advice(|| "a", &mut region, self.config.a, offset)?;
+                let b = b.copy_advice(|| "b", &mut region, self.config.b, offset)?;
+
+                let out_value = a.value().zip(b.value()).map(|(lhs, rhs)| {
+                    if lhs < rhs {
+                        pallas::Base::ONE
+                    } else {
+                        pallas::Base::ZERO
+                    }
+                });
+                let out =
+                    region.assign_advice(|| "a < b", self.config.out, offset, || out_value)?;
+
+                let a_offset_value = a.value().zip(b.value()).zip(out.value()).map(
+                    |((lhs, rhs), out)| {
+                        if out == pallas::Base::ONE {
+                            *rhs - *lhs - pallas::Base::ONE
+                        } else {
+                            *lhs - *rhs
+                        }
+                    },
+                );
+                let a_offset = region.assign_advice(
+                    || "a_offset",
+                    self.config.a_offset,
+                    offset,
+                    || a_offset_value,
+                )?;
+
+                Ok((a, a_offset, out))
+            },
+        )?;
+
+        self.less_than_range_check(layouter, a, a_offset)?;
+
+        Ok(out)
     }
 
     pub fn less_than_range_check(
@@ -286,6 +432,7 @@ mod tests {
                     let a_offset = meta.advice_column();
                     let z1 = meta.advice_column();
                     let z2 = meta.advice_column();
+                    let out = meta.advice_column();
 
                     let k_values_table = meta.lookup_table_column();
 
@@ -300,6 +447,7 @@ mod tests {
                             a_offset,
                             z1,
                             z2,
+                            out,
                             k_values_table,
                         ),
                         w,
