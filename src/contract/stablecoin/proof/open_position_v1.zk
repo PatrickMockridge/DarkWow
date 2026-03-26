@@ -74,19 +74,13 @@ circuit "OpenPositionV1" {
     bool_check(collateral_amount);
     bool_check(debt_amount);
 
-    # Collateralization check: collateral >= min_ratio * debt
-    # This requires: collateral * 10000 >= debt * min_ratio
-    # Implemented as: 2 * debt <= collateral (for 200% collateralization)
+    # Collateralization check: collateral >= 2 * debt (200% minimum collateralization)
+    # less_than_or_equal(a, b) returns 1 if a <= b, 0 otherwise.
+    # We verify: 2 * debt <= collateral, so is_collateralized = 1.
     #
-    # LESS THAN OR EQUAL LOGIC:
-    # LessThanOrEqual(a, b) returns 1 if a <= b, 0 otherwise.
-    # We have LessThanLoose(a, b) which constrains a < b but returns nothing.
-    # We can implement LessThanOrEqual using:
-    #   result = (a <= b) ? 1 : 0
-    #
-    # This requires the IsEqualBase opcode to compute (a == b) as a value,
-    # then combine with LessThanLoose(a, b).
-    #
-    # PENDING: Implement LessThanOrEqual(a, b) using IsEqualBase + LessThanLoose.
-    # See: doc/src/zkas/bincode.md "Reasoned Opcodes: LessThanOrEqual"
+    # NOTE: This opcode is experimental (grey-market goods).
+    # See: doc/src/arch/zkvm_primitives.md "Experimental Status"
+    two_times_debt = base_add(debt_amount, debt_amount);
+    is_collateralized = less_than_or_equal(two_times_debt, collateral_amount);
+    constrain_equal_base(is_collateralized, witness_base(1));
 }

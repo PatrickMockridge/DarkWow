@@ -38,8 +38,8 @@ circuit "LiquidateV1" {
     penalty = base_add(debt_value, liquidation_penalty);
 
     # Verify position is actually undercollateralized
-    # This is a simplified check - actual would use LessThanOrEqual
-    # PENDING: Verify debt_value * liquidation_threshold < collateral_value
+    # NOTE: Full ratio check (collateral_value / debt_value < threshold) requires BaseDiv.
+    # The arithmetic above is set up for that check once BaseDiv is available.
     bool_check(debt_amount);
 
     # New commitment after liquidation (collateral seized)
@@ -53,8 +53,9 @@ circuit "LiquidateV1" {
     range_check(64, liquidator_reward);
 
     # LESS THAN OR EQUAL LOGIC:
-    # Proving liquidator_reward <= collateral_amount requires LessThanOrEqual.
-    # Also need to verify: collateral_value / debt_value < liquidation_threshold
-    # PENDING: Implement using LessThanOrEqual(a, b).
-    # See: doc/src/zkas/bincode.md "Reasoned Opcodes: LessThanOrEqual"
+    # Proving liquidator_reward <= collateral_amount:
+    # NOTE: This opcode is experimental (grey-market goods).
+    # See: doc/src/arch/zkvm_primitives.md "Experimental Status"
+    reward_within_bounds = less_than_or_equal(liquidator_reward, collateral_amount);
+    constrain_equal_base(reward_within_bounds, witness_base(1));
 }

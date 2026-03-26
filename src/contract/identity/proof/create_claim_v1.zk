@@ -35,31 +35,20 @@ circuit "CreateClaimV1" {
     # This circuit proves: attribute_value >= threshold
     # (e.g., proving "I am over 18" without revealing age)
     #
-    # LESS THAN OR EQUAL LOGIC:
-    # We need to verify: threshold <= attribute_value
+    # less_than_or_equal(a, b) returns 1 if a <= b, 0 otherwise.
+    # is_equal_base(a, b) returns 1 if a == b, 0 otherwise.
     #
-    # LessThanOrEqual(a, b) returns 1 if a <= b, 0 otherwise.
-    # Available: LessThanLoose(a, b) which constrains a < b but returns nothing.
-    #
-    # Implementation using existing opcodes:
-    #   less_than_or_equal(a, b) = is_equal(a, b) OR less_than_loose(a, b)
-    #
-    # Where is_equal(a, b) can be computed as:
-    #   is_equal(a, b) = 1 - less_than_loose(a, b) - less_than_loose(b, a)
-    #
-    # This requires IsEqualBase(a, b) opcode that returns 0 or 1.
-    #
-    # PENDING: Implement LessThanOrEqual using IsEqualBase + LessThanLoose.
-    # See: doc/src/zkas/bincode.md "Reasoned Opcodes: LessThanOrEqual"
+    # NOTE: These opcodes are experimental (grey-market goods).
+    # See: doc/src/arch/zkvm_primitives.md "Experimental Status"
     # ============================================================
 
     # Range checks to ensure inputs are well-formed
     range_check(64, attribute_value);
     range_check(64, threshold);
 
-    # Placeholder: constrain predicate_result to itself (always true)
-    # PENDING: Replace with actual less_than_or_equal verification
-    # is_satisfied = less_than_or_equal(threshold, attribute_value);
-    # constrain_equal_base(is_satisfied, predicate_result);
-    constrain_equal_base(predicate_result, predicate_result);
+    # Verify the attribute value satisfies the threshold:
+    # is_authorized = 1 if threshold <= attribute_value, 0 otherwise.
+    # The public input predicate_result should match this computed result.
+    is_authorized = less_than_or_equal(threshold, attribute_value);
+    constrain_equal_base(is_authorized, predicate_result);
 }
