@@ -161,16 +161,9 @@ The stablecoin circuits use these zkVM opcodes:
 - `LessThanOrEqual(a, b)` — Returns 1 if `a <= b`, 0 otherwise (**experimental** — grey-market goods)
 - `RangeCheck`, `BoolCheck` — Range proofs
 
-**Pending implementation:**
-### `BaseDiv(a, b)` (Not implemented)
-**Purpose**: Returns `a / b` as Base
-**Reasoning**: Required for:
-- `collateral_ratio = collateral / debt` (full undercollateralization check)
-- TWAP price computation: `exchange_rate = output_amount / input_amount`
+> **Note on ratio checks**: Liquidation ratio checks (e.g., `collateral / debt < threshold`) do NOT need a `BaseDiv` opcode. As demonstrated in `dao/exec.zk` lines 118-126, ratio checks use cross-multiplication: prove `a/b < c/d` by asserting `a*d < b*c` via `base_mul` + `less_than_strict`. The TWAP price is expected to be supplied as an external oracle input, not computed in-circuit.
 
-**Why needed**: `LessThanOrEqual` can only bound-check; it cannot compute the actual ratio. A full liquidation circuit needs `collateral_value / debt_value < liquidation_threshold`.
-
-**See also**: [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes and dependency graphs.
+**See also**: [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes.
 
 ## Implementation Status
 
@@ -206,24 +199,25 @@ This is a **draft/placeholder**. The following items need implementation:
 
 ## MVP Status
 
-**Blocked on Opcodes and Architecture** — `LessThanOrEqual` is integrated (experimental) but `BaseDiv` is not yet implemented. The most complex contract, furthest from MVP.
+**Blocked on Architecture** — `LessThanOrEqual` is integrated (experimental). Ratio checks use cross-multiplication (no `BaseDiv` needed). The primary blockers are oracle and CDP integration.
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
 | `open_position_v1.zk` | Verified | Uses `less_than_or_equal` for 200% collateralization check. **Experimental opcode.** |
 | `mint_stable_v1.zk` | Corrected | Base arithmetic uses existing `base_add` opcode |
-| `liquidate_v1.zk` | Partial | Uses `less_than_or_equal` for reward bounds check. Full ratio check needs `BaseDiv`. **Experimental opcode.** |
+| `liquidate_v1.zk` | Partial | Uses `less_than_or_equal` for reward bounds check. Ratio check uses cross-multiplication. **Experimental opcode.** |
 
 ### Blockers
 
-1. **`BaseDiv` not implemented** — Required for `collateral_ratio = collateral / debt` (full undercollateralization check in liquidation) and TWAP price computation. This is the primary opcode blocker.
-2. **`LessThanOrEqual` is experimental** — Grey-market goods; no integration tests, delta-invert soundness concern. See [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for what production readiness requires.
-3. **No P2P oracle** — The NETHER/DRK AMM pool for TWAP price discovery does not yet exist on-chain.
-4. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is not implemented.
+1. **`LessThanOrEqual` is experimental** — Grey-market goods; no integration tests, delta-invert soundness concern. See [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for what production readiness requires.
+2. **No P2P oracle** — The NETHER/DRK AMM pool for TWAP price discovery does not yet exist on-chain. TWAP price is expected as an external oracle input.
+3. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is not implemented.
 
 ### What It Needs
 
-First: implement `BaseDiv`. Second: P2P oracle / AMM integration. Third: CDP Note integration with money contract. This is a multi-step dependency chain.
+First: P2P oracle / AMM integration to supply TWAP price. Second: CDP Note integration with money contract. Third: integration testing of the full lifecycle.
+
+> **Note on division**: Ratio checks like `collateral / debt < threshold` use cross-multiplication (see `dao/exec.zk`), not `BaseDiv`. `BaseDiv` is not a blocker.
 
 **See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
 

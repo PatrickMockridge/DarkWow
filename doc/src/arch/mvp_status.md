@@ -13,9 +13,9 @@ This document tracks the blockers to reaching MVP for each contract in `src/cont
 | `dex` | None | Order matching logic | Partial |
 | `bridge` | None (placeholder noted) | Merkle verification, light client | Partial |
 | `identity` | `LessThanOrEqual`, `IsEqualBase` integrated (experimental) | Integration testing | Partial |
-| `stablecoin` | `BaseDiv` not implemented | P2P oracle, CDP notes | No |
+| `stablecoin` | None (ratio checks use cross-multiplication — see `dao/exec.zk`) | P2P oracle, CDP notes | Partial |
 
-**Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are implemented in the zkVM (commit `41b0629e0`). `identity` has been updated to use them. `stablecoin` has been updated for bounds checks but `BaseDiv` is still required for full liquidation ratio verification. All experimental opcodes are grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md) for production readiness requirements.
+**Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are implemented in the zkVM (commit `41b0629e0`). `identity` and `stablecoin` have been updated to use `LessThanOrEqual`. Ratio checks (e.g., `collateral / debt < threshold`) use cross-multiplication via `base_mul + less_than_strict` — no `BaseDiv` needed. All experimental opcodes are grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md) for production readiness requirements.
 
 ---
 
@@ -181,25 +181,23 @@ InitializeV1 (0x00), OpenPositionV1 (0x01), AddCollateralV1 (0x02), RemoveCollat
 |---------|--------|-------|
 | `open_position_v1.zk` | Verified (experimental) | Uses `less_than_or_equal` for 200% collateralization check. **Grey-market opcode.** |
 | `mint_stable_v1.zk` | Corrected | Base arithmetic uses existing `base_add` opcode |
-| `liquidate_v1.zk` | Partial (experimental) | Uses `less_than_or_equal` for reward bounds check. Full ratio check needs `BaseDiv`. **Grey-market opcode.** |
+| `liquidate_v1.zk` | Partial (experimental) | Uses `less_than_or_equal` for reward bounds check. Ratio check uses cross-multiplication (`base_mul + less_than_strict`). **Grey-market opcode.** |
 
 ### Blockers
 
 **Opcode layer**:
 
-1. **`LessThanOrEqual` (0x55) integrated but experimental** — `open_position_v1.zk` and `liquidate_v1.zk` now use it. Grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md).
-
-2. **`BaseDiv` not implemented** — Required for:
-   - Computing `collateral_ratio = collateral / debt` (full undercollateralization check)
-   - TWAP price computation: `exchange_rate = output_amount / input_amount`
+1. **`LessThanOrEqual` (0x55) integrated but experimental** — `open_position_v1.zk` and `liquidate_v1.zk` now use it. Grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md). No other opcode blockers.
 
 **Architecture blockers**:
 
-3. **No P2P oracle** — The design requires a NETHER/DRK AMM pool for TWAP price discovery, but this does not yet exist on-chain.
+2. **No P2P oracle** — TWAP price is expected as an external oracle input. The NETHER/DRK AMM pool does not yet exist on-chain.
 
-4. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is designed but not implemented.
+3. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is designed but not implemented.
 
-**What it needs**: First: implement `BaseDiv`. Second: P2P oracle / AMM integration. Third: CDP Note integration. This is a multi-step dependency chain.
+**What it needs**: First: P2P oracle / AMM integration to supply TWAP price. Second: CDP Note integration with money contract. Third: integration testing of the full lifecycle.
+
+> **Note on division**: Ratio checks use cross-multiplication (see `dao/exec.zk` lines 118-126 for the exact pattern). `BaseDiv` is not needed and is not a blocker.
 
 **See also**: [zkVM Primitive Layer](zkvm_primitives.md) for the full opcode dependency analysis.
 
@@ -222,25 +220,26 @@ bridge
   │
   │ (needs Merkle verification fixed)
   ▼
-identity ◄─── (LessThanOrEqual, ───► stablecoin
-  │          IsEqualBase: experimental)   │
-  │                                         │
-  └──────── BaseDiv ────────────────────────┘
+identity ◄──────────── (LessThanOrEqual, ──► stablecoin
+  │                   IsEqualBase: experimental)  │
+  │                                               │
+  └────────────────── (P2P oracle) ──────────────┘
 ```
 
 ---
 
 ## The Single Highest-Leverage Primitive
 
-**`LessThanOrEqual`** (0x55), **`IsEqualBase`** (0x54), **`NotBase`** (0x56), and **`BaseLtStrict`** (0x57) are now implemented in the zkVM (commit `41b0629e0`). The next highest-leverage primitive is **`BaseDiv`** — it unblocks stablecoin's TWAP price computation and collateral ratio checks.
+**`LessThanOrEqual`** (0x55), **`IsEqualBase`** (0x54), **`NotBase`** (0x56), and **`BaseLtStrict`** (0x57) are now implemented in the zkVM (commit `41b0629e0`). There are **no remaining opcode blockers** for any planned contract feature.
+
+**Key pattern**: Ratio checks in ZK circuits use cross-multiplication, not division. To prove `a/b < c/d`, assert `a*d < b*c` using `base_mul + less_than_strict`. This is demonstrated in `dao/exec.zk` lines 118-126. TWAP prices are oracle inputs, not computed in-circuit.
 
 ```zk
-# Once LessThanOrEqual exists, IsEqualBase is also trivially available:
-less_than_or_equal(a, b) = is_equal_base(a, b) OR less_than_loose(a, b)
-is_equal_base(a, b) = 1 - less_than_loose(a, b) - less_than_loose(b, a)
+# Ratio check (no division needed):
+lhs = base_mul(collateral_value, 1);
+rhs = base_mul(liquidation_threshold, debt_value);
+less_than_strict(lhs, rhs);  # Proves collateral/debt < threshold
 ```
-
-This means implementing `LessThanOrEqual` also gives you `IsEqualBase` for free.
 
 **See**: [zkVM Primitive Layer](zkvm_primitives.md) for implementation guidance.
 

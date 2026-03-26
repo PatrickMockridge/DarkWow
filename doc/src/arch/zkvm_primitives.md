@@ -34,16 +34,16 @@ promised features and the primitive layer that enables them.
 
 Consider features explicitly discussed in DarkFi's public communications:
 
-| Promised Feature | Required Primitives |
-|-----------------|---------------------|
-| "Prove you meet criteria without revealing data" (identity) | `LessThanOrEqual`, `IsEqualBase` |
-| "Collateral must exceed debt" (stablecoin) | `LessThanOrEqual` |
-| "Order matching at or above price" | `LessThanOrEqual`, `IsEqualBase` |
-| "Partial fills where amount <= requested" | `LessThanOrEqual` |
-| "Liquidation when collateral/debt ratio < threshold" | `LessThanOrEqual`, `BaseMul`, `BaseDiv` |
-| "Generic intent fill conditions" (intent-amm fork) | `IsEqualBase`, `LessThanOrEqual`, `NotBase` |
-| "Time-locked reveal with bypass conditions" | `IsEqualBase`, `NotBase` |
-| "ZK-computed AMM pricing" | `BaseMul`, `BaseDiv`, `LessThanOrEqual` |
+| Promised Feature | Required Primitives | Notes |
+|-----------------|---------------------|-------|
+| "Prove you meet criteria without revealing data" (identity) | `LessThanOrEqual`, `IsEqualBase` | ✅ `LessThanOrEqual` implemented |
+| "Collateral must exceed debt" (stablecoin) | `LessThanOrEqual` | ✅ `LessThanOrEqual` implemented |
+| "Order matching at or above price" | `LessThanOrEqual`, `IsEqualBase` | Partial; atomic swap MVP works without |
+| "Partial fills where amount <= requested" | `LessThanOrEqual` | Partial; atomic swap works without |
+| "Liquidation when collateral/debt ratio < threshold" | `LessThanOrEqual`, `BaseMul` | ✅ Uses cross-multiplication (see `dao/exec.zk`), no `BaseDiv` needed |
+| "Generic intent fill conditions" (intent-amm fork) | `IsEqualBase`, `LessThanOrEqual`, `NotBase` | ✅ All implemented |
+| "Time-locked reveal with bypass conditions" | `IsEqualBase`, `NotBase` | ✅ All implemented |
+| "ZK-computed AMM pricing" | `BaseMul` | TWAP supplied as oracle input; no in-circuit division needed |
 
 ## The Core Gap: Opcodes That Return vs. Opcodes That Constrain
 
@@ -208,28 +208,33 @@ on input to ensure `a` is 0 or 1.
 
 ---
 
-### `BaseDiv(a, b)` → Base
+### `BaseDiv(a, b)` → Base (not implemented)
 
 **Signature**: `(Base a, Base b) → Base`
 
-**Purpose**: Field division `a / b`. Currently no division opcode exists.
+**Purpose**: Field division `a / b` (modular multiplicative inverse).
 
-**What it unlocks**:
+**When it's actually needed**: Division is expensive in circuit form. Most ratio checks that appear to need division can be reexpressed via cross-multiplication:
 
-```zk
-# Price computation (AMM, stablecoin)
-exchange_rate = base_div(output_amount, input_amount);
-
-# Collateralization ratios
-collateral_ratio = base_div(collateral_value, debt_value);
+```
+# Instead of: collateral / debt < threshold
+# Use:        collateral < threshold * debt
+lhs = base_mul(collateral, 1);
+rhs = base_mul(threshold, debt);
+less_than_strict(lhs, rhs);  # No division needed
 ```
 
-**Note**: Division in a prime field requires computing the modular multiplicative
-inverse. Expensive in circuit form but feasible.
+This pattern is already used in `dao/exec.zk` lines 118-126 for approval ratio checks.
+
+**Legitimate uses for `BaseDiv`** (when it exists):
+- Verifying externally-computed quotients (prove `b != 0` then check `a == b * (a/b)`)
+- General circuit ergonomics where cross-multiplication is impractical
+
+**Note**: TWAP prices are expected to be supplied as oracle inputs, not computed in-circuit. `BaseDiv` is not a blocker for any currently planned contract feature.
 
 ---
 
-### `BaseModExp(base, exp, mod)` → Base
+### `BaseModExp(base, exp, mod)` → Base (not implemented)
 
 **Signature**: `(Base base, Base exp, Base mod) → Base`
 

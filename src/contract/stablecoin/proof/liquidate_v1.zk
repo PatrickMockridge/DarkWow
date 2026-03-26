@@ -38,8 +38,12 @@ circuit "LiquidateV1" {
     penalty = base_add(debt_value, liquidation_penalty);
 
     # Verify position is actually undercollateralized
-    # NOTE: Full ratio check (collateral_value / debt_value < threshold) requires BaseDiv.
-    # The arithmetic above is set up for that check once BaseDiv is available.
+    # NOTE: Full ratio check (collateral_value / debt_value < threshold) uses
+    # cross-multiplication instead of division -- same pattern as dao/exec.zk:
+    #   collateral_value < threshold * debt_value
+    # This requires LessThanStrict which already exists in the zkVM.
+    # The arithmetic above is set up for that check once the threshold parameter
+    # is available in the circuit.
     bool_check(debt_amount);
 
     # New commitment after liquidation (collateral seized)
