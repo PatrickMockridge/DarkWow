@@ -523,6 +523,8 @@ No threshold needed to release funds.
 
 Replace the placeholder Merkle check with real `merkle_root` opcode verification using the `MerklePath` type, and integrate a light client proof system for the external chain.
 
+**Note**: `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM but are **experimental** (grey-market goods). Any future circuit work that uses them should see [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for production readiness requirements.
+
 **See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
 
 ## References
