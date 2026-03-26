@@ -223,7 +223,7 @@ bridge
   │ (needs Merkle verification fixed)
   ▼
 identity ◄─── (LessThanOrEqual, ───► stablecoin
-  │          IsEqualBase implemented)       │
+  │          IsEqualBase: experimental)   │
   │                                         │
   └──────── BaseDiv ────────────────────────┘
 ```

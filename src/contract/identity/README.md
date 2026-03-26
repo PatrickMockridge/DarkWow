@@ -368,7 +368,9 @@ Each step reveals only "meets criteria" — full history stays private.
 
 ## MVP Status
 
-**Needs Circuit Update** — `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are now implemented in the zkVM. The circuit code must be updated.
+**Needs Circuit Update** — `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM (commit `41b0629e0`, experimental). The circuit code must be updated to use them.
+
+> **Note**: These opcodes are grey-market goods — they pass isolation tests but have not been formally audited. See [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for the full analysis of what production readiness requires.
 
 | Circuit | Status | Notes |
 |---------|--------|-------|

@@ -102,9 +102,36 @@ These opcodes have been reasoned about through contract development, external fo
 experimentation, and feature roadmapping. They are not speculative — they are
 needed to deliver functionality already discussed publicly.
 
-> **Update**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and
-> `BaseLtStrict` (0x57) are now implemented in the zkVM (commit `41b0629e0`).
-> `BaseDiv` and `BaseModExp` remain unimplemented.
+### Experimental Status
+
+`LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) were initially developed on a [separate experimental branch](https://codeberg.org/rusticml/darkfi/commits/branch/less-than-or-equal-experiment) (by rusticml) and integrated into this repository at commit `41b0629e0`. `BaseDiv` and `BaseModExp` remain unimplemented.
+
+**These opcodes are currently grey-market goods.** They work in isolation and pass unit tests, but have not undergone the scrutiny required for production deployment. The following work is needed before they can be considered production-ready:
+
+#### Correctness verification
+
+- **Boundary value testing** — Current tests use small values (7, 9). The critical edge cases are at the field modulus boundary: values near `p` (the Pallas prime `2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`) and values near `2^253`. In the Pallas field, integer ordering and field ordering diverge — the gadget encodes integer comparison via field arithmetic, and field wraparound near the modulus could cause incorrect results if not properly constrained.
+
+- **`IsEqualBase` delta-invert edge case** — The gadget computes `(a - b)^(-1)` to determine equality. When `a == b`, delta is zero. The implementation sets `delta_invert = 1` in this case, which makes the constraint `(a-b) * inv == 1` become `0 * 1 == 1` — which is unsatisfiable. However, the gate only evaluates the constraint when the selector is active, and the second constraint `(a-b) * inv + (out - 1) == 0` becomes `0 + 0 == 0` when `a == b`, which always passes. This means the prover could assign an incorrect delta_invert value when `a == b` without violating any active constraint. A proper fix would require an explicit `is_zero` gadget rather than relying on this implicit behavior.
+
+- **LessThanOrEqual/LessThanStrict gate soundness** — Both gates encode the comparison result as an offset value passed to `less_than_range_check`. The constraint `a_offset = out * (b - a) + (1-out) * (a - b - 1)` relies on witness assignments from the prover. A malicious prover could assign incorrect `out` values (0 or 1) that don't reflect the actual comparison — but would then need to produce an `a_offset` that satisfies the gate constraint and passes the subsequent range check. The range check constrains `a_offset` to `[0, 2^253)`, which limits the feasible incorrect assignments, but this interaction between the gate constraint and range check deserves formal analysis.
+
+#### Integration testing
+
+- **Chained usage** — No test exists that uses the output of `LessThanOrEqual` as input to `CondSelect` or another opcode. The composability story (which is the entire point of having return-value opcodes) is untested.
+- **Integration with existing opcodes** — No test combines these new opcodes with `LessThanStrict`/`LessThanLoose` in the same circuit.
+
+#### Performance analysis
+
+- **Prover overhead** — Each new opcode adds extra advice columns (`out` column) and gate constraints. The `LessThanOrEqual` gate alone adds two multiplication constraints per invocation. In a circuit with hundreds of comparisons, this overhead is measurable.
+- **Verification key size** — Additional selectors and columns increase the verification key.
+
+#### Operational considerations
+
+- **No upgrade path** — If a bug is found in production, there is no mechanism to disable these opcodes or migrate circuits that use them.
+- **No audit** — The implementation has not been audited by a third party.
+
+**Recommendation for this phase**: Use these opcodes for development and prototyping. When a contract reaches audit readiness, a professional audit of the gadget implementations is required before mainnet deployment. The `LessThanOrEqual` and `IsEqualBase` opcodes are the highest priority for thorough review given their role in authorization logic.
 
 ### `LessThanOrEqual(a, b)` → Base
 

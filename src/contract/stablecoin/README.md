@@ -220,7 +220,7 @@ This is a **draft/placeholder**. The following items need implementation:
 
 ### Blockers
 
-1. **`LessThanOrEqual` (0x55) now implemented** — Circuits need to be updated to use it.
+1. **`LessThanOrEqual` (0x55) implemented but experimental** — Circuits need to be updated to use it. This opcode is grey-market — see [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for what production readiness requires.
 2. **`BaseDiv` not implemented** — Required for `collateral_ratio = collateral / debt` and TWAP price computation.
 3. **No P2P oracle** — The NETHER/DRK AMM pool for TWAP price discovery does not yet exist on-chain.
 4. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is not implemented.
