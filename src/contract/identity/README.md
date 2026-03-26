@@ -192,7 +192,7 @@ The identity circuits use existing zkVM opcodes for the basic proof structure. T
 LessThanOrEqual(a, b) = IsEqualBase(a, b) OR LessThanLoose(a, b)
 ```
 
-**See also**: [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes.
+**See also**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes.
 
 ## The Privacy Gradient
 
@@ -370,7 +370,7 @@ Each step reveals only "meets criteria" — full history stays private.
 
 **Partial MVP — experimental opcode integrated** — `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM (commit `41b0629e0`) and `create_claim_v1.zk` has been updated to use them. Integration testing remains.
 
-> **Note**: These opcodes are grey-market goods — they pass isolation tests but have not been formally audited, have no integration tests, and carry a delta-invert soundness concern. See [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for the full analysis of what production readiness requires.
+> **Note**: These opcodes are grey-market goods — they pass isolation tests but have not been formally audited, have no integration tests, and carry a delta-invert soundness concern. See [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full analysis of what production readiness requires.
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
@@ -383,15 +383,15 @@ Each step reveals only "meets criteria" — full history stays private.
 - Review `issue_credential_v1.zk` for correctness
 - `IsEqualBase` delta-invert soundness fix (see zkvm_primitives.md)
 
-**See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
+**See**: [Contract MVP Status](../../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
 
 ## References
 
-- [DarkFi Identity Contract](../../src/contract/identity/)
+- [DarkFi Identity Contract](./)
 - [DarkFi DEX Contract](../dex/)
 - [DarkFi Money Contract](../money/)
 - [DarkFi Bridge Contract](../bridge/)
-- [Contract MVP Status](../../doc/src/arch/mvp_status.md)
+- [Contract MVP Status](../../../doc/src/arch/mvp_status.md)
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)
 - [Differential Privacy](https://en.wikipedia.org/wiki/Differential_privacy)
 - [Anonymous Credentials](https://en.wikipedia.org/wiki/Anonymous_credentials)

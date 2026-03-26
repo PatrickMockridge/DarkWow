@@ -213,7 +213,7 @@ To add a new opcode to the zkVM:
 1. Define the opcode in `src/zkas/opcode.rs`
 2. Implement the opcode in `src/zk/vm.rs`
 
-For a full example of adding opcodes, see the [zkas bincode documentation](../../doc/src/zkas/bincode.md).
+For a full example of adding opcodes, see the [zkas bincode documentation](../../../doc/src/zkas/bincode.md).
 
 ## Roadmap: From MVP to Full Order Book
 
@@ -294,18 +294,18 @@ No price discovery     ZK proof of match    Unlinkable           Noise for prote
 
 1. **Manual matching required** — The `CreateSwap → AcceptSwap → ExecuteSwap` flow requires a third party to call `ExecuteSwap` after both locks are posted. There is no automatic order matching.
 2. **No amount comparison** — `execute_swap_v1.zk` verifies amounts are valid (`range_check(64, amount)`) but does not compare Alice's offered amount against Bob's requested amount.
-3. **No partial fills** — If a swap is posted for 100 tokens but someone wants to fill only 50, there is no mechanism. Implementing this would require `LessThanOrEqual` (0x55), which is implemented but **experimental** — see [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md).
+3. **No partial fills** — If a swap is posted for 100 tokens but someone wants to fill only 50, there is no mechanism. Implementing this would require `LessThanOrEqual` (0x55), which is implemented but **experimental** — see [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md).
 
 ### What It Needs
 
-Either document the atomic swap matching flow explicitly, or update circuits to use `LessThanOrEqual` for amount comparison and partial fills. Note that `LessThanOrEqual` is grey-market — see the experimental status section in [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md).
+Either document the atomic swap matching flow explicitly, or update circuits to use `LessThanOrEqual` for amount comparison and partial fills. Note that `LessThanOrEqual` is grey-market — see the experimental status section in [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md).
 
-**See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
+**See**: [Contract MVP Status](../../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
 
 ## References
 
-- [DarkFi DEX Architecture Document](../../doc/src/arch/dex.md)
+- [DarkFi DEX Architecture Document](../../../doc/src/arch/dex.md)
 - [DarkFi Money Contract](../money/)
 - [DarkFi Bridge Contract](../bridge/)
-- [Contract MVP Status](../../doc/src/arch/mvp_status.md)
+- [Contract MVP Status](../../../doc/src/arch/mvp_status.md)
 - [SPV Privacy Problem](https://en.bitcoin.it/wiki/Thin_Client_Security)

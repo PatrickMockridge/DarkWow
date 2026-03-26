@@ -163,7 +163,7 @@ The stablecoin circuits use these zkVM opcodes:
 
 > **Note on ratio checks**: Liquidation ratio checks (e.g., `collateral / debt < threshold`) do NOT need a `BaseDiv` opcode. As demonstrated in `dao/exec.zk` lines 118-126, ratio checks use cross-multiplication: prove `a/b < c/d` by asserting `a*d < b*c` via `base_mul` + `less_than_strict`. The TWAP price is expected to be supplied as an external oracle input, not computed in-circuit.
 
-**See also**: [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes.
+**See also**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes.
 
 ## Implementation Status
 
@@ -209,7 +209,7 @@ This is a **draft/placeholder**. The following items need implementation:
 
 ### Blockers
 
-1. **`LessThanOrEqual` is experimental** — Grey-market goods; no integration tests, delta-invert soundness concern. See [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for what production readiness requires.
+1. **`LessThanOrEqual` is experimental** — Grey-market goods; no integration tests, delta-invert soundness concern. See [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for what production readiness requires.
 2. **No P2P oracle** — The NETHER/DRK AMM pool for TWAP price discovery does not yet exist on-chain. TWAP price is expected as an external oracle input.
 3. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is not implemented.
 
@@ -219,13 +219,13 @@ First: P2P oracle / AMM integration to supply TWAP price. Second: CDP Note integ
 
 > **Note on division**: Ratio checks like `collateral / debt < threshold` use cross-multiplication (see `dao/exec.zk`), not `BaseDiv`. `BaseDiv` is not a blocker.
 
-**See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
+**See**: [Contract MVP Status](../../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
 
 ## References
 
 - [P2P Oracle Design](https://technologytruth.substack.com/p/nether-say-nether-again)
 - [DarkFi Money Contract](../money/)
-- [DarkFi SDK](../../sdk/)
+- [DarkFi SDK](../../../src/sdk/)
 - [Halo 2 Documentation](https://halo2.dev/)
 - [Poseidon Hash](https://poseidon.hrage.org/)
-- [Contract MVP Status](../../doc/src/arch/mvp_status.md)
+- [Contract MVP Status](../../../doc/src/arch/mvp_status.md)

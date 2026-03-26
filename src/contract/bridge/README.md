@@ -243,7 +243,7 @@ To add a new opcode to the zkVM:
 1. Define the opcode in `src/zkas/opcode.rs`
 2. Implement the opcode in `src/zk/vm.rs`
 
-For a full example of adding opcodes, see the [zkas bincode documentation](../../doc/src/zkas/bincode.md).
+For a full example of adding opcodes, see the [zkas bincode documentation](../../../doc/src/zkas/bincode.md).
 
 ## Implementation Status
 
@@ -523,15 +523,15 @@ No threshold needed to release funds.
 
 Replace the placeholder Merkle check with real `merkle_root` opcode verification using the `MerklePath` type, and integrate a light client proof system for the external chain.
 
-**Note**: `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM but are **experimental** (grey-market goods). Any future circuit work that uses them should see [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for production readiness requirements.
+**Note**: `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM but are **experimental** (grey-market goods). Any future circuit work that uses them should see [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for production readiness requirements.
 
-**See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
+**See**: [Contract MVP Status](../../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
 
 ## References
 
-- [Bridge Architecture Document](../../doc/src/arch/bridge.md)
-- [DarkFi SDK](../../sdk/)
+- [Bridge Architecture Document](../../../doc/src/arch/bridge.md)
+- [DarkFi SDK](../../../src/sdk/)
 - [Halo 2 Documentation](https://halo2.dev/)
 - [Object Capability Model](https://en.wikipedia.org/wiki/Object-capability_model)
 - [Poseidon Hash](https://www.poseidon-hash.info/)
-- [Contract MVP Status](../../doc/src/arch/mvp_status.md)
+- [Contract MVP Status](../../../doc/src/arch/mvp_status.md)
