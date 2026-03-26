@@ -12,10 +12,10 @@ This document tracks the blockers to reaching MVP for each contract in `src/cont
 | `dao` | None | Governance token integration | **Yes** |
 | `dex` | None | Order matching logic | Partial |
 | `bridge` | None (placeholder noted) | Merkle verification, light client | Partial |
-| `identity` | Circuit code not updated | — | No (needs circuit update) |
+| `identity` | `LessThanOrEqual`, `IsEqualBase` integrated (experimental) | Integration testing | Partial |
 | `stablecoin` | `BaseDiv` not implemented | P2P oracle, CDP notes | No |
 
-**Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are now implemented in the zkVM (commit `41b0629e0`). `identity` and `stablecoin` are no longer blocked at the opcode layer — their circuits must now be updated to use the new opcodes. `BaseDiv` remains the only unimplemented opcode blocking `stablecoin`.
+**Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are implemented in the zkVM (commit `41b0629e0`). `identity` has been updated to use them. `stablecoin` has been updated for bounds checks but `BaseDiv` is still required for full liquidation ratio verification. All experimental opcodes are grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md) for production readiness requirements.
 
 ---
 
@@ -142,7 +142,7 @@ InitializeV1 (0x00), DepositV1 (0x01), WithdrawV1 (0x02), UpdateConfigV1 (0x03)
 
 ---
 
-## `identity` — Needs Circuit Update
+## `identity` — Partial MVP (Experimental Opcode Integrated)
 
 **Location**: `src/contract/identity/`
 
@@ -154,21 +154,21 @@ InitializeV1 (0x00), IssueCredentialV1 (0x01), RevokeCredentialV1 (0x02), Create
 | Circuit | Status | Notes |
 |---------|--------|-------|
 | `issue_credential_v1.zk` | Unread | Likely needs review |
-| `create_claim_v1.zk` | Has placeholder | Predicate verification uses placeholder that always passes |
+| `create_claim_v1.zk` | Verified (experimental) | Uses `less_than_or_equal` for threshold checks. **Grey-market opcode.** |
 
 ### Blockers
 
-**Opcode layer**: `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are now implemented in the zkVM. The circuit code must be updated to use them.
+**Opcode layer**: `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented and integrated in `create_claim_v1.zk`. Both are **experimental grey-market goods** — see [zkVM Primitive Layer](zkvm_primitives.md) for the delta-invert soundness concern and what production readiness requires.
 
-**Circuit update needed**: `create_claim_v1.zk` currently uses a placeholder predicate that always passes. It should be updated to use `LessThanOrEqual` for threshold comparisons (e.g., `age >= 18`) and `IsEqualBase` for type comparisons.
+**Architecture**: Integration testing — no end-to-end test of issue → claim → verify flow exists yet.
 
-**What it needs**: Update `create_claim_v1.zk` to use `less_than_or_equal(a, b)` and `is_equal_base(a, b)` in place of the placeholder predicate.
+**What it needs**: Integration test for the full credential lifecycle. `IsEqualBase` delta-invert soundness fix. Review of `issue_credential_v1.zk`.
 
 **See also**: [zkVM Primitive Layer](zkvm_primitives.md) for the full opcode dependency analysis.
 
 ---
 
-## `stablecoin` — Blocked on Opcodes
+## `stablecoin` — Blocked on Opcodes and Architecture
 
 **Location**: `src/contract/stablecoin/`
 
@@ -179,18 +179,18 @@ InitializeV1 (0x00), OpenPositionV1 (0x01), AddCollateralV1 (0x02), RemoveCollat
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
-| `open_position_v1.zk` | Circuit update needed | Uses `LessThanOrEqual` reasoning, needs actual opcode |
+| `open_position_v1.zk` | Verified (experimental) | Uses `less_than_or_equal` for 200% collateralization check. **Grey-market opcode.** |
 | `mint_stable_v1.zk` | Corrected | Base arithmetic uses existing `base_add` opcode |
-| `liquidate_v1.zk` | Circuit update needed | Uses `LessThanOrEqual` reasoning, needs actual opcode |
+| `liquidate_v1.zk` | Partial (experimental) | Uses `less_than_or_equal` for reward bounds check. Full ratio check needs `BaseDiv`. **Grey-market opcode.** |
 
 ### Blockers
 
 **Opcode layer**:
 
-1. **`LessThanOrEqual` (0x55) now implemented** — The zkVM now has `LessThanOrEqual`. The circuits need to be updated to use it for collateralization checks.
+1. **`LessThanOrEqual` (0x55) integrated but experimental** — `open_position_v1.zk` and `liquidate_v1.zk` now use it. Grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md).
 
 2. **`BaseDiv` not implemented** — Required for:
-   - Computing `collateral_ratio = collateral / debt`
+   - Computing `collateral_ratio = collateral / debt` (full undercollateralization check)
    - TWAP price computation: `exchange_rate = output_amount / input_amount`
 
 **Architecture blockers**:
@@ -199,7 +199,7 @@ InitializeV1 (0x00), OpenPositionV1 (0x01), AddCollateralV1 (0x02), RemoveCollat
 
 4. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is designed but not implemented.
 
-**What it needs**: First: update circuits to use `LessThanOrEqual`. Second: implement `BaseDiv`. Third: P2P oracle / AMM integration. This is a multi-step dependency chain.
+**What it needs**: First: implement `BaseDiv`. Second: P2P oracle / AMM integration. Third: CDP Note integration. This is a multi-step dependency chain.
 
 **See also**: [zkVM Primitive Layer](zkvm_primitives.md) for the full opcode dependency analysis.
 

@@ -158,21 +158,17 @@ The stablecoin circuits use these zkVM opcodes:
 - `EcAdd(a, b)` — Adding EC points for Pedersen commitments
 - `BaseAdd`, `BaseSub`, `BaseMul` — Field arithmetic for debt calculations
 - `LessThanStrict`, `LessThanLoose` — Comparison constraints (constrain only, no return value)
+- `LessThanOrEqual(a, b)` — Returns 1 if `a <= b`, 0 otherwise (**experimental** — grey-market goods)
 - `RangeCheck`, `BoolCheck` — Range proofs
 
 **Pending implementation:**
-### `LessThanOrEqual(a, b)` (Reasoned)
-**Purpose**: Returns 1 if `a <= b`, 0 otherwise
-**Reasoning**: Essential for collateralization checks:
-- `collateral >= 2 * debt` → `LessThanOrEqual(2 * debt, collateral) == 1`
-- `liquidator_reward <= collateral` → `LessThanOrEqual(liquidator_reward, collateral) == 1`
+### `BaseDiv(a, b)` (Not implemented)
+**Purpose**: Returns `a / b` as Base
+**Reasoning**: Required for:
+- `collateral_ratio = collateral / debt` (full undercollateralization check)
+- TWAP price computation: `exchange_rate = output_amount / input_amount`
 
-**Why needed**: `LessThanStrict` and `LessThanLoose` constrain but don't return a value. We need an opcode that returns 0/1 for use in subsequent computations.
-
-**Implementation hint**: Can be built from `IsEqualBase + LessThanLoose`:
-```
-LessThanOrEqual(a, b) = IsEqualBase(a, b) OR LessThanLoose(a, b)
-```
+**Why needed**: `LessThanOrEqual` can only bound-check; it cannot compute the actual ratio. A full liquidation circuit needs `collateral_value / debt_value < liquidation_threshold`.
 
 **See also**: [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes and dependency graphs.
 
@@ -210,24 +206,24 @@ This is a **draft/placeholder**. The following items need implementation:
 
 ## MVP Status
 
-**Blocked on Opcodes** — the most complex contract, furthest from MVP.
+**Blocked on Opcodes and Architecture** — `LessThanOrEqual` is integrated (experimental) but `BaseDiv` is not yet implemented. The most complex contract, furthest from MVP.
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
-| `open_position_v1.zk` | Circuit update needed | Uses `LessThanOrEqual` reasoning, needs actual opcode |
+| `open_position_v1.zk` | Verified | Uses `less_than_or_equal` for 200% collateralization check. **Experimental opcode.** |
 | `mint_stable_v1.zk` | Corrected | Base arithmetic uses existing `base_add` opcode |
-| `liquidate_v1.zk` | Circuit update needed | Uses `LessThanOrEqual` reasoning, needs actual opcode |
+| `liquidate_v1.zk` | Partial | Uses `less_than_or_equal` for reward bounds check. Full ratio check needs `BaseDiv`. **Experimental opcode.** |
 
 ### Blockers
 
-1. **`LessThanOrEqual` (0x55) implemented but experimental** — Circuits need to be updated to use it. This opcode is grey-market — see [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for what production readiness requires.
-2. **`BaseDiv` not implemented** — Required for `collateral_ratio = collateral / debt` and TWAP price computation.
+1. **`BaseDiv` not implemented** — Required for `collateral_ratio = collateral / debt` (full undercollateralization check in liquidation) and TWAP price computation. This is the primary opcode blocker.
+2. **`LessThanOrEqual` is experimental** — Grey-market goods; no integration tests, delta-invert soundness concern. See [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for what production readiness requires.
 3. **No P2P oracle** — The NETHER/DRK AMM pool for TWAP price discovery does not yet exist on-chain.
 4. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is not implemented.
 
 ### What It Needs
 
-First: update circuits to use `LessThanOrEqual`. Second: implement `BaseDiv`. Third: P2P oracle / AMM integration. This is a multi-step dependency chain.
+First: implement `BaseDiv`. Second: P2P oracle / AMM integration. Third: CDP Note integration with money contract. This is a multi-step dependency chain.
 
 **See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
 

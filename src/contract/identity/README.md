@@ -368,18 +368,20 @@ Each step reveals only "meets criteria" — full history stays private.
 
 ## MVP Status
 
-**Needs Circuit Update** — `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM (commit `41b0629e0`, experimental). The circuit code must be updated to use them.
+**Partial MVP — experimental opcode integrated** — `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM (commit `41b0629e0`) and `create_claim_v1.zk` has been updated to use them. Integration testing remains.
 
-> **Note**: These opcodes are grey-market goods — they pass isolation tests but have not been formally audited. See [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for the full analysis of what production readiness requires.
+> **Note**: These opcodes are grey-market goods — they pass isolation tests but have not been formally audited, have no integration tests, and carry a delta-invert soundness concern. See [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for the full analysis of what production readiness requires.
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
 | `issue_credential_v1.zk` | Unread | Likely needs review |
-| `create_claim_v1.zk` | Has placeholder | Predicate verification uses placeholder that always passes |
+| `create_claim_v1.zk` | Verified | Uses `less_than_or_equal` for threshold checks, `is_equal_base` for type checks. **Experimental opcode.** |
 
 ### What It Needs
 
-Update `create_claim_v1.zk` to use `less_than_or_equal(a, b)` for threshold comparisons (e.g., `age >= 18`) and `is_equal_base(a, b)` for type comparisons.
+- Integration test: issue credential → create claim → verify claim end-to-end
+- Review `issue_credential_v1.zk` for correctness
+- `IsEqualBase` delta-invert soundness fix (see zkvm_primitives.md)
 
 **See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
 
