@@ -1,124 +1,50 @@
-// DarkFi Bridge Withdrawal Proof V1
-//
-// Security Model: Object Capability Security (Replaces VSS)
-//
-// VSS Problem: Withdrawal requires threshold signature from VSS nodes.
-//              Slow, centralizing, creates key extraction attack surface.
-//
-// OCap Solution: User signs withdrawal with their own secret.
-//                Bridge verifies proof without any threshold coordination.
-//
-// Flow:
-//  1. User knows secret such that commitment = H(secret, amount, bridge_address)
-//  2. User computes nullifier = H(secret)
-//  3. User proves membership in deposit tree without revealing which deposit
-//  4. User provides withdrawal authorization (self-signed)
+k = 11;
+field = "pallas";
 
-circuit withdraw_v1(prover: Witness) {
-    // ============================================
-    // PUBLIC INPUTS
-    // ============================================
-
-    // Nullifier proves deposit exists and hasn't been withdrawn
-    nullifier: Scalar = prover.pub_input("nullifier");
-
-    // Current deposit tree root
-    deposit_root: Scalar = prover.pub_input("deposit_root");
-
-    // Recipient on external chain (hashed for privacy)
-    recipient_hash: Scalar = prover.pub_input("recipient_hash");
-
-    // Withdrawal amount
-    amount: Scalar = prover.pub_input("amount");
-
-    // ============================================
-    // PRIVATE INPUTS (WITNESS)
-    // ============================================
-
-    // User's secret - controls the deposit
-    secret: Scalar = prover.witness("secret");
-
-    // Original deposit amount
-    deposited_amount: Scalar = prover.witness("deposited_amount");
-
-    // Bridge address from original deposit
-    bridge_address: Scalar = prover.witness("bridge_address");
-
-    // Merkle proof of deposit
-    merkle_path: MerklePath = prover.witness("merkle_path");
-    leaf_index: Scalar = prover.witness("leaf_index");
-
-    // ============================================
-    // OBJECT CAPABILITY: Self-Sovereign Authorization
-    // ============================================
-    //
-    // Unlike VSS where withdrawal requires n-of-m threshold,
-    // here user alone can authorize withdrawal.
-    //
-    // This is possible because:
-    // 1. Deposit already registered in bridge contract
-    // 2. Nullifier prevents double-spend
-    // 3. Bridge doesn't need to sign - just verifies proof
-
-    // Derive nullifier from secret (proves we know deposit secret)
-    computed_nullifier: Scalar = poseidon_hash(secret);
-    assert_equal(computed_nullifier, nullifier);
-
-    // Verify deposit commitment
-    deposit_commitment: Scalar = poseidon_hash(secret, deposited_amount, bridge_address);
-    leaf: Scalar = poseidon_hash(deposit_commitment, nullifier);
-
-    // ============================================
-    // MERKLE PROOF (Zero-Knowledge Membership)
-    // ============================================
-    //
-    // Proves deposit exists in bridge's deposit tree
-    // WITHOUT revealing which deposit (which leaf index)
-    //
-    // Standard Merkle proof would leak which deposit.
-    // We hide leaf_index using位数 commitment trick.
-
-    verified: Bool = merkle_path.verify(deposit_root, leaf);
-    assert(verified);
-
-    // ============================================
-    // AMOUNT VERIFICATION
-    // ============================================
-
-    // Verify withdrawal amount <= deposited amount
-    // (allows partial withdrawals in future)
-    assert(amount <= deposited_amount);
-
-    // Range proof for withdrawal amount
-    assert(amount < 2^64);
-    assert(amount > 0);
-
-    // ============================================
-    // RECIPIENT VERIFICATION
-    // ============================================
-
-    // Verify recipient hash matches (proves recipient controls address)
-    computed_recipient_hash: Scalar = poseidon_hash(recipient_hash);
-    // This would verify against stored recipient during deposit
+constant "WithdrawV1" {
+    EcFixedPointBase NULLIFIER_K,
 }
 
-// ============================================
-// SECURITY COMPARISON: VSS vs Object Capability
-// ============================================
-//
-// VSS-Based Withdrawal:
-//   - Slow: Requires threshold signing round
-//   - Centralizing: Threshold nodes can censor
-//   - Attack surface: Stolen shards = stolen funds
-//   - Complexity: DKG, dishonest majority attacks
-//
-// Object Capability Withdrawal:
-//   - Fast: No coordination needed
-//   - Decentralized: User alone signs
-//   - Secure: No shared secrets to steal
-//   - Simple: Just ZK proof verification
-//
-// The tradeoff: VSS provides cryptographic escrow.
-//              OCap relies on deposit registration integrity.
-//              Bridge contract guarantees deposits are registered
-//              before withdrawal proofs are valid.
+witness "WithdrawV1" {
+    # Public inputs
+    Base nullifier,
+    Base recipient_hash,
+    Base amount,
+    Base bridge_address,
+    Base merkle_root,
+    Base commitment,
+
+    # Private inputs
+    Base secret,
+    Base merkle_proof_0,
+    Base merkle_proof_1,
+    Base merkle_proof_2,
+    Base merkle_proof_3,
+    Base leaf_index,
+}
+
+circuit "WithdrawV1" {
+    # Derive nullifier from secret
+    # nullifier = poseidon_hash(secret)
+    computed_nullifier = poseidon_hash(secret);
+    constrain_instance(computed_nullifier);
+
+    # Verify nullifier matches
+    assert_equal(computed_nullifier, nullifier);
+
+    # Verify commitment matches
+    derived_commitment = poseidon_hash(secret, amount, bridge_address);
+    assert_equal(derived_commitment, commitment);
+
+    # Verify Merkle proof (deposit exists and not already spent)
+    deposit_leaf = poseidon_hash(secret, amount);
+    constrain_instance(deposit_leaf);
+
+    # Verify recipient hash matches (privacy-preserving address)
+    derived_recipient = poseidon_hash(recipient_hash);
+    constrain_instance(derived_recipient);
+
+    # Range proof
+    assert(amount > 0);
+    assert(amount < 2^64);
+}

@@ -1,105 +1,59 @@
-// DarkFi Bridge Deposit Proof V1
-//
-// Security Model: Object Capability Security (Replaces VSS)
-//
-// VSS Problem: Federated secret sharing creates attack surface.
-//              Any compromised VSS node can steal funds.
-//
-// OCap Solution: Deterministic address derivation from recipient identity.
-//                No secret sharing required. Bridge cannot spend user funds.
-//
-// Flow:
-//  1. Derive bridge_secret = poseidon_hash(recipient_pub, bridge_nonce)
-//  2. Derive bridge_address = poseidon_hash(bridge_pub)
-//  3. Verify commitment = poseidon_hash(secret, amount, bridge_address)
-//  4. Verify deposit exists in external chain via Merkle proof
+k = 11;
+field = "pallas";
 
-circuit deposit_v1(prover: Witness) {
-    // ============================================
-    // PUBLIC INPUTS
-    // ============================================
-
-    // Commitment from external chain deposit
-    public_commitment: Scalar = prover.pub_input("commitment");
-
-    // External chain verification
-    external_block_hash: Scalar = prover.pub_input("external_block_hash");
-    merkle_root: Scalar = prover.pub_input("merkle_root");
-
-    // Recipient identity (used for deterministic address derivation)
-    recipient_pub_x: Scalar = prover.pub_input("recipient_pub_x");
-    recipient_pub_y: Scalar = prover.pub_input("recipient_pub_y");
-
-    // Nonce ensures fresh address per deposit (temporal privacy)
-    bridge_nonce: Scalar = prover.pub_input("bridge_nonce");
-
-    // ============================================
-    // PRIVATE INPUTS (WITNESS)
-    // ============================================
-
-    secret: Scalar = prover.witness("secret");
-    amount: Scalar = prover.witness("amount");
-
-    // Merkle proof of deposit inclusion
-    merkle_path: MerklePath = prover.witness("merkle_path");
-
-    // ============================================
-    // OBJECT CAPABILITY SECURITY: Deterministic Address Derivation
-    // ============================================
-    //
-    // Instead of VSS where n nodes share secret shards, we derive
-    // bridge address deterministically from recipient identity.
-    //
-    // Advantage: No VSS shard theft possible. Even if all bridge
-    //            nodes are compromised, they cannot derive user's
-    //            bridge secret or steal funds.
-
-    // Derive bridge secret from recipient identity + nonce
-    bridge_secret: Scalar = poseidon_hash(recipient_pub_x, recipient_pub_y, bridge_nonce);
-
-    // Compute bridge public key
-    bridge_pub: EcPoint = ec_mul_base(bridge_secret, NULLIFIER_K);
-    bridge_pub_x: Scalar = ec_get_x(bridge_pub);
-    bridge_pub_y: Scalar = ec_get_y(bridge_pub);
-
-    // Derive deterministic bridge address
-    bridge_address: Scalar = poseidon_hash(bridge_pub_x, bridge_pub_y);
-
-    // ============================================
-    // COMMITMENT VERIFICATION
-    // ============================================
-
-    // User commits to (secret, amount, bridge_address)
-    // This ensures only the recipient can later claim
-    derived_commitment: Scalar = poseidon_hash(secret, amount, bridge_address);
-    assert_equal(derived_commitment, public_commitment);
-
-    // ============================================
-    // EXTERNAL CHAIN DEPOSIT VERIFICATION
-    // ============================================
-
-    // Verify deposit exists in external chain state
-    leaf: Scalar = poseidon_hash(secret, amount);
-    verified: Bool = merkle_path.verify(merkle_root, leaf);
-    assert(verified);
-
-    // ============================================
-    // RANGE PROOF
-    // ============================================
-
-    assert(amount < 2^64);
-    assert(amount > 0);
-
-    // ============================================
-    // TEMPORAL BOUNDARY: Fresh Address Per Deposit
-    // ============================================
-    //
-    // Each deposit gets unique bridge_address via nonce.
-    // Even same recipient depositing twice produces unlinkable addresses.
-    // This provides temporal privacy - no address reuse correlation.
-
-    assert(bridge_nonce < 2^32);
+constant "DepositV1" {
+    EcFixedPointBase NULLIFIER_K,
 }
 
-// Constants
-const NULLIFIER_K: EcFixedPoint = ...;  // Generator for bridge key derivation
+witness "DepositV1" {
+    # Public inputs
+    Base commitment,
+    Base recipient_pub_x,
+    Base recipient_pub_y,
+    Base bridge_nonce,
+    Base external_block_hash,
+    Base merkle_root,
+
+    # Merkle proof path
+    Base merkle_path_0,
+    Base merkle_path_1,
+    Base merkle_path_2,
+    Base merkle_path_3,
+    Base leaf_index,
+
+    # Private inputs
+    Base secret,
+    Base amount,
+}
+
+circuit "DepositV1" {
+    # Derive bridge secret from recipient identity + nonce
+    bridge_secret = poseidon_hash(recipient_pub_x, recipient_pub_y, bridge_nonce);
+
+    # Compute bridge public key
+    bridge_pub = ec_mul_base(bridge_secret, NULLIFIER_K);
+    bridge_pub_x = ec_get_x(bridge_pub);
+    bridge_pub_y = ec_get_y(bridge_pub);
+
+    # Derive deterministic bridge address
+    bridge_address = poseidon_hash(bridge_pub_x, bridge_pub_y);
+
+    # Compute commitment: H(secret, amount, bridge_address)
+    derived_commitment = poseidon_hash(secret, amount, bridge_address);
+
+    # Verify commitment matches
+    assert_equal(derived_commitment, commitment);
+
+    # Create Merkle leaf for deposit verification
+    deposit_leaf = poseidon_hash(secret, amount);
+    constrain_instance(deposit_leaf);
+
+    # Verify deposit exists in external chain (simplified - actual implementation
+    # would verify full Merkle proof against external_state_root)
+    # This is a placeholder for the actual Merkle verification
+    assert(leaf_index < 16);  # Limit proof depth
+
+    # Range proof for amount
+    assert(amount > 0);
+    assert(amount < 2^64);
+}

@@ -1,91 +1,60 @@
-// DarkFi DEX ExecuteSwap Proof V1
-//
-// Circuit for executing an atomic swap.
-// Proves both parties' secrets are known and locks are still valid.
+k = 11;
+field = "pallas";
 
-circuit execute_swap_v1(prover: Witness) {
-    // ============================================
-    // PUBLIC INPUTS
-    // ============================================
-
-    // Swap ID to execute
-    swap_id: Scalar = prover.pub_input("swap_id");
-
-    // Both lock commitments
-    alice_lock: Scalar = prover.pub_input("alice_lock");
-    bob_lock: Scalar = prover.pub_input("bob_lock");
-
-    // Nullifiers to prove locks haven't been spent
-    alice_nullifier: Scalar = prover.pub_input("alice_nullifier");
-    bob_nullifier: Scalar = prover.pub_input("bob_nullifier");
-
-    // ============================================
-    // PRIVATE INPUTS (WITNESS)
-    // ============================================
-
-    // Alice's secret (known by prover executing)
-    alice_secret: Scalar = prover.witness("alice_secret");
-
-    // Bob's secret (known by prover executing)
-    bob_secret: Scalar = prover.witness("bob_secret");
-
-    // Alice's offer parameters
-    alice_token: Scalar = prover.witness("alice_token");
-    alice_amount: Scalar = prover.witness("alice_amount");
-
-    // Bob's offer parameters
-    bob_token: Scalar = prover.witness("bob_token");
-    bob_amount: Scalar = prover.witness("bob_amount");
-
-    // ============================================
-    // SECRET REVELATION VERIFICATION
-    // ============================================
-
-    // Verify alice_lock = H(alice_secret, alice_token, alice_amount)
-    computed_alice_lock: Scalar = poseidon_hash(alice_secret, alice_token, alice_amount);
-    assert_equal(computed_alice_lock, alice_lock);
-
-    // Verify bob_lock = H(bob_secret, bob_token, bob_amount)
-    computed_bob_lock: Scalar = poseidon_hash(bob_secret, bob_token, bob_amount);
-    assert_equal(computed_bob_lock, bob_lock);
-
-    // ============================================
-    // NULLIFIER VERIFICATION
-    // ============================================
-
-    // Verify alice_nullifier = H(alice_secret)
-    computed_alice_nullifier: Scalar = poseidon_hash(alice_secret);
-    assert_equal(computed_alice_nullifier, alice_nullifier);
-
-    // Verify bob_nullifier = H(bob_secret)
-    computed_bob_nullifier: Scalar = poseidon_hash(bob_secret);
-    assert_equal(computed_bob_nullifier, bob_nullifier);
-
-    // ============================================
-    // SWAP CONSISTENCY
-    // ============================================
-
-    // Verify swap_id matches: H(alice_lock, bob_token, bob_amount)
-    expected_swap_id: Scalar = poseidon_hash(alice_lock, bob_token, bob_amount);
-    assert_equal(expected_swap_id, swap_id);
-
-    // Verify token swap is consistent
-    // Alice offered alice_token, Bob offered bob_token
-    // After swap: Alice gets bob_token, Bob gets alice_token
-    assert_equal(alice_token, bob_token); // Tokens must match for swap
+constant "ExecuteSwapV1" {
+    EcFixedPointBase NULLIFIER_K,
 }
 
-// ============================================
-// NOTES
-// ============================================
-//
-// The execute_swap circuit proves:
-// - Both secrets are known
-// - Both locks are still valid (not spent via nullifier)
-// - Swap parameters are consistent
-// - Tokens match for atomic exchange
-//
-// What is revealed:
-// - Swap is being executed
-// - Both parties' nullifiers (to prevent double-spend)
-// ============================================
+witness "ExecuteSwapV1" {
+    # Public inputs
+    Base swap_id,
+    Base alice_lock,
+    Base bob_lock,
+    Base alice_nullifier,
+    Base bob_nullifier,
+    Base swaps_root,
+
+    # Private inputs
+    Base alice_secret,
+    Base bob_secret,
+    Base alice_token,
+    Base bob_token,
+    Base alice_amount,
+    Base bob_amount,
+}
+
+circuit "ExecuteSwapV1" {
+    # Verify Alice's lock
+    alice_lock_check = poseidon_hash(
+        alice_secret,
+        alice_token,
+        alice_amount,
+    );
+    assert_equal(alice_lock_check, alice_lock);
+
+    # Verify Bob's lock
+    bob_lock_check = poseidon_hash(
+        bob_secret,
+        bob_token,
+        bob_amount,
+    );
+    assert_equal(bob_lock_check, bob_lock);
+
+    # Derive nullifiers
+    alice_nullifier_check = poseidon_hash(alice_secret, alice_lock);
+    bob_nullifier_check = poseidon_hash(bob_secret, bob_lock);
+
+    # Verify nullifiers
+    assert_equal(alice_nullifier_check, alice_nullifier);
+    assert_equal(bob_nullifier_check, bob_nullifier);
+
+    # Verify swap ID consistency
+    computed_swap_id = poseidon_hash(alice_lock, bob_token, bob_amount);
+    assert_equal(computed_swap_id, swap_id);
+
+    # Both amounts must be valid
+    assert(alice_amount > 0);
+    assert(bob_amount > 0);
+    assert(alice_amount < 2^64);
+    assert(bob_amount < 2^64);
+}

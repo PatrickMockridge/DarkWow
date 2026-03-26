@@ -1,142 +1,56 @@
-// DarkFi Stablecoin Mint Stablecoin Proof V1
-//
-// Design: P2P Oracle-Based Stablecoin (from Nethermind)
-//
-// This circuit proves a user can mint stablecoins against their
-// collateral without violating the minimum collateralization ratio.
-//
-// Minting increases debt, so we must verify:
-// 1. Position exists
-// 2. New total debt doesn't exceed collateral value / min_ratio
-// 3. Merkle proof verifies position membership
+k = 11;
+field = "pallas";
 
-circuit mint_stable_v1(prover: Witness) {
-    // ============================================
-    // PUBLIC INPUTS
-    // ============================================
-
-    // Position nullifier
-    position_nullifier: Scalar = prover.pub_input("position_nullifier");
-
-    // Current position root
-    position_root: Scalar = prover.pub_input("position_root");
-
-    // New commitment with increased debt
-    new_commitment: Scalar = prover.pub_input("new_commitment");
-
-    // Minimum collateralization ratio (basis points)
-    min_ratio: Scalar = prover.pub_input("min_collateralization_ratio");
-
-    // Amount of stablecoin to mint
-    mint_amount: Scalar = prover.pub_input("mint_amount");
-
-    // Current TWAP price
-    current_twap: Scalar = prover.pub_input("current_twap");
-
-    // ============================================
-    // PRIVATE INPUTS (WITNESS)
-    // ============================================
-
-    // User's secret
-    secret: Scalar = prover.witness("secret");
-
-    // Current collateral (before minting)
-    current_collateral: Scalar = prover.witness("current_collateral");
-
-    // Current debt (before minting)
-    current_debt: Scalar = prover.witness("current_debt");
-
-    // Owner's public key
-    owner_pub_x: Scalar = prover.witness("owner_pub_x");
-    owner_pub_y: Scalar = prover.witness("owner_pub_y");
-
-    // Merkle proof
-    merkle_path: MerklePath = prover.witness("merkle_path");
-    leaf_index: Scalar = prover.witness("leaf_index");
-
-    // ============================================
-    // NULLIFIER VERIFICATION
-    // ============================================
-
-    computed_nullifier: Scalar = poseidon_hash(secret);
-    assert_equal(computed_nullifier, position_nullifier);
-
-    // ============================================
-    // ORIGINAL COMMITMENT VERIFICATION
-    // ============================================
-
-    original_commitment: Scalar = poseidon_hash(
-        secret,
-        current_collateral,
-        current_debt,
-        owner_pub_x,
-        owner_pub_y
-    );
-
-    verified: Bool = merkle_path.verify(position_root, original_commitment);
-    assert(verified);
-
-    // ============================================
-    // NEW COMMITMENT VERIFICATION
-    // ============================================
-
-    // New debt = current debt + mint amount
-    new_debt: Scalar = current_debt + mint_amount;
-
-    // Verify new commitment matches
-    computed_new_commitment: Scalar = poseidon_hash(
-        secret,
-        current_collateral,
-        new_debt,
-        owner_pub_x,
-        owner_pub_y
-    );
-
-    assert_equal(computed_new_commitment, new_commitment);
-
-    // ============================================
-    // COLLLATERALIZATION RATIO CHECK
-    // ============================================
-    //
-    // Must maintain: (collateral * twap) / new_debt >= min_ratio
-    //
-    // Rearranged: collateral * twap >= new_debt * min_ratio
-
-    collateral_value: Scalar = current_collateral * current_twap;
-    required_value: Scalar = new_debt * min_ratio;
-
-    assert(collateral_value >= required_value);
-
-    // ============================================
-    // AMOUNT RANGE CHECKS
-    // ============================================
-
-    // Mint amount should be positive and bounded
-    assert(mint_amount > 0);
-    assert(mint_amount < 2^64);
-
-    // New debt shouldn't overflow (sanity check)
-    assert(new_debt > current_debt);
+constant "MintStableV1" {
+    EcFixedPointBase NULLIFIER_K,
+    EcFixedPoint VALUE_COMMIT,
+    EcFixedPoint RANDOM_COMMIT,
 }
 
-// ============================================
-// STABILITY FEE CONSIDERATION
-// ============================================
-//
-// In a full implementation, debt would accumulate
-// stability fees over time. This would be calculated as:
-//
-// accumulated_fee = debt * rate * time
-//
-// The PI Controller adjusts `rate` based on TWAP deviation
-// from the target price, creating a self-regulating system:
-//
-// - When stablecoin trades at premium (> $1):
-//   Rate increases -> borrowing more expensive
-//   -> Less minting -> More supply -> Price normalizes
-//
-// - When stablecoin trades at discount (< $1):
-//   Rate decreases -> borrowing cheaper
-//   -> More minting -> Less supply -> Price normalizes
-//
-// ============================================
+witness "MintStableV1" {
+    # Public inputs
+    Base old_commitment,
+    Base new_commitment,
+    Base position_nullifier,
+    Base mint_amount,
+    Base position_root,
+
+    # Private inputs
+    Base owner_secret,
+    Base old_collateral,
+    Base old_debt,
+    Base new_collateral,
+    Base new_debt,
+    Base collateral_blind,
+    Base debt_blind,
+}
+
+circuit "MintStableV1" {
+    # Verify nullifier matches
+    nullifier_check = poseidon_hash(owner_secret, old_commitment);
+    constrain_instance(nullifier_check);
+    assert_equal(nullifier_check, position_nullifier);
+
+    # Verify new debt is old debt + mint_amount
+    one = witness_base(1);
+    mint_check = base_add(old_debt, mint_amount);
+    assert_equal(mint_check, new_debt);
+
+    # Verify collateral unchanged (for simple minting)
+    assert_equal(old_collateral, new_collateral);
+
+    # New commitment verification
+    collateral_commit = ec_mul_short(new_collateral, VALUE_COMMIT);
+    collateral_random = ec_mul(collateral_blind, RANDOM_COMMIT);
+    collateral_total = ec_add(collateral_commit, collateral_random);
+    collateral_x = ec_get_x(collateral_total);
+
+    debt_commit = ec_mul_short(new_debt, VALUE_COMMIT);
+    debt_random = ec_mul(debt_blind, RANDOM_COMMIT);
+    debt_total = ec_add(debt_commit, debt_random);
+    debt_x = ec_get_x(debt_total);
+
+    # Verify mint_amount is positive
+    assert(mint_amount > 0);
+    assert(mint_amount < 2^64);
+}

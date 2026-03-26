@@ -170,7 +170,7 @@ Proves the claim without revealing attributes:
 - **Private inputs**: credential_attributes, holder_secret
 - **Verification**: Credential valid, predicate satisfied, not revoked
 
-### verify_claim_v1.zk
+### verify_claim_v1.zk (STUB)
 
 Proves the claim can be verified:
 - **Public inputs**: claim, verifier_pub
