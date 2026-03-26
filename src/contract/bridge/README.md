@@ -504,6 +504,27 @@ No threshold needed to release funds.
 4. **Deposit batching**: How to merge deposits for better privacy?
 5. **Governance**: How to upgrade bridge without compromising security?
 
+## MVP Status
+
+**Partial MVP** — core deposit/withdraw structure exists, but Merkle verification is a placeholder.
+
+| Circuit | Status | Notes |
+|---------|--------|-------|
+| `deposit_v1.zk` | Has placeholder | Merkle proof uses `poseidon_hash` instead of `merkle_root` opcode |
+| `withdraw_v1.zk` | Verified | Uses `constrain_equal_base` |
+
+### Blockers
+
+1. **Merkle proof is a placeholder** — `deposit_v1.zk` line 54 uses `poseidon_hash(deposit_leaf, merkle_path_0, merkle_path_1)` instead of the `merkle_root` opcode with proper `MerklePath`. This is not real Merkle verification.
+2. **No external block header verification** — The `external_block_hash` public input is accepted but not cryptographically verified against an actual chain.
+3. **No light client integration** — The design requires an external chain's light client proof system.
+
+### What It Needs
+
+Replace the placeholder Merkle check with real `merkle_root` opcode verification using the `MerklePath` type, and integrate a light client proof system for the external chain.
+
+**See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
+
 ## References
 
 - [Bridge Architecture Document](../../doc/src/arch/bridge.md)
@@ -511,3 +532,4 @@ No threshold needed to release funds.
 - [Halo 2 Documentation](https://halo2.dev/)
 - [Object Capability Model](https://en.wikipedia.org/wiki/Object-capability_model)
 - [Poseidon Hash](https://www.poseidon-hash.info/)
+- [Contract MVP Status](../../doc/src/arch/mvp_status.md)

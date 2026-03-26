@@ -328,6 +328,7 @@ expressiveness is limited**. Current circuits use placeholders that always pass.
 
 - [Composability & General Primitives](composability.md)
 - [zkVM Primitive Layer](zkvm_primitives.md) — opcode-level analysis of why comparison opcodes are foundational
+- [Contract MVP Status](mvp_status.md) — blockers for each contract in the contracts folder
 - [Identity Contract](../../src/contract/identity/)
 - [Bridge Contract](../../src/contract/bridge/)
 - [DEX Contract](../../src/contract/dex/)

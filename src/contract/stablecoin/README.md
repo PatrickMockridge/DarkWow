@@ -208,6 +208,29 @@ This is a **draft/placeholder**. The following items need implementation:
 - [ ] Fuzzing for edge cases
 - [ ] Security audit
 
+## MVP Status
+
+**Blocked on Opcodes** — the most complex contract, furthest from MVP.
+
+| Circuit | Status | Notes |
+|---------|--------|-------|
+| `open_position_v1.zk` | Corrected | Uses `LessThanOrEqual` reasoning, Pedersen commitments correct |
+| `mint_stable_v1.zk` | Corrected | Base arithmetic uses existing `base_add` opcode |
+| `liquidate_v1.zk` | Corrected | Uses `LessThanOrEqual` reasoning for collateral checks |
+
+### Blockers
+
+1. **`LessThanOrEqual` not implemented** — Every collateralization check needs it: `open_position_v1.zk` (`collateral >= 2 * debt`), `mint_stable_v1.zk`, `liquidate_v1.zk`.
+2. **`BaseDiv` not implemented** — Required for `collateral_ratio = collateral / debt` and TWAP price computation.
+3. **No P2P oracle** — The NETHER/DRK AMM pool for TWAP price discovery does not yet exist on-chain.
+4. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is not implemented.
+
+### What It Needs
+
+First: `LessThanOrEqual`. Second: `BaseDiv`. Third: P2P oracle / AMM integration. This is a multi-step dependency chain.
+
+**See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
+
 ## References
 
 - [P2P Oracle Design](https://technologytruth.substack.com/p/nether-say-nether-again)
@@ -215,3 +238,4 @@ This is a **draft/placeholder**. The following items need implementation:
 - [DarkFi SDK](../../sdk/)
 - [Halo 2 Documentation](https://halo2.dev/)
 - [Poseidon Hash](https://poseidon.hrage.org/)
+- [Contract MVP Status](../../doc/src/arch/mvp_status.md)

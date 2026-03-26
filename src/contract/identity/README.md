@@ -366,12 +366,33 @@ Each step reveals only "meets criteria" — full history stays private.
 | Issuer tracking | Full | Partial | None |
 | Offline verification | No | Possible | Possible |
 
+## MVP Status
+
+**Blocked on Opcodes** — basic structure exists, but predicate verification is stubbed.
+
+| Circuit | Status | Notes |
+|---------|--------|-------|
+| `issue_credential_v1.zk` | Unread | Likely needs review |
+| `create_claim_v1.zk` | Has placeholder | Predicate verification uses placeholder that always passes |
+
+### Blockers
+
+1. **`LessThanOrEqual` not implemented** — Required for predicates like `age >= 18`. Currently `create_claim_v1.zk` uses a placeholder that always passes. The verifier must trust the `predicate_result` public input.
+2. **`IsEqualBase` not implemented** — Needed for schema validation and credential type comparison.
+
+### What It Needs
+
+Implement `LessThanOrEqual` in the zkVM. Once available, update `create_claim_v1.zk` to use it for in-circuit predicate verification.
+
+**See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
+
 ## References
 
 - [DarkFi Identity Contract](../../src/contract/identity/)
 - [DarkFi DEX Contract](../dex/)
 - [DarkFi Money Contract](../money/)
 - [DarkFi Bridge Contract](../bridge/)
+- [Contract MVP Status](../../doc/src/arch/mvp_status.md)
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)
 - [Differential Privacy](https://en.wikipedia.org/wiki/Differential_privacy)
 - [Anonymous Credentials](https://en.wikipedia.org/wiki/Anonymous_credentials)

@@ -492,6 +492,7 @@ All DarkFi contracts should support incremental transparency (see [Identity](ide
 
 - [Private Authorization Layer](privauth.md)
 - [zkVM Primitive Layer](zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
+- [Contract MVP Status](mvp_status.md) — blockers for each contract in the contracts folder
 - [Identity Contract](../src/contract/identity/)
 - [Bridge Contract](../src/contract/bridge/)
 - [DEX Contract](../src/contract/dex/)

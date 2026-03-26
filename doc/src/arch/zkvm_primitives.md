@@ -284,6 +284,7 @@ circuit "MyContract" {
 
 - [Private Authorization Layer](privauth.md) — the authorization pattern these opcodes enable
 - [Composability & General Primitives](composability.md) — how these opcodes compose across contracts
+- [Contract MVP Status](mvp_status.md) — blockers for each contract and the single highest-leverage primitive to implement
 - [intent-amm fork (rusticml)](https://codeberg.org/rusticml/darkfi-intent-amm-proposal) — experimentation with intent-based AMM logic
 - [zkas bincode](../zkas/bincode.md) — existing opcode specifications
 - [Smart Contracts architecture](sc/sc.md) — contract layer built on zkVM
