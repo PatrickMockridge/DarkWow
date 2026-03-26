@@ -58,6 +58,7 @@
   - [Composability](arch/composability.md)
   - [Wallet](arch/wallet.md)
   - [Chat](arch/chat.md)
+  - [zkVM Primitive Layer](arch/zkvm_primitives.md)
 - [Smart Contracts](dev/contracts.md)
   - [Bridge Contract](dev/contracts/bridge.md)
   - [DEX Contract](dev/contracts/dex.md)

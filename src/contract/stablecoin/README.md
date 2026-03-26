@@ -174,7 +174,7 @@ The stablecoin circuits use these zkVM opcodes:
 LessThanOrEqual(a, b) = IsEqualBase(a, b) OR LessThanLoose(a, b)
 ```
 
-**See also**: [doc/src/zkas/bincode.md](../../doc/src/zkas/bincode.md) "Reasoned Opcodes"
+**See also**: [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes and dependency graphs.
 
 ## Implementation Status
 

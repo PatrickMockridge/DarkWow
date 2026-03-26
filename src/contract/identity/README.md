@@ -192,7 +192,7 @@ The identity circuits use existing zkVM opcodes for the basic proof structure. T
 LessThanOrEqual(a, b) = IsEqualBase(a, b) OR LessThanLoose(a, b)
 ```
 
-**See also**: [doc/src/zkas/bincode.md](../../doc/src/zkas/bincode.md) "Reasoned Opcodes"
+**See also**: [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes.
 
 ## The Privacy Gradient
 

@@ -250,31 +250,21 @@ module.
 
 ## Reasoned Opcodes
 
-Opcodes that have been reasoned about and are desirable for contract development, but are not yet implemented in the zkVM:
+Several opcodes have been reasoned about through contract development and are
+needed to deliver promised functionality. These are documented in full in
+[zkVM Primitive Layer](../arch/zkvm_primitives.md), which covers:
 
-### `LessThanOrEqual` (Reasoned)
+- Why the opcode layer is foundational to contract expressiveness
+- The core gap: opcodes that return values vs. opcodes that constrain
+- `LessThanOrEqual(a, b)` — comparison returning 0 or 1
+- `IsEqualBase(a, b)` — equality check returning 0 or 1
+- `NotBase(a)` — logical negation
+- `BaseDiv(a, b)` — field division
+- `BaseModExp(base, exp, mod)` — modular exponentiation
+- Opcode interaction graphs showing how primitives compose
 
-**Purpose**: Compare if `Base a <= Base b`
-
-**Reasoning**: Many contracts need predicate verification (e.g., "age >= 18", "balance >= minimum"). Currently only `LessThanStrict` and `LessThanLoose` exist which check `a < b`. To express `a <= b`, one would need `not(less_than_loose(b, a))` but there is no `not` operator.
-
-**Implementation hint**: Could return `1` if `a <= b`, `0` otherwise, using similar Halo2 gadgets to `LessThanLoose`.
-
-### `IsEqualBase` (Reasoned from rusticml fork)
-
-**Purpose**: Returns `0` or `1` for equality comparison, usable as a reusable boolean result in circuits.
-
-**Reasoning**: From the [intent-amm fork](https://codeberg.org/rusticml/darkfi-intent-amm-proposal) experimentation. Enables generic templates to express "require this on fill, bypass it on cancel" style logic cleanly.
-
-**Implementation hint**: Simple boolean output from `a == b`. Similar to `ConstrainEqualBase` but returns a value rather than constraining.
-
-### `NotBase` (Reasoned)
-
-**Purpose**: Logical negation of a Base field element (`not a` where `a` is 0 or 1)
-
-**Reasoning**: Needed to compose comparison operations. If we have `less_than_loose(b, a)` returning a boolean, we need `not` to express `a >= b`.
-
-**Implementation hint**: Could use `zero_cond_select(1, 0, a)` to get `not a` if `a` is 0 or 1.
+See [zkVM Primitive Layer](../arch/zkvm_primitives.md) for the full reasoning
+including what each opcode unlocks and how to implement them.
 
 ## Adding Custom Opcodes
 
@@ -282,7 +272,7 @@ To add a new opcode to the zkVM:
 
 1. **Define the opcode** in `src/zkas/opcode.rs` using the `define_opcodes!` macro:
    ```rust
-   LessThanOrEqual = 0x54, "less_than_or_equal",
+   LessThanOrEqual = 0x53, "less_than_or_equal",
        (VarType::Base), (VarType::Base, VarType::Base);
    ```
 
@@ -298,4 +288,6 @@ To add a new opcode to the zkVM:
    result = less_than_or_equal(a, b);
    ```
 
-The opcode system is designed to be extensible - new opcodes can be added without modifying existing ones.
+The opcode system is designed to be extensible — new opcodes can be added
+without modifying existing ones. See [zkVM Primitive Layer](../arch/zkvm_primitives.md)
+for implementation guidance on specific opcodes.
