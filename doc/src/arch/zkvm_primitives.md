@@ -102,6 +102,10 @@ These opcodes have been reasoned about through contract development, external fo
 experimentation, and feature roadmapping. They are not speculative — they are
 needed to deliver functionality already discussed publicly.
 
+> **Update**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and
+> `BaseLtStrict` (0x57) are now implemented in the zkVM (commit `41b0629e0`).
+> `BaseDiv` and `BaseModExp` remain unimplemented.
+
 ### `LessThanOrEqual(a, b)` → Base
 
 **Signature**: `(Base a, Base b) → Base` (returns 0 or 1)

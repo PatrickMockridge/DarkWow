@@ -214,20 +214,20 @@ This is a **draft/placeholder**. The following items need implementation:
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
-| `open_position_v1.zk` | Corrected | Uses `LessThanOrEqual` reasoning, Pedersen commitments correct |
+| `open_position_v1.zk` | Circuit update needed | Uses `LessThanOrEqual` reasoning, needs actual opcode |
 | `mint_stable_v1.zk` | Corrected | Base arithmetic uses existing `base_add` opcode |
-| `liquidate_v1.zk` | Corrected | Uses `LessThanOrEqual` reasoning for collateral checks |
+| `liquidate_v1.zk` | Circuit update needed | Uses `LessThanOrEqual` reasoning, needs actual opcode |
 
 ### Blockers
 
-1. **`LessThanOrEqual` not implemented** — Every collateralization check needs it: `open_position_v1.zk` (`collateral >= 2 * debt`), `mint_stable_v1.zk`, `liquidate_v1.zk`.
+1. **`LessThanOrEqual` (0x55) now implemented** — Circuits need to be updated to use it.
 2. **`BaseDiv` not implemented** — Required for `collateral_ratio = collateral / debt` and TWAP price computation.
 3. **No P2P oracle** — The NETHER/DRK AMM pool for TWAP price discovery does not yet exist on-chain.
 4. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is not implemented.
 
 ### What It Needs
 
-First: `LessThanOrEqual`. Second: `BaseDiv`. Third: P2P oracle / AMM integration. This is a multi-step dependency chain.
+First: update circuits to use `LessThanOrEqual`. Second: implement `BaseDiv`. Third: P2P oracle / AMM integration. This is a multi-step dependency chain.
 
 **See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
 

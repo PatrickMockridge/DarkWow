@@ -12,10 +12,10 @@ This document tracks the blockers to reaching MVP for each contract in `src/cont
 | `dao` | None | Governance token integration | **Yes** |
 | `dex` | None | Order matching logic | Partial |
 | `bridge` | None (placeholder noted) | Merkle verification, light client | Partial |
-| `identity` | `LessThanOrEqual`, `IsEqualBase` | — | No |
-| `stablecoin` | `LessThanOrEqual`, `BaseDiv` | P2P oracle, CDP notes | No |
+| `identity` | Circuit code not updated | — | No (needs circuit update) |
+| `stablecoin` | `BaseDiv` not implemented | P2P oracle, CDP notes | No |
 
-**Key insight**: `money` and `dao` have no opcode-layer blockers. `identity` and `stablecoin` are blocked by `LessThanOrEqual`. The `LessThanOrEqual` opcode is the single highest-leverage primitive to implement — it unblocks two contracts simultaneously.
+**Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are now implemented in the zkVM (commit `41b0629e0`). `identity` and `stablecoin` are no longer blocked at the opcode layer — their circuits must now be updated to use the new opcodes. `BaseDiv` remains the only unimplemented opcode blocking `stablecoin`.
 
 ---
 
@@ -142,7 +142,7 @@ InitializeV1 (0x00), DepositV1 (0x01), WithdrawV1 (0x02), UpdateConfigV1 (0x03)
 
 ---
 
-## `identity` — Blocked on Opcodes
+## `identity` — Needs Circuit Update
 
 **Location**: `src/contract/identity/`
 
@@ -158,15 +158,11 @@ InitializeV1 (0x00), IssueCredentialV1 (0x01), RevokeCredentialV1 (0x02), Create
 
 ### Blockers
 
-**Opcode layer**:
+**Opcode layer**: `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are now implemented in the zkVM. The circuit code must be updated to use them.
 
-1. **`LessThanOrEqual` not implemented** — Required for predicates like `age >= 18`. Currently `create_claim_v1.zk` uses a placeholder that always passes. The verifier must trust the `predicate_result` public input.
+**Circuit update needed**: `create_claim_v1.zk` currently uses a placeholder predicate that always passes. It should be updated to use `LessThanOrEqual` for threshold comparisons (e.g., `age >= 18`) and `IsEqualBase` for type comparisons.
 
-2. **`IsEqualBase` not implemented** — Needed for schema validation and credential type comparison (e.g., verifying the credential is of type "passport" not "drivers_license").
-
-**Why this blocks MVP**: Without `LessThanOrEqual`, the identity contract can issue credentials and create claims, but the claims cannot verify any comparison predicate in-circuit. The verifier must trust the predicate result rather than having the ZK circuit verify it.
-
-**What it needs**: Implement `LessThanOrEqual` in the zkVM. Once available, update `create_claim_v1.zk` to use it.
+**What it needs**: Update `create_claim_v1.zk` to use `less_than_or_equal(a, b)` and `is_equal_base(a, b)` in place of the placeholder predicate.
 
 **See also**: [zkVM Primitive Layer](zkvm_primitives.md) for the full opcode dependency analysis.
 
@@ -183,18 +179,15 @@ InitializeV1 (0x00), OpenPositionV1 (0x01), AddCollateralV1 (0x02), RemoveCollat
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
-| `open_position_v1.zk` | Corrected | Uses `LessThanOrEqual` reasoning, Pedersen commitments correct |
+| `open_position_v1.zk` | Circuit update needed | Uses `LessThanOrEqual` reasoning, needs actual opcode |
 | `mint_stable_v1.zk` | Corrected | Base arithmetic uses existing `base_add` opcode |
-| `liquidate_v1.zk` | Corrected | Uses `LessThanOrEqual` reasoning for collateral checks |
+| `liquidate_v1.zk` | Circuit update needed | Uses `LessThanOrEqual` reasoning, needs actual opcode |
 
 ### Blockers
 
 **Opcode layer**:
 
-1. **`LessThanOrEqual` not implemented** — Every collateralization check needs it:
-   - `open_position_v1.zk`: `collateral >= 2 * debt` → `LessThanOrEqual(2 * debt, collateral)`
-   - `mint_stable_v1.zk`: verifying debt does not exceed collateral ratio
-   - `liquidate_v1.zk`: `liquidator_reward <= collateral`, undercollateralization detection
+1. **`LessThanOrEqual` (0x55) now implemented** — The zkVM now has `LessThanOrEqual`. The circuits need to be updated to use it for collateralization checks.
 
 2. **`BaseDiv` not implemented** — Required for:
    - Computing `collateral_ratio = collateral / debt`
@@ -206,9 +199,7 @@ InitializeV1 (0x00), OpenPositionV1 (0x01), AddCollateralV1 (0x02), RemoveCollat
 
 4. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is designed but not implemented.
 
-**Why this is furthest from MVP**: Even if `LessThanOrEqual` were available tomorrow, the P2P oracle design requires a working AMM pool, which requires the DEX to be functional, which requires order matching to be resolved.
-
-**What it needs**: First: `LessThanOrEqual`. Second: `BaseDiv`. Third: P2P oracle / AMM integration. This is a multi-step dependency chain.
+**What it needs**: First: update circuits to use `LessThanOrEqual`. Second: implement `BaseDiv`. Third: P2P oracle / AMM integration. This is a multi-step dependency chain.
 
 **See also**: [zkVM Primitive Layer](zkvm_primitives.md) for the full opcode dependency analysis.
 
@@ -231,17 +222,17 @@ bridge
   │
   │ (needs Merkle verification fixed)
   ▼
-identity ◄── LessThanOrEqual ───────► stablecoin
-  │        (IsEqualBase too)              │
+identity ◄─── (LessThanOrEqual, ───► stablecoin
+  │          IsEqualBase implemented)       │
   │                                         │
-  └──────── BaseDiv ───────────────────────┘
+  └──────── BaseDiv ────────────────────────┘
 ```
 
 ---
 
 ## The Single Highest-Leverage Primitive
 
-**`LessThanOrEqual`** unblocks two contracts simultaneously (`identity` and `stablecoin`) and enables partial fill logic in the DEX. Its implementation is self-contained:
+**`LessThanOrEqual`** (0x55), **`IsEqualBase`** (0x54), **`NotBase`** (0x56), and **`BaseLtStrict`** (0x57) are now implemented in the zkVM (commit `41b0629e0`). The next highest-leverage primitive is **`BaseDiv`** — it unblocks stablecoin's TWAP price computation and collateral ratio checks.
 
 ```zk
 # Once LessThanOrEqual exists, IsEqualBase is also trivially available:

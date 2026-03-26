@@ -368,21 +368,16 @@ Each step reveals only "meets criteria" — full history stays private.
 
 ## MVP Status
 
-**Blocked on Opcodes** — basic structure exists, but predicate verification is stubbed.
+**Needs Circuit Update** — `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are now implemented in the zkVM. The circuit code must be updated.
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
 | `issue_credential_v1.zk` | Unread | Likely needs review |
 | `create_claim_v1.zk` | Has placeholder | Predicate verification uses placeholder that always passes |
 
-### Blockers
-
-1. **`LessThanOrEqual` not implemented** — Required for predicates like `age >= 18`. Currently `create_claim_v1.zk` uses a placeholder that always passes. The verifier must trust the `predicate_result` public input.
-2. **`IsEqualBase` not implemented** — Needed for schema validation and credential type comparison.
-
 ### What It Needs
 
-Implement `LessThanOrEqual` in the zkVM. Once available, update `create_claim_v1.zk` to use it for in-circuit predicate verification.
+Update `create_claim_v1.zk` to use `less_than_or_equal(a, b)` for threshold comparisons (e.g., `age >= 18`) and `is_equal_base(a, b)` for type comparisons.
 
 **See**: [Contract MVP Status](../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
 
