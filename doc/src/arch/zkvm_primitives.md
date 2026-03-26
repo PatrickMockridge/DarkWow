@@ -45,30 +45,242 @@ Consider features explicitly discussed in DarkFi's public communications:
 | "Time-locked reveal with bypass conditions" | `IsEqualBase`, `NotBase` | ✅ All implemented |
 | "ZK-computed AMM pricing" | `BaseMul` | TWAP supplied as oracle input; no in-circuit division needed |
 
-## The Core Gap: Opcodes That Return vs. Opcodes That Constrain
+## The Math Behind Comparison Opcodes
 
-The existing zkVM has two kinds of comparison:
+This section provides a technical deep-dive into how the comparison opcodes work, why they're challenging to implement correctly, and what can go wrong. Understanding this is essential before using these opcodes in production circuits.
 
-| Opcode | Signature | Behavior |
-|--------|-----------|----------|
-| `LessThanStrict` | `(Base, Base) → ()` | **Constrains**: fails if `a >= b` |
-| `LessThanLoose` | `(Base, Base) → ()` | **Constrains**: fails if `a >= b` |
+### The Fundamental Problem: Field Elements Are Not Integers
 
-Both *constrain* the circuit but **do not return a value**. You cannot use
-their results in subsequent computation:
+DarkFi's zkVM operates in the Pallas field — the scalar field of bn254, with prime order:
 
-```zk
-x = less_than_strict(a, b);  // ERROR: returns ()
-y = x + 1;                   // Cannot use x as a value
+```
+p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
 ```
 
-This matters for constructions like:
+All `Base` values are elements of this field. The critical insight is that **field arithmetic and integer arithmetic are not the same** near the modulus boundary.
+
+Consider comparing two integers `a` and `b` where `a < b`. In a ZK circuit, we manipulate field elements `a_f` and `b_f` (their field representations). The relation between integer ordering and field ordering breaks down near `p`:
+
+```
+Integer: 0 < 1 < 2 < ... < p-2 < p-1
+Field:   0 ≡ p < 1 < 2 < ... < p-2 < p-1 ≡ -1  (mod p)
+```
+
+For most values (well below `p`), integer ordering and field ordering agree. But for values in the range `[p - 2^32, p)`, field wraparound causes `a_f > b_f` even when `a < b` as integers.
+
+**Practical implication**: A gadget that compares field elements as integers must either:
+1. Constrain all inputs to a safe range (e.g., bottom 253 bits), or
+2. Handle wraparound explicitly
+
+The current implementation uses approach (1): the range check constrains values to `[0, 2^253)`, safely below the problematic boundary.
+
+---
+
+### How `LessThanLoose` Works: Range Check Gadget
+
+The core technique is to compute the difference `d = a - b` and check which range `d` falls into:
+
+```
+If a < b (integer):  d = a - b is in [-(p), 0)    → in field: d ∈ (p - 2^253, p)
+If a ≥ b (integer):  d = a - b is in [0, p)        → in field: d ∈ [0, 2^253)
+```
+
+The gadget computes `d = a - b` using `BaseSub`, then constrains `d` to the range `[0, 2^253)` via a range check. If the range check passes, `a ≥ b` as integers. If it fails, `a < b`.
+
+`LessThanStrict` is the same check but with an offset that accounts for the boundary case when `a == b`:
 
 ```zk
-# Want: if (a <= b) then c else d
-# But we need the comparison result as a value to select
-result = cond_select(less_than_or_equal(a, b), c, d);  // needs return value
+# LessThanStrict: returns 1 if a < b
+d = base_sub(a, b);
+less_than_range_check(d + 2^253);  # Shifted so equality fails the check
 ```
+
+---
+
+### How `LessThanOrEqual` Works: Combining Equality and Ordering
+
+`LessThanOrEqual(a, b)` returns `1` if `a ≤ b`, `0` otherwise. This can be decomposed as:
+
+```
+LessThanOrEqual(a, b) = IsEqual(a, b) OR LessThanLoose(a, b)
+```
+
+In field arithmetic:
+```
+IsEqual(a, b) = 1 - less_than_loose(a, b) - less_than_loose(b, a)
+```
+
+The gadget computes both `a - b` and `b - a`, runs the range check on each, and combines the results. The output is a `Base` value (0 or 1) usable in subsequent computation — unlike the `constrain`-only versions.
+
+---
+
+### `IsEqualBase`: The Delta-Invert Approach
+
+`IsEqualBase(a, b)` returns `1` if `a == b`, `0` otherwise. The gadget computes `delta = a - b` and its field inverse `delta_invert = delta^(-1)`:
+
+```
+delta = base_sub(a, b)
+delta_invert = field_inverse(delta)
+
+# Constraint: delta * delta_invert == 1  (when delta != 0)
+# When a == b: delta = 0, and delta_invert is set to 1 by convention
+```
+
+**The soundness issue**: When `a == b`, `delta = 0`. The constraint `delta * inv == 1` becomes `0 * 1 == 1`, which is unsatisfiable in a field. However, a selector gate makes this constraint only active when `a != b`. When `a == b`, only the second constraint `delta * inv + (out - 1) == 0` is evaluated, which becomes `0 + 0 == 0` — always satisfied, regardless of what `delta_invert` is assigned.
+
+**Consequence**: A malicious prover can assign any value to `delta_invert` when `a == b` without detection. The fix would require an explicit `is_zero` gadget that correctly constrains `delta_invert` when `delta = 0`, rather than relying on the selector gate to disable the problematic constraint.
+
+---
+
+### Gate Soundness: LessThanOrEqual with Output
+
+The `LessThanOrEqual` gate encodes the result as an offset value:
+
+```zk
+# Gate constraint:
+a_offset = out * (b - a) + (1 - out) * (a - b - 1)
+out * (1 - out) = 0  # out must be 0 or 1
+
+# Where:
+# - out = 1 means a <= b
+# - out = 0 means a > b
+```
+
+`a_offset` is then range-checked to `[0, 2^253)`. The concern: a malicious prover could assign `out = 0` and `a_offset = a - b - 1` (where `a > b`), producing an `a_offset` value that satisfies both the gate constraint and the range check. This would incorrectly pass verification even though the comparison result was flipped.
+
+The range check limits feasible incorrect assignments, but the interaction between the gate constraint and range check has not been formally analyzed. For production use, this deserves a proper security reduction.
+
+---
+
+### Why This Is Hard: Summary of Challenges
+
+| Challenge | Why It's Hard |
+|-----------|--------------|
+| **Field vs integer ordering** | Near `p`, field wraparound inverts integer ordering; requires range constraints on inputs |
+| **Delta-invert for IsEqualBase** | Cannot invert zero; convention-based fix creates a prover-controlled assignment with no constraint |
+| **Gate soundness for LessThanOrEqual** | Prover controls witness assignment; range check limits but doesn't eliminate incorrect assignments |
+| **No upgrade path** | Once deployed, buggy comparison results cannot be corrected without a hard fork |
+| **Composability untested** | Chaining comparison outputs into `CondSelect` or other opcodes has not been tested |
+
+---
+
+### What This Means for Contract Authors
+
+For most use cases — threshold predicates, collateralization bounds, reward limits — the current implementation is sufficient. The gadgets work correctly for honest provers and the range constraints keep inputs in the safe zone.
+
+However, before using these opcodes in a production contract that guards significant value, consider:
+
+1. **Input range validation**: Add explicit `range_check(253, a)` and `range_check(253, b)` before comparison to eliminate boundary cases
+2. **Redundant checks**: For high-value operations, add a redundant `LessThanStrict` constraint alongside `LessThanOrEqual` as a sanity check
+3. **Formal audit**: The delta-invert issue in `IsEqualBase` should be fixed with an explicit `is_zero` gadget before production deployment
+
+**See also**: `src/zk/gadget/less_than.rs` for the actual Halo2 implementation, and `dao/exec.zk` for a working example of cross-multiplication ratio checks that avoid these comparison issues entirely.
+
+---
+
+## Case Study: Reasoning About a Missing Opcode
+
+This section demonstrates how to reason about a missing opcode by working through a real example from contract development. The goal is to model the thought process, not just the conclusion.
+
+### The Problem: "I Need to Check if a Value Is Within a Range"
+
+During stablecoin development, a circuit needed to verify that a liquidator reward did not exceed the collateral. The circuit author wrote:
+
+```zk
+# Want: reward <= collateral
+# If true, the position can be liquidated
+constrain_equal_base(reward, collateral);  # WRONG: this checks equality
+```
+
+This fails because equality is not the right relation. The author needed a comparison — not just an assertion, but a **value** that could be used in subsequent logic.
+
+### Step 1: Identify What You Actually Need
+
+Before reaching for an opcode, ask: what is the circuit actually trying to enforce?
+
+The goal was to enforce: `liquidator_reward ≤ collateral_amount`
+
+This is a **less-than-or-equal** check. But the existing zkVM only had `LessThanStrict` which *constrains* the circuit to fail if `a ≥ b` — it doesn't return a value. You cannot do:
+
+```zk
+x = less_than_strict(a, b);  # ERROR: returns ()
+```
+
+### Step 2: Analyze the Existing Tools
+
+What does the VM actually provide?
+
+| What you have | What it does | Limitation |
+|--------------|-------------|-----------|
+| `LessThanStrict(a, b)` | Fails the circuit if `a ≥ b` | Returns nothing |
+| `LessThanLoose(a, b)` | Same — fails if `a ≥ b` | Returns nothing |
+| `BoolCheck(x)` | Enforces `x ∈ {0, 1}` | Needs a value to check |
+| `ConstrainEqualBase(a, b)` | Enforces `a = b` | Returns nothing |
+
+All existing comparison is **constrain-only**: it enforces a relation without producing a value. This is fine for hard constraints ("this must be true or the proof fails") but useless for soft logic ("if this is true, do A, else do B").
+
+### Step 3: Ask the Right Question
+
+The right question is not "what opcode am I missing?" — it is: **what relation do I need, and what inputs does it consume?**
+
+For `reward ≤ collateral`, the circuit needed to:
+1. Compute a comparison result `r ∈ {0, 1}`
+2. Use `r` in a subsequent constraint: `constrain_equal_base(r, 1)` (asserting the check passed)
+
+This requires an opcode with signature `(Base, Base) → Base`, not `(Base, Base) → ()`.
+
+### Step 4: Derive the Solution
+
+The derivation: `a ≤ b` if and only if `a < b OR a == b`.
+
+```
+LessThanOrEqual(a, b) = IsEqual(a, b) OR LessThanLoose(a, b)
+```
+
+Each of these primitives either existed or could be constructed:
+- `LessThanLoose` already existed (constrain-only)
+- `IsEqual` can be built from field arithmetic: `1 - (a - b) - (b - a)` then `BoolCheck`-ed
+
+The result is a **return-value opcode** that composes with the rest of the VM.
+
+### Step 5: Identify the Constraints
+
+Not every comparison can be added to a ZK VM. The constraints that matter:
+
+**Input domain**: Comparisons over field elements behave like integers only within safe ranges. The gadget must constrain inputs to `[0, 2^253)` to avoid field wraparound near the modulus `p`.
+
+**Composability**: A return-value opcode must produce a `Base` that can be consumed by other opcodes (`CondSelect`, `BoolCheck`, etc.). If the VM's type system doesn't allow this, the opcode is useless.
+
+**Soundness**: The gadget must be hard for a malicious prover to bypass. A comparison gadget that can be fooled is worse than no gadget — it creates false security.
+
+### Step 6: Recognize Workarounds
+
+Before implementing a new opcode, check whether existing opcodes can enforce the same constraint differently.
+
+For ratio checks like `collateral/debt < threshold`, a circuit can avoid comparison entirely using cross-multiplication:
+
+```zk
+# Instead of: collateral/debt < threshold
+# Do:         collateral < threshold * debt
+lhs = base_mul(collateral, 1);
+rhs = base_mul(threshold, debt);
+less_than_strict(lhs, rhs);  # Existing opcode, no new gadget needed
+```
+
+This is exactly what `dao/exec.zk` does for approval ratio checks. The lesson: **ZK circuits enforce constraints, they don't compute values**. Express your invariant as a constraint, not as an algorithm.
+
+### The General Pattern
+
+When reasoning about a missing opcode, follow this checklist:
+
+1. **What relation do I need?** (ordering, equality, membership, etc.)
+2. **Does an existing opcode enforce this relation?** (even if constrain-only)
+3. **Can I express my requirement as a constraint using existing opcodes?** (cross-multiplication for ratios, etc.)
+4. **If I need a return value, what opcode consumes it?** (compose all the way to the output)
+5. **What are the domain constraints on the inputs?** (range, bit-width, field membership)
+6. **What's the soundness story?** (can a malicious prover bypass this?)
+
+---
 
 ## Existing Opcode Inventory
 
@@ -110,11 +322,11 @@ needed to deliver functionality already discussed publicly.
 
 #### Correctness verification
 
-- **Boundary value testing** — Current tests use small values (7, 9). The critical edge cases are at the field modulus boundary: values near `p` (the Pallas prime `2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`) and values near `2^253`. In the Pallas field, integer ordering and field ordering diverge — the gadget encodes integer comparison via field arithmetic, and field wraparound near the modulus could cause incorrect results if not properly constrained.
+- **Boundary value testing** — Current tests use small values (7, 9). The critical edge cases are at the field modulus boundary: values near `p` and values near `2^253`. See **"The Math Behind Comparison Opcodes"** section above for the full analysis of field vs. integer ordering, the `IsEqualBase` delta-invert soundness issue, and the gate soundness concern for `LessThanOrEqual`.
 
-- **`IsEqualBase` delta-invert edge case** — The gadget computes `(a - b)^(-1)` to determine equality. When `a == b`, delta is zero. The implementation sets `delta_invert = 1` in this case, which makes the constraint `(a-b) * inv == 1` become `0 * 1 == 1` — which is unsatisfiable. However, the gate only evaluates the constraint when the selector is active, and the second constraint `(a-b) * inv + (out - 1) == 0` becomes `0 + 0 == 0` when `a == b`, which always passes. This means the prover could assign an incorrect delta_invert value when `a == b` without violating any active constraint. A proper fix would require an explicit `is_zero` gadget rather than relying on this implicit behavior.
+- **`IsEqualBase` delta-invert edge case** — When `a == b`, the prover can assign an arbitrary `delta_invert` value without violating any active constraint. The fix requires an explicit `is_zero` gadget. See the delta-invert analysis in the math section.
 
-- **LessThanOrEqual/LessThanStrict gate soundness** — Both gates encode the comparison result as an offset value passed to `less_than_range_check`. The constraint `a_offset = out * (b - a) + (1-out) * (a - b - 1)` relies on witness assignments from the prover. A malicious prover could assign incorrect `out` values (0 or 1) that don't reflect the actual comparison — but would then need to produce an `a_offset` that satisfies the gate constraint and passes the subsequent range check. The range check constrains `a_offset` to `[0, 2^253)`, which limits the feasible incorrect assignments, but this interaction between the gate constraint and range check deserves formal analysis.
+- **Gate soundness** — The `LessThanOrEqual` output gate relies on the prover assigning honest `out` values; the range check limits but does not eliminate incorrect assignments. Formal analysis of the gate × range-check interaction is needed before production use.
 
 #### Integration testing
 
@@ -131,7 +343,7 @@ needed to deliver functionality already discussed publicly.
 - **No upgrade path** — If a bug is found in production, there is no mechanism to disable these opcodes or migrate circuits that use them.
 - **No audit** — The implementation has not been audited by a third party.
 
-**Recommendation for this phase**: Use these opcodes for development and prototyping. When a contract reaches audit readiness, a professional audit of the gadget implementations is required before mainnet deployment. The `LessThanOrEqual` and `IsEqualBase` opcodes are the highest priority for thorough review given their role in authorization logic.
+**Recommendation for this phase**: Use these opcodes for development and prototyping. See the "What This Means for Contract Authors" section in the math documentation for concrete mitigations (input range validation, redundant checks). When a contract reaches audit readiness, a professional audit of the gadget implementations is required before mainnet deployment.
 
 ### `LessThanOrEqual(a, b)` → Base
 
