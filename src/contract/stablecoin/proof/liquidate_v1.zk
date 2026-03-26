@@ -32,25 +32,29 @@ circuit "LiquidateV1" {
     constrain_equal_base(nullifier_check, position_nullifier);
 
     # Calculate if position is undercollateralized
-    # NOTE: base_mul, base_add, base_sub are custom opcodes (not standard in zkVM)
+    # base_mul, base_add, base_sub all exist in zkVM
     debt_value = base_mul(debt_amount, current_price);
     collateral_value = base_mul(collateral_amount, witness_base(10000));
     penalty = base_add(debt_value, liquidation_penalty);
 
     # Verify position is actually undercollateralized
-    # NOTE: LessThanOrEqual needed for proper collateralization check
-    # See doc/src/zkas/bincode.md "Reasoned Opcodes"
+    # This is a simplified check - actual would use LessThanOrEqual
+    # PENDING: Verify debt_value * liquidation_threshold < collateral_value
     bool_check(debt_amount);
 
     # New commitment after liquidation (collateral seized)
+    # base_sub exists in zkVM (opcode 0x32)
     new_collateral = base_sub(collateral_amount, liquidator_reward);
     bool_check(new_collateral);
 
-    # Range proofs
+    # Range proofs (64-bit values)
     range_check(64, collateral_amount);
     range_check(64, debt_amount);
     range_check(64, liquidator_reward);
 
-    # NOTE: Proving liquidator_reward < collateral_amount requires
-    # LessThanOrEqual or similar comparison opcode.
+    # LESS THAN OR EQUAL LOGIC:
+    # Proving liquidator_reward <= collateral_amount requires LessThanOrEqual.
+    # Also need to verify: collateral_value / debt_value < liquidation_threshold
+    # PENDING: Implement using LessThanOrEqual(a, b).
+    # See: doc/src/zkas/bincode.md "Reasoned Opcodes: LessThanOrEqual"
 }

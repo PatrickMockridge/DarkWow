@@ -151,28 +151,30 @@ Proves a position can be liquidated:
 
 ## Reasoned Opcodes
 
-The stablecoin circuits require several opcodes that don't yet exist in the zkVM:
+The stablecoin circuits use these zkVM opcodes:
 
+**Implemented (available now):**
+- `EcMulShort(value, point)` — Pedersen commitments (`value * VALUE_COMMIT`)
+- `EcAdd(a, b)` — Adding EC points for Pedersen commitments
+- `BaseAdd`, `BaseSub`, `BaseMul` — Field arithmetic for debt calculations
+- `LessThanStrict`, `LessThanLoose` — Comparison constraints (constrain only, no return value)
+- `RangeCheck`, `BoolCheck` — Range proofs
+
+**Pending implementation:**
 ### `LessThanOrEqual(a, b)` (Reasoned)
-**Purpose**: Compare if `Base a <= Base b`
-**Reasoning**: Essential for collateralization checks (e.g., "collateral >= 2 * debt", "liquidator_reward <= collateral").
+**Purpose**: Returns 1 if `a <= b`, 0 otherwise
+**Reasoning**: Essential for collateralization checks:
+- `collateral >= 2 * debt` → `LessThanOrEqual(2 * debt, collateral) == 1`
+- `liquidator_reward <= collateral` → `LessThanOrEqual(liquidator_reward, collateral) == 1`
 
-### `EcMulShort(value, point)` (Reasoned)
-**Purpose**: Multiply a base field element by an elliptic curve fixed point
-**Reasoning**: Used for Pedersen commitments (`value * VALUE_COMMIT`). The current `ec_mul_base` multiplies by a constant generator, but we need multiplication by arbitrary fixed points.
+**Why needed**: `LessThanStrict` and `LessThanLoose` constrain but don't return a value. We need an opcode that returns 0/1 for use in subsequent computations.
 
-### `BaseAdd(a, b)`, `BaseSub(a, b)`, `BaseMul(a, b)` (Reasoned)
-**Purpose**: Field arithmetic on Base values
-**Reasoning**: Mint arithmetic requires adding/subtracting amounts. These could also be built from existing constraints but would be more efficient as native opcodes.
+**Implementation hint**: Can be built from `IsEqualBase + LessThanLoose`:
+```
+LessThanOrEqual(a, b) = IsEqualBase(a, b) OR LessThanLoose(a, b)
+```
 
-### Adding Custom Opcodes
-
-To add a new opcode to the zkVM:
-
-1. Define the opcode in `src/zkas/opcode.rs`
-2. Implement the opcode in `src/zk/vm.rs`
-
-For a full example of adding opcodes, see the [zkas bincode documentation](../../doc/src/zkas/bincode.md).
+**See also**: [doc/src/zkas/bincode.md](../../doc/src/zkas/bincode.md) "Reasoned Opcodes"
 
 ## Implementation Status
 

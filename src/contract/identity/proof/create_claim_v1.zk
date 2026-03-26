@@ -35,15 +35,22 @@ circuit "CreateClaimV1" {
     # This circuit proves: attribute_value >= threshold
     # (e.g., proving "I am over 18" without revealing age)
     #
-    # REQUIRED OPCODE: LessThanOrEqual(a, b) -> Base
-    #   Returns 1 if a <= b, 0 otherwise
-    #   This opcode does not exist in current zkVM.
+    # LESS THAN OR EQUAL LOGIC:
+    # We need to verify: threshold <= attribute_value
     #
-    # Pending opcode addition, the verification would be:
-    #   is_satisfied = less_than_or_equal(threshold, attribute_value);
-    #   constrain_equal_base(is_satisfied, predicate_result);
+    # LessThanOrEqual(a, b) returns 1 if a <= b, 0 otherwise.
+    # Available: LessThanLoose(a, b) which constrains a < b but returns nothing.
     #
-    # See: doc/src/zkas/bincode.md "Reasoned Opcodes"
+    # Implementation using existing opcodes:
+    #   less_than_or_equal(a, b) = is_equal(a, b) OR less_than_loose(a, b)
+    #
+    # Where is_equal(a, b) can be computed as:
+    #   is_equal(a, b) = 1 - less_than_loose(a, b) - less_than_loose(b, a)
+    #
+    # This requires IsEqualBase(a, b) opcode that returns 0 or 1.
+    #
+    # PENDING: Implement LessThanOrEqual using IsEqualBase + LessThanLoose.
+    # See: doc/src/zkas/bincode.md "Reasoned Opcodes: LessThanOrEqual"
     # ============================================================
 
     # Range checks to ensure inputs are well-formed
@@ -51,6 +58,8 @@ circuit "CreateClaimV1" {
     range_check(64, threshold);
 
     # Placeholder: constrain predicate_result to itself (always true)
-    # This allows the circuit to compile but verification is incomplete
+    # PENDING: Replace with actual less_than_or_equal verification
+    # is_satisfied = less_than_or_equal(threshold, attribute_value);
+    # constrain_equal_base(is_satisfied, predicate_result);
     constrain_equal_base(predicate_result, predicate_result);
 }

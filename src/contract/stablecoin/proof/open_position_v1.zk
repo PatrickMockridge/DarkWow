@@ -43,7 +43,7 @@ circuit "OpenPositionV1" {
     constrain_equal_base(nullifier_check, position_nullifier);
 
     # Create Pedersen commitments for collateral and debt
-    # NOTE: ec_mul_short, ec_add are custom opcodes (not standard in zkVM)
+    # Pedersen commitment: C = value * G + blind * H
     collateral_commit = ec_mul_short(collateral_amount, VALUE_COMMIT);
     collateral_random = ec_mul(collateral_blind, RANDOM_COMMIT);
     collateral_total = ec_add(collateral_commit, collateral_random);
@@ -68,12 +68,25 @@ circuit "OpenPositionV1" {
     constrain_instance(position_check);
     constrain_equal_base(position_check, position_commitment);
 
-    # Range checks for amounts
+    # Range checks for amounts (64-bit values)
     range_check(64, collateral_amount);
     range_check(64, debt_amount);
     bool_check(collateral_amount);
     bool_check(debt_amount);
 
-    # NOTE: Collateralization ratio check (collateral >= 2 * debt) requires
-    # LessThanOrEqual opcode. See doc/src/zkas/bincode.md "Reasoned Opcodes".
+    # Collateralization check: collateral >= min_ratio * debt
+    # This requires: collateral * 10000 >= debt * min_ratio
+    # Implemented as: 2 * debt <= collateral (for 200% collateralization)
+    #
+    # LESS THAN OR EQUAL LOGIC:
+    # LessThanOrEqual(a, b) returns 1 if a <= b, 0 otherwise.
+    # We have LessThanLoose(a, b) which constrains a < b but returns nothing.
+    # We can implement LessThanOrEqual using:
+    #   result = (a <= b) ? 1 : 0
+    #
+    # This requires the IsEqualBase opcode to compute (a == b) as a value,
+    # then combine with LessThanLoose(a, b).
+    #
+    # PENDING: Implement LessThanOrEqual(a, b) using IsEqualBase + LessThanLoose.
+    # See: doc/src/zkas/bincode.md "Reasoned Opcodes: LessThanOrEqual"
 }

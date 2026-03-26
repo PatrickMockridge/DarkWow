@@ -179,24 +179,20 @@ Proves the claim can be verified:
 
 ## Reasoned Opcodes
 
-Some predicates require opcodes that don't yet exist in the zkVM. These are documented here for future implementation:
+The identity circuits use existing zkVM opcodes for the basic proof structure. The predicate verification requires:
 
 ### `LessThanOrEqual(a, b)` (Reasoned)
-**Purpose**: Compare if `Base a <= Base b`
-**Reasoning**: Many contracts need predicate verification (e.g., "age >= 18", "balance >= minimum"). The current zkVM has `less_than_strict` and `less_than_loose` but not a simple `<=` operation.
+**Purpose**: Returns 1 if `a <= b`, 0 otherwise
+**Reasoning**: Required for predicates like "age >= 18" (threshold <= attribute_value).
 
-**Current workaround**: The circuit uses a placeholder (`constrain_equal_base(predicate_result, predicate_result)`) which always passes. Proper implementation would use `LessThanOrEqual(threshold, attribute_value)`.
+**Current workaround**: The circuit uses a placeholder that always passes. The verifier must trust the predicate_result public input.
 
-**See also**: [doc/src/zkas/bincode.md](../../doc/src/zkas/bincode.md) for zkVM opcode specifications.
+**Implementation**:
+```
+LessThanOrEqual(a, b) = IsEqualBase(a, b) OR LessThanLoose(a, b)
+```
 
-### Adding Custom Opcodes
-
-To add a new opcode to the zkVM:
-
-1. Define the opcode in `src/zkas/opcode.rs`
-2. Implement the opcode in `src/zk/vm.rs`
-
-For a full example of adding opcodes, see the [zkas bincode documentation](../../doc/src/zkas/bincode.md).
+**See also**: [doc/src/zkas/bincode.md](../../doc/src/zkas/bincode.md) "Reasoned Opcodes"
 
 ## The Privacy Gradient
 
