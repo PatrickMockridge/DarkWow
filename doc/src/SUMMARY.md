@@ -64,6 +64,7 @@
   - [zkVM Primitive Layer](arch/zkvm_primitives.md)
   - [Experimental Opcodes](arch/experimental-opcodes.md)
   - [MerkleRoot Depth Limitation](arch/merkle_depth.md)
+  - [Complete Opcode Universe](arch/opcode_universe.md)
   - [Contract MVP Status](arch/mvp_status.md)
 - [Smart Contracts](dev/contracts.md)
   - [Bridge Contract](dev/contracts/bridge.md)
