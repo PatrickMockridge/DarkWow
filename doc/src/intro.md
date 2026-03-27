@@ -22,12 +22,16 @@ This fork includes:
 - **DEX Contract**: Atomic swap DAO with incremental transparency roadmap
 - **Identity Contract**: Minimal credential proofs using ZK-verified competency DAGs
 - **Stablecoin Contract**: Monero-collateralized stablecoin with P2P Oracle design
+- **Escrow Contract**: Hashed Timelock with public key variant, trustless conditional payments
+- **DAO-Escrow Contract**: DAO-controlled endowment for community insurance with cooperative governance roadmap
 
 ### Architecture Documentation
 - Honest analysis of SPV de-anonymization problem
 - Incremental transparency approach (Level 0-3 privacy gradient)
 - ZK-verified competency DAGs for identity
 - P2P Oracle design for stablecoin price discovery
+- Field arithmetic constraints and zkVM primitive analysis
+- Escrow and DAO-Escrow contract documentation with cooperative governance roadmap
 
 ### Development Documentation
 - Contract developer guides
