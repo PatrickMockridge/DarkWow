@@ -11,8 +11,9 @@ This is a development fork of the official DarkFi repository.
 
 **The `dev` branch** (`PatrickM123/darkfi:dev`) contains all additions compared to official DarkFi master:
 
-- **New smart contracts**: Bridge, DEX, Identity, Stablecoin (not in official DarkFi)
+- **New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow (not in official DarkFi)
 - **Expanded architecture documentation**: Additional analysis and design approaches
+- **Architecture reference docs**: [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) (grey-market opcode analysis), [Merkle Depth](doc/src/arch/merkle_depth.md) (fixed-depth limitations and workarounds)
 - **Work-in-progress implementations**: Skeleton code and alternative approaches
 
 The official DarkFi repository (`darkrenaissance/darkfi`) should be consulted for the canonical state.
