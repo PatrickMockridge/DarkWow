@@ -1,341 +1,179 @@
 # DarkFi DAO-Escrow Contract
 
-Community insurance / collective escrow governed by DAO voting.
+Simplified MVP: Endowment pool governed by a DAO. The DAO acts as "escrow oracle" for claims.
 
-## The Problem: Centralized Insurance or Trustless but Inflexible
+## The Problem: Community Insurance Needs Governance + Trustlessness
 
 Traditional insurance:
 - **Centralized**: Single company controls everything
 - **Opaque**: Premium calculations and claims decisions are opaque
 - **Counterparty risk**: Company can deny claims or go bankrupt
 
-Smart contract escrow:
+Pure escrow:
 - **Trustless**: No single party controls funds
 - **Inflexible**: No voting/discretion on edge cases
 - **Timeout-based**: Refund is automatic, not discretionary
 
-**What if you could have democratic governance with trustless execution?**
+**What if the DAO controlled the escrow, using its existing voting mechanism?**
 
-## Our Solution: DAO-Governed Escrow
+## Our Solution: DAO-Controlled Endowment
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                  DAO-Escrow Architecture                            │
+│                  DAO-Escrow Architecture (Simplified)               │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                       │
 │   ┌─────────────┐                                                    │
 │   │  Members     │ ──pay premiums──> ┌─────────────────┐            │
-│   │  (token      │                   │  Endowment Pool  │            │
-│   │   holders)   │                   │                 │            │
-│   └─────────────┘                   └────────┬────────┘            │
+│   │              │                   │  Endowment Pool  │            │
+│   │  (pay annual │                   │                 │            │
+│   │   premium)   │                   │  (membership    │            │
+│   └─────────────┘                   │   notes issued)  │            │
+│                                      └────────┬────────┘            │
 │                                              │                       │
 │                           ┌─────────────────┼─────────────────┐    │
 │                           │                 │                   │    │
-│                           ▼                 ▼                   ▼    │
-│                    ┌──────────┐      ┌──────────┐       ┌──────────┐│
-│                    │  Claims   │      │  Claims   │       │  Claims   ││
-│                    │  Pending  │ ──> │ Approved │ ──>  │ Executed ││
-│                    └──────────┘      └──────────┘       └──────────┘│
-│                         │                  ▲                            │
-│                         │                  │                            │
-│                         └────── DAO Vote ──┘                            │
-│                                                                       │
-│   Endowment released like escrow claim IF DAO approves               │
+│                           │    DAO Treasury │ Management       │    │
+│                           │    (propose/   │ (via existing    │    │
+│                           │     vote/exec) │  DAO governance) │    │
+│                           │                 │                   │    │
+│                           └─────────────────┴─────────────────┘    │
+│                                               │                       │
+│                              Claims against endowment:               │
+│                              DAO votes → treasury releases funds     │
 │                                                                       │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## How It Works
+**Key simplification**: Instead of building a parallel voting mechanism for DAO-Escrow, we delegate voting to the existing DAO. Claims against the endowment are handled via the DAO's existing treasury management (`Propose` → `Vote` → `Exec`).
 
-### 1. Create DAO-Escrow
+## How It Works (Simplified MVP)
 
-An owner creates a DAO-Escrow with governance parameters:
-- **Quorum**: Minimum vote participation needed
-- **Approval ratio**: Yes votes / total votes needed to pass
-- **Premium rate**: What members pay into the endowment
-- **Max claim ratio**: Maximum claim as % of total endowment
+### 1. Initialize Endowment
+
+Owner creates an endowment linked to a DAO:
+```rust
+// The endowment is controlled by a DAO
+let endowment = InitializeBuilder::new()
+    .dao_bulla(existing_dao.bulla)  // Links to existing DAO
+    .owner_secret(owner_secret)
+    .endowment_token_id(DRK_TOKEN)
+    .build()?;
+```
 
 ### 2. Members Pay Premiums
 
-Members pay premiums into the endowment pool:
-```
-premium = member_balance * premium_rate
-```
-
-### 3. Propose a Claim
-
-Anyone with sufficient governance tokens can propose a claim:
-```
-claim = {
-    value: u64,
-    description_hash: hash,
-    recipient: public_key
-}
+Members pay annual premiums and receive a time-limited membership note:
+```rust
+// Pay premium, get membership note valid for ~1 year
+let premium = PayPremiumBuilder::new()
+    .dao_escrow_bulla(endowment.bulla)
+    .member_secret(member_secret)
+    .value(100)                    // Premium amount
+    .token_id(DRK_TOKEN)
+    .expiry(current_block + 52500) // ~1 year
+    .build()?;
 ```
 
-### 4. DAO Votes
+The membership note is spent when claiming DAO-Escrow benefits. The `spend_hook` checks membership hasn't expired.
 
-Token holders vote on the claim:
-- **Yes votes**: Approve the claim
-- **No votes**: Reject the claim
+### 3. Claims → DAO Treasury
 
-Vote aggregation happens on-chain. When quorum is reached:
-- `yes_votes / total_votes >= approval_ratio` → **Approved**
-- Otherwise → **Rejected**
+Claims against the endowment are handled by the DAO's existing treasury management:
+- **Propose**: Someone proposes a disbursement (using DAO's `Propose`)
+- **Vote**: DAO members vote (using DAO's `Vote`)
+- **Exec**: If approved, funds released (using DAO's `Exec` + `AuthMoneyTransfer`)
 
-### 5. Execute Claim (Like Escrow)
+The DAO-Escrow endowment is just a pool of funds. The DAO votes on how to allocate it.
 
-If approved, the endowment releases funds like an escrow claim:
-- Verified via ZK proof
-- Funds released to specified recipient
-- Claim marked as executed
+## Why This Simplification?
 
-## Trust Model: Democratic + Algorithmic
+**Original design had problems**:
+- Building parallel voting mechanism = lots of new circuits
+- Vote aggregation is complex (SMT, nullifiers, tallying)
+- Merkle proofs for premium tracking
 
-| Aspect | Traditional Insurance | Pure Escrow | DAO-Escrow |
-|--------|----------------------|-------------|-------------|
+**Simplified design reuses**:
+- DAO's existing `Propose`/`Vote`/`Exec` flow
+- DAO's existing `AuthMoneyTransfer` for fund release
+- No new voting circuits needed
+
+**Result**: DAO-Escrow is now just:
+1. Initialize endowment + link to DAO
+2. Pay premium + get membership note
+3. Claims handled by DAO treasury (existing code)
+
+## Trust Model: DAO as Escrow Oracle
+
+| Aspect | Traditional Insurance | Pure Escrow | DAO-Escrow (Simplified) |
+|--------|---------------------|-------------|------------------------|
 | **Who decides claims** | Company alone | Algorithm alone | DAO vote |
 | **Funds control** | Company | Smart contract | Smart contract |
-| **Edge case handling** | Company discretion | None | DAO discretion |
-| **Appeals** | None | None | Vote again |
-| **Transparency** | Opaque | Full | Full |
-
-## Comparison: DAO-Escrow vs Plain Escrow
-
-| Feature | Plain Escrow | DAO-Escrow |
-|---------|--------------|-------------|
-| **Timeout refund** | Yes (automatic) | No (DAO decides) |
-| **Claim conditions** | Pre-defined | Voted on |
-| **Dispute resolution** | None | DAO vote |
-| **Premium collection** | Not built-in | Built-in |
-| **Governance** | None | Full DAO |
+| **Premium → membership** | Underwriting | None | Time-limited note |
+| **Claims handling** | Company | Pre-defined | DAO treasury |
+| **Edge cases** | Company discretion | None | DAO discretion |
 
 ## Contract Functions
 
 | Function | ID | Description |
 |----------|-----|-------------|
-| InitializeV1 | 0x00 | Create new DAO-Escrow |
-| UpdateV1 | 0x01 | Update governance params |
-| PayPremiumV1 | 0x02 | Member pays premium |
-| ProposeClaimV1 | 0x03 | Propose a claim |
-| VoteClaimV1 | 0x04 | Vote on a claim |
-| ExecuteClaimV1 | 0x05 | Execute approved claim |
-| CancelClaimV1 | 0x06 | Cancel pending claim |
-| WithdrawV1 | 0x07 | Owner withdraws fees |
+| InitializeV1 | 0x00 | Create endowment linked to a DAO |
+| UpdateV1 | 0x01 | Update endowment params |
+| PayPremiumV1 | 0x02 | Pay premium, get membership note |
+| WithdrawV1 | 0x03 | Owner withdraws fees |
 
-## State Machine
+**Claims are NOT handled here** — they're handled by the DAO's treasury management.
 
-### Claim State
-
-```
-Pending ──[quorum + approval]──> Approved ──[execute]──> Executed
-   │
-   ├──[voting window expires]──> Expired
-   │
-   └──[proposer cancels]──> Cancelled
-
-Approved ──[execution deadline passes]──> Expired
-```
-
-### Endowment Flow
-
-```
-Members pay premiums ──> Endowment Pool ──> Claims payout
-                              │
-                              └──> Owner withdrawal (fees)
-```
-
-## ZK Circuits
+## ZK Circuits (Simplified)
 
 ### init_v1.zk
 
-Proves owner knows secret key and governance params are committed.
+Proves endowment is linked to a DAO:
+- **Public inputs**: `dao_bulla`, `endowment_bulla`
+- **Private inputs**: `owner_secret`, `endowment_token_id`, `bulla_blind`
+- **Verification**: `endowment_bulla = H(dao_bulla, owner_pub, token_id, blind)`
 
 ### pay_premium_v1.zk
 
-Proves premium payment is valid and member has funds.
+Proves premium payment and creates membership note:
+- **Public inputs**: `dao_escrow_bulla`, `membership_note`, `value_commit.x`, `value_commit.y`
+- **Private inputs**: `member_secret`, `value`, `token_id`, `expiry`, `membership_blind`, `value_blind`
+- **Verification**:
+  - Member key derivation
+  - Membership note commitment
+  - Value commitment (Pedersen)
 
-### propose_claim_v1.zk
-
-Proves proposer has sufficient governance tokens and claim is valid.
-
-### vote_claim_v1.zk
-
-Proves voter has tokens and hasn't already voted.
-
-### execute_claim_v1.zk
-
-Proves claim was approved and executes payout.
+**No new opcodes needed!** Both circuits use only proven opcodes.
 
 ## Opcode Requirements
 
 | Circuit | Opcodes Used | Status |
 |---------|-------------|--------|
-| `init_v1.zk` | `poseidon_hash`, `ec_mul_base` | Existing |
-| `pay_premium_v1.zk` | `ec_mul_short`, `ec_mul`, `ec_add` | Existing |
-| `propose_claim_v1.zk` | `poseidon_hash`, `ec_mul_base` | Existing |
-| `vote_claim_v1.zk` | `poseidon_hash`, `ec_mul_base` | Existing |
-| `execute_claim_v1.zk` | `ec_mul_base` | Existing |
+| `init_v1.zk` | `poseidon_hash`, `ec_mul_base`, `ec_get_x`, `ec_get_y` | Proven |
+| `pay_premium_v1.zk` | `poseidon_hash`, `ec_mul_base`, `ec_mul_short`, `ec_mul`, `ec_add`, `ec_get_x`, `ec_get_y` | Proven |
 
-**No new opcodes needed!** All required functionality exists in the zkVM.
+**No experimental opcodes. No grey-market concerns.**
 
-## Base Field Arithmetic
+## Comparison
 
-ZK circuits operate in a finite field — the Pallas field defined by prime `p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`. All arithmetic wraps at `p`, which breaks normal integer intuitions:
+| Feature | Insurance | DAO | Escrow | DAO-Escrow (New) |
+|---------|----------|-----|--------|-------------------|
+| Premium collection | Yes | No | No | Yes (annual note) |
+| Membership | Underwriting | N/A | N/A | Time-limited |
+| Claims handling | Company | N/A | Pre-defined | DAO treasury |
+| Funds release | Company | N/A | Secret/timeout | DAO vote |
 
-```zk
-# In the field, p-1 ≡ -1, so comparisons must be carefully designed
-# Vote ratio checks (yes_votes / total_votes >= approval_ratio) require cross-multiplication
-```
+## What DAO-Escrow IS NOT
 
-**Why this matters for DAO-Escrow**: The voting mechanism requires checking `yes_votes / total_votes >= approval_ratio`. This is a ratio comparison that must be expressed as field arithmetic.
+This is NOT a standalone voting system. It does NOT have:
+- Its own voting mechanism
+- Its own proposal/execute flow
+- Vote aggregation circuits
 
-**The DAO-Escrow's approach**: Vote ratio checks use cross-multiplication (same pattern as DAO). To prove `yes / total >= ratio`, we prove `yes * 1 >= ratio * total` via `base_mul` + `less_than_strict`. This avoids division entirely.
-
-**The pattern (from `dao/exec.zk` lines 118-126)**:
-```zk
-# To prove: yes_votes / total_votes >= approval_ratio
-# We prove: yes_votes >= approval_ratio * total_votes
-# I.e., yes_votes - approval_ratio * total_votes >= 0 as integers
-
-lhs = base_mul(yes_votes, 1);
-rhs = base_mul(approval_ratio, total_votes);
-less_than_strict(rhs, lhs);
-```
-
-**Key insight**: DAO-Escrow doesn't need `LessThanOrEqual` returning a value — the constrain-only `less_than_strict` is sufficient because we only need to verify the ratio is satisfied, not compute further from it.
-
-**See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
-
-## Opcode Discovery and Validation
-
-**Opcode discovery must go hand-in-hand with building functionality** — not precede it.
-
-When building the DAO-Escrow contract, we discovered that:
-1. Vote aggregation requires ratio comparisons — same as DAO's `exec.zk`
-2. Cross-multiplication (`base_mul` + `less_than_strict`) suffices for ratio checks
-3. No `LessThanOrEqual` returning a value is needed — the constrain-only opcode is sufficient
-4. This was confirmed by studying the DAO contract's implementation, not by pre-planning
-
-**The correct workflow**:
-1. Build the circuit with what exists
-2. When a constraint can't be expressed, document the opcode gap
-3. Implement the new opcode only when the actual use case is known
-4. Validate the opcode against the specific circuit that needs it — not in isolation
-
-DAO-Escrow benefited from DAO's prior work — the cross-multiplication pattern for ratio checks was already proven in DAO, so DAO-Escrow could reuse it directly.
-
-## Opcode Safety
-
-**DAO-Escrow has no grey-market opcode concerns — it uses only proven opcodes.**
-
-The DAO-Escrow contract uses only opcodes that are well-established in the zkVM:
-
-| Opcode | Status |
-|--------|--------|
-| `poseidon_hash` | Proven — widely used, well-audited |
-| `ec_mul_base` | Proven — standard EC operation |
-| `ec_mul_short` | Proven — Pedersen commitment basis |
-| `ec_add` | Proven — EC point addition |
-| `less_than_strict` | Proven — constrain-only, sound for ratio checks via cross-multiplication |
-
-**No experimental opcodes required.** DAO-Escrow's voting uses the same cross-multiplication pattern as DAO, which has been reviewed and is considered sound.
-
-## Key Blockers
-
-| Blocker | Severity | Description |
-|---------|----------|-------------|
-| ZK circuit compilation | **High** | `.zk` files need compilation to `.zk.bin` via zkas |
-| Entry point wiring | **High** | `process_instruction()` and `process_update()` are stubs |
-| Vote aggregation | **High** | On-chain vote counting with cross-multiplication not implemented |
-| Money integration | **High** | Endowment pool not connected to actual token holdings |
-| State management | **Medium** | Claim state machine transitions not fully implemented |
-
-**DAO-Escrow has no opcode blockers** — all required opcodes exist and are proven.
-
-## Use Cases
-
-### Community Insurance
-```rust
-// Create DAO-Escrow for community health insurance
-let dao_escrow = InitializeBuilder::new()
-    .owner_pubkey(community_treasury)
-    .gov_token_id(COMMUNITY_TOKEN)
-    .proposer_limit(100)        // 100 tokens to propose
-    .quorum(1000)               // 1000 token votes needed
-    .approval_ratio(51, 100)    // 51% approval
-    .premium_rate(1, 100)       // 1% of balance per period
-    .max_claim_ratio(10, 100)   // Max 10% of pool per claim
-    .build()?;
-
-// Members pay premiums
-premium_payment = PayPremiumBuilder::new()
-    .dao_escrow_bulla(dao_escrow.bulla)
-    .value(100)
-    .build()?;
-
-// Someone needs medical coverage - propose claim
-claim = ProposeClaimBuilder::new()
-    .dao_escrow_bulla(dao_escrow.bulla)
-    .value(5000)
-    .description("Emergency surgery")
-    .recipient_pubkey(claimant)
-    .build()?;
-
-// DAO votes on the claim
-vote = VoteClaimBuilder::new()
-    .claim_id(claim.id)
-    .yes()
-    .build()?;
-
-// If approved, funds released
-execute = ExecuteClaimBuilder::new()
-    .claim_id(claim.id)
-    .build()?;
-```
-
-### Protocol-Owned Liquidity
-```rust
-// DAO manages a liquidity endowment
-// Members contribute tokens
-// DAO votes on strategic allocations
-```
-
-### Treasury Management
-```rust
-// DAO manages treasury
-// Grants require voting
-// Execute is like escrow claim
-```
-
-### Collective Investment
-```rust
-// Members pool funds
-// DAO votes on investments
-// Profits distributed like claims
-```
-
-## Architecture
-
-```
-dao_escrow/
-├── proof/                    # ZK proof circuits (.zk files)
-│   ├── init_v1.zk          # DAO-Escrow initialization
-│   ├── pay_premium_v1.zk   # Premium payment
-│   ├── propose_claim_v1.zk # Claim proposal
-│   ├── vote_claim_v1.zk    # Vote on claim
-│   └── execute_claim_v1.zk # Execute approved claim
-├── src/
-│   ├── client/
-│   │   └── mod.rs          # Builder structs
-│   ├── entrypoint.rs       # WASM entrypoint
-│   ├── error.rs            # Error types
-│   ├── lib.rs              # Contract definitions
-│   └── model/
-│       └── mod.rs          # Data structures
-├── Cargo.toml
-└── README.md
-```
+Instead, it:
+- Holds an endowment pool
+- Issues membership notes
+- Lets the DAO control fund release
 
 ## Building
 
@@ -350,73 +188,49 @@ make proof
 cargo test -p darkfi_dao_escrow_contract
 ```
 
-## Integration
+## Architecture
 
-### With Money Contract
-- Premiums paid via Money::Transfer
-- Claims release funds via Money::Mint (from endowment pool)
-- Uses same coin/nullifier infrastructure
-
-### With DAO Contract
-- Similar voting mechanism to DAO::Propose/Vote/Exec
-- But specifically for endowment claims
-- Simplified: no arbitrary auth calls, just value transfer
-
-## Security Considerations
-
-### Vote Manipulation
-- One token = one vote (no delegation)
-- Nullifiers prevent double-voting
-- Quorum prevents low-participation decisions
-
-### Endowment Safety
-- Max claim ratio prevents drain via single claim
-- Execution deadline prevents indefinite pending claims
-- Owner withdrawal limited to accumulated fees
-
-### Privacy
-- Premium payments are pseudonymous (public key)
-- Claims linkable via description hash (if disclosed)
-- Vote amounts hidden via Pedersen commitments
+```
+dao_escrow/
+├── proof/
+│   ├── init_v1.zk          # Endowment initialization
+│   └── pay_premium_v1.zk   # Premium → membership note
+├── src/
+│   ├── client/              # Builder structs
+│   ├── entrypoint.rs        # WASM entrypoint
+│   ├── error.rs             # Error types
+│   ├── lib.rs               # Contract definitions
+│   └── model/              # Data structures
+├── Cargo.toml
+└── README.md
+```
 
 ## MVP Status
 
-**Placeholder MVP** — Core structure exists, ZK circuits are stubs.
+**Simplified MVP** — Delegated voting to DAO treasury.
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
-| `init_v1.zk` | Placeholder | Uses existing opcodes |
-| `pay_premium_v1.zk` | Placeholder | Pedersen commitment |
-| `propose_claim_v1.zk` | Placeholder | Merkle proof is TODO |
-| `vote_claim_v1.zk` | Placeholder | Nullifier check is TODO |
-| `execute_claim_v1.zk` | Placeholder | Vote aggregation is TODO |
+| `init_v1.zk` | Complete | Links endowment to DAO |
+| `pay_premium_v1.zk` | Complete | Creates membership note |
 
-### What It Needs
+### What Remains
 
-1. **ZK Circuit Compilation**: Convert `.zk` files to `.zk.bin`
-2. **Entry Point Implementation**: Wire ZK proof verification
-3. **Vote Aggregation**: On-chain vote counting with cross-multiplication
-4. **Money Integration**: Connect endowment to actual token pool
+1. **Entry point wiring**: Connect ZK proofs to `process_instruction()`
+2. **Membership note integration**: `spend_hook` to check expiry at spend time
+3. **Money integration**: Connect endowment to actual token holdings
 
-### No Blockers
+### Key Blocker: Membership Note Spend Hook
 
-All required opcodes exist. Vote aggregation uses the same cross-multiplication pattern as DAO.
+The membership note needs a `spend_hook` that:
+- Verifies `current_block < expiry` before allowing spend
+- This is Money contract integration, not DAO-Escrow
 
-## Comparison
-
-| Feature | Insurance | DAO | Escrow | DAO-Escrow |
-|---------|----------|-----|--------|------------|
-| Premium collection | Yes | No | No | Yes |
-| Claims process | Underwriting | Voting | Conditions | Voting |
-| Funds release | Company | N/A | Timeout/Secret | DAO approved |
-| Transparency | Low | High | Full | High |
-| Edge cases | Company discretion | DAO discretion | None | DAO discretion |
+**Claims are handled by DAO treasury** — no DAO-Escrow-specific work needed there.
 
 ## References
 
-- [DarkFi DAO Contract](../dao/)
-- [DarkFi Escrow Contract](../escrow/)
-- [DarkFi Money Contract](../money/)
-- [DAO Governance Documentation](https://docs.dark.fi)
-- [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md)
+- [DarkFi DAO Contract](../dao/) — Existing treasury management
+- [DarkFi Escrow Contract](../escrow/) — Membership note pattern
+- [DarkFi Money Contract](../money/) — Spend hook integration
 - [Contract MVP Status](../../../doc/src/arch/mvp_status.md)

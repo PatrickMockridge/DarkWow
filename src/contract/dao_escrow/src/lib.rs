@@ -18,29 +18,30 @@
 
 //! DarkFi DAO-Escrow Contract
 //!
-//! Community insurance / collective escrow governed by DAO voting.
+//! Simplified MVP: Endowment pool governed by a DAO.
 //!
 //! ## Concept
 //!
-//! Combines DAO governance with escrow mechanics:
-//! - **Members pay premiums** into a community endowment
-//! - **Claims are proposals** — anyone can propose a payout
-//! - **DAO votes** — token holders decide approve/reject
-//! - **Conditional release** — approved claims release endowment (like escrow claim)
+//! The DAO-Escrow is an endowment pool where:
+//! - **Members pay premiums** → receive a time-limited membership note (annual)
+//! - **Claims are handled by the DAO** → via existing treasury management (propose/vote/exec)
+//! - **The DAO acts as escrow oracle** → votes to release funds when claims are approved
 //!
-//! ## Trust Model: DAO-Governed Escrow
+//! This simplifies the original design by delegating voting to the existing DAO,
+//! rather than building a parallel voting mechanism.
 //!
-//! Unlike pure escrow with timeout-based refunds, this is governed:
-//! - No automatic timeout refund
-//! - DAO decides ALL outcomes via voting
-//! - Dispute resolution is democratic, not algorithmic
+//! ## Trust Model: DAO-Controlled Endowment
+//!
+//! - Membership notes are time-locked (annual expiry)
+//! - Claims against the endowment are handled by DAO treasury vote
+//! - The DAO's existing governance (propose/vote/exec) controls fund release
+//! - No separate DAO-Escrow voting needed
 //!
 //! ## Use Cases
 //!
-//! - **Community Insurance**: Pool funds, vote on claims (healthcare, disaster relief)
-//! - **Protocol-Owned Liquidity**: Pool funds, DAO allocates to strategic initiatives
-//! - **Treasury Management**: DAOs manage endowment, vote on disbursements
-//! - **Collective Investment**: Members contribute, DAO votes on investments
+//! - **Community Insurance**: Pool funds, DAO votes on claim payouts
+//! - **Protocol-Owned Liquidity**: Endowment controlled by DAO
+//! - **Treasury Management**: DAO manages a dedicated endowment pool
 
 use darkfi_sdk::define_contract_function;
 
@@ -49,11 +50,7 @@ define_contract_function!(DaoEscrowFunction {
     InitializeV1 = 0x00,
     UpdateV1 = 0x01,
     PayPremiumV1 = 0x02,
-    ProposeClaimV1 = 0x03,
-    VoteClaimV1 = 0x04,
-    ExecuteClaimV1 = 0x05,
-    CancelClaimV1 = 0x06,
-    WithdrawV1 = 0x07,
+    WithdrawV1 = 0x03,  // Admin withdrawal of endowment fees
 });
 
 /// Internal contract errors
@@ -74,16 +71,12 @@ pub mod client;
 // DATABASE TREES
 // ============================================================================
 
-/// Info tree (version, config, governance params)
+/// Info tree (version, config)
 pub const DAO_ESCROW_CONTRACT_INFO_TREE: &str = "info";
-/// Bullas tree (DAOEscrow instances)
+/// Bullas tree (endowment instances)
 pub const DAO_ESCROW_CONTRACT_BULLAS_TREE: &str = "bullas";
-/// Premiums tree (premium payments tracking)
-pub const DAO_ESCROW_CONTRACT_PREMIUMS_TREE: &str = "premiums";
-/// Claims tree (pending/executed claims)
-pub const DAO_ESCROW_CONTRACT_CLAIMS_TREE: &str = "claims";
-/// Vote nullifiers tree (prevents double-voting)
-pub const DAO_ESCROW_CONTRACT_VOTE_NULLIFIERS_TREE: &str = "vote_nullifiers";
+/// Membership notes tree (time-limited membership)
+pub const DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE: &str = "membership";
 /// Endowment pool tree (actual funds)
 pub const DAO_ESCROW_CONTRACT_ENDOWMENT_TREE: &str = "endowment";
 
@@ -106,9 +99,3 @@ pub const DAO_ESCROW_LATEST_ROOT: &[u8] = b"last_root";
 pub const DAO_ESCROW_ZKAS_INIT_NS: &str = "Init";
 /// ZKAS namespace for premium payment
 pub const DAO_ESCROW_ZKAS_PREMIUM_NS: &str = "PayPremium";
-/// ZKAS namespace for claim proposal
-pub const DAO_ESCROW_ZKAS_PROPOSE_NS: &str = "ProposeClaim";
-/// ZKAS namespace for claim vote
-pub const DAO_ESCROW_ZKAS_VOTE_NS: &str = "VoteClaim";
-/// ZKAS namespace for claim execution
-pub const DAO_ESCROW_ZKAS_EXEC_NS: &str = "ExecuteClaim";

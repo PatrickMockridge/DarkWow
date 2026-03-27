@@ -4,38 +4,32 @@ field = "pallas";
 
 # DAO-Escrow Initialization Circuit (Version 1)
 #
-# This circuit proves:
-# - Owner knows their secret key
-# - Governance parameters are correctly committed
+# Simplified MVP: The DAO-Escrow is an endowment pool controlled by a DAO.
+# The DAO (via existing treasury management) votes on claims.
+# This circuit just creates the endowment and links it to a DAO.
 #
 # Public Inputs (constrain_instance):
-#   - bulla = H(owner_pub.x, owner_pub.y, gov_token_id, params...)
+#   - dao_bulla: The controlling DAO's bulla
+#   - endowment_bulla: H(dao_bulla, owner_pub, endowment_token_id, owner_secret)
 #
 # Witnesses:
-#   - owner_secret: Owner's secret key
-#   - Various governance parameters
+#   - dao_bulla: The controlling DAO's bulla (passed as public input for verification)
+#   - owner_secret: Endowment owner's secret key
+#   - endowment_token_id: Token ID held in the endowment
 
 constant "Init" {
     EcFixedPointBase NULLIFIER_K,
 }
 
 witness "Init" {
+    # The controlling DAO's bulla (proves this endowment is governed by a DAO)
+    Base dao_bulla,
+
     # Owner's secret key
     Base owner_secret,
 
-    # Governance parameters
-    Base gov_token_id,
-    Base proposer_limit,
-    Base quorum,
-    Base early_exec_quorum,
-    Base approval_ratio_quot,
-    Base approval_ratio_base,
-    Base premium_rate_quot,
-    Base premium_rate_base,
-    Base max_claim_ratio_quot,
-    Base max_claim_ratio_base,
-    Base claim_voting_window,
-    Base claim_execution_window,
+    # Endowment token ID
+    Base endowment_token_id,
 
     # Bulla blind
     Base bulla_blind,
@@ -47,23 +41,17 @@ circuit "Init" {
     owner_pub_x = ec_get_x(owner_pub);
     owner_pub_y = ec_get_y(owner_pub);
 
-    # Compute bulla (unique identifier)
-    bulla = poseidon_hash(
+    # Compute endowment bulla = H(dao_bulla, owner_pub, endowment_token_id, blind)
+    # This uniquely identifies this endowment and proves it's controlled by the DAO
+    endowment_bulla = poseidon_hash(
+        dao_bulla,
         owner_pub_x,
         owner_pub_y,
-        gov_token_id,
-        proposer_limit,
-        quorum,
-        early_exec_quorum,
-        approval_ratio_quot,
-        approval_ratio_base,
-        premium_rate_quot,
-        premium_rate_base,
-        max_claim_ratio_quot,
-        max_claim_ratio_base,
+        endowment_token_id,
         bulla_blind,
     );
 
     # Expose bulla as public input
-    constrain_instance(bulla);
+    constrain_instance(dao_bulla);
+    constrain_instance(endowment_bulla);
 }

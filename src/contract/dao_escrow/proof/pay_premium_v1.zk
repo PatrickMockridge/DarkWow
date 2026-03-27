@@ -4,19 +4,25 @@ field = "pallas";
 
 # DAO-Escrow Premium Payment Circuit (Version 1)
 #
+# Simplfied MVP: Members pay premiums and receive a time-limited membership note.
+# The DAO (via existing treasury management) acts as "escrow oracle" for claims.
+#
 # This circuit proves:
-# - Member is paying a legitimate premium
-# - Premium amount is correctly computed
+# - Member is paying a legitimate premium to the endowment
+# - Membership note is correctly formed with expiry
 #
 # Public Inputs (constrain_instance):
-#   - dao_escrow_bulla
-#   - value_commit.x, value_commit.y
+#   - dao_escrow_bulla: DAO-Escrow identifier
+#   - membership_note: H(member_pub, value, token_id, expiry, membership_blind)
+#   - value_commit.x, value_commit.y: Pedersen commitment to premium value
 #
 # Witnesses:
-#   - member_secret
-#   - value
-#   - token_id
-#   - period
+#   - member_secret: Member's secret key
+#   - value: Premium amount
+#   - token_id: Token being paid
+#   - expiry: Membership expiry block (annual = current_block + ~52500)
+#   - membership_blind: Blinding for membership note
+#   - value_blind: Blinding for value commitment
 
 constant "PayPremium" {
     EcFixedPointBase NULLIFIER_K,
@@ -34,9 +40,12 @@ witness "PayPremium" {
     # Premium details
     Base value,
     Base token_id,
-    Base period,
 
-    # Blinding factor
+    # Membership expiry (annual = ~52500 blocks)
+    Base expiry,
+
+    # Blinding factors
+    Scalar membership_blind,
     Scalar value_blind,
 }
 
@@ -46,7 +55,19 @@ circuit "PayPremium" {
     member_pub_x = ec_get_x(member_pub);
     member_pub_y = ec_get_y(member_pub);
 
-    # Compute value commitment
+    # Compute membership note = H(member_pub, value, token_id, expiry, blind)
+    # This note is spent when claiming DAO-Escrow benefits
+    # The expiry is checked by the spend_hook at spend time
+    membership_note = poseidon_hash(
+        member_pub_x,
+        member_pub_y,
+        value,
+        token_id,
+        expiry,
+        membership_blind,
+    );
+
+    # Compute value commitment for the premium payment
     # C = value * G + blind * H
     vcv = ec_mul_short(value, VALUE_COMMIT_VALUE);
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
@@ -54,6 +75,7 @@ circuit "PayPremium" {
 
     # Expose public inputs
     constrain_instance(dao_escrow_bulla);
+    constrain_instance(membership_note);
     constrain_instance(ec_get_x(value_commit));
     constrain_instance(ec_get_y(value_commit));
 }
