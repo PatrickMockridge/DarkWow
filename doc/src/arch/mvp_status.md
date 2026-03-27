@@ -17,7 +17,7 @@ This document tracks the blockers to reaching MVP for each contract in `src/cont
 | `identity` | `LessThanOrEqual`, `IsEqualBase` integrated (experimental) | Integration testing | Partial |
 | `stablecoin` | None (ratio checks use cross-multiplication — see `dao/exec.zk`) | P2P oracle, CDP notes | Partial |
 | `escrow` | None | ZK circuit compilation, Money integration | Partial |
-| `dao_escrow` | None | Vote aggregation, Money integration | Partial |
+| `dao_escrow` | None | Entry point wiring, spend hook, Money integration | Partial |
 
 **Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are implemented in the zkVM (commit `41b0629e0`). `identity` and `stablecoin` have been updated to use `LessThanOrEqual`. Ratio checks (e.g., `collateral / debt < threshold`) use cross-multiplication via `base_mul + less_than_strict` — no `BaseDiv` needed. All experimental opcodes are grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md) for production readiness requirements.
 
@@ -244,38 +244,39 @@ InitializeV1 (0x00), CreateEscrowV1 (0x01), FundV1 (0x02), ClaimV1 (0x03), Refun
 
 ---
 
-## `dao_escrow` — Partial MVP
+## `dao_escrow` — Partial MVP (Simplified)
 
 **Location**: `src/contract/dao_escrow/`
 
 ### Functions
-InitializeV1 (0x00), UpdateV1 (0x01), PayPremiumV1 (0x02), ProposeClaimV1 (0x03), VoteClaimV1 (0x04), ExecuteClaimV1 (0x05), CancelClaimV1 (0x06), WithdrawV1 (0x07)
+InitializeV1 (0x00), UpdateV1 (0x01), PayPremiumV1 (0x02), WithdrawV1 (0x03)
+
+**Note**: Claims are handled by DAO treasury — no parallel voting in DAO-Escrow.
 
 ### Circuit Status
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
-| `init_v1.zk` | Placeholder | Uses `poseidon_hash`, `ec_mul_base` |
-| `pay_premium_v1.zk` | Placeholder | Pedersen commitment |
-| `propose_claim_v1.zk` | Placeholder | Merkle proof is TODO |
-| `vote_claim_v1.zk` | Placeholder | Nullifier check is TODO |
-| `execute_claim_v1.zk` | Placeholder | Vote aggregation is TODO |
+| `init_v1.zk` | Complete | Links endowment to DAO bulla |
+| `pay_premium_v1.zk` | Complete | Creates time-limited membership note |
 
 ### Blockers
 
-**Opcode layer**: None. All required opcodes exist.
+**Opcode layer**: None. MVP uses only proven opcodes.
 
 **Architecture blockers**:
 
-1. **Vote aggregation** — On-chain vote counting with cross-multiplication for approval ratio (same pattern as `dao/exec.zk`)
+1. **Entry point wiring** — `process_instruction()` and `process_update()` are stubs
 
-2. **Money integration** — Endowment pool needs to connect to actual token holdings
+2. **Membership note spend hook** — Money contract integration to check expiry at spend time
 
-3. **ZK circuit compilation** — `.zk` files exist but need to be compiled to `.zk.bin`
+3. **Money integration** — Endowment pool needs to connect to actual token holdings
 
-**What it needs**: Vote aggregation logic, money integration, ZK circuit compilation.
+**What it needs**: Entry point wiring, spend hook integration, money integration.
 
-**See also**: [DAO-Escrow Contract](./dao_escrow.md) for the full analysis.
+**Extended features** (see roadmap in dao_escrow.md): Claims DAO voting, multi-tier governance, mutual insurance — all possible with existing opcodes (no opcode barriers).
+
+**See also**: [DAO-Escrow Contract](./dao_escrow.md) for the full analysis including roadmap.
 
 ---
 
@@ -305,11 +306,13 @@ escrow ──────► money (spend_hook integration)
   │
   │ (Phase 1: standalone, no money integration needed)
   ▼
-dao_escrow ──────► money (endowment pool)
+dao_escrow ──────► dao (treasury via Propose/Vote/Exec)
+  │                │
+  │                └── Claims handled by DAO treasury
   │
-  │ (needs vote aggregation)
+  │ (membership note spend hook needs money integration)
   ▼
-dao (vote mechanism)
+money (token holdings)
 ```
 
 ---

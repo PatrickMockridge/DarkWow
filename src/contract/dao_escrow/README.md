@@ -205,6 +205,99 @@ dao_escrow/
 └── README.md
 ```
 
+## Roadmap: Extended Insurance Models
+
+The MVP delegates voting to DAO treasury. Future extensions can add more democratic rights and cooperative governance, subject to opcode availability.
+
+### Level 1: Endowment DAO (Current MVP)
+
+- Premium → membership note (annual)
+- Claims handled by DAO treasury
+- No parallel voting in DAO-Escrow
+
+### Level 2: Claims DAO (Requires Vote Aggregation)
+
+Add dedicated claim voting within DAO-Escrow:
+
+```
+Claims ──> Vote ──> Approved/Rejected
+```
+
+**Opcode requirements**:
+- Vote aggregation via cross-multiplication (exists in DAO `exec.zk`)
+- SMT for vote nullifiers (exists in DAO `vote-input.zk`)
+
+**Opcode barriers**: None for basic voting. `LessThanOrEqual` may be needed for advanced ratio checks.
+
+### Level 3: Multi-tier Governance
+
+Add differentiated rights:
+
+| Role | Rights |
+|------|--------|
+| Members | Pay premiums, vote on claims |
+| Delegates | Vote on policy changes |
+| Trustees | Emergency interventions, appeals |
+
+**Opcode requirements**:
+- Role-based access via Merkle membership proofs
+- Weighted voting (delegates have more weight)
+
+**Opcode barriers**: None identified.
+
+### Level 4: Democratic Policy Changes
+
+Allow members to vote on:
+
+- Premium rates
+- Coverage scope
+- Claim criteria
+- Investment strategy
+
+**Opcode requirements**:
+- Policy commitment via poseidon_hash
+- Policy change requires quorum + approval ratio
+
+**Opcode barriers**: None identified.
+
+### Level 5: Mutual Insurance (Full Cooperative)
+
+Complete mutual insurance model:
+
+- Premiums based on risk pool
+- Claims voted by peers (not company)
+- Profit shared as dividends
+- Democratic governance of all parameters
+
+**Opcode requirements**:
+- Advanced ratio checks for risk-adjusted premiums
+- Cross-chain price oracles for risk assessment
+- Reputation/identity integration
+
+**Opcode barriers**:
+- **`BaseDiv`** may be needed for complex ratio calculations (e.g., `risk_premium = claims / total_premiums`)
+- Cross-chain light client verification not yet implemented
+- `LessThanOrEqual` delta-invert soundness must be resolved for production
+
+### Opcode Dependency Summary
+
+| Feature | Current Status | Barrier |
+|---------|---------------|---------|
+| Cross-multiplication for ratios | Proven | None |
+| Vote aggregation | Proven (DAO) | None |
+| Merkle proofs | Proven | None |
+| `LessThanOrEqual` returning 0/1 | Grey-market | Delta-invert soundness |
+| `BaseDiv` | Not implemented | Division circuit complexity |
+| Cross-chain verification | Not implemented | Light client needed |
+
+**Key insight**: Most cooperative features can be built with existing opcodes. The main gaps are:
+
+1. **`LessThanOrEqual` soundness** — blocks production deployment of comparison-based governance
+2. **`BaseDiv`** — would simplify some ratio calculations but cross-multiplication works around it
+3. **Cross-chain oracles** — requires external light client infrastructure
+
+**See**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full opcode analysis.
+
 ## MVP Status
 
 **Simplified MVP** — Delegated voting to DAO treasury.
@@ -220,7 +313,20 @@ dao_escrow/
 2. **Membership note integration**: `spend_hook` to check expiry at spend time
 3. **Money integration**: Connect endowment to actual token holdings
 
-### Key Blocker: Membership Note Spend Hook
+### Key Blockers
+
+| Blocker | Severity | Description |
+|---------|----------|-------------|
+| Membership note spend hook | **High** | Money contract integration to check expiry at spend time |
+| Entry point wiring | **High** | `process_instruction()` and `process_update()` are stubs |
+
+### Opcode Barriers for Extensions
+
+**For Level 2+ (Claims voting)**: No opcode barriers — can reuse DAO's vote aggregation pattern.
+
+**For Level 5 (Full cooperative)**: `LessThanOrEqual` soundness must be resolved before production deployment.
+
+See the **Roadmap** above for full opcode dependency analysis.
 
 The membership note needs a `spend_hook` that:
 - Verifies `current_block < expiry` before allowing spend
