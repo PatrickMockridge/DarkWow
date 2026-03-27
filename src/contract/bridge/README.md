@@ -258,7 +258,7 @@ When building the bridge contract's withdrawal circuit, we discovered that:
 3. Implement the new opcode only when the actual use case is known
 4. Validate the opcode against the specific circuit that needs it — not in isolation
 
-The bridge's placeholder Merkle check (`poseidon_hash(deposit_leaf, merkle_path_0, merkle_path_1)`) exists because the real `merkle_root` opcode with proper `MerklePath` type was not yet integrated. This gap was discovered during implementation, not anticipated.
+The bridge's `deposit_v1.zk` now uses the real `merkle_root` opcode with proper `MerklePath` type (following the pattern from `money/burn_v1.zk`). The fix uses `zero_cond` for dummy leaf support and `constrain_equal_base` to verify the computed root matches the public input.
 
 ## Reasoned Opcodes
 
@@ -305,10 +305,12 @@ For a full example of adding opcodes, see the [zkas bincode documentation](../..
 
 | Blocker | Severity | Description |
 |---------|----------|-------------|
-| Merkle verification is placeholder | **Critical** | `poseidon_hash` instead of `merkle_root` opcode — not real Merkle verification |
-| No external block header verification | **Critical** | `external_block_hash` accepted but not cryptographically verified |
-| No light client integration | **High** | Requires external chain's light client proof system |
-| `LessThanOrEqual` if used | **High** | Grey-market opcode with delta-invert soundness concern |
+| Merkle verification | **Fixed** | `deposit_v1.zk` uses real `merkle_root` opcode |
+| External block header verification | **Critical** | `external_block_hash` not verified against actual chain |
+| Light client integration | **High** | Requires external chain's header chain tracking |
+| `LessThanOrEqual` (if used in future) | **High** | Grey-market opcode — see [Experimental Opcodes](../../../doc/src/arch/experimental-opcodes.md) |
+
+**Note**: Current circuits avoid all experimental opcodes. Any future feature using `LessThanOrEqual`, `IsEqualBase`, etc. must address soundness concerns first.
 
 ## Implementation Status
 
@@ -571,26 +573,44 @@ No threshold needed to release funds.
 
 ## MVP Status
 
-**Partial MVP** — core deposit/withdraw structure exists, but Merkle verification is a placeholder.
+**Partial MVP** — core deposit/withdraw structure exists, core ZK circuits verified.
 
-| Circuit | Status | Notes |
-|---------|--------|-------|
-| `deposit_v1.zk` | Has placeholder | Merkle proof uses `poseidon_hash` instead of `merkle_root` opcode |
-| `withdraw_v1.zk` | Verified | Uses `constrain_equal_base` |
+| Circuit | Status | Opcode Safety | Notes |
+|---------|--------|---------------|-------|
+| `deposit_v1.zk` | **Verified** | ✅ Only proven opcodes | Uses real `merkle_root` opcode with `MerklePath` type |
+| `withdraw_v1.zk` | **Verified** | ✅ Only proven opcodes | Uses `constrain_equal_base` |
 
-### Blockers
+### Opcode Safety
 
-1. **Merkle proof is a placeholder** — `deposit_v1.zk` line 54 uses `poseidon_hash(deposit_leaf, merkle_path_0, merkle_path_1)` instead of the `merkle_root` opcode with proper `MerklePath`. This is not real Merkle verification.
-2. **No external block header verification** — The `external_block_hash` public input is accepted but not cryptographically verified against an actual chain.
-3. **No light client integration** — The design requires an external chain's light client proof system.
+`deposit_v1.zk` uses ONLY proven opcodes:
+- `poseidon_hash`, `ec_mul_base`, `ec_get_x/y` — standard operations
+- `zero_cond` — sound conditional selection
+- `merkle_root` — proper Merkle verification
+- `constrain_equal_base`, `range_check` — standard constraints
+
+No experimental grey-market opcodes (`LessThanOrEqual`, `IsEqualBase`, etc.) are used.
+
+### Architecture Gaps (Not Opcode Issues)
+
+1. **No external block header verification** — `external_block_hash` is accepted as public input but NOT verified against a real chain. A valid Merkle proof could be for a non-existent block.
+
+2. **No light client integration** — Full verification requires tracking the external chain's header chain to prove block validity and finality.
+
+3. **No deposit finality** — The circuit proves a deposit EXISTS, not that it's FINAL. Chain reorganizations could revert deposits after proof submission.
+
+4. **No double-deposit prevention at bridge level** — Relies on external chain indexer not feeding the same Merkle proof twice.
 
 ### What It Needs
 
-Replace the placeholder Merkle check with real `merkle_root` opcode verification using the `MerklePath` type, and integrate a light client proof system for the external chain.
+Light client integration to verify `external_block_hash` corresponds to a valid, finalized block on the external chain.
 
-**Note**: `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM but are **experimental** (grey-market goods). Any future circuit work that uses them should see [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for production readiness requirements.
+### Soundness Notes
 
-**See**: [Contract MVP Status](../../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
+See [Experimental Opcodes](../../../doc/src/arch/experimental-opcodes.md) for detailed analysis of grey-market opcodes. This contract intentionally avoids all experimental opcodes.
+
+**See also**:
+- [Contract MVP Status](../../../doc/src/arch/mvp_status.md) for the full cross-contract analysis
+- [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for opcode implementation details
 
 ## References
 

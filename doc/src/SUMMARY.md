@@ -62,6 +62,8 @@
   - [Chat](arch/chat.md)
   - [Field Arithmetic Constraints](arch/field_arithmetic.md)
   - [zkVM Primitive Layer](arch/zkvm_primitives.md)
+  - [Experimental Opcodes](arch/experimental-opcodes.md)
+  - [MerkleRoot Depth Limitation](arch/merkle_depth.md)
   - [Contract MVP Status](arch/mvp_status.md)
 - [Smart Contracts](dev/contracts.md)
   - [Bridge Contract](dev/contracts/bridge.md)

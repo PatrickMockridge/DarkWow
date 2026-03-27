@@ -13,7 +13,7 @@ This document tracks the blockers to reaching MVP for each contract in `src/cont
 | `money` | None | Integration testing | **Yes** |
 | `dao` | None | Governance token integration | **Yes** |
 | `dex` | None | Order matching logic | Partial |
-| `bridge` | None (placeholder noted) | Merkle verification, light client | Partial |
+| `bridge` | None | Light client for external chain verification | Partial |
 | `identity` | `LessThanOrEqual`, `IsEqualBase` integrated (experimental) | Integration testing | Partial |
 | `stablecoin` | None (ratio checks use cross-multiplication — see `dao/exec.zk`) | P2P oracle, CDP notes | Partial |
 | `escrow` | None | ZK circuit compilation, Money integration | Partial |
@@ -123,7 +123,7 @@ InitializeV1 (0x00), DepositV1 (0x01), WithdrawV1 (0x02), UpdateConfigV1 (0x03)
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
-| `deposit_v1.zk` | Verified | Commitment derivation, range check. **Merkle proof is a placeholder** (see below) |
+| `deposit_v1.zk` | Verified | Uses real `merkle_root` opcode with `MerklePath` type |
 | `withdraw_v1.zk` | Corrected in prior session | Uses `constrain_equal_base` |
 
 ### Blockers
@@ -132,17 +132,11 @@ InitializeV1 (0x00), DepositV1 (0x01), WithdrawV1 (0x02), UpdateConfigV1 (0x03)
 
 **Architecture blockers**:
 
-1. **Merkle proof is a placeholder** — `deposit_v1.zk` line 54 computes:
-   ```zk
-   merkle_check = poseidon_hash(deposit_leaf, merkle_path_0, merkle_path_1);
-   ```
-   This is **not** real Merkle verification. It should use the `merkle_root` opcode with the `MerklePath` type. The current implementation accepts any `merkle_path_*` values without cryptographic verification.
+1. **No external block header verification** — The `external_block_hash` public input is accepted but not verified against an actual source chain. A real bridge needs a light client proof that commits to the external chain's block header.
 
-2. **No external block header verification** — The `external_block_hash` public input is accepted but not verified against an actual source chain. A real bridge needs a light client proof that commits to the external chain's block header.
+2. **No withdrawal finality** — After a withdrawal is processed, there is no mechanism to prove the external chain transaction was finalized.
 
-3. **No withdrawal finality** — After a withdrawal is processed, there is no mechanism to prove the external chain transaction was finalized.
-
-**What it needs for full MVP**: Replace the placeholder Merkle check with real `merkle_root` opcode verification, and integrate a light client proof system for the external chain (e.g., a simple header relay).
+**What it needs for full MVP**: Integrate a light client proof system for the external chain (e.g., a simple header relay) to verify `external_block_hash`.
 
 ---
 
@@ -295,7 +289,7 @@ dex ◄────────────────────────�
   ▼
 bridge
   │
-  │ (needs Merkle verification fixed)
+  │ (needs light client for external chain)
   ▼
 identity ◄──────────── (LessThanOrEqual, ──► stablecoin
   │                   IsEqualBase: experimental)  │

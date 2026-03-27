@@ -37,6 +37,9 @@ pub use tracer::DebugOpValue;
 
 mod debug;
 pub use debug::zkas_type_checks;
+
+#[cfg(test)]
+mod merkle_root_test;
 #[cfg(feature = "tinyjson")]
 pub use debug::{export_witness_json, import_witness_json};
 

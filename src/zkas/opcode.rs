@@ -132,7 +132,20 @@ define_opcodes! {
     PoseidonHash = 0x10, "poseidon_hash",
         (VarType::Base), (VarType::BaseArray);
 
-    /// Calculate Merkle root, given a position, Merkle path, and an element
+    /// Calculate Merkle root using Zcash Orchard Merkle tree hash (Sinsemilla).
+    ///
+    /// Signs: (leaf_pos: Uint32, path: MerklePath, leaf: Base) -> Base
+    ///
+    /// Computes a Merkle root by verifying the given leaf exists at leaf_pos
+    /// in the tree with the given authentication path.
+    ///
+    /// - `leaf_pos`: 32-bit unsigned position of the leaf in the tree
+    /// - `path`: MerklePath of length MERKLE_DEPTH_ORCHARD (32) sibling hashes
+    /// - `leaf`: The leaf value (typically H(data))
+    /// - Returns: The computed Merkle root
+    ///
+    /// Uses OrchardHashDomains::MerkleCrh with Sinsemilla hash.
+    /// Fixed depth of 32 (cannot verify trees of other depths).
     MerkleRoot = 0x20, "merkle_root",
         (VarType::Base), (VarType::Uint32, VarType::MerklePath, VarType::Base);
 

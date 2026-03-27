@@ -1010,15 +1010,52 @@ impl Circuit<pallas::Base> for ZkCircuit {
                 }
 
                 Opcode::MerkleRoot => {
-                    // TODO: all these trace statements could have trace!(..., args) instead
-                    trace!(target: "zk::vm", "Executing `MerkleRoot{:?}` opcode", opcode.1);
+                    // MerkleRoot computes a Merkle root from (leaf_pos, path, leaf).
+                    //
+                    // This opcode implements the Zcash Orchard Merkle tree hash using
+                    // Sinsemilla with the MerkleCrh hash function. The Merkle tree
+                    // has depth MERKLE_DEPTH_ORCHARD = 32.
+                    //
+                    // Args:
+                    //   args[0]: leaf_pos - Uint32 position of leaf in tree
+                    //   args[1]: merkle_path - MerklePath (32-element array of sibling hashes)
+                    //   args[2]: leaf - Base field element (typically a Poseidon hash)
+                    //
+                    // Returns:
+                    //   Base - The computed Merkle root
+                    //
+                    // Security: The MerklePath::construct and calculate_root ensure
+                    // cryptographic verification of the authentication path.
+                    //
+                    // Limitations:
+                    //   - Fixed depth of 32 (MERKLE_DEPTH_ORCHARD)
+                    //   - Uses OrchardHashDomains::MerkleCrh domain
+                    //   - Does not verify leaf existence, only computes root from path
+
+                    trace!(target: "zk::vm", "Executing MerkleRoot opcode");
                     let args = &opcode.1;
 
-                    let leaf_pos = heap[args[0].1].clone().try_into()?;
-                    let merkle_path: Value<[Fp; MERKLE_DEPTH_ORCHARD]> =
-                        heap[args[1].1].clone().try_into()?;
-                    let leaf = heap[args[2].1].clone().try_into()?;
+                    // Parse leaf position (Uint32)
+                    let leaf_pos = heap[args[0].1].clone().try_into().map_err(|e| {
+                        error!(target: "zk::vm", "Failed to parse leaf_pos: {:?}", e);
+                        plonk::Error::Synthesis
+                    })?;
 
+                    // Parse Merkle authentication path (32 elements for depth 32)
+                    let merkle_path: Value<[Fp; MERKLE_DEPTH_ORCHARD]> =
+                        heap[args[1].1].clone().try_into().map_err(|e| {
+                            error!(target: "zk::vm", "Failed to parse MerklePath: {:?}", e);
+                            plonk::Error::Synthesis
+                        })?;
+
+                    // Parse leaf value
+                    let leaf = heap[args[2].1].clone().try_into().map_err(|e| {
+                        error!(target: "zk::vm", "Failed to parse leaf: {:?}", e);
+                        plonk::Error::Synthesis
+                    })?;
+
+                    // Construct Merkle proof verification circuit
+                    // Uses two Merkle chips for the two-phase hashing in Sinsemilla
                     let merkle_inputs = MerklePath::construct(
                         [config.merkle_chip_1().unwrap(), config.merkle_chip_2().unwrap()],
                         OrchardHashDomains::MerkleCrh,
@@ -1026,10 +1063,19 @@ impl Circuit<pallas::Base> for ZkCircuit {
                         merkle_path,
                     );
 
+                    // Compute the root by hashing up the tree
                     let root = merkle_inputs
-                        .calculate_root(layouter.namespace(|| "MerkleRoot()"), leaf)?;
+                        .calculate_root(layouter.namespace(|| "MerkleRoot()"), leaf)
+                        .map_err(|e| {
+                            error!(target: "zk::vm", "MerkleRoot calculate_root failed: {:?}", e);
+                            plonk::Error::Synthesis
+                        })?;
 
-                    trace!(target: "zk::vm", "Pushing merkle root to heap address {}", heap.len());
+                    trace!(
+                        target: "zk::vm",
+                        "MerkleRoot computed root, pushing to heap address {}",
+                        heap.len()
+                    );
                     self.tracer.push_base(&root);
                     heap.push(HeapVar::Base(root));
                 }

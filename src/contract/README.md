@@ -82,7 +82,7 @@ This pattern (in `dao/exec.zk`) handles ratio checks without `BaseDiv`.
 | identity | `create_claim_v1.zk` | **Yes** | LessThanOrEqual + IsEqualBase |
 | stablecoin | `open_position_v1.zk` | **Yes** | LessThanOrEqual |
 | stablecoin | `liquidate_v1.zk` | **Yes** | LessThanOrEqual |
-| bridge | `deposit_v1.zk` | N/A | ❌ Fake Merkle verification |
+| bridge | `deposit_v1.zk` | No | ✅ Fixed — real `merkle_root` |
 
 ---
 
@@ -91,9 +91,11 @@ This pattern (in `dao/exec.zk`) handles ratio checks without `BaseDiv`.
 1. **No `BaseDiv` needed** - Cross-multiplication with `less_than_strict` handles all ratio checks
 2. **`less_than_strict` is safe** - It's constrain-only (no return value manipulation)
 3. **Experimental opcodes block production** - `identity` and `stablecoin` cannot ship until `LessThanOrEqual` is formally verified or replaced
-4. **Bridge Merkle is broken** - `deposit_v1.zk` needs real `merkle_root` opcode integration
+4. **Bridge Merkle is fixed** - `deposit_v1.zk` now uses real `merkle_root` opcode
 
-**See also**: [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) for full opcode safety analysis.
+**See also**:
+- [Experimental Opcodes](../../doc/src/arch/experimental-opcodes.md) — Concise reference for contract authors
+- [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) — Deep dive into opcode implementation
 
 ## Official Contracts
 

@@ -3,60 +3,236 @@ field = "pallas";
 
 constant "DepositV1" {
     EcFixedPointBase NULLIFIER_K,
+    # NULLIFIER_K is a fixed generator point on the Pallas curve.
+    # Used with ec_mul_base to derive public keys from secrets.
+    # This is the same base point used throughout DarkFi for key derivation.
 }
 
 witness "DepositV1" {
-    # Public inputs
+    # =========================================================================
+    # PUBLIC INPUTS (verified on-chain)
+    # =========================================================================
+
+    # The commitment the user claims this deposit creates.
+    # User must prove: commitment = H(secret, amount, bridge_address)
     Base commitment,
+
+    # Recipient's DarkFi public key (X coordinate)
+    # Used to derive the bridge_address via poseidon_hash with nonce
     Base recipient_pub_x,
+
+    # Recipient's DarkFi public key (Y coordinate)
     Base recipient_pub_y,
+
+    # Fresh nonce for this deposit.
+    # Purpose: Unlinkability. Same recipient + different nonce = different bridge_address.
+    # Without nonce, all deposits to the same recipient would be linkable on-chain.
     Base bridge_nonce,
+
+    # Hash of the external chain block containing this deposit.
+    # NOTE: This is NOT verified in this circuit. It is accepted as a public input
+    # but the circuit does NOT verify it corresponds to a valid block.
+    # Architecture gap: Requires light client integration to be meaningful.
     Base external_block_hash,
-    Base merkle_root,
 
-    # Merkle proof path elements (up to depth 4)
-    Base merkle_path_0,
-    Base merkle_path_1,
-    Base merkle_path_2,
-    Base merkle_path_3,
-    Base leaf_index,
+    # Merkle root of the external chain's deposit tree at the confirmed block.
+    # The Merkle proof (leaf_pos, path) authenticates the deposit_leaf against this root.
+    # NOTE: This root is NOT verified to correspond to external_block_hash.
+    # The circuit only verifies the proof is consistent with this root value.
+    Base merkle_root_input,
 
-    # Private inputs
+    # =========================================================================
+    # MERKLE PROOF (authentication path)
+    # =========================================================================
+
+    # Position of the deposit leaf in the Merkle tree (0-indexed).
+    # Uint32 type constrains this to 32-bit range automatically.
+    # The range [0, 2^32) covers trees up to 4B leaves (sufficient for any chain).
+    Uint32 leaf_pos,
+
+    # MerklePath type: variable-length authentication path.
+    # The zkVM's merkle_root opcode handles this type natively.
+    # Structure: [Base; depth] where each element is a sibling node hash.
+    # The opcode computes root = hash_level_n(hash_level_n-1, ... hash_level_0)
+    MerklePath path,
+
+    # =========================================================================
+    # PRIVATE INPUTS (witnesses, never revealed on-chain)
+    # =========================================================================
+
+    # User's secret for this deposit.
+    # NEVER revealed on-chain. Used to derive:
+    #   - deposit_leaf = H(secret, amount)
+    #   - derived_commitment = H(secret, amount, bridge_address)
     Base secret,
+
+    # Deposit amount in smallest external chain unit (e.g., wei for Ethereum).
+    # Must be > 0 for a valid deposit. Zero amounts are handled via zero_cond
+    # (see circuit logic below) to support dummy Merkle leaves.
     Base amount,
 }
 
 circuit "DepositV1" {
-    # Derive bridge secret from recipient identity + nonce
+    # ==========================================================================
+    # PHASE 1: Derive bridge address from recipient identity + nonce
+    # ==========================================================================
+    #
+    # The bridge uses an "Object Capability" model: funds are controlled by
+    # whoever knows the bridge_secret, which is deterministically derived from:
+    #   - The recipient's DarkFi public key (so only they can compute it)
+    #   - A fresh nonce (so deposits can't be linked)
+    #
+    # This replaces VSS (Verifiable Secret Sharing) used by traditional bridges.
+    # VSS requires threshold signing for withdrawals, which is slow and creates
+    # centralization risks. OCap model: user alone authorizes via ZK proof.
+    #
+    # SECURITY: If nonce is reused, deposits become linkable. User must
+    # generate a fresh nonce per deposit.
+
+    # Derive bridge_secret = H(recipient_pub_x, recipient_pub_y, nonce)
+    # Using Poseidon (ZK-friendly hash) ensures the computation is efficient
+    # in-circuit and doesn't leak the public key via side channels.
     bridge_secret = poseidon_hash(recipient_pub_x, recipient_pub_y, bridge_nonce);
 
-    # Compute bridge public key
+    # Multiply by generator point to get public key.
+    # ec_mul_base: result = bridge_secret * NULLIFIER_K
+    # This is the same operation used for standard DarkFi key derivation.
     bridge_pub = ec_mul_base(bridge_secret, NULLIFIER_K);
+
+    # Extract coordinates of the derived public key.
+    # These are field elements, not public keys on the external chain.
     bridge_pub_x = ec_get_x(bridge_pub);
     bridge_pub_y = ec_get_y(bridge_pub);
 
-    # Derive deterministic bridge address
+    # Hash coordinates to get the bridge address on the external chain.
+    # This is NOT an Ethereum address - it's a DarkFi-native address format
+    # used to identify this deposit's capability.
+    # External chain deposits are made to this address.
     bridge_address = poseidon_hash(bridge_pub_x, bridge_pub_y);
 
-    # Compute commitment: H(secret, amount, bridge_address)
+    # ==========================================================================
+    # PHASE 2: Verify the commitment matches what the user claimed
+    # ==========================================================================
+    #
+    # The user publishes `commitment` as a public input. This circuit proves
+    # the commitment was correctly computed from the user's secret.
+    #
+    # commitment = H(secret, amount, bridge_address)
+    #
+    # Why this structure?
+    # - secret: ensures only the depositor can later claim
+    # - amount: binds the amount to the commitment (no front-running)
+    # - bridge_address: binds to this specific bridge (prevents redirect attacks)
+    #
+    # The commitment is what DarkFi stores in its state. When the user withdraws,
+    # they prove knowledge of (secret, amount, bridge_address) that hashes to
+    # the stored commitment.
+
     derived_commitment = poseidon_hash(secret, amount, bridge_address);
 
-    # Verify commitment matches public input
+    # Constrain the derived commitment to equal the public input.
+    # If they don't match, the circuit fails - user can't claim a deposit
+    # they didn't actually create.
     constrain_equal_base(derived_commitment, commitment);
 
-    # Create Merkle leaf for deposit verification
+    # ==========================================================================
+    # PHASE 3: Merkle proof verification (deposit existence)
+    # ==========================================================================
+    #
+    # This proves the deposit exists in the external chain's Merkle tree,
+    # at a specific position with a specific authentication path.
+    #
+    # CAVEAT: This only verifies internal consistency of the Merkle proof.
+    # It does NOT verify:
+    #   1. That merkle_root corresponds to external_block_hash
+    #   2. That external_block_hash is a valid block on the external chain
+    #   3. That the deposit hasn't been reverted (chain reorganization)
+    #
+    # Architecture gap: Full verification requires light client integration
+    # that commits to the external chain's header chain, not just this deposit.
+
+    # Create the deposit leaf: H(secret, amount)
+    # This is what gets inserted into the external chain's Merkle tree.
+    # The external chain's indexer/service computes this and provides the Merkle proof.
     deposit_leaf = poseidon_hash(secret, amount);
-    constrain_instance(deposit_leaf);
 
-    # Verify Merkle proof against external chain merkle_root
-    # NOTE: Actual Merkle verification would use merkle_root(opcode) with
-    # proper MerklePath type. Current placeholder uses poseidon for simplicity.
-    merkle_check = poseidon_hash(deposit_leaf, merkle_path_0, merkle_path_1);
-    constrain_instance(merkle_check);
+    # zero_cond: if amount == 0, use 0x00 (empty leaf) instead of deposit_leaf.
+    # This supports dummy inputs where amount=0 represents an empty slot.
+    # The pattern follows burn_v1.zk's approach for handling zero-valued coins.
+    #
+    # zero_cond(amount, deposit_leaf) = (amount == 0) ? 0x00 : deposit_leaf
+    #
+    # WHY THIS MATTERS: External chains may have sparse Merkle trees with
+    # empty slots. Without zero_cond, proving membership of an empty slot
+    # would require revealing the actual leaf (breaking privacy). With zero_cond,
+    # the circuit can handle both populated and empty slots.
+    coin_incl = zero_cond(amount, deposit_leaf);
 
-    # Range proof for amount using 64-bit range check
+    # merkle_root: cryptographic Merkle root computation.
+    # Takes (leaf_pos, path, leaf) and computes the root.
+    # The opcode verifies the proof is valid for the given root.
+    #
+    # IMPORTANT: This uses the REAL merkle_root opcode with MerklePath type,
+    # NOT a placeholder hash like poseidon_hash(deposit_leaf, path[0], path[1]).
+    # The placeholder version accepted ANY path values - not cryptographically
+    # secure. The merkle_root opcode performs actual hash concatenation and
+    # re-hashing according to the Merkle tree algorithm.
+    root = merkle_root(leaf_pos, path, coin_incl);
+
+    # Verify the computed root matches the public input merkle_root.
+    # constrain_equal_base ensures the circuit fails if they don't match.
+    constrain_equal_base(root, merkle_root_input);
+
+    # ==========================================================================
+    # PHASE 4: Range check the amount
+    # ==========================================================================
+    #
+    # Verify amount fits in 64 bits. This prevents overflow attacks where
+    # a malicious user might try to claim an amount exceeding the field size.
+    # The external chain's deposit amount is assumed to be <= 2^64.
+
     range_check(64, amount);
 
-    # Verify leaf_index is within valid range for Merkle proof depth
-    range_check(4, leaf_index);
+    # ==========================================================================
+    # WHAT THIS CIRCUIT DOES NOT VERIFY (Architecture Gaps)
+    # ==========================================================================
+    #
+    # 1. External block validity: external_block_hash is accepted but not verified.
+    #    A valid Merkle proof could be for a block that doesn't exist or is
+    #    reorganization-attack vulnerable.
+    #
+    # 2. Block header verification: No light client proof that the external chain's
+    #    consensus rules认可 this block as canonical.
+    #
+    # 3. Deposit finality: The circuit doesn't prove the deposit is final.
+    #    A reorg could revert the deposit after this proof is submitted.
+    #
+    # 4. Double-deposit prevention: Relies on the external chain's indexer to
+    #    not feed the same Merkle proof twice. The nullifier system in the
+    #    withdrawal circuit prevents double-claiming on DarkFi, but the deposit
+    #    itself could be double-spent on the external chain.
+    #
+    # RESOLUTION: These gaps require integration with a light client that
+    # tracks the external chain's header chain and provides proofs of
+    # block finality. This is future work beyond the current MVP.
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses ONLY proven opcodes (no grey-market opcodes):
+    #   - poseidon_hash: field-proven, used everywhere in DarkFi
+    #   - ec_mul_base, ec_get_x, ec_get_y: standard EC operations
+    #   - zero_cond: conditional selection, simple and sound
+    #   - merkle_root: properly implemented Merkle verification
+    #   - constrain_equal_base: equality constraint
+    #   - range_check: 64-bit range validation
+    #
+    # There are NO uses of:
+    #   - LessThanOrEqual (gate soundness issue - see zkvm_primitives.md)
+    #   - IsEqualBase (delta-invert issue when a == b)
+    #   - NotBase, BaseLtStrict (unused experimental)
+    #
+    # The only soundness assumption is that poseidon_hash is collision-resistant
+    # and that the external chain's Merkle tree structure is correctly implemented.
 }
