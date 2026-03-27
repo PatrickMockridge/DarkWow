@@ -58,6 +58,7 @@
   - [Composability](arch/composability.md)
   - [Wallet](arch/wallet.md)
   - [Chat](arch/chat.md)
+  - [Field Arithmetic Constraints](arch/field_arithmetic.md)
   - [zkVM Primitive Layer](arch/zkvm_primitives.md)
   - [Contract MVP Status](arch/mvp_status.md)
 - [Smart Contracts](dev/contracts.md)

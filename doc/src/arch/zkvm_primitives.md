@@ -1,5 +1,7 @@
 # zkVM Primitive Layer: Opcode Reasoning
 
+> **Prerequisite reading**: Before this document, read [Field Arithmetic Constraints](field_arithmetic.md). It explains why every operation in a ZK circuit must be re-expressed in finite field arithmetic — and why that re-expression is the primary difficulty in ZK circuit design. The examples in this document assume you understand field vs. integer ordering and modular arithmetic.
+
 The opcode layer is not an implementation detail — it is the **primitive layer** that
 determines the entire expressiveness surface of DarkFi's smart contract system.
 
@@ -530,6 +532,7 @@ circuit "MyContract" {
 
 ## References
 
+- [Field Arithmetic Constraints](field_arithmetic.md) — foundational reading for understanding why ZK circuit arithmetic is hard
 - [Private Authorization Layer](privauth.md) — the authorization pattern these opcodes enable
 - [Composability & General Primitives](composability.md) — how these opcodes compose across contracts
 - [Contract MVP Status](mvp_status.md) — blockers for each contract and the single highest-leverage primitive to implement

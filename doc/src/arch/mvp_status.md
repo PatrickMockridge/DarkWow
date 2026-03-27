@@ -1,5 +1,7 @@
 # Contract MVP Status
 
+> **Prerequisite reading**: Understanding why opcodes are blockers requires understanding [Field Arithmetic Constraints](field_arithmetic.md). Most "missing opcodes" are not missing because no one thought to implement them — they are missing because implementing them correctly in a ZK circuit is genuinely hard. This document explains which opcodes are missing, which are experimental, and what the path to production looks like.
+
 This document tracks the blockers to reaching MVP for each contract in `src/contract/`. An MVP means: a functional, end-to-end testable version where the core use case works on-chain with real ZK proof verification.
 
 ---
