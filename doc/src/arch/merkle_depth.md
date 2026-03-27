@@ -93,6 +93,6 @@ This is significant engineering work and would increase proving key sizes.
 ---
 
 **See also**:
-- [MerkleRoot opcode implementation](../../src/zk/vm.rs) - lines 1012-1050
-- [deposit_v1.zk circuit](../../src/contract/bridge/proof/deposit_v1.zk) - Example usage with depth-32 tree
+- [MerkleRoot opcode implementation](https://codeberg.org/PatrickM123/darkfi/src/branch/dev/src/zk/vm.rs) - lines 1012-1050
+- [deposit_v1.zk circuit](https://codeberg.org/PatrickM123/darkfi/src/branch/dev/src/contract/bridge/proof/deposit_v1.zk) - Example usage with depth-32 tree
 - [halo2_gadgets::sinsemilla::merkle](https://docs.rs/halo2_gadgets) - Underlying Halo2 implementation
