@@ -177,6 +177,39 @@ Proves the claim can be verified:
 - **Private inputs**: issuer_pub, holder_secret
 - **Verification**: Claim valid, issuer trusted, not double-spent
 
+## Base Field Arithmetic
+
+ZK circuits operate in a finite field — the Pallas field defined by prime `p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`. All arithmetic wraps at `p`, which breaks normal integer intuitions:
+
+```zk
+# In the field, p-1 ≡ -1, so comparisons must be carefully designed
+# The value "just below p" is actually "just above 0" in integer terms
+# An opcode that returns a comparison result must handle this correctly
+```
+
+**Why this matters for identity**: Predicate checks like "age >= 18" or "score >= threshold" require comparing field elements as integers. The field wraparound means naive comparison (`a < b` in circuit) can give incorrect results when values are near `p`. Comparison opcodes that return values (not just constrain) must account for this.
+
+**The core challenge**: Proving `a <= b` as integers requires determining whether `a - b` falls in `{0, 1, ..., (p-1)/2}` or `{(p+1)/2, ..., p-1}`. This is straightforward in normal code but requires careful gadget design in circuits.
+
+**See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
+
+## Opcode Discovery and Validation
+
+**Opcode discovery must go hand-in-hand with building functionality** — not precede it.
+
+When building the identity contract's `create_claim_v1.zk` circuit, we discovered that:
+1. The predicate verification requires `LessThanOrEqual` — not just to constrain, but to **return a value** (0 or 1) for use in subsequent logic
+2. The `LessThanStrict` opcode already in the zkVM only constrains; it cannot produce a value for further computation
+3. This gap only became apparent when we tried to express "attribute >= threshold" in the circuit
+
+**The correct workflow**:
+1. Build the circuit with what exists
+2. When a constraint can't be expressed, document the opcode gap
+3. Implement the new opcode only when the actual use case is known
+4. Validate the opcode against the specific circuit that needs it — not in isolation
+
+Implementing `LessThanOrEqual` before having `create_claim_v1.zk` would have been backwards. The circuit's requirements drove the opcode's specification.
+
 ## Reasoned Opcodes
 
 The identity circuits use existing zkVM opcodes for the basic proof structure. The predicate verification requires:
@@ -193,6 +226,39 @@ LessThanOrEqual(a, b) = IsEqualBase(a, b) OR LessThanLoose(a, b)
 ```
 
 **See also**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes.
+
+## Opcode Safety
+
+**These opcodes are grey-market goods — buyer beware.**
+
+`LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM (commit `41b0629e0`) and integrated in `create_claim_v1.zk`. They are **not production-ready**:
+
+| Concern | Status |
+|---------|--------|
+| Isolation testing | Pass — the opcode works in isolation |
+| Integration tests | None — no end-to-end test exists |
+| Formal audit | Not started |
+| Delta-invert soundness | Unresolved — the opcode may be unsound near field boundary |
+| Blast radius if broken | High — predicates can be spoofed |
+
+**What production readiness requires**:
+1. Integration test: `issue credential → create claim → verify claim` end-to-end
+2. Formal soundness proof or concrete bound on delta-invert failure
+3. Audit by a ZK circuit expert
+4. Fuzzing with adversarial inputs near field boundaries
+
+**Current status**: The identity contract uses these opcodes because the alternative (a placeholder that always passes) is worse. But the circuit's security relies on the opcode being correct.
+
+**See**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full delta-invert analysis.
+
+## Key Blockers
+
+| Blocker | Severity | Description |
+|---------|----------|-------------|
+| `LessThanOrEqual` soundness | **High** | Delta-invert concern may allow predicate spoofing |
+| `IsEqualBase` soundness | **High** | Same delta-invert concern |
+| No integration test | **High** | Cannot verify full issue → claim → verify flow |
+| `issue_credential_v1.zk` unreviewed | **Medium** | Circuit has not been audited for correctness |
 
 ## The Privacy Gradient
 

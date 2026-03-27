@@ -1,0 +1,242 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Escrow contract data structures
+//!
+//! ## State Machine
+//!
+//! ```text
+//! Created ──[Fund]──> Funded ──[Claim]──> Claimed
+//!                   │                │
+//!                   │                └──[Refund]──> Refunded
+//!                   │
+//!                   └──[Cancel]──> Cancelled
+//! ```
+//!
+//! - **Created**: Escrow created but not yet funded
+//! - **Funded**: Funds locked in commitment, awaiting release condition
+//! - **Claimed**: Seller proved knowledge of seller_secret, funds released
+//! - **Refunded**: Buyer proved timeout reached, funds returned
+//! - **Cancelled**: Buyer cancelled before funding
+
+use darkfi_sdk::{
+    crypto::{poseidon_hash, MerkleNode, PublicKey},
+    pasta::pallas,
+};
+use darkfi_serial::{SerialDecodable, SerialEncodable};
+
+/// Escrow unique identifier (hash of escrow data)
+pub type EscrowId = pallas::Base;
+
+/// Represents the current state of an escrow
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+pub enum EscrowState {
+    /// Escrow created but not yet funded
+    Created = 0,
+    /// Funds locked, awaiting release condition
+    Funded = 1,
+    /// Seller claimed funds
+    Claimed = 2,
+    /// Buyer refunded after timeout
+    Refunded = 3,
+    /// Cancelled by buyer before funding
+    Cancelled = 4,
+}
+
+impl TryFrom<u8> for EscrowState {
+    type Error = darkfi_sdk::error::ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Created),
+            1 => Ok(Self::Funded),
+            2 => Ok(Self::Claimed),
+            3 => Ok(Self::Refunded),
+            4 => Ok(Self::Cancelled),
+            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+        }
+    }
+}
+
+/// Core escrow data stored on-chain
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct Escrow {
+    /// Escrow identifier (commitment)
+    pub id: EscrowId,
+    /// Buyer's public key
+    pub buyer_pubkey: PublicKey,
+    /// Seller's public key (derived from seller_secret)
+    pub seller_pubkey: PublicKey,
+    /// Value locked in escrow
+    pub value: u64,
+    /// Token ID
+    pub token_id: pallas::Base,
+    /// Timeout block height for refund
+    pub timeout: u64,
+    /// Current state
+    pub state: EscrowState,
+    /// Pedersen commitment for the locked value
+    pub value_commit: pallas::Point,
+    /// Blinding factor used in commitment
+    pub value_blind: pallas::Scalar,
+    /// Nullifier for the escrow (prevents double-claim/refund)
+    pub spent_nullifier: pallas::Base,
+    /// Block height when escrow was created
+    pub created_at: u64,
+    /// Block height when escrow was funded
+    pub funded_at: Option<u64>,
+}
+
+impl Escrow {
+    /// Derive the escrow ID from buyer_pubkey, seller_pubkey, value, token_id, and timeout
+    #[allow(dead_code)]
+    pub fn derive_id(
+        buyer_pubkey: &PublicKey,
+        seller_pubkey: &PublicKey,
+        value: u64,
+        token_id: pallas::Base,
+        timeout: u64,
+        buyer_secret: pallas::Base,
+        seller_secret: pallas::Base,
+    ) -> EscrowId {
+        let (bx, by) = buyer_pubkey.xy();
+        let (sx, sy) = seller_pubkey.xy();
+        poseidon_hash([
+            bx, by, sx, sy,
+            pallas::Base::from(value),
+            token_id,
+            pallas::Base::from(timeout),
+            buyer_secret,
+            seller_secret,
+        ])
+    }
+
+    /// Compute the nullifier that prevents double-claim or double-refund
+    #[allow(dead_code)]
+    pub fn compute_nullifier(&self, secret: pallas::Base) -> pallas::Base {
+        poseidon_hash([self.id, secret])
+    }
+}
+
+/// Parameters for `Escrow::CreateEscrowV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CreateEscrowParamsV1 {
+    /// Buyer's public key
+    pub buyer_pubkey: PublicKey,
+    /// Seller's public key
+    pub seller_pubkey: PublicKey,
+    /// Value to be locked in escrow
+    pub value: u64,
+    /// Token ID
+    pub token_id: pallas::Base,
+    /// Timeout block height (after which buyer can refund)
+    pub timeout: u64,
+    /// Commitment to the escrow parameters
+    pub commitment: EscrowId,
+    /// ZK proof public inputs:
+    pub merkle_root: MerkleNode,
+}
+
+/// State update for `Escrow::CreateEscrowV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CreateEscrowUpdateV1 {
+    /// The created escrow ID
+    pub escrow_id: EscrowId,
+}
+
+/// Parameters for `Escrow::FundV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct FundEscrowParamsV1 {
+    /// Escrow ID
+    pub escrow_id: EscrowId,
+    /// Value commitment (Pedersen)
+    pub value_commit: pallas::Point,
+    /// Merkle proof of the commitment
+    pub merkle_proof: Vec<pallas::Base>,
+    /// ZK proof public inputs
+    pub merkle_root: MerkleNode,
+}
+
+/// State update for `Escrow::FundV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct FundEscrowUpdateV1 {
+    /// The funded escrow ID
+    pub escrow_id: EscrowId,
+}
+
+/// Parameters for `Escrow::ClaimV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ClaimEscrowParamsV1 {
+    /// Escrow ID
+    pub escrow_id: EscrowId,
+    /// Seller's secret (proves ownership)
+    pub seller_secret: pallas::Base,
+    /// Nullifier revealing the escrow is spent
+    pub spent_nullifier: pallas::Base,
+    /// Recipient public key for the funds
+    pub recipient_pubkey: PublicKey,
+}
+
+/// State update for `Escrow::ClaimEscrowV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ClaimEscrowUpdateV1 {
+    /// The claimed escrow ID
+    pub escrow_id: EscrowId,
+    /// Nullifier for the spent escrow
+    pub spent_nullifier: pallas::Base,
+}
+
+/// Parameters for `Escrow::RefundV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RefundEscrowParamsV1 {
+    /// Escrow ID
+    pub escrow_id: EscrowId,
+    /// Buyer's secret (proves ownership)
+    pub buyer_secret: pallas::Base,
+    /// Nullifier revealing the escrow is spent
+    pub spent_nullifier: pallas::Base,
+    /// Current block height (proves timeout reached)
+    pub current_block: u64,
+    /// Recipient public key for the refunded funds
+    pub recipient_pubkey: PublicKey,
+}
+
+/// State update for `Escrow::RefundEscrowV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RefundEscrowUpdateV1 {
+    /// The refunded escrow ID
+    pub escrow_id: EscrowId,
+    /// Nullifier for the spent escrow
+    pub spent_nullifier: pallas::Base,
+}
+
+/// Parameters for `Escrow::CancelV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CancelEscrowParamsV1 {
+    /// Escrow ID
+    pub escrow_id: EscrowId,
+    /// Buyer's secret (must match creator)
+    pub buyer_secret: pallas::Base,
+}
+
+/// State update for `Escrow::CancelV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CancelEscrowUpdateV1 {
+    /// The cancelled escrow ID
+    pub escrow_id: EscrowId,
+}

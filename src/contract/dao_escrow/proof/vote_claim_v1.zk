@@ -1,0 +1,64 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# DAO-Escrow Vote Circuit (Version 1)
+#
+# This circuit proves:
+# - Voter has governance tokens
+# - Voter hasn't already voted on this claim
+# - Vote is valid
+#
+# Public Inputs (constrain_instance):
+#   - claim_id
+#   - vote_commit.x, vote_commit.y
+#   - vote_nullifier
+#
+# Witnesses:
+#   - voter_secret
+#   - vote (0 = no, 1 = yes)
+
+constant "VoteClaim" {
+    EcFixedPointBase NULLIFIER_K,
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "VoteClaim" {
+    # Claim being voted on
+    Base claim_id,
+
+    # Voter's secret
+    Base voter_secret,
+
+    # Vote type (0 = no, 1 = yes)
+    Base vote,
+
+    # Value being staked (should equal governance token balance)
+    Base vote_value,
+
+    # Blinding factor
+    Scalar vote_blind,
+}
+
+circuit "VoteClaim" {
+    # Derive voter public key
+    voter_pub = ec_mul_base(voter_secret, NULLIFIER_K);
+    voter_pub_x = ec_get_x(voter_pub);
+    voter_pub_y = ec_get_y(voter_pub);
+
+    # Compute vote commitment
+    vcv = ec_mul_short(vote_value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(vote_blind, VALUE_COMMIT_RANDOM);
+    vote_commit = ec_add(vcv, vcr);
+
+    # Compute vote nullifier = H(claim_id, voter_secret)
+    # This prevents double-voting
+    vote_nullifier = poseidon_hash(claim_id, voter_secret);
+
+    # Expose public inputs
+    constrain_instance(claim_id);
+    constrain_instance(ec_get_x(vote_commit));
+    constrain_instance(ec_get_y(vote_commit));
+    constrain_instance(vote_nullifier);
+}

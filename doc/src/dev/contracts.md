@@ -10,6 +10,8 @@ DarkFi implements several privacy-preserving smart contracts. Each contract foll
 | [DEX](dev/contracts/dex.md) | Atomic swap DAO | Minimal Viable Information, ZK proofs |
 | [Identity](dev/contracts/identity.md) | Credential proofs | Selective disclosure, competency DAGs |
 | [Stablecoin](dev/contracts/stablecoin.md) | Collateralized debt positions | Monero backing, liquidation mechanism |
+| [Escrow](../src/contract/escrow/README.md) | Hashed Timelock escrow | Conditional payments, timeout refund |
+| [DAO-Escrow](../src/contract/dao_escrow/README.md) | Community insurance | DAO-governed endowment, premium collection |
 
 ## Common Patterns
 

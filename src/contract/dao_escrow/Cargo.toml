@@ -1,0 +1,37 @@
+[package]
+name = "darkfi_dao_escrow_contract"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
+darkfi-serial = { path = "../../serial", features = ["derive", "crypto"] }
+darkfi_money_contract = { path = "../money", features = ["no-entrypoint"] }
+thiserror = "2.0.17"
+serde = "1.0"
+sled = "0.34"
+tracing = "0.1.44"
+
+# The following dependencies are used for the client API
+darkfi = { path = "../../../", features = ["zk"], optional = true }
+rand = { version = "0.8.5", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2.8", features = ["custom"] }
+darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
+
+[features]
+default = []
+no-entrypoint = []
+client = [
+    "darkfi",
+    "darkfi-serial/async",
+    "rand",
+]
+
+[lints]
+workspace = true

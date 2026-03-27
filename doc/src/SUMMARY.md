@@ -54,6 +54,8 @@
   - [DEX](arch/dex.md)
   - [Identity](arch/identity.md)
   - [Stablecoin](arch/stablecoin.md)
+  - [Escrow Contract MVP](arch/escrow.md)
+  - [DAO-Escrow Contract](arch/dao_escrow.md)
   - [Private Authorization Layer](arch/privauth.md)
   - [Composability](arch/composability.md)
   - [Wallet](arch/wallet.md)

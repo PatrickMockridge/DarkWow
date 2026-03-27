@@ -194,6 +194,41 @@ Proves ownership of a lock for cancellation:
 - **Private inputs**: secret, token, amount
 - **Verification**: Caller knows secret, lock valid, not already spent
 
+## Base Field Arithmetic
+
+ZK circuits operate in a finite field — the Pallas field defined by prime `p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`. All arithmetic wraps at `p`, which breaks normal integer intuitions:
+
+```zk
+# In the field, p-1 ≡ -1, so comparisons must be carefully designed
+# Amount comparisons (e.g., fill_amount <= requested_amount) require this
+```
+
+**Why this matters for DEX**: Atomic swap conditions like "Alice's offered amount >= Bob's requested amount" require comparing field elements as integers. The field wraparound means naive comparison can give incorrect results when values are near `p`.
+
+**The core challenge**: Proving `a <= b` as integers requires determining whether `a - b` falls in `{0, 1, ..., (p-1)/2}` or `{(p+1)/2, ..., p-1}`. This is straightforward in normal code but requires careful gadget design in circuits.
+
+**For DEX specifically**: Partial fills (filling only part of a swap) would require comparing `fill_amount <= swap_amount`. Without `LessThanOrEqual` returning a usable value, this comparison cannot be expressed in the current zkVM.
+
+**See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
+
+## Opcode Discovery and Validation
+
+**Opcode discovery must go hand-in-hand with building functionality** — not precede it.
+
+When building the DEX contract, we discovered that:
+1. The atomic swap flow (`CreateSwap → AcceptSwap → ExecuteSwap`) works with existing opcodes — no comparison needed
+2. But partial fills require `LessThanOrEqual` to compare `fill_amount <= swap_amount`
+3. The "require on fill, bypass on cancel" pattern requires `IsEqualBase` for equality checks
+4. These gaps only became apparent when trying to extend from atomic swaps to partial fills
+
+**The correct workflow**:
+1. Build the circuit with what exists
+2. When a constraint can't be expressed, document the opcode gap
+3. Implement the new opcode only when the actual use case is known
+4. Validate the opcode against the specific circuit that needs it — not in isolation
+
+The DEX contract started with atomic swaps (which don't need comparison opcodes) to avoid the `LessThanOrEqual` gap. Partial fills — which would require the opcode — are a future enhancement.
+
 ## Reasoned Opcodes
 
 The DEX circuits primarily use standard zkVM opcodes. Future expansions may require:
@@ -214,6 +249,40 @@ To add a new opcode to the zkVM:
 2. Implement the opcode in `src/zk/vm.rs`
 
 For a full example of adding opcodes, see the [zkas bincode documentation](../../../doc/src/zkas/bincode.md).
+
+## Opcode Safety
+
+**Comparison opcodes are grey-market goods — buyer beware.**
+
+`LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM but are **not production-ready**:
+
+| Concern | Status |
+|---------|--------|
+| Isolation testing | Pass — the opcode works in isolation |
+| Integration tests | None — no end-to-end test for DEX with comparison opcodes |
+| Formal audit | Not started |
+| Delta-invert soundness | Unresolved — may be unsound near field boundary |
+| Blast radius if broken | High — swap amounts can be spoofed, enabling value theft |
+
+**The DEX's current status**: The current circuits use `constrain_equal_base` and `range_check`, not comparison opcodes. Atomic swaps work without `LessThanOrEqual`. But partial fills would require it — and if broken, could allow a party to fill more than agreed.
+
+**What production readiness requires**:
+1. Integration test demonstrating partial fills with all amount checks enforced
+2. Formal soundness proof or concrete bound on delta-invert failure
+3. Audit by a ZK circuit expert
+4. Fuzzing with adversarial inputs near field boundaries
+
+**See**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full delta-invert analysis.
+
+## Key Blockers
+
+| Blocker | Severity | Description |
+|---------|----------|-------------|
+| Manual matching required | **High** | `CreateSwap → AcceptSwap → ExecuteSwap` requires third party to call ExecuteSwap |
+| No amount comparison | **High** | `execute_swap_v1.zk` doesn't compare Alice's offered vs Bob's requested amounts |
+| No partial fills | **Medium** | Would require `LessThanOrEqual` (grey-market) |
+| `LessThanOrEqual` if used | **Medium** | Grey-market opcode with delta-invert soundness concern |
+| No integration test | **High** | Full atomic swap flow not tested end-to-end |
 
 ## Roadmap: From MVP to Full Order Book
 

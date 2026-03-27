@@ -1,0 +1,70 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Escrow Create Circuit (Version 1)
+#
+# This circuit proves:
+# - Buyer knows (buyer_pubkey, buyer_secret)
+# - Seller's public key is correctly formed
+# - Escrow commitment is correctly computed from public parameters
+#
+# Public Inputs (constrain_instance):
+#   - commitment = H(buyer_pub.x, buyer_pub.y, seller_pub.x, seller_pub.y, value, token_id, timeout)
+#
+# Witnesses:
+#   - buyer_pub_x, buyer_pub_y: Buyer's public key coordinates
+#   - seller_pub_x, seller_pub_y: Seller's public key coordinates
+#   - value: Escrow value (u64)
+#   - token_id: Token identifier
+#   - timeout: Refund timeout block height
+#   - buyer_secret: Buyer's secret for deriving public key
+
+constant "CreateEscrow" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "CreateEscrow" {
+    # Buyer's public key
+    Base buyer_pub_x,
+    Base buyer_pub_y,
+
+    # Seller's public key
+    Base seller_pub_x,
+    Base seller_pub_y,
+
+    # Escrow parameters
+    Base value,
+    Base token_id,
+    Base timeout,
+
+    # Buyer's secret (for key derivation, not revealed)
+    Base buyer_secret,
+}
+
+circuit "CreateEscrow" {
+    # Verify buyer public key is correctly derived from secret
+    # buyer_pub = buyer_secret * G
+    buyer_pub_computed = ec_mul_base(buyer_secret, NULLIFIER_K);
+    buyer_pub_computed_x = ec_get_x(buyer_pub_computed);
+    buyer_pub_computed_y = ec_get_y(buyer_pub_computed);
+    # Constrain computed pubkey to match revealed pubkey
+    constrain_eq(buyer_pub_x, buyer_pub_computed_x);
+    constrain_eq(buyer_pub_y, buyer_pub_computed_y);
+
+    # Compute escrow commitment
+    # C = H(buyer_pub.x, buyer_pub.y, seller_pub.x, seller_pub.y, value, token_id, timeout)
+    C = poseidon_hash(
+        buyer_pub_x,
+        buyer_pub_y,
+        seller_pub_x,
+        seller_pub_y,
+        value,
+        token_id,
+        timeout,
+    );
+
+    # Expose commitment as public input
+    constrain_instance(C);
+}

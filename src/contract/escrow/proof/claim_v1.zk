@@ -1,0 +1,60 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Escrow Claim Circuit (Version 1)
+#
+# This circuit proves:
+# - Seller knows seller_secret
+# - seller_pubkey derived from seller_secret matches escrow.seller_pubkey
+# - The escrow is in Funded state (not already spent)
+#
+# This uses the Hashed Timelock pattern:
+# - Seller reveals spent_nullifier = H(escrow_id, seller_secret)
+# - The nullifier is recorded to prevent double-claim
+#
+# Public Inputs (constrain_instance):
+#   - escrow_id: The escrow identifier
+#   - seller_pub_x, seller_pub_y: Seller's public key (must match escrow)
+#   - spent_nullifier: Nullifier proving the escrow is spent
+#
+# Witnesses:
+#   - seller_secret: Seller's secret key
+
+constant "ClaimEscrow" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "ClaimEscrow" {
+    # Escrow identifier
+    Base escrow_id,
+
+    # Seller's secret (proves ownership)
+    Base seller_secret,
+
+    # Stored seller public key from escrow (revealed for verification)
+    Base escrow_seller_pub_x,
+    Base escrow_seller_pub_y,
+}
+
+circuit "ClaimEscrow" {
+    # Derive seller public key from secret
+    # seller_pub = seller_secret * G
+    seller_pub = ec_mul_base(seller_secret, NULLIFIER_K);
+    seller_pub_x = ec_get_x(seller_pub);
+    seller_pub_y = ec_get_y(seller_pub);
+
+    # Verify derived public key matches the escrow's seller public key
+    constrain_eq(seller_pub_x, escrow_seller_pub_x);
+    constrain_eq(seller_pub_y, escrow_seller_pub_y);
+
+    # Compute nullifier
+    # nullifier = H(escrow_id, seller_secret)
+    spent_nullifier = poseidon_hash(escrow_id, seller_secret);
+
+    # Expose public inputs
+    constrain_instance(escrow_id);
+    constrain_instance(seller_pub_x);
+    constrain_instance(seller_pub_y);
+    constrain_instance(spent_nullifier);
+}

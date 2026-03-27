@@ -228,6 +228,38 @@ tracks spent nullifiers to prevent double-spend.
 Each deposit gets unique bridge address via nonce. Even same recipient
 depositing multiple times produces unlinkable addresses.
 
+## Base Field Arithmetic
+
+ZK circuits operate in a finite field — the Pallas field defined by prime `p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`. All arithmetic wraps at `p`, which breaks normal integer intuitions:
+
+```zk
+# In the field, p-1 ≡ -1, so comparisons must be carefully designed
+# An opcode that returns a comparison result must handle field wraparound correctly
+```
+
+**Why this matters for bridge**: Withdrawal conditions like "amount <= fee threshold" or "confirmations >= minimum" require comparing field elements as integers. The field wraparound means naive comparison can give incorrect results when values are near `p`.
+
+**The core challenge**: Proving `a <= b` as integers requires determining whether `a - b` falls in `{0, 1, ..., (p-1)/2}` or `{(p+1)/2, ..., p-1}`. This is straightforward in normal code but requires careful gadget design in circuits.
+
+**See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
+
+## Opcode Discovery and Validation
+
+**Opcode discovery must go hand-in-hand with building functionality** — not precede it.
+
+When building the bridge contract's withdrawal circuit, we discovered that:
+1. Merkle proof verification required the `merkle_root` opcode — not just a `poseidon_hash` of path elements
+2. External block header verification requires additional opcodes that don't yet exist
+3. Withdrawal conditions may need comparison opcodes for fee thresholds
+
+**The correct workflow**:
+1. Build the circuit with what exists
+2. When a constraint can't be expressed, document the opcode gap
+3. Implement the new opcode only when the actual use case is known
+4. Validate the opcode against the specific circuit that needs it — not in isolation
+
+The bridge's placeholder Merkle check (`poseidon_hash(deposit_leaf, merkle_path_0, merkle_path_1)`) exists because the real `merkle_root` opcode with proper `MerklePath` type was not yet integrated. This gap was discovered during implementation, not anticipated.
+
 ## Reasoned Opcodes
 
 The bridge circuits use standard zkVM opcodes. Future enhancements may require:
@@ -244,6 +276,39 @@ To add a new opcode to the zkVM:
 2. Implement the opcode in `src/zk/vm.rs`
 
 For a full example of adding opcodes, see the [zkas bincode documentation](../../../doc/src/zkas/bincode.md).
+
+## Opcode Safety
+
+**Comparison opcodes are grey-market goods — buyer beware.**
+
+`LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM but are **not production-ready**:
+
+| Concern | Status |
+|---------|--------|
+| Isolation testing | Pass — the opcode works in isolation |
+| Integration tests | None — no end-to-end test exists for comparison opcodes |
+| Formal audit | Not started |
+| Delta-invert soundness | Unresolved — may be unsound near field boundary |
+| Blast radius if broken | High — withdrawal conditions can be bypassed |
+
+**The bridge's current status**: The withdrawal circuit (`withdraw_v1.zk`) uses `constrain_equal_base` and `range_check`, not comparison opcodes. But future enhancements (fee thresholds, minimum confirmation checks) would require `LessThanOrEqual`.
+
+**What production readiness requires**:
+1. Integration test demonstrating withdrawal with all conditions enforced
+2. Formal soundness proof or concrete bound on delta-invert failure
+3. Audit by a ZK circuit expert
+4. Fuzzing with adversarial inputs near field boundaries
+
+**See**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full delta-invert analysis.
+
+## Key Blockers
+
+| Blocker | Severity | Description |
+|---------|----------|-------------|
+| Merkle verification is placeholder | **Critical** | `poseidon_hash` instead of `merkle_root` opcode — not real Merkle verification |
+| No external block header verification | **Critical** | `external_block_hash` accepted but not cryptographically verified |
+| No light client integration | **High** | Requires external chain's light client proof system |
+| `LessThanOrEqual` if used | **High** | Grey-market opcode with delta-invert soundness concern |
 
 ## Implementation Status
 

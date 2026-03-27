@@ -16,6 +16,8 @@ This document tracks the blockers to reaching MVP for each contract in `src/cont
 | `bridge` | None (placeholder noted) | Merkle verification, light client | Partial |
 | `identity` | `LessThanOrEqual`, `IsEqualBase` integrated (experimental) | Integration testing | Partial |
 | `stablecoin` | None (ratio checks use cross-multiplication — see `dao/exec.zk`) | P2P oracle, CDP notes | Partial |
+| `escrow` | None | ZK circuit compilation, Money integration | Partial |
+| `dao_escrow` | None | Vote aggregation, Money integration | Partial |
 
 **Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are implemented in the zkVM (commit `41b0629e0`). `identity` and `stablecoin` have been updated to use `LessThanOrEqual`. Ratio checks (e.g., `collateral / debt < threshold`) use cross-multiplication via `base_mul + less_than_strict` — no `BaseDiv` needed. All experimental opcodes are grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md) for production readiness requirements.
 
@@ -205,6 +207,78 @@ InitializeV1 (0x00), OpenPositionV1 (0x01), AddCollateralV1 (0x02), RemoveCollat
 
 ---
 
+## `escrow` — Partial MVP
+
+**Location**: `src/contract/escrow/`
+
+### Functions
+InitializeV1 (0x00), CreateEscrowV1 (0x01), FundV1 (0x02), ClaimV1 (0x03), RefundV1 (0x04), CancelV1 (0x05)
+
+### Circuit Status
+
+| Circuit | Status | Notes |
+|---------|--------|-------|
+| `create_escrow_v1.zk` | Placeholder | Uses `poseidon_hash`, `ec_mul_base` — all existing |
+| `fund_v1.zk` | Placeholder | Pedersen commitment, needs merkle integration |
+| `claim_v1.zk` | Placeholder | Key derivation + nullifier, needs ZK wiring |
+| `refund_v1.zk` | Placeholder | Uses `less_than_strict` for timeout check (constrain-only) |
+
+### Blockers
+
+**Opcode layer**: None. All required opcodes exist:
+- `poseidon_hash` for commitment
+- `ec_mul_base` for key derivation
+- `less_than_strict` for timeout verification (constrain-only, no output)
+
+**Architecture blockers**:
+
+1. **ZK circuit compilation** — `.zk` files exist but need to be compiled to `.zk.bin`
+
+2. **Entry point wiring** — `get_metadata()` and `process_instruction()` are stubs
+
+3. **Money integration** — Phase 2 uses money contract's `spend_hook` for fund release. Phase 1 (standalone) doesn't need this.
+
+**What it needs**: ZK circuit compilation, entry point implementation, state management for the escrow state machine (Created → Funded → Claimed/Refunded).
+
+**See also**: [Escrow Contract MVP](./escrow.md) for the full analysis.
+
+---
+
+## `dao_escrow` — Partial MVP
+
+**Location**: `src/contract/dao_escrow/`
+
+### Functions
+InitializeV1 (0x00), UpdateV1 (0x01), PayPremiumV1 (0x02), ProposeClaimV1 (0x03), VoteClaimV1 (0x04), ExecuteClaimV1 (0x05), CancelClaimV1 (0x06), WithdrawV1 (0x07)
+
+### Circuit Status
+
+| Circuit | Status | Notes |
+|---------|--------|-------|
+| `init_v1.zk` | Placeholder | Uses `poseidon_hash`, `ec_mul_base` |
+| `pay_premium_v1.zk` | Placeholder | Pedersen commitment |
+| `propose_claim_v1.zk` | Placeholder | Merkle proof is TODO |
+| `vote_claim_v1.zk` | Placeholder | Nullifier check is TODO |
+| `execute_claim_v1.zk` | Placeholder | Vote aggregation is TODO |
+
+### Blockers
+
+**Opcode layer**: None. All required opcodes exist.
+
+**Architecture blockers**:
+
+1. **Vote aggregation** — On-chain vote counting with cross-multiplication for approval ratio (same pattern as `dao/exec.zk`)
+
+2. **Money integration** — Endowment pool needs to connect to actual token holdings
+
+3. **ZK circuit compilation** — `.zk` files exist but need to be compiled to `.zk.bin`
+
+**What it needs**: Vote aggregation logic, money integration, ZK circuit compilation.
+
+**See also**: [DAO-Escrow Contract](./dao_escrow.md) for the full analysis.
+
+---
+
 ## Cross-Contract Dependency Chain
 
 ```
@@ -226,6 +300,16 @@ identity ◄──────────── (LessThanOrEqual, ──► sta
   │                   IsEqualBase: experimental)  │
   │                                               │
   └────────────────── (P2P oracle) ──────────────┘
+
+escrow ──────► money (spend_hook integration)
+  │
+  │ (Phase 1: standalone, no money integration needed)
+  ▼
+dao_escrow ──────► money (endowment pool)
+  │
+  │ (needs vote aggregation)
+  ▼
+dao (vote mechanism)
 ```
 
 ---
@@ -258,3 +342,5 @@ less_than_strict(lhs, rhs);  # Proves collateral/debt < threshold
 - [DarkFi Stablecoin Contract](../../src/contract/stablecoin/)
 - [DarkFi Money Contract](../../src/contract/money/)
 - [DarkFi DAO Contract](../../src/contract/dao/)
+- [DarkFi Escrow Contract](../../src/contract/escrow/)
+- [DarkFi DAO-Escrow Contract](../../src/contract/dao_escrow/)

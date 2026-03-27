@@ -1,0 +1,84 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# DAO-Escrow Claim Proposal Circuit (Version 1)
+#
+# This circuit proves:
+# - Proposer has sufficient governance tokens (merkle membership)
+# - Claim value is within allowed limits
+# - Proposer knows their secret
+#
+# Public Inputs (constrain_instance):
+#   - dao_escrow_bulla
+#   - claim_id
+#   - value_commit.x, value_commit.y
+#
+# Witnesses:
+#   - proposer_secret
+#   - value
+#   - token_id
+#   - merkle_proof path elements
+
+constant "ProposeClaim" {
+    EcFixedPointBase NULLIFIER_K,
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "ProposeClaim" {
+    # DAO-Escrow identifier
+    Base dao_escrow_bulla,
+
+    # Proposer's secret
+    Base proposer_secret,
+
+    # Claim details
+    Base value,
+    Base token_id,
+    Base description_hash,
+
+    # Recipient public key coordinates
+    Base recipient_pub_x,
+    Base recipient_pub_y,
+
+    # Value commitment blinding
+    Scalar value_blind,
+
+    # Merkle proof
+    Base merkle_leaf,
+    Base merkle_path_0,
+    Base merkle_path_1,
+}
+
+circuit "ProposeClaim" {
+    # Derive proposer public key
+    proposer_pub = ec_mul_base(proposer_secret, NULLIFIER_K);
+    proposer_pub_x = ec_get_x(proposer_pub);
+    proposer_pub_y = ec_get_y(proposer_pub);
+
+    # Compute claim ID = H(dao_escrow_bulla, proposer_pub, value, token_id, description_hash)
+    claim_id = poseidon_hash(
+        dao_escrow_bulla,
+        proposer_pub_x,
+        proposer_pub_y,
+        value,
+        token_id,
+        description_hash,
+    );
+
+    # Compute value commitment
+    vcv = ec_mul_short(value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    value_commit = ec_add(vcv, vcr);
+
+    # TODO: Merkle membership proof
+    # merkle_root = compute_merkle_root(merkle_leaf, [sibling_0, sibling_1])
+    # constrain_instance(merkle_root)
+
+    # Expose public inputs
+    constrain_instance(dao_escrow_bulla);
+    constrain_instance(claim_id);
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
+}

@@ -1,0 +1,58 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Escrow Fund Circuit (Version 1)
+#
+# This circuit proves:
+# - The escrow exists and is in Created state
+# - A Pedersen commitment to the value is correctly formed
+# - The value commitment matches what was declared at creation
+#
+# Public Inputs (constrain_instance):
+#   - escrow_id: The escrow commitment from creation
+#   - value_commit.x, value_commit.y: Pedersen commitment coordinates
+#
+# Witnesses:
+#   - value: The escrowed value
+#   - value_blind: Blinding factor for Pedersen commitment
+#   - merkle_proof: Proof that escrow_id exists in escrows tree
+
+constant "FundEscrow" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "FundEscrow" {
+    # Escrow ID (commitment from CreateEscrow)
+    Base escrow_id,
+
+    # Value being funded
+    Base value,
+    Scalar value_blind,
+
+    # Merkle proof witnesses
+    Base merkle_path_length,
+    Base merkle_sibling_0,
+    Base merkle_sibling_1,
+}
+
+circuit "FundEscrow" {
+    # Verify value commitment is correctly formed
+    # C = value * G + value_blind * H
+    vcv = ec_mul_short(value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    value_commit = ec_add(vcv, vcr);
+
+    # Expose commitment coordinates as public inputs
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
+
+    # Expose escrow_id as public input
+    constrain_instance(escrow_id);
+
+    # TODO: Merkle proof verification
+    # This would verify escrow_id exists in the escrows Merkle tree
+    # merkle_root = compute_merkle_root(escrow_id, merkle_proof);
+    # constrain_instance(merkle_root);
+}

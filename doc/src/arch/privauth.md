@@ -309,6 +309,8 @@ opcodes. More complex predicates require comparison opcodes that return values:
 | `collateral >= 2 * debt` (stablecoin) | `LessThanOrEqual`, `BaseMul` |
 | `fill_amount <= requested_amount` (DEX) | `LessThanOrEqual` |
 | `price <= market_price` (AMM) | `LessThanOrEqual`, `IsEqualBase` |
+| `seller knows secret` (escrow claim) | None — `poseidon_hash` only |
+| `timeout passed` (escrow refund) | `LessThanStrict` (constrain-only, existing) |
 
 See [zkVM Primitive Layer](zkvm_primitives.md) for the full analysis of why comparison
 opcodes that return values are the core gap, and how they compose into higher-level
@@ -333,6 +335,8 @@ expressiveness is limited**. Current circuits use placeholders that always pass.
 - [Bridge Contract](../../src/contract/bridge/)
 - [DEX Contract](../../src/contract/dex/)
 - [Stablecoin Contract](../../src/contract/stablecoin/)
+- [Escrow Contract MVP](./escrow.md) — conditional payment authorization pattern
+- [DAO-Escrow Contract](./dao_escrow.md) — DAO-governed endowment with voting
 - [Intent AMM Proposal](https://codeberg.org/rusticml/darkfi-intent-amm-proposal)
 - [Response to PatrickM123 (Intent AMM)](https://codeberg.org/rusticml/darkfi-intent-amm-proposal/src/branch/main/docs/response-to-patrickm123.md)
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)

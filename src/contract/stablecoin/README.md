@@ -149,6 +149,54 @@ Proves a position can be liquidated:
 - **Private inputs**: owner_secret, liquidator_reward
 - **Verification**: Position undercollateralized, liquidation penalty correct
 
+## Base Field Arithmetic
+
+ZK circuits operate in a finite field — the Pallas field defined by prime `p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`. All arithmetic wraps at `p`, which breaks normal integer intuitions:
+
+```zk
+# In the field, p-1 ≡ -1, so comparisons must be carefully designed
+# Ratio comparisons (e.g., collateral/debt >= 2.0) require cross-multiplication
+# Never use division in a circuit — always cross-multiply
+```
+
+**Why this matters for stablecoin**: The collateralization ratio check `collateral / debt >= min_ratio` must be expressed as field arithmetic. Direct division (`BaseDiv`) doesn't exist — instead we prove `collateral * 1 >= min_ratio * debt` via cross-multiplication using `base_mul` + `less_than_strict`.
+
+**The pattern (from `dao/exec.zk` lines 118-126)**:
+```zk
+# To prove: collateral/debt >= 2.0 (200% collateralization)
+# We prove: collateral >= 2 * debt
+# I.e., collateral - 2*debt >= 0 as integers (not field elements!)
+
+lhs = base_mul(collateral, 1);          # collateral * 1
+rhs = base_mul(liquidation_threshold, debt_value);  # threshold * debt
+less_than_strict(rhs, lhs);             # Prove: rhs < lhs
+# If this passes, we know: threshold * debt < collateral (as integers, not field!)
+```
+
+**Why this works**: Cross-multiplication avoids division entirely. We compute `threshold * debt` and prove it's less than `collateral`. The field wraparound doesn't break this because we're proving a relation between products, not computing a quotient.
+
+**The core challenge**: Field wraparound means `a - b` as field subtraction is not the same as `a - b` as integer subtraction when `a < b`. The `less_than_strict` opcode constrains this correctly, but only when the inputs are bounded to prevent wraparound.
+
+**See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
+
+## Opcode Discovery and Validation
+
+**Opcode discovery must go hand-in-hand with building functionality** — not precede it.
+
+When building the stablecoin contract's `open_position_v1.zk` circuit, we discovered that:
+1. The 200% collateralization check requires comparing `collateral_value` against `liquidation_threshold * debt_value` — a ratio comparison
+2. The `LessThanStrict` opcode could constrain the relation but not return a value for further logic
+3. Cross-multiplication avoids the need for `BaseDiv`, but requires bounding inputs to prevent field wraparound
+4. `LessThanOrEqual` was needed to return a 0/1 result for further constraints
+
+**The correct workflow**:
+1. Build the circuit with what exists
+2. When a constraint can't be expressed, document the opcode gap
+3. Implement the new opcode only when the actual use case is known
+4. Validate the opcode against the specific circuit that needs it — not in isolation
+
+The stablecoin contract was instrumental in driving `LessThanOrEqual` integration — the actual collateralization check is what made the opcode gap visible.
+
 ## Reasoned Opcodes
 
 The stablecoin circuits use these zkVM opcodes:
@@ -164,6 +212,42 @@ The stablecoin circuits use these zkVM opcodes:
 > **Note on ratio checks**: Liquidation ratio checks (e.g., `collateral / debt < threshold`) do NOT need a `BaseDiv` opcode. As demonstrated in `dao/exec.zk` lines 118-126, ratio checks use cross-multiplication: prove `a/b < c/d` by asserting `a*d < b*c` via `base_mul` + `less_than_strict`. The TWAP price is expected to be supplied as an external oracle input, not computed in-circuit.
 
 **See also**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes.
+
+## Opcode Safety
+
+**`LessThanOrEqual` is a grey-market good — buyer beware.**
+
+`LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM and integrated in `open_position_v1.zk` and `liquidate_v1.zk`. They are **not production-ready**:
+
+| Concern | Status |
+|---------|--------|
+| Isolation testing | Pass — the opcode works in isolation |
+| Integration tests | None — no end-to-end test for stablecoin lifecycle |
+| Formal audit | Not started |
+| Delta-invert soundness | Unresolved — may be unsound near field boundary |
+| Blast radius if broken | **Critical** — collateralization ratios can be spoofed, enabling undercollateralized positions |
+
+**The stablecoin's risk profile is higher than identity's**: A broken `LessThanOrEqual` in identity allows a holder to claim they meet a threshold when they don't. A broken `LessThanOrEqual` in stablecoin allows creating a position with 50% collateral when 200% is required — directly draining the system.
+
+**What production readiness requires**:
+1. Integration test: open position → add collateral → mint stable → repay → liquidate (adversarial)
+2. Formal soundness proof or concrete bound on delta-invert failure
+3. Audit by a ZK circuit expert with formal verification
+4. Fuzzing with adversarial inputs: values near `p`, near 0, overflow cases
+
+**Current status**: The stablecoin uses these opcodes because the alternative (cross-multiplication alone, which only constrains but doesn't return a value) is insufficient for the full collateralization logic. But the system's security relies on the opcode being correct.
+
+**See**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full delta-invert analysis.
+
+## Key Blockers
+
+| Blocker | Severity | Description |
+|---------|----------|-------------|
+| `LessThanOrEqual` soundness | **Critical** | Delta-invert concern may allow undercollateralized positions |
+| No P2P oracle | **Critical** | NETHER/DRK AMM pool for TWAP doesn't exist on-chain |
+| CDP Note integration | **High** | Money contract's `spend_hook` to CDP engine not implemented |
+| No integration test | **High** | Cannot verify full lifecycle: open → add → mint → repay → liquidate |
+| `liquidate_v1.zk` unreviewed | **Medium** | Circuit uses experimental opcode, needs audit |
 
 ## Implementation Status
 

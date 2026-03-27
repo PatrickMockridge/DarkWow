@@ -1,0 +1,75 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Escrow Refund Circuit (Version 1)
+#
+# This circuit proves:
+# - Current block height >= escrow.timeout (timeout has passed)
+# - Buyer knows buyer_secret
+# - buyer_pubkey derived from buyer_secret matches escrow.buyer_pubkey
+# - The escrow is in Funded state (not already spent)
+#
+# The timeout check uses LessThanStrict (constrain-only):
+# - less_than_strict(timeout, current_block) returns ()
+# - This constrains current_block > timeout without revealing the result
+#
+# Public Inputs (constrain_instance):
+#   - escrow_id: The escrow identifier
+#   - timeout: The refund timeout block height
+#   - current_block: Current block height (revealed by block proposer)
+#   - buyer_pub_x, buyer_pub_y: Buyer's public key (must match escrow)
+#   - spent_nullifier: Nullifier proving the escrow is spent
+#
+# Witnesses:
+#   - buyer_secret: Buyer's secret key
+
+constant "RefundEscrow" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "RefundEscrow" {
+    # Escrow identifier
+    Base escrow_id,
+
+    # Timeout from escrow storage
+    Base timeout,
+
+    # Current block height (revealed by chain)
+    Base current_block,
+
+    # Buyer's secret (proves ownership)
+    Base buyer_secret,
+
+    # Stored buyer public key from escrow (revealed for verification)
+    Base escrow_buyer_pub_x,
+    Base escrow_buyer_pub_y,
+}
+
+circuit "RefundEscrow" {
+    # Prove timeout has passed: current_block > timeout
+    # Uses LessThanStrict (constrain-only, no output value)
+    less_than_strict(timeout, current_block);
+
+    # Derive buyer public key from secret
+    # buyer_pub = buyer_secret * G
+    buyer_pub = ec_mul_base(buyer_secret, NULLIFIER_K);
+    buyer_pub_x = ec_get_x(buyer_pub);
+    buyer_pub_y = ec_get_y(buyer_pub);
+
+    # Verify derived public key matches the escrow's buyer public key
+    constrain_eq(buyer_pub_x, escrow_buyer_pub_x);
+    constrain_eq(buyer_pub_y, escrow_buyer_pub_y);
+
+    # Compute nullifier
+    # nullifier = H(escrow_id, buyer_secret)
+    spent_nullifier = poseidon_hash(escrow_id, buyer_secret);
+
+    # Expose public inputs
+    constrain_instance(escrow_id);
+    constrain_instance(timeout);
+    constrain_instance(current_block);
+    constrain_instance(buyer_pub_x);
+    constrain_instance(buyer_pub_y);
+    constrain_instance(spent_nullifier);
+}

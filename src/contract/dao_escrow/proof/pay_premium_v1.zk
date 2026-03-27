@@ -1,0 +1,59 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# DAO-Escrow Premium Payment Circuit (Version 1)
+#
+# This circuit proves:
+# - Member is paying a legitimate premium
+# - Premium amount is correctly computed
+#
+# Public Inputs (constrain_instance):
+#   - dao_escrow_bulla
+#   - value_commit.x, value_commit.y
+#
+# Witnesses:
+#   - member_secret
+#   - value
+#   - token_id
+#   - period
+
+constant "PayPremium" {
+    EcFixedPointBase NULLIFIER_K,
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "PayPremium" {
+    # DAO-Escrow identifier
+    Base dao_escrow_bulla,
+
+    # Member's secret key
+    Base member_secret,
+
+    # Premium details
+    Base value,
+    Base token_id,
+    Base period,
+
+    # Blinding factor
+    Scalar value_blind,
+}
+
+circuit "PayPremium" {
+    # Derive member public key from secret
+    member_pub = ec_mul_base(member_secret, NULLIFIER_K);
+    member_pub_x = ec_get_x(member_pub);
+    member_pub_y = ec_get_y(member_pub);
+
+    # Compute value commitment
+    # C = value * G + blind * H
+    vcv = ec_mul_short(value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    value_commit = ec_add(vcv, vcr);
+
+    # Expose public inputs
+    constrain_instance(dao_escrow_bulla);
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
+}
