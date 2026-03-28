@@ -7,6 +7,13 @@ https://dark.fi/book/
 When adding or removing a section of the book, make sure to update the
 [SUMMARY.md](src/SUMMARY.md) file to actually list the contents.
 
+## Reference Materials
+
+**Uncensorable ZK and DarkFi Reference Material (Arweave)**
+
+DarkFi Reference Material stored permanently on Arweave:
+- [DarkFi Reference Material](https://app.ardrive.io/#/drives/f79597cd-8a4e-426e-840e-25c1453e418d=name=DarkFi+Reference+Material) - Textbooks, papers, and materials on ZK circuits, cryptography, and DarkFi
+
 Use a python virtual environment to install its requirements:
 ```shell
 % python -m venv venv

@@ -153,6 +153,13 @@ If you want to hack on the source code, make sure to read some
 introductory advice in the
 [DarkFi book](https://dark.fi/book/dev/dev.html).
 
+## Reference Materials
+
+**Uncensorable ZK and DarkFi Reference Material (Arweave)**
+
+DarkFi Reference Material stored permanently on Arweave:
+- [DarkFi Reference Material](https://app.ardrive.io/#/drives/f79597cd-8a4e-426e-840e-25c1453e418d?name=DarkFi+Reference+Material) - Textbooks, papers, and materials on ZK circuits, cryptography, and DarkFi
+
 ## Installation (Optional)
 
 This will install the binaries on your system (`/usr/local` by
