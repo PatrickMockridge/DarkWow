@@ -159,6 +159,54 @@ less_than_strict(current_block, expiry);  // Membership still valid
 
 This replaces timestamp-based locks which can be manipulated by miners.
 
+### Maximum Membership Period
+
+To prevent members from self-issuing excessively long memberships, the circuit enforces a maximum:
+
+```rust
+// Maximum: ~1 year (52560 blocks at 5min/block)
+max_membership_blocks = 52560;
+max_expiry = add(current_block, max_membership_blocks);
+less_than_strict(expiry, max_expiry);
+```
+
+This prevents:
+- Members choosing 100-year memberships
+- Long-term lockup that bypasses DAO governance
+
+## MPC Commit-Reveal for Bulla Generation
+
+**⚠️ Privacy Fix Applied**: The bulla is now generated via MPC commit-reveal ceremony to ensure unpredictability.
+
+### The Problem (Fixed)
+
+Previously, the DAO alone chose bullae, which could be predictable. A malicious DAO could:
+- Assign sequential bullae to track members
+- Choose low-entropy bullae to weaken privacy
+
+### The Fix: MPC Commit-Reveal
+
+**Setup Phase (off-chain MPC ceremony):**
+```
+Party 1: secret_1 → commitment_1 = secret_1 * G
+Party 2: secret_2 → commitment_2 = secret_2 * G
+Party 3: secret_3 → commitment_3 = secret_3 * G
+```
+
+**Issuance Phase:**
+```
+1. All parties reveal secrets to the user
+2. User verifies: secret_i * G == commitment_i
+3. Final bulla = H(member_pub, secret_1, secret_2, secret_3)
+```
+
+**Privacy Guarantee:**
+- As long as ONE MPC party is honest, the bulla is unpredictable
+- Even if n-1 parties collude, they cannot predict the final bulla
+- Same security model as Zcash's Powers of Tau ceremony
+
+See [security-analysis.md Issue #4](../../doc/src/arch/security-analysis.md) for full details.
+
 ## Trust Model
 
 | Aspect | How It's Protected |

@@ -93,22 +93,37 @@ Proves:
 - `poseidon_hash(secret)` matches stored hash (hash binding verified)
 - Nullifier prevents double-claim
 
+**Note**: The claim circuit has NO timelock check on claim. This is intentional - the timelock protects the refund path only. See [security-analysis.md Issue #6](../../../doc/src/arch/security-analysis.md) for why asymmetric timelock is correct for atomic swaps.
+
 ## MVP Status
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| CreateSwap circuit | ✅ Complete | Accepts external hash |
-| Claim circuit | ✅ Complete | Reveals secret |
-| Refund circuit | 🆕 TODO | Needs timelock verification |
-| External hash verification | 🆕 TODO | SHA256 in-circuit |
+| CreateSwap circuit | ✅ Complete | poseidon_hash verified in-circuit |
+| Claim circuit | ✅ Complete | Hash verified, no timelock on claim (intentional) |
+| Refund circuit | ✅ Complete | Timelock verification for refund |
+| External hash verification | ✅ Mitigated | Each chain verifies own hash |
+
+## Cross-Chain Hash Verification
+
+**How cross-chain swaps work without oracles:**
+
+| Chain | Hash Used | Verification |
+|-------|-----------|-------------|
+| DarkFi | `poseidon_hash(secret)` | ZK circuit verifies in-circuit |
+| Ethereum | `SHA256(secret)` | EVM verifies natively |
+
+Each chain verifies the hash function it understands. No oracle needed.
 
 ## Limitations
 
-1. **External hash function**: For cross-chain swaps, DarkFi uses `poseidon_hash(secret)` which is verified in-circuit. However, binding to external chains (Ethereum SHA256) requires a bridge/oracle to verify the cross-chain hash. See [security-analysis.md](../../../doc/src/arch/security-analysis.md) for details.
+1. **External hash binding**: For cross-chain swaps, each chain only verifies its own hash. This is sufficient because Alice reveals the secret voluntarily on one chain, and the other party claims on the other chain when they see it. See [security-analysis.md Issue #7](../../../doc/src/arch/security-analysis.md).
 
 2. **No Bitcoin**: Bitcoin uses RIPEMD160(SHA256) which requires different circuit.
 
 3. **Timelock delta**: External chain timelock must be later than DarkFi's to ensure fairness.
+
+4. **Asymmetric timelock**: The claim has no timelock (Bob claims immediately when secret is known). The refund has a timelock (Alice waits to refund). This is intentional - asymmetric timelocks prevent griefing and preserve atomicity. See [security-analysis.md Issue #6](../../../doc/src/arch/security-analysis.md).
 
 ## See Also
 
