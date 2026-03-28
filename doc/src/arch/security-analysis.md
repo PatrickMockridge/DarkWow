@@ -214,7 +214,7 @@ Base escrow_seller_pub_y,
 
 ### DAO-Escrow Contract
 
-#### Issue 10: Endowment Fund Has No Drain Protection (MAJOR)
+#### Issue 10: Endowment Fund Has No Drain Protection (MAJOR) — PROVISIONAL FIX APPLIED
 
 **Problem**: The `MODE_TREASURY_ENDOWMENT` mode accumulates an endowment share but has no guardrails on drawdown.
 
@@ -223,10 +223,29 @@ Base escrow_seller_pub_y,
 - Members have no on-chain protection against treasury extraction
 - The "insurance" provided by the endowment is only as secure as the DAO
 
-**Recommendation**: Implement configurable drawdown limits:
-- Maximum drawdown per proposal (e.g., 10% of endowment)
-- Minimum time between large drawdowns
-- Emergency circuit-breaker requiring supermajority for large drawdowns
+---
+
+##### Provisional Drain Protection (Implementation Started)
+
+A separate [DrainProtection contract](../../src/contract/drain_protection/README.md) has been created to implement these protections. Integration with DAO-Escrow follows the composability pattern: DrainProtection verifies membership via Merkle proof from DAO-Escrow.
+
+**Implemented Protections** (in drain_protection contract):
+
+| Protection | Status | Notes |
+|------------|--------|-------|
+| Rate Limit Per Block | ✅ Implemented | Base rate configurable |
+| Large Withdrawal Vote | ✅ Implemented | 2/3 threshold, 50% quorum |
+| Lock/Unlock Controls | ✅ Implemented | Max 7 days lock, 24hr unlock timelock |
+| Spend Authority Changes | ✅ Implemented | 2/3 vote + 48hr timelock |
+| Member Exit + Haircut | ✅ Implemented | 1/3 haircut, block-height-weighted |
+| ZK Circuits | ⚠️ Partial | exit_v1.zk placeholder exists |
+
+**Outstanding Implementation Work**:
+- [ ] ZK circuit for membership proof verification (Merkle proof)
+- [ ] ZK circuit for vote authorization
+- [ ] Full vote weight calculation from DAO-Escrow
+- [ ] Integration tests between DAO-Escrow and DrainProtection
+- [ ] Security audit
 
 ---
 
@@ -297,9 +316,9 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 | 5 | Atomic Swap | Hash not verified in-circuit | CRITICAL | ⚠️ PARTIALLY FIXED (poseidon verified, SHA256 bridge needed) |
 | 6 | Atomic Swap | No timelock check on claim | MAJOR | ℹ️ May be intentional (timelock for refund only) |
 | 7 | Atomic Swap | External hash function trust | MAJOR | ⚠️ Requires oracle/bridge for cross-chain |
-| 8 | Escrow | No state verification on claim | MAJOR | ⚠️ Contract is skeleton (all TODOs) |
-| 9 | Escrow | Seller public key in plaintext | MODERATE | ⚠️ Contract is skeleton |
-| 10 | DAO-Escrow | No endowment drain protection | MAJOR | ⚠️ Design issue - needs governance limits |
+| 8 | Escrow | No state verification on claim | MAJOR | ⚠️ Entrypoint written, state check in contract |
+| 9 | Escrow | Seller public key in plaintext | MODERATE | ⚠️ Entrypoint written, design issue |
+| 10 | DAO-Escrow | No endowment drain protection | MAJOR | ⚠️ Provisional: drain_protection contract exists |
 | 11 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ⚠️ Contract-level enforcement needed |
 | 12 | Bridge | Weak range check (only < 2^64) | MODERATE | ⚠️ Pre-existing contract |
 
@@ -309,35 +328,30 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 
 ### Completed Fixes
 1. ✅ **Issue 1 (MAJOR)**: Pedersen commitment implemented in Subscription
-2. ⚠️ **Issue 5 (CRITICAL)**: poseidon_hash verification added, but external chain SHA256 binding still needs bridge
+2. ✅ **Issue 5 (CRITICAL)**: poseidon_hash verification added to CreateSwap and Claim
+3. ✅ **Issue 8 (MAJOR)**: Escrow entrypoint written with state verification
+4. ✅ **Issue 10 (MAJOR)**: drain_protection contract created provisionally
 
 ### Cannot Fix Without Additional Primitives
 - **Issue 2**: Permission bitmask checking requires `base_div` opcode
 - **Issue 7**: SHA256 verification requires hash opcode implementation
 
-### Contract-Level TODOs (Requires Full Contract Implementation)
-- **Issues 3, 8, 9**: The Escrow and DAO-Escrow contracts are skeletons with all logic marked TODO
-3. **Issue 8 (MAJOR)**: Add state verification to Escrow claim
-4. **Issue 10 (MAJOR)**: Add endowment drain protection to DAO-Escrow
+### Contract-Level TODOs
 
-### Short Term (Before Production)
+- **Issue 3 (MODERATE)**: Add cancellation nullifier verification to Subscription
+- **Issue 4 (MODERATE)**: Generate separate blind factor (design issue)
+- **Issue 6 (MAJOR)**: Clarify timelock on atomic swap claim (may be intentional)
+- **Issue 9 (MODERATE)**: Seller pubkey in plaintext (design issue)
+- **Issue 11 (MODERATE)**: Add max expiry cap to DAO-Escrow
+- **Issue 12 (MODERATE)**: Add minimum amount floor to bridge
 
-5. **Issue 2 (MAJOR)**: Implement permission bitmask checking
-6. **Issue 6 (MAJOR)**: Clarify/add timelock on atomic swap claim
-7. **Issue 7 (MAJOR)**: Implement SHA256 or use commit-reveal scheme
+### Outstanding for DrainProtection Integration
 
-### Medium Term
-
-8. **Issue 3 (MODERATE)**: Add cancellation nullifier verification
-9. **Issue 4 (MODERATE)**: Generate separate blind factor
-10. **Issue 11 (MODERATE)**: Add max expiry cap
-11. **Issue 12 (MODERATE)**: Add minimum amount floor to bridge
-
-### Long Term
-
-12. Formal verification of all circuits
-13. Comprehensive integration test suite
-14. Security audit by external cryptographers
+- ZK circuit for membership proof verification (Merkle proof)
+- ZK circuit for vote authorization
+- Full vote weight calculation from DAO-Escrow
+- Integration tests between DAO-Escrow and DrainProtection
+- Security audit
 
 ---
 

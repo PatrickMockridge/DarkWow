@@ -33,11 +33,20 @@ pub enum EscrowError {
     #[error("Invalid escrow state: expected {expected}, got {actual}")]
     InvalidState { expected: String, actual: String },
 
+    #[error("Invalid escrow state transition")]
+    InvalidStateTransition,
+
     #[error("Invalid commitment")]
     InvalidCommitment,
 
+    #[error("Commitment mismatch")]
+    CommitmentMismatch,
+
     #[error("Invalid nullifier")]
     InvalidNullifier,
+
+    #[error("Already spent (nullifier exists)")]
+    AlreadySpent,
 
     #[error("Commitment not found in tree")]
     CommitmentNotFound,
@@ -53,6 +62,9 @@ pub enum EscrowError {
 
     #[error("Timeout not yet reached: need {needed} more blocks")]
     TimeoutNotReached { needed: u64 },
+
+    #[error("Timelock not expired")]
+    TimelockNotExpired,
 
     #[error("Seller secret does not match")]
     SellerSecretMismatch,
@@ -101,26 +113,30 @@ impl From<EscrowError> for ContractError {
             EscrowError::EscrowNotFound(_) => Self::Custom(2),
             EscrowError::EscrowAlreadyExists(_) => Self::Custom(3),
             EscrowError::InvalidState { .. } => Self::Custom(4),
-            EscrowError::InvalidCommitment => Self::Custom(5),
-            EscrowError::InvalidNullifier => Self::Custom(6),
-            EscrowError::CommitmentNotFound => Self::Custom(7),
-            EscrowError::DoubleSpend => Self::Custom(8),
-            EscrowError::InvalidZkProof => Self::Custom(9),
-            EscrowError::InvalidSignature => Self::Custom(10),
-            EscrowError::TimeoutNotReached { .. } => Self::Custom(11),
-            EscrowError::SellerSecretMismatch => Self::Custom(12),
-            EscrowError::BuyerSecretMismatch => Self::Custom(13),
-            EscrowError::InvalidMerkleProof => Self::Custom(14),
-            EscrowError::InsufficientFunds => Self::Custom(15),
-            EscrowError::OnlyBuyerCanRefund => Self::Custom(16),
-            EscrowError::OnlySellerCanClaim => Self::Custom(17),
-            EscrowError::EscrowAlreadyClaimed => Self::Custom(18),
-            EscrowError::EscrowAlreadyRefunded => Self::Custom(19),
-            EscrowError::EscrowAlreadyCancelled => Self::Custom(20),
-            EscrowError::InvalidAmount(_) => Self::Custom(21),
-            EscrowError::InvalidTimeout => Self::Custom(22),
-            EscrowError::CannotCancelFunded => Self::Custom(23),
-            EscrowError::CannotCancelNonBuyer => Self::Custom(24),
+            EscrowError::InvalidStateTransition => Self::Custom(5),
+            EscrowError::InvalidCommitment => Self::Custom(6),
+            EscrowError::CommitmentMismatch => Self::Custom(7),
+            EscrowError::InvalidNullifier => Self::Custom(8),
+            EscrowError::AlreadySpent => Self::Custom(9),
+            EscrowError::CommitmentNotFound => Self::Custom(10),
+            EscrowError::DoubleSpend => Self::Custom(11),
+            EscrowError::InvalidZkProof => Self::Custom(12),
+            EscrowError::InvalidSignature => Self::Custom(13),
+            EscrowError::TimeoutNotReached { .. } => Self::Custom(14),
+            EscrowError::TimelockNotExpired => Self::Custom(15),
+            EscrowError::SellerSecretMismatch => Self::Custom(16),
+            EscrowError::BuyerSecretMismatch => Self::Custom(17),
+            EscrowError::InvalidMerkleProof => Self::Custom(18),
+            EscrowError::InsufficientFunds => Self::Custom(19),
+            EscrowError::OnlyBuyerCanRefund => Self::Custom(20),
+            EscrowError::OnlySellerCanClaim => Self::Custom(21),
+            EscrowError::EscrowAlreadyClaimed => Self::Custom(22),
+            EscrowError::EscrowAlreadyRefunded => Self::Custom(23),
+            EscrowError::EscrowAlreadyCancelled => Self::Custom(24),
+            EscrowError::InvalidAmount(_) => Self::Custom(25),
+            EscrowError::InvalidTimeout => Self::Custom(26),
+            EscrowError::CannotCancelFunded => Self::Custom(27),
+            EscrowError::CannotCancelNonBuyer => Self::Custom(28),
         }
     }
 }

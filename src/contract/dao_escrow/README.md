@@ -184,6 +184,120 @@ This replaces timestamp-based locks which can be manipulated by miners.
 - Subscription services can integrate
 - Best for sustainable DAOs
 
+---
+
+## DrainProtection Integration
+
+DAO-Escrow integrates with the [DrainProtection contract](../drain_protection/README.md) for governance-level fund protections.
+
+### Composability Pattern
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    DAO-Escrow + DrainProtection                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌──────────────────────┐         ┌──────────────────────┐              │
+│  │     DAO-Escrow       │         │  DrainProtection      │              │
+│  │                      │         │                       │              │
+│  │  pay_premium()       │         │  exit()               │              │
+│  │  └─► Membership      │────────▶│  └─► Merkle proof    │              │
+│  │       (Merkle tree)  │         │       verification   │              │
+│  │                      │         │                       │              │
+│  │  State:              │         │  State:              │              │
+│  │  - Merkle root       │         │  - Rate limits       │              │
+│  │  - Bulla             │         │  - Vote tracking     │              │
+│  │  - Membership notes  │         │  - Exit records      │              │
+│  │                      │         │                       │              │
+│  └──────────────────────┘         └──────────────────────┘              │
+│                                                                          │
+│  KEY: No direct state sharing. DrainProtection verifies membership        │
+│  from DAO-Escrow's Merkle tree. Each has its own nullifier namespace.    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Enabling DrainProtection
+
+```rust
+// At initialization
+let dao_escrow = InitializeBuilder::new()
+    .mode(DaoEscrowMode::TreasuryEndowment)
+    .enable_drain_protection(true)  // Enable protections
+    // ...
+    .build()?;
+
+// Or enable later via governance
+let enable_dp = EnableDrainProtectionBuilder::new()
+    .dao_escrow_bulla(dao_escrow.bulla)
+    .drain_protection_bulla(drain_protection.bulla)
+    .build()?;
+```
+
+### What DrainProtection Provides
+
+| Protection | Description |
+|------------|-------------|
+| **Rate Limiting** | Transfers within base rate allowed; exceeding requires 2/3 vote |
+| **Vote Thresholds** | Large withdrawals need 2/3 approval + 50% quorum |
+| **Emergency Lock** | Lock funds with 2/3 vote (max 7 days, renewable) |
+| **Member Exit** | Any member exits with 1/3 haircut (anti-griefing) |
+| **Authority Controls** | Spend authority changes need 2/3 vote + 48hr timelock |
+
+### How It Works
+
+1. **Membership Verification**: DrainProtection's `exit()` function verifies the member exists in DAO-Escrow's Merkle tree via ZK proof
+2. **Rate Tracking**: DrainProtection tracks all transfers and enforces rate limits per block
+3. **Vote Execution**: Large withdrawals require DAO vote, recorded in DrainProtection
+4. **Exit Calculation**: Member's exit value = (weight / total) × funds × 0.666
+
+---
+
+## Provisional Endowment Drain Protection (Further Work Required)
+
+**⚠️ WARNING**: The endowment/treasury funds are protected by provisional governance controls listed below. These require implementation in the DAO governance layer and have not yet been audited.
+
+### Protections
+
+| Action | Threshold | Notes |
+|--------|-----------|-------|
+| Fund transfers (within rate limit) | None | Base rate per block |
+| Fund transfers (exceeds rate) | 2/3 total vote | Configurable rate limit |
+| Lock endowment funds | 2/3 total vote | Max 7 days, renewable |
+| Unlock funds | 2/3 total vote | + 24hr timelock |
+| Change spend authority | 2/3 total vote | + 48hr timelock |
+| Member exit | 1/3 haircut | Any time, block-height-weighted |
+
+### Haircut Formula for Member Exit
+
+```
+exit_value = (member_contribution_weight / total_endowment) × current_funds × 0.666
+```
+
+- Contribution weight is block-height-adjusted (longer deposits = more weight)
+- 1/3 withheld goes to insurance reserve
+- Protects against sudden mass exit attacks
+
+### Rate Limit Specification
+
+```
+base_rate = total_funds × 0.01 / 1000_blocks  # Suggested 1% per 1000 blocks
+```
+
+Exceeding this rate triggers mandatory 2/3 vote requirement.
+
+### Implementation Status
+
+- [ ] Implement block-increment rate limiting in DAO governance
+- [ ] Add 2/3 vote threshold enforcement for large withdrawals
+- [ ] Implement lock/unlock emergency controls with timelocks
+- [ ] Add spend authority change restrictions
+- [ ] Implement member exit with haircut mechanism
+- [ ] Add endowment health metrics dashboard
+
+See [security-analysis.md](../../doc/src/arch/security-analysis.md#issue-10-endowment-fund-has-no-drain-protection-major--provisional-fix-applied) for full details.
+
+---
+
 ## Integration with Subscription Contract
 
 DAO-Escrow membership enables Subscription discounts:

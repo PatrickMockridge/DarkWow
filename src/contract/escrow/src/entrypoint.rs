@@ -37,20 +37,29 @@
 //! - Claim/refund linkable only via nullifiers
 
 use darkfi_sdk::{
-    crypto::ContractId,
-    error::ContractResult,
+    crypto::{
+        pasta_prelude::*,
+        poseidon_hash, ContractId,
+    },
+    dark_tree::DarkLeaf,
+    error::{ContractError, ContractResult},
     msg,
+    pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::deserialize;
+use darkfi_serial::{deserialize, serialize, Encodable};
 
 use crate::{
+    error::EscrowError,
     model::{
-        CancelEscrowUpdateV1, ClaimEscrowUpdateV1, CreateEscrowUpdateV1, FundEscrowUpdateV1,
-        RefundEscrowUpdateV1,
+        CancelEscrowParamsV1, CancelEscrowUpdateV1, ClaimEscrowParamsV1, ClaimEscrowUpdateV1,
+        CreateEscrowParamsV1, CreateEscrowUpdateV1, Escrow, EscrowState, FundEscrowParamsV1,
+        FundEscrowUpdateV1, RefundEscrowParamsV1, RefundEscrowUpdateV1,
     },
     EscrowFunction, ESCROW_CONTRACT_ESCROWS_TREE, ESCROW_CONTRACT_INFO_TREE,
     ESCROW_CONTRACT_NULLIFIERS_TREE, ESCROW_CONTRACT_SPENT_FLAGS_TREE,
+    ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1, ESCROW_CONTRACT_ZKAS_CREATE_NS_V1,
+    ESCROW_CONTRACT_ZKAS_REFUND_NS_V1,
 };
 
 // ============================================================================
@@ -104,18 +113,137 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 /// Fetch metadata for ZK proof verification
 fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> =
-        deserialize(ix)?;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = EscrowFunction::try_from(self_.data[0])?;
 
     msg!("[escrow::get_metadata] Processing function: {:?}", func);
 
-    // TODO: Implement metadata fetching for ZK proof verification
-    // This would involve deserializing the call data and returning
-    // public inputs needed for proof verification.
+    let metadata = match func {
+        EscrowFunction::CreateEscrowV1 => {
+            let params: CreateEscrowParamsV1 = deserialize(&self_.data[1..])?;
+            escrow_create_get_metadata_v1(cid, call_idx, calls, params)?
+        }
+        EscrowFunction::FundV1 => {
+            // Fund doesn't use ZK proofs currently
+            vec![]
+        }
+        EscrowFunction::ClaimV1 => {
+            let params: ClaimEscrowParamsV1 = deserialize(&self_.data[1..])?;
+            escrow_claim_get_metadata_v1(cid, call_idx, calls, params)?
+        }
+        EscrowFunction::RefundV1 => {
+            let params: RefundEscrowParamsV1 = deserialize(&self_.data[1..])?;
+            escrow_refund_get_metadata_v1(cid, call_idx, calls, params)?
+        }
+        EscrowFunction::CancelV1 => {
+            // Cancel doesn't use ZK proofs currently
+            vec![]
+        }
+        EscrowFunction::InitializeV1 => vec![],
+    };
 
-    wasm::util::set_return_data(&[])
+    wasm::util::set_return_data(&metadata)
+}
+
+/// `get_metadata` for CreateEscrowV1
+fn escrow_create_get_metadata_v1(
+    _cid: ContractId,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
+    params: CreateEscrowParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    // Public inputs for CreateEscrow ZK proof
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+
+    // CreateEscrow circuit expects:
+    // - buyer_pub_x, buyer_pub_y (already derived from secret in params)
+    // - seller_pub_x, seller_pub_y (already derived from secret in params)
+    // - commitment (the escrow ID)
+    let (buyer_x, buyer_y) = params.buyer_pubkey.xy();
+    let (seller_x, seller_y) = params.seller_pubkey.xy();
+
+    zk_public_inputs.push((
+        ESCROW_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
+        vec![
+            buyer_x,
+            buyer_y,
+            seller_x,
+            seller_y,
+            pallas::Base::from(params.value),
+            params.token_id,
+            pallas::Base::from(params.timeout),
+            params.commitment,
+        ],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+/// `get_metadata` for ClaimV1
+fn escrow_claim_get_metadata_v1(
+    _cid: ContractId,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
+    params: ClaimEscrowParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    // Public inputs for ClaimEscrow ZK proof
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+
+    // Claim circuit expects:
+    // - escrow_id
+    // - seller_pub_x, seller_pub_y (re-derived from secret)
+    // - spent_nullifier
+    let (seller_x, seller_y) = params.recipient_pubkey.xy();
+
+    zk_public_inputs.push((
+        ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1.to_string(),
+        vec![
+            params.escrow_id,
+            seller_x,
+            seller_y,
+            params.spent_nullifier,
+        ],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+/// `get_metadata` for RefundV1
+fn escrow_refund_get_metadata_v1(
+    _cid: ContractId,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
+    params: RefundEscrowParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    // Public inputs for RefundEscrow ZK proof
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+
+    // Refund circuit expects:
+    // - escrow_id
+    // - buyer_pub_x, buyer_pub_y (re-derived from secret)
+    // - spent_nullifier
+    // - current_block (for timelock check)
+    let (buyer_x, buyer_y) = params.recipient_pubkey.xy();
+
+    zk_public_inputs.push((
+        ESCROW_CONTRACT_ZKAS_REFUND_NS_V1.to_string(),
+        vec![
+            params.escrow_id,
+            buyer_x,
+            buyer_y,
+            params.spent_nullifier,
+            pallas::Base::from(params.current_block),
+        ],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================
@@ -125,21 +253,246 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 /// Verify state transition and produce update if valid
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> =
-        deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func = EscrowFunction::try_from(self_.data[0])?;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx];
+    let func = EscrowFunction::try_from(self_.data.data[0])?;
 
     msg!("[escrow::process_instruction] Processing function: {:?}", func);
 
-    // TODO: Implement actual instruction processing
-    // This would:
-    // 1. Deserialize call parameters
-    // 2. Verify ZK proofs
-    // 3. Check state transitions
-    // 4. Return update data if valid
+    match func {
+        EscrowFunction::CreateEscrowV1 => {
+            let params: CreateEscrowParamsV1 = deserialize(&self_.data.data[1..])?;
+            let update = escrow_create_process_instruction_v1(cid, call_idx, calls, params)?;
+            let _ = wasm::util::set_return_data(&update);
+        }
+        EscrowFunction::FundV1 => {
+            let params: FundEscrowParamsV1 = deserialize(&self_.data.data[1..])?;
+            let update = escrow_fund_process_instruction_v1(cid, call_idx, calls, params)?;
+            let _ = wasm::util::set_return_data(&update);
+        }
+        EscrowFunction::ClaimV1 => {
+            let params: ClaimEscrowParamsV1 = deserialize(&self_.data.data[1..])?;
+            let update = escrow_claim_process_instruction_v1(cid, call_idx, calls, params)?;
+            let _ = wasm::util::set_return_data(&update);
+        }
+        EscrowFunction::RefundV1 => {
+            let params: RefundEscrowParamsV1 = deserialize(&self_.data.data[1..])?;
+            let update = escrow_refund_process_instruction_v1(cid, call_idx, calls, params)?;
+            let _ = wasm::util::set_return_data(&update);
+        }
+        EscrowFunction::CancelV1 => {
+            let params: CancelEscrowParamsV1 = deserialize(&self_.data.data[1..])?;
+            let update = escrow_cancel_process_instruction_v1(cid, call_idx, calls, params)?;
+            let _ = wasm::util::set_return_data(&update);
+        }
+        EscrowFunction::InitializeV1 => {
+            msg!("[escrow::process_instruction] InitializeV1 has no instruction data");
+            let _ = wasm::util::set_return_data(&[]);
+        }
+    }
 
-    wasm::util::set_return_data(&[])
+    Ok(())
+}
+
+/// `process_instruction` for CreateEscrowV1
+fn escrow_create_process_instruction_v1(
+    cid: ContractId,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
+    params: CreateEscrowParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    msg!("[CreateEscrowV1] Processing instruction");
+
+    // Access the escrows database
+    let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
+
+    // Verify the escrow doesn't already exist
+    if wasm::db::db_contains_key(escrows_db, &serialize(&params.commitment))? {
+        msg!("[CreateEscrowV1] Error: Escrow already exists");
+        return Err(EscrowError::EscrowAlreadyExists("commitment exists".to_string()).into())
+    }
+
+    // Create the escrow record
+    let escrow = Escrow {
+        id: params.commitment,
+        buyer_pubkey: params.buyer_pubkey,
+        seller_pubkey: params.seller_pubkey,
+        value: params.value,
+        token_id: params.token_id,
+        timeout: params.timeout,
+        state: EscrowState::Created,
+        value_commit: pallas::Point::identity(), // Set during Fund
+        value_blind: pallas::Scalar::ZERO,      // Set during Fund
+        spent_nullifier: pallas::Base::ZERO,    // Set during Claim/Refund
+        created_at: wasm::util::get_verifying_block_height()?.into(),
+        funded_at: None,
+    };
+
+    // Store the escrow directly since CreateEscrowUpdateV1 only has escrow_id
+    let key = serialize(&escrow.id);
+    let value = serialize(&escrow);
+    wasm::db::db_set(escrows_db, &key, &value)?;
+
+    let update = CreateEscrowUpdateV1 { escrow_id: escrow.id };
+    Ok(serialize(&update))
+}
+
+/// `process_instruction` for FundV1
+fn escrow_fund_process_instruction_v1(
+    cid: ContractId,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
+    params: FundEscrowParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    msg!("[FundV1] Processing instruction for escrow {:?}", params.escrow_id);
+
+    // Access the escrows database
+    let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
+
+    // Fetch the existing escrow
+    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&params.escrow_id))?
+        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
+    let mut escrow: Escrow = deserialize(&escrow_data)?;
+
+    // Verify the escrow is in Created state
+    if escrow.state != EscrowState::Created {
+        msg!("[FundV1] Error: Escrow not in Created state");
+        return Err(EscrowError::InvalidStateTransition.into())
+    }
+
+    // Update escrow with funding details
+    escrow.value_commit = params.value_commit;
+    escrow.state = EscrowState::Funded;
+    escrow.funded_at = Some(wasm::util::get_verifying_block_height()?.into());
+
+    let update = FundEscrowUpdateV1 { escrow_id: escrow.id };
+    Ok(serialize(&update))
+}
+
+/// `process_instruction` for ClaimV1
+fn escrow_claim_process_instruction_v1(
+    cid: ContractId,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
+    params: ClaimEscrowParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    msg!("[ClaimV1] Processing instruction for escrow {:?}", params.escrow_id);
+
+    // Access databases
+    let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
+    let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_SPENT_FLAGS_TREE)?;
+
+    // Fetch the existing escrow
+    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&params.escrow_id))?
+        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
+    let escrow: Escrow = deserialize(&escrow_data)?;
+
+    // CRITICAL: Verify the escrow is in Funded state
+    if escrow.state != EscrowState::Funded {
+        msg!("[ClaimV1] Error: Escrow not in Funded state - possible double-claim");
+        return Err(EscrowError::InvalidStateTransition.into())
+    }
+
+    // CRITICAL: Verify the escrow hasn't already been spent
+    if wasm::db::db_contains_key(spent_flags_db, &serialize(&params.spent_nullifier))? {
+        msg!("[ClaimV1] Error: Escrow already spent (nullifier exists)");
+        return Err(EscrowError::AlreadySpent.into())
+    }
+
+    // Verify the nullifier matches what we expect
+    let expected_nullifier = poseidon_hash([escrow.id, params.seller_secret]);
+    if expected_nullifier != params.spent_nullifier {
+        msg!("[ClaimV1] Error: Nullifier mismatch");
+        return Err(EscrowError::InvalidNullifier.into())
+    }
+
+    let update = ClaimEscrowUpdateV1 {
+        escrow_id: escrow.id,
+        spent_nullifier: params.spent_nullifier,
+    };
+    Ok(serialize(&update))
+}
+
+/// `process_instruction` for RefundV1
+fn escrow_refund_process_instruction_v1(
+    cid: ContractId,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
+    params: RefundEscrowParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    msg!("[RefundV1] Processing instruction for escrow {:?}", params.escrow_id);
+
+    // Access databases
+    let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
+    let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_SPENT_FLAGS_TREE)?;
+
+    // Fetch the existing escrow
+    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&params.escrow_id))?
+        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
+    let escrow: Escrow = deserialize(&escrow_data)?;
+
+    // CRITICAL: Verify the escrow is in Funded state
+    if escrow.state != EscrowState::Funded {
+        msg!("[RefundV1] Error: Escrow not in Funded state");
+        return Err(EscrowError::InvalidStateTransition.into())
+    }
+
+    // CRITICAL: Verify the escrow hasn't already been spent
+    if wasm::db::db_contains_key(spent_flags_db, &serialize(&params.spent_nullifier))? {
+        msg!("[RefundV1] Error: Escrow already spent (nullifier exists)");
+        return Err(EscrowError::AlreadySpent.into())
+    }
+
+    // CRITICAL: Verify timelock has passed
+    let current_block = wasm::util::get_verifying_block_height()?;
+    if u64::from(current_block) < escrow.timeout {
+        msg!(
+            "[RefundV1] Error: Timelock not reached (current: {}, timeout: {})",
+            current_block,
+            escrow.timeout
+        );
+        return Err(EscrowError::TimelockNotExpired.into())
+    }
+
+    // Verify the nullifier matches what we expect
+    let expected_nullifier = poseidon_hash([escrow.id, params.buyer_secret]);
+    if expected_nullifier != params.spent_nullifier {
+        msg!("[RefundV1] Error: Nullifier mismatch");
+        return Err(EscrowError::InvalidNullifier.into())
+    }
+
+    let update = RefundEscrowUpdateV1 {
+        escrow_id: escrow.id,
+        spent_nullifier: params.spent_nullifier,
+    };
+    Ok(serialize(&update))
+}
+
+/// `process_instruction` for CancelV1
+fn escrow_cancel_process_instruction_v1(
+    cid: ContractId,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
+    params: CancelEscrowParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    msg!("[CancelV1] Processing instruction for escrow {:?}", params.escrow_id);
+
+    // Access the escrows database
+    let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
+
+    // Fetch the existing escrow
+    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&params.escrow_id))?
+        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
+    let escrow: Escrow = deserialize(&escrow_data)?;
+
+    // CRITICAL: Verify the escrow is in Created state (can only cancel before funding)
+    if escrow.state != EscrowState::Created {
+        msg!("[CancelV1] Error: Can only cancel escrows in Created state");
+        return Err(EscrowError::InvalidStateTransition.into())
+    }
+
+    let update = CancelEscrowUpdateV1 { escrow_id: escrow.id };
+    Ok(serialize(&update))
 }
 
 // ============================================================================
@@ -152,29 +505,24 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         EscrowFunction::CreateEscrowV1 => {
-            let _update: CreateEscrowUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Write escrow to state tree
-            Ok(())
+            let update: CreateEscrowUpdateV1 = deserialize(&update_data[1..])?;
+            escrow_create_process_update_v1(cid, update)
         }
         EscrowFunction::FundV1 => {
-            let _update: FundEscrowUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Update escrow state to Funded
-            Ok(())
+            let update: FundEscrowUpdateV1 = deserialize(&update_data[1..])?;
+            escrow_fund_process_update_v1(cid, update)
         }
         EscrowFunction::ClaimV1 => {
-            let _update: ClaimEscrowUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Mark escrow as Claimed, record nullifier
-            Ok(())
+            let update: ClaimEscrowUpdateV1 = deserialize(&update_data[1..])?;
+            escrow_claim_process_update_v1(cid, update)
         }
         EscrowFunction::RefundV1 => {
-            let _update: RefundEscrowUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Mark escrow as Refunded, record nullifier
-            Ok(())
+            let update: RefundEscrowUpdateV1 = deserialize(&update_data[1..])?;
+            escrow_refund_process_update_v1(cid, update)
         }
         EscrowFunction::CancelV1 => {
-            let _update: CancelEscrowUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Mark escrow as Cancelled
-            Ok(())
+            let update: CancelEscrowUpdateV1 = deserialize(&update_data[1..])?;
+            escrow_cancel_process_update_v1(cid, update)
         }
         EscrowFunction::InitializeV1 => {
             msg!("[escrow::process_update] InitializeV1 has no update data");
@@ -183,40 +531,94 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     }
 }
 
-// ============================================================================
-// PLACEHOLDER IMPLEMENTATIONS
-// ============================================================================
-//
-// The following functions are placeholder implementations showing the
-// intended logic. Full ZK circuit integration is TODO.
-//
-// The actual escrow logic will verify:
-//
-// CreateEscrow:
-//   - Buyer creates escrow commitment: C = H(buyer_pub, seller_pub, value, token, timeout)
-//   - Stored in escrows tree with state = Created
-//
-// Fund:
-//   - ZK proof: buyer commits value to Pedersen commitment
-//   - Escrow state transitions: Created -> Funded
-//
-// Claim (seller):
-//   - ZK proof: seller knows seller_secret
-//   - seller_secret -> seller_pubkey via ec_mul_base
-//   - Verify: seller_pubkey matches escrow.seller_pubkey
-//   - State: Funded -> Claimed
-//   - Emit: spent_nullifier
-//
-// Refund (buyer):
-//   - ZK proof: current_block >= escrow.timeout
-//   - buyer_secret -> buyer_pubkey via ec_mul_base
-//   - Verify: buyer_pubkey matches escrow.buyer_pubkey
-//   - State: Funded -> Refunded
-//   - Emit: spent_nullifier
-//
-// Cancel:
-//   - Only allowed when state = Created (before funding)
-//   - Buyer proves knowledge of buyer_secret
-//   - State: Created -> Cancelled
-//
-// ============================================================================
+/// `process_update` for CreateEscrowV1
+fn escrow_create_process_update_v1(_cid: ContractId, update: CreateEscrowUpdateV1) -> ContractResult {
+    // Escrow was already stored in process_instruction
+    msg!("[CreateEscrowV1] Escrow {:?} created", update.escrow_id);
+    Ok(())
+}
+
+/// `process_update` for FundV1
+fn escrow_fund_process_update_v1(cid: ContractId, update: FundEscrowUpdateV1) -> ContractResult {
+    let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
+
+    // Fetch and update the escrow
+    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&update.escrow_id))?
+        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
+    let mut escrow: Escrow = deserialize(&escrow_data)?;
+
+    escrow.state = EscrowState::Funded;
+    escrow.funded_at = Some(wasm::util::get_verifying_block_height()?.into());
+
+    wasm::db::db_set(escrows_db, &serialize(&escrow.id), &serialize(&escrow))?;
+    msg!("[FundV1] Escrow {:?} funded and state updated to Funded", update.escrow_id);
+    Ok(())
+}
+
+/// `process_update` for ClaimV1
+fn escrow_claim_process_update_v1(cid: ContractId, update: ClaimEscrowUpdateV1) -> ContractResult {
+    let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
+    let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_SPENT_FLAGS_TREE)?;
+
+    // Fetch and update the escrow
+    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&update.escrow_id))?
+        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
+    let mut escrow: Escrow = deserialize(&escrow_data)?;
+
+    escrow.state = EscrowState::Claimed;
+    escrow.spent_nullifier = update.spent_nullifier;
+
+    wasm::db::db_set(escrows_db, &serialize(&escrow.id), &serialize(&escrow))?;
+
+    // Record the spent nullifier to prevent double-spend
+    wasm::db::db_set(spent_flags_db, &serialize(&update.spent_nullifier), &[])?;
+
+    msg!(
+        "[ClaimV1] Escrow {:?} claimed, nullifier {:?} recorded",
+        update.escrow_id,
+        update.spent_nullifier
+    );
+    Ok(())
+}
+
+/// `process_update` for RefundV1
+fn escrow_refund_process_update_v1(cid: ContractId, update: RefundEscrowUpdateV1) -> ContractResult {
+    let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
+    let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_SPENT_FLAGS_TREE)?;
+
+    // Fetch and update the escrow
+    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&update.escrow_id))?
+        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
+    let mut escrow: Escrow = deserialize(&escrow_data)?;
+
+    escrow.state = EscrowState::Refunded;
+    escrow.spent_nullifier = update.spent_nullifier;
+
+    wasm::db::db_set(escrows_db, &serialize(&escrow.id), &serialize(&escrow))?;
+
+    // Record the spent nullifier to prevent double-spend
+    wasm::db::db_set(spent_flags_db, &serialize(&update.spent_nullifier), &[])?;
+
+    msg!(
+        "[RefundV1] Escrow {:?} refunded, nullifier {:?} recorded",
+        update.escrow_id,
+        update.spent_nullifier
+    );
+    Ok(())
+}
+
+/// `process_update` for CancelV1
+fn escrow_cancel_process_update_v1(cid: ContractId, update: CancelEscrowUpdateV1) -> ContractResult {
+    let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
+
+    // Fetch and update the escrow
+    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&update.escrow_id))?
+        .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
+    let mut escrow: Escrow = deserialize(&escrow_data)?;
+
+    escrow.state = EscrowState::Cancelled;
+
+    wasm::db::db_set(escrows_db, &serialize(&escrow.id), &serialize(&escrow))?;
+    msg!("[CancelV1] Escrow {:?} cancelled", update.escrow_id);
+    Ok(())
+}

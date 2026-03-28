@@ -135,20 +135,29 @@ circuit "PayPremium" {
     #   - If expiry is in the past, the constraint fails
 
     # ==========================================================================
-    # SECURITY NOTES: ENDOWMENT DRAIN PROTECTION (CRITICAL)
+    # SECURITY NOTES: ENDOWMENT DRAIN PROTECTION (PROVISIONAL)
     # ==========================================================================
     #
     # This circuit verifies premium payments go to the endowment, but it does
-    # NOT protect against endowment drain via governance.
+    # NOT protect against endowment drain via governance. Further work required.
     #
-    # REQUIRED CONTRACT/GOVERNANCE LEVEL SAFEGUARDS:
+    # PROVISIONALLY SPECIFIED PROTECTIONS (must be implemented in governance):
     #
-    # 1. MAX_DRAWDOWN_PER_PROPOSAL: Limit withdrawal to e.g., 10% of endowment
-    # 2. TIME_LOCK_BETWEEN_LARGE_DRAWS: Minimum blocks between large withdrawals
-    # 3. EMERGENCY_HALT: Super-majority required for >50% endowment withdrawal
-    # 4. RATE_LIMITING: Per-member withdrawal limits per epoch
+    # 1. RATE LIMIT PER BLOCK: Transfers beyond base rate require 2/3 vote
+    #    - Base rate: configurable (suggested 1% per 1000 blocks)
     #
-    # Without these safeguards, a malicious DAO could vote to drain 100% of
-    # the endowment in a single proposal, leaving no funds for insurance.
+    # 2. LARGE WITHDRAWAL: Beyond rate limit requires 2/3 total vote
+    #    - 50% quorum minimum, 2/3 approval threshold
     #
-    # See security-analysis.md Issue #10 for full details.
+    # 3. LOCK/UNLOCK FUNDS: Requires 2/3 total vote
+    #    - Emergency lock lasts max 7 days, renewable by vote
+    #
+    # 4. SPEND AUTHORITY CHANGES: Requires 2/3 total vote
+    #    - 48hr timelock on all authority changes
+    #
+    # 5. MEMBER EXIT: Any member may exit with 1/3 haircut
+    #    - exit_value = (contribution_weight / total_endowment) × funds × 0.666
+    #    - Contribution weighted by block-height-adjusted deposit history
+    #    - Haircut proceeds remain as insurance reserve
+    #
+    # See security-analysis.md Issue #10 for full details and remaining work.

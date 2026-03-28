@@ -149,6 +149,10 @@ pub struct DaoEscrow {
     pub bulla_blind: BaseBlind,
     /// Whether governance is paused
     pub paused: bool,
+    /// Whether DrainProtection is enabled for this instance
+    pub drain_protection_enabled: bool,
+    /// Associated DrainProtection bulla (if enabled)
+    pub drain_protection_bulla: Option<DaoEscrowBulla>,
 }
 
 impl DaoEscrow {
@@ -238,6 +242,10 @@ pub struct InitializeParamsV1 {
     pub endowment_token_id: pallas::Base,
     /// Bulla blind factor
     pub bulla_blind: BaseBlind,
+    /// Enable DrainProtection for this instance
+    /// When true, endowment/treasury transfers are rate-limited and require
+    /// 2/3 vote for large withdrawals. Member exit has 1/3 haircut.
+    pub enable_drain_protection: bool,
 }
 
 /// State update for `DaoEscrow::InitializeV1`
@@ -315,4 +323,26 @@ pub struct WithdrawUpdateV1 {
     pub value: u64,
     /// Updated total endowment
     pub total_endowment: u64,
+}
+
+// ============================================================================
+// DRAIN PROTECTION INTEGRATION
+// ============================================================================
+
+/// Parameters for enabling DrainProtection on an existing DAO-Escrow
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct EnableDrainProtectionParamsV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// DrainProtection bulla (from DrainProtection::InitializeV1)
+    pub drain_protection_bulla: DaoEscrowBulla,
+}
+
+/// State update for `EnableDrainProtectionV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct EnableDrainProtectionUpdateV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// DrainProtection bulla now associated
+    pub drain_protection_bulla: DaoEscrowBulla,
 }

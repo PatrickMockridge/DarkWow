@@ -39,6 +39,56 @@
 //! - Fee split: treasury_share → Treasury, endowment_share → Endowment
 //! - Treasury for operational costs, Endowment for insurance
 //!
+//! ## Composability with DrainProtection
+//!
+//! DAO-Escrow can integrate with the DrainProtection contract to provide
+//! governance-level protections against malicious DAO actions or mass exit attacks.
+//!
+//! ### Integration Pattern
+//!
+//! ```
+//! ┌─────────────────────────────────────────────────────────────────────────┐
+//! │                    DAO-Escrow + DrainProtection                           │
+//! ├─────────────────────────────────────────────────────────────────────────┤
+//! │                                                                          │
+//! │  ┌──────────────────────┐         ┌──────────────────────┐              │
+//! │  │     DAO-Escrow       │         │  DrainProtection      │              │
+//! │  │                      │         │                       │              │
+//! │  │  ┌────────────────┐  │         │  ┌────────────────┐  │              │
+//! │  │  │ pay_premium()  │──┼───┐     │  │  exit()        │  │              │
+//! │  │  └────────────────┘  │   │     │  │  transfer()    │  │              │
+//! │  │                      │   │     │  │  lock/unlock   │  │              │
+//! │  │  State: Merklized    │   │     │  └───────┬────────┘  │              │
+//! │  │  Membership tree     │   │     │          │            │              │
+//! │  │                      │   │     │  Verifies via:        │              │
+//! │  │                      │   ├────▶│  ┌────────▼────────┐ │              │
+//! │  │                      │   │     │  │ Merkle proof   │ │              │
+//! │  │                      │   │     │  │ from DAO-Escrow│ │              │
+//! │  └──────────────────────┘   │     │  └────────────────┘ │              │
+//! │                             │     │                       │              │
+//! └─────────────────────────────┴─────┴───────────────────────┘              │
+//!                               │                                              │
+//!        Cross-Contract         │                                              │
+//!        Merkle Proof          │                                              │
+//!                               ▼                                              │
+//! ┌─────────────────────────────────────────────────────────────────────────┐
+//! │                    No Direct State Sharing!                              │
+//! │                                                                          │
+//! │  DrainProtection verifies DAO-Escrow membership via Merkle proof.        │
+//! │  DAO-Escrow does NOT read DrainProtection state.                         │
+//! │  Each contract maintains its own nullifier namespace.                   │
+//! └─────────────────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ### DrainProtection Features Enabled
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | Rate Limiting | Transfers exceeding base rate require 2/3 vote |
+//! | Vote Thresholds | Large withdrawals need 2/3 approval + 50% quorum |
+//! | Emergency Lock | Lock funds with 2/3 vote (max 7 days) |
+//! | Member Exit | Any member exits with 1/3 haircut |
+//!
 //! ## Trust Model
 //!
 //! - Membership notes are time-locked (block-based expiry)
@@ -123,3 +173,20 @@ pub const DAO_ESCROW_LATEST_ROOT: &[u8] = b"last_root";
 pub const DAO_ESCROW_ZKAS_INIT_NS: &str = "Init";
 /// ZKAS namespace for premium payment
 pub const DAO_ESCROW_ZKAS_PREMIUM_NS: &str = "PayPremium";
+
+// ============================================================================
+// DRAIN PROTECTION INTEGRATION
+// ============================================================================
+
+/// When enabled, the DAO-Escrow endowment/treasury is protected by DrainProtection
+/// - Rate limiting on all fund transfers
+/// - 2/3 vote required for large withdrawals
+/// - Emergency lock/unlock controls
+/// - Member exit with haircut
+///
+/// Integration: DrainProtection verifies membership via DAO-Escrow's Merkle tree.
+/// The bulla is used as the fund identifier in DrainProtection.
+pub const DAO_ESCROW_DRAIN_PROTECTION_KEY: &[u8] = b"drain_protection_enabled";
+
+/// Key storing the associated DrainProtection bulla (if enabled)
+pub const DAO_ESCROW_DRAIN_PROTECTION_BULLA_KEY: &[u8] = b"drain_protection_bulla";

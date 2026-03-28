@@ -2035,6 +2035,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkfi_drain_protection_contract"
+version = "0.1.0"
+dependencies = [
+ "darkfi",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "rand 0.8.5",
+ "serde",
+ "sled",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
 name = "darkfi_escrow_contract"
 version = "0.1.0"
 dependencies = [

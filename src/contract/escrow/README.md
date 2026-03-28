@@ -223,8 +223,7 @@ The escrow contract uses only opcodes that are well-established in the zkVM:
 | Blocker | Severity | Description |
 |---------|----------|-------------|
 | ZK circuit compilation | **High** | `.zk` files need compilation to `.zk.bin` via zkas |
-| Entry point wiring | **High** | `get_metadata()` and `process_instruction()` are stubs |
-| State management | **High** | Escrow state machine transitions not implemented |
+| ZK proof verification | **High** | Wire proofs into `get_metadata()` |
 | Money integration (Phase 2) | **Medium** | Spend_hook integration with money contract |
 
 **Escrow has no opcode blockers** — unlike other contracts, escrow's requirements are fully satisfied by existing opcodes.
@@ -378,23 +377,22 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 
 ## MVP Status
 
-**Partial MVP** — Core structure exists, ZK circuits are placeholder stubs.
+**Core Implementation Complete** — Entrypoint written with state transitions.
 
-| Circuit | Status | Notes |
+| Component | Status | Notes |
 |---------|--------|-------|
-| `create_escrow_v1.zk` | Placeholder | Uses existing opcodes, needs full implementation |
-| `fund_v1.zk` | Placeholder | Pedersen commitment, needs merkle integration |
-| `claim_v1.zk` | Placeholder | Key derivation + nullifier, needs full ZK wiring |
-| `refund_v1.zk` | Placeholder | LessThanStrict + key derivation, needs full ZK wiring |
+| Entrypoint (`entrypoint.rs`) | ✅ Complete | init, get_metadata, process_instruction, process_update |
+| State Machine | ✅ Complete | Created → Funded → Claimed/Refunded/Cancelled |
+| ZK Circuits | ⚠️ Stubs | .zk files need compilation via zkas |
+| Money Integration | ❌ TODO | Phase 2 spend_hook integration |
 
 ### What It Needs
 
 1. **ZK Circuit Compilation**: Convert `.zk` files to `.zk.bin` using zkas
-2. **Entry Point Implementation**: Wire ZK proof verification into `get_metadata()`
-3. **State Management**: Implement actual escrow state transitions in `process_update()`
-4. **Money Integration**: Phase 2 spend_hook integration
+2. **ZK Proof Verification**: Wire ZK proof verification into `get_metadata()`
+3. **Money Integration**: Phase 2 spend_hook integration
 
-### No Blockers
+### No Opcode Blockers
 
 Unlike other contracts, escrow has **no opcode blockers**. All required functionality (`poseidon_hash`, `ec_mul_base`, `less_than_strict`) already exists in the zkVM.
 

@@ -1,5 +1,23 @@
 This directory contains native WASM contracts on DarkFi.
 
+## Unofficial/Experimental Contracts on Dev Branch
+
+The `dev` branch contains additional contracts not yet in official DarkFi master. These are **EXPERIMENTAL** and **NOT AUDITED**.
+
+| Contract | Description | Status |
+|----------|-------------|--------|
+| **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
+| **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
+| **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
+| **dex** | Atomic swap DAO with incremental transparency | ⚠️ Partial |
+| **drain_protection** | Endowment/treasury drain protections | ⚠️ Provisional |
+| **escrow** | Hashed Timelock Contract variant | ✅ Complete |
+| **identity** | ZK credential proofs using competency DAGs | ⚠️ Uses experimental opcodes |
+| **stablecoin** | Monero-collateralized stablecoin | ⚠️ Uses experimental opcodes |
+| **subscription** | Member subscription with DAO treasury | ✅ Complete |
+
+---
+
 ## ZKas Circuit Analysis
 
 ### Opcode Classification
@@ -106,19 +124,24 @@ This pattern (in `dao/exec.zk`) handles ratio checks without `BaseDiv`.
 - **Deployooor**: Contract deployment and management
   - [Documentation](https://dark.fi/book/dev/darkfi_deployooor_contract/)
 
-## Development Fork Contracts
+## Unofficial Contract Documentation
 
-The `dev` branch contains additional contracts not yet in official DarkFi:
+Local READMEs exist for each contract in this folder:
 
-- **Bridge**: Cross-chain asset transfers with Object Capability Security (no VSS)
-  - [README](https://codeberg.org/PatrickM123/darkfi/src/branch/dev/src/contract/bridge/README.md)
-  - [Contract Doc](https://codeberg.org/PatrickM123/darkfi/src/branch/dev/doc/src/dev/contracts/bridge.md)
-- **DEX**: Atomic swap DAO with incremental transparency roadmap
-  - [README](https://codeberg.org/PatrickM123/darkfi/src/branch/dev/src/contract/dex/README.md)
-  - [Contract Doc](https://codeberg.org/PatrickM123/darkfi/src/branch/dev/doc/src/dev/contracts/dex.md)
-- **Identity**: Minimal credential proofs using ZK-verified competency DAGs
-  - [README](https://codeberg.org/PatrickM123/darkfi/src/branch/dev/src/contract/identity/README.md)
-  - [Contract Doc](https://codeberg.org/PatrickM123/darkfi/src/branch/dev/doc/src/dev/contracts/identity.md)
-- **Stablecoin**: Monero-collateralized stablecoin with P2P Oracle design
-  - [README](https://codeberg.org/PatrickM123/darkfi/src/branch/dev/src/contract/stablecoin/README.md)
-  - [Contract Doc](https://codeberg.org/PatrickM123/darkfi/src/branch/dev/doc/src/dev/contracts/stablecoin.md)
+- [atomic_swap/README.md](atomic_swap/README.md) - Cross-chain atomic swaps
+- [bridge/README.md](bridge/README.md) - Cross-chain asset transfers
+- [dao_escrow/README.md](dao_escrow/README.md) - Three-mode DAO
+- [dex/README.md](dex/README.md) - Atomic swap DAO
+- [drain_protection/README.md](drain_protection/README.md) - Endowment protection
+- [escrow/README.md](escrow/README.md) - Hashed Timelock Contract
+- [identity/README.md](identity/README.md) - ZK credential proofs
+- [stablecoin/README.md](stablecoin/README.md) - Collateral stablecoin
+- [subscription/README.md](subscription/README.md) - Member subscription
+
+Architecture docs:
+
+- [dao_escrow.md](../../doc/src/arch/dao_escrow.md)
+- [subscription.md](../../doc/src/arch/subscription.md)
+- [atomic_swap.md](../../doc/src/arch/atomic_swap.md)
+- [security-analysis.md](../../doc/src/arch/security-analysis.md)
+- [composability.md](../../doc/src/arch/composability.md)
