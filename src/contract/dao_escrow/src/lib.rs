@@ -18,39 +18,63 @@
 
 //! DarkFi DAO-Escrow Contract
 //!
-//! Simplified MVP: Endowment pool governed by a DAO.
+//! ## Three Operating Modes
 //!
-//! ## Concept
+//! DAO-Escrow supports three configuration modes:
 //!
-//! The DAO-Escrow is an endowment pool where:
-//! - **Members pay premiums** → receive a time-limited membership note (annual)
-//! - **Claims are handled by the DAO** → via existing treasury management (propose/vote/exec)
-//! - **The DAO acts as escrow oracle** → votes to release funds when claims are approved
+//! ### MODE_ESCROW (0x00) - Escrow-Only
+//! - Pure insurance pool
+//! - Members pay premiums → endowment grows
+//! - No treasury (operational funds)
+//! - Endowment pays out claims
 //!
-//! This simplifies the original design by delegating voting to the existing DAO,
-//! rather than building a parallel voting mechanism.
+//! ### MODE_TREASURY (0x01) - Treasury-Only
+//! - Same as DarkFi DAO
+//! - Members pay fees → treasury grows
+//! - DAO votes on treasury spending
+//! - No endowment/insurance
 //!
-//! ## Trust Model: DAO-Controlled Endowment
+//! ### MODE_TREASURY_ENDOWMENT (0x02) - Treasury + Endowment
+//! - Full-featured with insurance backing
+//! - Fee split: treasury_share → Treasury, endowment_share → Endowment
+//! - Treasury for operational costs, Endowment for insurance
 //!
-//! - Membership notes are time-locked (annual expiry)
-//! - Claims against the endowment are handled by DAO treasury vote
-//! - The DAO's existing governance (propose/vote/exec) controls fund release
-//! - No separate DAO-Escrow voting needed
+//! ## Trust Model
+//!
+//! - Membership notes are time-locked (block-based expiry)
+//! - Claims against endowment handled by DAO vote
+//! - Built-in governance (propose/vote/exec)
+//! - No external DAO dependency
 //!
 //! ## Use Cases
 //!
-//! - **Community Insurance**: Pool funds, DAO votes on claim payouts
-//! - **Protocol-Owned Liquidity**: Endowment controlled by DAO
-//! - **Treasury Management**: DAO manages a dedicated endowment pool
+//! - **Community Insurance**: Escrow mode - pure insurance pool
+//! - **Protocol Treasury**: Treasury mode - same as DarkFi DAO
+//! - **Full-Featured DAO**: TreasuryEndowment mode - treasury + insurance
 
 use darkfi_sdk::define_contract_function;
+
+/// DAO-Escrow operating modes
+pub mod modes {
+    use super::DaoEscrowMode;
+    /// Escrow-only: Pure insurance pool
+    pub const MODE_ESCROW: u8 = 0x00;
+    /// Treasury-only: Same as DarkFi DAO
+    pub const MODE_TREASURY: u8 = 0x01;
+    /// Treasury + Endowment: Full-featured
+    pub const MODE_TREASURY_ENDOWMENT: u8 = 0x02;
+}
 
 /// Functions available in the contract
 define_contract_function!(DaoEscrowFunction {
     InitializeV1 = 0x00,
     UpdateV1 = 0x01,
     PayPremiumV1 = 0x02,
-    WithdrawV1 = 0x03,  // Admin withdrawal of endowment fees
+    WithdrawV1 = 0x03,  // Withdrawal from treasury (not endowment)
+    /// Endowment-only withdrawal (requires DAO vote, for insurance payouts)
+    EndowmentWithdrawV1 = 0x04,
+    /// Treasury spending (standard DAO governance)
+    TreasurySpendV1 = 0x05,
 });
 
 /// Internal contract errors

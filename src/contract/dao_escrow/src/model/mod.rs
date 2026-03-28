@@ -16,15 +16,54 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! DAO-Escrow contract data structures (Simplified MVP)
+//! DAO-Escrow contract data structures
 //!
-//! ## Simplified MVP
+//! ## Three Operating Modes
 //!
-//! This contract manages an endowment pool governed by a DAO:
-//! - DAO-Escrow is identified by an `endowment_bulla` (linked to a DAO bulla)
-//! - Members pay premiums into the endowment
-//! - Members receive time-limited membership notes
-//! - Claims against the endowment are handled by the DAO treasury (not here)
+//! DAO-Escrow supports three configuration modes via the `mode` field:
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────────────┐
+//! │                         DAO-Escrow Modes                              │
+//! ├─────────────────────────────────────────────────────────────────────┤
+//! │                                                                       │
+//! │  MODE_ESCROW: Escrow-Only (Insurance Pool)                          │
+//! │  ┌─────────────────────────────────────────────────────────────┐     │
+//! │  │  - Members pay premiums → endowment grows                   │     │
+//! │  │  - No treasury (operational funds)                         │     │
+//! │  │  - Endowment pays out claims                                │     │
+//! │  │  - For: Pure insurance, no overhead                        │     │
+//! │  └─────────────────────────────────────────────────────────────┘     │
+//! │                                                                       │
+//! │  MODE_TREASURY: Treasury-Only (Same as DarkFi DAO)                  │
+//! │  ┌─────────────────────────────────────────────────────────────┐     │
+//! │  │  - Members pay fees → treasury grows                        │     │
+//! │  │  - DAO votes on treasury spending                           │     │
+//! │  │  - No endowment/insurance                                   │     │
+//! │  │  - For: Protocol treasury, grants, development             │     │
+//! │  └─────────────────────────────────────────────────────────────┘     │
+//! │                                                                       │
+//! │  MODE_TREASURY_ENDOWMENT: Treasury + Endowment (Combined)           │
+//! │  ┌─────────────────────────────────────────────────────────────┐     │
+//! │  │  Treasury:  │  Endowment:                                    │     │
+//! │  │  - Operational │  - Insurance reserve                       │     │
+//! │  │  - DAO votes   │  - Emergency only                          │     │
+//! │  │  - Grants      │  - Cannot fund treasury                    │     │
+//! │  │  - Dev costs   │  - Refund protection                      │     │
+//! │  └─────────────────────────────────────────────────────────────┘     │
+//! │  For: Full-featured DAO with insurance backing                     │
+//! │                                                                       │
+//! └─────────────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Fee Split (MODE_TREASURY_ENDOWMENT only)
+//!
+//! When a member pays a premium:
+//! - `treasury_share` → Treasury (operational funds)
+//! - `endowment_share` → Endowment (insurance reserve)
+//!
+//! The split is enforced in the circuit. In other modes, all funds go
+//! to the single pool.
 
 use darkfi_sdk::{
     crypto::{poseidon_hash, BaseBlind, PublicKey},
@@ -39,46 +78,102 @@ pub type DaoEscrowBulla = pallas::Base;
 pub type MembershipNote = pallas::Base;
 
 // ============================================================================
+// DAO-ESCROW MODES
+// ============================================================================
+
+/// Operating mode of the DAO-Escrow
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+pub enum DaoEscrowMode {
+    /// Escrow-only: Pure insurance pool, no treasury
+    Escrow = 0,
+    /// Treasury-only: Same as DarkFi DAO, no endowment
+    Treasury = 1,
+    /// Treasury + Endowment: Full-featured with insurance backing
+    TreasuryEndowment = 2,
+}
+
+impl TryFrom<u8> for DaoEscrowMode {
+    type Error = darkfi_sdk::error::ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Escrow),
+            1 => Ok(Self::Treasury),
+            2 => Ok(Self::TreasuryEndowment),
+            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+        }
+    }
+}
+
+// ============================================================================
 // ENDOWMENT CONFIGURATION
 // ============================================================================
 
-/// Represents a DAO-Escrow endowment instance
+/// Fee distribution configuration (used in TreasuryEndowment mode)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct FeeConfig {
+    /// Treasury share (percentage * 10000, e.g., 7000 = 70%)
+    pub treasury_share: u32,
+    /// Endowment share (percentage * 10000, e.g., 3000 = 30%)
+    pub endowment_share: u32,
+}
+
+/// Represents a DAO-Escrow instance
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DaoEscrow {
     /// Bulla (unique identifier)
     pub bulla: DaoEscrowBulla,
-    /// The controlling DAO's bulla
-    pub dao_bulla: DaoEscrowBulla,
+    /// Operating mode
+    pub mode: DaoEscrowMode,
     /// Owner/creator public key
     pub owner_pubkey: PublicKey,
-    /// Token ID held in the endowment
-    pub endowment_token_id: pallas::Base,
-    /// Total endowment value
+    /// Token ID held in the pool
+    pub pool_token_id: pallas::Base,
+    /// Total pool value (treasury in Treasury mode, endowment in Escrow mode)
+    pub total_pool: u64,
+    /// Total treasury (TreasuryEndowment mode only)
+    pub total_treasury: u64,
+    /// Total endowment (TreasuryEndowment mode only)
     pub total_endowment: u64,
-    /// Number of members
+    /// Number of active members
     pub member_count: u64,
+    /// Fee configuration (TreasuryEndowment mode only)
+    pub fee_config: Option<FeeConfig>,
+    /// Minimum premium amount
+    pub min_premium: u64,
+    /// Maximum members allowed
+    pub max_members: u64,
     /// Creation block
     pub created_at: u64,
     /// Bulla blind factor
     pub bulla_blind: BaseBlind,
+    /// Whether governance is paused
+    pub paused: bool,
 }
 
 impl DaoEscrow {
-    /// Derive the endowment bulla from parameters
+    /// Derive the DAO-Escrow bulla from parameters
+    #[allow(dead_code)]
     pub fn derive_bulla(
-        dao_bulla: DaoEscrowBulla,
+        mode: DaoEscrowMode,
         owner_pubkey: &PublicKey,
-        endowment_token_id: pallas::Base,
+        pool_token_id: pallas::Base,
+        fee_config: &Option<FeeConfig>,
         bulla_blind: BaseBlind,
     ) -> DaoEscrowBulla {
         let (ox, oy) = owner_pubkey.xy();
-        poseidon_hash([
-            dao_bulla,
+        let mut hash_inputs = vec![
             ox,
             oy,
-            endowment_token_id,
+            pool_token_id,
+            pallas::Base::from(mode as u8),
             bulla_blind.inner(),
-        ])
+        ];
+        if let Some(config) = fee_config {
+            hash_inputs.push(pallas::Base::from(config.treasury_share));
+            hash_inputs.push(pallas::Base::from(config.endowment_share));
+        }
+        poseidon_hash(hash_inputs)
     }
 }
 
