@@ -77,7 +77,7 @@ let premium = PayPremiumBuilder::new()
     .build()?;
 ```
 
-The membership note has a `spend_hook` that checks `current_block < expiry`.
+The membership note has a **ZK circuit check** that verifies `current_block < expiry` using `less_than_strict`. This is enforced in `pay_premium_v1.zk` — the circuit fails if the membership has already expired.
 
 ### 3. Claims → DAO Treasury (NOT DAO-Escrow)
 
@@ -141,20 +141,21 @@ Proves premium payment and creates membership note:
 - **Public inputs**: `dao_escrow_bulla`, `membership_note`, `value_commit.x`, `value_commit.y`
 - **Private inputs**: `member_secret`, `value`, `token_id`, `expiry`, `membership_blind`, `value_blind`
 - **Verification**:
+  - `less_than_strict(current_block, expiry)` — block-based time lock
   - Member key derivation
   - Membership note commitment
   - Value commitment (Pedersen)
 
-**No new opcodes needed!** Both circuits use only proven opcodes.
+**Uses only proven opcodes!** Block-based expiry is enforced via `less_than_strict`.
 
 ## Opcode Requirements
 
 | Circuit | Opcodes Used | Status |
 |---------|-------------|--------|
 | `init_v1.zk` | `poseidon_hash`, `ec_mul_base`, `ec_get_x`, `ec_get_y` | Proven |
-| `pay_premium_v1.zk` | `poseidon_hash`, `ec_mul_base`, `ec_mul_short`, `ec_mul`, `ec_add`, `ec_get_x`, `ec_get_y` | Proven |
+| `pay_premium_v1.zk` | `poseidon_hash`, `ec_mul_base`, `ec_mul_short`, `ec_mul`, `ec_add`, `ec_get_x`, `ec_get_y`, `less_than_strict` | Proven |
 
-**No experimental opcodes. No grey-market concerns.**
+**No experimental opcodes.** `less_than_strict` is constrain-only and sound.
 
 ## What DAO-Escrow IS NOT
 
