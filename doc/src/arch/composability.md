@@ -365,6 +365,160 @@ This pattern enables:
 
 See [Subscription Contract](subscription.md), [DAO-Escrow Contract](dao_escrow.md), and [Atomic Swap Contract](atomic_swap.md) for full details.
 
+### Case Study: How DAO-Escrow + Subscription Fixes Real-World DAO Failures
+
+The failure modes of historical DAOs — particularly treasury management failures and governance paralysis — reveal why naive DAO designs fail in practice. The DAO-Escrow + Subscription architecture addresses these directly.
+
+#### The Problem: Transparency and Accountability in Pure Treasury DAOs
+
+AssangeDAO raised approximately $55 million in a 2022 token sale, with DarkFi founders Amir Taaki and Rachel Rose O'Leary among its founding members. The DAO's stated purpose was to bid on Julian Assange's NFT (a controversial strategy even at the time), but the auction ultimately failed — not because of lack of funds, but because no other bidders participated, knowing the DAO's treasury was large enough to outbid anyone.
+
+The failure modes were predictable:
+
+| Failure Mode | What Happened | Root Cause |
+|-------------|---------------|------------|
+| **Auction manipulation** | No other bidders participated because the transparent treasury revealed the DAO's maximum bid | Treasury transparency created information asymmetry |
+| **Governance paralysis** | Taaki and O'Leary cited legal liability concerns as reasons members abstained from governance votes | No clear accountability for outcomes vs. decisions |
+| **Treasury disappearance** | The $55M vanished with no clear accounting or service delivery documented | No escrow mechanism, pure trust model |
+| **Free rider problem** | External actors exploited knowledge of treasury size to extract value in downstream negotiations | Public treasury balance invited extraction |
+| **Insurance gap** | No protection against service failure or mismanagement | Pure treasury model has no consumer protection |
+
+The founders' explanation — that the failed auction and legal liability fears caused governance paralysis — explains some failures. But it does not explain where the $55 million went or how it was ultimately spent. A DAO with proper escrow, service delivery, and insurance mechanisms would have had far stronger accountability for treasury management.
+
+#### DarkFi Founders' Lessons Applied
+
+The involvement of Amir Taaki and Rachel Rose O'Leary in both DarkFi and the earlier cypherpunk movements informs the architecture directly. The problems they encountered in practice shaped the design decisions:
+
+**Transparency as a liability**: In a pure treasury DAO, public treasury balances become a negotiating liability. DAO-Escrow stores state in Merkle trees — membership can be verified without revealing total treasury holdings.
+
+**Outcome-based governance**: Legal liability fears paralyzed voting because members felt responsible for every decision. DAO-Escrow separates governance (voting on parameters) from service delivery (enforced via escrow and endowment).
+
+**Consumer protection via endowment**: A pure treasury DAO has no mechanism to refund members if services aren't delivered. DAO-Escrow's endowment fund accumulates a portion of each subscription as an insurance reserve, governed by DAO vote for drawdown.
+
+#### How DAO-Escrow + Subscription Solves Each Problem
+
+**1. Treasury Privacy via Merkle State**
+
+A pure treasury DAO reveals all balances publicly. DAO-Escrow stores treasury state in a Merkle tree:
+
+```zk
+# DAO-Escrow membership tree stores:
+# - Member stake
+# - Voting weight
+# - Treasury share entitlement
+
+dao_root = merkle_root(leaf_position, membership_path, membership_note);
+```
+
+Outside observers cannot see the total treasury balance — only that a given membership is valid. This prevents the auction manipulation problem: bidders cannot know the DAO's max bid because the treasury balance isn't publicly visible.
+
+**2. Service Delivery via Subscription**
+
+Instead of donating to a treasury with no strings attached, members pay for defined services:
+
+```rust
+struct SubscriptionPlan {
+    plan_id: u64,
+    price: TokenAmount,
+    duration_blocks: u64,
+    service_description: "Weekly magazine + podcast access",
+}
+
+struct Subscription {
+    subscriber: PublicKey,
+    plan_id: u64,
+    lock_until_block: u64,
+    endowment_share: u64,  // Insurance reserve
+}
+```
+
+The endowment_share of each payment accumulates in an insurance reserve. If the service fails to deliver, the DAO can authorize refunds from the endowment fund via governance.
+
+**3. Block-Based Time Locks (No Oracle Manipulation)**
+
+Traditional DAOs use timestamps which miners can manipulate. DarkFi uses deterministic block numbers:
+
+```rust
+// Subscription: lock_until is a block height, not a timestamp
+lock_until_block = current_block + plan.duration_blocks;
+less_than_strict(current_block, lock_until_block);  // Still active?
+
+// DAO-Escrow: membership expiry is a block height
+less_than_strict(current_block, membership_expiry);
+```
+
+**Advantage**: A block number N means "the Nth block in the chain" — not an approximation of time. Miners cannot manipulate block numbers the way they can timestamps.
+
+**4. Triple-Mode DAO-Escrow for Risk Distribution**
+
+DAO-Escrow supports three operating modes:
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `MODE_ESCROW` | Pure insurance pool, no treasury | Consumer protection, service escrow |
+| `MODE_TREASURY` | Same as DarkFi DAO, governance funding | Traditional DAO treasury |
+| `MODE_TREASURY_ENDOWMENT` | Treasury + endowment split | Service + insurance combined |
+
+A news organization using this architecture might configure:
+- **Treasury share** (e.g., 70%): Funds operations, governance
+- **Endowment share** (e.g., 30%): Insurance reserve for refunds if publication fails to deliver
+
+**5. Nullifier Namespace Prevents Double-Spending**
+
+Each contract has its own nullifier namespace:
+
+```rust
+// Subscription nullifier
+subscription_nullifier = poseidon_hash(subscriber, subscription_id);
+
+// DAO-Escrow membership nullifier
+membership_nullifier = poseidon_hash(member_pubkey, membership_note);
+
+// Different namespaces — no collision, no double-spend possible
+```
+
+**6. Accountability via On-Chain Record**
+
+Every state transition is recorded:
+
+| Action | What Gets Recorded |
+|--------|-------------------|
+| Subscribe | Commitment (private), plan_id, duration, endowment_share |
+| Cancel | Nullifier (spent), refund_amount at lock_until_block |
+| Service deliver | No record needed — service is off-chain |
+| Refund from endowment | DAO governance vote recorded, payout executed |
+| Membership expiry | Automatic via block height check |
+
+#### Comparison: Naive DAO vs DAO-Escrow + Subscription
+
+| Dimension | Naive Treasury DAO | DAO-Escrow + Subscription |
+|-----------|---------------------|--------------------------|
+| Treasury visibility | Fully transparent | Merkle-protected |
+| Member accountability | Token ownership only | Subscription + service delivery |
+| Consumer protection | None | Endowment fund escrow |
+| Governance paralysis risk | High (legal fear) | Lower (outcome-based, not decision-based) |
+| Treasury extraction | Easy (public balance) | Harder (obscured by Merkle state) |
+| Service failure recourse | None | DAO can trigger endowment refund |
+| Cross-chain funding | Difficult | Atomic swap integration |
+
+#### Real-World Application: News Organization DAO
+
+Imagine a privacy-preserving news organization funded via DAO-Escrow + Subscription:
+
+1. **Reporter** pays subscription in DRK via atomic swap from Ethereum
+2. **Subscription** activates with endowment_share flowing to insurance reserve
+3. **Publication** delivers weekly magazine, podcast, blog — off-chain, but membership verified on-chain
+4. **If publication fails**: DAO governance votes to trigger endowment refunds
+5. **If publication succeeds**: Treasury funds operations, endowment grows as insurance buffer
+
+The $55M problem doesn't happen because:
+- The money wasn't sitting in a transparent treasury waiting to be extracted
+- Members paid for services, not donated to a black box
+- The endowment provided insurance against failure
+- Block-based time locks prevented timestamp manipulation
+
+This architecture would have solved the accountability problems that plagued organizations like AssangeDAO — where the inability to vote on governance (due to legal liability fears) and the transparent treasury (which invited extraction) led to failure.
+
 ## SDK Primitives
 
 The DarkFi SDK provides reusable primitives for contracts:
