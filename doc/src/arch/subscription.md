@@ -286,7 +286,7 @@ See [Atomic Swap Contract](atomic_swap.md) for full HTLC details.
 | DAO treasury integration | ✅ Complete | Via DAO-Escrow `MODE_TREASURY` |
 | Endowment fund | ✅ Complete | Via DAO-Escrow `MODE_TREASURY_ENDOWMENT` |
 | Escrow-only mode | ✅ Complete | Via DAO-Escrow `MODE_ESCROW` |
-| Cross-chain atomic swap | 🆕 TODO | Integration with `atomic_swap` |
+| Cross-chain atomic swap | ✅ Complete | Integration with `atomic_swap` via hash link |
 
 **All three DAO-Escrow modes supported:**
 - `MODE_ESCROW`: Pure insurance for subscription deposits
