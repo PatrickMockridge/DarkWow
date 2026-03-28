@@ -61,7 +61,7 @@ circuit "ClaimEscrow" {
     # exposing seller_pub_x/y on-chain.
 
     seller_commitment_computed = poseidon_hash(seller_pub_x, seller_pub_y);
-    constrain_eq(seller_commitment_computed, escrow_seller_commitment);
+    constrain_equal_base(seller_commitment_computed, escrow_seller_commitment);
 
     # Compute nullifier
     # nullifier = H(escrow_id, seller_secret)

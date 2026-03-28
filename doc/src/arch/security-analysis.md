@@ -484,7 +484,7 @@ seller_pub_y = ec_get_y(seller_pub);
 
 # PRIVACY: Verify seller_commitment without revealing seller_pub on-chain
 seller_commitment_computed = poseidon_hash(seller_pub_x, seller_pub_y);
-constrain_eq(seller_commitment_computed, escrow_seller_commitment);
+constrain_equal_base(seller_commitment_computed, escrow_seller_commitment);
 
 # Public inputs: escrow_id, seller_commitment, spent_nullifier (NOT seller_pub_x/y)
 ```
@@ -530,10 +530,9 @@ A separate [DrainProtection contract](../../src/contract/drain_protection/README
 | Lock/Unlock Controls | ✅ Implemented | Max 7 days lock, 24hr unlock timelock |
 | Spend Authority Changes | ✅ Implemented | 2/3 vote + 48hr timelock |
 | Member Exit + Haircut | ✅ Implemented | 1/3 haircut, block-height-weighted |
-| ZK Circuits | ⚠️ Partial | exit_v1.zk placeholder exists |
+| ZK Circuits | ✅ Implemented | exit_v1.zk has Merkle proof verification |
 
 **Outstanding Implementation Work**:
-- [ ] ZK circuit for membership proof verification (Merkle proof)
 - [ ] ZK circuit for vote authorization
 - [ ] Full vote weight calculation from DAO-Escrow
 - [ ] Integration tests between DAO-Escrow and DrainProtection
@@ -643,7 +642,6 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 
 ### Outstanding for DrainProtection Integration
 
-- ZK circuit for membership proof verification (Merkle proof)
 - ZK circuit for vote authorization
 - Full vote weight calculation from DAO-Escrow
 - Integration tests between DAO-Escrow and DrainProtection

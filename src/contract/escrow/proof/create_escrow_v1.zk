@@ -26,6 +26,7 @@ field = "pallas";
 #   - buyer_secret: Buyer's secret for deriving public key
 
 constant "CreateEscrow" {
+    EcFixedPointBase NULLIFIER_K,
     EcFixedPointShort VALUE_COMMIT_VALUE,
     EcFixedPoint VALUE_COMMIT_RANDOM,
 }
@@ -55,8 +56,8 @@ circuit "CreateEscrow" {
     buyer_pub_computed_x = ec_get_x(buyer_pub_computed);
     buyer_pub_computed_y = ec_get_y(buyer_pub_computed);
     # Constrain computed pubkey to match revealed pubkey
-    constrain_eq(buyer_pub_x, buyer_pub_computed_x);
-    constrain_eq(buyer_pub_y, buyer_pub_computed_y);
+    constrain_equal_base(buyer_pub_x, buyer_pub_computed_x);
+    constrain_equal_base(buyer_pub_y, buyer_pub_computed_y);
 
     # ==========================================================================
     # PRIVACY: Compute seller commitment (hides seller_pub on-chain)

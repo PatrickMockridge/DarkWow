@@ -146,10 +146,10 @@ Proves the buyer legitimately refunds:
 
 | Circuit | Opcodes Used | Status |
 |---------|-------------|--------|
-| `create_escrow_v1.zk` | `poseidon_hash`, `ec_mul_base`, `ec_get_x`, `ec_get_y`, `constrain_eq` | Existing |
+| `create_escrow_v1.zk` | `poseidon_hash`, `ec_mul_base`, `ec_get_x`, `ec_get_y`, `constrain_equal_base` | Existing |
 | `fund_v1.zk` | `ec_mul_short`, `ec_mul`, `ec_add`, `ec_get_x`, `ec_get_y` | Existing |
-| `claim_v1.zk` | `ec_mul_base`, `poseidon_hash`, `constrain_eq` | Existing |
-| `refund_v1.zk` | `less_than_strict`, `ec_mul_base`, `poseidon_hash`, `constrain_eq` | Existing (constrain-only) |
+| `claim_v1.zk` | `ec_mul_base`, `poseidon_hash`, `constrain_equal_base` | Existing |
+| `refund_v1.zk` | `less_than_strict`, `ec_mul_base`, `poseidon_hash`, `constrain_equal_base` | Existing (constrain-only) |
 
 The `refund_v1.zk` circuit uses `less_than_strict(timeout, current_block)` which is a **constrain-only** opcode — it constrains `current_block > timeout` without producing a usable output value. This is sufficient because the block proposer reveals `current_block` and the circuit simply verifies it's greater than `timeout`.
 

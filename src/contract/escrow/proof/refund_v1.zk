@@ -58,8 +58,8 @@ circuit "RefundEscrow" {
     buyer_pub_y = ec_get_y(buyer_pub);
 
     # Verify derived public key matches the escrow's buyer public key
-    constrain_eq(buyer_pub_x, escrow_buyer_pub_x);
-    constrain_eq(buyer_pub_y, escrow_buyer_pub_y);
+    constrain_equal_base(buyer_pub_x, escrow_buyer_pub_x);
+    constrain_equal_base(buyer_pub_y, escrow_buyer_pub_y);
 
     # Compute nullifier
     # nullifier = H(escrow_id, buyer_secret)
