@@ -699,6 +699,87 @@ In practice:
 - For comparisons, design the gate so the output is uniquely determined by the arithmetic relation
 - Add redundant checks for high-value operations
 
+#### Formal Security Definition
+
+Let the circuit implement an intended function `f: F^m → F^ℓ` over finite field `F`. The circuit has:
+
+- **Public inputs** `x ∈ F^m`
+- **Witness inputs** `w ∈ F^n` (prover chooses)
+- **Auxiliary variables** `v ∈ F^r`
+- **Constraints** `C_j(x, w, v) = 0` for `j = 1, ..., k`
+- **Output** `y ∈ F^ℓ`
+
+**Definition 1 (Secure circuit)**: The circuit is secure if for every public input `x`, the set of possible outputs `y` that can be produced by a prover who satisfies all constraints is exactly the singleton `{f(x)}`.
+
+More formally:
+
+| Property | Requirement |
+|----------|-------------|
+| **Correctness** | For every honest witness `w` that corresponds to the intended function, there exists `v` such that all constraints hold and `y = f(x)` |
+| **Soundness** | For any assignment `(w, v, y)` satisfying all constraints, it must hold that `y = f(x)` |
+
+An injection attack exists when soundness fails: there exists `(w, v, y)` satisfying constraints but with `y ≠ f(x)`.
+
+#### What Must Be Tested to Prove Security
+
+To prove soundness, verify that the constraint system uniquely determines the output from public inputs and intended witness relation.
+
+**Formal Verification of Determinism**: The core is showing that constraints imply a functional relationship `y = g(x, w)` where `g` equals `f` over all legitimate witnesses. For each constraint `C_j`, analyze its algebraic structure and ensure no variable influencing `y` remains free. For edge cases where a divisor would be zero, constraints must still determine output uniquely.
+
+**Methodology**:
+- **Algebraic proof**: Express constraints as polynomial equations and solve for `y`. If the solution set is a single value for all possible free variables, the circuit is sound
+- **SMT/SAT solving**: Encode constraints and check that for any assignment satisfying them, output matches intended function
+
+**Edge-Case Analysis**: Attack surfaces often exist at boundaries:
+
+| Edge Case | Example |
+|-----------|---------|
+| `a = b` | IsEqualBase, LessThanOrEqual |
+| Field modulus boundary | Values near `p` causing wraparound |
+
+Testing must systematically cover:
+- `a = b`
+- `a = b + 1` and `b = a + 1`
+- Values where `a - b` is a small negative number (field element near `p`)
+- Values where `a` or `b` are `0`, `1`, `p - 1`
+
+For each test case, attempt to construct a witness satisfying constraints but giving wrong output.
+
+**Fuzzing with Adversarial Witnesses**:
+- For LessThanOrEqual: fix `a, b`, try all assignments of `out` and `a_off` that satisfy gate equation. If any passes range check and yields wrong `out`, circuit is broken
+- For IsEqualBase: fix `a = b`, try arbitrary values for `delta_inv`; if circuit uses `delta_inv` to influence output, it may accept false result
+
+**Formal Verification of Range Check**: The range check on `a_off` must be proven to correctly enforce integer representative in `[0, 2^253)`. The attack exploited a subtlety: even when integer value is negative, its field representation may lie in range after modular reduction.
+
+#### Testing Framework for Opcode Security
+
+A robust testing suite should include:
+
+| Test Type | Description |
+|-----------|-------------|
+| **Unit Tests** | Test all edge cases (0, 1, large values, boundaries) with honest and adversarial witness assignments |
+| **Randomized Fuzzing** | Generate millions of random inputs; for each, try to construct a witness violating soundness |
+| **Formal Proofs** | Prove constraint system is deterministic; prove range checks are correct |
+| **Edge-Case Exploitation Tests** | Write explicit adversarial scripts attempting to inject false outputs |
+
+**Proof of Uniqueness for Edge Cases**: For IsEqualBase, the delta-invert approach is inherently problematic because the inverse is undefined at zero. A secure implementation must replace the selector with an `is_zero` gadget that forces `delta_inv` to a harmless value (e.g., `0`) when `delta = 0`.
+
+The formal requirement: **output must be deterministically computed from inputs without any branch that leaves a variable free**. This often requires using the algebraic identity `is_equal = 1 - less_than(a,b) - less_than(b,a)` or a dedicated `is_zero` gate.
+
+#### What "Secure" Means in This Context
+
+A ZK gadget is secure (sound) if:
+
+| Property | Description |
+|----------|-------------|
+| **No false positive** | No witness satisfies constraints but yields output contradicting intended function |
+| **No undetermined output** | For every public input, all accepting witnesses produce the same output |
+| **Resistance to injection** | Prover cannot influence output by choosing arbitrary values for unconstrained variables |
+
+These properties must be proved for **all possible inputs**, not just those in a safe range, unless the circuit is explicitly limited to a subset where inputs are range-checked before the gadget.
+
+The LessThanOrEqual implementation **fails property 1** because the output is not uniquely determined. The IsEqualBase implementation **fails properties 1 and 3** because it leaves `delta_inv` free when `a = b`.
+
 #### Conclusion
 
 The vulnerability class is **injection**: the prover can inject arbitrary values into underconstrained parts of the circuit, altering the output. These are not "minor soundness issues" but fundamental gaps that must be fixed for production use.
