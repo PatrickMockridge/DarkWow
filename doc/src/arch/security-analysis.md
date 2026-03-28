@@ -249,22 +249,21 @@ A separate [DrainProtection contract](../../src/contract/drain_protection/README
 
 ---
 
-#### Issue 11: Membership Expiry is Witness, Not Verified (MODERATE)
+#### Issue 11: Membership Expiry is Witness, Not Verified (MODERATE) — FIXED
 
-**Location**: [dao_escrow/pay_premium_v1.zk:69](file://../../src/contract/dao_escrow/proof/pay_premium_v1.zk#L69)
+**Location**: [dao_escrow/pay_premium_v1.zk](file://../../src/contract/dao_escrow/proof/pay_premium_v1.zk)
 
-**Problem**: While `less_than_strict(current_block, expiry)` is verified, the `expiry` itself is provided as a witness:
+**Problem (Original)**: While `less_than_strict(current_block, expiry)` was verified, the `expiry` itself was provided as a witness with no maximum cap.
+
+**Fix Applied**: Added maximum membership period check in the circuit:
 
 ```zk
-Uint64 expiry,  # Membership expiry block (must be > current_block)
+max_membership_blocks = 52560;  # ~1 year at 5min blocks
+max_expiry = add(current_block, max_membership_blocks);
+less_than_strict(expiry, max_expiry);
 ```
 
-**Impact**:
-- The member can choose any expiry they want (within reason)
-- Nothing forces the expiry to be "reasonable" (e.g., 1 year max)
-- A member could self-issue a 100-year membership
-
-**Recommendation**: Add a maximum allowed expiry check in the circuit or enforce it in the contract layer.
+**Impact** (resolved): Members cannot self-issue excessively long memberships. Maximum is ~1 year.
 
 ---
 
@@ -319,7 +318,7 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 | 8 | Escrow | No state verification on claim | MAJOR | ⚠️ Entrypoint written, state check in contract |
 | 9 | Escrow | Seller public key in plaintext | MODERATE | ⚠️ Entrypoint written, design issue |
 | 10 | DAO-Escrow | No endowment drain protection | MAJOR | ⚠️ Provisional: drain_protection contract exists |
-| 11 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ⚠️ Contract-level enforcement needed |
+| 11 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ✅ FIXED (max 1-year cap added) |
 | 12 | Bridge | Weak range check (only < 2^64) | MODERATE | ⚠️ Pre-existing contract |
 
 ---
@@ -331,6 +330,7 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 2. ✅ **Issue 5 (CRITICAL)**: poseidon_hash verification added to CreateSwap and Claim
 3. ✅ **Issue 8 (MAJOR)**: Escrow entrypoint written with state verification
 4. ✅ **Issue 10 (MAJOR)**: drain_protection contract created provisionally
+5. ✅ **Issue 11 (MODERATE)**: Max membership expiry cap added (1 year limit)
 
 ### Cannot Fix Without Additional Primitives
 - **Issue 2**: Permission bitmask checking requires `base_div` opcode
@@ -340,9 +340,8 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 
 - **Issue 3 (MODERATE)**: Add cancellation nullifier verification to Subscription
 - **Issue 4 (MODERATE)**: Generate separate blind factor (design issue)
-- **Issue 6 (MAJOR)**: Clarify timelock on atomic swap claim (may be intentional)
-- **Issue 9 (MODERATE)**: Seller pubkey in plaintext (design issue)
-- **Issue 11 (MODERATE)**: Add max expiry cap to DAO-Escrow
+- **Issue 6 (MAJOR)**: Clarify timelock on atomic swap claim (intentional by design)
+- **Issue 9 (MODERATE)**: Seller pubkey in plaintext (design issue - circular dependency)
 - **Issue 12 (MODERATE)**: Add minimum amount floor to bridge
 
 ### Outstanding for DrainProtection Integration
