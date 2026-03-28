@@ -1,0 +1,336 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Subscription contract data structures
+//!
+//! ## State Machine
+//!
+//! ```text
+//! Active ──[Cancel]──> Cancelled ──[Expiry]──> Expired
+//!    │                                          │
+//!    └──[Renew]──> Active                       │
+//! ```
+//!
+//! - **Active**: Subscription is valid, lock_until_block > current_block
+//! - **Cancelled**: User cancelled, refund available
+//! - **Expired**: Time lock expired, refund available
+
+use darkfi_sdk::{
+    crypto::{poseidon_hash, PublicKey},
+    pasta::pallas,
+};
+use darkfi_serial::{SerialDecodable, SerialEncodable};
+
+// ============================================================================
+// STATE TYPES
+// ============================================================================
+
+/// Subscription unique identifier (Poseidon hash of subscription data)
+pub type SubscriptionId = pallas::Base;
+
+/// Represents the current state of a subscription
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+pub enum SubscriptionState {
+    /// Subscription is active
+    Active = 0,
+    /// User cancelled, refund available at lock_until_block
+    Cancelled = 1,
+    /// Subscription expired (lock_until_block reached), refund available
+    Expired = 2,
+}
+
+impl TryFrom<u8> for SubscriptionState {
+    type Error = darkfi_sdk::error::ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Active),
+            1 => Ok(Self::Cancelled),
+            2 => Ok(Self::Expired),
+            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+        }
+    }
+}
+
+// ============================================================================
+// CORE DATA STRUCTURES
+// ============================================================================
+
+/// Core subscription data stored on-chain
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct Subscription {
+    /// Subscription identifier (commitment)
+    pub id: SubscriptionId,
+    /// Subscriber's public key
+    pub subscriber_pubkey: PublicKey,
+    /// Plan ID
+    pub plan_id: u32,
+    /// Block height when subscription expires (time lock)
+    pub lock_until_block: u64,
+    /// Deposit amount (held in escrow)
+    pub deposit: u64,
+    /// Token ID
+    pub token_id: pallas::Base,
+    /// Value commitment (Pedersen)
+    pub value_commit: pallas::Point,
+    /// Current state
+    pub state: SubscriptionState,
+    /// Nullifier for the subscription (prevents double-cancel/renew)
+    pub spent_nullifier: pallas::Base,
+    /// Block height when subscription was created
+    pub created_at: u64,
+}
+
+impl Subscription {
+    /// Derive the subscription ID from subscriber, plan, deposit, token, and lock
+    #[allow(dead_code)]
+    pub fn derive_id(
+        subscriber_pubkey: &PublicKey,
+        plan_id: u32,
+        deposit: u64,
+        token_id: pallas::Base,
+        lock_until_block: u64,
+        subscriber_secret: pallas::Base,
+        plan_nonce: pallas::Base,
+    ) -> SubscriptionId {
+        let (bx, by) = subscriber_pubkey.xy();
+        poseidon_hash([
+            bx,
+            by,
+            pallas::Base::from(plan_id),
+            pallas::Base::from(deposit),
+            token_id,
+            pallas::Base::from(lock_until_block),
+            subscriber_secret,
+            plan_nonce,
+        ])
+    }
+
+    /// Compute the nullifier that prevents double-cancel or double-renew
+    #[allow(dead_code)]
+    pub fn compute_nullifier(&self, secret: pallas::Base) -> pallas::Base {
+        poseidon_hash([self.id, secret])
+    }
+}
+
+/// Subscription plan definition
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct Plan {
+    /// Plan unique identifier
+    pub id: u32,
+    /// Plan name (Poseidon hash for privacy)
+    pub name_hash: pallas::Base,
+    /// Price per period (subscription fee)
+    pub price: u64,
+    /// Token ID for payment
+    pub token_id: pallas::Base,
+    /// Duration in blocks
+    pub duration_blocks: u64,
+    /// DAO treasury share (percentage * 10000, e.g., 1000 = 10%)
+    pub treasury_share: u32,
+    /// Endowment share (percentage * 10000)
+    pub endowment_share: u32,
+    /// Whether the plan is active
+    pub active: bool,
+}
+
+/// Capability derived from subscription for access control
+/// This implements the Object Capability pattern
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SubscriptionCapability {
+    /// Subscriber's public key
+    pub subscriber: PublicKey,
+    /// Plan ID
+    pub plan_id: u32,
+    /// Subscription ID (commitment)
+    pub subscription_id: SubscriptionId,
+    /// Permissions bitmask
+    pub permissions: u8,
+    /// Expiry block
+    pub expires_at: u64,
+    /// Nonce for unpredictability
+    pub nonce: pallas::Base,
+}
+
+impl SubscriptionCapability {
+    /// Derive the capability digest for access control
+    #[allow(dead_code)]
+    pub fn derive_capability(
+        subscriber: &PublicKey,
+        plan_id: u32,
+        subscription_id: SubscriptionId,
+        permissions: u8,
+        expires_at: u64,
+        nonce: pallas::Base,
+    ) -> pallas::Base {
+        let (bx, by) = subscriber.xy();
+        poseidon_hash([
+            bx,
+            by,
+            pallas::Base::from(plan_id),
+            subscription_id,
+            pallas::Base::from(permissions),
+            pallas::Base::from(expires_at),
+            nonce,
+        ])
+    }
+}
+
+// ============================================================================
+// PARAMETER TYPES (for contract calls)
+// ============================================================================
+
+/// Parameters for `Subscription::SubscribeV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SubscribeParamsV1 {
+    /// Plan ID to subscribe to
+    pub plan_id: u32,
+    /// Subscriber's public key
+    pub subscriber_pubkey: PublicKey,
+    /// Commitment to subscription parameters
+    pub commitment: SubscriptionId,
+    /// Value commitment (Pedersen)
+    pub value_commit: pallas::Point,
+    /// Merkle proof of the commitment
+    pub merkle_proof: Vec<pallas::Base>,
+    /// Merkle root for the plan
+    pub merkle_root: pallas::Base,
+}
+
+/// State update for `Subscription::SubscribeV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SubscribeUpdateV1 {
+    /// The created subscription ID
+    pub subscription_id: SubscriptionId,
+}
+
+/// Parameters for `Subscription::CancelV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CancelParamsV1 {
+    /// Subscription ID
+    pub subscription_id: SubscriptionId,
+    /// Subscriber's secret (proves ownership)
+    pub subscriber_secret: pallas::Base,
+    /// Nullifier revealing the subscription is cancelled
+    pub spent_nullifier: pallas::Base,
+    /// Current block height
+    pub current_block: u64,
+    /// Recipient public key for refund
+    pub recipient_pubkey: PublicKey,
+}
+
+/// State update for `Subscription::CancelV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CancelUpdateV1 {
+    /// The cancelled subscription ID
+    pub subscription_id: SubscriptionId,
+    /// Nullifier for the cancelled subscription
+    pub spent_nullifier: pallas::Base,
+}
+
+/// Parameters for `Subscription::RenewV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RenewParamsV1 {
+    /// Existing subscription ID
+    pub subscription_id: SubscriptionId,
+    /// Subscriber's secret (proves ownership)
+    pub subscriber_secret: pallas::Base,
+    /// New lock_until_block
+    pub new_lock_until_block: u64,
+    /// Nullifier for the old subscription
+    pub spent_nullifier: pallas::Base,
+    /// Value commitment for renewal payment
+    pub value_commit: pallas::Point,
+    /// Merkle proof of the commitment
+    pub merkle_proof: Vec<pallas::Base>,
+}
+
+/// State update for `Subscription::RenewV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RenewUpdateV1 {
+    /// The renewed subscription ID (new commitment)
+    pub subscription_id: SubscriptionId,
+    /// Nullifier for the old subscription
+    pub spent_nullifier: pallas::Base,
+}
+
+/// Parameters for `Subscription::VerifyAccessV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VerifyAccessParamsV1 {
+    /// Subscription ID being verified
+    pub subscription_id: SubscriptionId,
+    /// Capability derived from subscription
+    pub capability: pallas::Base,
+    /// Nonce for the proof
+    pub nonce: pallas::Base,
+}
+
+/// Parameters for `Subscription::DaoControlV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub enum DaoControlParamsV1 {
+    /// Update plan parameters
+    UpdatePlan(Plan),
+    /// Activate/deactivate a plan
+    SetPlanActive { plan_id: u32, active: bool },
+    /// Emergency pause all subscriptions
+    EmergencyPause { pause: bool, reason: pallas::Base },
+    /// Withdraw from endowment fund
+    EndowmentWithdraw { amount: u64, recipient: PublicKey },
+    /// Slash a subscription (governance enforcement)
+    Slash { subscription_id: SubscriptionId, reason: pallas::Base },
+}
+
+/// State update for `Subscription::DaoControlV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DaoControlUpdateV1 {
+    /// The DAO action performed
+    pub action: DaoControlAction,
+}
+
+/// Actions resulting from DAO control
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub enum DaoControlAction {
+    /// Plan was updated
+    PlanUpdated(u32),
+    /// Plan active status changed
+    PlanStatusChanged { plan_id: u32, active: bool },
+    /// Emergency pause toggled
+    EmergencyPauseToggled(bool),
+    /// Endowment withdrawn
+    EndowmentWithdrawn { amount: u64, recipient: PublicKey },
+    /// Subscription slashed
+    SubscriptionSlashed(SubscriptionId),
+}
+
+// ============================================================================
+// ACCESS CONTROL CONSTANTS
+// ============================================================================
+
+/// Permission bitmask for subscription capabilities
+pub mod permissions {
+    /// Read access - can verify membership
+    pub const READ: u8 = 0b0000_0001;
+    /// Write access - can modify subscription
+    pub const WRITE: u8 = 0b0000_0010;
+    /// Cancel access - can cancel subscription
+    pub const CANCEL: u8 = 0b0000_0100;
+    /// Renew access - can renew subscription
+    pub const RENEW: u8 = 0b0000_1000;
+    /// Admin access - DAO governance
+    pub const ADMIN: u8 = 0b1000_0000;
+}

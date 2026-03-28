@@ -1,0 +1,246 @@
+# DarkFi Subscription Contract
+
+Privacy-preserving member subscription service with block-based time locks, DAO treasury, and endowment fund insurance.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Subscription Service DAO                          │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────────┐ │
+│  │  Treasury (subscription fees → governance)                        │ │
+│  │  - DAO votes on subscription pricing                            │ │
+│  │  - DAO controls fee parameters                                   │ │
+│  │  - Endowment share accumulates here                             │ │
+│  └─────────────────────────────────────────────────────────────────┘ │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────────┐ │
+│  │  Endowment Fund (insurance reserve)                              │ │
+│  │  - Covers refunds if service fails                              │ │
+│  │  - Grows from endowment_share of each subscription               │ │
+│  │  - DAO-controlled drawdown                                       │ │
+│  │  - Provides consumer protection                                   │ │
+│  └─────────────────────────────────────────────────────────────────┘ │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────────┐ │
+│  │  Subscription Plans (Merkle tree registry)                       │ │
+│  │  - Monthly, yearly, premium tiers                                │ │
+│  │  - DAO can add/update/deactivate plans                          │ │
+│  │  - Merkle proof verifies plan validity                          │ │
+│  └─────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+## State Machine
+
+```
+                    ┌──────────────────────────────────────┐
+                    │                                      │
+                    │         ┌──────────────┐            │
+                    │         │   Active     │            │
+    Subscribe ─────►│         │ lock_until   │            │
+                    │         │   > current   │            │
+                    │         └──────┬───────┘            │
+                    │                │                     │
+                    │                │ Cancel              │
+                    │                ▼                     │
+                    │         ┌──────────────┐            │
+                    │         │  Cancelled   │            │
+                    │         │ refund@lock │            │
+                    │         └──────┬───────┘            │
+                    │                │                     │
+                    │         (time passes)                │
+                    │                │ lock reached        │
+                    │                ▼                     │
+                    │         ┌──────────────┐            │
+                    │         │   Expired    │            │
+                    │         │ refund@lock  │            │
+                    │         └──────┬───────┘            │
+                    │                │                     │
+                    │                │ Renew               │
+                    │                ▼                     │
+                    │         ┌──────────────┐            │
+                    └────────►│   Active     │◄────────────┘
+                              │ (new period) │
+                              └──────────────┘
+```
+
+## Trust Model
+
+### Block-Based Time Locks (No Oracle)
+
+DarkFi has deterministic block heights. Subscriptions use block numbers instead of timestamps:
+
+```rust
+lock_until_block = current_block + plan.duration_blocks
+```
+
+**Advantage over Ethereum**: Miners cannot manipulate block numbers the way they can timestamps. A block number N means "the Nth block in the chain" - not an approximation of time.
+
+### Object Capability Security
+
+The subscription grants a **capability** derived via Poseidon hash:
+
+```rust
+capability = PoseidonHash(
+    subscriber_pubkey,  // Who
+    plan_id,           // What plan
+    subscription_id,   // Which subscription
+    permissions,        // What they can do
+    lock_until_block,  // Until when
+    nonce              // Unpredictable
+);
+```
+
+**Properties**:
+- Unforgeable: Only the subscriber knows the secret key
+- Transferable: Capability can be shared (but tracked via nullifiers)
+- Revocable: DAO can slash malicious subscribers
+
+### Endowment Fund Insurance
+
+Each subscription splits the deposit:
+
+| Share | Destination | Purpose |
+|-------|-------------|---------|
+| `price` | Treasury | DAO governance funding |
+| `endowment_share` | Endowment Fund | Insurance reserve |
+
+If the service fails or is malicious, the DAO can authorize refunds from the endowment fund.
+
+## Entrypoints
+
+| Function | Opcode | Description |
+|----------|--------|-------------|
+| `SubscribeV1` | `0x01` | Create new subscription |
+| `CancelV1` | `0x02` | User cancels, refund at lock |
+| `RenewV1` | `0x03` | Extend subscription period |
+| `VerifyAccessV1` | `0x04` | ZK proof of valid subscription |
+| `DaoControlV1` | `0x05` | DAO governance actions |
+
+## Circuits
+
+### Subscribe V1 (`subscribe_v1.zk`)
+
+**Purpose**: Create a subscription with deposit locked in escrow.
+
+**Proves**:
+1. Subscriber knows the secret key
+2. Plan ID is valid (Merkle proof)
+3. `current_block < lock_until_block` (subscription is active)
+4. Deposit commitment is valid
+
+**Public Inputs**:
+- `subscription_id`: Commitment hash
+- `subscriber_pub_x/y`: Public key coordinates
+- `plan_id`: Subscription tier
+- `deposit`: Amount locked
+- `token_id`: Which token
+- `lock_until_block`: Expiration height
+- `plan_merkle_root`: Plan registry root
+
+**Private Inputs**:
+- `subscriber_secret`: Proves ownership
+- `nonce`: Unpredictability
+- `plan_merkle_proof`: Plan validity proof
+- `value_blind`: Commitment blinding
+
+### Verify Access V1 (`verify_access_v1.zk`)
+
+**Purpose**: Prove subscription is valid for access control.
+
+**Proves**:
+1. Subscriber knows the secret key
+2. `current_block < lock_until_block` (still active)
+3. Capability digest matches expected
+
+**Use Cases**:
+- Gated content access
+- Service authentication
+- API rate limiting
+
+## Cross-Chain Integration
+
+### Atomic Swap Flow
+
+```
+Ethereum                          DarkFi
+    │                                 │
+    │  1. Lock ETH in HTLC            │
+    │     (hash of DarkFi secret)     │
+    │ ───────────────────────────────►│
+    │                                 │  2. Reveal secret
+    │                                 │     Atomic swap executes
+    │                                 │     SubscribeV1 called
+    │                                 │
+    │  3. Claim ETH with secret       │  4. Subscription activated
+    │◄────────────────────────────────│
+```
+
+DarkFi's existing `atomic_swap` contract handles the cross-chain payment. The subscription contract integrates at step 3 - verifying the atomic swap completed before activating the subscription.
+
+### HTLC Pattern
+
+```rust
+// On DarkFi side:
+htlc_secret = reveal_phase(atomic_swap);
+subscription_deposit = create_subscription(
+    plan_id,
+    htlc_secret,
+    amount
+);
+
+// On Ethereum side:
+preimage = sha256(htlc_secret);
+htlc = HTLC {
+    amount: subscription_fee,
+    hash: preimage,
+    timelock: lock_until_block
+};
+```
+
+## Integration with Existing Contracts
+
+| Component | Integration Point |
+|-----------|-------------------|
+| `money` | Token transfers for deposits and refunds |
+| `dao` | Governance for subscription parameters |
+| `dao_escrow` | Treasury and endowment fund management |
+| `atomic_swap` | Cross-chain payment settlement |
+
+## Missing Opcodes (Future Work)
+
+| Opcode | Purpose | Workaround |
+|--------|---------|------------|
+| `base_div` | Pro-rated refunds | Cross-multiplication pattern |
+| `pedersen_commit` | Better deposit hiding | Poseidon hash placeholder |
+| `set_membership` | Plan registry | Merkle proof (current) |
+
+## MVP Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Subscribe circuit | ⚠️ Skeleton | Placeholder Pedersen verification |
+| VerifyAccess circuit | ⚠️ Skeleton | Permission checks need `base_div` |
+| DAO treasury integration | 🆕 TODO | Integrate with `dao_escrow` |
+| Endowment fund | 🆕 TODO | Separate DAO or built-in |
+| Cross-chain atomic swap | 🆕 TODO | Integration with `atomic_swap` |
+
+## Security Considerations
+
+1. **Block finality**: Subscription locks depend on DarkFi's consensus. If chain reorganizes, the block number could change.
+
+2. **DAO trust**: The endowment fund requires trustworthy DAO governance. A malicious DAO could drain the fund.
+
+3. **Endowment sufficiency**: If many subscriptions are cancelled simultaneously, the endowment must have sufficient reserves.
+
+4. **Capability transfer**: Once a capability is revealed (for access), it could be used by anyone who sees it.
+
+## See Also
+
+- [Object Capability Model](https://en.wikipedia.org/wiki/Object_capability_model)
+- [DarkFi DAO Contract](../dao/README.md)
+- [Atomic Swap Contract](../atomic_swap/README.md)
+- [Experimental Opcodes](../../../doc/src/arch/experimental-opcodes.md)
+- [Opcode Universe](../../../doc/src/arch/opcode_universe.md)
