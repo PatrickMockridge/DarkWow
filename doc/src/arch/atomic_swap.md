@@ -150,9 +150,11 @@ Atomic swap can fund subscription payments from external chains:
 ```zk
 # Proves:
 # - Creator knows secret
-# - Hash is correct
+# - poseidon_hash(secret) is correctly computed and stored
 # - Timelock is set
 
+computed_hash = poseidon_hash(secret);
+constrain_equal_base(computed_hash, hash);
 constrain_equal_base(derived_swap_id, swap_id);
 ```
 
@@ -161,9 +163,11 @@ constrain_equal_base(derived_swap_id, swap_id);
 ```zk
 # Proves:
 # - Claimer knows secret
-# - Hash matches
+# - poseidon_hash(secret) matches stored hash (hash binding verified)
 # - Nullifier is valid
 
+computed_hash = poseidon_hash(secret);
+constrain_equal_base(computed_hash, hash);
 nullifier_check = poseidon_hash(swap_id, secret);
 constrain_equal_base(nullifier_check, nullifier);
 ```
@@ -179,7 +183,7 @@ constrain_equal_base(nullifier_check, nullifier);
 
 ## Limitations
 
-1. **Hash function trust**: We accept external chain hashes without in-circuit verification
+1. **Hash function trust**: DarkFi uses `poseidon_hash(secret)` which is verified in-circuit. For cross-chain swaps, a bridge/oracle is needed to bind to external chain hashes (e.g., Ethereum SHA256).
 
 2. **Timelock synchronization**: External chain timelock must be > DarkFi timelock for fairness
 

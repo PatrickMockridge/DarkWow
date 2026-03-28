@@ -190,7 +190,7 @@ capability = PoseidonHash(
 1. Subscriber knows the secret key
 2. Plan ID is valid (Merkle proof)
 3. `current_block < lock_until_block` (subscription is active)
-4. Deposit commitment is valid
+4. Deposit commitment is valid (Pedersen commitment via `ec_mul_short` + `ec_add`)
 5. **DAO-Escrow membership** (Merkle proof + expiry + pubkey)
 
 **Public Inputs**:
@@ -200,6 +200,7 @@ capability = PoseidonHash(
 - `deposit`: Amount locked
 - `token_id`: Which token
 - `lock_until_block`: Expiration height
+- `value_commit_x/y`: Pedersen commitment to deposit
 - `plan_merkle_root`: Plan registry root
 - `dao_escrow_bulla`: Insurance pool identifier
 - `dao_membership_note`: Membership proof

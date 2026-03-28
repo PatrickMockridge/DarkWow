@@ -83,14 +83,14 @@ The subscription can be funded from the atomic swap proceeds.
 
 Proves:
 - Creator knows the secret (but doesn't reveal)
-- Hash is computed correctly
+- `poseidon_hash(secret)` is correctly computed and stored
 - Timelock is set
 
 ### Claim (`claim_v1.zk`)
 
 Proves:
 - Claimer knows the secret
-- Hash matches stored hash
+- `poseidon_hash(secret)` matches stored hash (hash binding verified)
 - Nullifier prevents double-claim
 
 ## MVP Status
@@ -104,7 +104,7 @@ Proves:
 
 ## Limitations
 
-1. **External hash function**: We trust the external chain's hash function (SHA256, etc.). Full implementation would verify in-circuit.
+1. **External hash function**: For cross-chain swaps, DarkFi uses `poseidon_hash(secret)` which is verified in-circuit. However, binding to external chains (Ethereum SHA256) requires a bridge/oracle to verify the cross-chain hash. See [security-analysis.md](../../../doc/src/arch/security-analysis.md) for details.
 
 2. **No Bitcoin**: Bitcoin uses RIPEMD160(SHA256) which requires different circuit.
 
