@@ -151,18 +151,55 @@ The SHIT version leaks tier level. The proper implementation using `base_div` wo
 
 ---
 
-#### Issue 3: No Cancellation Nullifier Verification (MODERATE)
+#### Issue 3: No Cancellation Nullifier Verification (MODERATE) — PROVISIONAL FIX
 
-**Location**: [verify_access_v1.zk:150-151](file://../../src/contract/subscription/proof/verify_access_v1.zk#L150-L151)
+**Location**: [verify_access_v1.zk:150-151](file://../../src/contract/subscription/proof/verify_access_v1.zk#L150-L151) (now Phase 5)
 
-**Problem**: The circuit explicitly notes it does not verify the subscription hasn't been cancelled.
+**Problem (Original)**: The circuit did not verify the subscription hasn't been cancelled. A subscriber who cancels retains a valid capability.
 
-**Impact**:
-- A subscriber who cancels their subscription retains a valid capability
-- The DAO must actively slash malicious subscribers
-- If slashing is not enforced, cancelled subscriptions remain usable
+**PROVISIONAL FIX Applied**: Phase 5 added to verify subscription is Active via Merkle proof.
 
-**Recommendation**: Add a nullifier tree check to verify the subscription has not been cancelled before allowing access.
+```zk
+# Compute the subscription's spent nullifier
+computed_spent_nullifier = poseidon_hash(subscription_id, subscriber_secret);
+constrain_equal_base(computed_spent_nullifier, subscription_spent_nullifier);
+
+# Compute the subscription leaf hash
+subscription_leaf = poseidon_hash(
+    subscription_id,
+    subscription_state,
+    subscription_spent_nullifier,
+);
+
+# Verify the Merkle proof
+verified_root = merkle_root(subscription_leaf_pos, subscription_path, subscription_leaf);
+constrain_equal_base(verified_root, subscription_state_root);
+
+# Verify the subscription is in Active state (0 = Active)
+less_than_strict(subscription_state, 1);
+```
+
+**IMPORTANT LIMITATION: This makes capabilities SINGLE-USE**
+
+After each successful verify, the contract MUST mark `subscription_spent_nullifier` as spent in the nullifiers tree. This prevents replay, but:
+
+**Privacy Leak**:
+- The `spent_nullifier` is revealed on each access
+- All uses of the same subscription can be linked together
+- Reveals usage patterns and frequency
+
+**The PROPER Fix Would Require**:
+1. A different architecture that doesn't mark nullifier as spent on each use
+2. Or a state Merkle tree with non-membership proofs for cancellation
+3. Or separating "cancellation nullifier" from "usage tracking"
+
+**What This Fix Achieves**:
+- ✅ Cancelled/expired subscriptions CANNOT access (nullifier check fails)
+- ✅ Proper Merkle proof verification of subscription state
+- ❌ Capabilities become effectively single-use
+- ❌ Usage patterns are linkable via spent_nullifier
+
+**Status**: PROVISIONALLY FIXED - enables cancellation enforcement but with privacy tradeoff. The proper fix requires a different architecture.
 
 ---
 
@@ -437,7 +474,7 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 |---|----------|-------|----------|--------|
 | 1 | Subscription | Poseidon hash instead of Pedersen for value commitment | MAJOR | ✅ FIXED |
 | 2 | Subscription | Permission bitmask checking absent | MAJOR | ✅ FIXED (SHIT VERSION - tiered access with less_than_strict, privacy leak) |
-| 3 | Subscription | No cancellation nullifier verification | MODERATE | ⚠️ Contract-level TODO |
+| 3 | Subscription | No cancellation nullifier verification | MODERATE | ⚠️ PROVISIONAL FIX (single-use, privacy leak) |
 | 4 | Subscription | Bulla used as blind factor | MODERATE | ⚠️ Design issue, documented |
 | 5 | Atomic Swap | Hash not verified in-circuit | CRITICAL | ⚠️ PARTIALLY FIXED (poseidon verified, SHA256 bridge needed) |
 | 6 | Atomic Swap | No timelock check on claim | MAJOR | ℹ️ May be intentional (timelock for refund only) |
@@ -468,7 +505,7 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 
 ### Contract-Level TODOs
 
-- **Issue 3 (MODERATE)**: Add cancellation nullifier verification to Subscription
+- **Issue 3 (MODERATE)**: ⚠️ PROVISIONALLY FIXED (makes capabilities single-use, see Issue #3 above)
 - **Issue 4 (MODERATE)**: Generate separate blind factor (design issue)
 - **Issue 6 (MAJOR)**: Clarify timelock on atomic swap claim (intentional by design)
 

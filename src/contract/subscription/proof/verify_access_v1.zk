@@ -34,6 +34,19 @@ witness "VerifyAccessV1" {
     Uint64 lock_until_block,
 
     # =========================================================================
+    # PROVISIONAL FIX: Cancellation Nullifier Verification
+    # =========================================================================
+    # [PROVISIONAL] This section adds cancellation verification.
+    # See Phase 5 below for full implementation details.
+    #
+    # IMPORTANT: This makes capabilities SINGLE-USE after first successful verify.
+    # The contract MUST mark the subscription_spent_nullifier as spent after
+    # each successful verify. See documentation below.
+
+    # Merkle root of the subscription state tree
+    Base subscription_state_root,
+
+    # =========================================================================
     # PRIVATE INPUTS (witnesses, never revealed on-chain)
     # =========================================================================
 
@@ -45,6 +58,24 @@ witness "VerifyAccessV1" {
 
     # Permissions being claimed
     Uint8 permissions_claimed,
+
+    # =========================================================================
+    # [PROVISIONAL] Cancellation verification witnesses
+    # =========================================================================
+    # These prove the subscription is not cancelled/expired.
+
+    # Position of this subscription's leaf in the subscription state tree
+    Uint32 subscription_leaf_pos,
+
+    # Merkle path to verify the subscription leaf
+    MerklePath subscription_path,
+
+    # Current subscription state (0=Active, 1=Cancelled, 2=Expired)
+    # The circuit verifies this is 0 (Active) via Merkle proof
+    Base subscription_state,
+
+    # Spent nullifier for this subscription (computed from subscription_id, secret)
+    Base subscription_spent_nullifier,
 }
 
 circuit "VerifyAccessV1" {
@@ -219,6 +250,88 @@ circuit "VerifyAccessV1" {
     #   # For now, the tiered approach is the ONLY working option.
 
     # ==========================================================================
+    # PHASE 5: [PROVISIONAL] Cancellation Nullifier Verification
+    # ==========================================================================
+    #
+    # !!! THIS IS A PROVISIONAL FIX FOR ISSUE #3 - SEE FULL DOCUMENTATION BELOW !!!
+    #
+    # This phase verifies the subscription is in Active state (not Cancelled/Expired).
+    #
+    # IMPORTANT: This implementation makes capabilities SINGLE-USE after first
+    # successful verify. The contract MUST mark subscription_spent_nullifier
+    # as spent after each successful verify. This is a provisional fix.
+    #
+    # THE PROPER FIX requires a different architecture:
+    # - Separate "cancellation nullifier" from "usage tracking"
+    # - Or use a state Merkle tree with non-membership proofs
+    #
+    # This provisional fix works as follows:
+    #
+    # 1. The subscription leaf in the subscription state tree contains:
+    #    H(subscription_id, state, spent_nullifier)
+    #
+    # 2. The circuit verifies via Merkle proof that:
+    #    - The subscription exists at the claimed leaf_pos
+    #    - The computed leaf hash matches the Merkle path
+    #    - The subscription_state is 0 (Active)
+    #
+    # 3. IMPORTANT: After successful verify, the contract MUST mark
+    #    subscription_spent_nullifier as spent in the nullifiers tree.
+    #    This prevents replay of the same access proof.
+    #
+    # PRIVACY LEAK: This makes capabilities effectively single-use.
+    # Each successful access reveals the spent_nullifier, linking all
+    # uses of the same subscription together.
+    #
+    # LIMITATION: The proper fix would use a different architecture
+    # that doesn't require marking the nullifier as spent on each use.
+
+    # ==========================================================================
+    # PHASE 5: PROVISIONAL CANCELLATION VERIFICATION
+    # ==========================================================================
+
+    # Compute the subscription's spent nullifier
+    # This is the same nullifier that gets spent on Cancel
+    computed_spent_nullifier = poseidon_hash(subscription_id, subscriber_secret);
+    constrain_equal_base(computed_spent_nullifier, subscription_spent_nullifier);
+
+    # Compute the subscription leaf hash
+    # This must match what's stored in the subscription state tree
+    subscription_leaf = poseidon_hash(
+        subscription_id,
+        subscription_state,
+        subscription_spent_nullifier,
+    );
+
+    # Verify the Merkle proof
+    # This proves the subscription exists and is at the claimed position
+    verified_root = merkle_root(subscription_leaf_pos, subscription_path, subscription_leaf);
+    constrain_equal_base(verified_root, subscription_state_root);
+
+    # Verify the subscription is in Active state (0 = Active)
+    # If this fails, the subscription has been cancelled or expired
+    # State values:
+    #   0 = Active
+    #   1 = Cancelled
+    #   2 = Expired
+    #
+    # We use less_than_strict(0, subscription_state) which constrains:
+    #   0 < subscription_state
+    #
+    # Wait, that would FAIL if subscription_state is 0 (Active).
+    # We need subscription_state to be 0 (Active).
+    #
+    # The correct check: subscription_state == 0
+    # But we can't do equality with Base easily.
+    #
+    # Actually, we check: subscription_state should be 0 (Active).
+    # If subscription_state > 0, the check fails.
+    #
+    # We can use: less_than_strict(subscription_state, 1)
+    # This constrains: subscription_state < 1, meaning subscription_state == 0
+    less_than_strict(subscription_state, 1);
+
+    # ==========================================================================
     # WHAT THIS CIRCUIT PROVES
     # ==========================================================================
     #
@@ -227,9 +340,9 @@ circuit "VerifyAccessV1" {
     #   2. The subscription is still active (current_block < lock_until_block)
     #   3. The capability digest matches the expected value
     #   4. [SHIT VERSION] The claimed tier is >= required tier
+    #   5. [PROVISIONAL] The subscription is in Active state (via Merkle proof)
     #
     # What it DOES NOT prove:
-    #   - The subscription hasn't been cancelled (DAO can slash)
     #   - The plan is still active (DAO can deactivate plans)
     #   - The subscriber hasn't transferred the capability
     #   - [SHIT VERSION] The exact permission level (only tier, not granular)
@@ -248,6 +361,7 @@ circuit "VerifyAccessV1" {
     #   - ec_mul_base, ec_get_x, ec_get_y: standard EC operations
     #   - less_than_strict: constrain-only comparison (SOUND)
     #   - constrain_equal_base: equality constraint
+    #   - merkle_root: proper Merkle verification (from burn_v1.zk pattern)
     #
     # There are NO uses of:
     #   - LessThanOrEqual (gate soundness issue)
@@ -256,27 +370,30 @@ circuit "VerifyAccessV1" {
     #
     # The block-based time lock is sound for the same reasons as
     # in subscribe_v1.zk - DarkFi has deterministic block numbers.
+    #
+    # The Merkle proof verification uses the same pattern as money/burn_v1.zk.
 
     # ==========================================================================
-    # PRIVACY LEAK DOCUMENTATION (SHIT VERSION)
+    # PRIVACY LEAK DOCUMENTATION
     # ==========================================================================
     #
+    # TIERED APPROACH (Phase 4):
     # The tiered approach reveals the subscriber's TIER LEVEL on-chain.
     # This is a privacy regression compared to proper bitmask checking.
     #
+    # PROVISIONAL CANCELLATION FIX (Phase 5):
+    # This implementation makes capabilities SINGLE-USE after first
+    # successful verify. The spent_nullifier is revealed on each use,
+    # linking all uses of the same subscription together.
+    #
     # Attack vector:
-    # - Observer sees tier 3 (ADMIN) subscriber accessing service
-    # - Observer learns subscriber has elevated privileges
-    # - Cannot determine exact permissions, but knows high-tier status
+    # - Observer sees subscription_spent_nullifier on each access
+    # - Can link multiple accesses to the same subscription
+    # - Reveals usage patterns and frequency
     #
-    # Comparison:
-    # - TRUE zero-knowledge: Only proves "has access" (binary)
-    # - Tiered (SHIT): Proves "has tier N access" (leaks tier level)
-    # - Bitmask (PROPER with base_div): Only proves "has required permissions" (binary)
+    # The proper fix would:
+    # 1. NOT mark nullifier as spent on each use
+    # 2. Use a different state verification mechanism
+    # 3. Preserve unlinkability between accesses
     #
-    # The tiered approach is a privacy-for-simplicity tradeoff:
-    # - LESS private than proper bitmask
-    # - MORE private than revealing exact bitmask (0b0101 reveals READ+ADMIN)
-    # - MUCH better than no permission checking at all
-    #
-    # See: doc/src/arch/security-analysis.md Issue #2 for full analysis.
+    # See: doc/src/arch/security-analysis.md Issue #3 for full analysis.

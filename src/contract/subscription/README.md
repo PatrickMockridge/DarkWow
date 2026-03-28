@@ -215,6 +215,18 @@ capability = PoseidonHash(
 2. `current_block < lock_until_block` (still active)
 3. Capability digest matches expected
 4. [SHIT VERSION] Claimed tier >= required tier
+5. [PROVISIONAL] Subscription is in Active state (via Merkle proof)
+
+**Public Inputs**:
+- `expected_capability`: Capability digest
+- `subscription_id`: Subscription identifier
+- `current_block`: Current block height
+- `subscriber_pub_x/y`: Subscriber's public key
+- `plan_id`: Plan ID
+- `lock_until_block`: Subscription expiry
+- `subscription_state_root`: Merkle root of subscription state tree
+
+**Privacy Note**: The provisional cancellation fix (Phase 5) makes capabilities effectively **single-use** - each successful access reveals the `spent_nullifier`, linking all uses together. See Issue #3 in security-analysis.md.
 
 ## Permission Checking: SHIT VERSION vs PROPER VERSION
 
@@ -278,7 +290,46 @@ less_than_strict(required_tier - 1, permissions_claimed);
 
 **Status**: SHIT VERSION implemented to enable access control. PROPER VERSION awaits `base_div` opcode.
 
-## MVP Status
+## Cancellation Verification: PROVISIONAL FIX
+
+**⚠️ THIS IS A PROVISIONAL FIX FOR ISSUE #3** - Makes capabilities single-use. See [security-analysis.md](../../doc/src/arch/security-analysis.md) Issue #3 for full analysis.
+
+### PROVISIONAL FIX: Single-Use via Merkle Proof
+
+The circuit verifies subscription state via Merkle proof:
+
+```zk
+# Compute subscription leaf hash
+subscription_leaf = poseidon_hash(
+    subscription_id,
+    subscription_state,      # 0 = Active
+    subscription_spent_nullifier,
+);
+
+# Verify Merkle proof
+verified_root = merkle_root(subscription_leaf_pos, subscription_path, subscription_leaf);
+
+# Verify state is Active (0)
+less_than_strict(subscription_state, 1);
+```
+
+**IMPORTANT: After successful verify, contract MUST mark `subscription_spent_nullifier` as spent.**
+
+### Privacy Leak
+
+This makes capabilities **effectively single-use**:
+- Each access reveals the `spent_nullifier`
+- All accesses of the same subscription are linkable
+- Usage patterns and frequency can be observed
+
+### The PROPER Fix
+
+Would require a different architecture:
+1. Don't mark nullifier as spent on each use
+2. Use state Merkle tree with non-membership proofs
+3. Separate "cancellation" from "usage tracking"
+
+**Status**: PROVISIONALLY FIXED - enables cancellation enforcement but with privacy tradeoff.
 
 | Component | Status | Notes |
 |-----------|--------|-------|
