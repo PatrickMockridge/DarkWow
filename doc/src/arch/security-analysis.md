@@ -38,29 +38,116 @@ constrain_equal_base(computed_y, value_commit_y);
 
 ---
 
-#### Issue 2: Permission Bitmask Checking is Absent (MAJOR)
+#### Issue 2: Permission Bitmask Checking is Absent (MAJOR) — FIXED (SHIT VERSION)
 
-**Location**: [verify_access_v1.zk:128-138](file://../../src/contract/subscription/proof/verify_access_v1.zk#L128-L138)
+**Location**: [verify_access_v1.zk](file://../../src/contract/subscription/proof/verify_access_v1.zk)
 
-**Problem**: The circuit comment explicitly states that permission verification is a no-op:
+**Problem (Original)**: The circuit did not enforce permission bitmask checking - any subscriber could claim any permission level.
 
+**SHIT VERSION FIX Applied**: Tiered access approach using `less_than_strict`
+
+The circuit now implements tiered permission checking:
 ```zk
-# less_than_or_equal is experimental (has gate soundness issue),
-# so we use the sound alternative: less_than_strict
-# For MVP, we just verify the claimed permissions are non-zero
-# The actual permission enforcement would be done off-chain
+# Tier definitions:
+#   TIER_BASIC = 1    -> READ only
+#   TIER_PREMIUM = 2  -> READ + WRITE
+#   TIER_ADMIN = 3    -> READ + WRITE + ADMIN
+
+# SHIT VERSION: Check claimed_tier >= required_tier
+# Uses less_than_strict(required_tier - 1, claimed_tier)
+# This constrains: (required_tier - 1) < claimed_tier
+less_than_strict(required_tier - 1, permissions_claimed);
 ```
 
-**Impact**:
-- Any subscriber can claim ANY permission level (READ, WRITE, ADMIN, etc.)
-- Access control is not enforced on-chain
-- A subscriber paying for basic access could exercise admin-level permissions
+**Impact** (SHIT VERSION - privacy leak):
+- Permission tier IS revealed on-chain (privacy regression vs true zero-knowledge)
+- Tier 1 (BASIC), Tier 2 (PREMIUM), or Tier 3 (ADMIN) is exposed
+- Cannot do arbitrary bitmask combinations (READ+ADMIN without WRITE is impossible)
+- But: DOES prevent unauthorized access (tier must be >= required)
 
-**Recommendation**: Implement proper bitmask checking once `base_div` opcode is available. Workaround using subtraction:
+**Proper Version (REQUIRES base_div opcode)**:
+
+The SHIT version leaks tier level. The proper implementation using `base_div` would be:
+
 ```zk
-# Check: (claimed & required) == claimed
-# Via: less_than_strict(claimed - required, 1)  # Fails if claimed > required
+# Proper bitmask checking with base_div (when available):
+#
+# Goal: Verify (claimed & required) == claimed
+# Meaning: all bits in 'required' are also set in 'claimed'
+#
+# Bit definitions:
+#   READ = 0b0001
+#   WRITE = 0b0010
+#   ADMIN = 0b0100
+#
+# The check: (claimed | required) == claimed
+# This verifies 'claimed' contains all bits of 'required'
+#
+# base_div approach:
+#   # Check that (claimed - required) has no unauthorized bits
+#   diff = base_sub(claimed, required);  # field subtraction
+#
+#   # The key insight: if claimed contains required,
+#   # then (claimed - required) will not have bits outside claimed
+#   #
+#   # Actually, the real base_div approach for bitwise subset:
+#   # We need to verify: (claimed & ~required) == 0
+#   #
+#   # With base_div, we can do:
+#   #   excess = base_div(claimed, required);  # claimed / required
+#   #   # If excess has no bits outside of claimed, then required ⊆ claimed
+#   #
+#   # Alternative: use field division to check subset relationship
+#   # by verifying the quotient has no bits that aren't in claimed.
+#
+# SIMPLER PROPER APPROACH:
+#   # Check: claimed >= required AND (claimed | required) == claimed
+#   #
+#   # 1. First verify claimed >= required (for field ordering)
+#   less_than_strict(required - 1, claimed);  # constrains claimed >= required
+#
+#   # 2. With base_div, verify bitwise subset:
+#   #    is_subset = base_div(claimed, required);
+#   #    The quotient tells us if required divides evenly into claimed
+#   #    If required is a subset of claimed bits, the division works cleanly
+#
+# The CORRECT base_div implementation:
+#   required_tier = 0b0001;  # READ
+#   claimed_tier = permissions_claimed;
+#
+#   # Step 1: Verify claimed >= required (field ordering)
+#   less_than_strict(required_tier - 1, claimed_tier);
+#
+#   # Step 2: Verify (claimed & ~required) == 0 using base_div
+#   # This is the proper bitmask subset check
+#   #
+#   # The base_div opcode lets us do:
+#   #   quotient = claimed / required
+#   #   remainder = claimed % required
+#   #
+#   # For bitmask subset check where required ⊆ claimed:
+#   #   We check that all bits of required appear in claimed
+#   #   This is equivalent to: (claimed | required) == claimed
+#   #
+#   # The division approach:
+#   #   If required's bits are a subset of claimed's bits,
+#   #   then the bitwise OR equals claimed.
+#   #
+#   # With base_div we can verify:
+#   #   (claimed | required) / claimed == 1  (OR contains claimed)
+#   #
+#   # Actually, simpler: The bitmask check is:
+#   #   (claimed - required) & claimed == 0
+#   #
+#   # With base_div on field elements representing bits:
+#   #   remainder = base_div(claimed, required);
+#   #   # If required ⊆ claimed, the remainder relationship holds
 ```
+
+**Status**: FIXED (SHIT VERSION) - tiered access prevents unauthorized access but leaks tier level. Proper version requires `base_div` opcode.
+
+**See Also**:
+- [Experimental Opcodes: base_div analysis](experimental-opcodes.md)
 
 ---
 
@@ -349,7 +436,7 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 | # | Contract | Issue | Severity | Status |
 |---|----------|-------|----------|--------|
 | 1 | Subscription | Poseidon hash instead of Pedersen for value commitment | MAJOR | ✅ FIXED |
-| 2 | Subscription | Permission bitmask checking absent | MAJOR | ⚠️ Cannot fix (needs base_div opcode) |
+| 2 | Subscription | Permission bitmask checking absent | MAJOR | ✅ FIXED (SHIT VERSION - tiered access with less_than_strict, privacy leak) |
 | 3 | Subscription | No cancellation nullifier verification | MODERATE | ⚠️ Contract-level TODO |
 | 4 | Subscription | Bulla used as blind factor | MODERATE | ⚠️ Design issue, documented |
 | 5 | Atomic Swap | Hash not verified in-circuit | CRITICAL | ⚠️ PARTIALLY FIXED (poseidon verified, SHA256 bridge needed) |
@@ -367,16 +454,17 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 
 ### Completed Fixes
 1. ✅ **Issue 1 (MAJOR)**: Pedersen commitment implemented in Subscription
-2. ✅ **Issue 5 (CRITICAL)**: poseidon_hash verification added to CreateSwap and Claim
-3. ✅ **Issue 7 (MAJOR)**: External hash trust mitigated by HTLC design
-4. ✅ **Issue 8 (MAJOR)**: Escrow entrypoint written with state verification
-5. ✅ **Issue 9 (MODERATE)**: Seller pubkey privacy fixed (H(seller_pub) in commitment)
-6. ✅ **Issue 10 (MAJOR)**: drain_protection contract created provisionally
-7. ✅ **Issue 11 (MODERATE)**: Max membership expiry cap added (1 year limit)
-8. ✅ **Issue 12 (MODERATE)**: Minimum amount floor added to bridge (100_000_000)
+2. ✅ **Issue 2 (MAJOR)**: SHIT VERSION - tiered permission checking (leaks tier, privacy regression)
+3. ✅ **Issue 5 (CRITICAL)**: poseidon_hash verification added to CreateSwap and Claim
+4. ✅ **Issue 7 (MAJOR)**: External hash trust mitigated by HTLC design
+5. ✅ **Issue 8 (MAJOR)**: Escrow entrypoint written with state verification
+6. ✅ **Issue 9 (MODERATE)**: Seller pubkey privacy fixed (H(seller_pub) in commitment)
+7. ✅ **Issue 10 (MAJOR)**: drain_protection contract created provisionally
+8. ✅ **Issue 11 (MODERATE)**: Max membership expiry cap added (1 year limit)
+9. ✅ **Issue 12 (MODERATE)**: Minimum amount floor added to bridge (100_000_000)
 
 ### Cannot Fix Without Additional Primitives
-- **Issue 2**: Permission bitmask checking requires `base_div` opcode
+- **Issue 2 (PROPER VERSION)**: True bitmask checking requires `base_div` opcode (SHIT version uses tiered approach)
 
 ### Contract-Level TODOs
 

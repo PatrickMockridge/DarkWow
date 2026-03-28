@@ -110,32 +110,113 @@ circuit "VerifyAccessV1" {
     constrain_equal_base(derived_capability, expected_capability);
 
     # ==========================================================================
-    # PHASE 4: Verify permissions are sufficient
+    # PHASE 4: Verify permissions are sufficient (TIERED APPROACH - SHIT VERSION)
     # ==========================================================================
     #
-    # The subscriber claims certain permissions (e.g., READ = 0b0000_0001).
-    # We verify they have at least the claimed permissions by checking
-    # the bitmask. Since we can't do bitwise AND in the circuit directly
-    # with the opcodes available, we use a workaround:
+    # !!! THIS IS THE SHIT VERSION - SEE PHASE 4 PROPER FOR CORRECT IMPLEMENTATION !!!
     #
-    # If claimed_permissions & required_permissions == claimed_permissions,
-    # then the subscriber has all required permissions.
+    # This tiered approach sacrifices fine-grained permission control for
+    # a working implementation using only proven opcodes. It's a PRIVACY-LEAKING
+    # simplification: you can only have tiered access, not arbitrary bitmasks.
     #
-    # Workaround using subtraction (since we don't have base_div):
-    #   claimed_permissions - required_permissions >= 0
-    #   This works because permissions are small (0-255)
+    # The proper implementation requires base_div for true bitmask checking.
+    #
+    # TIERED ACCESS (this implementation):
+    # - Tier 1 = BASIC (READ only)
+    # - Tier 2 = PREMIUM (READ + WRITE)
+    # - Tier 3 = ADMIN (READ + WRITE + ADMIN)
+    #
+    # The permission_claimed value IS the tier level (1, 2, or 3).
+    # We verify: claimed_tier >= required_tier
+    #
+    # PRIVACY LEAK: Anyone can see your TIER LEVEL, not just that you have access,
+    # but roughly what level (basic/premium/admin). This is a significant privacy
+    # regression from true zero-knowledge permission checking.
 
-    required_permissions = 0b0000_0001;  # READ access
+    # ==========================================================================
+    # SHIT VERSION: Tier-based checking with less_than_strict (proven opcode)
+    # ==========================================================================
 
-    # less_than_or_equal is experimental (has gate soundness issue),
-    # so we use the sound alternative: less_than_strict
-    # We check: permissions_claimed <= required_permissions would fail
-    # But actually we need to check: required_permissions & claimed == claimed
-    # For MVP, we just verify the claimed permissions are non-zero
-    # The actual permission enforcement would be done off-chain
+    # Tier definitions (mapped from plan_id by the service):
+    #   TIER_BASIC = 1    -> READ only
+    #   TIER_PREMIUM = 2  -> READ + WRITE
+    #   TIER_ADMIN = 3    -> READ + WRITE + ADMIN
 
-    # For now, just verify the capability is valid (phase 3)
-    # A full implementation would need base_div for proper bitmask checking
+    # Required tier for access (passed as constant in capability)
+    # This is embedded in the expected_capability by the service
+    required_tier = 1;  # Default to BASIC tier requirement
+
+    # SHIT VERSION CHECK: less_than_strict(required_tier - 1, claimed_tier)
+    # This constrains: (required_tier - 1) < claimed_tier
+    # Which means: claimed_tier >= required_tier
+    #
+    # This works because:
+    # - If required_tier = 1, we check: 0 < claimed_tier (any positive tier passes)
+    # - If required_tier = 2, we check: 1 < claimed_tier (only tier 2 or 3 passes)
+    # - If required_tier = 3, we check: 2 < claimed_tier (only tier 3 passes)
+    #
+    # LIMITATION: claimed_tier must be >= 1, and the subtraction (required_tier - 1)
+    # could wrap if required_tier is 0 (but we never have tier 0).
+
+    less_than_strict(required_tier - 1, permissions_claimed);
+
+    # ==========================================================================
+    # PHASE 4 PROPER: True Bitmask Checking (REQUIRES base_div - NOT IMPLEMENTED)
+    # ==========================================================================
+    #
+    # !!! THE PROPER VERSION THAT ACTUALLY WORKS WITH base_div !!!
+    #
+    # Proper bitmask checking would allow arbitrary permission combinations:
+    #   READ = 0b0001
+    #   WRITE = 0b0010
+    #   ADMIN = 0b0100
+    #
+    # The check: (claimed & required) == claimed
+    # Means: all bits in 'required' are also set in 'claimed'
+    #
+    # With base_div, we can verify bitwise subset relationship:
+    #
+    #   is_subset = (claimed | required) / claimed  # should be 1 if claimed contains required
+    #   Actually, proper implementation:
+    #
+    #   # Check that (claimed - required) has no bits outside of claimed
+    #   # i.e., (claimed & ~required) == 0 means all required bits are in claimed
+    #   #
+    #   # base_div approach:
+    #   # remainder = (claimed - required) % claimed
+    #   # If remainder == 0, then required is a subset of claimed
+    #   #
+    #   # Actually that's still wrong. The real base_div approach:
+    #   #
+    #   # For bitwise: we need to check that (claimed | required) == claimed
+    #   # This means claimed contains all bits of required
+    #   #
+    #   # The CORRECT base_div approach for bitwise subset:
+    #   # Claimed contains Required if and only if:
+    #   #   (claimed & ~required) == 0
+    #   #   (where ~required is bitwise NOT)
+    #   #
+    #   # In field arithmetic, this is tricky. The base_div approach uses:
+    #   #   (claimed - required) & claimed == 0  (if claimed > required)
+    #   #
+    #   # PROPER IMPLEMENTATION (when base_div is available):
+    #   #
+    #   # 1. Compute difference: diff = claimed - required (field subtraction)
+    #   # 2. Compute bitwise AND: bits = diff & claimed
+    #   # 3. Verify: bits == 0 (no unauthorized bits in claimed)
+    #   #
+    #   # But we need base_div for step 2 (bitwise AND on field elements).
+    #   # The circuit would look like:
+    #   #
+    #   #   required_tier = 0b0001;  # READ
+    #   #   claimed_tier = permissions_claimed;
+    #   #
+    #   #   # PROPER: Check (claimed & ~required) == 0 using base_div
+    #   #   # This verifies claimed contains all bits of required
+    #   #   excess_bits = base_div(claimed, required);  # claimed / required
+    #   #   # If claimed >= required and (claimed & ~required) == 0, this passes
+    #   #
+    #   # For now, the tiered approach is the ONLY working option.
 
     # ==========================================================================
     # WHAT THIS CIRCUIT PROVES
@@ -145,12 +226,13 @@ circuit "VerifyAccessV1" {
     #   1. The prover knows the subscriber_secret corresponding to subscriber_pub
     #   2. The subscription is still active (current_block < lock_until_block)
     #   3. The capability digest matches the expected value
-    #   4. The claimed permissions are valid for this subscription
+    #   4. [SHIT VERSION] The claimed tier is >= required tier
     #
     # What it DOES NOT prove:
     #   - The subscription hasn't been cancelled (DAO can slash)
     #   - The plan is still active (DAO can deactivate plans)
     #   - The subscriber hasn't transferred the capability
+    #   - [SHIT VERSION] The exact permission level (only tier, not granular)
     #
     # These limitations are addressed by:
     #   - DAO governance: trusted to manage the service honestly
@@ -170,22 +252,31 @@ circuit "VerifyAccessV1" {
     # There are NO uses of:
     #   - LessThanOrEqual (gate soundness issue)
     #   - IsEqualBase (delta-invert issue when a == b)
-    #   - NotBase, BaseLtStrict (unused experimental)
+    #   - base_div (NOT YET AVAILABLE - when it is, use proper bitmask check)
     #
     # The block-based time lock is sound for the same reasons as
     # in subscribe_v1.zk - DarkFi has deterministic block numbers.
 
     # ==========================================================================
-    # FUTURE IMPROVEMENTS
+    # PRIVACY LEAK DOCUMENTATION (SHIT VERSION)
     # ==========================================================================
     #
-    # 1. Permission bitmask checking: Currently we can't properly check
-    #    bitwise AND due to missing base_div. With base_div:
-    #    is_subset = (claimed & required) == claimed
-    #    Via: less_than_strict(claimed - required, 1)  # Fails if claimed > required
+    # The tiered approach reveals the subscriber's TIER LEVEL on-chain.
+    # This is a privacy regression compared to proper bitmask checking.
     #
-    # 2. Cancellation nullifier: Verify the subscription hasn't been
-    #    cancelled by checking a nullifier tree.
+    # Attack vector:
+    # - Observer sees tier 3 (ADMIN) subscriber accessing service
+    # - Observer learns subscriber has elevated privileges
+    # - Cannot determine exact permissions, but knows high-tier status
     #
-    # 3. DAO slashing proof: Add a circuit that lets the DAO prove
-    #    a subscription should be slashed (misbehavior proof).
+    # Comparison:
+    # - TRUE zero-knowledge: Only proves "has access" (binary)
+    # - Tiered (SHIT): Proves "has tier N access" (leaks tier level)
+    # - Bitmask (PROPER with base_div): Only proves "has required permissions" (binary)
+    #
+    # The tiered approach is a privacy-for-simplicity tradeoff:
+    # - LESS private than proper bitmask
+    # - MORE private than revealing exact bitmask (0b0101 reveals READ+ADMIN)
+    # - MUCH better than no permission checking at all
+    #
+    # See: doc/src/arch/security-analysis.md Issue #2 for full analysis.

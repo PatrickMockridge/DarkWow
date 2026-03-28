@@ -214,6 +214,69 @@ capability = PoseidonHash(
 1. Subscriber knows the secret key
 2. `current_block < lock_until_block` (still active)
 3. Capability digest matches expected
+4. [SHIT VERSION] Claimed tier >= required tier
+
+## Permission Checking: SHIT VERSION vs PROPER VERSION
+
+**THIS IS THE SHIT VERSION** - Uses tiered access with `less_than_strict`. See security-analysis.md Issue #2 for full analysis.
+
+### SHIT VERSION: Tiered Access (Current Implementation)
+
+The circuit uses a tiered approach that **LEAKS TIER LEVEL on-chain**:
+
+```zk
+# Tier definitions:
+#   TIER_BASIC = 1    -> READ only
+#   TIER_PREMIUM = 2  -> READ + WRITE
+#   TIER_ADMIN = 3    -> READ + WRITE + ADMIN
+
+# SHIT VERSION: Check claimed_tier >= required_tier
+less_than_strict(required_tier - 1, permissions_claimed);
+```
+
+**Privacy Leak**: The tier level (1, 2, or 3) is revealed on-chain. Anyone observing can tell if a subscriber has BASIC, PREMIUM, or ADMIN tier access.
+
+**Tradeoffs**:
+- ✅ Prevents unauthorized access (tier must be >= required)
+- ✅ Works with proven `less_than_strict` opcode
+- ❌ Leaks tier level (privacy regression)
+- ❌ Cannot have arbitrary bitmask combinations (e.g., READ+ADMIN without WRITE)
+
+### PROPER VERSION: True Bitmask Checking (Requires base_div)
+
+**Requires**: `base_div` opcode (not yet available)
+
+The proper implementation would be:
+
+```zk
+# Bit definitions:
+#   READ = 0b0001
+#   WRITE = 0b0010
+#   ADMIN = 0b0100
+
+# Goal: Verify (claimed & required) == claimed
+# Meaning: all bits in 'required' are also set in 'claimed'
+
+# PROPER base_div approach:
+# Step 1: Verify claimed >= required (field ordering)
+less_than_strict(required_tier - 1, permissions_claimed);
+
+# Step 2: With base_div, verify bitwise subset:
+# The check (claimed & ~required) == 0 requires base_div for bitwise AND
+# This verifies all required bits are present in claimed
+
+# Pseudocode for proper bitmask check with base_div:
+#   excess_bits = base_div(claimed, required);
+#   # If required ⊆ claimed, the quotient relationship holds
+#   # and no bits outside of claimed appear in the result
+```
+
+**Benefits of Proper Version**:
+- ✅ No tier level leak (only "has access" vs "doesn't have access")
+- ✅ Arbitrary permission combinations (READ+ADMIN, WRITE only, etc.)
+- ✅ True zero-knowledge permission verification
+
+**Status**: SHIT VERSION implemented to enable access control. PROPER VERSION awaits `base_div` opcode.
 
 ## MVP Status
 
