@@ -68,6 +68,7 @@
   - [MerkleRoot Depth Limitation](arch/merkle_depth.md)
   - [Complete Opcode Universe](arch/opcode_universe.md)
   - [Contract MVP Status](arch/mvp_status.md)
+  - [Security Analysis](arch/security-analysis.md)
 - [Smart Contracts](dev/contracts.md)
   - [Bridge Contract](dev/contracts/bridge.md)
   - [DEX Contract](dev/contracts/dex.md)
