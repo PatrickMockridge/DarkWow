@@ -133,4 +133,22 @@ circuit "PayPremium" {
     #   - DarkFi block numbers are deterministic
     #   - The constraint only verifies current_block < expiry
     #   - If expiry is in the past, the constraint fails
-}
+
+    # ==========================================================================
+    # SECURITY NOTES: ENDOWMENT DRAIN PROTECTION (CRITICAL)
+    # ==========================================================================
+    #
+    # This circuit verifies premium payments go to the endowment, but it does
+    # NOT protect against endowment drain via governance.
+    #
+    # REQUIRED CONTRACT/GOVERNANCE LEVEL SAFEGUARDS:
+    #
+    # 1. MAX_DRAWDOWN_PER_PROPOSAL: Limit withdrawal to e.g., 10% of endowment
+    # 2. TIME_LOCK_BETWEEN_LARGE_DRAWS: Minimum blocks between large withdrawals
+    # 3. EMERGENCY_HALT: Super-majority required for >50% endowment withdrawal
+    # 4. RATE_LIMITING: Per-member withdrawal limits per epoch
+    #
+    # Without these safeguards, a malicious DAO could vote to drain 100% of
+    # the endowment in a single proposal, leaving no funds for insurance.
+    #
+    # See security-analysis.md Issue #10 for full details.
