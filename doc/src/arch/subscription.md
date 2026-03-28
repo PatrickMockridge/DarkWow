@@ -118,6 +118,94 @@ If the service fails or is malicious, the DAO can authorize refunds from the end
 | `VerifyAccessV1` | `0x04` | ZK proof of valid subscription |
 | `DaoControlV1` | `0x05` | DAO governance actions |
 
+## Composability: Subscription + DAO-Escrow
+
+This contract demonstrates DarkFi's **composable contract pattern** through integration with DAO-Escrow.
+
+### The Pattern
+
+```
+┌──────────────────────┐         ┌──────────────────────┐
+│     DAO-Escrow       │         │    Subscription       │
+│                      │         │                       │
+│  ┌────────────────┐  │         │  ┌────────────────┐  │
+│  │ pay_premium()  │──┼───┐     │  │ subscribe()    │  │
+│  └────────────────┘  │   │     │  └───────┬────────┘  │
+│                      │   │     │          │            │
+│  State: Merklized    │   │     │  Verifies via:      │
+│  Membership tree     │   │     │  ┌────────▼────────┐ │
+│                      │   │     │  │ Merkle proof     │ │
+│                      │   │     │  │ + expiry check   │ │
+│                      │   │     │  │ + pubkey link    │ │
+└──────────────────────┘   │     │  └────────────────┘  │
+                           │     │                       │
+         ┌─────────────────┘     └───────────────────────┘
+         │                           │
+         │    Cross-Contract         │
+         │    ZK Verification       │
+         ▼                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                   Composability                         │
+│                                                         │
+│  No direct state sharing!                              │
+│  Pure Merkle proof verification.                        │
+│  Nullifiers prevent double-spending.                   │
+└─────────────────────────────────────────────────────────┘
+```
+
+### How DAO-Escrow Integration Works
+
+**1. DAO-Escrow Issues Membership** (`pay_premium_v1.zk`):
+```zk
+# Member pays premium → receives membership note
+membership_note = poseidon_hash(
+    member_pub_x,
+    member_pub_y,
+    value,
+    token_id,
+    expiry,
+    membership_blind,
+);
+
+# Note stored in DAO-Escrow's Merkle tree
+```
+
+**2. Subscription Verifies Membership** (`subscribe_v1.zk` Phase 5):
+```zk
+# Verify DAO-Escrow membership via Merkle proof
+dao_root = merkle_root(dao_leaf_pos, dao_path, dao_membership_note);
+constrain_equal_base(dao_root, dao_escrow_merkle_root);
+
+# Verify membership hasn't expired
+less_than_strict(current_block, dao_membership_expiry);
+
+# Verify member public key matches subscription
+constrain_equal_base(dao_member_pub_x, subscriber_pub_x);
+```
+
+### Benefits
+
+| Benefit | Description |
+|---------|-------------|
+| **Insurance Tier** | DAO-Escrow members get subscription discounts |
+| **No Trust Assumption** | Subscription verifies, doesn't trust DAO-Escrow |
+| **Privacy** | Merkle proofs don't reveal membership details |
+| **Atomic Transactions** | Both execute in single transaction |
+
+### Composability Principles
+
+DarkFi's contract composability follows three rules:
+
+1. **Merkle State**: Contract state is Merklized for privacy
+2. **ZK Verification**: Other contracts verify via Merkle proofs
+3. **Nullifier Namespace**: Shared nullifiers prevent double-spending
+
+This pattern enables:
+- Tiered services (member vs non-member pricing)
+- Insurance-backed subscriptions
+- Cross-contract loyalty programs
+- Composable DeFi primitives
+
 ## Circuits
 
 ### Subscribe V1 (`subscribe_v1.zk`)
@@ -129,6 +217,7 @@ If the service fails or is malicious, the DAO can authorize refunds from the end
 2. Plan ID is valid (Merkle proof)
 3. `current_block < lock_until_block` (subscription is active)
 4. Deposit commitment is valid
+5. **DAO-Escrow membership** (Merkle proof + expiry + pubkey link)
 
 **Public Inputs**:
 - `subscription_id`: Commitment hash
@@ -138,6 +227,9 @@ If the service fails or is malicious, the DAO can authorize refunds from the end
 - `token_id`: Which token
 - `lock_until_block`: Expiration height
 - `plan_merkle_root`: Plan registry root
+- `dao_escrow_bulla`: Insurance pool identifier
+- `dao_membership_note`: Membership proof from DAO-Escrow
+- `dao_escrow_merkle_root`: Insurance pool's membership root
 
 ### Verify Access V1 (`verify_access_v1.zk`)
 

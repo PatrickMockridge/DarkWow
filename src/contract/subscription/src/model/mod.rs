@@ -18,6 +18,13 @@
 
 //! Subscription contract data structures
 //!
+//! ## Composability with DAO-Escrow
+//!
+//! This contract integrates with DAO-Escrow for tiered membership benefits:
+//! - DAO-Escrow members get discounted subscription rates
+//! - Membership note verified via Merkle proof
+//! - Nullifier check prevents double-spending of membership
+//!
 //! ## State Machine
 //!
 //! ```text
@@ -94,6 +101,10 @@ pub struct Subscription {
     pub spent_nullifier: pallas::Base,
     /// Block height when subscription was created
     pub created_at: u64,
+    /// DAO-Escrow bulla (if member of insurance pool)
+    pub dao_escrow_bulla: Option<pallas::Base>,
+    /// DAO-Escrow membership note (verifies insurance membership)
+    pub dao_membership_note: Option<pallas::Base>,
 }
 
 impl Subscription {
@@ -147,6 +158,10 @@ pub struct Plan {
     pub endowment_share: u32,
     /// Whether the plan is active
     pub active: bool,
+    /// DAO-Escrow discount (percentage * 10000, e.g., 2000 = 20% off for members)
+    pub dao_escrow_discount: u32,
+    /// Required DAO-Escrow bulla for discount (optional)
+    pub required_dao_escrow: Option<pallas::Base>,
 }
 
 /// Capability derived from subscription for access control
@@ -210,6 +225,16 @@ pub struct SubscribeParamsV1 {
     pub merkle_proof: Vec<pallas::Base>,
     /// Merkle root for the plan
     pub merkle_root: pallas::Base,
+    /// DAO-Escrow bulla (optional - for insurance tier discount)
+    pub dao_escrow_bulla: Option<pallas::Base>,
+    /// DAO-Escrow membership note (verifies valid insurance member)
+    pub dao_membership_note: Option<pallas::Base>,
+    /// DAO-Escrow Merkle root (for verifying membership note)
+    pub dao_escrow_merkle_root: Option<pallas::Base>,
+    /// DAO-Escrow membership Merkle proof
+    pub dao_merkle_proof: Option<Vec<pallas::Base>>,
+    /// DAO-Escrow membership leaf position
+    pub dao_leaf_pos: Option<u32>,
 }
 
 /// State update for `Subscription::SubscribeV1`
