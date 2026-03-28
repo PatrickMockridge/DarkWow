@@ -1,0 +1,17 @@
+[package]
+name = "atomic_swap_contract"
+version = "0.1.0"
+edition = "2021"
+authors = ["DarkFi contributors"]
+description = "DarkFi Atomic Swap Contract - Cross-chain HTLC swaps"
+license = "AGPL-3.0-only"
+
+[dependencies]
+darkfi-sdk = { path = "../../../sdk", features = ["no-entrypoint"] }
+darkfi_serial = { path = "../../../serial" }
+pasta = { path = "../../../pasta" }
+
+[features]
+default = ["no-entrypoint"]
+no-entrypoint = ["darkfi-sdk/no-entrypoint"]
+client = ["darkfi-sdk/client"]

@@ -1,0 +1,215 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! WASM entrypoint for the atomic swap contract
+//!
+//! ## Cross-Chain Atomic Swap
+//!
+//! This contract enables trustless cross-chain swaps via Hashed Timelock Contract.
+//!
+//! ## HTLC Flow
+//!
+//! ```
+//! DarkFi                          External Chain (e.g., Ethereum)
+//! ──────────────────────────────────────────────────────────────────
+//!
+//!  1. Alice (initiator) creates swap on DarkFi
+//!     - Locks X tokens
+//!     - hash = SHA256(secret)
+//!     - timelock = current_block + N
+//!
+//!  2. Alice sends hash to Bob on external chain              ──────────►
+//!
+//!  3. Bob verifies hash matches, creates HTLC on external chain
+//!     - Locks Y tokens
+//!     - Same hash
+//!     - timelock = current_block + N + δ (δ = verification delay)
+//!
+//!  4. Bob confirms HTLC on external chain                   ◄─────────
+//!
+//!  5. Alice sees confirmation, reveals secret on DarkFi
+//!     - secret sent via atomic_swap contract
+//!     - ClaimV1: proves knowledge of secret
+//!
+//!  6. Secret revealed on DarkFi (readable by Bob)          ◄─────────
+//!
+//!  7. Bob claims on DarkFi with secret
+//!     - funds released to Bob
+//!
+//!  8. Alice claims on external chain with secret
+//!     - funds released to Alice
+//!
+//!  If timelock expires:
+//!  - Alice refunds on DarkFi (after timelock)
+//!  - Bob refunds on external chain (after external timelock)
+//! ```
+
+use darkfi_sdk::{
+    crypto::ContractId,
+    error::ContractResult,
+    msg,
+    wasm, ContractCall,
+};
+use darkfi_serial::deserialize;
+
+use crate::{
+    model::{ClaimUpdateV1, CreateSwapUpdateV1, RefundUpdateV1},
+    AtomicSwapFunction, ATOMIC_SWAP_CONTRACT_INFO_TREE,
+    ATOMIC_SWAP_CONTRACT_SWAPS_TREE,
+};
+
+// ============================================================================
+// DATABASE KEYS
+// ============================================================================
+
+const ATOMIC_SWAP_DB_VERSION_KEY: &[u8] = b"db_version";
+
+darkfi_sdk::define_contract!(
+    init: init_contract,
+    exec: process_instruction,
+    apply: process_update,
+    metadata: get_metadata
+);
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
+/// Initialize atomic swap contract state
+///
+/// Sets up:
+/// - Info tree (version, config)
+/// - Swaps tree (active swaps)
+/// - Secrets tree (revealed secrets)
+/// - Nullifiers tree (prevents double-claim/refund)
+pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
+    msg!("[atomic_swap::init_contract] Initializing atomic swap contract");
+
+    // Initialize info tree
+    let info_db = wasm::db::db_init(cid, ATOMIC_SWAP_CONTRACT_INFO_TREE)?;
+    wasm::db::db_set(
+        info_db,
+        ATOMIC_SWAP_DB_VERSION_KEY,
+        &env!("CARGO_PKG_VERSION").as_bytes(),
+    )?;
+
+    // Initialize swaps tree
+    wasm::db::db_init(cid, ATOMIC_SWAP_CONTRACT_SWAPS_TREE)?;
+
+    // Initialize secrets tree
+    wasm::db::db_init(cid, ATOMIC_SWAP_CONTRACT_SECRETS_TREE)?;
+
+    // Initialize nullifiers tree
+    wasm::db::db_init(cid, ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
+
+    msg!("[atomic_swap::init_contract] Atomic swap contract initialized successfully");
+    Ok(())
+}
+
+// ============================================================================
+// METADATA (ZK proof verification)
+// ============================================================================
+
+/// Fetch metadata for ZK proof verification
+fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = AtomicSwapFunction::try_from(self_.data[0])?;
+
+    msg!("[atomic_swap::get_metadata] Processing function: {:?}", func);
+
+    // TODO: Implement metadata fetching for ZK proof verification
+
+    wasm::util::set_return_data(&[])
+}
+
+// ============================================================================
+// INSTRUCTION PROCESSING (state transition verification)
+// ============================================================================
+
+/// Verify state transition and produce update if valid
+fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = AtomicSwapFunction::try_from(self_.data[0])?;
+
+    msg!("[atomic_swap::process_instruction] Processing function: {:?}", func);
+
+    // TODO: Implement actual instruction processing
+
+    wasm::util::set_return_data(&[])
+}
+
+// ============================================================================
+// STATE UPDATE (write new state)
+// ============================================================================
+
+/// Write state update after successful verification
+fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
+    let func = AtomicSwapFunction::try_from(update_data[0])?;
+
+    match func {
+        AtomicSwapFunction::CreateSwapV1 => {
+            let _update: CreateSwapUpdateV1 = deserialize(&update_data[1..])?;
+            // TODO: Write swap to state tree
+            Ok(())
+        }
+        AtomicSwapFunction::ClaimV1 => {
+            let _update: ClaimUpdateV1 = deserialize(&update_data[1..])?;
+            // TODO: Mark swap as Claimed, record secret and nullifier
+            Ok(())
+        }
+        AtomicSwapFunction::RefundV1 => {
+            let _update: RefundUpdateV1 = deserialize(&update_data[1..])?;
+            // TODO: Mark swap as Refunded, record nullifier
+            Ok(())
+        }
+        AtomicSwapFunction::InitializeV1 => {
+            msg!("[atomic_swap::process_update] InitializeV1 has no update data");
+            Ok(())
+        }
+    }
+}
+
+// ============================================================================
+// HTLC LOGIC OVERVIEW
+// ============================================================================
+//
+// The actual HTLC logic will verify:
+//
+// CreateSwap:
+//   - User locks funds in contract
+//   - Hash is provided: hash = SHA256(secret)
+//   - Timelock set to prevent premature refund
+//   - Swap state = Created
+//
+// Claim:
+//   - User proves knowledge of secret
+//   - hash(secret) must equal the stored hash
+//   - State transitions: Created -> Claimed
+//   - Secret is revealed (Bob can now claim on external chain)
+//
+// Refund:
+//   - Prover verifies current_block >= timelock
+//   - User didn't claim in time
+//   - State transitions: Created -> Refunded
+//   - Emit nullifier to prevent claim after refund
+//
+// ============================================================================

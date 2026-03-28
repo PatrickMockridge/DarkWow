@@ -263,7 +263,9 @@ Ethereum                          DarkFi
     │◄────────────────────────────────│
 ```
 
-DarkFi's existing `atomic_swap` contract handles the cross-chain payment. The subscription contract integrates at step 3 - verifying the atomic swap completed before activating the subscription.
+DarkFi's `atomic_swap` contract handles the cross-chain payment. The subscription contract integrates at step 3 - verifying the atomic swap completed before activating the subscription.
+
+See [Atomic Swap Contract](atomic_swap.md) for full HTLC details.
 
 ## Integration with Existing Contracts
 
@@ -272,6 +274,7 @@ DarkFi's existing `atomic_swap` contract handles the cross-chain payment. The su
 | `money` | Token transfers for deposits and refunds |
 | `dao` | Governance for subscription parameters |
 | `dao_escrow` | Treasury and endowment fund management |
+| `atomic_swap` | Cross-chain subscription payments |
 | `atomic_swap` | Cross-chain payment settlement |
 
 ## MVP Status

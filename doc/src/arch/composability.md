@@ -234,6 +234,137 @@ Cross-contract composition follows specific patterns:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Case Study: Subscription + DAO-Escrow + Atomic Swap
+
+The Subscription contract demonstrates DarkFi's full composability stack: DAO-Escrow membership verification via Merkle proofs, block-based time locks, and cross-chain atomic swap payments.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│           Subscription + DAO-Escrow + Atomic Swap Composability              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌──────────────────────┐         ┌──────────────────────┐              │
+│  │     DAO-Escrow       │         │    Subscription      │              │
+│  │                      │         │                       │              │
+│  │  ┌────────────────┐  │         │  ┌────────────────┐  │              │
+│  │  │ pay_premium()  │──┼───┐     │  │ subscribe()    │  │              │
+│  │  └────────────────┘  │   │     │  └───────┬────────┘  │              │
+│  │                      │   │     │          │            │              │
+│  │  State: Merklized    │   │     │  Verifies via:      │              │
+│  │  Membership tree     │   │     │  ┌────────▼────────┐ │              │
+│  │                      │   │     │  │ Merkle proof   │ │              │
+│  │                      │   │     │  │ + expiry check │ │              │
+│  │                      │   │     │  │ + pubkey link  │ │              │
+│  └──────────────────────┘   │     │  └────────────────┘  │              │
+│                             │     │                       │              │
+│         ┌───────────────────┘     └───────────────────────┘              │
+│         │                           │                                      │
+│         │    Cross-Contract         │                                      │
+│         │    ZK Verification        │                                      │
+│         ▼                           ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐        │
+│  │                   Composability                               │        │
+│  │                                                             │        │
+│  │  No direct state sharing!                                   │        │
+│  │  Pure Merkle proof verification.                             │        │
+│  │  Nullifiers prevent double-spending.                         │        │
+│  └─────────────────────────────────────────────────────────────┘        │
+│                                                                          │
+│  ┌──────────────────────┐         ┌──────────────────────┐              │
+│  │    Atomic Swap       │         │    Subscription      │              │
+│  │                      │         │                       │              │
+│  │  ┌────────────────┐  │         │  ┌────────────────┐  │              │
+│  │  │ CreateSwap()   │──┼─────────┼──│ SubscribeV1()  │  │              │
+│  │  │ + HTLC        │  │         │  │ + hash link   │  │              │
+│  │  └────────────────┘  │         │  └───────┬────────┘  │              │
+│  │                      │         │          │            │              │
+│  │  External chain      │         │  Cross-chain            │              │
+│  │  funding flow        │         │  payment settlement     │              │
+│  └──────────────────────┘         └───────────────────────┘              │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Three-Mode DAO-Escrow
+
+DAO-Escrow operates in three modes, configurable at deployment:
+
+| Mode | Constant | Description | Subscription Use |
+|------|----------|-------------|------------------|
+| Escrow | `MODE_ESCROW = 0` | Pure insurance pool | Deposits held as insurance |
+| Treasury | `MODE_TREASURY = 1` | Same as DarkFi DAO | Subscription fees fund governance |
+| Treasury+Endowment | `MODE_TREASURY_ENDOWMENT = 2` | Combined treasury + endowment | Fees split: treasury + endowment share |
+
+The Subscription contract splits each payment:
+
+```rust
+struct FeeConfig {
+    treasury_share: u64,      // Goes to DAO treasury
+    endowment_share: u64,    // Goes to endowment fund
+}
+```
+
+#### Block-Based Time Locks
+
+Unlike timestamp-based locks (which require oracles), DarkFi uses deterministic block numbers:
+
+```rust
+// DAO-Escrow: membership expiry
+lock_until_block = current_block + duration_blocks;
+less_than_strict(current_block, expiry);  // Verify not expired
+
+// Subscription: subscription period
+lock_until_block = current_block + plan.duration_blocks;
+less_than_strict(current_block, lock_until_block);  // Still active
+```
+
+**Advantage**: Miners cannot manipulate block numbers the way they can timestamps.
+
+#### Cross-Chain Atomic Swap Flow
+
+```
+Ethereum                          DarkFi
+    │                                 │
+    │  1. User locks ETH in HTLC      │
+    │     hash = SHA256(secret)        │
+    │ ───────────────────────────────►│
+    │                                 │  2. Verify hash matches
+    │                                 │  3. SubscribeV1 executes
+    │                                 │     (DAO-Escrow membership
+    │                                 │      verified via Merkle)
+    │                                 │
+    │  4. Reveal secret              │  5. Subscription activated
+    │ ───────────────────────────────►│
+```
+
+The atomic swap's HTLC pattern ensures:
+- **Atomicity**: Either both chains complete, or neither
+- **Hashlock**: Only secret holder can claim
+- **Timelock**: Refund guaranteed after expiration
+
+#### Composability Principles Applied
+
+| Principle | How It's Applied |
+|-----------|------------------|
+| **Merkle State** | DAO-Escrow stores memberships in Merkle tree; Subscription verifies via Merkle proof |
+| **ZK Verification** | All three contracts use ZK proofs for authorization without revealing secrets |
+| **Nullifier Namespace** | Each contract has its own nullifier namespace; Subscription nullifier unique per subscriber |
+
+This pattern enables:
+- Tiered services (DAO-Escrow members get subscription benefits)
+- Insurance-backed subscriptions (endowment fund covers failures)
+- Cross-chain membership (atomic swap funds subscription from external chains)
+- Privacy-preserving access control (Merkle proofs don't reveal membership details)
+
+#### Contract Integration Points
+
+| From | To | Integration |
+|------|----|-------------|
+| Subscription | DAO-Escrow | `SubscribeV1` verifies DAO-Escrow membership via Merkle proof |
+| Atomic Swap | Subscription | Swap proceeds fund subscription payment; hash links swap to subscription |
+| DAO-Escrow | Subscription | Membership note proves insurance eligibility |
+
+See [Subscription Contract](subscription.md), [DAO-Escrow Contract](dao_escrow.md), and [Atomic Swap Contract](atomic_swap.md) for full details.
+
 ## SDK Primitives
 
 The DarkFi SDK provides reusable primitives for contracts:
@@ -493,9 +624,12 @@ All DarkFi contracts should support incremental transparency (see [Identity](ide
 - [Private Authorization Layer](privauth.md)
 - [zkVM Primitive Layer](zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
 - [Contract MVP Status](mvp_status.md) — blockers for each contract in the contracts folder
-- [Identity Contract](../src/contract/identity/)
-- [Bridge Contract](../src/contract/bridge/)
-- [DEX Contract](../src/contract/dex/)
-- [Stablecoin Contract](../src/contract/stablecoin/)
+- [Identity Contract](identity.md)
+- [Bridge Contract](bridge.md)
+- [DEX Contract](../dev/contracts/dex.md)
+- [Stablecoin Contract](../dev/contracts/stablecoin.md)
+- [Subscription Contract](subscription.md)
+- [DAO-Escrow Contract](dao_escrow.md)
+- [Atomic Swap Contract](atomic_swap.md)
 - [Intent AMM Proposal](https://codeberg.org/rusticml/darkfi-intent-amm-proposal)
 - [Response to PatrickM123](https://codeberg.org/rusticml/darkfi-intent-amm-proposal/src/branch/main/docs/response-to-patrickm123.md)
