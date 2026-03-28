@@ -291,7 +291,7 @@ For a full example of adding opcodes, see the [zkas bincode documentation](../..
 | Delta-invert soundness | Unresolved — may be unsound near field boundary |
 | Blast radius if broken | High — withdrawal conditions can be bypassed |
 
-**The bridge's current status**: The withdrawal circuit (`withdraw_v1.zk`) uses `constrain_equal_base` and `range_check`, not comparison opcodes. But future enhancements (fee thresholds, minimum confirmation checks) would require `LessThanOrEqual`.
+**The bridge's current status**: The withdrawal circuit (`withdraw_v1.zk`) uses `constrain_equal_base`, `range_check`, and `less_than_strict` for minimum amount check. Future enhancements (fee thresholds, token-aware minimums) would require `LessThanOrEqual` once it becomes production-ready.
 
 **What production readiness requires**:
 1. Integration test demonstrating withdrawal with all conditions enforced
@@ -578,9 +578,14 @@ No threshold needed to release funds.
 | Circuit | Status | Opcode Safety | Notes |
 |---------|--------|---------------|-------|
 | `deposit_v1.zk` | **Verified** | ✅ Only proven opcodes | Uses real `merkle_root` opcode with `MerklePath` type |
-| `withdraw_v1.zk` | **Verified** | ✅ Only proven opcodes | Uses `constrain_equal_base` |
+| `withdraw_v1.zk` | **Verified** | ✅ Only proven opcodes | Uses `constrain_equal_base` + minimum amount floor |
 
 ### Opcode Safety
+
+`withdraw_v1.zk` uses ONLY proven opcodes:
+- `poseidon_hash`, `ec_mul_base`, `ec_get_x/y` — standard operations
+- `constrain_equal_base`, `range_check` — standard constraints
+- `less_than_strict` — constrain-only comparison (sound, used for minimum amount check)
 
 `deposit_v1.zk` uses ONLY proven opcodes:
 - `poseidon_hash`, `ec_mul_base`, `ec_get_x/y` — standard operations

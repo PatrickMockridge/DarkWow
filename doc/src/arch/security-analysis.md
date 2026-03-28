@@ -359,7 +359,7 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 | 9 | Escrow | Seller public key in plaintext | MODERATE | ✅ FIXED (H(seller_pub) in commitment, circuit verifies hash) |
 | 10 | DAO-Escrow | No endowment drain protection | MAJOR | ⚠️ Provisional: drain_protection contract exists |
 | 11 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ✅ FIXED (max 1-year cap added) |
-| 12 | Bridge | Weak range check (only < 2^64) | MODERATE | ⚠️ Pre-existing contract |
+| 12 | Bridge | Weak range check (only < 2^64) | MODERATE | ✅ FIXED (min amount floor: 100_000_000) |
 
 ---
 
@@ -373,6 +373,7 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 5. ✅ **Issue 9 (MODERATE)**: Seller pubkey privacy fixed (H(seller_pub) in commitment)
 6. ✅ **Issue 10 (MAJOR)**: drain_protection contract created provisionally
 7. ✅ **Issue 11 (MODERATE)**: Max membership expiry cap added (1 year limit)
+8. ✅ **Issue 12 (MODERATE)**: Minimum amount floor added to bridge (100_000_000)
 
 ### Cannot Fix Without Additional Primitives
 - **Issue 2**: Permission bitmask checking requires `base_div` opcode
@@ -382,7 +383,6 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 - **Issue 3 (MODERATE)**: Add cancellation nullifier verification to Subscription
 - **Issue 4 (MODERATE)**: Generate separate blind factor (design issue)
 - **Issue 6 (MAJOR)**: Clarify timelock on atomic swap claim (intentional by design)
-- **Issue 12 (MODERATE)**: Add minimum amount floor to bridge
 
 ### Outstanding for DrainProtection Integration
 

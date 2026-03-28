@@ -47,6 +47,13 @@ circuit "WithdrawV1" {
     # Range proof for amount
     range_check(64, amount);
 
+    # Minimum amount check (prevents dust/zero-value griefing)
+    # TODO: This should be token-aware and use DEX price feed for 1 DAI equivalent.
+    # Pending DEX integration, using 100_000_000 as conservative dust threshold.
+    # less_than_strict(a, b) constrains a < b (constrain-only, sound)
+    minimum_withdraw = 100000000;
+    less_than_strict(minimum_withdraw, amount);
+
     # Verify leaf_index is valid for Merkle proof
     range_check(4, leaf_index);
 }
