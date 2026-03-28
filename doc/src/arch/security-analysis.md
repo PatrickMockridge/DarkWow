@@ -589,9 +589,121 @@ None of the unofficial contracts have formal verification. Complex cryptographic
 
 Several circuits reference other contracts (Subscription → DAO-Escrow, Atomic Swap → Subscription) but integration tests across contract boundaries are minimal or absent.
 
-### Issue 15: Opcode Soundness Tradeoffs
+### Issue 15: Opcode Soundness Tradeoffs — Formal Analysis of Injection Attacks
 
-The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known soundness issues, choosing `less_than_strict` as a safer alternative. This limits functionality (e.g., permission bitmask checking) but avoids critical vulnerabilities.
+The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known soundness issues, choosing `less_than_strict` as a safer alternative. This section provides a formal characterization of the underlying vulnerability class.
+
+#### Formal Model of a ZK Circuit
+
+Let a circuit be defined over a finite field `F`. It has:
+
+- **Public inputs** `x ∈ F^m` (known to verifier)
+- **Witness inputs** `w ∈ F^n` (provided by prover, kept secret)
+- **Auxiliary variables** `v ∈ F^r` (internal wires)
+- **Constraints** `C_1, ..., C_k`, each a polynomial equation in `x, w, v` that must hold in `F`
+- **Public outputs** `y ∈ F^ℓ`, computed as a deterministic function of `x, w, v`
+
+The intended semantic relation is:
+
+```
+R(x, w, y) = 1  iff  the prover knows a witness satisfying the constraints and yielding output y
+```
+
+A **soundness violation** occurs if there exists a prover strategy that, given `x`, can produce `w, v, y` such that all constraints `C_i` hold, but the intended relation `R` is false.
+
+#### Injection Attack Definition
+
+An **injection attack** is a soundness violation where the prover, by choosing specific witness values, forces the circuit to accept an output `y` that does not correspond to the intended function of the inputs, even though all constraints are satisfied.
+
+Formally, let `F: F^m × F^n → F^ℓ` be the intended function that the circuit should compute (e.g., `LessThanOrEqual(a, b)`). The constraints `C_i` are meant to enforce that for all `x, w` satisfying them, `y = F(x, w)`.
+
+An injection attack exists if there exist `x, w, v, y` with:
+
+1. `C_i(x, w, v) = 0` for all `i` (constraints satisfied)
+2. `y ≠ F(x, w)` (output does not match intended function)
+3. The prover can compute such a tuple
+
+Equivalently: the constraint system is **underdetermined** with respect to the output — the output `y` is not fully constrained by `x` and the constraints; there is residual freedom for the prover to manipulate it.
+
+#### Concrete Instantiation: LessThanOrEqual Gate Soundness
+
+The gate is implemented as:
+
+```
+a_offset = out * (b - a) + (1 - out) * (a - b - 1)
+out * (1 - out) = 0  # out must be 0 or 1
+a_offset ∈ [0, 2^253)  # range check
+```
+
+The intended function: `LTE(a, b) = 1` if `a ≤ b`, else `0`.
+
+**The attack**: The prover can choose `out` and `a_offset` arbitrarily as long as the equations hold. When `a ≤ b`, the prover sets `out = 0` and `a_offset = a - b - 1`. The gate equation becomes:
+
+```
+a_offset = 0 * (b - a) + 1 * (a - b - 1) = a - b - 1
+```
+
+Since `a ≤ b`, `a - b - 1` is negative or zero. The range check `[0, 2^253)` is applied to the field element's integer representative. If the value falls within the range (after potential wrapping), both constraints are satisfied — but `out = 0` incorrectly indicates `a > b`.
+
+**Result**: The circuit accepts `out = 0` even when `a ≤ b`, violating the intended semantics.
+
+#### Concrete Instantiation: IsEqualBase Delta-Invert
+
+The gate:
+
+```
+δ = a - b
+δ_inv = field_inverse(δ)
+δ * δ_inv = 1  (if δ ≠ 0)
+```
+
+A selector gate disables the multiplication constraint when `δ = 0`. In that case, `δ_inv` is **unconstrained**.
+
+The intended function: `EQ(a, b) = 1` iff `a = b`.
+
+**The attack**: When `a = b`, the prover can set `δ_inv` to any value. If the circuit later uses `δ_inv` in a way that influences the output, the prover can inject arbitrary behavior. The delta-invert is free when `a = b`, allowing manipulation of dependent computations.
+
+#### Generalizing: The Injection Class
+
+These attacks share a common pattern:
+
+| Pattern | Description |
+|---------|-------------|
+| **Edge-Case Gap** | A constraint that should cover all cases has a branch where the constraint is skipped (e.g., when a divisor would be zero) |
+| **Unconstrained Variable** | In the skipped branch, a variable that participates in later constraints is left free |
+| **Output Influence** | The free variable affects the final output or a subsequent constraint |
+| **Prover Control** | The prover can choose any value for that free variable |
+
+In SQL injection, the attacker injects code that alters the query's logical structure. Here, the attacker injects values into underconstrained witness variables, altering the circuit's logical outcome.
+
+#### Formal Characterization
+
+Let `C(x, w, v, y) = 0` be the constraint system. Let `S(x)` be the set of all `(w, v, y)` satisfying `C`. The circuit is said to implement function `F` if:
+
+```
+∀x, ∀(w, v, y) ∈ S(x), y = F(x, w)
+```
+
+An injection attack exists iff there exists `x` and two distinct tuples `(w, v, y), (w', v', y') ∈ S(x)` with `y ≠ y'`. The solution set is not single-valued in `y` for given `x` — the prover can choose which output to produce.
+
+#### Prevention
+
+To prevent injection attacks:
+
+1. **Every variable must be uniquely determined** by the inputs or by earlier constraints
+2. **Edge cases must be handled by constraints** that also determine the variable's value, not by skipping constraints
+3. **The output must be a function of the inputs only** — no residual degrees of freedom in the solution space
+
+In practice:
+- Use explicit `is_zero` gadgets that correctly constrain the inverse even when input is zero
+- For comparisons, design the gate so the output is uniquely determined by the arithmetic relation
+- Add redundant checks for high-value operations
+
+#### Conclusion
+
+The vulnerability class is **injection**: the prover can inject arbitrary values into underconstrained parts of the circuit, altering the output. These are not "minor soundness issues" but fundamental gaps that must be fixed for production use.
+
+The `less_than_strict` opcode used throughout DarkFi's contracts avoids these issues because it is **constrain-only** — it does not produce a usable output value, only a boolean constraint. This eliminates the underdetermined variable problem entirely.
 
 ---
 
