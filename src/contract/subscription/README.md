@@ -218,10 +218,16 @@ capability = PoseidonHash(
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Subscribe circuit | ✅ Complete | DAO-Escrow integration working |
-| VerifyAccess circuit | ⚠️ Skeleton | Permission checks need `base_div` |
-| DAO treasury integration | 🆕 TODO | Integrate with `dao_escrow` |
-| Endowment fund | 🆕 TODO | Separate DAO or built-in |
+| Subscribe circuit | ✅ Complete | DAO-Escrow integration (all 3 modes) |
+| VerifyAccess circuit | ✅ Complete | Block-based expiry, Merkle proof |
+| DAO treasury integration | ✅ Complete | Via DAO-Escrow `MODE_TREASURY` |
+| Endowment fund | ✅ Complete | Via DAO-Escrow `MODE_TREASURY_ENDOWMENT` |
+| Escrow-only mode | ✅ Complete | Via DAO-Escrow `MODE_ESCROW` |
+
+**All three DAO-Escrow modes are supported:**
+- `MODE_ESCROW`: Pure insurance for subscription deposits
+- `MODE_TREASURY`: Treasury for subscription fees
+- `MODE_TREASURY_ENDOWMENT`: Treasury + Endowment combined
 
 ## See Also
 

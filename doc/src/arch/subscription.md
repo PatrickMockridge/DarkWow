@@ -278,11 +278,17 @@ DarkFi's existing `atomic_swap` contract handles the cross-chain payment. The su
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Subscribe circuit | ⚠️ Skeleton | Placeholder Pedersen verification |
-| VerifyAccess circuit | ⚠️ Skeleton | Permission checks need `base_div` |
-| DAO treasury integration | 🆕 TODO | Integrate with `dao_escrow` |
-| Endowment fund | 🆕 TODO | Separate DAO or built-in |
+| Subscribe circuit | ✅ Complete | DAO-Escrow integration (all 3 modes) |
+| VerifyAccess circuit | ✅ Complete | Block-based expiry, Merkle proof |
+| DAO treasury integration | ✅ Complete | Via DAO-Escrow `MODE_TREASURY` |
+| Endowment fund | ✅ Complete | Via DAO-Escrow `MODE_TREASURY_ENDOWMENT` |
+| Escrow-only mode | ✅ Complete | Via DAO-Escrow `MODE_ESCROW` |
 | Cross-chain atomic swap | 🆕 TODO | Integration with `atomic_swap` |
+
+**All three DAO-Escrow modes supported:**
+- `MODE_ESCROW`: Pure insurance for subscription deposits
+- `MODE_TREASURY`: Treasury for subscription fees
+- `MODE_TREASURY_ENDOWMENT`: Treasury + Endowment combined
 
 ## Security Considerations
 
