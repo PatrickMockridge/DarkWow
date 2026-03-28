@@ -198,24 +198,57 @@ Uint64 timelock,
 
 ---
 
-#### Issue 9: Seller Public Key Stored in Plaintext (MODERATE)
+#### Issue 9: Seller Public Key Stored in Plaintext (MODERATE) — FIXED
 
-**Location**: [escrow/claim_v1.zk:36-37](file://../../src/contract/escrow/proof/claim_v1.zk#L36-L37)
+**Location**:
+- [escrow/create_escrow_v1.zk](file://../../src/contract/escrow/proof/create_escrow_v1.zk)
+- [escrow/claim_v1.zk](file://../../src/contract/escrow/proof/claim_v1.zk)
 
-**Problem**: The escrow's seller public key is revealed as a witness:
+**Problem (Original)**: The escrow's seller public key was revealed as a public input in claim, compromising seller privacy.
 
+**Fix Applied**:
+
+1. **create_escrow_v1.zk**: Store `H(seller_pub)` instead of `seller_pub_x/y` in the commitment:
 ```zk
-# Stored seller public key from escrow (revealed for verification)
-Base escrow_seller_pub_x,
-Base escrow_seller_pub_y,
+seller_commitment = poseidon_hash(seller_pub_x, seller_pub_y);
+C = poseidon_hash(
+    buyer_pub_x,
+    buyer_pub_y,
+    seller_commitment,
+    value,
+    token_id,
+    timeout,
+);
+constrain_instance(C);
+constrain_instance(seller_commitment);
 ```
 
-**Impact**:
-- The seller's identity is revealed when claiming
-- Privacy is compromised compared to a zero-knowledge verification
-- The buyer learns the seller's public key
+2. **claim_v1.zk**: Verify via poseidon_hash without exposing seller_pub on-chain:
+```zk
+# Derive seller public key from secret
+seller_pub = ec_mul_base(seller_secret, NULLIFIER_K);
+seller_pub_x = ec_get_x(seller_pub);
+seller_pub_y = ec_get_y(seller_pub);
 
-**Recommendation**: Derive the seller public key from the escrow_id and seller_secret using the same key derivation scheme, rather than storing it in plaintext.
+# PRIVACY: Verify seller_commitment without revealing seller_pub on-chain
+seller_commitment_computed = poseidon_hash(seller_pub_x, seller_pub_y);
+constrain_eq(seller_commitment_computed, escrow_seller_commitment);
+
+# Public inputs: escrow_id, seller_commitment, spent_nullifier (NOT seller_pub_x/y)
+```
+
+**Why This is NOT Circular**:
+
+The circular dependency was about `H(seller_secret)`, not `H(seller_pub)`:
+- `seller_pub` is a PUBLIC KEY - the buyer KNOWS it at creation time
+- `seller_secret` is the PRIVATE KEY - the seller hasn't shared it yet
+
+The buyer receives `seller_pub` from the seller out-of-band, computes `H(seller_pub)`, and stores that in the commitment. At claim time, the seller proves knowledge of `seller_secret` (which derives to `seller_pub`) and the circuit verifies `H(seller_pub)` matches without ever exposing `seller_pub` on-chain.
+
+**Impact** (resolved):
+- Seller's public key is NOT revealed on-chain
+- Claim verification is still binding (proves seller knows seller_secret)
+- Privacy preserved without changing the trust model
 
 ---
 
@@ -323,7 +356,7 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 | 6 | Atomic Swap | No timelock check on claim | MAJOR | ℹ️ May be intentional (timelock for refund only) |
 | 7 | Atomic Swap | External hash function trust | MAJOR | ✅ MITIGATED (each chain verifies own hash) |
 | 8 | Escrow | No state verification on claim | MAJOR | ⚠️ Entrypoint written, state check in contract |
-| 9 | Escrow | Seller public key in plaintext | MODERATE | ⚠️ Entrypoint written, design issue |
+| 9 | Escrow | Seller public key in plaintext | MODERATE | ✅ FIXED (H(seller_pub) in commitment, circuit verifies hash) |
 | 10 | DAO-Escrow | No endowment drain protection | MAJOR | ⚠️ Provisional: drain_protection contract exists |
 | 11 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ✅ FIXED (max 1-year cap added) |
 | 12 | Bridge | Weak range check (only < 2^64) | MODERATE | ⚠️ Pre-existing contract |
@@ -337,8 +370,9 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 2. ✅ **Issue 5 (CRITICAL)**: poseidon_hash verification added to CreateSwap and Claim
 3. ✅ **Issue 7 (MAJOR)**: External hash trust mitigated by HTLC design
 4. ✅ **Issue 8 (MAJOR)**: Escrow entrypoint written with state verification
-5. ✅ **Issue 10 (MAJOR)**: drain_protection contract created provisionally
-6. ✅ **Issue 11 (MODERATE)**: Max membership expiry cap added (1 year limit)
+5. ✅ **Issue 9 (MODERATE)**: Seller pubkey privacy fixed (H(seller_pub) in commitment)
+6. ✅ **Issue 10 (MAJOR)**: drain_protection contract created provisionally
+7. ✅ **Issue 11 (MODERATE)**: Max membership expiry cap added (1 year limit)
 
 ### Cannot Fix Without Additional Primitives
 - **Issue 2**: Permission bitmask checking requires `base_div` opcode
@@ -348,7 +382,6 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 - **Issue 3 (MODERATE)**: Add cancellation nullifier verification to Subscription
 - **Issue 4 (MODERATE)**: Generate separate blind factor (design issue)
 - **Issue 6 (MAJOR)**: Clarify timelock on atomic swap claim (intentional by design)
-- **Issue 9 (MODERATE)**: Seller pubkey in plaintext (design issue - circular dependency)
 - **Issue 12 (MODERATE)**: Add minimum amount floor to bridge
 
 ### Outstanding for DrainProtection Integration

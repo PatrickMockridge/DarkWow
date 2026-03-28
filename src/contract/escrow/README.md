@@ -108,9 +108,10 @@ Three variants exist in the wild. DarkFi uses Variant 3:
 ### create_escrow_v1.zk
 
 Proves the escrow commitment is correctly formed:
-- **Public inputs**: `commitment = H(buyer_pub.x, buyer_pub.y, seller_pub.x, seller_pub.y, value, token_id, timeout)`
+- **Public inputs**: `commitment = H(buyer_pub.x, buyer_pub.y, H(seller_pub), value, token_id, timeout)`
 - **Private inputs**: `buyer_pub_x, buyer_pub_y, seller_pub_x, seller_pub_y, value, token_id, timeout, buyer_secret`
 - **Verification**: Public key derivation + commitment hash
+- **Privacy**: `H(seller_pub)` hides seller_pub on-chain
 
 ### fund_v1.zk
 
@@ -122,11 +123,12 @@ Proves the value commitment is valid:
 ### claim_v1.zk
 
 Proves the seller legitimately claims funds:
-- **Public inputs**: `escrow_id`, `seller_pub_x`, `seller_pub_y`, `spent_nullifier`
+- **Public inputs**: `escrow_id`, `seller_commitment = H(seller_pub)`, `spent_nullifier`
 - **Private inputs**: `seller_secret`
 - **Verification**:
-  1. `seller_pub = seller_secret * G` matches escrow.seller_pubkey
+  1. `seller_pub = seller_secret * G` internally verified against `seller_commitment`
   2. `spent_nullifier = H(escrow_id, seller_secret)`
+- **Privacy**: seller_pub is NOT exposed on-chain (verified via poseidon_hash)
 
 ### refund_v1.zk
 

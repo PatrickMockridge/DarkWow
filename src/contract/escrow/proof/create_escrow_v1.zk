@@ -9,8 +9,13 @@ field = "pallas";
 # - Seller's public key is correctly formed
 # - Escrow commitment is correctly computed from public parameters
 #
+# PRIVACY IMPROVEMENT: seller_pub is NOT exposed in the commitment.
+# Instead, we store H(seller_pub) which allows private verification
+# at claim time without revealing the seller's public key on-chain.
+#
 # Public Inputs (constrain_instance):
-#   - commitment = H(buyer_pub.x, buyer_pub.y, seller_pub.x, seller_pub.y, value, token_id, timeout)
+#   - commitment = H(buyer_pub.x, buyer_pub.y, H(seller_pub), value, token_id, timeout)
+#   - seller_commitment = H(seller_pub.x, seller_pub.y)
 #
 # Witnesses:
 #   - buyer_pub_x, buyer_pub_y: Buyer's public key coordinates
@@ -53,18 +58,30 @@ circuit "CreateEscrow" {
     constrain_eq(buyer_pub_x, buyer_pub_computed_x);
     constrain_eq(buyer_pub_y, buyer_pub_computed_y);
 
+    # ==========================================================================
+    # PRIVACY: Compute seller commitment (hides seller_pub on-chain)
+    # ==========================================================================
+    #
+    # Instead of including seller_pub directly in the commitment (which would
+    # reveal the seller's public key on-chain), we include H(seller_pub).
+    #
+    # At claim time, the circuit verifies H(seller_pub) privately without
+    # exposing seller_pub_x/y on-chain.
+
+    seller_commitment = poseidon_hash(seller_pub_x, seller_pub_y);
+
     # Compute escrow commitment
-    # C = H(buyer_pub.x, buyer_pub.y, seller_pub.x, seller_pub.y, value, token_id, timeout)
+    # C = H(buyer_pub.x, buyer_pub.y, H(seller_pub), value, token_id, timeout)
     C = poseidon_hash(
         buyer_pub_x,
         buyer_pub_y,
-        seller_pub_x,
-        seller_pub_y,
+        seller_commitment,
         value,
         token_id,
         timeout,
     );
 
-    # Expose commitment as public input
+    # Expose commitment and seller commitment as public inputs
     constrain_instance(C);
+    constrain_instance(seller_commitment);
 }

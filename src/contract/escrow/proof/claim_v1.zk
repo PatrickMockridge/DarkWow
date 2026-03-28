@@ -6,8 +6,12 @@ field = "pallas";
 #
 # This circuit proves:
 # - Seller knows seller_secret
-# - seller_pubkey derived from seller_secret matches escrow.seller_pubkey
+# - seller_pubkey derived from seller_secret matches escrow.seller_pubkey via H(seller_pub)
 # - The escrow is in Funded state (not already spent) - CONTRACT ENFORCED
+#
+# PRIVACY IMPROVEMENT: seller_pub is NOT exposed on-chain.
+# Instead, we verify H(seller_pub) matches the escrow's stored commitment.
+# This allows private verification at claim time without revealing the seller's public key.
 #
 # This uses the Hashed Timelock pattern:
 # - Seller reveals spent_nullifier = H(escrow_id, seller_secret)
@@ -15,7 +19,7 @@ field = "pallas";
 #
 # Public Inputs (constrain_instance):
 #   - escrow_id: The escrow identifier
-#   - seller_pub_x, seller_pub_y: Seller's public key (must match escrow)
+#   - seller_commitment: H(seller_pub_x, seller_pub_y) - private verification, does not expose seller_pub
 #   - spent_nullifier: Nullifier proving the escrow is spent
 #
 # Witnesses:
@@ -37,9 +41,9 @@ witness "ClaimEscrow" {
     # Seller's secret (proves ownership)
     Base seller_secret,
 
-    # Stored seller public key from escrow (revealed for verification)
-    Base escrow_seller_pub_x,
-    Base escrow_seller_pub_y,
+    # Stored seller commitment from escrow: H(seller_pub_x, seller_pub_y)
+    # Allows private verification without revealing seller_pub on-chain
+    Base escrow_seller_commitment,
 }
 
 circuit "ClaimEscrow" {
@@ -49,9 +53,15 @@ circuit "ClaimEscrow" {
     seller_pub_x = ec_get_x(seller_pub);
     seller_pub_y = ec_get_y(seller_pub);
 
-    # Verify derived public key matches the escrow's seller public key
-    constrain_eq(seller_pub_x, escrow_seller_pub_x);
-    constrain_eq(seller_pub_y, escrow_seller_pub_y);
+    # ==========================================================================
+    # PRIVACY: Verify seller_commitment without revealing seller_pub on-chain
+    # ==========================================================================
+    # Compute H(seller_pub) and verify it matches the escrow's stored commitment.
+    # This allows the seller to prove knowledge of seller_secret without
+    # exposing seller_pub_x/y on-chain.
+
+    seller_commitment_computed = poseidon_hash(seller_pub_x, seller_pub_y);
+    constrain_eq(seller_commitment_computed, escrow_seller_commitment);
 
     # Compute nullifier
     # nullifier = H(escrow_id, seller_secret)
@@ -59,7 +69,6 @@ circuit "ClaimEscrow" {
 
     # Expose public inputs
     constrain_instance(escrow_id);
-    constrain_instance(seller_pub_x);
-    constrain_instance(seller_pub_y);
+    constrain_instance(escrow_seller_commitment);
     constrain_instance(spent_nullifier);
 }
