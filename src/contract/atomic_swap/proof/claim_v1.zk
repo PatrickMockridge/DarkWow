@@ -7,7 +7,7 @@ field = "pallas";
 #
 # This circuit proves:
 # - Claimer knows the secret
-# - The hash of the secret matches the stored hash
+# - The poseidon_hash of the secret matches the stored hash
 # - The swap hasn't been refunded (nullifier check)
 #
 # Public Inputs (constrain_instance):
@@ -16,7 +16,7 @@ field = "pallas";
 #
 # Witnesses:
 #   - secret: The secret (revealed on-chain)
-#   - hash: The stored hash (should equal SHA256(secret))
+#   - hash: The stored poseidon_hash(secret)
 #   - timelock: For reference only
 
 constant "ClaimSwap" {
@@ -31,7 +31,7 @@ witness "ClaimSwap" {
     # The secret (revealed on-chain)
     Base secret,
 
-    # The hash that was stored (should equal SHA256(secret))
+    # The stored poseidon_hash(secret) from CreateSwap
     Base hash,
 
     # Timelock for reference
@@ -49,18 +49,17 @@ circuit "ClaimSwap" {
     # The secret is revealed, and we verify it matches the stored hash.
     # This proves the claimer knows the secret.
 
-    # The hash is computed externally (same function as in CreateSwap)
-    # We verify: hash(secret) == stored_hash
+    # NOTE: Due to missing SHA256 in-circuit, we use poseidon_hash.
+    # The CreateSwap circuit also stores poseidon_hash(secret) as the hash.
+    # For external chain integration (Ethereum SHA256), a bridge/oracle
+    # must verify the cross-chain hash binding.
     #
-    # NOTE: We trust the external chain's hash function.
-    # For Ethereum: SHA256
-    # For Bitcoin: SHA256 or RIPEMD160(SHA256)
-    #
-    # FUTURE: Implement proper hash verification in-circuit
+    # This is a known limitation - see security-analysis.md Issue #5
 
-    # For the MVP, we just store the hash as a witness and constrain it
-    # A full implementation would compute poseidon_hash(secret) and verify
-    # it equals the stored hash
+    # Verify: poseidon_hash(secret) == stored hash
+    # This proves the claimer knows the secret AND the hash matches
+    computed_hash = poseidon_hash(secret);
+    constrain_equal_base(computed_hash, hash);
 
     # ==========================================================================
     # PHASE 2: Compute nullifier
@@ -82,8 +81,11 @@ circuit "ClaimSwap" {
     #
     # There are NO uses of experimental opcodes.
     #
-    # The hash is not verified in-circuit - we trust the external chain.
-    # This is a limitation of the MVP.
+    # The poseidon_hash is now verified in-circuit (Phase 1).
+    # This fixes the critical issue where hash was not bound to secret.
+    #
+    # For external chain integration, a bridge/oracle must verify
+    # the cross-chain hash binding separately.
 
     # ==========================================================================
     # WHAT THIS CIRCUIT PROVES
@@ -91,11 +93,11 @@ circuit "ClaimSwap" {
     #
     # This circuit proves:
     #   1. The claimer knows the secret
-    #   2. The secret's hash matches the stored hash
+    #   2. The secret's poseidon_hash matches the stored hash
     #   3. The nullifier is correctly computed
     #
     # What it DOES NOT prove:
-    #   1. The hash function is correct (we trust external chain)
+    #   1. External chain hash binding (requires bridge/oracle)
     #   2. The funds haven't been refunded (nullifier check handles this)
     #   3. The timelock has passed (not required for claim - only for refund)
 

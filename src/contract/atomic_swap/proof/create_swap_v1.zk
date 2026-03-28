@@ -7,12 +7,12 @@ field = "pallas";
 #
 # This circuit proves:
 # - Creator knows the secret (but doesn't reveal it yet)
-# - The hash of the secret is computed correctly
+# - The poseidon_hash of the secret is computed correctly
 # - The timelock is set correctly
 #
 # Public Inputs (constrain_instance):
 #   - swap_id: H(hash, timelock, receiver_pub, amount, token_id, side, blind)
-#   - hash: SHA256(secret) - same hash used on external chain
+#   - hash: poseidon_hash(secret) - verified in-circuit
 #   - timelock: block height before which refund is not allowed
 #   - receiver_pub_x, receiver_pub_y: DarkFi public key of recipient
 #
@@ -29,10 +29,7 @@ constant "CreateSwap" {
 }
 
 witness "CreateSwap" {
-    # Hash of the secret (same on both chains)
-    # This is the external chain's hash function output
-    # For Ethereum: SHA256(secret)
-    # For Bitcoin: SHA256(secret) or RIPEMD160(SHA256(secret))
+    # Hash of the secret (poseidon_hash, verified in-circuit)
     Base hash,
 
     # Timelock block height
@@ -60,18 +57,21 @@ witness "CreateSwap" {
 
 circuit "CreateSwap" {
     # ==========================================================================
-    # PHASE 1: Verify the hash is correctly computed
+    # PHASE 1: Compute and store hash of the secret
     # ==========================================================================
     #
-    # The hash is computed externally (on the other chain).
-    # We accept it as a public input.
+    # We compute poseidon_hash(secret) and store it as the swap's hash.
+    # This allows the Claim circuit to verify the secret without revealing it.
     #
-    # In a full implementation, we would verify the hash function itself,
-    # but that would require implementing SHA256 or similar in-circuit.
-    # For the MVP, we trust the hash from the external chain.
+    # NOTE: For external chain integration (Ethereum), the SHA256 hash
+    # is handled separately via bridge/oracle. This poseidon_hash is
+    # for DarkFi-side verification only.
+    #
+    # This fixes the critical issue where the hash was not bound to the secret.
 
-    # Hash is passed as public input - it's computed on the external chain
-    # The external chain's HTLC verifies the hash matches the secret
+    # Compute poseidon_hash(secret) - this is what we store
+    computed_hash = poseidon_hash(secret);
+    constrain_equal_base(computed_hash, hash);
 
     # ==========================================================================
     # PHASE 2: Verify timelock is in the future
@@ -124,18 +124,16 @@ circuit "CreateSwap" {
     #
     # There are NO uses of experimental opcodes.
     #
-    # The hash is trusted from the external chain - we don't verify
-    # SHA256 in-circuit. This is a limitation of the MVP.
-    #
-    # FUTURE: Implement Poseidon-based hash verification in-circuit
-    # to avoid trusting external chain hash functions.
+    # The poseidon_hash is now verified in-circuit (Phase 1).
+    # This fixes the critical issue where hash was not bound to secret.
 
     # ==========================================================================
     # WHAT THIS CIRCUIT DOES NOT VERIFY
     # ==========================================================================
     #
-    # 1. Hash function correctness: We trust the external chain's hash
-    #    To fix this, we'd need SHA256 or similar in-circuit
+    # 1. External chain hash: For cross-chain swaps (Ethereum SHA256),
+    #    a bridge/oracle must verify the cross-chain binding separately.
+    #    The poseidon_hash here is for DarkFi-side verification only.
     #
     # 2. Fund deposit: We don't verify the funds are actually locked
     #    This requires Money contract integration

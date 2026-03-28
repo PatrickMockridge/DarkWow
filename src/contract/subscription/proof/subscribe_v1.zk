@@ -6,6 +6,14 @@ constant "SubscribeV1" {
     # SUBSCRIBER_K is a fixed generator point on the Pallas curve.
     # Used with ec_mul_base to derive public keys from subscriber secrets.
     # This is the same base point used throughout DarkFi for key derivation.
+
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    # Pedersen generator for the deposit value.
+    # Used in: value_commit = deposit * VALUE_COMMIT_VALUE + blind * VALUE_COMMIT_RANDOM
+
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+    # Pedersen generator for the blinding factor.
+    # Used in: value_commit = deposit * VALUE_COMMIT_VALUE + blind * VALUE_COMMIT_RANDOM
 }
 
 witness "SubscribeV1" {
@@ -241,27 +249,31 @@ circuit "SubscribeV1" {
     # ==========================================================================
     # PHASE 6: Verify value commitment (deposit)
     # ==========================================================================
-
-    # ==========================================================================
-    # PHASE 6: Verify value commitment (deposit)
-    # ==========================================================================
     #
     # The subscriber creates a Pedersen commitment to their deposit.
     # This hides the amount while allowing:
     #   - Anyone to verify the commitment is valid
     #   - The subscriber to later prove the amount for refunds
     #
-    # value_commit = deposit * G1 + value_blind * G2
-    # The circuit doesn't directly verify this (it would require point addition
-    # and scalar multiplication which are expensive). Instead, the ZK proof
-    # demonstrates knowledge of (deposit, value_blind) without revealing them.
-    #
-    # For the MVP, we use poseidon_hash as a stand-in for the full
-    # Pedersen verification. This is a placeholder - the real implementation
-    # should use ec_mul_base and ec_add to properly verify the commitment.
+    # value_commit = deposit * VALUE_COMMIT_VALUE + value_blind * VALUE_COMMIT_RANDOM
+    # This is proper Pedersen commitment - same as used in money contract.
 
-    commit_check = poseidon_hash(deposit, value_blind, token_id);
-    constrain_equal_base(commit_check, value_commit_x);
+    # Compute: deposit * VALUE_COMMIT_VALUE
+    vcv = ec_mul_short(deposit, VALUE_COMMIT_VALUE);
+
+    # Compute: value_blind * VALUE_COMMIT_RANDOM
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+
+    # Sum: deposit * G1 + blind * G2
+    value_commit_computed = ec_add(vcv, vcr);
+
+    # Extract coordinates
+    computed_x = ec_get_x(value_commit_computed);
+    computed_y = ec_get_y(value_commit_computed);
+
+    # Verify the commitment matches the public input
+    constrain_equal_base(computed_x, value_commit_x);
+    constrain_equal_base(computed_y, value_commit_y);
 
     # ==========================================================================
     # PHASE 7: Derive subscriber capability (for access control)

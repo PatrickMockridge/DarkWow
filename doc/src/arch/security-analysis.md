@@ -19,29 +19,22 @@
 
 ### Subscription Contract
 
-#### Issue 1: Value Commitment Uses Poseidon Hash Instead of Pedersen (MAJOR)
+#### Issue 1: Value Commitment Uses Poseidon Hash Instead of Pedersen (MAJOR) — FIXED
 
-**Location**: [subscribe_v1.zk:257-264](file://../../src/contract/subscription/proof/subscribe_v1.zk#L257-L264)
+**Location**: subscribe_v1.zk
 
-**Problem**: The deposit commitment uses `poseidon_hash(deposit, value_blind, token_id)` instead of proper Pedersen commitment (`deposit * G1 + blind * G2`).
+**Problem (Original)**: The deposit commitment used `poseidon_hash(deposit, value_blind, token_id)` instead of proper Pedersen commitment.
 
+**Fix Applied**: The circuit now implements proper Pedersen commitment verification:
 ```zk
-# Current (INSECURE):
-commit_check = poseidon_hash(deposit, value_blind, token_id);
-constrain_equal_base(commit_check, value_commit_x);
-
-# Correct Pedersen:
-# C = deposit * VALUE_COMMIT_VALUE + value_blind * VALUE_COMMIT_RANDOM
-# verify ec_add(ec_mul_short(deposit, VALUE_COMMIT_VALUE),
-#               ec_mul(value_blind, VALUE_COMMIT_RANDOM)) == value_commit
+vcv = ec_mul_short(deposit, VALUE_COMMIT_VALUE);
+vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+value_commit_computed = ec_add(vcv, vcr);
+constrain_equal_base(computed_x, value_commit_x);
+constrain_equal_base(computed_y, value_commit_y);
 ```
 
-**Impact**:
-- An attacker who knows `deposit` and `token_id` can derive `value_blind` by brute-forcing the Poseidon hash
-- The "hidden" deposit amount is not actually hidden
-- Anonymity guarantees are voided
-
-**Recommendation**: Implement proper Pedersen commitment verification using `ec_mul_short` and `ec_add` opcodes, as done in the `money` contract's burn/mint circuits.
+**Impact** (resolved): The deposit amount is now properly hidden using standard Pedersen commitment. The value_blind cannot be derived from the commitment without solving the discrete log problem.
 
 ---
 
@@ -114,30 +107,19 @@ derived_dao_note = poseidon_hash(
 
 ### Atomic Swap Contract
 
-#### Issue 5: Hash Not Verified In-Circuit (CRITICAL)
+#### Issue 5: Hash Not Verified In-Circuit (CRITICAL) — PARTIALLY FIXED
 
-**Location**: [claim_v1.zk:59-63](file://../../src/contract/atomic_swap/proof/claim_v1.zk#L59-L63)
+**Location**: claim_v1.zk, create_swap_v1.zk
 
-**Problem**: The circuit does NOT verify `hash == SHA256(secret)`. It only stores the hash as a witness:
+**Problem (Original)**: The circuit did NOT verify `hash == SHA256(secret)`. It only stored the hash as a witness.
 
-```zk
-# NOTE: We trust the external chain's hash function.
-# For the MVP, we just store the hash as a witness and constrain it
-# A full implementation would compute poseidon_hash(secret) and verify
-# it equals the stored hash
-```
+**Fix Applied**: Both CreateSwap and Claim circuits now verify `poseidon_hash(secret)` matches the stored hash. The hash is no longer a free variable.
 
-**Impact**:
-- Anyone who obtains a valid `(hash, secret)` pair can claim the swap
-- If the secret is leaked through any channel (side-channel, reused secret, etc.), an attacker can steal funds
-- The HTLC's security relies on hash preimage secrecy, but the circuit doesn't enforce it
+**Remaining Issue**: For cross-chain swaps with Ethereum (SHA256), the poseidon_hash on DarkFi is not cryptographically bound to the external chain's SHA256 hash. A bridge or oracle is needed to verify the cross-chain binding.
 
-**Recommendation**: Implement proper hash verification in-circuit:
-```zk
-# Compute hash of secret and verify it matches stored hash
-computed_hash = poseidon_hash(secret);  # or SHA256 if supported
-constrain_equal_base(computed_hash, hash);
-```
+**Impact** (mitigated): The poseidon_hash verification prevents arbitrary (hash, secret) pairs from being used. The claimer must have created the swap via CreateSwap, establishing the swap_id binding.
+
+**Recommendation**: External chain integration requires a commit-reveal or bridge scheme where an oracle verifies SHA256(hash) on Ethereum and creates a corresponding DarkFi swap.
 
 ---
 
@@ -306,29 +288,35 @@ The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known s
 
 ## Summary Table
 
-| # | Contract | Issue | Severity |
-|---|----------|-------|----------|
-| 1 | Subscription | Poseidon hash instead of Pedersen for value commitment | MAJOR |
-| 2 | Subscription | Permission bitmask checking absent | MAJOR |
-| 3 | Subscription | No cancellation nullifier verification | MODERATE |
-| 4 | Subscription | Bulla used as blind factor | MODERATE |
-| 5 | Atomic Swap | Hash not verified in-circuit | CRITICAL |
-| 6 | Atomic Swap | No timelock check on claim | MAJOR |
-| 7 | Atomic Swap | External hash function trust | MAJOR |
-| 8 | Escrow | No state verification on claim | MAJOR |
-| 9 | Escrow | Seller public key in plaintext | MODERATE |
-| 10 | DAO-Escrow | No endowment drain protection | MAJOR |
-| 11 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE |
-| 12 | Bridge | Weak range check (only < 2^64) | MODERATE |
+| # | Contract | Issue | Severity | Status |
+|---|----------|-------|----------|--------|
+| 1 | Subscription | Poseidon hash instead of Pedersen for value commitment | MAJOR | ✅ FIXED |
+| 2 | Subscription | Permission bitmask checking absent | MAJOR | ⚠️ Cannot fix (needs base_div opcode) |
+| 3 | Subscription | No cancellation nullifier verification | MODERATE | ⚠️ Contract-level TODO |
+| 4 | Subscription | Bulla used as blind factor | MODERATE | ⚠️ Design issue, documented |
+| 5 | Atomic Swap | Hash not verified in-circuit | CRITICAL | ⚠️ PARTIALLY FIXED (poseidon verified, SHA256 bridge needed) |
+| 6 | Atomic Swap | No timelock check on claim | MAJOR | ℹ️ May be intentional (timelock for refund only) |
+| 7 | Atomic Swap | External hash function trust | MAJOR | ⚠️ Requires oracle/bridge for cross-chain |
+| 8 | Escrow | No state verification on claim | MAJOR | ⚠️ Contract is skeleton (all TODOs) |
+| 9 | Escrow | Seller public key in plaintext | MODERATE | ⚠️ Contract is skeleton |
+| 10 | DAO-Escrow | No endowment drain protection | MAJOR | ⚠️ Design issue - needs governance limits |
+| 11 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ⚠️ Contract-level enforcement needed |
+| 12 | Bridge | Weak range check (only < 2^64) | MODERATE | ⚠️ Pre-existing contract |
 
 ---
 
 ## Recommendations Priority
 
-### Immediate (Before Any Production Use)
+### Completed Fixes
+1. ✅ **Issue 1 (MAJOR)**: Pedersen commitment implemented in Subscription
+2. ⚠️ **Issue 5 (CRITICAL)**: poseidon_hash verification added, but external chain SHA256 binding still needs bridge
 
-1. **Issue 5 (CRITICAL)**: Implement hash verification in atomic_swap claim circuit
-2. **Issue 1 (MAJOR)**: Replace Poseidon placeholder with proper Pedersen commitment in Subscription
+### Cannot Fix Without Additional Primitives
+- **Issue 2**: Permission bitmask checking requires `base_div` opcode
+- **Issue 7**: SHA256 verification requires hash opcode implementation
+
+### Contract-Level TODOs (Requires Full Contract Implementation)
+- **Issues 3, 8, 9**: The Escrow and DAO-Escrow contracts are skeletons with all logic marked TODO
 3. **Issue 8 (MAJOR)**: Add state verification to Escrow claim
 4. **Issue 10 (MAJOR)**: Add endowment drain protection to DAO-Escrow
 

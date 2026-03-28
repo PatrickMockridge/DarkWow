@@ -7,7 +7,7 @@ field = "pallas";
 # This circuit proves:
 # - Seller knows seller_secret
 # - seller_pubkey derived from seller_secret matches escrow.seller_pubkey
-# - The escrow is in Funded state (not already spent)
+# - The escrow is in Funded state (not already spent) - CONTRACT ENFORCED
 #
 # This uses the Hashed Timelock pattern:
 # - Seller reveals spent_nullifier = H(escrow_id, seller_secret)
@@ -20,6 +20,11 @@ field = "pallas";
 #
 # Witnesses:
 #   - seller_secret: Seller's secret key
+#
+# SECURITY NOTE: This circuit does NOT verify escrow state directly.
+# The contract layer MUST verify the escrow is in "Funded" state before
+# accepting this proof. Without this check, an already-refunded or
+# already-claimed escrow could be claimed again.
 
 constant "ClaimEscrow" {
     EcFixedPointBase NULLIFIER_K,
