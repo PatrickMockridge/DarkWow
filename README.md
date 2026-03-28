@@ -7,6 +7,8 @@
 
 ## Development Fork
 
+**WARNING: This branch contains experimental, unaudited smart contracts. Do NOT deploy or use these contracts with real funds. They are for research and educational purposes only.**
+
 This is a development fork of the official DarkFi repository.
 
 **The `dev` branch** (`PatrickM123/darkfi:dev`) contains all additions compared to official DarkFi master:
@@ -16,7 +18,7 @@ This is a development fork of the official DarkFi repository.
 - **Architecture reference docs**: [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) (grey-market opcode analysis), [Merkle Depth](doc/src/arch/merkle_depth.md) (fixed-depth limitations and workarounds), [Composability](doc/src/arch/composability.md) (smart contract composition patterns with real-world DAO failure analysis)
 - **Work-in-progress implementations**: Skeleton code and alternative approaches
 
-The official DarkFi repository (`darkrenaissance/darkfi`) should be consulted for the canonical state.
+**Security Status**: All new contracts are EXPERIMENTAL and UNAUDITED. Known security issues are documented in [Security Analysis](doc/src/arch/security-analysis.md). The official DarkFi repository should be consulted for the canonical, production-ready state.
 
 ---
 
