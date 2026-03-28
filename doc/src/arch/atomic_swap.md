@@ -2,46 +2,74 @@
 
 Cross-chain atomic swaps via Hashed Timelock Contract (HTLC) pattern.
 
-## Overview
+## Cross-Chain Hash Verification
+
+**Important**: DarkFi and Ethereum use **different hash functions**:
+- DarkFi: `poseidon_hash(secret)` - ZK-friendly, verified in-circuit
+- Ethereum: `SHA256(secret)` - traditional, verified by EVM
+
+For cross-chain swaps, **each chain only verifies its own hash**. This is sufficient because:
+1. Alice reveals secret voluntarily when she chooses to claim on Ethereum
+2. Bob has financial incentive to monitor DarkFi and claim when secret is revealed
+3. No oracle or cross-chain verification is needed
+
+## Cross-Chain Atomic Swap Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        Cross-Chain Atomic Swap                            │
+│                Cross-Chain Atomic Swap (No Oracle Needed)                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │   Alice (Ethereum)                    Bob (DarkFi)                      │
 │   ──────────────────                  ─────────────────                  │
 │                                                                          │
-│   1. Create HTLC                       2. Verify hash                     │
-│      hash = SHA256(secret)               matches her hash               │
-│      amount = X ETH                      amount = Y DRK                  │
-│      timelock = T                        timelock = T + δ               │
+│   1. Generate secret                 2. Create DarkFi swap              │
+│      secret = random()                   H' = poseidon_hash(secret)     │
 │                                                                          │
-│   3. Send hash to Bob          ───────────────────────────────────────►  │
+│   2. Create Ethereum HTLC              ◄─────────────────────────────   │
+│      H = SHA256(secret)                   Send H' to Bob                 │
+│      amount = X ETH                                                    │
+│      timelock = T                                                      │
 │                                                                          │
-│   4. Bob creates HTLC           ◄─────────────────────────────────────   │
-│      same hash                                                 │         │
-│      amount = Y DRK                                         │         │
-│      timelock = T + δ                                       │         │
-│                                                                  │         │
-│   5. Bob confirms HTLC          ───────────────────────────────────────►  │
+│   3. Send H to Bob                ──────────────────────────────────► │
 │                                                                          │
-│   6. Alice reveals secret       ───────────────────────────────────────►  │
-│      (on Ethereum)                                │                     │
+│   4. Bob verifies H' matches       ◄───────────────────────────────── │
+│      (from Alice's DarkFi swap)                                        │
+│                                                                          │
+│   5. Bob funds DarkFi HTLC         ─────────────────────────────────► │
+│      amount = Y DRK                                                    │
+│      H' = poseidon_hash(secret)                                        │
+│                                                                          │
+│   6. Alice reveals secret          ◄──────────────────────────────── │
+│      (on Ethereum)                 Bob monitors DarkFi for reveal      │
+│      H = SHA256(secret)                                               │
+│                                                     │                     │
 │                                                     ▼                     │
-│   7. Bob claims on DarkFi      ◄──────────────────────────────────────   │
-│      - Proves knowledge of secret                                          │
-│      - Gets Y DRK                                                             │
+│   7. Bob claims on DarkFi         ◄────────────────────────────────── │
+│      - Reveals secret                                               │
+│      - poseidon_hash(secret) == H'                                   │
+│      - Gets Y DRK                                                      │
 │                                                                          │
-│   8. Bob tells Alice secret     ───────────────────────────────────────►  │
-│                                                                          │
-│   9. Alice claims on Ethereum  ◄──────────────────────────────────────  │
-│      - Gets X ETH                                                            │
+│   8. Alice claims on Ethereum     ◄───────────────────────────────── │
+│      - Uses same secret                                               │
+│      - SHA256(secret) == H                                             │
+│      - Gets X ETH                                                      │
 │                                                                          │
 │   SWAP COMPLETE!                                                         │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+## Why This Works Without Oracles
+
+| Step | Who Verifies What | How |
+|------|-------------------|-----|
+| Ethereum HTLC | EVM verifies `SHA256(secret) == H` | Native EVM opcode |
+| DarkFi Claim | ZK circuit verifies `poseidon_hash(secret) == H'` | poseidon_hash in circuit |
+| Secret Reveal | Alice monitors DarkFi blockchain | No verification needed |
+| Bob Monitors | Bob watches DarkFi for secret reveal | No ZK needed |
+
+**Key insight**: Each chain verifies the hash function it understands. The cross-chain coordination happens via blockchain monitoring, not cryptographic verification across chains.
 
 ## HTLC Pattern
 
@@ -53,7 +81,7 @@ The swap is secured by a cryptographic hash:
 secret → HASH(secret) → stored_hash
 ```
 
-Only the holder of the secret can compute the preimage and claim. This binds both chains atomically.
+Only the holder of the secret can compute the preimage and claim. On DarkFi, the ZK circuit verifies `poseidon_hash(secret)`. On Ethereum, the EVM verifies `SHA256(secret)`.
 
 ### Timelock
 
@@ -67,7 +95,10 @@ If the swap isn't completed in time, either party can get their funds back.
 
 ### Atomicity
 
-Both chains see the same hash. If Alice claims on Ethereum, she reveals the secret, allowing Bob to claim on DarkFi. If either party fails, the other gets their funds via timelock refund.
+The atomicity comes from the HTLC pattern, not from cross-chain verification:
+- Alice reveals secret **voluntarily** when she wants to claim on Ethereum
+- Bob reveals secret on DarkFi **financially incentivized** by getting Alice's funds
+- If either fails to act, the timelock refund protects the other party
 
 ## Contract Functions
 
