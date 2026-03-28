@@ -69,6 +69,21 @@ circuit "PayPremium" {
     less_than_strict(current_block, expiry);
 
     # ==========================================================================
+    # PHASE 1b: Enforce maximum membership period
+    # ==========================================================================
+    #
+    # Prevent members from self-issuing excessively long memberships.
+    # Maximum: ~1 year (52560 blocks at 5min/block)
+    #
+    # This ensures membership expiry is "reasonable" and prevents:
+    # - Members choosing 100-year memberships
+    # - Long-term lockup that bypasses DAO governance
+
+    max_membership_blocks = 52560;
+    max_expiry = add(current_block, max_membership_blocks);
+    less_than_strict(expiry, max_expiry);
+
+    # ==========================================================================
     # PHASE 2: Derive member public key from secret
     # ==========================================================================
 
