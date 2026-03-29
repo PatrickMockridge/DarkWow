@@ -45,6 +45,54 @@ This fork contains all additions compared to official DarkFi master:
 
 All contracts are **EXPERIMENTAL** and **UNAUDITED**. Known security issues are documented in [Security Analysis](arch/security-analysis.md). The official DarkFi repository should be consulted for the canonical, production-ready state.
 
+## Technical Debt: Opcode Layer
+
+**⚠️ Important**: Several contracts use **workaround patterns** because ideal opcodes are not yet production-ready.
+
+### The Problem
+
+DarkFi's zkVM operates in the Pallas field where `LessThanOrEqual` and `IsEqualBase` are **implemented but have unverified soundness**:
+
+| Opcode | Issue | Impact |
+|--------|-------|--------|
+| `LessThanOrEqual` (0x55) | Gate soundness unverified | Returns Boolean for composability |
+| `IsEqualBase` (0x54) | Delta-invert issue when `a == b` | Returns Boolean for composability |
+
+### The Workaround
+
+Contracts use **safemath assertion gadgets** (`assert_lte_u64_v1.zk`):
+- Pattern: prove `a <= b` via `a < b + 1` using `less_than_strict`
+- Production-ready (uses only proven opcodes)
+- **BUT**: Constrain-only, no Boolean return value
+- Cannot replace LessThanOrEqual when Boolean is needed for downstream logic
+
+### Full Composability Requires
+
+Once the following are formally verified:
+1. **`LessThanOrEqual` soundness** → Returns 0/1 Boolean for full circuit composability
+2. **`IsEqualBase` soundness** → Correct equality checks in all cases
+3. **`base_div`** → True division in circuits (currently uses cross-multiplication workaround)
+
+### What Works Now (with workarounds)
+
+| Contract | Feature | Workaround Used |
+|----------|---------|----------------|
+| stablecoin | Collateralization checks | Safemath `assert_lte` |
+| identity | Threshold predicates | Safemath `assert_lte` (Level 0 zk_only) |
+| dex | Partial fills | Safemath `less_than_strict` assertion |
+| dao | Ratio checks | Cross-multiplication pattern |
+
+### What Would Be Fully Composable With Ideal Opcodes
+
+| Contract | Feature | Needs |
+|----------|---------|--------|
+| stablecoin | Return Boolean for liquidation priority | LessThanOrEqual |
+| identity | Level 1 selective disclosure (reveal predicate) | LessThanOrEqual + IsEqualBase |
+| dex | Fill amount as value for further constraints | LessThanOrEqual |
+| escrow | Atomic swap with partial fill Boolean return | LessThanOrEqual |
+
+**See**: [Safemath](arch/safemath.md) and [Experimental Opcodes](arch/experimental-opcodes.md) for full analysis.
+
 ## Building
 
 ```bash
