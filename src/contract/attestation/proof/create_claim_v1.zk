@@ -1,0 +1,60 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Attestation Create Claim Circuit (Version 1)
+#
+# This circuit proves:
+# - Claimant knows their secret key
+# - Claimant public key is correctly derived
+# - Claim is linked to a valid attestation
+#
+# Public Inputs (constrain_instance):
+#   - attestation_id: The attestation being claimed against
+#   - claimant_pub_x: Claimant's public key x coordinate
+#   - claimant_pub_y: Claimant's public key y coordinate
+#
+# Witnesses:
+#   - claimant_secret: Claimant's secret key
+
+constant "CreateClaim" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "CreateClaim" {
+    # The attestation being claimed against
+    Base attestation_id,
+
+    # Claimant's secret (for key derivation and nullifier)
+    Base claimant_secret,
+}
+
+circuit "CreateClaim" {
+    # ==========================================================================
+    # PHASE 1: Derive claimant public key from secret
+    # ==========================================================================
+
+    claimant_pub = ec_mul_base(claimant_secret, NULLIFIER_K);
+    claimant_pub_x = ec_get_x(claimant_pub);
+    claimant_pub_y = ec_get_y(claimant_pub);
+
+    # ==========================================================================
+    # PHASE 2: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(attestation_id);
+    constrain_instance(claimant_pub_x);
+    constrain_instance(claimant_pub_y);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses ONLY proven opcodes:
+    #   - ec_mul_base: standard EC operations
+    #   - ec_get_x, ec_get_y: standard EC operations
+    #   - constrain_instance: public input exposure
+    #
+    # The attestation existence and claim validity are verified by the contract.
+    # The ZK proof only establishes that the claimant knows their secret.
+}

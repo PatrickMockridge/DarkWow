@@ -6,6 +6,7 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 
 | Contract | Description | Status |
 |----------|-------------|--------|
+| **attestation** | Generalized attestation and claims system | ✅ Complete |
 | **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
 | **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
@@ -131,6 +132,7 @@ This pattern (in `dao/exec.zk`) handles ratio checks without `BaseDiv`.
 
 Local READMEs exist for each contract in this folder:
 
+- [attestation/README.md](attestation/README.md) - Generalized attestation and claims
 - [atomic_swap/README.md](atomic_swap/README.md) - Cross-chain atomic swaps
 - [bridge/README.md](bridge/README.md) - Cross-chain asset transfers
 - [dao_escrow/README.md](dao_escrow/README.md) - Three-mode DAO

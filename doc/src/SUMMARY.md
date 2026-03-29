@@ -55,6 +55,7 @@
   - [Identity](arch/identity.md)
   - [Stablecoin](arch/stablecoin.md)
   - [Escrow Contract MVP](arch/escrow.md)
+  - [Attestation Contract](arch/attestation.md)
   - [DAO-Escrow Contract](arch/dao_escrow.md)
   - [Subscription Contract](arch/subscription.md)
   - [Atomic Swap Contract](arch/atomic_swap.md)
