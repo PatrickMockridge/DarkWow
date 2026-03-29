@@ -42,6 +42,7 @@ members = [
     "src/contract/drain_protection",
     "src/contract/escrow",
     "src/contract/dao_escrow",
+    "src/contract/safemath",
 
     "example/dchat/dchatd",
 ]

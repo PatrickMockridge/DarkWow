@@ -276,24 +276,35 @@ less_than_strict(rhs, lhs);             # Prove: rhs < lhs
 
 **See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
 
-## Opcode Safety
+## Opcode Safety: LessThanOrEqual Workaround
 
-**`LessThanOrEqual` is a grey-market good — buyer beware.**
+**Current state**: The stablecoin circuits use `LessThanOrEqual` (experimental opcode) to prove:
+1. `2 * debt <= collateral` (200% collateralization check)
+2. `liquidator_reward <= collateral_amount` (reward bounds check)
 
-The stablecoin circuits use experimental opcodes for collateralization checks:
+Both usages constrain the result to equal `1` — an **assertion pattern**, not needing a Boolean witness for downstream logic.
 
-| Opcode | Purpose | Status |
-|--------|---------|--------|
-| `LessThanOrEqual` | Ratio comparison | **Experimental** |
-| `less_than_strict` | Constrain-only comparison | Safe (no return value) |
+**The safemath workaround** (from [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath)):
+
+| Check | Safemath Circuit | Pattern |
+|-------|-----------------|---------|
+| `a <= b` | `assert_lte_u64_v1.zk` | Prove `a < b + 1` via bounded inputs |
+| Ratio `a/b <= c/d` | `cross_mul_lte_u64_v1.zk` | Cross-multiplication + `+1` trick |
+
+**Key distinction**:
+- `LessThanOrEqual(a, b) → bit`: Returns 0/1 Boolean (what we currently use)
+- `assert_lte_u64_v1.zk`: Assertion gadget, proves `a <= b` without returning a value
+
+Since the current circuits assert `LessThanOrEqual == 1`, they can be replaced with assertion-style circuits — no Boolean witness needed downstream.
 
 **What production readiness requires**:
-1. Integration test: deposit → mint → repay → liquidate (adversarial)
-2. Formal soundness proof or concrete bound on delta-invert failure
-3. Audit by a ZK circuit expert with formal verification
-4. Fuzzing with adversarial inputs: values near `p`, near 0, overflow cases
+1. Replace `LessThanOrEqual` with safemath assertion circuits
+2. Integration test: deposit → mint → repay → liquidate (adversarial)
+3. Audit by a ZK circuit expert
 
-**See**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full delta-invert analysis.
+**See**:
+- [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) for the assertion gadgets
+- [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full delta-invert analysis
 
 ## Comparison
 
