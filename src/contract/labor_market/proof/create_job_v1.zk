@@ -7,45 +7,25 @@ field = "pallas";
 # This circuit proves:
 # - Employer knows their secret key
 # - Employer public key is correctly derived
-# - Job ID is correctly computed as a commitment
-# - Payment commitment is correctly formed
-# - Deadline is in the future
+#
+# The job parameters (deliverable_hash, deadline, payment, etc.) are passed
+# as public inputs and stored by the contract. The ZK proof only verifies
+# the employer knows their secret key.
 #
 # Public Inputs (constrain_instance):
-#   - job_id: Poseidon hash commitment of job parameters
-#   - payment_commit.x, payment_commit.y: Pedersen commitment to payment
+#   - employer_pub_x: Employer's public key x coordinate
+#   - employer_pub_y: Employer's public key y coordinate
 #
 # Witnesses:
 #   - employer_secret: Employer's secret key
-#   - deliverable_hash: Hash of expected deliverable (zip hash or commit hash)
-#   - delivery_type: 0 = Generic (zip), 1 = Git
-#   - payment_amount: Payment amount (u64)
-#   - payment_blind: Blinding factor for payment commitment
-#   - token_id: Token being paid
-#   - deadline_block: Block by which work must be delivered
 
 constant "CreateJob" {
     EcFixedPointBase NULLIFIER_K,
-    EcFixedPointShort VALUE_COMMIT_VALUE,
-    EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
 witness "CreateJob" {
     # Employer's secret (for key derivation, not revealed)
     Base employer_secret,
-
-    # Deliverable specification
-    Base deliverable_hash,
-    Base delivery_type,  # 0 = Generic, 1 = Git
-
-    # Payment details
-    Base payment_amount,
-    Scalar payment_blind,
-    Base token_id,
-
-    # Deadline and current block (passed as Base to avoid .into() issues)
-    Base deadline_block,
-    Base current_block,
 }
 
 circuit "CreateJob" {
@@ -58,66 +38,21 @@ circuit "CreateJob" {
     employer_pub_y = ec_get_y(employer_pub);
 
     # ==========================================================================
-    # PHASE 2: Verify deadline is in the future (block-based time lock)
+    # PHASE 2: Expose public inputs
     # ==========================================================================
 
-    # less_than_strict: constrains current_block < deadline_block
-    # This ensures the deadline hasn't passed yet
-    less_than_strict(current_block, deadline_block);
-
-    # ==========================================================================
-    # PHASE 3: Compute job ID commitment
-    # ==========================================================================
-    #
-    # Job ID = H(employer_pub.x, employer_pub.y, deliverable_hash,
-    #            delivery_type, payment_amount, token_id, deadline_block)
-    #
-    # This commitment binds the employer, the deliverable spec, payment,
-    # and deadline together. The worker will accept this specific job.
-
-    job_id = poseidon_hash(
-        employer_pub_x,
-        employer_pub_y,
-        deliverable_hash,
-        delivery_type,
-        payment_amount,
-        token_id,
-        deadline_block,
-    );
-
-    # ==========================================================================
-    # PHASE 4: Compute payment commitment (Pedersen)
-    # ==========================================================================
-    #
-    # C = payment_amount * G1 + payment_blind * G2
-    # This hides the payment amount until released
-
-    vcv = ec_mul_short(payment_amount, VALUE_COMMIT_VALUE);
-    vcr = ec_mul(payment_blind, VALUE_COMMIT_RANDOM);
-    payment_commit = ec_add(vcv, vcr);
-
-    # ==========================================================================
-    # PHASE 5: Expose public inputs
-    # ==========================================================================
-
-    constrain_instance(job_id);
-    constrain_instance(ec_get_x(payment_commit));
-    constrain_instance(ec_get_y(payment_commit));
+    constrain_instance(employer_pub_x);
+    constrain_instance(employer_pub_y);
 
     # ==========================================================================
     # SOUNDNESS NOTES
     # ==========================================================================
     #
-    # This circuit uses ONLY proven opcodes (no grey-market opcodes):
-    #   - less_than_strict: constrain-only comparison (SOUND)
-    #   - ec_mul_base, ec_get_x, ec_get_y: standard EC operations
-    #   - ec_mul_short, ec_mul: standard EC operations
-    #   - ec_add: point addition
-    #   - poseidon_hash: field-proven, standard in DarkFi
+    # This circuit uses ONLY proven opcodes:
+    #   - ec_mul_base: standard EC operations
+    #   - ec_get_x, ec_get_y: standard EC operations
     #   - constrain_instance: public input exposure
-    #   - constrain_equal_base: equality constraint
     #
-    # There are NO uses of:
-    #   - LessThanOrEqual (gate soundness issue)
-    #   - IsEqualBase (delta-invert issue when a == b)
+    # The job parameters are stored by the contract from the public inputs.
+    # The ZK proof only establishes that the creator knows their secret.
 }

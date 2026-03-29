@@ -96,6 +96,20 @@ pub struct CreateJobParamsV1 {
     pub proof: Vec<u8>,
     /// Job ID (public input)
     pub job_id: pallas::Base,
+    /// Employer's public key x coordinate
+    pub employer_pub_x: pallas::Base,
+    /// Employer's public key y coordinate
+    pub employer_pub_y: pallas::Base,
+    /// Hash of expected deliverable
+    pub deliverable_hash: pallas::Base,
+    /// Type of deliverable (0 = Generic, 1 = Git)
+    pub delivery_type: u8,
+    /// Payment amount
+    pub payment_amount: u64,
+    /// Token being paid
+    pub payment_token: pallas::Base,
+    /// Block by which work must be delivered
+    pub deadline_block: u64,
     /// Payment commitment x coordinate
     pub payment_commit_x: pallas::Base,
     /// Payment commitment y coordinate

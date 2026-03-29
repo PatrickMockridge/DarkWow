@@ -158,7 +158,11 @@ fn create_job_get_metadata_v1(
         crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1,
     )?;
 
-    let mut public_inputs: Vec<pallas::Base> = vec![params.job_id, params.payment_commit_x, params.payment_commit_y];
+    // Public inputs: employer public key coordinates
+    let mut public_inputs: Vec<pallas::Base> = vec![
+        params.employer_pub_x,
+        params.employer_pub_y,
+    ];
 
     let mut metadata = vec![];
     (call_idx, &calls).encode(&mut metadata)?;
@@ -531,17 +535,27 @@ fn create_job_apply_v1(cid: ContractId, params: CreateJobParamsV1) -> ContractRe
         return Err(ContractError::from(LaborMarketError::JobAlreadyExists).into())
     }
 
-    // Create new job
+    // Validate delivery type
+    let delivery_type = match params.delivery_type {
+        0 => crate::model::DeliveryType::Generic,
+        1 => crate::model::DeliveryType::Git,
+        _ => {
+            msg!("[labor_market::create_job_apply_v1] Invalid delivery type");
+            return Err(ContractError::from(LaborMarketError::InvalidDeliveryType).into())
+        }
+    };
+
+    // Create new job with all parameters properly set
     let job = Job {
         id: params.job_id,
-        employer_pubkey: [pallas::Base::zero(), pallas::Base::zero()], // Will be set from ZK witness
+        employer_pubkey: [params.employer_pub_x, params.employer_pub_y],
         worker_pubkey: None,
-        deliverable_hash: pallas::Base::zero(),
-        delivery_type: crate::model::DeliveryType::Generic,
-        payment_amount: 0,
-        payment_token: pallas::Base::zero(),
+        deliverable_hash: params.deliverable_hash,
+        delivery_type,
+        payment_amount: params.payment_amount,
+        payment_token: params.payment_token,
         payment_commit: [params.payment_commit_x, params.payment_commit_y],
-        deadline_block: 0, // Will be set from ZK witness
+        deadline_block: params.deadline_block,
         state: JobState::Created,
         dao_escrow_bulla: None,
     };
@@ -557,13 +571,26 @@ fn accept_job_apply_v1(cid: ContractId, params: AcceptJobParamsV1) -> ContractRe
 
     let jobs_db = wasm::db::db_get(cid, LABOR_CONTRACT_JOBS_TREE)?;
 
-    // Get existing job
+    // SECURITY FIX: Get existing job and verify it exists
     let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
-    let mut job: Job = deserialize(&job_data)?;
+    let mut job: Job = match deserialize(&job_data)? {
+        Some(j) => j,
+        None => {
+            msg!("[labor_market::accept_job_apply_v1] ERROR: Job not found");
+            return Err(ContractError::from(LaborMarketError::JobNotFound).into())
+        }
+    };
 
     // Verify job is in Created state
     if job.state != JobState::Created {
+        msg!("[labor_market::accept_job_apply_v1] ERROR: Job not in Created state");
         return Err(ContractError::from(LaborMarketError::InvalidStateTransition).into())
+    }
+
+    // Verify no worker already assigned
+    if job.worker_pubkey.is_some() {
+        msg!("[labor_market::accept_job_apply_v1] ERROR: Worker already assigned");
+        return Err(ContractError::from(LaborMarketError::WorkerAlreadyAssigned).into())
     }
 
     // Update job with worker
@@ -596,6 +623,18 @@ fn submit_deliverable_apply_v1(cid: ContractId, params: SubmitDeliverableParamsV
         return Err(ContractError::from(LaborMarketError::InvalidStateTransition).into())
     }
 
+    // SECURITY FIX: Verify deliverable_hash matches the job's stored hash
+    if job.deliverable_hash != params.deliverable_hash {
+        msg!("[labor_market::submit_deliverable_apply_v1] ERROR: Deliverable hash mismatch");
+        return Err(ContractError::from(LaborMarketError::DeliverableHashMismatch).into())
+    }
+
+    // Verify delivery type is Generic (not Git)
+    if job.delivery_type != crate::model::DeliveryType::Generic {
+        msg!("[labor_market::submit_deliverable_apply_v1] ERROR: Wrong delivery type");
+        return Err(ContractError::from(LaborMarketError::InvalidDeliveryType).into())
+    }
+
     // Update job state
     job.state = JobState::Delivered;
 
@@ -626,6 +665,18 @@ fn submit_git_deliverable_apply_v1(cid: ContractId, params: SubmitGitDeliverable
         return Err(ContractError::from(LaborMarketError::InvalidStateTransition).into())
     }
 
+    // SECURITY FIX: Verify commit_hash matches the job's stored deliverable_hash
+    if job.deliverable_hash != params.commit_hash {
+        msg!("[labor_market::submit_git_deliverable_apply_v1] ERROR: Commit hash mismatch");
+        return Err(ContractError::from(LaborMarketError::DeliverableHashMismatch).into())
+    }
+
+    // Verify delivery type is Git (not Generic)
+    if job.delivery_type != crate::model::DeliveryType::Git {
+        msg!("[labor_market::submit_git_deliverable_apply_v1] ERROR: Wrong delivery type");
+        return Err(ContractError::from(LaborMarketError::InvalidDeliveryType).into())
+    }
+
     // Update job state
     job.state = JobState::Delivered;
 
@@ -637,22 +688,30 @@ fn submit_git_deliverable_apply_v1(cid: ContractId, params: SubmitGitDeliverable
 
 /// ConfirmDelivery apply
 fn confirm_delivery_apply_v1(cid: ContractId, params: ConfirmDeliveryParamsV1) -> ContractResult {
-    msg!("[labor_market::confirm_delivery_apply_v1] Job: {:?}", params.job_id);
+    msg!("[labor_market::confirm_delivery_apply_v1] Confirming delivery for job: {:?}", params.job_id);
 
     let jobs_db = wasm::db::db_get(cid, LABOR_CONTRACT_JOBS_TREE)?;
     let spent_flags_db = wasm::db::db_get(cid, LABOR_CONTRACT_SPENT_FLAGS_TREE)?;
 
     // Check if already spent
     if wasm::db::db_contains_key(spent_flags_db, &serialize(&params.spent_nullifier))? {
+        msg!("[labor_market::confirm_delivery_apply_v1] ERROR: Already spent");
         return Err(ContractError::from(LaborMarketError::AlreadySpent).into())
     }
 
     // Get existing job
     let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
-    let mut job: Job = deserialize(&job_data)?;
+    let mut job: Job = match deserialize(&job_data)? {
+        Some(j) => j,
+        None => {
+            msg!("[labor_market::confirm_delivery_apply_v1] ERROR: Job not found");
+            return Err(ContractError::from(LaborMarketError::JobNotFound).into())
+        }
+    };
 
-    // Verify job is in Delivered state
+    // SECURITY FIX: Verify job is in Delivered state
     if job.state != JobState::Delivered {
+        msg!("[labor_market::confirm_delivery_apply_v1] ERROR: Job not in Delivered state");
         return Err(ContractError::from(LaborMarketError::InvalidStateTransition).into())
     }
 
@@ -667,22 +726,30 @@ fn confirm_delivery_apply_v1(cid: ContractId, params: ConfirmDeliveryParamsV1) -
 
 /// Dispute apply
 fn dispute_apply_v1(cid: ContractId, params: DisputeParamsV1) -> ContractResult {
-    msg!("[labor_market::dispute_apply_v1] Job: {:?}", params.job_id);
+    msg!("[labor_market::dispute_apply_v1] Creating dispute for job: {:?}", params.job_id);
 
     let jobs_db = wasm::db::db_get(cid, LABOR_CONTRACT_JOBS_TREE)?;
     let nullifiers_db = wasm::db::db_get(cid, LABOR_CONTRACT_NULLIFIERS_TREE)?;
 
     // Check if already disputed
     if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.spent_nullifier))? {
+        msg!("[labor_market::dispute_apply_v1] ERROR: Already submitted");
         return Err(ContractError::from(LaborMarketError::AlreadySubmitted).into())
     }
 
     // Get existing job
     let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
-    let mut job: Job = deserialize(&job_data)?;
+    let mut job: Job = match deserialize(&job_data)? {
+        Some(j) => j,
+        None => {
+            msg!("[labor_market::dispute_apply_v1] ERROR: Job not found");
+            return Err(ContractError::from(LaborMarketError::JobNotFound).into())
+        }
+    };
 
-    // Verify job is in Delivered state
+    // Verify job is in Delivered or InProgress state
     if job.state != JobState::Delivered && job.state != JobState::InProgress {
+        msg!("[labor_market::dispute_apply_v1] ERROR: Invalid state for dispute");
         return Err(ContractError::from(LaborMarketError::InvalidStateTransition).into())
     }
 
@@ -697,22 +764,31 @@ fn dispute_apply_v1(cid: ContractId, params: DisputeParamsV1) -> ContractResult 
 
 /// Refund apply
 fn refund_apply_v1(cid: ContractId, params: RefundParamsV1) -> ContractResult {
-    msg!("[labor_market::refund_apply_v1] Job: {:?}", params.job_id);
+    msg!("[labor_market::refund_apply_v1] Processing refund for job: {:?}", params.job_id);
 
     let jobs_db = wasm::db::db_get(cid, LABOR_CONTRACT_JOBS_TREE)?;
     let spent_flags_db = wasm::db::db_get(cid, LABOR_CONTRACT_SPENT_FLAGS_TREE)?;
 
-    // Check if already refunded
+    // Check if already refunded/claimed
     if wasm::db::db_contains_key(spent_flags_db, &serialize(&params.spent_nullifier))? {
+        msg!("[labor_market::refund_apply_v1] ERROR: Already spent");
         return Err(ContractError::from(LaborMarketError::AlreadySpent).into())
     }
 
     // Get existing job
     let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
-    let mut job: Job = deserialize(&job_data)?;
+    let mut job: Job = match deserialize(&job_data)? {
+        Some(j) => j,
+        None => {
+            msg!("[labor_market::refund_apply_v1] ERROR: Job not found");
+            return Err(ContractError::from(LaborMarketError::JobNotFound).into())
+        }
+    };
 
-    // Verify job is in InProgress state (deadline passed but not delivered)
-    if job.state != JobState::InProgress {
+    // SECURITY FIX: Allow refund from both InProgress (never delivered) and Delivered
+    // (delivered but employer never confirmed). The ZK circuit proves deadline passed.
+    if job.state != JobState::InProgress && job.state != JobState::Delivered {
+        msg!("[labor_market::refund_apply_v1] ERROR: Invalid state for refund");
         return Err(ContractError::from(LaborMarketError::InvalidStateTransition).into())
     }
 
@@ -727,16 +803,23 @@ fn refund_apply_v1(cid: ContractId, params: RefundParamsV1) -> ContractResult {
 
 /// CancelJob apply
 fn cancel_job_apply_v1(cid: ContractId, params: CancelJobParamsV1) -> ContractResult {
-    msg!("[labor_market::cancel_job_apply_v1] Job: {:?}", params.job_id);
+    msg!("[labor_market::cancel_job_apply_v1] Cancelling job: {:?}", params.job_id);
 
     let jobs_db = wasm::db::db_get(cid, LABOR_CONTRACT_JOBS_TREE)?;
 
     // Get existing job
     let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
-    let mut job: Job = deserialize(&job_data)?;
+    let mut job: Job = match deserialize(&job_data)? {
+        Some(j) => j,
+        None => {
+            msg!("[labor_market::cancel_job_apply_v1] ERROR: Job not found");
+            return Err(ContractError::from(LaborMarketError::JobNotFound).into())
+        }
+    };
 
-    // Verify job is in Created state
+    // Verify job is in Created state (can only cancel before acceptance)
     if job.state != JobState::Created {
+        msg!("[labor_market::cancel_job_apply_v1] ERROR: Job not in Created state");
         return Err(ContractError::from(LaborMarketError::InvalidStateTransition).into())
     }
 

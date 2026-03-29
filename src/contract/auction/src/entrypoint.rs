@@ -194,6 +194,14 @@ fn place_bid_get_metadata_v1(
         return Err(ContractError::InvalidInstruction.into())
     }
 
+    // SECURITY FIX: Verify auction hasn't ended (deadline not passed)
+    // Get current block and verify deadline_block > current_block
+    let current_block = wasm::chain::get_block_height()?;
+    if current_block >= auction.deadline_block {
+        msg!("[auction::place_bid_get_metadata_v1] ERROR: Auction has ended");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
     // Verify bid amount > current highest bid (if there is one)
     if let Some(highest_bid) = auction.highest_bid {
         if params.amount <= highest_bid {
@@ -323,6 +331,13 @@ fn settle_auction_get_metadata_v1(
     // Verify auction is closed
     if auction.state != AuctionState::Closed {
         msg!("[auction::settle_auction_get_metadata_v1] ERROR: Auction not closed");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // SECURITY FIX: Verify settlement nullifier hasn't been used (prevent double-settlement)
+    let nullifiers_db = wasm::db::db_get(cid, AUCTION_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.settlement_nullifier))? {
+        msg!("[auction::settle_auction_get_metadata_v1] ERROR: Already settled");
         return Err(ContractError::InvalidInstruction.into())
     }
 
@@ -642,9 +657,19 @@ fn settle_auction_v1(cid: ContractId, params: SettleAuctionParamsV1) -> Contract
         return Err(ContractError::InvalidInstruction.into())
     }
 
+    // SECURITY FIX: Verify settlement nullifier hasn't been used
+    let nullifiers_db = wasm::db::db_get(cid, AUCTION_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.settlement_nullifier))? {
+        msg!("[auction::settle_auction_v1] ERROR: Already settled");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
     // Update auction state
     auction.state = AuctionState::Settled;
     wasm::db::db_set(auctions_db, &serialize(&params.auction_id), &serialize(&auction))?;
+
+    // SECURITY FIX: Store settlement nullifier to prevent double-settlement
+    wasm::db::db_put(nullifiers_db, &serialize(&params.settlement_nullifier), &[])?;
 
     msg!("[auction::settle_auction_v1] Auction settled successfully");
     Ok(())
