@@ -28,6 +28,10 @@ witness "RefundBid" {
 
     # Bidder's secret (for key derivation and nullifier)
     Base bidder_secret,
+
+    # Bidder's public key coordinates (public input - must match derived)
+    Base bidder_pub_x,
+    Base bidder_pub_y,
 }
 
 circuit "RefundBid" {
@@ -36,8 +40,13 @@ circuit "RefundBid" {
     # ==========================================================================
 
     bidder_pub = ec_mul_base(bidder_secret, NULLIFIER_K);
-    bidder_pub_x = ec_get_x(bidder_pub);
-    bidder_pub_y = ec_get_y(bidder_pub);
+    derived_pub_x = ec_get_x(bidder_pub);
+    derived_pub_y = ec_get_y(bidder_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the bidder_secret to the bidder_pubkey
+    constrain_equal_base(derived_pub_x, bidder_pub_x);
+    constrain_equal_base(derived_pub_y, bidder_pub_y);
 
     # ==========================================================================
     # PHASE 2: Compute refund nullifier
@@ -64,6 +73,7 @@ circuit "RefundBid" {
     # This circuit uses ONLY proven opcodes:
     #   - ec_mul_base: standard EC operations
     #   - ec_get_x, ec_get_y: standard EC operations
+    #   - constrain_equal_base: equality constraint
     #   - poseidon_hash: field-proven commitment
     #   - constrain_instance: public input exposure
     #

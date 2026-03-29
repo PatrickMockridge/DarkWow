@@ -32,6 +32,10 @@ witness "SettleAuction" {
 
     # Winning bid amount
     Base highest_bid_amount,
+
+    # Seller's public key coordinates (public input - must match derived)
+    Base seller_pub_x,
+    Base seller_pub_y,
 }
 
 circuit "SettleAuction" {
@@ -40,8 +44,13 @@ circuit "SettleAuction" {
     # ==========================================================================
 
     seller_pub = ec_mul_base(seller_secret, NULLIFIER_K);
-    seller_pub_x = ec_get_x(seller_pub);
-    seller_pub_y = ec_get_y(seller_pub);
+    derived_pub_x = ec_get_x(seller_pub);
+    derived_pub_y = ec_get_y(seller_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the seller_secret to the seller_pubkey
+    constrain_equal_base(derived_pub_x, seller_pub_x);
+    constrain_equal_base(derived_pub_y, seller_pub_y);
 
     # ==========================================================================
     # PHASE 2: Compute settlement nullifier
@@ -68,6 +77,7 @@ circuit "SettleAuction" {
     # This circuit uses ONLY proven opcodes:
     #   - ec_mul_base: standard EC operations
     #   - ec_get_x, ec_get_y: standard EC operations
+    #   - constrain_equal_base: equality constraint
     #   - poseidon_hash: field-proven commitment
     #   - constrain_instance: public input exposure
     #

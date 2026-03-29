@@ -30,6 +30,10 @@ witness "ClaimWinnings" {
 
     # Winning bid ID
     Base winner_bid_id,
+
+    # Winner's public key coordinates (public input - must match derived)
+    Base winner_pub_x,
+    Base winner_pub_y,
 }
 
 circuit "ClaimWinnings" {
@@ -38,8 +42,13 @@ circuit "ClaimWinnings" {
     # ==========================================================================
 
     winner_pub = ec_mul_base(winner_secret, NULLIFIER_K);
-    winner_pub_x = ec_get_x(winner_pub);
-    winner_pub_y = ec_get_y(winner_pub);
+    derived_pub_x = ec_get_x(winner_pub);
+    derived_pub_y = ec_get_y(winner_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the winner_secret to the winner_pubkey
+    constrain_equal_base(derived_pub_x, winner_pub_x);
+    constrain_equal_base(derived_pub_y, winner_pub_y);
 
     # ==========================================================================
     # PHASE 2: Expose public inputs
@@ -61,6 +70,7 @@ circuit "ClaimWinnings" {
     # This circuit uses ONLY proven opcodes:
     #   - ec_mul_base: standard EC operations
     #   - ec_get_x, ec_get_y: standard EC operations
+    #   - constrain_equal_base: equality constraint
     #   - constrain_instance: public input exposure
     #
     # The contract layer verifies:
