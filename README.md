@@ -13,9 +13,9 @@ This is a development fork of the official DarkFi repository.
 
 **The `dev` branch** (`PatrickM123/darkfi:dev`) contains all additions compared to official DarkFi master:
 
-- **New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap (not in official DarkFi)
-- **Expanded architecture documentation**: Additional analysis and design approaches including [Subscription](doc/src/arch/subscription.md) and [Atomic Swap](doc/src/arch/atomic_swap.md) contracts
-- **Architecture reference docs**: [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) (grey-market opcode analysis), [Merkle Depth](doc/src/arch/merkle_depth.md) (fixed-depth limitations and workarounds), [Composability](doc/src/arch/composability.md) (smart contract composition patterns with real-world DAO failure analysis)
+- **New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap, Labor Market, Auction, Tender (not in official DarkFi)
+- **Expanded architecture documentation**: Additional analysis and design approaches including [Subscription](doc/src/arch/subscription.md), [Atomic Swap](doc/src/arch/atomic_swap.md), [Labor Market](doc/src/arch/labor_market.md), [Auction](doc/src/arch/auction.md), and [Tender](doc/src/arch/tender.md) contracts
+- **Architecture reference docs**: [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) (grey-market opcode analysis), [Merkle Depth](doc/src/arch/merkle_depth.md) (fixed-depth limitations and workarounds), [Composability](doc/src/arch/composability.md) (smart contract composition patterns with real-world DAO failure analysis and Tender + Labor Market + Identity integration)
 - **Work-in-progress implementations**: Skeleton code and alternative approaches
 
 **Security Status**: All new contracts are EXPERIMENTAL and UNAUDITED. Known security issues are documented in [Security Analysis](doc/src/arch/security-analysis.md). The official DarkFi repository should be consulted for the canonical, production-ready state.
