@@ -102,9 +102,9 @@ This pattern (in `dao/exec.zk`) handles ratio checks without `BaseDiv`.
 | escrow | `refund_v1.zk` | No | ✅ Safe |
 | dao_escrow | `init_v1.zk` | No | ✅ Safe |
 | dao_escrow | `pay_premium_v1.zk` | No | ✅ Safe |
-| identity | `create_claim_v1.zk` | **Yes** | LessThanOrEqual + IsEqualBase |
-| stablecoin | `open_position_v1.zk` | **Yes** | LessThanOrEqual |
-| stablecoin | `liquidate_v1.zk` | **Yes** | LessThanOrEqual |
+| identity | `create_claim_v1.zk` | **Yes** | LessThanOrEqual (needs Boolean output, cannot use safemath) |
+| stablecoin | `open_position_v1.zk` | No | ✅ Uses safemath `assert_lte_u64_v1.zk` |
+| stablecoin | `liquidate_v1.zk` | No | ✅ Uses safemath `assert_lte_u64_v1.zk` |
 | bridge | `deposit_v1.zk` | No | ✅ Fixed — real `merkle_root` |
 
 ---
@@ -113,8 +113,9 @@ This pattern (in `dao/exec.zk`) handles ratio checks without `BaseDiv`.
 
 1. **No `BaseDiv` needed** - Cross-multiplication with `less_than_strict` handles all ratio checks
 2. **`less_than_strict` is safe** - It's constrain-only (no return value manipulation)
-3. **Experimental opcodes block production** - `identity` and `stablecoin` cannot ship until `LessThanOrEqual` is formally verified or replaced
-4. **Bridge Merkle is fixed** - `deposit_v1.zk` now uses real `merkle_root` opcode
+3. **stablecoin LessThanOrEqual replaced** - Now uses safemath assertion gadgets (`assert_lte_u64_v1.zk`)
+4. **identity LessThanOrEqual is fundamental** - Cannot use safemath without changing Level 1 (selective) to Level 0 (zk_only) semantics
+5. **Bridge Merkle is fixed** - `deposit_v1.zk` now uses real `merkle_root` opcode
 
 **See also**:
 - [Experimental Opcodes](../../doc/src/arch/experimental-opcodes.md) — Concise reference for contract authors

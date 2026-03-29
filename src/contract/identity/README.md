@@ -210,6 +210,21 @@ When building the identity contract's `create_claim_v1.zk` circuit, we discovere
 
 Implementing `LessThanOrEqual` before having `create_claim_v1.zk` would have been backwards. The circuit's requirements drove the opcode's specification.
 
+## LessThanOrEqual: Boolean vs Assertion
+
+The identity contract uses `LessThanOrEqual` differently from stablecoin:
+
+| Contract | Usage | Can use safemath? |
+|----------|-------|-------------------|
+| **stablecoin** | Assert `result == 1` (assertion pattern) | ✅ Yes - use `assert_lte_u64_v1.zk` |
+| **identity** | Return Boolean for public output | ❌ No - would change semantics |
+
+For **stablecoin**: The circuit asserts `2*debt <= collateral` - if true, proof passes. This is an assertion that can be replaced with safemath's `assert_lte_u64_v1.zk`.
+
+For **identity**: The circuit returns `is_authorized` (0/1) which is constrained to equal a PUBLIC INPUT `predicate_result`. This reveals the predicate result to the verifier. Using safemath's assertion gadget would require redesigning to NOT reveal the result (changing Level 1 "selective" to Level 0 "zk_only").
+
+**Current workaround**: The circuit uses a placeholder that always passes. The verifier must trust the predicate_result public input.
+
 ## Reasoned Opcodes
 
 The identity circuits use existing zkVM opcodes for the basic proof structure. The predicate verification requires:
@@ -217,8 +232,6 @@ The identity circuits use existing zkVM opcodes for the basic proof structure. T
 ### `LessThanOrEqual(a, b)` (Reasoned)
 **Purpose**: Returns 1 if `a <= b`, 0 otherwise
 **Reasoning**: Required for predicates like "age >= 18" (threshold <= attribute_value).
-
-**Current workaround**: The circuit uses a placeholder that always passes. The verifier must trust the predicate_result public input.
 
 **Implementation**:
 ```
@@ -247,7 +260,9 @@ LessThanOrEqual(a, b) = IsEqualBase(a, b) OR LessThanLoose(a, b)
 3. Audit by a ZK circuit expert
 4. Fuzzing with adversarial inputs near field boundaries
 
-**Current status**: The identity contract uses these opcodes because the alternative (a placeholder that always passes) is worse. But the circuit's security relies on the opcode being correct.
+**Current status**: The identity contract uses these opcodes because the alternative (removing public predicate result, changing Level 1 to Level 0) is a semantic change. But the circuit's security relies on the opcode being correct.
+
+**To avoid LessThanOrEqual without semantic change**: Would need a new opcode that returns Boolean (not just an assertion gadget). The `LessThanOrEqual` itself is the correct opcode for this use case - it just needs formal verification.
 
 **See**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full delta-invert analysis.
 

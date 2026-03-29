@@ -75,12 +75,13 @@ circuit "OpenPositionV1" {
     bool_check(debt_amount);
 
     # Collateralization check: collateral >= 2 * debt (200% minimum collateralization)
-    # less_than_or_equal(a, b) returns 1 if a <= b, 0 otherwise.
-    # We verify: 2 * debt <= collateral, so is_collateralized = 1.
+    # Using safemath assert_lte pattern: prove a <= b by proving a < b + 1
+    # This replaces less_than_or_equal (experimental opcode)
     #
-    # NOTE: This opcode is experimental (grey-market goods).
-    # See: doc/src/arch/zkvm_primitives.md "Experimental Status"
+    # See: src/contract/safemath/templates/safemath/assert_lte_u64_v1.zk
     two_times_debt = base_add(debt_amount, debt_amount);
-    is_collateralized = less_than_or_equal(two_times_debt, collateral_amount);
-    constrain_equal_base(is_collateralized, witness_base(1));
+    range_check(64, two_times_debt);
+    ONE = witness_base(1);
+    collateral_plus_one = base_add(collateral_amount, ONE);
+    less_than_strict(two_times_debt, collateral_plus_one);
 }
