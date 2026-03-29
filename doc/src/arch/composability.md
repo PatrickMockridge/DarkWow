@@ -41,7 +41,7 @@ All DarkFi contracts must represent state. The common patterns are:
 │                                                                   │
 │     ┌─────────┐         ┌─────────────┐                          │
 │     │ Element │ ──────→ │   Merkle    │                          │
-│     └─────────┘         │     Root    │                          │
+│     └─────────┘         │     Root     │                          │
 │                         └─────────────┘                          │
 │     Proof: "element is in set" without revealing element         │
 │                                                                   │
@@ -98,11 +98,130 @@ As detailed in [Private Authorization Layer](privauth.md), all DarkFi contracts 
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## The Attestation Primitive
+
+The [Attestation Contract](./attestation.md) provides a **generalized claims and attestation system** that enables cross-contract composition through a common pattern:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Attestation Pattern                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ATTESTOR → ATTESTATION → CLAIMANT → CLAIM → VALIDATION          │
+│                                                                   │
+│  ┌─────────────┐    ┌──────────────┐    ┌─────────────┐         │
+│  │ Attestor    │───→│ Attestation  │───→│ Claimant    │         │
+│  │ (issuer)    │    │ (commitment) │    │ (holder)    │         │
+│  └─────────────┘    └──────────────┘    └──────┬──────┘         │
+│                                                 │                 │
+│                                                 ▼                 │
+│                                           ┌─────────────┐         │
+│                                           │    Claim    │         │
+│                                           │ (assertion) │         │
+│                                           └──────┬──────┘         │
+│                                                  │                 │
+│                                                  ▼                 │
+│                                           ┌─────────────┐         │
+│                                           │   Verify    │         │
+│                                           │ (predicate) │         │
+│                                           └──────┬──────┘         │
+│                                                  │                 │
+│                                                  ▼                 │
+│                                           ┌─────────────┐         │
+│                                           │   Consume   │         │
+│                                           │ (nullifier) │         │
+│                                           └─────────────┘         │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Attestation vs Identity
+
+| Aspect | Identity Contract | Attestation Contract |
+|--------|------------------|---------------------|
+| **Purpose** | ZK credential proofs using competency DAGs | Generalized attestation and claims |
+| **Pattern** | Issuer issues credentials, holder proves | Attestor commits to data, claimant creates claim |
+| **Predicate** | Custom ZK circuits | Standard predicates: Matches, GreaterOrEqual, LessOrEqual, Contains |
+| **Replay Prevention** | Nullifier per claim | Nullifier per claim consumption |
+| **Use Cases** | Competency verification, age checks | Deliverable verification, price feeds, oracle data |
+
+The Attestation contract generalizes the claims pattern that appeared in Identity, Labor Market, and Tender.
+
+### Predicates
+
+The Attestation contract supports standard predicates:
+
+| Predicate | Description |
+|-----------|-------------|
+| `Matches` | `evidence_commitment == claim_data[0]` |
+| `GreaterOrEqual` | `value >= threshold` |
+| `LessOrEqual` | `value <= threshold` |
+| `Contains` | `data contains pattern` |
+| `Custom` | Custom predicate via ZK circuit |
+
+### State Machines
+
+**Attestation State:**
+```
+Active ──[Revoke]──> Revoked
+    │
+    └──[Expire]──> Expired
+```
+
+**Claim State:**
+```
+Pending ──[Verify:valid]──> Verified ──[Consume]──> Consumed
+    │
+    └──[Verify:invalid]──> Rejected
+```
+
+### Contracts Using Attestation
+
+| Contract | Attestation Usage |
+|----------|-------------------|
+| **Labor Market** | Employer attests to deliverable hash; worker claims completion |
+| **Tender** | Requester attests to competency requirements; bidders claim competency |
+| **Oracle** | Oracle attests to external data values; consumers claim and verify |
+
+### Oracle: Push Model for External Data
+
+The [Oracle Contract](./oracle.md) demonstrates the push model using Attestation:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Oracle + Attestation Flow                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Oracle Operator                                                             │
+│     │                                                                       │
+│     │  RegisterOracle(name, data_type)                                      │
+│     ▼                                                                       │
+│  Oracle(Active)                                                             │
+│     │                                                                       │
+│     │  PushValue(value)                                                    │
+│     │                                                                       │
+│     │  AttestValue(predicate, threshold)                                    │
+│     ▼                                                                       │
+│  Attestation(claim_data=[value]) ─────────────────────────────────────────►│
+│                                                                              │
+│                                              Consumer Contract               │
+│                                                 │                            │
+│                                                 │ CreateClaim(evidence)      │
+│                                                 ▼                            │
+│                                              Claim(Verified)                 │
+│                                                 │                            │
+│                                                 │ ConsumeClaim()             │
+│                                                 ▼                            │
+│                                              Contract Logic                  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
 ### Interaction Primitives
 
 Cross-contract composition follows specific patterns:
 
-```
+ ```
 ┌─────────────────────────────────────────────────────────────────┐
 │              Cross-Contract Interaction Patterns                      │
 ├─────────────────────────────────────────────────────────────────┤
@@ -113,7 +232,7 @@ Cross-contract composition follows specific patterns:
 │     Problem: How does C verify A's authorization?                │
 │                                                                   │
 │     Solution: Pass proof along call chain                         │
-│     A produces proof, B validates and forwards, C trusts B        │
+│     A produces proof, B validates and forwards, C trusts B      │
 │                                                                   │
 │  2. STATE DEPENDENCY                                             │
 │     Contract A reads state from Contract B                        │
@@ -131,21 +250,29 @@ Cross-contract composition follows specific patterns:
 │     Solution: Atomic transactions with dependent operations      │
 │     Both operations in same transaction, all or nothing          │
 │                                                                   │
+│  4. ATTESTATION REFERENCE                                       │
+│     Contract A uses attestation from Contract B                  │
+│                                                                   │
+│     Problem: How does A verify B's attestation without direct?   │
+│                                                                   │
+│     Solution: Store attestation_id, verify claim via Attestation │
+│     A reads attestation_id, calls Attestation.verify_claim()    │
+│                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Cross-Contract Composability Matrix
 
-| Caller → | Money | DAO | Bridge | DEX | Identity | Stablecoin | Labor Market | Tender |
-|----------|-------|-----|--------|-----|----------|------------|-------------|--------|
-| **Money** | - | Token transfers | Token escrow | Swap settlement | Token-gated access | Collateral deposits | Job payment escrow | Bid deposit escrow |
-| **DAO** | Treasury management | - | Governance of bridge | Governance of DEX | Credential-gated voting | Governance of stability | Job approval governance | Tender authorization |
-| **Bridge** | Cross-chain transfers | Relayer rewards | - | Liquidity provision | Identity verification | Liquidity provision | External job funding | External tender integration |
-| **DEX** | Swap execution | Fee distribution | - | - | Credential-gated pools | Liquidity pools | - | - |
-| **Identity** | Token-gated access | Credential-gated voting | Identity attestation | Credential-gated trading | - | Credit scoring | Competency verification | Competency requirement |
-| **Stablecoin** | Collateral management | Stability pool governance | Collateral rebalancing | - | - | - | - | - |
-| **Labor Market** | Job payment settlement | Job DAO governance | External payment integration | - | Worker credential verification | - | - | Job creation from tender |
-| **Tender** | Bid deposit management | - | External tender integration | - | Competency-based selection | - | Winner job creation | - |
+| Caller → | Money | DAO | Bridge | DEX | Attestation | Oracle | Labor Market | Tender |
+|----------|-------|-----|--------|-----|--------------|--------|-------------|--------|
+| **Money** | - | Token transfers | Token escrow | Swap settlement | - | - | Job payment escrow | Bid deposit escrow |
+| **DAO** | Treasury management | - | Governance of bridge | Governance of DEX | Attestation governance | - | Job approval governance | Tender authorization |
+| **Bridge** | Cross-chain transfers | Relayer rewards | - | Liquidity provision | - | - | External job funding | External tender integration |
+| **DEX** | Swap execution | Fee distribution | - | - | - | - | - | - |
+| **Attestation** | - | - | - | - | - | Oracle data attestation | Deliverable verification | Competency verification |
+| **Oracle** | Collateral pricing | - | - | Liquidity pricing | Creates attestations | - | - | - |
+| **Labor Market** | Job payment settlement | Job DAO governance | External payment integration | - | Uses for delivery | - | - | Job creation from tender |
+| **Tender** | Bid deposit management | - | External tender integration | - | Uses for competency | - | Winner job creation | - |
 
 ## General Primitive Composition Patterns
 
@@ -159,10 +286,10 @@ Cross-contract composition follows specific patterns:
 │  PRECONDITION: User holds >= N tokens                            │
 │                                                                   │
 │  Implementation:                                                 │
-│  1. User creates commitment: H(balance_secret, token, amount)    │
-│  2. User generates ZK proof: "I know secret such that             │
-│     commitment = H(secret, token, amount) AND amount >= N"      │
-│  3. Contract verifies: commitment exists, proof valid             │
+│  1. User creates commitment: H(balance_secret, token, amount)  │
+│  2. User generates ZK proof: "I know secret such that            │
+│     commitment = H(secret, token, amount) AND amount >= N"     │
+│  3. Contract verifies: commitment exists, proof valid            │
 │                                                                   │
 │  Privacy: Only reveals "amount >= N", not actual balance         │
 │                                                                   │
@@ -171,25 +298,25 @@ Cross-contract composition follows specific patterns:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Pattern 2: Credential-Gated Access
+### Pattern 2: Attestation-Based Claims
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│               Credential-Gated Access                                   │
+│               Attestation-Based Claims                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  PRECONDITION: User holds valid credential from trusted issuer   │
+│  PRECONDITION: Attestor has attested to a claim                   │
 │                                                                   │
 │  Implementation:                                                 │
-│  1. Issuer creates: credential = H(issuer_key, holder, schema)   │
-│  2. User creates claim: ZK proof of credential ownership        │
-│  3. Contract verifies: credential exists, not revoked,           │
-│     issuer is trusted                                            │
+│  1. Attestor creates: attestation = H(data, attestor_key)     │
+│  2. Claimant creates: claim = ZK proof of attestation access    │
+│  3. Contract verifies: attestation exists, claim valid,           │
+│     predicate satisfied                                           │
 │                                                                   │
-│  Privacy: Only reveals "valid credential", not holder identity   │
+│  Privacy: Only reveals "valid claim", not underlying data        │
 │                                                                   │
-│  Used in: Governance rights, age-restricted pools, accredited    │
-│           investor gates                                         │
+│  Used in: Deliverable verification, competency claims,            │
+│           oracle data consumption, event attestation               │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -201,7 +328,7 @@ Cross-contract composition follows specific patterns:
 │                  Time-Locked Actions                                   │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  PRECONDITION: Action can only happen after timestamp T         │
+│  PRECONDITION: Action can only happen after timestamp T           │
 │                                                                   │
 │  Implementation:                                                  │
 │  1. State includes: time_lock = H(T, action_description)        │
@@ -210,7 +337,7 @@ Cross-contract composition follows specific patterns:
 │                                                                   │
 │  Privacy: Locked action description hidden until unlock          │
 │                                                                   │
-│  Used in: Vesting schedules, delayed withdrawals, expiration     │
+│  Used in: Vesting schedules, delayed withdrawals, expiration      │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -226,7 +353,7 @@ Cross-contract composition follows specific patterns:
 │                                                                   │
 │  Implementation:                                                 │
 │  1. Each party creates: partial_sig_i = sign(secret_i, msg)     │
-│  2. Aggregator combines: full_sig = combine(partial_sigs)         │
+│  2. Aggregator combines: full_sig = combine(partial_sigs)        │
 │  3. Contract verifies: threshold met, all signers authorized    │
 │                                                                   │
 │  Privacy: Individual signers revealed only if needed             │
@@ -235,6 +362,8 @@ Cross-contract composition follows specific patterns:
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+## Case Studies
 
 ### Case Study: Subscription + DAO-Escrow + Atomic Swap
 
@@ -328,14 +457,14 @@ Ethereum                          DarkFi
     │                                 │
     │  1. User locks ETH in HTLC      │
     │     hash = SHA256(secret)        │
-    │ ───────────────────────────────►│
+    │ ───────────────────────────────► │
     │                                 │  2. Verify hash matches
     │                                 │  3. SubscribeV1 executes
     │                                 │     (DAO-Escrow membership
     │                                 │      verified via Merkle)
     │                                 │
     │  4. Reveal secret              │  5. Subscription activated
-    │ ───────────────────────────────►│
+    │ ───────────────────────────────► │
 ```
 
 The atomic swap's HTLC pattern ensures:
@@ -521,26 +650,25 @@ The $55M problem doesn't happen because:
 
 This architecture would have solved the accountability problems that plagued organizations like AssangeDAO — where the inability to vote on governance (due to legal liability fears) and the transparent treasury (which invited extraction) led to failure.
 
-### Case Study: Tender + Labor Market + Identity
+### Case Study: Tender + Labor Market + Attestation
 
-The Tender contract demonstrates DarkFi's integration of sealed-bid procurement with competency verification and job execution, forming a complete project lifecycle from tender to delivery.
+The Tender and Labor Market contracts demonstrate DarkFi's integration of sealed-bid procurement with attestation-based competency verification and job execution, forming a complete project lifecycle from tender to delivery.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│           Tender + Labor Market + Identity Composability                           │
+│              Tender + Labor Market + Attestation Composability                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌──────────────────────┐         ┌──────────────────────┐                  │
-│  │     Identity         │         │       Tender         │                  │
+│  │    Attestation       │         │       Tender         │                  │
 │  │                      │         │                       │                  │
 │  │  ┌────────────────┐  │         │  ┌────────────────┐  │                  │
-│  │  │ Competency DAG │──┼─────────┼──│ SubmitBidV1()  │  │                  │
-│  │  │ + Credential   │  │         │  │ + competency_  │  │                  │
-│  │  │   Commitment   │  │         │  │   commitment   │  │                  │
+│  │  │ CreateAttest() │──┼─────────┼──│ SubmitBidV1()   │  │                  │
+│  │  │ + claim_data   │  │         │  │ + claim_id     │  │                  │
 │  │  └────────────────┘  │         │  └───────┬────────┘  │                  │
 │  │                       │         │          │            │                  │
-│  │  ZK Credential        │         │  Sealed Bid          │                  │
-│  │  Verification         │         │  + Commitment        │                  │
+│  │  Attestation          │         │  Sealed Bid          │                  │
+│  │  Reference            │         │  + Claim ID         │                  │
 │  └───────────────────────┘         └───────────────────────┘                  │
 │                                    │                                           │
 │                                    │    Winner Selected                        │
@@ -551,9 +679,15 @@ The Tender contract demonstrates DarkFi's integration of sealed-bid procurement 
 │  │  ┌──────────────────────────────────────────────────────────┐  │           │
 │  │  │ CreateJobV1()                                             │  │           │
 │  │  │ - Creates job from tender winner                          │  │           │
-│  │  │ - Sets deliverable_hash from tender specification         │  │           │
-│  │  │ - Sets payment_amount from winning bid                    │  │           │
-│  │  │ - Sets deadline from tender delivery_deadline             │  │           │
+│  │  │ - Sets attestation_id from tender specification            │  │           │
+│  │  │ - Sets payment_amount from winning bid                     │  │           │
+│  │  │ - Sets deadline from tender delivery_deadline              │  │           │
+│  │  └──────────────────────────────────────────────────────────┘  │           │
+│  │                                                                 │           │
+│  │  ┌──────────────────────────────────────────────────────────┐  │           │
+│  │  │ SubmitDeliverableV1()                                     │  │           │
+│  │  │ - Worker submits claim_id from attestation                 │  │           │
+│  │  │ - Labor market verifies claim via Attestation contract    │  │           │
 │  │  └──────────────────────────────────────────────────────────┘  │           │
 │  └────────────────────────────────────────────────────────────────┘           │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -579,22 +713,31 @@ Sealed ──[Reveal]──> Revealed ──[Accept]──> Accepted
   └──[Timeout]──> Expired  └──[Reject]──> Rejected
 ```
 
-#### Integration with Identity
+#### Integration with Attestation
 
-Workers prove competency via the Identity contract:
+Workers prove competency via the Attestation contract:
 
 ```rust
-// SubmitBidV1 parameters include:
+// Requester creates attestation for competency requirements
+let attestation_id = attestation::create_attestation(
+    attestor: requester_pubkey,
+    claim_type: Predicate::Matches,
+    claim_data: vec![requirement_commitment],
+)?;
+
+// Worker creates claim proving they meet requirements
+let claim_id = attestation::create_claim(
+    attestation_id,
+    claimant: worker_pubkey,
+    predicate: Predicate::Matches,
+    evidence_commitment: worker_competency_commitment,
+)?;
+
+// Worker submits bid with claim_id
 struct SubmitBidParamsV1 {
-    competency_commitment: pallas::Base,  // From Identity credential
-    encrypted_payload: Vec<u8>,            // Encrypted bid details
+    claim_id: pallas::Base,  // From Attestation.create_claim
     // ...
 }
-
-// The competency_commitment proves:
-// - Worker has valid credentials from trusted issuers
-// - Credentials meet the tender's requirement_commitment
-// - Without revealing worker's identity or specific credentials
 ```
 
 #### Integration with Labor Market
@@ -605,16 +748,46 @@ Winner selection automatically creates a job:
 // SelectWinnerV1 creates labor job with:
 struct SelectWinnerParamsV1 {
     winner_pubkey: PublicKey,         // From winning bid
-    winning_amount: u64,             // From revealed bid
-    // Tender's specification, delivery_deadline used for job
+    winning_amount: u64,              // From revealed bid
+    // Tender's attestation_id, delivery_deadline used for job
 }
 
 // Labor Market job creation:
-// - deliverable_hash = tender.specification
+// - attestation_id = tender.attestation_id
 // - payment_amount = winning_amount
 // - deadline_block = tender.delivery_deadline
 // - employer_pubkey = tender.requester_pubkey
 // - worker_pubkey = winner_pubkey
+```
+
+#### Attestation Flow for Deliverables
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                Labor Market + Attestation Deliverable Flow                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Employer                                                                   │
+│     │                                                                       │
+│     │ CreateAttestation(deliverable_hash)                                   │
+│     ▼                                                                       │
+│  Attestation(Active)                                                        │
+│     │                                                                       │
+│     │ attestation_id                                                        │
+│     │                                                                       │
+│     │◄──────────────────────────────── CreateJob(job, attestation_id)      │
+│     │                                                                       │
+│     │                              Worker                                   │
+│     │                                 │                                     │
+│     │                                 │ CreateClaim(evidence_commitment)   │
+│     │                                 ▼                                     │
+│     │                              Claim(Verified)                          │
+│     │                                 │                                     │
+│     │                                 │ claim_id                            │
+│     │                                 │                                     │
+│     │◄── SubmitDeliverable(job_id, claim_id)                              │
+│     │                                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### Composability Principles Applied
@@ -622,7 +795,7 @@ struct SelectWinnerParamsV1 {
 | Principle | How It's Applied |
 |-----------|------------------|
 | **Sealed Bids** | `poseidon_hash(amount, nonce)` hides bid until reveal deadline |
-| **Competency Verification** | Identity contract credentials verified via commitment |
+| **Attestation Verification** | Attestation contract verifies competency/deliverable claims |
 | **State Machine** | Tender/Bid states prevent invalid transitions |
 | **Nullifier Namespace** | Bid submission and reveal use separate nullifiers |
 | **Escrow Integration** | Bid deposits held in escrow; refundable if outbid or cancelled |
@@ -631,9 +804,10 @@ struct SelectWinnerParamsV1 {
 
 | From | To | Integration |
 |------|----|-------------|
-| Identity | Tender | `SubmitBid` verifies competency commitment from Identity credential |
+| Attestation | Tender | `SubmitBid` verifies claim_id from Attestation |
+| Attestation | Labor Market | `SubmitDeliverable` verifies claim_id for deliverable |
 | Tender | Labor Market | `SelectWinner` creates job with tender's specification and winning bid details |
-| Labor Market | Tender | Worker can use same identity credentials in job delivery |
+| Labor Market | Attestation | Worker creates claim on attestation for deliverable verification |
 
 #### Tau Task Tracking Integration
 
@@ -646,20 +820,70 @@ Jobs created from tender winners can be tracked via Tau:
 │                                                                   │
 │  1. Requester creates Tender with specifications                 │
 │     ↓                                                             │
-│  2. Workers submit sealed bids with competency proofs            │
+│  2. Workers submit sealed bids with attestation claims           │
 │     ↓                                                             │
 │  3. Winner selected → Job created in Labor Market                │
 │     ↓                                                             │
 │  4. Job tracked in Tau for delivery monitoring                   │
 │     ↓                                                             │
-│  5. Worker submits deliverables → Verified against spec          │
+│  5. Worker submits deliverables → Attestation verifies claim       │
 │     ↓                                                             │
-│  6. Payment released via escrow                                  │
+│  6. Payment released via escrow                                   │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-See [Tender Contract](tender.md), [Labor Market Contract](labor_market.md), [Identity Contract](identity.md), and [Tau](../../misc/tau.md) for full details.
+See [Tender Contract](tender.md), [Labor Market Contract](labor_market.md), [Attestation Contract](attestation.md), [Oracle Contract](oracle.md), and [Tau](../../misc/tau.md) for full details.
+
+### Case Study: Oracle + Attestation + DeFi
+
+The Oracle contract demonstrates using Attestation for external data integration:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Oracle + Attestation + DeFi Flow                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Price Oracle                                                               │
+│     │                                                                       │
+│     │  RegisterOracle("BTC/USD", "price")                                  │
+│     ▼                                                                       │
+│  Oracle(Active)                                                             │
+│     │                                                                       │
+│     │  PushValue(50000)  // BTC/USD price                                  │
+│     │                                                                       │
+│     │  AttestValue(GreaterOrEqual, 45000)  // Liquidation threshold        │
+│     ▼                                                                       │
+│  Attestation(claim_data=[50000])                                            │
+│     │                                                                       │
+│     │ attestation_id                                                        │
+│     │                                                                       │
+│     │◄─────────────────────────────── Stablecoin Contract                 │
+│     │                                                                       │
+│     │                              Worker/Bot                               │
+│     │                                 │                                     │
+│     │                                 │ CreateClaim(poseidon_hash(50000))  │
+│     │                                 ▼                                     │
+│     │                              Claim(Verified)                          │
+│     │                                 │                                     │
+│     │                                 │ if price < threshold:               │
+│     │                                 │    liquidate_position()            │
+│     │                                 ▼                                     │
+│     │                              Payout                                  │
+│     │                                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Oracle Use Cases
+
+| Use Case | Oracle Pushes | Attestation Predicate | Consumer Action |
+|----------|---------------|----------------------|-----------------|
+| DeFi Liquidation | Token price | LessOrEqual threshold | Liquidate CDP |
+| Sports Betting | Game outcome | Matches team | Settle bets |
+| Gaming Randomness | Random value | Matches committed | Mint NFT |
+| Weather Insurance | Weather data | LessOrEqual threshold | Trigger payout |
+
+See [Oracle Contract](oracle.md) and [Attestation Contract](attestation.md) for full details.
 
 ## SDK Primitives
 
@@ -782,9 +1006,9 @@ The intent primitives in this SDK are **not** specific to AMM or DEX. They imple
 │    DepositParams.commitment → WithdrawParams.nullifier            │
 │    "I know the secret for this deposit"                          │
 │                                                                   │
-│  Identity:                                                        │
-│    IssueCredentialParams.commitment → Claim.nullifier             │
-│    "I hold a valid credential from this issuer"                  │
+│  Attestation:                                                     │
+│    Attestation.id → Claim.id → Claim.nullifier                   │
+│    "I have a valid claim on this attestation"                   │
 │                                                                   │
 │  DEX:                                                             │
 │    CreateSwapParams.lock_commitment → AcceptSwapParams.lock_commitment │
@@ -795,7 +1019,7 @@ The intent primitives in this SDK are **not** specific to AMM or DEX. They imple
 │    "I own this CDP"                                              │
 │                                                                   │
 │  KEY INSIGHT: Same lifecycle, different predicates.                │
-│               The machinery is reusable; the proof is not.         │
+│               The machinery is reusable; the proof is not.       │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -809,9 +1033,10 @@ Each application domain uses a namespace constant to scope intents:
 | Contract | Namespace | Purpose |
 |----------|-----------|---------|
 | Identity | `0x0001` | Credential claims and verifications |
-| Bridge | `0x0002` | Cross-chain deposit/withdrawal |
-| DEX | `0x0003` | Atomic swaps and exchange |
-| Stablecoin | `0x0004` | CDP positions and liquidation |
+| Attestation | `0x0002` | Generalized attestation and claims |
+| Bridge | `0x0003` | Cross-chain deposit/withdrawal |
+| DEX | `0x0004` | Atomic swaps and exchange |
+| Stablecoin | `0x0005` | CDP positions and liquidation |
 
 Namespace separation allows the same `PrivateIntent` primitives to work across all privacy-preserving contracts without collision.
 
@@ -858,17 +1083,19 @@ When designing a new DarkFi contract:
 │                                                                   │
 │  State Primitives:                                                │
 │  □ What state does this contract hold?                           │
-│  □ Can state be expressed as Merkle tree / accumulator?           │
+│  □ Can state be expressed as Merkle tree / accumulator?          │
 │  □ What are the state transition rules?                           │
 │                                                                   │
 │  Authorization Primitives:                                         │
 │  □ What actions require authorization?                            │
-│  □ Can all authorization be expressed as commitment/nullifier?    │
+│  □ Can all authorization be expressed as commitment/nullifier?     │
 │  □ What predicates must be satisfied?                             │
 │  □ Is revocation needed?                                          │
+│  □ Can I use Attestation instead of building custom claims?       │
 │                                                                   │
 │  Interaction Primitives:                                          │
 │  □ What other contracts does this call?                           │
+│  □ Does Attestation already provide what I need?                  │
 │  □ What state does this read from other contracts?                │
 │  □ What tokens does this contract manage?                         │
 │  □ How are atomic transactions handled?                           │
@@ -920,6 +1147,8 @@ All DarkFi contracts should support incremental transparency (see [Identity](ide
 - [Private Authorization Layer](privauth.md)
 - [zkVM Primitive Layer](zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
 - [Contract MVP Status](mvp_status.md) — blockers for each contract in the contracts folder
+- [Attestation Contract](attestation.md) — Generalized attestation and claims
+- [Oracle Contract](oracle.md) — Push-model oracle with attestation
 - [Identity Contract](identity.md)
 - [Bridge Contract](bridge.md)
 - [DEX Contract](../dev/contracts/dex.md)
