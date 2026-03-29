@@ -1,6 +1,6 @@
 # Sealed Bid Tender Contract Architecture
 
-A privacy-preserving tendering system that combines sealed-bid auctions with identity verification and labor market integration.
+A privacy-preserving tendering system that combines sealed-bid auctions with attestation-based competency verification and labor market integration.
 
 ## Overview
 
@@ -9,14 +9,14 @@ A privacy-preserving tendering system that combines sealed-bid auctions with ide
 │                        Project Tender System                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│   IDENTITY/            SEEDED BID           LABOR            TAU            │
-│   COMPETENCY           TENDER               MARKET                          │
-│   Framework            Contract             Contract          Task Manager     │
+│   ATTESTATION/            SEEDED BID           LABOR            TAU         │
+│   COMPETENCY             TENDER               MARKET                          │
+│   Contract                Contract             Contract          Task Manager     │
 │       │                    │                   │                │            │
 │       │                    │                   │                │            │
 │       ▼                    ▼                   ▼                ▼            │
 │  ┌─────────┐        ┌─────────┐        ┌─────────┐        ┌─────────┐    │
-│  │ Prove   │        │ Create  │        │ Create  │        │ Create  │    │
+│  │ Attest  │        │ Create  │        │ Create  │        │ Create  │    │
 │  │ skills  │───────>│ tender  │        │ job     │        │ task    │    │
 │  │ & track │        │         │        │         │        │         │    │
 │  └─────────┘        │         │        │         │        │         │    │
@@ -34,12 +34,44 @@ A privacy-preserving tendering system that combines sealed-bid auctions with ide
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Key Innovation: Sealed Bids + Competency Verification
+## Key Innovation: Sealed Bids + Attestation Verification
 
 Unlike a standard auction where only price matters, sealed bid tendering allows:
 - **Price-only bids**: Pure auction mode
-- **Competency + Price bids**: Select based on verified skills + cost
-- **DAO governance**: Community selects winner via vote
+- **Attested competency + Price bids**: Select based on verified skills + cost
+- **DAO governance**: Community can select winner via vote
+
+## Attestation Integration
+
+The tender uses the [Attestation Contract](./attestation.md) for competency verification:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Tender + Attestation Flow                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Requester                                                                  │
+│     │                                                                       │
+│     │ CreateAttestation(requirement_commitment)                              │
+│     ▼                                                                       │
+│  Attestation(Active)                                                         │
+│     │                                                                       │
+│     │ attestation_id                                                        │
+│     │                                                                       │
+│     │◄──────────────────────────────── CreateTender(tender, attestation_id) │
+│     │                                                                       │
+│     │                              Worker                                   │
+│     │                                 │                                     │
+│     │                                 │ CreateClaim(evidence_commitment)    │
+│     │                                 ▼                                     │
+│     │                              Claim(Verified)                          │
+│     │                                 │                                     │
+│     │                                 │ claim_id                            │
+│     │                                 │                                     │
+│     │◄── SubmitBid(tender_id, claim_id, encrypted_amount)                  │
+│     │                                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Tender State Machine
 
@@ -77,21 +109,31 @@ Unlike a standard auction where only price matters, sealed bid tendering allows:
 
 ## Integration with Existing Contracts
 
-### With Identity/Competency Framework
+### With Attestation
 
-Workers prove competency via ZK credentials:
+Workers prove competency via attestation claims:
 ```rust
-// In tender circuit, bidder proves:
-claim_proof = verify_zk_credential(
-    credential: CompetencyCredential,
-    predicate: "skill_level >= required_level"
-);
-```
+// Requester creates attestation for competency requirements
+let attestation_id = attestation::create_attestation(
+    attestor: requester_pubkey,
+    claim_type: Predicate::Matches,
+    claim_data: vec![requirement_commitment],
+)?;
 
-Competency DAG records:
-- Skills verified by issuers
-- Work history from completed tenders
-- Reputation scores
+// Worker creates claim proving they meet requirements
+let claim_id = attestation::create_claim(
+    attestation_id,
+    claimant: worker_pubkey,
+    predicate: Predicate::Matches,
+    evidence_commitment: worker_competency_commitment,
+)?;
+
+// Worker submits bid with claim_id
+let bid = SubmitBidParamsV1 {
+    claim_id,
+    // ...
+};
+```
 
 ### With Labor Market
 
@@ -102,6 +144,7 @@ let job = CreateJobBuilder::new()
     .employer(requester_pubkey)
     .worker(winner_pubkey)
     .specification(tender.specification)
+    .attestation_id(tender.attestation_id)
     .payment(winning_bid_amount)
     .deadline(tender.delivery_deadline)
     .build()?;
@@ -135,8 +178,8 @@ pub struct Tender {
     pub id: TenderId,
     pub requester_pubkey: PublicKey,
     pub title: String,
-    pub specification: pallas::Base,        // Hash of spec document
-    pub requirement_commitment: pallas::Base, // Competency requirements
+    pub specification: pallas::Base,     // Hash of spec document
+    pub attestation_id: pallas::Base,   // Attestation for competency requirements
     pub min_bid: u64,
     pub max_bid: u64,
     pub bid_deadline: u64,
@@ -164,8 +207,8 @@ pub struct Bid {
     pub tender_id: TenderId,
     pub bidder_pubkey: PublicKey,
     pub amount: u64,
-    pub competency_proof: pallas::Base,     // ZK proof of competency
-    pub encrypted_payload: Vec<u8>,         // Encrypted bid details
+    pub claim_id: pallas::Base,         // Attestation claim proving competency
+    pub encrypted_payload: Vec<u8>,     // Encrypted bid details
     pub state: BidState,
     pub revealed_amount: Option<u64>,
     pub created_at: u64,
@@ -184,25 +227,26 @@ pub enum BidState {
 
 ### submit_bid_v1.zk
 
-**Purpose**: Submit sealed bid with competency proof
+**Purpose**: Submit sealed bid with attestation claim
 
 **Public Inputs**:
 - `tender_id`
 - `bid_id`
-- `competency_commitment` (proves bidder has required skills)
+- `bidder_pub_x`
+- `bidder_pub_y`
 
 **Witnesses**:
 - `bidder_secret`
 - `amount`
-- `competency_proof`
+- `bid_nonce`
 
 **Circuit**:
 ```zk
 bidder_pub = ec_mul_base(bidder_secret, NULLIFIER_K);
-# Verify competency proof
-verify_credential(competency_proof, requirement_commitment);
+# Verify bidder public key matches
 # Compute bid ID
 bid_id = poseidon_hash(tender_id, bidder_pub, amount, nonce);
+# claim_id is verified by attestation contract
 ```
 
 ### reveal_bid_v1.zk
@@ -233,15 +277,14 @@ less_than_strict(current_block, reveal_deadline);
 ```zk
 # Verify requester authorized
 # Verify winner bid was revealed
-# Verify winner meets competency requirements
 ```
 
 ## Contract Functions
 
 | Function | Opcode | Description |
 |----------|--------|-------------|
-| `CreateTenderV1` | 0x00 | Create new tender |
-| `SubmitBidV1` | 0x01 | Submit sealed bid |
+| `CreateTenderV1` | 0x00 | Create new tender (references attestation) |
+| `SubmitBidV1` | 0x01 | Submit sealed bid with claim_id |
 | `RevealBidV1` | 0x02 | Reveal bid amount |
 | `CloseTenderV1` | 0x03 | Close bidding period |
 | `SelectWinnerV1` | 0x04 | Select winning bid |
@@ -254,15 +297,21 @@ less_than_strict(current_block, reveal_deadline);
 |-----------------|-------------------|
 | Tender exists | All bid amounts until reveal |
 | Your bid after reveal | Other bidders' amounts |
-| Winner selected |losers' identities |
-| Competency verified | Specific credential data |
+| Winner selected | losers' identities |
+| Competency attested | Specific credential data |
+
+## Breaking Changes (v2)
+
+- **Removed**: `Tender.requirement_commitment` - replaced with `Tender.attestation_id`
+- **Removed**: `Bid.competency_commitment` - replaced with `Bid.claim_id`
+- Workers now create attestation claims proving competency, reference claim_id in bid
 
 ## Comparison
 
 | Feature | Traditional Tender | DarkFi Tender |
-|---------|-------------------|----------------|
+|---------|-------------------|---------------|
 | Bid privacy | Sealed envelope | Cryptographically sealed |
-| Competency check | KYC documents | ZK credentials |
+| Competency check | KYC documents | Attestation claims |
 | Winner selection | Single criteria | Multi-criteria (skill + price) |
 | Dispute resolution | Central authority | DAO governance |
 | Task tracking | Separate system | Tau integration |
@@ -273,10 +322,16 @@ less_than_strict(current_block, reveal_deadline);
 ### Open Tender (Community Funded)
 ```rust
 // DAO creates tender for grant work
+let attestation_id = attestation::create_attestation(
+    attestor: dao_pubkey,
+    claim_type: Predicate::Matches,
+    claim_data: vec![dao_member_commitment],
+)?;
+
 let tender = CreateTenderBuilder::new()
     .title("ZK Documentation")
     .specification(doc_hash)
-    .requirement(competency_dao_member())  // Must be DAO member
+    .attestation_id(attestation_id)
     .min_bid(1000)
     .max_bid(10000)
     .bid_deadline(current_block + 1000)
@@ -287,10 +342,16 @@ let tender = CreateTenderBuilder::new()
 ### Private Tender (Select Bidders)
 ```rust
 // Only pre-approved workers can bid
+let attestation_id = attestation::create_attestation(
+    attestor: requester_pubkey,
+    claim_type: Predicate::Custom,
+    claim_data: vec![competency_requirement],
+)?;
+
 let tender = CreateTenderBuilder::new()
     .title("Smart Contract Audit")
     .specification(spec_hash)
-    .requirement(competency_proof("security_audit", 3))  // Level 3+
+    .attestation_id(attestation_id)
     .invited_bidders(vec![alice_pub, bob_pub, charlie_pub])
     .build()?;
 ```
@@ -311,51 +372,51 @@ let tender = CreateTenderBuilder::new()
 │                                                                              │
 │  REQUESTER                          SYSTEM                                     │
 │     │                                                                         │
-│     │  1. Create Tender (spec + requirements)                                │
+│     │  1. Create Attestation (requirements)                                  │
+│     │───────────────────────────────────────────────────────────────────────>│
+│     │                                                                         │
+│     │  2. Create Tender (spec + attestation_id)                              │
 │     │───────────────────────────────────────────────────────────────────────>│
 │     │                                                                         │
 │  WORKERS                                                                         │
-│     │  2. Prove competency (Identity contract)                                │
+│     │  3. Create Claim (attestation)                                         │
 │     │───────────────────────────────────────────────────────────────────────>│
 │     │                                                                         │
-│     │  3. Submit sealed bid (Tender contract)                                │
+│     │  4. Submit sealed bid with claim_id (Tender contract)                  │
 │     │───────────────────────────────────────────────────────────────────────>│
 │     │                                                                         │
-│     │  4. Reveal bids (after deadline)                                        │
+│     │  5. Reveal bids (after deadline)                                        │
 │     │───────────────────────────────────────────────────────────────────────>│
 │     │                                                                         │
 │  REQUESTER                          │                                         │
-│     │  5. Select winner              │                                         │
+│     │  6. Select winner              │                                         │
 │     │────────────────────────────────>│                                        │
 │     │                                 │                                         │
-│     │                    6. Create job (Labor Market)                         │
+│     │                    7. Create job (Labor Market)                         │
 │     │<───────────────────────────────────────────────────────────────────────│
 │     │                                 │                                         │
-│     │                    7. Accept and start work                              │
+│     │                    8. Accept and start work                              │
 │     │<───────────────────────────────────────────────────────────────────────│
 │     │                                 │                                         │
-│     │                    8. Create task (Tau)                                │
+│     │                    9. Create task (Tau)                                │
 │     │<───────────────────────────────────────────────────────────────────────│
 │     │                                 │                                         │
-│     │                    9. Track progress (Tau commands)                    │
+│     │                    10. Track progress (Tau commands)                    │
 │     │<───────────────────────────────────────────────────────────────────────│
 │     │                                 │                                         │
-│     │  10. Submit deliverable (Labor Market)                                 │
+│     │  11. Submit deliverable (Labor Market)                                 │
 │     │────────────────────────────────>│                                        │
 │     │                                 │                                         │
-│     │  11. Confirm + Release payment                                          │
+│     │  12. Confirm + Release payment                                          │
 │     │<───────────────────────────────────────────────────────────────────────│
 │     │                                 │                                         │
-│     │                    12. Complete task (Tau)                             │
+│     │                    13. Complete task (Tau)                             │
 │     │<───────────────────────────────────────────────────────────────────────│
-│     │                                                                         │
-│     │  13. Update competency record                                           │
-│     │────────────────────────────────>│ (Identity contract)                    │
-│     │                                                                         │
+│                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Files to Create
+## Files
 
 ```
 src/contract/tender/
@@ -373,9 +434,8 @@ src/contract/tender/
 └── README.md
 ```
 
-## References
+## See Also
 
-- [DarkFi Identity Contract](../identity/)
-- [DarkFi Labor Market Contract](../labor_market/)
-- [DarkFi Auction Contract](../auction/)
+- [Attestation Contract](./attestation.md) - Generalized attestation and claims
+- [Labor Market Contract](./labor_market.md) - Job execution after tender award
 - [Tau Task Manager](../../misc/tau.md)
