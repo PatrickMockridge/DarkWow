@@ -60,6 +60,7 @@
   - [Atomic Swap Contract](arch/atomic_swap.md)
   - [Labor Market Contract](arch/labor_market.md)
   - [Auction Contract](arch/auction.md)
+  - [Tender Contract](arch/tender.md)
   - [Private Authorization Layer](arch/privauth.md)
   - [Composability](arch/composability.md)
   - [Wallet](arch/wallet.md)
