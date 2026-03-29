@@ -78,6 +78,11 @@ pub struct CreateSwapParams {
 
     /// Fee paid for swap creation
     pub fee: u64,
+
+    /// If true, anyone can execute this swap after acceptance (no secret needed)
+    /// WARNING: Reveals Alice's secret to the network. Use only with trusted acceptors.
+    /// Default: false (standard atomic swap flow)
+    pub open_execution: bool,
 }
 
 /// Accept swap parameters
@@ -97,6 +102,11 @@ pub struct AcceptSwapParams {
 
     /// Fee paid for acceptance
     pub fee: u64,
+
+    /// If true and swap has open_execution=true, immediately execute after acceptance.
+    /// This enables "immediate fill" - Bob accepts and the swap executes in the same tx.
+    /// Default: false
+    pub immediate_execute: bool,
 }
 
 /// Execute swap parameters
@@ -190,6 +200,10 @@ pub struct Swap {
 
     /// Expiration timestamp
     pub expires_at: u64,
+
+    /// If true, anyone can execute this swap (no Alice secret needed)
+    /// Set by Alice at swap creation time
+    pub open_execution: bool,
 }
 
 // ============================================================================

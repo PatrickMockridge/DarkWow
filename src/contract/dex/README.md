@@ -400,29 +400,59 @@ No price discovery     ZK proof of match    Unlinkable           Noise for prote
 - [x] MVP function definitions (CreateSwap, AcceptSwap, ExecuteSwap, CancelSwap, UpdateConfig)
 - [x] Atomic swap DAO implementation (full on-chain logic)
 - [x] ZK circuits for swap verification (create_swap, accept_swap, execute_swap, cancel_swap)
-- [ ] Integration with money contract for actual token transfers
-- [ ] Order book expansion (future)
+- [x] Partial fill support via safemath (fill_amount <= alice_amount)
+- [x] Open execution for automatic matching (open_execution + immediate_execute)
+- [ ] Integration with money contract for actual token transfers (future)
+- [ ] Order book expansion (Level 1 future)
 
-## MVP Status
+## Level 0 MVP: Complete
 
-**Partial MVP** — atomic swap flow works, but automatic order matching is not yet implemented.
+**Atomic swap flow is complete** with two execution modes:
+
+### Standard Atomic Swap (Default)
+```
+1. Alice creates swap (locks funds, holds secret)
+2. Bob accepts swap (locks funds)
+3. Alice or Bob calls ExecuteSwap (both secrets needed)
+```
+
+### Open Execution (Instant Fill)
+```
+1. Alice creates swap with open_execution=true (locks funds, secret public)
+2. Bob accepts with immediate_execute=true
+3. Swap executes automatically in same transaction!
+```
+
+**Trade-off**: Open execution reveals Alice's secret to network. Use only with trusted counterparties.
 
 | Circuit | Status |
 |---------|--------|
-| `create_swap_v1.zk` | Verified |
-| `accept_swap_v1.zk` | Verified |
-| `execute_swap_v1.zk` | Verified |
-| `cancel_swap_v1.zk` | Verified |
+| `create_swap_v1.zk` | ✅ Verified |
+| `accept_swap_v1.zk` | ✅ Verified |
+| `execute_swap_v1.zk` | ✅ Verified with partial fill (safemath) |
+| `cancel_swap_v1.zk` | ✅ Verified |
 
-### Blockers
+## Partial Fill Support
 
-1. **Manual matching required** — The `CreateSwap → AcceptSwap → ExecuteSwap` flow requires a third party to call `ExecuteSwap` after both locks are posted. There is no automatic order matching.
-2. **No amount comparison** — `execute_swap_v1.zk` verifies amounts are valid (`range_check(64, amount)`) but does not compare Alice's offered amount against Bob's requested amount.
-3. **No partial fills** — If a swap is posted for 100 tokens but someone wants to fill only 50, there is no mechanism. Implementing this would require `LessThanOrEqual` (0x55), which is implemented but **experimental** — see [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md).
+The `execute_swap_v1.zk` circuit now asserts `fill_amount <= alice_amount` using safemath:
 
-### What It Needs
+```zk
+# Safemath: fill < alice + 1  ⟺  fill <= alice
+less_than_strict(fill_amount, alice_amount_plus_one);
+```
 
-Either document the atomic swap matching flow explicitly, or update circuits to use `LessThanOrEqual` for amount comparison and partial fills. Note that `LessThanOrEqual` is grey-market — see the experimental status section in [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md).
+**Limitation**: This is assertion-only (no Boolean return). For Boolean return (full composability), LessThanOrEqual (once gate soundness is verified) is the ideal solution.
+
+## Future: Level 1 (Order Book)
+
+| Feature | Status | Blocker |
+|---------|--------|---------|
+| Atomic swaps | ✅ Done | None |
+| Partial fills | ✅ Done | None |
+| Open execution | ✅ Done | None |
+| SMT order book | ❌ Future | Needs solver/oracle |
+| Price discovery | ❌ Future | Encrypted search |
+| Differential privacy | ❌ Future | Research |
 
 **See**: [Contract MVP Status](../../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
 

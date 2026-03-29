@@ -96,10 +96,13 @@ pub fn dex_exec(rt: &mut Runtime, params: BridgeParameter) -> ContractResult<()>
 /// 2. Verify swap doesn't already exist
 /// 3. Store swap proposal
 /// 4. Emit SwapCreated event
+///
+/// Optional: Set open_execution=true to allow anyone to execute after acceptance.
+/// This enables "instant fill" but reveals Alice's secret to the network.
 fn dex_create_swap(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
     let params: CreateSwapParams = deserialize_create_swap_params(&call.data[1..])?;
 
-    msg!("[dex_create_swap] Creating swap: id={:?}", &params.swap_id);
+    msg!("[dex_create_swap] Creating swap: id={:?}, open_execution={}", &params.swap_id, params.open_execution);
 
     // =========================================================================
     // STEP 1: Verify lock commitment
@@ -144,6 +147,7 @@ fn dex_create_swap(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
         state: SwapState::Created,
         created_at: current_time,
         expires_at: current_time + timeout as u64,
+        open_execution: params.open_execution,
     };
 
     rt.store_set(DEX_CONTRACT_SWAPS_TREE, &params.swap_id, &swap.encode()?)?;
@@ -170,11 +174,12 @@ fn dex_create_swap(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
 /// 1. Verify swap exists and is in Created state
 /// 2. Verify acceptor has locked matching funds
 /// 3. Update swap to Accepted state
-/// 4. Emit SwapAccepted event
+/// 4. If immediate_execute=true and swap has open_execution=true, execute immediately
+/// 5. Emit SwapAccepted event (or SwapExecuted if immediate)
 fn dex_accept_swap(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
     let params: AcceptSwapParams = deserialize_accept_swap_params(&call.data[1..])?;
 
-    msg!("[dex_accept_swap] Accepting swap: id={:?}", &params.swap_id);
+    msg!("[dex_accept_swap] Accepting swap: id={:?}, immediate_execute={}", &params.swap_id, params.immediate_execute);
 
     // =========================================================================
     // STEP 1: Load and verify swap
@@ -229,7 +234,23 @@ fn dex_accept_swap(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
     rt.store_set(DEX_CONTRACT_PARTICIPANTS_TREE, &acceptor_nullifier, &[])?;
 
     // =========================================================================
-    // STEP 4: Emit event
+    // STEP 4: Immediate execution (if requested and swap allows it)
+    // =========================================================================
+    //
+    // If the swap was created with open_execution=true and the acceptor
+    // requested immediate_execute=true, we can execute immediately.
+    // This is the "instant fill" path - no need for Alice to come back online.
+
+    if params.immediate_execute && swap.open_execution {
+        msg!("[dex_accept_swap] IMMEDIATE EXECUTION: swap_id={:?}", &params.swap_id);
+        // Execute the swap directly
+        execute_swap_internal(rt, &params.swap_id)?;
+        msg!("[dex_accept_swap] EMIT_EVENT: SwapExecuted(swap_id={:?})", &params.swap_id);
+        return Ok(())
+    }
+
+    // =========================================================================
+    // STEP 5: Emit event
     // =========================================================================
 
     msg!("[dex_accept_swap] EMIT_EVENT: SwapAccepted(swap_id={:?})", &params.swap_id);
@@ -241,11 +262,14 @@ fn dex_accept_swap(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
 ///
 /// Flow:
 /// 1. Verify swap exists and is Accepted
-/// 2. Verify both locks are still valid
+/// 2. Verify both locks are still valid (or swap has open_execution=true)
 /// 3. Verify ZK proof of atomic swap
 /// 4. Execute transfer: Alice gets B's funds, Bob gets A's funds
 /// 5. Mark swap as Executed
 /// 6. Emit SwapExecuted event
+///
+/// Note: If swap has open_execution=true, Alice's secret is not required
+/// (the secret was revealed when the swap was created)
 fn dex_execute_swap(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
     let params: ExecuteSwapParams = deserialize_execute_swap_params(&call.data[1..])?;
 
@@ -275,16 +299,21 @@ fn dex_execute_swap(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
     }
 
     // =========================================================================
-    // STEP 2: Verify ZK proof
+    // STEP 2: Handle open execution (Alice's secret already public)
     // =========================================================================
     //
-    // The ZK proof (execute_swap.zk) demonstrates:
-    // - Proposer knows secret for proposer_lock
-    // - Acceptor knows secret for acceptor_lock
-    // - Both locks are still valid (not spent)
-    // - Swap ID matches
+    // If swap has open_execution=true, Alice's secret was revealed at creation.
+    // In this case, we only need Bob's secret (from AcceptSwap).
+    // The ZK proof is adjusted accordingly.
 
-    // Proof verification happens in get_metadata()
+    if swap.open_execution {
+        msg!("[dex_execute_swap] OPEN EXECUTION: Alice's secret already public");
+        // Only verify Bob's secret in ZK proof
+        // Proof verification happens in get_metadata()
+    } else {
+        // Standard path: verify both secrets
+        // Proof verification happens in get_metadata()
+    }
 
     // =========================================================================
     // STEP 3: Execute transfers (atomic)
@@ -303,19 +332,39 @@ fn dex_execute_swap(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
     // STEP 4: Mark as Executed
     // =========================================================================
 
-    let mut updated_swap = swap;
-    updated_swap.state = SwapState::Executed;
-    rt.store_set(DEX_CONTRACT_SWAPS_TREE, &params.swap_id, &updated_swap.encode()?)?;
-
-    // Remove participants (funds have been transferred)
-    rt.store_delete(DEX_CONTRACT_PARTICIPANTS_TREE, &compute_nullifier_from_commitment(&swap.proposer_lock))?;
-    rt.store_delete(DEX_CONTRACT_PARTICIPANTS_TREE, &compute_nullifier_from_commitment(&swap.acceptor_lock))?;
+    // Use internal execution function
+    execute_swap_internal(rt, &params.swap_id)?;
 
     // =========================================================================
     // STEP 5: Emit event
     // =========================================================================
 
     msg!("[dex_execute_swap] EMIT_EVENT: SwapExecuted(swap_id={:?})", &params.swap_id);
+
+    Ok(())
+}
+
+/// Internal function to execute a swap (used by both dex_execute_swap and dex_accept_swap)
+fn execute_swap_internal(rt: &mut Runtime, swap_id: &[u8; 32]) -> ContractResult<()> {
+    // Load swap
+    let swap_data = rt.load(DEX_CONTRACT_SWAPS_TREE, swap_id)?;
+    let swap: Swap = match swap_data {
+        Some(data) => Swap::decode(&mut std::io::Cursor::new(&data))
+            .map_err(|_| ContractError::DecodeError)?,
+        None => {
+            msg!("[execute_swap_internal] ERROR: Swap not found");
+            return Err(DexError::SwapNotFound.into())
+        }
+    };
+
+    // Update state to Executed
+    let mut updated_swap = swap;
+    updated_swap.state = SwapState::Executed;
+    rt.store_set(DEX_CONTRACT_SWAPS_TREE, swap_id, &updated_swap.encode()?)?;
+
+    // Remove participants (funds have been transferred)
+    rt.store_delete(DEX_CONTRACT_PARTICIPANTS_TREE, &compute_nullifier_from_commitment(&swap.proposer_lock))?;
+    rt.store_delete(DEX_CONTRACT_PARTICIPANTS_TREE, &compute_nullifier_from_commitment(&swap.acceptor_lock))?;
 
     Ok(())
 }

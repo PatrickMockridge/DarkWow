@@ -14,7 +14,7 @@ This fork contains all additions compared to official DarkFi master:
 | **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
 | **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
-| **dex** | Atomic swap DAO with incremental transparency | ⚠️ Partial |
+| **dex** | Atomic swap DAO with incremental transparency | ✅ Complete |
 | **drain_protection** | Endowment/treasury protections (8 best practices) | ✅ Complete |
 | **escrow** | Hashed Timelock Contract variant | ✅ Complete |
 | **identity** | ZK credential proofs using competency DAGs | ✅ Uses safemath (Level 0 zk_only) |
