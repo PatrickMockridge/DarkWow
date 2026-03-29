@@ -1,159 +1,94 @@
-# DarkFi Money: The Fork Decision
+# DarkFi Money: Fork vs Bridge
 
-## Executive Summary
+## Decision: Fork, Not Bridge
 
-**We are NOT building a bridge between master and dev money. We are forking.**
-
-This document explains why the bridge approach was rejected and why the hard fork is the correct decision.
+We're doing a hard fork of the money contract, not building a bridge between versions.
 
 ---
 
-## Why Not a Bridge?
+## Why Not a Bridge
 
-### The Bridge Would Inherit the Vulnerability
+### What a Bridge Would Do
 
-A bridge that accepts both master and dev proofs would:
+Accept burns from both master and dev versions, converting them to the new format.
 
-1. **Accept master proofs** - which have the vulnerable pattern
-2. **Cannot fix the vulnerability** - it's baked into the proof
-3. **Create false confidence** - users think they're secure, but the vulnerability is still present
+### Why We're Not Doing It
 
-The only way to "fix" a master proof is to re-verify it at the Rust layer:
+1. **A bridge inherits the design debt** - Master circuits have incomplete binding. A bridge that accepts both keeps that incompleteness.
 
-```rust
-// If we try to add binding verification at the bridge layer...
-let derived_pub = PublicKey::from_secret(signature_secret);
-if derived_pub != input.signature_public {
-    return Err(BridgeError::Unbound.into());
-}
-```
+2. **Two code paths forever** - Maintaining bridge logic indefinitely doubles attack surface and maintenance burden.
 
-But this defeats the purpose of ZK circuits - we're adding trust assumptions back in.
+3. **Doesn't solve the root issue** - The bridge would still rely on external verification layers for master proofs.
 
-### Maintaining Two Paths Is Technical Debt
-
-A bridge that handles both versions:
-- Doubles the code to maintain
-- Doubles the attack surface
-- Creates complexity that will compound over time
-- Is a permanent patch for a broken circuit
-
-### zkas Can't Help
-
-Even if we wanted to implement a proper bridge, zkas has no opcode composition:
-
-```
-No verify_proof opcode  ──►  Cannot verify proofs from other circuits inline
-No interface types      ──►  Cannot define "Money::Burn" as an interface
-No version negotiation  ──►  Cannot accept multiple versions transparently
-```
-
-Without these primitives, a bridge is always a manual, imperfect workaround.
+4. **zkas architecture** - Without opcode composition (`verify_proof`), a bridge is always a manual, imperfect workaround.
 
 ---
 
-## The Correct Decision: Hard Fork
-
-Instead of:
+## The Fork Decision
 
 ```
-Master ◄──► Bridge ◄──► Dev
-    │              │
-    └── Broken ────┘
-```
-
-We choose:
-
-```
-Master (deprecated) ──► Dev (new standard)
+Instead of:  Master ◄──► Bridge ◄──► Dev (forever coupled)
+We choose:   Master (legacy) ──► Dev (clean break)
 ```
 
 ### Why This Is Correct
 
-1. **Clean break** - No legacy code carrying the vulnerability
-2. **Clear security model** - Only dev, only secure
-3. **Easier to audit** - One path, not two
-4. **No false confidence** - No "mostly secure" bridge
+1. **Clean solution** - One circuit, one security model, no compromises
+2. **No inheritance of debt** - Dev money stands on its own
+3. **Easier audit** - Single path, no bridge logic to verify
+4. **Future-proof** - New features won't inherit master design
 
-### The Migration Path
+---
+
+## What We're Forking For
+
+**Clean, self-contained circuit design.**
+
+Not:
+- ❌ "We're unsafe and need to fix"
+- ❌ "There's an active exploit"
+- ❌ "Master is broken"
+
+But:
+- ✅ "We want provably correct circuits"
+- ✅ "We want defense in depth"
+- ✅ "We want auditability without tracing layers"
+
+---
+
+## Migration Path
 
 ```
 Phase 1: Deploy dev money
 ├── Dev money contract deployed
-├── New coins use dev
-└── Master still functional but deprecated
+├── New applications use dev
+└── Master remains functional (legacy)
 
-Phase 2: Migration event
-├── Coordinated migration ceremony
-├── Users burn master coins, mint dev coins
-├── Snapshot of master state transferred
-└── Migration ends
+Phase 2: Migration
+├── Users migrate at their pace
+├── No forced migration deadline initially
+└── Master enters maintenance mode
 
 Phase 3: Deprecation
+├── As usage shifts to dev
 ├── Master contract deprecated
-├── All value in dev money
-└── Fork complete
+└── Fork is complete
 ```
 
 ---
 
-## What We Gain From the Fork
-
-### Security
+## Security Properties
 
 | | Master | Dev |
 |---|--------|-----|
-| Issue 19 vulnerability | ❌ Present | ✅ Fixed |
-| Signature binding | ❌ None | ✅ Enforced |
-| Nullifier replay | ⚠️ Possible | ✅ Prevented |
-
-### Simplicity
-
-| | Master | Dev |
-|---|--------|-----|
-| Code paths | 1 (vulnerable) | 1 (secure) |
-| Attack surface | Larger | Smaller |
-| Audit complexity | High (vulnerability hidden) | Low (circuit enforces) |
-
-### Privacy (NOT Sacrificed)
-
-The fix does NOT add privacy leakage:
-- `signature_public` was already public in master
-- The binding only proves what you already knew
-- No new information is revealed
-
----
-
-## What We Lose
-
-1. **Instant backward compatibility** - Old proofs won't work
-2. **Coordinated upgrade required** - Migration ceremony needed
-3. **Some users may lose funds** - If they can't/won't migrate
-
-But these are acceptable losses because:
-- The vulnerability in master is FUNDAMENTAL
-- You can't patch a circuit without changing it
-- The migration is a one-time cost
-
----
-
-## The Philosophical Point
-
-**A ZK circuit that doesn't enforce its invariants is broken.**
-
-Master money's circuit says "I'm proving knowledge of signature_secret" but doesn't actually enforce that the signature_public matches. This is:
-
-1. A bug, not a feature
-2. Not something a bridge can fix
-3. Only fixable via circuit change
-
-Dev money fixes this. The fork is the correct response to a broken circuit.
+| Self-contained circuit | ❌ Relies on external | ✅ Complete in circuit |
+| Defense in depth | ❌ Single layer | ✅ Layered |
+| Clean audit | ⚠️ Multi-layer | ✅ Single circuit |
 
 ---
 
 ## See Also
 
-- [Money Vulnerability Analysis](./money-vulnerability-analysis.md)
-- [Security Analysis: Issue 19](./security-analysis.md#issue-19-missing-public-key-constraint-majormd--fixed)
-- [Public Key Constraint Hook](./pubkey-constraint-hook.md)
-- [zkas Opcode Limitations](./opcode_universe.md)
+- [Money Vulnerability Analysis](./money-vulnerability-analysis.md) - Full reasoning for the fork
+- [Security Analysis](./security-analysis.md) - Audit details
+- [Public Key Constraint Hook](./pubkey-constraint-hook.md) - Prevention mechanism

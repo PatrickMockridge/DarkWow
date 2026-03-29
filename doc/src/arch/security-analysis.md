@@ -774,10 +774,14 @@ circuit "Example" {
 }
 ```
 
-**Impact**: Without this constraint, a prover can impersonate any public key holder, enabling:
-- Unauthorized claims on behalf of others
-- False identity assertions in attestation systems
-- Bypass of access control tied to public keys
+**Impact (Theoretical)**: Without this constraint, the circuit has incomplete proof of knowledge:
+- The circuit proves "I know a secret that derives to SOME public key"
+- But does NOT prove "My derived public key matches the Input's public key"
+- **Actual exploitability depends on transaction layer verification**
+
+**Note on Severity**: The transaction layer may provide additional verification that mitigates this issue. However, clean circuit design dictates that circuits should be self-contained and provably correct in isolation. Defense in depth suggests fixing the circuit regardless of transaction layer protection.
+
+**Why Fork**: We fork the money contract for clean, self-contained circuit design—not because we're under active attack. See [Money Vulnerability Analysis](./money-vulnerability-analysis.md) for the full reasoning.
 
 **Circuits Fixed** (this audit session):
 | Contract | Circuit | Status |
