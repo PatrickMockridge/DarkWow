@@ -61,15 +61,19 @@ Traditional KYC:              DarkFi Identity (MVI):
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Privacy Properties
+## Privacy Properties (Level 0: zk_only)
+
+The identity contract currently implements **Level 0 (zk_only)** — the verifier learns ONLY that the proof is valid or invalid, not the actual predicate result.
 
 | What You Reveal | What Stays Hidden |
 |-----------------|-------------------|
-| "I meet criteria" | Who you are |
-| "Credential valid" | Your actual data |
+| "Proof is valid" | Who you are |
+| "Credential is valid" | Your actual attribute values |
 | "Not revoked" | When credential expires |
 | Issuer is trusted | Full credential contents |
-| Predicate result (e.g., true/false) | The actual attribute values |
+| Predicate is satisfied | Whether you meet the threshold |
+
+**This is more private than Level 1 (selective disclosure)** — the verifier cannot learn the authorization decision from the proof.
 
 ## Use Cases
 
@@ -80,7 +84,7 @@ let claim = CreateClaimBuilder::new()
     .claim_type(b"age_over_18")
     .predicate(b">= 18")
     .build()?;
-// Reveals: Only "age >= 18" — birthdate hidden
+// Reveals: Only "proof is valid" — verifier learns nothing about age
 ```
 
 ### DAO Membership
@@ -90,7 +94,7 @@ let claim = CreateClaimBuilder::new()
     .claim_type(b"dao_member")
     .predicate(b">= 1")
     .build()?;
-// Reveals: Only "holds >= 1 token" — balance and address hidden
+// Reveals: Only "proof is valid" — verifier learns nothing about token balance
 ```
 
 ### Accredited Investor
@@ -100,7 +104,7 @@ let claim = CreateClaimBuilder::new()
     .claim_type(b"accredited_investor")
     .predicate(b"== true")
     .build()?;
-// Reveals: Only "is accredited" — income/net worth hidden
+// Reveals: Only "proof is valid" — verifier learns nothing about income
 ```
 
 ### Sybil Resistance
@@ -110,7 +114,7 @@ let claim = CreateClaimBuilder::new()
     .claim_type(b"unique_human")
     .predicate(b"== true")
     .build()?;
-// Reveals: Only "is unique human" — identity hidden
+// Reveals: Only "proof is valid" — verifier learns nothing about identity
 ```
 
 ## Contract Functions
@@ -144,7 +148,7 @@ Holder creates a claim from their credential:
 - Verifies credential exists and is valid
 - Verifies not expired or revoked
 - Generates ZK proof of predicate satisfaction
-- Emits `ClaimCreated` event
+- **Level 0 (zk_only)**: Proof reveals only "valid" or "invalid", not the actual predicate result
 
 ### VerifyClaimV1 (0x04)
 
@@ -152,7 +156,7 @@ Verifier checks a claim:
 - Verifies credential exists and is valid
 - Verifies ZK proof
 - Verifies not expired or revoked
-- Emits `ClaimVerified` event with result
+- **Level 0**: Result is "proof valid" or "proof invalid" only — no predicate result revealed
 
 ## ZK Circuits
 
@@ -165,10 +169,11 @@ Proves the issuer legitimately issued this credential:
 
 ### create_claim_v1.zk
 
-Proves the claim without revealing attributes:
-- **Public inputs**: nullifier, claim_type, predicate_result
-- **Private inputs**: credential_attributes, holder_secret
-- **Verification**: Credential valid, predicate satisfied, not revoked
+Proves the claim without revealing attributes (Level 0 zk_only):
+- **Public inputs**: nullifier, claim_type, issuer_pub_x, issuer_pub_y, schema_hash
+- **Private inputs**: credential_secret, attribute_value, threshold, commitment
+- **Verification**: Credential valid, predicate (threshold <= attribute) satisfied, not revoked
+- **Uses safemath**: `assert_lte_u64_v1.zk` pattern — no experimental opcodes
 
 ### verify_claim_v1.zk (STUB)
 
@@ -193,108 +198,61 @@ ZK circuits operate in a finite field — the Pallas field defined by prime `p =
 
 **See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
 
-## Opcode Discovery and Validation
+## Safemath Integration
 
-**Opcode discovery must go hand-in-hand with building functionality** — not precede it.
+The identity contract uses [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) assertion gadgets for predicate verification:
 
-When building the identity contract's `create_claim_v1.zk` circuit, we discovered that:
-1. The predicate verification requires `LessThanOrEqual` — not just to constrain, but to **return a value** (0 or 1) for use in subsequent logic
-2. The `LessThanStrict` opcode already in the zkVM only constrains; it cannot produce a value for further computation
-3. This gap only became apparent when we tried to express "attribute >= threshold" in the circuit
-
-**The correct workflow**:
-1. Build the circuit with what exists
-2. When a constraint can't be expressed, document the opcode gap
-3. Implement the new opcode only when the actual use case is known
-4. Validate the opcode against the specific circuit that needs it — not in isolation
-
-Implementing `LessThanOrEqual` before having `create_claim_v1.zk` would have been backwards. The circuit's requirements drove the opcode's specification.
-
-## LessThanOrEqual: Boolean vs Assertion
-
-The identity contract uses `LessThanOrEqual` differently from stablecoin:
-
-| Contract | Usage | Can use safemath? |
-|----------|-------|-------------------|
-| **stablecoin** | Assert `result == 1` (assertion pattern) | ✅ Yes - use `assert_lte_u64_v1.zk` |
-| **identity** | Return Boolean for public output | ❌ No - would change semantics |
-
-For **stablecoin**: The circuit asserts `2*debt <= collateral` - if true, proof passes. This is an assertion that can be replaced with safemath's `assert_lte_u64_v1.zk`.
-
-For **identity**: The circuit returns `is_authorized` (0/1) which is constrained to equal a PUBLIC INPUT `predicate_result`. This reveals the predicate result to the verifier. Using safemath's assertion gadget would require redesigning to NOT reveal the result (changing Level 1 "selective" to Level 0 "zk_only").
-
-**Current workaround**: The circuit uses a placeholder that always passes. The verifier must trust the predicate_result public input.
-
-## Reasoned Opcodes
-
-The identity circuits use existing zkVM opcodes for the basic proof structure. The predicate verification requires:
-
-### `LessThanOrEqual(a, b)` (Reasoned)
-**Purpose**: Returns 1 if `a <= b`, 0 otherwise
-**Reasoning**: Required for predicates like "age >= 18" (threshold <= attribute_value).
-
-**Implementation**:
-```
-LessThanOrEqual(a, b) = IsEqualBase(a, b) OR LessThanLoose(a, b)
+**Pattern** (from `create_claim_v1.zk`):
+```zk
+# Proves: threshold <= attribute_value
+# Using safemath assert_lte pattern: threshold < attribute + 1
+range_check(64, attribute_value);
+range_check(64, threshold);
+attribute_plus_one = base_add(attribute_value, witness_base(1));
+less_than_strict(threshold, attribute_plus_one);
 ```
 
-**See also**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for full reasoning on comparison opcodes.
+**Why this works**:
+- Bounded inputs (u64) prevent field wraparound
+- `less_than_strict` is constrain-only (sound — no return value manipulation)
+- Adding 1 converts strict `<` to non-strict `<=`
 
-## Opcode Safety
+**Key distinction from Level 1**:
+- Level 1 (selective disclosure): Would return Boolean publicly via `LessThanOrEqual`
+- Level 0 (zk_only): Asserts `threshold <= attribute_value` without returning a value
 
-**These opcodes are grey-market goods — buyer beware.**
-
-`LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM (commit `41b0629e0`) and integrated in `create_claim_v1.zk`. They are **not production-ready**:
-
-| Concern | Status |
-|---------|--------|
-| Isolation testing | Pass — the opcode works in isolation |
-| Integration tests | None — no end-to-end test exists |
-| Formal audit | Not started |
-| Delta-invert soundness | Unresolved — the opcode may be unsound near field boundary |
-| Blast radius if broken | High — predicates can be spoofed |
-
-**What production readiness requires**:
-1. Integration test: `issue credential → create claim → verify claim` end-to-end
-2. Formal soundness proof or concrete bound on delta-invert failure
-3. Audit by a ZK circuit expert
-4. Fuzzing with adversarial inputs near field boundaries
-
-**Current status**: The identity contract uses these opcodes because the alternative (removing public predicate result, changing Level 1 to Level 0) is a semantic change. But the circuit's security relies on the opcode being correct.
-
-**To avoid LessThanOrEqual without semantic change**: Would need a new opcode that returns Boolean (not just an assertion gadget). The `LessThanOrEqual` itself is the correct opcode for this use case - it just needs formal verification.
-
-**See**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full delta-invert analysis.
+**See**: [Safemath](../../../doc/src/arch/safemath.md) for full integration guide.
 
 ## Key Blockers
 
 | Blocker | Severity | Description |
 |---------|----------|-------------|
-| `LessThanOrEqual` soundness | **High** | Delta-invert concern may allow predicate spoofing |
-| `IsEqualBase` soundness | **High** | Same delta-invert concern |
 | No integration test | **High** | Cannot verify full issue → claim → verify flow |
 | `issue_credential_v1.zk` unreviewed | **Medium** | Circuit has not been audited for correctness |
+| `verify_claim_v1.zk` stub | **Medium** | Needs full implementation |
 
 ## The Privacy Gradient
 
 Based on [ZK-Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags),
 we implement graduated privacy levels rather than binary public/private:
 
-| Level | Name | What Verifier Sees | Use Case |
-|-------|------|-------------------|----------|
-| **0** | `zk_only` | Nothing | Maximum privacy |
-| **1** | `selective` | Predicate result only | Basic verification |
-| **2** | `attested` | Issuer confirms | Trusted issuers |
-| **3** | `public` | Full disclosure | Regulatory compliance |
+| Level | Name | What Verifier Sees | Use Case | Status |
+|-------|------|-------------------|----------|--------|
+| **0** | `zk_only` | Nothing (proof valid/invalid only) | Maximum privacy | **Current** |
+| **1** | `selective` | Predicate result only | Basic verification | Future |
+| **2** | `attested` | Issuer confirms | Trusted issuers | Future |
+| **3** | `public` | Full disclosure | Regulatory compliance | Future |
 
 ```
 Example: Age Verification
 
-zk_only:    "I prove age >= 18" → Verifier sees: ✓
+zk_only:    "I prove age >= 18" → Verifier sees: ✓ (proof valid)
 selective:   "age >= 18, issued by Gov" → Verifier sees: ✓ + issuer
 attested:    "DOB: 1990-01-01, issued by Gov" → Verifier sees: full DOB
 public:      Full KYC disclosure → Verifier sees: everything
 ```
+
+**Current implementation is Level 0 (zk_only)** — the verifier learns only that the proof is valid or invalid, not the predicate result. This provides maximum privacy.
 
 ## Roadmap: ZK-Verified Competency DAGs
 

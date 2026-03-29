@@ -153,13 +153,11 @@ For **experimental/skeleton code** where:
 
 | Contract | Circuit | Opcode Used | Status | Alternative |
 |----------|---------|-------------|--------|-------------|
-| `identity` | `create_claim_v1.zk` | `LessThanOrEqual` | ⚠️ Experimental | Cannot use safemath — needs Boolean output for public predicate_result |
+| `identity` | `create_claim_v1.zk` | None | ✅ Uses safemath | Refactored to Level 0 (zk_only) — no Boolean output needed |
 | `stablecoin` | `open_position_v1.zk` | None | ✅ Uses safemath | `assert_lte_u64_v1.zk` |
 | `stablecoin` | `liquidate_v1.zk` | None | ✅ Uses safemath | `assert_lte_u64_v1.zk` |
 
-**stablecoin can ship to production** using safemath assertion gadgets.
-
-**identity cannot use safemath** without changing Level 1 (selective disclosure) to Level 0 (zk_only) semantics — the Boolean output is fundamental to the design.
+**All contracts can ship to production** using safemath assertion gadgets.
 
 ---
 

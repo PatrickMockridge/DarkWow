@@ -14,7 +14,7 @@ This document tracks the blockers to reaching MVP for each contract in `src/cont
 | `dao` | None | Governance token integration | **Yes** |
 | `dex` | None | Order matching logic | Partial |
 | `bridge` | None | Light client for external chain verification | Partial |
-| `identity` | `LessThanOrEqual`, `IsEqualBase` integrated (experimental) — **fundamental**: needs Boolean output for public predicate_result | Integration testing | Partial |
+| `identity` | None — uses safemath (Level 0 zk_only refactor) | Integration testing | Partial |
 | `stablecoin` | None — uses safemath `assert_lte_u64_v1.zk` | P2P oracle, CDP notes | Partial |
 | `escrow` | None | ZK circuit compilation, Money integration | Partial |
 | `dao_escrow` | None | Entry point wiring, spend hook, Money integration | Partial |
@@ -140,9 +140,11 @@ InitializeV1 (0x00), DepositV1 (0x01), WithdrawV1 (0x02), UpdateConfigV1 (0x03)
 
 ---
 
-## `identity` — Partial MVP (Experimental Opcode Integrated)
+## `identity` — Partial MVP (Architecture Blockers Only)
 
 **Location**: `src/contract/identity/`
+
+**Architecture**: Level 0 (zk_only) — verifier learns only "proof valid/invalid", not predicate result.
 
 ### Functions
 InitializeV1 (0x00), IssueCredentialV1 (0x01), RevokeCredentialV1 (0x02), CreateClaimV1 (0x03), VerifyClaimV1 (0x04)
@@ -152,20 +154,18 @@ InitializeV1 (0x00), IssueCredentialV1 (0x01), RevokeCredentialV1 (0x02), Create
 | Circuit | Status | Notes |
 |---------|--------|-------|
 | `issue_credential_v1.zk` | Unread | Likely needs review |
-| `create_claim_v1.zk` | Verified (experimental) | Uses `LessThanOrEqual` for threshold checks. **Grey-market opcode.** |
+| `create_claim_v1.zk` | Verified | Uses safemath `assert_lte_u64_v1.zk` pattern |
+
+**Opcode layer**: None. All LTE checks use safemath assertion gadgets. No experimental opcodes.
 
 ### Blockers
 
-**Opcode layer**: `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented and integrated in `create_claim_v1.zk`. Both are **experimental grey-market goods** — see [zkVM Primitive Layer](zkvm_primitives.md) for the delta-invert soundness concern and what production readiness requires.
-
-**Why LessThanOrEqual is fundamental here**: The identity contract uses `LessThanOrEqual` to return a **Boolean** (0/1) that is constrained to equal a **public input** `predicate_result`. This reveals the authorization decision publicly (Level 1 "selective" disclosure). Safemath's `assert_lte` cannot replace this because it only constrains — it doesn't return a value. Redesigning to use safemath would change Level 1 to Level 0 ("zk_only") semantics.
-
 **Architecture**: Integration testing — no end-to-end test of issue → claim → verify flow exists yet.
 
-**What it needs**: Integration test for the full credential lifecycle. `IsEqualBase` delta-invert soundness fix. Review of `issue_credential_v1.zk`.
+**What it needs**: Integration test for the full credential lifecycle. Review of `issue_credential_v1.zk`. `verify_claim_v1.zk` is stubbed.
 
 **See also**:
-- [zkVM Primitive Layer](zkvm_primitives.md) for the full opcode dependency analysis.
+- [Safemath](../safemath.md) for the safemath integration guide.
 - [identity contract README](../../src/contract/identity/README.md) for the privacy gradient design.
 
 ---
