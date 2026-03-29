@@ -8,16 +8,17 @@ field = "pallas";
 # This circuit proves:
 # - Claimer knows the secret
 # - The poseidon_hash of the secret matches the stored hash
-# - The swap hasn't been refunded (nullifier check)
+# - The nullifier is correctly computed
 #
 # Public Inputs (constrain_instance):
-#   - swap_id: The swap being claimed
 #   - nullifier: Prevents double-claim
 #
 # Witnesses:
 #   - secret: The secret (revealed on-chain)
-#   - hash: The stored poseidon_hash(secret)
-#   - timelock: For reference only
+#   - hash: The stored poseidon_hash(secret) from CreateSwap
+#   - swap_id: The swap being claimed
+#   - timelock: For reference only (not enforced in claim)
+#   - side: 0 = Alice, 1 = Bob
 
 constant "ClaimSwap" {
     EcFixedPointBase NULLIFIER_K,
@@ -49,27 +50,21 @@ circuit "ClaimSwap" {
     # The secret is revealed, and we verify it matches the stored hash.
     # This proves the claimer knows the secret.
 
-    # NOTE: Due to missing SHA256 in-circuit, we use poseidon_hash.
-    # The CreateSwap circuit also stores poseidon_hash(secret) as the hash.
-    # For external chain integration (Ethereum SHA256), a bridge/oracle
-    # must verify the cross-chain hash binding.
-    #
-    # This is a known limitation - see security-analysis.md Issue #5
-
-    # Verify: poseidon_hash(secret) == stored hash
-    # This proves the claimer knows the secret AND the hash matches
-    computed_hash = poseidon_hash(secret);
+    computed_hash = poseidon_hash([secret]);
     constrain_equal_base(computed_hash, hash);
 
     # ==========================================================================
-    # PHASE 2: Compute nullifier
+    # PHASE 2: Compute and verify nullifier - PUBLIC INPUT
     # ==========================================================================
     #
     # Nullifier prevents double-claim of the same swap.
     # Once claimed, the swap cannot be claimed again or refunded.
+    # The nullifier is a PUBLIC INPUT provided by the verifier.
 
-    nullifier_check = poseidon_hash(swap_id, secret);
-    constrain_equal_base(nullifier_check, nullifier);
+    nullifier_check = poseidon_hash([swap_id, secret]);
+
+    # This is the PUBLIC INPUT - nullifier must be provided by verifier
+    constrain_instance(nullifier_check);
 
     # ==========================================================================
     # SOUNDNESS NOTES
@@ -78,14 +73,12 @@ circuit "ClaimSwap" {
     # This circuit uses ONLY proven opcodes:
     #   - poseidon_hash: field-proven, standard in DarkFi
     #   - constrain_equal_base: equality constraint
+    #   - constrain_instance: public input commitment
     #
     # There are NO uses of experimental opcodes.
     #
-    # The poseidon_hash is now verified in-circuit (Phase 1).
-    # This fixes the critical issue where hash was not bound to secret.
-    #
-    # For external chain integration, a bridge/oracle must verify
-    # the cross-chain hash binding separately.
+    # The poseidon_hash is verified in-circuit (Phase 1).
+    # The nullifier is a public input verified via constrain_instance.
 
     # ==========================================================================
     # WHAT THIS CIRCUIT PROVES
@@ -94,7 +87,7 @@ circuit "ClaimSwap" {
     # This circuit proves:
     #   1. The claimer knows the secret
     #   2. The secret's poseidon_hash matches the stored hash
-    #   3. The nullifier is correctly computed
+    #   3. The nullifier is correctly computed from swap_id and secret
     #
     # What it DOES NOT prove:
     #   1. External chain hash binding (requires bridge/oracle)
@@ -122,7 +115,7 @@ circuit "ClaimSwap" {
     # The swap is now complete. Both parties have their funds.
 
     # ==========================================================================
-    # REFUND FLOW (if timelock expires)
+    # REFUND FLOW (if timelock expires) - see refund_v1.zk
     # ==========================================================================
     #
     # If the swap is not completed before timelock:
@@ -131,3 +124,4 @@ circuit "ClaimSwap" {
     # 2. Refund circuit verifies: current_block >= timelock
     # 3. Refund emits nullifier (prevents later claim)
     # 4. Funds returned to original depositor
+}

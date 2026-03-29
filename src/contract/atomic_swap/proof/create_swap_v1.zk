@@ -12,16 +12,16 @@ field = "pallas";
 #
 # Public Inputs (constrain_instance):
 #   - swap_id: H(hash, timelock, receiver_pub, amount, token_id, side, blind)
-#   - hash: poseidon_hash(secret) - verified in-circuit
-#   - timelock: block height before which refund is not allowed
-#   - receiver_pub_x, receiver_pub_y: DarkFi public key of recipient
 #
 # Witnesses:
 #   - secret: The secret (never revealed on-chain in this step)
+#   - hash: poseidon_hash(secret)
+#   - timelock: block height before which refund is not allowed
 #   - amount: Swap amount
 #   - token_id: Token being swapped
 #   - side: 0 = Alice (initiator), 1 = Bob (responder)
 #   - blind: Blinding factor for commitment
+#   - receiver_pub_x, receiver_pub_y: DarkFi public key of recipient
 
 constant "CreateSwap" {
     EcFixedPointBase NULLIFIER_K,
@@ -57,40 +57,24 @@ witness "CreateSwap" {
 
 circuit "CreateSwap" {
     # ==========================================================================
-    # PHASE 1: Compute and store hash of the secret
+    # PHASE 1: Compute and verify hash of the secret
     # ==========================================================================
     #
-    # We compute poseidon_hash(secret) and store it as the swap's hash.
-    # This allows the Claim circuit to verify the secret without revealing it.
-    #
-    # NOTE: For external chain integration (Ethereum), the SHA256 hash
-    # is handled separately via bridge/oracle. This poseidon_hash is
-    # for DarkFi-side verification only.
-    #
-    # This fixes the critical issue where the hash was not bound to the secret.
+    # We compute poseidon_hash(secret) and verify it matches the witness hash.
+    # This proves the creator knows the secret without revealing it.
 
-    # Compute poseidon_hash(secret) - this is what we store
-    computed_hash = poseidon_hash(secret);
+    computed_hash = poseidon_hash([secret]);
     constrain_equal_base(computed_hash, hash);
 
     # ==========================================================================
-    # PHASE 2: Verify timelock is in the future
-    # ==========================================================================
-    #
-    # Block-based timelock: The refund is not allowed until timelock block.
-    # This uses DarkFi's deterministic block heights.
-
-    # Note: We don't constrain timelock here since it's a public input
-    # The refund circuit will verify current_block >= timelock
-
-    # ==========================================================================
-    # PHASE 3: Derive swap ID (commitment)
+    # PHASE 2: Derive swap ID (commitment) - PUBLIC INPUT
     # ==========================================================================
     #
     # The swap ID commits to all swap parameters.
     # This is what gets stored on-chain.
+    # It is a PUBLIC INPUT - the verifier passes this value.
 
-    derived_swap_id = poseidon_hash(
+    derived_swap_id = poseidon_hash([
         hash,
         timelock.into(),
         receiver_pub_x,
@@ -99,20 +83,10 @@ circuit "CreateSwap" {
         token_id,
         side.into(),
         blind
-    );
+    ]);
 
-    # Verify the derived swap ID matches the public input
-    constrain_equal_base(derived_swap_id, swap_id);
-
-    # ==========================================================================
-    # PHASE 4: Verify receiver public key
-    # ==========================================================================
-    #
-    # The receiver must have the corresponding private key.
-    # We derive the public key from a derived secret (not the HTLC secret).
-
-    # For the MVP, we just store the receiver pubkey directly
-    # A full implementation might derive it from a different secret
+    # This is the PUBLIC INPUT - swap_id must be provided by verifier
+    constrain_instance(derived_swap_id);
 
     # ==========================================================================
     # SOUNDNESS NOTES
@@ -121,22 +95,10 @@ circuit "CreateSwap" {
     # This circuit uses ONLY proven opcodes:
     #   - poseidon_hash: field-proven, standard in DarkFi
     #   - constrain_equal_base: equality constraint
+    #   - constrain_instance: public input commitment
     #
     # There are NO uses of experimental opcodes.
     #
-    # The poseidon_hash is now verified in-circuit (Phase 1).
-    # This fixes the critical issue where hash was not bound to secret.
-
-    # ==========================================================================
-    # WHAT THIS CIRCUIT DOES NOT VERIFY
-    # ==========================================================================
-    #
-    # 1. External chain hash: For cross-chain swaps (Ethereum SHA256),
-    #    a bridge/oracle must verify the cross-chain binding separately.
-    #    The poseidon_hash here is for DarkFi-side verification only.
-    #
-    # 2. Fund deposit: We don't verify the funds are actually locked
-    #    This requires Money contract integration
-    #
-    # These are covered by the contract logic outside the circuit.
+    # The poseidon_hash is verified in-circuit (Phase 1).
+    # The swap_id is a public input verified via constrain_instance.
 }

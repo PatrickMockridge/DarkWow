@@ -261,6 +261,86 @@ Cross-contract composition follows specific patterns:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## Cross-Contract Verification Patterns
+
+### The Trusted Setup Workaround
+
+When contracts need to verify state from other contracts (e.g., DEX verifying that funds
+are locked in the Money contract), the ideal solution is cross-contract ZK composition.
+Since this is not yet available, DarkFi uses a **trusted setup pattern**.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              Trusted Setup Pattern (TEMPORARY WORKAROUND)             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Problem: Contract A needs to verify Contract B's state          │
+│                                                                   │
+│  Example: DEX needs to verify Money contract's lock_proof       │
+│                                                                   │
+│  Ideal Solution (not yet available):                             │
+│  - Cross-contract ZK composition opcodes                         │
+│  - On-chain Merkle root verification                             │
+│  - Event-based state synchronization                              │
+│                                                                   │
+│  Current Workaround:                                              │
+│  1. Contract A initialized with "trusted root" from Contract B  │
+│  2. Contract A verifies state against trusted root              │
+│  3. Root must be manually updated when Contract B changes        │
+│                                                                   │
+│  Security Trade-off:                                              │
+│  - If trusted root is wrong/stale, invalid proofs may be accepted│
+│  - No automatic detection of Contract B state changes            │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### DEX-Money Trusted Setup
+
+The DEX contract uses this pattern to verify lock_proofs:
+
+| Step | Action | Description |
+|------|--------|-------------|
+| 1 | Initialize DEX | Set `trusted_money_merkle_root` from current Money contract |
+| 2 | User locks funds | Money contract issues lock_commitment + lock_proof |
+| 3 | Create/Accept swap | DEX verifies lock_proof against trusted root |
+| 4 | Execute swap | Nullifiers prevent double-spending |
+
+**Warning**: If the Money contract's Merkle root changes (e.g., after a large
+settlement), the DEX's trusted root becomes stale. Swaps may fail until the DEX
+is re-initialized with the new root.
+
+### Long-Term Solution: Cross-Contract ZK Composition
+
+The proper solution requires new VM opcodes:
+
+```zk
+# When available, contracts will be able to:
+cross_call(
+    target: MoneyContract,
+    circuit: "verify_lock",
+    inputs: [lock_proof],
+    proof: zk_proof
+) -> bool
+```
+
+This would eliminate the trusted setup entirely:
+- No manual root synchronization needed
+- Verification is always current
+- No trust assumptions about root correctness
+
+See [zkVM Primitive Layer](zkvm_primitives.md) for the full analysis of required
+cross-contract ZK composition opcodes.
+
+### When to Use Trusted Setup
+
+| Use Case | Trusted Setup Appropriate? |
+|----------|--------------------------|
+| DEX ↔ Money lock verification | Yes (temporary workaround) |
+| Cross-contract token transfers | No (use atomic transactions) |
+| Attestation references | No (use Attestation contract directly) |
+| Oracle data verification | Yes (oracle can attest to data) |
+
 ## Cross-Contract Composability Matrix
 
 | Caller → | Money | DAO | Bridge | DEX | Attestation | Oracle | Labor Market | Tender |

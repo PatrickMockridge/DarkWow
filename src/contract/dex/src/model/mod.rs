@@ -32,23 +32,88 @@
 //!
 //! 4. OR Cancel/Timeout: refund both
 //! ```
+//!
+//! ## Trusted Setup with Money Contract
+//!
+//! The DEX contract requires a trusted setup with the money contract to verify
+//! lock_proofs. This is a TEMPORARY WORKAROUND due to the absence of proper
+//! cross-contract composable opcodes in the ZK circuit execution environment.
+//!
+//! ### The Problem
+//!
+//! Ideally, the DEX would:
+//! 1. Call the money contract to verify lock_proofs
+//! 2. Use cross-contract state proofs
+//! 3. Have atomic composition of ZK proofs across contracts
+//!
+//! Without these opcodes, we rely on a TRUSTED Merkle root that is set during
+//! initialization and assumed to be valid.
+//!
+//! ### Current Implementation
+//!
+//! - `InitializeParams.trusted_money_merkle_root`: Set during contract initialization
+//! - This root is used to verify `lock_proof` in CreateSwap and AcceptSwap
+//! - The root should be obtained from the money contract's current Merkle root
+//!
+//! ### Security Note
+//!
+//! This trusted setup is a SIGNIFICANT SECURITY TRADE-OFF:
+//! - If the trusted root is wrong or outdated, an attacker could:
+//!   - Create swaps with invalid lock_proofs
+//!   - Claim swaps for funds they haven't locked
+//!
+//! Proper solution requires:
+//! - Cross-contract ZK proof composition opcodes
+//! - On-chain Merkle root verification
+//! - Event-based state synchronization between contracts
 
 use darkfi_serial::{SerialDecodable, SerialEncodable};
-use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier};
+use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
 
 /// Namespace for DEX intents (used with generic intent primitives)
 pub const DEX_NAMESPACE: u64 = 0x0003;
 
 /// Initialize contract parameters
+///
+/// # Trusted Setup
+///
+/// This includes a `trusted_money_merkle_root` which is used to verify lock_proofs.
+/// See module-level documentation for security considerations.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeParams {
     /// Swap timeout in blocks
     pub timeout: u32,
     /// DEX fee (basis points)
     pub fee: u64,
+    /// Trusted Merkle root of the money contract's coin tree
+    ///
+    /// # Security Warning
+    ///
+    /// This root is TRUSTED and not verified. It should match the money contract's
+    /// current Merkle root at initialization time. If incorrect, the DEX cannot
+    /// detect invalid lock_proofs.
+    ///
+    /// This is a workaround for lack of cross-contract ZK composition opcodes.
+    pub trusted_money_merkle_root: [u8; 32],
 }
 
 /// Create swap proposal parameters
+///
+/// SECURITY NOTE: The prover MUST compute nullifier externally:
+/// - nullifier = poseidon_hash([secret, lock_commitment])
+///
+/// This nullifier is passed in this struct to allow the contract to:
+/// 1. Verify it as a public input to the ZK proof
+/// 2. Track it for double-spend prevention
+///
+/// ## Signature Verification
+///
+/// The proposer signs the swap parameters using their secret key. The signature
+/// is verified at the host level before contract execution. The ZK circuit
+/// constrains the signature_public coordinates, binding the proof to the signer's
+/// public key.
+///
+/// The signature commits to: swap_id || offer_token || offer_amount || request_token || request_amount
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CreateSwapParams {
     /// Swap ID (computed from commitment)
@@ -70,11 +135,16 @@ pub struct CreateSwapParams {
     /// lock_commitment = poseidon_hash([9001, owner_x, owner_y, namespace, payload_hash, expiry, nonce, blind])
     pub lock_commitment: IntentCommitment,
 
+    /// Proposer's nullifier: poseidon_hash([secret, lock_commitment])
+    /// MUST be computed by the prover before submitting
+    pub nullifier: IntentNullifier,
+
     /// Merkle proof that lock commitment is valid
     pub lock_proof: Vec<[u8; 32]>,
 
-    /// Signature authorizing swap creation
-    pub signature: Vec<u8>,
+    /// Proposer's public key for signature verification
+    /// The ZK circuit constrains this public key's coordinates
+    pub signature_public: PublicKey,
 
     /// Fee paid for swap creation
     pub fee: u64,
@@ -86,6 +156,22 @@ pub struct CreateSwapParams {
 }
 
 /// Accept swap parameters
+///
+/// SECURITY NOTE: The prover MUST compute nullifier externally:
+/// - nullifier = poseidon_hash([secret, lock_commitment])
+///
+/// This nullifier is passed in this struct to allow the contract to:
+/// 1. Verify it as a public input to the ZK proof
+/// 2. Track it for double-spend prevention
+///
+/// ## Signature Verification
+///
+/// The acceptor signs the acceptance using their secret key. The signature
+/// is verified at the host level before contract execution. The ZK circuit
+/// constrains the signature_public coordinates, binding the proof to the signer's
+/// public key.
+///
+/// The signature commits to: swap_id || lock_commitment
 #[derive(Debug, Clone, SerialDecodable, SerialEncodable)]
 pub struct AcceptSwapParams {
     /// Swap ID being accepted
@@ -94,11 +180,16 @@ pub struct AcceptSwapParams {
     /// Commitment that Bob's funds are locked (uses generic PrivateIntent commitment)
     pub lock_commitment: IntentCommitment,
 
+    /// Acceptor's nullifier: poseidon_hash([secret, lock_commitment])
+    /// MUST be computed by the prover before submitting
+    pub nullifier: IntentNullifier,
+
     /// Merkle proof that Bob's lock is valid
     pub lock_proof: Vec<[u8; 32]>,
 
-    /// Signature authorizing acceptance
-    pub signature: Vec<u8>,
+    /// Acceptor's public key for signature verification
+    /// The ZK circuit constrains this public key's coordinates
+    pub signature_public: PublicKey,
 
     /// Fee paid for acceptance
     pub fee: u64,
@@ -110,6 +201,14 @@ pub struct AcceptSwapParams {
 }
 
 /// Execute swap parameters
+///
+/// SECURITY NOTE: The prover MUST compute nullifiers externally:
+/// - alice_nullifier = poseidon_hash([alice_secret, alice_lock])
+/// - bob_nullifier = poseidon_hash([bob_secret, bob_lock])
+///
+/// These nullifiers are passed in this struct to allow the contract to:
+/// 1. Verify them as public inputs to the ZK proof
+/// 2. Check them against on-chain state to prevent double-execution
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ExecuteSwapParams {
     /// Swap ID to execute
@@ -121,6 +220,14 @@ pub struct ExecuteSwapParams {
     /// Prover's secret for Bob's lock
     pub bob_secret: [u8; 32],
 
+    /// Alice's nullifier: poseidon_hash([alice_secret, alice_lock])
+    /// MUST be computed by the prover before submitting
+    pub alice_nullifier: IntentNullifier,
+
+    /// Bob's nullifier: poseidon_hash([bob_secret, bob_lock])
+    /// MUST be computed by the prover before submitting
+    pub bob_nullifier: IntentNullifier,
+
     /// ZK proof that swap is valid
     pub proof: Vec<u8>,
 
@@ -129,6 +236,13 @@ pub struct ExecuteSwapParams {
 }
 
 /// Cancel swap parameters
+///
+/// SECURITY NOTE: The prover MUST compute the nullifier externally:
+/// - nullifier = poseidon_hash([secret, lock_commitment])
+///
+/// This nullifier is passed in this struct to allow the contract to:
+/// 1. Verify it as a public input to the ZK proof
+/// 2. Check it against on-chain state to prevent double-cancellation
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CancelSwapParams {
     /// Swap ID to cancel
@@ -136,6 +250,10 @@ pub struct CancelSwapParams {
 
     /// Secret to unlock the lock
     pub secret: [u8; 32],
+
+    /// Nullifier: poseidon_hash([secret, lock_commitment])
+    /// MUST be computed by the prover before submitting
+    pub nullifier: IntentNullifier,
 
     /// ZK proof of ownership
     pub proof: Vec<u8>,
@@ -189,8 +307,14 @@ pub struct Swap {
     /// Proposer's lock commitment (uses generic PrivateIntent commitment)
     pub proposer_lock: IntentCommitment,
 
+    /// Proposer's nullifier for double-spend prevention
+    pub proposer_nullifier: IntentNullifier,
+
     /// Acceptor's lock commitment (set when accepted)
     pub acceptor_lock: IntentCommitment,
+
+    /// Acceptor's nullifier for double-spend prevention (set when accepted)
+    pub acceptor_nullifier: IntentNullifier,
 
     /// Current state
     pub state: SwapState,
@@ -204,6 +328,76 @@ pub struct Swap {
     /// If true, anyone can execute this swap (no Alice secret needed)
     /// Set by Alice at swap creation time
     pub open_execution: bool,
+}
+
+// ============================================================================
+// UPDATE STRUCTS (for state transitions)
+// ============================================================================
+
+/// Update struct for CreateSwapV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CreateSwapUpdateV1 {
+    /// The swap ID
+    pub swap_id: [u8; 32],
+    /// Proposer's public key x
+    pub proposer_pub_x: [u8; 32],
+    /// Proposer's public key y
+    pub proposer_pub_y: [u8; 32],
+    /// Token being offered
+    pub offer_token: [u8; 32],
+    /// Amount being offered
+    pub offer_amount: u64,
+    /// Token being requested
+    pub request_token: [u8; 32],
+    /// Amount being requested
+    pub request_amount: u64,
+    /// Proposer's lock commitment
+    pub proposer_lock: IntentCommitment,
+    /// Proposer's nullifier for double-spend prevention
+    pub proposer_nullifier: IntentNullifier,
+    /// Creation timestamp
+    pub created_at: u64,
+    /// Expiration timestamp
+    pub expires_at: u64,
+    /// Open execution flag
+    pub open_execution: bool,
+}
+
+/// Update struct for AcceptSwapV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AcceptSwapUpdateV1 {
+    /// The swap ID
+    pub swap_id: [u8; 32],
+    /// Acceptor's public key x
+    pub acceptor_pub_x: [u8; 32],
+    /// Acceptor's public key y
+    pub acceptor_pub_y: [u8; 32],
+    /// Acceptor's lock commitment
+    pub acceptor_lock: IntentCommitment,
+    /// Acceptor's nullifier for double-spend prevention
+    pub acceptor_nullifier: IntentNullifier,
+}
+
+/// Update struct for ExecuteSwapV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ExecuteSwapUpdateV1 {
+    /// The swap ID
+    pub swap_id: [u8; 32],
+    /// Alice's nullifier
+    pub alice_nullifier: IntentNullifier,
+    /// Bob's nullifier
+    pub bob_nullifier: IntentNullifier,
+}
+
+/// Update struct for CancelSwapV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CancelSwapUpdateV1 {
+    /// The swap ID
+    pub swap_id: [u8; 32],
+    /// Nullifier for the cancelled lock
+    pub nullifier: IntentNullifier,
+    /// Whether the proposer cancelled (true) or acceptor (false)
+    pub is_proposer: bool,
 }
 
 // ============================================================================

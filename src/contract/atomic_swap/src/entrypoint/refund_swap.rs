@@ -1,0 +1,130 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+use darkfi_sdk::{
+    crypto::pasta_prelude::*,
+    dark_tree::DarkLeaf,
+    error::{ContractError, ContractResult},
+    msg,
+    pasta::pallas,
+    wasm, ContractCall,
+};
+use darkfi_serial::{deserialize, serialize, Encodable};
+
+use crate::{
+    model::{RefundParamsV1, RefundUpdateV1, Swap, SwapState},
+    ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE,
+    ATOMIC_SWAP_CONTRACT_SWAPS_TREE,
+    ATOMIC_SWAP_CONTRACT_ZKAS_REFUND_NS,
+};
+
+/// `get_metadata` function for `AtomicSwap::RefundV1`
+pub(crate) fn atomic_swap_refund_get_metadata_v1(
+    _cid: darkfi_sdk::crypto::ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> Result<Vec<u8>, ContractError> {
+    let self_ = &calls[call_idx].data;
+    let params: RefundParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Public inputs for the ZK proofs we have to verify
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+
+    // The circuit expects: nullifier_check as public input
+    zk_public_inputs.push((
+        ATOMIC_SWAP_CONTRACT_ZKAS_REFUND_NS.to_string(),
+        vec![params.nullifier],
+    ));
+
+    // Serialize everything gathered and return it
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+
+    Ok(metadata)
+}
+
+/// `process_instruction` function for `AtomicSwap::RefundV1`
+pub(crate) fn atomic_swap_refund_process_instruction_v1(
+    cid: darkfi_sdk::crypto::ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> Result<Vec<u8>, ContractError> {
+    let self_ = &calls[call_idx];
+    let params: RefundParamsV1 = deserialize(&self_.data.data[1..])?;
+
+    // Load the swap
+    let swaps_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_SWAPS_TREE)?;
+    let Some(swap_data) = wasm::db::db_get(swaps_db, &serialize(&params.swap_id))? else {
+        msg!("[AtomicSwap::Refund] Error: Swap not found");
+        return Err(ContractError::InvalidInstruction)
+    };
+    let swap: Swap = Swap::decode(&mut std::io::Cursor::new(&swap_data))
+        .map_err(|_| ContractError::DecodeError)?;
+
+    // Verify swap is in Created state
+    if swap.state != SwapState::Created {
+        msg!("[AtomicSwap::Refund] Error: Swap not in Created state");
+        return Err(ContractError::InvalidState)
+    }
+
+    // Verify timelock has passed
+    if params.current_block < swap.timelock {
+        msg!("[AtomicSwap::Refund] Error: Timelock not expired");
+        return Err(ContractError::InvalidInstruction)
+    }
+
+    // Check nullifier hasn't been used (prevent double-refund)
+    let nullifiers_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.nullifier))? {
+        msg!("[AtomicSwap::Refund] Error: Nullifier already spent");
+        return Err(ContractError::InvalidInstruction)
+    }
+
+    // Return update data
+    let update = RefundUpdateV1 {
+        swap_id: params.swap_id,
+        nullifier: params.nullifier,
+    };
+    Ok(serialize(&update))
+}
+
+/// `process_update` function for `AtomicSwap::RefundV1`
+pub(crate) fn atomic_swap_refund_process_update_v1(
+    cid: darkfi_sdk::crypto::ContractId,
+    update: RefundUpdateV1,
+) -> ContractResult {
+    // Load the swap
+    let swaps_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_SWAPS_TREE)?;
+    let Some(swap_data) = wasm::db::db_get(swaps_db, &serialize(&update.swap_id))? else {
+        msg!("[AtomicSwap::Refund] Error: Swap not found");
+        return Err(ContractError::InvalidInstruction)
+    };
+    let mut swap: Swap = Swap::decode(&mut std::io::Cursor::new(&swap_data))
+        .map_err(|_| ContractError::DecodeError)?;
+
+    // Mark as Refunded
+    swap.state = SwapState::Refunded;
+    wasm::db::db_set(swaps_db, &serialize(&update.swap_id), &swap.encode())?;
+
+    // Record nullifier to prevent double-refund
+    let nullifiers_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier), &[])?;
+
+    msg!("[AtomicSwap::Refund] Swap refunded: {:?}", update.swap_id);
+    Ok(())
+}

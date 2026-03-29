@@ -30,7 +30,7 @@
 //!
 //!  1. Alice (initiator) creates swap on DarkFi
 //!     - Locks X tokens
-//!     - hash = SHA256(secret)
+//!     - hash = poseidon_hash(secret)
 //!     - timelock = current_block + N
 //!
 //!  2. Alice sends hash to Bob on external chain              ──────────►
@@ -40,18 +40,10 @@
 //!     - Same hash
 //!     - timelock = current_block + N + δ (δ = verification delay)
 //!
-//!  4. Bob confirms HTLC on external chain                   ◄─────────
-//!
-//!  5. Alice sees confirmation, reveals secret on DarkFi
-//!     - secret sent via atomic_swap contract
-//!     - ClaimV1: proves knowledge of secret
-//!
-//!  6. Secret revealed on DarkFi (readable by Bob)          ◄─────────
-//!
-//!  7. Bob claims on DarkFi with secret
+//!  4. Bob claims on DarkFi with secret
 //!     - funds released to Bob
 //!
-//!  8. Alice claims on external chain with secret
+//!  5. Alice claims on external chain with secret
 //!     - funds released to Alice
 //!
 //!  If timelock expires:
@@ -63,13 +55,17 @@ use darkfi_sdk::{
     crypto::ContractId,
     error::ContractResult,
     msg,
-    wasm, ContractCall,
+    wasm,
 };
 use darkfi_serial::deserialize;
 
 use crate::{
-    model::{ClaimUpdateV1, CreateSwapUpdateV1, RefundUpdateV1},
+    model::{
+        ClaimUpdateV1, CreateSwapUpdateV1, RefundUpdateV1,
+    },
     AtomicSwapFunction, ATOMIC_SWAP_CONTRACT_INFO_TREE,
+    ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE,
+    ATOMIC_SWAP_CONTRACT_SECRETS_TREE,
     ATOMIC_SWAP_CONTRACT_SWAPS_TREE,
 };
 
@@ -78,6 +74,35 @@ use crate::{
 // ============================================================================
 
 const ATOMIC_SWAP_DB_VERSION_KEY: &[u8] = b"db_version";
+
+// ============================================================================
+// ENTRYPOINT SUBMODULES
+// ============================================================================
+
+/// `AtomicSwap::CreateSwap` functions
+mod create_swap;
+use create_swap::{
+    atomic_swap_create_get_metadata_v1, atomic_swap_create_process_instruction_v1,
+    atomic_swap_create_process_update_v1,
+};
+
+/// `AtomicSwap::Claim` functions
+mod claim_swap;
+use claim_swap::{
+    atomic_swap_claim_get_metadata_v1, atomic_swap_claim_process_instruction_v1,
+    atomic_swap_claim_process_update_v1,
+};
+
+/// `AtomicSwap::Refund` functions
+mod refund_swap;
+use refund_swap::{
+    atomic_swap_refund_get_metadata_v1, atomic_swap_refund_process_instruction_v1,
+    atomic_swap_refund_process_update_v1,
+};
+
+// ============================================================================
+// CONTRACT DEFINITION
+// ============================================================================
 
 darkfi_sdk::define_contract!(
     init: init_contract,
@@ -128,15 +153,18 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 /// Fetch metadata for ZK proof verification
 fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = AtomicSwapFunction::try_from(self_.data[0])?;
 
-    msg!("[atomic_swap::get_metadata] Processing function: {:?}", func);
+    let metadata = match func {
+        AtomicSwapFunction::CreateSwapV1 => atomic_swap_create_get_metadata_v1(cid, call_idx, calls)?,
+        AtomicSwapFunction::ClaimV1 => atomic_swap_claim_get_metadata_v1(cid, call_idx, calls)?,
+        AtomicSwapFunction::RefundV1 => atomic_swap_refund_get_metadata_v1(cid, call_idx, calls)?,
+        AtomicSwapFunction::InitializeV1 => vec![],
+    };
 
-    // TODO: Implement metadata fetching for ZK proof verification
-
-    wasm::util::set_return_data(&[])
+    wasm::util::set_return_data(&metadata)
 }
 
 // ============================================================================
@@ -146,15 +174,24 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 /// Verify state transition and produce update if valid
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = AtomicSwapFunction::try_from(self_.data[0])?;
 
-    msg!("[atomic_swap::process_instruction] Processing function: {:?}", func);
+    let update_data = match func {
+        AtomicSwapFunction::CreateSwapV1 => {
+            atomic_swap_create_process_instruction_v1(cid, call_idx, calls)?
+        }
+        AtomicSwapFunction::ClaimV1 => {
+            atomic_swap_claim_process_instruction_v1(cid, call_idx, calls)?
+        }
+        AtomicSwapFunction::RefundV1 => {
+            atomic_swap_refund_process_instruction_v1(cid, call_idx, calls)?
+        }
+        AtomicSwapFunction::InitializeV1 => vec![],
+    };
 
-    // TODO: Implement actual instruction processing
-
-    wasm::util::set_return_data(&[])
+    wasm::util::set_return_data(&update_data)
 }
 
 // ============================================================================
@@ -163,23 +200,18 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 /// Write state update after successful verification
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
-    let func = AtomicSwapFunction::try_from(update_data[0])?;
-
-    match func {
+    match AtomicSwapFunction::try_from(update_data[0])? {
         AtomicSwapFunction::CreateSwapV1 => {
-            let _update: CreateSwapUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Write swap to state tree
-            Ok(())
+            let update: CreateSwapUpdateV1 = deserialize(&update_data[1..])?;
+            Ok(atomic_swap_create_process_update_v1(cid, update)?)
         }
         AtomicSwapFunction::ClaimV1 => {
-            let _update: ClaimUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Mark swap as Claimed, record secret and nullifier
-            Ok(())
+            let update: ClaimUpdateV1 = deserialize(&update_data[1..])?;
+            Ok(atomic_swap_claim_process_update_v1(cid, update)?)
         }
         AtomicSwapFunction::RefundV1 => {
-            let _update: RefundUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Mark swap as Refunded, record nullifier
-            Ok(())
+            let update: RefundUpdateV1 = deserialize(&update_data[1..])?;
+            Ok(atomic_swap_refund_process_update_v1(cid, update)?)
         }
         AtomicSwapFunction::InitializeV1 => {
             msg!("[atomic_swap::process_update] InitializeV1 has no update data");
@@ -192,11 +224,11 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 // HTLC LOGIC OVERVIEW
 // ============================================================================
 //
-// The actual HTLC logic will verify:
+// The HTLC logic verifies:
 //
 // CreateSwap:
 //   - User locks funds in contract
-//   - Hash is provided: hash = SHA256(secret)
+//   - Hash is provided: hash = poseidon_hash(secret)
 //   - Timelock set to prevent premature refund
 //   - Swap state = Created
 //

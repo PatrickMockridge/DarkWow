@@ -1,31 +1,57 @@
 k = 11;
 field = "pallas";
 
+# DEX: Execute Swap Circuit (Version 1)
+#
+# Executes an atomic swap between Alice and Bob.
+#
+# This circuit proves:
+# - Alice knows the secret to her lock
+# - Bob knows the secret to his lock
+# - Both locks are valid commitments to the amounts
+# - The nullifiers are correctly computed
+# - The swap ID is consistent
+#
+# Public Inputs (constrain_instance):
+#   - alice_nullifier: Prevents double-spending Alice's lock
+#   - bob_nullifier: Prevents double-spending Bob's lock
+#   - swap_id: The swap being executed
+#
+# witnesses:
+#   - alice_secret: Alice's secret for her lock
+#   - alice_token: Token Alice is offering
+#   - alice_amount: Amount Alice is offering
+#   - bob_secret: Bob's secret for his lock
+#   - bob_token: Token Bob is offering
+#   - bob_amount: Amount Bob is offering
+#   - alice_lock: Alice's lock commitment (poseidon_hash of her funds)
+#   - bob_lock: Bob's lock commitment (poseidon_hash of his funds)
+#   - fill_amount: Amount being filled (for partial fills)
+
 constant "ExecuteSwapV1" {
     EcFixedPointBase NULLIFIER_K,
 }
 
 witness "ExecuteSwapV1" {
-    # Public inputs
-    Base swap_id,
-    Base alice_lock,
-    Base bob_lock,
-    Base alice_nullifier,
-    Base bob_nullifier,
-    Base swaps_root,
-
-    # Private inputs
+    # Alice's secret for her lock
     Base alice_secret,
-    Base bob_secret,
+
+    # Alice's offer details
     Base alice_token,
-    Base bob_token,
     Base alice_amount,
+
+    # Bob's secret for his lock
+    Base bob_secret,
+
+    # Bob's offer details
+    Base bob_token,
     Base bob_amount,
 
+    # Lock commitments (should match what's stored in the contract)
+    Base alice_lock,
+    Base bob_lock,
+
     # Partial fill support
-    # fill_amount: how much of the swap the filler proposes to fill
-    # When fill_amount == alice_amount, it's a full fill
-    # When fill_amount < alice_amount, it's a partial fill
     Base fill_amount,
 }
 
@@ -37,11 +63,11 @@ circuit "ExecuteSwapV1" {
     # Alice's lock = poseidon_hash(alice_secret, alice_token, alice_amount)
     # This proves Alice has locked funds for this swap.
 
-    alice_lock_check = poseidon_hash(
+    alice_lock_check = poseidon_hash([
         alice_secret,
         alice_token,
         alice_amount,
-    );
+    ]);
     constrain_equal_base(alice_lock_check, alice_lock);
 
     # ==========================================================================
@@ -51,35 +77,39 @@ circuit "ExecuteSwapV1" {
     # Bob's lock = poseidon_hash(bob_secret, bob_token, bob_amount)
     # This proves Bob has locked funds for this swap.
 
-    bob_lock_check = poseidon_hash(
+    bob_lock_check = poseidon_hash([
         bob_secret,
         bob_token,
         bob_amount,
-    );
+    ]);
     constrain_equal_base(bob_lock_check, bob_lock);
 
     # ==========================================================================
-    # PHASE 3: Derive and verify nullifiers
+    # PHASE 3: Derive and verify nullifiers - PUBLIC INPUTS
     # ==========================================================================
     #
     # Nullifiers prevent double-spending. Once the swap executes,
     # the nullifiers are emitted, preventing reuse.
+    #
+    # The nullifiers are PUBLIC INPUTS - verified via constrain_instance
 
-    alice_nullifier_check = poseidon_hash(alice_secret, alice_lock);
-    bob_nullifier_check = poseidon_hash(bob_secret, bob_lock);
+    alice_nullifier_check = poseidon_hash([alice_secret, alice_lock]);
+    bob_nullifier_check = poseidon_hash([bob_secret, bob_lock]);
 
-    constrain_equal_base(alice_nullifier_check, alice_nullifier);
-    constrain_equal_base(bob_nullifier_check, bob_nullifier);
+    constrain_instance(alice_nullifier_check);
+    constrain_instance(bob_nullifier_check);
 
     # ==========================================================================
-    # PHASE 4: Verify swap ID consistency
+    # PHASE 4: Verify swap ID consistency - PUBLIC INPUT
     # ==========================================================================
     #
     # swap_id = poseidon_hash(alice_lock, bob_token, bob_amount)
     # This binds all swap parameters together.
+    #
+    # The swap_id is a PUBLIC INPUT
 
-    computed_swap_id = poseidon_hash(alice_lock, bob_token, bob_amount);
-    constrain_equal_base(computed_swap_id, swap_id);
+    computed_swap_id = poseidon_hash([alice_lock, bob_token, bob_amount]);
+    constrain_instance(computed_swap_id);
 
     # ==========================================================================
     # PHASE 5: Partial fill check using safemath pattern
@@ -89,20 +119,6 @@ circuit "ExecuteSwapV1" {
     # that fill_amount <= alice_amount (the fill does not exceed Alice's offer).
     #
     # The safemath pattern for a <= b is: a < b + 1
-    #
-    # Why this workaround:
-    # - LessThanOrEqual (0x55) is IDEAL - returns Boolean for composability
-    # - But LessThanOrEqual has GATE SOUNDNESS ISSUES (unverified formal analysis)
-    # - Safemath provides PRODUCTION-READY assertion gadgets
-    # - This circuit only needs assertion (constrain-only), not Boolean return
-    #
-    # The safemath pattern:
-    #   1. Range-check both inputs to u64 bounds (prevents field wraparound)
-    #   2. Add 1 to the upper bound (converts strict < to <=)
-    #   3. Use less_than_strict (constrain-only, sound opcode)
-    #
-    # Circuit bloat note: Each circuit that needs this copies the gadget.
-    # LessThanOrEqual (once verified) would be a single VM implementation.
 
     # Both amounts must be valid u64
     range_check(64, alice_amount);
@@ -116,7 +132,6 @@ circuit "ExecuteSwapV1" {
     less_than_strict(fill_amount, alice_amount_plus_one);
 
     # Additionally, Bob's amount must be >= fill_amount (Bob receives fill)
-    # Bob agreed to swap bob_amount for alice_amount, so bob_amount >= fill
     less_than_strict(fill_amount, bob_amount);
 
     # Boolean checks for amounts
@@ -130,6 +145,7 @@ circuit "ExecuteSwapV1" {
     # This circuit uses ONLY PROVEN (sound) opcodes:
     #   - poseidon_hash: field-proven standard opcode
     #   - constrain_equal_base: equality constraint
+    #   - constrain_instance: public input commitment
     #   - range_check: bounds verification
     #   - bool_check: boolean verification
     #   - less_than_strict: constrain-only comparison (NO return value)
@@ -141,10 +157,6 @@ circuit "ExecuteSwapV1" {
     # LessThanOrEqual (0x55) is NOT used here because:
     #   1. Gate soundness is unverified (technical debt)
     #   2. This circuit only needs assertion, not Boolean return
-    #
-    # If you need the Boolean result for further constraints:
-    #   - Wait for LessThanOrEqual formal verification, OR
-    #   - Accept the technical debt and use LessThanOrEqual directly
     #
     # SAFEMATH IS THE WORKAROUND for production-safe comparison assertions.
 }

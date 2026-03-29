@@ -662,6 +662,174 @@ The proper long-term approach is to implement comparison opcodes **correctly and
 
 ---
 
+## Cross-Contract ZK Composition: The Trusted Setup Workaround
+
+This section documents a critical workaround that appears in contracts requiring
+cross-contract state verification, specifically the DEX contract's integration with
+the Money contract.
+
+### The Problem: Verifying State Across Contract Boundaries
+
+When the DEX contract needs to verify that a user has locked funds in the Money
+contract, the ideal solution is **cross-contract ZK composition**:
+
+```
+Ideal (not yet possible):
+┌─────────────────────────────────────────────────────────────────┐
+│  DEX Contract                                                     │
+│                                                                    │
+│  1. Call Money contract's ZK circuit                            │
+│  2. Verify lock_proof is valid                                   │
+│  3. Money contract's state is verified without duplication       │
+│                                                                    │
+│  Problem: No cross-contract ZK composition opcodes exist         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+The DEX needs to verify that `lock_proof` (a Merkle proof showing funds are locked
+in the Money contract) is valid. Without cross-contract ZK composition, the DEX
+cannot directly verify the Money contract's state.
+
+### The Trusted Setup Workaround
+
+The current implementation uses a **trusted setup pattern**:
+
+```rust
+// During DEX initialization:
+pub struct InitializeParams {
+    /// Trusted Merkle root of the money contract's coin tree
+    pub trusted_money_merkle_root: [u8; 32],
+}
+
+// When creating/accepting a swap:
+fn verify_lock_proof(
+    config_db: u32,
+    lock_commitment: &[u8; 32],
+    lock_proof: &[[u8; 32]],
+) -> Result<(), ContractError> {
+    // Get trusted Merkle root from config
+    let trusted_root = get_trusted_root(config_db)?;
+
+    // Recompute Merkle root from lock_proof
+    let computed_root = compute_merkle_root(lock_commitment, lock_proof)?;
+
+    // Compare against trusted root
+    if computed_root != trusted_root {
+        return Err(DexError::InvalidMerkleProof.into());
+    }
+    Ok(())
+}
+```
+
+### Security Trade-offs
+
+This trusted setup is a **significant security trade-off**:
+
+| Aspect | Status | Implication |
+|--------|--------|-------------|
+| **Trusted root correctness** | User-provided at initialization | If wrong, invalid lock_proofs accepted |
+| **Root synchronization** | Manual update required | If money contract updates its Merkle root, DEX becomes stale |
+| **No on-chain verification** | Root comparison only | Cannot detect if money contract state changed |
+| **Double-spend prevention** | Nullifiers still enforced | Protects against double-spending within DEX |
+
+### Why This Is Temporary
+
+The trusted setup is explicitly a **workaround** until proper cross-contract ZK
+composition opcodes exist. The proper solution requires:
+
+| Requirement | Description | Status |
+|-------------|-------------|--------|
+| **Cross-contract ZK composition opcodes** | VM can call and verify proofs from other contracts | Not implemented |
+| **On-chain Merkle root verification** | Contract can verify Merkle root against consensus state | Not implemented |
+| **Event-based state synchronization** | Contracts receive notifications when state changes | Not implemented |
+
+### Trusted Setup in the DEX
+
+The DEX contract uses this pattern in two places:
+
+1. **CreateSwapV1**: Verifies proposer's lock_proof against trusted Merkle root
+2. **AcceptSwapV1**: Verifies acceptor's lock_proof against trusted Merkle root
+
+```rust
+// In create_swap_v1.rs and accept_swap_v1.rs:
+// WARNING: This is a TRUSTED SETUP workaround
+// Proper implementation requires cross-contract ZK composition
+let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
+verify_lock_proof(config_db, &params.lock_commitment, &params.lock_proof)?;
+```
+
+### DEX-Money Contract Integration Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    DEX + Money Contract Integration                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. Initialize DEX contract                                                 │
+│     └─► Set trusted_money_merkle_root from current Money contract state     │
+│                                                                              │
+│  2. User locks funds in Money contract                                      │
+│     └─► Money contract updates its Merkle tree                             │
+│     └─► User receives lock_commitment + lock_proof                         │
+│                                                                              │
+│  3. User creates swap in DEX                                               │
+│     └─► DEX verifies lock_proof against trusted root                       │
+│     └─► WARNING: If Money's Merkle root changed, verification may fail     │
+│                                                                              │
+│  4. User accepts swap in DEX                                               │
+│     └─► Same verification against trusted root                             │
+│                                                                              │
+│  5. Execute swap                                                            │
+│     └─► Both parties' locks verified via nullifier tracking                │
+│     └─► Funds transferred via Money contract                               │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Security Notes for Contract Authors
+
+If you are building a contract that requires cross-contract state verification:
+
+1. **Document the trust assumption**: Explicitly state that a trusted Merkle root
+   is used and why
+
+2. **Warn about staleness**: If the money contract updates its Merkle root, the
+   DEX's trusted root becomes stale and swaps may fail
+
+3. **Prefer nullifiers over commitments**: Store nullifiers (not commitments) in
+   participants_db for double-spend prevention
+
+4. **Plan for migration**: When cross-contract ZK composition opcodes are available,
+   remove the trusted setup and implement proper verification
+
+### Long-Term Solution: Cross-Contract ZK Composition Opcodes
+
+The proper solution requires new opcodes that enable circuits to call other circuits:
+
+```zk
+# Hypothetical cross-contract ZK composition:
+cross_contract_call(
+    target_contract: Money,
+    function: "verify_lock",
+    inputs: [lock_commitment, lock_proof],
+    proof: zk_proof
+) -> Base  # Returns 1 if verified
+```
+
+This would allow the DEX to:
+1. Call the Money contract's verification circuit
+2. Pass the lock_proof as input
+3. Receive verification result without duplicating the circuit
+
+### Related Documentation
+
+- [DEX Contract](../../src/contract/dex/) — Implementation of trusted setup
+- [Money Contract](../../src/contract/money/) — Source of truth for locked funds
+- [Composability](composability.md) — Cross-contract patterns
+- [Private Authorization Layer](privauth.md) — Authorization primitives
+
+---
+
 ## Adding Custom Opcodes
 
 The zkVM opcode system is designed to be extensible. To add a new opcode:

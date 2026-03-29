@@ -69,6 +69,44 @@ Level 3: Full transparency (opt-in)
 - `execute_swap_v1.zk`: Prove both secrets known, locks valid
 - `cancel_swap_v1.zk`: Prove ownership for cancellation
 
+### Signature Verification
+
+The DEX uses a **split verification model** for signatures:
+
+1. **Host verifies signature** before contract execution using `SchnorrPublic::verify()`
+2. **ZK circuit constrains** the signature public key coordinates
+
+This is necessary because there is no `schnorr_verify` opcode in the zkVM.
+The circuit proves knowledge of the secret key by deriving the public key and
+constraining its coordinates to match the provided values.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Signature Verification Flow                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  1. Client creates swap, signs with secret key                   │
+│  2. Host verifies signature (Rust level)                         │
+│  3. If valid, contract executes                                 │
+│  4. ZK circuit constrains signature_public.x/y                   │
+│     (proves prover knows corresponding secret)                   │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Opcode Dependencies
+
+The DEX design is constrained by missing opcodes:
+
+| Opcode | Status | Impact |
+|--------|--------|-------|
+| `BaseDiv` | Not implemented | Cannot compute price ratios in circuit |
+| `LessThanOrEqual` | Experimental | Uses safemath pattern for assertions |
+| Cross-contract ZK | Not implemented | Requires trusted setup for Money contract |
+| `schnorr_verify` | Not implemented | Signature verification split between host and circuit |
+
+See [DEX Architecture](../../arch/dex.md) for detailed analysis of opcode limitations.
+
 ## Roadmap
 
 ```

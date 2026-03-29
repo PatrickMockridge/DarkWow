@@ -249,6 +249,362 @@ The Swap DAO contract handles:
 - **Timeout refunds**: If swap not executed in time, either party can cancel and refund
 - **Governance**: Update timeout and fee parameters
 
+## Signature Verification and the Opcode Layer
+
+This section explains how the DEX implements signature verification and why certain
+opcode limitations shape the current design.
+
+### The Signature Verification Flow
+
+The DEX uses a split verification model where:
+
+1. **Client computes signature**: The proposer signs swap parameters using `SchnorrSecret::sign()`
+2. **Host verifies signature**: Before the contract runs, the host verifies the signature
+3. **ZK circuit constrains public key**: The circuit derives `signature_public` from witness and constrains coordinates
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    DEX Signature Verification Flow                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Client (off-chain)                                                          │
+│     │                                                                       │
+│     │ 1. Create swap parameters                                            │
+│     │ 2. Sign with secret key: signature = secret.sign(swap_data)          │
+│     │ 3. Derive public key: signature_public = secret.to_public()         │
+│     ▼                                                                       │
+│  Host (verifies before contract)                                             │
+│     │                                                                       │
+│     │ 4. Verify signature: public.verify(signature)                       │
+│     │    - If invalid, reject transaction                                  │
+│     │    - If valid, continue                                              │
+│     ▼                                                                       │
+│  Contract (executes if host verification passed)                             │
+│     │                                                                       │
+│     │ 5. Receive signature_public as parameter                              │
+│     │ 6. Pass signature_public.x, signature_public.y to ZK circuit       │
+│     │ 7. ZK circuit derives same and constrains equality                   │
+│     ▼                                                                       │
+│  ZK Circuit                                                                  │
+│     │                                                                       │
+│     │ 8. Witness: signature_secret                                          │
+│     │ 9. Derive: signature_public = ec_mul_base(signature_secret, K)     │
+│     │ 10. Constrain: ec_get_x(signature_public) == public_x              │
+│     │     Constrain: ec_get_y(signature_public) == public_y              │
+│     ▼                                                                       │
+│  Result: Prover proved they know secret without revealing it                 │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Why Not Verify Signature Directly in ZK Circuit?
+
+Ideally, the ZK circuit would verify the signature directly:
+
+```zk
+# Hypothetical - if we had the right opcodes:
+signature_valid = schnorr_verify(signature_public, message, signature);
+constrain_equal_base(signature_valid, 1);
+```
+
+This would eliminate the need for host-level signature verification. However, this
+requires opcodes that don't exist yet:
+
+| Opcode | Why It's Needed | Status |
+|--------|----------------|--------|
+| **schnorr_verify** | Verify signature in circuit | Not implemented |
+| **BaseDiv** | Division for ratio checks | Not implemented |
+| **LessThanOrEqual** | Price comparison for matching | Implemented but experimental |
+
+### The BaseDiv Absentee and Its Impact
+
+`BaseDiv` (a / b mod p) is not implemented. This affects the DEX in several ways:
+
+**Impact 1: Price Ratio Comparisons**
+
+Level 1+ DEX needs to match orders by price ratio:
+
+```zk
+# Hypothetical price matching (requires BaseDiv):
+alice_price = alice_amount / alice_request;
+bob_price = bob_amount / bob_offer;
+price_match = less_than_or_equal(alice_price, bob_price);
+```
+
+Without `BaseDiv`, we cannot compute price ratios in the circuit. The workaround:
+
+```zk
+# Cross-multiplication instead of division:
+# Want: alice_request / alice_amount >= bob_offer / bob_amount
+# i.e.: alice_request * bob_amount >= bob_offer * alice_amount
+lhs = base_mul(alice_request, bob_amount);
+rhs = base_mul(bob_offer, alice_amount);
+less_than_or_equal(rhs, lhs);  # Assert rhs <= lhs
+```
+
+This works for assertion but requires careful formulation.
+
+**Impact 2: Partial Fill Calculations**
+
+Partial fills require computing ratios:
+
+```zk
+# Hypothetical partial fill (requires BaseDiv):
+fill_ratio = fill_amount / total_amount;
+filled_value = base_mul(fill_amount, fill_ratio);  # Needs division
+```
+
+The current `execute_swap_v1.zk` circuit uses safemath pattern for partial fills:
+
+```zk
+# SAFEMATH PATTERN: Assert fill_amount <= total_amount
+# Pattern: prove fill_amount < total_amount + 1
+ONE = witness_base(1);
+total_plus_one = base_add(total_amount, ONE);
+less_than_strict(fill_amount, total_plus_one);
+```
+
+### The LessThanOrEqual Experimental Status
+
+`LessThanOrEqual` is implemented but marked experimental due to soundness concerns:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    LessThanOrEqual Soundness Concern                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Gate constraint:                                                            │
+│  a_offset = out * (b - a) + (1 - out) * (a - b - 1)                       │
+│  out * (1 - out) = 0  # out must be 0 or 1                                 │
+│                                                                              │
+│  Concern: Prover could assign out=0 and a_offset=a-b-1 incorrectly         │
+│           and still pass the range check                                      │
+│                                                                              │
+│  Mitigation: Range check limits feasible incorrect assignments                │
+│  Status: Grey-market - works for honest provers, unverified for malicious    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+The DEX's `execute_swap_v1.zk` uses `less_than_strict` (constrain-only) instead
+of `LessThanOrEqual` (returns value):
+
+```zk
+# From execute_swap_v1.zk:
+# SAFEMATH WORKAROUND: This circuit uses the safemath pattern to assert
+# that fill_amount <= alice_amount (the fill does not exceed Alice's offer).
+#
+# The safemath pattern for a <= b is: a < b + 1
+ONE = witness_base(1);
+alice_amount_plus_one = base_add(alice_amount, ONE);
+less_than_strict(fill_amount, alice_amount_plus_one);
+```
+
+This is assertion-only (no Boolean return) but is sound because `less_than_strict`
+is proven to correctly fail when a >= b.
+
+### Signature Verification Without BaseDiv
+
+The current signature verification doesn't need `BaseDiv`:
+
+```zk
+# Signature verification uses ONLY these opcodes:
+signature_public = ec_mul_base(signature_secret, NULLIFIER_K);
+constrain_instance(ec_get_x(signature_public));
+constrain_instance(ec_get_y(signature_public));
+```
+
+The Schnorr signature verification equation:
+```
+R = g^k
+e = H(R || pubkey || message)
+s = k + e*x
+verify: g^s == R * pubkey^e
+```
+
+This requires `BaseDiv` to compute e = H(...)/something? No - the challenge
+is computed via hash, not division. The verification happens at the host level
+(external to circuit), so the circuit only needs to constrain the public key.
+
+### Why Signature Verification Is Split
+
+The split model (host verifies, circuit constrains) exists because:
+
+1. **No schnorr_verify opcode**: Circuit can't verify signatures directly
+2. **Public key commitment**: Circuit constrains that prover knows the private key
+3. **Host as guard**: Invalid signatures rejected before contract runs
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Split Verification Architecture                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Host (Rust)                           ZK Circuit                            │
+│  ─────────────────                     ────────────                           │
+│  Verify signature with:                Constrain signature_public:           │
+│  - schnorr_verify()                    - ec_mul_base(sig_secret, K)          │
+│  - Returns bool                        - constrain_instance(coord_x)        │
+│                                                                              │
+│  Prover MUST have valid signature     Prover MUST know secret key           │
+│  to reach contract execution          to satisfy circuit constraints         │
+│                                                                              │
+│  Result: Both conditions required for valid execution                       │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### The Trusted Setup Workaround for Money Contract Integration
+
+The DEX must verify that locked funds exist in the Money contract. This requires
+cross-contract state verification, which needs opcodes that don't exist:
+
+| Required | Status | Impact |
+|----------|--------|--------|
+| Cross-contract ZK composition | Not implemented | Can't call Money circuit |
+| On-chain Merkle root verification | Not implemented | Can't verify proofs |
+| Event-based state sync | Not implemented | Can't react to Money changes |
+
+**Current workaround**: DEX initialized with `trusted_money_merkle_root`
+
+```rust
+// In InitializeParams:
+pub struct InitializeParams {
+    pub trusted_money_merkle_root: [u8; 32],  // Set at initialization
+}
+```
+
+```rust
+// In verify_lock_proof:
+fn verify_lock_proof(lock_commitment, lock_proof) {
+    // Recompute Merkle root from proof
+    computed_root = merkle_root(lock_commitment, lock_proof);
+
+    // Compare against trusted root (set at init)
+    if computed_root != trusted_root {
+        return Err(InvalidMerkleProof);
+    }
+}
+```
+
+**Security trade-off**: If `trusted_money_merkle_root` is wrong/stale, invalid
+lock proofs may be accepted.
+
+### What BaseDiv Would Enable
+
+With `BaseDiv`, the DEX could:
+
+**1. Compute exact price ratios for order matching (Level 1+)**
+
+```zk
+# If BaseDiv existed:
+alice_price = base_div(alice_request_amount, alice_offer_amount);
+bob_price = base_div(bob_offer_amount, bob_request_amount);
+# Compare: alice_price >= bob_price
+```
+
+**2. Compute percentage-based fees**
+
+```zk
+# Fee calculation:
+fee_amount = base_div(total_amount, fee_basis_points);
+# fee_amount = total * 100 / 10000  (for 1% fee)
+```
+
+**3. Compute exchange rates with precision**
+
+```zk
+# DEX to external price feed:
+exchange_rate = base_div(dex_amount, external_amount);
+```
+
+### What LessThanOrEqual (production-ready) Would Enable
+
+With `LessThanOrEqual` returning a Boolean value:
+
+**1. Predicate-based order matching**
+
+```zk
+# If LessThanOrEqual returned 0/1:
+is_match = less_than_or_equal(my_price, market_price);
+constrain_instance(is_match);  # Public output
+```
+
+**2. Conditional execution based on comparison**
+
+```zk
+# Execute only if fill meets minimum:
+fills_enough = less_than_or_equal(min_fill_amount, fill_amount);
+execute_if_valid = cond_select(fills_enough, execute, abort);
+```
+
+**3. Complex order types**
+
+```zk
+# Stop-loss order:
+stop_triggered = less_than_or_equal(stop_price, current_price);
+constrain_equal_base(stop_triggered, 1);
+```
+
+### Current Trade-offs in the DEX Design
+
+| Limitation | Workaround | Risk |
+|------------|-----------|------|
+| No `BaseDiv` | Cross-multiplication for ratios | Limited expressiveness |
+| `LessThanOrEqual` experimental | Safemath assertion pattern | Cannot return Boolean |
+| No schnorr_verify in circuit | Split verification (host + circuit) | Extra verification step |
+| No cross-contract ZK | Trusted Merkle root setup | Trust assumption |
+
+### The Long-Term Solution
+
+When the opcode layer is complete, the DEX signature verification could be:
+
+```zk
+# Future circuit with full opcode support:
+circuit "CreateSwapV1" {
+    witness {
+        Base secret,
+        Base signature_secret,
+        # ...
+    }
+
+    # Derive lock commitment
+    computed_lock = poseidon_hash([secret, ...]);
+    constrain_instance(computed_lock);
+
+    # Full signature verification in circuit
+    signature_valid = schnorr_verify(
+        signature_public,
+        swap_data,
+        signature
+    );
+    constrain_equal_base(signature_valid, 1);
+
+    # Price ratio with BaseDiv
+    price_ratio = base_div(request_amount, offer_amount);
+    constrain_instance(price_ratio);
+
+    # Boolean comparison for conditions
+    sufficient_funds = less_than_or_equal(minimum, amount);
+    constrain_equal_base(sufficient_funds, 1);
+}
+```
+
+This would eliminate:
+- Host-level signature verification (circuit does it all)
+- Trusted setup for Money contract (cross-contract ZK composition)
+- Safemath workarounds (native opcodes)
+
+### Related Opcode Documentation
+
+See [zkVM Primitive Layer](zkvm_primitives.md) for:
+- Full analysis of `LessThanOrEqual` soundness concerns
+- `BaseDiv` implementation status and use cases
+- Why comparison opcodes are foundational to contract expressiveness
+
+See [Private Authorization Layer](privauth.md) for:
+- How the signature/authorization pattern works across contracts
+- Why the split verification model exists
+
 ## Comparison
 
 | Feature | UniSwap | Curve | DarkFi MVP (Atomic Swaps) |

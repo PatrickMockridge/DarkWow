@@ -195,6 +195,26 @@ pub struct CreateSwapParamsV1 {
 pub struct CreateSwapUpdateV1 {
     /// The created swap ID
     pub swap_id: SwapId,
+    /// The hash of the secret
+    pub hash: pallas::Base,
+    /// Timelock block height
+    pub timelock: u64,
+    /// Which side: 0 = Alice (initiator), 1 = Bob (responder)
+    pub side: u8,
+    /// External chain identifier
+    pub external_chain: u8,
+    /// External chain receiver address
+    pub external_receiver: pallas::Base,
+    /// DarkFi receiver public key
+    pub darkfi_receiver: PublicKey,
+    /// Swap amount
+    pub amount: u64,
+    /// Token ID
+    pub token_id: pallas::Base,
+    /// Blinding factor
+    pub blind: pallas::Base,
+    /// Creation block height
+    pub created_at: u64,
 };
 
 /// Parameters for `AtomicSwap::ClaimV1`

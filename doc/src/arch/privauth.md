@@ -202,6 +202,120 @@ When adding revocation:
 2. **Revocation is separate**: Revoked commitments can still exist, just can't be consumed
 3. **Consider expiration**: Time-based revocation reduces issuer burden
 
+## Cross-Contract Authorization: The Trusted Setup Workaround
+
+When the authorization pattern (commitment → proof → nullifier) needs to cross contract
+boundaries, DarkFi uses a **trusted setup pattern** as a temporary workaround.
+
+### The Problem: Verifying Lock Proofs Across Contracts
+
+The DEX contract needs to verify that a user has locked funds in the Money contract.
+The ideal solution is cross-contract ZK composition:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Ideal: Cross-Contract ZK Composition (not yet available)             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  DEX Circuit                                                       │
+│     │                                                             │
+│     │ cross_contract_verify(MoneyContract, "lock_proof", ...)    │
+│     ▼                                                             │
+│  Money's circuit verifies lock_proof directly                     │
+│                                                                   │
+│  Benefits:                                                        │
+│  - No trusted root needed                                        │
+│  - Always synchronized with Money contract state                  │
+│  - No manual trust assumption                                    │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### The Trusted Setup Workaround
+
+Currently, the DEX uses a trusted Merkle root:
+
+```rust
+// In InitializeParams:
+pub struct InitializeParams {
+    /// Trusted Merkle root from Money contract
+    /// WARNING: This is a TEMPORARY WORKAROUND due to lack of
+    /// cross-contract ZK composition opcodes
+    pub trusted_money_merkle_root: [u8; 32],
+}
+
+// When verifying lock_proof:
+fn verify_lock_proof(config_db: u32, lock_commitment: &[u8; 32], lock_proof: &[[u8; 32]]) {
+    let trusted_root = db_get(config_db, "trusted_money_merkle_root");
+    let computed_root = compute_merkle_root(lock_commitment, lock_proof);
+    assert_eq!(computed_root, trusted_root);  // Trust assumption!
+}
+```
+
+### Security Properties with Trusted Setup
+
+The trusted setup changes the security properties:
+
+| Property | Without Trusted Setup | With Trusted Setup |
+|----------|---------------------|-------------------|
+| **Lock verification** | Money contract verifies | Trusted root comparison |
+| **Double-spend prevention** | Nullifiers | Nullifiers (unchanged) |
+| **Trust assumption** | None | Trusted root must be correct |
+| **Synchronization** | Automatic | Manual (re-initialization) |
+
+### Nullifier Double-Spend Prevention
+
+Despite the trusted setup for lock verification, **nullifier-based double-spend prevention
+still works correctly**:
+
+```rust
+// When creating a swap:
+wasm::db::db_set(participants_db, &update.proposer_nullifier, &[])?;
+
+// When accepting:
+wasm::db::db_set(participants_db, &update.acceptor_nullifier, &[])?;
+
+// When executing:
+wasm::db::db_contains_key(participants_db, &bob_nullifier)?;
+
+// When cancelling:
+wasm::db::db_delete(participants_db, &swap.proposer_nullifier)?;
+```
+
+The nullifier is computed as `poseidon_hash([secret, lock_commitment])` externally by
+the prover, then passed to the contract. This is secure regardless of the trusted
+setup workaround for lock_proof verification.
+
+### Why This Is Temporary
+
+The trusted setup is explicitly documented as a workaround:
+
+```
+TRUSTED SETUP WARNING:
+========================
+This is a TEMPORARY WORKAROUND due to lack of proper cross-contract
+ZK composition opcodes.
+
+Proper implementation requires:
+- Cross-contract ZK proof composition opcodes
+- On-chain Merkle root verification
+- Event-based state synchronization
+
+When these opcodes exist, this workaround will be removed.
+```
+
+### Implications for Contract Authors
+
+When using the authorization pattern across contracts:
+
+1. **Document trust assumptions**: Clearly state what trusted state is used and why
+2. **Warn about staleness**: Trusted roots can become stale if the source contract updates
+3. **Prefer nullifiers**: Store nullifiers for double-spend prevention, not commitments
+4. **Plan for migration**: Design contracts to transition when proper composition is available
+
+See [zkVM Primitive Layer](zkvm_primitives.md) for the full analysis of cross-contract
+ZK composition requirements.
+
 ## SDK Primitives
 
 The DarkFi SDK provides reusable implementations of this pattern in `src/sdk/src/crypto/intent.rs` and `src/sdk/src/crypto/intent_set.rs`:

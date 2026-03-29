@@ -1,59 +1,118 @@
 k = 11;
 field = "pallas";
 
+# DEX: Create Swap Circuit (Version 1)
+#
+# Creates a swap proposal.
+#
+# This circuit proves:
+# - Creator knows the secret to the locked funds
+# - The lock commitment is correctly computed
+# - The swap ID is consistent
+# - Creator knows the secret key corresponding to signature_public
+#
+# Public Inputs (constrain_instance):
+#   - lock_commitment: The commitment to Alice's locked funds
+#   - swap_id: The derived swap identifier
+#   - nullifier: Prevents double-creation
+#   - signature_public_x: X coordinate of proposer's signature public key
+#   - signature_public_y: Y coordinate of proposer's signature public key
+#
+# witnesses:
+#   - secret: Alice's secret for the lock
+#   - offer_token: Token Alice is offering
+#   - offer_amount: Amount Alice is offering
+#   - request_token: Token Alice wants in return
+#   - request_amount: Amount Alice wants in return
+#   - token_blind: Blinding factor for token
+#   - amount_blind: Blinding factor for amount
+#   - signature_secret: Alice's secret key for signature
+
 constant "CreateSwapV1" {
     EcFixedPointBase NULLIFIER_K,
 }
 
 witness "CreateSwapV1" {
-    # Public inputs
-    Base swap_id,
-    Base lock_commitment,
+    # Swap details
+    Base secret,
     Base offer_token,
     Base offer_amount,
     Base request_token,
     Base request_amount,
-    Base swaps_root,
-    Base timestamp,
-    Base expiry,
 
-    # Private inputs
-    Base secret,
+    # Blinding factors
     Base token_blind,
     Base amount_blind,
+
+    # Signature secret key
+    Base signature_secret,
 }
 
 circuit "CreateSwapV1" {
-    # Compute lock commitment: H(secret, offer_token, offer_amount, blinds)
-    computed_lock = poseidon_hash(
+    # ==========================================================================
+    # PHASE 1: Compute and verify lock commitment
+    # ==========================================================================
+    #
+    # Lock commitment = poseidon_hash(secret, offer_token, offer_amount, blinds)
+    # This proves Alice has locked funds for this swap.
+
+    computed_lock = poseidon_hash([
         secret,
         offer_token,
         offer_amount,
         token_blind,
         amount_blind,
-    );
+    ]);
+
+    # The lock_commitment is a PUBLIC INPUT
     constrain_instance(computed_lock);
 
-    # Verify lock commitment matches public input
-    constrain_equal_base(computed_lock, lock_commitment);
+    # ==========================================================================
+    # PHASE 2: Derive and verify swap ID - PUBLIC INPUT
+    # ==========================================================================
+    #
+    # swap_id = poseidon_hash(lock_commitment, request_token, request_amount)
+    # This binds the swap parameters together.
 
-    # Derive swap ID: H(lock_commitment, request_token, request_amount, timestamp)
-    computed_swap_id = poseidon_hash(
-        lock_commitment,
+    computed_swap_id = poseidon_hash([
+        computed_lock,  # Use the computed lock
         request_token,
         request_amount,
-        timestamp,
-    );
+    ]);
+
+    # The swap_id is a PUBLIC INPUT
     constrain_instance(computed_swap_id);
 
-    # Verify swap ID matches public input
-    constrain_equal_base(computed_swap_id, swap_id);
+    # ==========================================================================
+    # PHASE 3: Derive nullifier - PUBLIC INPUT
+    # ==========================================================================
+    #
+    # nullifier = poseidon_hash(secret, lock_commitment)
+    # This prevents creating the same swap twice.
 
-    # Derive nullifier for this swap
-    nullifier = poseidon_hash(secret, lock_commitment);
+    nullifier = poseidon_hash([secret, computed_lock]);
     constrain_instance(nullifier);
 
-    # Range proofs for amounts
+    # ==========================================================================
+    # PHASE 4: Signature public key verification
+    # ==========================================================================
+    #
+    # Derive signature public key from secret and constrain coordinates.
+    # This proves the signer knows the secret key corresponding to signature_public.
+    # The host verifies the actual signature; this constrains the public key.
+
+    signature_public = ec_mul_base(signature_secret, NULLIFIER_K);
+    constrain_instance(ec_get_x(signature_public));
+    constrain_instance(ec_get_y(signature_public));
+
+    # ==========================================================================
+    # PHASE 5: Range proofs
+    # ==========================================================================
+
     range_check(64, offer_amount);
     range_check(64, request_amount);
+
+    # Boolean checks
+    bool_check(offer_amount);
+    bool_check(request_amount);
 }

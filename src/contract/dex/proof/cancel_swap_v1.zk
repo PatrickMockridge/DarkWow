@@ -1,38 +1,75 @@
 k = 11;
 field = "pallas";
 
+# DEX: Cancel Swap Circuit (Version 1)
+#
+# Cancels a swap and refunds the locked funds.
+#
+# This circuit proves:
+# - Canceler knows the secret to the lock
+# - The nullifier is correctly computed
+#
+# Public Inputs (constrain_instance):
+#   - nullifier: Prevents double-cancellation
+#
+# witnesses:
+#   - swap_id: The swap being cancelled
+#   - lock_commitment: The lock commitment
+#   - secret: The secret to the lock
+#   - token: Token being cancelled
+#   - amount: Amount being cancelled
+
 constant "CancelSwapV1" {
     EcFixedPointBase NULLIFIER_K,
 }
 
 witness "CancelSwapV1" {
-    # Public inputs
+    # The swap being cancelled
     Base swap_id,
-    Base lock_commitment,
-    Base nullifier,
 
-    # Private inputs
+    # The lock commitment
+    Base lock_commitment,
+
+    # The secret to the lock
     Base secret,
+
+    # Token and amount
     Base token,
     Base amount,
 }
 
 circuit "CancelSwapV1" {
-    # Derive nullifier from secret and lock commitment
-    computed_nullifier = poseidon_hash(secret, lock_commitment);
-    constrain_instance(computed_nullifier);
+    # ==========================================================================
+    # PHASE 1: Verify lock commitment can be derived
+    # ==========================================================================
+    #
+    # The lock should be derivable from the secret, token, and amount.
+    # This proves the canceller knows the lock details.
 
-    # Verify nullifier matches (proves ownership)
-    constrain_equal_base(computed_nullifier, nullifier);
-
-    # Verify lock commitment can be derived from secret
-    derived_lock = poseidon_hash(secret, token, amount);
+    derived_lock = poseidon_hash([secret, token, amount]);
     constrain_equal_base(derived_lock, lock_commitment);
 
-    # Verify swap ID consistency
-    computed_swap_id = poseidon_hash(lock_commitment);
-    constrain_equal_base(computed_swap_id, swap_id);
+    # ==========================================================================
+    # PHASE 2: Derive and verify nullifier - PUBLIC INPUT
+    # ==========================================================================
+    #
+    # nullifier = poseidon_hash(secret, lock_commitment)
+    # This prevents cancelling the same swap twice.
 
-    # Range check for amount
+    computed_nullifier = poseidon_hash([secret, lock_commitment]);
+    constrain_instance(computed_nullifier);
+
+    # ==========================================================================
+    # PHASE 3: Verify swap ID consistency - PUBLIC INPUT
+    # ==========================================================================
+
+    computed_swap_id = poseidon_hash([lock_commitment]);
+    constrain_instance(computed_swap_id);
+
+    # ==========================================================================
+    # PHASE 4: Range proofs
+    # ==========================================================================
+
     range_check(64, amount);
+    bool_check(amount);
 }
