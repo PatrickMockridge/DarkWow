@@ -63,7 +63,7 @@ circuit "CreateSwap" {
     # We compute poseidon_hash(secret) and verify it matches the witness hash.
     # This proves the creator knows the secret without revealing it.
 
-    computed_hash = poseidon_hash([secret]);
+    computed_hash = poseidon_hash(secret);
     constrain_equal_base(computed_hash, hash);
 
     # ==========================================================================

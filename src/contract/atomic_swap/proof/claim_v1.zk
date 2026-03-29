@@ -50,7 +50,7 @@ circuit "ClaimSwap" {
     # The secret is revealed, and we verify it matches the stored hash.
     # This proves the claimer knows the secret.
 
-    computed_hash = poseidon_hash([secret]);
+    computed_hash = poseidon_hash(secret);
     constrain_equal_base(computed_hash, hash);
 
     # ==========================================================================
@@ -61,7 +61,7 @@ circuit "ClaimSwap" {
     # Once claimed, the swap cannot be claimed again or refunded.
     # The nullifier is a PUBLIC INPUT provided by the verifier.
 
-    nullifier_check = poseidon_hash([swap_id, secret]);
+    nullifier_check = poseidon_hash(swap_id, secret);
 
     # This is the PUBLIC INPUT - nullifier must be provided by verifier
     constrain_instance(nullifier_check);
