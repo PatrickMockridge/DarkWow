@@ -275,9 +275,11 @@ The current implementation requires ALL parties to reveal their secrets. The ide
    - Would use proper Pedersen commitments for all party verifications
    - But same security property
 
-3. **Future Grey-Market Opcodes That Would Help**:
+3. **Future Opcodes That Would Help**:
    - `base_div`: Would enable polynomial commitments for efficient threshold MPC
-   - `LessThanOrEqual`: Would enable threshold verification without full reveal
+   - **Native `LessThanOrEqual` with Boolean return**: Would enable threshold verification without full reveal — note that the identity contract currently uses safemath assertion gadgets (Level 0 zk_only) as a workaround, but a production-ready native opcode would enable Level 1 (selective disclosure) semantics with proper soundness
+
+   **See also**: [Safemath](../safemath.md) — for current workaround using assertion templates
 
 **SIMPLIFICATION NOTE:**
 This implementation uses 3 parties, all must reveal (no threshold). This is simpler but less robust - if one party disappears, issuance fails. The ideal threshold MPC would be more complex to implement.

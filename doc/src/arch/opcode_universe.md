@@ -468,36 +468,48 @@ return t;
 
 ### Tier 1: Critical (Required for Production DeFi)
 
-| Opcode | Rationale | Complexity |
-|--------|-----------|------------|
-| `base_div` | Every ratio check | High |
-| `signature_verify(secp256k1)` | Ethereum bridge | Very High |
-| `keccak256` | Ethereum Merkle proofs | Very High |
+| Opcode | Rationale | Complexity | Status |
+|--------|-----------|------------|--------|
+| `base_div` | Every ratio check | High | Not implemented |
+| `signature_verify(secp256k1)` | Ethereum bridge | Very High | Not implemented |
+| `keccak256` | Ethereum Merkle proofs | Very High | Not implemented |
 
 ### Tier 2: High Value (Major Feature Enablers)
 
-| Opcode | Rationale | Complexity |
-|--------|-----------|------------|
-| `sha256` | Bitcoin bridge | Very High |
-| `pedersen_commit` | Confidential DeFi | Medium |
-| `set_membership` | Allowlists, revocations | Medium |
-| `power` | Vesting, bonding curves | Medium |
+| Opcode | Rationale | Complexity | Status |
+|--------|-----------|------------|--------|
+| `sha256` | Bitcoin bridge | Very High | Not implemented |
+| `pedersen_commit` | Confidential DeFi | Medium | Not implemented |
+| `set_membership` | Allowlists, revocations | Medium | Not implemented |
+| `power` | Vesting, bonding curves | Medium | Not implemented |
 
 ### Tier 3: Nice to Have (Efficiency Gains)
 
-| Opcode | Rationale | Complexity |
-|--------|-----------|------------|
-| `range_proof_batch` | Multi-asset privacy | High |
-| `ed25519_verify` | Solana compatibility | Very High |
-| `ecdsa_verify` | Bitcoin legacy | Very High |
+| Opcode | Rationale | Complexity | Status |
+|--------|-----------|------------|--------|
+| `range_proof_batch` | Multi-asset privacy | High | Not implemented |
+| `ed25519_verify` | Solana compatibility | Very High | Not implemented |
+| `ecdsa_verify` | Bitcoin legacy | Very High | Not implemented |
 
 ### Tier 4: Theoretical (Future Expansion)
 
-| Opcode | Rationale | Complexity |
-|--------|-----------|------------|
-| `pairing_check` | BBS+ signatures, ZK-Rollups | Extreme |
-| `fft` | Polynomial operations | High |
-| `sort_verify` | Order book circuits | High |
+| Opcode | Rationale | Complexity | Status |
+|--------|-----------|------------|--------|
+| `pairing_check` | BBS+ signatures, ZK-Rollups | Extreme | Not implemented |
+| `fft` | Polynomial operations | High | Not implemented |
+| `sort_verify` | Order book circuits | High | Not implemented |
+
+### Note on Comparison Opcodes: Safemath vs Native Opcode
+
+`LessThanOrEqual` and `IsEqualBase` are implemented (experimental, grey-market). However:
+
+- **Safemath workaround exists**: For assertion-only use cases (no Boolean return value), the [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) library provides production-ready templates using sound `less_than_strict` + `base_add` + `range_check`.
+
+- **Native opcode still needed**: When a circuit requires a Boolean return value (e.g., for public output or `CondSelect`), the native opcode is still required. Safemath cannot replace this.
+
+**Current status**: stablecoin and identity use safemath for assertion-only checks. No contracts require the native `LessThanOrEqual` opcode at this time.
+
+**See**: [Safemath](../safemath.md) for the workaround, [zkVM Primitive Layer](zkvm_primitives.md) for native opcode status.
 
 ---
 

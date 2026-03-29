@@ -1049,18 +1049,19 @@ Current ZK circuits can verify:
 - `amount > 0` (via `BoolCheck` and `RangeCheck`)
 - Commitment validity (via `ConstrainEqualBase`)
 - Merkle membership (via `MerkleRoot`)
+- Bounded comparisons via safemath assertion gadgets (see below)
 
-But predicates like `attribute >= threshold` or `collateral >= 2 * debt` require comparison
-opcodes that return values — currently missing from the zkVM.
+Predicates like `attribute >= threshold` or `collateral >= 2 * debt` can use:
+- **Safemath assertion gadgets**: For assertion-only checks (no Boolean return value) — see [Safemath](../safemath.md)
+- **Native `LessThanOrEqual` opcode**: When a Boolean return value is needed for composability (experimental, grey-market)
 
 See [zkVM Primitive Layer](zkvm_primitives.md) for the full analysis of:
 - Why `LessThanOrEqual` and `IsEqualBase` are systematically needed
 - How they compose with existing opcodes
 - What each opcode unlocks across identity, stablecoin, DEX, and AMM use cases
+- The safemath workaround vs native opcode tradeoffs
 
-This is **not blocking** current contracts from functioning — they use placeholder constraints
-that always pass. But unlocking full predicate expressiveness requires implementing these
-opcodes in the zkVM.
+**Current status**: `LessThanOrEqual` is implemented (experimental). stablecoin and identity use safemath for assertion-only checks. Full predicate expressiveness with return-value opcodes requires formal verification of the experimental opcode.
 
 ### Relationship to AMM/DEX Work
 

@@ -489,6 +489,179 @@ NotBase ──────────┘    (used to compose boolean logic)
                       = LessThanLoose(a,b) + IsEqualBase(a,c)
 ```
 
+## Safemath: Workaround vs Ideal Opcode
+
+This section explains the relationship between **safemath templates** (external ZK circuit libraries) and **native VM opcodes** (built into the zkVM). Understanding this distinction is essential for contract authors making architectural decisions.
+
+### The Core Tension: Opcode vs Template
+
+When a circuit needs `LessThanOrEqual`, there are two approaches:
+
+| Approach | What It Is | Example |
+|----------|-----------|---------|
+| **Native Opcode** | Single implementation in VM, all circuits reference it | `LessThanOrEqual(a, b)` built into zkVM |
+| **Safemath Template** | ZK circuit gadget copy-pasted into every circuit that needs it | `assert_lte_u64_v1.zk` template from darkfi-safemath |
+
+### Why Native Opcodes Are Ideal
+
+A native opcode is **the right approach** for comparison operations:
+
+1. **No circuit bloat**: One implementation in the VM, used by all circuits. The gadget constraints are in the verification key once, not replicated in every circuit.
+
+2. **Proper composability**: The opcode output is a `Base` value that can feed into other opcodes (`CondSelect`, `BoolCheck`, `ConstrainEqualBase`). This is how ZK circuits compose — through values flowing between operations.
+
+3. **Single audit point**: The opcode implementation is audited once. Every circuit that uses it benefits automatically.
+
+4. **Efficient verification**: The verifier's work is proportional to the number of opcodes executed, not the size of copied gadget code.
+
+```
+Native opcode (ideal):
+┌─────────────────────────────────────────────────────┐
+│  zkVM                                                  │
+│  ┌─────────────────────────────────────────────┐     │
+│  │  LessThanOrEqual gate (ONE implementation)    │     │
+│  └─────────────────────────────────────────────┘     │
+│                         ▲                           │
+│    ┌────────────────────┼────────────────────┐       │
+│    │                    │                    │       │
+│ Circuit A ──────────────│───────────── Circuit B      │
+│ (references opcode)     │    (references opcode)     │
+└─────────────────────────────────────────────────────┘
+
+Safemath template (workaround):
+┌─────────────────────────────────────────────────────┐
+│  Circuit A                                           │
+│  ┌─────────────────────────────────────────────┐     │
+│  │  assert_lte_u64_v1.zk (COPY of gadget)      │     │
+│  └─────────────────────────────────────────────┘     │
+├─────────────────────────────────────────────────────┤
+│  Circuit B                                           │
+│  ┌─────────────────────────────────────────────┐     │
+│  │  assert_lte_u64_v1.zk (ANOTHER COPY)        │     │
+│  └─────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────┘
+```
+
+### Why Safemath Is the Current Workaround
+
+When an opcode isn't available or isn't production-ready, safemath templates are the workaround:
+
+1. **External template library**: [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) provides pre-built ZK circuit templates for common operations
+
+2. **Assertion gadgets**: Safemath templates only **constrain** — they don't return values. This is sufficient when you only need to assert a relation passes, not when you need the result for downstream logic.
+
+3. **Bounded inputs required**: Safemath assumes inputs are within safe ranges (e.g., u64). Range checks must be explicit.
+
+**The safemath pattern** (`assert_lte_u64_v1.zk`):
+```zk
+# Prove: lhs <= rhs  (assertion, no return value)
+range_check(64, lhs);
+range_check(64, rhs);
+rhs_plus_one = base_add(rhs, witness_base(1));
+less_than_strict(lhs, rhs_plus_one);  # Proves lhs < rhs + 1
+```
+
+### Benefits and Drawbacks: Full Analysis
+
+#### Native Opcode: `LessThanOrEqual(a, b) → Base`
+
+| Aspect | Status |
+|--------|--------|
+| Returns 0/1 Boolean | ✅ Yes — can feed into other logic |
+| Composability | ✅ Full — output is Base, usable everywhere |
+| Circuit bloat | ✅ None — single implementation in VM |
+| Audit burden | ✅ Single audit point |
+| Soundness risk | ⚠️ Gate soundness concern (unverified) |
+| Production status | ⚠️ Grey-market (experimental) |
+
+**Drawback**: Requires implementing and auditing a native opcode in the VM. If the implementation has a bug, all circuits using it are affected.
+
+#### Safemath Template: `assert_lte_u64_v1.zk`
+
+| Aspect | Status |
+|--------|--------|
+| Returns 0/1 Boolean | ❌ No — constrain-only |
+| Composability | ❌ Limited — cannot feed result into other logic |
+| Circuit bloat | ❌ Each circuit copies the gadget |
+| Audit burden | ❌ Each circuit must be reviewed |
+| Soundness risk | ✅ Low — uses sound `less_than_strict` |
+| Production status | ✅ Production-ready (uses existing opcodes) |
+
+**Drawback**: Cannot be used when a Boolean return value is needed for downstream logic (e.g., `constrain_equal_base(result, public_input)`).
+
+### When to Use Which
+
+| Use Case | Use Safemath? | Why |
+|----------|--------------|-----|
+| `assert x <= y` (internal constraint) | ✅ Yes | No return value needed |
+| `if x <= y then A else B` | ❌ No | Need Boolean for `CondSelect` |
+| Public output of comparison result | ❌ No | Safemath can't produce public value |
+| Bounded ratio check `a/b <= c/d` | ✅ Yes | Cross-multiplication works |
+| Collateralization `debt <= collateral/ratio` | ✅ Yes | Assertion only |
+
+### The Identity Contract: Why Safemath Required a Semantic Change
+
+The identity contract's `create_claim_v1.zk` originally used `LessThanOrEqual` to return a Boolean constrained to a public input `predicate_result`:
+
+```zk
+# BEFORE (Level 1 selective disclosure):
+is_authorized = less_than_or_equal(threshold, attribute_value);
+constrain_equal_base(is_authorized, predicate_result);  # Public!
+# Verifier learns: is_authorized == predicate_result
+```
+
+Using safemath (assertion only, no return value) required removing the public output:
+
+```zk
+# AFTER (Level 0 zk_only):
+attribute_plus_one = base_add(attribute_value, witness_base(1));
+less_than_strict(threshold, attribute_plus_one);  # Assert only
+# Verifier learns: proof is valid or invalid
+```
+
+**This is a semantic change**: Level 1 reveals the predicate result publicly; Level 0 reveals only proof validity. The privacy properties changed.
+
+**The lesson**: Safemath can only replace `LessThanOrEqual` when you don't need a Boolean return value. If your circuit's logic requires the comparison result as a value (not just as an assertion that passes), you need the native opcode.
+
+### The Path Forward: Ideal Opcodes as Foundation
+
+The proper long-term approach is to implement comparison opcodes **correctly and formally verified** in the zkVM:
+
+1. **Fix `LessThanOrEqual` soundness**: The gate soundness concern needs formal analysis or a redesign
+
+2. **Fix `IsEqualBase` delta-invert**: Replace the selector-gate workaround with an explicit `is_zero` gadget
+
+3. **Single audit, universal benefit**: Once the opcodes are correct, every circuit using them is automatically secure
+
+4. **Composability unlocked**: With return-value opcodes, circuits can compose comparison results into complex logic:
+   ```zk
+   # With native LessThanOrEqual:
+   authorized = less_than_or_equal(balance, minimum);
+   time_locked = less_than_or_equal(current_time, unlock_time);
+   can_withdraw = and(authorized, not(time_locked));
+   result = cond_select(can_withdraw, withdrawal_amount, 0);
+   constrain_instance(result);
+   ```
+
+### Summary: Workaround vs Ideal
+
+| | Safemath (Workaround) | Native Opcode (Ideal) |
+|---|---|---|
+| **Bloat** | Each circuit copies gadget | Single VM implementation |
+| **Returns value** | ❌ No | ✅ Yes |
+| **Composability** | ❌ Limited to assertions | ✅ Full |
+| **Soundness** | ✅ Uses sound `less_than_strict` | ⚠️ Needs formal verification |
+| **Audit** | Per-circuit | Single opcode audit |
+| **Use when** | Assertion only needed | Boolean return needed |
+
+**Recommendation**: Use safemath for assertions (collateralization checks, bounds checks). Implement native opcodes when you need return values for composability. The goal should always be native opcodes as the foundation — safemath is the workaround for when they're not available.
+
+**See also**:
+- [Safemath](../safemath.md) — integration guide for darkfi-safemath templates
+- [Experimental Opcodes](experimental-opcodes.md) — LessThanOrEqual status and soundness concerns
+
+---
+
 ## Adding Custom Opcodes
 
 The zkVM opcode system is designed to be extensible. To add a new opcode:

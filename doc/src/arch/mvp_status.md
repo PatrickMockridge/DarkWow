@@ -19,7 +19,7 @@ This document tracks the blockers to reaching MVP for each contract in `src/cont
 | `escrow` | None | ZK circuit compilation, Money integration | Partial |
 | `dao_escrow` | None | Entry point wiring, spend hook, Money integration | Partial |
 
-**Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are implemented in the zkVM (commit `41b0629e0`). `stablecoin` now uses safemath assertion gadgets instead of `LessThanOrEqual`. `identity` still uses it fundamentally — the Boolean output is needed for public predicate_result (Level 1 selective disclosure). Ratio checks use cross-multiplication via `base_mul + less_than_strict` — no `BaseDiv` needed. All experimental opcodes are grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md) for production readiness requirements.
+**Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are implemented in the zkVM (commit `41b0629e0`). `stablecoin` and `identity` now use [safemath](../safemath.md) assertion gadgets instead of experimental `LessThanOrEqual`. Ratio checks use cross-multiplication via `base_mul + less_than_strict` — no `BaseDiv` needed. The experimental opcodes remain grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md) for production readiness requirements.
 
 ---
 

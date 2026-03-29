@@ -144,7 +144,20 @@ DarkFi's theoretical contract capability is enormous. In practice, the roadmap i
 - **Which gadgets have integration tests** — an opcode working in isolation is not the same as it working inside a real circuit
 - **Which gadgets have a clear upgrade path** — once a buggy arithmetic gadget is deployed, it cannot be fixed without a hard fork
 
-The `LessThanOrEqual` opcode took an experimental fork to prototype, multiple iterations to integrate, and is still grey-market goods because the soundness analysis is incomplete. A `BaseDiv` or `BaseModExp` opcode would take similar effort.
+### The Opcode vs Safemath Tradeoff
+
+For comparison operations, there are two paths:
+
+| Approach | When to Use | Tradeoffs |
+|----------|-------------|-----------|
+| **Native Opcode** | When you need Boolean return value for composability | Single implementation, full composability, but needs formal verification |
+| **Safemath Template** | When you only need to assert a relation (no return value) | No circuit bloat, sound, production-ready, but only constrain-only |
+
+The `LessThanOrEqual` opcode took an experimental fork to prototype, multiple iterations to integrate, and is still grey-market goods because the soundness analysis is incomplete. However, for **assertion-only use cases** (like stablecoin collateralization checks), the [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) library provides production-ready templates using only sound opcodes (`less_than_strict`, `base_add`, `range_check`).
+
+**Key insight**: Not every `LessThanOrEqual` use case needs the opcode. If you're just asserting `a <= b` as a circuit constraint (not returning a Boolean), safemath templates work without the soundness concerns.
+
+**The ideal path forward**: Native opcodes as foundation (properly audited), safemath as production workaround today. See [Safemath](safemath.md) for the full analysis.
 
 This is why the opcode primitives documentation is on the roadmap. It is not academic — it determines what contracts can actually exist on DarkFi.
 
