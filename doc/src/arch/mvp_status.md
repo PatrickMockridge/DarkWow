@@ -12,7 +12,7 @@ This document tracks the blockers to reaching MVP for each contract in `src/cont
 |----------|----------------|-----------------------|-----------|
 | `money` | None | Integration testing | **Yes** |
 | `dao` | None | Governance token integration | **Yes** |
-| `dex` | None | Order matching logic | Partial |
+| `dex` | None | None — Level 0 complete | **Yes** |
 | `bridge` | None | Light client for external chain verification | Partial |
 | `identity` | None — uses safemath (Level 0 zk_only refactor) | Integration testing | Partial |
 | `stablecoin` | None — uses safemath `assert_lte_u64_v1.zk` | P2P oracle, CDP notes | Partial |
@@ -80,7 +80,7 @@ Mint (0x00), Propose (0x01), Vote (0x02), Exec (0x03), AuthMoneyTransfer (0x04)
 
 ---
 
-## `dex` — Partial MVP
+## `dex` — Level 0 MVP Complete
 
 **Location**: `src/contract/dex/`
 
@@ -91,26 +91,35 @@ InitializeV1 (0x00), CreateSwapV1 (0x01), AcceptSwapV1 (0x02), ExecuteSwapV1 (0x
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
-| `create_swap_v1.zk` | Corrected | Uses `constrain_equal_base`, not `assert_equal` |
-| `accept_swap_v1.zk` | Corrected | Uses `constrain_equal_base` |
-| `execute_swap_v1.zk` | Corrected | Uses `constrain_equal_base`, `range_check`, `bool_check` |
-| `cancel_swap_v1.zk` | Corrected | Uses `constrain_equal_base` |
+| `create_swap_v1.zk` | ✅ Verified | Uses `constrain_equal_base`, `poseidon_hash` |
+| `accept_swap_v1.zk` | ✅ Verified | Uses `constrain_equal_base`, `poseidon_hash` |
+| `execute_swap_v1.zk` | ✅ Verified | Uses `constrain_equal_base`, `range_check`, `less_than_strict` (safemath pattern) |
+| `cancel_swap_v1.zk` | ✅ Verified | Uses `constrain_equal_base`, `poseidon_hash` |
 
-### Blockers
+### Level 0 Complete Features
 
-**Opcode layer**: None.
+1. **Standard Atomic Swap** — `CreateSwap → AcceptSwap → ExecuteSwap` (manual third-party execution)
 
-**Architecture blockers**:
+2. **Open Execution** — `open_execution=true` on CreateSwap + `immediate_execute=true` on AcceptSwap enables instant fill in single transaction (no Alice re-login needed)
 
-1. **Manual matching required** — The current flow is `CreateSwap → AcceptSwap → ExecuteSwap`. There is no automatic order matching. After both parties post their locks, a third party (or one of the participants) must call `ExecuteSwap` to settle. This is an atomic swap, not an AMM or order book.
+3. **Partial Fill** — `execute_swap_v1.zk` asserts `fill_amount <= alice_amount` using safemath pattern
 
-2. **No price or amount comparison** — `execute_swap_v1.zk` verifies amounts are valid via `range_check(64, amount)` but does not compare Alice's offered amount against Bob's requested amount. For a swap "Alice offers 100 token A for 50 token B", the circuit does not enforce that these amounts satisfy each other's requirements.
+**Opcode layer**: None. All circuits use proven opcodes.
 
-3. **No fill logic** — partial fills are not supported. If a swap is posted for 100 tokens but someone wants to fill only 50, there is no mechanism for that.
+### Technical Debt Note
 
-**What it needs for full MVP**: Either document the atomic swap flow explicitly (manual matching is acceptable for a basic MVP), or implement `LessThanOrEqual` to enable amount comparison and partial fills.
+> **Safemath vs LessThanOrEqual**: The partial fill uses safemath `less_than_strict` assertion pattern (production-ready). `LessThanOrEqual` (gate soundness unverified) would return a Boolean for full composability, but safemath is sufficient for assertion-only checks.
 
-> **Note**: `LessThanOrEqual` is the **ideal solution** for amount comparison — it returns a Boolean that can compose into other logic. Safemath assertion gadgets (`assert_lte_u64_v1.zk`) are a **workaround with technical debt**: they can assert `a <= b` but cannot return a Boolean for downstream logic. For partial fills where you need to constrain `fill_amount <= requested_amount` and use that result in further constraints, safemath cannot replace `LessThanOrEqual`.
+### Future: Level 1 (Order Book)
+
+| Feature | Status | Blocker |
+|---------|--------|---------|
+| Atomic swaps | ✅ Done | None |
+| Open execution | ✅ Done | None |
+| Partial fills | ✅ Done | None |
+| SMT order book | ❌ Future | Needs solver/oracle |
+| Price discovery | ❌ Future | Encrypted search |
+| Differential privacy | ❌ Future | Research |
 
 ---
 
