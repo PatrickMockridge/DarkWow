@@ -41,6 +41,10 @@ witness "ClaimEscrow" {
     # Seller's secret (proves ownership)
     Base seller_secret,
 
+    # Recipient public key coordinates (passed as public input)
+    Base seller_x,
+    Base seller_y,
+
     # Stored seller commitment from escrow: H(seller_pub_x, seller_pub_y)
     # Allows private verification without revealing seller_pub on-chain
     Base escrow_seller_commitment,
@@ -66,6 +70,11 @@ circuit "ClaimEscrow" {
     # Compute nullifier
     # nullifier = H(escrow_id, seller_secret)
     spent_nullifier = poseidon_hash(escrow_id, seller_secret);
+
+    # CRITICAL: Verify recipient_pubkey matches the derived seller public key
+    # This prevents an attacker from claiming to a different recipient
+    constrain_equal_base(seller_pub_x, seller_x);
+    constrain_equal_base(seller_pub_y, seller_y);
 
     # Expose public inputs
     constrain_instance(escrow_id);
