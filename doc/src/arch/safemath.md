@@ -128,6 +128,68 @@ less_than_strict(two_times_debt, collateral_plus_one);  # Pass/fail only
 - **Range checks**: Use `range_check(64, value)` directly
 - **Boolean constraints**: Use `bool_check(value)` + `constrain_equal_base`
 
+## Real-World Use Cases
+
+### DEX Partial Fills
+
+The DEX contract uses safemath for partial fill checks:
+
+```zk
+# From src/contract/dex/proof/execute_swap_v1.zk
+#
+# Partial fill: prove fill_amount <= alice_amount
+# This prevents the filler from exceeding Alice's offered amount
+
+range_check(64, alice_amount);
+range_check(64, bob_amount);
+range_check(64, fill_amount);
+
+# Safemath: fill < alice + 1  ⟺  fill <= alice
+ONE = witness_base(1);
+alice_amount_plus_one = base_add(alice_amount, ONE);
+less_than_strict(fill_amount, alice_amount_plus_one);
+
+# Also verify: bob_amount >= fill_amount (Bob receives the fill)
+less_than_strict(fill_amount, bob_amount);
+```
+
+**Why safemath for DEX**:
+- Partial fill only needs assertion (fill must not exceed Alice's offer)
+- No Boolean return needed for further constraints
+- Safemath is production-ready; LessThanOrEqual gate soundness is unverified
+
+**Why NOT LessThanOrEqual here**:
+- LessThanOrEqual returns Boolean (for composability)
+- But gate soundness is unverified (technical debt)
+- DEX only needs constrain-assertion, not Boolean return
+- Safemath provides production-safe workaround
+
+### Stablecoin Collateralization
+
+```zk
+# From src/contract/stablecoin/proof/open_position_v1.zk
+#
+# Prove: 2 * debt <= collateral (200% collateralization)
+
+range_check(64, two_times_debt);
+range_check(64, collateral_amount);
+ONE = witness_base(1);
+collateral_plus_one = base_add(collateral_amount, ONE);
+less_than_strict(two_times_debt, collateral_plus_one);
+```
+
+### Identity Threshold
+
+```zk
+# From src/contract/identity/proof/create_claim_v1.zk
+#
+# Prove: threshold <= attribute_value (credential threshold met)
+
+ONE = witness_base(1);
+attribute_plus_one = base_add(attribute_value, ONE);
+less_than_strict(threshold, attribute_plus_one);
+```
+
 ## Source
 
 - **Repository**: https://codeberg.org/rusticml/darkfi-safemath

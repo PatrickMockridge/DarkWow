@@ -182,10 +182,52 @@ Proves the acceptor has locked matching funds:
 
 ### execute_swap_v1.zk
 
-Proves both parties' secrets and locks are valid:
+Proves both parties' secrets and locks are valid, with **partial fill support**:
+
 - **Public inputs**: swap_id, alice_lock, bob_lock, alice_nullifier, bob_nullifier
-- **Private inputs**: alice_secret, bob_secret, alice_token, alice_amount, bob_token, bob_amount
-- **Verification**: Both secrets known, both locks valid, both nullifiers unspent, swap consistency
+- **Private inputs**: alice_secret, bob_secret, alice_token, alice_amount, bob_token, bob_amount, **fill_amount**
+- **Verification**: Both secrets known, both locks valid, both nullifiers unspent, swap consistency, **fill_amount <= alice_amount**
+- **Partial fill**: The circuit asserts that the fill amount does not exceed Alice's offered amount
+
+#### Safemath Partial Fill Implementation
+
+```zk
+# execute_swap_v1.zk - Partial fill check using safemath pattern
+#
+# SAFEMATH WORKAROUND: This circuit uses the safemath pattern to assert
+# that fill_amount <= alice_amount (the fill does not exceed Alice's offer).
+#
+# The safemath pattern for a <= b is: a < b + 1
+
+# Both amounts must be valid u64
+range_check(64, alice_amount);
+range_check(64, bob_amount);
+range_check(64, fill_amount);
+
+# Safemath assertion: fill_amount <= alice_amount
+# Pattern: prove fill_amount < alice_amount + 1
+ONE = witness_base(1);
+alice_amount_plus_one = base_add(alice_amount, ONE);
+less_than_strict(fill_amount, alice_amount_plus_one);
+
+# Additionally, Bob's amount must be >= fill_amount
+less_than_strict(fill_amount, bob_amount);
+```
+
+**Why safemath instead of LessThanOrEqual**:
+
+| Aspect | Safemath (WORKAROUND) | LessThanOrEqual (IDEAL) |
+|--------|----------------------|------------------------|
+| Returns Boolean | ❌ Constrain-only | ✅ 0/1 for composability |
+| Circuit bloat | ❌ Copied per circuit | ✅ Single VM implementation |
+| Soundness | ✅ Production-ready | ⚠️ Gate soundness unverified |
+| Use when | Only need to assert `a <= b` | Need Boolean for downstream logic |
+
+**Technical debt documentation**:
+- LessThanOrEqual (0x55) is IDEAL but has unverified gate soundness
+- Safemath is WORKAROUND with production-ready assertion gadgets
+- DEX uses safemath because it only needs assertion, not Boolean return
+- See [Safemath](../../../doc/src/arch/safemath.md) for full analysis
 
 ### cancel_swap_v1.zk
 

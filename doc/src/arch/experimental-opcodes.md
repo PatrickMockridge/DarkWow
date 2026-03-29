@@ -156,6 +156,7 @@ For **experimental/skeleton code** where:
 | `identity` | `create_claim_v1.zk` | None | ✅ Uses safemath | Refactored to Level 0 (zk_only) — no Boolean output needed |
 | `stablecoin` | `open_position_v1.zk` | None | ✅ Uses safemath | `assert_lte_u64_v1.zk` |
 | `stablecoin` | `liquidate_v1.zk` | None | ✅ Uses safemath | `assert_lte_u64_v1.zk` |
+| `dex` | `execute_swap_v1.zk` | None | ✅ Uses safemath | Partial fill: `fill <= alice_amount` via `fill < alice + 1` |
 
 **All contracts can ship to production** using safemath assertion gadgets.
 

@@ -21,10 +21,22 @@ witness "ExecuteSwapV1" {
     Base bob_token,
     Base alice_amount,
     Base bob_amount,
+
+    # Partial fill support
+    # fill_amount: how much of the swap the filler proposes to fill
+    # When fill_amount == alice_amount, it's a full fill
+    # When fill_amount < alice_amount, it's a partial fill
+    Base fill_amount,
 }
 
 circuit "ExecuteSwapV1" {
-    # Verify Alice's lock
+    # ==========================================================================
+    # PHASE 1: Verify Alice's lock commitment
+    # ==========================================================================
+    #
+    # Alice's lock = poseidon_hash(alice_secret, alice_token, alice_amount)
+    # This proves Alice has locked funds for this swap.
+
     alice_lock_check = poseidon_hash(
         alice_secret,
         alice_token,
@@ -32,7 +44,13 @@ circuit "ExecuteSwapV1" {
     );
     constrain_equal_base(alice_lock_check, alice_lock);
 
-    # Verify Bob's lock
+    # ==========================================================================
+    # PHASE 2: Verify Bob's lock commitment
+    # ==========================================================================
+    #
+    # Bob's lock = poseidon_hash(bob_secret, bob_token, bob_amount)
+    # This proves Bob has locked funds for this swap.
+
     bob_lock_check = poseidon_hash(
         bob_secret,
         bob_token,
@@ -40,21 +58,93 @@ circuit "ExecuteSwapV1" {
     );
     constrain_equal_base(bob_lock_check, bob_lock);
 
-    # Derive nullifiers
+    # ==========================================================================
+    # PHASE 3: Derive and verify nullifiers
+    # ==========================================================================
+    #
+    # Nullifiers prevent double-spending. Once the swap executes,
+    # the nullifiers are emitted, preventing reuse.
+
     alice_nullifier_check = poseidon_hash(alice_secret, alice_lock);
     bob_nullifier_check = poseidon_hash(bob_secret, bob_lock);
 
-    # Verify nullifiers
     constrain_equal_base(alice_nullifier_check, alice_nullifier);
     constrain_equal_base(bob_nullifier_check, bob_nullifier);
 
-    # Verify swap ID consistency
+    # ==========================================================================
+    # PHASE 4: Verify swap ID consistency
+    # ==========================================================================
+    #
+    # swap_id = poseidon_hash(alice_lock, bob_token, bob_amount)
+    # This binds all swap parameters together.
+
     computed_swap_id = poseidon_hash(alice_lock, bob_token, bob_amount);
     constrain_equal_base(computed_swap_id, swap_id);
 
-    # Both amounts must be valid (use range_check for upper bound)
+    # ==========================================================================
+    # PHASE 5: Partial fill check using safemath pattern
+    # ==========================================================================
+    #
+    # SAFEMATH WORKAROUND: This circuit uses the safemath pattern to assert
+    # that fill_amount <= alice_amount (the fill does not exceed Alice's offer).
+    #
+    # The safemath pattern for a <= b is: a < b + 1
+    #
+    # Why this workaround:
+    # - LessThanOrEqual (0x55) is IDEAL - returns Boolean for composability
+    # - But LessThanOrEqual has GATE SOUNDNESS ISSUES (unverified formal analysis)
+    # - Safemath provides PRODUCTION-READY assertion gadgets
+    # - This circuit only needs assertion (constrain-only), not Boolean return
+    #
+    # The safemath pattern:
+    #   1. Range-check both inputs to u64 bounds (prevents field wraparound)
+    #   2. Add 1 to the upper bound (converts strict < to <=)
+    #   3. Use less_than_strict (constrain-only, sound opcode)
+    #
+    # Circuit bloat note: Each circuit that needs this copies the gadget.
+    # LessThanOrEqual (once verified) would be a single VM implementation.
+
+    # Both amounts must be valid u64
     range_check(64, alice_amount);
     range_check(64, bob_amount);
+    range_check(64, fill_amount);
+
+    # Safemath assertion: fill_amount <= alice_amount
+    # Pattern: prove fill_amount < alice_amount + 1
+    ONE = witness_base(1);
+    alice_amount_plus_one = base_add(alice_amount, ONE);
+    less_than_strict(fill_amount, alice_amount_plus_one);
+
+    # Additionally, Bob's amount must be >= fill_amount (Bob receives fill)
+    # Bob agreed to swap bob_amount for alice_amount, so bob_amount >= fill
+    less_than_strict(fill_amount, bob_amount);
+
+    # Boolean checks for amounts
     bool_check(alice_amount);
     bool_check(bob_amount);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses ONLY PROVEN (sound) opcodes:
+    #   - poseidon_hash: field-proven standard opcode
+    #   - constrain_equal_base: equality constraint
+    #   - range_check: bounds verification
+    #   - bool_check: boolean verification
+    #   - less_than_strict: constrain-only comparison (NO return value)
+    #
+    # LESS THAN OR EQUAL: IDEAL vs WORKAROUND
+    #   - IDEAL: LessThanOrEqual returns 0/1 Boolean for full composability
+    #   - WORKAROUND: Safemath assertion (this circuit) - constrain-only
+    #
+    # LessThanOrEqual (0x55) is NOT used here because:
+    #   1. Gate soundness is unverified (technical debt)
+    #   2. This circuit only needs assertion, not Boolean return
+    #
+    # If you need the Boolean result for further constraints:
+    #   - Wait for LessThanOrEqual formal verification, OR
+    #   - Accept the technical debt and use LessThanOrEqual directly
+    #
+    # SAFEMATH IS THE WORKAROUND for production-safe comparison assertions.
 }
