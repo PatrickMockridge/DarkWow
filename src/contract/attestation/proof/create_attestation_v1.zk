@@ -23,6 +23,10 @@ constant "CreateAttestation" {
 witness "CreateAttestation" {
     # Attestor's secret (for key derivation, not revealed)
     Base attestor_secret,
+
+    # Attestor's public key coordinates (public input - must match derived)
+    Base attestor_pub_x,
+    Base attestor_pub_y,
 }
 
 circuit "CreateAttestation" {
@@ -31,8 +35,13 @@ circuit "CreateAttestation" {
     # ==========================================================================
 
     attestor_pub = ec_mul_base(attestor_secret, NULLIFIER_K);
-    attestor_pub_x = ec_get_x(attestor_pub);
-    attestor_pub_y = ec_get_y(attestor_pub);
+    derived_pub_x = ec_get_x(attestor_pub);
+    derived_pub_y = ec_get_y(attestor_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the attestor_secret to the attestor_pubkey
+    constrain_equal_base(derived_pub_x, attestor_pub_x);
+    constrain_equal_base(derived_pub_y, attestor_pub_y);
 
     # ==========================================================================
     # PHASE 2: Expose public inputs
