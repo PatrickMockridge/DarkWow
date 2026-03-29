@@ -41,6 +41,10 @@ witness "RefundEscrow" {
     # Buyer's secret (proves ownership)
     Base buyer_secret,
 
+    # Buyer public key passed as public input
+    Base input_buyer_pub_x,
+    Base input_buyer_pub_y,
+
     # Stored buyer public key from escrow (revealed for verification)
     Base escrow_buyer_pub_x,
     Base escrow_buyer_pub_y,
@@ -61,6 +65,11 @@ circuit "RefundEscrow" {
     constrain_equal_base(buyer_pub_x, escrow_buyer_pub_x);
     constrain_equal_base(buyer_pub_y, escrow_buyer_pub_y);
 
+    # CRITICAL: Verify buyer_pub matches the public input
+    # This prevents an attacker from refunding to a different recipient
+    constrain_equal_base(buyer_pub_x, input_buyer_pub_x);
+    constrain_equal_base(buyer_pub_y, input_buyer_pub_y);
+
     # Compute nullifier
     # nullifier = H(escrow_id, buyer_secret)
     spent_nullifier = poseidon_hash(escrow_id, buyer_secret);
@@ -69,7 +78,7 @@ circuit "RefundEscrow" {
     constrain_instance(escrow_id);
     constrain_instance(timeout);
     constrain_instance(current_block);
-    constrain_instance(buyer_pub_x);
-    constrain_instance(buyer_pub_y);
+    constrain_instance(input_buyer_pub_x);
+    constrain_instance(input_buyer_pub_y);
     constrain_instance(spent_nullifier);
 }
