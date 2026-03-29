@@ -804,22 +804,73 @@ circuit "Example" {
 - auction/claim_winnings_v1.zk, auction/close_auction_v1.zk, auction/refund_bid_v1.zk, auction/settle_auction_v1.zk
 - attestation/consume_claim_v1.zk
 
-**Future Improvement (Suggestion for zkas maintainers)**:
+**DAO Circuits Still Needing Fix** (systematic pattern across multiple circuits):
+| Contract | Circuit | Unconstrained Pubkeys |
+|----------|---------|----------------------|
+| dao | mint.zk | notes_public, proposer_public, proposals_public, votes_public, exec_public, early_exec_public |
+| dao | auth-money-transfer.zk | ephem_public |
+| dao | propose-main.zk | dao_proposer_public |
+| dao | vote-main.zk | ephem_public |
+| dao | early-exec.zk | dao_exec_public, dao_early_exec_public, signature_public |
+| dao | vote-input.zk | signature_public |
+| dao | propose-input.zk | signature_public |
+| dao | auth-money-transfer-enc-coin.zk | ephem_public |
 
-A `derive_pubkey` builtin opcode would eliminate this entire vulnerability class by construction:
+**Proposed zkas Compiler Solution (derive_pubkey builtin)**:
+
+The recurring nature of this vulnerability across 30+ circuits suggests a compiler-level solution is warranted. We propose adding a `derive_pubkey` builtin to zkas that enforces soundness by construction:
 
 ```zk
-# Proposed builtin: derive_pubkey(secret, constant, pub_x, pub_y)
-# This single opcode would:
-# 1. Compute pub = ec_mul_base(secret, constant)
-# 2. Extract pub_x = ec_get_x(pub), pub_y = ec_get_y(pub)
-# 3. Constrain pub_x to equal pub_x (and same for y)
+// PROPOSED: New builtin opcode in zkas
+// Location: src/zkas/src/ops/derive_pubkey.rs (new file)
+//
+// Syntax:
+//   derive_pubkey <secret> <constant> <pub_x> <pub_y>
+//
+// Semantics:
+//   1. Compute point = ec_mul_base(<secret>, <constant>)
+//   2. Extract x = ec_get_x(point), y = ec_get_y(point)
+//   3. Constrain: x == <pub_x> AND y == <pub_y>
+//
+// This is equivalent to the correct 4-line pattern but enforces
+// the constraint atomically, making the vulnerable pattern impossible.
 
-# Usage would be one line instead of four:
-derive_pubkey(secret, NULLIFIER_K, pub_x, pub_y);
+circuit "Example" {
+    // BEFORE (vulnerable - easy to forget constrain_equal_base):
+    //   pub = ec_mul_base(secret, NULLIFIER_K);
+    //   pub_x = ec_get_x(pub);
+    //   pub_y = ec_get_y(pub);
+    //   constrain_instance(pub_x);  // <-- FORGOTTEN?
+    //   constrain_instance(pub_y);  // <-- FORGOTTEN?
+
+    // AFTER (sound - derive_pubkey enforces constraint):
+    derive_pubkey secret, NULLIFIER_K, pub_x, pub_y;
+    constrain_instance(pub_x);
+    constrain_instance(pub_y);
+}
 ```
 
-This makes it impossible to forget the binding constraint — the builtin enforces soundness by design. This is especially valuable since the pattern appears in 20+ circuits across the codebase.
+**Implementation Notes for zkas Maintainers**:
+
+1. **Location**: Create `src/zkas/src/ops/derive_pubkey.rs` following the pattern of existing builtin ops like `EcMulBase`
+
+2. **Constraint Generation**: The builtin should emit R1CS constraints for:
+   - `ec_mul_base` computation
+   - `ec_get_x` / `ec_get_y` extraction
+   - Equality constraints between derived coords and public inputs
+
+3. **Type Checking**: The opcode should verify:
+   - `<secret>` is a witness variable
+   - `<constant>` is a curve constant (EcFixedPointBase)
+   - `<pub_x>` and `<pub_y>` are Base type variables
+
+4. **Migration Path**: Existing circuits using the vulnerable pattern can be updated incrementally. The old pattern still works but linters could warn about it.
+
+5. **Linter Rule**: Additionally, a lint rule could detect the vulnerable pattern and suggest using `derive_pubkey` instead:
+   ```
+   warning: derived public key not constrained to public input
+   help: use derive_pubkey(secret, constant, pub_x, pub_y) instead
+   ```
 
 ---
 
@@ -1051,7 +1102,7 @@ The `less_than_strict` opcode used throughout DarkFi's contracts avoids these is
 | 16 | DEX | Public keys hardcoded to zero | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
 | 17 | DEX | lock_proof never verified | CRITICAL | ⚠️ PARTIALLY FIXED (basic validation added) |
 | 18 | DEX | ZK proof verification stubbed | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
-| 19 | Multiple | Missing public key constraint binding | MAJOR | ✅ FIXED (20+ circuits across money, oracle, dao, labor_market, tender, drain_protection) |
+| 19 | Multiple | Missing public key constraint binding | MAJOR | ⚠️ PARTIALLY FIXED (17 circuits fixed, 8 DAO circuits still need fix, zkas builtin proposed) |
 
 ---
 
