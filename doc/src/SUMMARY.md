@@ -61,6 +61,7 @@
   - [Labor Market Contract](arch/labor_market.md)
   - [Auction Contract](arch/auction.md)
   - [Tender Contract](arch/tender.md)
+  - [Drain Protection Contract](arch/drain_protection.md)
   - [Private Authorization Layer](arch/privauth.md)
   - [Composability](arch/composability.md)
   - [Wallet](arch/wallet.md)
