@@ -60,6 +60,7 @@
   - [Subscription Contract](arch/subscription.md)
   - [Atomic Swap Contract](arch/atomic_swap.md)
   - [Labor Market Contract](arch/labor_market.md)
+  - [Oracle Contract](arch/oracle.md)
   - [Auction Contract](arch/auction.md)
   - [Tender Contract](arch/tender.md)
   - [Drain Protection Contract](arch/drain_protection.md)

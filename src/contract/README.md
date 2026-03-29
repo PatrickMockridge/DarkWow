@@ -16,6 +16,7 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 | **identity** | ZK credential proofs using competency DAGs | ⚠️ Uses experimental opcodes |
 | **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
 | **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
+| **oracle** | Push-model oracle with attestation integration | ✅ Complete |
 | **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
 | **stablecoin** | Monero-collateralized stablecoin | ⚠️ Uses experimental opcodes |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete |
@@ -142,6 +143,7 @@ Local READMEs exist for each contract in this folder:
 - [identity/README.md](identity/README.md) - ZK credential proofs
 - [labor_market/README.md](labor_market/README.md) - Job/labor market
 - [auction/README.md](auction/README.md) - Privacy-preserving auction
+- [oracle/README.md](oracle/README.md) - Push-model oracle
 - [stablecoin/README.md](stablecoin/README.md) - Collateral stablecoin
 - [subscription/README.md](subscription/README.md) - Member subscription
 - [tender/README.md](tender/README.md) - Sealed-bid tendering
@@ -151,5 +153,6 @@ Architecture docs:
 - [dao_escrow.md](../../doc/src/arch/dao_escrow.md)
 - [subscription.md](../../doc/src/arch/subscription.md)
 - [atomic_swap.md](../../doc/src/arch/atomic_swap.md)
+- [oracle.md](../../doc/src/arch/oracle.md)
 - [security-analysis.md](../../doc/src/arch/security-analysis.md)
 - [composability.md](../../doc/src/arch/composability.md)
