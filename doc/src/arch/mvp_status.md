@@ -110,6 +110,8 @@ InitializeV1 (0x00), CreateSwapV1 (0x01), AcceptSwapV1 (0x02), ExecuteSwapV1 (0x
 
 **What it needs for full MVP**: Either document the atomic swap flow explicitly (manual matching is acceptable for a basic MVP), or implement `LessThanOrEqual` to enable amount comparison and partial fills.
 
+> **Note**: `LessThanOrEqual` is the **ideal solution** for amount comparison — it returns a Boolean that can compose into other logic. Safemath assertion gadgets (`assert_lte_u64_v1.zk`) are a **workaround with technical debt**: they can assert `a <= b` but cannot return a Boolean for downstream logic. For partial fills where you need to constrain `fill_amount <= requested_amount` and use that result in further constraints, safemath cannot replace `LessThanOrEqual`.
+
 ---
 
 ## `bridge` — Partial MVP

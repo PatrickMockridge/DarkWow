@@ -62,6 +62,18 @@ The constraint `out * (b - a) + (1 - out) * (a - b - 1)` can be satisfied with m
 
 When `a == b`, the constraint `delta * delta_invert == 1` becomes `0 * anything == 1`, which is unsatisfiable. A selector gate disables this, but the prover can assign arbitrary `delta_invert` when inputs are equal.
 
+### Ideal vs Workaround: LessThanOrEqual vs Safemath
+
+| Aspect | `LessThanOrEqual` (IDEAL) | Safemath (WORKAROUND) |
+|--------|---------------------------|----------------------|
+| Returns Boolean | ✅ Yes | ❌ No (constrain-only) |
+| Composability | ✅ Full | ❌ Limited to assertions |
+| Circuit bloat | ✅ None (single VM impl) | ❌ Each circuit copies gadget |
+| Soundness | ⚠️ Unverified (gate soundness) | ✅ Production-ready |
+| Use when | Need Boolean for downstream logic | Only need to assert `a <= b` |
+
+**Why this matters**: Safemath (`assert_lte_u64_v1.zk`) is a **workaround** that works for stablecoin/identity because they only need to assert constraints (not return Booleans). If you need the comparison result as a value for further constraints, LessThanOrEqual is required.
+
 ---
 
 ### Cross-Multiplication Pattern (Avoids BaseDiv)
@@ -113,8 +125,10 @@ This pattern (in `dao/exec.zk`) handles ratio checks without `BaseDiv`.
 
 1. **No `BaseDiv` needed** - Cross-multiplication with `less_than_strict` handles all ratio checks
 2. **`less_than_strict` is safe** - It's constrain-only (no return value manipulation)
-3. **stablecoin and identity use safemath** - Both now use assertion gadgets instead of `LessThanOrEqual`
-4. **Bridge Merkle is fixed** - `deposit_v1.zk` now uses real `merkle_root` opcode
+3. **stablecoin and identity use safemath** - Assertion gadgets (`assert_lte_u64_v1.zk`) as workaround for LessThanOrEqual
+4. **LessThanOrEqual is IDEAL but has technical debt** - Returns Boolean for composability, but gate soundness unverified
+5. **Safemath is WORKAROUND** - Production-ready for assertion-only, but cannot return Boolean for downstream logic
+6. **Bridge Merkle is fixed** - `deposit_v1.zk` now uses real `merkle_root` opcode
 
 **See also**:
 - [Experimental Opcodes](../../doc/src/arch/experimental-opcodes.md) — Concise reference for contract authors

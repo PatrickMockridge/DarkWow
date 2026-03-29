@@ -264,28 +264,41 @@ The bridge's `deposit_v1.zk` now uses the real `merkle_root` opcode with proper 
 
 The bridge circuits use standard zkVM opcodes. Future enhancements may require:
 
-### `LessThanOrEqual(a, b)` (Reasoned)
+### `LessThanOrEqual(a, b)` (IDEAL — but experimental with soundness issues)
 **Purpose**: Compare if `Base a <= Base b`
 **Reasoning**: Could enable more complex withdrawal conditions (e.g., "amount <= fee threshold").
+**Technical debt**: Gate soundness is unverified — formal analysis needed before production use.
 
-### Adding Custom Opcodes
+### `IsEqualBase(a, b)` (IDEAL — but experimental with soundness issues)
+**Purpose**: Returns `0` or `1` for equality comparison
+**Reasoning**: Could enable state machine transitions with proper equality checks.
+**Technical debt**: Delta-invert soundness issue when `a == b`.
 
-To add a new opcode to the zkVM:
+## Ideal vs Workaround: LessThanOrEqual vs Safemath
 
-1. Define the opcode in `src/zkas/opcode.rs`
-2. Implement the opcode in `src/zk/vm.rs`
+**`LessThanOrEqual` is the IDEAL solution**:
+- Returns a 0/1 Boolean usable in downstream logic
+- Single implementation in VM — no circuit bloat
+- Full composability
 
-For a full example of adding opcodes, see the [zkas bincode documentation](../../../doc/src/zkas/bincode.md).
+**Safemath is a WORKAROUND with technical debt**:
+- Only assertion gadgets (constrain-only, no Boolean return)
+- Must be copied into each circuit
+- Cannot replace LessThanOrEqual when Boolean return is needed
+
+For fee thresholds or token-aware minimums, safemath can work **if** you only need to assert the constraint. If you need the result for further logic, LessThanOrEqual is required.
+
+See [Safemath](../../../doc/src/arch/safemath.md) and [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for full analysis.
 
 ## Opcode Safety
 
 **Comparison opcodes status**:
 
-| Opcode | Status | Use in Bridge |
-|--------|--------|---------------|
-| `LessThanOrEqual` | Implemented (experimental) | Future: fee thresholds, token-aware minimums |
-| `IsEqualBase` | Implemented (experimental) | Future: state machine transitions |
-| `less_than_strict` | Sound (constrain-only) | ✅ Used in circuits |
+| Opcode | Status | Use in Bridge | Note |
+|--------|--------|---------------|------|
+| `LessThanOrEqual` | Implemented (experimental) | Future: fee thresholds, token-aware minimums | **IDEAL**: returns Boolean. **Debt**: gate soundness unverified |
+| `IsEqualBase` | Implemented (experimental) | Future: state machine transitions | **IDEAL**: returns Boolean. **Debt**: delta-invert issue |
+| `less_than_strict` | Sound (constrain-only) | ✅ Used in circuits | Safe but cannot return value |
 
 **The bridge's current status**: The withdrawal circuit (`withdraw_v1.zk`) uses `constrain_equal_base`, `range_check`, and `less_than_strict` for minimum amount check. Future enhancements (fee thresholds, token-aware minimums) can use safemath assertion gadgets.
 

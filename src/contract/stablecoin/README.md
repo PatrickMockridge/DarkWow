@@ -276,14 +276,26 @@ less_than_strict(rhs, lhs);             # Prove: rhs < lhs
 
 **See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
 
-## Opcode Safety: LessThanOrEqual Replaced with Safemath
+## Opcode Safety: LessThanOrEqual vs Safemath (Workaround)
 
-**Current state**: The stablecoin circuits use **safemath assertion gadgets** — no experimental opcodes needed:
+**`LessThanOrEqual` is the IDEAL solution** — but has **technical debt**:
+- Gate soundness unverified (prover could assign malicious values)
+- Delta-invert issue in `IsEqualBase` when `a == b`
+- **Must be formally verified before production use**
+
+**Safemath is the WORKAROUND** — currently used because LessThanOrEqual is not production-ready:
+- Production-ready: uses sound `less_than_strict` + `base_add` + `range_check`
+- Technical debt: only assertion gadgets (constrain-only, no Boolean return)
+- Cannot replace LessThanOrEqual when Boolean return is needed
+
+**Stablecoin's current state**: Uses **safemath assertion gadgets** — no LessThanOrEqual needed:
 
 | Circuit | Check | Safemath Template |
 |---------|-------|-------------------|
-| `open_position_v1.zk` | `2 * debt <= collateral` | `assert_lte_u64_v1.zk` pattern |
-| `liquidate_v1.zk` | `reward <= collateral` | `assert_lte_u64_v1.zk` pattern |
+| `open_position_v1.zk` | `2 * debt <= collateral` | ✅ `assert_lte_u64_v1.zk` pattern |
+| `liquidate_v1.zk` | `reward <= collateral` | ✅ `assert_lte_u64_v1.zk` pattern |
+
+Both circuits only need to **assert** the relation passes (not return a Boolean), so safemath works perfectly. This is a **workaround** — LessThanOrEqual would be the ideal solution.
 
 **Implementation** (from `open_position_v1.zk`):
 ```zk
@@ -297,23 +309,18 @@ less_than_strict(two_times_debt, collateral_plus_one);
 ```
 
 **Key distinction**:
-- `LessThanOrEqual(a, b) → bit`: Returns 0/1 Boolean (can feed into later logic)
-- Safemath `assert_lte`: Constrains only, proves `a <= b` assertion without returning value
-
-Both circuits only need to **assert** the relation passes (not return a Boolean), so safemath works perfectly.
+- `LessThanOrEqual(a, b) → bit`: Returns 0/1 Boolean (can feed into later logic) — **IDEAL**
+- Safemath `assert_lte`: Constrains only, proves `a <= b` assertion without returning value — **WORKAROUND**
 
 **See**:
 - [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) for the template library
 - [Safemath doc](../../../doc/src/arch/safemath.md) for integration guide
+- [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for LessThanOrEqual soundness issues
 
 **What production readiness requires**:
-1. Replace `LessThanOrEqual` with safemath assertion circuits
-2. Integration test: deposit → mint → repay → liquidate (adversarial)
+1. Integration test: deposit → mint → repay → liquidate (adversarial)
+2. Formal verification of LessThanOrEqual gate soundness (enables Boolean return use cases)
 3. Audit by a ZK circuit expert
-
-**See**:
-- [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) for the assertion gadgets
-- [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full delta-invert analysis
 
 ## Comparison
 
