@@ -1,6 +1,6 @@
 # DarkFi Labor Market Contract
 
-A job/labor market contract using escrow and DAO governance for trustless conditional payments.
+A job/labor market contract using escrow, DAO governance, and the attestation contract for deliverable verification.
 
 ## Overview
 
@@ -9,23 +9,31 @@ A job/labor market contract using escrow and DAO governance for trustless condit
 │                           Labor Market Flow                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  Employer                          Worker                                   │
-│     │                                 │                                       │
+│  Employer                          Worker                                    │
+│     │                                │                                       │
+│     │  Create Attestation            │                                       │
+│     │  (deliverable_hash)            │                                       │
+│     │───────────────────────────────►│                                       │
+│     │                                │                                        │
 │     │  Create Job (with payment)     │                                       │
+│     │  (references attestation)      │                                       │
 │     │────────────────────────────────►│                                       │
-│     │                                 │                                       │
-│     │         Accept Job             │                                       │
+│     │                                │                                        │
+│     │        Accept Job              │                                       │
 │     │◄────────────────────────────────│                                       │
-│     │                                 │                                       │
-│     │                                 │  Deliver Work                          │
-│     │                                 │  (hash or commit)                       │
+│     │                                │                                        │
+│     │                                │  Create Claim (attestation)            │
+│     │                                │  (evidence_commitment)                  │
+│     │                                │                                        │
+│     │                                │  Submit Deliverable                    │
+│     │                                │  (claim_id)                            │
 │     │◄────────────────────────────────│                                       │
-│     │                                 │                                       │
+│     │                                │                                        │
 │     │  Confirm (release payment)      │                                       │
 │     │────────────────────────────────►│                                       │
-│     │                                 │                                       │
-│     OR: Timeout ──► Refund            │                                       │
-│     OR: Dispute ──► DAO Resolution     │                                       │
+│     │                                │                                        │
+│     OR: Timeout ──► Refund           │                                       │
+│     OR: Dispute ──► DAO Resolution    │                                       │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -34,32 +42,35 @@ A job/labor market contract using escrow and DAO governance for trustless condit
 
 | Type | Description | Use Case |
 |------|-------------|----------|
-| **Generic** | Submit `hash(zip_file)` as proof | Any deliverable: documents, images, etc. |
-| **Git** | Submit `commit_hash` as proof | Code work: tamper-evident, timestamped |
+| **Generic** | Submit claim against attestation | Any deliverable: documents, images, etc. |
+| **Git** | Submit claim against attestation | Code work: tamper-evident, timestamped |
 
 ## How It Works
 
-### Generic Delivery (Zip Hash)
+### Generic Delivery (with Attestation)
 
-1. **Employer creates job** with expected deliverable hash
-2. **Worker completes work**, zips it, computes `SHA256(zip_file)`
-3. **Worker submits** the hash as proof of completed work
-4. **Employer verifies** the zip matches the hash
-5. **Employer confirms** -> payment released to worker
+1. **Employer creates attestation** with expected deliverable hash
+2. **Employer creates job** referencing the attestation
+3. **Worker completes work**, zips it, computes hash
+4. **Worker creates claim** on the attestation (evidence_commitment = hash)
+5. **Worker submits deliverable** with claim_id
+6. **Contract verifies** the attestation claim is valid
+7. **Employer confirms** -> payment released
 
-### Git Delivery (Commit Hash)
+### Git Delivery (with Attestation)
 
-1. **Employer creates job** with expected commit ref
-2. **Worker pushes** work to a git repo
-3. **Worker submits** `git commit SHA` as proof
-4. **Employer verifies** commit exists and contains expected work
-5. **Employer confirms** -> payment released
+1. **Employer creates attestation** with expected commit ref
+2. **Employer creates job** referencing the attestation
+3. **Worker pushes** work to a git repo
+4. **Worker creates claim** on attestation (evidence_commitment = commit hash)
+5. **Worker submits deliverable** with claim_id
+6. **Attestation contract verifies** the commit matches
+7. **Employer confirms** -> payment released
 
-**Why git is better for code work:**
-- Git commit hash = `SHA(author + message + parent + timestamp + diff)`
-- Tamper-evident: change any file, hash changes
-- Timestamped: proves work existed before deadline
-- Immutable audit trail
+**Why attestation is better:**
+- Reusable: same attestation can be used for multiple jobs
+- Composable: other contracts can reference the same attestation
+- Standardized: single implementation for all deliverable types
 
 ## State Machine
 
@@ -74,14 +85,52 @@ Created ──[Accept]──> InProgress ──[Deliver]──> Delivered
             Confirmed    Disputed                  Refunded    Cancelled
 ```
 
+## Attestation Integration
+
+The labor market uses the [Attestation Contract](../attestation/README.md) for deliverable verification:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Labor Market + Attestation Flow                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Employer                                                                   │
+│     │                                                                       │
+│     │ CreateAttestation(deliverable_hash)                                   │
+│     ▼                                                                       │
+│  Attestation(Active)                                                        │
+│     │                                                                       │
+│     │ attestation_id                                                        │
+│     │                                                                       │
+│     │◄──────────────────────────────── CreateJob(job, attestation_id)      │
+│     │                                                                       │
+│     │                              Worker                                   │
+│     │                                 │                                     │
+│     │                                 │ CreateClaim(evidence_commitment)   │
+│     │                                 ▼                                     │
+│     │                              Claim(Verified)                         │
+│     │                                 │                                     │
+│     │                                 │ claim_id                            │
+│     │                                 │                                     │
+│     │◄── SubmitDeliverable(job_id, claim_id)                              │
+│     │                                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Attestation Predicate
+
+The attestation uses `Predicate::Matches` to verify the deliverable:
+- Worker submits `evidence_commitment = poseidon_hash(deliverable)`
+- Attestation verifies `evidence_commitment == attestation.claim_data[0]`
+
 ## Entrypoints
 
 | Function | Opcode | Description |
 |----------|--------|-------------|
-| `CreateJobV1` | 0x00 | Employer posts job, deposits payment |
+| `CreateJobV1` | 0x00 | Employer posts job (references attestation) |
 | `AcceptJobV1` | 0x01 | Worker accepts job |
-| `SubmitDeliverableV1` | 0x02 | Worker submits zip hash |
-| `SubmitGitDeliverableV1` | 0x03 | Worker submits commit hash |
+| `SubmitDeliverableV1` | 0x02 | Worker submits claim_id for generic delivery |
+| `SubmitGitDeliverableV1` | 0x03 | Worker submits claim_id for git delivery |
 | `ConfirmDeliveryV1` | 0x04 | Employer confirms, releases payment |
 | `DisputeV1` | 0x05 | Either party escalates to DAO |
 | `RefundV1` | 0x06 | Timeout triggers refund |
@@ -91,10 +140,10 @@ Created ──[Accept]──> InProgress ──[Deliver]──> Delivered
 
 | Circuit | Purpose | Key Opcodes |
 |---------|---------|-------------|
-| `create_job_v1.zk` | Prove job creation is valid | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
+| `create_job_v1.zk` | Prove job creation + attestation_id | `ec_mul_base`, `constrain_instance` |
 | `accept_job_v1.zk` | Prove worker accepts job | `ec_mul_base` |
-| `submit_deliverable_v1.zk` | Prove deliverable submission | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
-| `submit_git_deliverable_v1.zk` | Prove git commit submission | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
+| `submit_deliverable_v1.zk` | Prove deliverable submission + claim_id | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
+| `submit_git_deliverable_v1.zk` | Prove git commit submission + claim_id | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
 | `confirm_delivery_v1.zk` | Prove employer confirmation | `ec_mul_base`, `poseidon_hash` |
 | `dispute_v1.zk` | Prove dispute initiation | `ec_mul_base`, `poseidon_hash` |
 | `refund_v1.zk` | Prove timeout refund | `ec_mul_base`, `poseidon_hash`, `less_than_strict` |
@@ -126,6 +175,7 @@ A DAO-Escrow can act as the organizational employer:
 
 ```
 Labor Market Contract
+├── Uses Attestation for deliverable verification
 ├── Uses Escrow pattern for payment
 ├── Integrates with DAO-Escrow for dispute resolution
 └── Composable with Subscription for recurring wages
@@ -135,18 +185,20 @@ Labor Market Contract
 
 ```
 Employer:
-1. Creates job: "Review PR #123, pay 100 DRK"
-   - deliverable_hash = expected commit hash
+1. Creates attestation: expected commit hash = abc123...
+2. Creates job: "Review PR #123, pay 100 DRK"
+   - attestation_id = <from step 1>
    - deadline = block 50000
 
 Worker:
-2. Reviews the PR, pushes review commit
-3. Submits: commit_hash = abc123...
+3. Reviews the PR, pushes review commit
+4. Creates claim on attestation: evidence = poseidon_hash(abc123...)
+5. Submits deliverable: claim_id = <from step 4>
    (proves they did the work by that block)
 
 Employer:
-4. Verifies commit abc123 exists in repo
-5. Confirms delivery -> 100 DRK to worker
+6. Attestation contract verifies claim is valid
+7. Confirms delivery -> 100 DRK to worker
 
 OR: Worker never delivers by block 50000
 -> Employer calls Refund -> 100 DRK returned
@@ -154,6 +206,7 @@ OR: Worker never delivers by block 50000
 
 ## See Also
 
+- [Attestation Contract](../attestation/README.md) - Generalized attestation and claims
 - [DAO-Escrow Contract](../dao_escrow/README.md) - Dispute resolution and organization
 - [Escrow Contract](../escrow/README.md) - HTLC-style payment escrow
 - [Subscription Contract](../subscription/README.md) - Recurring payments

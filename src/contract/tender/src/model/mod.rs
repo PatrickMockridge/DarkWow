@@ -117,8 +117,8 @@ pub struct Tender {
     pub title: String,
     /// Hash of the specification document
     pub specification: pallas::Base,
-    /// Commitment to competency requirements
-    pub requirement_commitment: pallas::Base,
+    /// Attestation ID for competency requirements (references attestation contract)
+    pub attestation_id: pallas::Base,
     /// Minimum bid amount
     pub min_bid: u64,
     /// Maximum bid amount
@@ -146,7 +146,7 @@ impl Tender {
         requester_pubkey: &PublicKey,
         title: &str,
         specification: pallas::Base,
-        requirement_commitment: pallas::Base,
+        attestation_id: pallas::Base,
         min_bid: u64,
         max_bid: u64,
         bid_deadline: u64,
@@ -160,7 +160,7 @@ impl Tender {
             ry,
             pallas::Base::from_text(&title).unwrap_or_default(),
             specification,
-            requirement_commitment,
+            attestation_id,
             pallas::Base::from(min_bid),
             pallas::Base::from(max_bid),
             pallas::Base::from(bid_deadline),
@@ -182,8 +182,8 @@ pub struct Bid {
     pub bidder_pubkey: PublicKey,
     /// Bid amount (hidden until reveal)
     pub amount: u64,
-    /// Commitment to competency proof (verifiable off-chain)
-    pub competency_commitment: pallas::Base,
+    /// Attestation claim ID (proving competency via attestation contract)
+    pub claim_id: pallas::Base,
     /// Encrypted bid details (decrypted by requester after reveal)
     pub encrypted_payload: Vec<u8>,
     /// Current state
@@ -229,8 +229,8 @@ pub struct CreateTenderParamsV1 {
     pub title: String,
     /// Hash of the specification document
     pub specification: pallas::Base,
-    /// Commitment to competency requirements
-    pub requirement_commitment: pallas::Base,
+    /// Attestation ID for competency requirements
+    pub attestation_id: pallas::Base,
     /// Minimum bid amount
     pub min_bid: u64,
     /// Maximum bid amount
@@ -265,8 +265,8 @@ pub struct SubmitBidParamsV1 {
     pub bidder_pub_y: pallas::Base,
     /// Bid amount (hidden)
     pub amount: u64,
-    /// Commitment to competency proof
-    pub competency_commitment: pallas::Base,
+    /// Attestation claim ID (from attestation.create_claim)
+    pub claim_id: pallas::Base,
     /// Encrypted bid details
     pub encrypted_payload: Vec<u8>,
 }

@@ -74,6 +74,9 @@ pub enum LaborMarketError {
     #[error("Invalid delivery type")]
     InvalidDeliveryType,
 
+    #[error("Invalid attestation claim")]
+    InvalidClaim,
+
     #[error("DAO-Escrow required for dispute")]
     DaoEscrowRequired,
 

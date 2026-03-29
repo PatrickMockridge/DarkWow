@@ -1,23 +1,25 @@
 # Tender Contract
 
-A privacy-preserving sealed-bid tendering system that integrates with the identity/competency framework, labor market, and Tau task manager.
+A privacy-preserving sealed-bid tendering system that integrates with the attestation contract for competency verification and the labor market for job execution.
 
 ## Overview
 
 The tender contract enables requesters to create tenders for projects with:
 - **Sealed bids**: Bidders submit encrypted bids that remain hidden until the reveal deadline
-- **Competency verification**: Bidders provide competency commitments proving their qualifications
+- **Attestation-based competency**: Bidders prove qualifications via attestation claims
 - **Integration with labor market**: Winner automatically creates a job in the labor market
 - **Task tracking via Tau**: Created jobs are tracked in Tau for delivery management
 
 ## Trust Model
 
-1. **Requester creates tender** with specifications, requirements, and deadlines
-2. **Workers submit sealed bids** with competency proofs and encrypted bid details
-3. **Bids revealed** after the bidding deadline
-4. **Winner selected** based on competency + price evaluation
-5. **Job created** via Labor Market for execution
-6. **Task tracked** via Tau for progress monitoring
+1. **Requester creates attestation** with competency requirements
+2. **Requester creates tender** referencing the attestation
+3. **Workers submit claims** against the attestation proving qualifications
+4. **Workers submit sealed bids** with claim IDs and encrypted bid details
+5. **Bids revealed** after the bidding deadline
+6. **Winner selected** based on competency (via attestation) + price evaluation
+7. **Job created** via Labor Market for execution
+8. **Task tracked** via Tau for progress monitoring
 
 ## State Machines
 
@@ -37,12 +39,44 @@ Sealed ──[Reveal]──> Revealed ──[Accept]──> Accepted
   └──[Timeout]──> Expired  └──[Reject]──> Rejected
 ```
 
+## Attestation Integration
+
+The tender contract uses the [Attestation Contract](../attestation/README.md) for competency verification:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Tender + Attestation Flow                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Requester                                                                  │
+│     │                                                                       │
+│     │ CreateAttestation(requirement_commitment)                              │
+│     ▼                                                                       │
+│  Attestation(Active)                                                         │
+│     │                                                                       │
+│     │ attestation_id                                                        │
+│     │                                                                       │
+│     │◄──────────────────────────────── CreateTender(attestation_id)        │
+│     │                                                                       │
+│     │                              Worker                                   │
+│     │                                 │                                     │
+│     │                                 │ CreateClaim(evidence_commitment)   │
+│     │                                 ▼                                     │
+│     │                              Claim(Verified)                          │
+│     │                                 │                                     │
+│     │                                 │ claim_id                            │
+│     │                                 │                                     │
+│     │◄── SubmitBid(tender_id, claim_id, encrypted_amount)                │
+│     │                                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Contract Functions
 
 | Function | Opcode | Description |
 |----------|--------|-------------|
-| `CreateTenderV1` | 0x00 | Requester creates a new tender |
-| `SubmitBidV1` | 0x01 | Worker submits a sealed bid |
+| `CreateTenderV1` | 0x00 | Requester creates a new tender (references attestation) |
+| `SubmitBidV1` | 0x01 | Worker submits a sealed bid with claim_id |
 | `RevealBidV1` | 0x02 | Worker reveals their bid amount |
 | `CloseTenderV1` | 0x03 | Requester closes bidding, starts reveal period |
 | `SelectWinnerV1` | 0x04 | Requester selects winning bid |
@@ -55,11 +89,11 @@ Sealed ──[Reveal]──> Revealed ──[Accept]──> Accepted
 
 ```rust
 pub struct Tender {
-    pub id: TenderId,              // Commitment hash
+    pub id: TenderId,
     pub requester_pubkey: PublicKey,
     pub title: String,
     pub specification: pallas::Base,  // Hash of spec document
-    pub requirement_commitment: pallas::Base,
+    pub attestation_id: pallas::Base,  // Attestation for competency requirements
     pub min_bid: u64,
     pub max_bid: u64,
     pub bid_deadline: u64,
@@ -80,8 +114,8 @@ pub struct Bid {
     pub tender_id: TenderId,
     pub bidder_pubkey: PublicKey,
     pub amount: u64,                    // Hidden until reveal
-    pub competency_commitment: pallas::Base,
-    pub encrypted_payload: Vec<u8>,      // Encrypted bid details
+    pub claim_id: pallas::Base,         // Attestation claim proving competency
+    pub encrypted_payload: Vec<u8>,     // Encrypted bid details
     pub state: BidState,
     pub revealed_amount: Option<u64>,
     pub created_at: u64,
@@ -92,9 +126,9 @@ pub struct Bid {
 
 ```
 ┌──────────────┐     ┌─────────────┐     ┌────────────────┐
-│   Identity   │────>│   Tender    │────>│  Labor Market  │
+│  Attestation │────>│   Tender    │────>│  Labor Market  │
 │  (Competency │     │  (Sealed    │     │   (Job for     │
-│   Credentials)     │   Bidding)  │     │   Winner)      │
+│   Claims)    │     │   Bidding)  │     │   Winner)      │
 └──────────────┘     └─────────────┘     └────────────────┘
                             │
                             v
@@ -105,8 +139,8 @@ pub struct Bid {
                      └─────────────┘
 ```
 
-1. **Identity**: Worker obtains competency credentials
-2. **Tender**: Worker submits bid with competency commitment
+1. **Attestation**: Requester creates attestation for competency requirements
+2. **Tender**: Worker creates claim on attestation, submits bid with claim_id
 3. **Winner Selected**: Job automatically created in labor market
 4. **Tau**: Job tracked for delivery and completion
 
@@ -115,7 +149,7 @@ pub struct Bid {
 | Circuit | Purpose |
 |---------|---------|
 | `create_tender_v1.zk` | Proves requester knows secret key |
-| `submit_bid_v1.zk` | Proves bid with competency commitment |
+| `submit_bid_v1.zk` | Proves bid with attestation claim |
 | `reveal_bid_v1.zk` | Reveals sealed bid amount |
 | `select_winner_v1.zk` | Proves winner selection is valid |
 
@@ -130,5 +164,11 @@ pub struct Bid {
 
 - Bids remain sealed until the reveal deadline
 - Only the requester can select winners or cancel tenders
-- Competency commitments allow verification without exposing worker details
+- Attestation claims provide competency verification without exposing worker details
 - Nullifiers prevent bid submission replay
+- Attestation verification is handled by the attestation contract
+
+## See Also
+
+- [Attestation Contract](../attestation/README.md) - Generalized attestation and claims
+- [Labor Market Contract](../labor_market/README.md) - Job execution after tender award

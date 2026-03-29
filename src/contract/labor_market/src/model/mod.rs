@@ -71,8 +71,8 @@ pub struct Job {
     pub employer_pubkey: [pallas::Base; 2],
     /// Worker's public key (set when accepted)
     pub worker_pubkey: Option<[pallas::Base; 2]>,
-    /// Hash of expected deliverable (zip hash or commit hash)
-    pub deliverable_hash: pallas::Base,
+    /// Attestation ID for deliverable verification (references attestation contract)
+    pub attestation_id: pallas::Base,
     /// Type of deliverable (generic or git)
     pub delivery_type: DeliveryType,
     /// Payment amount
@@ -100,16 +100,14 @@ pub struct CreateJobParamsV1 {
     pub employer_pub_x: pallas::Base,
     /// Employer's public key y coordinate
     pub employer_pub_y: pallas::Base,
-    /// Hash of expected deliverable
-    pub deliverable_hash: pallas::Base,
+    /// Attestation ID for deliverable verification (references attestation contract)
+    pub attestation_id: pallas::Base,
     /// Type of deliverable (0 = Generic, 1 = Git)
     pub delivery_type: u8,
     /// Payment amount
     pub payment_amount: u64,
     /// Token being paid
     pub payment_token: pallas::Base,
-    /// Block by which work must be delivered
-    pub deadline_block: u64,
     /// Payment commitment x coordinate
     pub payment_commit_x: pallas::Base,
     /// Payment commitment y coordinate
@@ -136,8 +134,8 @@ pub struct SubmitDeliverableParamsV1 {
     pub proof: Vec<u8>,
     /// Job ID being completed
     pub job_id: pallas::Base,
-    /// Hash of the delivered work
-    pub deliverable_hash: pallas::Base,
+    /// Attestation claim ID (from attestation.create_claim)
+    pub claim_id: pallas::Base,
     /// Worker's public key x coordinate
     pub worker_pub_x: pallas::Base,
     /// Worker's public key y coordinate
@@ -153,8 +151,8 @@ pub struct SubmitGitDeliverableParamsV1 {
     pub proof: Vec<u8>,
     /// Job ID being completed
     pub job_id: pallas::Base,
-    /// Git commit hash
-    pub commit_hash: pallas::Base,
+    /// Attestation claim ID (from attestation.create_claim)
+    pub claim_id: pallas::Base,
     /// Worker's public key x coordinate
     pub worker_pub_x: pallas::Base,
     /// Worker's public key y coordinate
