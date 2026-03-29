@@ -207,9 +207,13 @@ ZK circuits operate in a finite field — the Pallas field defined by prime `p =
 
 **The core challenge**: Proving `a <= b` as integers requires determining whether `a - b` falls in `{0, 1, ..., (p-1)/2}` or `{(p+1)/2, ..., p-1}`. This is straightforward in normal code but requires careful gadget design in circuits.
 
-**For DEX specifically**: Partial fills (filling only part of a swap) would require comparing `fill_amount <= swap_amount`. Without `LessThanOrEqual` returning a usable value, this comparison cannot be expressed in the current zkVM.
+**For DEX specifically**: Partial fills (filling only part of a swap) would require comparing `fill_amount <= swap_amount`. This can be addressed via:
+- **Safemath** (current): `assert_lte_u64_v1.zk` template for assertion-only checks
+- **Native opcode** (future): `LessThanOrEqual` with Boolean return for full composability
 
-**See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
+**See**:
+- [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment
+- [Safemath](../../../doc/src/arch/safemath.md) for the safemath workaround
 
 ## Opcode Discovery and Validation
 
@@ -236,6 +240,7 @@ The DEX circuits primarily use standard zkVM opcodes. Future expansions may requ
 ### `LessThanOrEqual(a, b)` (Reasoned)
 **Purpose**: Compare if `Base a <= Base b`
 **Reasoning**: Could enable minimum amount checks, swap size limits, or partial fill conditions.
+**Alternative**: [Safemath assert_lte](https://codeberg.org/rusticml/darkfi-safemath) templates available for assertion-only use.
 
 ### `IsEqualBase(a, b)` (Reasoned)
 **Purpose**: Returns `0` or `1` for equality comparison
@@ -252,27 +257,19 @@ For a full example of adding opcodes, see the [zkas bincode documentation](../..
 
 ## Opcode Safety
 
-**Comparison opcodes are grey-market goods — buyer beware.**
+**Comparison opcodes status**:
 
-`LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM but are **not production-ready**:
+| Opcode | Status | Use in DEX |
+|--------|--------|------------|
+| `LessThanOrEqual` | Implemented (experimental) | Would enable partial fills via safemath or native opcode |
+| `IsEqualBase` | Implemented (experimental) | Would enable intent fill conditions |
+| `less_than_strict` | Sound (constrain-only) | ✅ Used in circuits |
 
-| Concern | Status |
-|---------|--------|
-| Isolation testing | Pass — the opcode works in isolation |
-| Integration tests | None — no end-to-end test for DEX with comparison opcodes |
-| Formal audit | Not started |
-| Delta-invert soundness | Unresolved — may be unsound near field boundary |
-| Blast radius if broken | High — swap amounts can be spoofed, enabling value theft |
+**The DEX's current status**: The current circuits use `constrain_equal_base` and `range_check`, not comparison opcodes. Atomic swaps work without `LessThanOrEqual`. Partial fills can use safemath assertion gadgets.
 
-**The DEX's current status**: The current circuits use `constrain_equal_base` and `range_check`, not comparison opcodes. Atomic swaps work without `LessThanOrEqual`. But partial fills would require it — and if broken, could allow a party to fill more than agreed.
-
-**What production readiness requires**:
-1. Integration test demonstrating partial fills with all amount checks enforced
-2. Formal soundness proof or concrete bound on delta-invert failure
-3. Audit by a ZK circuit expert
-4. Fuzzing with adversarial inputs near field boundaries
-
-**See**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full delta-invert analysis.
+**See**:
+- [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full analysis
+- [Safemath](../../../doc/src/arch/safemath.md) for the workaround templates
 
 ## Key Blockers
 
@@ -280,9 +277,10 @@ For a full example of adding opcodes, see the [zkas bincode documentation](../..
 |---------|----------|-------------|
 | Manual matching required | **High** | `CreateSwap → AcceptSwap → ExecuteSwap` requires third party to call ExecuteSwap |
 | No amount comparison | **High** | `execute_swap_v1.zk` doesn't compare Alice's offered vs Bob's requested amounts |
-| No partial fills | **Medium** | Would require `LessThanOrEqual` (grey-market) |
-| `LessThanOrEqual` if used | **Medium** | Grey-market opcode with delta-invert soundness concern |
+| No partial fills | **Medium** | Would require safemath or native `LessThanOrEqual` for amount checks |
 | No integration test | **High** | Full atomic swap flow not tested end-to-end |
+
+**Note on LessThanOrEqual**: Partial fills can use safemath assertion gadgets for bounded amount checks. Native opcode (when formally verified) would enable full Boolean return for composability. See [Safemath](../../../doc/src/arch/safemath.md).
 
 ## Roadmap: From MVP to Full Order Book
 

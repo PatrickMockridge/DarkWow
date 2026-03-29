@@ -279,27 +279,19 @@ For a full example of adding opcodes, see the [zkas bincode documentation](../..
 
 ## Opcode Safety
 
-**Comparison opcodes are grey-market goods — buyer beware.**
+**Comparison opcodes status**:
 
-`LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM but are **not production-ready**:
+| Opcode | Status | Use in Bridge |
+|--------|--------|---------------|
+| `LessThanOrEqual` | Implemented (experimental) | Future: fee thresholds, token-aware minimums |
+| `IsEqualBase` | Implemented (experimental) | Future: state machine transitions |
+| `less_than_strict` | Sound (constrain-only) | ✅ Used in circuits |
 
-| Concern | Status |
-|---------|--------|
-| Isolation testing | Pass — the opcode works in isolation |
-| Integration tests | None — no end-to-end test exists for comparison opcodes |
-| Formal audit | Not started |
-| Delta-invert soundness | Unresolved — may be unsound near field boundary |
-| Blast radius if broken | High — withdrawal conditions can be bypassed |
+**The bridge's current status**: The withdrawal circuit (`withdraw_v1.zk`) uses `constrain_equal_base`, `range_check`, and `less_than_strict` for minimum amount check. Future enhancements (fee thresholds, token-aware minimums) can use safemath assertion gadgets.
 
-**The bridge's current status**: The withdrawal circuit (`withdraw_v1.zk`) uses `constrain_equal_base`, `range_check`, and `less_than_strict` for minimum amount check. Future enhancements (fee thresholds, token-aware minimums) would require `LessThanOrEqual` once it becomes production-ready.
-
-**What production readiness requires**:
-1. Integration test demonstrating withdrawal with all conditions enforced
-2. Formal soundness proof or concrete bound on delta-invert failure
-3. Audit by a ZK circuit expert
-4. Fuzzing with adversarial inputs near field boundaries
-
-**See**: [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full delta-invert analysis.
+**See**:
+- [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full analysis
+- [Safemath](../../../doc/src/arch/safemath.md) for the workaround templates
 
 ## Key Blockers
 
@@ -308,9 +300,8 @@ For a full example of adding opcodes, see the [zkas bincode documentation](../..
 | Merkle verification | **Fixed** | `deposit_v1.zk` uses real `merkle_root` opcode |
 | External block header verification | **Critical** | `external_block_hash` not verified against actual chain |
 | Light client integration | **High** | Requires external chain's header chain tracking |
-| `LessThanOrEqual` (if used in future) | **High** | Grey-market opcode — see [Experimental Opcodes](../../../doc/src/arch/experimental-opcodes.md) |
 
-**Note**: Current circuits avoid all experimental opcodes. Any future feature using `LessThanOrEqual`, `IsEqualBase`, etc. must address soundness concerns first.
+**Note**: Current circuits avoid all experimental opcodes. Future features can use safemath assertion gadgets.
 
 ## Implementation Status
 

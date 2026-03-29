@@ -332,8 +332,10 @@ This is a **draft/placeholder** for pooled debt architecture.
 
 ### Blockers
 
-1. **`LessThanOrEqual` is experimental** — Grey-market goods; delta-invert soundness concern
-2. **No P2P oracle** — The XMR/DRK AMM pool for TWAP price discovery does not yet exist
+**Opcode layer**: None — all LTE checks use safemath assertion gadgets.
+
+1. **No P2P oracle** — The XMR/DRK AMM pool for TWAP price discovery does not yet exist
+2. **CDP Note integration** — Money contract's `spend_hook` to CDP engine not implemented
 3. **Integration tests needed** — Cannot verify full lifecycle without testnet
 
 ### What It Needs

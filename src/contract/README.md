@@ -13,12 +13,12 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 | **dex** | Atomic swap DAO with incremental transparency | ⚠️ Partial |
 | **drain_protection** | Endowment/treasury drain protections | ⚠️ Provisional |
 | **escrow** | Hashed Timelock Contract variant | ✅ Complete |
-| **identity** | ZK credential proofs using competency DAGs | ⚠️ Uses experimental opcodes |
+| **identity** | ZK credential proofs using competency DAGs | ✅ Uses safemath (Level 0 zk_only) |
 | **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
 | **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
 | **oracle** | Push-model oracle with attestation integration | ✅ Complete |
 | **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
-| **stablecoin** | Monero-collateralized stablecoin | ⚠️ Uses experimental opcodes |
+| **stablecoin** | Monero-collateralized stablecoin | ✅ Uses safemath |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete |
 
 ---

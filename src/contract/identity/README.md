@@ -407,22 +407,22 @@ Each step reveals only "meets criteria" — full history stays private.
 
 ## MVP Status
 
-**Partial MVP — experimental opcode integrated** — `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented in the zkVM (commit `41b0629e0`) and `create_claim_v1.zk` has been updated to use them. Integration testing remains.
-
-> **Note**: These opcodes are grey-market goods — they pass isolation tests but have not been formally audited, have no integration tests, and carry a delta-invert soundness concern. See [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full analysis of what production readiness requires.
+**Partial MVP — safemath assertion gadgets** — `create_claim_v1.zk` uses [safemath](https://codeberg.org/rusticml/darkfi-safemath) assertion templates instead of experimental `LessThanOrEqual`. The contract implements Level 0 (zk_only) semantics — verifier learns only "proof valid/invalid", not the predicate result.
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
 | `issue_credential_v1.zk` | Unread | Likely needs review |
-| `create_claim_v1.zk` | Verified | Uses `less_than_or_equal` for threshold checks, `is_equal_base` for type checks. **Experimental opcode.** |
+| `create_claim_v1.zk` | Verified | Uses safemath `assert_lte` pattern — no experimental opcodes |
 
 ### What It Needs
 
 - Integration test: issue credential → create claim → verify claim end-to-end
 - Review `issue_credential_v1.zk` for correctness
-- `IsEqualBase` delta-invert soundness fix (see zkvm_primitives.md)
+- `verify_claim_v1.zk` implementation
 
-**See**: [Contract MVP Status](../../../doc/src/arch/mvp_status.md) for the full cross-contract analysis.
+**See**:
+- [Safemath](../../../doc/src/arch/safemath.md) — safemath integration guide
+- [Contract MVP Status](../../../doc/src/arch/mvp_status.md) — full cross-contract analysis
 
 ## References
 
