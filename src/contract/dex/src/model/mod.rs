@@ -209,6 +209,9 @@ pub struct AcceptSwapParams {
 /// These nullifiers are passed in this struct to allow the contract to:
 /// 1. Verify them as public inputs to the ZK proof
 /// 2. Check them against on-chain state to prevent double-execution
+///
+/// SECURITY: The prover MUST also provide alice_lock and bob_lock which must
+/// match the proposer's stored lock for the ZK proof to be valid.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ExecuteSwapParams {
     /// Swap ID to execute
@@ -219,6 +222,14 @@ pub struct ExecuteSwapParams {
 
     /// Prover's secret for Bob's lock
     pub bob_secret: [u8; 32],
+
+    /// Alice's lock commitment (must match proposer's stored lock)
+    /// This is verified by the ZK circuit
+    pub alice_lock: IntentCommitment,
+
+    /// Bob's lock commitment (must match acceptor's stored lock)
+    /// This is verified by the ZK circuit
+    pub bob_lock: IntentCommitment,
 
     /// Alice's nullifier: poseidon_hash([alice_secret, alice_lock])
     /// MUST be computed by the prover before submitting

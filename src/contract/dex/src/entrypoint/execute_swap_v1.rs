@@ -142,6 +142,18 @@ pub(crate) fn dex_execute_swap_process_instruction_v1(
         }
     }
 
+    // SECURITY: Verify that provided locks match the stored values
+    // This prevents an attacker from executing a swap with mismatched locks
+    if params.alice_lock != swap.proposer_lock {
+        msg!("[ExecuteSwapV1] Error: Alice's lock does not match stored proposer_lock");
+        return Err(DexError::InvalidLockCommitment.into())
+    }
+
+    if params.bob_lock != swap.acceptor_lock {
+        msg!("[ExecuteSwapV1] Error: Bob's lock does not match stored acceptor_lock");
+        return Err(DexError::InvalidLockCommitment.into())
+    }
+
     // Verify nullifiers against on-chain state (double-execution check)
     // Now using nullifiers instead of lock_commitments
     let participants_db = wasm::db::db_lookup(cid, DEX_CONTRACT_PARTICIPANTS_TREE)?;

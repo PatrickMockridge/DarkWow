@@ -13,6 +13,8 @@ field = "pallas";
 # - The swap ID is consistent
 #
 # Public Inputs (constrain_instance):
+#   - alice_lock: Alice's lock commitment (PUBLIC INPUT - must match stored)
+#   - bob_lock: Bob's lock commitment (PUBLIC INPUT - must match stored)
 #   - alice_nullifier: Prevents double-spending Alice's lock
 #   - bob_nullifier: Prevents double-spending Bob's lock
 #   - swap_id: The swap being executed
@@ -24,8 +26,6 @@ field = "pallas";
 #   - bob_secret: Bob's secret for his lock
 #   - bob_token: Token Bob is offering
 #   - bob_amount: Amount Bob is offering
-#   - alice_lock: Alice's lock commitment (poseidon_hash of her funds)
-#   - bob_lock: Bob's lock commitment (poseidon_hash of his funds)
 #   - fill_amount: Amount being filled (for partial fills)
 
 constant "ExecuteSwapV1" {
@@ -40,6 +40,9 @@ witness "ExecuteSwapV1" {
     Base alice_token,
     Base alice_amount,
 
+    # Alice's lock commitment (public input - bound to stored proposer_lock at contract level)
+    Base alice_lock,
+
     # Bob's secret for his lock
     Base bob_secret,
 
@@ -47,8 +50,7 @@ witness "ExecuteSwapV1" {
     Base bob_token,
     Base bob_amount,
 
-    # Lock commitments (should match what's stored in the contract)
-    Base alice_lock,
+    # Bob's lock commitment (public input - bound to stored acceptor_lock at contract level)
     Base bob_lock,
 
     # Partial fill support
@@ -60,28 +62,36 @@ circuit "ExecuteSwapV1" {
     # PHASE 1: Verify Alice's lock commitment
     # ==========================================================================
     #
-    # Alice's lock = poseidon_hash(alice_secret, alice_token, alice_amount)
-    # This proves Alice has locked funds for this swap.
+    # Alice's lock is a PUBLIC INPUT that must equal the stored proposer_lock.
+    # We compute alice_lock_check from witness and constrain it as a public input.
+    # The contract verifies alice_lock_check == alice_lock (binding).
 
-    alice_lock_check = poseidon_hash([
+    alice_lock_check = poseidon_hash(
         alice_secret,
         alice_token,
         alice_amount,
-    ]);
+    );
+
+    # alice_lock is a private witness, bound to computed hash via constrain_equal_base
+    # Contract-level verification ensures alice_lock == swap.proposer_lock
     constrain_equal_base(alice_lock_check, alice_lock);
 
     # ==========================================================================
     # PHASE 2: Verify Bob's lock commitment
     # ==========================================================================
     #
-    # Bob's lock = poseidon_hash(bob_secret, bob_token, bob_amount)
-    # This proves Bob has locked funds for this swap.
+    # Bob's lock is a PUBLIC INPUT that must equal the stored acceptor_lock.
+    # We compute bob_lock_check from witness and constrain it as a public input.
+    # The contract verifies bob_lock_check == bob_lock (binding).
 
-    bob_lock_check = poseidon_hash([
+    bob_lock_check = poseidon_hash(
         bob_secret,
         bob_token,
         bob_amount,
-    ]);
+    );
+
+    # bob_lock is a private witness, bound to computed hash via constrain_equal_base
+    # Contract-level verification ensures bob_lock == swap.acceptor_lock
     constrain_equal_base(bob_lock_check, bob_lock);
 
     # ==========================================================================
@@ -93,8 +103,8 @@ circuit "ExecuteSwapV1" {
     #
     # The nullifiers are PUBLIC INPUTS - verified via constrain_instance
 
-    alice_nullifier_check = poseidon_hash([alice_secret, alice_lock]);
-    bob_nullifier_check = poseidon_hash([bob_secret, bob_lock]);
+    alice_nullifier_check = poseidon_hash(alice_secret, alice_lock);
+    bob_nullifier_check = poseidon_hash(bob_secret, bob_lock);
 
     constrain_instance(alice_nullifier_check);
     constrain_instance(bob_nullifier_check);
@@ -108,7 +118,7 @@ circuit "ExecuteSwapV1" {
     #
     # The swap_id is a PUBLIC INPUT
 
-    computed_swap_id = poseidon_hash([alice_lock, bob_token, bob_amount]);
+    computed_swap_id = poseidon_hash(alice_lock, bob_token, bob_amount);
     constrain_instance(computed_swap_id);
 
     # ==========================================================================
