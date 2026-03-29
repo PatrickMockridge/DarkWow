@@ -126,6 +126,8 @@ impl CreateTenderBuilder {
 pub struct SubmitBidBuilder {
     tender_id: Option<pallas::Base>,
     bid_id: Option<pallas::Base>,
+    bidder_pub_x: Option<pallas::Base>,
+    bidder_pub_y: Option<pallas::Base>,
     amount: Option<u64>,
     competency_commitment: Option<pallas::Base>,
     encrypted_payload: Option<Vec<u8>>,
@@ -143,6 +145,13 @@ impl SubmitBidBuilder {
 
     pub fn bid_id(mut self, id: pallas::Base) -> Self {
         self.bid_id = Some(id);
+        self
+    }
+
+    pub fn bidder_pubkey(mut self, pubkey: PublicKey) -> Self {
+        let (x, y) = pubkey.xy();
+        self.bidder_pub_x = Some(x);
+        self.bidder_pub_y = Some(y);
         self
     }
 
@@ -166,6 +175,8 @@ impl SubmitBidBuilder {
             proof: vec![],
             tender_id: self.tender_id.ok_or("tender_id not set")?,
             bid_id: self.bid_id.ok_or("bid_id not set")?,
+            bidder_pub_x: self.bidder_pub_x.ok_or("bidder_pub_x not set")?,
+            bidder_pub_y: self.bidder_pub_y.ok_or("bidder_pub_y not set")?,
             amount: self.amount.ok_or("amount not set")?,
             competency_commitment: self.competency_commitment.ok_or("competency_commitment not set")?,
             encrypted_payload: self.encrypted_payload.unwrap_or_default(),

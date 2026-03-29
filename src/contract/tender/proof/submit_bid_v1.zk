@@ -6,18 +6,20 @@ field = "pallas";
 #
 # This circuit proves:
 # - Bidder knows their secret key
-# - Bidder public key is correctly derived
+# - Bidder public key is correctly derived and matches the provided coordinates
 # - Bid is valid for this tender
 # - Competency requirements are met
 #
 # Public Inputs (constrain_instance):
 #   - tender_id: The tender this bid is for
 #   - bid_id: Poseidon hash commitment of bid
-#   - competency_commitment: Proves bidder meets requirements
+#   - bidder_pub_x: Bidder's public key x coordinate
+#   - bidder_pub_y: Bidder's public key y coordinate
 #
 # Witnesses:
 #   - bidder_secret: Bidder's secret key
 #   - amount: Bid amount (hidden)
+#   - bid_nonce: Random nonce for bid commitment
 
 constant "SubmitBid" {
     EcFixedPointBase NULLIFIER_K,
@@ -45,7 +47,15 @@ circuit "SubmitBid" {
     bidder_pub_y = ec_get_y(bidder_pub);
 
     # ==========================================================================
-    # PHASE 2: Compute bid ID commitment
+    # PHASE 2: Verify public key matches the provided coordinates
+    # ==========================================================================
+
+    # Constrain the derived public key to match the provided public inputs
+    constrain_instance(bidder_pub_x);
+    constrain_instance(bidder_pub_y);
+
+    # ==========================================================================
+    # PHASE 3: Compute bid ID commitment
     # ==========================================================================
     #
     # bid_id = H(tender_id, bidder_pub.x, bidder_pub.y, amount, bid_nonce)
@@ -62,7 +72,7 @@ circuit "SubmitBid" {
     );
 
     # ==========================================================================
-    # PHASE 3: Expose public inputs
+    # PHASE 4: Expose public inputs
     # ==========================================================================
 
     constrain_instance(tender_id);

@@ -36,7 +36,7 @@
 //! 7. Task tracked via Tau
 
 use darkfi_sdk::{
-    crypto::pasta_prelude::*,
+    crypto::{pasta_prelude::*, poseidon_hash},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -195,9 +195,13 @@ fn submit_bid_get_metadata_v1(
         return Err(ContractError::InvalidInstruction.into())
     }
 
+    // Public inputs include bidder_pub_x and bidder_pub_y so the apply function
+    // can store the actual bidder public key (derived from ZK witness)
     let mut public_inputs = vec![
         params.tender_id,
         params.bid_id,
+        params.bidder_pub_x,
+        params.bidder_pub_y,
     ];
 
     msg!("[tender::submit_bid_get_metadata_v1] Returning metadata: {:?}", public_inputs);
@@ -390,6 +394,7 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> ContractResult {
 
     let tenders_db = wasm::db::db_get(cid, TENDER_CONTRACT_TENDERS_TREE)?;
     let bids_db = wasm::db::db_get(cid, TENDER_CONTRACT_BIDS_TREE)?;
+    let nullifiers_db = wasm::db::db_get(cid, TENDER_CONTRACT_NULLIFIERS_TREE)?;
 
     // Get and verify tender
     let mut tender: Tender = match wasm::db::db_get(tenders_db, &serialize(&params.tender_id))? {
@@ -419,11 +424,17 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> ContractResult {
         return Err(ContractError::InvalidInstruction.into())
     }
 
+    // Check for double submission using nullifier
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.bid_id))? {
+        msg!("[tender::submit_bid_v1] ERROR: Bid already submitted");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
     // Create bid
     let bid = Bid {
         id: params.bid_id,
         tender_id: params.tender_id,
-        bidder_pubkey: [pallas::Base::zero(), pallas::Base::zero()], // Set from ZK witness
+        bidder_pubkey: [params.bidder_pub_x, params.bidder_pub_y],
         amount: params.amount,
         competency_commitment: params.competency_commitment,
         encrypted_payload: params.encrypted_payload,
@@ -434,6 +445,9 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> ContractResult {
 
     // Store bid
     wasm::db::db_set(bids_db, &serialize(&params.bid_id), &serialize(&bid))?;
+
+    // Store nullifier to prevent double submission
+    wasm::db::db_set(nullifiers_db, &serialize(&params.bid_id), &[])?;
 
     // Update tender state and count
     if tender.state == TenderState::Created {
@@ -449,7 +463,23 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> ContractResult {
 fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> ContractResult {
     msg!("[tender::reveal_bid_v1] Revealing bid: {:?}", params.bid_id);
 
+    let tenders_db = wasm::db::db_get(cid, TENDER_CONTRACT_TENDERS_TREE)?;
     let bids_db = wasm::db::db_get(cid, TENDER_CONTRACT_BIDS_TREE)?;
+    let nullifiers_db = wasm::db::db_get(cid, TENDER_CONTRACT_NULLIFIERS_TREE)?;
+
+    // Get and verify tender is in Revealed state
+    let tender: Tender = match wasm::db::db_get(tenders_db, &serialize(&params.tender_id))? {
+        Some(t) => t,
+        None => {
+            msg!("[tender::reveal_bid_v1] ERROR: Tender not found");
+            return Err(ContractError::InvalidInstruction.into())
+        }
+    };
+
+    if tender.state != TenderState::Revealed {
+        msg!("[tender::reveal_bid_v1] ERROR: Tender not in reveal state");
+        return Err(ContractError::InvalidInstruction.into())
+    }
 
     // Get and verify bid
     let mut bid: Bid = match wasm::db::db_get(bids_db, &serialize(&params.bid_id))? {
@@ -466,11 +496,27 @@ fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> ContractResult {
         return Err(ContractError::InvalidInstruction.into())
     }
 
+    // Check for double reveal using nullifier (separate from submit nullifier)
+    let reveal_nullifier = poseidon_hash(params.bid_id, pallas::Base::one());
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&reveal_nullifier))? {
+        msg!("[tender::reveal_bid_v1] ERROR: Bid already revealed");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Verify revealed amount matches the sealed bid amount
+    if params.revealed_amount != bid.amount {
+        msg!("[tender::reveal_bid_v1] ERROR: Revealed amount does not match sealed bid");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
     // Update bid with revealed amount
     bid.state = BidState::Revealed;
     bid.revealed_amount = Some(params.revealed_amount);
 
     wasm::db::db_set(bids_db, &serialize(&params.bid_id), &serialize(&bid))?;
+
+    // Store nullifier to prevent double reveal
+    wasm::db::db_set(nullifiers_db, &serialize(&reveal_nullifier), &[])?;
 
     msg!("[tender::reveal_bid_v1] Bid revealed successfully");
     Ok(())
@@ -499,6 +545,13 @@ fn close_tender_v1(cid: ContractId, params: CloseTenderParamsV1) -> ContractResu
     // Verify tender is in Bidding state
     if tender.state != TenderState::Bidding {
         msg!("[tender::close_tender_v1] ERROR: Tender not in bidding state");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Verify bid deadline has passed
+    let current_block = wasm::chain::get_block_height()?;
+    if current_block < tender.bid_deadline {
+        msg!("[tender::close_tender_v1] ERROR: Bid deadline not yet passed");
         return Err(ContractError::InvalidInstruction.into())
     }
 
@@ -555,6 +608,18 @@ fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> ContractRe
     // Verify bid is in Revealed state
     if winner_bid.state != BidState::Revealed {
         msg!("[tender::select_winner_v1] ERROR: Winner bid not revealed");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Verify winning amount matches the revealed bid amount
+    if params.winning_amount != winner_bid.revealed_amount.unwrap() {
+        msg!("[tender::select_winner_v1] ERROR: Winning amount does not match revealed bid");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Verify winner public key matches the bid's bidder public key
+    if params.winner_pubkey != winner_bid.bidder_pubkey {
+        msg!("[tender::select_winner_v1] ERROR: Winner public key does not match bid");
         return Err(ContractError::InvalidInstruction.into())
     }
 
@@ -623,6 +688,12 @@ fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> ContractResult {
     // Verify caller is requester
     if tender.requester_pubkey != params.requester_pubkey {
         msg!("[tender::reject_bid_v1] ERROR: Not requester");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Verify tender is in Revealed state (not Awarded)
+    if tender.state != TenderState::Revealed {
+        msg!("[tender::reject_bid_v1] ERROR: Tender not in reveal state");
         return Err(ContractError::InvalidInstruction.into())
     }
 

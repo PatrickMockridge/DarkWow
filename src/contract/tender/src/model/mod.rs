@@ -259,6 +259,10 @@ pub struct SubmitBidParamsV1 {
     pub tender_id: TenderId,
     /// Bid ID
     pub bid_id: BidId,
+    /// Bidder's public key x coordinate
+    pub bidder_pub_x: pallas::Base,
+    /// Bidder's public key y coordinate
+    pub bidder_pub_y: pallas::Base,
     /// Bid amount (hidden)
     pub amount: u64,
     /// Commitment to competency proof
