@@ -16,20 +16,36 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Data structures for stablecoin (CDP) contract calls
+//! Data structures for stablecoin (Pooled Debt) contract calls
 //!
-//! ## Design Principles (from Nethermind P2P Oracle)
+//! ## Architecture: Pooled Debt (Synthetix-style)
 //!
-//! 1. **AMM-based price feed**: TWAP from NETHER/DRK constant-product AMM pool
-//! 2. **PI Controller**: Proportional-Integral controller adjusts redemption rate
-//! 3. **Privacy**: All positions and amounts hidden via Pedersen commitments + SMT
-//! 4. **Self-sovereign**: No trusted price oracles, no governance can freeze
+//! Unlike individual CDP models (MakerDAO) where each position is tracked separately,
+//! this contract uses pooled debt where:
+//!
+//! - All collateral goes into a global pool
+//! - All debt is pooled together
+//! - Users hold "debt shares" representing their proportion of total debt
+//! - No individual position tracking = simpler privacy
+//!
+//! ## Why Pooled Debt for Privacy
+//!
+//! CDP Model (MakerDAO) problems:
+//! - Must prove individual position is valid (complex ZK)
+//! - Liquidator sees "position ID X was liquidated" (privacy leak)
+//! - Individual nullifiers/commitments for each position
+//!
+//! Pooled Model advantages:
+//! - No individual positions to track
+//! - Liquidation is "pool had shortfall" not "this person was liquidated"
+//! - Simpler ZK circuits
+//! - No position IDs that could leak information
 
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier};
 
-/// Namespace for stablecoin intents (used with generic intent primitives)
-pub const STABLECOIN_NAMESPACE: u64 = 0x0004;
+/// Namespace for stablecoin intents
+pub const STABLECOIN_NAMESPACE: u64 = 0x0005;
 
 /// Collateral type identifier
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -40,13 +56,13 @@ pub enum CollateralType {
     Drk,
 }
 
-/// CDP Engine initialization parameters
+/// Pooled Debt Engine initialization parameters
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeParams {
-    /// Initial minimum collateralization ratio (basis points)
+    /// Initial minimum collateralization ratio for pool (basis points, e.g., 15000 = 150%)
     pub min_collateralization_ratio: u64,
 
-    /// Initial liquidation threshold (basis points)
+    /// Liquidation threshold for pool (basis points)
     pub liquidation_threshold: u64,
 
     /// Liquidation penalty (basis points)
@@ -68,143 +84,74 @@ pub struct InitializeParams {
     pub price_deviation_threshold: u64,
 }
 
-/// Open a new CDP (Collateralized Debt Position)
+/// Deposit collateral into the pool
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct OpenPositionParams {
-    /// Pedersen commitment to collateral amount + debt (uses generic PrivateIntent commitment)
-    /// commitment = poseidon_hash([9001, owner_x, owner_y, namespace, payload_hash, expiry, nonce, blind])
-    pub position_commitment: IntentCommitment,
+pub struct DepositCollateralParams {
+    /// Commitment to the deposit (hides amount)
+    pub deposit_commitment: IntentCommitment,
 
-    /// Owner's public key for the position
-    pub owner_pub_x: [u8; 32],
-    pub owner_pub_y: [u8; 32],
-
-    /// Collateral type (XMR or DRK)
-    pub collateral_type: CollateralType,
-
-    /// Initial collateral amount (hidden in commitment)
+    /// Collateral amount (hidden in commitment)
     pub collateral_amount: u64,
 
-    /// Initial debt amount (stablecoin to mint)
-    pub debt_amount: u64,
+    /// Collateral type
+    pub collateral_type: CollateralType,
 
-    /// Merkle proof of membership in position tree
-    pub merkle_proof: Vec<[u8; 32]>,
-
-    /// Leaf index in Merkle tree (hidden via ZK)
-    pub leaf_index: u64,
-
-    /// ZK proof: position commitment valid + collateral sufficient
+    /// ZK proof: deposit is valid
     pub proof: Vec<u8>,
 
     /// Fee paid for this operation
     pub fee: u64,
 }
 
-/// Add collateral to an existing CDP
+/// Withdraw collateral from the pool (only if collateralization ratio allows)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct AddCollateralParams {
-    /// Nullifier to identify the position (uses generic PrivateIntent nullifier)
-    pub position_nullifier: IntentNullifier,
+pub struct WithdrawCollateralParams {
+    /// Nullifier to prove withdrawal is authorized
+    pub withdrawal_nullifier: IntentNullifier,
 
-    /// New collateral commitment (cumulative) - uses generic PrivateIntent commitment
+    /// New commitment after withdrawal
     pub new_commitment: IntentCommitment,
 
-    /// Amount of collateral being added (hidden in new commitment)
-    pub added_collateral: u64,
+    /// Amount of collateral to withdraw
+    pub withdraw_amount: u64,
 
-    /// Merkle proof of position existence
-    pub merkle_proof: Vec<[u8; 32]>,
-
-    /// Current position root
-    pub current_root: [u8; 32],
-
-    /// ZK proof: added collateral is valid
+    /// ZK proof: withdrawal doesn't violate pool collateralization
     pub proof: Vec<u8>,
 
     /// Fee paid for this operation
     pub fee: u64,
 }
 
-/// Remove collateral from a CDP (only if collateralization ratio allows)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct RemoveCollateralParams {
-    /// Nullifier to identify the position (uses generic PrivateIntent nullifier)
-    pub position_nullifier: IntentNullifier,
-
-    /// New commitment after removal (uses generic PrivateIntent commitment)
-    pub new_commitment: IntentCommitment,
-
-    /// Amount of collateral to remove
-    pub removed_collateral: u64,
-
-    /// Current debt (must remain below capacity)
-    pub current_debt: u64,
-
-    /// Merkle proof of position
-    pub merkle_proof: Vec<[u8; 32]>,
-
-    /// Current position root
-    pub current_root: [u8; 32],
-
-    /// ZK proof: removal doesn't violate collateralization ratio
-    pub proof: Vec<u8>,
-
-    /// Fee paid for this operation
-    pub fee: u64,
-}
-
-/// Mint stablecoin against collateral
+/// Mint stablecoin against collateral pool
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct MintStableParams {
-    /// Nullifier identifying the position (uses generic PrivateIntent nullifier)
-    pub position_nullifier: IntentNullifier,
-
-    /// New commitment with increased debt (uses generic PrivateIntent commitment)
-    pub new_commitment: IntentCommitment,
+    /// Commitment to the mint (hides debt amount)
+    pub mint_commitment: IntentCommitment,
 
     /// Amount of stablecoin to mint
     pub mint_amount: u64,
 
-    /// Current collateral amount (for ratio check)
-    pub current_collateral: u64,
+    /// Current total debt in pool (for ratio check)
+    pub total_debt: u64,
 
-    /// Merkle proof
-    pub merkle_proof: Vec<[u8; 32]>,
+    /// Current total collateral in pool (for ratio check)
+    pub total_collateral: u64,
 
-    /// Current position root
-    pub current_root: [u8; 32],
-
-    /// ZK proof: mint doesn't violate min collateralization
+    /// ZK proof: mint doesn't violate pool collateralization
     pub proof: Vec<u8>,
 
     /// Fee paid for this operation
     pub fee: u64,
 }
 
-/// Repay stablecoin debt to unlock collateral
+/// Repay stablecoin debt to reduce debt share
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RepayStableParams {
-    /// Nullifier identifying the position (uses generic PrivateIntent nullifier)
-    pub position_nullifier: IntentNullifier,
-
-    /// New commitment with reduced debt (uses generic PrivateIntent commitment)
-    pub new_commitment: IntentCommitment,
+    /// Commitment to the repayment
+    pub repay_commitment: IntentCommitment,
 
     /// Amount of stablecoin to burn (repay)
     pub repay_amount: u64,
-
-    /// Current collateral (for ratio check)
-    pub current_collateral: u64,
-
-    /// Current debt before repayment
-    pub current_debt: u64,
-
-    /// Merkle proof
-    pub merkle_proof: Vec<[u8; 32]>,
-
-    /// Current position root
-    pub current_root: [u8; 32],
 
     /// ZK proof: repayment is valid
     pub proof: Vec<u8>,
@@ -213,41 +160,38 @@ pub struct RepayStableParams {
     pub fee: u64,
 }
 
-/// Liquidate an undercollateralized CDP
+/// Liquidate pool if undercollateralized
+///
+/// Note: In pooled model, liquidation is global - the entire pool is either
+/// liquidated or not. Individual users' collateral is seized proportionally.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct LiquidateParams {
-    /// Nullifier of the position being liquidated (uses generic PrivateIntent nullifier)
-    pub position_nullifier: IntentNullifier,
+    /// Liquidation commitment
+    pub liquidation_commitment: IntentCommitment,
 
-    /// New commitment after liquidation (uses generic PrivateIntent commitment)
-    pub new_commitment: IntentCommitment,
+    /// Current total debt in pool
+    pub total_debt: u64,
 
-    /// Current collateral in position
-    pub collateral_amount: u64,
+    /// Current total collateral in pool
+    pub total_collateral: u64,
 
-    /// Current debt in position
-    pub debt_amount: u64,
-
-    /// Current price from TWAP
+    /// Current TWAP price
     pub current_price: u64,
 
-    /// Merkle proof of position
-    pub merkle_proof: Vec<[u8; 32]>,
+    /// Amount of debt to cover
+    pub debt_to_cover: u64,
 
-    /// Current position root
-    pub current_root: [u8; 32],
-
-    /// ZK proof: position is below liquidation threshold
+    /// ZK proof: pool is undercollateralized
     pub proof: Vec<u8>,
 
-    /// Liquidation reward to liquidator
+    /// Liquidation reward
     pub liquidation_reward: u64,
 
     /// Fee paid for this operation
     pub fee: u64,
 }
 
-/// Update CDP engine configuration (governance)
+/// Update pool configuration (governance)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct UpdateConfigParams {
     /// New minimum collateralization ratio
@@ -275,59 +219,64 @@ pub struct UpdateConfigParams {
     pub price_deviation_threshold: u64,
 }
 
-/// Stored CDP position record
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct Position {
-    /// Position commitment hash (uses generic PrivateIntent commitment)
-    pub commitment: IntentCommitment,
+// ============================================================================
+// POOLED DEBT STATE (not per-user positions)
+// ============================================================================
 
+/// Global debt pool state
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DebtPool {
+    /// Total debt in the pool (all stablecoins minted)
+    pub total_debt: u64,
+
+    /// Total collateral value (in stablecoin terms)
+    pub total_collateral: u64,
+
+    /// Accumulated fees from interest
+    pub accumulated_fees: u64,
+
+    /// Last update timestamp
+    pub last_update: u64,
+}
+
+/// Collateral pool for a specific collateral type
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CollateralPool {
+    /// Collateral type
+    pub collateral_type: CollateralType,
+
+    /// Total amount of this collateral type deposited
+    pub total_deposited: u64,
+
+    /// Current value ratio (to stablecoin)
+    pub value_ratio: u64,
+
+    /// Last update timestamp
+    pub last_update: u64,
+}
+
+/// User's debt share record
+///
+/// Note: In the pooled model, we don't track individual positions.
+/// Instead, users have "debt shares" that represent their proportion
+/// of the total debt. Their actual collateral is pooled.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DebtShare {
     /// Owner's public key
     pub owner_pub_x: [u8; 32],
     pub owner_pub_y: [u8; 32],
 
-    /// Collateral type
-    pub collateral_type: CollateralType,
-
-    /// Collateral amount (hidden in commitment)
-    pub collateral_amount: u64,
-
-    /// Debt amount (stablecoin minted, hidden in commitment)
+    /// Amount of stablecoin debt they owe
     pub debt_amount: u64,
 
-    /// Accumulated stability fee
-    pub accumulated_fee: u64,
-
-    /// Whether position has been liquidated
-    pub liquidated: bool,
+    /// Commitment for this debt position
+    pub commitment: IntentCommitment,
 
     /// Creation timestamp
     pub created_at: u64,
 
     /// Last update timestamp
     pub updated_at: u64,
-}
-
-/// Stored liquidation record
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct Liquidation {
-    /// Position nullifier (uses generic PrivateIntent nullifier)
-    pub position_nullifier: IntentNullifier,
-
-    /// Liquidator public key
-    pub liquidator_pub_x: [u8; 32],
-    pub liquidator_pub_y: [u8; 32],
-
-    /// Collateral seized
-    pub collateral_seized: u64,
-
-    /// Debt burned
-    pub debt_burned: u64,
-
-    /// Liquidation penalty
-    pub penalty: u64,
-
-    /// Timestamp
-    pub liquidated_at: u64,
 }
 
 /// PI Controller state for redemption rate
@@ -358,34 +307,75 @@ pub struct PriceFeed {
     /// TWAP window end
     pub window_end: u64,
 
-    /// NETHER/DRK pool reserve0
+    /// Pool reserve0
     pub reserve0: u64,
 
-    /// NETHER/DRK pool reserve1
+    /// Pool reserve1
     pub reserve1: u64,
 
     /// Block timestamp
     pub timestamp: u64,
 }
 
+/// Global liquidation record
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct LiquidationRecord {
+    /// Total debt covered
+    pub debt_covered: u64,
+
+    /// Total collateral seized
+    pub collateral_seized: u64,
+
+    /// Liquidation penalty applied
+    pub penalty: u64,
+
+    /// Liquidator public key
+    pub liquidator_pub_x: [u8; 32],
+    pub liquidator_pub_y: [u8; 32],
+
+    /// Timestamp
+    pub liquidated_at: u64,
+}
+
 // ============================================================================
-// DESIGN NOTES: How This Differs from Traditional CDPs
+// DESIGN NOTES: Why Pooled Debt vs Individual CDP
 // ============================================================================
 //
-// Traditional CDP (MakerDAO DAI):
-// - Governance-controlled parameters
-// - Price oracles can be manipulated
-// - All positions and amounts public
-// - Liquidation auctions can be front-run
+// INDIVIDUAL CDP MODEL (original DarkFi approach, possible but complex):
 //
-// This Design (DarkFi Stablecoin):
-// - PI Controller replaces governance for rate adjustment
-// - AMM TWAP is manipulation-resistant
-// - All positions and amounts hidden via ZK
-// - Liquidation can be triggered by anyone via ZK proof
+// Pros:
+// - Users have individual positions with specific collateral/debt
+// - Can implement partial liquidations
+// - More granular control over positions
 //
-// Key Innovation: The P2P Oracle uses the NETHER/DRK AMM pool itself as
-// the price feed, creating a self-referential stability mechanism where
-// the stablecoin's own collateral pool provides price discovery.
+// Cons:
+// - Must prove individual position validity (complex ZK circuits)
+// - Position IDs leak information: "position 123 was liquidated"
+// - Liquidators can see specific positions being liquidated
+// - Individual nullifiers/commitments for each position
+// - ZK circuits need to verify per-position collateralization
 //
+// POOLED DEBT MODEL (this implementation, simpler for privacy):
+//
+// Pros:
+// - No individual positions to track
+// - Liquidation is "pool had shortfall" - no position IDs leaked
+// - Simpler ZK circuits
+// - All collateral backs all debt - more capital efficient
+//
+// Cons:
+// - Cannot liquidate individual positions
+// - Entire pool must be healthy or entire pool can be liquidated
+// - User's collateral is always at risk from others' behavior
+//
+// The pooled model was chosen for the MVP because:
+// 1. Simpler ZK circuits (no per-position proofs)
+// 2. Better privacy (no position IDs that could be tracked)
+// 3. Faster to implement
+// 4. Individual CDP can be added later as a layer on top
+//
+// TO ADD INDIVIDUAL CDP LATER:
+// - Layer individual position tracking on top of pooled debt
+// - Use attestation contract to verify individual positions
+// - Each user can choose pooled (simpler) or individual (more control)
 // ============================================================================
