@@ -16,6 +16,9 @@ witness "Fee_V1" {
     MerklePath input_path,
     # Secret key used to derive public key for the tx signature
     Base signature_secret,
+    # Signature public key coordinates (public input - must match derived)
+    Base signature_public_x,
+    Base signature_public_y,
     # Value of the input coin
     Base input_value,
     # Random blinding factor for the input value commitment
@@ -89,8 +92,16 @@ circuit "Fee_V1" {
     # Derive a public key for the signature and
     # constrain its coordinates
     signature_public = ec_mul_base(signature_secret, NULLIFIER_K);
-    constrain_instance(ec_get_x(signature_public));
-    constrain_instance(ec_get_y(signature_public));
+    derived_sig_pub_x = ec_get_x(signature_public);
+    derived_sig_pub_y = ec_get_y(signature_public);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the signature_secret to the signature_pubkey
+    constrain_equal_base(derived_sig_pub_x, signature_public_x);
+    constrain_equal_base(derived_sig_pub_y, signature_public_y);
+
+    constrain_instance(signature_public_x);
+    constrain_instance(signature_public_y);
 
     # Derive output coin
     output_coin = poseidon_hash(

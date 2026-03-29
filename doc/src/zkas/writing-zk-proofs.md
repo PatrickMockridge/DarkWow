@@ -98,3 +98,47 @@ You should see something like:
 
 ![](../assets/zk-circuit-layout.png)
 
+## Public Key Derivation Pattern
+
+When deriving public keys from secrets in circuits, you **must** use `constrain_equal_base` to bind the derived coordinates to public inputs. This prevents a vulnerability where a malicious prover could claim any public key without knowing the corresponding secret.
+
+**Required Pattern**:
+
+```zk
+witness "Example" {
+    Base secret,
+    Base pub_x,      # Public input witness
+    Base pub_y,      # Public input witness
+}
+
+circuit "Example" {
+    # Derive public key from secret
+    pub = ec_mul_base(secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(pub);
+    derived_pub_y = ec_get_y(pub);
+
+    # CRITICAL: Bind derived coordinates to public inputs
+    constrain_equal_base(derived_pub_x, pub_x);
+    constrain_equal_base(derived_pub_y, pub_y);
+
+    # Now expose as public inputs
+    constrain_instance(pub_x);
+    constrain_instance(pub_y);
+}
+```
+
+**Common Mistake** (vulnerable):
+
+```zk
+# WRONG: Missing constrain_equal_base binding
+pub = ec_mul_base(secret, NULLIFIER_K);
+pub_x = ec_get_x(pub);
+pub_y = ec_get_y(pub);
+constrain_instance(pub_x);  # No binding! Vulnerable!
+constrain_instance(pub_y);  # No binding! Vulnerable!
+```
+
+A pre-commit hook at `hooks/pre-commit` automatically detects this vulnerability and rejects commits containing it.
+
+**See Also**: [Public Key Constraint Hook](../arch/pubkey-constraint-hook.md)
+

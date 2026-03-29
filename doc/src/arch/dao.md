@@ -452,3 +452,24 @@ Optional: many DAOs these days implement Abstain, which increases the
 quorum without voting yes. This is for when you want to weak support
 a measure, allowing it to reach quorum faster. This could be
 implemented in DarkFi, by allowing the vote yes to optionally be 0.
+
+# Security: Public Key Constraints
+
+The DAO circuits use the `constrain_equal_base` pattern to bind derived public keys to public inputs. This prevents a vulnerability where a malicious prover could claim any public key without knowing the corresponding secret.
+
+All DAO circuits have been audited and fixed to use the correct pattern:
+
+```zk
+# Derive and bind public key
+pub = ec_mul_base(secret, NULLIFIER_K);
+derived_pub_x = ec_get_x(pub);
+derived_pub_y = ec_get_y(pub);
+constrain_equal_base(derived_pub_x, witness_pub_x);
+constrain_equal_base(derived_pub_y, witness_pub_y);
+constrain_instance(witness_pub_x);
+constrain_instance(witness_pub_y);
+```
+
+A pre-commit hook (`hooks/pre-commit`) automatically rejects commits containing the vulnerable pattern.
+
+**See Also**: [Public Key Constraint Hook](pubkey-constraint-hook.md)

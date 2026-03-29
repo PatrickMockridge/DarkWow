@@ -1,0 +1,155 @@
+#!/bin/bash
+# Pre-commit hook to detect missing constrain_equal_base after pubkey derivation
+#
+# This hook scans .zk files for the vulnerable pattern where public keys are
+# derived via ec_mul_base + ec_get_x/y but NOT constrained with constrain_equal_base.
+#
+# The correct pattern requires:
+#   1. pub = ec_mul_base(secret, CONSTANT)
+#   2. pub_x = ec_get_x(pub), pub_y = ec_get_y(pub)
+#   3. constrain_equal_base(pub_x, witness_pub_x)  # BINDING
+#   4. constrain_equal_base(pub_y, witness_pub_y)  # BINDING
+#   5. constrain_instance(witness_pub_x)  # EXPOSE
+#   6. constrain_instance(witness_pub_y)  # EXPOSE
+#
+# The vulnerable pattern is missing steps 3-4.
+
+echo "Checking for missing constrain_equal_base pattern..."
+
+VULNERABLE=0
+
+# Find all .zk files being committed
+for file in $(git diff --cached --name-only --diff-filter=ACM | grep '\.zk$'); do
+    if [ ! -f "$file" ]; then
+        continue
+    fi
+
+    # Skip if file was just renamed to this name (doesn't exist yet in working dir)
+    if git ls-files --error-unmatch "$file" 2>/dev/null; then
+        # File exists in repo, check its content
+        content=$(cat "$file")
+    else
+        # New file, use the staged version
+        content=$(git show ":$file" 2>/dev/null)
+    fi
+
+    if [ -z "$content" ]; then
+        continue
+    fi
+
+    # Pattern detection:
+    # Look for ec_get_x followed by constrain_instance WITHOUT constrain_equal_base
+    # This regex looks for lines where ec_get_x or ec_get_y result is constrained
+    # but NOT bound via constrain_equal_base
+
+    # Check for the vulnerable pattern: ec_get_x(...); followed by constrain_instance(...)
+    # where there's no constrain_equal_base between them
+
+    # Split into lines for analysis
+    lines=$(echo "$content" | grep -n '.' | cut -d: -f2-)
+
+    # Track line numbers of ec_get_x and ec_get_y calls
+    declare -a get_x_lines
+    declare -a get_y_lines
+
+    # More targeted check: look for constrain_instance of ec_get_x/y results
+    # The pattern is:
+    #   variable = ec_get_x(something)
+    #   ...
+    #   constrain_instance(variable)
+    # WITHOUT a preceding constrain_equal_base(variable, ...)
+
+    # Use awk for multi-line pattern detection (standard AWK compatible)
+    vulnerable_lines=$(echo "$content" | awk '
+    BEGIN { in_circuit = 0; pending_get_x = ""; pending_get_y = "" }
+
+    /circuit "/ { in_circuit = 1; pending_get_x = ""; pending_get_y = "" }
+    /^}/ { in_circuit = 0 }
+
+    # Track ec_get_x assignments
+    /^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]* = ec_get_x/ {
+        if (in_circuit) {
+            # Extract the variable name being assigned using standard AWK
+            # Pattern: whitespace + var_name + = ec_get_x(
+            if (match($0, /^[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*/)) {
+                pending_get_x = substr($0, RSTART, RLENGTH)
+                # Remove leading whitespace
+                gsub(/^[[:space:]]+/, "", pending_get_x)
+            }
+        }
+    }
+
+    # Track ec_get_y assignments
+    /^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]* = ec_get_y/ {
+        if (in_circuit) {
+            if (match($0, /^[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*/)) {
+                pending_get_y = substr($0, RSTART, RLENGTH)
+                gsub(/^[[:space:]]+/, "", pending_get_y)
+            }
+        }
+    }
+
+    # Check for constrain_equal_base on pending variables (this is GOOD - clears the flag)
+    /^[[:space:]]*constrain_equal_base/ {
+        if (in_circuit) {
+            if (pending_get_x != "" && index($0, pending_get_x) > 0) {
+                pending_get_x = ""
+            }
+            if (pending_get_y != "" && index($0, pending_get_y) > 0) {
+                pending_get_y = ""
+            }
+        }
+    }
+
+    # Check for constrain_instance on pending variables (this is BAD - vulnerability!)
+    /^[[:space:]]*constrain_instance/ {
+        if (in_circuit) {
+            if (pending_get_x != "" && index($0, pending_get_x) > 0) {
+                printf "%s: VULNERABLE: %s used in constrain_instance without constrain_equal_base\n", FILENAME, pending_get_x
+                pending_get_x = ""
+                VULNERABLE = 1
+            }
+            if (pending_get_y != "" && index($0, pending_get_y) > 0) {
+                printf "%s: VULNERABLE: %s used in constrain_instance without constrain_equal_base\n", FILENAME, pending_get_y
+                pending_get_y = ""
+                VULNERABLE = 1
+            }
+        }
+    }
+
+    # Reset pending vars when we see new assignments (they are overwritten)
+    /^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]* = ec_mul_base/ { pending_get_x = ""; pending_get_y = "" }
+    /^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]* = ec_mul_var_base/ { pending_get_x = ""; pending_get_y = "" }
+
+    END { exit VULNERABLE }
+    ' 2>&1) || vulnerable_lines="$vulnerable_lines"
+
+    if [ -n "$vulnerable_lines" ] && [ "$vulnerable_lines" != "1" ]; then
+        echo "ERROR: Vulnerable pubkey derivation pattern detected!"
+        echo "$vulnerable_lines"
+        echo ""
+        echo "FIX: Add constrain_equal_base to bind the derived public key to its witness."
+        echo "Example:"
+        echo "  BEFORE (vulnerable):"
+        echo "    pub = ec_mul_base(secret, NULLIFIER_K);"
+        echo "    pub_x = ec_get_x(pub);"
+        echo "    constrain_instance(pub_x);"
+        echo ""
+        echo "  AFTER (sound):"
+        echo "    pub = ec_mul_base(secret, NULLIFIER_K);"
+        echo "    pub_x = ec_get_x(pub);"
+        echo "    constrain_equal_base(pub_x, witness_pub_x);  // BIND"
+        echo "    constrain_instance(witness_pub_x);"
+        echo ""
+        VULNERABLE=1
+    fi
+done
+
+if [ $VULNERABLE -eq 1 ]; then
+    echo "Commit rejected: vulnerable constrain_equal_base pattern detected."
+    echo "Add constrain_equal_base constraints to bind derived public keys to their witnesses."
+    exit 1
+fi
+
+echo "No vulnerable patterns detected."
+exit 0

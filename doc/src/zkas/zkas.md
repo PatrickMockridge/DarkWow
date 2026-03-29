@@ -25,3 +25,26 @@ can be added by extending
 {{#include ../../../bin/zkas/src/main.rs:zkas}}
 ```
 
+# Security: Public Key Derivation
+
+When adding circuits that derive public keys from secrets using `ec_mul_base` + `ec_get_x/y`, you **must** bind the derived coordinates to public inputs using `constrain_equal_base`. A pre-commit hook (`hooks/pre-commit`) automatically rejects circuits missing this binding.
+
+**Required Pattern**:
+
+```zk
+# Derive and bind
+pub = ec_mul_base(secret, NULLIFIER_K);
+derived_x = ec_get_x(pub);
+derived_y = ec_get_y(pub);
+constrain_equal_base(derived_x, witness_x);  # BIND
+constrain_equal_base(derived_y, witness_y);  # BIND
+
+# Then expose
+constrain_instance(witness_x);
+constrain_instance(witness_y);
+```
+
+**Without binding**: A malicious prover can claim any public key without knowing the secret.
+
+**See Also**: [Public Key Constraint Hook](../arch/pubkey-constraint-hook.md)
+

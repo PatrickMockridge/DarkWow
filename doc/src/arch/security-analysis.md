@@ -783,6 +783,8 @@ circuit "Example" {
 | Contract | Circuit | Status |
 |----------|---------|--------|
 | money | auth_token_mint_v1.zk | ✅ Fixed |
+| money | fee_v1.zk | ✅ Fixed (signature_public) |
+| money | burn_v1.zk | ✅ Fixed (signature_public) |
 | oracle | register_oracle_v1.zk | ✅ Fixed |
 | drain_protection | exit_v1.zk | ✅ Fixed |
 | dao | exec.zk | ✅ Fixed |
@@ -799,10 +801,18 @@ circuit "Example" {
 | tender | reveal_bid_v1.zk | ✅ Fixed |
 
 **Previously Fixed Circuits** (prior audit sessions):
-- dex/execute_swap_v1.zk, dex/cancel_swap_v1.zk, dex/create_swap_v1.zk, dex/accept_swap_v1.zk
+- dex/execute_swap_v1.zk, dex/cancel_swap_v1.zk
 - escrow/claim_v1.zk, escrow/refund_v1.zk
 - auction/claim_winnings_v1.zk, auction/close_auction_v1.zk, auction/refund_bid_v1.zk, auction/settle_auction_v1.zk
 - attestation/consume_claim_v1.zk, attestation/create_attestation_v1.zk
+
+**Additional Fixes** (money and dex signature_public):
+| Contract | Circuit | Status |
+|----------|---------|--------|
+| money | fee_v1.zk | ✅ Fixed |
+| money | burn_v1.zk | ✅ Fixed |
+| dex | create_swap_v1.zk | ✅ Fixed |
+| dex | accept_swap_v1.zk | ✅ Fixed |
 
 **DAO Circuits Fixed** (all 8 now fixed with constrain_equal_base):
 | Contract | Circuit | Unconstrained Pubkeys |
@@ -816,9 +826,9 @@ circuit "Example" {
 | dao | propose-input.zk | signature_public | ✅ Fixed |
 | dao | auth-money-transfer-enc-coin.zk | ephem_public | ✅ Fixed |
 
-**Prevention: Git Pre-commit Hook** (`.git/hooks/pre-commit`):
+**Prevention: Git Pre-commit Hook** (`hooks/pre-commit`):
 
-A pre-commit hook now detects the vulnerable pattern and rejects commits containing it:
+A pre-commit hook in the repository detects the vulnerable pattern and rejects commits containing it:
 
 ```bash
 # The hook detects when constrain_instance is used on ec_get_x/y results
