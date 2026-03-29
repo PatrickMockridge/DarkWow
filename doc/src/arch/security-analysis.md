@@ -802,7 +802,7 @@ circuit "Example" {
 - dex/execute_swap_v1.zk, dex/cancel_swap_v1.zk, dex/create_swap_v1.zk, dex/accept_swap_v1.zk
 - escrow/claim_v1.zk, escrow/refund_v1.zk
 - auction/claim_winnings_v1.zk, auction/close_auction_v1.zk, auction/refund_bid_v1.zk, auction/settle_auction_v1.zk
-- attestation/consume_claim_v1.zk
+- attestation/consume_claim_v1.zk, attestation/create_attestation_v1.zk
 
 **DAO Circuits Still Needing Fix** (systematic pattern across multiple circuits):
 | Contract | Circuit | Unconstrained Pubkeys |
