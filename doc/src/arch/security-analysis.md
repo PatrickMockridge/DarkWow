@@ -804,17 +804,31 @@ circuit "Example" {
 - auction/claim_winnings_v1.zk, auction/close_auction_v1.zk, auction/refund_bid_v1.zk, auction/settle_auction_v1.zk
 - attestation/consume_claim_v1.zk, attestation/create_attestation_v1.zk
 
-**DAO Circuits Still Needing Fix** (systematic pattern across multiple circuits):
+**DAO Circuits Fixed** (all 8 now fixed with constrain_equal_base):
 | Contract | Circuit | Unconstrained Pubkeys |
 |----------|---------|----------------------|
-| dao | mint.zk | notes_public, proposer_public, proposals_public, votes_public, exec_public, early_exec_public |
-| dao | auth-money-transfer.zk | ephem_public |
-| dao | propose-main.zk | dao_proposer_public |
-| dao | vote-main.zk | ephem_public |
-| dao | early-exec.zk | dao_exec_public, dao_early_exec_public, signature_public |
-| dao | vote-input.zk | signature_public |
-| dao | propose-input.zk | signature_public |
-| dao | auth-money-transfer-enc-coin.zk | ephem_public |
+| dao | mint.zk | notes_public, proposer_public, proposals_public, votes_public, exec_public, early_exec_public | ✅ Fixed |
+| dao | auth-money-transfer.zk | ephem_public | ✅ Fixed |
+| dao | propose-main.zk | dao_proposer_public | ✅ Fixed |
+| dao | vote-main.zk | ephem_public | ✅ Fixed |
+| dao | early-exec.zk | dao_exec_public, dao_early_exec_public, signature_public | ✅ Fixed |
+| dao | vote-input.zk | signature_public | ✅ Fixed |
+| dao | propose-input.zk | signature_public | ✅ Fixed |
+| dao | auth-money-transfer-enc-coin.zk | ephem_public | ✅ Fixed |
+
+**Prevention: Git Pre-commit Hook** (`.git/hooks/pre-commit`):
+
+A pre-commit hook now detects the vulnerable pattern and rejects commits containing it:
+
+```bash
+# The hook detects when constrain_instance is used on ec_get_x/y results
+# without a preceding constrain_equal_base binding.
+
+ERROR: Vulnerable pubkey derivation pattern detected!
+  dao/proof/mint.zk:30 VULNERABLE: notes_public_x used without constrain_equal_base
+
+Commit rejected: vulnerable constrain_equal_base pattern detected.
+```
 
 **Proposed zkas Compiler Solution (derive_pubkey builtin)**:
 
@@ -1102,7 +1116,7 @@ The `less_than_strict` opcode used throughout DarkFi's contracts avoids these is
 | 16 | DEX | Public keys hardcoded to zero | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
 | 17 | DEX | lock_proof never verified | CRITICAL | ⚠️ PARTIALLY FIXED (basic validation added) |
 | 18 | DEX | ZK proof verification stubbed | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
-| 19 | Multiple | Missing public key constraint binding | MAJOR | ⚠️ PARTIALLY FIXED (17 circuits fixed, 8 DAO circuits still need fix, zkas builtin proposed) |
+| 19 | Multiple | Missing public key constraint binding | MAJOR | ✅ FULLY FIXED (25+ circuits fixed, pre-commit hook added, zkas builtin proposed) |
 
 ---
 

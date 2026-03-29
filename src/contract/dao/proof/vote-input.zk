@@ -26,6 +26,8 @@ witness "VoteInput" {
     SparseMerklePath null_path,
 
     Base signature_secret,
+    Base signature_public_x,
+    Base signature_public_y,
 }
 
 circuit "VoteInput" {
@@ -73,6 +75,14 @@ circuit "VoteInput" {
     constrain_instance(merkle_coin_root);
 
     signature_public = ec_mul_base(signature_secret, NULLIFIER_K);
-    constrain_instance(ec_get_x(signature_public));
-    constrain_instance(ec_get_y(signature_public));
+    derived_sig_pub_x = ec_get_x(signature_public);
+    derived_sig_pub_y = ec_get_y(signature_public);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the signature_secret to the signature_pubkey
+    constrain_equal_base(derived_sig_pub_x, signature_public_x);
+    constrain_equal_base(derived_sig_pub_y, signature_public_y);
+
+    constrain_instance(signature_public_x);
+    constrain_instance(signature_public_y);
 }

@@ -31,7 +31,11 @@ witness "EarlyExec" {
     Base dao_votes_public_x,
     Base dao_votes_public_y,
     Base dao_exec_secret,
+    Base dao_exec_public_x,
+    Base dao_exec_public_y,
     Base dao_early_exec_secret,
+    Base dao_early_exec_public_x,
+    Base dao_early_exec_public_y,
     Base dao_bulla_blind,
 
     # Votes
@@ -45,18 +49,24 @@ witness "EarlyExec" {
 
     # Signature secret
     Base signature_secret,
+    Base signature_public_x,
+    Base signature_public_y,
 }
 
 circuit "EarlyExec" {
     # Derive DAO executor public key
     dao_exec_public = ec_mul_base(dao_exec_secret, NULLIFIER_K);
-    dao_exec_public_x = ec_get_x(dao_exec_public);
-    dao_exec_public_y = ec_get_y(dao_exec_public);
+    derived_exec_pub_x = ec_get_x(dao_exec_public);
+    derived_exec_pub_y = ec_get_y(dao_exec_public);
+    constrain_equal_base(derived_exec_pub_x, dao_exec_public_x);
+    constrain_equal_base(derived_exec_pub_y, dao_exec_public_y);
 
     # Derive DAO early executor public key for 2FA
     dao_early_exec_public = ec_mul_base(dao_early_exec_secret, NULLIFIER_K);
-    dao_early_exec_public_x = ec_get_x(dao_early_exec_public);
-    dao_early_exec_public_y = ec_get_y(dao_early_exec_public);
+    derived_early_exec_pub_x = ec_get_x(dao_early_exec_public);
+    derived_early_exec_pub_y = ec_get_y(dao_early_exec_public);
+    constrain_equal_base(derived_early_exec_pub_x, dao_early_exec_public_x);
+    constrain_equal_base(derived_early_exec_pub_y, dao_early_exec_public_y);
 
     dao_bulla = poseidon_hash(
         dao_proposer_limit,
@@ -130,7 +140,15 @@ circuit "EarlyExec" {
 
     # Derive a public key for the signature and constrain its coordinates
     signature_public = ec_mul_base(signature_secret, NULLIFIER_K);
-    constrain_instance(ec_get_x(signature_public));
-    constrain_instance(ec_get_y(signature_public));
+    derived_sig_pub_x = ec_get_x(signature_public);
+    derived_sig_pub_y = ec_get_y(signature_public);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the signature_secret to the signature_pubkey
+    constrain_equal_base(derived_sig_pub_x, signature_public_x);
+    constrain_equal_base(derived_sig_pub_y, signature_public_y);
+
+    constrain_instance(signature_public_x);
+    constrain_instance(signature_public_y);
 }
 

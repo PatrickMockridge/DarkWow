@@ -32,6 +32,8 @@ witness "ProposeMain" {
     Base dao_notes_public_x,
     Base dao_notes_public_y,
     Base dao_proposer_secret,
+    Base dao_proposer_public_x,
+    Base dao_proposer_public_y,
     Base dao_proposals_public_x,
     Base dao_proposals_public_y,
     Base dao_votes_public_x,
@@ -52,8 +54,13 @@ circuit "ProposeMain" {
 
     # Derive DAO proposer public key
     dao_proposer_public = ec_mul_base(dao_proposer_secret, NULLIFIER_K);
-    dao_proposer_public_x = ec_get_x(dao_proposer_public);
-    dao_proposer_public_y = ec_get_y(dao_proposer_public);
+    derived_proposer_pub_x = ec_get_x(dao_proposer_public);
+    derived_proposer_pub_y = ec_get_y(dao_proposer_public);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the dao_proposer_secret to the dao_proposer_pubkey
+    constrain_equal_base(derived_proposer_pub_x, dao_proposer_public_x);
+    constrain_equal_base(derived_proposer_pub_y, dao_proposer_public_y);
 
     dao_bulla = poseidon_hash(
         dao_proposer_limit,

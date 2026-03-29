@@ -46,6 +46,10 @@ witness "AuthMoneyTransfer" {
 
     # Epehemeral secret used for diffie-hellman shared secret derivation
     Base ephem_secret,
+
+    # Ephemeral public key coordinates (public input - must match derived)
+    Base ephem_pub_x,
+    Base ephem_pub_y,
 }
 
 circuit "AuthMoneyTransfer" {
@@ -120,8 +124,16 @@ circuit "AuthMoneyTransfer" {
 
     # Ephemeral public key
     ephem_public = ec_mul_base(ephem_secret, NULLIFIER_K);
-    constrain_instance(ec_get_x(ephem_public));
-    constrain_instance(ec_get_y(ephem_public));
+    derived_ephem_pub_x = ec_get_x(ephem_public);
+    derived_ephem_pub_y = ec_get_y(ephem_public);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the ephem_secret to the ephem_pubkey
+    constrain_equal_base(derived_ephem_pub_x, ephem_pub_x);
+    constrain_equal_base(derived_ephem_pub_y, ephem_pub_y);
+
+    constrain_instance(ephem_pub_x);
+    constrain_instance(ephem_pub_y);
 
     # The shared_point C = eP = dE
     shared_point = ec_mul_var_base(ephem_secret, dao_notes_public_key);
