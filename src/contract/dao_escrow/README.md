@@ -290,6 +290,14 @@ let enable_dp = EnableDrainProtectionBuilder::new()
 | **Emergency Lock** | Lock funds with 2/3 vote (max 7 days, renewable) |
 | **Member Exit** | Any member exits with 1/3 haircut (anti-griefing) |
 | **Authority Controls** | Spend authority changes need 2/3 vote + 48hr timelock |
+| **Graduated Tiers** | Multi-tier approval requirements based on withdrawal size |
+| **Exit Queue** | FCFS processing prevents bank-run cascades |
+| **Circuit Breaker** | Auto-pause if anomalous drain detected |
+| **Guardian Pause** | Multisig emergency stop capability |
+| **Observation Period** | 48h delay before large withdrawals visible |
+| **Split Proposals** | Large withdrawals must be chunked |
+| **No-Loss Reserve** | 20% reserve never available for DAO governance |
+| **Dead Man's Switch** | Auto-protocol if DAO inactive for 30 days |
 
 ### How It Works
 
