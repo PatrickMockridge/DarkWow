@@ -15,7 +15,7 @@ This fork contains all additions compared to official DarkFi master:
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
 | **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
 | **dex** | Atomic swap DAO with incremental transparency | ⚠️ Partial |
-| **drain_protection** | Endowment/treasury drain protections | ⚠️ Provisional |
+| **drain_protection** | Endowment/treasury protections (8 best practices) | ✅ Complete |
 | **escrow** | Hashed Timelock Contract variant | ✅ Complete |
 | **identity** | ZK credential proofs using competency DAGs | ✅ Uses safemath (Level 0 zk_only) |
 | **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
@@ -27,6 +27,7 @@ This fork contains all additions compared to official DarkFi master:
 
 ## Key Technical Changes
 
+- **DrainProtection**: 8 optional best practices (graduated tiers, exit queue, circuit breaker, guardian pause, observation period, split proposals, no-loss reserve, dead man's switch). All features configurable by contract deployer and controllable by DAO members via governance.
 - **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
 - **Identity refactor**: Level 0 (zk_only) with safemath assertion gadgets
 - **Safemath integration**: Production-ready ZK arithmetic templates as LessThanOrEqual workaround

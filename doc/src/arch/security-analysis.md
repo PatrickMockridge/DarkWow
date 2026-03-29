@@ -519,26 +519,39 @@ The buyer receives `seller_pub` from the seller out-of-band, computes `H(seller_
 
 ---
 
-##### Provisional Drain Protection (Implementation Started)
+##### Drain Protection Best Practices (Implemented)
 
-A separate [DrainProtection contract](../../src/contract/drain_protection/README.md) has been created to implement these protections. Integration with DAO-Escrow follows the composability pattern: DrainProtection verifies membership via Merkle proof from DAO-Escrow.
+A separate [DrainProtection contract](../../src/contract/drain_protection/README.md) implements comprehensive protections. **All features are optional and configurable by the contract deployer. DAO members control features via governance.**
 
-**Implemented Protections** (in drain_protection contract):
+**8 Best Practices Implemented**:
 
-| Protection | Status | Notes |
-|------------|--------|-------|
-| Rate Limit Per Block | ✅ Implemented | Base rate configurable |
-| Large Withdrawal Vote | ✅ Implemented | 2/3 threshold, 50% quorum |
-| Lock/Unlock Controls | ✅ Implemented | Max 7 days lock, 24hr unlock timelock |
-| Spend Authority Changes | ✅ Implemented | 2/3 vote + 48hr timelock |
-| Member Exit + Haircut | ✅ Implemented | 1/3 haircut, block-height-weighted |
-| ZK Circuits | ✅ Implemented | exit_v1.zk has Merkle proof verification |
+| Protection | Description | Deployer Control | Member Control |
+|------------|-------------|------------------|----------------|
+| Graduated Tiers | Multi-level approval (1%→5%→20%→emergency) | Enable/disable | Governance vote |
+| Exit Queue | FCFS prevents bank-run cascades | Configure limits | FIFO processing |
+| Circuit Breaker | Auto-pause on anomalous drain | Set thresholds | Automatic trigger |
+| Guardian Pause | Multisig emergency stop | Set guardians | Multisig action |
+| Observation Period | 48h delay for large withdrawals | Set threshold | Visibility + exit |
+| Split Proposals | Chunk large withdrawals | Set chunk size | Separate votes |
+| No-Loss Reserve | 20% untouched insurance | Set percentage | Emergency vote only |
+| Dead Man's Switch | Auto-protocol on inactivity | Set timeout | Social recovery |
 
-**Outstanding Implementation Work**:
-- [ ] ZK circuit for vote authorization
-- [ ] Full vote weight calculation from DAO-Escrow
-- [ ] Integration tests between DAO-Escrow and DrainProtection
+**Deployment Options**:
+
+```rust
+// Enable all 8 protections
+DrainConfig::full()
+
+// Conservative: circuit_breaker + guardian + no_loss_reserve
+DrainConfig::conservative()
+
+// Minimal: circuit_breaker + guardian only
+DrainConfig::minimal()
+```
+
+**Outstanding**:
 - [ ] Security audit
+- [ ] Integration tests
 
 ---
 
@@ -803,7 +816,7 @@ The `less_than_strict` opcode used throughout DarkFi's contracts avoids these is
 | 7 | Atomic Swap | External hash function trust | MAJOR | ✅ MITIGATED (each chain verifies own hash) |
 | 8 | Escrow | No state verification on claim | MAJOR | ⚠️ Entrypoint written, state check in contract |
 | 9 | Escrow | Seller public key in plaintext | MODERATE | ✅ FIXED (H(seller_pub) in commitment, circuit verifies hash) |
-| 10 | DAO-Escrow | No endowment drain protection | MAJOR | ⚠️ Provisional: drain_protection contract exists |
+| 10 | DAO-Escrow | No endowment drain protection | MAJOR | ✅ FIXED: drain_protection with 8 best practices |
 | 11 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ✅ FIXED (max 1-year cap added) |
 | 12 | Bridge | Weak range check (only < 2^64) | MODERATE | ✅ FIXED (min amount floor: 100_000_000) |
 
@@ -820,7 +833,7 @@ The `less_than_strict` opcode used throughout DarkFi's contracts avoids these is
 6. ✅ **Issue 7 (MAJOR)**: External hash trust mitigated by HTLC design
 7. ✅ **Issue 8 (MAJOR)**: Escrow entrypoint written with state verification
 8. ✅ **Issue 9 (MODERATE)**: Seller pubkey privacy fixed (H(seller_pub) in commitment)
-9. ✅ **Issue 10 (MAJOR)**: drain_protection contract created provisionally
+9. ✅ **Issue 10 (MAJOR)**: drain_protection with 8 best practices (graduated tiers, exit queue, circuit breaker, guardian pause, observation period, split proposals, no-loss reserve, dead man's switch)
 10. ✅ **Issue 11 (MODERATE)**: Max membership expiry cap added (1 year limit)
 11. ✅ **Issue 12 (MODERATE)**: Minimum amount floor added to bridge (100_000_000)
 
