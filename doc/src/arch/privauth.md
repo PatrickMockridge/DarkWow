@@ -303,14 +303,14 @@ But the **expressiveness of the predicate** is constrained by the zkVM opcode la
 Simple predicates like `amount > 0` or `balance == 0` can be expressed with existing
 opcodes. More complex predicates require comparison opcodes that return values:
 
-| Predicate | Required Opcodes |
-|-----------|-----------------|
-| `attribute >= threshold` (identity) | `LessThanOrEqual` |
-| `collateral >= 2 * debt` (stablecoin) | `LessThanOrEqual`, `BaseMul` |
-| `fill_amount <= requested_amount` (DEX) | `LessThanOrEqual` |
-| `price <= market_price` (AMM) | `LessThanOrEqual`, `IsEqualBase` |
-| `seller knows secret` (escrow claim) | None — `poseidon_hash` only |
-| `timeout passed` (escrow refund) | `LessThanStrict` (constrain-only, existing) |
+| Predicate | Required Opcodes | Status |
+|-----------|-----------------|--------|
+| `attribute >= threshold` (identity) | Safemath assert | ✅ Uses safemath (Level 0 zk_only) |
+| `collateral >= 2 * debt` (stablecoin) | Safemath assert | ✅ Uses safemath |
+| `fill_amount <= requested_amount` (DEX) | `LessThanOrEqual` or safemath | Partial — atomic swap works without |
+| `price <= market_price` (AMM) | `LessThanOrEqual`, `IsEqualBase` | Future — TWAP supplied as oracle |
+| `seller knows secret` (escrow claim) | None — `poseidon_hash` only | ✅ Complete |
+| `timeout passed` (escrow refund) | `LessThanStrict` (constrain-only, existing) | ✅ Complete |
 
 See [zkVM Primitive Layer](zkvm_primitives.md) for the full analysis of why comparison
 opcodes that return values are the core gap, and how they compose into higher-level
@@ -320,11 +320,15 @@ constructions.
 
 The existing zkVM has `LessThanStrict` and `LessThanLoose`, but both **constrain only**
 — they fail the circuit if `a >= b`, they don't return a value you can use in further
-computation. This is why `LessThanOrEqual` (returning 0 or 1) and `IsEqualBase`
-(returning 0 or 1) are systematically needed.
+computation.
 
-The authorization pattern is complete without these opcodes — but the **predicate
-expressiveness is limited**. Current circuits use placeholders that always pass.
+**Current status**: For assertion-only use cases (no Boolean return needed), [safemath](safemath.md)
+templates provide production-ready alternatives. For predicates requiring Boolean returns
+(e.g., public output), the native `LessThanOrEqual` opcode is still needed.
+
+**See**:
+- [Safemath](../safemath.md) — production-ready assertion gadgets
+- [zkVM Primitive Layer](zkvm_primitives.md) — native opcode status
 
 ## References
 
