@@ -136,14 +136,16 @@ Cross-contract composition follows specific patterns:
 
 ## Cross-Contract Composability Matrix
 
-| Caller → | Money | DAO | Bridge | DEX | Identity | Stablecoin |
-|----------|-------|-----|--------|-----|----------|------------|
-| **Money** | - | Token transfers | Token escrow | Swap settlement | Token-gated access | Collateral deposits |
-| **DAO** | Treasury management | - | Governance of bridge | Governance of DEX | Credential-gated voting | Governance of stability |
-| **Bridge** | Cross-chain transfers | Relayer rewards | - | Liquidity provision | Identity verification | Liquidity provision |
-| **DEX** | Swap execution | Fee distribution | - | - | Credential-gated pools | Liquidity pools |
-| **Identity** | Token-gated access | Credential-gated voting | Identity attestation | Credential-gated trading | - | Credit scoring |
-| **Stablecoin** | Collateral management | Stability pool governance | Collateral rebalancing | - | - | - |
+| Caller → | Money | DAO | Bridge | DEX | Identity | Stablecoin | Labor Market | Tender |
+|----------|-------|-----|--------|-----|----------|------------|-------------|--------|
+| **Money** | - | Token transfers | Token escrow | Swap settlement | Token-gated access | Collateral deposits | Job payment escrow | Bid deposit escrow |
+| **DAO** | Treasury management | - | Governance of bridge | Governance of DEX | Credential-gated voting | Governance of stability | Job approval governance | Tender authorization |
+| **Bridge** | Cross-chain transfers | Relayer rewards | - | Liquidity provision | Identity verification | Liquidity provision | External job funding | External tender integration |
+| **DEX** | Swap execution | Fee distribution | - | - | Credential-gated pools | Liquidity pools | - | - |
+| **Identity** | Token-gated access | Credential-gated voting | Identity attestation | Credential-gated trading | - | Credit scoring | Competency verification | Competency requirement |
+| **Stablecoin** | Collateral management | Stability pool governance | Collateral rebalancing | - | - | - | - | - |
+| **Labor Market** | Job payment settlement | Job DAO governance | External payment integration | - | Worker credential verification | - | - | Job creation from tender |
+| **Tender** | Bid deposit management | - | External tender integration | - | Competency-based selection | - | Winner job creation | - |
 
 ## General Primitive Composition Patterns
 
@@ -519,6 +521,146 @@ The $55M problem doesn't happen because:
 
 This architecture would have solved the accountability problems that plagued organizations like AssangeDAO — where the inability to vote on governance (due to legal liability fears) and the transparent treasury (which invited extraction) led to failure.
 
+### Case Study: Tender + Labor Market + Identity
+
+The Tender contract demonstrates DarkFi's integration of sealed-bid procurement with competency verification and job execution, forming a complete project lifecycle from tender to delivery.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│           Tender + Labor Market + Identity Composability                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────┐         ┌──────────────────────┐                  │
+│  │     Identity         │         │       Tender         │                  │
+│  │                      │         │                       │                  │
+│  │  ┌────────────────┐  │         │  ┌────────────────┐  │                  │
+│  │  │ Competency DAG │──┼─────────┼──│ SubmitBidV1()  │  │                  │
+│  │  │ + Credential   │  │         │  │ + competency_  │  │                  │
+│  │  │   Commitment   │  │         │  │   commitment   │  │                  │
+│  │  └────────────────┘  │         │  └───────┬────────┘  │                  │
+│  │                       │         │          │            │                  │
+│  │  ZK Credential        │         │  Sealed Bid          │                  │
+│  │  Verification         │         │  + Commitment        │                  │
+│  └───────────────────────┘         └───────────────────────┘                  │
+│                                    │                                           │
+│                                    │    Winner Selected                        │
+│                                    ▼                                           │
+│  ┌────────────────────────────────────────────────────────────────┐           │
+│  │                    Labor Market                                  │           │
+│  │                                                                 │           │
+│  │  ┌──────────────────────────────────────────────────────────┐  │           │
+│  │  │ CreateJobV1()                                             │  │           │
+│  │  │ - Creates job from tender winner                          │  │           │
+│  │  │ - Sets deliverable_hash from tender specification         │  │           │
+│  │  │ - Sets payment_amount from winning bid                    │  │           │
+│  │  │ - Sets deadline from tender delivery_deadline             │  │           │
+│  │  └──────────────────────────────────────────────────────────┘  │           │
+│  └────────────────────────────────────────────────────────────────┘           │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Tender State Machine
+
+The tender contract implements a sealed-bid workflow:
+
+```
+Created ──[SubmitBid]──> Bidding ──[Close]──> Revealed ──[Select]──> Awarded
+                                               │
+                                               └──[Cancel]──> Cancelled
+```
+
+#### Bid State Machine
+
+Bids transition through sealed and revealed states:
+
+```
+Sealed ──[Reveal]──> Revealed ──[Accept]──> Accepted
+  │                        │
+  └──[Timeout]──> Expired  └──[Reject]──> Rejected
+```
+
+#### Integration with Identity
+
+Workers prove competency via the Identity contract:
+
+```rust
+// SubmitBidV1 parameters include:
+struct SubmitBidParamsV1 {
+    competency_commitment: pallas::Base,  // From Identity credential
+    encrypted_payload: Vec<u8>,            // Encrypted bid details
+    // ...
+}
+
+// The competency_commitment proves:
+// - Worker has valid credentials from trusted issuers
+// - Credentials meet the tender's requirement_commitment
+// - Without revealing worker's identity or specific credentials
+```
+
+#### Integration with Labor Market
+
+Winner selection automatically creates a job:
+
+```rust
+// SelectWinnerV1 creates labor job with:
+struct SelectWinnerParamsV1 {
+    winner_pubkey: PublicKey,         // From winning bid
+    winning_amount: u64,             // From revealed bid
+    // Tender's specification, delivery_deadline used for job
+}
+
+// Labor Market job creation:
+// - deliverable_hash = tender.specification
+// - payment_amount = winning_amount
+// - deadline_block = tender.delivery_deadline
+// - employer_pubkey = tender.requester_pubkey
+// - worker_pubkey = winner_pubkey
+```
+
+#### Composability Principles Applied
+
+| Principle | How It's Applied |
+|-----------|------------------|
+| **Sealed Bids** | `poseidon_hash(amount, nonce)` hides bid until reveal deadline |
+| **Competency Verification** | Identity contract credentials verified via commitment |
+| **State Machine** | Tender/Bid states prevent invalid transitions |
+| **Nullifier Namespace** | Bid submission and reveal use separate nullifiers |
+| **Escrow Integration** | Bid deposits held in escrow; refundable if outbid or cancelled |
+
+#### Contract Integration Points
+
+| From | To | Integration |
+|------|----|-------------|
+| Identity | Tender | `SubmitBid` verifies competency commitment from Identity credential |
+| Tender | Labor Market | `SelectWinner` creates job with tender's specification and winning bid details |
+| Labor Market | Tender | Worker can use same identity credentials in job delivery |
+
+#### Tau Task Tracking Integration
+
+Jobs created from tender winners can be tracked via Tau:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Tender → Labor Market → Tau Flow                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  1. Requester creates Tender with specifications                 │
+│     ↓                                                             │
+│  2. Workers submit sealed bids with competency proofs            │
+│     ↓                                                             │
+│  3. Winner selected → Job created in Labor Market                │
+│     ↓                                                             │
+│  4. Job tracked in Tau for delivery monitoring                   │
+│     ↓                                                             │
+│  5. Worker submits deliverables → Verified against spec          │
+│     ↓                                                             │
+│  6. Payment released via escrow                                  │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+See [Tender Contract](tender.md), [Labor Market Contract](labor_market.md), [Identity Contract](identity.md), and [Tau](../../misc/tau.md) for full details.
+
 ## SDK Primitives
 
 The DarkFi SDK provides reusable primitives for contracts:
@@ -785,5 +927,8 @@ All DarkFi contracts should support incremental transparency (see [Identity](ide
 - [Subscription Contract](subscription.md)
 - [DAO-Escrow Contract](dao_escrow.md)
 - [Atomic Swap Contract](atomic_swap.md)
+- [Labor Market Contract](labor_market.md)
+- [Auction Contract](auction.md)
+- [Tender Contract](tender.md)
 - [Intent AMM Proposal](https://codeberg.org/rusticml/darkfi-intent-amm-proposal)
 - [Response to PatrickM123](https://codeberg.org/rusticml/darkfi-intent-amm-proposal/src/branch/main/docs/response-to-patrickm123.md)

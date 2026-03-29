@@ -138,6 +138,8 @@ Local READMEs exist for each contract in this folder:
 - [drain_protection/README.md](drain_protection/README.md) - Endowment protection
 - [escrow/README.md](escrow/README.md) - Hashed Timelock Contract
 - [identity/README.md](identity/README.md) - ZK credential proofs
+- [labor_market/README.md](labor_market/README.md) - Job/labor market
+- [auction/README.md](auction/README.md) - Privacy-preserving auction
 - [stablecoin/README.md](stablecoin/README.md) - Collateral stablecoin
 - [subscription/README.md](subscription/README.md) - Member subscription
 - [tender/README.md](tender/README.md) - Sealed-bid tendering
