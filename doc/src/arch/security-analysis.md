@@ -720,6 +720,109 @@ range_check(64, amount);
 
 ## Cross-Cutting Issues
 
+### Issue 19: Missing Public Key Constraint (MAJOR) — FIXED IN CIRCUITS BELOW
+
+**Category**: ZK Circuit Soundness
+
+**Vulnerability Pattern**: When a circuit derives a public key from a secret using `ec_mul_base` and exposes the derived coordinates as public inputs via `constrain_instance`, it must also bind the derived coordinates to the public inputs using `constrain_equal_base`. Without this binding, a malicious prover can claim any public key without knowing the corresponding secret.
+
+**Incorrect Pattern (Vulnerable)**:
+```zk
+witness "Example" {
+    Base secret,
+    # ... pub_x and pub_y passed as public inputs but NOT constrained
+}
+
+circuit "Example" {
+    # Derive public key from secret
+    pub = ec_mul_base(secret, NULLIFIER_K);
+    pub_x = ec_get_x(pub);
+    pub_y = ec_get_y(pub);
+
+    # WRONG: Only expose via constrain_instance, no binding constraint
+    constrain_instance(pub_x);
+    constrain_instance(pub_y);
+}
+```
+
+**Why This is Vulnerable**: The circuit only proves knowledge of `secret`, but does NOT prove that the derived public key matches `pub_x/pub_y`. A prover could:
+1. Choose any arbitrary `pub_x, pub_y` as public inputs
+2. Provide any `secret` (doesn't need to correspond to the claimed pubkey)
+3. The circuit accepts because the derived value is never checked against the public input
+
+**Correct Pattern (Sound)**:
+```zk
+witness "Example" {
+    Base secret,
+    Base pub_x,  # Public key coordinate - MUST be constrained
+    Base pub_y,  # Public key coordinate - MUST be constrained
+}
+
+circuit "Example" {
+    # Derive public key from secret
+    pub = ec_mul_base(secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(pub);
+    derived_pub_y = ec_get_y(pub);
+
+    # CRITICAL: Bind derived public key to public inputs
+    constrain_equal_base(derived_pub_x, pub_x);
+    constrain_equal_base(derived_pub_y, pub_y);
+
+    # Now expose as public inputs
+    constrain_instance(pub_x);
+    constrain_instance(pub_y);
+}
+```
+
+**Impact**: Without this constraint, a prover can impersonate any public key holder, enabling:
+- Unauthorized claims on behalf of others
+- False identity assertions in attestation systems
+- Bypass of access control tied to public keys
+
+**Circuits Fixed** (this audit session):
+| Contract | Circuit | Status |
+|----------|---------|--------|
+| money | auth_token_mint_v1.zk | ✅ Fixed |
+| oracle | register_oracle_v1.zk | ✅ Fixed |
+| drain_protection | exit_v1.zk | ✅ Fixed |
+| dao | exec.zk | ✅ Fixed |
+| labor_market | create_job_v1.zk | ✅ Fixed |
+| labor_market | accept_job_v1.zk | ✅ Fixed |
+| labor_market | submit_deliverable_v1.zk | ✅ Fixed |
+| labor_market | confirm_delivery_v1.zk | ✅ Fixed |
+| labor_market | dispute_v1.zk | ✅ Fixed |
+| labor_market | refund_v1.zk | ✅ Fixed |
+| labor_market | submit_git_deliverable_v1.zk | ✅ Fixed |
+| tender | create_tender_v1.zk | ✅ Fixed |
+| tender | submit_bid_v1.zk | ✅ Fixed |
+| tender | select_winner_v1.zk | ✅ Fixed |
+| tender | reveal_bid_v1.zk | ✅ Fixed |
+
+**Previously Fixed Circuits** (prior audit sessions):
+- dex/execute_swap_v1.zk, dex/cancel_swap_v1.zk, dex/create_swap_v1.zk, dex/accept_swap_v1.zk
+- escrow/claim_v1.zk, escrow/refund_v1.zk
+- auction/claim_winnings_v1.zk, auction/close_auction_v1.zk, auction/refund_bid_v1.zk, auction/settle_auction_v1.zk
+- attestation/consume_claim_v1.zk
+
+**Future Improvement (Suggestion for zkas maintainers)**:
+
+A `derive_pubkey` builtin opcode would eliminate this entire vulnerability class by construction:
+
+```zk
+# Proposed builtin: derive_pubkey(secret, constant, pub_x, pub_y)
+# This single opcode would:
+# 1. Compute pub = ec_mul_base(secret, constant)
+# 2. Extract pub_x = ec_get_x(pub), pub_y = ec_get_y(pub)
+# 3. Constrain pub_x to equal pub_x (and same for y)
+
+# Usage would be one line instead of four:
+derive_pubkey(secret, NULLIFIER_K, pub_x, pub_y);
+```
+
+This makes it impossible to forget the binding constraint — the builtin enforces soundness by design. This is especially valuable since the pattern appears in 20+ circuits across the codebase.
+
+---
+
 ### Issue 13: No Formal Verification
 
 None of the unofficial contracts have formal verification. Complex cryptographic circuits like these benefit from formal methods to catch edge cases that testing misses.
@@ -948,6 +1051,7 @@ The `less_than_strict` opcode used throughout DarkFi's contracts avoids these is
 | 16 | DEX | Public keys hardcoded to zero | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
 | 17 | DEX | lock_proof never verified | CRITICAL | ⚠️ PARTIALLY FIXED (basic validation added) |
 | 18 | DEX | ZK proof verification stubbed | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
+| 19 | Multiple | Missing public key constraint binding | MAJOR | ✅ FIXED (20+ circuits across money, oracle, dao, labor_market, tender, drain_protection) |
 
 ---
 
