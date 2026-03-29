@@ -105,6 +105,30 @@ less_than_strict(lhs, rhs_1);  # Passes if lhs < rhs + 1
 
 See `dao/exec.zk` lines 118-126 for the exact pattern.
 
+### For Bounded LTE Assertions: Use Safemath Templates
+
+The [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) crate provides assertion gadgets that replace `LessThanOrEqual` when you only need to **assert** `a <= b`:
+
+| Template | Proves | Use Case |
+|----------|--------|----------|
+| `assert_lte_u64_v1.zk` | `lhs <= rhs` via `lhs < rhs + 1` | Collateralization checks |
+| `cross_mul_lte_u64_v1.zk` | `lhs_num/lhs_den <= rhs_num/rhs_den` via cross-mul | Ratio checks |
+
+**Pattern** (from `assert_lte_u64_v1.zk`):
+```zk
+# Proves: lhs <= rhs (assertion, no Boolean returned)
+range_check(64, lhs);
+range_check(64, rhs);
+rhs_plus_one = base_add(rhs, witness_base(1));
+less_than_strict(lhs, rhs_plus_one);  # lhs < rhs + 1  ⟺  lhs <= rhs
+```
+
+**Key distinction**:
+- Safemath templates are **assertion gadgets** — they prove a relation without returning a value
+- If you need a **0/1 Boolean** to feed into later logic (e.g., public output), safemath cannot replace `LessThanOrEqual`
+
+**See**: [Safemath](../safemath.md) for full integration guide.
+
 ---
 
 ## When You CAN Use Experimental Opcodes
@@ -127,13 +151,15 @@ For **experimental/skeleton code** where:
 
 ## Contracts Using Experimental Opcodes
 
-| Contract | Circuit | Opcode Used | Status |
-|----------|---------|-------------|--------|
-| `identity` | `create_claim_v1.zk` | `LessThanOrEqual` | ⚠️ Experimental |
-| `stablecoin` | `open_position_v1.zk` | `LessThanOrEqual` | ⚠️ Experimental |
-| `stablecoin` | `liquidate_v1.zk` | `LessThanOrEqual` | ⚠️ Experimental |
+| Contract | Circuit | Opcode Used | Status | Alternative |
+|----------|---------|-------------|--------|-------------|
+| `identity` | `create_claim_v1.zk` | `LessThanOrEqual` | ⚠️ Experimental | Cannot use safemath — needs Boolean output for public predicate_result |
+| `stablecoin` | `open_position_v1.zk` | None | ✅ Uses safemath | `assert_lte_u64_v1.zk` |
+| `stablecoin` | `liquidate_v1.zk` | None | ✅ Uses safemath | `assert_lte_u64_v1.zk` |
 
-**These cannot ship to production** until LessThanOrEqual is formally verified or replaced.
+**stablecoin can ship to production** using safemath assertion gadgets.
+
+**identity cannot use safemath** without changing Level 1 (selective disclosure) to Level 0 (zk_only) semantics — the Boolean output is fundamental to the design.
 
 ---
 

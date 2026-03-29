@@ -276,26 +276,35 @@ less_than_strict(rhs, lhs);             # Prove: rhs < lhs
 
 **See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
 
-## Opcode Safety: LessThanOrEqual Workaround
+## Opcode Safety: LessThanOrEqual Replaced with Safemath
 
-**Current state**: The stablecoin circuits use `LessThanOrEqual` (experimental opcode) to prove:
-1. `2 * debt <= collateral` (200% collateralization check)
-2. `liquidator_reward <= collateral_amount` (reward bounds check)
+**Current state**: The stablecoin circuits use **safemath assertion gadgets** — no experimental opcodes needed:
 
-Both usages constrain the result to equal `1` — an **assertion pattern**, not needing a Boolean witness for downstream logic.
+| Circuit | Check | Safemath Template |
+|---------|-------|-------------------|
+| `open_position_v1.zk` | `2 * debt <= collateral` | `assert_lte_u64_v1.zk` pattern |
+| `liquidate_v1.zk` | `reward <= collateral` | `assert_lte_u64_v1.zk` pattern |
 
-**The safemath workaround** (from [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath)):
-
-| Check | Safemath Circuit | Pattern |
-|-------|-----------------|---------|
-| `a <= b` | `assert_lte_u64_v1.zk` | Prove `a < b + 1` via bounded inputs |
-| Ratio `a/b <= c/d` | `cross_mul_lte_u64_v1.zk` | Cross-multiplication + `+1` trick |
+**Implementation** (from `open_position_v1.zk`):
+```zk
+# Prove: 2 * debt <= collateral
+# Using safemath pattern: lhs < rhs + 1  ⟺  lhs <= rhs
+range_check(64, two_times_debt);
+range_check(64, collateral_amount);
+ONE = witness_base(1);
+collateral_plus_one = base_add(collateral_amount, ONE);
+less_than_strict(two_times_debt, collateral_plus_one);
+```
 
 **Key distinction**:
-- `LessThanOrEqual(a, b) → bit`: Returns 0/1 Boolean (what we currently use)
-- `assert_lte_u64_v1.zk`: Assertion gadget, proves `a <= b` without returning a value
+- `LessThanOrEqual(a, b) → bit`: Returns 0/1 Boolean (can feed into later logic)
+- Safemath `assert_lte`: Constrains only, proves `a <= b` assertion without returning value
 
-Since the current circuits assert `LessThanOrEqual == 1`, they can be replaced with assertion-style circuits — no Boolean witness needed downstream.
+Both circuits only need to **assert** the relation passes (not return a Boolean), so safemath works perfectly.
+
+**See**:
+- [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) for the template library
+- [Safemath doc](../../../doc/src/arch/safemath.md) for integration guide
 
 **What production readiness requires**:
 1. Replace `LessThanOrEqual` with safemath assertion circuits

@@ -14,12 +14,12 @@ This document tracks the blockers to reaching MVP for each contract in `src/cont
 | `dao` | None | Governance token integration | **Yes** |
 | `dex` | None | Order matching logic | Partial |
 | `bridge` | None | Light client for external chain verification | Partial |
-| `identity` | `LessThanOrEqual`, `IsEqualBase` integrated (experimental) | Integration testing | Partial |
-| `stablecoin` | None (ratio checks use cross-multiplication — see `dao/exec.zk`) | P2P oracle, CDP notes | Partial |
+| `identity` | `LessThanOrEqual`, `IsEqualBase` integrated (experimental) — **fundamental**: needs Boolean output for public predicate_result | Integration testing | Partial |
+| `stablecoin` | None — uses safemath `assert_lte_u64_v1.zk` | P2P oracle, CDP notes | Partial |
 | `escrow` | None | ZK circuit compilation, Money integration | Partial |
 | `dao_escrow` | None | Entry point wiring, spend hook, Money integration | Partial |
 
-**Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are implemented in the zkVM (commit `41b0629e0`). `identity` and `stablecoin` have been updated to use `LessThanOrEqual`. Ratio checks (e.g., `collateral / debt < threshold`) use cross-multiplication via `base_mul + less_than_strict` — no `BaseDiv` needed. All experimental opcodes are grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md) for production readiness requirements.
+**Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are implemented in the zkVM (commit `41b0629e0`). `stablecoin` now uses safemath assertion gadgets instead of `LessThanOrEqual`. `identity` still uses it fundamentally — the Boolean output is needed for public predicate_result (Level 1 selective disclosure). Ratio checks use cross-multiplication via `base_mul + less_than_strict` — no `BaseDiv` needed. All experimental opcodes are grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md) for production readiness requirements.
 
 ---
 
@@ -152,52 +152,60 @@ InitializeV1 (0x00), IssueCredentialV1 (0x01), RevokeCredentialV1 (0x02), Create
 | Circuit | Status | Notes |
 |---------|--------|-------|
 | `issue_credential_v1.zk` | Unread | Likely needs review |
-| `create_claim_v1.zk` | Verified (experimental) | Uses `less_than_or_equal` for threshold checks. **Grey-market opcode.** |
+| `create_claim_v1.zk` | Verified (experimental) | Uses `LessThanOrEqual` for threshold checks. **Grey-market opcode.** |
 
 ### Blockers
 
 **Opcode layer**: `LessThanOrEqual` (0x55) and `IsEqualBase` (0x54) are implemented and integrated in `create_claim_v1.zk`. Both are **experimental grey-market goods** — see [zkVM Primitive Layer](zkvm_primitives.md) for the delta-invert soundness concern and what production readiness requires.
 
+**Why LessThanOrEqual is fundamental here**: The identity contract uses `LessThanOrEqual` to return a **Boolean** (0/1) that is constrained to equal a **public input** `predicate_result`. This reveals the authorization decision publicly (Level 1 "selective" disclosure). Safemath's `assert_lte` cannot replace this because it only constrains — it doesn't return a value. Redesigning to use safemath would change Level 1 to Level 0 ("zk_only") semantics.
+
 **Architecture**: Integration testing — no end-to-end test of issue → claim → verify flow exists yet.
 
 **What it needs**: Integration test for the full credential lifecycle. `IsEqualBase` delta-invert soundness fix. Review of `issue_credential_v1.zk`.
 
-**See also**: [zkVM Primitive Layer](zkvm_primitives.md) for the full opcode dependency analysis.
+**See also**:
+- [zkVM Primitive Layer](zkvm_primitives.md) for the full opcode dependency analysis.
+- [identity contract README](../../src/contract/identity/README.md) for the privacy gradient design.
 
 ---
 
-## `stablecoin` — Blocked on Opcodes and Architecture
+## `stablecoin` — Partial MVP (Architecture Blockers Only)
 
 **Location**: `src/contract/stablecoin/`
 
+**Architecture**: Synthetix-style pooled debt model. All collateral backs all debt — no individual position tracking.
+
 ### Functions
-InitializeV1 (0x00), OpenPositionV1 (0x01), AddCollateralV1 (0x02), RemoveCollateralV1 (0x03), MintStableV1 (0x04), RepayStableV1 (0x05), LiquidateV1 (0x06), UpdateConfigV1 (0x07)
+InitializeV1 (0x00), DepositCollateralV1 (0x01), WithdrawCollateralV1 (0x02), MintStableV1 (0x03), RepayStableV1 (0x04), LiquidateV1 (0x05), UpdateConfigV1 (0x06)
 
 ### Circuit Status
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
-| `open_position_v1.zk` | Verified (experimental) | Uses `less_than_or_equal` for 200% collateralization check. **Grey-market opcode.** |
-| `mint_stable_v1.zk` | Corrected | Base arithmetic uses existing `base_add` opcode |
-| `liquidate_v1.zk` | Partial (experimental) | Uses `less_than_or_equal` for reward bounds check. Ratio check uses cross-multiplication (`base_mul + less_than_strict`). **Grey-market opcode.** |
+| `open_position_v1.zk` | Verified | Uses safemath `assert_lte_u64_v1.zk` pattern for collateralization |
+| `mint_stable_v1.zk` | Unread | Base arithmetic uses existing opcodes |
+| `liquidate_v1.zk` | Verified | Uses safemath `assert_lte_u64_v1.zk` pattern for reward bounds |
+
+**Opcode layer**: None. All LTE checks use safemath assertion gadgets instead of experimental `LessThanOrEqual` opcode.
 
 ### Blockers
 
-**Opcode layer**:
-
-1. **`LessThanOrEqual` (0x55) integrated but experimental** — `open_position_v1.zk` and `liquidate_v1.zk` now use it. Grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md). No other opcode blockers.
-
 **Architecture blockers**:
 
-2. **No P2P oracle** — TWAP price is expected as an external oracle input. The NETHER/DRK AMM pool does not yet exist on-chain.
+1. **No P2P oracle** — TWAP price is expected as an external oracle input. The XMR/DRK AMM pool does not yet exist on-chain.
 
-3. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is designed but not implemented.
+2. **CDP Note integration stubbed** — The money contract's `spend_hook` pointing to the CDP engine is designed but not implemented.
 
 **What it needs**: First: P2P oracle / AMM integration to supply TWAP price. Second: CDP Note integration with money contract. Third: integration testing of the full lifecycle.
 
 > **Note on division**: Ratio checks use cross-multiplication (see `dao/exec.zk` lines 118-126 for the exact pattern). `BaseDiv` is not needed and is not a blocker.
 
-**See also**: [zkVM Primitive Layer](zkvm_primitives.md) for the full opcode dependency analysis.
+> **Note on safemath**: The stablecoin uses [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) assertion gadgets instead of `LessThanOrEqual`. See [Safemath](../safemath.md) for details.
+
+**See also**:
+- [zkVM Primitive Layer](zkvm_primitives.md) for the full opcode dependency analysis.
+- [Safemath](../safemath.md) for the safemath integration guide.
 
 ---
 
