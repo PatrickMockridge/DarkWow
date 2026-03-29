@@ -14,6 +14,7 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 | **escrow** | Hashed Timelock Contract variant | ✅ Complete |
 | **identity** | ZK credential proofs using competency DAGs | ⚠️ Uses experimental opcodes |
 | **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
+| **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
 | **stablecoin** | Monero-collateralized stablecoin | ⚠️ Uses experimental opcodes |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete |
 

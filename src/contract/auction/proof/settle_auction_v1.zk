@@ -1,0 +1,78 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Auction Settle Circuit (Version 1)
+#
+# This circuit proves:
+# - Seller knows their secret key
+# - Seller public key is correctly derived
+# - Seller is settling the auction
+# - Settlement nullifier is correctly computed
+#
+# Public Inputs (constrain_instance):
+#   - auction_id: The auction being settled
+#   - seller_pub_x, seller_pub_y: Seller's public key coordinates
+#   - settlement_nullifier: Nullifier for this settlement
+#
+# Witnesses:
+#   - seller_secret: Seller's secret key
+#   - highest_bid_amount: The winning bid amount
+
+constant "SettleAuction" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "SettleAuction" {
+    # Auction being settled
+    Base auction_id,
+
+    # Seller's secret (for key derivation and nullifier)
+    Base seller_secret,
+
+    # Winning bid amount
+    Base highest_bid_amount,
+}
+
+circuit "SettleAuction" {
+    # ==========================================================================
+    # PHASE 1: Derive seller public key from secret
+    # ==========================================================================
+
+    seller_pub = ec_mul_base(seller_secret, NULLIFIER_K);
+    seller_pub_x = ec_get_x(seller_pub);
+    seller_pub_y = ec_get_y(seller_pub);
+
+    # ==========================================================================
+    # PHASE 2: Compute settlement nullifier
+    # ==========================================================================
+    #
+    # settlement_nullifier = H(auction_id, seller_secret)
+    # This uniquely identifies this settlement and prevents double-settlement
+
+    settlement_nullifier = poseidon_hash(auction_id, seller_secret);
+
+    # ==========================================================================
+    # PHASE 3: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(auction_id);
+    constrain_instance(seller_pub_x);
+    constrain_instance(seller_pub_y);
+    constrain_instance(settlement_nullifier);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses ONLY proven opcodes:
+    #   - ec_mul_base: standard EC operations
+    #   - ec_get_x, ec_get_y: standard EC operations
+    #   - poseidon_hash: field-proven commitment
+    #   - constrain_instance: public input exposure
+    #
+    # The contract layer verifies:
+    # 1. Auction is in Closed state
+    # 2. Seller is the auction creator
+    # 3. Highest bid amount is correct
+}

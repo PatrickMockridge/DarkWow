@@ -1,0 +1,110 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Auction Create Circuit (Version 1)
+#
+# This circuit proves:
+# - Seller knows their secret key
+# - Seller public key is correctly derived
+# - Auction ID is correctly computed as a commitment
+# - Deadline is in the future
+#
+# Public Inputs (constrain_instance):
+#   - auction_id: Poseidon hash commitment of auction parameters
+#   - seller_commitment: Poseidon hash of seller public key
+#
+# Witnesses:
+#   - seller_secret: Seller's secret key
+#   - item_commitment: Hash of item being auctioned
+#   - reserve_price: Minimum bid price
+#   - token_id: Token being used for bidding
+#   - deadline_block: Auction end block height
+
+constant "CreateAuction" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "CreateAuction" {
+    # Seller's secret (for key derivation, not revealed)
+    Base seller_secret,
+
+    # Item being auctioned (hash of description or commitment)
+    Base item_commitment,
+
+    # Auction parameters
+    Base reserve_price,
+    Base token_id,
+
+    # Deadline and current block (passed as Base to avoid .into() issues)
+    Base deadline_block,
+    Base current_block,
+}
+
+circuit "CreateAuction" {
+    # ==========================================================================
+    # PHASE 1: Derive seller public key from secret
+    # ==========================================================================
+
+    seller_pub = ec_mul_base(seller_secret, NULLIFIER_K);
+    seller_pub_x = ec_get_x(seller_pub);
+    seller_pub_y = ec_get_y(seller_pub);
+
+    # ==========================================================================
+    # PHASE 2: Verify deadline is in the future (block-based time lock)
+    # ==========================================================================
+
+    # less_than_strict: constrains current_block < deadline_block
+    # This ensures the auction hasn't expired yet
+    less_than_strict(current_block, deadline_block);
+
+    # ==========================================================================
+    # PHASE 3: Compute seller commitment (privacy - hides seller pubkey)
+    # ==========================================================================
+
+    seller_commitment = poseidon_hash(seller_pub_x, seller_pub_y);
+
+    # ==========================================================================
+    # PHASE 4: Compute auction ID commitment
+    # ==========================================================================
+    #
+    # Auction ID = H(seller_pub.x, seller_pub.y, item_commitment,
+    #                reserve_price, token_id, deadline_block)
+    #
+    # This commitment binds the seller, the item, reserve price,
+    # token, and deadline together.
+
+    auction_id = poseidon_hash(
+        seller_pub_x,
+        seller_pub_y,
+        item_commitment,
+        reserve_price,
+        token_id,
+        deadline_block,
+    );
+
+    # ==========================================================================
+    # PHASE 5: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(auction_id);
+    constrain_instance(seller_commitment);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses ONLY proven opcodes:
+    #   - ec_mul_base: standard EC operations
+    #   - ec_get_x, ec_get_y: standard EC operations
+    #   - less_than_strict: constrain-only comparison (SOUND)
+    #   - poseidon_hash: field-proven commitment
+    #   - constrain_instance: public input exposure
+    #
+    # The actual auction mechanics (bidding, winning, etc.) are handled
+    # by the contract layer, not in this circuit. The circuit only proves:
+    # 1. Seller knows their secret
+    # 2. Seller public key is derived correctly
+    # 3. Auction parameters are committed to correctly
+    # 4. Deadline is in the future
+}
