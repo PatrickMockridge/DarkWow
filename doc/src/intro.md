@@ -1,58 +1,55 @@
 # DarkFi Development Fork
 
-This is a development fork containing work in progress that may or may not be merged into the official DarkFi repository.
+**WARNING: This branch contains experimental, unaudited smart contracts. Do NOT deploy or use these contracts with real funds. They are for research and educational purposes only.**
 
-## The `dev` Branch
+This is a development fork of the official DarkFi repository. **Development occurs on the `master` branch** (`PatrickM123/darkfi:master`).
 
-This fork's `dev` branch (`PatrickM123/darkfi:dev`) contains all additions and changes compared to official DarkFi master. It includes:
+This fork contains all additions compared to official DarkFi master:
 
-- New smart contracts not in official DarkFi (Bridge, DEX, Identity, Stablecoin)
-- Expanded architecture documentation
-- Alternative design approaches and analysis
-- Work-in-progress implementations
+## New Smart Contracts
 
-The official DarkFi master branch (`darkrenaissance/darkfi:master`) should be consulted for the canonical state of the project.
+| Contract | Description | Status |
+|----------|-------------|--------|
+| **attestation** | Generalized attestation and claims system | ✅ Complete |
+| **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
+| **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
+| **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
+| **dex** | Atomic swap DAO with incremental transparency | ⚠️ Partial |
+| **drain_protection** | Endowment/treasury drain protections | ⚠️ Provisional |
+| **escrow** | Hashed Timelock Contract variant | ✅ Complete |
+| **identity** | ZK credential proofs using competency DAGs | ✅ Uses safemath (Level 0 zk_only) |
+| **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
+| **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
+| **oracle** | Push-model oracle with attestation integration | ✅ Complete |
+| **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
+| **stablecoin** | Synthetix-style pooled debt with safemath | ✅ Uses safemath |
+| **subscription** | Member subscription with DAO treasury | ✅ Complete |
 
-## Contents
+## Key Technical Changes
 
-This fork includes:
+- **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
+- **Identity refactor**: Level 0 (zk_only) with safemath assertion gadgets
+- **Safemath integration**: Production-ready ZK arithmetic templates as LessThanOrEqual workaround
+- **Bridge Merkle fix**: Real `merkle_root` opcode (not fake proof)
 
-### Smart Contracts
-- **Bridge Contract**: Cross-chain asset transfers with Object Capability Security
-- **DEX Contract**: Atomic swap DAO with incremental transparency roadmap
-- **Identity Contract**: Minimal credential proofs using ZK-verified competency DAGs
-- **Stablecoin Contract**: Monero-collateralized stablecoin with P2P Oracle design
-- **Escrow Contract**: Hashed Timelock with public key variant, trustless conditional payments
-- **DAO-Escrow Contract**: DAO-controlled endowment for community insurance with cooperative governance roadmap
+## Architecture Documentation
 
-### Architecture Documentation
-- Honest analysis of SPV de-anonymization problem
-- Incremental transparency approach (Level 0-3 privacy gradient)
-- ZK-verified competency DAGs for identity
-- P2P Oracle design for stablecoin price discovery
-- Field arithmetic constraints and zkVM primitive analysis
-- Escrow and DAO-Escrow contract documentation with cooperative governance roadmap
+- [Experimental Opcodes](arch/experimental-opcodes.md) — Grey-market opcode analysis with gate soundness issues
+- [Merkle Depth](arch/merkle_depth.md) — Fixed-depth limitations and workarounds
+- [Composability](arch/composability.md) — Smart contract composition patterns
+- [Safemath](arch/safemath.md) — ZK arithmetic templates (LessThanOrEqual workaround)
+- [Field Arithmetic](arch/field_arithmetic.md) — zkVM primitive analysis
 
-### Development Documentation
-- Contract developer guides
-- Common patterns for new contracts
-- ZK circuit documentation
-- Build and test instructions
+## Security Status
 
-## Relationship to Official Repo
-
-This fork diverges from the official DarkFi repository. Some features here may never be merged upstream. The official documentation should be consulted for the canonical state of the project.
-
-## Status
-
-All contracts in this fork are **skeleton implementations** demonstrating design concepts. They have not been audited, formally verified, or tested in production. Use at your own risk.
+All contracts are **EXPERIMENTAL** and **UNAUDITED**. Known security issues are documented in [Security Analysis](arch/security-analysis.md). The official DarkFi repository should be consulted for the canonical, production-ready state.
 
 ## Building
 
 ```bash
-# Build contracts
-cd src/contract/<name>
-make
+# Clone this fork
+git clone https://codeberg.org/PatrickM123/darkfi
+cd darkfi
 
 # Build documentation
 cd doc

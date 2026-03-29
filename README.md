@@ -9,18 +9,22 @@
 
 **WARNING: This branch contains experimental, unaudited smart contracts. Do NOT deploy or use these contracts with real funds. They are for research and educational purposes only.**
 
-This is a development fork of the official DarkFi repository.
+This is a development fork of the official DarkFi repository. **Development occurs on the `master` branch** (`PatrickM123/darkfi:master`).
 
-**The `dev` branch** (`PatrickM123/darkfi:dev`) contains all additions compared to official DarkFi master:
+This fork contains all additions compared to official DarkFi master:
 
 - **New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap, Labor Market, Auction, Tender, Attestation, Oracle (not in official DarkFi)
+- **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
+- **Identity refactor**: Level 0 (zk_only) with safemath assertion gadgets
 - **Expanded architecture documentation**: Additional analysis and design approaches including [Subscription](doc/src/arch/subscription.md), [Atomic Swap](doc/src/arch/atomic_swap.md), [Labor Market](doc/src/arch/labor_market.md), [Auction](doc/src/arch/auction.md), [Tender](doc/src/arch/tender.md), [Attestation](doc/src/arch/attestation.md), and [Oracle](doc/src/arch/oracle.md) contracts
-- **Architecture reference docs**: [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) (grey-market opcode analysis), [Merkle Depth](doc/src/arch/merkle_depth.md) (fixed-depth limitations and workarounds), [Composability](doc/src/arch/composability.md) (smart contract composition patterns with real-world DAO failure analysis and Tender + Labor Market + Attestation integration)
+- **Architecture reference docs**: [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) (grey-market opcode analysis), [Merkle Depth](doc/src/arch/merkle_depth.md) (fixed-depth limitations and workarounds), [Composability](doc/src/arch/composability.md) (smart contract composition patterns with real-world DAO failure analysis and Tender + Labor Market + Attestation integration), [Safemath](doc/src/arch/safemath.md) (ZK arithmetic templates as LessThanOrEqual workaround)
 - **Work-in-progress implementations**: Skeleton code and alternative approaches
 
 **Key new features:**
 - **Attestation contract**: Generalized attestation and claims system for reusable verification patterns
 - **Oracle contract**: Push-model oracle demonstrating external data integration via attestation
+- **Safemath integration**: Production-ready assertion gadgets for bounded arithmetic (workaround for LessThanOrEqual gate soundness issue)
+- **Pooled debt stablecoin**: Synthetix-style shared liability model replacing individual CDPs
 
 **Security Status**: All new contracts are EXPERIMENTAL and UNAUDITED. Known security issues are documented in [Security Analysis](doc/src/arch/security-analysis.md). The official DarkFi repository should be consulted for the canonical, production-ready state.
 
@@ -87,9 +91,8 @@ First you need to clone DarkFi repo and enter its root folder, if
 you haven't already done it:
 
 ```shell
-% git clone https://codeberg.org/darkrenaissance/darkfi
+% git clone https://codeberg.org/PatrickM123/darkfi
 % cd darkfi
-% git checkout a05956d412a091e8b54c1cd4f4264c33b941203d
 ```
 
 This project requires the Rust compiler to be installed. 

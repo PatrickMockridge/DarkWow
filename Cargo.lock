@@ -1924,6 +1924,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkfi-safemath-zk"
+version = "0.1.0"
+
+[[package]]
 name = "darkfi-sdk"
 version = "0.5.0"
 dependencies = [
