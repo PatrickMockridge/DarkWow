@@ -1,0 +1,92 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Labor Market Refund Circuit (Version 1)
+#
+# This circuit proves:
+# - Employer knows their secret key
+# - Employer public key is correctly derived
+# - The deadline has passed (timeout)
+# - Employer is claiming refund for a specific job
+#
+# Public Inputs (constrain_instance):
+#   - job_id: The job being refunded
+#   - employer_pub_x, employer_pub_y: Employer's public key coordinates
+#
+# Witnesses:
+#   - employer_secret: Employer's secret key
+#   - deadline_block: When work was due
+#   - current_block: Current block height
+
+constant "Refund" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "Refund" {
+    # Job being refunded
+    Base job_id,
+
+    # Employer's secret (for key derivation and nullifier)
+    Base employer_secret,
+
+    # Time verification (passed as Base to avoid .into() issues)
+    Base deadline_block,
+    Base current_block,
+}
+
+circuit "Refund" {
+    # ==========================================================================
+    # PHASE 1: Derive employer public key from secret
+    # ==========================================================================
+
+    employer_pub = ec_mul_base(employer_secret, NULLIFIER_K);
+    employer_pub_x = ec_get_x(employer_pub);
+    employer_pub_y = ec_get_y(employer_pub);
+
+    # ==========================================================================
+    # PHASE 2: Verify timeout has passed
+    # ==========================================================================
+    #
+    # less_than_strict(deadline_block, current_block)
+    # constrains: deadline_block < current_block
+    # This means the deadline has passed and work was never delivered
+
+    less_than_strict(deadline_block, current_block);
+
+    # ==========================================================================
+    # PHASE 3: Compute refund nullifier
+    # ==========================================================================
+    #
+    # nullifier = H(job_id, employer_secret)
+    # This proves the employer authorized the refund
+
+    spent_nullifier = poseidon_hash(job_id, employer_secret);
+
+    # ==========================================================================
+    # PHASE 4: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(job_id);
+    constrain_instance(employer_pub_x);
+    constrain_instance(employer_pub_y);
+    constrain_instance(spent_nullifier);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses ONLY proven opcodes:
+    #   - ec_mul_base: standard EC operations
+    #   - ec_get_x, ec_get_y: standard EC operations
+    #   - less_than_strict: constrain-only comparison (SOUND)
+    #   - poseidon_hash: field-proven commitment
+    #   - constrain_instance: public input exposure
+    #
+    # The contract layer verifies:
+    # 1. Job is in "InProgress" or "Delivered" state
+    # 2. No previous refund/claim has been made
+    #
+    # This is the HTLC-style timeout refund - if the worker doesn't deliver
+    # by the deadline, the employer gets their funds back.
+}

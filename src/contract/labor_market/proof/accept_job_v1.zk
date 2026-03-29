@@ -1,0 +1,64 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Labor Market Accept Job Circuit (Version 1)
+#
+# This circuit proves:
+# - Worker knows their secret key
+# - Worker public key is correctly derived
+# - Worker is accepting a valid job
+#
+# Public Inputs (constrain_instance):
+#   - job_id: The job being accepted
+#   - worker_pub_x, worker_pub_y: Worker's public key coordinates
+#
+# Witnesses:
+#   - worker_secret: Worker's secret key
+
+constant "AcceptJob" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "AcceptJob" {
+    # Job being accepted
+    Base job_id,
+
+    # Worker's secret (for key derivation, not revealed)
+    Base worker_secret,
+}
+
+circuit "AcceptJob" {
+    # ==========================================================================
+    # PHASE 1: Derive worker public key from secret
+    # ==========================================================================
+
+    worker_pub = ec_mul_base(worker_secret, NULLIFIER_K);
+    worker_pub_x = ec_get_x(worker_pub);
+    worker_pub_y = ec_get_y(worker_pub);
+
+    # ==========================================================================
+    # PHASE 2: Expose public inputs
+    # ==========================================================================
+    #
+    # The job_id is a public input - the worker is accepting this specific job.
+    # The contract will verify the job exists and is in "Created" state.
+    # The worker's public key is bound to this job.
+
+    constrain_instance(job_id);
+    constrain_instance(worker_pub_x);
+    constrain_instance(worker_pub_y);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses ONLY proven opcodes:
+    #   - ec_mul_base: standard EC operations
+    #   - ec_get_x, ec_get_y: standard EC operations
+    #   - constrain_instance: public input exposure
+    #
+    # Note: The actual job verification (state, deadline, etc.) is done
+    # by the contract layer, not in this circuit. The circuit only proves
+    # the worker knows their secret and has derived their public key.
+}

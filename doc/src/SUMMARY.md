@@ -58,6 +58,7 @@
   - [DAO-Escrow Contract](arch/dao_escrow.md)
   - [Subscription Contract](arch/subscription.md)
   - [Atomic Swap Contract](arch/atomic_swap.md)
+  - [Labor Market Contract](arch/labor_market.md)
   - [Private Authorization Layer](arch/privauth.md)
   - [Composability](arch/composability.md)
   - [Wallet](arch/wallet.md)
