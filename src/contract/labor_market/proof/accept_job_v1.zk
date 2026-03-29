@@ -26,6 +26,10 @@ witness "AcceptJob" {
 
     # Worker's secret (for key derivation, not revealed)
     Base worker_secret,
+
+    # Worker's public key coordinates (public input - must match derived)
+    Base worker_pub_x,
+    Base worker_pub_y,
 }
 
 circuit "AcceptJob" {
@@ -34,8 +38,13 @@ circuit "AcceptJob" {
     # ==========================================================================
 
     worker_pub = ec_mul_base(worker_secret, NULLIFIER_K);
-    worker_pub_x = ec_get_x(worker_pub);
-    worker_pub_y = ec_get_y(worker_pub);
+    derived_pub_x = ec_get_x(worker_pub);
+    derived_pub_y = ec_get_y(worker_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the worker_secret to the worker_pubkey
+    constrain_equal_base(derived_pub_x, worker_pub_x);
+    constrain_equal_base(derived_pub_y, worker_pub_y);
 
     # ==========================================================================
     # PHASE 2: Expose public inputs

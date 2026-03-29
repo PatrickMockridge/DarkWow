@@ -32,6 +32,10 @@ witness "RevealBid" {
     # Bidder's secret (for key derivation)
     Base bidder_secret,
 
+    # Bidder's public key coordinates (public input - must match derived)
+    Base bidder_pub_x,
+    Base bidder_pub_y,
+
     # The revealed amount
     Base revealed_amount,
 }
@@ -42,8 +46,13 @@ circuit "RevealBid" {
     # ==========================================================================
 
     bidder_pub = ec_mul_base(bidder_secret, NULLIFIER_K);
-    bidder_pub_x = ec_get_x(bidder_pub);
-    bidder_pub_y = ec_get_y(bidder_pub);
+    derived_pub_x = ec_get_x(bidder_pub);
+    derived_pub_y = ec_get_y(bidder_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the bidder_secret to the bidder_pubkey
+    constrain_equal_base(derived_pub_x, bidder_pub_x);
+    constrain_equal_base(derived_pub_y, bidder_pub_y);
 
     # ==========================================================================
     # PHASE 2: Expose public inputs

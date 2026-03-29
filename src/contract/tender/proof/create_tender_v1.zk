@@ -23,6 +23,10 @@ constant "CreateTender" {
 witness "CreateTender" {
     # Requester's secret (for key derivation, not revealed)
     Base requester_secret,
+
+    # Requester's public key coordinates (public input - must match derived)
+    Base requester_pub_x,
+    Base requester_pub_y,
 }
 
 circuit "CreateTender" {
@@ -31,8 +35,13 @@ circuit "CreateTender" {
     # ==========================================================================
 
     requester_pub = ec_mul_base(requester_secret, NULLIFIER_K);
-    requester_pub_x = ec_get_x(requester_pub);
-    requester_pub_y = ec_get_y(requester_pub);
+    derived_pub_x = ec_get_x(requester_pub);
+    derived_pub_y = ec_get_y(requester_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the requester_secret to the requester_pubkey
+    constrain_equal_base(derived_pub_x, requester_pub_x);
+    constrain_equal_base(derived_pub_y, requester_pub_y);
 
     # ==========================================================================
     # PHASE 2: Expose public inputs

@@ -35,6 +35,10 @@ witness "Dispute" {
 
     # DAO-Escrow handling this dispute
     Base dao_escrow_bulla,
+
+    # Disputer's public key coordinates (public input - must match derived)
+    Base disputer_pub_x,
+    Base disputer_pub_y,
 }
 
 circuit "Dispute" {
@@ -43,8 +47,13 @@ circuit "Dispute" {
     # ==========================================================================
 
     disputer_pub = ec_mul_base(disputer_secret, NULLIFIER_K);
-    disputer_pub_x = ec_get_x(disputer_pub);
-    disputer_pub_y = ec_get_y(disputer_pub);
+    derived_pub_x = ec_get_x(disputer_pub);
+    derived_pub_y = ec_get_y(disputer_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the disputer_secret to the disputer_pubkey
+    constrain_equal_base(derived_pub_x, disputer_pub_x);
+    constrain_equal_base(derived_pub_y, disputer_pub_y);
 
     # ==========================================================================
     # PHASE 2: Compute dispute nullifier

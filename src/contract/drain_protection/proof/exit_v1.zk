@@ -39,6 +39,10 @@ witness "ExitProof" {
     # Member's secret key
     Base member_secret,
 
+    # Member's public key coordinates (public input - must match derived)
+    Base member_pub_x,
+    Base member_pub_y,
+
     # Contribution details
     Uint64 deposited_at,
     Uint64 contribution_amount,
@@ -68,8 +72,13 @@ circuit "ExitProof" {
     # ==========================================================================
 
     member_pub = ec_mul_base(member_secret, NULLIFIER_K);
-    member_pub_x = ec_get_x(member_pub);
-    member_pub_y = ec_get_y(member_pub);
+    derived_pub_x = ec_get_x(member_pub);
+    derived_pub_y = ec_get_y(member_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the member_secret to the member_pubkey
+    constrain_equal_base(derived_pub_x, member_pub_x);
+    constrain_equal_base(derived_pub_y, member_pub_y);
 
     # ==========================================================================
     # PHASE 2: Compute contribution weight (block-height-adjusted)
@@ -145,6 +154,7 @@ circuit "ExitProof" {
     # This circuit uses ONLY proven opcodes (no grey-market opcodes):
     #   - less_than_strict: constrain-only comparison (SOUND)
     #   - ec_mul_base, ec_get_x, ec_get_y: standard EC operations
+    #   - constrain_equal_base: equality constraint
     #   - sub, mul, div: standard arithmetic
     #   - constrain_instance: public input exposure
     #

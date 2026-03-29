@@ -26,6 +26,10 @@ witness "ConfirmDelivery" {
 
     # Employer's secret (for key derivation and nullifier)
     Base employer_secret,
+
+    # Employer's public key coordinates (public input - must match derived)
+    Base employer_pub_x,
+    Base employer_pub_y,
 }
 
 circuit "ConfirmDelivery" {
@@ -34,8 +38,13 @@ circuit "ConfirmDelivery" {
     # ==========================================================================
 
     employer_pub = ec_mul_base(employer_secret, NULLIFIER_K);
-    employer_pub_x = ec_get_x(employer_pub);
-    employer_pub_y = ec_get_y(employer_pub);
+    derived_pub_x = ec_get_x(employer_pub);
+    derived_pub_y = ec_get_y(employer_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the employer_secret to the employer_pubkey
+    constrain_equal_base(derived_pub_x, employer_pub_x);
+    constrain_equal_base(derived_pub_y, employer_pub_y);
 
     # ==========================================================================
     # PHASE 2: Compute release nullifier

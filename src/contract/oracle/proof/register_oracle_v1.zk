@@ -22,6 +22,10 @@ constant "RegisterOracle" {
 witness "RegisterOracle" {
     # Oracle operator's secret (for key derivation, not revealed)
     Base oracle_secret,
+
+    # Oracle's public key coordinates (public input - must match derived)
+    Base oracle_pub_x,
+    Base oracle_pub_y,
 }
 
 circuit "RegisterOracle" {
@@ -30,8 +34,13 @@ circuit "RegisterOracle" {
     # ==========================================================================
 
     oracle_pub = ec_mul_base(oracle_secret, NULLIFIER_K);
-    oracle_pub_x = ec_get_x(oracle_pub);
-    oracle_pub_y = ec_get_y(oracle_pub);
+    derived_pub_x = ec_get_x(oracle_pub);
+    derived_pub_y = ec_get_y(oracle_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the oracle_secret to the oracle_pubkey
+    constrain_equal_base(derived_pub_x, oracle_pub_x);
+    constrain_equal_base(derived_pub_y, oracle_pub_y);
 
     # ==========================================================================
     # PHASE 2: Expose public inputs
@@ -47,6 +56,7 @@ circuit "RegisterOracle" {
     # This circuit uses ONLY proven opcodes:
     #   - ec_mul_base: standard EC operations
     #   - ec_get_x, ec_get_y: standard EC operations
+    #   - constrain_equal_base: equality constraint
     #   - constrain_instance: public input exposure
     #
     # The oracle registration data (name, type) is stored by the contract.
