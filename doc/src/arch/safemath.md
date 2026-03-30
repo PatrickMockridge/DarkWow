@@ -95,6 +95,40 @@ less_than_strict(two_times_debt, collateral_plus_one);  # Pass/fail only
 # Can use safemath safely
 ```
 
+### Bounded Equation Construction (No LessThanOrEqual Needed)
+
+There's an alternative approach that **returns a public 0/1 bit without LessThanOrEqual**:
+
+```zk
+# Prove: threshold <= attribute_value, return public bit
+#
+# Construction:
+#   threshold + delta = attribute_value + (1 - result) * 2^64
+#
+# With constraints:
+range_check(64, threshold);
+range_check(64, attribute_value);
+range_check(64, delta);
+bool_check(predicate_result);
+base_mul_small((1 - predicate_result), 2^64);  # Large constant
+
+# Interpretation:
+# - If predicate_result = 1: equation becomes threshold + delta = attribute_value
+#   This is solvable iff threshold <= attribute_value
+# - If predicate_result = 0: equation becomes threshold + delta = attribute_value + 2^64
+#   This is solvable iff threshold > attribute_value
+```
+
+**Why this works**:
+- Both values are bounded to u64, so arithmetic is well-defined
+- The equation collapses to solvable/unsolvable depending on the bit
+- The prover MUST set predicate_result correctly to satisfy constraints
+- No experimental opcode needed — uses only: `range_check`, `bool_check`, `base_add`, `base_mul`, `constrain_equal_base`
+
+**This preserves Level 1 semantics** — predicate_result is a public output bit.
+
+**Key limitation**: Only works for u64-bounded comparisons, not arbitrary field ordering.
+
 ## Safemath in the Stack
 
 ```
@@ -178,17 +212,35 @@ collateral_plus_one = base_add(collateral_amount, ONE);
 less_than_strict(two_times_debt, collateral_plus_one);
 ```
 
-### Identity Threshold
+### Identity Threshold (Assertion-Only)
 
 ```zk
 # From src/contract/identity/proof/create_claim_v1.zk
 #
 # Prove: threshold <= attribute_value (credential threshold met)
+# Uses safemath assertion (no public bit returned)
 
 ONE = witness_base(1);
 attribute_plus_one = base_add(attribute_value, ONE);
 less_than_strict(threshold, attribute_plus_one);
 ```
+
+### Identity Threshold (Bounded Equation - Returns Public Bit)
+
+For Level 1 selective disclosure where a public predicate_result bit is needed:
+
+```zk
+# Bounded equation construction returning public bit:
+#   threshold + delta = attribute_value + (1 - result) * 2^64
+
+range_check(64, threshold);
+range_check(64, attribute_value);
+range_check(64, delta);
+bool_check(predicate_result);
+# Prover sets predicate_result to 1 if threshold <= attribute_value
+```
+
+This preserves Level 1 semantics without LessThanOrEqual.
 
 ## Source
 
