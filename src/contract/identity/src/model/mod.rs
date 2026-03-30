@@ -170,6 +170,34 @@ pub struct CreateClaimParams {
     pub fee: u64,
 }
 
+/// Create claim parameters (Level 1 - Selective Disclosure)
+/// This version includes a public predicate_result output
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CreateClaimParamsL1 {
+    /// The credential nullifier
+    pub nullifier: IntentNullifier,
+
+    /// The claim type (e.g., "age_over_18", "dao_member")
+    pub claim_type: Vec<u8>,
+
+    /// Predicate for the claim (e.g., ">= 18", "== 1")
+    pub predicate: Vec<u8>,
+
+    /// The attributes being revealed in this claim
+    /// (not the actual values, just which ones)
+    pub revealed_attributes: Vec<Vec<u8>>,
+
+    /// ZK proof for the claim (Level 1 with bounded equation)
+    pub proof: Vec<u8>,
+
+    /// Public predicate result (1 if predicate satisfied, 0 otherwise)
+    /// This is revealed publicly via the ZK circuit's bounded equation
+    pub predicate_result: u8,
+
+    /// Fee paid for claim creation (if on-chain)
+    pub fee: u64,
+}
+
 /// Verify claim parameters
 /// This is typically called by a verifier
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]

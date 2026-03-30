@@ -109,7 +109,8 @@
 //! | InitializeV1 | 0x00 | Initialize identity registry |
 //! | IssueCredentialV1 | 0x01 | Issuer issues a credential |
 //! | RevokeCredentialV1 | 0x02 | Issuer revokes a credential |
-//! | CreateClaimV1 | 0x03 | Generate claim from credential |
+//! | CreateClaimV1 | 0x03 | Generate claim from credential (Level 0 zk_only) |
+//! | CreateClaimV1L1 | 0x05 | Generate claim with public predicate result |
 //! | VerifyClaimV1 | 0x04 | Verify a claim (on-chain) |
 //!
 //! ## Future Expansion
@@ -126,6 +127,7 @@ define_contract_function!(IdentityFunction {
     IssueCredentialV1 = 0x01,
     RevokeCredentialV1 = 0x02,
     CreateClaimV1 = 0x03,
+    CreateClaimV1L1 = 0x05,
     VerifyClaimV1 = 0x04,
 });
 
@@ -173,7 +175,9 @@ pub const IDENTITY_CONTRACT_VERSION: &[u8] = b"protocol_version";
 
 /// Credential issuance circuit namespace
 pub const IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V1: &str = "IssueCredential_V1";
-/// Claim generation circuit namespace
+/// Claim generation circuit namespace (Level 0 - zk_only)
 pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1: &str = "CreateClaim_V1";
+/// Claim generation circuit namespace (Level 1 - selective disclosure)
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1: &str = "CreateClaim_V1_L1";
 /// Claim verification circuit namespace
 pub const IDENTITY_CONTRACT_ZKAS_VERIFY_NS_V1: &str = "VerifyClaim_V1";

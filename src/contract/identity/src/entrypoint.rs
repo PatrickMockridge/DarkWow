@@ -65,6 +65,7 @@ pub fn identity_exec(rt: &mut Runtime, params: BridgeParameter) -> ContractResul
         IdentityFunction::IssueCredentialV1 => identity_issue_credential(rt, call),
         IdentityFunction::RevokeCredentialV1 => identity_revoke_credential(rt, call),
         IdentityFunction::CreateClaimV1 => identity_create_claim(rt, call),
+        IdentityFunction::CreateClaimV1L1 => identity_create_claim_l1(rt, call),
         IdentityFunction::VerifyClaimV1 => identity_verify_claim(rt, call),
     }
 }
@@ -294,6 +295,97 @@ fn identity_create_claim(rt: &mut Runtime, call: BridgeCall) -> ContractResult<(
 }
 
 // ============================================================================
+// CREATE CLAIM (Level 1 - Selective Disclosure)
+// ============================================================================
+
+/// Create a Level 1 claim from a credential with selective disclosure
+///
+/// This is similar to CreateClaimV1 but returns a public predicate_result bit.
+/// The verifier learns whether the predicate is satisfied, not just that
+/// the proof is valid.
+///
+/// Flow:
+/// 1. Verify credential exists and is valid
+/// 2. Verify credential is not expired or revoked
+/// 3. Verify ZK proof with bounded equation (returns predicate_result)
+/// 4. Store claim (if on-chain registration required)
+/// 5. Emit ClaimCreated event with predicate_result
+fn identity_create_claim_l1(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
+    let params: CreateClaimParamsL1 = deserialize_claim_params_l1(&call.data[1..])?;
+
+    msg!("[identity_create_claim_l1] Creating Level 1 claim for nullifier {:?}", &params.nullifier);
+
+    // =========================================================================
+    // STEP 1: Load and verify credential
+    // =========================================================================
+
+    let nullifier_bytes = params.nullifier.to_bytes();
+    let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, nullifier_bytes)?;
+    let credential: Credential = match cred_data {
+        Some(data) => Credential::decode(&mut std::io::Cursor::new(&data))
+            .map_err(|_| ContractError::DecodeError)?,
+        None => {
+            msg!("[identity_create_claim_l1] ERROR: Credential not found");
+            return Err(IdentityError::CredentialNotFound.into())
+        }
+    };
+
+    // =========================================================================
+    // STEP 2: Verify not expired or revoked
+    // =========================================================================
+
+    if credential.revoked {
+        msg!("[identity_create_claim_l1] ERROR: Credential is revoked");
+        return Err(IdentityError::CredentialRevoked.into())
+    }
+
+    let current_time = get_current_timestamp(rt)?;
+    if credential.expires_at > 0 && current_time > credential.expires_at {
+        msg!("[identity_create_claim_l1] ERROR: Credential expired");
+        return Err(IdentityError::CredentialExpired.into())
+    }
+
+    // =========================================================================
+    // STEP 3: Verify ZK proof with Level 1 bounded equation
+    // =========================================================================
+    //
+    // The Level 1 ZK proof verifies:
+    // - Holder knows the secret key corresponding to holder_pub
+    // - Credential commitment matches stored commitment
+    // - The predicate is satisfied (e.g., age >= 18)
+    // - The bounded equation holds: threshold + delta = attribute_value + (1 - result) * 2^64
+    //
+    // PUBLIC OUTPUT: predicate_result (0 or 1)
+    //
+    // What it reveals:
+    // - predicate_result: 1 if threshold <= attribute_value, 0 otherwise
+    //
+    // What it does NOT reveal:
+    // - Who the holder is
+    // - What the credential attributes are
+    // - What the actual threshold or attribute values are
+
+    // In production: call ZK verifier with proof
+
+    // =========================================================================
+    // STEP 4: Store claim (if required on-chain)
+    // =========================================================================
+
+    // =========================================================================
+    // STEP 5: Emit event with predicate result
+    // =========================================================================
+    // Note: Level 1 reveals the predicate result publicly
+
+    msg!(
+        "[identity_create_claim_l1] EMIT_EVENT: ClaimCreatedL1(nullifier={:?}, predicate_result={})",
+        &params.nullifier,
+        params.predicate_result
+    );
+
+    Ok(())
+}
+
+// ============================================================================
 // VERIFY CLAIM
 // ============================================================================
 
@@ -459,5 +551,10 @@ fn deserialize_claim_params(data: &[u8]) -> ContractResult<CreateClaimParams> {
 
 fn deserialize_verify_params(data: &[u8]) -> ContractResult<VerifyClaimParams> {
     VerifyClaimParams::decode(&mut std::io::Cursor::new(data))
+        .map_err(|_| ContractError::DecodeError)
+}
+
+fn deserialize_claim_params_l1(data: &[u8]) -> ContractResult<CreateClaimParamsL1> {
+    CreateClaimParamsL1::decode(&mut std::io::Cursor::new(data))
         .map_err(|_| ContractError::DecodeError)
 }

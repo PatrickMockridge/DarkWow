@@ -1,0 +1,90 @@
+k = 12;
+field = "pallas";
+
+constant "CreateClaimV1L1" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "CreateClaimV1L1" {
+    # Public inputs
+    Base nullifier,
+    Base claim_type,
+    Base issuer_pub_x,
+    Base issuer_pub_y,
+    Base schema_hash,
+    Base predicate_result,  # Public output: 1 if threshold <= attribute_value
+
+    # Private inputs
+    Base credential_secret,
+    Base attribute_value,
+    Base threshold,
+    Base commitment,
+    Base delta,  # Slack variable for bounded equation
+}
+
+circuit "CreateClaimV1L1" {
+    # Derive nullifier from credential secret and commitment
+    computed_nullifier = poseidon_hash(credential_secret, commitment);
+    constrain_instance(computed_nullifier);
+
+    # Verify nullifier matches
+    constrain_equal_base(computed_nullifier, nullifier);
+
+    # ============================================================
+    # PREDICATE VERIFICATION (Level 1: selective disclosure)
+    # ============================================================
+    # This circuit proves: threshold <= attribute_value
+    # AND returns a PUBLIC predicate_result bit.
+    #
+    # Level 0 (zk_only): Verifier learns ONLY "proof is valid" or "invalid"
+    # Level 1 (selective): Verifier learns predicate_result (0 or 1)
+    #
+    # Bounded equation construction:
+    #   threshold + delta = attribute_value + (1 - result) * 2^64
+    #
+    # Interpretation:
+    # - If predicate_result = 1: threshold + delta = attribute_value
+    #   Solvable iff threshold <= attribute_value (delta absorbs the gap)
+    # - If predicate_result = 0: threshold + delta = attribute_value + 2^64
+    #   Solvable iff threshold > attribute_value (needs 2^64 slack)
+    #
+    # Uses only proven opcodes: range_check, bool_check, base_add, base_mul
+    # See: doc/src/arch/safemath.md#bounded-equation-construction
+    # ============================================================
+
+    # Range checks to ensure inputs are well-formed (prevents field wraparound)
+    range_check(64, attribute_value);
+    range_check(64, threshold);
+    range_check(64, delta);
+
+    # Constrain predicate_result to be binary (0 or 1)
+    bool_check(predicate_result);
+
+    # Compute 2^64 as 2^32 * 2^32 (both as witnesses, properly constrained)
+    TWO_POW_32 = witness_base(4294967296);
+    TWO_POW_64 = base_mul(TWO_POW_32, TWO_POW_32);
+
+    # Compute the right-hand side of the bounded equation
+    # RHS = attribute_value + (1 - predicate_result) * 2^64
+    ONE = witness_base(1);
+    one_minus_result = base_sub(ONE, predicate_result);
+    result_term = base_mul(one_minus_result, TWO_POW_64);
+    rhs = base_add(attribute_value, result_term);
+
+    # Compute LHS = threshold + delta
+    lhs = base_add(threshold, delta);
+
+    # Constrain the bounded equation: LHS == RHS
+    constrain_equal_base(lhs, rhs);
+
+    # ============================================================
+    # SEMANTIC GUARANTEE
+    # ============================================================
+    # The prover MUST set predicate_result = 1 if and only if
+    # threshold <= attribute_value. Otherwise verification fails.
+    #
+    # This gives Level 1 selective disclosure: the verifier learns
+    # the predicate result publicly, but nothing about the actual
+    # attribute_value or threshold values beyond what the predicate
+    # result reveals.
+}
