@@ -1532,6 +1532,106 @@ Instead of memecoins (speculation on nothing), the risk market ecosystem creates
 
 See [Risk Market Ecosystem](risk_market_ecosystem.md) for full details.
 
+## Current Development Limitations
+
+Several issues affect the ability to develop, test, and deploy smart contracts on DarkFi. These are documented here for awareness when designing or modifying contracts.
+
+### Issue 1: async-trait Lifetime Bug (Rust 1.90+)
+
+**Impact**: Cannot build `darkfid`, `drk`, or integration tests from source when using Rust 1.90+.
+
+**Root cause**: The `darkfi-serial/async` feature enables async-serialization which triggers a lifetime bug in `async-trait` 0.1.x.
+
+**Feature chain**:
+```
+darkfi/validator
+  └── darkfi/tx
+        └── darkfi/async-serial
+              └── darkfi-serial/async
+                    └── async-trait 0.1.x  (buggy on Rust 1.90+)
+```
+
+**Workaround**: Use Rust 1.89 with downgraded dependencies:
+```bash
+rustup install 1.89.0
+rustup override set 1.89.0
+cargo update typed-index-collections@3.4.0 --precise 3.3.0
+```
+
+**Status**: Pre-built DarkFiMain binaries (v0.5.0) work around this issue.
+
+See [Async Serialization Lifetime Bug](./async_serial_lifetime_bug.md) for full details.
+
+### Issue 2: Missing `drk wallet` Commands in v0.5.0 Binaries
+
+**Impact**: Cannot create wallets, check balances, mine tokens, or list coins using the CLI.
+
+**Missing commands**:
+- `drk wallet create` - Wallet creation
+- `drk wallet mine` - Mining for test tokens
+- `drk wallet balance` - Balance checking
+- `drk wallet coins` - Coin listing
+
+**Available commands in v0.5.0**:
+- `drk alias` - Token alias management
+- `drk contract` - Contract deployment
+- `drk token` - Token operations (mint, freeze, import)
+
+**Workaround**: Use pre-built DarkFiMain binaries which include wallet functionality, or wait for v0.6.0 tooling.
+
+See [Localnet Contract Testing](./localnet_contract_testing.md) for testing alternatives.
+
+### Issue 3: No Test Token Faucet
+
+**Impact**: Cannot obtain DARK tokens on localnet without mining infrastructure.
+
+**Options**:
+1. **Solo PoW Mining**: Run `darkfid` + `minerd` to mine blocks and earn rewards
+2. **Merge Mining**: Set up Monero + p2pool + xmrig (complex, for mainnet)
+3. **Custom Token Minting**: Use `drk token generate-mint` + `drk token mint` for non-DARK tokens
+
+**For localnet testing**: The `minerd` binary from DarkFiMain can connect to darkfid for solo mining.
+
+See [Mining on Testnet](../testnet/testnet-mining.md) for solo mining setup.
+
+### Issue 4: Integration Test Compilation Blocked
+
+**Impact**: Cannot compile `darkfi-contract-test-harness` from source.
+
+**Root cause**: Same async-trait issue as Issue 1.
+
+**Workaround**: Test what can be tested:
+- ✅ ZK circuit compilation (via `zkas` binary)
+- ✅ Serialization round-trips (via `cargo test --lib`)
+- ❌ Business logic tests (requires full test harness)
+
+See [Test Harness Guide](./test_harness_guide.md) for testable components.
+
+### Impact on Composability Development
+
+These limitations affect cross-contract development:
+
+| Activity | Status | Workaround |
+|----------|--------|------------|
+| Contract WASM compilation | ✅ Works | `cargo build --target wasm32` |
+| ZK circuit compilation | ✅ Works | `zkas` binary |
+| Contract deployment | ⚠️ Needs DARK | Solo mining or custom tokens |
+| Cross-contract integration | ⚠️ Limited | Test with custom tokens |
+| Full test harness | ❌ Blocked | Test individual components |
+
+### Mitigation Strategies
+
+1. **For contract authors**: Focus on ZK circuit tests and serialization tests which work without the full harness
+2. **For testing**: Use custom tokens for testing contract logic without needing DARK
+3. **For deployment**: Mine testnet using solo PoW (minerd) or use pre-built binaries with wallet commands
+
+### Related Documentation
+
+- [Localnet Contract Testing](./localnet_contract_testing.md) - Current testing state
+- [Test Harness Guide](./test_harness_guide.md) - What can be tested
+- [Async Serialization Lifetime Bug](./async_serial_lifetime_bug.md) - Rust compatibility issue
+- [Mining on Testnet](../testnet/testnet-mining.md) - Solo mining setup
+
 ## References
 
 - [Private Authorization Layer](privauth.md)

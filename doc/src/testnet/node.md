@@ -18,6 +18,8 @@ We also strongly suggest to first execute next guide steps on a
 [local environment](#local-deployment) to become familiar with
 each command, before broadcasting transactions to the actual network.
 
+> **Conda Users**: If using conda environments, run `conda deactivate` before running DarkFi binaries. Conda's Python and library paths may conflict with DarkFi's native dependencies. See [Using dnet](../learn/dchat/network-tools/using-dnet.md) for venv setup.
+
 ## Overview
 
 This tutorial will cover the three DarkFi blockchain components and

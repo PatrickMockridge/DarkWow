@@ -20,6 +20,8 @@ Use a python virtual environment to install its requirements:
 % source venv/bin/activate
 ```
 
+> **Conda Users**: If using conda, consider running `conda deactivate` before creating venvs, or use `conda create -n mdbook python=3.x && conda activate mdbook` to avoid environment conflicts. The venv approach is recommended over conda for mdbook builds.
+
 Then install the requirements:
 
 ```shell

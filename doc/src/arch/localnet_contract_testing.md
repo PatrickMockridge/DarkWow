@@ -12,6 +12,8 @@ Localnet smart contract testing is **partially functional** but has significant 
 2. **Missing wallet commands** - The `drk wallet` subcommand was removed or not implemented in v0.5.0
 3. **No test token minting** - No mechanism to obtain test DARK tokens on localnet
 
+> **Conda Users**: If using conda environments, be aware that conda's Python may conflict with system Python packages. Consider using `conda deactivate` before running DarkFi binaries, or use a separate venv as described in [Using dnet](../learn/dchat/network-tools/using-dnet.md).
+
 ## What Works
 
 ### Binary Availability

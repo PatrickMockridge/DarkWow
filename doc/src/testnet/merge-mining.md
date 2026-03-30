@@ -4,6 +4,8 @@ DarkFi x Monero Merge Mining using p2pool and xmrig
 This document provides a way to set up a Monero testnet that is
 able to merge-mine DarkFi using `p2pool` and `xmrig`.
 
+> **Conda Users**: If using conda environments, run `conda deactivate` before running DarkFi binaries. Conda's Python and library paths may conflict with DarkFi's native dependencies. Consider using a venv as described in [Using dnet](../learn/dchat/network-tools/using-dnet.md).
+
 Please read the whole document first before executing commands, to
 understand all the steps required and how each component operates.
 Unless instructed otherwise, each daemon runs on its own shell, so

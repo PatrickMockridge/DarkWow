@@ -290,6 +290,8 @@ activity from all channels without needing to flick through them.
 You may need to install `weechat-python` to enable Python scripting support
 in your weechat.
 
+> **Conda Users**: If using conda, run `conda deactivate` before starting weechat, or ensure weechat uses the system Python. Conda's Python may conflict with weechat's Python integration.
+
 ## Emojis
 
 Install the `noto` fonts to have the full unicode set. Popular Linux distros

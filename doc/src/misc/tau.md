@@ -30,6 +30,8 @@ Let's install the requirements:
 % pip install -r requirements.txt
 ```
 
+> **Conda Users**: If using conda, run `conda deactivate` before installing Python requirements, or use `conda run -n base pip install` to avoid conda's Python environment conflicts. Consider using a venv as described in [Using dnet](../learn/dchat/network-tools/using-dnet.md).
+
 Then you can run it with:
 ```shell
 % ./tau

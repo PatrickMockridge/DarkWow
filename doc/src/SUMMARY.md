@@ -21,6 +21,7 @@
 - [DAO](testnet/dao.md)
 - [Contracts](testnet/contract.md)
 - [Merge Mining](testnet/merge-mining.md)
+- [Mining on Testnet](testnet/testnet-mining.md)
 - [DarkIRC](misc/darkirc/darkirc.md)
   - [Private Message](misc/darkirc/private_message.md)
 - [Node Configurations](misc/nodes/node-configurations.md)
