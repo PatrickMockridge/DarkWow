@@ -1,0 +1,194 @@
+# DarkFi Async Serialization Lifetime Bug
+
+## Overview
+
+DarkFi has a pre-existing bug in its `async` serialization system that prevents integration tests from compiling on Rust 1.90+. This bug affects all smart contract integration tests that depend on `darkfi-sdk` when compiled with `darkfi-serial/async` enabled.
+
+## Affected Components
+
+- `darkfi-sdk` (src/sdk)
+- `darkfi-serial` (src/serial)
+- `darkfi-derive` (src/serial/derive)
+- `darkfi-derive-internal` (src/serial/derive-internal)
+- All smart contract integration tests
+
+## Error Message
+
+```
+error[E0195]: lifetime parameters or bounds on associated function `decode_async` do not match the trait declaration
+   --> src/sdk/src/crypto/intent_set.rs:124:56
+    |
+124 | #[derive(Clone, Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+    |                                                        ^^^^^^^^^^^^^^^ lifetimes do not match associated function in trait
+```
+
+## Root Cause Analysis
+
+### The async-trait Crate Bug
+
+DarkFi uses the `async-trait` crate (version 0.1.x) to provide async serialization traits. The `#[async_trait]` attribute macro transforms async fn signatures into equivalent non-async functions returning boxed futures.
+
+The bug is in how `async-trait 0.1.x` handles lifetime elision for `async fn(&self)` methods. When the trait is:
+
+```rust
+#[async_trait]
+pub trait AsyncDecodable: Sized {
+    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self>;
+}
+```
+
+The generated impl uses `Pin<Box<dyn Future + Send + '_>>` with an implicit lifetime that doesn't satisfy the compiler's bounds checking on Rust 1.90+.
+
+### How async Code Gets Generated
+
+The `SerialEncodable` and `SerialDecodable` derive macros from `darkfi-derive` generate `async` implementations when the `async` feature is enabled on `darkfi-serial`. The feature flag propagates through the derive macro:
+
+1. `darkfi-serial` has `async = ["futures-lite", "async-trait", "darkfi-derive/async"]`
+2. When `async` is enabled, `darkfi-derive/async` enables `darkfi-derive-internal/async`
+3. This causes `async_struct_ser`, `async_struct_de`, `async_enum_ser`, `async_enum_de` to generate `#[async_trait]` impl blocks
+4. These impl blocks are generated for **ALL** structs/enums using the derives, not just async-specific code
+
+### Feature Chain That Enables async-serial
+
+The `async-serial` feature propagates through this chain:
+
+```
+darkfi/validator
+  └── darkfi/blockchain
+        └── darkfi/tx
+              └── darkfi/async-serial
+                    └── darkfi-serial/async
+```
+
+**Any** code that depends on `darkfi` with the `validator` feature (directly or through test-harnesses) will transitively enable `async-serial`.
+
+## Why The Bug Is Hard To Fix
+
+### 1. Proc Macro Expansion Happens Early
+
+Proc macros run before type checking. The `#[derive(SerialEncodable)]` expands to code that includes `#[async_trait]` attributes. This expanded code is then type-checked. If the expanded code has lifetime mismatches, the error appears in the user's code (intent_set.rs), not in the macro.
+
+### 2. Feature Unification In Cargo
+
+Cargo merges features across the dependency graph. Even if a specific crate doesn't directly enable `async-serial`, a dependency might, and that enables it for all consumers in that build.
+
+### 3. Cannot Conditionally Generate async Code
+
+The derive macros generate either sync OR async code based on the `async` feature at compile time of the crate using the derive. There is no way to have sync-only code in the same crate as async-only code using the same derive.
+
+### 4. Lifetime Elision Rules
+
+Rust's lifetime elision rules for async fn with &self don't produce the bounds that `async-trait`'s macro transformation expects. The compiler has become stricter about this in 1.90+.
+
+## Affected Build Configurations
+
+| Rust Version | typed-index-collections | Status |
+|--------------|------------------------|--------|
+| 1.88.x       | any                    | Should work |
+| 1.89.x       | 3.3.0                 | Works with no `async-serial` |
+| 1.89.x       | 3.4.0                 | Works (bug doesn't manifest) |
+| 1.90+        | any                    | Broken with `async-serial` |
+
+## Current Workaround
+
+The integration tests cannot be run with Rust 1.90+ because `darkfi/validator` is required by the test-harness, which transitively enables `async-serial`.
+
+### Option 1: Use Rust 1.89 with Downgraded Dependencies
+
+```bash
+rustup install 1.89.0
+rustup override set 1.89.0
+cargo update typed-index-collections@3.4.0 --precise 3.3.0
+```
+
+### Option 2: Fix the async-trait Issue
+
+Update to `async-trait 1.0+` which uses native async traits (Rust 1.75+). This requires:
+
+1. Changing `async-trait = "0"` to `async-trait = "1"` in `src/serial/Cargo.toml`
+2. Removing `#[async_trait]` from trait definitions (now redundant with Rust 1.75+)
+3. Changing `async fn` trait methods to native async syntax
+
+### Option 3: Restructure darkfi Features
+
+Remove `async-serial` from the `tx` feature chain:
+
+```toml
+# In Cargo.toml
+tx = [
+    "blake3",
+    "async-sdk",  # Keep this
+    # "async-serial",  # Remove this
+    "zk",
+]
+```
+
+This would break async serialization for tx module but allow tests to compile.
+
+## Files Involved
+
+### Core Files
+- `src/serial/Cargo.toml` - Defines async feature
+- `src/serial/src/async_lib.rs` - Async trait definitions with #[async_trait]
+- `src/serial/derive/src/lib.rs` - Derive macro entry point
+- `src/serial/derive-internal/src/async_derive.rs` - Async derive implementations
+- `src/sdk/src/crypto/intent_set.rs` - Affected structs with derives
+
+### Contracts Using async-serial in client Features
+- `src/contract/baccarat/Cargo.toml`
+- `src/contract/dao/Cargo.toml`
+- `src/contract/deployooor/Cargo.toml`
+- `src/contract/darktoshi_dice/Cargo.toml`
+- `src/contract/drain_protection/Cargo.toml`
+- `src/contract/escrow/Cargo.toml`
+- `src/contract/money/Cargo.toml`
+- `src/contract/money_v2/Cargo.toml`
+- `src/contract/stablecoin/Cargo.toml`
+- `src/contract/dex/Cargo.toml`
+- `src/contract/bridge/Cargo.toml`
+
+### Feature Chain
+```
+darkfi/validator
+  └── darkfi/blockchain
+        └── darkfi/tx
+              └── darkfi/async-serial
+                    └── darkfi-serial/async
+                          ├── futures-lite
+                          ├── async-trait
+                          └── darkfi-derive/async
+                                └── darkfi-derive-internal/async
+```
+
+## Verification Commands
+
+### Check If async-serial Is Enabled
+```bash
+cargo tree -p darkfi_baccarat_contract -e features -i darkfi-serial 2>&1 | grep "async"
+```
+
+### Check What Enables async-serial
+```bash
+cargo tree -p darkfi_baccarat_contract -e features 2>&1 | grep -B5 "darkfi-serial/async"
+```
+
+### Check Rust Version
+```bash
+rustc --version
+```
+
+## Related Links
+
+- [async-trait crate](https://crates.io/crates/async-trait)
+- [Rust async traits RFC](https://rust-lang.github.io/rfcs/3320-receiver-lifetime-bounds.html)
+- [Rust 1.75 async traits release notes](https://blog.rust-lang.org/2023/12/28/Rust-1.75.html)
+
+## Status
+
+**Unresolved** - This is a pre-existing architectural issue in DarkFi's async serialization system that predates the current development cycle.
+
+## See Also
+
+- [Baccarat Contract README](../contract/baccarat.md) - Casino game contract
+- [ZK Circuit Testing](./zk_circuit_testing.md) - How to run ZK circuit tests
+- [Contract Testing](./contract_testing.md) - Smart contract testing patterns

@@ -82,6 +82,7 @@
   - [Complete Opcode Universe](arch/opcode_universe.md)
   - [Contract MVP Status](arch/mvp_status.md)
   - [Security Analysis](arch/security-analysis.md)
+  - [Async Serialization Lifetime Bug](arch/async_serial_lifetime_bug.md)
   - [Public Key Constraint Hook](arch/pubkey-constraint-hook.md)
   - [Money Version Bridge](arch/money-version-bridge.md)
   - [Money Vulnerability Analysis](arch/money-vulnerability-analysis.md)
