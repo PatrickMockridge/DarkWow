@@ -156,25 +156,27 @@ This would break async serialization for tx module but allow tests to compile.
 
 ## Files Involved
 
-### Core Files
+### Core Files (Where The Bug Lives)
 - `src/serial/Cargo.toml` - Defines async feature
-- `src/serial/src/async_lib.rs` - Async trait definitions with #[async_trait]
+- `src/serial/src/async_lib.rs` - Async trait definitions with `#[async_trait]`
 - `src/serial/derive/src/lib.rs` - Derive macro entry point
-- `src/serial/derive-internal/src/async_derive.rs` - Async derive implementations
-- `src/sdk/src/crypto/intent_set.rs` - Affected structs with derives
+- `src/serial/derive-internal/src/async_derive.rs` - **THIS IS WHERE THE BUG IS** - generates `#[async_trait]` impl blocks that fail on Rust 1.90+
+- `src/sdk/src/crypto/intent_set.rs` - Structs using derives - NOT the source of the bug
 
-### Contracts Using async-serial in client Features
-- `src/contract/baccarat/Cargo.toml`
-- `src/contract/dao/Cargo.toml`
-- `src/contract/deployooor/Cargo.toml`
-- `src/contract/darktoshi_dice/Cargo.toml`
-- `src/contract/drain_protection/Cargo.toml`
-- `src/contract/escrow/Cargo.toml`
-- `src/contract/money/Cargo.toml`
-- `src/contract/money_v2/Cargo.toml`
-- `src/contract/stablecoin/Cargo.toml`
-- `src/contract/dex/Cargo.toml`
-- `src/contract/bridge/Cargo.toml`
+### Contracts (Dead async_trait Imports - Commented Out)
+The following contracts had `use darkfi_serial::async_trait` imports that were **UNUSED** (no `#[async_trait]` attributes in contract code). These were dead code that has been commented out:
+- `src/contract/money/src/client/mod.rs`
+- `src/contract/money/src/model/mod.rs`
+- `src/contract/money/src/model/nullifier.rs`
+- `src/contract/money/src/model/token_id.rs`
+- `src/contract/money_v2/src/client/mod.rs`
+- `src/contract/money_v2/src/model/mod.rs`
+- `src/contract/money_v2/src/model/nullifier.rs`
+- `src/contract/money_v2/src/model/token_id.rs`
+- `src/contract/dao/src/model.rs`
+- `src/contract/deployooor/src/model.rs`
+
+**IMPORTANT**: Commenting out these unused imports does NOT fix the bug. The bug is in the `derive-internal/src/async_derive.rs` which generates `#[async_trait]` code when the `async` feature is enabled.
 
 ### Feature Chain
 ```

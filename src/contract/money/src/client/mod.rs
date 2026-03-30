@@ -38,7 +38,10 @@ use darkfi_sdk::{
     },
     pasta::pallas,
 };
-use darkfi_serial::{async_trait, SerialDecodable, SerialEncodable};
+// UNUSED: async_trait is imported but not used - async serialization is handled
+// by darkfi-serial derive macros when async feature is enabled (via darkfi/validator).
+// This import is dead code and can be removed if darkfi-serial/async is ever fixed.
+use darkfi_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{Coin, Nullifier, TokenId};
 
