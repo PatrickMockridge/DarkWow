@@ -20,9 +20,12 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 | **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
 | **oracle** | Push-model oracle with attestation integration | ✅ Complete |
 | **prediction_market** | Prediction market with AMM pricing | ✅ Complete |
+| **block_height_prediction** | PoW-backed block height betting (PoC) | ✅ PoC |
 | **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
 | **stablecoin** | Monero-collateralized stablecoin | ✅ Uses safemath |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete |
+
+**Randomness**: See [Provable Randomness](../../doc/src/arch/provable_randomness.md) for analysis of randomness sources in DarkToshi Dice and leveraging PoW for trustless randomness.
 
 ---
 
@@ -179,6 +182,7 @@ Local READMEs exist for each contract in this folder:
 - [auction/README.md](auction/README.md) - Privacy-preserving auction
 - [oracle/README.md](oracle/README.md) - Push-model oracle
 - [prediction_market/README.md](prediction_market/README.md) - Prediction market
+- [block_height_prediction/README.md](block_height_prediction/README.md) - Block height prediction (PoC)
 - [stablecoin/README.md](stablecoin/README.md) - Collateral stablecoin
 - [subscription/README.md](subscription/README.md) - Member subscription
 - [tender/README.md](tender/README.md) - Sealed-bid tendering

@@ -86,8 +86,10 @@ pub struct Market {
     pub betting_closes: u64,
     /// Number of possible outcomes (2 for YES/NO, N for discrete)
     pub num_outcomes: u8,
-    /// Total pool size (sum of all bets)
+    /// Total pool size (sum of all bets plus earned LP fees)
     pub total_pool: u64,
+    /// Total LP shares outstanding (sum of all LpShare.shares)
+    pub total_lp_shares: u64,
     /// Pool shares per outcome
     pub outcome_pools: Vec<u64>,
     /// Market state
@@ -281,6 +283,7 @@ pub struct ResolveMarketUpdateV1 {
 pub struct ClaimWinningsParamsV1 {
     pub position_id: PositionId,
     pub market_id: MarketId,
+    pub owner: PublicKey, // Access control: must match position.owner
     pub proof: Vec<u8>, // ZK proof of position ownership and winning outcome
 }
 
@@ -421,10 +424,10 @@ pub fn calculate_position_price(
     outcome_pools: &[u64],
     outcome: u8,
     amount: u64,
-) -> u64 {
+) -> Result<u64, PredictionMarketError> {
     let total: u64 = outcome_pools.iter().sum();
     if total == 0 {
-        return amount // First bet: even odds
+        return Ok(amount) // First bet: even odds
     }
     let pool_for_outcome = outcome_pools[outcome as usize];
     let other_pools: u64 = outcome_pools.iter().enumerate()
@@ -434,7 +437,9 @@ pub fn calculate_position_price(
 
     // Price = (other_pools * amount) / (pool_for_outcome + amount)
     // This ensures price approaches 1 as bets approach even
-    (other_pools * amount) / (pool_for_outcome + amount).max(1)
+    let product = other_pools.checked_mul(amount).ok_or(PredictionMarketError::ArithmeticOverflow)?;
+    let denominator = (pool_for_outcome + amount).max(1);
+    Ok(product / denominator)
 }
 
 /// Calculate payout for a winning position
@@ -445,11 +450,15 @@ pub fn calculate_payout(
     total_pool: u64,
     protocol_fee: u32,
     lp_fee: u32,
-) -> u64 {
+) -> Result<u64, PredictionMarketError> {
     let total_fees = protocol_fee as u64 + lp_fee as u64;
-    let fee_factor = 10000u64 - total_fees;
-    let share_of_pool = (position_amount * total_pool) / winning_pool.max(1);
-    (share_of_pool * fee_factor) / 10000
+    let fee_factor = 10000u64.checked_sub(total_fees).ok_or(PredictionMarketError::ArithmeticOverflow)?;
+    let share_of_pool = position_amount
+        .checked_mul(total_pool)
+        .ok_or(PredictionMarketError::ArithmeticOverflow)?
+        / winning_pool.max(1);
+    let product = share_of_pool.checked_mul(fee_factor).ok_or(PredictionMarketError::ArithmeticOverflow)?;
+    Ok(product / 10000)
 }
 
 /// Calculate how many LP shares to mint for providing liquidity
@@ -458,11 +467,12 @@ pub fn calculate_lp_shares(
     amount: u64,
     existing_shares: u64,
     existing_liquidity: u64,
-) -> u64 {
+) -> Result<u64, PredictionMarketError> {
     if existing_liquidity == 0 {
-        amount // First LP gets 1:1 shares
+        Ok(amount) // First LP gets 1:1 shares
     } else {
-        (amount * existing_shares) / existing_liquidity
+        let product = amount.checked_mul(existing_shares).ok_or(PredictionMarketError::ArithmeticOverflow)?;
+        Ok(product / existing_liquidity)
     }
 }
 
@@ -472,10 +482,11 @@ pub fn calculate_liquidity_payout(
     shares: u64,
     total_pool: u64,
     total_shares: u64,
-) -> u64 {
+) -> Result<u64, PredictionMarketError> {
     if total_shares == 0 {
-        0
+        Ok(0)
     } else {
-        (shares * total_pool) / total_shares
+        let product = shares.checked_mul(total_pool).ok_or(PredictionMarketError::ArithmeticOverflow)?;
+        Ok(product / total_shares)
     }
 }

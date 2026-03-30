@@ -121,6 +121,7 @@ pub fn prediction_market_create_market_process_update_v1(
         betting_closes: update.betting_closes,
         num_outcomes: update.num_outcomes,
         total_pool: 0,
+        total_lp_shares: 0,
         outcome_pools: vec![0u64; update.num_outcomes as usize],
         state: crate::model::MarketState::Active,
         resolved_outcome: None,

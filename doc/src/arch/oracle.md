@@ -199,6 +199,23 @@ if claim.verified {
 | Oracle doesn't double-attest | Attestation contract prevents replay |
 | Predicate logic is correct | Attestation contract audits predicate |
 
+### Signature Verification Limitations
+
+The Oracle contract provides a framework for oracle operators to push values and create
+attestations. However, **signature verification is not yet cryptographically enforced** in consuming contracts:
+
+- [Prediction Market](prediction_market.md): Markets accept oracle resolution but do not verify the oracle's signature
+- [Insurance Market](insurance_market.md): Claims accept oracle resolution but do not verify the oracle's signature
+
+**Current limitation**: The `oracle_signature` field is stored but not verified using the oracle's public key. A `SchnorrVerify` opcode would enable proper on-chain signature verification.
+
+**TODO**: Implement `SchnorrVerify` opcode in zkVM to enable:
+```zk
+# In ZK circuit:
+is_valid = schnorr_verify(oracle_pubkey, message, signature);
+constrain_instance(is_valid);
+```
+
 ## File Structure
 
 ```

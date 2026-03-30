@@ -192,6 +192,21 @@ pub fn get_tx_location(hash: &TransactionHash) -> GenericResult<(u32, u16)> {
     Ok((Decodable::decode(&mut cursor)?, Decodable::decode(&mut cursor)?))
 }
 
+/// Only metadata() and exec() can call this. Will return block hash
+/// at the given height.
+///
+/// ```
+/// block_hash = get_block_hash(block_height)?;
+/// ```
+pub fn get_block_hash(block_height: u32) -> GenericResult<TransactionHash> {
+    let ret = unsafe { get_block_hash_(block_height as i64) };
+    let obj = parse_retval_u32(ret)?;
+    let mut block_hash_data = [0u8; 32];
+    assert_eq!(get_object_size(obj), 32);
+    get_object_bytes(&mut block_hash_data, obj);
+    Ok(TransactionHash(block_hash_data))
+}
+
 extern "C" {
     fn set_return_data_(ptr: *const u8, len: u32) -> i64;
     fn get_object_bytes_(ptr: *const u8, len: u32) -> i64;
@@ -205,4 +220,5 @@ extern "C" {
     fn get_last_block_height_() -> i64;
     fn get_tx_(ptr: *const u8) -> i64;
     fn get_tx_location_(ptr: *const u8) -> i64;
+    fn get_block_hash_(height: i64) -> i64;
 }

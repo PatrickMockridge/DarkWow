@@ -55,6 +55,11 @@ pub fn insurance_market_file_claim_process_instruction_v1(
         return Err(InsuranceMarketError::CoverageExpired.into())
     }
 
+    // Verify the caller is the coverage buyer (access control)
+    if coverage.buyer != params.buyer {
+        return Err(InsuranceMarketError::CoverageNotFound.into())
+    }
+
     // Verify claim amount doesn't exceed coverage
     if params.amount > coverage.amount {
         return Err(InsuranceMarketError::ClaimNotCovered.into())

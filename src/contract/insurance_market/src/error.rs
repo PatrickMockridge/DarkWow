@@ -99,6 +99,9 @@ pub enum InsuranceMarketError {
 
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
+
+    #[error("Arithmetic overflow in calculation")]
+    ArithmeticOverflow,
 }
 
 impl From<InsuranceMarketError> for ContractError {
@@ -130,6 +133,7 @@ impl From<InsuranceMarketError> for ContractError {
             InsuranceMarketError::SlashExceedsBond => Self::Custom(24),
             InsuranceMarketError::TransferFailed => Self::Custom(25),
             InsuranceMarketError::InvalidParameter(_) => Self::Custom(26),
+            InsuranceMarketError::ArithmeticOverflow => Self::Custom(27),
         }
     }
 }

@@ -154,3 +154,17 @@ This contract is designed to compose with:
 - [Money Contract](../money_v2/) - Value transfer integration
 - [DaoEscrow Contract](../dao_escrow/) - DAO escrow integration
 - [DarkToshi Dice Contract](../darktoshi_dice/) - Gambling primitives
+
+## Specialized Implementations
+
+### Block Height Prediction Market (Proof-of-Concept)
+
+A specialized contract demonstrating **PoW-backed randomness** for prediction markets:
+
+- Uses DarkFi's PoW (tx_hash) as randomness source instead of oracle
+- Simplified BELOW/EXACT/ABOVE position model
+- Demonstrates [Provable Randomness](../../doc/src/arch/provable_randomness.md) concepts
+
+See [block_height_prediction](../block_height_prediction/) for the PoC implementation.
+
+**Note**: For production use with high-stakes, oracle-based resolution (this contract) or stronger PoW with `BlockHashGet` opcode is recommended.

@@ -103,7 +103,32 @@ let b = u64::from_le_bytes(tx_hash[8..16]);
 let c = u64::from_le_bytes(tx_hash[16..24]);
 let d = u64::from_le_bytes(tx_hash[24..32]);
 let block_hash = poseidon_hash([...]);
+let roll = poseidon_hash([block_hash, bet_id, secret_nonce]);
 ```
+
+**Security Note**: The current implementation uses `wasm::util::get_tx_hash()` which
+provides tx-level randomness. For higher-stakes applications, see [Provable Randomness](provable_randomness.md)
+for analysis of leveraging DarkFi's PoW mechanism (RandomX) directly.
+
+### Adjustable Confirmation Depth
+
+Players can specify a `confirmation_depth` when placing bets, determining how many blocks
+to wait before settlement is allowed. This accumulates PoW entropy for stronger randomness.
+
+```
+Security scaling with depth:
+- K=1: 33% manipulation chance (with 33% hash power)
+- K=6: ~0.14% (Bitcoin "6 confirmations" standard)
+- K=10: ~0.005%
+```
+
+The `settle_block` is calculated as:
+```
+settle_block = current_block + confirmation_depth
+```
+
+Higher confirmation depths exponentially increase the cost of manipulation but require
+waiting for more blocks before the bet can be settled.
 
 ### Constants
 
@@ -112,6 +137,24 @@ let block_hash = poseidon_hash([...]);
 - `MAX_HOUSE_EDGE`: 500 basis points (5%)
 - `DEFAULT_ROLL_TIMEOUT`: 10 blocks
 - `MAX_TARGET`: 99
+
+## Randomness Analysis
+
+The dice contract demonstrates several randomness patterns:
+
+| Pattern | Current Use | Security Level |
+|---------|-------------|----------------|
+| Commit-Reveal | Secret nonce committed at bet time | High |
+| Block Hash | tx_hash at block inclusion | Medium |
+| Poseidon Hash | Combine multiple sources | High |
+
+**Weakness**: Current implementation relies on tx_hash which could be influenced by transaction ordering. For production gambling use, leverage PoW block hash directly.
+
+See [Provable Randomness](provable_randomness.md) for full analysis including:
+- Leveraging DarkFi's RandomX PoW for randomness
+- ECVRF-based verifiable randomness
+- Hybrid approaches (PoW + VRF + Commit-Reveal)
+- **Case study: Block Height Prediction Market** with detailed implementation design
 
 ## Primitives Provided
 
@@ -125,6 +168,7 @@ This contract establishes useful primitives for other games:
 
 ## See Also
 
+- [Provable Randomness](provable_randomness.md) - Deep dive into randomness sources and security
 - [Money Contract](money.md) - Value transfer integration
 - [Atomic Swap](../arch/atomic_swap.md) - Commit-reveal pattern reference
 - [Tender Contract](tender.md) - Sealed bid pattern reference

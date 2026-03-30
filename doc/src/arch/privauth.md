@@ -458,3 +458,98 @@ templates provide production-ready alternatives. For predicates requiring Boolea
 - [Intent AMM Proposal](https://codeberg.org/rusticml/darkfi-intent-amm-proposal)
 - [Response to PatrickM123 (Intent AMM)](https://codeberg.org/rusticml/darkfi-intent-amm-proposal/src/branch/main/docs/response-to-patrickm123.md)
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)
+
+## Case Study: Authorization Bugs Found During Audit
+
+During audit of the [Prediction Market](../arch/prediction_market.md) and
+[Insurance Market](../arch/insurance_market.md) contracts, several authorization bugs were
+found that illustrate the importance of proper pattern implementation:
+
+### Bug 1: Missing Owner Verification
+
+**Contracts affected**: Insurance Market
+
+```rust
+// BEFORE (vulnerable):
+fn withdraw_premium(params: WithdrawPremiumParamsV1) {
+    // No check that caller owns the underwriter
+    underwriter.earned_premiums -= params.amount;
+}
+
+// AFTER (fixed):
+fn withdraw_premium(params: WithdrawPremiumParamsV1) {
+    // Access control: caller must own underwriter
+    if underwriter.owner != params.owner {
+        return Err(UnauthorizedUnderwriter);
+    }
+    underwriter.earned_premiums -= params.amount;
+}
+```
+
+**Pattern violated**: The authorization pattern requires that only the owner can consume their own capability. The original code allowed anyone to withdraw any underwriter's premiums.
+
+### Bug 2: Proof Not Verified
+
+**Contracts affected**: Prediction Market
+
+```rust
+// BEFORE (vulnerable):
+fn claim_winnings(params: ClaimWinningsParamsV1) {
+    // proof field accepted but never verified
+    let payout = calculate_payout(position);
+    // ...
+}
+
+// AFTER (fixed):
+fn claim_winnings(params: ClaimWinningsParamsV1) {
+    // ZK proof should be verified, but we at least check:
+    if position.owner != params.owner {
+        return Err(UnauthorizedCaller);
+    }
+    if params.proof.is_empty() {
+        return Err(InvalidProof);
+    }
+    // TODO: Full ZK proof verification requires ZKaSVerify opcode
+}
+```
+
+**Pattern violated**: The proof should be verified before the action is authorized. The original code accepted a proof without any verification.
+
+### Bug 3: Missing State Tracking
+
+**Contracts affected**: Insurance Market
+
+```rust
+// BEFORE (vulnerable):
+struct Underwriter {
+    coverage_provided: u64,
+    // coverage_sold field was missing!
+}
+
+// AFTER (fixed):
+struct Underwriter {
+    coverage_provided: u64,  // Max they can sell
+    coverage_sold: u64,       // Track how much they've sold
+}
+```
+
+**Pattern violated**: The contract must track state to prevent double-spending of coverage. Without tracking `coverage_sold`, underwriters could oversell coverage beyond their bond-backed limit.
+
+### Lessons Learned
+
+1. **Always verify ownership**: Every action that consumes a capability must verify the caller owns it
+2. **Verify proofs before acting**: A proof field is meaningless if not verified
+3. **Track state changes**: Prevent double-spending by tracking consumed vs. available resources
+4. **Document trust assumptions**: When ZK verification is deferred, document why and what's needed
+
+### Missing Opcodes
+
+These bugs highlight missing opcodes that would enable proper authorization:
+
+| Opcode | Would Enable |
+|--------|-------------|
+| `ZKaSVerify` | On-chain ZK proof verification |
+| `SchnorrVerify` | Signature verification without revealing pubkey |
+| `CrossCall` | Contracts calling each other's circuits |
+
+See [Composability](../arch/composability.md) for the full analysis of these limitations.

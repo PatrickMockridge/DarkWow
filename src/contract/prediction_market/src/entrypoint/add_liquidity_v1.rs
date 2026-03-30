@@ -72,7 +72,7 @@ pub fn prediction_market_add_liquidity_process_instruction_v1(
         0
     };
 
-    let shares_to_mint = calculate_lp_shares(params.amount, existing_shares, market.total_pool);
+    let shares_to_mint = calculate_lp_shares(params.amount, existing_shares, market.total_lp_shares)?;
 
     // Derive LP share ID
     let vc_coords = params.value_commit.to_affine().coordinates();
@@ -142,6 +142,7 @@ pub fn prediction_market_add_liquidity_process_update_v1(
     let market_bytes = wasm::db::db_get(markets_db, &serialize(&update.market_id))?.unwrap();
     let mut market: crate::model::Market = deserialize(&market_bytes)?;
     market.total_pool += update.shares_minted; // LP adds to total pool
+    market.total_lp_shares += update.shares_minted; // Track LP shares separately
     wasm::db::db_set(markets_db, &serialize(&update.market_id), &serialize(&market))?;
 
     msg!(

@@ -161,6 +161,12 @@ impl Blockchain {
         Ok(ret)
     }
 
+    /// Retrieve block hash by height. Returns None if not found.
+    pub fn get_block_hash_by_height(&self, height: u32) -> Result<Option<HeaderHash>> {
+        let result = self.blocks.get_order(&[height], false)?;
+        Ok(result.into_iter().next().flatten())
+    }
+
     /// Retrieve all [`BlockInfo`] for given slice of [`Block`].
     /// Fails if any of them is not found
     fn get_blocks_infos(&self, blocks: &[Block]) -> Result<Vec<BlockInfo>> {
@@ -664,6 +670,12 @@ impl BlockchainOverlay {
         let ret = self.get_blocks_infos(&blocks)?;
 
         Ok(ret)
+    }
+
+    /// Retrieve block hash by height. Returns None if not found.
+    pub fn get_block_hash_by_height(&self, height: u32) -> Result<Option<HeaderHash>> {
+        let result = self.blocks.get_order(&[height], false)?;
+        Ok(result.into_iter().next().flatten())
     }
 
     /// Retrieve all [`BlockInfo`] for given slice of [`Block`].

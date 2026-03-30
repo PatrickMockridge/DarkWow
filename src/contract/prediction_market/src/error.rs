@@ -106,6 +106,9 @@ pub enum PredictionMarketError {
 
     #[error("Claim does not exist")]
     ClaimNotFound,
+
+    #[error("Arithmetic overflow in calculation")]
+    ArithmeticOverflow,
 }
 
 impl From<PredictionMarketError> for ContractError {
@@ -140,6 +143,7 @@ impl From<PredictionMarketError> for ContractError {
             PredictionMarketError::OracleTimeoutExceeded => Self::Custom(27),
             PredictionMarketError::InsufficientBalance => Self::Custom(28),
             PredictionMarketError::ClaimNotFound => Self::Custom(29),
+            PredictionMarketError::ArithmeticOverflow => Self::Custom(30),
         }
     }
 }

@@ -24,6 +24,8 @@ use darkfi_sdk::{
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 
+use crate::error::InsuranceMarketError;
+
 // ============================================================================
 // STATE TYPES
 // ============================================================================
@@ -185,8 +187,10 @@ pub struct Underwriter {
     pub market_id: MarketId,
     /// Bond amount posted (at risk)
     pub bond_amount: u64,
-    /// Coverage provided by this underwriter
+    /// Total coverage provided by this underwriter (max they can sell)
     pub coverage_provided: u64,
+    /// Coverage sold so far (decremented from coverage_provided)
+    pub coverage_sold: u64,
     /// Premiums earned (available for withdrawal)
     pub earned_premiums: u64,
     /// Claims paid out
@@ -370,6 +374,7 @@ pub struct PurchaseCoverageUpdateV1 {
 pub struct FileClaimParamsV1 {
     pub coverage_id: CoverageId,
     pub market_id: MarketId,
+    pub buyer: PublicKey, // Access control: must match coverage.buyer
     pub amount: u64,
     pub evidence: Vec<u8>,
 }
@@ -411,6 +416,7 @@ pub struct ResolveClaimUpdateV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct WithdrawPremiumParamsV1 {
     pub underwriter_id: UnderwriterId,
+    pub owner: PublicKey, // Access control: must match underwriter.owner
     pub amount: u64,
 }
 
@@ -498,15 +504,26 @@ pub fn derive_claim_id(
 // ============================================================================
 
 /// Calculate premium from coverage amount and rate
-pub fn calculate_premium(coverage_amount: u64, premium_rate: u32) -> u64 {
+pub fn calculate_premium(
+    coverage_amount: u64,
+    premium_rate: u32,
+) -> Result<u64, InsuranceMarketError> {
     // premium_rate is in basis points (10000 = 100%)
-    (coverage_amount * premium_rate as u64) / 10000
+    let product = coverage_amount
+        .checked_mul(premium_rate as u64)
+        .ok_or(InsuranceMarketError::ArithmeticOverflow)?;
+    Ok(product / 10000)
 }
 
 /// Calculate maximum coverage supported by bond
-pub fn calculate_max_coverage(bond_amount: u64, coverage_leverage: u32) -> u64 {
+pub fn calculate_max_coverage(
+    bond_amount: u64,
+    coverage_leverage: u32,
+) -> Result<u64, InsuranceMarketError> {
     // coverage_leverage is typically > 1 (e.g., 10x means $100 bond backs $1000 coverage)
-    bond_amount * coverage_leverage as u64
+    bond_amount
+        .checked_mul(coverage_leverage as u64)
+        .ok_or(InsuranceMarketError::ArithmeticOverflow)
 }
 
 /// Calculate slash amount based on coverage and performance
@@ -515,10 +532,13 @@ pub fn calculate_slash(
     _coverage_amount: u64,
     bond_amount: u64,
     performance_score: u32,
-) -> u64 {
+) -> Result<u64, InsuranceMarketError> {
     // Slash proportional to claim, capped at bond
     // Better performance = smaller slash
-    let slash_ratio = 10000 - performance_score;
-    let proportional_slash = (claim_amount * slash_ratio as u64) / 10000;
-    proportional_slash.min(bond_amount)
+    let slash_ratio = 10000u64.checked_sub(performance_score as u64).ok_or(InsuranceMarketError::ArithmeticOverflow)?;
+    let proportional_slash = claim_amount
+        .checked_mul(slash_ratio)
+        .ok_or(InsuranceMarketError::ArithmeticOverflow)?
+        / 10000;
+    Ok(proportional_slash.min(bond_amount))
 }

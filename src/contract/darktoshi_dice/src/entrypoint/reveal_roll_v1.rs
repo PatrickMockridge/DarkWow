@@ -23,10 +23,11 @@ use darkfi_sdk::{
     msg,
     wasm,
 };
+use darkfi_sdk::pasta::pallas;
 use darkfi_serial::{deserialize, serialize};
 
 use crate::error::DiceError;
-use crate::model::{calculate_roll, Bet, BetState, RevealRollParamsV1, RevealRollUpdateV1};
+use crate::model::{calculate_roll_with_depth, Bet, BetState, RevealRollParamsV1, RevealRollUpdateV1};
 use crate::DICE_CONTRACT_BETS_TREE;
 use crate::ROLL_RANGE;
 
@@ -61,8 +62,24 @@ pub fn dice_reveal_roll_process_instruction_v1(
     // Get block hash for randomness
     let tx_hash = wasm::util::get_tx_hash()?;
 
-    // Calculate the roll using full tx_hash for better randomness
-    let roll = calculate_roll(tx_hash.0, bet.id, params.secret_nonce);
+    // Convert tx_hash bytes to pallas::Base for the depth-based roll calculation
+    // For confirmation_depth > 1, multiple block hashes would be combined
+    let tx_hash_a = u64::from_le_bytes(tx_hash.0[0..8].try_into().unwrap());
+    let tx_hash_b = u64::from_le_bytes(tx_hash.0[8..16].try_into().unwrap());
+    let tx_hash_c = u64::from_le_bytes(tx_hash.0[16..24].try_into().unwrap());
+    let tx_hash_d = u64::from_le_bytes(tx_hash.0[24..32].try_into().unwrap());
+
+    // Use confirmation_depth to determine how many block hashes to combine
+    // For now, we use the tx_hash split into field elements (backward compatible)
+    let block_hashes = vec![
+        pallas::Base::from(tx_hash_a),
+        pallas::Base::from(tx_hash_b),
+        pallas::Base::from(tx_hash_c),
+        pallas::Base::from(tx_hash_d),
+    ];
+
+    // Calculate roll using depth-based approach
+    let roll = calculate_roll_with_depth(&block_hashes, bet.id, params.secret_nonce);
 
     msg!("[dice::reveal_roll] Calculated roll: {} (target: {})", roll, bet.target);
 

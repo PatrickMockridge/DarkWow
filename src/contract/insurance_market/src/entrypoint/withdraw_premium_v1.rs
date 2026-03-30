@@ -44,6 +44,16 @@ pub fn insurance_market_withdraw_premium_process_instruction_v1(
         wasm::db::db_get(underwriters_db, &serialize(&params.underwriter_id))?.unwrap();
     let underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
 
+    // Verify the caller is the underwriter owner (access control)
+    if underwriter.owner != params.owner {
+        return Err(InsuranceMarketError::UnauthorizedUnderwriter.into())
+    }
+
+    // Verify underwriter is active
+    if !underwriter.active {
+        return Err(InsuranceMarketError::UnauthorizedUnderwriter.into())
+    }
+
     // Verify sufficient earned premiums
     if params.amount > underwriter.earned_premiums {
         return Err(InsuranceMarketError::InsufficientPremium.into())

@@ -350,6 +350,12 @@ impl Runtime {
                     &ctx,
                     import::util::get_tx_location,
                 ),
+
+                "get_block_hash_" => Function::new_typed_with_env(
+                    &mut store,
+                    &ctx,
+                    import::util::get_block_hash_,
+                ),
             }
         };
 

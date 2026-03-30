@@ -608,3 +608,60 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
     objects.push(return_data.to_vec());
     (objects.len() - 1) as i64
 }
+
+/// Reads a block hash by height from the blockchain.
+///
+/// This function can be called from the Exec or Metadata [`ContractSection`].
+///
+/// On success, returns the index of the block hash object in the environment's object store.
+/// Otherwise, returns an error code.
+///
+/// Permissions: deploy, metadata, exec
+pub(crate) fn get_block_hash_(mut ctx: FunctionEnvMut<Env>, height: i64) -> i64 {
+    let (env, mut store) = ctx.data_and_store_mut();
+    let cid = &env.contract_id;
+
+    if let Err(e) =
+        acl_allow(env, &[ContractSection::Deploy, ContractSection::Metadata, ContractSection::Exec])
+    {
+        error!(
+            target: "runtime::util::get_block_hash_",
+            "[WASM] [{cid}] get_block_hash_(): Called in unauthorized section: {e}"
+        );
+        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    // Subtract used gas. Here we count the size of the returned hash.
+    // blake3::OUT_LEN is 32 bytes.
+    env.subtract_gas(&mut store, blake3::OUT_LEN as u64);
+
+    // Grab block hash by height
+    let block_hash =
+        match env.blockchain.lock().unwrap().get_block_hash_by_height(height as u32) {
+            Ok(Some(hash)) => hash,
+            Ok(None) => {
+                debug!(
+                    target: "runtime::util::get_block_hash_",
+                    "[WASM] [{cid}] get_block_hash_(): Block at height {height} not found"
+                );
+                return darkfi_sdk::error::DB_GET_FAILED
+            }
+            Err(e) => {
+                error!(
+                    target: "runtime::util::get_block_hash_",
+                    "[WASM] [{cid}] get_block_hash_(): Internal error getting block hash: {e}"
+                );
+                return darkfi_sdk::error::DB_GET_FAILED
+            }
+        };
+
+    // Copy the block hash (Vec<u8>) to the VM by pushing it to the objects Vector.
+    let mut objects = env.objects.borrow_mut();
+    if objects.len() == u32::MAX as usize {
+        return darkfi_sdk::error::DATA_TOO_LARGE
+    }
+
+    // Return the index of the objects Vector where the data was pushed
+    objects.push(block_hash.inner().to_vec());
+    (objects.len() - 1) as i64
+}

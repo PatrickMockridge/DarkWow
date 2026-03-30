@@ -65,8 +65,8 @@ pub fn prediction_market_remove_liquidity_process_instruction_v1(
         return Err(PredictionMarketError::InsufficientLiquidity.into())
     }
 
-    // Calculate payout
-    let payout = calculate_liquidity_payout(params.shares, market.total_pool, lp.shares + lp.earned_fees);
+    // Calculate payout using total LP shares (not individual)
+    let payout = calculate_liquidity_payout(params.shares, market.total_pool, market.total_lp_shares)?;
     let fees_withdrawn = (params.shares * lp.earned_fees) / lp.shares.max(1);
 
     msg!(
@@ -94,20 +94,28 @@ pub fn prediction_market_remove_liquidity_process_update_v1(
     update: RemoveLiquidityUpdateV1,
 ) -> Result<(), ContractError> {
     let liquidity_db = wasm::db::db_lookup(cid, PREDICTION_CONTRACT_LIQUIDITY_TREE)?;
+    let markets_db = wasm::db::db_lookup(cid, PREDICTION_CONTRACT_MARKETS_TREE)?;
 
     // Look up and update LP share
     let lp_bytes = wasm::db::db_get(liquidity_db, &serialize(&update.provider))?.unwrap();
     let mut lp: crate::model::LpShare = deserialize(&lp_bytes)?;
 
-    lp.shares -= update.shares_burned;
-    lp.earned_fees -= update.fees_withdrawn;
+    lp.shares = lp.shares.saturating_sub(update.shares_burned);
+    lp.earned_fees = lp.earned_fees.saturating_sub(update.fees_withdrawn);
 
     wasm::db::db_set(liquidity_db, &serialize(&update.provider), &serialize(&lp))?;
 
+    // Update market total LP shares
+    let market_bytes = wasm::db::db_get(markets_db, &serialize(&update.market_id))?.unwrap();
+    let mut market: crate::model::Market = deserialize(&market_bytes)?;
+    market.total_lp_shares = market.total_lp_shares.saturating_sub(update.shares_burned);
+    wasm::db::db_set(markets_db, &serialize(&update.market_id), &serialize(&market))?;
+
     msg!(
-        "[prediction_market::remove_liquidity::update] Remaining shares: {}, Fees: {}",
+        "[prediction_market::remove_liquidity::update] Remaining shares: {}, Fees: {}, Total LP shares: {}",
         lp.shares,
-        lp.earned_fees
+        lp.earned_fees,
+        market.total_lp_shares
     );
 
     Ok(())

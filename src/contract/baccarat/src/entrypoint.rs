@@ -1,0 +1,120 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Baccarat Contract Entrypoint
+
+use darkfi_sdk::{
+    crypto::ContractId,
+    dark_tree::DarkLeaf,
+    error::ContractResult,
+    wasm, ContractCall,
+};
+use darkfi_serial::{deserialize, serialize};
+
+use crate::error::BaccaratError;
+use crate::model::{
+    CommitBetUpdateV1, DrawCardsUpdateV1, HouseCloseUpdateV1, SettleBetUpdateV1,
+};
+use crate::BaccaratFunction;
+
+darkfi_sdk::define_contract!(
+    init: init_contract,
+    exec: process_instruction,
+    apply: process_update,
+    metadata: get_metadata
+);
+
+/// Initialize the contract
+fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
+    // Embed zkas circuits
+    let commit_bet_bincode = include_bytes!("../proof/commit_bet_v1.zk.bin");
+    let settle_bet_bincode = include_bytes!("../proof/settle_bet_v1.zk.bin");
+
+    wasm::db::zkas_db_set(&commit_bet_bincode[..])?;
+    wasm::db::zkas_db_set(&settle_bet_bincode[..])?;
+
+    // Initialize database trees
+    wasm::db::db_init(cid, crate::BACCARAT_CONTRACT_BETS_TREE)?;
+    wasm::db::db_init(cid, crate::BACCARAT_CONTRACT_NULLIFIERS_TREE)?;
+    wasm::db::db_init(cid, crate::BACCARAT_CONTRACT_INFO_TREE)?;
+    wasm::db::db_init(cid, crate::BACCARAT_CONTRACT_HOUSE_TREE)?;
+
+    // Initialize default house settings
+    let info_db = wasm::db::db_lookup(cid, crate::BACCARAT_CONTRACT_INFO_TREE)?;
+    wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_HOUSE_EDGE, &serialize(&crate::DEFAULT_HOUSE_EDGE))?;
+    wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_BET_TIMEOUT, &serialize(&crate::DEFAULT_BET_TIMEOUT))?;
+
+    Ok(())
+}
+
+/// Get metadata for verification
+fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
+    Ok(())
+}
+
+/// Process instruction
+fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = BaccaratFunction::try_from(self_.data[0])?;
+
+    let update_data = match func {
+        BaccaratFunction::CommitBetV1 => baccarat_commit_bet_process_instruction_v1(cid, call_idx, calls)?,
+        BaccaratFunction::DrawCardsV1 => baccarat_draw_cards_process_instruction_v1(cid, call_idx, calls)?,
+        BaccaratFunction::SettleBetV1 => baccarat_settle_bet_process_instruction_v1(cid, call_idx, calls)?,
+        BaccaratFunction::HouseCloseV1 => baccarat_house_close_process_instruction_v1(cid, call_idx, calls)?,
+        BaccaratFunction::InitializeV1 => return Err(BaccaratError::InvalidFunction.into()),
+    };
+
+    wasm::util::set_return_data(&update_data)
+}
+
+/// Process update
+fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
+    match BaccaratFunction::try_from(update_data[0])? {
+        BaccaratFunction::CommitBetV1 => {
+            let update: CommitBetUpdateV1 = deserialize(&update_data[1..])?;
+            baccarat_commit_bet_process_update_v1(cid, update)
+        }
+        BaccaratFunction::DrawCardsV1 => {
+            let update: DrawCardsUpdateV1 = deserialize(&update_data[1..])?;
+            baccarat_draw_cards_process_update_v1(cid, update)
+        }
+        BaccaratFunction::SettleBetV1 => {
+            let update: SettleBetUpdateV1 = deserialize(&update_data[1..])?;
+            baccarat_settle_bet_process_update_v1(cid, update)
+        }
+        BaccaratFunction::HouseCloseV1 => {
+            let update: HouseCloseUpdateV1 = deserialize(&update_data[1..])?;
+            baccarat_house_close_process_update_v1(cid, update)
+        }
+        BaccaratFunction::InitializeV1 => Err(BaccaratError::InvalidFunction.into()),
+    }
+}
+
+// Modules for function implementations
+mod commit_bet_v1;
+mod draw_cards_v1;
+mod settle_bet_v1;
+mod house_close_v1;
+
+use commit_bet_v1::*;
+use draw_cards_v1::*;
+use house_close_v1::*;
+use settle_bet_v1::*;

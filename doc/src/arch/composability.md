@@ -332,6 +332,209 @@ This would eliminate the trusted setup entirely:
 See [zkVM Primitive Layer](zkvm_primitives.md) for the full analysis of required
 cross-contract ZK composition opcodes.
 
+### Known Authorization Limitations in Current Contracts
+
+The Prediction Market and Insurance Market contracts have known authorization bugs that
+were discovered during audit and fixed. Understanding these issues illustrates common
+patterns of authorization vulnerabilities in ZK-based contracts.
+
+#### Issue 1: Oracle Signature Verification (Prediction Market)
+
+**Location**: `resolve_market_v1.rs`
+
+**Problem**: The oracle signature on market resolution was not verified. Any caller could resolve a market with any outcome.
+
+**Original Code**:
+```rust
+// Verify oracle signature
+// In production, this would verify the attestation using the oracle's public key
+// For MVP, we trust the oracle_pubkey stored in the market
+// TODO: Implement proper oracle signature verification
+msg!("[prediction_market::resolve_market] Oracle signature verification (MVP: skipped)");
+```
+
+**Fixed Code**:
+```rust
+// Verify oracle signature is non-zero and attestation is present
+if params.oracle_signature == pallas::Base::zero() {
+    return Err(PredictionMarketError::InvalidOracleAttestation.into())
+}
+if params.attestation.is_empty() {
+    return Err(PredictionMarketError::InvalidOracleAttestation.into())
+}
+// TODO: Implement proper Schnorr signature verification
+```
+
+**Missing Opcode**: Full verification requires a `SchnorrVerify` opcode that can verify
+signatures within ZK circuits. Currently, the signature is a `pallas::Base` scalar that
+cannot be cryptographically verified on-chain.
+
+#### Issue 2: ZK Proof Not Verified (Prediction Market)
+
+**Location**: `claim_winnings_v1.rs`
+
+**Problem**: The ZK proof field was accepted but never verified. The proof should
+demonstrate ownership of the position and validity of the winning outcome.
+
+**Original Code**:
+```rust
+let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
+// ...
+// proof field was accepted but ignored
+```
+
+**Fix**: Added owner verification as a partial workaround:
+```rust
+// Verify the caller is the position owner (access control)
+// TODO: The ZK proof should prove knowledge of the owner's secret key
+if position.owner != params.owner {
+    return Err(PredictionMarketError::UnauthorizedCaller.into())
+}
+if params.proof.is_empty() {
+    return Err(PredictionMarketError::InvalidProof.into())
+}
+```
+
+**Missing Opcode**: Full fix requires a `ZKaSVerify` opcode that can verify ZK proofs
+within the contract execution. The proof should be passed to a verifier circuit that
+returns boolean acceptance.
+
+#### Issue 3: Missing Access Control (Insurance Market)
+
+**Location**: `withdraw_premium_v1.rs`, `file_claim_v1.rs`
+
+**Problem**: Without proper access control, anyone could withdraw an underwriter's
+premiums or file a claim on someone else's coverage.
+
+**Original Issues**:
+- `withdraw_premium`: No verification that caller owns the underwriter
+- `file_claim`: No verification that caller owns the coverage
+
+**Fix**: Added owner verification:
+```rust
+// Verify the caller is the underwriter owner
+if underwriter.owner != params.owner {
+    return Err(InsuranceMarketError::UnauthorizedUnderwriter.into())
+}
+
+// In file_claim:
+// Verify the caller is the coverage buyer
+if coverage.buyer != params.buyer {
+    return Err(InsuranceMarketError::CoverageNotFound.into())
+}
+```
+
+**Missing Opcode**: This is a design pattern issue, not an opcode issue. The fix required
+adding explicit `owner` fields to parameters and verifying them. However, a `SchnorrVerify`
+opcode would allow ZK-proof-based authorization that doesn't reveal the owner's public key.
+
+#### Issue 4: Coverage Tracking Bug (Insurance Market)
+
+**Location**: `underwrite_v1.rs`, `purchase_coverage_v1.rs`
+
+**Problem**: The `coverage_provided` field was not decremented when coverage was sold,
+allowing underwriters to oversell coverage beyond their bond-backed limit.
+
+**Fix**: Added separate `coverage_sold` tracking:
+```rust
+// In Underwriter struct:
+coverage_provided: u64,  // Max coverage they can sell
+coverage_sold: u64,      // Coverage already sold
+
+// When purchasing:
+let available_coverage = underwriter.coverage_provided - underwriter.coverage_sold;
+if params.coverage_amount > available_coverage {
+    return Err(InsuranceMarketError::InsufficientCoverage.into())
+}
+// ...
+underwriter.coverage_sold += update.amount;
+```
+
+### Missing Opcodes That Would Enable Proper Authorization
+
+The issues above highlight missing opcodes in DarkFi's zkVM that prevent proper
+cross-contract authorization:
+
+| Missing Opcode | What It Would Enable | Current Workaround |
+|--------------|---------------------|-------------------|
+| `SchnorrVerify` | On-chain signature verification in ZK | Manual signature field, non-zero check only |
+| `ZKaSVerify` | Verify ZK proofs within contract | Access control via owner field |
+| `CrossCall` | Call other contracts' circuits | Trusted setup, manual root sync |
+| `MerkleProofVerify` | Prove membership in external Merkle tree | Store trusted Merkle root |
+
+#### SchnorrVerify
+
+```zk
+# Ideal interface:
+schnorr_verify(
+    pubkey: Point,
+    message: Base,
+    signature: (Point, Scalar)
+) -> Base  # 1 if valid, 0 if invalid
+
+# Would enable:
+# - Oracle signature verification in circuits
+# - Proof of ownership without revealing pubkey
+# - Cross-contract authorization via signatures
+```
+
+#### ZKaSVerify
+
+```zk
+# Ideal interface:
+zkas_verify(
+    circuit_name: str,
+    public_inputs: [Base],
+    proof: Bytes
+) -> Base  # 1 if valid, 0 if invalid
+
+# Would enable:
+# - Claim winnings proof verification
+# - Attestation claim verification
+# - Any custom ZK predicate in contracts
+```
+
+#### CrossCall
+
+```zk
+# Ideal interface:
+cross_call(
+    target_contract: ContractId,
+    function: u8,
+    inputs: [Base],
+    proof: Bytes
+) -> Base
+
+# Would enable:
+# - Contracts to call each other's circuits directly
+# - Atomic cross-contract transactions with proof verification
+# - No trusted setup required
+```
+
+### Impact on Risk Market Ecosystem
+
+The [Risk Market Ecosystem](./risk_market_ecosystem.md) case study demonstrates how these
+contracts compose:
+
+```
+Prediction Market ──→ Insurance Market ──→ Oracle/Attestation
+      │                     │
+      │                     └──→ Tender + Labor Market
+      │
+      └──→ DAO-Escrow (capital endowment)
+```
+
+Without proper oracle signature verification:
+- Anyone can resolve prediction markets incorrectly
+- Insurance premiums based on wrong probabilities
+
+Without ZK proof verification:
+- Claim winnings can be claimed by non-owners
+- Insurance claims cannot be properly verified
+
+The fixes applied (owner fields, non-zero checks) provide minimum viable security but
+are not cryptographically sound. Production deployment requires the missing opcodes.
+
 ### When to Use Trusted Setup
 
 | Use Case | Trusted Setup Appropriate? |

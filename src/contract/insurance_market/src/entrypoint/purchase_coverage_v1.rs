@@ -89,12 +89,13 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
     }
 
     // Check underwriter has sufficient coverage available
-    if params.coverage_amount > underwriter.coverage_provided {
+    let available_coverage = underwriter.coverage_provided - underwriter.coverage_sold;
+    if params.coverage_amount > available_coverage {
         return Err(InsuranceMarketError::InsufficientCoverage.into())
     }
 
     // Calculate premium
-    let premium = calculate_premium(params.coverage_amount, market.premium_rate);
+    let premium = calculate_premium(params.coverage_amount, market.premium_rate)?;
 
     // Verify value commitment matches premium (simplified - in production would verify signature)
     let vc_coords = params.value_commit.to_affine().coordinates();
@@ -169,11 +170,12 @@ pub fn insurance_market_purchase_coverage_process_update_v1(
         &serialize(&coverage),
     )?;
 
-    // Update underwriter's earned premiums
+    // Update underwriter's earned premiums and coverage sold
     let underwriter_bytes =
         wasm::db::db_get(underwriters_db, &serialize(&update.underwriter_id))?.unwrap();
     let mut underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
     underwriter.earned_premiums += update.premium_paid;
+    underwriter.coverage_sold += update.amount; // Track coverage sold
     wasm::db::db_set(
         underwriters_db,
         &serialize(&update.underwriter_id),

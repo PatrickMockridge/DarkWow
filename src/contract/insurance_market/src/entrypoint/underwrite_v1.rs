@@ -66,7 +66,7 @@ pub fn insurance_market_underwrite_process_instruction_v1(
 
     // Calculate max coverage this bond can support (10x leverage default)
     let coverage_leverage = 10u32;
-    let max_coverage = calculate_max_coverage(params.bond_amount, coverage_leverage);
+    let max_coverage = calculate_max_coverage(params.bond_amount, coverage_leverage)?;
 
     if params.coverage_limit > max_coverage {
         return Err(InsuranceMarketError::BondTooSmall.into())
@@ -140,6 +140,7 @@ pub fn insurance_market_underwrite_process_update_v1(
             market_id: update.market_id,
             bond_amount: update.bond_amount,
             coverage_provided: update.coverage_provided,
+            coverage_sold: 0,
             earned_premiums: 0,
             claims_paid: 0,
             slash_count: 0,

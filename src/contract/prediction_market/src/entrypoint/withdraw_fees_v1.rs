@@ -92,7 +92,7 @@ pub fn prediction_market_withdraw_fees_process_update_v1(
     let lp_bytes = wasm::db::db_get(liquidity_db, &serialize(&update.provider))?.unwrap();
     let mut lp: crate::model::LpShare = deserialize(&lp_bytes)?;
 
-    lp.earned_fees -= update.amount;
+    lp.earned_fees = lp.earned_fees.saturating_sub(update.amount);
 
     wasm::db::db_set(liquidity_db, &serialize(&update.provider), &serialize(&lp))?;
 

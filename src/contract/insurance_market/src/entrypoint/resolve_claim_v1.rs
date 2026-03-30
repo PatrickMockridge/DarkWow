@@ -86,7 +86,7 @@ pub fn insurance_market_resolve_claim_process_instruction_v1(
             coverage.amount,
             underwriter.bond_amount,
             underwriter.performance_score,
-        )
+        )?
     } else {
         0
     };

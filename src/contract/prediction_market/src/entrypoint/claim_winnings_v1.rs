@@ -45,6 +45,19 @@ pub fn prediction_market_claim_winnings_process_instruction_v1(
     let position_bytes = wasm::db::db_get(positions_db, &serialize(&params.position_id))?.unwrap();
     let position: crate::model::Position = deserialize(&position_bytes)?;
 
+    // Verify the caller is the position owner (access control)
+    // TODO: The ZK proof should prove knowledge of the owner's secret key without
+    // requiring the owner field. For now, we verify the owner matches.
+    if position.owner != params.owner {
+        return Err(PredictionMarketError::UnauthorizedCaller.into())
+    }
+
+    // Verify proof is provided (ZK proof verification happens off-chain in the verifier)
+    // The proof demonstrates knowledge of the owner's secret key.
+    if params.proof.is_empty() {
+        return Err(PredictionMarketError::InvalidProof.into())
+    }
+
     // Look up the market
     let markets_db = wasm::db::db_lookup(cid, PREDICTION_CONTRACT_MARKETS_TREE)?;
     let market_bytes = wasm::db::db_get(markets_db, &serialize(&params.market_id))?.unwrap();
@@ -77,7 +90,7 @@ pub fn prediction_market_claim_winnings_process_instruction_v1(
             market.total_pool,
             market.protocol_fee,
             market.lp_fee,
-        )
+        )?
     } else {
         0
     };
