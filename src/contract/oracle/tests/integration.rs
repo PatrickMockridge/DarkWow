@@ -1,0 +1,123 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Oracle contract integration tests
+
+use darkfi_oracle_contract::{
+    model::{AttestValueParamsV1, Oracle, PushValueParamsV1, RegisterOracleParamsV1},
+    OracleFunction,
+    // Constants
+    ORACLE_CONTRACT_ORACLES_TREE, ORACLE_CONTRACT_ATTESTATIONS_TREE, ORACLE_CONTRACT_INFO_TREE,
+};
+
+#[test]
+fn test_oracle_function_enum_valid() {
+    assert!(OracleFunction::try_from(0x00).is_ok()); // RegisterOracleV1
+    assert!(OracleFunction::try_from(0x01).is_ok()); // PushValueV1
+    assert!(OracleFunction::try_from(0x02).is_ok()); // AttestValueV1
+}
+
+#[test]
+fn test_oracle_function_enum_invalid() {
+    assert!(OracleFunction::try_from(0xFF).is_err());
+    assert!(OracleFunction::try_from(0x03).is_err());
+    assert!(OracleFunction::try_from(0x10).is_err());
+}
+
+#[test]
+fn test_oracle_encoding() {
+    let oracle = Oracle {
+        id: darkfi_sdk::pasta::pallas::Base::from(1),
+        oracle_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
+            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
+        ),
+        name: "BTC/USD Price Feed".to_string(),
+        data_type: "price".to_string(),
+        value: darkfi_sdk::pasta::pallas::Base::from(50000),
+        updated_at: 50000,
+        is_active: true,
+    };
+
+    let encoded = oracle.encode().unwrap();
+    let decoded = Oracle::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+
+    assert_eq!(decoded.id, oracle.id);
+    assert_eq!(decoded.name, oracle.name);
+    assert_eq!(decoded.value, oracle.value);
+    assert_eq!(decoded.is_active, oracle.is_active);
+}
+
+#[test]
+fn test_register_oracle_params_encoding() {
+    let params = RegisterOracleParamsV1 {
+        proof: vec![1, 2, 3],
+        oracle_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        oracle_pub_x: darkfi_sdk::pasta::pallas::Base::from(2),
+        oracle_pub_y: darkfi_sdk::pasta::pallas::Base::from(3),
+        name: "BTC/USD Price Feed".to_string(),
+        data_type: "price".to_string(),
+    };
+
+    let encoded = params.encode().unwrap();
+    let decoded = RegisterOracleParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+
+    assert_eq!(decoded.oracle_id, params.oracle_id);
+    assert_eq!(decoded.name, params.name);
+    assert_eq!(decoded.data_type, params.data_type);
+}
+
+#[test]
+fn test_push_value_params_encoding() {
+    let params = PushValueParamsV1 {
+        proof: vec![1, 2, 3],
+        oracle_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        value: darkfi_sdk::pasta::pallas::Base::from(50000),
+    };
+
+    let encoded = params.encode().unwrap();
+    let decoded = PushValueParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+
+    assert_eq!(decoded.oracle_id, params.oracle_id);
+    assert_eq!(decoded.value, params.value);
+}
+
+#[test]
+fn test_attest_value_params_encoding() {
+    let params = AttestValueParamsV1 {
+        proof: vec![1, 2, 3],
+        oracle_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        attestation_id: darkfi_sdk::pasta::pallas::Base::from(2),
+        predicate: 0, // Matches
+        threshold: darkfi_sdk::pasta::pallas::Base::from(50000),
+    };
+
+    let encoded = params.encode().unwrap();
+    let decoded = AttestValueParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+
+    assert_eq!(decoded.oracle_id, params.oracle_id);
+    assert_eq!(decoded.attestation_id, params.attestation_id);
+    assert_eq!(decoded.predicate, params.predicate);
+    assert_eq!(decoded.threshold, params.threshold);
+}
+
+#[test]
+fn test_constants() {
+    assert_eq!(ORACLE_CONTRACT_ORACLES_TREE, "oracles");
+    assert_eq!(ORACLE_CONTRACT_ATTESTATIONS_TREE, "attestations");
+    assert_eq!(ORACLE_CONTRACT_INFO_TREE, "info");
+}
