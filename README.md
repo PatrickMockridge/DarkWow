@@ -13,16 +13,19 @@ This is a development fork of the official DarkFi repository. **Development occu
 
 This fork contains all additions compared to official DarkFi master:
 
-- **New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap, Labor Market, Auction, Tender, Attestation, Oracle (not in official DarkFi)
+- **New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap, Labor Market, Auction, Tender, Attestation, Oracle, Baccarat, Prediction Market, Insurance Market, Block Height Prediction (not in official DarkFi)
 - **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
 - **Identity refactor**: Level 0 (zk_only) with safemath assertion gadgets
-- **Expanded architecture documentation**: Additional analysis and design approaches including [Subscription](doc/src/arch/subscription.md), [Atomic Swap](doc/src/arch/atomic_swap.md), [Labor Market](doc/src/arch/labor_market.md), [Auction](doc/src/arch/auction.md), [Tender](doc/src/arch/tender.md), [Attestation](doc/src/arch/attestation.md), and [Oracle](doc/src/arch/oracle.md) contracts
+- **Expanded architecture documentation**: Additional analysis and design approaches including [Subscription](doc/src/arch/subscription.md), [Atomic Swap](doc/src/arch/atomic_swap.md), [Labor Market](doc/src/arch/labor_market.md), [Auction](doc/src/arch/auction.md), [Tender](doc/src/arch/tender.md), [Attestation](doc/src/arch/attestation.md), [Oracle](doc/src/arch/oracle.md), [Baccarat](doc/src/arch/baccarat.md), [Prediction Market](doc/src/arch/prediction_market.md), [Insurance Market](doc/src/arch/insurance_market.md), and [Block Height Prediction](doc/src/arch/block_height_prediction.md) contracts
 - **Architecture reference docs**: [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) (grey-market opcode analysis), [Merkle Depth](doc/src/arch/merkle_depth.md) (fixed-depth limitations and workarounds), [Composability](doc/src/arch/composability.md) (smart contract composition patterns with real-world DAO failure analysis and Tender + Labor Market + Attestation integration), [Safemath](doc/src/arch/safemath.md) (ZK arithmetic templates as LessThanOrEqual workaround)
 - **Work-in-progress implementations**: Skeleton code and alternative approaches
 
 **Key new features:**
 - **Attestation contract**: Generalized attestation and claims system for reusable verification patterns
 - **Oracle contract**: Push-model oracle demonstrating external data integration via attestation
+- **Baccarat contract**: Privacy-preserving casino game using cumulative PoW entropy for card dealing
+- **Prediction Market contract**: AMM-based prediction market with PoW-backed resolution
+- **Insurance Market contract**: Decentralized insurance marketplace with risk markets
 - **Safemath integration**: Production-ready assertion gadgets for bounded arithmetic (workaround for LessThanOrEqual gate soundness issue)
 - **Pooled debt stablecoin**: Synthetix-style shared liability model replacing individual CDPs
 
