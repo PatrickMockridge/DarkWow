@@ -40,6 +40,11 @@ circuit "CreateClaimV1" {
     # Using safemath assert_lte pattern: threshold < attribute + 1
     # This replaces LessThanOrEqual which was returning a Boolean publicly.
     #
+    # ALTERNATIVE: For Level 1 with public bit, see bounded equation:
+    #   threshold + delta = attribute_value + (1 - result) * 2^64
+    # This returns a public predicate_result bit using only proven opcodes.
+    # See: doc/src/arch/safemath.md#bounded-equation-construction
+    #
     # See: doc/src/arch/safemath.md
     # See: doc/src/arch/experimental-opcodes.md
     # ============================================================
