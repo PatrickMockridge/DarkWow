@@ -175,6 +175,20 @@ Proves the claim without revealing attributes (Level 0 zk_only):
 - **Verification**: Credential valid, predicate (threshold <= attribute) satisfied, not revoked
 - **Uses safemath**: `assert_lte_u64_v1.zk` pattern — no experimental opcodes
 
+### create_claim_v1_l1.zk
+
+Proves the claim with **selective disclosure** (Level 1):
+- **Public inputs**: nullifier, claim_type, issuer_pub_x, issuer_pub_y, schema_hash, **predicate_result**
+- **Private inputs**: credential_secret, attribute_value, threshold, commitment, delta
+- **Verification**: Bounded equation `threshold + delta = attribute_value + (1 - predicate_result) * 2^64`
+- **Uses bounded equation**: Returns public `predicate_result` bit without `LessThanOrEqual`
+
+The bounded equation works as follows:
+- `predicate_result = 1`: Equation becomes `threshold + delta = attribute_value` (solvable iff `threshold <= attribute_value`)
+- `predicate_result = 0`: Equation becomes `threshold + delta = attribute_value + 2^64` (solvable iff `threshold > attribute_value`)
+
+**Key advantage over Level 0**: The verifier learns the predicate result (e.g., "is_over_18 = true") without learning the actual attribute value or threshold.
+
 ### verify_claim_v1.zk (STUB)
 
 Proves the claim can be verified:
@@ -228,8 +242,9 @@ less_than_strict(threshold, attribute_plus_one);
 | Blocker | Severity | Description |
 |---------|----------|-------------|
 | No integration test | **High** | Cannot verify full issue → claim → verify flow |
-| `issue_credential_v1.zk` unreviewed | **Medium** | Circuit has not been audited for correctness |
+| `issue_credential_v1.zk` bug | **High** | Uses unsupported `ISSUER_PK` constant |
 | `verify_claim_v1.zk` stub | **Medium** | Needs full implementation |
+| Test harness integration | **High** | Contract uses outdated SDK API (`BridgeCall`) |
 
 ## The Privacy Gradient
 
@@ -238,8 +253,8 @@ we implement graduated privacy levels rather than binary public/private:
 
 | Level | Name | What Verifier Sees | Use Case | Status |
 |-------|------|-------------------|----------|--------|
-| **0** | `zk_only` | Nothing (proof valid/invalid only) | Maximum privacy | **Current** |
-| **1** | `selective` | Predicate result only | Basic verification | Future |
+| **0** | `zk_only` | Nothing (proof valid/invalid only) | Maximum privacy | **Implemented** |
+| **1** | `selective` | Predicate result only | Basic verification | **Implemented** (bounded equation) |
 | **2** | `attested` | Issuer confirms | Trusted issuers | Future |
 | **3** | `public` | Full disclosure | Regulatory compliance | Future |
 
@@ -407,18 +422,21 @@ Each step reveals only "meets criteria" — full history stays private.
 
 ## MVP Status
 
-**Partial MVP — safemath assertion gadgets** — `create_claim_v1.zk` uses [safemath](https://codeberg.org/rusticml/darkfi-safemath) assertion templates instead of experimental `LessThanOrEqual`. The contract implements Level 0 (zk_only) semantics — verifier learns only "proof valid/invalid", not the predicate result.
+**Partial MVP — safemath + bounded equation** — The contract implements:
+- **Level 0 (zk_only)**: `create_claim_v1.zk` uses safemath assertion gadgets
+- **Level 1 (selective)**: `create_claim_v1_l1.zk` uses bounded equation construction
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
-| `issue_credential_v1.zk` | Unread | Likely needs review |
-| `create_claim_v1.zk` | Verified | Uses safemath `assert_lte` pattern — no experimental opcodes |
+| `issue_credential_v1.zk` | **Bug** | Uses unsupported `ISSUER_PK` constant |
+| `create_claim_v1.zk` | **Implemented** | Uses safemath `assert_lte` pattern |
+| `create_claim_v1_l1.zk` | **Implemented** | Uses bounded equation for selective disclosure |
 
 ### What It Needs
 
 - Integration test: issue credential → create claim → verify claim end-to-end
-- Review `issue_credential_v1.zk` for correctness
-- `verify_claim_v1.zk` implementation
+- Fix `issue_credential_v1.zk` circuit (replace `ISSUER_PK` with proper constant)
+- Full test harness integration (requires SDK API fixes)
 
 **See**:
 - [Safemath](../../../doc/src/arch/safemath.md) — safemath integration guide
