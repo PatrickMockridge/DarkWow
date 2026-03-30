@@ -19,7 +19,7 @@ This fork contains all additions compared to official DarkFi master:
 | **dex** | Atomic swap DAO with incremental transparency | ✅ Complete |
 | **drain_protection** | Endowment/treasury protections (8 best practices) | ✅ Complete |
 | **escrow** | Hashed Timelock Contract variant | ✅ Complete |
-| **identity** | ZK credential proofs using competency DAGs | ✅ Uses safemath (Level 0 zk_only) |
+| **identity** | ZK credential proofs using competency DAGs | ✅ Level 0 zk_only + Level 1 selective (bounded equation) |
 | **insurance_market** | Decentralized insurance marketplace | ✅ Complete |
 | **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
 | **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
@@ -37,7 +37,7 @@ This fork contains all additions compared to official DarkFi master:
 - **Prediction Market**: AMM-based prediction market with PoW-backed resolution
 - **Insurance Market**: Decentralized insurance marketplace with risk markets ecosystem
 - **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
-- **Identity refactor**: Level 0 (zk_only) with safemath assertion gadgets
+- **Identity refactor**: Level 0 (zk_only) + Level 1 selective disclosure (bounded equation)
 - **Safemath integration**: Production-ready ZK arithmetic templates as LessThanOrEqual workaround
 - **Bridge Merkle fix**: Real `merkle_root` opcode (not fake proof)
 
@@ -89,7 +89,7 @@ Once the following are formally verified:
 | Contract | Feature | Workaround Used |
 |----------|---------|----------------|
 | stablecoin | Collateralization checks | Safemath `assert_lte` |
-| identity | Threshold predicates | Safemath `assert_lte` (Level 0 zk_only) |
+| identity | Threshold predicates | Safemath `assert_lte` (Level 0 zk_only), Bounded equation (Level 1) |
 | dex | Partial fills | Safemath `less_than_strict` assertion |
 | dao | Ratio checks | Cross-multiplication pattern |
 
@@ -98,7 +98,7 @@ Once the following are formally verified:
 | Contract | Feature | Needs |
 |----------|---------|--------|
 | stablecoin | Return Boolean for liquidation priority | LessThanOrEqual |
-| identity | Level 1 selective disclosure (reveal predicate) | LessThanOrEqual + IsEqualBase |
+| identity | Level 1 selective disclosure (bounded equation) | ✅ Available now! |
 | dex | Fill amount as value for further constraints | LessThanOrEqual |
 | escrow | Atomic swap with partial fill Boolean return | LessThanOrEqual |
 
