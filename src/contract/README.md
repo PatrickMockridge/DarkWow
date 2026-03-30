@@ -10,13 +10,16 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 | **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
 | **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
+| **darktoshi_dice** | Privacy-preserving Satoshi Dice clone | ✅ Complete |
 | **dex** | Atomic swap DAO with partial fills + open execution | ✅ Complete |
 | **drain_protection** | Endowment/treasury drain protections with 8 best practices | ✅ Complete |
 | **escrow** | Hashed Timelock Contract variant | ✅ Complete |
 | **identity** | ZK credential proofs using competency DAGs | ✅ Uses safemath (Level 0 zk_only) |
+| **insurance_market** | Decentralized insurance marketplace | ✅ Complete |
 | **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
 | **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
 | **oracle** | Push-model oracle with attestation integration | ✅ Complete |
+| **prediction_market** | Prediction market with AMM pricing | ✅ Complete |
 | **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
 | **stablecoin** | Monero-collateralized stablecoin | ✅ Uses safemath |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete |
@@ -165,14 +168,17 @@ Local READMEs exist for each contract in this folder:
 - [atomic_swap/README.md](atomic_swap/README.md) - Cross-chain atomic swaps
 - [bridge/README.md](bridge/README.md) - Cross-chain asset transfers
 - [dao_escrow/README.md](dao_escrow/README.md) - Three-mode DAO
+- [darktoshi_dice/README.md](darktoshi_dice/README.md) - Satoshi Dice clone
 - [dex/README.md](dex/README.md) - Atomic swap DAO
 - [drain_protection/README.md](drain_protection/README.md) - Endowment protection
 - [escrow/README.md](escrow/README.md) - Hashed Timelock Contract
 - [identity/README.md](identity/README.md) - ZK credential proofs
+- [insurance_market/README.md](insurance_market/README.md) - Decentralized insurance
 - [labor_market/README.md](labor_market/README.md) - Job/labor market
 - [money_v2/README.md](money_v2/README.md) - Secure money contract (STANDARD)
 - [auction/README.md](auction/README.md) - Privacy-preserving auction
 - [oracle/README.md](oracle/README.md) - Push-model oracle
+- [prediction_market/README.md](prediction_market/README.md) - Prediction market
 - [stablecoin/README.md](stablecoin/README.md) - Collateral stablecoin
 - [subscription/README.md](subscription/README.md) - Member subscription
 - [tender/README.md](tender/README.md) - Sealed-bid tendering

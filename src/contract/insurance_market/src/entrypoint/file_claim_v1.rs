@@ -1,0 +1,141 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! FileClaimV1 Implementation
+
+use darkfi_sdk::{error::ContractError, msg, wasm};
+use darkfi_serial::{deserialize, serialize};
+
+use crate::error::InsuranceMarketError;
+use crate::model::{derive_claim_id, FileClaimParamsV1, FileClaimUpdateV1};
+use crate::{INSURANCE_CONTRACT_CLAIMS_TREE, INSURANCE_CONTRACT_COVERAGES_TREE};
+
+/// Process instruction for FileClaimV1
+pub fn insurance_market_file_claim_process_instruction_v1(
+    cid: darkfi_sdk::crypto::ContractId,
+    call_idx: usize,
+    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+) -> Result<Vec<u8>, ContractError> {
+    let self_ = &calls[call_idx].data;
+    let params: FileClaimParamsV1 = deserialize(&self_.data[1..])?;
+
+    msg!("[insurance_market::file_claim] Filing claim");
+    msg!("  coverage_id: {:?}", params.coverage_id);
+    msg!("  amount: {}", params.amount);
+
+    // Look up the coverage
+    let coverages_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_COVERAGES_TREE)?;
+    let coverage_bytes =
+        wasm::db::db_get(coverages_db, &serialize(&params.coverage_id))?.unwrap();
+    let coverage: crate::model::Coverage = deserialize(&coverage_bytes)?;
+
+    // Verify coverage is active
+    if coverage.state != crate::model::CoverageState::Active {
+        return Err(InsuranceMarketError::CoverageNotFound.into())
+    }
+
+    // Verify coverage hasn't expired
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    if current_block >= coverage.expires_at {
+        return Err(InsuranceMarketError::CoverageExpired.into())
+    }
+
+    // Verify claim amount doesn't exceed coverage
+    if params.amount > coverage.amount {
+        return Err(InsuranceMarketError::ClaimNotCovered.into())
+    }
+
+    // Verify market_id matches
+    if coverage.market_id != params.market_id {
+        return Err(InsuranceMarketError::MarketNotFound.into())
+    }
+
+    // Derive claim ID
+    // Use first 8 bytes of evidence as u64 for hash input
+    let mut bytes = [0u8; 8];
+    let e_len = params.evidence.len().min(8);
+    bytes[..e_len].copy_from_slice(&params.evidence[..e_len]);
+    let evidence_hash = darkfi_sdk::pasta::pallas::Base::from(u64::from_le_bytes(bytes));
+    let claim_id = derive_claim_id(params.coverage_id, evidence_hash, current_block);
+
+    // Check if claim already exists
+    let claims_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_CLAIMS_TREE)?;
+    if wasm::db::db_contains_key(claims_db, &serialize(&claim_id))? {
+        return Err(InsuranceMarketError::ClaimAlreadyResolved.into())
+    }
+
+    // Create the update
+    let update = FileClaimUpdateV1 {
+        claim_id,
+        coverage_id: params.coverage_id,
+        market_id: params.market_id,
+        amount: params.amount,
+        state: crate::model::ClaimState::Filed,
+        created_at: current_block,
+    };
+
+    msg!("[insurance_market::file_claim] Claim filed: {:?}", claim_id);
+    Ok(serialize(&update))
+}
+
+/// Process update for FileClaimV1
+pub fn insurance_market_file_claim_process_update_v1(
+    cid: darkfi_sdk::crypto::ContractId,
+    update: FileClaimUpdateV1,
+) -> Result<(), ContractError> {
+    let claims_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_CLAIMS_TREE)?;
+    let coverages_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_COVERAGES_TREE)?;
+
+    // Create claim state
+    let claim = crate::model::Claim {
+        id: update.claim_id,
+        coverage_id: update.coverage_id,
+        market_id: update.market_id,
+        amount: update.amount,
+        payout: 0, // Calculated at resolution
+        state: crate::model::ClaimState::Filed,
+        evidence: vec![], // Stored separately or in metadata
+        attestation: vec![],
+        oracle_signature: darkfi_sdk::pasta::pallas::Base::zero(),
+        resolved_at: 0,
+    };
+
+    // Store claim
+    wasm::db::db_set(
+        claims_db,
+        &serialize(&update.claim_id),
+        &serialize(&claim),
+    )?;
+
+    // Update coverage to mark claim in progress
+    let coverage_bytes =
+        wasm::db::db_get(coverages_db, &serialize(&update.coverage_id))?.unwrap();
+    let mut coverage: crate::model::Coverage = deserialize(&coverage_bytes)?;
+    coverage.claim_id = Some(update.claim_id);
+    wasm::db::db_set(
+        coverages_db,
+        &serialize(&update.coverage_id),
+        &serialize(&coverage),
+    )?;
+
+    msg!(
+        "[insurance_market::file_claim::update] Claim stored: {:?}",
+        update.claim_id
+    );
+    Ok(())
+}

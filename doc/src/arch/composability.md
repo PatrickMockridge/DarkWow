@@ -343,16 +343,19 @@ cross-contract ZK composition opcodes.
 
 ## Cross-Contract Composability Matrix
 
-| Caller → | Money | DAO | Bridge | DEX | Attestation | Oracle | Labor Market | Tender |
-|----------|-------|-----|--------|-----|--------------|--------|-------------|--------|
-| **Money** | - | Token transfers | Token escrow | Swap settlement | - | - | Job payment escrow | Bid deposit escrow |
-| **DAO** | Treasury management | - | Governance of bridge | Governance of DEX | Attestation governance | - | Job approval governance | Tender authorization |
-| **Bridge** | Cross-chain transfers | Relayer rewards | - | Liquidity provision | - | - | External job funding | External tender integration |
-| **DEX** | Swap execution | Fee distribution | - | - | - | - | - | - |
-| **Attestation** | - | - | - | - | - | Oracle data attestation | Deliverable verification | Competency verification |
-| **Oracle** | Collateral pricing | - | - | Liquidity pricing | Creates attestations | - | - | - |
-| **Labor Market** | Job payment settlement | Job DAO governance | External payment integration | - | Uses for delivery | - | - | Job creation from tender |
-| **Tender** | Bid deposit management | - | External tender integration | - | Uses for competency | - | Winner job creation | - |
+| Caller → | Money | DAO | Bridge | DEX | Attestation | Oracle | Labor Market | Tender | DarkToshi Dice | Prediction Market | Insurance Market |
+|----------|-------|-----|--------|-----|--------------|--------|-------------|--------|----------------|-------------------|-----------------|
+| **Money** | - | Token transfers | Token escrow | Swap settlement | - | - | Job payment escrow | Bid deposit escrow | Bet value lock | Bet value lock | Premium payments, claim payouts |
+| **DAO** | Treasury management | - | Governance of bridge | Governance of DEX | Attestation governance | - | Job approval governance | Tender authorization | House edge management | Market creation governance | Insurance governance |
+| **Bridge** | Cross-chain transfers | Relayer rewards | - | Liquidity provision | - | - | External job funding | External tender integration | - | - | - |
+| **DEX** | Swap execution | Fee distribution | - | - | - | - | - | - | - | - | - |
+| **Attestation** | - | - | - | - | - | Oracle data attestation | Deliverable verification | Competency verification | - | - | Claim resolution |
+| **Oracle** | Collateral pricing | - | - | Liquidity pricing | Creates attestations | - | - | - | Roll randomness | Outcome resolution | Claim validity |
+| **Labor Market** | Job payment settlement | Job DAO governance | External payment integration | - | Uses for delivery | - | - | Job creation from tender | - | - | Underwriter certification |
+| **Tender** | Bid deposit management | - | External tender integration | - | Uses for competency | - | Winner job creation | - | - | - | Insurance requirements |
+| **DarkToshi Dice** | Token settlements | - | - | - | - | Block hash randomness | - | - | - | - | - |
+| **Prediction Market** | Payout settlement | - | - | - | - | Oracle resolution | - | - | - | - | Risk probability pricing |
+| **Insurance Market** | Claim payouts | - | - | - | Claim verification | Oracle attestation | Underwriter bonding | Coverage requirements | - | Risk market integration | - |
 
 ## General Primitive Composition Patterns
 
@@ -1223,6 +1226,109 @@ All DarkFi contracts should support incremental transparency (see [Identity](ide
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Case Study: Risk Market Ecosystem - Lloyd's of DarkFi
+
+The combination of DarkToshi Dice, Prediction Market, Insurance Market, Tender, and Labor Market contracts enables a novel risk market ecosystem that prices risk as a first-class asset class, replacing speculative memecoins with markets for **belief in risk**, **capability to mitigate risk**, and **actual risk transfer**.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    RISK MARKET ECOSYSTEM                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────┐         ┌──────────────────────┐                │
+│  │   DarkToshi Dice     │         │   Prediction Market   │                │
+│  │                      │         │                       │                │
+│  │  Commit-reveal       │         │  P(event) × impact   │                │
+│  │  gambling            │         │  = expected loss      │                │
+│  │  primitives          │         │                       │                │
+│  └──────────────────────┘         └──────────┬───────────┘                │
+│                                               │                              │
+│                                               │ Risk probability             │
+│                                               ▼                              │
+│  ┌────────────────────────────────────────────────────────────────┐        │
+│  │                    INSURANCE MARKET                               │        │
+│  │                                                                 │        │
+│  │  Engineers underwrite risks they can control:                   │        │
+│  │  - Bond posted = skin in the game                               │        │
+│  │  - Slashable if bad event occurs despite mitigation             │        │
+│  │  - Premium = prediction_price × (1 - belief_factor)           │        │
+│  │                                                                 │        │
+│  │  Risk categories:                                               │        │
+│  │  - Smart contract exploits (Security engineers)                 │        │
+│  │  - Oracle manipulation (Oracle operators)                       │        │
+│  │  - Key management failures (Custody providers)                 │        │
+│  └────────────────────────────────────────────────────────────────┘        │
+│                            │                                                  │
+│                            │ Premium flow + Slash mechanism                  │
+│                            ▼                                                  │
+│  ┌────────────────────────────────────────────────────────────────┐        │
+│  │                    TENDER + LABOR MARKET                          │        │
+│  │                                                                 │        │
+│  │  Projects allocate work to engineers based on:                   │        │
+│  │  - Competency (via Attestation)                                  │        │
+│  │  - Insurance coverage requirements                               │        │
+│  │  - Bonded guarantee of delivery                                 │        │
+│  └────────────────────────────────────────────────────────────────┘        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### The Core Pricing Formula
+
+```
+insurance_premium = prediction_market_price × (1 - engineering_confidence)
+
+where:
+- prediction_market_price = P(bad_event) × monetary_impact
+- engineering_confidence = 1 - (mitigation_cost / premium_charged)
+```
+
+#### The Spread Creates Value
+
+```
+LP_spread = insurance_premium - engineering_mitigation_cost - prediction_price
+
+Example:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Prediction Market: "Smart contract hack" = 10% × $1M = $100k expected     │
+│                                                                              │
+│  Engineers charge: $50k to mitigate (audit, formal verification)           │
+│  Insurance premium: $80k (buyers willing to pay for certainty)            │
+│                                                                              │
+│  LP spread: $30k = passive capital earns for backing the risk               │
+│                                                                              │
+│  Result:                                                                    │
+│  - Engineers earn $30k for taking on risk they can mitigate                 │
+│  - LPs earn $30k for providing capital backing                              │
+│  - Buyers pay $80k to transfer risk (cheaper than $100k expected loss)      │
+│  - Society benefits: engineers are incentivized to build secure code        │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Contract Integration Points
+
+| From | To | Integration |
+|------|----|-------------|
+| Prediction Market | Insurance Market | `P(event)` prices insurance premiums |
+| Insurance Market | Tender | Projects can require insurance coverage |
+| Tender | Labor Market | Winner selected → Job created with coverage requirements |
+| Labor Market | Attestation | Workers prove competency for risk categories |
+| DarkToshi Dice | Insurance Market | Gambling primitives for risk training |
+| Insurance Market | Money | Premium payments, claim payouts, bond slashing |
+
+#### Why This Matters
+
+Instead of memecoins (speculation on nothing), the risk market ecosystem creates:
+
+| Traditional | Risk Market Equivalent |
+|-------------|----------------------|
+| Memecoins | P(bad thing) × impact = real information |
+| Pure speculation | Engineering talent allocated to highest risks |
+| No accountability | Engineers bonded for non-performance |
+| Tragedy of commons | LPs earn spread for providing capital |
+
+See [Risk Market Ecosystem](risk_market_ecosystem.md) for full details.
+
 ## References
 
 - [Private Authorization Layer](privauth.md)
@@ -1240,5 +1346,9 @@ All DarkFi contracts should support incremental transparency (see [Identity](ide
 - [Labor Market Contract](labor_market.md)
 - [Auction Contract](auction.md)
 - [Tender Contract](tender.md)
+- [DarkToshi Dice Contract](darktoshi_dice.md) — Satoshi Dice clone with commit-reveal gambling primitives
+- [Prediction Market Contract](prediction_market.md) — Prediction market with AMM pricing
+- [Insurance Market Contract](insurance_market.md) — Decentralized insurance marketplace
+- [Risk Market Ecosystem](risk_market_ecosystem.md) — Lloyd's of DarkFi: combining prediction markets, insurance, and engineering capability
 - [Intent AMM Proposal](https://codeberg.org/rusticml/darkfi-intent-amm-proposal)
 - [Response to PatrickM123](https://codeberg.org/rusticml/darkfi-intent-amm-proposal/src/branch/main/docs/response-to-patrickm123.md)
