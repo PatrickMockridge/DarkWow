@@ -59,6 +59,7 @@
   - [DAO-Escrow Contract](arch/dao_escrow.md)
   - [Subscription Contract](arch/subscription.md)
   - [Atomic Swap Contract](arch/atomic_swap.md)
+  - [DarkToshi Dice Contract](arch/darktoshi_dice.md)
   - [Labor Market Contract](arch/labor_market.md)
   - [Oracle Contract](arch/oracle.md)
   - [Auction Contract](arch/auction.md)
