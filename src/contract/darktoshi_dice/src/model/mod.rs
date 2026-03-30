@@ -1,0 +1,243 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! DarkToshi Dice Contract Data Models
+
+use darkfi_sdk::{
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
+    pasta::pallas,
+};
+use darkfi_serial::{SerialDecodable, SerialEncodable};
+
+use crate::error::DiceError;
+use crate::{MAX_HOUSE_EDGE, MAX_TARGET, MIN_HOUSE_EDGE, ROLL_RANGE};
+
+// ============================================================================
+// STATE TYPES
+// ============================================================================
+
+/// Unique bet identifier (Poseidon hash of bet parameters)
+pub type BetId = pallas::Base;
+
+/// Represents the current state of a bet in the state machine
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+pub enum BetState {
+    Committed = 0,
+    Revealed = 1,
+    SettledPlayer = 2,
+    SettledHouse = 3,
+    Cancelled = 4,
+}
+
+impl TryFrom<u8> for BetState {
+    type Error = darkfi_sdk::error::ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Committed),
+            1 => Ok(Self::Revealed),
+            2 => Ok(Self::SettledPlayer),
+            3 => Ok(Self::SettledHouse),
+            4 => Ok(Self::Cancelled),
+            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+        }
+    }
+}
+
+// ============================================================================
+// CORE DATA STRUCTURES
+// ============================================================================
+
+/// Core bet data stored on-chain
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct Bet {
+    pub id: BetId,
+    pub player_pub: PublicKey,
+    pub bet_value: u64,
+    pub target: u8,
+    pub secret_nonce: pallas::Base,
+    pub blind: pallas::Base,
+    pub roll: Option<u8>,
+    pub state: BetState,
+    pub house_edge: u32,
+    pub created_at: u64,
+    pub revealed_at: u64,
+    pub value_commit: pallas::Point,
+    pub token_id: pallas::Base,
+    pub nullifier: BetId,
+}
+
+impl Bet {
+    /// Calculate payout for player winning.
+    /// Formula: bet_value * (10000 - house_edge) / (target * 100)
+    /// Example: bet=100, target=50, house_edge=200bp (2%)
+    ///   payout = 100 * 9800 / 5000 = 196
+    pub fn calculate_payout(&self) -> u64 {
+        (self.bet_value * (10000 - self.house_edge as u64)) / (self.target as u64 * 100)
+    }
+
+    /// Calculate house's take when house wins.
+    /// House takes: bet_value - base_win + (base_win * house_edge / 10000)
+    /// where base_win = bet_value * 100 / target
+    /// This simplifies to: bet_value * (target + house_edge - 100) / target
+    pub fn calculate_house_take(&self) -> u64 {
+        let base_win = (self.bet_value * 100) / self.target as u64;
+        // House takes the difference between bet and base win, plus house edge cut of base win
+        let profit = self.bet_value.saturating_sub(base_win);
+        profit + (base_win * self.house_edge as u64 / 10000)
+    }
+}
+
+// ============================================================================
+// PARAMETER TYPES
+// ============================================================================
+
+/// Parameters for `Dice::CommitBetV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CommitBetParamsV1 {
+    pub player_pub: PublicKey,
+    pub bet_value: u64,
+    pub target: u8,
+    pub secret_nonce: pallas::Base,
+    pub blind: pallas::Base,
+    pub token_id: pallas::Base,
+    pub value_commit: pallas::Point,
+    pub signature: pallas::Base,
+    pub house_edge: u32,
+}
+
+/// State update for `CommitBetV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CommitBetUpdateV1 {
+    pub bet_id: BetId,
+    pub player_pub: PublicKey,
+    pub bet_value: u64,
+    pub target: u8,
+    pub secret_nonce: pallas::Base,
+    pub blind: pallas::Base,
+    pub value_commit: pallas::Point,
+    pub token_id: pallas::Base,
+    pub house_edge: u32,
+    pub nullifier: BetId,
+    pub created_at: u64,
+}
+
+/// Parameters for `Dice::RevealRollV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RevealRollParamsV1 {
+    pub bet_id: BetId,
+    pub secret_nonce: pallas::Base,
+}
+
+/// State update for `RevealRollV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RevealRollUpdateV1 {
+    pub bet_id: BetId,
+    pub roll: u8,
+    pub state: BetState,
+    pub revealed_at: u64,
+}
+
+/// Parameters for `Dice::SettleBetV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SettleBetParamsV1 {
+    pub bet_id: BetId,
+    pub proof: Vec<u8>,
+}
+
+/// State update for `SettleBetV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SettleBetUpdateV1 {
+    pub bet_id: BetId,
+    pub state: BetState,
+    pub payout: u64,
+}
+
+/// Parameters for `Dice::HouseCloseV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct HouseCloseParamsV1 {
+    pub bet_id: BetId,
+}
+
+/// State update for `HouseCloseV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct HouseCloseUpdateV1 {
+    pub bet_id: BetId,
+    pub state: BetState,
+}
+
+// ============================================================================
+// VALIDATION HELPERS
+// ============================================================================
+
+pub fn validate_target(target: u8) -> Result<(), DiceError> {
+    if target == 0 || target > MAX_TARGET {
+        return Err(DiceError::InvalidTarget)
+    }
+    Ok(())
+}
+
+pub fn validate_house_edge(house_edge: u32) -> Result<(), DiceError> {
+    if house_edge < MIN_HOUSE_EDGE || house_edge > MAX_HOUSE_EDGE {
+        return Err(DiceError::InvalidHouseEdge)
+    }
+    Ok(())
+}
+
+pub fn derive_bet_id(
+    player_pub: &PublicKey,
+    bet_value: u64,
+    target: u8,
+    secret_nonce: pallas::Base,
+    blind: pallas::Base,
+    token_id: pallas::Base,
+) -> BetId {
+    let (px, py) = player_pub.xy();
+    poseidon_hash([
+        px,
+        py,
+        pallas::Base::from(bet_value),
+        pallas::Base::from(u64::from(target)),
+        secret_nonce,
+        blind,
+        token_id,
+    ])
+}
+
+pub fn derive_nullifier(bet_id: BetId, secret_nonce: pallas::Base) -> BetId {
+    poseidon_hash([bet_id, secret_nonce])
+}
+
+pub fn calculate_roll(tx_hash_bytes: [u8; 32], bet_id: BetId, secret_nonce: pallas::Base) -> u8 {
+    // Use multiple bytes from tx_hash for better randomness
+    let a = u64::from_le_bytes(tx_hash_bytes[0..8].try_into().unwrap());
+    let b = u64::from_le_bytes(tx_hash_bytes[8..16].try_into().unwrap());
+    let c = u64::from_le_bytes(tx_hash_bytes[16..24].try_into().unwrap());
+    let d = u64::from_le_bytes(tx_hash_bytes[24..32].try_into().unwrap());
+
+    let block_hash = poseidon_hash([
+        pallas::Base::from(a),
+        pallas::Base::from(b),
+        pallas::Base::from(c),
+        pallas::Base::from(d),
+    ]);
+
+    let roll_input = poseidon_hash([block_hash, bet_id, secret_nonce]);
+    let bytes = roll_input.to_repr();
+    ((bytes[0] as u64) % (ROLL_RANGE as u64)) as u8
+}

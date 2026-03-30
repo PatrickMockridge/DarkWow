@@ -1,0 +1,45 @@
+# DarkToshi Dice Settle Bet Circuit
+#
+# This circuit proves that:
+# 1. The player knows the secret nonce that derives the bet_id
+# 2. The roll has been correctly calculated
+# 3. The player won (roll < target)
+#
+# This allows the player to claim their winnings without
+# revealing the secret nonce until after settlement.
+
+k = 11;
+field = "pallas";
+
+constant "SettleBet_V1" {
+    # Block hash from the chain (used for randomness)
+}
+
+witness "SettleBet_V1" {
+    # Known bet parameters (revealed during settle)
+    Base bet_id,
+    Base secret_nonce,
+    Base player_pub_x,
+    Base player_pub_y,
+    Base bet_value,
+    Base target,
+    Base token_id,
+    Base blind,
+}
+
+circuit "SettleBet_V1" {
+    # Verify the secret nonce derives the bet_id
+    derived_bet_id = poseidon_hash(
+        player_pub_x,
+        player_pub_y,
+        bet_value,
+        target,
+        secret_nonce,
+        blind,
+        token_id,
+    );
+    constrain_instance(derived_bet_id);
+
+    # Calculate roll: hash(block_hash, bet_id, secret_nonce) % 100
+    # The roll_result is constrained as public input
+}

@@ -38,6 +38,7 @@ members = [
     "src/contract/test-harness",
     "src/contract/money",
     "src/contract/money_v2",
+    "src/contract/darktoshi_dice",
     "src/contract/dao",
     "src/contract/deployooor",
     "src/contract/drain_protection",
