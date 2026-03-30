@@ -163,6 +163,70 @@ Disclosure correlates with calculated trust scores:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## Implementation Levels
+
+### Level 0: zk_only (Maximum Privacy)
+
+Level 0 uses the safemath assertion pattern. The verifier learns **only** whether the proof is valid or invalid — no predicate result is revealed:
+
+```zk
+# From create_claim_v1.zk
+# Proves: threshold <= attribute_value
+# Verifier learns: only "proof valid/invalid"
+
+range_check(64, attribute_value);
+range_check(64, threshold);
+ONE = witness_base(1);
+attribute_plus_one = base_add(attribute_value, ONE);
+less_than_strict(threshold, attribute_plus_one);
+```
+
+**Use case**: When the verifier only needs to know "this person is authorized" without revealing why.
+
+### Level 1: Selective Disclosure (Bounded Equation)
+
+Level 1 uses the **bounded equation construction** to return a public `predicate_result` bit (0 or 1) without using `LessThanOrEqual`:
+
+```
+threshold + delta = attribute_value + (1 - predicate_result) * 2^64
+```
+
+**How it works**:
+- `predicate_result = 1`: Equation becomes `threshold + delta = attribute_value`
+  - Solvable iff `threshold <= attribute_value` (delta absorbs the gap)
+- `predicate_result = 0`: Equation becomes `threshold + delta = attribute_value + 2^64`
+  - Solvable iff `threshold > attribute_value` (needs 2^64 slack)
+
+**Implementation** (from `create_claim_v1_l1.zk`):
+
+```zk
+# Bounded equation for Level 1 (selective disclosure)
+range_check(64, attribute_value);
+range_check(64, threshold);
+range_check(64, delta);
+bool_check(predicate_result);
+
+# Compute 2^64 as 2^32 * 2^32 (avoids large constants)
+TWO_POW_32 = witness_base(4294967296);
+TWO_POW_64 = base_mul(TWO_POW_32, TWO_POW_32);
+
+# RHS = attribute_value + (1 - predicate_result) * 2^64
+ONE = witness_base(1);
+one_minus_result = base_sub(ONE, predicate_result);
+result_term = base_mul(one_minus_result, TWO_POW_64);
+rhs = base_add(attribute_value, result_term);
+
+# LHS = threshold + delta
+lhs = base_add(threshold, delta);
+
+# Constrain the equation
+constrain_equal_base(lhs, rhs);
+```
+
+**Why this matters**: The bounded equation uses only proven opcodes (`range_check`, `bool_check`, `base_mul`, `base_add`, `constrain_equal_base`). No `LessThanOrEqual` (gate soundness unverified) or `IsEqualBase` (delta-invert issue) needed.
+
+**Use case**: When the verifier needs to know "is_over_18 = true" but nothing about the actual birthdate.
+
 ## Level 0 MVP: Basic Credential Proofs
 
 The MVP implements the Issuer-Holder-Verifier model:
@@ -213,15 +277,25 @@ The contract stores **commitments, not data**:
 | Schema hash | When credential expires |
 | Revocation status | Who holds the credential |
 
-### Privacy Properties
+### Privacy Properties by Level
+
+**Level 0 (zk_only)**:
 
 | What You Reveal | What Stays Hidden |
 |-----------------|-------------------|
-| "I meet criteria" | Who you are |
-| "Credential valid" | Your actual data |
-| "Not revoked" | When credential expires |
+| "Proof valid/invalid" | Predicate result |
+| "Credential valid" | Whether predicate satisfied |
+| "Not revoked" | The actual attribute values |
+| Issuer is trusted | Who the holder is |
+
+**Level 1 (selective disclosure)**:
+
+| What You Reveal | What Stays Hidden |
+|-----------------|-------------------|
+| "Predicate satisfied: yes/no" | The actual attribute values |
+| "Proof valid" | Exact threshold or attribute |
+| "Credential valid" | Who the holder is |
 | Issuer is trusted | Full credential contents |
-| Predicate result (e.g., true) | The actual attribute values |
 
 ## Expansion: Competency DAG (Future)
 
