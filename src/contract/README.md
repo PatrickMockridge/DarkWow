@@ -23,6 +23,19 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 
 ---
 
+## Money V2 (Standard for This Fork)
+
+**money_v2** is our standard money contract featuring improved circuit design with self-contained ZK proofs.
+
+| Contract | Description | Standard |
+|----------|-------------|----------|
+| **money** | Original DarkFi money (v1) - upstream legacy | No |
+| **money_v2** | Our secure version with constrain_equal_base | **Yes** |
+
+See [money_v2/README.md](money_v2/README.md) for full details.
+
+---
+
 ## ZKas Circuit Analysis
 
 ### Opcode Classification
@@ -110,7 +123,8 @@ This pattern (in `dao/exec.zk`) handles ratio checks without `BaseDiv`.
 |----------|---------|---------------|--------|
 | dao | `exec.zk` | No | ✅ Safe |
 | dao | `propose-main.zk` | No | ✅ Safe |
-| money | `burn_v1.zk` | No | ✅ Safe |
+| money (v1) | `burn_v1.zk` | No | ✅ Safe |
+| money_v2 | `burn_v1.zk` | No | ✅ Safe - constrain_equal_base |
 | escrow | `refund_v1.zk` | No | ✅ Safe |
 | dao_escrow | `init_v1.zk` | No | ✅ Safe |
 | dao_escrow | `pay_premium_v1.zk` | No | ✅ Safe |
@@ -156,6 +170,7 @@ Local READMEs exist for each contract in this folder:
 - [escrow/README.md](escrow/README.md) - Hashed Timelock Contract
 - [identity/README.md](identity/README.md) - ZK credential proofs
 - [labor_market/README.md](labor_market/README.md) - Job/labor market
+- [money_v2/README.md](money_v2/README.md) - Secure money contract (STANDARD)
 - [auction/README.md](auction/README.md) - Privacy-preserving auction
 - [oracle/README.md](oracle/README.md) - Push-model oracle
 - [stablecoin/README.md](stablecoin/README.md) - Collateral stablecoin
