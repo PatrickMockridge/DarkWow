@@ -38,6 +38,9 @@ pub enum BaccaratError {
     #[error("Bet value too small")]
     BetValueTooSmall,
 
+    #[error("Bet value too large")]
+    BetValueTooLarge,
+
     #[error("Cards already drawn")]
     CardsAlreadyDrawn,
 
@@ -93,21 +96,22 @@ impl From<BaccaratError> for ContractError {
             BaccaratError::InvalidFunction => Self::Custom(4),
             BaccaratError::InvalidBetType => Self::Custom(5),
             BaccaratError::BetValueTooSmall => Self::Custom(6),
-            BaccaratError::CardsAlreadyDrawn => Self::Custom(7),
-            BaccaratError::CardsNotDrawn => Self::Custom(8),
-            BaccaratError::InvalidCard => Self::Custom(9),
-            BaccaratError::BetTimeoutNotReached => Self::Custom(10),
-            BaccaratError::InvalidHouseEdge => Self::Custom(11),
-            BaccaratError::InvalidSignature => Self::Custom(12),
-            BaccaratError::InvalidProof => Self::Custom(13),
-            BaccaratError::UnauthorizedCaller => Self::Custom(14),
-            BaccaratError::CrossContractFailed => Self::Custom(15),
-            BaccaratError::ValueCommitmentMismatch => Self::Custom(16),
-            BaccaratError::DuplicateNullifier => Self::Custom(17),
-            BaccaratError::HouseNotInitialized => Self::Custom(18),
-            BaccaratError::InvalidBlockHash => Self::Custom(19),
-            BaccaratError::CommitmentMismatch => Self::Custom(20),
-            BaccaratError::InvalidConfirmationDepth => Self::Custom(21),
+            BaccaratError::BetValueTooLarge => Self::Custom(7),
+            BaccaratError::CardsAlreadyDrawn => Self::Custom(8),
+            BaccaratError::CardsNotDrawn => Self::Custom(9),
+            BaccaratError::InvalidCard => Self::Custom(10),
+            BaccaratError::BetTimeoutNotReached => Self::Custom(11),
+            BaccaratError::InvalidHouseEdge => Self::Custom(12),
+            BaccaratError::InvalidSignature => Self::Custom(13),
+            BaccaratError::InvalidProof => Self::Custom(14),
+            BaccaratError::UnauthorizedCaller => Self::Custom(15),
+            BaccaratError::CrossContractFailed => Self::Custom(16),
+            BaccaratError::ValueCommitmentMismatch => Self::Custom(17),
+            BaccaratError::DuplicateNullifier => Self::Custom(18),
+            BaccaratError::HouseNotInitialized => Self::Custom(19),
+            BaccaratError::InvalidBlockHash => Self::Custom(20),
+            BaccaratError::CommitmentMismatch => Self::Custom(21),
+            BaccaratError::InvalidConfirmationDepth => Self::Custom(22),
         }
     }
 }

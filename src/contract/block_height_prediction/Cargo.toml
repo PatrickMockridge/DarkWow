@@ -1,0 +1,21 @@
+[package]
+name = "darkfi_block_height_prediction_contract"
+version = "0.1.0"
+authors = ["DarkFi developers"]
+license = "AGPL-3.0-only"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
+darkfi-serial = { path = "../../serial", features = ["derive", "crypto"] }
+thiserror = "2.0.17"
+
+[features]
+no-entrypoint = []
+default = []
+
+[lints]
+workspace = true

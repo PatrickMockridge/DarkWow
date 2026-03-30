@@ -130,6 +130,10 @@ pub const MAX_HOUSE_EDGE: u32 = 300;
 pub const DEFAULT_BET_TIMEOUT: u32 = 10;
 /// Maximum confirmation depth
 pub const MAX_CONFIRMATION_DEPTH: u8 = 10;
+/// Maximum bet value (to prevent overflow)
+pub const MAX_BET_VALUE: u64 = 1_000_000_000; // 1 billion tokens
+/// Minimum bet value
+pub const MIN_BET_VALUE: u64 = 1;
 /// Number of card ranks (2-10, J, Q, K, A = 13)
 pub const CARD_RANKS: u8 = 13;
 /// Number of suits (Clubs, Diamonds, Hearts, Spades = 4)

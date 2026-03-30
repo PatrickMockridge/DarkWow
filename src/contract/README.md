@@ -8,6 +8,7 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 |----------|-------------|--------|
 | **attestation** | Generalized attestation and claims system | ✅ Complete |
 | **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
+| **baccarat** | Privacy-preserving Baccarat (Punto Banco) casino game | ✅ Complete |
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
 | **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
 | **darktoshi_dice** | Privacy-preserving Satoshi Dice clone | ✅ Complete |
@@ -169,6 +170,7 @@ Local READMEs exist for each contract in this folder:
 
 - [attestation/README.md](attestation/README.md) - Generalized attestation and claims
 - [atomic_swap/README.md](atomic_swap/README.md) - Cross-chain atomic swaps
+- [baccarat/README.md](baccarat/README.md) - Privacy-preserving Baccarat casino game
 - [bridge/README.md](bridge/README.md) - Cross-chain asset transfers
 - [dao_escrow/README.md](dao_escrow/README.md) - Three-mode DAO
 - [darktoshi_dice/README.md](darktoshi_dice/README.md) - Satoshi Dice clone

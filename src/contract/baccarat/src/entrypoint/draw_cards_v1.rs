@@ -56,7 +56,7 @@ pub fn baccarat_draw_cards_process_instruction_v1(
         return Err(BaccaratError::InvalidStateTransition.into())
     }
 
-    // Verify secret nonce matches
+    // Verify secret nonce matches (proves caller knows the commitment)
     if bet.secret_nonce != params.secret_nonce {
         return Err(BaccaratError::CommitmentMismatch.into())
     }
@@ -82,14 +82,16 @@ pub fn baccarat_draw_cards_process_instruction_v1(
 
     msg!("[baccarat::draw_cards] Collected {} block hashes for entropy", block_hashes.len());
 
-    // Deal cards using block hash entropy
-    let (mut player_hand, mut banker_hand) = deal_cards(&block_hashes, bet.id);
+    // Deal cards using block hash entropy - now returns all cards properly derived
+    let (mut player_hand, mut banker_hand, player_third, banker_third) =
+        deal_cards(&block_hashes, bet.id);
 
     msg!("[baccarat::draw_cards] Player hand: {:?}, {:?}", player_hand.card1, player_hand.card2);
     msg!("[baccarat::draw_cards] Banker hand: {:?}, {:?}", banker_hand.card1, banker_hand.card2);
 
-    // Calculate outcome using Baccarat drawing rules
-    let game_outcome = calculate_outcome(&mut player_hand, &mut banker_hand);
+    // Calculate outcome using Baccarat drawing rules with entropy-derived third cards
+    let game_outcome =
+        calculate_outcome(&mut player_hand, &mut banker_hand, player_third, banker_third);
 
     msg!("[baccarat::draw_cards] Game outcome: {:?}", game_outcome);
 

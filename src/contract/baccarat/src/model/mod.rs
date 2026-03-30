@@ -192,6 +192,11 @@ impl Bet {
     }
 }
 
+/// Derive nullifier from bet_id and secret_nonce
+pub fn derive_nullifier(bet_id: BetId, secret_nonce: pallas::Base) -> BetId {
+    poseidon_hash([bet_id, secret_nonce])
+}
+
 // ============================================================================
 // PARAMS AND UPDATES
 // ============================================================================
@@ -242,6 +247,7 @@ pub struct CommitBetUpdateV1 {
     pub settle_block: u64,
     pub nullifier: BetId,
     pub state: BetState,
+    pub created_at: u64,
 }
 
 /// Parameters for DrawCardsV1
@@ -302,9 +308,10 @@ pub struct HouseCloseUpdateV1 {
 // ============================================================================
 
 /// Deal cards using block hash entropy
-/// Returns (player_hand, banker_hand)
+/// Returns (player_hand, banker_hand, player_third_card, banker_third_card)
+/// Third cards are returned separately because their dealing depends on drawing rules
 #[allow(clippy::unused)]
-pub fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId) -> (Hand, Hand) {
+pub fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId) -> (Hand, Hand, Option<Card>, Option<Card>) {
     // Combine entropy from block hashes
     let mut entropy = bet_id;
     for (i, hash) in block_hashes.iter().enumerate() {
@@ -333,19 +340,35 @@ pub fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId) -> (Hand, Han
     let seed3 = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
     let seed4 = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
 
+    // Create seeds for third cards (derived from entropy of first 4 cards)
+    let seed5 = seed1.wrapping_mul(31).wrapping_add(seed2);
+    let seed6 = seed3.wrapping_mul(17).wrapping_add(seed4);
+
     // For simplicity, we use modulo 52 to select cards
     let player_card1 = Card::new(seed1 as u8);
     let player_card2 = Card::new(seed2 as u8);
     let banker_card1 = Card::new(seed3 as u8);
     let banker_card2 = Card::new(seed4 as u8);
 
+    // Third cards - only drawn if rules require them
+    let player_third = Card::new(seed5 as u8);
+    let banker_third = Card::new(seed6 as u8);
+
     (Hand { card1: player_card1, card2: player_card2, third_card: None },
-     Hand { card1: banker_card1, card2: banker_card2, third_card: None })
+     Hand { card1: banker_card1, card2: banker_card2, third_card: None },
+     Some(player_third),
+     Some(banker_third))
 }
 
 /// Calculate baccarat outcome using standard drawing rules
+/// Takes pre-derived third cards from entropy
 #[allow(clippy::assigning_clones, clippy::let_and_return)]
-pub fn calculate_outcome(player_hand: &mut Hand, banker_hand: &mut Hand) -> Outcome {
+pub fn calculate_outcome(
+    player_hand: &mut Hand,
+    banker_hand: &mut Hand,
+    player_third_card: Option<Card>,
+    banker_third_card: Option<Card>,
+) -> Outcome {
     let player_value = player_hand.value();
     let banker_value = banker_hand.value();
 
@@ -362,9 +385,8 @@ pub fn calculate_outcome(player_hand: &mut Hand, banker_hand: &mut Hand) -> Outc
 
     // Player draws third card if 0-5
     if player_value <= 5 {
-        // Player draws - use entropy-derived card (simplified)
-        let player_third = player_hand.third_card.unwrap_or(Card(0));
-        player_hand.third_card = Some(player_third);
+        // Player draws - use entropy-derived card
+        player_hand.third_card = player_third_card;
     }
 
     // Banker drawing rules (complex):
@@ -398,8 +420,7 @@ pub fn calculate_outcome(player_hand: &mut Hand, banker_hand: &mut Hand) -> Outc
     };
 
     if should_banker_draw {
-        let banker_third = banker_hand.third_card.unwrap_or(Card(0));
-        banker_hand.third_card = Some(banker_third);
+        banker_hand.third_card = banker_third_card;
     }
 
     // Calculate final values
@@ -415,7 +436,7 @@ pub fn calculate_outcome(player_hand: &mut Hand, banker_hand: &mut Hand) -> Outc
     }
 }
 
-/// Calculate payout for a winning bet
+/// Calculate payout for a winning bet using actual house edge
 #[allow(clippy::let_and_return)]
 pub fn calculate_payout(bet: &Bet, outcome: Outcome) -> u64 {
     // Check if bet won
@@ -430,19 +451,36 @@ pub fn calculate_payout(bet: &Bet, outcome: Outcome) -> u64 {
         return 0
     }
 
-    // Calculate payout based on bet type
+    // Calculate payout based on bet type, using actual house_edge
+    // house_edge is in basis points (e.g., 150 = 1.5%)
     match bet.bet_type {
         BetType::Player => {
-            // 1:1 payout
-            bet.bet_value * 100 / 100
+            // Player bet pays 1:1, house edge applied to player
+            // payout = bet_value * (10000 - house_edge) / 10000
+            let payout = (bet.bet_value as u128) *
+                ((10000 - bet.house_edge) as u128) /
+                10000;
+            payout as u64
         }
         BetType::Banker => {
-            // 0.95:1 payout (house takes 5%)
-            (bet.bet_value * 95) / 100
+            // Banker bet pays 0.95:1 with ~1.06% house edge
+            // Standard payout is 0.95:1, but we use house_edge for precision
+            // payout = bet_value * 9500 / 10000 * (10000 - house_edge) / 10000
+            // Simplified: bet_value * (9500 - house_edge*0.5) / 10000
+            let payout = (bet.bet_value as u128) *
+                ((9500u32.saturating_sub(bet.house_edge / 2)) as u128) /
+                10000;
+            payout as u64
         }
         BetType::Tie => {
-            // 8:1 payout
-            bet.bet_value * 800 / 100
+            // Tie bet pays 8:1 with ~14.36% house edge
+            // Standard payout is 8:1, house edge is much higher for tie
+            // payout = bet_value * 8000 / 1000 * (10000 - house_edge) / 10000
+            // Simplified: bet_value * (8000 - house_edge*8) / 1000
+            let payout = (bet.bet_value as u128) *
+                ((8000u32.saturating_sub(bet.house_edge * 8)) as u128) /
+                1000;
+            payout as u64
         }
     }
 }
