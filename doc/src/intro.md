@@ -15,6 +15,7 @@ This fork contains all additions compared to official DarkFi master:
 | **baccarat** | Privacy-preserving Baccarat casino game | ✅ Complete |
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
 | **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
+| **darktoshi_dice** | Privacy-preserving Satoshi Dice clone | ✅ Complete |
 | **dex** | Atomic swap DAO with incremental transparency | ✅ Complete |
 | **drain_protection** | Endowment/treasury protections (8 best practices) | ✅ Complete |
 | **escrow** | Hashed Timelock Contract variant | ✅ Complete |
