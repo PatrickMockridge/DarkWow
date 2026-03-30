@@ -65,7 +65,6 @@
   - [Auction Contract](arch/auction.md)
   - [Tender Contract](arch/tender.md)
   - [Drain Protection Contract](arch/drain_protection.md)
-  - [DarkToshi Dice Contract](arch/darktoshi_dice.md)
   - [Baccarat Contract](arch/baccarat.md)
   - [Provable Randomness](arch/provable_randomness.md)
   - [Prediction Market Contract](arch/prediction_market.md)
