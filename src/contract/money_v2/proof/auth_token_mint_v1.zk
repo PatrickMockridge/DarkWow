@@ -1,0 +1,38 @@
+# Circuit used to verify a token mint authority.
+k = 11;
+field = "pallas";
+
+constant "AuthTokenMint_V1" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "AuthTokenMint_V1" {
+    # TokenAttributes {
+    Base token_auth_parent,
+    Base token_blind,
+    # }
+
+    # Secret key used by the mint authority
+    Base mint_secret,
+
+    # Mint authority's public key coordinates (public input - must match derived)
+    Base mint_pub_x,
+    Base mint_pub_y,
+}
+
+circuit "AuthTokenMint_V1" {
+    # Derive public key for the mint authority
+    mint_public = ec_mul_base(mint_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(mint_public);
+    derived_pub_y = ec_get_y(mint_public);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the mint_secret to the mint_pubkey
+    constrain_equal_base(derived_pub_x, mint_pub_x);
+    constrain_equal_base(derived_pub_y, mint_pub_y);
+
+    # Derive the token ID using the PUBLIC mint_pub_x/y
+    token_user_data = poseidon_hash(mint_pub_x, mint_pub_y);
+    token_id = poseidon_hash(token_auth_parent, token_user_data, token_blind);
+    constrain_instance(token_id);
+}
