@@ -84,53 +84,68 @@ darkfi/validator
 
 **Any** code that depends on `darkfi` with the `validator` feature (directly or through test-harnesses) will transitively enable `async-serial`.
 
-## Why The Bug Is Hard To Fix
+## Why The Bug Blocks Building
 
-### 1. Proc Macro Expansion Happens Early
+### 1. Transitive Feature Dependency
 
-Proc macros run before type checking. The `#[derive(SerialEncodable)]` expands to code that includes `#[async_trait]` attributes. This expanded code is then type-checked. If the expanded code has lifetime mismatches, the error appears in the user's code (intent_set.rs), not in the macro.
+The `async-serial` feature is enabled transitively through this chain:
+```
+darkfid → darkfi/validator → darkfi/blockchain → darkfi/tx → darkfi/async-serial
+```
 
-### 2. Feature Unification In Cargo
+There is no way to build `darkfid` without `async-serial` because the Cargo features are unified.
 
-Cargo merges features across the dependency graph. Even if a specific crate doesn't directly enable `async-serial`, a dependency might, and that enables it for all consumers in that build.
+### 2. async-trait 0.1.x Lifetime Issue
 
-### 3. Cannot Conditionally Generate async Code
+The `async-trait 0.1.x` crate uses a macro-based approach to async traits that predates native async trait support (Rust 1.75+). The macro transformation doesn't properly handle lifetime elision for `async fn(&self)` methods, causing lifetime bound mismatches.
 
-The derive macros generate either sync OR async code based on the `async` feature at compile time of the crate using the derive. There is no way to have sync-only code in the same crate as async-only code using the same derive.
+### 3. No Conditional Compilation
 
-### 4. Lifetime Elision Rules
+The derive macros in `darkfi-derive-internal` generate either sync OR async code based on the `async` feature flag. There is no fallback to sync code when async code fails to compile.
 
-Rust's lifetime elision rules for async fn with &self don't produce the bounds that `async-trait`'s macro transformation expects. The compiler has become stricter about this in 1.90+.
+### 4. Rust Compiler Stricter Checking
+
+Recent Rust versions (1.90+) have stricter lifetime bounds checking that exposes the underlying issue in async-trait's generated code. This is NOT a Rust regression - async-trait's code was always incorrect, but older compilers didn't catch it.
 
 ## Affected Build Configurations
 
-| Rust Version | typed-index-collections | Status |
-|--------------|------------------------|--------|
-| 1.88.x       | any                    | Should work |
-| 1.89.x       | 3.3.0                 | Works with no `async-serial` |
-| 1.89.x       | 3.4.0                 | Works (bug doesn't manifest) |
-| 1.90+        | any                    | Broken with `async-serial` |
+**Updated 2026-03-30:** The table below was overly optimistic. The async-trait lifetime issue occurs when `async-serial` feature is enabled, which happens transitively through `darkfi/validator` (required by `darkfid`, `drk`, and the test-harness). This affects ALL Rust versions when `async-serial` is enabled.
 
-## Current Workaround
+Additionally, some dependencies (e.g., `tapes` from Cuprate) now require `edition2024` which requires Cargo features from Rust 1.80+.
 
-**The integration tests I created cannot be run with Rust 1.90+** because `darkfi/validator` is required by the test-harness, which transitively enables `async-serial`.
+| Rust Version | Status |
+|--------------|--------|
+| 1.80.x       | Fails: dependencies require `edition2024` Cargo feature |
+| 1.88.x       | Fails: async-trait lifetime bug with `async-serial` |
+| 1.89.x       | Fails: async-trait lifetime bug with `async-serial` |
+| 1.90+        | Fails: async-trait lifetime bug with `async-serial` |
 
-**However**: The contracts themselves work correctly. You can still:
-1. Run ZK circuit tests (`./tests/zk_circuit_test.sh`) - these work
-2. Build contracts (`cargo build -p darkfi_baccarat_contract --lib`) - this works
-3. Write on-chain code using the contracts - this works
+**Root cause:** This is a **pre-existing architectural issue** in DarkFi's async serialization system. The `async-trait 0.1.x` crate generates code with implicit lifetime bounds that are rejected by Rust's compiler. This is NOT a Rust backwards compatibility issue - Rust is working correctly. The problem is that `async-trait 0.1.x` never properly handled lifetime elision for `async fn(&self)` methods.
 
-The bug only prevents running the test harness that exercises contract logic end-to-end.
+## Impact
 
-### Option 1: Use Rust 1.89 with Downgraded Dependencies
+**Critical:** This bug affects the entire DarkFi build system, not just tests:
 
+- `darkfid` (validator node) - **CANNOT BUILD**
+- `drk` (CLI wallet) - **CANNOT BUILD**
+- Integration tests - **CANNOT BUILD** (require `darkfi/validator`)
+
+**What still works:**
+- Contract libraries (`cargo build -p darkfi_<name>_contract --lib`) - works
+- ZK circuit compilation (`./zkas proof/circuit.zk -o proof/circuit.zk.bin`) - works
+- ZK circuit tests (shell scripts) - work
+
+### Options to Resolve
+
+**Option 1: Use Pre-built Binaries**
+Use binaries from DarkFiMain (June 2025) which were built before this issue manifested:
 ```bash
-rustup install 1.89.0
-rustup override set 1.89.0
-cargo update typed-index-collections@3.4.0 --precise 3.3.0
+cp /path/to/DarkFiMain/bin/darkfid ./bin/darkfid/
+cp /path/to/DarkFiMain/bin/drk ./bin/drk/
 ```
 
-### Option 2: Fix the async-trait Issue
+**Option 2: Fix async-trait (Requires Code Change)**
+Update to `async-trait 1.0+` which uses native async traits (Rust 1.75+):
 
 Update to `async-trait 1.0+` which uses native async traits (Rust 1.75+). This requires:
 
