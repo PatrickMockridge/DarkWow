@@ -39,6 +39,7 @@ members = [
     "src/contract/money",
     "src/contract/money_v2",
     "src/contract/darktoshi_dice",
+    "src/contract/prediction_market",
     "src/contract/dao",
     "src/contract/deployooor",
     "src/contract/drain_protection",
