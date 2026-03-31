@@ -75,7 +75,6 @@
   - [Betting Stake Contract](arch/betting_stake.md)
   - [Roulette Contract](arch/roulette.md)
   - [DarkBet Exchange Contract](arch/darkbet_exchange.md)
-  - [Betfair Exchange Concept](arch/bet_exchange.md)
   - [Private Authorization Layer](arch/privauth.md)
   - [Composability](arch/composability.md)
   - [Wallet](arch/wallet.md)

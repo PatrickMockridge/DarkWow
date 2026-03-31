@@ -54,7 +54,6 @@ This fork contains all additions compared to official DarkFi master:
 - [Safemath](arch/safemath.md) — ZK arithmetic templates (LessThanOrEqual workaround)
 - [Field Arithmetic](arch/field_arithmetic.md) — zkVM primitive analysis
 - [DarkBet Exchange](arch/darkbet_exchange.md) — Unified betting exchange (order-book + AMM)
-- [Betfair Exchange Concept](arch/bet_exchange.md) — Full Betfair-style architecture vision
 - [Entropy Module](arch/entropy.md) — Provable randomness via block hash entropy
 - [Provable Randomness](arch/provable_randomness.md) — PoW randomness analysis with casino game case studies
 
