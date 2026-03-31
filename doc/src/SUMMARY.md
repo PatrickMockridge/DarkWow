@@ -71,6 +71,7 @@
   - [Prediction Market Contract](arch/prediction_market.md)
   - [Block Height Prediction Market](arch/block_height_prediction.md)
   - [Insurance Market Contract](arch/insurance_market.md)
+  - [Lottery Contract](arch/lottery.md)
   - [Private Authorization Layer](arch/privauth.md)
   - [Composability](arch/composability.md)
   - [Wallet](arch/wallet.md)

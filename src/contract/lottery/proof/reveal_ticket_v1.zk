@@ -1,0 +1,31 @@
+# Lottery Reveal Ticket Circuit
+#
+# This circuit proves that a player has revealed valid numbers
+# that match their commitment and counts the matches.
+
+k = 11;
+field = "pallas";
+
+constant "RevealTicket_V1" {
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "RevealTicket_V1" {
+    Base ticket_id,
+    Base winning_numbers_hash,
+    Base revealed_commitment,
+    Base matches,
+    Base nonce,
+    Base token_id,
+    Scalar value_blind,
+}
+
+circuit "RevealTicket_V1" {
+    # Verify the commitment matches the revealed numbers
+    # This is a placeholder - actual implementation would verify
+    # the commitment against the revealed numbers + nonce
+    constrain_instance(revealed_commitment);
+
+    # Verify matches count (placeholder constraint)
+    constrain_instance(matches);
+}
