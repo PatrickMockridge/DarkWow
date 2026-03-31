@@ -13,8 +13,11 @@ This fork contains all additions compared to official DarkFi master:
 | **attestation** | Generalized attestation and claims system | ✅ Complete |
 | **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
 | **baccarat** | Privacy-preserving Baccarat casino game | ✅ Complete |
+| **betting_stake** | LP staking for betting contracts | ✅ Complete |
+| **block_height_prediction** | PoW-backed block height betting | ✅ Complete |
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
 | **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
+| **darkbet_exchange** | Unified betting exchange (order-book + AMM) | ✅ Complete |
 | **darktoshi_dice** | Privacy-preserving Satoshi Dice clone | ✅ Complete |
 | **dex** | Atomic swap DAO with incremental transparency | ✅ Complete |
 | **drain_protection** | Endowment/treasury protections (8 best practices) | ✅ Complete |
@@ -22,24 +25,26 @@ This fork contains all additions compared to official DarkFi master:
 | **identity** | ZK credential proofs using competency DAGs | ✅ Level 0 zk_only + Level 1 selective (bounded equation) |
 | **insurance_market** | Decentralized insurance marketplace | ✅ Complete |
 | **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
+| **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete |
 | **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
 | **oracle** | Push-model oracle with attestation integration | ✅ Complete |
-| **prediction_market** | AMM-based prediction market | ✅ Complete |
-| **block_height_prediction** | PoW-backed block height betting | ✅ PoC |
+| **roulette** | Privacy-preserving roulette casino game | ✅ Complete |
 | **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
 | **stablecoin** | Synthetix-style pooled debt with safemath | ✅ Uses safemath |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete |
 
 ## Key Technical Changes
 
+- **DarkBet Exchange**: Unified betting contract with order-book (back/lay) and AMM pool modes. Replaces prediction_market.
 - **DrainProtection**: 8 optional best practices (graduated tiers, exit queue, circuit breaker, guardian pause, observation period, split proposals, no-loss reserve, dead man's switch). All features configurable by contract deployer and controllable by DAO members via governance.
-- **Baccarat contract**: Privacy-preserving casino game using cumulative PoW block hash entropy for card dealing
-- **Prediction Market**: AMM-based prediction market with PoW-backed resolution
+- **Baccarat/Roulette**: Privacy-preserving casino games using cumulative PoW block hash entropy for dealing
+- **Lottery**: Configurable lottery bridging BettingStake and Insurance market problem spaces
 - **Insurance Market**: Decentralized insurance marketplace with risk markets ecosystem
 - **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
 - **Identity refactor**: Level 0 (zk_only) + Level 1 selective disclosure (bounded equation)
 - **Safemath integration**: Production-ready ZK arithmetic templates as LessThanOrEqual workaround
 - **Bridge Merkle fix**: Real `merkle_root` opcode (not fake proof)
+- **Entropy module**: Shared `darkfi_sdk::crypto::entropy` for provable randomness across contracts
 
 ## Architecture Documentation
 
@@ -48,9 +53,10 @@ This fork contains all additions compared to official DarkFi master:
 - [Composability](arch/composability.md) — Smart contract composition patterns
 - [Safemath](arch/safemath.md) — ZK arithmetic templates (LessThanOrEqual workaround)
 - [Field Arithmetic](arch/field_arithmetic.md) — zkVM primitive analysis
-- [Baccarat](arch/baccarat.md) — Casino game using cumulative PoW entropy
-- [Prediction Market](arch/prediction_market.md) — AMM-based prediction market
-- [Provable Randomness](arch/provable_randomness.md) — PoW randomness analysis with Baccarat case study
+- [DarkBet Exchange](arch/darkbet_exchange.md) — Unified betting exchange (order-book + AMM)
+- [Betfair Exchange Concept](arch/bet_exchange.md) — Full Betfair-style architecture vision
+- [Entropy Module](arch/entropy.md) — Provable randomness via block hash entropy
+- [Provable Randomness](arch/provable_randomness.md) — PoW randomness analysis with casino game case studies
 
 ## Security Status
 
@@ -87,7 +93,7 @@ Once the following are formally verified:
 ### What Works Now (with workarounds)
 
 | Contract | Feature | Workaround Used |
-|----------|---------|----------------|
+|----------|---------|------------------|
 | stablecoin | Collateralization checks | Safemath `assert_lte` |
 | identity | Threshold predicates | Safemath `assert_lte` (Level 0 zk_only), Bounded equation (Level 1) |
 | dex | Partial fills | Safemath `less_than_strict` assertion |
@@ -96,7 +102,7 @@ Once the following are formally verified:
 ### What Would Be Fully Composable With Ideal Opcodes
 
 | Contract | Feature | Needs |
-|----------|---------|--------|
+|----------|---------|-------|
 | stablecoin | Return Boolean for liquidation priority | LessThanOrEqual |
 | identity | Level 1 selective disclosure (bounded equation) | ✅ Available now! |
 | dex | Fill amount as value for further constraints | LessThanOrEqual |
