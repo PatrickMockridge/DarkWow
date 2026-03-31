@@ -22,7 +22,7 @@
 //! Resolution uses cumulative PoW entropy from DarkFi's RandomX blockchain.
 
 use darkfi_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
+    crypto::{combine_block_hashes, pasta_prelude::PrimeField, poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
@@ -427,11 +427,7 @@ pub enum PositionOutcome {
 pub fn calculate_resolution_hash(
     block_hashes: &[pallas::Base],
 ) -> pallas::Base {
-    let mut combined_hash = pallas::Base::zero();
-    for block_hash in block_hashes.iter() {
-        combined_hash = poseidon_hash([combined_hash, *block_hash]);
-    }
-    combined_hash
+    combine_block_hashes(block_hashes)
 }
 
 /// Derive block height from PoW entropy

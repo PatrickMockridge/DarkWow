@@ -21,7 +21,7 @@
 //! Data structures for configurable lottery games.
 
 use darkfi_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
+    crypto::{draw_unique_range, pasta_prelude::PrimeField, poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
@@ -457,23 +457,7 @@ pub fn draw_winning_numbers(
     num_picks: u8,
     number_range: u8,
 ) -> Vec<u8> {
-    // Use block hash + nonce as entropy
-    let mut entropy = poseidon_hash([block_hash, pallas::Base::from(seed_nonce)]);
-
-    let mut numbers: Vec<u8> = Vec::with_capacity(num_picks as usize);
-    let mut rng_seed = u64::from_le_bytes(entropy.to_repr()[0..8].try_into().unwrap());
-
-    while numbers.len() < num_picks as usize {
-        // Generate number in range 1 to number_range
-        let num = ((rng_seed % (number_range as u64)) + 1) as u8;
-        if !numbers.contains(&num) {
-            numbers.push(num);
-        }
-        // Update RNG seed (LCG)
-        rng_seed = rng_seed.wrapping_mul(31).wrapping_add(17);
-    }
-
-    numbers
+    draw_unique_range(block_hash, seed_nonce, num_picks, number_range)
 }
 
 /// Verify a ticket commitment

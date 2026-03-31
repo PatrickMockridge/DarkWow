@@ -8,14 +8,14 @@ The Lottery contract enables:
 
 1. **Configurable Lotteries**: Deploy lotteries with custom number ranges, pick counts, and prize tiers
 2. **Standard Presets**: Pre-configured lotteries (UK 6/59, Powerball 5/69, Superenalotto 6/90)
-3. **Provably Fair Drawing**: Winning numbers derived from block hash entropy
+3. **Provably Fair Drawing**: Winning numbers derived from block hash entropy via [Entropy Module](../entropy/)
 4. **Privacy-Preserving**: Ticket commitments hide numbers until reveal
 5. **Tiered Prizes**: Multiple prize tiers based on number of matches
 
 ## Key Features
 
 - **Commit-Reveal Pattern**: Players commit to tickets before numbers are drawn
-- **Block Hash Entropy**: Drawing uses blockchain randomness for fairness
+- **Block Hash Entropy**: Drawing uses blockchain randomness via `darkfi_sdk::crypto::entropy`
 - **Configurable House Edge**: Set via deployment (default 2%)
 - **Prize Rollover**: Unclaimed prizes can roll to next draw
 - **ZK Proofs**: Placeholder circuits for commit and reveal verification
@@ -138,9 +138,64 @@ The Lottery contract integrates with Money for value transfers:
 2. **ClaimPrize**: Money::MintV2 pays out winner's share
 3. **ExpireLottery**: Money::MintV2 sends unclaimed to house
 
+## The Lottery Problem Space
+
+Lottery sits **between** BettingStake and Insurance in the DarkFi problem space:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    RISK CAPITAL SPECTRUM                              │
+├─────────────────┬─────────────────────┬─────────────────────────────┤
+│   BETTINGSTAKE  │       LOTTERY       │         INSURANCE            │
+├─────────────────┼─────────────────────┼─────────────────────────────┤
+│ Fixed odds      │ Parimutuel pool     │ Indemnity-based             │
+│ Bounded max     │ Variable jackpot    │ Catastrophic risk           │
+│ loss per bet    │ Can exceed pool     │ Pool can be insufficient     │
+├─────────────────┼─────────────────────┼─────────────────────────────┤
+│ Max payout      │ Jackpot may need    │ Major catastrophe           │
+│ known before    │ capital buffer       │ requires reinsurance        │
+│ bet placed      │ (BettingStake)      │                              │
+├─────────────────┼─────────────────────┼─────────────────────────────┤
+│ Works natively  │ Bridge solution:    │ True insurance for          │
+│ with staking    │ BettingStake as     │ Powerball-scale jackpots    │
+│                 │ capital backstop    │                              │
+└─────────────────┴─────────────────────┴─────────────────────────────┘
+```
+
+### Why Lottery is the Bridge
+
+| Aspect | BettingStake | Lottery | Insurance |
+|--------|--------------|---------|----------|
+| Odds | Fixed (e.g., 35:1) | Pool-based (variable) | Event-based |
+| Max payout | Known pre-event | Exceeds pool possible |理论上无上限 |
+| Capital need | Bounded (max × odds) | Bounded + buffer | Catastrophe modeling |
+| Risk profile | Low-medium | Medium-high | High/catastrophic |
+
+Lottery's parimutuel nature means:
+- Small jackpots: Covered by ticket pool + BettingStake
+- Large jackpots: BettingStake insufficient, needs insurance/reinsurance
+- Powerball-scale: True insurance needed for catastrophic risk
+
+## BettingStake as Capital Backstop
+
+For small/neighborhood lotteries, BettingStake works well:
+- Fixed ticket count limits max payout
+- Pool accumulation is predictable
+
+For large lotteries (Powerball-scale), BettingStake is a **band-aid**:
+```
+Problem: Large lottery needs $10M for jackpot but only has $5M in pool
+Solution: BettingStake provides $5M capital buffer
+
+Limitation: If multiple players hit jackpot simultaneously,
+the pool may still not cover all payouts
+```
+
+See [BettingStake Contract](../betting_stake/) for the capital staking infrastructure.
+
 ## Insurance as Underwriter
 
-Lotteries present a clear risk profile ideal for insurance underwriters:
+For catastrophic lottery risks, true insurance is needed:
 
 | Risk | Description | Mitigation |
 |------|-------------|------------|
@@ -149,39 +204,27 @@ Lotteries present a clear risk profile ideal for insurance underwriters:
 | Fraud | Fake tickets | ZK proof verification |
 
 Insurance companies can:
-1. **Stake against the pool**: Provide liquidity for large jackpots
-2. **Yield farming**: Earn house edge share for risk-bearing
-3. **Reinsurance**: Cross-lottery risk distribution
+1. **Reinsurance**: Cross-lottery risk distribution
+2. **Catastrophe bonds**: Transfer risk to capital markets
+3. **Yield farming**: Earn house edge share for risk-bearing
 
 See [Insurance Market Contract](../insurance_market/) for underwriter infrastructure.
 
 ## Drawing Algorithm
 
-Winning numbers are drawn using block hash entropy:
+Winning numbers are drawn using the [Entropy Module](../entropy/) (`darkfi_sdk::crypto::entropy`):
 
 ```rust
-fn draw_winning_numbers(
-    block_hash: BlockHash,
-    seed_nonce: u64,
-    num_picks: u8,
-    number_range: u8,
-) -> Vec<u8> {
-    // Use block hash + nonce as entropy
-    let entropy = poseidon_hash([block_hash, Base::from(seed_nonce)]);
+use darkfi_sdk::crypto::entropy::draw_unique_range;
 
-    let mut rng_seed = u64::from_le_bytes(entropy.to_repr()[0..8]);
-    let mut numbers = Vec::new();
-
-    while numbers.len() < num_picks {
-        let num = ((rng_seed % (number_range as u64)) + 1) as u8;
-        if !numbers.contains(&num) {
-            numbers.push(num);
-        }
-        rng_seed = rng_seed.wrapping_mul(31).wrapping_add(17);
-    }
-    numbers
-}
+// Draw N unique numbers from 1 to M using block hash entropy
+let numbers = draw_unique_range(block_hash, seed_nonce, num_picks, number_range);
 ```
+
+This provides:
+- **Provably fair**: Block hash from PoW mining
+- **Unique picks**: LCG-based without-replacement sampling
+- **Verifiable**: Deterministic given same inputs
 
 ## Security Considerations
 
@@ -198,11 +241,14 @@ This contract establishes useful primitives:
 - Commit-reveal schemes via Poseidon hash
 - Parimutuel prize pool calculations
 - Multi-tier payout structures
-- Block hash randomness for drawing
+- Block hash randomness via [Entropy Module](../entropy/)
 
 ## See Also
 
+- [Entropy Module](../entropy/) - Provably fair randomness for all betting contracts
 - [Insurance Market Contract](../insurance_market/) - Underwriter infrastructure
+- [BettingStake Contract](../betting_stake/) - Capital staking for betting games
 - [DarkToshi Dice Contract](../darktoshi_dice/) - Commit-reveal gambling pattern
 - [Baccarat Contract](../baccarat/) - Multi-round game reference
+- [Roulette Contract](../roulette/) - Fixed-odds betting (native BettingStake fit)
 - [Money V2 Contract](../money_v2/) - Value transfer integration

@@ -463,3 +463,34 @@ less_than_strict(fill_amount, alice_amount_plus_one);
 - [DarkFi Bridge Contract](../bridge/)
 - [Contract MVP Status](../../../doc/src/arch/mvp_status.md)
 - [SPV Privacy Problem](https://en.bitcoin.it/wiki/Thin_Client_Security)
+
+## Betfair Exchange
+
+The DEX can be extended to power a **Decentralized Betfair Exchange**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    BETFAIR EXCHANGE CONCEPT                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Components:                                                                │
+│  - DEX: Match back/lay orders at agreed odds                                 │
+│  - BettingStake: LP pool for settlement guarantee                           │
+│  - Oracle: Resolve event outcomes                                            │
+│  - DAO-Escrow: Commission treasury, governance, disputes                    │
+│                                                                              │
+│  How it works:                                                              │
+│  1. User A backs "Team A wins" @ 2.5 with 100 tokens                        │
+│  2. User B lays "Team A wins" @ 2.4 with 104 tokens                        │
+│  3. DEX matches: execution at 2.4 (lay price)                              │
+│  4. Oracle resolves: Team A wins                                            │
+│  5. User A wins: 240 from User B (minus commission)                         │
+│  6. Exchange earns 2% commission                                             │
+│                                                                              │
+│  Key insight: Exchange matches users, doesn't bet against them.            │
+│  LP pool only guarantees settlement, doesn't carry outcome risk.            │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+See [Betfair Exchange Concept](../../../doc/src/arch/bet_exchange.md) for full architecture.

@@ -61,12 +61,26 @@ COMMITTED ──[RevealRoll]──> REVEALED ──[SettleBet]──> SETTLED
 
 ## Roll Calculation
 
-```
-roll = hash(block_hash, bet_id, secret_nonce) % 100
+Rolls are derived using the [Entropy Module](../entropy/):
+
+```rust
+use darkfi_sdk::crypto::entropy::{tx_hash_to_base, mix_entropy};
+
+// Simple roll from single block
+let block_hash = tx_hash_to_base(&tx_hash_bytes);
+let roll_entropy = mix_entropy(block_hash, &[bet_id, secret_nonce]);
+let roll = (roll_entropy % 100) as u8;
+
+// High-security roll with multiple block confirmations
+use darkfi_sdk::crypto::entropy::{combine_block_hashes, draw_with_depth};
+let entropy = combine_block_hashes(&block_hashes);
+let roll = draw_with_depth(&block_hashes, bet_id, 100);
 ```
 
 - Player wins if `roll < target`
 - House wins if `roll >= target`
+
+See [Entropy Module](../entropy/) for security levels and cumulative PoW entropy.
 
 ## Building
 
@@ -191,7 +205,10 @@ Dice presents a clear yield opportunity for capital providers. See [Betting Capi
 
 ## See Also
 
+- [Entropy Module](../entropy/) - Provably fair randomness for all betting contracts
 - [Money Contract](../money_v2/) - Value transfer integration
 - [Atomic Swap](../atomic_swap/) - Commit-reveal pattern reference
 - [Tender Contract](../tender/) - Sealed bid pattern reference
 - [Betting Capital Staking](../betting_stake/) - Capital provider infrastructure
+- [Baccarat Contract](../baccarat/) - Multi-round betting game
+- [Roulette Contract](../roulette/) - Fixed-odds betting

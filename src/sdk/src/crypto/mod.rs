@@ -30,6 +30,13 @@ pub mod diffie_hellman;
 pub mod util;
 pub use util::poseidon_hash;
 
+/// Entropy and randomness for provably fair betting
+pub mod entropy;
+pub use entropy::{
+    draw_single, draw_unique_range, combine_block_hashes, draw_with_depth, mix_entropy,
+    tx_hash_to_base,
+};
+
 /// Keypairs, secret keys, and public keys
 pub mod keypair;
 pub use keypair::{Keypair, PublicKey, SecretKey};

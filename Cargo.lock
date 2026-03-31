@@ -2007,6 +2007,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkfi_betting_stake_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "once_cell",
+ "rand 0.8.5",
+ "smol",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
 name = "darkfi_block_height_prediction_contract"
 version = "0.1.0"
 dependencies = [
@@ -2047,6 +2068,26 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "sled",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
+name = "darkfi_darkbet_exchange_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.5",
+ "smol",
  "thiserror 2.0.17",
  "tracing",
 ]
@@ -2128,6 +2169,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkfi_lottery_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "once_cell",
+ "rand 0.8.5",
+ "smol",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
 name = "darkfi_money_contract"
 version = "0.5.0"
 dependencies = [
@@ -2175,6 +2237,26 @@ dependencies = [
  "darkfi-serial",
  "rand 0.8.5",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "darkfi_roulette_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.5",
+ "smol",
+ "thiserror 2.0.17",
+ "tracing",
 ]
 
 [[package]]
@@ -8619,9 +8701,9 @@ dependencies = [
 
 [[package]]
 name = "typed-index-collections"
-version = "3.4.0"
+version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5318ee4ce62a4e948a33915574021a7a953d83e84fba6e25c72ffcfd7dad35ff"
+checksum = "3fd393dbd1e7b23e0cab7396570309b4068aa504e9dac2cd41d827583b4e9ab7"
 dependencies = [
  "bincode",
  "serde",

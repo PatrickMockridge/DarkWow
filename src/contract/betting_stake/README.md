@@ -57,11 +57,13 @@ Over time, with many bets, the law of large numbers means stakers should earn th
 
 Different betting games have different volatility:
 
-| Game | Volatility | House Edge | Risk Premium |
-|------|------------|------------|--------------|
-| Dice | Low | ~2% | ~1% |
-| Baccarat | Medium | ~1.5% | ~2.5% |
-| Lottery | High | 10-30% | ~5% |
+| Game | Volatility | House Edge | Risk Premium | Notes |
+|------|------------|------------|--------------|-------|
+| Dice | Low | ~2% | ~1% | Native fit |
+| Baccarat | Medium | ~1.5% | ~2.5% | Native fit |
+| Roulette (EU) | Low | 2.7% | ~1% | Native fit, fixed odds |
+| Roulette (US) | Low | 5.26% | ~1.5% | Native fit, fixed odds |
+| Lottery | High | 10-30% | ~5% | Band-aid only |
 
 The risk premium compensates stakers for:
 - Variance in payout outcomes
@@ -167,5 +169,8 @@ This is similar to insurance but with key differences:
 
 - [DarkToshi Dice Contract](../darktoshi_dice/) - Betting contract with ~2% house edge
 - [Baccarat Contract](../baccarat/) - Betting contract with ~1.5% house edge
-- [Lottery Contract](../lottery/) - Parimutuel betting with variable odds
+- [Roulette Contract](../roulette/) - Fixed-odds betting (native BettingStake fit)
+- [Lottery Contract](../lottery/) - Parimutuel betting (BettingStake as band-aid)
 - [Insurance Market Contract](../insurance_market/) - Underwriting infrastructure for categorical risks
+- [DEX Contract](../dex/) - Matching engine for peer-to-peer betting
+- [Oracle Contract](../oracle/) - Event resolution for betting markets

@@ -238,3 +238,4 @@ Oracle Contract
 
 - [Attestation Contract](../attestation/README.md) - Generalized attestation and claims
 - [Stablecoin Contract](../stablecoin/README.md) - Uses oracle for liquidation
+- [Betfair Exchange Concept](../../doc/src/arch/bet_exchange.md) - Betting exchange using Oracle for event resolution

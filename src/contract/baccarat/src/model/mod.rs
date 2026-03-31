@@ -21,7 +21,7 @@
 //! Data structures for Baccarat game state, card handling, and outcome calculation.
 
 use darkfi_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, tx_hash_to_base, PublicKey},
     pasta::pallas,
     tx::TransactionHash,
 };
@@ -315,19 +315,7 @@ pub fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId) -> (Hand, Han
     // Combine entropy from block hashes
     let mut entropy = bet_id;
     for (i, hash) in block_hashes.iter().enumerate() {
-        let hash_bytes = hash.0;
-        let a = u64::from_le_bytes(hash_bytes[0..8].try_into().unwrap());
-        let b = u64::from_le_bytes(hash_bytes[8..16].try_into().unwrap());
-        let c = u64::from_le_bytes(hash_bytes[16..24].try_into().unwrap());
-        let d = u64::from_le_bytes(hash_bytes[24..32].try_into().unwrap());
-
-        let block_entropy = poseidon_hash([
-            pallas::Base::from(a),
-            pallas::Base::from(b),
-            pallas::Base::from(c),
-            pallas::Base::from(d),
-        ]);
-
+        let block_entropy = tx_hash_to_base(&hash.0);
         entropy = poseidon_hash([entropy, block_entropy, pallas::Base::from(i as u64)]);
     }
 

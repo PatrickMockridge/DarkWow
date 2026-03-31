@@ -51,6 +51,8 @@ members = [
     "src/contract/safemath",
     "src/contract/lottery",
     "src/contract/betting_stake",
+    "src/contract/roulette",
+    "src/contract/darkbet_exchange",
 
     "example/dchat/dchatd",
 ]

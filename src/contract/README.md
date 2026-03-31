@@ -9,8 +9,10 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 | **attestation** | Generalized attestation and claims system | ✅ Complete |
 | **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
 | **baccarat** | Privacy-preserving Baccarat (Punto Banco) casino game | ✅ Complete |
+| **block_height_prediction** | PoW-backed block height betting | ✅ Complete |
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
 | **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
+| **darkbet_exchange** | Unified betting exchange (order-book + AMM) | ✅ Complete |
 | **darktoshi_dice** | Privacy-preserving Satoshi Dice clone | ✅ Complete |
 | **dex** | Atomic swap DAO with partial fills + open execution | ✅ Complete |
 | **drain_protection** | Endowment/treasury drain protections with 8 best practices | ✅ Complete |
@@ -20,13 +22,13 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 | **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
 | **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
 | **oracle** | Push-model oracle with attestation integration | ✅ Complete |
-| **prediction_market** | Prediction market with AMM pricing | ✅ Complete |
-| **block_height_prediction** | PoW-backed block height betting (PoC) | ✅ PoC |
+| **roulette** | Privacy-preserving roulette casino game | ✅ Complete |
+| **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete |
 | **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
 | **stablecoin** | Monero-collateralized stablecoin | ✅ Uses safemath |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete |
 
-**Randomness**: See [Provable Randomness](../../doc/src/arch/provable_randomness.md) for analysis of randomness sources in DarkToshi Dice and leveraging PoW for trustless randomness.
+**Randomness**: See [Provable Randomness](../../doc/src/arch/provable_randomness.md) for analysis of randomness sources in DarkToshi Dice, Roulette, Lottery, and leveraging PoW for trustless randomness.
 
 ---
 
@@ -171,8 +173,10 @@ Local READMEs exist for each contract in this folder:
 - [attestation/README.md](attestation/README.md) - Generalized attestation and claims
 - [atomic_swap/README.md](atomic_swap/README.md) - Cross-chain atomic swaps
 - [baccarat/README.md](baccarat/README.md) - Privacy-preserving Baccarat casino game
+- [block_height_prediction/README.md](block_height_prediction/README.md) - PoW-backed block height betting
 - [bridge/README.md](bridge/README.md) - Cross-chain asset transfers
 - [dao_escrow/README.md](dao_escrow/README.md) - Three-mode DAO
+- [darkbet_exchange/README.md](darkbet_exchange/README.md) - Unified betting exchange (order-book + AMM)
 - [darktoshi_dice/README.md](darktoshi_dice/README.md) - Satoshi Dice clone
 - [dex/README.md](dex/README.md) - Atomic swap DAO
 - [drain_protection/README.md](drain_protection/README.md) - Endowment protection
@@ -180,11 +184,11 @@ Local READMEs exist for each contract in this folder:
 - [identity/README.md](identity/README.md) - ZK credential proofs
 - [insurance_market/README.md](insurance_market/README.md) - Decentralized insurance
 - [labor_market/README.md](labor_market/README.md) - Job/labor market
+- [lottery/README.md](lottery/README.md) - Configurable lottery
 - [money_v2/README.md](money_v2/README.md) - Secure money contract (STANDARD)
 - [auction/README.md](auction/README.md) - Privacy-preserving auction
 - [oracle/README.md](oracle/README.md) - Push-model oracle
-- [prediction_market/README.md](prediction_market/README.md) - Prediction market
-- [block_height_prediction/README.md](block_height_prediction/README.md) - Block height prediction (PoC)
+- [roulette/README.md](roulette/README.md) - Privacy-preserving roulette
 - [stablecoin/README.md](stablecoin/README.md) - Collateral stablecoin
 - [subscription/README.md](subscription/README.md) - Member subscription
 - [tender/README.md](tender/README.md) - Sealed-bid tendering

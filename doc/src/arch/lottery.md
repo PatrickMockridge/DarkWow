@@ -120,34 +120,18 @@ struct PrizeTierConfig {
 
 ## Drawing Algorithm
 
-Winning numbers use block hash entropy for provable fairness:
+Winning numbers use block hash entropy via the [Entropy Module](./entropy.md) (`darkfi_sdk::crypto::entropy`):
 
 ```rust
-fn draw_winning_numbers(
-    block_hash: pallas::Base,
-    seed_nonce: u64,
-    num_picks: u8,
-    number_range: u8,
-) -> Vec<u8> {
-    // Hash block hash with nonce for entropy
-    let entropy = poseidon_hash([block_hash, pallas::Base::from(seed_nonce)]);
+use darkfi_sdk::crypto::entropy::draw_unique_range;
 
-    // Extract RNG seed from entropy
-    let mut rng_seed = u64::from_le_bytes(entropy.to_repr()[0..8]);
-
-    let mut numbers = Vec::new();
-    while numbers.len() < num_picks as usize {
-        // Generate number in range [1, number_range]
-        let num = ((rng_seed % (number_range as u64)) + 1) as u8;
-        if !numbers.contains(&num) {
-            numbers.push(num);
-        }
-        // LCG update
-        rng_seed = rng_seed.wrapping_mul(31).wrapping_add(17);
-    }
-    numbers
-}
+// Draw N unique numbers from 1 to M
+let numbers = draw_unique_range(block_hash, seed_nonce, num_picks, number_range);
 ```
+
+This uses LCG-based without-replacement sampling to ensure unique picks.
+
+See [Entropy Module](./entropy.md) for security levels and cumulative PoW entropy.
 
 ## Privacy Model
 
@@ -173,6 +157,45 @@ This allows:
 2. **Draw Winners**: House draws numbers → stored on-chain
 3. **Reveal**: Player reveals numbers + nonce → match count verified
 4. **Claim**: Winner provides ZK proof of match → receives payout
+
+## The Lottery Problem Space
+
+Lottery sits **between** BettingStake and Insurance in the DarkFi risk capital spectrum:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    RISK CAPITAL SPECTRUM                              │
+├─────────────────┬─────────────────────┬─────────────────────────────┤
+│   BETTINGSTAKE  │       LOTTERY       │         INSURANCE            │
+├─────────────────┼─────────────────────┼─────────────────────────────┤
+│ Fixed odds      │ Parimutuel pool     │ Indemnity-based             │
+│ Bounded max     │ Variable jackpot    │ Catastrophic risk           │
+│ loss per bet    │ Can exceed pool     │ Pool can be insufficient     │
+├─────────────────┼─────────────────────┼─────────────────────────────┤
+│ Max payout      │ Jackpot may need    │ Major catastrophe           │
+│ known before    │ capital buffer       │ requires reinsurance        │
+│ bet placed      │ (BettingStake)      │                              │
+├─────────────────┼─────────────────────┼─────────────────────────────┤
+│ Works natively  │ Bridge solution:    │ True insurance for          │
+│ with staking    │ BettingStake as     │ Powerball-scale jackpots    │
+│                 │ capital backstop    │                              │
+└─────────────────┴─────────────────────┴─────────────────────────────┘
+```
+
+### Why Lottery is the Bridge
+
+| Aspect | BettingStake | Lottery | Insurance |
+|--------|--------------|---------|----------|
+| Odds | Fixed (e.g., 35:1) | Pool-based (variable) | Event-based |
+| Max payout | Known pre-event | Exceeds pool possible |理论上无上限 |
+| Capital need | Bounded (max × odds) | Bounded + buffer | Catastrophe modeling |
+| Risk profile | Low-medium | Medium-high | High/catastrophic |
+
+For small/neighborhood lotteries, BettingStake works well:
+- Fixed ticket count limits max payout
+- Pool accumulation is predictable
+
+For large lotteries (Powerball-scale), BettingStake is a **band-aid** and true insurance/reinsurance is needed.
 
 ## Insurance Integration
 
@@ -216,8 +239,11 @@ See [Insurance Market Contract](./insurance_market.md) for underwriter infrastru
 
 ## Related Contracts
 
+- [Entropy Module](./entropy.md) - Provably fair randomness for all betting contracts
 - [Insurance Market](./insurance_market.md) - Underwriter infrastructure for risk markets
+- [BettingStake](./betting_stake.md) - Capital staking for betting games
 - [DarkToshi Dice](./darktoshi_dice.md) - Commit-reveal gambling with house edge
+- [Roulette](./roulette.md) - Fixed-odds betting (native BettingStake fit)
 - [Baccarat](./baccarat.md) - Multi-round card game contract
 - [Money V2](../spec/contract/money/money.md) - Value transfer and token minting
 

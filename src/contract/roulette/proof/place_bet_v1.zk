@@ -1,0 +1,45 @@
+// ZK Circuit for PlaceBetV1
+// Proves player has valid bet without revealing numbers or amount
+
+#ifndef __ROULETTE_PLACE_BET_V1_ZK__
+#define __ROULETTE_PLACE_BET_V1_ZK__
+
+// Inputs (witnesses)
+// - table_id: Base
+// - player_pub: Base (x coordinate)
+// - bet_type: u8
+// - numbers: u8[)
+// - amount: u64
+// - nonce: Base (for nullifier)
+// - bet_id: Base (expected)
+
+Circuit::
+
+// Verify bet commitment matches
+Bls12_83::assert_eq(
+    poseidon_hash([table_id, player_pub, amount]),
+    bet_id
+);
+
+// Verify nullifier
+nullifier == poseidon_hash([bet_id, nonce]);
+
+// Verify bet type valid
+// bet_type < 8
+
+// Verify numbers in valid range for bet type
+// For straight: 1 number, 0-36 (or 00 for American)
+// For split: 2 adjacent numbers
+// ...
+
+// Verify amount within table limits
+// amount <= max_straight_bet
+
+// Verify table is active
+// table_state == Active
+
+CONSTRAINTS::
+
+END::
+
+#endif

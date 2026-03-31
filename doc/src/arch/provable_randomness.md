@@ -102,31 +102,29 @@ final_value = Hash(reveal_hash, commit)
 ### Roll Calculation
 
 ```rust
-// From src/contract/darktoshi_dice/src/model/mod.rs
+// Using darkfi_sdk::crypto::entropy module
 
+use darkfi_sdk::crypto::entropy::{tx_hash_to_base, mix_entropy};
+
+// Modern implementation using SDK entropy module
 pub fn calculate_roll(tx_hash_bytes: [u8; 32], bet_id: BetId, secret_nonce: pallas::Base) -> u8 {
-    // Convert tx_hash bytes to field elements
-    let a = u64::from_le_bytes(tx_hash_bytes[0..8].try_into().unwrap());
-    let b = u64::from_le_bytes(tx_hash_bytes[8..16].try_into().unwrap());
-    let c = u64::from_le_bytes(tx_hash_bytes[16..24].try_into().unwrap());
-    let d = u64::from_le_bytes(tx_hash_bytes[24..32].try_into().unwrap());
-
-    // Hash the block hash components
-    let block_hash = poseidon_hash([
-        pallas::Base::from(a),
-        pallas::Base::from(b),
-        pallas::Base::from(c),
-        pallas::Base::from(d),
-    ]);
-
-    // Combine with bet_id and secret_nonce
-    let roll_input = poseidon_hash([block_hash, bet_id, secret_nonce]);
+    let block_hash = tx_hash_to_base(&tx_hash_bytes);
+    let roll_input = mix_entropy(block_hash, &[bet_id, secret_nonce]);
     let bytes = roll_input.to_repr();
+    ((bytes[0] as u64) % (ROLL_RANGE as u64)) as u8
+}
 
-    // Extract first byte as roll value (0-99)
+// High-security version with multiple block confirmations
+pub fn calculate_roll_with_depth(block_hashes: &[pallas::Base], bet_id: BetId, secret_nonce: pallas::Base) -> u8 {
+    use darkfi_sdk::crypto::entropy::{combine_block_hashes, draw_with_depth};
+    let entropy = combine_block_hashes(block_hashes);
+    let final_entropy = mix_entropy(entropy, &[bet_id, secret_nonce]);
+    let bytes = final_entropy.to_repr();
     ((bytes[0] as u64) % (ROLL_RANGE as u64)) as u8
 }
 ```
+
+See [Entropy Module](entropy.md) for the composable randomness API.
 
 ### Current Flow
 

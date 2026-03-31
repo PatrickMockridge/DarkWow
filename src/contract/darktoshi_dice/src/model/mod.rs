@@ -19,7 +19,10 @@
 //! DarkToshi Dice Contract Data Models
 
 use darkfi_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
+    crypto::{
+        combine_block_hashes, draw_with_depth, pasta_prelude::PrimeField, poseidon_hash,
+        tx_hash_to_base, PublicKey,
+    },
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
@@ -241,13 +244,10 @@ pub fn calculate_roll_with_depth(
     secret_nonce: pallas::Base,
 ) -> u8 {
     // Combine all block hashes cumulatively using Poseidon
-    let mut combined_hash = pallas::Base::zero();
-    for block_hash in block_hashes.iter().take(ROLL_RANGE as usize) {
-        combined_hash = poseidon_hash([combined_hash, *block_hash]);
-    }
-
-    let roll_input = poseidon_hash([combined_hash, bet_id, secret_nonce]);
-    let bytes = roll_input.to_repr();
+    let combined_hash = combine_block_hashes(block_hashes);
+    // Mix in bet_id and secret_nonce for additional entropy
+    let final_entropy = mix_entropy(combined_hash, &[bet_id, secret_nonce]);
+    let bytes = final_entropy.to_repr();
     ((bytes[0] as u64) % (ROLL_RANGE as u64)) as u8
 }
 
@@ -255,19 +255,7 @@ pub fn calculate_roll_with_depth(
 /// Deprecated: Use calculate_roll_with_depth for production gambling.
 #[deprecated(since = "0.1.0", note = "Use calculate_roll_with_depth with adjustable confirmation depth")]
 pub fn calculate_roll(tx_hash_bytes: [u8; 32], bet_id: BetId, secret_nonce: pallas::Base) -> u8 {
-    // Use multiple bytes from tx_hash for better randomness
-    let a = u64::from_le_bytes(tx_hash_bytes[0..8].try_into().unwrap());
-    let b = u64::from_le_bytes(tx_hash_bytes[8..16].try_into().unwrap());
-    let c = u64::from_le_bytes(tx_hash_bytes[16..24].try_into().unwrap());
-    let d = u64::from_le_bytes(tx_hash_bytes[24..32].try_into().unwrap());
-
-    let block_hash = poseidon_hash([
-        pallas::Base::from(a),
-        pallas::Base::from(b),
-        pallas::Base::from(c),
-        pallas::Base::from(d),
-    ]);
-
+    let block_hash = tx_hash_to_base(&tx_hash_bytes);
     let roll_input = poseidon_hash([block_hash, bet_id, secret_nonce]);
     let bytes = roll_input.to_repr();
     ((bytes[0] as u64) % (ROLL_RANGE as u64)) as u8

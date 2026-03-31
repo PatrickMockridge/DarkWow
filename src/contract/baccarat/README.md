@@ -90,19 +90,26 @@ COMMITTED ──[DrawCards]──> CARDS_DRAWN ──[SettleBet]──> SETTLED
 
 ## Card Dealing via Block Hash
 
-Cards are derived using cumulative PoW entropy from K consecutive block hashes (where K = confirmation_depth):
+Cards are derived using cumulative PoW entropy from K consecutive block hashes (where K = confirmation_depth) via the [Entropy Module](../entropy/):
 
-```
-entropy = bet_id
-for each block_hash in recent_blocks:
-    block_entropy = poseidon_hash(hash_bytes[0:8], hash_bytes[8:16], ...)
-    entropy = poseidon_hash(entropy, block_entropy, index)
+```rust
+use darkfi_sdk::crypto::entropy::{tx_hash_to_base, mix_entropy};
 
+// Combine entropy from multiple block hashes
+let mut entropy = bet_id;
+for (i, hash) in block_hashes.iter().enumerate() {
+    let block_entropy = tx_hash_to_base(&hash.0);
+    entropy = mix_entropy(entropy, &[block_entropy, pallas::Base::from(i as u64)]);
+}
+
+// Extract cards from entropy bytes
 player_card1 = Card(entropy[0:8] % 52)
 player_card2 = Card(entropy[8:16] % 52)
 banker_card1 = Card(entropy[16:24] % 52)
 banker_card2 = Card(entropy[24:32] % 52)
 ```
+
+See [Entropy Module](../entropy/) for cumulative PoW entropy combining (`combine_block_hashes`, `draw_with_depth`).
 
 The player specifies `confirmation_depth` when placing the bet—more blocks means more entropy security but longer wait time.
 
@@ -234,7 +241,9 @@ Baccarat presents a clear yield opportunity for capital providers. See [Betting 
 
 ## See Also
 
+- [Entropy Module](../entropy/) - Provably fair randomness for all betting contracts
 - [Money Contract](../money_v2/) - Value transfer integration
 - [DarkToshi Dice Contract](../darktoshi_dice/) - Commit-reveal pattern reference
 - [Block Height Prediction](../block_height_prediction/) - Block hash entropy usage
 - [Betting Capital Staking](../betting_stake/) - Capital provider infrastructure
+- [Roulette Contract](../roulette/) - Fixed-odds betting
