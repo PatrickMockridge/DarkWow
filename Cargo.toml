@@ -50,6 +50,7 @@ members = [
     "src/contract/dao_escrow",
     "src/contract/safemath",
     "src/contract/lottery",
+    "src/contract/betting_stake",
 
     "example/dchat/dchatd",
 ]

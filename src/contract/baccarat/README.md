@@ -10,6 +10,20 @@ Baccarat is particularly well-suited for blockchain gambling because:
 - **Fast gameplay**: Simple 3-outcome betting
 - **Perfect for commit-reveal**: Block hash provides card shuffle entropy
 
+## Capital Requirements
+
+**Critical**: A betting contract can only pay out what it has in capital. This means:
+
+1. **House must maintain reserves**: Sufficient capital to cover maximum potential payouts
+2. **Bet sizing limits**: Maximum bet size constrained by available capital
+3. **No fractional reserves**: Every winning bet must be fully backed
+
+For example, if a Baccarat table has $1M in capital and a player bets $2M on Player:
+- The bet exceeds available capital
+- The house **cannot** accept this bet (would be insolvency risk)
+
+This creates an opportunity for capital providers to stake against the house and earn yield.
+
 ## Key Features
 
 - **Privacy-preserving**: Bet details committed via Poseidon hash
@@ -210,8 +224,17 @@ This contract establishes useful primitives for other games:
 - Fixed-odds betting with deterministic outcomes
 - Time-locked state transitions
 
+## Capital Staking
+
+Baccarat presents a clear yield opportunity for capital providers. See [Betting Capital Staking](../betting_stake/) for infrastructure that allows:
+
+- Staking capital against Baccarat (or Dice) tables
+- Earning a share of the house edge over time
+- Bearing risk of large payouts (but compensated for this risk)
+
 ## See Also
 
 - [Money Contract](../money_v2/) - Value transfer integration
 - [DarkToshi Dice Contract](../darktoshi_dice/) - Commit-reveal pattern reference
 - [Block Height Prediction](../block_height_prediction/) - Block hash entropy usage
+- [Betting Capital Staking](../betting_stake/) - Capital provider infrastructure
