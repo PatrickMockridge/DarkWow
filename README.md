@@ -13,21 +13,24 @@ This is a development fork of the official DarkFi repository. **Development occu
 
 This fork contains all additions compared to official DarkFi master:
 
-- **New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap, Labor Market, Auction, Tender, Attestation, Oracle, Baccarat, Prediction Market, Insurance Market, Block Height Prediction (not in official DarkFi)
+- **New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap, Labor Market, Auction, Tender, Attestation, Oracle, Baccarat, Roulette, Lottery, BettingStake, DarkBet Exchange, Insurance Market, Block Height Prediction (not in official DarkFi)
 - **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
 - **Identity refactor**: Level 0 (zk_only) with safemath assertion gadgets
-- **Expanded architecture documentation**: Additional analysis and design approaches including [Subscription](doc/src/arch/subscription.md), [Atomic Swap](doc/src/arch/atomic_swap.md), [Labor Market](doc/src/arch/labor_market.md), [Auction](doc/src/arch/auction.md), [Tender](doc/src/arch/tender.md), [Attestation](doc/src/arch/attestation.md), [Oracle](doc/src/arch/oracle.md), [Baccarat](doc/src/arch/baccarat.md), [Prediction Market](doc/src/arch/prediction_market.md), [Insurance Market](doc/src/arch/insurance_market.md), and [Block Height Prediction](doc/src/arch/block_height_prediction.md) contracts
-- **Architecture reference docs**: [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) (grey-market opcode analysis), [Merkle Depth](doc/src/arch/merkle_depth.md) (fixed-depth limitations and workarounds), [Composability](doc/src/arch/composability.md) (smart contract composition patterns with real-world DAO failure analysis and Tender + Labor Market + Attestation integration), [Safemath](doc/src/arch/safemath.md) (ZK arithmetic templates as LessThanOrEqual workaround)
+- **Expanded architecture documentation**: Additional analysis and design approaches including [Subscription](doc/src/arch/subscription.md), [Atomic Swap](doc/src/arch/atomic_swap.md), [Labor Market](doc/src/arch/labor_market.md), [Auction](doc/src/arch/auction.md), [Tender](doc/src/arch/tender.md), [Attestation](doc/src/arch/attestation.md), [Oracle](doc/src/arch/oracle.md), [Baccarat](doc/src/arch/baccarat.md), [Roulette](doc/src/arch/roulette.md), [Lottery](doc/src/arch/lottery.md), [BettingStake](doc/src/arch/betting_stake.md), [DarkBet Exchange](doc/src/arch/darkbet_exchange.md), [Insurance Market](doc/src/arch/insurance_market.md), and [Block Height Prediction](doc/src/arch/block_height_prediction.md) contracts
+- **Architecture reference docs**: [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) (grey-market opcode analysis), [Merkle Depth](doc/src/arch/merkle_depth.md) (fixed-depth limitations and workarounds), [Composability](doc/src/arch/composability.md) (smart contract composition patterns with real-world DAO failure analysis and Tender + Labor Market + Attestation integration), [Safemath](doc/src/arch/safemath.md) (ZK arithmetic templates as LessThanOrEqual workaround), [Entropy Module](doc/src/arch/entropy.md) (provable randomness via block hash entropy)
 - **Work-in-progress implementations**: Skeleton code and alternative approaches
 
 **Key new features:**
+- **DarkBet Exchange**: Unified betting contract with order-book (back/lay) and AMM pool modes
+- **Lottery**: Configurable lottery bridging BettingStake and Insurance problem spaces
+- **Baccarat/Roulette**: Privacy-preserving casino games using cumulative PoW entropy for card dealing
 - **Attestation contract**: Generalized attestation and claims system for reusable verification patterns
 - **Oracle contract**: Push-model oracle demonstrating external data integration via attestation
-- **Baccarat contract**: Privacy-preserving casino game using cumulative PoW entropy for card dealing
-- **Prediction Market contract**: AMM-based prediction market with PoW-backed resolution
 - **Insurance Market contract**: Decentralized insurance marketplace with risk markets
+- **BettingStake contract**: LP staking for betting contracts
 - **Safemath integration**: Production-ready assertion gadgets for bounded arithmetic (workaround for LessThanOrEqual gate soundness issue)
 - **Pooled debt stablecoin**: Synthetix-style shared liability model replacing individual CDPs
+- **Entropy module**: Shared `darkfi_sdk::crypto::entropy` for provable randomness across contracts
 
 **Security Status**: All new contracts are EXPERIMENTAL and UNAUDITED. Known security issues are documented in [Security Analysis](doc/src/arch/security-analysis.md). The official DarkFi repository should be consulted for the canonical, production-ready state.
 
@@ -40,9 +43,9 @@ markets](https://dark.fi/manifesto.html) by means of strong cryptography
 and peer-to-peer networks. We are establishing an online zone of freedom
 that is resistant to the surveillance state.
 
-> Unfortunately, the law hasn’t kept pace with technology, and this disconnect
+> Unfortunately, the law hasn't kept pace with technology, and this disconnect
 > has created a significant public safety problem. We call it "Going Dark".
->
+
 > James Comey, FBI director
 
 So let there be dark.
@@ -98,7 +101,7 @@ you haven't already done it:
 % cd darkfi
 ```
 
-This project requires the Rust compiler to be installed. 
+This project requires the Rust compiler to be installed.
 Please visit [Rustup](https://rustup.rs/) for instructions.
 
 You have to install a native toolchain, which is set up during Rust installation,
