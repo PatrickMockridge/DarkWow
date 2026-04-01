@@ -1,6 +1,47 @@
-# Composability & General Primitives
+# Composability & Composable Privacy
 
 *This document describes common patterns and primitives that appear across DarkFi smart contracts, enabling composition and interoperability.*
+
+## Composable Privacy: Why It Matters for Ordinary People
+
+**For privacy to be truly exceptional and a human right, it must be composable** - enabling real-economy applications like labor contracts, mutual insurance, and professional credentials - not just gambling and speculation.
+
+As analyzed in [DarkFi Development Uncensored](https://technologytruth.substack.com/p/darkfi-development-uncensored-part-c9b):
+
+> The current ZK-first approach creates inherent structural biases favoring certain types of work (speculative finance) over others (ordinary labor, mutual insurance, real-economy contracts).
+
+### The Structural Bias Problem
+
+If only gambling/speculation contracts can be built with ZK privacy:
+- Privacy becomes a **luxury** for those in financial speculation
+- Ordinary workers (freelancers, nurses, teachers) cannot get privacy-preserving contracts
+- Creates **parallel societies**: surveilled formal economy vs. private economy (only for gamblers)
+
+### Industries Vital to Social Reproduction
+
+These industries are essential for societal survival but are systematically excluded from privacy-preserving systems:
+
+| Industry | Why Vital | Current Privacy Options |
+|----------|-----------|------------------------|
+| **Healthcare** | Medical decisions should be private | None in DarkFi ZK contracts |
+| **Domestic Labor** | Care work, cleaning, cooking | None |
+| **Education** | Tutoring, skill training | None |
+| **Freelance Work** | Programming, writing, design | Limited (ZK subscription) |
+| **Mutual Insurance** | Community risk pooling | Basic in ZK |
+| **Union Organization** | Collective bargaining | None |
+
+### The Dual-Layer Solution
+
+DarkFi implements a **dual-layer contract architecture**:
+
+| Layer | Location | Characteristics | Ideal For |
+|-------|----------|-----------------|----------|
+| **ZK Contracts** | `src/contract/` | Maximum privacy, circuit-constrained | Gambling, speculation, simple DeFi |
+| **Plain Contracts** | `src/contract_plain/` | Partial transparency, unlimited expressiveness | Labor, insurance, real-economy |
+
+See [Plain Contracts: A Dual-Layer Architecture](./plain_contracts.md) for full documentation.
+
+---
 
 ## The Problem: Contract-Specific Reasoning
 

@@ -85,6 +85,8 @@
   - [Safemath](arch/safemath.md)
   - [MerkleRoot Depth Limitation](arch/merkle_depth.md)
   - [Complete Opcode Universe](arch/opcode_universe.md)
+  - [Plain Contracts Architecture](arch/plain_contracts.md)
+  - [Parallel Societies](arch/parallel_societies.md)
   - [Contract MVP Status](arch/mvp_status.md)
   - [Security Analysis](arch/security-analysis.md)
   - [Async Serialization Lifetime Bug](arch/async_serial_lifetime_bug.md)

@@ -2230,6 +2230,56 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkfi_plain_attestation_contract"
+version = "0.1.0"
+dependencies = [
+ "darkfi-sdk",
+ "darkfi-serial",
+ "pasta_curves",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "darkfi_plain_insurance_contract"
+version = "0.1.0"
+dependencies = [
+ "darkfi-sdk",
+ "darkfi-serial",
+ "pasta_curves",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "darkfi_plain_labor_market_contract"
+version = "0.1.0"
+dependencies = [
+ "darkfi-sdk",
+ "darkfi-serial",
+ "pasta_curves",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "darkfi_plain_oracle_contract"
+version = "0.1.0"
+dependencies = [
+ "darkfi-sdk",
+ "darkfi-serial",
+ "pasta_curves",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "darkfi_plain_subscription_contract"
+version = "0.1.0"
+dependencies = [
+ "darkfi-sdk",
+ "darkfi-serial",
+ "pasta_curves",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "darkfi_roulette_contract"
 version = "0.1.0"
 dependencies = [
