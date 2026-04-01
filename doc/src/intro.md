@@ -8,6 +8,10 @@ This fork contains all additions compared to official DarkFi master:
 
 ## New Smart Contracts
 
+### Workstream 1: ZK Contracts (Current Opcodes)
+
+ZK contracts using the existing opcode set. These prioritize **maximum privacy** but are constrained by circuit limitations.
+
 | Contract | Description | Status |
 |----------|-------------|--------|
 | **attestation** | Generalized attestation and claims system | ✅ Complete + safemath predicates |
@@ -33,6 +37,20 @@ This fork contains all additions compared to official DarkFi master:
 | **stablecoin** | Synthetix-style pooled debt with safemath | ✅ Uses safemath |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete |
 
+### Workstream 2: Plain Contracts (Full Opcode Suite)
+
+Plain WASM contracts planning for the full opcode suite. These use **partial transparency** to overcome current ZK limitations. When `base_div`, `less_than_or_equal` (sound), and other missing opcodes are available, these can be ported to ZK.
+
+| Contract | Description | Status | Planning For |
+|----------|-------------|--------|-------------|
+| **subscription_plain** | Access control with bitmask permissions | ✅ Complete | `base_div` |
+| **labor_market_plain** | Escrow with time-weighted release | ✅ Complete | `base_div` |
+| **insurance_plain** | Actuarial calculations for premiums/claims | ✅ Complete | `base_div` |
+| **oracle_plain** | Weighted aggregation with slashable staking | ✅ Complete | `base_div`, `set_membership` |
+| **attestation_plain** | Delegation chains with depth limits | ✅ Complete | `base_div` |
+
+**Principle**: "A malicious proof is more dangerous than a public bug." Plain contracts use native Rust where ZK opcodes are unsound or missing. See [Plain Contracts Architecture](arch/plain_contracts.md).
+
 ## Key Technical Changes
 
 - **DarkBet Exchange**: Unified betting contract with order-book (back/lay) and AMM pool modes. Replaces prediction_market.
@@ -50,12 +68,14 @@ This fork contains all additions compared to official DarkFi master:
 
 - [Experimental Opcodes](arch/experimental-opcodes.md) — Grey-market opcode analysis with gate soundness issues
 - [Merkle Depth](arch/merkle_depth.md) — Fixed-depth limitations and workarounds
-- [Composability](arch/composability.md) — Smart contract composition patterns
+- [Composability](arch/composability.md) — Smart contract composition patterns with plain contracts integration
 - [Safemath](arch/safemath.md) — ZK arithmetic templates (LessThanOrEqual workaround)
 - [Field Arithmetic](arch/field_arithmetic.md) — zkVM primitive analysis
 - [DarkBet Exchange](arch/darkbet_exchange.md) — Unified betting exchange (order-book + AMM)
 - [Entropy Module](arch/entropy.md) — Provable randomness via block hash entropy
 - [Provable Randomness](arch/provable_randomness.md) — PoW randomness analysis with casino game case studies
+- [Plain Contracts Architecture](arch/plain_contracts.md) — Dual-layer ZK/plain contract design
+- [Parallel Societies](arch/parallel_societies.md) — Privacy for social reproduction industries (labor, healthcare, insurance, education)
 
 ## Security Status
 

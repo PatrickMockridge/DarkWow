@@ -13,25 +13,45 @@ This is a development fork of the official DarkFi repository. **Development occu
 
 This fork contains all additions compared to official DarkFi master:
 
-- **New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap, Labor Market, Auction, Tender, Attestation, Oracle, Baccarat, Roulette, Lottery, BettingStake, DarkBet Exchange, Insurance Market, Block Height Prediction (not in official DarkFi)
+## Two Parallel Workstreams
+
+This fork develops DarkFi contracts in **two parallel workstreams**:
+
+### Workstream 1: ZK Contracts (Current Opcodes)
+ZK contracts using the existing opcode set. Maximum privacy, constrained by circuit limitations.
+
+**New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap, Labor Market, Auction, Tender, Attestation, Oracle, Baccarat, Roulette, Lottery, BettingStake, DarkBet Exchange, Insurance Market, Block Height Prediction
+
 - **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
 - **Identity refactor**: Level 0 (zk_only) with safemath assertion gadgets
-- **Expanded architecture documentation**: Additional analysis and design approaches including [Subscription](doc/src/arch/subscription.md), [Atomic Swap](doc/src/arch/atomic_swap.md), [Labor Market](doc/src/arch/labor_market.md), [Auction](doc/src/arch/auction.md), [Tender](doc/src/arch/tender.md), [Attestation](doc/src/arch/attestation.md), [Oracle](doc/src/arch/oracle.md), [Baccarat](doc/src/arch/baccarat.md), [Roulette](doc/src/arch/roulette.md), [Lottery](doc/src/arch/lottery.md), [BettingStake](doc/src/arch/betting_stake.md), [DarkBet Exchange](doc/src/arch/darkbet_exchange.md), [Insurance Market](doc/src/arch/insurance_market.md), and [Block Height Prediction](doc/src/arch/block_height_prediction.md) contracts
-- **Architecture reference docs**: [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) (grey-market opcode analysis), [Merkle Depth](doc/src/arch/merkle_depth.md) (fixed-depth limitations and workarounds), [Composability](doc/src/arch/composability.md) (smart contract composition patterns with real-world DAO failure analysis and Tender + Labor Market + Attestation integration), [Safemath](doc/src/arch/safemath.md) (ZK arithmetic templates as LessThanOrEqual workaround), [Entropy Module](doc/src/arch/entropy.md) (provable randomness via block hash entropy), [Plain Contracts Architecture](doc/src/arch/plain_contracts.md) (dual-layer ZK/plain contract design), [Parallel Societies](doc/src/arch/parallel_societies.md) (privacy for social reproduction industries)
-- **Work-in-progress implementations**: Skeleton code and alternative approaches
+- **Safemath integration**: Production-ready assertion gadgets for bounded arithmetic (workaround for LessThanOrEqual gate soundness issue)
+- **Pooled debt stablecoin**: Synthetix-style shared liability model replacing individual CDPs
 
-**Key new features:**
+### Workstream 2: Plain Contracts (Full Opcode Suite)
+Plain WASM contracts planning for the full opcode suite. Partial transparency to overcome ZK limitations.
+
+**Contracts**: [Subscription](src/contract_plain/subscription/README.md), [Labor Market](src/contract_plain/labor_market/README.md), [Insurance](src/contract_plain/insurance/README.md), [Oracle](src/contract_plain/oracle/README.md), [Attestation](src/contract_plain/attestation/README.md)
+
+These use native Rust for operations where ZK opcodes are unsound or missing (`base_div`, `less_than_or_equal`). Principle: "a malicious proof is more dangerous than a public bug."
+
+When `base_div`, `less_than_or_equal` (sound), and other missing opcodes are available, these can be ported to ZK. See [Plain Contracts Architecture](doc/src/arch/plain_contracts.md).
+
+## Architecture Documentation
+
+- [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) — Grey-market opcode analysis with gate soundness issues
+- [Merkle Depth](doc/src/arch/merkle_depth.md) — Fixed-depth limitations and workarounds
+- [Composability](doc/src/arch/composability.md) — Smart contract composition patterns
+- [Safemath](doc/src/arch/safemath.md) — ZK arithmetic templates (LessThanOrEqual workaround)
+- [Entropy Module](doc/src/arch/entropy.md) — Provable randomness via block hash entropy
+- [Plain Contracts Architecture](doc/src/arch/plain_contracts.md) — Dual-layer ZK/plain contract design
+- [Parallel Societies](doc/src/arch/parallel_societies.md) — Privacy for social reproduction industries
+
+## Key Features
+
 - **DarkBet Exchange**: Unified betting contract with order-book (back/lay) and AMM pool modes
 - **Lottery**: Configurable lottery bridging BettingStake and Insurance problem spaces
 - **Baccarat/Roulette**: Privacy-preserving casino games using cumulative PoW entropy for card dealing
-- **Attestation contract**: Generalized attestation and claims system for reusable verification patterns
-- **Oracle contract**: Push-model oracle demonstrating external data integration via attestation
-- **Insurance Market contract**: Decentralized insurance marketplace with risk markets
-- **BettingStake contract**: LP staking for betting contracts
-- **Safemath integration**: Production-ready assertion gadgets for bounded arithmetic (workaround for LessThanOrEqual gate soundness issue)
-- **Pooled debt stablecoin**: Synthetix-style shared liability model replacing individual CDPs
-- **Entropy module**: Shared `darkfi_sdk::crypto::entropy` for provable randomness across contracts
-- **Plain Contracts**: New [contract_plain](src/contract_plain/) directory containing "partial transparency" alternatives to ZK contracts: [Subscription](src/contract_plain/subscription/README.md), [Labor Market](src/contract_plain/labor_market/README.md), [Insurance](src/contract_plain/insurance/README.md), [Oracle](src/contract_plain/oracle/README.md), and [Attestation](src/contract_plain/attestation/README.md). These use native Rust for operations where ZK opcodes are unsound (like `base_div`), following the principle "a malicious proof is more dangerous than a public bug".
+- **Entro module**: Shared `darkfi_sdk::crypto::entropy` for provable randomness across contracts
 
 **Security Status**: All new contracts are EXPERIMENTAL and UNAUDITED. Known security issues are documented in [Security Analysis](doc/src/arch/security-analysis.md). The official DarkFi repository should be consulted for the canonical, production-ready state.
 
