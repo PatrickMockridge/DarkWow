@@ -86,6 +86,9 @@ pub enum RouletteError {
 
     #[error("Internal error: {0}")]
     InternalError(String),
+
+    #[error("Arithmetic overflow in calculation")]
+    ArithmeticOverflow,
 }
 
 impl From<RouletteError> for ContractError {
@@ -112,6 +115,7 @@ impl From<RouletteError> for ContractError {
             RouletteError::CrossContractFailed => Self::Custom(19),
             RouletteError::DatabaseError(_) => Self::Custom(20),
             RouletteError::InternalError(_) => Self::Custom(21),
+            RouletteError::ArithmeticOverflow => Self::Custom(22),
         }
     }
 }

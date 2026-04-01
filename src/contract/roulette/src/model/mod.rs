@@ -21,7 +21,7 @@
 //! Data structures for the roulette game.
 
 use darkfi_sdk::{
-    crypto::{draw_single, pasta_prelude::PrimeField, poseidon_hash, PublicKey},
+    crypto::{draw_single, poseidon_hash, PublicKey, schnorr::Signature},
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
@@ -128,22 +128,22 @@ impl RouletteTable {
         max_straight_bet: u64,
         duration_blocks: u64,
         current_block: u64,
-    ) -> Self {
-        Self {
+    ) -> Option<Self> {
+        Some(Self {
             table_id,
             house_pub,
             wheel_size: EUROPEAN_WHEEL_SIZE,
             house_edge_bp: EUROPEAN_HOUSE_EDGE_BP,
             house_capital,
             max_straight_bet,
-            max_total_bet: max_straight_bet * 36, // Approximate max exposure
+            max_total_bet: max_straight_bet.checked_mul(36)?, // Approximate max exposure
             state: RouletteTableState::Active,
             spin_count: 0,
             winning_number: None,
             bets_close_block: current_block + duration_blocks,
             spun_at_block: None,
             created_at: current_block,
-        }
+        })
     }
 
     /// Create a new American table
@@ -154,22 +154,22 @@ impl RouletteTable {
         max_straight_bet: u64,
         duration_blocks: u64,
         current_block: u64,
-    ) -> Self {
-        Self {
+    ) -> Option<Self> {
+        Some(Self {
             table_id,
             house_pub,
             wheel_size: AMERICAN_WHEEL_SIZE,
             house_edge_bp: AMERICAN_HOUSE_EDGE_BP,
             house_capital,
             max_straight_bet,
-            max_total_bet: max_straight_bet * 36,
+            max_total_bet: max_straight_bet.checked_mul(36)?,
             state: RouletteTableState::Active,
             spin_count: 0,
             winning_number: None,
             bets_close_block: current_block + duration_blocks,
             spun_at_block: None,
             created_at: current_block,
-        }
+        })
     }
 
     /// Check if table can accept a bet
@@ -187,8 +187,8 @@ impl RouletteTable {
     }
 
     /// Calculate maximum payout for a bet
-    pub fn max_payout(&self, bet: &Bet) -> u64 {
-        bet.amount * (bet.bet_type.payout_ratio() as u64)
+    pub fn max_payout(&self, bet: &Bet) -> Option<u64> {
+        bet.amount.checked_mul(bet.bet_type.payout_ratio() as u64)
     }
 }
 
@@ -248,25 +248,25 @@ impl Bet {
         amount: u64,
         spin_number: u64,
         current_block: u64,
-    ) -> Self {
+    ) -> Option<Self> {
         let bet_id =
             poseidon_hash([table_id, player_pub.x(), player_pub.y(), pallas::Base::from(amount)]);
         let nullifier = poseidon_hash([bet_id, pallas::Base::from(current_block)]);
 
-        Self {
+        Some(Self {
             bet_id,
             table_id,
             player_pub,
             bet_type,
             numbers,
             amount,
-            payout: amount * (bet_type.payout_ratio() as u64),
+            payout: amount.checked_mul(bet_type.payout_ratio() as u64)?,
             won: None,
             actual_payout: 0,
             spin_number,
             placed_at: current_block,
             nullifier,
-        }
+        })
     }
 
     /// Check if this bet wins given the winning number
@@ -345,6 +345,10 @@ pub struct SpinWheelParamsV1 {
     pub table_id: pallas::Base,
     /// Nonce for randomness
     pub nonce: pallas::Base,
+    /// House public key for access control
+    pub house_pub: PublicKey,
+    /// Signature from house
+    pub signature: Signature,
 }
 
 /// Update from SpinWheelV1
@@ -380,6 +384,10 @@ pub struct SettleBetsUpdateV1 {
 pub struct HouseCloseParamsV1 {
     /// Table ID
     pub table_id: pallas::Base,
+    /// House public key for access control
+    pub house_pub: PublicKey,
+    /// Signature from house
+    pub signature: Signature,
 }
 
 /// Update from HouseCloseV1

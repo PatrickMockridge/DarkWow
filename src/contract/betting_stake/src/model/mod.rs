@@ -26,7 +26,7 @@ use darkfi_sdk::{
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 
-use crate::{BettingStakeFunction, EARNINGS_BP};
+use crate::EARNINGS_BP;
 
 // =============================================================================
 // STAKE REGISTRY
@@ -57,7 +57,11 @@ impl TableStakeRegistry {
         // Base house edge - accumulated losses ratio + risk premium
         let base = self.house_edge_bp;
         let losses_ratio = if self.total_stake > 0 {
-            (self.accumulated_losses * EARNINGS_BP as u64 / self.total_stake) as u32
+            self.accumulated_losses
+                .checked_mul(EARNINGS_BP as u64)
+                .and_then(|v| v.checked_div(self.total_stake))
+                .map(|v| v as u32)
+                .unwrap_or(0)
         } else {
             0
         };

@@ -62,6 +62,9 @@ pub enum DiceError {
     #[error("Unauthorized caller")]
     UnauthorizedCaller,
 
+    #[error("Arithmetic overflow in calculation")]
+    ArithmeticOverflow,
+
     #[error("Cross-contract call failed")]
     CrossContractFailed,
 
@@ -104,6 +107,7 @@ impl From<DiceError> for ContractError {
             DiceError::HouseNotInitialized => Self::Custom(18),
             DiceError::InvalidBlockHash => Self::Custom(19),
             DiceError::CommitmentMismatch => Self::Custom(20),
+            DiceError::ArithmeticOverflow => Self::Custom(21),
         }
     }
 }

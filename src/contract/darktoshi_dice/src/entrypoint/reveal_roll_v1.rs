@@ -44,8 +44,10 @@ pub fn dice_reveal_roll_process_instruction_v1(
 
     // Look up the bet
     let bets_db = wasm::db::db_lookup(cid, DICE_CONTRACT_BETS_TREE)?;
-    let bet_bytes = wasm::db::db_get(bets_db, &serialize(&params.bet_id))?.unwrap();
-    let bet: Bet = deserialize(&bet_bytes)?;
+    let bet: Bet = match wasm::db::db_get(bets_db, &serialize(&params.bet_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DiceError::BetNotFound.into()),
+    };
 
     msg!("[dice::reveal_roll] Found bet, current state: {:?}", bet.state as u8);
 
@@ -114,8 +116,10 @@ pub fn dice_reveal_roll_process_update_v1(
     let bets_db = wasm::db::db_lookup(cid, DICE_CONTRACT_BETS_TREE)?;
 
     // Look up and update the bet
-    let bet_bytes = wasm::db::db_get(bets_db, &serialize(&update.bet_id))?.unwrap();
-    let mut bet: Bet = deserialize(&bet_bytes)?;
+    let mut bet: Bet = match wasm::db::db_get(bets_db, &serialize(&update.bet_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DiceError::BetNotFound.into()),
+    };
 
     // Update bet state
     bet.roll = Some(update.roll);

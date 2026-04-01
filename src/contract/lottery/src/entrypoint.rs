@@ -24,9 +24,8 @@ use darkfi_sdk::{
     error::ContractResult,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize};
+use darkfi_serial::deserialize;
 
-use crate::error::LotteryError;
 use crate::model::{
     BuyTicketUpdateV1, ClaimPrizeUpdateV1, DrawWinnersUpdateV1, ExpireLotteryUpdateV1,
     InitializeUpdateV1, RevealTicketUpdateV1,

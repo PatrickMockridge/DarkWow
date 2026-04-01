@@ -183,9 +183,10 @@ fn staking_stake_process_instruction_v1(
 
     // Get registry
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
-    let mut table: TableStakeRegistry = deserialize(
-        &wasm::db::db_get(registry_db, &serialize(&params.table_id))?.unwrap(),
-    )?;
+    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&params.table_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(BettingStakeError::TableNotFound.into()),
+    };
 
     // Validate stake amount
     if params.amount < crate::MIN_STAKE_AMOUNT {
@@ -224,9 +225,10 @@ fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> Co
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
 
     // Get and update registry
-    let mut table: TableStakeRegistry = deserialize(
-        &wasm::db::db_get(registry_db, &serialize(&update.table_id))?.unwrap(),
-    )?;
+    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&update.table_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(BettingStakeError::TableNotFound.into()),
+    };
     table.total_stake = update.total_stake;
     table.staker_count = update.staker_count;
 
@@ -267,8 +269,10 @@ fn staking_unstake_process_instruction_v1(
 
     // Get stake
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
-    let stake: Stake =
-        deserialize(&wasm::db::db_get(stakes_db, &serialize(&params.stake_id))?.unwrap())?;
+    let stake: Stake = match wasm::db::db_get(stakes_db, &serialize(&params.stake_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(BettingStakeError::StakeNotFound.into()),
+    };
 
     if !stake.is_active {
         return Err(BettingStakeError::StakeLocked.into())
@@ -276,14 +280,20 @@ fn staking_unstake_process_instruction_v1(
 
     // Get table for final settlement
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
-    let table: TableStakeRegistry = deserialize(
-        &wasm::db::db_get(registry_db, &serialize(&stake.table_id))?.unwrap(),
-    )?;
+    let table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&stake.table_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(BettingStakeError::TableNotFound.into()),
+    };
 
     // Calculate final payout
-    let stake_share = (stake.current_amount * 10000) / table.total_stake;
-    let loss_share = (table.accumulated_losses * stake_share) / 10000;
-    let earnings_share = (table.accumulated_earnings * stake_share) / 10000;
+    // FIX: Handle division by zero if total_stake is 0
+    let stake_share = if table.total_stake == 0 {
+        0
+    } else {
+        (stake.current_amount * 10000) / table.total_stake
+    };
+    let loss_share = table.accumulated_losses.checked_mul(stake_share).ok_or(BettingStakeError::ArithmeticOverflow)? / 10000;
+    let earnings_share = table.accumulated_earnings.checked_mul(stake_share).ok_or(BettingStakeError::ArithmeticOverflow)? / 10000;
 
     let payout_amount = stake.current_amount.saturating_sub(loss_share) + earnings_share;
     let unstake_penalty = 0; // No penalty in this simple version
@@ -298,8 +308,10 @@ fn staking_unstake_process_update_v1(cid: ContractId, update: UnstakeUpdateV1) -
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
 
     // Get and update stake
-    let mut stake: Stake =
-        deserialize(&wasm::db::db_get(stakes_db, &serialize(&update.stake_id))?.unwrap())?;
+    let mut stake: Stake = match wasm::db::db_get(stakes_db, &serialize(&update.stake_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(BettingStakeError::StakeNotFound.into()),
+    };
 
     stake.is_active = false;
     stake.current_amount = 0;
@@ -327,18 +339,26 @@ fn staking_claim_earnings_process_instruction_v1(
 
     // Get stake
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
-    let stake: Stake =
-        deserialize(&wasm::db::db_get(stakes_db, &serialize(&params.stake_id))?.unwrap())?;
+    let stake: Stake = match wasm::db::db_get(stakes_db, &serialize(&params.stake_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(BettingStakeError::StakeNotFound.into()),
+    };
 
     // Get table
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
-    let table: TableStakeRegistry = deserialize(
-        &wasm::db::db_get(registry_db, &serialize(&stake.table_id))?.unwrap(),
-    )?;
+    let table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&stake.table_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(BettingStakeError::TableNotFound.into()),
+    };
 
     // Calculate claimable earnings
-    let stake_share = (stake.current_amount * 10000) / table.total_stake;
-    let total_earnings = (table.accumulated_earnings * stake_share) / 10000;
+    // FIX: Handle division by zero if total_stake is 0
+    let stake_share = if table.total_stake == 0 {
+        0
+    } else {
+        (stake.current_amount * 10000) / table.total_stake
+    };
+    let total_earnings = table.accumulated_earnings.checked_mul(stake_share).ok_or(BettingStakeError::ArithmeticOverflow)? / 10000;
     let claimable = total_earnings.saturating_sub(stake.accumulated_earnings);
 
     if claimable == 0 {
@@ -359,8 +379,10 @@ fn staking_claim_earnings_process_update_v1(cid: ContractId, update: ClaimEarnin
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
 
     // Get and update stake
-    let mut stake: Stake =
-        deserialize(&wasm::db::db_get(stakes_db, &serialize(&update.stake_id))?.unwrap())?;
+    let mut stake: Stake = match wasm::db::db_get(stakes_db, &serialize(&update.stake_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(BettingStakeError::StakeNotFound.into()),
+    };
 
     stake.accumulated_earnings = update.remaining_earnings;
 
@@ -386,9 +408,10 @@ fn staking_update_risk_process_instruction_v1(
 
     // Get registry
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
-    let mut table: TableStakeRegistry = deserialize(
-        &wasm::db::db_get(registry_db, &serialize(&params.table_id))?.unwrap(),
-    )?;
+    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&params.table_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(BettingStakeError::TableNotFound.into()),
+    };
 
     // Calculate staker's share of loss
     // Stakers absorb: payout_amount - house_share
@@ -420,9 +443,10 @@ fn staking_update_risk_process_update_v1(cid: ContractId, update: UpdateRiskUpda
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
 
     // Get and update registry
-    let mut table: TableStakeRegistry = deserialize(
-        &wasm::db::db_get(registry_db, &serialize(&update.table_id))?.unwrap(),
-    )?;
+    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&update.table_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(BettingStakeError::TableNotFound.into()),
+    };
 
     table.total_stake = update.new_total_stake;
 

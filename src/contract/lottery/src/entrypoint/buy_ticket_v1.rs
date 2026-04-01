@@ -23,8 +23,7 @@ use darkfi_serial::{deserialize, serialize};
 
 use crate::error::LotteryError;
 use crate::model::{
-    derive_nullifier, derive_ticket_id, validate_numbers, BuyTicketParamsV1, BuyTicketUpdateV1,
-    Ticket, TicketId,
+    derive_nullifier, derive_ticket_id, BuyTicketParamsV1, BuyTicketUpdateV1, Ticket,
 };
 use crate::LOTTERY_CONTRACT_CURRENT_LOTTERY;
 use crate::LOTTERY_CONTRACT_LOTTERIES_TREE;

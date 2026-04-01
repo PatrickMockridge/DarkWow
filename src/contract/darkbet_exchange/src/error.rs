@@ -105,6 +105,15 @@ pub enum DarkbetError {
     #[error("Cross-contract call failed")]
     CrossContractFailed,
 
+    #[error("Oracle signature verification failed")]
+    InvalidOracleSignature,
+
+    #[error("Market already exists")]
+    MarketAlreadyExists,
+
+    #[error("Cross-contract call requires authorized contract")]
+    UnauthorizedCrossContract,
+
     #[error("Database error: {0}")]
     DatabaseError(String),
 
@@ -142,6 +151,9 @@ impl From<DarkbetError> for ContractError {
             DarkbetError::PositionAlreadyClaimed => Self::Custom(28),
             DarkbetError::ArithmeticOverflow => Self::Custom(29),
             DarkbetError::CrossContractFailed => Self::Custom(18),
+            DarkbetError::InvalidOracleSignature => Self::Custom(30),
+            DarkbetError::MarketAlreadyExists => Self::Custom(31),
+            DarkbetError::UnauthorizedCrossContract => Self::Custom(32),
             DarkbetError::DatabaseError(_) => Self::Custom(19),
             DarkbetError::InternalError(_) => Self::Custom(20),
         }

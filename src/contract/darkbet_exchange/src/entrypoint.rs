@@ -19,7 +19,7 @@
 //! DarkBet Exchange Contract Entrypoint
 
 use darkfi_sdk::{
-    crypto::{ContractId, PublicKey, SecretKey},
+    crypto::{poseidon_hash, schnorr::SchnorrPublic, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
@@ -201,7 +201,7 @@ fn darkbet_create_market_process_instruction_v1(
     };
 
     // Validate fees for AMM mode
-    let _protocol_fee = if params.protocol_fee == 0 {
+    let protocol_fee = if params.protocol_fee == 0 {
         SDK_PROTOCOL_FEE
     } else {
         if params.protocol_fee > crate::MAX_PROTOCOL_FEE {
@@ -210,31 +210,100 @@ fn darkbet_create_market_process_instruction_v1(
         params.protocol_fee
     };
 
-    let _lp_fee = if params.lp_fee == 0 { SDK_LP_FEE } else { params.lp_fee };
+    let lp_fee = if params.lp_fee == 0 { SDK_LP_FEE } else { params.lp_fee };
 
     let close_block = current_block + params.duration_blocks;
 
+    // Create message for signature verification using poseidon_hash
+    // This avoids serialization issues with String/Vec<String>
+    let signature_msg = serialize(&poseidon_hash([
+        params.oracle_id,
+        params.creator_pub.x(),
+        params.creator_pub.y(),
+        pallas::Base::from(params.market_type as u64),
+        pallas::Base::from(params.commission_bp as u64),
+        pallas::Base::from(params.protocol_fee as u64),
+        pallas::Base::from(params.lp_fee as u64),
+        pallas::Base::from(params.duration_blocks),
+        pallas::Base::from(close_block),
+    ]));
+
+    // Verify signature from creator
+    if !params.creator_pub.verify(&signature_msg, &params.signature) {
+        msg!("[darkbet::create_market] ERROR: Invalid signature");
+        return Err(DarkbetError::InvalidSignature.into())
+    }
+
+    // Derive market ID from params using poseidon_hash
+    let market_id = poseidon_hash([
+        params.oracle_id,
+        pallas::Base::from(params.market_type as u64),
+        pallas::Base::from(close_block),
+        pallas::Base::from(current_block),
+    ]);
+
     let update = CreateMarketUpdateV1 {
-        market_id: pallas::Base::zero(), // Will be computed properly
+        market_id,
+        creator: params.creator_pub,
+        description: params.description,
+        outcomes: params.outcomes,
+        oracle_id: params.oracle_id,
+        commission_bp: params.commission_bp,
         market_type,
+        protocol_fee,
+        lp_fee,
         close_block,
     };
 
     msg!(
-        "[darkbet::create_market] Market type: {:?}, closes at block {}",
+        "[darkbet::create_market] Market type: {:?}, closes at block {}, id: {:?}",
         market_type,
-        close_block
+        close_block,
+        market_id
     );
     Ok(serialize(&update))
 }
 
 fn darkbet_create_market_process_update_v1(
     cid: ContractId,
-    _update: CreateMarketUpdateV1,
+    update: CreateMarketUpdateV1,
 ) -> ContractResult {
-    let _markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
+    let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
-    msg!("[darkbet::create_market::update] Market created successfully");
+    // Create market struct using the update fields
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let num_outcomes = update.outcomes.len();
+
+    let market = Market {
+        market_id: update.market_id,
+        creator: update.creator,
+        description: update.description.clone(),
+        outcomes: update.outcomes.clone(),
+        oracle_id: update.oracle_id,
+        commission_bp: update.commission_bp,
+        market_type: update.market_type,
+        state: MarketState::Open,
+        back_volume: 0,
+        lay_volume: 0,
+        matched_volume: 0,
+        total_pool: 0,
+        total_lp_shares: 0,
+        outcome_pools: if update.market_type == MarketType::AmmPool {
+            vec![0; num_outcomes]
+        } else {
+            vec![]
+        },
+        protocol_fee: update.protocol_fee,
+        lp_fee: update.lp_fee,
+        close_block: update.close_block,
+        resolved_at: None,
+        winning_outcome: None,
+        created_at: current_block,
+    };
+
+    wasm::db::db_set(markets_db, &serialize(&update.market_id), &serialize(&market))?;
+
+    msg!("[darkbet::create_market::update] Market stored successfully with {} outcomes", num_outcomes);
 
     Ok(())
 }
@@ -253,16 +322,26 @@ fn darkbet_place_back_process_instruction_v1(
 
     msg!("[darkbet::place_back] Placing back order on market {:?}", params.market_id);
 
-    // Get market
+    // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market_data = wasm::db::db_get(markets_db, &serialize(&params.market_id))?;
-    if market_data.is_none() {
-        return Err(DarkbetError::MarketNotFound.into())
+    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
+    };
+
+    // Verify market is open and accepting orders
+    if market.state != MarketState::Open {
+        return Err(DarkbetError::MarketNotOpen.into())
     }
 
-    let _current_block = wasm::util::get_verifying_block_height()? as u64;
+    // Validate outcome index is within bounds
+    if params.outcome_index as usize >= market.outcomes.len() {
+        return Err(DarkbetError::InvalidOutcome.into())
+    }
 
-    // Validate order
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+
+    // Validate order params
     if params.stake < DARKBET_EXCHANGE_MIN_ORDER_SIZE {
         return Err(DarkbetError::InsufficientStake.into())
     }
@@ -270,13 +349,39 @@ fn darkbet_place_back_process_instruction_v1(
         return Err(DarkbetError::InvalidOdds.into())
     }
 
+    // Create message for signature verification
+    let signature_msg = serialize(&(
+        params.market_id,
+        params.outcome_index,
+        params.odds,
+        params.stake,
+        current_block,
+    ));
+
+    // Verify signature from user
+    if !params.user_pub.verify(&signature_msg, &params.signature) {
+        msg!("[darkbet::place_back] ERROR: Invalid signature");
+        return Err(DarkbetError::InvalidSignature.into())
+    }
+
+    // Derive order_id and nullifier
+    let order_id = poseidon_hash([
+        params.market_id,
+        pallas::Base::from(params.outcome_index as u64),
+        pallas::Base::from(current_block),
+        pallas::Base::from(params.stake),
+    ]);
+
+    let nullifier = poseidon_hash([order_id, pallas::Base::from(current_block)]);
+
     let update = PlaceBackUpdateV1 {
-        order_id: pallas::Base::zero(),
+        order_id,
         market_id: params.market_id,
         outcome_index: params.outcome_index,
         odds: params.odds,
         stake: params.stake,
-        nullifier: pallas::Base::zero(),
+        user_pub: params.user_pub,
+        nullifier,
     };
 
     msg!("[darkbet::place_back] Back order placed: {} @ {}bps", params.stake, params.odds);
@@ -300,7 +405,7 @@ fn darkbet_place_back_process_update_v1(
         odds: update.odds,
         stake: update.stake,
         liability: 0,
-        user_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::zero())),
+        user_pub: update.user_pub,
         state: OrderState::Open,
         created_at: wasm::util::get_verifying_block_height()? as u64,
         nullifier: update.nullifier,
@@ -330,16 +435,26 @@ fn darkbet_place_lay_process_instruction_v1(
 
     msg!("[darkbet::place_lay] Placing lay order on market {:?}", params.market_id);
 
-    // Get market
+    // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market_data = wasm::db::db_get(markets_db, &serialize(&params.market_id))?;
-    if market_data.is_none() {
-        return Err(DarkbetError::MarketNotFound.into())
+    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
+    };
+
+    // Verify market is open and accepting orders
+    if market.state != MarketState::Open {
+        return Err(DarkbetError::MarketNotOpen.into())
     }
 
-    let _current_block = wasm::util::get_verifying_block_height()? as u64;
+    // Validate outcome index is within bounds
+    if params.outcome_index as usize >= market.outcomes.len() {
+        return Err(DarkbetError::InvalidOutcome.into())
+    }
 
-    // Validate order
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+
+    // Validate order params
     if params.stake < DARKBET_EXCHANGE_MIN_ORDER_SIZE {
         return Err(DarkbetError::InsufficientStake.into())
     }
@@ -347,17 +462,48 @@ fn darkbet_place_lay_process_instruction_v1(
         return Err(DarkbetError::InvalidOdds.into())
     }
 
-    // Liability = stake * (odds - 1)
-    let liability = (params.stake * ((params.odds - 10000) as u64)) / 10000;
+    // Create message for signature verification
+    let signature_msg = serialize(&(
+        params.market_id,
+        params.outcome_index,
+        params.odds,
+        params.stake,
+        current_block,
+    ));
+
+    // Verify signature from user
+    if !params.user_pub.verify(&signature_msg, &params.signature) {
+        msg!("[darkbet::place_lay] ERROR: Invalid signature");
+        return Err(DarkbetError::InvalidSignature.into())
+    }
+
+    // Liability = stake * (odds - 1) / 10000
+    let liability = params
+        .stake
+        .checked_mul((params.odds - 10000) as u64)
+        .ok_or(DarkbetError::ArithmeticOverflow)?
+        / 10000;
+
+    // Derive order_id and nullifier
+    let order_id = poseidon_hash([
+        params.market_id,
+        pallas::Base::from(params.outcome_index as u64),
+        pallas::Base::from(current_block),
+        pallas::Base::from(params.stake),
+        pallas::Base::one(), // Lay indicator
+    ]);
+
+    let nullifier = poseidon_hash([order_id, pallas::Base::from(current_block)]);
 
     let update = PlaceLayUpdateV1 {
-        order_id: pallas::Base::zero(),
+        order_id,
         market_id: params.market_id,
         outcome_index: params.outcome_index,
         odds: params.odds,
         stake: params.stake,
         liability,
-        nullifier: pallas::Base::zero(),
+        user_pub: params.user_pub,
+        nullifier,
     };
 
     msg!("[darkbet::place_lay] Lay order placed: {} liability @ {}bps", liability, params.odds);
@@ -381,7 +527,7 @@ fn darkbet_place_lay_process_update_v1(
         odds: update.odds,
         stake: update.stake,
         liability: update.liability,
-        user_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::zero())),
+        user_pub: update.user_pub,
         state: OrderState::Open,
         created_at: wasm::util::get_verifying_block_height()? as u64,
         nullifier: update.nullifier,
@@ -411,38 +557,103 @@ fn darkbet_match_orders_process_instruction_v1(
 
     msg!("[darkbet::match_orders] Matching back {:?} with lay {:?}", params.back_order_id, params.lay_order_id);
 
-    // Get market
+    // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market_data = wasm::db::db_get(markets_db, &serialize(&params.market_id))?;
-    if market_data.is_none() {
-        return Err(DarkbetError::MarketNotFound.into())
+    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
+    };
+
+    // FIX: Verify market is open
+    if market.state != MarketState::Open {
+        return Err(DarkbetError::MarketNotOpen.into())
     }
 
-    // Get orders
+    // Get back order
     let back_orders_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_BACK_ORDERS_TREE)?;
-    let back_order_data = wasm::db::db_get(back_orders_db, &serialize(&params.back_order_id))?;
-    if back_order_data.is_none() {
+    let back_order: Order = match wasm::db::db_get(back_orders_db, &serialize(&params.back_order_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::OrderNotFound.into()),
+    };
+
+    // Verify back order is valid
+    if back_order.state != OrderState::Open {
+        return Err(DarkbetError::OrderAlreadyMatched.into())
+    }
+    if back_order.market_id != params.market_id {
         return Err(DarkbetError::OrderNotFound.into())
     }
 
+    // Get lay order
     let lay_orders_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_LAY_ORDERS_TREE)?;
-    let lay_order_data = wasm::db::db_get(lay_orders_db, &serialize(&params.lay_order_id))?;
-    if lay_order_data.is_none() {
+    let lay_order: Order = match wasm::db::db_get(lay_orders_db, &serialize(&params.lay_order_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::OrderNotFound.into()),
+    };
+
+    // Verify lay order is valid
+    if lay_order.state != OrderState::Open {
+        return Err(DarkbetError::OrderAlreadyMatched.into())
+    }
+    if lay_order.market_id != params.market_id {
         return Err(DarkbetError::OrderNotFound.into())
     }
 
-    // Calculate commission
-    let back_payout = (params.odds as u64 * 100) / 10000;
-    let commission = (back_payout * DARKBET_EXCHANGE_COMMISSION_BP as u64) / 10000;
+    // FIX: Verify orders are for the same outcome
+    if back_order.outcome_index != lay_order.outcome_index {
+        return Err(DarkbetError::OddsMismatch.into())
+    }
+
+    // FIX: Verify odds are compatible (lay odds >= back odds for a match)
+    if lay_order.odds < back_order.odds {
+        return Err(DarkbetError::OddsMismatch.into())
+    }
+
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+
+    // Create message for signature verification
+    let signature_msg = serialize(&(
+        params.market_id,
+        params.back_order_id,
+        params.lay_order_id,
+        params.odds,
+        current_block,
+    ));
+
+    // Verify signature from matcher
+    if !params.user_pub.verify(&signature_msg, &params.signature) {
+        msg!("[darkbet::match_orders] ERROR: Invalid signature");
+        return Err(DarkbetError::InvalidSignature.into())
+    }
+
+    // FIX: Derive match_id properly
+    let match_id = poseidon_hash([
+        params.market_id,
+        params.back_order_id,
+        params.lay_order_id,
+        pallas::Base::from(back_order.odds as u64),
+        pallas::Base::from(current_block),
+    ]);
+
+    // Calculate commission based on actual stake
+    let back_payout = back_order
+        .stake
+        .checked_mul(back_order.odds as u64)
+        .ok_or(DarkbetError::ArithmeticOverflow)?
+        / 10000;
+    let commission = back_payout
+        .checked_mul(DARKBET_EXCHANGE_COMMISSION_BP as u64)
+        .ok_or(DarkbetError::ArithmeticOverflow)?
+        / 10000;
 
     let update = MatchOrdersUpdateV1 {
-        match_id: pallas::Base::zero(),
+        match_id,
         market_id: params.market_id,
         back_order_id: params.back_order_id,
         lay_order_id: params.lay_order_id,
-        odds: params.odds,
-        back_stake: 100,
-        lay_liability: 100,
+        odds: back_order.odds,
+        back_stake: back_order.stake,
+        lay_liability: lay_order.liability,
         commission,
     };
 
@@ -460,27 +671,31 @@ fn darkbet_match_orders_process_update_v1(
     let _markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
     // Update back order state
-    let mut back_order: Order =
-        deserialize(&wasm::db::db_get(back_orders_db, &serialize(&update.back_order_id))?.unwrap())?;
+    let mut back_order: Order = match wasm::db::db_get(back_orders_db, &serialize(&update.back_order_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::OrderNotFound.into()),
+    };
     back_order.state = OrderState::Matched;
     wasm::db::db_set(back_orders_db, &serialize(&update.back_order_id), &serialize(&back_order))?;
 
     // Update lay order state
-    let mut lay_order: Order =
-        deserialize(&wasm::db::db_get(lay_orders_db, &serialize(&update.lay_order_id))?.unwrap())?;
+    let mut lay_order: Order = match wasm::db::db_get(lay_orders_db, &serialize(&update.lay_order_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::OrderNotFound.into()),
+    };
     lay_order.state = OrderState::Matched;
     wasm::db::db_set(lay_orders_db, &serialize(&update.lay_order_id), &serialize(&lay_order))?;
 
-    // Store match
+    // Store match - outcome_index comes from back_order
     let m = Match {
         match_id: update.match_id,
         market_id: update.market_id,
-        outcome_index: 0,
+        outcome_index: back_order.outcome_index,
         odds: update.odds,
         back_stake: update.back_stake,
         lay_liability: update.lay_liability,
-        back_user: PublicKey::from_secret(SecretKey::from(pallas::Base::zero())),
-        lay_user: PublicKey::from_secret(SecretKey::from(pallas::Base::zero())),
+        back_user: back_order.user_pub,
+        lay_user: lay_order.user_pub,
         commission: update.commission,
         state: MatchState::Pending,
         created_at: wasm::util::get_verifying_block_height()? as u64,
@@ -512,16 +727,24 @@ fn darkbet_buy_position_process_instruction_v1(
 
     // Get market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market_data = wasm::db::db_get(markets_db, &serialize(&params.market_id))?;
-    let market: Market = if let Some(data) = market_data {
-        deserialize(&data)?
-    } else {
-        return Err(DarkbetError::MarketNotFound.into())
+    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
     };
 
     // Verify market is AMM type
     if market.market_type != MarketType::AmmPool {
         return Err(DarkbetError::InvalidMarketType.into())
+    }
+
+    // FIX: Verify market is open
+    if market.state != MarketState::Open {
+        return Err(DarkbetError::MarketNotOpen.into())
+    }
+
+    // FIX: Validate outcome index is within bounds
+    if params.outcome as usize >= market.outcomes.len() {
+        return Err(DarkbetError::InvalidOutcome.into())
     }
 
     // Validate amount
@@ -530,6 +753,21 @@ fn darkbet_buy_position_process_instruction_v1(
     }
 
     let current_block = wasm::util::get_verifying_block_height()? as u64;
+
+    // Create message for signature verification
+    let signature_msg = serialize(&(
+        params.market_id,
+        params.outcome,
+        params.amount,
+        params.min_payout,
+        current_block,
+    ));
+
+    // Verify signature from owner
+    if !params.owner.verify(&signature_msg, &params.signature) {
+        msg!("[darkbet::buy_position] ERROR: Invalid signature");
+        return Err(DarkbetError::InvalidSignature.into())
+    }
 
     // Calculate payout using AMM formula
     let payout = market
@@ -541,8 +779,18 @@ fn darkbet_buy_position_process_instruction_v1(
         return Err(DarkbetError::SlippageExceeded.into())
     }
 
+    // FIX: Derive position_id properly (matches Position::new() calculation)
+    let position_id = poseidon_hash([
+        params.market_id,
+        params.owner.x(),
+        params.owner.y(),
+        pallas::Base::from(params.outcome as u64),
+        pallas::Base::from(params.amount),
+        pallas::Base::from(current_block),
+    ]);
+
     let update = BuyPositionUpdateV1 {
-        position_id: pallas::Base::zero(),
+        position_id,
         market_id: params.market_id,
         owner: params.owner,
         outcome: params.outcome,
@@ -612,11 +860,21 @@ fn darkbet_add_liquidity_process_instruction_v1(
         params.market_id
     );
 
-    // Get market
+    // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market_data = wasm::db::db_get(markets_db, &serialize(&params.market_id))?;
-    if market_data.is_none() {
-        return Err(DarkbetError::MarketNotFound.into())
+    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
+    };
+
+    // FIX: Verify market is AMM type
+    if market.market_type != MarketType::AmmPool {
+        return Err(DarkbetError::InvalidMarketType.into())
+    }
+
+    // FIX: Verify market is open
+    if market.state != MarketState::Open {
+        return Err(DarkbetError::MarketNotOpen.into())
     }
 
     // Validate amount
@@ -626,11 +884,35 @@ fn darkbet_add_liquidity_process_instruction_v1(
 
     let current_block = wasm::util::get_verifying_block_height()? as u64;
 
+    // Create message for signature verification
+    let signature_msg = serialize(&(params.market_id, params.amount, current_block));
+
+    // Verify signature from provider
+    if !params.provider.verify(&signature_msg, &params.signature) {
+        msg!("[darkbet::add_liquidity] ERROR: Invalid signature");
+        return Err(DarkbetError::InvalidSignature.into())
+    }
+
+    // FIX: Calculate shares to mint properly
+    let shares_minted = market
+        .calculate_lp_shares(params.amount)
+        .ok_or(DarkbetError::ArithmeticOverflow)?;
+
+    // FIX: Derive lp_share_id properly
+    let lp_share_id = poseidon_hash([
+        params.market_id,
+        params.provider.x(),
+        params.provider.y(),
+        pallas::Base::from(shares_minted),
+        pallas::Base::from(current_block),
+    ]);
+
     let update = AddLiquidityUpdateV1 {
-        lp_share_id: pallas::Base::zero(),
+        lp_share_id,
         market_id: params.market_id,
         provider: params.provider,
-        shares_minted: 0, // Calculated in update
+        amount: params.amount,
+        shares_minted,
         fees_earned: 0,
         created_at: current_block,
     };
@@ -650,17 +932,14 @@ fn darkbet_add_liquidity_process_update_v1(
     let market_data = wasm::db::db_get(markets_db, &serialize(&update.market_id))?.unwrap();
     let mut market: Market = deserialize(&market_data)?;
 
-    // Calculate shares to mint
-    let shares_minted = market.calculate_lp_shares(update.shares_minted);
-
-    // Store LP share
-    let lp_share = LpShare::new(update.market_id, update.provider, shares_minted, update.created_at);
+    // Store LP share (shares_minted already calculated in instruction)
+    let lp_share = LpShare::new(update.market_id, update.provider, update.shares_minted, update.created_at);
 
     wasm::db::db_set(lp_shares_db, &serialize(&lp_share.lp_share_id), &serialize(&lp_share))?;
 
-    // Update market
-    market.total_pool += update.shares_minted;
-    market.total_lp_shares += shares_minted;
+    // FIX: Update market with correct amounts
+    market.total_pool += update.amount;  // Add actual token amount to pool
+    market.total_lp_shares += update.shares_minted;  // Add LP shares
     wasm::db::db_set(markets_db, &serialize(&market.market_id), &serialize(&market))?;
 
     msg!("[darkbet::add_liquidity::update] LP shares minted: {:?}", lp_share.lp_share_id);
@@ -688,25 +967,47 @@ fn darkbet_remove_liquidity_process_instruction_v1(
 
     // Get LP share
     let lp_shares_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_LP_SHARES_TREE)?;
-    let lp_share_data = wasm::db::db_get(lp_shares_db, &serialize(&params.lp_share_id))?;
-    if lp_share_data.is_none() {
+    let lp_share: LpShare = match wasm::db::db_get(lp_shares_db, &serialize(&params.lp_share_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::LpShareNotFound.into()),
+    };
+
+    // FIX: Verify LP share's market matches
+    if lp_share.market_id != params.market_id {
         return Err(DarkbetError::LpShareNotFound.into())
     }
-
-    let lp_share: LpShare = deserialize(&lp_share_data.unwrap())?;
 
     // Verify ownership
     if lp_share.provider != params.provider {
         return Err(DarkbetError::UnauthorizedCaller.into())
     }
 
+    // Verify LP share is active
+    if lp_share.state != LpShareState::Active {
+        return Err(DarkbetError::LpShareNotFound.into())
+    }
+
+    // Create message for signature verification
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let signature_msg = serialize(&(params.market_id, params.lp_share_id, current_block));
+
+    // Verify signature from provider
+    if !params.provider.verify(&signature_msg, &params.signature) {
+        msg!("[darkbet::remove_liquidity] ERROR: Invalid signature");
+        return Err(DarkbetError::InvalidSignature.into())
+    }
+
     // Get market for payout calculation
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market_data = wasm::db::db_get(markets_db, &serialize(&params.market_id))?.unwrap();
-    let market: Market = deserialize(&market_data)?;
+    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
+    };
 
     // Calculate payout
-    let payout = market.calculate_liquidity_payout(lp_share.shares);
+    let payout = market
+        .calculate_liquidity_payout(lp_share.shares)
+        .ok_or(DarkbetError::ArithmeticOverflow)?;
     let fees_withdrawn = lp_share.earned_fees;
 
     let update = RemoveLiquidityUpdateV1 {
@@ -734,16 +1035,26 @@ fn darkbet_remove_liquidity_process_update_v1(
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
     // Update LP share state
-    let lp_share_data = wasm::db::db_get(lp_shares_db, &serialize(&update.lp_share_id))?.unwrap();
-    let mut lp_share: LpShare = deserialize(&lp_share_data)?;
+    let mut lp_share: LpShare = match wasm::db::db_get(lp_shares_db, &serialize(&update.lp_share_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::LpShareNotFound.into()),
+    };
     lp_share.state = LpShareState::Removed;
     wasm::db::db_set(lp_shares_db, &serialize(&lp_share.lp_share_id), &serialize(&lp_share))?;
 
     // Update market
-    let market_data = wasm::db::db_get(markets_db, &serialize(&update.market_id))?.unwrap();
-    let mut market: Market = deserialize(&market_data)?;
-    market.total_pool = market.total_pool.saturating_sub(update.payout);
-    market.total_lp_shares = market.total_lp_shares.saturating_sub(update.shares_burned);
+    let mut market: Market = match wasm::db::db_get(markets_db, &serialize(&update.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
+    };
+    market.total_pool = market
+        .total_pool
+        .checked_sub(update.payout)
+        .ok_or(DarkbetError::ArithmeticOverflow)?;
+    market.total_lp_shares = market
+        .total_lp_shares
+        .checked_sub(update.shares_burned)
+        .ok_or(DarkbetError::ArithmeticOverflow)?;
     wasm::db::db_set(markets_db, &serialize(&market.market_id), &serialize(&market))?;
 
     msg!("[darkbet::remove_liquidity::update] LP shares removed");
@@ -767,12 +1078,15 @@ fn darkbet_claim_winnings_process_instruction_v1(
 
     // Get position
     let positions_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_POSITIONS_TREE)?;
-    let position_data = wasm::db::db_get(positions_db, &serialize(&params.position_id))?;
-    if position_data.is_none() {
+    let position: Position = match wasm::db::db_get(positions_db, &serialize(&params.position_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::PositionNotFound.into()),
+    };
+
+    // FIX: Verify position's market matches
+    if position.market_id != params.market_id {
         return Err(DarkbetError::PositionNotFound.into())
     }
-
-    let position: Position = deserialize(&position_data.unwrap())?;
 
     // Verify ownership
     if position.owner != params.owner {
@@ -786,8 +1100,10 @@ fn darkbet_claim_winnings_process_instruction_v1(
 
     // Get market to verify resolved
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market_data = wasm::db::db_get(markets_db, &serialize(&params.market_id))?.unwrap();
-    let market: Market = deserialize(&market_data)?;
+    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
+    };
 
     if market.state != MarketState::Resolved {
         return Err(DarkbetError::MarketNotResolved.into())
@@ -817,8 +1133,10 @@ fn darkbet_claim_winnings_process_update_v1(
     let positions_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_POSITIONS_TREE)?;
 
     // Update position state
-    let position_data = wasm::db::db_get(positions_db, &serialize(&update.position_id))?.unwrap();
-    let mut position: Position = deserialize(&position_data)?;
+    let mut position: Position = match wasm::db::db_get(positions_db, &serialize(&update.position_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::PositionNotFound.into()),
+    };
     position.state = PositionState::Claimed;
     wasm::db::db_set(positions_db, &serialize(&position.position_id), &serialize(&position))?;
 
@@ -841,18 +1159,46 @@ fn darkbet_resolve_market_process_instruction_v1(
 
     msg!("[darkbet::resolve_market] Resolving market {:?}", params.market_id);
 
-    // Get market
+    // Get market and verify it exists
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market_data = wasm::db::db_get(markets_db, &serialize(&params.market_id))?;
-    if market_data.is_none() {
-        return Err(DarkbetError::MarketNotFound.into())
+    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
+    };
+
+    // Verify market is in correct state (must be Open or Closed, not already resolved)
+    match market.state {
+        MarketState::Open | MarketState::Closed => {}
+        MarketState::Resolved => return Err(DarkbetError::MarketAlreadyResolved.into()),
+        MarketState::Settled => return Err(DarkbetError::MarketAlreadySettled.into()),
+        MarketState::Cancelled => return Err(DarkbetError::MarketNotOpen.into()),
+    }
+
+    // Validate winning outcome index is within bounds
+    if params.winning_outcome as usize >= market.outcomes.len() {
+        return Err(DarkbetError::InvalidOutcome.into())
+    }
+
+    // Verify the oracle public key x-coordinate matches the market's oracle_id
+    // This ensures only the designated oracle can resolve this market
+    if params.oracle_pub.x() != market.oracle_id {
+        msg!("[darkbet::resolve_market] ERROR: Oracle ID mismatch");
+        return Err(DarkbetError::InvalidOracleSignature.into())
     }
 
     let current_block = wasm::util::get_verifying_block_height()? as u64;
 
-    // Validate winning outcome
-    if params.winning_outcome > 10 {
-        return Err(DarkbetError::InvalidOutcome.into())
+    // Create message for oracle signature verification
+    let signature_msg = serialize(&(
+        params.market_id,
+        params.winning_outcome,
+        current_block,
+    ));
+
+    // Verify oracle signature
+    if !params.oracle_pub.verify(&signature_msg, &params.oracle_signature) {
+        msg!("[darkbet::resolve_market] ERROR: Invalid oracle signature");
+        return Err(DarkbetError::InvalidOracleSignature.into())
     }
 
     let update = ResolveMarketUpdateV1 {
@@ -867,9 +1213,22 @@ fn darkbet_resolve_market_process_instruction_v1(
 
 fn darkbet_resolve_market_process_update_v1(
     cid: ContractId,
-    _update: ResolveMarketUpdateV1,
+    update: ResolveMarketUpdateV1,
 ) -> ContractResult {
-    let _markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
+    let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
+
+    // Get and update market
+    let mut market: Market = match wasm::db::db_get(markets_db, &serialize(&update.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
+    };
+
+    // FIX: Actually store the resolved state
+    market.state = MarketState::Resolved;
+    market.winning_outcome = Some(update.winning_outcome);
+    market.resolved_at = Some(update.resolved_at_block);
+
+    wasm::db::db_set(markets_db, &serialize(&update.market_id), &serialize(&market))?;
 
     msg!("[darkbet::resolve_market::update] Market state updated to Resolved");
 
@@ -881,7 +1240,7 @@ fn darkbet_resolve_market_process_update_v1(
 // ============================================================================
 
 fn darkbet_settle_market_process_instruction_v1(
-    _cid: ContractId,
+    cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -894,6 +1253,20 @@ fn darkbet_settle_market_process_instruction_v1(
         params.market_id
     );
 
+    // FIX: Verify market exists and is resolved
+    let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
+    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
+    };
+
+    // FIX: Market must be resolved before settling
+    if market.state != MarketState::Resolved {
+        return Err(DarkbetError::MarketNotResolved.into())
+    }
+
+    // TODO: Calculate actual payouts based on match_ids and winning_outcome
+    // For now, settle_count is passed through for future implementation
     let update = SettleMarketUpdateV1 {
         market_id: params.market_id,
         settled_count: params.match_ids.len() as u64,
@@ -907,12 +1280,29 @@ fn darkbet_settle_market_process_instruction_v1(
 
 fn darkbet_settle_market_process_update_v1(
     cid: ContractId,
-    _update: SettleMarketUpdateV1,
+    update: SettleMarketUpdateV1,
 ) -> ContractResult {
     let _matches_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MATCHES_TREE)?;
-    let _markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
+    let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
-    msg!("[darkbet::settle_market::update] Market settled");
+    // Get and update market
+    let mut market: Market = match wasm::db::db_get(markets_db, &serialize(&update.market_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(DarkbetError::MarketNotFound.into()),
+    };
+
+    // FIX: Actually store the settled state
+    market.state = MarketState::Settled;
+
+    wasm::db::db_set(markets_db, &serialize(&update.market_id), &serialize(&market))?;
+
+    // TODO: Process individual matches - for now just log
+    msg!(
+        "[darkbet::settle_market::update] Settled {} matches, total_payout: {}, total_commission: {}",
+        update.settled_count,
+        update.total_payout,
+        update.total_commission
+    );
 
     Ok(())
 }
@@ -947,6 +1337,21 @@ fn darkbet_cancel_order_process_instruction_v1(
     let order: Order = deserialize(&order_data)?;
     if order.state != OrderState::Open {
         return Err(DarkbetError::OrderAlreadyMatched.into())
+    }
+
+    // Verify the order belongs to the user making the cancellation request
+    if order.user_pub != params.user_pub {
+        return Err(DarkbetError::UnauthorizedCaller.into())
+    }
+
+    // Create message for signature verification
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let signature_msg = serialize(&(params.order_id, current_block));
+
+    // Verify signature from user
+    if !params.user_pub.verify(&signature_msg, &params.signature) {
+        msg!("[darkbet::cancel_order] ERROR: Invalid signature");
+        return Err(DarkbetError::InvalidSignature.into())
     }
 
     let update = CancelOrderUpdateV1 { order_id: params.order_id, refund_amount: order.stake };

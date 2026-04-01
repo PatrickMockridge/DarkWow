@@ -107,7 +107,7 @@ pub fn dice_house_close_process_update_v1(
     wasm::db::db_set(bets_db, &serialize(&update.bet_id), &serialize(&bet))?;
 
     // House collects the bet value
-    let house_take = bet.calculate_house_take();
+    let house_take = bet.calculate_house_take().ok_or(DiceError::ArithmeticOverflow)?;
     let mut house_balance: u64 = 0;
     if wasm::db::db_contains_key(house_db, b"balance")? {
         let balance_bytes = wasm::db::db_get(house_db, b"balance")?.unwrap();

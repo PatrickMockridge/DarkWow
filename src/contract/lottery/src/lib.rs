@@ -153,7 +153,7 @@ pub fn uk_lottery_config() -> model::LotteryConfig {
 }
 
 /// Pre-configured UK lottery (for convenience in tests)
-pub const UK_LOTTERY_CONFIG: (fn() -> model::LotteryConfig) = uk_lottery_config;
+pub const UK_LOTTERY_CONFIG: fn() -> model::LotteryConfig = uk_lottery_config;
 
 /// Simple neighborhood game: 3 numbers from 1-10
 pub fn neighborhood_config() -> model::LotteryConfig {
@@ -171,7 +171,7 @@ pub fn neighborhood_config() -> model::LotteryConfig {
 }
 
 /// Pre-configured neighborhood game (for convenience in tests)
-pub const NEIGHBORHOOD_CONFIG: (fn() -> model::LotteryConfig) = neighborhood_config;
+pub const NEIGHBORHOOD_CONFIG: fn() -> model::LotteryConfig = neighborhood_config;
 
 /// Superenalotto style: 6 numbers from 1-90
 pub fn simple_690_config() -> model::LotteryConfig {
@@ -190,7 +190,7 @@ pub fn simple_690_config() -> model::LotteryConfig {
 }
 
 /// Pre-configured Superenalotto-style (for convenience in tests)
-pub const SIMPLE_690_CONFIG: (fn() -> model::LotteryConfig) = simple_690_config;
+pub const SIMPLE_690_CONFIG: fn() -> model::LotteryConfig = simple_690_config;
 
 /// Powerball style: 5 numbers from 1-69 + Powerball (simplified as single range)
 pub fn powerball_config() -> model::LotteryConfig {
@@ -210,4 +210,4 @@ pub fn powerball_config() -> model::LotteryConfig {
 }
 
 /// Pre-configured Powerball-style (for convenience in tests)
-pub const POWERBALL_CONFIG: (fn() -> model::LotteryConfig) = powerball_config;
+pub const POWERBALL_CONFIG: fn() -> model::LotteryConfig = powerball_config;

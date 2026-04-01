@@ -21,7 +21,7 @@
 //! Data structures for configurable lottery games.
 
 use darkfi_sdk::{
-    crypto::{draw_unique_range, pasta_prelude::PrimeField, poseidon_hash, PublicKey},
+    crypto::{draw_unique_range, poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};

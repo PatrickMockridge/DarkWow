@@ -23,10 +23,8 @@ use darkfi_serial::{deserialize, serialize};
 
 use crate::error::LotteryError;
 use crate::model::{derive_lottery_id, InitializeParamsV1, InitializeUpdateV1, Lottery, LotteryState};
-use crate::LOTTERY_CONTRACT_CLAIMS_TREE;
 use crate::LOTTERY_CONTRACT_CURRENT_LOTTERY;
 use crate::LOTTERY_CONTRACT_LOTTERIES_TREE;
-use crate::LOTTERY_CONTRACT_TICKETS_TREE;
 
 /// Process instruction for InitializeV1
 pub fn lottery_initialize_process_instruction_v1(

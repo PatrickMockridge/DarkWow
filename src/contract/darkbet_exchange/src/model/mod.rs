@@ -22,7 +22,7 @@
 //! order-book matching (back/lay) and AMM pool modes.
 
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{poseidon_hash, schnorr::Signature, PublicKey},
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
@@ -325,11 +325,11 @@ impl Market {
     pub fn calculate_lp_shares(
         &self,
         amount: u64,
-    ) -> u64 {
+    ) -> Option<u64> {
         if self.total_lp_shares == 0 {
-            amount // First LP gets 1:1 shares
+            Some(amount) // First LP gets 1:1 shares
         } else {
-            (amount * self.total_lp_shares) / self.total_pool
+            amount.checked_mul(self.total_lp_shares)?.checked_div(self.total_pool)
         }
     }
 
@@ -337,11 +337,11 @@ impl Market {
     pub fn calculate_liquidity_payout(
         &self,
         shares: u64,
-    ) -> u64 {
+    ) -> Option<u64> {
         if self.total_lp_shares == 0 {
-            0
+            Some(0)
         } else {
-            (shares * self.total_pool) / self.total_lp_shares
+            shares.checked_mul(self.total_pool)?.checked_div(self.total_lp_shares)
         }
     }
 }
@@ -671,15 +671,24 @@ pub struct CreateMarketParamsV1 {
     pub lp_fee: u32,
     /// Market duration in blocks
     pub duration_blocks: u64,
-    /// Signature from creator
-    pub signature: pallas::Base,
+    /// Creator public key
+    pub creator_pub: PublicKey,
+    /// Signature from creator over market params
+    pub signature: Signature,
 }
 
 /// Update from CreateMarketV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CreateMarketUpdateV1 {
     pub market_id: pallas::Base,
+    pub creator: PublicKey,
+    pub description: String,
+    pub outcomes: Vec<String>,
+    pub oracle_id: pallas::Base,
+    pub commission_bp: u32,
     pub market_type: MarketType,
+    pub protocol_fee: u32,
+    pub lp_fee: u32,
     pub close_block: u64,
 }
 
@@ -698,8 +707,10 @@ pub struct PlaceBackParamsV1 {
     pub odds: u32,
     /// Amount to stake
     pub stake: u64,
-    /// Signature from user
-    pub signature: pallas::Base,
+    /// User public key
+    pub user_pub: PublicKey,
+    /// Signature over the bet commitment
+    pub signature: Signature,
 }
 
 /// Update from PlaceBackV1
@@ -710,6 +721,7 @@ pub struct PlaceBackUpdateV1 {
     pub outcome_index: u8,
     pub odds: u32,
     pub stake: u64,
+    pub user_pub: PublicKey,
     pub nullifier: pallas::Base,
 }
 
@@ -724,8 +736,10 @@ pub struct PlaceLayParamsV1 {
     pub odds: u32,
     /// Amount to stake
     pub stake: u64,
-    /// Signature from user
-    pub signature: pallas::Base,
+    /// User public key
+    pub user_pub: PublicKey,
+    /// Signature over the bet commitment
+    pub signature: Signature,
 }
 
 /// Update from PlaceLayV1
@@ -737,6 +751,7 @@ pub struct PlaceLayUpdateV1 {
     pub odds: u32,
     pub stake: u64,
     pub liability: u64,
+    pub user_pub: PublicKey,
     pub nullifier: pallas::Base,
 }
 
@@ -751,8 +766,10 @@ pub struct MatchOrdersParamsV1 {
     pub lay_order_id: pallas::Base,
     /// Execution odds
     pub odds: u32,
-    /// Signature from matcher (could be either user or protocol)
-    pub signature: pallas::Base,
+    /// User public key (the matcher)
+    pub user_pub: PublicKey,
+    /// Signature from matcher
+    pub signature: Signature,
 }
 
 /// Update from MatchOrdersV1
@@ -788,7 +805,7 @@ pub struct BuyPositionParamsV1 {
     /// Value commitment for the bet amount
     pub value_commit: pallas::Point,
     /// Signature over the bet commitment
-    pub signature: pallas::Base,
+    pub signature: Signature,
 }
 
 /// Update from BuyPositionV1
@@ -814,8 +831,8 @@ pub struct AddLiquidityParamsV1 {
     pub provider: PublicKey,
     /// Value commitment
     pub value_commit: pallas::Point,
-    /// Signature
-    pub signature: pallas::Base,
+    /// Signature over liquidity commitment
+    pub signature: Signature,
 }
 
 /// Update from AddLiquidityV1
@@ -824,6 +841,7 @@ pub struct AddLiquidityUpdateV1 {
     pub lp_share_id: pallas::Base,
     pub market_id: pallas::Base,
     pub provider: PublicKey,
+    pub amount: u64,
     pub shares_minted: u64,
     pub fees_earned: u64,
     pub created_at: u64,
@@ -838,8 +856,8 @@ pub struct RemoveLiquidityParamsV1 {
     pub lp_share_id: pallas::Base,
     /// Provider public key (access control)
     pub provider: PublicKey,
-    /// Signature
-    pub signature: pallas::Base,
+    /// Signature over removal request
+    pub signature: Signature,
 }
 
 /// Update from RemoveLiquidityV1
@@ -885,8 +903,10 @@ pub struct ResolveMarketParamsV1 {
     pub market_id: pallas::Base,
     /// Winning outcome index
     pub winning_outcome: u8,
+    /// Oracle public key
+    pub oracle_pub: PublicKey,
     /// Oracle signature verifying the result
-    pub oracle_signature: pallas::Base,
+    pub oracle_signature: Signature,
 }
 
 /// Update from ResolveMarketV1
@@ -920,8 +940,10 @@ pub struct SettleMarketUpdateV1 {
 pub struct CancelOrderParamsV1 {
     /// Order to cancel
     pub order_id: pallas::Base,
+    /// User public key
+    pub user_pub: PublicKey,
     /// Signature from user
-    pub signature: pallas::Base,
+    pub signature: Signature,
 }
 
 /// Update from CancelOrderV1

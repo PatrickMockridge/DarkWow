@@ -20,7 +20,7 @@
 
 use darkfi_sdk::{
     crypto::{
-        combine_block_hashes, draw_with_depth, pasta_prelude::PrimeField, poseidon_hash,
+        combine_block_hashes, mix_entropy, pasta_prelude::PrimeField, poseidon_hash,
         tx_hash_to_base, PublicKey,
     },
     pasta::pallas,
@@ -92,19 +92,21 @@ impl Bet {
     /// Formula: bet_value * (10000 - house_edge) / (target * 100)
     /// Example: bet=100, target=50, house_edge=200bp (2%)
     ///   payout = 100 * 9800 / 5000 = 196
-    pub fn calculate_payout(&self) -> u64 {
-        (self.bet_value * (10000 - self.house_edge as u64)) / (self.target as u64 * 100)
+    pub fn calculate_payout(&self) -> Option<u64> {
+        let multiplier = 10000u64.checked_sub(self.house_edge as u64)?;
+        let product = self.bet_value.checked_mul(multiplier)?;
+        product.checked_div(self.target as u64 * 100)
     }
 
     /// Calculate house's take when house wins.
     /// House takes: bet_value - base_win + (base_win * house_edge / 10000)
     /// where base_win = bet_value * 100 / target
     /// This simplifies to: bet_value * (target + house_edge - 100) / target
-    pub fn calculate_house_take(&self) -> u64 {
-        let base_win = (self.bet_value * 100) / self.target as u64;
-        // House takes the difference between bet and base win, plus house edge cut of base win
+    pub fn calculate_house_take(&self) -> Option<u64> {
+        let base_win = self.bet_value.checked_mul(100)?.checked_div(self.target as u64)?;
         let profit = self.bet_value.saturating_sub(base_win);
-        profit + (base_win * self.house_edge as u64 / 10000)
+        let house_cut = base_win.checked_mul(self.house_edge as u64)?.checked_div(10000)?;
+        profit.checked_add(house_cut)
     }
 }
 

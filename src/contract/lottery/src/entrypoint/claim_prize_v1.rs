@@ -69,7 +69,7 @@ pub fn lottery_claim_prize_process_instruction_v1(
     }
 
     // Get winning numbers
-    let winning_numbers = lottery.winning_numbers.as_ref().ok_or(LotteryError::LotteryNotFound)?;
+    let _winning_numbers = lottery.winning_numbers.as_ref().ok_or(LotteryError::LotteryNotFound)?;
 
     // Count matches - we need to recalculate since reveal info isn't stored
     // In a full implementation, we'd store reveal info or include it in params

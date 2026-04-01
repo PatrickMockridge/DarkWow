@@ -71,6 +71,9 @@ pub enum BettingStakeError {
 
     #[error("Internal error: {0}")]
     InternalError(String),
+
+    #[error("Arithmetic overflow in calculation")]
+    ArithmeticOverflow,
 }
 
 impl From<BettingStakeError> for ContractError {
@@ -92,6 +95,7 @@ impl From<BettingStakeError> for ContractError {
             BettingStakeError::ValueMismatch => Self::Custom(14),
             BettingStakeError::DatabaseError(_) => Self::Custom(15),
             BettingStakeError::InternalError(_) => Self::Custom(16),
+            BettingStakeError::ArithmeticOverflow => Self::Custom(17),
         }
     }
 }

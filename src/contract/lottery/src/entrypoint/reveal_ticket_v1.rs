@@ -99,7 +99,7 @@ pub fn lottery_reveal_ticket_process_instruction_v1(
 
 /// Process update for RevealTicketV1
 pub fn lottery_reveal_ticket_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    _cid: darkfi_sdk::crypto::ContractId,
     update: RevealTicketUpdateV1,
 ) -> Result<(), ContractError> {
     // The reveal just verifies the ticket and calculates matches.

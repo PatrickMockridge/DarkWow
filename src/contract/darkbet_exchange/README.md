@@ -174,6 +174,5 @@ cargo test -p darkfi_darkbet_exchange_contract --lib
 ## See Also
 
 - [DarkBet Architecture](../../doc/src/arch/darkbet_exchange.md)
-- [Betfair Exchange Concept](../../doc/src/arch/bet_exchange.md)
 - [BettingStake Contract](../../doc/src/arch/betting_stake.md)
 - [Oracle Contract](../../doc/src/arch/oracle.md)
