@@ -52,6 +52,7 @@ members = [
     "src/contract/betting_stake",
     "src/contract/roulette",
     "src/contract/darkbet_exchange",
+    "src/contract/slot",
 
     "src/contract_plain/subscription",
     "src/contract_plain/labor_market",

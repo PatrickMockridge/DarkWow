@@ -1,0 +1,530 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Slot Contract Entrypoint
+//!
+//! A composable slot machine contract with modular design.
+//!
+//! Flow:
+//! 1. Player commits to a spin via Slot::CommitSpinV1 (locks bet value)
+//! 2. Block entropy reveals random positions via Slot::RevealSpinV1
+//! 3. Payout calculated and winner determined via Slot::SettleSpinV1
+//! 4. House can close abandoned spins via Slot::CancelSpinV1
+//!
+//! Modular Design:
+//! - Paytables define winning combinations (swappable per game)
+//! - Reel strips define symbol layouts (configurable)
+//! - Extension traits for bonus rounds (future work)
+
+use darkfi_sdk::{
+    crypto::{poseidon_hash, pasta_prelude::PrimeField, ContractId},
+    dark_tree::DarkLeaf,
+    error::GenericResult,
+    msg, wasm,
+    ContractCall,
+};
+use darkfi_sdk::pasta::pallas::Base;
+use darkfi_serial::{deserialize, serialize, Encodable};
+
+use crate::error::SlotError;
+use crate::model::{
+    classic_paytable, video_paytable, CommitSpinParamsV1, CommitSpinUpdateV1, GameConfig,
+    Paytable, ReelStrip, Spin, SpinId, SpinState,
+};
+use crate::SlotFunction;
+
+// Database trees
+const SPINS_TREE: &str = "spins";
+const CONFIG_TREE: &str = "config";
+const HOUSE_TREE: &str = "house";
+
+darkfi_sdk::define_contract!(
+    init: init_contract,
+    exec: process_instruction,
+    apply: process_update,
+    metadata: get_metadata
+);
+
+/// Initialize the contract
+fn init_contract(cid: ContractId, _ix: &[u8]) -> GenericResult<()> {
+    wasm::db::db_init(cid, SPINS_TREE)?;
+    wasm::db::db_init(cid, CONFIG_TREE)?;
+    wasm::db::db_init(cid, HOUSE_TREE)?;
+    Ok(())
+}
+
+/// Get metadata for verification
+fn get_metadata(_cid: ContractId, _ix: &[u8]) -> GenericResult<()> {
+    Ok(())
+}
+
+/// Process instruction
+fn process_instruction(cid: ContractId, ix: &[u8]) -> GenericResult<()> {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = SlotFunction::try_from(self_.data[0])?;
+
+    let update_data = match func {
+        SlotFunction::InitializeV1 => {
+            initialize_process_instruction_v1(cid, call_idx, calls)?
+        }
+        SlotFunction::CommitSpinV1 => commit_spin_process_instruction_v1(cid, call_idx, calls)?,
+        SlotFunction::RevealSpinV1 => reveal_spin_process_instruction_v1(cid, call_idx, calls)?,
+        SlotFunction::SettleSpinV1 => settle_spin_process_instruction_v1(cid, call_idx, calls)?,
+        SlotFunction::CancelSpinV1 => cancel_spin_process_instruction_v1(cid, call_idx, calls)?,
+    };
+
+    wasm::util::set_return_data(&update_data)
+}
+
+/// Process update
+fn process_update(cid: ContractId, update_data: &[u8]) -> GenericResult<()> {
+    match SlotFunction::try_from(update_data[0])? {
+        SlotFunction::InitializeV1 => {
+            // No state update needed for initialize
+            Ok(())
+        }
+        SlotFunction::CommitSpinV1 => {
+            let update: CommitSpinUpdateV1 = deserialize(&update_data[1..])?;
+            commit_spin_process_update_v1(cid, update)
+        }
+        SlotFunction::RevealSpinV1 => {
+            let update: crate::model::RevealSpinUpdateV1 = deserialize(&update_data[1..])?;
+            reveal_spin_process_update_v1(cid, update)
+        }
+        SlotFunction::SettleSpinV1 => {
+            let update: crate::model::SettleSpinUpdateV1 = deserialize(&update_data[1..])?;
+            settle_spin_process_update_v1(cid, update)
+        }
+        SlotFunction::CancelSpinV1 => {
+            let update: crate::model::CancelSpinUpdateV1 = deserialize(&update_data[1..])?;
+            cancel_spin_process_update_v1(cid, update)
+        }
+    }
+}
+
+// =============================================================================
+// INITIALIZE (Set up game configuration)
+// =============================================================================
+
+fn initialize_process_instruction_v1(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> GenericResult<Vec<u8>> {
+    let self_ = &calls[call_idx].data;
+    // Initialize takes no params, just sets up config
+    // In a full implementation, this would include game type selection
+
+    msg!("[slot::initialize] Initializing slot contract");
+
+    // For now, default to video slot (5 reels, 3 rows, 9 paylines)
+    // This could be extended to support multiple game types
+    let config = GameConfig {
+        reel_count: 5,
+        row_count: 3,
+        reels: video_paytable::default_reels(),
+        paylines: create_3x5_paylines(),
+        house_edge: 500, // 5% house edge
+    };
+
+    // Store config
+    let config_db = wasm::db::db_lookup(cid, CONFIG_TREE)?;
+    wasm::db::db_set(config_db, b"config", &serialize(&config))?;
+
+    msg!("[slot::initialize] Slot contract initialized with video slot config");
+    Ok(vec![])
+}
+
+// =============================================================================
+// COMMIT SPIN
+// =============================================================================
+
+fn commit_spin_process_instruction_v1(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> GenericResult<Vec<u8>> {
+    let self_ = &calls[call_idx].data;
+    let params: CommitSpinParamsV1 = deserialize(&self_.data[1..])?;
+
+    msg!(
+        "[slot::commit_spin] Committing spin for player {:?}, bet: {}",
+        params.player_pub,
+        params.bet_value
+    );
+
+    // Validate bet value
+    if params.bet_value == 0 {
+        return Err(SlotError::InvalidBetValue.into())
+    }
+
+    // Get config to validate paylines
+    let config_db = wasm::db::db_lookup(cid, CONFIG_TREE)?;
+    let config_data = wasm::db::db_get(config_db, b"config")?;
+    let config: GameConfig = match config_data {
+        Some(data) => deserialize(&data)?,
+        None => {
+            // Auto-initialize if not set
+            return Err(SlotError::HouseNotInitialized.into())
+        }
+    };
+
+    // Validate paylines
+    if params.paylines_played == 0 ||
+        params.paylines_played > config.paylines.len() as u32
+    {
+        return Err(SlotError::InvalidPayline.into())
+    }
+
+    // Derive spin ID
+    let spin_id = crate::model::derive_spin_id(
+        &params.player_pub,
+        params.bet_value,
+        params.paylines_played,
+        params.secret_nonce,
+        params.blind,
+        params.token_id,
+    );
+
+    // Check spin doesn't already exist
+    let spins_db = wasm::db::db_lookup(cid, SPINS_TREE)?;
+    if wasm::db::db_contains_key(spins_db, &serialize(&spin_id))? {
+        return Err(SlotError::SpinAlreadyExists.into())
+    }
+
+    // Calculate settle block
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let settle_block = current_block + params.confirmation_depth as u64 + 1;
+
+    let update = CommitSpinUpdateV1 {
+        spin_id,
+        player_pub: params.player_pub,
+        bet_value: params.bet_value,
+        paylines_played: params.paylines_played,
+        secret_nonce: params.secret_nonce,
+        blind: params.blind,
+        house_edge: params.house_edge,
+        confirmation_depth: params.confirmation_depth,
+        token_id: params.token_id,
+        value_commit: params.value_commit,
+        settle_block,
+        nullifier: spin_id, // Initially same as ID
+        state: SpinState::Committed,
+        created_at: current_block,
+    };
+
+    msg!(
+        "[slot::commit_spin] Spin {:?} committed, settle at block {}",
+        spin_id,
+        settle_block
+    );
+    Ok(serialize(&update))
+}
+
+fn commit_spin_process_update_v1(cid: ContractId, update: CommitSpinUpdateV1) -> GenericResult<()> {
+    let db = wasm::db::db_lookup(cid, SPINS_TREE)?;
+
+    let spin = Spin {
+        id: update.spin_id,
+        player_pub: update.player_pub,
+        bet_value: update.bet_value,
+        paylines_played: update.paylines_played,
+        secret_nonce: update.secret_nonce,
+        blind: update.blind,
+        result: None,
+        wins: vec![],
+        payout: 0,
+        state: update.state,
+        house_edge: update.house_edge,
+        confirmation_depth: update.confirmation_depth,
+        created_at: update.created_at,
+        settle_block: update.settle_block,
+        value_commit: update.value_commit,
+        token_id: update.token_id,
+        nullifier: update.nullifier,
+    };
+
+    wasm::db::db_set(db, &serialize(&update.spin_id), &serialize(&spin))?;
+    msg!("[slot::commit_spin::update] Spin stored");
+
+    Ok(())
+}
+
+// =============================================================================
+// REVEAL SPIN (Determine random positions)
+// =============================================================================
+
+fn reveal_spin_process_instruction_v1(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> GenericResult<Vec<u8>> {
+    let self_ = &calls[call_idx].data;
+    let params: crate::model::RevealSpinParamsV1 = deserialize(&self_.data[1..])?;
+
+    msg!("[slot::reveal_spin] Revealing spin {:?}", params.spin_id);
+
+    // Look up spin
+    let spins_db = wasm::db::db_lookup(cid, SPINS_TREE)?;
+    let mut spin: Spin = match wasm::db::db_get(spins_db, &serialize(&params.spin_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(SlotError::SpinNotFound.into()),
+    };
+
+    // Check spin is in correct state
+    if spin.state != SpinState::Committed {
+        return Err(SlotError::InvalidSpinState.into())
+    }
+
+    // Verify secret nonce matches
+    if spin.secret_nonce != params.secret_nonce {
+        return Err(SlotError::InvalidSignature.into())
+    }
+
+    // Get config for reel count
+    let config_db = wasm::db::db_lookup(cid, CONFIG_TREE)?;
+    let config_data = wasm::db::db_get(config_db, b"config")?;
+    let config: GameConfig = match config_data {
+        Some(data) => deserialize(&data)?,
+        None => return Err(SlotError::HouseNotInitialized.into()),
+    };
+
+    // Get block hashes for entropy (simplified - would use actual block hashes in production)
+    // OPCODE PLACEHOLDER: When block hash access is available, use actual hashes
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+
+    // For now, derive positions from block hash + spin ID + nonce
+    let positions = derive_positions_from_entropy(
+        current_block,
+        spin.id,
+        spin.secret_nonce,
+        config.reel_count,
+    );
+
+    // Store result
+    spin.result = Some(crate::model::SpinResult::new(positions.clone()));
+    spin.state = SpinState::Revealed;
+
+    let update = crate::model::RevealSpinUpdateV1 {
+        spin_id: spin.id,
+        positions,
+        state: spin.state,
+    };
+
+    wasm::db::db_set(spins_db, &serialize(&spin.id), &serialize(&spin))?;
+    msg!("[slot::reveal_spin] Spin {:?} revealed", spin.id);
+    Ok(serialize(&update))
+}
+
+fn reveal_spin_process_update_v1(
+    cid: ContractId,
+    update: crate::model::RevealSpinUpdateV1,
+) -> GenericResult<()> {
+    // State already updated in process_instruction
+    msg!("[slot::reveal_spin::update] Reveal confirmed for spin {:?}", update.spin_id);
+    Ok(())
+}
+
+// =============================================================================
+// SETTLE SPIN (Calculate payouts)
+// =============================================================================
+
+fn settle_spin_process_instruction_v1(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> GenericResult<Vec<u8>> {
+    let self_ = &calls[call_idx].data;
+    let params: crate::model::SettleSpinParamsV1 = deserialize(&self_.data[1..])?;
+
+    msg!("[slot::settle_spin] Settling spin {:?}", params.spin_id);
+
+    // Look up spin
+    let spins_db = wasm::db::db_lookup(cid, SPINS_TREE)?;
+    let mut spin: Spin = match wasm::db::db_get(spins_db, &serialize(&params.spin_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(SlotError::SpinNotFound.into()),
+    };
+
+    // Check spin is in correct state
+    if spin.state != SpinState::Revealed {
+        return Err(SlotError::InvalidSpinState.into())
+    }
+
+    // Get config
+    let config_db = wasm::db::db_lookup(cid, CONFIG_TREE)?;
+    let config_data = wasm::db::db_get(config_db, b"config")?;
+    let config: GameConfig = match config_data {
+        Some(data) => deserialize(&data)?,
+        None => return Err(SlotError::HouseNotInitialized.into()),
+    };
+
+    // Get paytable (could be selected based on game type)
+    let paytable = video_paytable::create();
+
+    // Calculate wins
+    let result = spin.result.as_ref().ok_or(SlotError::InvalidSpinState)?;
+    let active_paylines: Vec<_> = config.paylines.iter().take(spin.paylines_played as usize).cloned().collect();
+    let wins = crate::model::calculate_wins(result, &config.reels, &active_paylines, &paytable);
+
+    // Calculate payout
+    let payout = crate::model::calculate_payout(spin.bet_value, &wins, spin.house_edge);
+
+    // Update spin
+    spin.wins = wins.clone();
+    spin.payout = payout;
+    spin.state = SpinState::Settled;
+
+    let update = crate::model::SettleSpinUpdateV1 {
+        spin_id: spin.id,
+        wins,
+        payout,
+        state: spin.state,
+    };
+
+    wasm::db::db_set(spins_db, &serialize(&spin.id), &serialize(&spin))?;
+    msg!(
+        "[slot::settle_spin] Spin {:?} settled, payout: {}",
+        spin.id,
+        payout
+    );
+    Ok(serialize(&update))
+}
+
+fn settle_spin_process_update_v1(
+    cid: ContractId,
+    update: crate::model::SettleSpinUpdateV1,
+) -> GenericResult<()> {
+    msg!(
+        "[slot::settle_spin::update] Settlement confirmed for spin {:?}, payout: {}",
+        update.spin_id,
+        update.payout
+    );
+    Ok(())
+}
+
+// =============================================================================
+// CANCEL SPIN (Timeout/abandoned)
+// =============================================================================
+
+fn cancel_spin_process_instruction_v1(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> GenericResult<Vec<u8>> {
+    let self_ = &calls[call_idx].data;
+    let params: crate::model::CancelSpinParamsV1 = deserialize(&self_.data[1..])?;
+
+    msg!("[slot::cancel_spin] Cancelling spin {:?}", params.spin_id);
+
+    // Look up spin
+    let spins_db = wasm::db::db_lookup(cid, SPINS_TREE)?;
+    let mut spin: Spin = match wasm::db::db_get(spins_db, &serialize(&params.spin_id))? {
+        Some(data) => deserialize(&data)?,
+        None => return Err(SlotError::SpinNotFound.into()),
+    };
+
+    // Check spin is still committed or revealed (not already settled)
+    if spin.state == SpinState::Settled || spin.state == SpinState::Cancelled {
+        return Err(SlotError::InvalidSpinState.into())
+    }
+
+    // Check timeout (current block past settle_block)
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    if current_block < spin.settle_block {
+        return Err(SlotError::InvalidSpinState.into())
+    }
+
+    // Calculate house take
+    let house_take = crate::model::calculate_house_take(spin.bet_value, spin.house_edge);
+
+    // Update spin
+    spin.state = SpinState::Cancelled;
+
+    let update = crate::model::CancelSpinUpdateV1 {
+        spin_id: spin.id,
+        house_take,
+        state: spin.state,
+    };
+
+    wasm::db::db_set(spins_db, &serialize(&spin.id), &serialize(&spin))?;
+    msg!("[slot::cancel_spin] Spin {:?} cancelled, house takes: {}", spin.id, house_take);
+    Ok(serialize(&update))
+}
+
+fn cancel_spin_process_update_v1(
+    cid: ContractId,
+    update: crate::model::CancelSpinUpdateV1,
+) -> GenericResult<()> {
+    msg!(
+        "[slot::cancel_spin::update] Cancellation confirmed for spin {:?}",
+        update.spin_id
+    );
+    Ok(())
+}
+
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+/// Create standard paylines for a 3x5 slot display
+fn create_3x5_paylines() -> Vec<crate::model::Payline> {
+    vec![
+        // Horizontal lines (top, middle, bottom)
+        crate::model::Payline::horizontal_top(5),
+        crate::model::Payline::horizontal_middle(5),
+        crate::model::Payline::horizontal_bottom(5),
+        // V shapes
+        crate::model::Payline::new(3, vec![0, 1, 2, 1, 0]),
+        crate::model::Payline::new(4, vec![2, 1, 0, 1, 2]),
+        // More complex patterns could be added
+    ]
+}
+
+/// Derive reel positions from entropy
+/// Simplified version - uses block height as entropy source
+fn derive_positions_from_entropy(
+    block_height: u64,
+    spin_id: SpinId,
+    secret_nonce: Base,
+    num_reels: usize,
+) -> Vec<u64> {
+    let mut positions = Vec::with_capacity(num_reels);
+
+    for i in 0..num_reels {
+        // Create entropy for this reel
+        let entropy = poseidon_hash([
+            spin_id,
+            secret_nonce,
+            Base::from(block_height),
+            Base::from(i as u64),
+        ]);
+
+        // Derive position from entropy
+        let bytes = entropy.to_repr();
+        let seed = u64::from_le_bytes(bytes[0..8].try_into().unwrap_or_default());
+
+        // Use seed to generate position (mod 100 for classic slot strip length)
+        let position = seed % 100;
+        positions.push(position);
+    }
+
+    positions
+}
