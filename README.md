@@ -1,4 +1,4 @@
-# DarkFi - Anonymous, Uncensored, Sovereign
+# Uncensored DarkFi Fork - Math and Code, Not Memes and Slogans
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/darkrenaissance/darkfi/ci.yml?branch=master&style=flat-square)
 [![Web - dark.fi](https://img.shields.io/badge/Web-dark.fi-white?logo=firefox&logoColor=white&style=flat-square)](https://dark.fi)
