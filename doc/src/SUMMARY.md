@@ -74,6 +74,7 @@
   - [Lottery Contract](arch/lottery.md)
   - [Betting Stake Contract](arch/betting_stake.md)
   - [Roulette Contract](arch/roulette.md)
+  - [Slot Contract](arch/slot.md)
   - [DarkBet Exchange Contract](arch/darkbet_exchange.md)
   - [Private Authorization Layer](arch/privauth.md)
   - [Composability](arch/composability.md)

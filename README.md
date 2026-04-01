@@ -20,7 +20,7 @@ This fork develops DarkFi contracts in **two parallel workstreams**:
 ### Workstream 1: ZK Contracts (Current Opcodes)
 ZK contracts using the existing opcode set. Maximum privacy, constrained by circuit limitations.
 
-**New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap, Labor Market, Auction, Tender, Attestation, Oracle, Baccarat, Roulette, Lottery, BettingStake, DarkBet Exchange, Insurance Market, Block Height Prediction
+**New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap, Labor Market, Auction, Tender, Attestation, Oracle, Baccarat, Roulette, Slot, Lottery, BettingStake, DarkBet Exchange, Insurance Market, Block Height Prediction
 
 - **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
 - **Identity refactor**: Level 0 (zk_only) with safemath assertion gadgets
@@ -50,7 +50,7 @@ When `base_div`, `less_than_or_equal` (sound), and other missing opcodes are ava
 
 - **DarkBet Exchange**: Unified betting contract with order-book (back/lay) and AMM pool modes
 - **Lottery**: Configurable lottery bridging BettingStake and Insurance problem spaces
-- **Baccarat/Roulette**: Privacy-preserving casino games using cumulative PoW entropy for card dealing
+- **Baccarat/Roulette/Slot**: Privacy-preserving casino games using cumulative PoW entropy. Slot uses same composability pattern as Baccarat (Commit → Reveal → Settle) with swappable paytables and reel configurations.
 - **Entro module**: Shared `darkfi_sdk::crypto::entropy` for provable randomness across contracts
 
 **Security Status**: All new contracts are EXPERIMENTAL and UNAUDITED. Known security issues are documented in [Security Analysis](doc/src/arch/security-analysis.md). The official DarkFi repository should be consulted for the canonical, production-ready state.

@@ -33,6 +33,7 @@ ZK contracts using the existing opcode set. These prioritize **maximum privacy**
 | **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
 | **oracle** | Push-model oracle with attestation integration | ✅ Complete |
 | **roulette** | Privacy-preserving roulette casino game | ✅ Complete |
+| **slot** | Composable slot machine with modular paytables | ✅ Complete |
 | **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
 | **stablecoin** | Synthetix-style pooled debt with safemath | ✅ Uses safemath |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete |
@@ -55,7 +56,7 @@ Plain WASM contracts planning for the full opcode suite. These use **partial tra
 
 - **DarkBet Exchange**: Unified betting contract with order-book (back/lay) and AMM pool modes. Replaces prediction_market.
 - **DrainProtection**: 8 optional best practices (graduated tiers, exit queue, circuit breaker, guardian pause, observation period, split proposals, no-loss reserve, dead man's switch). All features configurable by contract deployer and controllable by DAO members via governance.
-- **Baccarat/Roulette**: Privacy-preserving casino games using cumulative PoW block hash entropy for dealing
+- **Baccarat/Roulette/Slot**: Privacy-preserving casino games using cumulative PoW block hash entropy for dealing. Slot uses same composability pattern as Baccarat (Commit → Reveal → Settle) with swappable paytables and reel configurations.
 - **Lottery**: Configurable lottery bridging BettingStake and Insurance market problem spaces
 - **Insurance Market**: Decentralized insurance marketplace with risk markets ecosystem
 - **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
