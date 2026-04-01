@@ -173,6 +173,34 @@ let claim_id = attestation::create_claim(
 - `claims`: Claim structs keyed by ID
 - `nullifiers`: Spent claims to prevent replay
 - `attestation_index`: Index by attestor for lookup
+- `claim_rate_limits`: Rate limiting tracking per claimant per attestation
+
+## Security Features
+
+### 1. Predicate Validation
+Claims must use a predicate compatible with the attestation's claim_type:
+- `Matches` predicate can only be used with `Matches` attestations
+- `GreaterOrEqual` predicate can only be used with `GreaterOrEqual` attestations
+- `LessOrEqual` predicate can only be used with `LessOrEqual` attestations
+- `Custom` predicate is always allowed (ZK-verified separately)
+
+### 2. Claim Rate Limiting
+To prevent griefing, claimants are limited in how frequently they can create claims against the same attestation:
+- Minimum 1 block between claims from the same claimant for the same attestation
+- Tracked via `claim_rate_limits` tree
+
+### 3. Atomic State Verification
+`ConsumeClaimV1` performs atomic state verification:
+- Reads attestation and claim state upfront before any modifications
+- Validates claim's `attestation_id` matches provided `attestation_id`
+- Verifies attestation is still `Active` before allowing claim consumption
+- Prevents TOCTOU (time-of-check-time-of-use) vulnerabilities
+
+### 4. Arithmetic Predicate Safety
+For `GreaterOrEqual` and `LessOrEqual` predicates:
+- On-chain `validate_claim_v1` uses u64 conversion with explicit range checks
+- Production ZK circuits should use safemath assertion gadgets (`assert_lte_u64_v1.zk`)
+- Field comparisons don't have integer semantics; proper comparison requires circuit constraints
 
 ## Benefits
 

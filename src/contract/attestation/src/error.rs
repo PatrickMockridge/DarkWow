@@ -80,6 +80,15 @@ pub enum AttestationError {
     #[error("Invalid zk proof")]
     InvalidProof,
 
+    #[error("Predicate not allowed for this attestation type")]
+    PredicateNotAllowed,
+
+    #[error("Claim rate limit exceeded")]
+    ClaimRateLimitExceeded,
+
+    #[error("Invalid predicate ID")]
+    InvalidPredicateId,
+
     #[error("Sled database error: {0}")]
     SledError(String),
 }

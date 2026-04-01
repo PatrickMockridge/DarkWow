@@ -71,6 +71,7 @@ pub const ATTESTATION_CONTRACT_ATTESTATIONS_TREE: &str = "attestations";
 pub const ATTESTATION_CONTRACT_CLAIMS_TREE: &str = "claims";
 pub const ATTESTATION_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 pub const ATTESTATION_CONTRACT_INDEX_TREE: &str = "attestation_index";
+pub const ATTESTATION_CONTRACT_RATE_LIMIT_TREE: &str = "claim_rate_limits";
 
 // These are keys inside the info tree
 pub const ATTESTATION_CONTRACT_DB_VERSION: &[u8] = b"db_version";

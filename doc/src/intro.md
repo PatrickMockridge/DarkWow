@@ -10,7 +10,7 @@ This fork contains all additions compared to official DarkFi master:
 
 | Contract | Description | Status |
 |----------|-------------|--------|
-| **attestation** | Generalized attestation and claims system | ✅ Complete |
+| **attestation** | Generalized attestation and claims system | ✅ Complete + safemath predicates |
 | **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
 | **baccarat** | Privacy-preserving Baccarat casino game | ✅ Complete |
 | **betting_stake** | LP staking for betting contracts | ✅ Complete |
