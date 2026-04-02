@@ -20,7 +20,7 @@ ZK contracts using the existing opcode set. These prioritize **maximum privacy**
 | **betting_stake** | LP staking for betting contracts | ✅ Complete |
 | **block_height_prediction** | PoW-backed block height betting | ✅ Complete |
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
-| **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
+| **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) + optional DrainProtection | ✅ Complete |
 | **darkbet_exchange** | Unified betting exchange (order-book + AMM) | ✅ Complete |
 | **darktoshi_dice** | Privacy-preserving Satoshi Dice clone | ✅ Complete |
 | **dex** | Atomic swap DAO with incremental transparency | ✅ Complete |

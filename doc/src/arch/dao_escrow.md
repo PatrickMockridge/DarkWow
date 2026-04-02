@@ -160,6 +160,7 @@ When members pay premiums:
 | `WithdrawV1` | `0x03` | Withdraw from treasury |
 | `EndowmentWithdrawV1` | `0x04` | Withdraw from endowment (insurance) |
 | `TreasurySpendV1` | `0x05` | Treasury spending (standard governance) |
+| `EnableDrainProtectionV1` | `0x06` | Enable DrainProtection on existing DAO-Escrow |
 
 ## Trust Model
 
@@ -169,6 +170,90 @@ When members pay premiums:
 | Endowment | Cannot be used for treasury items, only insurance |
 | Membership notes | Block-based expiry enforced in circuit |
 | Double-spend | Nullifiers prevent redemption twice |
+| Mass exit / drain | Optional DrainProtection with rate limiting and exit queue |
+
+## Trust Model
+
+| Aspect | How It's Protected |
+|--------|-------------------|
+| Treasury funds | DAO governance (propose/vote/exec) |
+| Endowment | Cannot be used for treasury items, only insurance |
+| Membership notes | Block-based expiry enforced in circuit |
+| Double-spend | Nullifiers prevent redemption twice |
+
+## DrainProtection Integration
+
+DAO-Escrow can integrate with the [DrainProtection contract](./drain_protection.md) to provide governance-level protections against malicious DAO actions or mass exit attacks.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    DAO-Escrow + DrainProtection                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌──────────────────────┐         ┌──────────────────────┐              │
+│  │     DAO-Escrow       │         │  DrainProtection      │              │
+│  │                      │         │                       │              │
+│  │  ┌────────────────┐  │         │  ┌────────────────┐  │              │
+│  │  │ pay_premium()  │──┼───┐     │  │  exit()        │  │              │
+│  │  └────────────────┘  │   │     │  │  transfer()    │  │              │
+│  │                      │   │     │  │  lock/unlock   │  │              │
+│  │  State: Merklized    │   │     │  └───────┬────────┘  │              │
+│  │  Membership tree     │   │     │          │            │              │
+│  │                      │   │     │  Verifies via:        │              │
+│  │                      │   ├────▶│  ┌────────▼────────┐ │              │
+│  │                      │   │     │  │ Merkle proof   │ │              │
+│  │                      │   │     │  │ from DAO-Escrow│ │              │
+│  └──────────────────────┘   │     │  └────────────────┘ │              │
+│                             │     │                       │              │
+└─────────────────────────────┴─────┴───────────────────────┘              │
+       Cross-Contract         │                                              │
+       Merkle Proof          │                                              │
+                              ▼                                              │
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    No Direct State Sharing!                                │
+│                                                                          │
+│  DrainProtection verifies DAO-Escrow membership via Merkle proof.        │
+│  DAO-Escrow does NOT read DrainProtection state.                         │
+│  Each contract maintains its own nullifier namespace.                    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### DrainProtection Features
+
+When enabled, the following protections are available:
+
+| Feature | Description |
+|---------|-------------|
+| Rate Limiting | Transfers exceeding base rate require 2/3 vote |
+| Vote Thresholds | Large withdrawals need 2/3 approval + 50% quorum |
+| Emergency Lock | Lock funds with 2/3 vote (max 7 days) |
+| Exit Queue | Members queue for exit during high-risk periods |
+| Graduated Tiers | Larger exits require more governance approval |
+| Guardian Pause | Emergency pause capability for guardians |
+| Observation Period | New proposals face a delay before voting |
+| Split Proposals | Large proposals split into smaller ones |
+| No-Loss Reserve | Endowment maintains minimum reserve |
+| Dead Man's Switch | Auto-disable if governance becomes unresponsive |
+
+### Enabling DrainProtection
+
+DrainProtection can be enabled during initialization or on an existing DAO-Escrow:
+
+```rust
+// During initialization
+let dao_escrow = InitializeBuilder::new()
+    .mode(DaoEscrowMode::TreasuryEndowment)
+    .enable_drain_protection(true)  // Enable at setup
+    .build()?;
+
+// Or enable later via governance
+let enable_dp = EnableDrainProtectionBuilder::new()
+    .dao_escrow_bulla(dao_escrow.bulla)
+    .drain_protection_bulla(dp_instance.bulla)
+    .build()?;
+```
 
 ## Composability with Subscription
 

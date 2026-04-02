@@ -166,18 +166,19 @@ impl DaoEscrow {
         bulla_blind: BaseBlind,
     ) -> DaoEscrowBulla {
         let (ox, oy) = owner_pubkey.xy();
-        let mut hash_inputs = vec![
-            ox,
-            oy,
-            pool_token_id,
-            pallas::Base::from(mode as u8),
-            bulla_blind.inner(),
-        ];
-        if let Some(config) = fee_config {
-            hash_inputs.push(pallas::Base::from(config.treasury_share));
-            hash_inputs.push(pallas::Base::from(config.endowment_share));
+        let mode_base = pallas::Base::from(mode as u64);
+        let blind_base = bulla_blind.inner();
+
+        match fee_config {
+            Some(config) => {
+                let treasury = pallas::Base::from(config.treasury_share as u64);
+                let endowment = pallas::Base::from(config.endowment_share as u64);
+                poseidon_hash([ox, oy, pool_token_id, mode_base, blind_base, treasury, endowment])
+            }
+            None => {
+                poseidon_hash([ox, oy, pool_token_id, mode_base, blind_base])
+            }
         }
-        poseidon_hash(hash_inputs)
     }
 }
 

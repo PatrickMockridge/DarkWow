@@ -119,6 +119,7 @@ let full = InitializeBuilder::new()
 | `WithdrawV1` | `0x03` | Withdraw from treasury |
 | `EndowmentWithdrawV1` | `0x04` | Withdraw from endowment (insurance) |
 | `TreasurySpendV1` | `0x05` | Treasury spending (standard governance) |
+| `EnableDrainProtectionV1` | `0x06` | Enable DrainProtection on existing DAO-Escrow |
 
 ## Fee Split (TreasuryEndowment Mode)
 

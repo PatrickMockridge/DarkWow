@@ -43,7 +43,10 @@ use darkfi_sdk::{
 use darkfi_serial::deserialize;
 
 use crate::{
-    model::{InitializeUpdateV1, PayPremiumUpdateV1, UpdateUpdateV1, WithdrawUpdateV1},
+    model::{
+        EnableDrainProtectionUpdateV1, InitializeUpdateV1, PayPremiumUpdateV1, UpdateUpdateV1,
+        WithdrawUpdateV1,
+    },
     DaoEscrowFunction, DAO_ESCROW_CONTRACT_BULLAS_TREE, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE,
     DAO_ESCROW_CONTRACT_INFO_TREE, DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE,
 };
@@ -159,6 +162,21 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         DaoEscrowFunction::WithdrawV1 => {
             let _update: WithdrawUpdateV1 = deserialize(&update_data[1..])?;
             // TODO: Process owner withdrawal
+            Ok(())
+        }
+        DaoEscrowFunction::EndowmentWithdrawV1 => {
+            // TODO: Process endowment withdrawal (requires DAO vote)
+            Ok(())
+        }
+        DaoEscrowFunction::TreasurySpendV1 => {
+            // TODO: Process treasury spending (standard DAO governance)
+            Ok(())
+        }
+        DaoEscrowFunction::EnableDrainProtectionV1 => {
+            let _update: EnableDrainProtectionUpdateV1 = deserialize(&update_data[1..])?;
+            // TODO: Enable drain protection on this DAO-Escrow
+            // - Set drain_protection_enabled = true
+            // - Store drain_protection_bulla
             Ok(())
         }
     }

@@ -18,21 +18,14 @@
 
 use darkfi_sdk::{
     crypto::{
-        constants::DRK_TOKEN_ID_PERSONALIZATION, pasta_prelude::PrimeField, util::hash_to_base,
+        constants::DRK_TOKEN_ID_PERSONALIZATION, pasta_prelude::PrimeField, poseidon_hash,
+        util::hash_to_base,
     },
     error::ContractError,
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 use lazy_static::lazy_static;
-
-// UNUSED: async_trait is imported but not used - async serialization is handled
-// by darkfi-serial derive macros when async feature is enabled (via darkfi/validator).
-// This import is dead code and can be removed if darkfi-serial/async is ever fixed.
-#[cfg(feature = "client")]
-// use darkfi_serial::async_trait;
-
-use super::poseidon_hash;
 
 lazy_static! {
     // Is this even needed? Not used elsewhere except here.

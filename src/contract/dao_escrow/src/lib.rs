@@ -106,7 +106,7 @@ use darkfi_sdk::define_contract_function;
 
 /// DAO-Escrow operating modes
 pub mod modes {
-    use super::DaoEscrowMode;
+    use crate::model::DaoEscrowMode;
     /// Escrow-only: Pure insurance pool
     pub const MODE_ESCROW: u8 = 0x00;
     /// Treasury-only: Same as DarkFi DAO
@@ -121,10 +121,12 @@ define_contract_function!(DaoEscrowFunction {
     UpdateV1 = 0x01,
     PayPremiumV1 = 0x02,
     WithdrawV1 = 0x03,  // Withdrawal from treasury (not endowment)
-    /// Endowment-only withdrawal (requires DAO vote, for insurance payouts)
+    // Endowment-only withdrawal (requires DAO vote, for insurance payouts)
     EndowmentWithdrawV1 = 0x04,
-    /// Treasury spending (standard DAO governance)
+    // Treasury spending (standard DAO governance)
     TreasurySpendV1 = 0x05,
+    // Enable DrainProtection on an existing DAO-Escrow
+    EnableDrainProtectionV1 = 0x06,
 });
 
 /// Internal contract errors
