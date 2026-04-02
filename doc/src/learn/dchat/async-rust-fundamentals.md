@@ -184,6 +184,24 @@ impl net::ProtocolBase for ProtocolDchat {
 
 **Reference**: [RfR - Async Traits](https://rustforrustaceans.com/rocking/async)
 
+### DarkFi Async Serialization
+
+DarkFi provides `SerialEncodable` and `SerialDecodable` derive macros that
+generate async serialization code. When `darkfi-serial/async` is enabled:
+
+```rust
+#[derive(Clone, Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct MyStruct {
+    pub field1: u64,
+    pub field2: Vec<u8>,
+}
+```
+
+The derives generate implementations of `AsyncEncodable` and `AsyncDecodable`
+traits using `#[#cratename::async_trait]` internally (fully qualified via
+`darkfi_serial`). For more details on debugging serialization issues, see
+[Debugging FAQ](../arch/debugging_faq.md#async-serialization-issues).
+
 ## Executors
 
 An executor runs async code. DarkFi uses `smol::Executor` to run async

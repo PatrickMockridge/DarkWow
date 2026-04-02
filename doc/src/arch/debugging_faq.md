@@ -26,19 +26,13 @@ error: cannot find attribute `async_trait` in this scope
    |                                             ^^^^^^^^^^^^^^^
 ```
 
-**Cause:**
-The `SerialEncodable` and `SerialDecodable` derive macros from `darkfi-serial` internally use `async_trait::async_trait![]` when the `async` feature is enabled on `darkfi-serial`. However, the `async_trait` attribute macro must be imported into the scope where the derive is used.
+**Status: Resolved**
 
-**Solution:**
-Add the following import to files that use `SerialEncodable` or `SerialDecodable` derives when the `async` feature is active:
+This issue was fixed by updating the derive macros to use fully qualified paths:
+- `#[#cratename::async_trait]` instead of `#[async_trait]`
+- `#cratename::FutAsyncWriteExt::write_all()` instead of unqualified method calls
 
-```rust
-#[cfg(feature = "async")]
-use darkfi_serial::async_trait;
-```
-
-**Why this happens:**
-DarkFi's contract architecture requires async serialization for wallet integration. When `darkfi-serial/async` is enabled (typically via `darkfi-sdk/async` or a contract's `client` feature), the serialization derives generate code that requires `async_trait` in scope.
+Contracts no longer need to import `async_trait` at use sites. The generated code in `src/serial/derive-internal/src/async_derive.rs` now uses `darkfi_serial::async_trait` directly.
 
 **Related:**
 - [Async Rust Fundamentals](../learn/dchat/async-rust-fundamentals.md) - Background on Rust async patterns
@@ -57,13 +51,9 @@ client = [
 ]
 ```
 
-If your contract uses `SerialEncodable`/`SerialDecodable` derives and enables the `client` feature, you must:
+The `SerialEncodable`/`SerialDecodable` derives work automatically with the `async` feature. No additional imports are needed in contract code.
 
-1. Add a local `async` feature that enables `darkfi-sdk/async`
-2. Make your `client` feature depend on `async`
-3. Add `#[cfg(feature = "async")] use darkfi_serial::async_trait;` to files using the derives
-
-Example from `deployooor` contract:
+Example from a contract's Cargo.toml:
 
 ```toml
 [features]
