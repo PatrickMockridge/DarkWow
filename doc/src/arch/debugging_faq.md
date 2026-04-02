@@ -200,6 +200,54 @@ Use `&mut` to pass a mutable reference:
 .is_eq_with_output(&mut layouter.namespace(|| "is_equal_base"), lhs, rhs)?;
 ```
 
+### MoneyV2 Contract Compilation Errors
+
+The `darkfi_money_v2_contract` had several pre-existing issues preventing compilation:
+
+**Error 1: Unresolved import `nullifier`**
+```
+error[E0432]: unresolved import `nullifier`
+```
+
+**Cause:** Module declared as `pub mod nullifier;` but re-exported incorrectly.
+
+**Solution:** Use `self::` prefix for re-exports:
+```rust
+pub mod nullifier;
+pub use self::nullifier::Nullifier;
+```
+
+**Error 2: Cannot find function `poseidon_hash`**
+```
+error[E0425]: cannot find function `poseidon_hash` in this scope
+```
+
+**Cause:** Import was outside the nested `crypto {}` block.
+
+**Solution:** Ensure imports are in correct scope:
+```rust
+use darkfi_sdk::crypto::{
+    // imports must be inside nested crypto block
+    poseidon_hash,
+    // ...
+};
+```
+
+**Error 3: lazy_static ordering**
+The `TokenId` struct must be defined before `DARK_TOKEN_ID` lazy_static that references it. Reorder so struct comes first.
+
+**Error 4: Type annotations needed**
+```
+error[E0282]: type annotations needed
+```
+
+**Cause:** Closure parameter type not inferred.
+
+**Solution:** Add explicit type annotation:
+```rust
+.update.nullifiers.iter().map(|n: &Nullifier| n.inner())
+```
+
 ---
 
 ## Runtime Issues
