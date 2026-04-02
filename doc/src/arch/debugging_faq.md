@@ -42,7 +42,6 @@ DarkFi's contract architecture requires async serialization for wallet integrati
 
 **Related:**
 - [Async Rust Fundamentals](../learn/dchat/async-rust-fundamentals.md) - Background on Rust async patterns
-- [Async Serialization Lifetime Bug](async_serial_lifetime_bug.md) - Known issue with async serialization
 
 ### Feature Flag Propagation
 
@@ -77,6 +76,62 @@ client = [
     # ...
 ]
 ```
+
+### Async Serialization Lifetime Bug
+
+**Error message:**
+```
+error[E0195]: lifetime parameters or bounds on associated function `decode_async`
+do not match the trait declaration
+   --> src/sdk/src/crypto/intent_set.rs:124:56
+    |
+124 | #[derive(Clone, Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+    |                                                        ^^^^^^^^^^^^^^^ lifetimes do not match
+```
+
+**Cause:**
+DarkFi uses the `async-trait` crate (version 0.1.x) to provide async serialization traits. The `#[async_trait]` attribute macro transforms async fn signatures into equivalent non-async functions returning boxed futures.
+
+The bug is in how `async-trait 0.1.x` handles lifetime elision for `async fn(&self)` methods. When the trait is:
+
+```rust
+#[async_trait]
+pub trait AsyncDecodable: Sized {
+    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self>;
+}
+```
+
+The generated impl uses `Pin<Box<dyn Future + Send + '_>>` with an implicit lifetime that doesn't satisfy the compiler's bounds checking on Rust 1.90+.
+
+**Affected Components:**
+- `darkfi-sdk` (src/sdk)
+- `darkfi-serial` (src/serial)
+- `darkfi-derive` (src/serial/derive)
+- `darkfi-derive-internal` (src/serial/derive-internal)
+- All smart contract integration tests when compiled with `async-serial` enabled
+
+**Feature Chain:**
+```
+darkfi/validator
+  └── darkfi/blockchain
+        └── darkfi/tx
+              └── darkfi/async-serial
+                    └── darkfi-serial/async
+```
+
+**Options to Resolve:**
+
+1. **Update to async-trait 1.0+** (requires Rust 1.75+):
+   - Change `async-trait = "0"` to `async-trait = "1"` in `src/serial/Cargo.toml`
+   - Remove `#[async_trait]` from trait definitions (now redundant with Rust 1.75+)
+
+2. **Restructure darkfi Features:**
+   Remove `async-serial` from the `tx` feature chain to break async serialization for tx module but allow tests to compile.
+
+**Related:**
+- [Async Rust Fundamentals](../learn/dchat/async-rust-fundamentals.md)
+- [async-trait crate](https://crates.io/crates/async-trait)
+- [Rust 1.75 async traits release notes](https://blog.rust-lang.org/2023/12/28/Rust-1.75.html)
 
 ---
 
@@ -181,6 +236,5 @@ When a ZK gadget fails, check:
 ## See Also
 
 - [Async Rust Fundamentals](../learn/dchat/async-rust-fundamentals.md)
-- [Async Serialization Lifetime Bug](async_serial_lifetime_bug.md)
 - [Localnet Contract Testing](localnet_contract_testing.md)
 - [Test Harness Guide](test_harness_guide.md)

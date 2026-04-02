@@ -91,7 +91,7 @@
   - [Parallel Societies](arch/parallel_societies.md)
   - [Contract MVP Status](arch/mvp_status.md)
   - [Security Analysis](arch/security-analysis.md)
-  - [Async Serialization Lifetime Bug](arch/async_serial_lifetime_bug.md)
+  - [[DEPRECATED] Async Serialization Lifetime Bug](arch/async_serial_lifetime_bug.md) - Content moved to Debugging FAQ
   - [Debugging FAQ](arch/debugging_faq.md)
   - [Test Harness Guide](arch/test_harness_guide.md)
   - [Localnet Contract Testing](arch/localnet_contract_testing.md)

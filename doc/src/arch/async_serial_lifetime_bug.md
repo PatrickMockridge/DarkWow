@@ -1,4 +1,8 @@
-# DarkFi Async Serialization Lifetime Bug
+# [DEPRECATED] DarkFi Async Serialization Lifetime Bug
+
+> **Note:** This page is deprecated. The content has been integrated into [Debugging FAQ](debugging_faq.md).
+
+
 
 ## Overview
 
