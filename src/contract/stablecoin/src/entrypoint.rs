@@ -18,7 +18,7 @@
 
 //! WASM entrypoint for the stablecoin (CDP) contract
 //!
-//! ## Design: P2P Oracle-Based Stablecoin
+//! ## Design: P2P Oracle-Based Stablecoin (Pooled Debt Model)
 //!
 //! Unlike traditional CDPs (MakerDAO) that rely on:
 //! - Governance-controlled parameters
@@ -30,247 +30,271 @@
 //! - **PI Controller**: Algorithmic redemption rate adjustment
 //! - **Full privacy**: All positions hidden via Pedersen commitments + SMT
 //! - **ZK proofs**: All state transitions verified without revealing data
+//! - **Pooled Debt**: All collateral backs all debt, no individual positions
 
 use darkfi_sdk::{
-    bridge::{BridgeCall, BridgeParameter},
-    contract::ContractResult,
-    error::ContractError,
-    runtime::Runtime,
+    crypto::ContractId,
+    dark_tree::DarkLeaf,
+    error::{ContractError, ContractResult},
+    msg, ContractCall,
+    wasm,
+};
+use darkfi_serial::{deserialize, serialize, Decodable, SerialDecodable, SerialEncodable};
+
+use crate::{
+    error::StablecoinError,
+    model::{DepositCollateralParams, UpdateConfigParams},
+    StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
+    STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
+    STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
+    STABLECOIN_CONTRACT_STABLECOIN_TREE,
 };
 
-use crate::{error::StablecoinError, model::*, StablecoinFunction};
+// ============================================================================
+// DATABASE KEYS
+// ============================================================================
+
+const CDP_PI_STATE_KEY: &[u8] = b"pi_controller_state";
+const CDP_REDEMPTION_RATE_KEY: &[u8] = b"redemption_rate";
+const CDP_MIN_RATIO_KEY: &[u8] = b"min_ratio";
+const CDP_LIQ_THRESHOLD_KEY: &[u8] = b"liq_threshold";
+
+// ============================================================================
+// CONTRACT DEFINITION
+// ============================================================================
+
+darkfi_sdk::define_contract!(
+    init: init_contract,
+    exec: process_instruction,
+    apply: process_update,
+    metadata: get_metadata
+);
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
 
 /// Initialize the CDP engine
-pub fn stablecoin_init(_rt: &mut Runtime, _params: BridgeParameter) -> ContractResult<()> {
-    // TODO: Initialize CDP engine state
-    // - Initialize position Sparse Merkle Tree
-    // - Set initial PI controller state
-    // - Configure fee parameters
-    // - Set up stablecoin token (minting authority)
+pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
+    let params = UpdateConfigParams::decode(&mut std::io::Cursor::new(ix))
+        .map_err(|_| ContractError::IoError("Decode error".to_string()))?;
+
+    msg!("[stablecoin::init_contract] Initializing CDP engine");
+
+    // Initialize info tree
+    let info_db = wasm::db::db_init(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+    wasm::db::db_set(info_db, STABLECOIN_CONTRACT_DB_VERSION, env!("CARGO_PKG_VERSION").as_bytes())?;
+
+    // Initialize positions tree (for tracking commitments)
+    wasm::db::db_init(cid, STABLECOIN_CONTRACT_POSITIONS_TREE)?;
+
+    // Initialize position nullifiers tree
+    wasm::db::db_init(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
+
+    // Initialize stablecoin tree (for tracking supply)
+    wasm::db::db_init(cid, STABLECOIN_CONTRACT_STABLECOIN_TREE)?;
+
+    // Initialize collateral tree
+    wasm::db::db_init(cid, STABLECOIN_CONTRACT_COLLATERAL_TREE)?;
+
+    // Initialize liquidations tree
+    wasm::db::db_init(cid, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE)?;
+
+    // Initialize PI controller state and config
+    let config_db = wasm::db::db_init(cid, "config")?;
+    wasm::db::db_set(config_db, CDP_PI_STATE_KEY, &0i64.to_le_bytes())?;
+    wasm::db::db_set(config_db, CDP_REDEMPTION_RATE_KEY, &0i64.to_le_bytes())?;
+    wasm::db::db_set(config_db, CDP_MIN_RATIO_KEY, &params.min_collateralization_ratio.to_le_bytes())?;
+    wasm::db::db_set(config_db, CDP_LIQ_THRESHOLD_KEY, &params.liquidation_threshold.to_le_bytes())?;
+
+    msg!("[stablecoin::init_contract] CDP engine initialized successfully");
     Ok(())
 }
 
-/// Main contract entrypoint
-pub fn stablecoin_exec(rt: &mut Runtime, params: BridgeParameter) -> ContractResult<()> {
-    let call = BridgeCall::decode(params)?;
-    let function = StablecoinFunction::try_from(call.function)?;
+// ============================================================================
+// METADATA (ZK proof verification)
+// ============================================================================
 
-    match function {
-        StablecoinFunction::InitializeV1 => stablecoin_init(rt, params),
-        StablecoinFunction::OpenPositionV1 => cdp_open_position(rt, call),
-        StablecoinFunction::AddCollateralV1 => cdp_add_collateral(rt, call),
-        StablecoinFunction::RemoveCollateralV1 => cdp_remove_collateral(rt, call),
-        StablecoinFunction::MintStableV1 => cdp_mint_stable(rt, call),
-        StablecoinFunction::RepayStableV1 => cdp_repay_stable(rt, call),
-        StablecoinFunction::LiquidateV1 => cdp_liquidate(rt, call),
-        StablecoinFunction::UpdateConfigV1 => cdp_update_config(rt, call),
+/// Fetch metadata for ZK proof verification
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = StablecoinFunction::try_from(self_.data[0])?;
+
+    match func {
+        StablecoinFunction::InitializeV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::OpenPositionV1 => {
+            // TODO: Return ZK public inputs for open position proof
+            msg!("[stablecoin::get_metadata] OpenPositionV1 metadata requested");
+            wasm::util::set_return_data(&vec![])
+        }
+        StablecoinFunction::AddCollateralV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::RemoveCollateralV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::MintStableV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::RepayStableV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::LiquidateV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::UpdateConfigV1 => wasm::util::set_return_data(&vec![]),
     }
 }
 
-/// Open a new Collateralized Debt Position
-///
-/// Flow:
-/// 1. User creates commitment: C = H(secret, collateral, debt, owner_pubkey)
-/// 2. User provides ZK proof that:
-///    - Commitment is correctly formed
-///    - Collateral amount >= minimum
-///    - Debt amount <= collateral / min_ratio
-/// 3. CDP Engine verifies proof and inserts into position SMT
-/// 4. CDP Engine mints stablecoin to user
-fn cdp_open_position(_rt: &mut Runtime, _call: BridgeCall) -> ContractResult<()> {
-    // TODO: Implement open position
-    //
-    // 1. Parse OpenPositionParams:
-    //    - position_commitment: H(secret, collateral, debt, owner)
-    //    - owner_pub: Owner's public key
-    //    - collateral_type: XMR or DRK
-    //    - merkle_proof: Proof of position not already existing
-    //    - proof: ZK proof
-    //
-    // 2. Verify ZK proof (open_position_v1.zk):
-    //    - Commitment correctly formed
-    //    - Collateral >= minimum
-    //    - Debt <= collateral * ratio
-    //
-    // 3. Insert commitment into position SMT
-    //
-    // 4. Mint stablecoin to owner
+// ============================================================================
+// INSTRUCTION PROCESSING
+// ============================================================================
 
-    Err(ContractError::NotYetImplemented.into())
+/// Verify state transition and produce update if valid
+fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = StablecoinFunction::try_from(self_.data[0])?;
+
+    match func {
+        StablecoinFunction::InitializeV1 => {
+            msg!("[stablecoin::process_instruction] InitializeV1 has no update data");
+            wasm::util::set_return_data(&vec![])
+        }
+        StablecoinFunction::OpenPositionV1 => process_open_position_instruction(cid, call_idx, calls),
+        StablecoinFunction::AddCollateralV1 => {
+            msg!("[stablecoin::process_instruction] AddCollateralV1 not yet implemented");
+            Err(ContractError::IoError("Not yet implemented".to_string()).into())
+        }
+        StablecoinFunction::RemoveCollateralV1 => {
+            msg!("[stablecoin::process_instruction] RemoveCollateralV1 not yet implemented");
+            Err(ContractError::IoError("Not yet implemented".to_string()).into())
+        }
+        StablecoinFunction::MintStableV1 => {
+            msg!("[stablecoin::process_instruction] MintStableV1 not yet implemented");
+            Err(ContractError::IoError("Not yet implemented".to_string()).into())
+        }
+        StablecoinFunction::RepayStableV1 => {
+            msg!("[stablecoin::process_instruction] RepayStableV1 not yet implemented");
+            Err(ContractError::IoError("Not yet implemented".to_string()).into())
+        }
+        StablecoinFunction::LiquidateV1 => {
+            msg!("[stablecoin::process_instruction] LiquidateV1 not yet implemented");
+            Err(ContractError::IoError("Not yet implemented".to_string()).into())
+        }
+        StablecoinFunction::UpdateConfigV1 => {
+            msg!("[stablecoin::process_instruction] UpdateConfigV1 processed");
+            wasm::util::set_return_data(&vec![])
+        }
+    }
 }
 
-/// Add collateral to an existing CDP
-///
-/// Flow:
-/// 1. User computes new commitment with additional collateral
-/// 2. User provides ZK proof of:
-///    - Position exists (via nullifier)
-///    - New commitment valid
-///    - Collateral increase is positive
-/// 3. CDP Engine verifies and updates position
-fn cdp_add_collateral(_rt: &mut Runtime, _call: BridgeCall) -> ContractResult<()> {
-    // TODO: Implement add collateral
-    //
-    // 1. Parse AddCollateralParams:
-    //    - position_nullifier: Identifies the position
-    //    - new_commitment: Updated commitment with more collateral
-    //    - added_collateral: Amount being added
-    //    - merkle_proof: Proof position exists
-    //    - proof: ZK proof
-    //
-    // 2. Verify ZK proof (add_collateral_v1.zk)
-    //
-    // 3. Update position in SMT
+/// Process open position instruction
+/// Note: In the pooled model, this is equivalent to depositing collateral
+fn process_open_position_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: DepositCollateralParams = deserialize(&self_.data[1..])?;
 
-    Err(ContractError::NotYetImplemented.into())
-}
+    msg!(
+        "[stablecoin::process_instruction] Opening position: commitment={:?}",
+        &params.deposit_commitment
+    );
 
-/// Remove collateral from a CDP
-///
-/// Flow:
-/// 1. User computes new commitment with less collateral
-/// 2. User provides ZK proof that:
-///    - Position exists
-///    - New collateral >= minimum ratio after removal
-/// 3. CDP Engine verifies and updates position
-/// 4. CDP Engine transfers collateral back to user
-fn cdp_remove_collateral(_rt: &mut Runtime, _call: BridgeCall) -> ContractResult<()> {
-    // TODO: Implement remove collateral
-    //
-    // 1. Parse RemoveCollateralParams:
-    //    - position_nullifier: Identifies position
-    //    - new_commitment: Updated commitment with less collateral
-    //    - removed_collateral: Amount to remove
-    //    - current_debt: For ratio check
-    //    - merkle_proof + proof
-    //
-    // 2. Verify removal doesn't violate collateralization ratio
-    //
-    // 3. Update position and transfer collateral
+    // Verify commitment doesn't already exist
+    let positions_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITIONS_TREE)?;
+    if wasm::db::db_contains_key(positions_db, &params.deposit_commitment.to_bytes())? {
+        msg!("[stablecoin::process_instruction] ERROR: Position already exists");
+        return Err(StablecoinError::PositionAlreadyExists.into())
+    }
 
-    Err(ContractError::NotYetImplemented.into())
-}
+    // Create update data
+    let update = OpenPositionUpdateV1 {
+        deposit_commitment: params.deposit_commitment,
+        collateral_type: params.collateral_type,
+        collateral_amount: params.collateral_amount,
+    };
 
-/// Mint stablecoin against collateral
-///
-/// Flow:
-/// 1. User computes new commitment with more debt
-/// 2. User provides ZK proof that:
-///    - Position exists
-///    - New debt maintains minimum collateralization ratio
-/// 3. CDP Engine verifies and updates position
-/// 4. CDP Engine mints stablecoin to user
-fn cdp_mint_stable(_rt: &mut Runtime, _call: BridgeCall) -> ContractResult<()> {
-    // TODO: Implement mint stable
-    //
-    // 1. Parse MintStableParams:
-    //    - position_nullifier
-    //    - new_commitment: Updated with more debt
-    //    - mint_amount: Stablecoins to mint
-    //    - current_collateral: For ratio check
-    //    - merkle_proof + proof
-    //
-    // 2. Verify ratio: (collateral * price) / (debt + mint_amount) >= min_ratio
-    //
-    // 3. Update position and mint stablecoins
-
-    Err(ContractError::NotYetImplemented.into())
-}
-
-/// Repay stablecoin debt
-///
-/// Flow:
-/// 1. User burns stablecoins to reduce debt
-/// 2. User provides ZK proof that:
-///    - Position exists
-///    - Repay amount <= debt
-///    - Burn proof included
-/// 3. CDP Engine verifies and updates position
-fn cdp_repay_stable(_rt: &mut Runtime, _call: BridgeCall) -> ContractResult<()> {
-    // TODO: Implement repay stable
-    //
-    // 1. Parse RepayStableParams:
-    //    - position_nullifier
-    //    - new_commitment: Updated with less debt
-    //    - repay_amount: Stablecoins to burn
-    //    - current_collateral, current_debt
-    //    - merkle_proof + proof
-    //
-    // 2. Verify repay_amount <= current_debt
-    //
-    // 3. Update position and burn stablecoins
-
-    Err(ContractError::NotYetImplemented.into())
-}
-
-/// Liquidate an undercollateralized CDP
-///
-/// Flow:
-/// 1. Anyone can trigger liquidation if:
-///    - collateral / debt < liquidation_threshold
-/// 2. Liquidator provides ZK proof of:
-///    - Position exists and is undercollateralized
-///    - Using current TWAP price
-/// 3. CDP Engine:
-///    - Burns stablecoins equal to debt
-///    - Seizes collateral (minus penalty)
-///    - Records liquidation
-fn cdp_liquidate(_rt: &mut Runtime, _call: BridgeCall) -> ContractResult<()> {
-    // TODO: Implement liquidation
-    //
-    // 1. Parse LiquidateParams:
-    //    - position_nullifier
-    //    - new_commitment (position now empty/liquidated)
-    //    - collateral_amount, debt_amount
-    //    - current_price: From TWAP
-    //    - merkle_proof + proof
-    //    - liquidation_reward
-    //
-    // 2. Verify: (collateral * price) / debt < liquidation_threshold
-    //
-    // 3. Burn stablecoins (debt)
-    // 4. Transfer collateral to liquidator (minus penalty)
-    // 5. Record liquidation event
-
-    Err(ContractError::NotYetImplemented.into())
-}
-
-/// Update CDP engine configuration
-///
-/// Security: Only callable by authorized governance
-fn cdp_update_config(_rt: &mut Runtime, _call: BridgeCall) -> ContractResult<()> {
-    // TODO: Implement config update
-    //
-    // Authorized callers:
-    // - DAO governance (via proposal/vote)
-    // - Emergency multisig
-    //
-    // Updateable parameters:
-    // - min_collateralization_ratio
-    // - liquidation_threshold
-    // - liquidation_penalty
-    // - PI controller parameters
-    // - TWAP window
-
-    Err(ContractError::NotYetImplemented.into())
+    wasm::util::set_return_data(&serialize(&update))
 }
 
 // ============================================================================
-// PI CONTROLLER (Redemption Rate Adjustment)
+// STATE UPDATE
 // ============================================================================
-//
-// The PI Controller adjusts the redemption rate based on TWAP deviation:
-//
-// error = (twap - target_price) / target_price
-// integral = integral + error * dt
-// rate = base_rate + Kp * error + Ki * integral
-//
-// When twap > target (stablecoin trading premium):
-//   rate increases -> borrowing more expensive -> reduce minting -> push down twap
-//
-// When twap < target (stablecoin trading discount):
-//   rate decreases -> borrowing cheaper -> increase minting -> push up twap
-//
-// This creates a self-stabilizing mechanism without governance intervention.
-//
+
+/// Write state update after successful verification
+fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
+    let func = StablecoinFunction::try_from(update_data[0])?;
+
+    match func {
+        StablecoinFunction::InitializeV1 => {
+            msg!("[stablecoin::process_update] InitializeV1 has no update data");
+            Ok(())
+        }
+        StablecoinFunction::OpenPositionV1 => {
+            let update: OpenPositionUpdateV1 = deserialize(&update_data[1..])?;
+            apply_open_position_update(cid, update)
+        }
+        StablecoinFunction::AddCollateralV1 => {
+            msg!("[stablecoin::process_update] AddCollateralV1 not yet implemented");
+            Ok(())
+        }
+        StablecoinFunction::RemoveCollateralV1 => {
+            msg!("[stablecoin::process_update] RemoveCollateralV1 not yet implemented");
+            Ok(())
+        }
+        StablecoinFunction::MintStableV1 => {
+            msg!("[stablecoin::process_update] MintStableV1 not yet implemented");
+            Ok(())
+        }
+        StablecoinFunction::RepayStableV1 => {
+            msg!("[stablecoin::process_update] RepayStableV1 not yet implemented");
+            Ok(())
+        }
+        StablecoinFunction::LiquidateV1 => {
+            msg!("[stablecoin::process_update] LiquidateV1 not yet implemented");
+            Ok(())
+        }
+        StablecoinFunction::UpdateConfigV1 => {
+            let params: UpdateConfigParams = deserialize(&update_data[1..])?;
+            apply_config_update(cid, params)
+        }
+    }
+}
+
+/// Apply open position state update
+fn apply_open_position_update(cid: ContractId, update: OpenPositionUpdateV1) -> ContractResult {
+    let positions_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITIONS_TREE)?;
+    let collateral_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_COLLATERAL_TREE)?;
+
+    // Insert position into positions tree
+    wasm::db::db_set(positions_db, &update.deposit_commitment.to_bytes(), &vec![])?;
+
+    // Update collateral pool (simplified - in production, track per-type pools)
+    wasm::db::db_set(collateral_db, &update.deposit_commitment.to_bytes(), &vec![])?;
+
+    msg!(
+        "[stablecoin::process_update] Position opened: commitment={:?}",
+        &update.deposit_commitment
+    );
+    Ok(())
+}
+
+/// Apply configuration update
+fn apply_config_update(cid: ContractId, params: UpdateConfigParams) -> ContractResult {
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+
+    wasm::db::db_set(config_db, CDP_MIN_RATIO_KEY, &params.min_collateralization_ratio.to_le_bytes())?;
+    wasm::db::db_set(config_db, CDP_LIQ_THRESHOLD_KEY, &params.liquidation_threshold.to_le_bytes())?;
+
+    msg!("[stablecoin::process_update] Configuration updated successfully");
+    Ok(())
+}
+
 // ============================================================================
+// UPDATE STRUCTS
+// ============================================================================
+
+/// Update data for open position
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct OpenPositionUpdateV1 {
+    pub deposit_commitment: darkfi_sdk::crypto::IntentCommitment,
+    pub collateral_type: crate::model::CollateralType,
+    pub collateral_amount: u64,
+}

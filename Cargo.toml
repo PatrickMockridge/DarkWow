@@ -54,6 +54,10 @@ members = [
     "src/contract/slot",
     "src/contract/atomic_swap",
     "src/contract/identity",
+    "src/contract/deployooor",
+    "src/contract/dex",
+    "src/contract/bridge",
+    "src/contract/stablecoin",
 
     "src/contract_plain/subscription",
     "src/contract_plain/labor_market",

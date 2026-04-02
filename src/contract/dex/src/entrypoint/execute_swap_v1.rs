@@ -42,19 +42,19 @@
 //! - The contract verifies nullifiers against on-chain state to prevent double-execution
 
 use darkfi_sdk::{
-    crypto::pasta_prelude::*,
+    crypto::pasta_prelude::PrimeField,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
-    msg,
+    msg, ContractCall,
     pasta::pallas,
-    wasm, ContractCall,
+    wasm,
 };
 use darkfi_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DexError,
     model::{ExecuteSwapParams, ExecuteSwapUpdateV1, Swap, SwapState},
-    DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
+    DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
     DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1,
 };
 
@@ -83,13 +83,13 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
 
     // The prover computed the nullifiers externally and passed them in params.
     // We use these directly as public inputs for ZK verification.
-    let alice_nullifier = pallas::Base::from_bytes(&params.alice_nullifier)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
-    let bob_nullifier = pallas::Base::from_bytes(&params.bob_nullifier)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
+    let alice_nullifier = params.alice_nullifier.inner();
+    let bob_nullifier = params.bob_nullifier.inner();
 
-    let swap_id = pallas::Base::from_bytes(&params.swap_id)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
+    let swap_id = match pallas::Base::from_repr(params.swap_id).into_option() {
+        Some(v) => v,
+        None => return Err(ContractError::IoError("Invalid swap_id".to_string()).into()),
+    };
 
     zk_public_inputs.push((
         DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1.to_string(),
@@ -123,10 +123,7 @@ pub(crate) fn dex_execute_swap_process_instruction_v1(
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;
     let swap_data = wasm::db::db_get(swaps_db, &params.swap_id)?;
     let swap: Swap = match swap_data {
-        Some(data) => {
-            let mut cursor = std::io::Cursor::new(&data);
-            Swap::decode(&mut cursor).map_err(|_| ContractError::DecodeError)?
-        }
+        Some(data) => deserialize(&data)?,
         None => {
             msg!("[ExecuteSwapV1] Error: Swap not found");
             return Err(DexError::SwapNotFound.into())
@@ -159,13 +156,13 @@ pub(crate) fn dex_execute_swap_process_instruction_v1(
     let participants_db = wasm::db::db_lookup(cid, DEX_CONTRACT_PARTICIPANTS_TREE)?;
 
     // Check that proposer's nullifier hasn't been spent
-    if !wasm::db::db_contains_key(participants_db, &swap.proposer_nullifier)? {
+    if !wasm::db::db_contains_key(participants_db, &swap.proposer_nullifier.to_bytes())? {
         msg!("[ExecuteSwapV1] Error: Proposer's nullifier not found in participants");
         return Err(DexError::InvalidNullifier.into())
     }
 
     // Check that acceptor's nullifier hasn't been spent
-    if !wasm::db::db_contains_key(participants_db, &swap.acceptor_nullifier)? {
+    if !wasm::db::db_contains_key(participants_db, &swap.acceptor_nullifier.to_bytes())? {
         msg!("[ExecuteSwapV1] Error: Acceptor's nullifier not found in participants");
         return Err(DexError::InvalidNullifier.into())
     }
@@ -192,10 +189,7 @@ pub(crate) fn dex_execute_swap_process_update_v1(
     // Load existing swap
     let swap_data = wasm::db::db_get(swaps_db, &update.swap_id)?;
     let mut swap: Swap = match swap_data {
-        Some(data) => {
-            let mut cursor = std::io::Cursor::new(&data);
-            Swap::decode(&mut cursor).map_err(|_| ContractError::DecodeError)?
-        }
+        Some(data) => deserialize(&data)?,
         None => {
             msg!("[ExecuteSwapV1] Error: Swap not found during update");
             return Err(DexError::SwapNotFound.into())
@@ -206,14 +200,14 @@ pub(crate) fn dex_execute_swap_process_update_v1(
     swap.state = SwapState::Executed;
 
     // Store updated swap
-    wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
+    wasm::db::db_set(swaps_db, &update.swap_id, &serialize(&swap))?;
 
     // Remove participants (funds have been transferred)
     // In a full implementation, we would also call the money contract
     // to perform the actual token transfers
     // Using nullifiers for deletion (proper double-spend prevention)
-    wasm::db::db_del(participants_db, &swap.proposer_nullifier)?;
-    wasm::db::db_del(participants_db, &swap.acceptor_nullifier)?;
+    wasm::db::db_del(participants_db, &swap.proposer_nullifier.to_bytes())?;
+    wasm::db::db_del(participants_db, &swap.acceptor_nullifier.to_bytes())?;
 
     msg!("[ExecuteSwapV1] Swap executed successfully: id={:?}", &update.swap_id);
 

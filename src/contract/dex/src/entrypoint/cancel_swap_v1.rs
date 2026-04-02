@@ -42,19 +42,19 @@
 //! - Determining WHO is cancelling (proposer vs acceptor) requires checking which nullifier matches
 
 use darkfi_sdk::{
-    crypto::pasta_prelude::*,
+    crypto::pasta_prelude::PrimeField,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
-    msg,
+    msg, ContractCall,
     pasta::pallas,
-    wasm, ContractCall,
+    wasm,
 };
 use darkfi_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DexError,
     model::{CancelSwapParams, CancelSwapUpdateV1, Swap, SwapState},
-    DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
+    DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
     DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1,
 };
 
@@ -81,11 +81,12 @@ pub(crate) fn dex_cancel_swap_get_metadata_v1(
 
     // The prover computed the nullifier externally and passed it in params.
     // We use this directly as a public input for ZK verification.
-    let nullifier = pallas::Base::from_bytes(&params.nullifier)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
+    let nullifier = params.nullifier.inner();
 
-    let swap_id = pallas::Base::from_bytes(&params.swap_id)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
+    let swap_id = match pallas::Base::from_repr(params.swap_id).into_option() {
+        Some(v) => v,
+        None => return Err(ContractError::IoError("Invalid swap_id".to_string()).into()),
+    };
 
     zk_public_inputs.push((
         DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1.to_string(),
@@ -120,10 +121,7 @@ pub(crate) fn dex_cancel_swap_process_instruction_v1(
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;
     let swap_data = wasm::db::db_get(swaps_db, &params.swap_id)?;
     let swap: Swap = match swap_data {
-        Some(data) => {
-            let mut cursor = std::io::Cursor::new(&data);
-            Swap::decode(&mut cursor).map_err(|_| ContractError::DecodeError)?
-        }
+        Some(data) => deserialize(&data)?,
         None => {
             msg!("[CancelSwapV1] Error: Swap not found");
             return Err(DexError::SwapNotFound.into())
@@ -144,10 +142,10 @@ pub(crate) fn dex_cancel_swap_process_instruction_v1(
     let participants_db = wasm::db::db_lookup(cid, DEX_CONTRACT_PARTICIPANTS_TREE)?;
 
     // Check if the provided nullifier matches the proposer's nullifier
-    let is_proposer = wasm::db::db_contains_key(participants_db, &swap.proposer_nullifier)?;
+    let is_proposer = wasm::db::db_contains_key(participants_db, &swap.proposer_nullifier.to_bytes())?;
 
     // Check if it matches the acceptor's nullifier (if swap is accepted)
-    let is_acceptor = wasm::db::db_contains_key(participants_db, &swap.acceptor_nullifier)?;
+    let is_acceptor = wasm::db::db_contains_key(participants_db, &swap.acceptor_nullifier.to_bytes())?;
 
     // The nullifier must match exactly one of the participants
     // If it matches neither, the prover is trying to cancel with an invalid nullifier
@@ -184,10 +182,7 @@ pub(crate) fn dex_cancel_swap_process_update_v1(
     // Load existing swap
     let swap_data = wasm::db::db_get(swaps_db, &update.swap_id)?;
     let mut swap: Swap = match swap_data {
-        Some(data) => {
-            let mut cursor = std::io::Cursor::new(&data);
-            Swap::decode(&mut cursor).map_err(|_| ContractError::DecodeError)?
-        }
+        Some(data) => deserialize(&data)?,
         None => {
             msg!("[CancelSwapV1] Error: Swap not found during update");
             return Err(DexError::SwapNotFound.into())
@@ -198,16 +193,16 @@ pub(crate) fn dex_cancel_swap_process_update_v1(
     swap.state = SwapState::Cancelled;
 
     // Store updated swap
-    wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
+    wasm::db::db_set(swaps_db, &update.swap_id, &serialize(&swap))?;
 
     // Remove the participant's nullifier (they get refunded)
     // In a full implementation, we would also call the money contract
     // to refund the locked funds
     // Using nullifier for deletion (proper double-spend prevention)
     if update.is_proposer {
-        wasm::db::db_del(participants_db, &swap.proposer_nullifier)?;
+        wasm::db::db_del(participants_db, &swap.proposer_nullifier.to_bytes())?;
     } else {
-        wasm::db::db_del(participants_db, &swap.acceptor_nullifier)?;
+        wasm::db::db_del(participants_db, &swap.acceptor_nullifier.to_bytes())?;
     }
 
     msg!("[CancelSwapV1] Swap cancelled: id={:?}", &update.swap_id);

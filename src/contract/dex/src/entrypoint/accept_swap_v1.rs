@@ -34,14 +34,14 @@
 //! cross-contract ZK composition opcodes.
 
 use darkfi_sdk::{
-    crypto::{poseidon_hash, pasta_prelude::*},
+    crypto::{poseidon_hash, pasta_prelude::PrimeField, IntentCommitment, IntentNullifier},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
-    msg,
+    msg, ContractCall,
     pasta::pallas,
-    wasm, ContractCall,
+    wasm,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use darkfi_serial::{deserialize, serialize, Decodable, Encodable};
 
 use crate::{
     error::DexError,
@@ -78,18 +78,15 @@ pub(crate) fn dex_accept_swap_get_metadata_v1(
 
     // The prover computed the nullifier externally and passed it in params.
     // We use these directly as public inputs for ZK verification.
-    let lock_commitment = pallas::Base::from_bytes(&params.lock_commitment)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
-
-    let nullifier = pallas::Base::from_bytes(&params.nullifier)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
+    let lock_commitment = params.lock_commitment.inner();
+    let nullifier = params.nullifier.inner();
 
     // Extract signature public key coordinates
     let (sig_x, sig_y) = params.signature_public.xy();
 
     zk_public_inputs.push((
         DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V1.to_string(),
-        vec![lock_commitment, nullifier, *sig_x(), *sig_y()],
+        vec![lock_commitment, nullifier, sig_x, sig_y],
     ));
 
     // Serialize metadata for ZK verification
@@ -120,10 +117,7 @@ pub(crate) fn dex_accept_swap_process_instruction_v1(
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;
     let swap_data = wasm::db::db_get(swaps_db, &params.swap_id)?;
     let swap: Swap = match swap_data {
-        Some(data) => {
-            let mut cursor = std::io::Cursor::new(&data);
-            Swap::decode(&mut cursor).map_err(|_| ContractError::DecodeError)?
-        }
+        Some(data) => deserialize(&data)?,
         None => {
             msg!("[AcceptSwapV1] Error: Swap not found");
             return Err(DexError::SwapNotFound.into())
@@ -151,7 +145,7 @@ pub(crate) fn dex_accept_swap_process_instruction_v1(
     // WARNING: This is a TRUSTED SETUP workaround
     // Proper implementation requires cross-contract ZK composition
     let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
-    verify_lock_proof(config_db, &params.lock_commitment, &params.lock_proof)?;
+    verify_lock_proof(config_db, &params.lock_commitment.to_bytes(), &params.lock_proof)?;
 
     // Extract acceptor's public key from signature_public
     // The signature_public is provided by the client and will be verified
@@ -162,8 +156,8 @@ pub(crate) fn dex_accept_swap_process_instruction_v1(
     // Create the update struct with nullifier from params
     let update = AcceptSwapUpdateV1 {
         swap_id: params.swap_id,
-        acceptor_pub_x: acceptor_pub_x.to_bytes(),
-        acceptor_pub_y: acceptor_pub_y.to_bytes(),
+        acceptor_pub_x: acceptor_pub_x.to_repr(),
+        acceptor_pub_y: acceptor_pub_y.to_repr(),
         acceptor_lock: params.lock_commitment,
         acceptor_nullifier: params.nullifier,
     };
@@ -182,10 +176,7 @@ pub(crate) fn dex_accept_swap_process_update_v1(
     // Load existing swap
     let swap_data = wasm::db::db_get(swaps_db, &update.swap_id)?;
     let mut swap: Swap = match swap_data {
-        Some(data) => {
-            let mut cursor = std::io::Cursor::new(&data);
-            Swap::decode(&mut cursor).map_err(|_| ContractError::DecodeError)?
-        }
+        Some(data) => deserialize(&data)?,
         None => {
             msg!("[AcceptSwapV1] Error: Swap not found during update");
             return Err(DexError::SwapNotFound.into())
@@ -200,10 +191,10 @@ pub(crate) fn dex_accept_swap_process_update_v1(
     swap.state = SwapState::Accepted;
 
     // Store updated swap
-    wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
+    wasm::db::db_set(swaps_db, &update.swap_id, &serialize(&swap))?;
 
     // Store acceptor's nullifier using nullifier as key (not lock_commitment)
-    wasm::db::db_set(participants_db, &update.acceptor_nullifier, &[])?;
+    wasm::db::db_set(participants_db, &update.acceptor_nullifier.to_bytes(), &[])?;
 
     msg!("[AcceptSwapV1] Swap accepted: id={:?}", &update.swap_id);
 
@@ -220,7 +211,7 @@ fn get_current_timestamp(info_db: u32) -> Result<u64, ContractError> {
     match data {
         Some(d) => {
             let mut cursor = std::io::Cursor::new(&d);
-            u64::decode(&mut cursor).map_err(|_| ContractError::DecodeError)
+            u64::decode(&mut cursor).map_err(|_| ContractError::IoError("decode error".to_string()))
         }
         None => Ok(0),
     }
@@ -243,13 +234,13 @@ fn verify_lock_proof(
 ) -> Result<(), ContractError> {
     // Get trusted Merkle root from config
     let trusted_root_data = wasm::db::db_get(config_db, DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY)
-        .map_err(|_| ContractError::DbError)?;
+        .map_err(|_| ContractError::IoError("Db error".to_string()))?;
 
     let trusted_root = match trusted_root_data {
         Some(data) => {
             let mut cursor = std::io::Cursor::new(&data);
             <[u8; 32]>::decode(&mut cursor)
-                .map_err(|_| ContractError::DecodeError)?
+                .map_err(|_| ContractError::IoError("Decode error".to_string()))?
         }
         None => {
             msg!("[AcceptSwapV1] ERROR: Trusted Merkle root not set during initialization");
@@ -266,19 +257,23 @@ fn verify_lock_proof(
     }
 
     // Convert lock_commitment to pallas::Base
-    let leaf = pallas::Base::from_bytes(lock_commitment)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
+    let leaf = match pallas::Base::from_repr(*lock_commitment).into_option() {
+        Some(v) => v,
+        None => return Err(ContractError::IoError("Invalid lock commitment".to_string()).into()),
+    };
 
     // Compute Merkle root by hashing upward
     let mut current = leaf;
     for sibling_bytes in lock_proof.iter() {
-        let sibling = pallas::Base::from_bytes(sibling_bytes)
-            .map_err(|_| ContractError::FailedToDeserialize)?;
+        let sibling = match pallas::Base::from_repr(*sibling_bytes).into_option() {
+            Some(v) => v,
+            None => return Err(ContractError::IoError("Invalid sibling".to_string()).into()),
+        };
         current = poseidon_hash([current, sibling]);
     }
 
     // Compare computed root with trusted root
-    let computed_root: [u8; 32] = current.to_bytes();
+    let computed_root: [u8; 32] = current.to_repr();
 
     if computed_root != trusted_root {
         msg!("[AcceptSwapV1] ERROR: lock_proof verification failed");

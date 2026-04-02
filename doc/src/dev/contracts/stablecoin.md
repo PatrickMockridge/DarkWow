@@ -86,15 +86,21 @@ Maintains peg stability:
 |----------|-----|-------------|
 | InitializeV1 | 0x00 | Initialize stablecoin |
 | OpenPositionV1 | 0x01 | Open collateralized position |
-| MintStableV1 | 0x02 | Mint stablecoin against collateral |
-| LiquidateV1 | 0x03 | Liquidate undercollateralized position |
-| UpdateConfigV1 | 0x04 | Update parameters |
+| AddCollateralV1 | 0x02 | Add collateral to position |
+| RemoveCollateralV1 | 0x03 | Remove collateral from position |
+| MintStableV1 | 0x04 | Mint stablecoin against collateral |
+| RepayStableV1 | 0x05 | Repay stablecoin debt |
+| LiquidateV1 | 0x06 | Liquidate undercollateralized position |
+| UpdateConfigV1 | 0x07 | Update parameters |
 
 ## ZK Circuits
 
 - `open_position_v1.zk`: Prove valid collateral without revealing amount
 - `mint_stable_v1.zk`: Prove collateral ratio without revealing full position
 - `liquidate_v1.zk`: Prove liquidation is valid
+- `add_collateral_v1.zk`: (not yet implemented)
+- `remove_collateral_v1.zk`: (not yet implemented)
+- `repay_stable_v1.zk`: (not yet implemented)
 
 ## Liquidation Flow
 

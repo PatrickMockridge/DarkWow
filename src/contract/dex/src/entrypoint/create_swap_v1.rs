@@ -36,14 +36,14 @@
 //! See module-level documentation in lib.rs for full details.
 
 use darkfi_sdk::{
-    crypto::{poseidon_hash, pasta_prelude::*},
+    crypto::{poseidon_hash, pasta_prelude::PrimeField, IntentCommitment, IntentNullifier},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
-    msg,
+    msg, ContractCall,
     pasta::pallas,
-    wasm, ContractCall,
+    wasm,
 };
-use darkfi_serial::{deserialize, serialize, Encodable, WriteExt};
+use darkfi_serial::{deserialize, serialize, Decodable, Encodable};
 
 use crate::{
     error::DexError,
@@ -82,21 +82,19 @@ pub(crate) fn dex_create_swap_get_metadata_v1(
 
     // The prover computed the nullifier externally and passed it in params.
     // We use these directly as public inputs for ZK verification.
-    let lock_commitment = pallas::Base::from_bytes(&params.lock_commitment)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
-
-    let swap_id = pallas::Base::from_bytes(&params.swap_id)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
-
-    let nullifier = pallas::Base::from_bytes(&params.nullifier)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
+    let lock_commitment = params.lock_commitment.inner();
+    let swap_id = match pallas::Base::from_repr(params.swap_id).into_option() {
+        Some(v) => v,
+        None => return Err(ContractError::IoError("Invalid swap_id".to_string()).into()),
+    };
+    let nullifier = params.nullifier.inner();
 
     // Extract signature public key coordinates
     let (sig_x, sig_y) = params.signature_public.xy();
 
     zk_public_inputs.push((
         DEX_CONTRACT_ZKAS_CREATE_SWAP_NS_V1.to_string(),
-        vec![lock_commitment, swap_id, nullifier, *sig_x(), *sig_y()],
+        vec![lock_commitment, swap_id, nullifier, sig_x, sig_y],
     ));
 
     // Serialize metadata for ZK verification
@@ -133,7 +131,7 @@ pub(crate) fn dex_create_swap_process_instruction_v1(
     // WARNING: This is a TRUSTED SETUP workaround
     // Proper implementation requires cross-contract ZK composition
     let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
-    verify_lock_proof(config_db, &params.lock_commitment, &params.lock_proof)?;
+    verify_lock_proof(config_db, &params.lock_commitment.to_bytes(), &params.lock_proof)?;
 
     // Get current timestamp and timeout
     let info_db = wasm::db::db_lookup(cid, DEX_CONTRACT_INFO_TREE)?;
@@ -149,8 +147,8 @@ pub(crate) fn dex_create_swap_process_instruction_v1(
     // Create the update struct with nullifier from params
     let update = CreateSwapUpdateV1 {
         swap_id: params.swap_id,
-        proposer_pub_x: proposer_pub_x.to_bytes(),
-        proposer_pub_y: proposer_pub_y.to_bytes(),
+        proposer_pub_x: proposer_pub_x.to_repr(),
+        proposer_pub_y: proposer_pub_y.to_repr(),
         offer_token: params.offer_token,
         offer_amount: params.offer_amount,
         request_token: params.request_token,
@@ -186,8 +184,8 @@ pub(crate) fn dex_create_swap_process_update_v1(
         request_amount: update.request_amount,
         proposer_lock: update.proposer_lock,
         proposer_nullifier: update.proposer_nullifier,
-        acceptor_lock: [0u8; 32],
-        acceptor_nullifier: [0u8; 32],
+        acceptor_lock: IntentCommitment::from_bytes([0u8; 32]).unwrap(),
+        acceptor_nullifier: IntentNullifier::from_bytes([0u8; 32]).unwrap(),
         state: SwapState::Created,
         created_at: update.created_at,
         expires_at: update.expires_at,
@@ -195,11 +193,11 @@ pub(crate) fn dex_create_swap_process_update_v1(
     };
 
     // Store the swap
-    wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
+    wasm::db::db_set(swaps_db, &update.swap_id, &serialize(&swap))?;
 
     // Store proposer's nullifier to prevent double-spending
     // Using nullifier as key instead of lock_commitment
-    wasm::db::db_set(participants_db, &update.proposer_nullifier, &[])?;
+    wasm::db::db_set(participants_db, &update.proposer_nullifier.to_bytes(), &[])?;
 
     msg!("[CreateSwapV1] Swap created successfully: id={:?}", &update.swap_id);
 
@@ -216,7 +214,7 @@ fn get_current_timestamp(info_db: u32) -> Result<u64, ContractError> {
     match data {
         Some(d) => {
             let mut cursor = std::io::Cursor::new(&d);
-            u64::decode(&mut cursor).map_err(|_| ContractError::DecodeError)
+            u64::decode(&mut cursor).map_err(|_| ContractError::IoError("decode error".to_string()))
         }
         None => Ok(0),
     }
@@ -228,7 +226,7 @@ fn get_swap_timeout(config_db: u32) -> Result<u32, ContractError> {
     match data {
         Some(d) => {
             let mut cursor = std::io::Cursor::new(&d);
-            u32::decode(&mut cursor).map_err(|_| ContractError::DecodeError)
+            u32::decode(&mut cursor).map_err(|_| ContractError::IoError("decode error".to_string()))
         }
         None => Ok(100), // Default 100 blocks
     }
@@ -257,13 +255,13 @@ fn verify_lock_proof(
 ) -> Result<(), ContractError> {
     // Get trusted Merkle root from config
     let trusted_root_data = wasm::db::db_get(config_db, DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY)
-        .map_err(|_| ContractError::DbError)?;
+        .map_err(|_| ContractError::IoError("Db error".to_string()))?;
 
     let trusted_root = match trusted_root_data {
         Some(data) => {
             let mut cursor = std::io::Cursor::new(&data);
             <[u8; 32]>::decode(&mut cursor)
-                .map_err(|_| ContractError::DecodeError)?
+                .map_err(|_| ContractError::IoError("Decode error".to_string()))?
         }
         None => {
             msg!("[CreateSwapV1] ERROR: Trusted Merkle root not set during initialization");
@@ -281,21 +279,25 @@ fn verify_lock_proof(
     }
 
     // Convert lock_commitment to pallas::Base
-    let leaf = pallas::Base::from_bytes(lock_commitment)
-        .map_err(|_| ContractError::FailedToDeserialize)?;
+    let leaf = match pallas::Base::from_repr(*lock_commitment).into_option() {
+        Some(v) => v,
+        None => return Err(ContractError::IoError("Invalid lock commitment".to_string()).into()),
+    };
 
     // Compute Merkle root by hashing upward
     // The lock_proof contains siblings at each level
     let mut current = leaf;
     for sibling_bytes in lock_proof.iter() {
-        let sibling = pallas::Base::from_bytes(sibling_bytes)
-            .map_err(|_| ContractError::FailedToDeserialize)?;
+        let sibling = match pallas::Base::from_repr(*sibling_bytes).into_option() {
+            Some(v) => v,
+            None => return Err(ContractError::IoError("Invalid sibling".to_string()).into()),
+        };
         // Hash pair - order matters for some trees, we assume fixed ordering
         current = poseidon_hash([current, sibling]);
     }
 
     // Compare computed root with trusted root
-    let computed_root: [u8; 32] = current.to_bytes();
+    let computed_root: [u8; 32] = current.to_repr();
 
     if computed_root != trusted_root {
         msg!("[CreateSwapV1] ERROR: lock_proof verification failed");

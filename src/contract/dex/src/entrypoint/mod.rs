@@ -119,7 +119,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     // Parse initialization parameters
     let params = InitializeParams::decode(&mut std::io::Cursor::new(ix))
-        .map_err(|_| darkfi_sdk::error::ContractError::DecodeError)?;
+        .map_err(|_| darkfi_sdk::error::ContractError::IoError("Decode error".to_string()))?;
 
     msg!(
         "[dex::init_contract] Trusted money Merkle root: {:?}",
@@ -138,8 +138,8 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     // Initialize config tree
     let config_db = wasm::db::db_init(cid, DEX_CONTRACT_CONFIG_TREE)?;
-    wasm::db::db_set(config_db, DEX_SWAP_TIMEOUT_KEY, &params.timeout.encode())?;
-    wasm::db::db_set(config_db, DEX_FEE_KEY, &params.fee.encode())?;
+    wasm::db::db_set(config_db, DEX_SWAP_TIMEOUT_KEY, &params.timeout.to_le_bytes())?;
+    wasm::db::db_set(config_db, DEX_FEE_KEY, &params.fee.to_le_bytes())?;
     wasm::db::db_set(config_db, DEX_TRUSTED_MONEY_MERKLE_ROOT_KEY, &params.trusted_money_merkle_root)?;
 
     msg!("[dex::init_contract] DEX contract initialized successfully");

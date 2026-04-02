@@ -16,17 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-// UNUSED: async_trait is imported but not used - async serialization is handled
-// by darkfi-serial derive macros when async feature is enabled (via darkfi/validator).
-// This import is dead code and can be removed if darkfi-serial/async is ever fixed.
-#[cfg(feature = "client")]
-// use darkfi_serial::async_trait;
-
-use darkfi_sdk::{
-    crypto::{ContractId, PublicKey},
-};
-#[cfg(feature = "async")]
-use darkfi_serial::async_trait;
+use darkfi_sdk::crypto::{ContractId, PublicKey};
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 
 /// State update for `Deploy::Deploy`
@@ -36,14 +26,12 @@ pub struct DeployUpdateV1 {
     pub contract_id: ContractId,
 }
 
-// ANCHOR: deploy-lock-params
 /// Parameters for `Deploy::Lock`
 #[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
 pub struct LockParamsV1 {
     /// Public key used to sign the transaction and derive the `ContractId`
     pub public_key: PublicKey,
 }
-// ANCHOR_END: deploy-lock-params
 
 /// State update for `Deploy::Lock`
 #[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
