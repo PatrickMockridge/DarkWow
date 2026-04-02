@@ -1260,7 +1260,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let out: AssignedCell<Fp, Fp> = isequal_chip
                         .as_ref()
                         .unwrap()
-                        .is_eq_with_output(layouter.namespace(|| "is_equal_base"), lhs, rhs)?;
+                        .is_eq_with_output(&mut layouter.namespace(|| "is_equal_base"), lhs, rhs)?;
 
                     trace!(target: "zk::vm", "Pushing assignment to heap address {}", heap.len());
                     self.tracer.push_base(&out);
