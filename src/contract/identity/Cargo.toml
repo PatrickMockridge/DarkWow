@@ -6,8 +6,8 @@ authors = ["DarkFi <research@dark.fi>"]
 description = "Minimal credential proofs for selective disclosure"
 
 [dependencies]
-darkfi-sdk = { path = "../../../sdk", features = ["no-entrypoint"] }
-darkfi_serial = { path = "../../../serial" }
+darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
+darkfi-serial = { path = "../../serial" }
 thiserror = "1.0"
 
 [features]
