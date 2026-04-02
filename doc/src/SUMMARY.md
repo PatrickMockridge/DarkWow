@@ -92,6 +92,7 @@
   - [Contract MVP Status](arch/mvp_status.md)
   - [Security Analysis](arch/security-analysis.md)
   - [Async Serialization Lifetime Bug](arch/async_serial_lifetime_bug.md)
+  - [Debugging FAQ](arch/debugging_faq.md)
   - [Test Harness Guide](arch/test_harness_guide.md)
   - [Localnet Contract Testing](arch/localnet_contract_testing.md)
   - [Public Key Constraint Hook](arch/pubkey-constraint-hook.md)
