@@ -18,8 +18,6 @@
 
 use core::str::FromStr;
 
-#[cfg(feature = "async")]
-use darkfi_serial::async_trait;
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 use halo2_gadgets::ecc::chip::FixedPoint;
 use pasta_curves::{

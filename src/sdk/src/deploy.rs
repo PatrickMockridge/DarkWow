@@ -16,8 +16,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#[cfg(feature = "async")]
-use darkfi_serial::async_trait;
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 
 use crate::crypto::PublicKey;

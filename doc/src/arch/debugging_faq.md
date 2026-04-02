@@ -81,52 +81,29 @@ client = [
 
 **Error message:**
 ```
-error[E0195]: lifetime parameters or bounds on associated function `decode_async`
-do not match the trait declaration
-   --> src/sdk/src/crypto/intent_set.rs:124:56
+error[E0433]: failed to resolve: could not find `async_trait` in the list of imported crates
+  --> src/sdk/src/crypto/intent_set.rs:124:56
     |
 124 | #[derive(Clone, Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
-    |                                                        ^^^^^^^^^^^^^^^ lifetimes do not match
+    |                                       ^^^^^^^^^^^^^^^ could not find `async_trait`
 ```
 
 **Cause:**
-DarkFi uses the `async-trait` crate (version 0.1.x) to provide async serialization traits. The `#[async_trait]` attribute macro transforms async fn signatures into equivalent non-async functions returning boxed futures.
+When `darkfi-serial/async` is enabled, the `SerialEncodable` and `SerialDecodable` derive macros generate async code that uses `#[async_trait]`. Previously, the generated code used `#[async_trait]` directly, expecting the macro to be in scope at the use site. However, `async_trait` is only available as a transitive dependency through `darkfi_serial`, not as a direct import at use sites in `darkfi_sdk`.
 
-The bug is in how `async-trait 0.1.x` handles lifetime elision for `async fn(&self)` methods. When the trait is:
+**Fix Applied:**
+The fix was in `src/serial/derive-internal/src/async_derive.rs`:
 
-```rust
-#[async_trait]
-pub trait AsyncDecodable: Sized {
-    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self>;
-}
+1. Changed `#[async_trait]` to `#[#cratename::async_trait]` in generated code - this uses the fully qualified path through `darkfi_serial` where the trait is re-exported
+2. Changed `s.write_all(&bytes).await?` to `#cratename::FutAsyncWriteExt::write_all(&mut *s, &bytes).await?` - uses fully qualified trait method
+
+This makes the generated code self-contained and doesn't require contracts to import `async_trait` at use sites.
+
+**Verification:**
+```bash
+cargo check -p darkfi --features "zk"  # Should compile without async_trait errors
+cargo check -p darkfid  # Should compile
 ```
-
-The generated impl uses `Pin<Box<dyn Future + Send + '_>>` with an implicit lifetime that doesn't satisfy the compiler's bounds checking on Rust 1.90+.
-
-**Affected Components:**
-- `darkfi-sdk` (src/sdk)
-- `darkfi-serial` (src/serial)
-- `darkfi-derive` (src/serial/derive)
-- `darkfi-derive-internal` (src/serial/derive-internal)
-- All smart contract integration tests when compiled with `async-serial` enabled
-
-**Feature Chain:**
-```
-darkfi/validator
-  └── darkfi/blockchain
-        └── darkfi/tx
-              └── darkfi/async-serial
-                    └── darkfi-serial/async
-```
-
-**Options to Resolve:**
-
-1. **Update to async-trait 1.0+** (requires Rust 1.75+):
-   - Change `async-trait = "0"` to `async-trait = "1"` in `src/serial/Cargo.toml`
-   - Remove `#[async_trait]` from trait definitions (now redundant with Rust 1.75+)
-
-2. **Restructure darkfi Features:**
-   Remove `async-serial` from the `tx` feature chain to break async serialization for tx module but allow tests to compile.
 
 **Related:**
 - [Async Rust Fundamentals](../learn/dchat/async-rust-fundamentals.md)

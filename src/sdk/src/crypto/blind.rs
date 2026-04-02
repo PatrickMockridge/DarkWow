@@ -19,7 +19,7 @@
 use core::str::FromStr;
 
 #[cfg(feature = "async")]
-use darkfi_serial::{async_trait, AsyncDecodable, AsyncEncodable};
+use darkfi_serial::{AsyncDecodable, AsyncEncodable};
 use darkfi_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
 
 use pasta_curves::{

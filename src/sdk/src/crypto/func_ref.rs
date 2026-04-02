@@ -18,8 +18,6 @@
 
 use std::str::FromStr;
 
-#[cfg(feature = "async")]
-use darkfi_serial::async_trait;
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 use pasta_curves::pallas;
 
