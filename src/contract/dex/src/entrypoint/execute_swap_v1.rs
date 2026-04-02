@@ -212,8 +212,8 @@ pub(crate) fn dex_execute_swap_process_update_v1(
     // In a full implementation, we would also call the money contract
     // to perform the actual token transfers
     // Using nullifiers for deletion (proper double-spend prevention)
-    wasm::db::db_delete(participants_db, &swap.proposer_nullifier)?;
-    wasm::db::db_delete(participants_db, &swap.acceptor_nullifier)?;
+    wasm::db::db_del(participants_db, &swap.proposer_nullifier)?;
+    wasm::db::db_del(participants_db, &swap.acceptor_nullifier)?;
 
     msg!("[ExecuteSwapV1] Swap executed successfully: id={:?}", &update.swap_id);
 

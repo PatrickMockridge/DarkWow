@@ -22,7 +22,9 @@
 #[cfg(feature = "client")]
 // use darkfi_serial::async_trait;
 
-use darkfi_sdk::crypto::{ContractId, PublicKey};
+use darkfi_sdk::{
+    crypto::{ContractId, PublicKey},
+};
 #[cfg(feature = "async")]
 use darkfi_serial::async_trait;
 use darkfi_serial::{SerialDecodable, SerialEncodable};

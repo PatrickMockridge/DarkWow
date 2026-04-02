@@ -81,13 +81,13 @@ pub(crate) fn atomic_swap_create_process_instruction_v1(
     let swaps_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_SWAPS_TREE)?;
     if wasm::db::db_contains_key(swaps_db, &serialize(&params.commitment))? {
         msg!("[AtomicSwap::Create] Error: Swap already exists");
-        return Err(ContractError::InvalidInstruction)
+        return Err(ContractError::InvalidFunction)
     }
 
     // Verify the hash is not zero
     if params.hash == pallas::Base::ZERO {
         msg!("[AtomicSwap::Create] Error: Hash cannot be zero");
-        return Err(ContractError::InvalidInstruction)
+        return Err(ContractError::InvalidFunction)
     }
 
     // Return update data with all info needed to store the swap
@@ -102,7 +102,7 @@ pub(crate) fn atomic_swap_create_process_instruction_v1(
         amount: params.amount,
         token_id: params.token_id,
         blind: params.blind,
-        created_at: wasm::util::get_verifying_block_height()?,
+        created_at: wasm::util::get_verifying_block_height()?.into(),
     };
     Ok(serialize(&update))
 }
@@ -131,7 +131,7 @@ pub(crate) fn atomic_swap_create_process_update_v1(
     };
 
     // Store the swap
-    wasm::db::db_set(swaps_db, &serialize(&update.swap_id), &swap.encode())?;
+    wasm::db::db_set(swaps_db, &serialize(&update.swap_id), &serialize(&swap))?;
 
     msg!("[AtomicSwap::Create] Swap created: {:?}", update.swap_id);
     Ok(())

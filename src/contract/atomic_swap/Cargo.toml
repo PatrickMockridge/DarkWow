@@ -12,4 +12,5 @@ darkfi-serial = { path = "../../serial" }
 
 [features]
 default = []
+no-entrypoint = []
 client = []

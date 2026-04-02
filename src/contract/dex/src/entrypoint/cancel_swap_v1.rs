@@ -205,9 +205,9 @@ pub(crate) fn dex_cancel_swap_process_update_v1(
     // to refund the locked funds
     // Using nullifier for deletion (proper double-spend prevention)
     if update.is_proposer {
-        wasm::db::db_delete(participants_db, &swap.proposer_nullifier)?;
+        wasm::db::db_del(participants_db, &swap.proposer_nullifier)?;
     } else {
-        wasm::db::db_delete(participants_db, &swap.acceptor_nullifier)?;
+        wasm::db::db_del(participants_db, &swap.acceptor_nullifier)?;
     }
 
     msg!("[CancelSwapV1] Swap cancelled: id={:?}", &update.swap_id);

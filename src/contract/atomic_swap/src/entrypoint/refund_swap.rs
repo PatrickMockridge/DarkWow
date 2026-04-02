@@ -24,7 +24,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use darkfi_serial::{deserialize, serialize, Decodable, Encodable};
 
 use crate::{
     model::{RefundParamsV1, RefundUpdateV1, Swap, SwapState},
@@ -71,28 +71,28 @@ pub(crate) fn atomic_swap_refund_process_instruction_v1(
     let swaps_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_SWAPS_TREE)?;
     let Some(swap_data) = wasm::db::db_get(swaps_db, &serialize(&params.swap_id))? else {
         msg!("[AtomicSwap::Refund] Error: Swap not found");
-        return Err(ContractError::InvalidInstruction)
+        return Err(ContractError::InvalidFunction)
     };
-    let swap: Swap = Swap::decode(&mut std::io::Cursor::new(&swap_data))
-        .map_err(|_| ContractError::DecodeError)?;
+    let swap: Swap = deserialize(&swap_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Verify swap is in Created state
     if swap.state != SwapState::Created {
         msg!("[AtomicSwap::Refund] Error: Swap not in Created state");
-        return Err(ContractError::InvalidState)
+        return Err(ContractError::InvalidFunction)
     }
 
     // Verify timelock has passed
     if params.current_block < swap.timelock {
         msg!("[AtomicSwap::Refund] Error: Timelock not expired");
-        return Err(ContractError::InvalidInstruction)
+        return Err(ContractError::InvalidFunction)
     }
 
     // Check nullifier hasn't been used (prevent double-refund)
     let nullifiers_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
     if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.nullifier))? {
         msg!("[AtomicSwap::Refund] Error: Nullifier already spent");
-        return Err(ContractError::InvalidInstruction)
+        return Err(ContractError::InvalidFunction)
     }
 
     // Return update data
@@ -112,14 +112,14 @@ pub(crate) fn atomic_swap_refund_process_update_v1(
     let swaps_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_SWAPS_TREE)?;
     let Some(swap_data) = wasm::db::db_get(swaps_db, &serialize(&update.swap_id))? else {
         msg!("[AtomicSwap::Refund] Error: Swap not found");
-        return Err(ContractError::InvalidInstruction)
+        return Err(ContractError::InvalidFunction)
     };
-    let mut swap: Swap = Swap::decode(&mut std::io::Cursor::new(&swap_data))
-        .map_err(|_| ContractError::DecodeError)?;
+    let mut swap: Swap = deserialize(&swap_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Mark as Refunded
     swap.state = SwapState::Refunded;
-    wasm::db::db_set(swaps_db, &serialize(&update.swap_id), &swap.encode())?;
+    wasm::db::db_set(swaps_db, &serialize(&update.swap_id), &serialize(&swap))?;
 
     // Record nullifier to prevent double-refund
     let nullifiers_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE)?;

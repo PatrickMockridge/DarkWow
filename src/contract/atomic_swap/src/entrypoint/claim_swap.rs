@@ -24,7 +24,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use darkfi_serial::{deserialize, serialize, Decodable, Encodable};
 
 use crate::{
     model::{ClaimParamsV1, ClaimUpdateV1, Swap, SwapState},
@@ -72,29 +72,29 @@ pub(crate) fn atomic_swap_claim_process_instruction_v1(
     let swaps_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_SWAPS_TREE)?;
     let Some(swap_data) = wasm::db::db_get(swaps_db, &serialize(&params.swap_id))? else {
         msg!("[AtomicSwap::Claim] Error: Swap not found");
-        return Err(ContractError::InvalidInstruction)
+        return Err(ContractError::InvalidFunction)
     };
-    let swap: Swap = Swap::decode(&mut std::io::Cursor::new(&swap_data))
-        .map_err(|_| ContractError::DecodeError)?;
+    let swap: Swap = deserialize(&swap_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Verify swap is in Created state
     if swap.state != SwapState::Created {
         msg!("[AtomicSwap::Claim] Error: Swap not in Created state");
-        return Err(ContractError::InvalidState)
+        return Err(ContractError::InvalidFunction)
     }
 
     // Verify the hash matches poseidon_hash(secret)
     let computed_hash = poseidon_hash([params.secret]);
     if computed_hash != swap.hash {
         msg!("[AtomicSwap::Claim] Error: Hash does not match secret");
-        return Err(ContractError::InvalidInstruction)
+        return Err(ContractError::InvalidFunction)
     }
 
     // Check nullifier hasn't been used (prevent double-claim)
     let nullifiers_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
     if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.nullifier))? {
         msg!("[AtomicSwap::Claim] Error: Nullifier already spent");
-        return Err(ContractError::InvalidInstruction)
+        return Err(ContractError::InvalidFunction)
     }
 
     // Return update data
@@ -115,14 +115,14 @@ pub(crate) fn atomic_swap_claim_process_update_v1(
     let swaps_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_SWAPS_TREE)?;
     let Some(swap_data) = wasm::db::db_get(swaps_db, &serialize(&update.swap_id))? else {
         msg!("[AtomicSwap::Claim] Error: Swap not found");
-        return Err(ContractError::InvalidInstruction)
+        return Err(ContractError::InvalidFunction)
     };
-    let mut swap: Swap = Swap::decode(&mut std::io::Cursor::new(&swap_data))
-        .map_err(|_| ContractError::DecodeError)?;
+    let mut swap: Swap = deserialize(&swap_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Mark as Claimed
     swap.state = SwapState::Claimed;
-    wasm::db::db_set(swaps_db, &serialize(&update.swap_id), &swap.encode())?;
+    wasm::db::db_set(swaps_db, &serialize(&update.swap_id), &serialize(&swap))?;
 
     // Record nullifier to prevent double-claim
     let nullifiers_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
@@ -130,7 +130,7 @@ pub(crate) fn atomic_swap_claim_process_update_v1(
 
     // Store revealed secret (for external chain to read)
     let secrets_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_SECRETS_TREE)?;
-    wasm::db::db_set(secrets_db, &serialize(&update.swap_id), &update.secret.encode())?;
+    wasm::db::db_set(secrets_db, &serialize(&update.swap_id), &serialize(&update.secret))?;
 
     msg!("[AtomicSwap::Claim] Swap claimed: {:?}", update.swap_id);
     Ok(())

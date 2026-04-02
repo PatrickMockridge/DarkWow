@@ -136,7 +136,7 @@ impl Swap {
             dy,
             pallas::Base::from(amount),
             token_id,
-            pallas::Base::from(side),
+            pallas::Base::from(side as u64),
             blind,
         ])
     }
@@ -215,7 +215,7 @@ pub struct CreateSwapUpdateV1 {
     pub blind: pallas::Base,
     /// Creation block height
     pub created_at: u64,
-};
+}
 
 /// Parameters for `AtomicSwap::ClaimV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -237,7 +237,7 @@ pub struct ClaimUpdateV1 {
     pub nullifier: pallas::Base,
     /// The revealed secret (cleared after use)
     pub secret: pallas::Base,
-};
+}
 
 /// Parameters for `AtomicSwap::RefundV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -259,7 +259,7 @@ pub struct RefundUpdateV1 {
     pub swap_id: SwapId,
     /// Nullifier for the refunded swap
     pub nullifier: pallas::Base,
-};
+}
 
 // ============================================================================
 // CROSS-CHAIN CONSTANTS

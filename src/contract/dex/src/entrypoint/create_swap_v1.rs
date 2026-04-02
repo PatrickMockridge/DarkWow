@@ -256,7 +256,7 @@ fn verify_lock_proof(
     lock_proof: &[[u8; 32]],
 ) -> Result<(), ContractError> {
     // Get trusted Merkle root from config
-    let trusted_root_data = wasm::db::db_get(config_db, DEX_TRUSTED_MONEY_MERKLE_ROOT_KEY)
+    let trusted_root_data = wasm::db::db_get(config_db, DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY)
         .map_err(|_| ContractError::DbError)?;
 
     let trusted_root = match trusted_root_data {
