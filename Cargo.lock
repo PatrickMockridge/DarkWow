@@ -1924,6 +1924,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkfi-identity-contract"
+version = "0.1.0"
+dependencies = [
+ "darkfi-sdk",
+ "darkfi-serial",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "darkfi-safemath-zk"
 version = "0.1.0"
 
