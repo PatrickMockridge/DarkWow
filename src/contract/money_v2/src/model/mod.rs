@@ -26,15 +26,13 @@ use darkfi_sdk::{
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 
-// UNUSED: async_trait is imported but not used - async serialization is handled
-// by darkfi-serial derive macros when async feature is enabled (via darkfi/validator).
-// This import is dead code and can be removed if darkfi-serial/async is ever fixed.
+// async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
-// use darkfi_serial::async_trait;
+use darkfi_serial::async_trait;
 
 /// Nullifier definitions
 pub mod nullifier;
-pub use nullifier::Nullifier;
+pub use self::nullifier::Nullifier;
 
 /// Token ID definitions and methods
 pub mod token_id;

@@ -18,7 +18,8 @@
 
 use darkfi_sdk::{
     crypto::{
-        constants::DRK_TOKEN_ID_PERSONALIZATION, pasta_prelude::PrimeField, util::hash_to_base,
+        constants::DRK_TOKEN_ID_PERSONALIZATION, pasta_prelude::PrimeField, poseidon_hash,
+        util::hash_to_base,
     },
     error::ContractError,
     pasta::pallas,
@@ -26,24 +27,9 @@ use darkfi_sdk::{
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 use lazy_static::lazy_static;
 
-// UNUSED: async_trait is imported but not used - async serialization is handled
-// by darkfi-serial derive macros when async feature is enabled (via darkfi/validator).
-// This import is dead code and can be removed if darkfi-serial/async is ever fixed.
+// async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
-// use darkfi_serial::async_trait;
-
-use super::poseidon_hash;
-
-lazy_static! {
-    // Is this even needed? Not used elsewhere except here.
-    /// Derivation prefix for `TokenId`
-    pub static ref TOKEN_ID_PREFIX: pallas::Base = pallas::Base::from(69);
-
-    /// Native DARK token ID.
-    /// It does not correspond to any real commitment since we only rely on this value as
-    /// a constant.
-    pub static ref DARK_TOKEN_ID: TokenId = TokenId(hash_to_base(&[0x69], &[DRK_TOKEN_ID_PERSONALIZATION]));
-}
+use darkfi_serial::async_trait;
 
 /// TokenId represents an on-chain identifier for a certain token.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
@@ -81,6 +67,17 @@ impl TokenId {
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0.to_repr()
     }
+}
+
+lazy_static! {
+    // Is this even needed? Not used elsewhere except here.
+    /// Derivation prefix for `TokenId`
+    pub static ref TOKEN_ID_PREFIX: pallas::Base = pallas::Base::from(69);
+
+    /// Native DARK token ID.
+    /// It does not correspond to any real commitment since we only rely on this value as
+    /// a constant.
+    pub static ref DARK_TOKEN_ID: TokenId = TokenId(hash_to_base(&[0x69], &[DRK_TOKEN_ID_PERSONALIZATION]));
 }
 
 use core::str::FromStr;

@@ -35,7 +35,7 @@ use darkfi_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::MoneyError,
-    model::{MoneyBurnParamsV1, MoneyBurnUpdateV1},
+    model::{MoneyBurnParamsV1, MoneyBurnUpdateV1, Nullifier},
     MONEY_CONTRACT_COIN_ROOTS_TREE, MONEY_CONTRACT_INFO_TREE, MONEY_CONTRACT_LATEST_NULLIFIER_ROOT,
     MONEY_CONTRACT_NULLIFIERS_TREE, MONEY_CONTRACT_NULLIFIER_ROOTS_TREE,
     MONEY_CONTRACT_ZKAS_BURN_NS_V2,
@@ -186,7 +186,7 @@ pub(crate) fn money_burn_process_update_v1(
         nullifiers_db,
         nullifier_roots_db,
         MONEY_CONTRACT_LATEST_NULLIFIER_ROOT,
-        &update.nullifiers.iter().map(|n| n.inner()).collect::<Vec<_>>(),
+        &update.nullifiers.iter().map(|n: &Nullifier| n.inner()).collect::<Vec<_>>(),
     )?;
 
     Ok(())

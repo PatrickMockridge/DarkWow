@@ -35,7 +35,7 @@ use darkfi_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::MoneyError,
-    model::{MoneyTransferParamsV1, MoneyTransferUpdateV1},
+    model::{MoneyTransferParamsV1, MoneyTransferUpdateV1, Nullifier},
     MONEY_CONTRACT_COINS_TREE, MONEY_CONTRACT_COIN_MERKLE_TREE, MONEY_CONTRACT_COIN_ROOTS_TREE,
     MONEY_CONTRACT_INFO_TREE, MONEY_CONTRACT_LATEST_COIN_ROOT,
     MONEY_CONTRACT_LATEST_NULLIFIER_ROOT, MONEY_CONTRACT_NULLIFIERS_TREE,
@@ -251,7 +251,7 @@ pub(crate) fn money_transfer_process_update_v1(
         nullifiers_db,
         nullifier_roots_db,
         MONEY_CONTRACT_LATEST_NULLIFIER_ROOT,
-        &update.nullifiers.iter().map(|n| n.inner()).collect::<Vec<_>>(),
+        &update.nullifiers.iter().map(|n: &Nullifier| n.inner()).collect::<Vec<_>>(),
     )?;
 
     msg!("[TransferV1] Adding new coins to the set");

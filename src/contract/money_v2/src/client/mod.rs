@@ -38,10 +38,11 @@ use darkfi_sdk::{
     },
     pasta::pallas,
 };
-// UNUSED: async_trait is imported but not used - async serialization is handled
-// by darkfi-serial derive macros when async feature is enabled (via darkfi/validator).
-// This import is dead code and can be removed if darkfi-serial/async is ever fixed.
 use darkfi_serial::{SerialDecodable, SerialEncodable};
+
+// async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
+#[cfg(feature = "client")]
+use darkfi_serial::async_trait;
 
 use crate::model::{Coin, Nullifier, TokenId};
 
