@@ -43,6 +43,10 @@ mod tests;
 mod error;
 use error::{server_error, RpcError};
 
+/// Contract registry and handlers for generalized invocation
+mod contract_registry;
+mod contract_handler;
+
 /// JSON-RPC requests handler and methods
 mod rpc;
 use rpc::{management::ManagementRpcHandler, DefaultRpcHandler};

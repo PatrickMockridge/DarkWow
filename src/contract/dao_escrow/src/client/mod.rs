@@ -61,6 +61,8 @@ use darkfi_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
+#[cfg(feature = "async")]
+use darkfi_serial::async_trait;
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{

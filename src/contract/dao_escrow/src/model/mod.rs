@@ -69,6 +69,8 @@ use darkfi_sdk::{
     crypto::{poseidon_hash, BaseBlind, PublicKey},
     pasta::pallas,
 };
+#[cfg(feature = "async")]
+use darkfi_serial::async_trait;
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 
 /// DAO-Escrow unique identifier (hash of parameters)
