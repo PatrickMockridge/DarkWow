@@ -274,7 +274,7 @@ impl<const WINDOW_SIZE: usize, const NUM_OF_BITS: usize> LessThanChip<WINDOW_SIZ
 
                 let a_offset_value = a.value().zip(b.value()).zip(out.value()).map(
                     |((lhs, rhs), out)| {
-                        if out == pallas::Base::ONE {
+                        if *out == pallas::Base::ONE {
                             *rhs - *lhs
                         } else {
                             *lhs - *rhs - pallas::Base::ONE
@@ -324,7 +324,7 @@ impl<const WINDOW_SIZE: usize, const NUM_OF_BITS: usize> LessThanChip<WINDOW_SIZ
 
                 let a_offset_value = a.value().zip(b.value()).zip(out.value()).map(
                     |((lhs, rhs), out)| {
-                        if out == pallas::Base::ONE {
+                        if *out == pallas::Base::ONE {
                             *rhs - *lhs - pallas::Base::ONE
                         } else {
                             *lhs - *rhs

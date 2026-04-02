@@ -25,6 +25,8 @@ use darkfi_sdk::{
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
+#[cfg(feature = "async")]
+use darkfi_serial::async_trait;
 use lazy_static::lazy_static;
 
 lazy_static! {

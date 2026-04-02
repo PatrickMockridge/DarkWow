@@ -17,6 +17,8 @@
  */
 
 use darkfi_sdk::{crypto::pasta_prelude::PrimeField, error::ContractError, pasta::pallas};
+#[cfg(feature = "async")]
+use darkfi_serial::async_trait;
 use darkfi_serial::{SerialDecodable, SerialEncodable};
 
 /// The `Nullifier` is represented as a base field element.

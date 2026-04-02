@@ -40,8 +40,10 @@ darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
 [features]
 default = []
 no-entrypoint = []
+async = []
 client = [
     "darkfi",
+    "async",
     "darkfi-serial/async",
 
     "rand",

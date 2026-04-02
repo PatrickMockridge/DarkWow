@@ -89,6 +89,10 @@ pub fn circuit_gas_use(zkbin: &ZkBinary) -> u64 {
             Opcode::ConstrainEqualBase => 10,
             Opcode::ConstrainEqualPoint => 20,
             Opcode::ConstrainInstance => 10,
+            Opcode::IsEqualBase => 100,
+            Opcode::LessThanOrEqual => 100,
+            Opcode::NotBase => 20,
+            Opcode::BaseLtStrict => 100,
             Opcode::DebugPrint => 100,
         };
 
