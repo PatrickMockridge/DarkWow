@@ -22,13 +22,230 @@ DarkFi applications typically follow a layered architecture:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Two Types of SDKs
+## Recommended Architecture: Domain-Driven SDK
 
-### 1. Contract Client SDKs (Transaction Builders)
+The recommended pattern separates concerns into distinct crates:
 
-Each DarkFi contract provides a client library for building transactions. These live in `src/contract/<name>/src/client/mod.rs`.
+```
+my_app/
+├── Cargo.toml          # Workspace
+├── crates/
+│   ├── my-app-domain/   # Pure domain types, no external deps
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   ├── api.rs   # ApiRequest/ApiResponse enums
+│   │   │   └── model.rs # Domain models
+│   │   └── Cargo.toml
+│   ├── my-app-client/   # Transport + SDK implementation
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   └── transport.rs
+│   │   └── Cargo.toml
+│   └── my-app-core/     # Business logic (optional)
+src/                     # Application binary
+```
 
-**Pattern**: Builder API with method chaining
+### Why This Pattern?
+
+1. **Domain independence**: The domain crate has zero external dependencies (only `serde`)
+2. **Testability**: Pure domain types are easy to test without infrastructure
+3. **Reusability**: Same domain types work across CLI, desktop, web
+4. **Type safety**: Compile-time guarantees instead of runtime JSON parsing
+
+## Domain Crate Pattern
+
+The domain crate defines the API contract without any implementation details:
+
+### API Types (`api.rs`)
+
+```rust
+use serde::{Deserialize, Serialize};
+
+// Error type
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceError {
+    pub code: String,
+    pub message: String,
+    pub detail: Option<String>,
+}
+
+// Request params - each operation has its own typed struct
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSwapParams {
+    pub wallet_id: Option<String>,
+    pub offer_token: [u8; 32],
+    pub offer_amount: u64,
+    pub request_token: [u8; 32],
+    pub request_amount: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendSubmitParams {
+    pub wallet_id: Option<String>,
+    pub draft: SendDraft,
+    pub dry_run: bool,
+}
+
+// API Request enum - one variant per operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ApiRequest {
+    // Lifecycle
+    CreateWallet(CreateWalletParams),
+    OpenWallet(OpenWalletParams),
+    UnlockWallet(UnlockWalletParams),
+
+    // Swap operations
+    CreateSwap(CreateSwapParams),
+    AcceptSwap(AcceptSwapParams),
+    ExecuteSwap(ExecuteSwapParams),
+
+    // Send operations
+    SendSubmit(SendSubmitParams),
+}
+
+impl ApiRequest {
+    pub fn method_name(&self) -> &'static str {
+        match self {
+            ApiRequest::CreateWallet(_) => "wallet.create",
+            ApiRequest::OpenWallet(_) => "wallet.open",
+            ApiRequest::UnlockWallet(_) => "wallet.unlock",
+            ApiRequest::CreateSwap(_) => "swap.create",
+            ApiRequest::AcceptSwap(_) => "swap.accept",
+            ApiRequest::ExecuteSwap(_) => "swap.execute",
+            ApiRequest::SendSubmit(_) => "wallet.send_submit",
+        }
+    }
+}
+
+// API Response enum - matching response types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ApiResponse {
+    WalletCreated(WalletSummary),
+    WalletOpened(WalletSummary),
+    SwapCreated(SwapReceipt),
+    SendReceipt(SendReceipt),
+    // ... other responses
+}
+```
+
+### Domain Models (`model.rs`)
+
+```rust
+use serde::{Deserialize, Serialize};
+
+// Pure domain models with no external dependencies
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendDraft {
+    pub token_id: [u8; 32],
+    pub recipients: Vec<Recipient>,
+    pub amount: u64,
+    pub fee: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Recipient {
+    pub address: String,
+    pub amount: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalletSummary {
+    pub id: String,
+    pub name: String,
+    pub network: String,
+}
+```
+
+## Client Crate Pattern
+
+The client crate implements the SDK using the domain types:
+
+### Transport Trait
+
+```rust
+use drk_desktop_wallet_domain::{ApiRequest, ApiResponse, ServiceError};
+
+/// Transport trait allows different implementations
+pub trait Transport: Send + Sync {
+    fn request(&self, request: &ApiRequest) -> Result<ApiResponse, ServiceError>;
+}
+
+/// Loopback transport for in-process calls
+pub struct LoopbackTransport<H> {
+    handler: H,
+}
+
+impl<H> Transport for LoopbackTransport<H>
+where
+    H: HandleRequest,
+{
+    fn request(&self, request: &ApiRequest) -> Result<ApiResponse, ServiceError> {
+        self.handler.handle(request.clone())
+    }
+}
+
+/// HTTP transport for networked calls
+pub struct HttpTransport {
+    endpoint: String,
+}
+
+impl Transport for HttpTransport {
+    fn request(&self, request: &ApiRequest) -> Result<ApiResponse, ServiceError> {
+        // JSON-RPC call to endpoint
+    }
+}
+```
+
+### Typed SDK Client
+
+```rust
+use drk_desktop_wallet_domain::*;
+
+pub struct WalletClient<T: Transport> {
+    transport: T,
+}
+
+impl<T: Transport> WalletClient<T> {
+    pub fn new(transport: T) -> Self {
+        Self { transport }
+    }
+
+    pub fn create_wallet(&self, params: CreateWalletParams) -> Result<WalletSummary, ServiceError> {
+        match self.transport.request(&ApiRequest::CreateWallet(params))? {
+            ApiResponse::WalletCreated(summary) => Ok(summary),
+            other => Err(unexpected("WalletCreated", other)),
+        }
+    }
+
+    pub fn create_swap(&self, params: CreateSwapParams) -> Result<SwapReceipt, ServiceError> {
+        match self.transport.request(&ApiRequest::CreateSwap(params))? {
+            ApiResponse::SwapCreated(receipt) => Ok(receipt),
+            other => Err(unexpected("SwapCreated", other)),
+        }
+    }
+
+    pub fn submit_send(&self, params: SendSubmitParams) -> Result<SendReceipt, ServiceError> {
+        match self.transport.request(&ApiRequest::SendSubmit(params))? {
+            ApiResponse::SendReceipt(receipt) => Ok(receipt),
+            other => Err(unexpected("SendReceipt", other)),
+        }
+    }
+}
+
+fn unexpected<T>(expected: &str, actual: ApiResponse) -> ServiceError {
+    ServiceError::with_detail(
+        "unexpected_response",
+        format!("Expected `{expected}` response"),
+        format!("{actual:?}"),
+    )
+}
+```
+
+## Contract SDK Pattern (for Smart Contracts)
+
+Each DarkFi contract provides a client library in `src/contract/<name>/src/client/mod.rs`:
+
+### Builder Pattern
 
 ```rust
 /// Builder for creating an atomic swap proposal
@@ -42,21 +259,17 @@ pub struct CreateSwapBuilder {
 impl CreateSwapBuilder {
     pub fn new() -> Self { /* ... */ }
 
-    /// Set the secret for the lock
     pub fn secret(&mut self, secret: [u8; 32]) -> &mut Self {
         self.secret = Some(secret);
         self
     }
 
-    /// Set the token being offered
     pub fn offer_token(&mut self, token: [u8; 32]) -> &mut Self {
         self.offer_token = Some(token);
         self
     }
 
-    /// Build the create swap transaction
     pub fn build(&self) -> Result<Vec<u8>, ClientError> {
-        // Validation
         let secret = self.secret.ok_or_else(|| {
             ClientError::InvalidInput("secret required".into())
         })?;
@@ -65,36 +278,35 @@ impl CreateSwapBuilder {
         let mut call_data = Vec::new();
         call_data.push(0x01); // CreateSwapV1 = 0x01
         call_data.extend_from_slice(&compute_swap_id(...));
-
         Ok(call_data)
     }
 }
 ```
 
-**Usage**:
+### Usage
+
 ```rust
 let call_data = CreateSwapBuilder::new()
     .secret(alice_secret)
     .offer_token(drk_token)
     .offer_amount(1000)
-    .request_token(eth_token)
-    .request_amount(1)
     .build()?;
 ```
 
-### 2. Integration SDKs (Wallet/Frontend)
+## Key Differences from Generic RPC
 
-Integration SDKs expose high-level APIs for applications. They combine:
-- RPC client for node communication
-- Wallet management
-- Transaction signing
-- State tracking
+**This typed approach is better than generic `contract.invoke()` because:**
 
-## Contract SDK Pattern
+| Aspect | Typed API | Generic RPC |
+|--------|----------|-------------|
+| Type safety | Compile-time checking | Runtime JSON errors |
+| Discovery | IDE autocomplete | Documentation lookup |
+| Refactoring | Compiler-guided | Manual everywhere |
+| Error handling | Exhaustiveness checking | Missed cases |
 
-Every DarkFi contract follows this structure:
+## Contract Entrypoint Pattern
 
-### Entry Point: `define_contract!`
+DarkFi contracts use `define_contract!` with four functions:
 
 ```rust
 darkfi_sdk::define_contract!(
@@ -105,8 +317,6 @@ darkfi_sdk::define_contract!(
 );
 ```
 
-**Four functions**:
-
 | Function | Purpose | Returns |
 |----------|---------|---------|
 | `init_contract` | Initialize contract state | `ContractResult` |
@@ -115,8 +325,6 @@ darkfi_sdk::define_contract!(
 | `get_metadata` | Return ZK public inputs | `ContractResult` |
 
 ### Function Selector Pattern
-
-Contracts use a function enum with `#[repr(u8)]`:
 
 ```rust
 define_contract_function!(DexFunction {
@@ -128,323 +336,93 @@ define_contract_function!(DexFunction {
 });
 ```
 
-**Important**: The first byte of call data is the function selector.
+First byte of call data = function selector.
 
-### Data Encoding
-
-All parameters use `darkfi_serial` for CBOR encoding:
+### WASM APIs
 
 ```rust
-use darkfi_serial::{SerialEncodable, SerialDecodable};
+use darkfi_sdk::wasm;
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct CreateSwapParams {
-    pub swap_id: [u8; 32],
-    pub offer_token: [u8; 32],
-    pub offer_amount: u64,
-    // ...
-}
+// Database
+let info_db = wasm::db::db_init(cid, "info")?;
+let swaps_db = wasm::db::db_lookup(cid, "swaps")?;
+wasm::db::db_set(swaps_db, &key, &value)?;
+let data = wasm::db::db_get(swaps_db, &key)?;
+
+// Utilities
+let call_idx = wasm::util::get_call_index()? as usize;
+wasm::util::set_return_data(&metadata)?;
 ```
 
 ### Error Handling
-
-Use `ContractError` variants from the SDK:
 
 ```rust
 use darkfi_sdk::error::{ContractError, ContractResult};
 
 // Valid variants:
-// ContractError::IoError("message".to_string())
-// ContractError::InvalidFunction
-// ContractError::Custom(u32)
-```
-
-**Do NOT use** non-existent variants like:
-- `ContractError::NotYetImplemented`
-- `ContractError::FailedToDeserialize`
-- `ContractError::DecodeError`
-- `ContractError::DbError`
-
-## SDK APIs for Contracts
-
-### WASM Database API
-
-```rust
-use darkfi_sdk::wasm;
-
-// Initialize a tree
-let info_db = wasm::db::db_init(cid, "info")?;
-
-// Lookup a tree handle
-let swaps_db = wasm::db::db_lookup(cid, "swaps")?;
-
-// Get value
-let data = wasm::db::db_get(swaps_db, &key)?;
-
-// Check existence
-if wasm::db::db_contains_key(swaps_db, &key)? {
-    // ...
-}
-
-// Set value
-wasm::db::db_set(swaps_db, &key, &value)?;
-
-// Delete value
-wasm::db::db_del(swaps_db, &key)?;
-```
-
-### WASM Utilities
-
-```rust
-use darkfi_sdk::wasm::util;
-
-// Get current call index
-let call_idx = wasm::util::get_call_index()? as usize;
-
-// Set return data
-wasm::util::set_return_data(&metadata)?;
-```
-
-### Serialization
-
-```rust
-use darkfi_serial::{deserialize, serialize, Encodable, Decodable};
-
-// Serialize
-let encoded = serialize(&data);
-
-// Deserialize
-let decoded: MyType = deserialize(&encoded)?;
-```
-
-### Field Operations
-
-```rust
-use darkfi_sdk::pasta::pallas;
-use darkfi_sdk::crypto::pasta_prelude::PrimeField;
-
-// Convert bytes to field element
-let element = match pallas::Base::from_repr(params.some_bytes).into_option() {
-    Some(v) => v,
-    None => return Err(ContractError::IoError("Invalid".to_string()).into()),
-};
-
-// Convert field element to bytes
-let bytes: [u8; 32] = element.to_repr();
-```
-
-### Intent Types
-
-```rust
-use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier};
-
-// Create from bytes
-let commitment = IntentCommitment::from_bytes([0u8; 32]).unwrap();
-let nullifier = IntentNullifier::from_bytes([0u8; 32]).unwrap();
-
-// Get inner bytes
-let inner = commitment.inner(); // returns pallas::Base
-let bytes = commitment.to_bytes(); // returns [u8; 32]
-```
-
-## Application SDK Pattern
-
-### RPC Client
-
-Connect to `darkfid` via JSON-RPC:
-
-```rust
-use jsonrpc_client::{Client, JsonRpcError};
-
-pub struct DarkfiClient {
-    rpc: Client,
-}
-
-impl DarkfiClient {
-    pub async fn new(url: &str) -> Result<Self, Error> {
-        let rpc = Client::new(url);
-        Ok(Self { rpc })
-    }
-
-    pub async fn contract_invoke(
-        &self,
-        contract_id: &str,
-        function: &str,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value, Error> {
-        self.rpc.call("contract.invoke", (contract_id, function, params)).await
-    }
-}
-```
-
-### Wallet Integration
-
-```rust
-pub struct Wallet {
-    secret: SecretKey,
-    rpc: DarkfiClient,
-}
-
-impl Wallet {
-    pub async fn create_swap(
-        &self,
-        offer_token: [u8; 32],
-        offer_amount: u64,
-    ) -> Result<Transaction, Error> {
-        // 1. Build contract call
-        let call_data = CreateSwapBuilder::new()
-            .secret(self.secret.to_bytes())
-            .offer_token(offer_token)
-            .offer_amount(offer_amount)
-            .build()?;
-
-        // 2. Create transaction with proof
-        let proof = self.generate_zk_proof(&call_data)?;
-
-        // 3. Submit via RPC
-        let tx = self.submit_transaction(call_data, proof).await?;
-
-        Ok(tx)
-    }
-}
-```
-
-## Transaction Lifecycle
-
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   Builder    │────▶│  RPC Submit  │────▶│   darkfid    │
-│  (creates)   │     │              │     │  (validates) │
-└──────────────┘     └──────────────┘     └──────────────┘
-                                                  │
-                                                  ▼
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   Receipt    │◀────│  Broadcast   │◀────│  ZK Verify   │
-│  (result)    │     │              │     │              │
-└──────────────┘     └──────────────┘     └──────────────┘
-```
-
-## Building a CLI Tool (drk pattern)
-
-The `drk` tool demonstrates the recommended CLI pattern:
-
-```
-drk/
-├── Cargo.toml
-├── src/
-│   ├── main.rs        # CLI entry point
-│   ├── lib.rs         # Library exports
-│   ├── error.rs      # Error types
-│   ├── money.rs      # Money contract commands
-│   ├── dao.rs        # DAO contract commands
-│   ├── swap.rs       # Swap contract commands
-│   ├── rpc.rs        # RPC client
-│   └── walletdb.rs   # Wallet database
-└── Makefile
-```
-
-### CLI Structure
-
-```rust
-// main.rs
-#[tokio::main]
-async fn main() -> Result<(), Error> {
-    let matches = Command::new("drk")
-        .subcommand(money::cmd())
-        .subcommand(dao::cmd())
-        .run_async()
-        .await?;
-
-    match matches.subcommand() {
-        Some(("transfer", m)) => money::transfer(m).await?,
-        Some(("swap", m)) => swap::execute(m).await?,
-        // ...
-    }
-    Ok(())
-}
+ContractError::IoError("message".to_string())
+ContractError::InvalidFunction
+ContractError::Custom(u32)
 ```
 
 ## Best Practices
 
-### 1. Use Builder Pattern for Transactions
+### 1. Separate Domain from Implementation
 
 ```rust
-// Good
-let tx = TransactionBuilder::new()
-    .contract("dao_escrow")
-    .function("InitializeV1")
-    .params(params)
-    .fee(fee)
-    .build()?;
+// crates/my-app-domain/src/lib.rs
+pub mod api;
+pub mod model;
 
-// Avoid
-let tx = build_transaction("dao_escrow", "InitializeV1", &params, fee);
+// Re-export for convenience
+pub use api::{ApiRequest, ApiResponse};
+pub use model::{User, Account};
 ```
 
-### 2. Validate Early
+### 2. Use the Transport Trait
+
+```rust
+// Allow different transports (loopback, HTTP, WebSocket)
+pub fn do_something<T: Transport>(client: &WalletClient<T>) {
+    client.create_wallet(params)?;
+}
+```
+
+### 3. Validate Early in Builders
 
 ```rust
 pub fn build(&self) -> Result<Vec<u8>, ClientError> {
-    // Validate all fields at the start
     let secret = self.secret.ok_or_else(|| {
-        ClientError::InvalidInput("secret is required".into())
+        ClientError::InvalidInput("secret required".into())
     })?;
 
     if self.amount == 0 {
         return Err(ClientError::InvalidInput("amount must be > 0".into()));
     }
-
-    // Proceed with encoding
     // ...
 }
 ```
 
-### 3. Use Type-Safe IDs
+### 4. Exhaustive Match Checking
+
+```rust
+// Compiler ensures all variants handled
+match self.transport.request(&ApiRequest::CreateWallet(params))? {
+    ApiResponse::WalletCreated(summary) => Ok(summary),
+    // Compiler error if we forget a variant
+}
+```
+
+### 5. Type-Safe IDs
 
 ```rust
 // Good: Newtype wrappers
 pub struct SwapId([u8; 32]);
 pub struct TokenId([u8; 32]);
 
-// Avoid: Raw bytes everywhere
+// Avoid: Raw bytes
 pub struct CreateSwapParams {
     pub swap_id: [u8; 32],  // Ambiguous
-}
-```
-
-### 4. Handle Errors Explicitly
-
-```rust
-// Good
-impl From<ContractError> for MyError {
-    fn from(e: ContractError) -> Self {
-        match e {
-            ContractError::IoError(msg) => MyError::Io(msg),
-            ContractError::Custom(code) => MyError::Contract(code),
-            _ => MyError::Unknown,
-        }
-    }
-}
-
-// Avoid
-impl From<ContractError> for MyError {
-    fn from(e: ContractError) -> Self {
-        MyError::Other(Box::new(e)) // Loses type safety
-    }
-}
-```
-
-### 5. Separate ZK Proof Generation
-
-```rust
-// In client module
-pub mod proof {
-    use halo2_proofs::plonk;
-
-    pub fn create_swap_proof(params: &CreateSwapParams) -> Result<Proof, ClientError> {
-        // ZK proof generation is expensive
-        // Keep separate from transaction building
-    }
 }
 ```
 
@@ -453,40 +431,43 @@ pub mod proof {
 For a complete DarkFi application:
 
 ```
-my_app/
-├── Cargo.toml              # Workspace member or standalone
-├── src/
-│   ├── main.rs            # CLI entry
-│   ├── lib.rs             # Library exports
-│   ├── error.rs          # Error types
-│   ├── rpc.rs            # RPC client
-│   ├── wallet.rs         # Wallet management
-│   ├── commands/         # CLI subcommands
-│   │   ├── mod.rs
-│   │   ├── transfer.rs
-│   │   └── swap.rs
-│   └── clients/          # Contract client SDKs
-│       ├── mod.rs
-│       ├── money.rs
-│       └── dao.rs
-└── Makefile
+drk-desktop-wallet/           # Workspace
+├── Cargo.toml
+├── crates/
+│   ├── drk-desktop-wallet-domain/   # API types + domain models
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── api.rs               # ApiRequest/ApiResponse
+│   │       └── model.rs            # Domain types
+│   ├── drk-desktop-wallet-client/  # SDK implementation
+│   │   └── src/
+│   │       ├── lib.rs              # WalletClient<T>
+│   │       └── transport.rs        # Transport trait + impls
+│   └── drk-desktop-wallet-core/    # Business logic
+├── src/                            # Application binary
+│   └── main.rs
+└── app_ui/                         # Optional UI code
 ```
 
 ## Testing
 
-Test contract interactions with the test harness:
+Test domain types without infrastructure:
 
 ```rust
 #[cfg(test)]
 mod tests {
-    use darkfi_contract_test_harness::*;
+    use drk_desktop_wallet_domain::*;
 
-    #[tokio::test]
-    async fn test_create_swap() -> Result<(), TestError> {
-        let harness = TestHarness::new().await?;
-        let tx = harness.execute_create_swap().await?;
-        assert!(harness.verify_tx(&tx).await?);
-        Ok(())
+    #[test]
+    fn test_api_request_serialization() {
+        let request = ApiRequest::CreateWallet(CreateWalletParams {
+            name: "test".into(),
+            network: "localnet".into(),
+            // ...
+        });
+        let json = serde_json::to_string(&request).unwrap();
+        let parsed: ApiRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(request, parsed);
     }
 }
 ```
@@ -496,5 +477,4 @@ mod tests {
 - [Contract Architecture](../arch/sc/sc.md)
 - [Transaction Lifetime](../arch/tx_lifetime.md)
 - [ZK VM Primitives](../arch/zkvm_primitives.md)
-- [Rust/WASM Interaction](rust-wasm-interaction.md)
-- Example contracts: `src/contract/dex/`, `src/contract/money/`
+- Example domain-driven SDK: `crates/drk-desktop-wallet-domain/` in chatty-watty-tinker-token-box
