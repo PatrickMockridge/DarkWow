@@ -43,7 +43,6 @@ members = [
     "src/contract/block_height_prediction",
     "src/contract/insurance_market",
     "src/contract/dao",
-    "src/contract/deployooor",
     "src/contract/drain_protection",
     "src/contract/escrow",
     "src/contract/dao_escrow",
