@@ -1,0 +1,16 @@
+k = 11;
+field = "pallas";
+
+constant "SM_AssertU128_2x64_V1" {
+}
+
+witness "SM_AssertU128_2x64_V1" {
+    Base value_lo,
+    Base value_hi,
+}
+
+circuit "SM_AssertU128_2x64_V1" {
+    # Stock-compatible u128 encoding: two little-endian u64 limbs.
+    range_check(64, value_lo);
+    range_check(64, value_hi);
+}

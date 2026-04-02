@@ -1,0 +1,13 @@
+k = 11;
+field = "pallas";
+
+constant "SafeMath_AssertU64_V1" {
+}
+
+witness "SafeMath_AssertU64_V1" {
+    Base value,
+}
+
+circuit "SafeMath_AssertU64_V1" {
+    range_check(64, value);
+}

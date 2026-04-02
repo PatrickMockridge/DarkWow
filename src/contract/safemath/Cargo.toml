@@ -1,0 +1,20 @@
+[package]
+name = "darkfi-safemath-zk"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "External safemath zkas template catalog for DarkFi-style bounded integer relations"
+readme = "README.md"
+documentation = "https://docs.rs/darkfi-safemath-zk"
+keywords = ["darkfi", "zkas", "zk", "amm", "arithmetic"]
+categories = ["cryptography::cryptocurrencies", "mathematics"]
+include = [
+    "src/**/*",
+    "templates/**/*",
+    "docs/**/*",
+    "README.md",
+]
+autotests = false
+
+[lib]
+path = "src/lib.rs"

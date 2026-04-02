@@ -1,0 +1,16 @@
+k = 11;
+field = "pallas";
+
+constant "SafeMath_AssertNonZeroU64_V1" {
+}
+
+witness "SafeMath_AssertNonZeroU64_V1" {
+    Base value,
+}
+
+circuit "SafeMath_AssertNonZeroU64_V1" {
+    ZERO = witness_base(0);
+
+    range_check(64, value);
+    less_than_strict(ZERO, value);
+}

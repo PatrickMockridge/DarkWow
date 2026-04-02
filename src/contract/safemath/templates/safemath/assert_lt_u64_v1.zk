@@ -1,0 +1,16 @@
+k = 11;
+field = "pallas";
+
+constant "SafeMath_AssertLTU64_V1" {
+}
+
+witness "SafeMath_AssertLTU64_V1" {
+    Base lhs,
+    Base rhs,
+}
+
+circuit "SafeMath_AssertLTU64_V1" {
+    range_check(64, lhs);
+    range_check(64, rhs);
+    less_than_strict(lhs, rhs);
+}

@@ -1,0 +1,31 @@
+k = 11;
+field = "pallas";
+
+constant "SafeMath_DivFloor_V1" {
+}
+
+witness "SafeMath_DivFloor_V1" {
+    Base numerator,
+    Base denominator,
+    Base quotient,
+    Base remainder,
+}
+
+circuit "SafeMath_DivFloor_V1" {
+    ZERO = witness_base(0);
+
+    # numerator < 2^128 and denominator/quotient/remainder < 2^64 keeps
+    # denominator * quotient + remainder below 2^129 while still allowing
+    # exact products of two u64 values in the numerator slot.
+    range_check(128, numerator);
+    range_check(64, denominator);
+    range_check(64, quotient);
+    range_check(64, remainder);
+
+    less_than_strict(ZERO, denominator);
+    less_than_strict(remainder, denominator);
+
+    denominator_times_quotient = base_mul(denominator, quotient);
+    recomposed = base_add(denominator_times_quotient, remainder);
+    constrain_equal_base(recomposed, numerator);
+}

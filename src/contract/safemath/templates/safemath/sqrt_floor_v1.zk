@@ -1,0 +1,28 @@
+k = 11;
+field = "pallas";
+
+constant "SafeMath_SqrtFloor_V1" {
+}
+
+witness "SafeMath_SqrtFloor_V1" {
+    Base radicand,
+    Base root,
+}
+
+circuit "SafeMath_SqrtFloor_V1" {
+    ONE = witness_base(1);
+
+    # root < 2^126 keeps root^2 and (root + 1)^2 below 2^252.
+    range_check(252, radicand);
+    range_check(126, root);
+
+    root_sq = base_mul(root, root);
+    next_root = base_add(root, ONE);
+    next_root_sq = base_mul(next_root, next_root);
+    radicand_plus_one = base_add(radicand, ONE);
+
+    # root^2 <= radicand
+    less_than_strict(root_sq, radicand_plus_one);
+    # radicand < (root + 1)^2
+    less_than_strict(radicand, next_root_sq);
+}
