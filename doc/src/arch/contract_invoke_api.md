@@ -1,5 +1,11 @@
 # Generalized Contract Invocation API
 
+> **Implementation Status:** Partially implemented (commit `7a7424579`). The `contract.invoke` RPC endpoint is functional for dry-run mode. Full ZK proof generation and transaction broadcasting is in progress.
+
+## Overview
+
+A generalized RPC API for invoking any DarkFi smart contract without requiring a new API endpoint per contract function.
+
 A generalized RPC API for invoking any DarkFi smart contract function without requiring a new API endpoint per contract.
 
 ## Motivation

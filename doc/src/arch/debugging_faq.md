@@ -233,8 +233,56 @@ When a ZK gadget fails, check:
 
 ---
 
+## RPC and Wallet Integration
+
+### Generalized Contract Invocation
+
+DarkFi provides a generalized `contract.invoke` RPC endpoint for invoking any smart contract without requiring new API methods per function. See [Generalized Contract Invocation API](contract_invoke_api.md) for details.
+
+**RPC Endpoint:** `contract.invoke`
+
+**Request:**
+```json
+{
+  "method": "contract.invoke",
+  "params": {
+    "contract_id": "dao_escrow",
+    "function": "InitializeV1",
+    "params": {"enable_drain_protection": true},
+    "dry_run": true
+  }
+}
+```
+
+**Current Status:**
+- `contract.invoke` endpoint is implemented in `bin/darkfid/src/rpc/contract.rs`
+- `ContractHandler` trait and `ContractRegistry` in `bin/darkfid/src/contract_registry.rs`
+- DAO-Escrow handler with function selectors (0x00-0x06)
+- Full ZK proof generation and transaction broadcasting is TODO
+
+### Contract Handler Pattern
+
+To add a new contract to the generalized invocation system:
+
+1. Implement `ContractHandler` trait in `bin/darkfid/src/contract_handler/<contract>.rs`
+2. Register the handler in `ContractRegistry::register_default_handlers()`
+3. Add function selectors matching the contract's `define_contract_function!` macro
+
+Example function selectors from DAO-Escrow:
+- `InitializeV1` = 0x00
+- `UpdateV1` = 0x01
+- `PayPremiumV1` = 0x02
+- `WithdrawV1` = 0x03
+- `EndowmentWithdrawV1` = 0x04
+- `TreasurySpendV1` = 0x05
+- `EnableDrainProtectionV1` = 0x06
+
+---
+
 ## See Also
 
 - [Async Rust Fundamentals](../learn/dchat/async-rust-fundamentals.md)
+- [Generalized Contract Invocation API](contract_invoke_api.md)
 - [Localnet Contract Testing](localnet_contract_testing.md)
+- [Test Harness Guide](test_harness_guide.md)
 - [Test Harness Guide](test_harness_guide.md)

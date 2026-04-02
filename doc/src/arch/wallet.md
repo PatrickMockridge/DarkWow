@@ -380,6 +380,28 @@ Wallets are clients talking to the node (remote).
   communicate with other nodes .etc
 * Wallet apps can talk with each other.
 
+### Generalized Contract Invocation
+
+Wallets can invoke smart contract functions through the generalized `contract.invoke` RPC API without needing contract-specific methods. See [Generalized Contract Invocation API](contract_invoke_api.md) for details.
+
+**Benefits:**
+- Single RPC endpoint for all contracts
+- No per-contract API variants needed
+- Consistent interface for frontend wallets
+
+**Usage:**
+```json
+{
+  "method": "contract.invoke",
+  "params": {
+    "contract_id": "dao_escrow",
+    "function": "InitializeV1",
+    "params": {"enable_drain_protection": true},
+    "dry_run": true
+  }
+}
+```
+
 ## References
 
 * [Veil: Private Browsing Semantics Without Browser-side Assistance](https://mickens.seas.harvard.edu/files/mickens/files/veil.pdf)
