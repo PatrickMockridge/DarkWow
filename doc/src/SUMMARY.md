@@ -87,6 +87,7 @@
   - [MerkleRoot Depth Limitation](arch/merkle_depth.md)
   - [Complete Opcode Universe](arch/opcode_universe.md)
   - [Plain Contracts Architecture](arch/plain_contracts.md)
+  - [Generalized Contract Invocation API](arch/contract_invoke_api.md)
   - [Parallel Societies](arch/parallel_societies.md)
   - [Contract MVP Status](arch/mvp_status.md)
   - [Security Analysis](arch/security-analysis.md)

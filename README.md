@@ -45,6 +45,7 @@ When `base_div`, `less_than_or_equal` (sound), and other missing opcodes are ava
 - [Entropy Module](doc/src/arch/entropy.md) — Provable randomness via block hash entropy
 - [Plain Contracts Architecture](doc/src/arch/plain_contracts.md) — Dual-layer ZK/plain contract design
 - [Parallel Societies](doc/src/arch/parallel_societies.md) — Privacy for social reproduction industries
+- [Generalized Contract Invocation API](doc/src/arch/contract_invoke_api.md) — Single RPC endpoint for any contract
 
 ## Key Features
 

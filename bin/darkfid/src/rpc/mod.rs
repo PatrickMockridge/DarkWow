@@ -38,6 +38,9 @@ mod blockchain;
 /// Transactions related methods
 mod tx;
 
+/// Contract invocation methods
+mod contract;
+
 /// Stratum JSON-RPC related methods for native mining
 pub mod stratum;
 
@@ -91,6 +94,11 @@ impl RequestHandler<DefaultRpcHandler> for DarkfiNode {
             "tx.pending" => self.tx_pending(req.id, req.params).await,
             "tx.clean_pending" => self.tx_clean_pending(req.id, req.params).await,
             "tx.calculate_fee" => self.tx_calculate_fee(req.id, req.params).await,
+
+            // =======================
+            // Contract methods
+            // =======================
+            "contract.invoke" => self.contract_invoke(req.id, req.params).await,
 
             // ==============
             // Invalid method
