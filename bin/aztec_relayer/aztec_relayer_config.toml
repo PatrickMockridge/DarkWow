@@ -1,0 +1,31 @@
+# Aztec Relayer Configuration
+#
+# Private DAI and ETH - Aztec's private DeFi made portable
+#
+# This relayer monitors the Aztec rollup for deposits to bridge
+# addresses and submits proofs to the DarkFi bridge contract.
+
+# DarkFi node RPC endpoint
+darkfid_url = "http://127.0.0.1:8543"
+
+# Ethereum node RPC endpoint (for Aztec rollup observation)
+ethereum_node_url = "http://127.0.0.1:8545"
+
+# Aztec rollup contract address (on Ethereum mainnet/testnet)
+aztec_rollup_address = ""
+
+# Aztec view key (for observing deposits only - cannot spend)
+# This is an encrypted viewing key provided by the Aztec network
+view_key = ""
+
+# Minimum deposit amounts in wei
+# ETH: 0.001 ETH = 1,000,000,000,000,000 wei
+min_deposit_eth = 1000000000000000
+# DAI: 0.001 DAI = 1,000,000,000,000,000 wei (in DAI wei units)
+min_deposit_dai = 1000000000000000
+
+# Required Ethereum block confirmations after rollup
+confirmations = 5
+
+# Bridge fee to pay for deposit transactions (in wei)
+fee = 1000000000000000

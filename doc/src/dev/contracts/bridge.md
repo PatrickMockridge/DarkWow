@@ -59,6 +59,7 @@ User knows secret → Compute nullifier = H(secret) → Withdraw (self-signed)
 - `withdraw_v1.zk`: Prove withdrawal authorization without revealing secret
 - `xmr_deposit_v1.zk`: Prove Monero deposit via DLEq proof (stubbed DLEq verification)
 - `zec_deposit_v1.zk`: Prove Zcash Sapling deposit via nullifier + merkle proof
+- `azt_deposit_v1.zk`: Prove Aztec rollup deposit via note + merkle proof
 
 ## External Chain Support
 
@@ -163,6 +164,61 @@ Unlike other bridges that require you to re-shield on every transaction, DarkFi'
 2. User specifies recipient hash (zaddr or taddr)
 3. Relayer picks up pending withdrawal
 4. Relayer broadcasts TX to Zcash network
+5. If relayer fails > 100 blocks, user can cancel
+```
+
+### Aztec
+
+Aztec is a private rollup on Ethereum enabling fully private smart contracts. Perfect for private DAI and ETH transfers:
+
+| Aspect | Ethereum | Aztec |
+|--------|----------|-------|
+| Privacy | Transparent | Full privacy |
+| Tokens | All ERC-20 | ETH + ERC-20 (DAI) |
+| Technology | Direct | ZK Rollup |
+| Gas | High | Low (batched) |
+
+**The Pitch: "Private DAI and ETH - Aztec's private DeFi made portable"**
+
+Unlike transparent Ethereum transactions, Aztec keeps your:
+- Transaction amounts private
+- Counterparties private
+- Full DeFi history private
+
+Once your DAI/ETH is deposited to the DarkFi bridge via Aztec:
+- Your funds remain private in Aztec's rollup on Ethereum
+- You receive wDAI/wETH on DarkFi for private DeFi
+- All subsequent DarkFi transactions are completely private
+- When you unwrap, tokens return to your Aztec private account
+- Your DeFi history stays private **forever**
+
+**AZT Deposit Flow:**
+```
+1. User deposits ETH/DAI into Aztec bridge on Ethereum
+2. Aztec rollup processes deposit and creates private note
+3. Relayer observes deposit via Ethereum events (encrypted data)
+4. Relayer constructs proof showing note exists in rollup tree
+5. User submits DepositV1 with AztecDepositProof
+6. Contract verifies rollup inclusion + note proof
+7. Contract mints wETH/wDAI to user
+```
+
+**Trust Model:**
+- Relayer: Honest-but-curious (observes encrypted notes, cannot spend)
+- Aztec rollup: Trustless (ZK proofs ensure validity)
+- Economic incentives + overcollateralization prevent fraud
+
+**AZT Constants:**
+- Minimum deposit: 0.001 ETH or equivalent
+- Confirmations required: 5 Ethereum blocks after rollup
+- Supported assets: ETH (0), DAI (1)
+
+**AZT Withdrawal Flow:**
+```
+1. User burns wETH/wDAI on DarkFi
+2. User specifies recipient Aztec address hash
+3. Relayer picks up pending withdrawal
+4. Relayer broadcasts private TX to Aztec rollup
 5. If relayer fails > 100 blocks, user can cancel
 ```
 

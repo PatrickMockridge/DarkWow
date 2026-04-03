@@ -37,9 +37,9 @@ pub enum ExternalChain {
     Ethereum,
     Monero,
     Zcash,
+    Aztec,
     // Future chains can be added here
     // Bitcoin,
-    // Aztec,
 }
 
 /// Bridge deposit parameters
@@ -88,6 +88,10 @@ pub struct DepositParams {
     /// ZEC-specific deposit proof data (used when chain is Zcash)
     /// This contains nullifier, commitment, merkle path, and spend proofs
     pub zec_proof: Option<ZcashDepositProof>,
+
+    /// AZT-specific deposit proof data (used when chain is Aztec)
+    /// This contains nullifier, commitment, rollup data, and proofs
+    pub azt_proof: Option<AztecDepositProof>,
 }
 
 /// Bridge withdrawal parameters
@@ -356,6 +360,106 @@ pub struct ZcashWithdrawParams {
 
     /// Amount to withdraw in zatoshi
     pub amount: u64,
+
+    /// Block height timeout - if relayer doesn't execute by this height,
+    /// the withdrawal can be cancelled
+    pub timeout_height: u64,
+
+    /// ZK proof demonstrating:
+    /// - Prover knows secret corresponding to the nullifier
+    /// - Recipient hash is correctly computed
+    pub proof: Vec<u8>,
+}
+
+// ================================================================
+// AZTEC (PRIVATE ROLLUP) BRIDGING SUPPORT
+// ================================================================
+//
+// Aztec is a private rollup on Ethereum that enables fully private
+// smart contract execution. Key features for bridging:
+//
+// - Private transactions for ETH and ERC-20 tokens (DAI, etc.)
+// - Notes are encrypted and stored as Pedersen commitments
+// - Nullifiers prevent double-spending
+// - Data availability posted to Ethereum L1
+//
+// AZT Deposit Flow:
+//
+// 1. User deposits ETH/DAI into Aztec bridge contract on Ethereum
+// 2. Aztec rollup processes deposit and creates note commitment
+// 3. Relayer observes deposit via Aztec RPC (encrypted note data)
+// 4. Relayer constructs proof showing note exists in rollup tree
+// 5. User submits DepositV1 with AztecDepositProof
+// 6. Contract verifies rollup inclusion + note proof
+// 7. Contract mints wETH/wDAI to user
+//
+// The Sell: "Private DAI and ETH - Aztec's private DeFi made portable"
+//
+// ================================================================
+
+/// Aztec deposit proof data
+///
+/// This structure contains the cryptographic proofs required to verify
+/// an Aztec deposit on the Ethereum rollup without revealing the
+/// user's transaction details or balance.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AztecDepositProof {
+    /// Nullifier derived from note (proves note hasn't been spent)
+    /// Computed as: nullifier = pedersen_hash(note_secret, asset_id)
+    pub nullifier: [u8; 32],
+
+    /// Pedersen commitment to the deposit value
+    /// Computed as: commitment = value * G_v + secret * G_s
+    pub commitment: [u8; 32],
+
+    /// Merkle root of the Aztec note tree at deposit rollup
+    pub anchor: [u8; 32],
+
+    /// Merkle path authenticating the note's position in the tree
+    pub merkle_path: Vec<[u8; 32]>,
+
+    /// Proof bytes demonstrating:
+    /// 1. Note exists and prover knows the secret
+    /// 2. Commitment is correctly computed
+    /// 3. Merkle path is valid
+    pub proof_bytes: Vec<u8>,
+
+    /// Public value being deposited (for consistency check)
+    pub value: u64,
+
+    /// Asset identifier (ETH = 0, DAI = 1, etc.)
+    pub asset_id: u32,
+
+    /// Aztec rollup block height containing the deposit
+    pub rollup_height: u64,
+
+    /// Ethereum block height of rollup commitment
+    pub eth_block_height: u64,
+
+    /// Number of rollup confirmations (must meet minimum threshold)
+    pub confirmations: u64,
+
+    /// The Ethereum transaction hash where the rollup was posted
+    pub rollup_tx_hash: [u8; 32],
+}
+
+/// Aztec withdrawal parameters
+///
+/// For withdrawal, the user burns wETH/wDAI on DarkFi and specifies
+/// an Aztec destination via a hashed recipient address.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AztecWithdrawParams {
+    /// Nullifier proving the wrapped token hasn't been spent
+    pub nullifier: IntentNullifier,
+
+    /// Hash of the Aztec destination address (privacy-preserving)
+    pub recipient_hash: [u8; 32],
+
+    /// Amount to withdraw
+    pub amount: u64,
+
+    /// Asset ID (ETH = 0, DAI = 1)
+    pub asset_id: u32,
 
     /// Block height timeout - if relayer doesn't execute by this height,
     /// the withdrawal can be cancelled

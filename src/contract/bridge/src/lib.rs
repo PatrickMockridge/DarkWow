@@ -79,6 +79,16 @@ pub const BRIDGE_CONTRACT_ZEC_CONFIRMATIONS: u64 = 10;
 /// Hash function identifier for ZEC (blake2s for Sapling)
 pub const BRIDGE_CONTRACT_ZEC_HASH_FUNCTION: u8 = 4;
 
+// AZT (Aztec) specific constants
+/// Number of rollup confirmations required for Aztec deposits
+pub const BRIDGE_CONTRACT_AZT_CONFIRMATIONS: u64 = 5;
+/// Hash function identifier for Aztec (keccak256 for rollup)
+pub const BRIDGE_CONTRACT_AZT_HASH_FUNCTION: u8 = 3;
+
+/// Aztec asset IDs
+pub const BRIDGE_CONTRACT_AZT_ASSET_ETH: u32 = 0;
+pub const BRIDGE_CONTRACT_AZT_ASSET_DAI: u32 = 1;
+
 /// Withdrawal timeout constants
 /// Default number of blocks before a withdrawal can be cancelled
 pub const BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS: u64 = 100;
