@@ -51,28 +51,134 @@ User knows secret → Compute nullifier = H(secret) → Withdraw (self-signed)
 | DepositV1 | 0x01 | Register external chain deposit |
 | WithdrawV1 | 0x02 | Claim withdrawal to external chain |
 | UpdateConfigV1 | 0x03 | Update bridge operators/threshold |
+| CancelWithdrawV1 | 0x04 | Cancel timed-out withdrawal |
 
 ## ZK Circuits
 
-- `deposit_v1.zk`: Prove deposit is valid without revealing recipient
+- `deposit_v1.zk`: Prove Ethereum deposit is valid without revealing recipient
 - `withdraw_v1.zk`: Prove withdrawal authorization without revealing secret
+- `xmr_deposit_v1.zk`: Prove Monero deposit via DLEq proof (stubbed DLEq verification)
+
+## External Chain Support
+
+### Ethereum
+
+Standard Merkle proof verification for ETH deposits:
+- Merkle proof authenticates deposit inclusion in ETH block
+- ZK circuit verifies: commitment = H(secret, amount, bridge_address)
+- 12 block confirmations required
+
+### Monero
+
+Monero uses Cryptonote protocol, fundamentally different from Ethereum's UTXO model:
+
+| Aspect | Ethereum | Monero |
+|--------|----------|--------|
+| Address type | Regular public keys | One-time addresses |
+| Ownership proof | Signatures | DLEq proofs |
+| Hash function | Keccak256 | cn_fast_hash (Keccak256) |
+| Privacy | Transparent | Ring signatures |
+
+**XMR Deposit Flow:**
+```
+1. User computes one-time address: derive_from(bridge_pub, view_key)
+2. User sends XMR to this address on Monero chain
+3. Relayer observes deposit via Monero RPC (view key only)
+4. Relayer constructs DLEq proof showing ownership
+5. User submits DepositV1 with XmrDepositProof
+6. Contract verifies DLEq + merkle proof + confirmations
+7. Contract mints wXMR to user
+```
+
+**Trust Model:**
+- Relayer: Honest-but-curious (view key only, cannot spend)
+- Economic incentives + overcollateralization prevent fraud
+- DLEq verification stubbed in MVP (would require Montgomery curve support)
+
+**XMR Constants:**
+- Minimum deposit: 0.001 XMR (1,000,000,000 piconero)
+- Confirmations required: 10 blocks
+
+**XMR Withdrawal Flow:**
+```
+1. User burns wXMR on DarkFi
+2. User specifies recipient hash (Monero address)
+3. Relayer picks up pending withdrawal
+4. Relayer broadcasts TX to Monero network
+5. If relayer fails > 100 blocks, user can cancel
+```
+
+**Timeout & Slashing:**
+- Withdrawal timeout: 100 blocks
+- If relayer doesn't execute within timeout:
+  - User can call CancelWithdrawV1 to reclaim funds
+  - Relayer gets slashed (BRIDGE_CONTRACT_SLASH_AMOUNT)
+
+## Stablecoin Integration
+
+wXMR can be used as collateral in the [stablecoin contract](../stablecoin.md):
+
+**Full Flow: XMR → wXMR → Stablecoin Collateral → Mint Stablecoin**
+```
+1. XMR → DarkFi (Deposit):
+   - User deposits XMR to bridge one-time address
+   - Relayer observes + verifies via DLEq proof
+   - DarkFi mints wXMR to user
+
+2. wXMR → Collateral (DepositCollateral):
+   - User deposits wXMR to stablecoin pool
+   - CollateralPool tracks wXMR deposits
+   - User receives debt shares
+
+3. Collateral → Stablecoin (MintStable):
+   - User locks collateral + pays stability fee
+   - Receives stablecoin (e.g., USD-stable)
+   - Must maintain collateralization ratio
+
+4. Stablecoin → Collateral (RepayStable + WithdrawCollateral):
+   - User repays stablecoin debt
+   - Withdraws wXMR collateral
+
+5. wXMR → XMR (Withdraw):
+   - User burns wXMR on bridge
+   - Relayer executes withdrawal on Monero
+```
+
+**Price Feed:**
+- XMR/USD price used for collateral valuation
+- Fallback price: 150 USD per XMR (until DEX pool exists)
+- In production, TWAP from XMR/DRK or XMR/USD AMM pool
 
 ## Structure
 
 ```
 src/contract/bridge/
 ├── proof/
-│   ├── deposit_v1.zk
-│   └── withdraw_v1.zk
+│   ├── deposit_v1.zk       # Ethereum deposit circuit
+│   ├── withdraw_v1.zk        # Withdrawal circuit
+│   └── xmr_deposit_v1.zk    # Monero deposit circuit (DLEq stubbed)
 ├── src/
-│   ├── client/mod.rs      # DepositBuilder, WithdrawBuilder
-│   ├── entrypoint.rs     # Contract implementation
+│   ├── client/mod.rs        # DepositBuilder, WithdrawBuilder
+│   ├── entrypoint.rs        # Contract implementation
 │   ├── error.rs
-│   ├── lib.rs            # BridgeFunction enum
-│   └── model/mod.rs      # DepositParams, WithdrawParams
+│   ├── lib.rs               # BridgeFunction enum, constants
+│   └── model/mod.rs         # DepositParams, WithdrawParams, XmrDepositProof
 ├── tests/
 ├── Cargo.toml
 └── Makefile
+```
+
+## Relayer Binary
+
+```
+bin/xmr_relayer/
+├── src/
+│   ├── main.rs              # CLI entry point
+│   ├── monero_rpc.rs        # Monero RPC client
+│   ├── proof.rs             # ZK proof construction
+│   └── withdrawal.rs        # Withdrawal handling + timeout
+├── xmr_relayer_config.toml
+└── Cargo.toml
 ```
 
 ## Building

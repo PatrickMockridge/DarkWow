@@ -1,0 +1,28 @@
+# XMR Relayer Configuration
+#
+# This file contains the configuration for the XMR bridge relayer.
+
+# DarkFi RPC endpoint
+darkfid_url = "http://127.0.0.1:8543"
+
+# Monero wallet RPC endpoint (view-only)
+monero_wallet_url = "http://127.0.0.1:18083"
+
+# Monero full node RPC endpoint
+monero_node_url = "http://127.0.0.1:18081"
+
+# View key for monitoring deposits (view-only, CANNOT spend)
+# Generate with: monero-wallet-cli --generate-from-view-key
+view_key = ""
+
+# Minimum deposit amount in piconero (1 XMR = 10^12 piconero)
+# Default: 0.001 XMR = 1,000,000,000 piconero
+min_deposit = 1000000000
+
+# Required confirmations before relaying
+# Monero recommends 10 blocks for most transactions
+confirmations = 10
+
+# Relayer fee in piconero
+# This is deducted from the deposited amount
+fee = 1000000

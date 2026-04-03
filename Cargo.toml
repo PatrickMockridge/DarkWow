@@ -27,6 +27,7 @@ members = [
     "bin/tau/taud",
     "bin/vanityaddr",
     "bin/lilith",
+    "bin/xmr_relayer",
 
     "src/sdk",
     "src/sdk/python",

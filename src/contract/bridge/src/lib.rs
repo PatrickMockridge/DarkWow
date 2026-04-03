@@ -31,6 +31,7 @@ define_contract_function!(BridgeFunction {
     DepositV1 = 0x01,
     WithdrawV1 = 0x02,
     UpdateConfigV1 = 0x03,
+    CancelWithdrawV1 = 0x04,  // Cancel timed-out withdrawal
 });
 
 /// Internal contract errors
@@ -53,6 +54,7 @@ pub const BRIDGE_CONTRACT_DEPOSITS_TREE: &str = "deposits";
 pub const BRIDGE_CONTRACT_WITHDRAWALS_TREE: &str = "withdrawals";
 pub const BRIDGE_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 pub const BRIDGE_CONTRACT_KEYS_TREE: &str = "keys";
+pub const BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE: &str = "pending_withdrawals";
 
 // These are keys inside the info tree
 pub const BRIDGE_CONTRACT_DB_VERSION: &[u8] = b"db_version";
@@ -64,3 +66,15 @@ pub const BRIDGE_CONTRACT_EXTERNAL_CHAIN: &[u8] = b"external_chain";
 pub const BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1: &str = "Deposit_V1";
 /// zkas withdrawal circuit namespace
 pub const BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1: &str = "Withdraw_V1";
+
+// XMR (Monero) specific constants
+/// Number of block confirmations required for XMR deposits
+pub const BRIDGE_CONTRACT_XMR_CONFIRMATIONS: u64 = 10;
+/// Hash function identifier for XMR (keccak256 = cn_fast_hash)
+pub const BRIDGE_CONTRACT_XMR_HASH_FUNCTION: u8 = 3;
+
+/// Withdrawal timeout constants
+/// Default number of blocks before a withdrawal can be cancelled
+pub const BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS: u64 = 100;
+/// Slash amount for relayer timeout (in smallest unit)
+pub const BRIDGE_CONTRACT_SLASH_AMOUNT: u64 = 1_000_000; // 0.001 XMR equivalent

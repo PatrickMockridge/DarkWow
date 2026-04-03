@@ -1,0 +1,53 @@
+[package]
+name = "xmr_relayer"
+version = "0.5.0"
+homepage = "https://dark.fi"
+description = "XMR bridge relayer service for DarkFi"
+authors = ["Dyne.org foundation <foundation@dyne.org>"]
+repository = "https://codeberg.org/darkrenaissance/darkfi"
+license = "AGPL-3.0-only"
+edition = "2021"
+
+[dependencies]
+# Darkfi
+darkfi = {path = "../../", features = ["async-daemonize", "rpc", "async-serial"]}
+darkfi-sdk = {path = "../../src/sdk", features = ["async"]}
+darkfi-serial = {path = "../../src/serial", features = ["async"]}
+darkfi_bridge_contract = {path = "../../src/contract/bridge"}
+darkfi_money_contract = {path = "../../src/contract/money"}
+
+# Serialization
+serde = {version = "1.0.228", features = ["derive"]}
+toml = "0.9.8"
+hex = "0.4.3"
+bs58 = "0.5.1"
+
+# Crypto
+blake3 = "1.8.2"
+
+# Async
+smol = "2.0.2"
+
+# RPC
+tinyjson = "2.5.1"
+url = "2.5.7"
+
+# Monero
+monero = "0.21.0"
+
+# Error handling
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }
+
+# Argument parsing
+structopt = "0.3.26"
+structopt-toml = "0.5.1"
+
+# Utilities
+shellexpand = "3.1"
+
+[lints]
+workspace = true

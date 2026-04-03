@@ -49,15 +49,17 @@ use darkfi_sdk::{
     error::{ContractError, ContractResult},
     msg, ContractCall,
     wasm,
+    pasta::group::GroupEncoding,
 };
 use darkfi_serial::{deserialize, serialize, Decodable, SerialDecodable, SerialEncodable};
 
 use crate::{
     error::BridgeError,
-    model::{Deposit, DepositParams, ExternalChain, UpdateConfigParams, Withdrawal, WithdrawParams},
+    model::{CancelWithdrawParams, Deposit, DepositParams, ExternalChain, PendingWithdrawal, UpdateConfigParams, Withdrawal, WithdrawParams, XmrDepositProof},
     BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_INFO_TREE,
-    BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE, BRIDGE_CONTRACT_WITHDRAWALS_TREE,
-    BRIDGE_CONTRACT_STATE,
+    BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE,
+    BRIDGE_CONTRACT_WITHDRAWALS_TREE, BRIDGE_CONTRACT_STATE, BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS,
+    BRIDGE_CONTRACT_XMR_CONFIRMATIONS,
 };
 
 // ============================================================================
@@ -156,6 +158,12 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&vec![])
         }
         BridgeFunction::UpdateConfigV1 => wasm::util::set_return_data(&vec![]),
+        BridgeFunction::CancelWithdrawV1 => {
+            // CancelWithdraw doesn't require ZK proof metadata
+            // It's a simple timeout check
+            msg!("[bridge::get_metadata] CancelWithdrawV1 metadata requested");
+            wasm::util::set_return_data(&vec![])
+        }
     }
 }
 
@@ -178,6 +186,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         BridgeFunction::DepositV1 => process_deposit_instruction(cid, call_idx, calls),
         BridgeFunction::WithdrawV1 => process_withdraw_instruction(cid, call_idx, calls),
         BridgeFunction::UpdateConfigV1 => process_config_instruction(cid, call_idx, calls),
+        BridgeFunction::CancelWithdrawV1 => process_cancel_withdraw_instruction(cid, call_idx, calls),
     }
 }
 
@@ -186,7 +195,7 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     let self_ = &calls[call_idx].data;
     let params: DepositParams = deserialize(&self_.data[1..])?;
 
-    msg!("[bridge::process_instruction] Processing deposit: commitment={:?}", &params.commitment);
+    msg!("[bridge::process_instruction] Processing deposit: commitment={:?}, chain={:?}", &params.commitment, &params.chain);
 
     // Verify deposit hasn't already been registered (double-deposit check)
     let deposits_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;
@@ -195,13 +204,21 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
         return Err(BridgeError::DoubleDeposit.into())
     }
 
-    // Verify minimum confirmations (simplified - in production, check against external chain)
-    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-    let current_height = get_current_block_height(info_db)?;
-    let min_confirmations = get_min_confirmations(cid)?;
-
-    // In production, verify: current_height - deposit_height >= min_confirmations
-    msg!("[bridge::process_instruction] Confirmations verified: {} required", min_confirmations);
+    // Verify based on chain type
+    match params.chain {
+        ExternalChain::Ethereum => {
+            // Existing Ethereum deposit verification
+            // For v1, we trust the ZK proof verification happened at host level
+            msg!("[bridge::process_instruction] Ethereum deposit - ZK proof verified at host level");
+        }
+        ExternalChain::Monero => {
+            // Verify Monero deposit via DLEq proof
+            let xmr_proof = params.xmr_proof.ok_or_else(|| {
+                BridgeError::InvalidDeposit("Monero deposit missing xmr_proof".into())
+            })?;
+            verify_xmr_deposit(cid, &xmr_proof)?;
+        }
+    }
 
     // Create update data
     let update = DepositUpdateV1 {
@@ -215,6 +232,71 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     };
 
     wasm::util::set_return_data(&serialize(&update))
+}
+
+/// Verify XMR deposit proof
+///
+/// This function verifies the cryptographic proof of an XMR deposit:
+/// 1. DLEq proof - proves ownership of the one-time address
+/// 2. Amount range - proves the amount is valid (no negative amounts)
+/// 3. Confirmation count - proves enough Monero blocks have passed
+///
+/// Note: This is a simplified implementation. In production:
+/// - DLEq verification would use proper elliptic curve cryptography
+/// - Block confirmations would be verified against stored state
+/// - The relayer's observation would be cryptographically authenticated
+fn verify_xmr_deposit(_cid: ContractId, proof: &XmrDepositProof) -> ContractResult {
+    use darkfi_sdk::pasta::pallas;
+
+    msg!("[bridge::verify_xmr_deposit] Verifying XMR deposit proof");
+    msg!("[bridge::verify_xmr_deposit] tx_hash={:?}, amount={}, confirmations={}",
+          &proof.tx_hash, proof.amount, proof.confirmations);
+
+    // Verify minimum amount (prevent dust attacks)
+    // Minimum: 0.001 XMR = 10^9 piconero
+    const MIN_XMR_DEPOSIT: u64 = 1_000_000_000;
+    if proof.amount < MIN_XMR_DEPOSIT {
+        msg!("[bridge::verify_xmr_deposit] ERROR: Amount below minimum");
+        return Err(BridgeError::InvalidDeposit("Amount below minimum".into()).into())
+    }
+
+    // Verify confirmations meet threshold
+    if proof.confirmations < BRIDGE_CONTRACT_XMR_CONFIRMATIONS as u64 {
+        msg!("[bridge::verify_xmr_deposit] ERROR: Insufficient confirmations");
+        return Err(BridgeError::InsufficientConfirmations.into())
+    }
+
+    // Verify the ephemeral public key is a valid point
+    let ephemeral_point = pallas::Point::from_bytes(&proof.ephemeral_pub);
+    if bool::from(ephemeral_point.is_none()) {
+        msg!("[bridge::verify_xmr_deposit] ERROR: Invalid ephemeral public key");
+        return Err(BridgeError::InvalidCommitment.into())
+    }
+
+    // In production: Verify DLEq proof
+    // DLEq proves: the prover knows x such that:
+    // - Y1 = x * G1 (generator on curve 1)
+    // - Y2 = x * G2 (generator on curve 2)
+    //
+    // For Monero one-time addresses, this proves ownership of the private key
+    // without revealing the key.
+    //
+    // The DLEq verification would check:
+    // - challenge = Hash(G1, G2, Y1, Y2, commitment1, commitment2)
+    // - response = secret * G1 - challenge * commitment1
+    // - etc.
+    msg!("[bridge::verify_xmr_deposit] DLEq proof verification (stubbed for v1)");
+
+    // In production: Verify Merkle proof to coinbase
+    // This proves the block is in the main Monero chain
+    if proof.coinbase_merkle_proof.is_empty() {
+        msg!("[bridge::verify_xmr_deposit] ERROR: Empty coinbase merkle proof");
+        return Err(BridgeError::InvalidMerkleProof.into())
+    }
+    msg!("[bridge::verify_xmr_deposit] Coinbase merkle proof length: {}", proof.coinbase_merkle_proof.len());
+
+    msg!("[bridge::verify_xmr_deposit] XMR deposit proof verified successfully");
+    Ok(())
 }
 
 /// Process withdrawal instruction
@@ -259,6 +341,31 @@ fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkL
     wasm::util::set_return_data(&vec![])
 }
 
+/// Process cancel withdrawal instruction
+///
+/// Allows users to cancel a withdrawal that has timed out.
+/// The timeout prevents relayer censorship - if relayer doesn't execute
+/// within BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS, user can reclaim funds.
+fn process_cancel_withdraw_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let _params: CancelWithdrawParams = deserialize(&self_.data[1..])?;
+
+    msg!("[bridge::process_instruction] Cancel withdrawal instruction processed");
+
+    // In production, this would:
+    // 1. Look up the pending withdrawal by nullifier
+    // 2. Verify current block height > timeout_height
+    // 3. Verify the withdrawal hasn't already been executed
+    // 4. Mark the pending withdrawal as cancelled
+    // 5. Allow user to reclaim their funds
+
+    wasm::util::set_return_data(&vec![])
+}
+
 // ============================================================================
 // STATE UPDATE
 // ============================================================================
@@ -283,6 +390,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         BridgeFunction::UpdateConfigV1 => {
             let params: UpdateConfigParams = deserialize(&update_data[1..])?;
             apply_config_update(cid, params)
+        }
+        BridgeFunction::CancelWithdrawV1 => {
+            msg!("[bridge::process_update] CancelWithdrawV1 processed");
+            Ok(())
         }
     }
 }

@@ -35,6 +35,7 @@ pub const BRIDGE_NAMESPACE: u64 = 0x0002;
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub enum ExternalChain {
     Ethereum,
+    Monero,
     // Future chains can be added here
     // Bitcoin,
     // Aztec,
@@ -64,7 +65,7 @@ pub struct DepositParams {
     /// Hash of the external block containing the deposit
     pub external_block_hash: [u8; 32],
 
-    /// Merkle proof of deposit inclusion in external chain
+    /// Merkle proof of deposit inclusion in external chain (Ethereum)
     pub merkle_proof: Vec<[u8; 32]>,
 
     /// Merkle root of external chain state at block
@@ -78,6 +79,10 @@ pub struct DepositParams {
     /// 2. Deposit exists in external chain
     /// 3. Commitment is correctly computed
     pub proof: Vec<u8>,
+
+    /// XMR-specific deposit proof data (used when chain is Monero)
+    /// This contains DLEq proof, tx data, and confirmation proof
+    pub xmr_proof: Option<XmrDepositProof>,
 }
 
 /// Bridge withdrawal parameters
@@ -182,6 +187,169 @@ pub struct Withdrawal {
 
     /// Timestamp of withdrawal
     pub withdrawn_at: u64,
+}
+
+// ================================================================
+// XMR (MONERO) BRIDGING SUPPORT
+// ================================================================
+//
+// Monero uses Cryptonote protocol which differs from Ethereum's UTXO model:
+// - One-time addresses instead of regular public keys
+// - View keys for observation without spending authority
+// - DLEq proofs for ownership verification instead of signatures
+//
+// XMR Deposit Flow:
+//
+// 1. User computes one-time address: derive_from(bridge_pub, view_key)
+// 2. User sends XMR to this address on Monero chain
+// 3. Relayer observes deposit via Monero RPC (view key)
+// 4. Relayer constructs DLEq proof showing ownership
+// 5. User submits DepositV1 with XmrDepositProof
+// 6. Contract verifies DLEq + merkle proof + confirmations
+// 7. Contract mints wXMR to user
+//
+// ================================================================
+
+/// XMR deposit proof data for Monero bridging
+///
+/// This structure contains the cryptographic proof required to verify
+/// an XMR deposit on the Monero chain without revealing the user's
+/// spend key.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct XmrDepositProof {
+    /// Monero transaction hash (cn_fast_hash / keccak256 of tx serialization)
+    pub tx_hash: [u8; 32],
+
+    /// Monero block height containing the deposit
+    pub block_height: u64,
+
+    /// Output index in the transaction (proves which output is the deposit)
+    pub output_index: u64,
+
+    /// Amount in piconero (smallest XMR unit, 1 XMR = 10^12 piconero)
+    pub amount: u64,
+
+    /// Ephemeral public key of the one-time address (receiving address)
+    pub ephemeral_pub: [u8; 32],
+
+    /// DLEq proof demonstrating ownership of the one-time address
+    /// This proves the recipient owns the private key corresponding to ephemeral_pub
+    pub dleq_proof: DleqProof,
+
+    /// Merkle proof to coinbase hash (proves block is in main chain)
+    pub coinbase_merkle_proof: Vec<[u8; 32]>,
+
+    /// Number of block confirmations (must meet minimum threshold)
+    pub confirmations: u64,
+}
+
+/// Discrete Logarithm Equality proof structure
+///
+/// DLEq proves that the prover knows x such that:
+/// - Y1 = x * G1 (on curve 1)
+/// - Y2 = x * G2 (on curve 2)
+///
+/// For Monero, this proves ownership of the one-time address private key
+/// without revealing the key itself.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DleqProof {
+    /// First challenge response
+    pub challenge_response_1: [u8; 32],
+    /// Second challenge response
+    pub challenge_response_2: [u8; 32],
+    /// Challenge value
+    pub challenge: [u8; 32],
+}
+
+/// XMR withdrawal parameters
+///
+/// For withdrawal, the user burns wXMR on DarkFi and specifies
+/// a Monero destination via a hashed recipient address.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct XmrWithdrawParams {
+    /// Nullifier proving the wXMR hasn't been spent
+    pub nullifier: IntentNullifier,
+
+    /// Hash of the Monero destination address (privacy-preserving)
+    pub recipient_hash: [u8; 32],
+
+    /// Amount to withdraw in piconero
+    pub amount: u64,
+
+    /// Block height timeout - if relayer doesn't execute by this height,
+    /// the withdrawal can be cancelled
+    pub timeout_height: u64,
+
+    /// ZK proof demonstrating:
+    /// - Prover knows secret corresponding to the nullifier
+    /// - Recipient hash is correctly computed
+    pub proof: Vec<u8>,
+}
+
+/// Pending withdrawal record
+///
+/// Tracks withdrawals that have been submitted but not yet executed.
+/// This allows the timeout mechanism to work - if relayer doesn't
+/// execute within the timeout, user can cancel and reclaim funds.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct PendingWithdrawal {
+    /// Nullifier of the withdrawal
+    pub nullifier: IntentNullifier,
+
+    /// Recipient hash on external chain
+    pub recipient_hash: [u8; 32],
+
+    /// Amount in piconero
+    pub amount: u64,
+
+    /// Timeout height - if current block > timeout_height, withdrawal can be cancelled
+    pub timeout_height: u64,
+
+    /// Relayer address that picked up this withdrawal
+    pub relayer: [u8; 32],
+
+    /// When the withdrawal was submitted
+    pub submitted_at: u64,
+
+    /// Whether cancellation has been requested
+    pub cancelled: bool,
+}
+
+/// Cancellation parameters for timed-out withdrawals
+///
+/// When a withdrawal times out (current block > timeout_height),
+/// the user can submit a cancellation to reclaim their funds.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CancelWithdrawParams {
+    /// Nullifier of the withdrawal to cancel
+    pub nullifier: IntentNullifier,
+
+    /// Original signature or proof that this withdrawal was valid
+    /// This ensures only the original submitter can cancel
+    pub proof: Vec<u8>,
+}
+
+/// Relayer slash record
+///
+/// Records relayer misbehavior for potential slashing.
+/// If a relayer fails to execute a withdrawal within timeout,
+/// they can be slashed as punishment.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RelayerSlash {
+    /// Relayer address
+    pub relayer: [u8; 32],
+
+    /// Withdrawal nullifier that timed out
+    pub withdrawal_nullifier: IntentNullifier,
+
+    /// Block height when timeout occurred
+    pub timeout_height: u64,
+
+    /// Slash amount (penalty for misbehavior)
+    pub slash_amount: u64,
+
+    /// Whether slash has been applied
+    pub executed: bool,
 }
 
 // ================================================================

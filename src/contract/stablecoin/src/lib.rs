@@ -117,3 +117,16 @@ pub const STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1: &str = "MintStable_V1";
 pub const STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1: &str = "RepayStable_V1";
 /// zkas liquidate circuit namespace
 pub const STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1: &str = "Liquidate_V1";
+
+// ============================================================================
+// XMR Collateral Constants
+// ============================================================================
+
+/// Default XMR/USD price feed (fallback when no DEX pool available)
+/// This is used as a placeholder until an XMR/USD or XMR/DRK pool exists
+/// In production, the price should come from an AMM TWAP
+pub const STABLECOIN_XMR_USD_PRICE_FALLBACK: u64 = 150_000_000_000; // ~$150 USD per XMR
+
+/// Maximum price age before using fallback (in seconds)
+/// If the last price update is older than this, use fallback
+pub const STABLECOIN_XMR_PRICE_MAX_AGE: u64 = 3600; // 1 hour
