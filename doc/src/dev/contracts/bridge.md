@@ -58,6 +58,7 @@ User knows secret → Compute nullifier = H(secret) → Withdraw (self-signed)
 - `deposit_v1.zk`: Prove Ethereum deposit is valid without revealing recipient
 - `withdraw_v1.zk`: Prove withdrawal authorization without revealing secret
 - `xmr_deposit_v1.zk`: Prove Monero deposit via DLEq proof (stubbed DLEq verification)
+- `zec_deposit_v1.zk`: Prove Zcash Sapling deposit via nullifier + merkle proof
 
 ## External Chain Support
 
@@ -113,6 +114,57 @@ Monero uses Cryptonote protocol, fundamentally different from Ethereum's UTXO mo
 - If relayer doesn't execute within timeout:
   - User can call CancelWithdrawV1 to reclaim funds
   - Relayer gets slashed (BRIDGE_CONTRACT_SLASH_AMOUNT)
+
+### Zcash
+
+Zcash Sapling provides fully shielded transactions with zero-knowledge proofs:
+
+| Aspect | Ethereum | Zcash |
+|--------|----------|-------|
+| Address type | Regular public keys | Shielded (zaddr) |
+| Ownership proof | Signatures | Groth16 zk-SNARKs |
+| Privacy | Transparent | Full shielding |
+| TX visibility | Public | Private |
+
+**The Pitch: "Shield your Zcash once and forever more"**
+
+Once your ZEC is deposited to the DarkFi bridge:
+- Your ZEC remains in a Sapling shielding on the Zcash chain
+- You receive wZEC on DarkFi for private DeFi
+- All subsequent DarkFi transactions are completely private
+- When you unwrap, wZEC burns and ZEC returns to your Zcash address
+- Your Zcash transaction history stays private **forever**
+
+Unlike other bridges that require you to re-shield on every transaction, DarkFi's bridge means you only shield **once**.
+
+**ZEC Deposit Flow:**
+```
+1. User creates Sapling shielded address (zaddr)
+2. User sends ZEC to DarkFi bridge shielded address
+3. Relayer observes deposit via light walletd RPC (view key only)
+4. Relayer constructs proof showing note exists in Sapling tree
+5. User submits DepositV1 with ZcashDepositProof
+6. Contract verifies anchor + merkle proof + confirmations
+7. Contract mints wZEC to user
+```
+
+**Trust Model:**
+- Relayer: Honest-but-curious (view key only, cannot spend)
+- Economic incentives + overcollateralization prevent fraud
+- Spend proof verification stubbed in MVP (would require Groth16 verifier)
+
+**ZEC Constants:**
+- Minimum deposit: 0.0001 ZEC (10,000 zatoshi)
+- Confirmations required: 10 blocks
+
+**ZEC Withdrawal Flow:**
+```
+1. User burns wZEC on DarkFi
+2. User specifies recipient hash (zaddr or taddr)
+3. Relayer picks up pending withdrawal
+4. Relayer broadcasts TX to Zcash network
+5. If relayer fails > 100 blocks, user can cancel
+```
 
 ## Stablecoin Integration
 

@@ -73,6 +73,12 @@ pub const BRIDGE_CONTRACT_XMR_CONFIRMATIONS: u64 = 10;
 /// Hash function identifier for XMR (keccak256 = cn_fast_hash)
 pub const BRIDGE_CONTRACT_XMR_HASH_FUNCTION: u8 = 3;
 
+// ZEC (Zcash) specific constants
+/// Number of block confirmations required for ZEC deposits (Sapling)
+pub const BRIDGE_CONTRACT_ZEC_CONFIRMATIONS: u64 = 10;
+/// Hash function identifier for ZEC (blake2s for Sapling)
+pub const BRIDGE_CONTRACT_ZEC_HASH_FUNCTION: u8 = 4;
+
 /// Withdrawal timeout constants
 /// Default number of blocks before a withdrawal can be cancelled
 pub const BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS: u64 = 100;

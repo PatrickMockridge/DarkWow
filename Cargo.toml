@@ -28,6 +28,7 @@ members = [
     "bin/vanityaddr",
     "bin/lilith",
     "bin/xmr_relayer",
+    "bin/zcash_relayer",
 
     "src/sdk",
     "src/sdk/python",

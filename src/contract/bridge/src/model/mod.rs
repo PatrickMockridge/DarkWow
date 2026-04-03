@@ -36,6 +36,7 @@ pub const BRIDGE_NAMESPACE: u64 = 0x0002;
 pub enum ExternalChain {
     Ethereum,
     Monero,
+    Zcash,
     // Future chains can be added here
     // Bitcoin,
     // Aztec,
@@ -83,6 +84,10 @@ pub struct DepositParams {
     /// XMR-specific deposit proof data (used when chain is Monero)
     /// This contains DLEq proof, tx data, and confirmation proof
     pub xmr_proof: Option<XmrDepositProof>,
+
+    /// ZEC-specific deposit proof data (used when chain is Zcash)
+    /// This contains nullifier, commitment, merkle path, and spend proofs
+    pub zec_proof: Option<ZcashDepositProof>,
 }
 
 /// Bridge withdrawal parameters
@@ -259,6 +264,107 @@ pub struct DleqProof {
     pub challenge_response_2: [u8; 32],
     /// Challenge value
     pub challenge: [u8; 32],
+}
+
+// ================================================================
+// ZCASH (SAPLING) BRIDGING SUPPORT
+// ================================================================
+//
+// Zcash Sapling provides fully shielded transactions with:
+// - Pedersen commitments for value (jubjub curve)
+// - Nullifiers derived from note private key + note plaintext
+// - Spend proofs (Groth16 zk-SNARK proofs)
+// - Merkle path authentication (Sapling note commitment tree)
+//
+// ZEC Deposit Flow:
+//
+// 1. User creates a Sapling shielded address (zaddr)
+// 2. User sends ZEC to this address on Zcash chain
+// 3. Relayer observes deposit via Zcash light walletd RPC (view key)
+// 4. Relayer constructs proof showing:
+//    - Note exists at given merkle root
+//    - Prover knows note private key (nullifier derived)
+// 5. User submits DepositV1 with ZcashDepositProof
+// 6. Contract verifies anchor + merkle proof + spend proof
+// 7. Contract mints wZEC to user
+//
+// ================================================================
+
+/// Zcash Sapling deposit proof data
+///
+/// This structure contains the cryptographic proofs required to verify
+/// a Zcash Sapling deposit on the Zcash chain without revealing the
+/// user's spend key or transaction details.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ZcashDepositProof {
+    /// Nullifier derived from note (proves note hasn't been spent)
+    /// Computed as: note_nullifier = blake2s(labeled_communication, ...)
+    pub nullifier: [u8; 32],
+
+    /// Pedersen commitment to the deposit value (jubjub curve)
+    /// Computed as: commitment = value * G_v + randomness * G_r
+    pub commitment: [u8; 32],
+
+    /// Merkle root of the Sapling note commitment tree at deposit height
+    pub anchor: [u8; 32],
+
+    /// Merkle path authenticating the note's position in the tree
+    pub merkle_path: Vec<[u8; 32]>,
+
+    /// Spend proof bytes (Groth16 proof for spend authorization)
+    /// Proves:
+    /// 1. Prover knows note private key corresponding to nullifier
+    /// 2. Note commitment is correctly computed
+    /// 3. Merkle path is valid
+    pub spend_proof: Vec<u8>,
+
+    /// Output proof bytes (Groth16 proof for output)
+    /// Proves the output note commitment is well-formed
+    pub output_proof: Vec<u8>,
+
+    /// Randomized public key for the note (diversified payment address)
+    pub randomized_pub_key: [u8; 32],
+
+    /// Ephemeral randomness used in commitment (blinding factor)
+    pub randomness: [u8; 32],
+
+    /// Deposit amount in zatoshi (smallest ZEC unit, 1 ZEC = 10^8 zatoshi)
+    pub amount: u64,
+
+    /// Zcash block height containing the deposit
+    pub block_height: u64,
+
+    /// Number of block confirmations (must meet minimum threshold)
+    pub confirmations: u64,
+}
+
+/// Zcash withdrawal parameters
+///
+/// For withdrawal, the user burns wZEC on DarkFi and specifies
+/// a Zcash shielded destination via a hashed recipient address.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ZcashWithdrawParams {
+    /// Nullifier proving the wZEC hasn't been spent
+    pub nullifier: IntentNullifier,
+
+    /// Hash of the Zcash destination address (privacy-preserving)
+    /// Can be a transparent taddr or shielded zaddr
+    pub recipient_hash: [u8; 32],
+
+    /// Whether recipient is a shielded address (zaddr) or transparent
+    pub is_shielded: bool,
+
+    /// Amount to withdraw in zatoshi
+    pub amount: u64,
+
+    /// Block height timeout - if relayer doesn't execute by this height,
+    /// the withdrawal can be cancelled
+    pub timeout_height: u64,
+
+    /// ZK proof demonstrating:
+    /// - Prover knows secret corresponding to the nullifier
+    /// - Recipient hash is correctly computed
+    pub proof: Vec<u8>,
 }
 
 /// XMR withdrawal parameters

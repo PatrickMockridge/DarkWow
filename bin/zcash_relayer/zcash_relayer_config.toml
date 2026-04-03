@@ -1,0 +1,28 @@
+# Zcash Relayer Configuration
+#
+# Shield your Zcash once and forever more
+#
+# This relayer monitors the Zcash blockchain for deposits to bridge
+# shielded addresses and submits proofs to the DarkFi bridge contract.
+
+# DarkFi node RPC endpoint
+darkfid_url = "http://127.0.0.1:8543"
+
+# Zcash lightwalletd endpoint (for observing Sapling notes)
+zcash_lightwalletd_url = "http://127.0.0.1:9067"
+
+# Zcash full node RPC endpoint (for wallet operations)
+zcash_node_url = "http://127.0.0.1:8233"
+
+# Zcash view key (for observing deposits only - cannot spend)
+# This should be a valid Zcash viewing key (starts with 'viewing_key_')
+view_key = ""
+
+# Minimum deposit amount in zatoshi (0.0001 ZEC = 10,000 zatoshi)
+min_deposit = 10000
+
+# Required block confirmations before relaying
+confirmations = 10
+
+# Bridge fee to pay for deposit transactions (in smallest unit)
+fee = 1000
