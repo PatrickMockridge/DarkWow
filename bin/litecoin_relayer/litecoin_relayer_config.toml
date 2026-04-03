@@ -1,0 +1,26 @@
+# Litecoin Relayer Configuration
+#
+# The Monero trade pair - move in and out of privacy with LTC
+#
+# This relayer monitors the Litecoin blockchain for deposits to bridge
+# addresses and submits proofs to the DarkFi bridge contract.
+
+# DarkFi node RPC endpoint
+darkfid_url = "http://127.0.0.1:8543"
+
+# Litecoin daemon RPC endpoint
+litecoin_rpc_url = "http://127.0.0.1:9332"
+
+# Litecoin RPC authentication
+litecoin_rpc_user = ""
+litecoin_rpc_pass = ""
+
+# Minimum deposit amount in satoshis (0.001 LTC = 100,000 satoshis)
+min_deposit = 100000
+
+# Required block confirmations before relaying
+# Litecoin faster block time (2.5 min) means 6 confirmations ~= 15 min
+confirmations = 6
+
+# Bridge fee to pay for deposit transactions (in satoshis)
+fee = 10000

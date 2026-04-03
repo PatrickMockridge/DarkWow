@@ -38,6 +38,7 @@ pub enum ExternalChain {
     Monero,
     Zcash,
     Aztec,
+    Litecoin,
     // Future chains can be added here
     // Bitcoin,
 }
@@ -92,6 +93,10 @@ pub struct DepositParams {
     /// AZT-specific deposit proof data (used when chain is Aztec)
     /// This contains nullifier, commitment, rollup data, and proofs
     pub azt_proof: Option<AztecDepositProof>,
+
+    /// LTC-specific deposit proof data (used when chain is Litecoin)
+    /// This contains tx data, merkle proof, and optional MWEB data
+    pub ltc_proof: Option<LitecoinDepositProof>,
 }
 
 /// Bridge withdrawal parameters
@@ -460,6 +465,103 @@ pub struct AztecWithdrawParams {
 
     /// Asset ID (ETH = 0, DAI = 1)
     pub asset_id: u32,
+
+    /// Block height timeout - if relayer doesn't execute by this height,
+    /// the withdrawal can be cancelled
+    pub timeout_height: u64,
+
+    /// ZK proof demonstrating:
+    /// - Prover knows secret corresponding to the nullifier
+    /// - Recipient hash is correctly computed
+    pub proof: Vec<u8>,
+}
+
+// ================================================================
+// LITECOIN (TRANSPARENT + MIMBLEWIMBLE) BRIDGING SUPPORT
+// ================================================================
+//
+// Litecoin is Bitcoin's silver - it's fundamentally similar to Bitcoin
+// but with faster block times and active development. Key features:
+//
+// - 4x faster block time than Bitcoin (2.5 min vs 10 min)
+// - Lower fees, same security model
+// - MimbleWimble extension blocks for privacy (MWEB)
+// - Native support for confidential transactions
+// - Already widely used as XMR trade pair
+//
+// LTC Deposit Flow:
+//
+// 1. User deposits LTC to DarkFi bridge address on Litecoin
+// 2. Relayer observes deposit via Litecoin RPC/MWEB
+// 3. Relayer constructs proof showing:
+//    - Deposit exists in Litecoin blockchain
+//    - Amount is verified via confidential tx or standard tx
+// 4. User submits DepositV1 with LitecoinDepositProof
+// 5. Contract verifies merkle proof + amount
+// 6. Contract mints wLTC to user
+//
+// The Sell: "The Monero trade pair - move in and out of privacy with LTC"
+//
+// ================================================================
+
+/// Litecoin deposit proof data
+///
+/// This structure contains the cryptographic proof required to verify
+/// a Litecoin deposit on the Litecoin chain. Supports both standard
+/// transparent UTXO deposits and MimbleWimble MWEB confidential deposits.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct LitecoinDepositProof {
+    /// Transaction hash of the LTC deposit
+    pub tx_hash: [u8; 32],
+
+    /// Output index proving which output is the deposit
+    pub output_index: u64,
+
+    /// Deposit amount in satoshis (smallest LTC unit, 1 LTC = 10^8 satoshis)
+    pub amount: u64,
+
+    /// Merkle proof authenticating tx inclusion in Litecoin block
+    pub merkle_proof: Vec<[u8; 32]>,
+
+    /// Merkle root of Litecoin block header
+    pub block_merkle_root: [u8; 32],
+
+    /// Block height containing the deposit
+    pub block_height: u64,
+
+    /// Number of block confirmations (must meet minimum threshold)
+    pub confirmations: u64,
+
+    /// If using MWEB/MimbleWimble: commitment to the amount
+    /// This is a Pedersen commitment when using confidential transactions
+    pub confidential_commitment: Option<[u8; 32]>,
+
+    /// If using MWEB: range proof bytes for amount verification
+    /// Proves the amount is within valid range without revealing it
+    pub range_proof: Option<Vec<u8>>,
+
+    /// Whether this is a confidential (MWEB) or transparent deposit
+    pub is_confidential: bool,
+}
+
+/// Litecoin withdrawal parameters
+///
+/// For withdrawal, the user burns wLTC on DarkFi and specifies
+/// a Litecoin destination via a hashed recipient address.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct LitecoinWithdrawParams {
+    /// Nullifier proving the wLTC hasn't been spent
+    pub nullifier: IntentNullifier,
+
+    /// Hash of the Litecoin destination address (privacy-preserving)
+    /// Can be MWEB address (ltc1...) or legacy (L...)
+    pub recipient_hash: [u8; 32],
+
+    /// Whether recipient is a MWEB address
+    pub is_mweb: bool,
+
+    /// Amount to withdraw in satoshis
+    pub amount: u64,
 
     /// Block height timeout - if relayer doesn't execute by this height,
     /// the withdrawal can be cancelled

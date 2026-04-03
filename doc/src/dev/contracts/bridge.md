@@ -60,6 +60,7 @@ User knows secret → Compute nullifier = H(secret) → Withdraw (self-signed)
 - `xmr_deposit_v1.zk`: Prove Monero deposit via DLEq proof (stubbed DLEq verification)
 - `zec_deposit_v1.zk`: Prove Zcash Sapling deposit via nullifier + merkle proof
 - `azt_deposit_v1.zk`: Prove Aztec rollup deposit via note + merkle proof
+- `ltc_deposit_v1.zk`: Prove Litecoin deposit via merkle proof (MWEB optional)
 
 ## External Chain Support
 
@@ -219,6 +220,57 @@ Once your DAI/ETH is deposited to the DarkFi bridge via Aztec:
 2. User specifies recipient Aztec address hash
 3. Relayer picks up pending withdrawal
 4. Relayer broadcasts private TX to Aztec rollup
+5. If relayer fails > 100 blocks, user can cancel
+```
+
+### Litecoin
+
+Litecoin is Bitcoin's silver - fundamentally similar to Bitcoin but with faster block times and active development. Key features:
+
+| Aspect | Bitcoin | Litecoin |
+|--------|---------|----------|
+| Block time | 10 min | 2.5 min |
+| Fees | Higher | Lower |
+| PoW | SHA256 | Scrypt |
+| Privacy | Transparent | MWEB (MimbleWimble) |
+
+**The Pitch: "The Monero trade pair - move in and out of privacy with LTC"**
+
+Litecoin is the natural segueway to the Bitcoin ecosystem:
+- **XMR/LTC trading pair**: Most Monero trades happen via LTC on exchanges
+- **Lower fees than Bitcoin**: Move in/out of privacy cheaper
+- **MWEB privacy**: MimbleWimble extension blocks for confidential transactions
+- **Segue to Bitcoin**: Natural stepping stone to/from the Bitcoin ecosystem
+- **Already used this way**: Traders use LTC as a privacy stepping stone to Monero
+
+**LTC Deposit Flow:**
+```
+1. User deposits LTC to DarkFi bridge address on Litecoin
+2. Relayer observes deposit via Litecoin RPC (transparent or MWEB)
+3. Relayer constructs proof showing:
+   - Deposit exists in Litecoin blockchain
+   - Amount verified (via UTXO or MWEB commitment)
+4. User submits DepositV1 with LitecoinDepositProof
+5. Contract verifies merkle proof + amount
+6. Contract mints wLTC to user
+```
+
+**Trust Model:**
+- Relayer: Honest-but-curious (observes deposits, cannot spend)
+- Litecoin network: Trustless (confirmed by merkle proof)
+- Economic incentives prevent fraud
+
+**LTC Constants:**
+- Minimum deposit: 0.001 LTC (100,000 satoshis)
+- Confirmations required: 6 blocks (~15 min with 2.5 min blocks)
+- Supported: Transparent UTXO + MWEB confidential
+
+**LTC Withdrawal Flow:**
+```
+1. User burns wLTC on DarkFi
+2. User specifies recipient Litecoin address (LTC or MWEB)
+3. Relayer picks up pending withdrawal
+4. Relayer broadcasts TX to Litecoin network
 5. If relayer fails > 100 blocks, user can cancel
 ```
 

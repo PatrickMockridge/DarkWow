@@ -89,6 +89,13 @@ pub const BRIDGE_CONTRACT_AZT_HASH_FUNCTION: u8 = 3;
 pub const BRIDGE_CONTRACT_AZT_ASSET_ETH: u32 = 0;
 pub const BRIDGE_CONTRACT_AZT_ASSET_DAI: u32 = 1;
 
+// LTC (Litecoin) specific constants
+/// Number of block confirmations required for LTC deposits
+/// Litecoin faster block time (2.5 min vs Bitcoin 10 min) means faster confirmations
+pub const BRIDGE_CONTRACT_LTC_CONFIRMATIONS: u64 = 6;
+/// Hash function identifier for LTC (scrypt for PoW, same family as sha256)
+pub const BRIDGE_CONTRACT_LTC_HASH_FUNCTION: u8 = 5;
+
 /// Withdrawal timeout constants
 /// Default number of blocks before a withdrawal can be cancelled
 pub const BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS: u64 = 100;
