@@ -35,6 +35,11 @@ use crate::{
 };
 
 /// `get_metadata` function for `AtomicSwap::ClaimV1`
+///
+/// **Note**: This prepares public inputs for ZK proof verification when the
+/// DarkFi runtime's `wasm::zk::verify_zk_proof()` is integrated. Currently,
+/// the actual verification is done manually in `process_instruction` via
+/// `poseidon_hash(secret) == swap.hash`.
 pub(crate) fn atomic_swap_claim_get_metadata_v1(
     cid: darkfi_sdk::crypto::ContractId,
     call_idx: usize,
@@ -60,6 +65,13 @@ pub(crate) fn atomic_swap_claim_get_metadata_v1(
 }
 
 /// `process_instruction` function for `AtomicSwap::ClaimV1`
+///
+/// **ZK Verification Status**: This contract expects `wasm::zk::verify_zk_proof()`
+/// from the DarkFi runtime, but the SDK does not expose this function.
+/// Instead, we manually verify `poseidon_hash(secret) == swap.hash` which provides
+/// equivalent cryptographic proof of secret knowledge. The ZK circuit (`claim_v1.zk`)
+/// exists and could provide privacy-preserving verification if the runtime
+/// integration is completed.
 pub(crate) fn atomic_swap_claim_process_instruction_v1(
     cid: darkfi_sdk::crypto::ContractId,
     call_idx: usize,
