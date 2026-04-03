@@ -38,23 +38,34 @@ User withdraws → n-of-m threshold           User withdraws → Self-signed ZK 
 
 ### Ethereum
 
-The foundational chain - ETH is the native gas token and DeFi building block.
+Native Ethereum support for ETH transfers via Merkle proof verification.
 
 **Architecture:**
-- Standard Merkle proof verification for ETH deposits
-- Deposit contract on Ethereum holds ETH backing
+- Standard Merkle proof authenticates deposit inclusion in ETH block
+- ZK circuit verifies: commitment = H(secret, amount, bridge_address)
 - 12 block confirmations required
 
-**Flow:**
+**When to use:**
+- Simple ETH transfers where Aztec adds too much complexity
+- Assets that don't have Aztec support
+
+**Best Practice: ETH → Aztec → DarkFi**
+
+For privacy-preserving ETH transfers, the recommended path is:
+
 ```
-User → Bridge deposit contract on Ethereum (irreversible)
-     ↓
-Ethereum confirms deposit (12 blocks)
-     ↓
-ZK proof submitted to DarkFi (commitment verified)
-     ↓
-DarkFi mints wETH to user
+ETH → Aztec (private rollup) → DarkFi
 ```
+
+This provides:
+- **Full privacy** on Ethereum L1 via Aztec's private rollup
+- **Transaction amounts hidden**
+- **Counterparties hidden**
+- **Full DeFi history private**
+
+Not all assets support Aztec bridging. For those that don't (like Lido staked ETH, rocket pool ETH, etc.), direct Ethereum bridging remains available.
+
+See [Aztec section](#aztec-private-rollup) for the preferred privacy path.
 
 ### Monero
 
@@ -138,6 +149,8 @@ DarkFi mints wZEC to user
 - Confirmations: 10 blocks
 
 ### Aztec (Private Rollup)
+
+**Preferred for ETH and DAI** - provides full privacy on Ethereum L1 via ZK rollup.
 
 Ethereum ZK rollup for private ETH and ERC-20 (DAI) transfers. Combines Ethereum security with privacy.
 
