@@ -783,6 +783,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "blake2s_simd"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee29928bad1e3f94c9d1528da29e07a1d3d04817ae8332de1e8b846c8439f4b3"
+dependencies = [
+ "arrayref",
+ "arrayvec",
+ "constant_time_eq",
+]
+
+[[package]]
 name = "blake3"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9933,6 +9944,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "xmr_relayer"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "bs58",
+ "darkfi",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "darkfi_bridge_contract",
+ "darkfi_money_contract",
+ "hex",
+ "monero",
+ "serde",
+ "shellexpand",
+ "smol",
+ "structopt",
+ "structopt-toml",
+ "tinyjson",
+ "toml 0.9.11+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "xxhash-rust"
 version = "0.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9979,6 +10016,31 @@ dependencies = [
  "quote",
  "syn 2.0.114",
  "synstructure",
+]
+
+[[package]]
+name = "zec_relayer"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "blake2s_simd",
+ "blake3",
+ "darkfi",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "darkfi_bridge_contract",
+ "darkfi_money_contract",
+ "hex",
+ "serde",
+ "shellexpand",
+ "smol",
+ "structopt",
+ "structopt-toml",
+ "tinyjson",
+ "toml 0.9.11+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
