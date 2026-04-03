@@ -605,6 +605,69 @@ See [Private Authorization Layer](privauth.md) for:
 - How the signature/authorization pattern works across contracts
 - Why the split verification model exists
 
+## Multi-Chain Token Support
+
+The DEX **theoretically supports all bridged tokens** from the universal bridge:
+
+| Chain | Token | DEX Status | Notes |
+|-------|-------|------------|-------|
+| **Ethereum** | ETH | Supported | Native gas token |
+| **Monero** | XMR | Supported | Privacy-native |
+| **Zcash** | ZEC | Supported | Shielded transactions |
+| **Aztec** | ETH/DAI | Supported | Private rollup |
+| **Litecoin** | LTC | Supported | The Monero trade pair |
+
+This means the DEX can facilitate:
+- **XMR/ETH swaps**: Private exchange via atomic swaps
+- **ZEC/LTC swaps**: Shielded-to-transparent with LTC as stepping stone
+- **DAI/ETH swaps**: Private stablecoin trades via Aztec
+- **Cross-chain liquidity**: All tokens tradable within DarkFi's privacy layer
+
+### Bridged DAI as Price Anchor
+
+**Bridged DAI (via Aztec)** is particularly valuable for the DEX:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              DAI as Price Anchor in DarkFi                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  External: DAI/USD ≈ $1.00                                        │
+│                        ↓                                          │
+│  Aztec Bridge: wDAI on DarkFi                                     │
+│                        ↓                                          │
+│  DarkFi AMM Pool: DAI/DRK or DAI/NETHER                         │
+│                        ↓                                          │
+│  TWAP Price Feed → Stablecoin PI Controller                       │
+│                                                                   │
+│  Result:                                                         │
+│  - DAI provides natural USD price reference                       │
+│  - NETHER can be redeemed for DAI (indirect USD peg)             │
+│  - Arbitrage keeps NETHER price stable                           │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Price Signals In and Out of DarkFi
+
+The DEX creates **bidirectional price signals**:
+
+**Price signals INTO DarkFi:**
+- External ETH/USD → via bridge data → collateral valuation
+- External XMR/USD → via bridge data → LP pool pricing
+- External DAI/USD → via Aztec bridge → stablecoin redemption rate
+
+**Price signals OUT of DarkFi:**
+- DarkFi NETHER/USD → via bridge redemption → external markets
+- DarkFi DRK/token prices → observable via bridge withdrawal data
+- DarkFi AMM TWAP → published via data bridge for external consumption
+
+This makes DarkFi a **privacy-preserving price discovery layer** that:
+1. Hides trader identity and amounts
+2. Publishes aggregate price data
+3. Enables arbitrage across privacy boundary
+4. Maintains price peg stability for the stablecoin
+
 ## Comparison
 
 | Feature | UniSwap | Curve | DarkFi MVP (Atomic Swaps) |

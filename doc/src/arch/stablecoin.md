@@ -166,6 +166,59 @@ The **OCap security model** ensures:
 - **Self-signed withdrawals**: User alone authorizes via their secret
 - **Censorship resistant**: No threshold can block valid operations
 
+## Multi-Chain Collateral Support
+
+The bridge now supports **multiple external chains**, enabling diverse collateral options:
+
+| Chain | Token | Bridge Status | Stablecoin Use |
+|-------|-------|---------------|----------------|
+| **Ethereum** | ETH | Implemented | Native collateral |
+| **Monero** | XMR | Implemented | Privacy-native collateral |
+| **Zcash** | ZEC | Implemented | Shielded collateral |
+| **Aztec** | ETH/DAI | Implemented | Private DeFi collateral |
+| **Litecoin** | LTC | Implemented | Trade pair collateral |
+
+This means users can collateralize the stablecoin with **any bridged asset**, enabling:
+- XMR-backed privacy-preserving debt positions
+- ETH-backed stablecoin minting
+- DAI-backed positions via Aztec (private DAI!)
+- LTC-backed positions (the Monero trade pair)
+
+### Bridged DAI as Price Anchor
+
+**Bridged DAI (via Aztec)** serves as a critical price anchor:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              Bridged DAI Price Anchoring                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  External DAI/USD price → Aztec private pool → DarkFi TWAP     │
+│                              ↓                                    │
+│  Stablecoin redemption rate adjusted by PI Controller            │
+│                              ↓                                    │
+│  Keeps NETHER/USD price stable                                    │
+│                                                                   │
+│  Why DAI?                                                         │
+│  - DAI is pegged to USD (softly)                                 │
+│  - Aztec provides private DAI transfers                           │
+│  - DarkFi can observe DAI/USD without revealing users             │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+The **price signal flow**:
+1. External price data (DAI/USD, XMR/USD) enters via bridge data
+2. AMM pools on DarkFi provide TWAP price feeds
+3. PI Controller adjusts redemption rates based on TWAP deviation
+4. Users mint/burn to arbitrage the stablecoin back to peg
+
+This creates **price signals in and out of DarkFi**:
+- **Into DarkFi**: External asset prices inform collateral valuation
+- **Out of DarkFi**: NETHER price influences external markets via redemption
+
+## Open Questions
+
 ## Open Questions
 
 1. **Atomic swap feasibility**: Can trustless XMR ↔ DRK swaps be implemented?
