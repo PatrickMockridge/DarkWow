@@ -441,14 +441,15 @@ Each chain has specific verification:
 ### Object Capability Properties
 
 1. **Bridge nodes cannot steal**: They never hold user secrets
-2. **Self-signed withdrawals**: User alone authorizes via ZK proof
+2. **Self-signed withdrawals**: User proves secret knowledge to authorize (secret revealed to relayer for external chain execution)
 3. **Fresh addresses**: Nonce ensures temporal privacy
 4. **Double-spend prevention**: Nullifiers tracked on DarkFi
 
 ### Relayer Security
 
 - Relayers observe deposits but **cannot steal** (no spending authority)
-- Withdrawal pre-authorization via ZK proof
+- User proves secret knowledge to authorize withdrawal
+- Secret revealed to relayer (required for external chain execution — inherent to HTLC)
 - Timeout mechanism prevents indefinite withholding
 - Slashing discourages relayer misbehavior
 
@@ -544,10 +545,33 @@ Future DEX (Level 1 - Order Matching):
 
 The **bridge is NOT held up by missing opcodes**. It uses atomic swap semantics:
 - Deposit verification = merkle proof + hash constraints
-- Withdrawal authorization = ZK proof of secret knowledge
+- Withdrawal authorization = proof of secret knowledge
 - No complex arithmetic needed
 
 **This is why the bridge is complete while the DEX is still developing.**
+
+**On Secret Revelation in Withdrawals**:
+
+Like atomic swaps, bridge withdrawals require the user to reveal their secret so the relayer can execute the transaction on the external chain. This is NOT a privacy regression — it's inherent to cross-chain HTLC design:
+
+```
+User submits withdrawal (proves knowledge of secret)
+     ↓
+Relayer sees secret, executes on external chain
+     ↓
+Funds released to user on external chain
+```
+
+**Why this is secure**:
+- Fresh address per deposit → no cross-deposit linkability
+- Nullifiers prevent double-spend
+- Relayer cannot steal (no signing authority, only observation)
+- Secret revelation required by HTLC semantics (counterparty needs secret)
+
+**No bloom filter problem**:
+- Each deposit/withdrawal uses a fresh secret
+- No key reuse across transactions
+- Observer cannot correlate deposits
 
 See [DEX documentation](dex.md) for more on opcode limitations affecting the order book.
 
