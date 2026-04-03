@@ -481,6 +481,63 @@ bin/aztec_relayer/      # Aztec relayer
 bin/litecoin_relayer/   # Litecoin relayer
 ```
 
+## Opcode Requirements: What's Needed vs What's Not
+
+### Bridge Does NOT Need Advanced Opcodes
+
+The bridge circuits use only **proven, production-ready opcodes**:
+
+| Opcode | Used In Bridge | Purpose |
+|--------|---------------|---------|
+| `poseidon_hash` | ✅ All deposits | Commitment derivation |
+| `merkle_root` | ✅ All deposits | Block inclusion proofs |
+| `ec_mul_base` | ✅ All deposits | Public key derivation |
+| `ec_get_x` / `ec_get_y` | ✅ All deposits | Point coordinate extraction |
+| `constrain_equal_base` | ✅ All deposits | Equality constraints |
+| `range_check` | ✅ All deposits | Amount validation |
+
+**The bridge works because deposits/withdrawals are atomic:**
+- Either the ZK proof verifies and tokens are minted, or it fails and nothing happens
+- No need for complex arithmetic, division, or Boolean returns
+- Just hash constraints + merkle proofs + range checks
+
+### Where Missing Opcodes ARE Needed
+
+The **DEX Level 1+** (order book matching) and **advanced features** need these:
+
+| Opcode | Status | Needed For |
+|--------|--------|-----------|
+| `base_div` | Not implemented | Price ratio calculations (`alice_price = request / offer`) |
+| `LessThanOrEqual` | Experimental (soundness unverified) | Boolean returns for conditional logic |
+| `schnorr_verify` | Not implemented | In-circuit signature verification |
+
+### The Current Limitation
+
+```
+Current DEX (Level 0 - Atomic Swaps):
+├── Works NOW with existing opcodes
+├── No price ratio calculations
+├── No Boolean returns needed
+└── Just atomic swap verification
+
+Future DEX (Level 1 - Order Matching):
+├── NEEDS base_div for price ratios
+├── NEEDS LessThanOrEqual for Boolean returns
+├── NEEDS schnorr_verify for in-circuit signatures
+└── NOT blocked, but requires opcode workarounds
+```
+
+### Bridge = Opcode-Independent ✅
+
+The **bridge is NOT held up by missing opcodes**. It uses atomic swap semantics:
+- Deposit verification = merkle proof + hash constraints
+- Withdrawal authorization = ZK proof of secret knowledge
+- No complex arithmetic needed
+
+**This is why the bridge is complete while the DEX is still developing.**
+
+See [DEX documentation](dex.md) for more on opcode limitations affecting the order book.
+
 ## References
 
 - [Bridge Contract Dev Docs](../dev/contracts/bridge.md)

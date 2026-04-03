@@ -118,6 +118,7 @@ Once the following are formally verified:
 | identity | Threshold predicates | Safemath `assert_lte` (Level 0 zk_only), Bounded equation (Level 1) |
 | dex | Partial fills | Safemath `less_than_strict` assertion |
 | dao | Ratio checks | Cross-multiplication pattern |
+| **bridge** | All deposit/withdraw operations | ✅ No workarounds needed! |
 
 ### What Would Be Fully Composable With Ideal Opcodes
 
@@ -127,6 +128,20 @@ Once the following are formally verified:
 | identity | Level 1 selective disclosure (bounded equation) | ✅ Available now! |
 | dex | Fill amount as value for further constraints | LessThanOrEqual |
 | escrow | Atomic swap with partial fill Boolean return | LessThanOrEqual |
+| dex | Price ratio calculations for order matching | `base_div` |
+
+### Bridge = Opcode-Independent ✅
+
+**The bridge is NOT held up by missing opcodes.**
+
+The bridge uses **atomic swap semantics** which only need:
+- Hash constraints (poseidon_hash)
+- Merkle proofs (merkle_root)
+- Range checks (range_check)
+
+No division, no Boolean returns, no complex arithmetic. The bridge "just works" because atomic operations don't need the advanced opcodes.
+
+See [Bridge Architecture](arch/bridge.md) for details on why the bridge doesn't need advanced opcodes.
 
 **See**: [Safemath](arch/safemath.md) and [Experimental Opcodes](arch/experimental-opcodes.md) for full analysis.
 
