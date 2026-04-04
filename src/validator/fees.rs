@@ -93,6 +93,7 @@ pub fn circuit_gas_use(zkbin: &ZkBinary) -> u64 {
             Opcode::LessThanOrEqual => 100,
             Opcode::NotBase => 20,
             Opcode::BaseLtStrict => 100,
+            Opcode::BaseDiv => 1000, // ~253 squarings + up to 253 multiplications
             Opcode::DebugPrint => 100,
         };
 

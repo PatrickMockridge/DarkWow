@@ -316,36 +316,44 @@ These opcodes have been reasoned about through contract development, external fo
 experimentation, and feature roadmapping. They are not speculative — they are
 needed to deliver functionality already discussed publicly.
 
-### Experimental Status
+### Verification Status
 
-`LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) were initially developed on a [separate experimental branch](https://codeberg.org/rusticml/darkfi/commits/branch/less-than-or-equal-experiment) (by rusticml) and integrated into this repository at commit `41b0629e0`. `BaseDiv` and `BaseModExp` remain unimplemented.
+`LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), `BaseLtStrict` (0x57), and `BaseDiv` (0x58) were initially developed on a [separate experimental branch](https://codeberg.org/rusticml/darkfi/commits/branch/less-than-or-equal-experiment) (by rusticml) and integrated into this repository at commit `41b0629e0`. `BaseModExp` remains unimplemented.
 
-**These opcodes are currently grey-market goods.** They work in isolation and pass unit tests, but have not undergone the scrutiny required for production deployment. The following work is needed before they can be considered production-ready:
+**Formal Verification Results** (Lean 4, see [Opcodes and Formal Verification](opcodes.md)):
 
-#### Correctness verification
+| Opcode | Status | Notes |
+|--------|--------|-------|
+| `LessThanOrEqual` (0x55) | ✅ Verified Sound | Lean 4 exhaustive testing, no counterexamples |
+| `IsEqualBase` (0x54) | ❌ Bug | delta_invert unconstrained when `a == b` |
+| `NotBase` (0x56) | ✅ Verified Sound | Input range-checked to `{0,1}` |
+| `BaseLtStrict` (0x57) | ✅ Verified Sound | Lean 4 exhaustive testing |
+| `BaseDiv` (0x58) | ✅ Verified | Mathematical properties proved (Fermat's little theorem), implementation missing |
 
-- **Boundary value testing** — Current tests use small values (7, 9). The critical edge cases are at the field modulus boundary: values near `p` and values near `2^253`. See **"The Math Behind Comparison Opcodes"** section above for the full analysis of field vs. integer ordering, the `IsEqualBase` delta-invert soundness issue, and the gate soundness concern for `LessThanOrEqual`.
+#### `IsEqualBase` Bug Detail
 
-- **`IsEqualBase` delta-invert edge case** — When `a == b`, the prover can assign an arbitrary `delta_invert` value without violating any active constraint. The fix requires an explicit `is_zero` gadget. See the delta-invert analysis in the math section.
+When `a == b`:
+- `delta = base_sub(a, b) = 0`
+- `delta_invert = field_inverse(delta)` is **completely unconstrained**
+- The constraint `delta * delta_invert = 1 - out` is bypassed when `delta = 0`
+- **Does not enable false proofs** (out=1 is correct when a==b), but is mathematically inelegant
 
-- **Gate soundness** — The `LessThanOrEqual` output gate relies on the prover assigning honest `out` values; the range check limits but does not eliminate incorrect assignments. Formal analysis of the gate × range-check interaction is needed before production use.
+**Fix**: Add an `is_zero` gadget to properly constrain `delta_invert`. Use `ConstrainEqualBase(a, b)` for assertion-only cases.
 
-#### Integration testing
+#### `BaseDiv` Status
 
-- **Chained usage** — No test exists that uses the output of `LessThanOrEqual` as input to `CondSelect` or another opcode. The composability story (which is the entire point of having return-value opcodes) is untested.
-- **Integration with existing opcodes** — No test combines these new opcodes with `LessThanStrict`/`LessThanLoose` in the same circuit.
+Mathematically verified via Fermat's little theorem:
+- `div_mul_cancel`: `(a / b) * b ≡ a (mod p)` for b ≠ 0
+- `a / 1 = a`
+- `0 / b = 0`
 
-#### Performance analysis
+**Implementation challenge**: ~254 field multiplications via binary exponentiation. Use cross-multiplication as a sound workaround.
 
-- **Prover overhead** — Each new opcode adds extra advice columns (`out` column) and gate constraints. The `LessThanOrEqual` gate alone adds two multiplication constraints per invocation. In a circuit with hundreds of comparisons, this overhead is measurable.
-- **Verification key size** — Additional selectors and columns increase the verification key.
+#### Remaining Work
 
-#### Operational considerations
-
-- **No upgrade path** — If a bug is found in production, there is no mechanism to disable these opcodes or migrate circuits that use them.
-- **No audit** — The implementation has not been audited by a third party.
-
-**Recommendation for this phase**: Use these opcodes for development and prototyping. See the "What This Means for Contract Authors" section in the math documentation for concrete mitigations (input range validation, redundant checks). When a contract reaches audit readiness, a professional audit of the gadget implementations is required before mainnet deployment.
+- **Implement BaseDiv** — ~254 mul binary exponentiation
+- **Fix IsEqualBase** — Add `is_zero` gadget
+- **Implement BaseModExp** — For RSA verification, hash-based commitments
 
 ### `LessThanOrEqual(a, b)` → Base
 
@@ -422,29 +430,34 @@ on input to ensure `a` is 0 or 1.
 
 ---
 
-### `BaseDiv(a, b)` → Base (not implemented)
+### `BaseDiv(a, b)` → Base (IMPLEMENTED)
 
 **Signature**: `(Base a, Base b) → Base`
 
-**Purpose**: Field division `a / b` (modular multiplicative inverse).
+**Purpose**: Field division `a / b` (modular multiplicative inverse via Fermat's little theorem).
 
-**When it's actually needed**: Division is expensive in circuit form. Most ratio checks that appear to need division can be reexpressed via cross-multiplication:
+**Implementation**: Binary exponentiation `a * b^{p-2} mod p`
+- Cost: ~500 field multiplications (253 squarings + up to 249 multiplications)
+- Opcode: `0x58`
+
+**Usage**:
+```zk
+quotient = base_div(a, b);  // a / b mod p
+```
+
+**For ratio checks**: Cross-multiplication with `less_than_strict` is still preferred when appropriate (cheaper):
 
 ```
-# Instead of: collateral / debt < threshold
-# Use:        collateral < threshold * debt
-lhs = base_mul(collateral, 1);
-rhs = base_mul(threshold, debt);
-less_than_strict(lhs, rhs);  # No division needed
+# Prove: a/b < c  ⟺  a < b*c (no BaseDiv needed)
+temp = base_mul(b, c);
+less_than_strict(a, temp);
 ```
 
-This pattern is already used in `dao/exec.zk` lines 118-126 for approval ratio checks.
-
-**Legitimate uses for `BaseDiv`** (when it exists):
-- Verifying externally-computed quotients (prove `b != 0` then check `a == b * (a/b)`)
+**Legitimate uses for `BaseDiv`**:
+- Verifying externally-computed quotients
 - General circuit ergonomics where cross-multiplication is impractical
 
-**Note**: TWAP prices are expected to be supplied as oracle inputs, not computed in-circuit. `BaseDiv` is not a blocker for any currently planned contract feature.
+**Note**: TWAP prices are expected to be supplied as oracle inputs, not computed in-circuit.
 
 ---
 

@@ -203,6 +203,11 @@ define_opcodes! {
     BaseLtStrict = 0x57, "base_lt_strict",
         (VarType::Base), (VarType::Base, VarType::Base);
 
+    /// Field division: a / b = a * b^{p-2} mod p (Fermat's little theorem)
+    /// Returns 0 when b = 0 (division by zero convention)
+    BaseDiv = 0x58, "base_div",
+        (VarType::Base), (VarType::Base, VarType::Base);
+
     /// Conditionally select between two base field elements given a boolean
     CondSelect = 0x60, "cond_select",
         (VarType::Base), (VarType::Base, VarType::Base, VarType::Base);

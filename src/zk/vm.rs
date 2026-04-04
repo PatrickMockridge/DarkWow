@@ -1333,6 +1333,62 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     heap.push(HeapVar::Base(out));
                 }
 
+                Opcode::BaseDiv => {
+                    trace!(target: "zk::vm", "Executing `BaseDiv{:?}` opcode", opcode.1);
+                    let args = &opcode.1;
+
+                    let a: AssignedCell<Fp, Fp> = heap[args[0].1].clone().try_into()?;
+                    let b: AssignedCell<Fp, Fp> = heap[args[1].1].clone().try_into()?;
+
+                    // Compute a / b = a * b^(p-2) mod p using Fermat's little theorem
+                    // p-2 = 0x3ffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffff6b
+                    // Bits that are 0: 2, 4, 7, 32, 254
+                    // All other 250 bits are 1
+                    //
+                    // Binary exponentiation: result = b^(p-2)
+                    // We compute result = b, then for bits 1..253:
+                    //   result = result^2
+                    //   if bit i is 1: result = result * b
+                    // Finally multiply by a to get a * b^(p-2)
+
+                    // Bits of p-2 that are 0 (we don't multiply by b at these positions)
+                    const SKIP_BITS: [u64; 5] = [2, 4, 7, 32, 254];
+
+                    // Initialize result = b (for bit 0 which is 1), current = b^(2^0) = b
+                    let mut result = b.clone();
+                    let mut current = b.clone();
+
+                    // Process bits 1 through 253
+                    for i in 1..=253 {
+                        // Square: current = current^2 = b^(2^i)
+                        current = arith_chip.as_ref().unwrap().mul(
+                            layouter.namespace(|| format!("base_div_pow_{}", i)),
+                            &current,
+                            &current,
+                        )?;
+
+                        // If bit i is 1 (not in SKIP_BITS), multiply result by current
+                        if !SKIP_BITS.contains(&i) {
+                            result = arith_chip.as_ref().unwrap().mul(
+                                layouter.namespace(|| format!("base_div_mul_{}", i)),
+                                &result,
+                                &current,
+                            )?;
+                        }
+                    }
+
+                    // Multiply a * result to get a / b
+                    let quotient = arith_chip.as_ref().unwrap().mul(
+                        layouter.namespace(|| "base_div_final_mul"),
+                        &a,
+                        &result,
+                    )?;
+
+                    trace!(target: "zk::vm", "Pushing result to heap address {}", heap.len());
+                    self.tracer.push_base(&quotient);
+                    heap.push(HeapVar::Base(quotient));
+                }
+
                 Opcode::CondSelect => {
                     trace!(target: "zk::vm", "Executing `CondSelect{:?}` opcode", opcode.1);
                     let args = &opcode.1;

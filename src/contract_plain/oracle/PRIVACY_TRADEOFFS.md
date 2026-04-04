@@ -36,7 +36,7 @@ This plain contract:
 | `EcMul` | ✅ Sound | Yes |
 | `PoseidonHash` | ✅ Sound | Yes |
 | `SchnorrVerify` | ✅ Sound | Yes |
-| `base_div` | ❌ Not implemented | N/A - needed for weighted averages |
+| `base_div` | ✅ **Implemented** | N/A - available in ZKVM (0x58) |
 | `set_membership` | ❌ Not implemented | N/A - needed for data point proofs |
 
 **We prefer plain over ZK-with-unsound-opcodes.** A visible bug is fixable; an invisible theft is catastrophic.

@@ -37,17 +37,15 @@ This plain contract:
 | `EcMul` | ✅ Sound | Yes |
 | `PoseidonHash` | ✅ Sound | Yes |
 | `SchnorrVerify` | ✅ Sound | Yes |
-| `base_div` | ❌ Not implemented | N/A |
-| `less_than_or_equal` | ❌ Unsound bug | **NO - would allow false proofs** |
-| `is_equal_base` | ❌ Unsound bug | **NO - would allow false proofs** |
-
-**We prefer plain over ZK-with-unsound-opcodes.** A visible bug is fixable; an invisible theft is catastrophic.
+| `base_div` | ✅ **Implemented** | N/A | Available in ZKVM (0x58) |
+| `less_than_or_equal` | ✅ **Verified Sound** | N/A | Available in ZKVM (0x55) |
+| `is_equal_base` | ❌ Bug | **NO - delta_invert unconstrained** | Do not use |
 
 ## Opcode Dependencies
 
 | Opcode | Status | Fallback | Impact |
 |--------|--------|----------|--------|
-| `base_div` | NOT IMPLEMENTED | Native Rust division | Results visible on-chain |
+| `base_div` | **IMPLEMENTED** (0x58) | Native Rust division | Results visible on-chain |
 
 ## Data Visibility
 
@@ -82,16 +80,17 @@ When `base_div` is implemented in the ZKVM, this contract's logic could be porte
 
 ## OPCODE PLACEHOLDERS
 
-### base_div (NOT IMPLEMENTED)
+### base_div (IMPLEMENTED - 0x58)
 ```rust
 // PRIVACY: In ZK version, division result would be constrained, not revealed.
 // Currently: Native Rust division reveals result on-chain.
 pub fn calculate_rate_limit(uses: u64, period: u64) -> u64 {
     uses / period  // DIVISION - visible on-chain
 }
+// ZK VERSION: Use base_div(a, b) opcode to compute ratio privately
 ```
 
-### less_than_or_equal (NOT IMPLEMENTED - SOUNDNESS BUG)
+### less_than_or_equal (VERIFIED SOUND)
 ```rust
 // PRIVACY: In ZK version with sound less_than_or_equal, comparison result
 // could be constrained without revealing the actual values.

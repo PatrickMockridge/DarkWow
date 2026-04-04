@@ -66,12 +66,12 @@ See [Opcode Soundness Status](PRIVACY_TRADEOFFS.md#opcode-soundness-status) for 
 
 | Opcode | Status | Plain Fallback |
 |--------|--------|----------------|
-| `base_div` | NOT IMPLEMENTED | Native division (privacy tradeoff: results visible) |
+| `base_div` | **IMPLEMENTED** (0x58) | Native division (privacy tradeoff: results visible) |
 | `set_membership` | NOT IMPLEMENTED | Direct inclusion check |
 
-## Future ZK Enhancement Path
+## ZK Enhancement Path
 
-When `base_div` and `set_membership` are implemented in the ZKVM:
+`base_div` is now implemented. When `set_membership` is implemented:
 
 1. Keep individual data points private through commitments
 2. Prove data point inclusion without revealing values

@@ -108,7 +108,7 @@ InitializeV1 (0x00), CreateSwapV1 (0x01), AcceptSwapV1 (0x02), ExecuteSwapV1 (0x
 
 ### Technical Debt Note
 
-> **Safemath vs LessThanOrEqual**: The partial fill uses safemath `less_than_strict` assertion pattern (production-ready). `LessThanOrEqual` (gate soundness unverified) would return a Boolean for full composability, but safemath is sufficient for assertion-only checks.
+> **Safemath vs LessThanOrEqual**: The partial fill uses safemath `less_than_strict` assertion pattern (production-ready). `LessThanOrEqual` is formally verified sound (Lean 4), but safemath is sufficient for assertion-only checks. `LessThanOrEqual` is preferred when a Boolean return value is needed for composability.
 
 ### Future: Level 1 (Order Book)
 
@@ -198,7 +198,7 @@ InitializeV1 (0x00), DepositCollateralV1 (0x01), WithdrawCollateralV1 (0x02), Mi
 | `mint_stable_v1.zk` | Unread | Base arithmetic uses existing opcodes |
 | `liquidate_v1.zk` | Verified | Uses safemath `assert_lte_u64_v1.zk` pattern for reward bounds |
 
-**Opcode layer**: None. All LTE checks use safemath assertion gadgets instead of experimental `LessThanOrEqual` opcode.
+**Opcode layer**: None. All LTE checks use safemath assertion gadgets. `LessThanOrEqual` is formally verified sound but safemath is sufficient for assertion-only checks.
 
 ### Blockers
 

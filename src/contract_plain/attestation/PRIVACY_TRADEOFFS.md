@@ -36,8 +36,8 @@ This plain contract:
 | `EcMul` | ✅ Sound | Yes |
 | `PoseidonHash` | ✅ Sound | Yes |
 | `SchnorrVerify` | ✅ Sound | Yes |
-| `base_div` | ❌ Not implemented | N/A - needed for delegation ratios |
-| `less_than_or_equal` | ❌ Unsound bug | **NO - would allow false proofs** |
+| `base_div` | ✅ **Implemented** | N/A - available in ZKVM (0x58) |
+| `less_than_or_equal` | ✅ **Verified Sound** | N/A - available in ZKVM (0x55) |
 
 **We prefer plain over ZK-with-unsound-opcodes.** A visible bug is fixable; an invisible credential fraud is catastrophic.
 

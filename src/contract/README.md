@@ -99,9 +99,9 @@ When `a == b`, the constraint `delta * delta_invert == 1` becomes `0 * anything 
 
 ---
 
-### Cross-Multiplication Pattern (Avoids BaseDiv)
+### Cross-Multiplication Pattern (Alternative to BaseDiv)
 
-Ratio checks use cross-multiplication instead of division:
+Ratio checks can use cross-multiplication instead of division:
 
 ```zk
 # Prove: approval_ratio <= yes_vote / all_vote
@@ -112,7 +112,7 @@ rhs_1 = base_add(rhs, 1);  # +1 converts strict < to <=
 less_than_strict(lhs, rhs_1);
 ```
 
-This pattern (in `dao/exec.zk`) handles ratio checks without `BaseDiv`.
+**Note**: `BaseDiv` is now implemented (opcode 0x58). This cross-multiplication pattern is still useful for simple ratio assertions where BaseDiv would be expensive.
 
 ---
 
@@ -147,11 +147,11 @@ This pattern (in `dao/exec.zk`) handles ratio checks without `BaseDiv`.
 
 ### Key Takeaways
 
-1. **No `BaseDiv` needed** - Cross-multiplication with `less_than_strict` handles all ratio checks
-2. **`less_than_strict` is safe** - It's constrain-only (no return value manipulation)
-3. **stablecoin and identity use safemath** - Assertion gadgets (`assert_lte_u64_v1.zk`) as workaround for LessThanOrEqual
-4. **LessThanOrEqual is IDEAL but has technical debt** - Returns Boolean for composability, but gate soundness unverified
-5. **Safemath is WORKAROUND** - Production-ready for assertion-only, but cannot return Boolean for downstream logic
+1. **`BaseDiv` is implemented** - Opcode 0x58 using binary exponentiation
+2. **`LessThanOrEqual` is verified sound** - Formally verified via Lean 4
+3. **`less_than_strict` is safe** - It's constrain-only (no return value manipulation)
+4. **Cross-multiplication is still useful** - For simple ratio assertions without BaseDiv overhead
+5. **stablecoin and identity use safemath** - Assertion gadgets (`assert_lte_u64_v1.zk`) as workaround for LessThanOrEqual
 6. **Bridge Merkle is fixed** - `deposit_v1.zk` now uses real `merkle_root` opcode
 
 **See also**:

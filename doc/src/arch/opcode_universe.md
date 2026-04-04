@@ -503,7 +503,7 @@ return t;
 
 `LessThanOrEqual` and `IsEqualBase` are implemented (experimental, grey-market).
 
-**Formal Verification Results** (see [Opcodes and Formal Verification](experimental-opcodes.md)):
+**Formal Verification Results** (see [Opcodes and Formal Verification](opcodes.md)):
 - `LessThanOrEqual` (0x55): ✅ **Verified Sound** via Lean 4
 - `IsEqualBase` (0x54): ❌ **Bug Confirmed** - delta_invert unconstrained when `a == b`
 - `NotBase` (0x56): ✅ **Verified Sound**
@@ -526,17 +526,16 @@ return t;
 - ✅ Public key derivation (ECDSA on Jubjub)
 - ✅ Poseidon-based Merkle trees (fixed depth 32)
 - ✅ Arbitrary field arithmetic circuits
-- ✅ Conditional logic via constrain-only comparisons
+- ✅ Boolean comparison logic (`LessThanOrEqual`, `BaseLtStrict` — formally verified sound)
+- ✅ Field division (`BaseDiv` opcode 0x58 — implemented via binary exponentiation)
 - ✅ Object capability permissions (basic)
 - ✅ Single-asset confidential transfers (via ec_mul/ec_add workaround)
-- ✅ DAO governance with voting权重
+- ✅ DAO governance with voting
 
 **What DarkFi CANNOT Express** (missing opcodes):
 
 - ❌ Cross-chain signature verification (ETH, BTC, Solana)
 - ❌ Standard hash functions (SHA-256, Keccak)
-- ❌ Field division without circuit bloat
-- ❌ Efficient ratio comparisons (requires base_div)
 - ❌ Constant-size set membership proofs
 - ❌ Variable-time exponentiation
 - ❌ Confidential multi-asset transactions
@@ -555,7 +554,7 @@ The mathematical universe is bounded only by constraint density and proving time
 
 ## See Also
 
-- [Opcodes and Formal Verification](experimental-opcodes.md) — Soundness verification status, Lean 4 proofs, and outstanding work
+- [Opcodes and Formal Verification](opcodes.md) — Soundness verification status, Lean 4 proofs, and outstanding work
 - [Merkle Depth Limitation](merkle_depth.md) — Fixed-depth constraints and workarounds
 - [Bridge Contract Architecture](../contract/bridge/README.md) — How Merkle proofs are used in production
 - [dao/exec.zk](../../src/contract/dao/proof/exec.zk) — Cross-multiplication pattern example

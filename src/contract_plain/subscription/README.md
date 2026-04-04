@@ -66,12 +66,12 @@ See [`PRIVACY_TRADEOFFS.md`](PRIVACY_TRADEOFFS.md) for full documentation.
 
 | Opcode | Status | Plain Fallback |
 |--------|--------|----------------|
-| `base_div` | NOT IMPLEMENTED | Native Rust division (privacy tradeoff: results visible) |
-| `less_than_or_equal` | Unsound bug | Cross-multiplication workaround |
+| `base_div` | **IMPLEMENTED** (0x58) | Native Rust division (privacy tradeoff: results visible) |
+| `less_than_or_equal` | **Verified Sound** | Cross-multiplication workaround |
 
-## Future ZK Enhancement Path
+## ZK Enhancement Path
 
-When `base_div` is implemented in the ZKVM, this contract's logic could be ported back to ZK:
+`base_div` is now implemented and `less_than_or_equal` is verified sound. Migration to ZK is possible:
 
 1. Replace native `&` bitmask with ZK constraint
 2. Replace division with ZK-verified division

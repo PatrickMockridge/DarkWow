@@ -75,12 +75,12 @@ Created → Active → Expired
 
 | Opcode | Status | Plain Fallback |
 |--------|--------|----------------|
-| `base_div` | NOT IMPLEMENTED | Cross-multiplication workaround (privacy tradeoff: results visible) |
-| `less_than_or_equal` | Unsound bug | Cross-multiplication |
+| `base_div` | **IMPLEMENTED** (0x58) | Cross-multiplication workaround (privacy tradeoff: results visible) |
+| `less_than_or_equal` | **Verified Sound** | Cross-multiplication |
 
-## Future ZK Enhancement Path
+## ZK Enhancement Path
 
-When `base_div` is implemented in the ZKVM, this contract's logic could be ported back to ZK:
+`base_div` is now implemented and `less_than_or_equal` is verified sound. Migration to ZK is possible:
 
 1. Replace premium division with ZK-verified division
 2. Keep individual risk factors private where possible

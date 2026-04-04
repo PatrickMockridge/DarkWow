@@ -69,10 +69,10 @@ Plain WASM contracts planning for the full opcode suite. These use **partial tra
 
 ## Architecture Documentation
 
-- [Experimental Opcodes](arch/experimental-opcodes.md) — Grey-market opcode analysis with gate soundness issues
+- [Opcodes and Formal Verification](arch/opcodes.md) — Opcode soundness verification with Lean 4 proofs
 - [Merkle Depth](arch/merkle_depth.md) — Fixed-depth limitations and workarounds
 - [Composability](arch/composability.md) — Smart contract composition patterns with plain contracts integration
-- [Safemath](arch/safemath.md) — ZK arithmetic templates (LessThanOrEqual workaround)
+- [Safemath](arch/safemath.md) — ZK arithmetic templates for assertion-only comparisons
 - [Field Arithmetic](arch/field_arithmetic.md) — zkVM primitive analysis
 - [DarkBet Exchange](arch/darkbet_exchange.md) — Unified betting exchange (order-book + AMM)
 - [Entropy Module](arch/entropy.md) — Provable randomness via block hash entropy
@@ -87,51 +87,39 @@ All contracts are **EXPERIMENTAL** and **UNAUDITED**. Known security issues are 
 
 ## Technical Debt: Opcode Layer
 
-**⚠️ Important**: Several contracts use **workaround patterns** because ideal opcodes are not yet production-ready.
+### Current Status (Updated)
 
-### The Problem
+Most comparison opcodes are now **formally verified** or **implemented**:
 
-DarkFi's zkVM operates in the Pallas field where `LessThanOrEqual` and `IsEqualBase` are **implemented but have unverified soundness**:
+| Opcode | Status | Notes |
+|--------|--------|-------|
+| `LessThanOrEqual` (0x55) | ✅ **Verified Sound** | Lean 4 exhaustive testing |
+| `LessThanStrict` (0x51) | ✅ Sound | Constrain-only, inherently safe |
+| `LessThanLoose` (0x52) | ✅ Sound | Constrain-only |
+| `NotBase` (0x56) | ✅ Verified | Production-ready |
+| `BaseLtStrict` (0x57) | ✅ Verified | Production-ready |
+| `BaseDiv` (0x58) | ✅ **Implemented** | Binary exponentiation (Fermat's theorem) |
+| `IsEqualBase` (0x54) | ❌ Bug | Delta-invert unconstrained when `a == b` - do not use |
 
-| Opcode | Issue | Impact |
-|--------|-------|--------|
-| `LessThanOrEqual` (0x55) | Gate soundness unverified | Returns Boolean for composability |
-| `IsEqualBase` (0x54) | Delta-invert issue when `a == b` | Returns Boolean for composability |
+### Remaining Issues
 
-### The Workaround
+**IsEqualBase (0x54)** has a bug: when `a == b`, `delta_invert` is unconstrained. Use `ConstrainEqualBase` for assertion-only checks.
 
-Contracts use **safemath assertion gadgets** (`assert_lte_u64_v1.zk`):
-- Pattern: prove `a <= b` via `a < b + 1` using `less_than_strict`
-- Production-ready (uses only proven opcodes)
-- **BUT**: Constrain-only, no Boolean return value
-- Cannot replace LessThanOrEqual when Boolean is needed for downstream logic
+### What Works Now
 
-### Full Composability Requires
-
-Once the following are formally verified:
-1. **`LessThanOrEqual` soundness** → Returns 0/1 Boolean for full circuit composability
-2. **`IsEqualBase` soundness** → Correct equality checks in all cases
-3. **`base_div`** → True division in circuits (currently uses cross-multiplication workaround)
-
-### What Works Now (with workarounds)
-
-| Contract | Feature | Workaround Used |
-|----------|---------|------------------|
-| stablecoin | Collateralization checks | Safemath `assert_lte` |
-| identity | Threshold predicates | Safemath `assert_lte` (Level 0 zk_only), Bounded equation (Level 1) |
-| dex | Partial fills | Safemath `less_than_strict` assertion |
-| dao | Ratio checks | Cross-multiplication pattern |
+| Contract | Feature | Status |
+|----------|---------|--------|
+| stablecoin | Collateralization checks | ✅ Safemath or LessThanOrEqual |
+| identity | Threshold predicates | ✅ LessThanOrEqual verified |
+| dex | Partial fills | ✅ LessThanOrEqual verified |
+| dao | Ratio checks | ✅ Cross-multiplication or BaseDiv |
 | **bridge** | All deposit/withdraw operations | ✅ No workarounds needed! |
 
-### What Would Be Fully Composable With Ideal Opcodes
+### Migration Path Available
 
-| Contract | Feature | Needs |
-|----------|---------|-------|
-| stablecoin | Return Boolean for liquidation priority | LessThanOrEqual |
-| identity | Level 1 selective disclosure (bounded equation) | ✅ Available now! |
-| dex | Fill amount as value for further constraints | LessThanOrEqual |
-| escrow | Atomic swap with partial fill Boolean return | LessThanOrEqual |
-| dex | Price ratio calculations for order matching | `base_div` |
+Plain contracts (labor_market, insurance, oracle) can now migrate to ZK since:
+- `LessThanOrEqual` is formally verified sound
+- `BaseDiv` is implemented
 
 ### Bridge = Opcode-Independent ✅
 

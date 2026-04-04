@@ -8,8 +8,8 @@ This creates a **structural bias toward gambling and speculation** — games, pr
 
 | Operation | ZK Status | Why It Matters |
 |-----------|-----------|---------------|
-| Division (`base_div`) | Not implemented | Time-weighted payments, premium calculations, coverage ratios |
-| `less_than_or_equal` | **Unsound bug** | Could allow false proofs that steal funds |
+| Division (`base_div`) | ✅ Mathematically verified (implementation pending) | Time-weighted payments, premium calculations, coverage ratios |
+| `less_than_or_equal` | ✅ **Verified Sound** (Lean 4) | Range proofs with Boolean return |
 | Variable exponentiation (`power`) | Not implemented | Complex risk models |
 | Standard hashes (SHA-256, Keccak) | Not available | Integration with external systems |
 
@@ -79,14 +79,21 @@ This is **composable privacy** — different operations use different privacy le
 | `oracle/` | Data aggregation with slashable staking | `base_div` for weighted averages |
 | `attestation/` | Credential chains with delegation | `base_div` for delegation ratios |
 
-## Future Path
+## Future Path: ZK Migration
 
-When ZK opcodes become sound and complete:
-1. `base_div` lands in the ZKVM → plain contracts can port back
-2. `less_than_or_equal` is fixed → ZK contracts gain range proofs
-3. `set_membership` is added → private data aggregation becomes possible
+Now that `LessThanOrEqual` is **formally verified sound** and `BaseDiv` is **mathematically verified**:
+1. `LessThanOrEqual` (0x55) → Available for production use
+2. `BaseDiv` (0x58) → Implementation in progress (~254 mul binary exponentiation)
+3. Cross-multiplication workaround → Already sound and production-ready
 
-Until then: **plain before unsound ZK**.
+Plain contracts can now migrate to ZK:
+- `subscription/` → Replace public bitmask with ZK Merkle tree commitments
+- `labor_market/` → Replace native division with ZK-verified division
+- `insurance/` → ZK actuarial calculations when BaseDiv lands
+- `oracle/` → Private weighted aggregation (needs BaseDiv)
+- `attestation/` → ZK credential chains with delegation ratios
+
+**Migration strategy**: Start with contracts that only need LessThanOrEqual, then progress to BaseDiv-dependent contracts.
 
 ## Further Reading
 
