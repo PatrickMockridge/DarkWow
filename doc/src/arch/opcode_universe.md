@@ -501,13 +501,19 @@ return t;
 
 ### Note on Comparison Opcodes: Safemath vs Native Opcode
 
-`LessThanOrEqual` and `IsEqualBase` are implemented (experimental, grey-market). However:
+`LessThanOrEqual` and `IsEqualBase` are implemented (experimental, grey-market).
 
-- **Safemath workaround exists**: For assertion-only use cases (no Boolean return value), the [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) library provides production-ready templates using sound `less_than_strict` + `base_add` + `range_check`.
+**Formal Verification Results** (see [Opcodes and Formal Verification](experimental-opcodes.md)):
+- `LessThanOrEqual` (0x55): ✅ **Verified Sound** via Lean 4
+- `IsEqualBase` (0x54): ❌ **Bug Confirmed** - delta_invert unconstrained when `a == b`
+- `NotBase` (0x56): ✅ **Verified Sound**
+- `BaseLtStrict` (0x57): ✅ **Verified Sound**
 
-- **Native opcode still needed**: When a circuit requires a Boolean return value (e.g., for public output or `CondSelect`), the native opcode is still required. Safemath cannot replace this.
+**Safemath workaround**: For assertion-only use cases (no Boolean return value), the [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) library provides production-ready templates using sound `less_than_strict` + `base_add` + `range_check`.
 
-**Current status**: stablecoin and identity use safemath for assertion-only checks. No contracts require the native `LessThanOrEqual` opcode at this time.
+**Native opcode still needed**: When a circuit requires a Boolean return value (e.g., for public output or `CondSelect`), the native opcode is still required. Safemath cannot replace this.
+
+**Current status**: stablecoin and identity use safemath for assertion-only checks. `LessThanOrEqual` is verified sound for bounded inputs.
 
 **See**: [Safemath](../safemath.md) for the workaround, [zkVM Primitive Layer](zkvm_primitives.md) for native opcode status.
 
@@ -549,7 +555,7 @@ The mathematical universe is bounded only by constraint density and proving time
 
 ## See Also
 
-- [Experimental Opcodes](experimental-opcodes.md) — Soundness issues in current comparison opcodes
+- [Opcodes and Formal Verification](experimental-opcodes.md) — Soundness verification status, Lean 4 proofs, and outstanding work
 - [Merkle Depth Limitation](merkle_depth.md) — Fixed-depth constraints and workarounds
 - [Bridge Contract Architecture](../contract/bridge/README.md) — How Merkle proofs are used in production
 - [dao/exec.zk](../../src/contract/dao/proof/exec.zk) — Cross-multiplication pattern example
