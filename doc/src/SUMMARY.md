@@ -32,6 +32,10 @@
   - [Nym Nodes](misc/nodes/nym-guide.md)
 - [Network Troubleshooting](misc/network-troubleshooting.md)
 
+# Relayer Operations
+
+- [Universal Relayer](relayer/relayer.md)
+
 # Developer Doc
 
 - [Development](dev/dev.md)
@@ -47,7 +51,6 @@
   - [Consensus](arch/consensus.md)
   - [Transactions](arch/tx_lifetime.md)
   - [Bridge](arch/bridge.md)
-  - [Monero](arch/monero.md)
   - [Tooling](arch/tooling.md)
   - [P2P Network](arch/net/p2p-network.md)
   - [Services](arch/services.md)

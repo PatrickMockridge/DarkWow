@@ -649,6 +649,7 @@ Relayers run the actual full nodes on external chains to execute withdrawals.
 ## References
 
 - [Bridge Contract Dev Docs](../dev/contracts/bridge.md)
+- [Relayer Documentation](../relayer/relayer.md)
 - [Monero Integration](./monero.md)
 - [Stablecoin](./stablecoin.md)
 - [DEX](./dex.md)
