@@ -199,6 +199,7 @@ Architecture docs:
 
 - [dao_escrow.md](../../doc/src/arch/dao_escrow.md)
 - [game_room.md](../../doc/src/arch/game_room.md)
+- [game_room_app_layer.md](../../doc/src/arch/game_room_app_layer.md)
 - [subscription.md](../../doc/src/arch/subscription.md)
 - [atomic_swap.md](../../doc/src/arch/atomic_swap.md)
 - [oracle.md](../../doc/src/arch/oracle.md)

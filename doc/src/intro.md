@@ -77,6 +77,7 @@ Plain WASM contracts planning for the full opcode suite. These use **partial tra
 - [DarkBet Exchange](arch/darkbet_exchange.md) — Unified betting exchange (order-book + AMM)
 - [Entropy Module](arch/entropy.md) — Provable randomness via block hash entropy
 - [Provable Randomness](arch/provable_randomness.md) — PoW randomness analysis with casino game case studies
+- [Game Room App Layer](arch/game_room_app_layer.md) — SDK integration guide for app developers
 - [Plain Contracts Architecture](arch/plain_contracts.md) — Dual-layer ZK/plain contract design
 - [Parallel Societies](arch/parallel_societies.md) — Privacy for social reproduction industries (labor, healthcare, insurance, education)
 
