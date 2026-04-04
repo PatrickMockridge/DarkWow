@@ -107,6 +107,10 @@ Source code is under `src/` subdirectory. Main interesting modules are:
       All participants are anonymous, proposals are anonymous and votes
       are anonymous including the token weighted vote amount, and user
       identity. You cannot see who is in the DAO.
+    * `game_room`, a generalized betting and pot management contract for
+      privacy-preserving staked games. App developers build poker rooms,
+      backgammon rooms, etc. on top using the SDK. The room owner uses
+      an escrow-DAO to organize game rules and resolve disputes.
 
 > Note: We try to minimize external dependencies in our code as much as
 > possible. We even try to limit dependencies within submodules.

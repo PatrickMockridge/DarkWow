@@ -26,6 +26,7 @@ ZK contracts using the existing opcode set. These prioritize **maximum privacy**
 | **dex** | Atomic swap DAO with incremental transparency | ✅ Complete |
 | **drain_protection** | Endowment/treasury protections (8 best practices) | ✅ Complete |
 | **escrow** | Hashed Timelock Contract variant | ✅ Complete |
+| **game_room** | Generalized betting and pot management | ✅ Complete |
 | **identity** | ZK credential proofs using competency DAGs | ✅ Level 0 zk_only + Level 1 selective (bounded equation) |
 | **insurance_market** | Decentralized insurance marketplace | ✅ Complete |
 | **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
@@ -64,6 +65,7 @@ Plain WASM contracts planning for the full opcode suite. These use **partial tra
 - **Safemath integration**: Production-ready ZK arithmetic templates as LessThanOrEqual workaround
 - **Bridge Merkle fix**: Real `merkle_root` opcode (not fake proof)
 - **Entropy module**: Shared `darkfi_sdk::crypto::entropy` for provable randomness across contracts
+- **Game Room**: Generalized betting and pot management contract. App developers build poker rooms, backgammon rooms, etc. on top using the SDK. Room owner uses escrow-DAO for game rules and dispute resolution.
 
 ## Architecture Documentation
 

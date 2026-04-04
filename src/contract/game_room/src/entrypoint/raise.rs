@@ -1,0 +1,212 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+use darkfi_sdk::{
+    crypto::poseidon_hash,
+    dark_tree::DarkLeaf,
+    error::{ContractError, ContractResult},
+    msg,
+    pasta::pallas,
+    wasm, ContractCall,
+};
+
+use crate::{
+    error::GameRoomError,
+    model::{
+        Bet, BetType, PlayerAccount, RaiseParamsV1, RaiseUpdateV1, GameRoom, Pot,
+        PotContribution, RoomState,
+    },
+    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_BETS_TREE, GAME_ROOM_POTS_TREE, GAME_ROOM_ROOMS_TREE,
+};
+
+pub(crate) fn game_room_raise_process_instruction_v1(
+    cid: darkfi_sdk::crypto::ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> Result<Vec<u8>, ContractError> {
+    let self_ = &calls[call_idx].data;
+    let params: RaiseParamsV1 = darkfi_serial::deserialize(&self_.data[1..])?;
+
+    msg!(
+        "[Raise] Raising bet by {} in room {:?}",
+        params.amount,
+        params.room_id
+    );
+
+    // Get room
+    let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
+    let Some(room_data) =
+        wasm::db::db_get(rooms_db, &darkfi_serial::serialize(&params.room_id))?
+    else {
+        msg!("[Raise] Error: Room not found");
+        return Err(GameRoomError::RoomNotFound.into())
+    };
+    let mut room: GameRoom =
+        darkfi_serial::deserialize(&room_data)?;
+
+    // Validate room state
+    if room.state != RoomState::Active {
+        msg!("[Raise] Error: Room not active");
+        return Err(GameRoomError::RoomNotActive.into())
+    }
+
+    // Validate there's an active bet to raise
+    if room.current_bet_amount == 0 {
+        msg!("[Raise] Error: No current bet to raise");
+        return Err(GameRoomError::NotCurrentBet.into())
+    }
+
+    // New total must be more than current bet
+    let raise_total = room.current_bet_amount + params.amount;
+
+    // Use player from params (verified by proof/signature)
+    let caller = params.player;
+
+    // Cannot raise self
+    if let Some(current_better) = room.current_better {
+        if current_better == caller {
+            msg!("[Raise] Error: Cannot raise own bet");
+            return Err(GameRoomError::CallerNotPlayer.into())
+        }
+    }
+
+    // Get account
+    let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
+    let account_key = darkfi_serial::serialize(&(params.room_id, caller.xy().0));
+    let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
+        msg!("[Raise] Error: Account not found");
+        return Err(GameRoomError::AccountNotFound.into())
+    };
+    let mut account: PlayerAccount =
+        darkfi_serial::deserialize(&account_data)?;
+
+    if account.has_folded {
+        msg!("[Raise] Error: Player has folded");
+        return Err(GameRoomError::CallerNotPlayer.into())
+    }
+
+    // Check available balance for the raise
+    if account.available_balance() < params.amount {
+        msg!(
+            "[Raise] Error: Insufficient available balance for raise (have {}, need {})",
+            account.available_balance(),
+            params.amount
+        );
+        return Err(GameRoomError::InsufficientBalance.into())
+    }
+
+    // Get pot
+    let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
+    let Some(pot_id) = room.current_pot_id else {
+        msg!("[Raise] Error: No current pot");
+        return Err(GameRoomError::PotNotFound.into())
+    };
+    let Some(pot_data) = wasm::db::db_get(pots_db, &darkfi_serial::serialize(&pot_id))? else {
+        msg!("[Raise] Error: Pot not found");
+        return Err(GameRoomError::PotNotFound.into())
+    };
+    let mut pot: Pot =
+        darkfi_serial::deserialize(&pot_data)?;
+
+    // Validate pot state
+    if pot.state != crate::model::PotState::Open {
+        msg!("[Raise] Error: Pot not open");
+        return Err(GameRoomError::PotNotOpen.into())
+    }
+
+    // Update account
+    account.balance -= params.amount;
+    account.locked += params.amount;
+    let new_balance = account.balance;
+    let new_locked = account.locked;
+
+    // Update pot
+    pot.total += params.amount;
+    pot.contributions.push(PotContribution {
+        player: caller,
+        amount: params.amount,
+        bet_type: BetType::Raise,
+        block: wasm::util::get_verifying_block_height()? as u64,
+    });
+    let new_pot_total = pot.total;
+
+    // Create bet record
+    let bet_id = poseidon_hash([
+        pot_id,
+        caller.xy().0,
+        pallas::Base::from(raise_total),
+        pallas::Base::from(wasm::util::get_verifying_block_height()? as u64),
+    ]);
+    let bet = Bet::new(
+        bet_id,
+        params.room_id,
+        pot_id,
+        caller,
+        raise_total,
+        BetType::Raise,
+        pot.betting_round,
+        params.nonce,
+        wasm::util::get_verifying_block_height()? as u64,
+    );
+
+    // Store bet
+    let bets_db = wasm::db::db_lookup(cid, GAME_ROOM_BETS_TREE)?;
+    wasm::db::db_set(bets_db, &darkfi_serial::serialize(&bet_id), &darkfi_serial::serialize(&bet))?;
+
+    // Store updated pot
+    wasm::db::db_set(pots_db, &darkfi_serial::serialize(&pot_id), &darkfi_serial::serialize(&pot))?;
+
+    // Store updated account
+    wasm::db::db_set(accounts_db, &account_key, &darkfi_serial::serialize(&account))?;
+
+    // Update room
+    room.current_bet_amount = raise_total;
+    room.current_better = Some(caller);
+    wasm::db::db_set(
+        rooms_db,
+        &darkfi_serial::serialize(&params.room_id),
+        &darkfi_serial::serialize(&room),
+    )?;
+
+    msg!("[Raise] Raise applied successfully");
+
+    let update = RaiseUpdateV1 {
+        room_id: params.room_id,
+        player: caller,
+        new_balance,
+        new_locked,
+        new_pot_total,
+        new_current_bet: raise_total,
+    };
+    Ok(darkfi_serial::serialize(&update))
+}
+
+pub(crate) fn game_room_raise_process_update_v1(
+    _cid: darkfi_sdk::crypto::ContractId,
+    update: RaiseUpdateV1,
+) -> ContractResult {
+    msg!(
+        "[Raise] Update applied: player {:?} new balance {}, locked {}, pot total {}, new bet {}",
+        update.player,
+        update.new_balance,
+        update.new_locked,
+        update.new_pot_total,
+        update.new_current_bet
+    );
+    Ok(())
+}

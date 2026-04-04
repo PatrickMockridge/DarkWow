@@ -1,0 +1,18 @@
+[package]
+name = "game_room_contract"
+version = "0.1.0"
+edition = "2021"
+authors = ["DarkFi contributors"]
+description = "DarkFi Game Room Contract - Generalized betting and pot management"
+license = "AGPL-3.0-only"
+
+[dependencies]
+darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
+darkfi-serial = { path = "../../serial" }
+
+[dev-dependencies]
+serial_test = "3"
+
+[profile.release]
+opt-level = "s"
+lto = true

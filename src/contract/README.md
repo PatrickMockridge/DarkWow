@@ -17,6 +17,7 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 | **dex** | Atomic swap DAO with partial fills + open execution | ✅ Complete |
 | **drain_protection** | Endowment/treasury drain protections with 8 best practices | ✅ Complete |
 | **escrow** | Hashed Timelock Contract variant | ✅ Complete |
+| **game_room** | Generalized betting and pot management | ✅ Complete |
 | **identity** | ZK credential proofs using competency DAGs | ✅ Uses safemath (Level 0 zk_only) |
 | **insurance_market** | Decentralized insurance marketplace | ✅ Complete |
 | **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
@@ -181,6 +182,7 @@ Local READMEs exist for each contract in this folder:
 - [dex/README.md](dex/README.md) - Atomic swap DAO
 - [drain_protection/README.md](drain_protection/README.md) - Endowment protection
 - [escrow/README.md](escrow/README.md) - Hashed Timelock Contract
+- [game_room/README.md](game_room/README.md) - Generalized betting and pot management
 - [identity/README.md](identity/README.md) - ZK credential proofs
 - [insurance_market/README.md](insurance_market/README.md) - Decentralized insurance
 - [labor_market/README.md](labor_market/README.md) - Job/labor market
@@ -196,6 +198,7 @@ Local READMEs exist for each contract in this folder:
 Architecture docs:
 
 - [dao_escrow.md](../../doc/src/arch/dao_escrow.md)
+- [game_room.md](../../doc/src/arch/game_room.md)
 - [subscription.md](../../doc/src/arch/subscription.md)
 - [atomic_swap.md](../../doc/src/arch/atomic_swap.md)
 - [oracle.md](../../doc/src/arch/oracle.md)
