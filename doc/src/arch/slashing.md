@@ -183,32 +183,210 @@ Understanding what participants can do wrong is the first step to designing slas
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Option 3: Staked Reserve Pool
+### Option 3: Stake = Coverage Limit (Recommended for Relayers)
+
+This is the recommended model for DarkFi relayers. It is simple, elegant, and avoids the complexity of pool governance:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Staked Reserve Model                              │
+│                Stake = Coverage Limit Model                           │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  Relayers stake → Slashed → Reserve pool → Replenished by new stake │
+│  Core Principles:                                                  │
 │                                                                     │
-│  Pros:                                                             │
-│  • Pool stays solvent                                               │
-│  • New relayers fund the pool indirectly                            │
-│  • Longer-term thinking for relayers                                │
+│  1. RELAYER STAKE = MAXIMUM BRIDGING CAPACITY                      │
+│     Relayer can only have withdrawals in-flight up to their stake.   │
 │                                                                     │
-│  Cons:                                                             │
-│  • Complex dynamics                                                │
-│  • Entry cost increases over time                                   │
-│  • Need to manage pool health                                       │
+│  2. ZK PROOF OF STAKE                                             │
+│     User verifies relayer has sufficient stake before accepting.     │
 │                                                                     │
-│  Use when:                                                         │
-│  • Large slashable events possible                                  │
-│  • Need pool to remain solvent                                     │
-│  • Sustainable long-term operation                                  │
+│  3. DIRECT CLAIM ON STAKE                                          │
+│     On failure, user can claim directly from relayer's stake.      │
+│                                                                     │
+│  4. SELF-RECOVERY                                                 │
+│     Relayer recovers user's funds, rebuilds stake.                  │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+#### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Stake = Coverage Flow                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  1. RELAYER STAKES                                                 │
+│     ┌─────────────────────────────────────────────────────────────┐ │
+│     │ Relayer deposits DAI + NETHER into staking contract.        │ │
+│     │ Stake is locked, cannot be withdrawn while active.         │ │
+│     │ Example: 10,000 DAI + 5,000 NETHER staked                 │ │
+│     └─────────────────────────────────────────────────────────────┘ │
+│                              │                                        │
+│                              ▼                                        │
+│  2. STAKE PROOF TO USER                                             │
+│     ┌─────────────────────────────────────────────────────────────┐ │
+│     │ User requests withdrawal                                    │ │
+│     │ Relayer sends ZK proof: "My stake is 10,000 DAI equivalent"│ │
+│     │ User verifies proof on-chain                                │ │
+│     └─────────────────────────────────────────────────────────────┘ │
+│                              │                                        │
+│                              ▼                                        │
+│  3. WITHDRAWAL EXECUTES                                           │
+│     ┌─────────────────────────────────────────────────────────────┐ │
+│     │ Relayer executes withdrawal on external chain               │ │
+│     │ Withdrawal amount ≤ Relayer's available stake              │ │
+│     │ Stake is held as coverage during withdrawal window          │ │
+│     └─────────────────────────────────────────────────────────────┘ │
+│                              │                                        │
+│                              ▼                                        │
+│  4. SUCCESS → STAKE RELEASED                                       │
+│     ┌─────────────────────────────────────────────────────────────┐ │
+│     │ User confirms receipt on external chain                     │ │
+│     │ Relayer's stake released for new withdrawals                │ │
+│     │ Relayer earned fee                                         │ │
+│     └─────────────────────────────────────────────────────────────┘ │
+│                                                                     │
+│  ON FAILURE:                                                       │
+│                              │                                        │
+│                              ▼                                        │
+│     ┌─────────────────────────────────────────────────────────────┐ │
+│     │ User submits claim after timeout                             │ │
+│     │ "Relayer R did not deliver withdrawal W"                   │ │
+│     │ Proof: tx hash not found on external chain                  │ │
+│     │                                                           │ │
+│     │ Slashed stake transfers to user                             │ │
+│     │ Relayer keeps residual (if any)                            │ │
+│     │ Relayer must now recover user's funds externally             │ │
+│     │ Then can rebuild stake to resume operations                 │ │
+│     └─────────────────────────────────────────────────────────────┘ │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### Why This Works
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Why Stake = Coverage Works                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ✓ NO GOVERNANCE NEEDED                                            │
+│    User claims directly from stake. No endowment pool to manage.    │
+│                                                                     │
+│  ✓ NO COMPLEX PAYOUT RATIOS                                        │
+│    Full compensation because stake = coverage limit.                │
+│                                                                     │
+│  ✓ SELF-BALANCING                                                  │
+│    If stake is too low, relayer can't take large withdrawals.       │
+│    Economic pressure to maintain sufficient stake.                   │
+│                                                                     │
+│  ✓ INCENTIVE TO RECOVER                                            │
+│    Relayer must recover user's funds to rebuild business.           │
+│    No central fund to bail out, relayer is on the hook.            │
+│                                                                     │
+│  ✓ NO ENDOULMENT SURPLUS PROBLEM                                   │
+│    Funds sitting idle in pool? Stake less next time.               │
+│                                                                     │
+│  ✓ FALSE CLAIMS DIFFICULT                                          │
+│    External chain state is verifiable.                              │
+│    Relayer can contest with tx proof.                              │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### Stake Asset Selection
+
+The stake should be in **stable, liquid assets** to avoid volatility issues:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Stake Asset Requirements                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  NEEDED:                                                           │
+│  • Stable value (not volatile)                                     │
+│  • Liquid (easy to acquire/exit)                                   │
+│  • Widely available                                                │
+│                                                                     │
+│  RECOMMENDED FOR DARKFI RELAYERS:                                  │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ DAI (External)           │ NETHER (DarkFi Native)          │   │
+│  │ • USD pegged             │ • DarkFi's stablecoin           │   │
+│  │ • Deep liquidity        │ • Native to ecosystem           │   │
+│  │ • Battle-tested         │ • Aligns relayer with protocol  │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  WHY NOT VOLATILE TOKENS?                                          │
+│  • Stake could become insufficient if token price drops            │
+│  • User might not be fully covered                                 │
+│  • Complexity of oracle-based adjustment                           │
+│                                                                     │
+│  RATIO SUGGESTION:                                                │
+│  • 50% DAI + 50% NETHER (or similar)                             │
+│  • Balances external stability with protocol alignment              │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### Implementation Sketch
+
+```rust
+// Relayer Stake Contract
+pub struct RelayerStake {
+    pub relayer: Pubkey,
+    pub dai_amount: u64,
+    pub nether_amount: u64,
+    pub active_withdrawals: Vec<ActiveWithdrawal>,
+    pub status: RelayerStatus,
+}
+
+pub struct ActiveWithdrawal {
+    pub withdrawal_id: [u8; 32],
+    pub amount: u64,
+    pub asset: AssetId,
+    pub locked_until: u64,
+}
+
+pub fn verify_stake_proof(
+    stake: &RelayerStake,
+    withdrawal_amount: u64,
+) -> bool {
+    let available = calculate_available_stake(stake);
+    available >= withdrawal_amount
+}
+
+pub fn claim_failed_withdrawal(
+    stake: &mut RelayerStake,
+    claim: &ClaimProof,
+) -> Result<()> {
+    // Verify:
+    // 1. Withdrawal was in active_withdrawals
+    // 2. Timeout has passed
+    // 3. Tx hash not found on external chain (verified externally)
+
+    let slash_amount = calculate_slash(claim);
+    transfer(slash_amount).to(claim.user);
+
+    // Relayer keeps residual
+    stake.dai_amount -= slash_amount;
+}
+```
+
+#### Comparison with Endowment
+
+| Aspect | Endowment Pool | Stake = Coverage |
+|--------|----------------|------------------|
+| Governance | Who decides payouts? | None needed |
+| Complexity | High (payout ratios, pool health) | Low |
+| Payout | Partial (ratio < 100%) | Full (stake = coverage) |
+| Pool surplus | What to do with excess? | Not applicable |
+| False claims | Pool drains if too many | Individual relayer bears cost |
+| Recovery | Protocol-wide recovery | Relayer-specific |
+| New relayer entry | Pays into pool | Only stakes for themselves |
+
+## The Endowment Model: Detailed Considerations
 
 ## The Endowment Model: Detailed Considerations
 
