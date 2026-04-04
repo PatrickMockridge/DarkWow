@@ -567,6 +567,86 @@ No threshold needed to release funds.
 | **Commitment** | A cryptographic binding to a value. In this design: `C = H(secret, amount, bridge_address)`. |
 | **Relayer** | An entity that broadcasts pre-authorized withdrawal transactions to the external chain on behalf of users, enabling user sovereignty without requiring users to hold ETH for gas. |
 
+## Node Requirements for Bridge Operations
+
+### User Node Types
+
+The bridge is designed to work with **light clients**, not full nodes infrastructure:
+
+| Operation | Required Node | Why |
+|-----------|--------------|-----|
+| **Deposit** | Light client or indexer | Only need Merkle proof of deposit, not full chain |
+| **Withdraw** | DarkFi full node | ZK proof verification happens on DarkFi contract |
+| **Monitor deposits** | Light wallet (view key) or indexer | For Monero/Zcash: can use view-key light clients |
+| **Execute withdrawals** | Relayer service | External chain tx broadcast |
+
+### Full Node vs Light Client
+
+**Full nodes** (DarkFi validator, Ethereum geth) are needed for:
+- Validating ZK proofs on DarkFi side
+- Broadcasting withdrawal transactions to external chains (relayers)
+- Tracking nullifier state to prevent double-spends
+
+**Light clients** (or indexers) are sufficient for:
+- Detecting deposits on external chains
+- Generating Merkle proofs of deposit inclusion
+- Verifying block confirmations (via SPV-style proofs)
+
+### Practical Architecture
+
+```
+Deposit Flow (User Side):
+┌──────────────────────────────────────────────────────────────┐
+│ User needs:                                                   │
+│   - Light client or indexer access to external chain        │
+│   - NOT a full node                                          │
+│                                                              │
+│ Examples:                                                    │
+│   - Ethereum: Infura/Alchemy RPC (light) or block explorer  │
+│   - Monero: View key + remote node (no full sync needed)     │
+│   - Zcash: lightwalletd or block explorer API                │
+└──────────────────────────────────────────────────────────────┘
+
+Withdraw Flow (User Side):
+┌──────────────────────────────────────────────────────────────┐
+│ User needs:                                                   │
+│   - DarkFi full node access (to submit proofs)              │
+│   - NOT required to run own node (can use RPC)               │
+└──────────────────────────────────────────────────────────────┘
+
+Relayer (Separate Service):
+┌──────────────────────────────────────────────────────────────┐
+│ Relayer needs:                                               │
+│   - Full node on external chain (to broadcast withdrawals)   │
+│   - DarkFi full node access (to observe withdrawal events)   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Indexer Dependency
+
+Current implementation relies on an **external indexer** to provide:
+- Merkle proofs for deposit verification
+- Block header data for confirmation verification
+- Deposit event monitoring and aggregation
+
+**This is an architecture gap**: Trustless operation requires light client integration instead of trusting an indexer. See "Key Blockers" section.
+
+### External Chain Requirements
+
+| Chain | User Needs for Deposit | Relayer Needs for Withdraw |
+|-------|----------------------|---------------------------|
+| Ethereum | RPC to fetch Merkle proof (Infura/Alchemy) | Full geth/nethermind node |
+| Monero | View key + remote node | Full monerod node |
+| Zcash | lightwalletd or block explorer | Full zcashd node |
+| Aztec | Rollup data availability | Aztec sequencer API |
+| Litecoin | RPC + optional MWEB | Full litecoind node |
+
+**Bottom line**: Users do **NOT** need to run full nodes for bridge deposits. They need:
+1. Light client or RPC access to external chain (for Merkle proofs)
+2. Access to DarkFi full node (for submitting proofs)
+
+Relayers run the actual full nodes on external chains to execute withdrawals.
+
 ## Open Questions
 
 1. **External chain finality**: How many confirmations before deposit is trustless?

@@ -575,6 +575,77 @@ Funds released to user on external chain
 
 See [DEX documentation](dex.md) for more on opcode limitations affecting the order book.
 
+## Node Requirements for Cross-Chain Operations
+
+### User Node Types
+
+The bridge is designed to work with **light clients**, not full nodes:
+
+| Operation | Required Node | Why |
+|-----------|--------------|-----|
+| **Deposit** | Light client or indexer | Only need Merkle proof of deposit inclusion |
+| **Withdraw** | DarkFi full node | ZK proof verification happens on DarkFi contract |
+| **Monitor deposits** | Light wallet (view key) or indexer | Monero/Zcash: view-key light clients work |
+| **Execute withdrawals** | Relayer service | External chain tx broadcast (full nodes) |
+
+### Full Node vs Light Client
+
+**Full nodes** (DarkFi validator, Ethereum geth) are needed for:
+- Validating ZK proofs on DarkFi side
+- Broadcasting withdrawal transactions to external chains (relayers)
+- Tracking nullifier state to prevent double-spends
+
+**Light clients** (or indexers) are sufficient for:
+- Detecting deposits on external chains
+- Generating Merkle proofs of deposit inclusion
+- Verifying block confirmations (SPV-style)
+
+### Practical Architecture
+
+```
+Deposit Flow (User Side):
+┌──────────────────────────────────────────────────────────────┐
+│ User needs:                                                   │
+│   - Light client or indexer access to external chain        │
+│   - NOT a full node                                          │
+│                                                              │
+│ Examples:                                                    │
+│   - Ethereum: Infura/Alchemy RPC (light) or block explorer  │
+│   - Monero: View key + remote node (no full sync needed)     │
+│   - Zcash: lightwalletd or block explorer API                │
+└──────────────────────────────────────────────────────────────┘
+
+Withdraw Flow (User Side):
+┌──────────────────────────────────────────────────────────────┐
+│ User needs:                                                   │
+│   - DarkFi full node access (to submit proofs)               │
+│   - NOT required to run own node (can use RPC)               │
+└──────────────────────────────────────────────────────────────┘
+
+Relayer (Separate Service):
+┌──────────────────────────────────────────────────────────────┐
+│ Relayer needs:                                               │
+│   - Full node on external chain (to broadcast withdrawals)   │
+│   - DarkFi full node access (to observe withdrawal events)   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### External Chain Requirements
+
+| Chain | User Needs for Deposit | Relayer Needs for Withdraw |
+|-------|----------------------|---------------------------|
+| Ethereum | RPC for Merkle proof (Infura/Alchemy) | Full geth/nethermind node |
+| Monero | View key + remote node | Full monerod node |
+| Zcash | lightwalletd or block explorer | Full zcashd node |
+| Aztec | Rollup data availability | Aztec sequencer API |
+| Litecoin | RPC + optional MWEB | Full litecoind node |
+
+**Bottom line**: Users do **NOT** need to run full nodes for bridge deposits. They need:
+1. Light client or RPC access to external chain (for Merkle proofs)
+2. Access to DarkFi full node (for submitting proofs)
+
+Relayers run the actual full nodes on external chains to execute withdrawals.
+
 ## References
 
 - [Bridge Contract Dev Docs](../dev/contracts/bridge.md)
