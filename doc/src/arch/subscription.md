@@ -239,20 +239,20 @@ This pattern enables:
 1. Subscriber knows the secret key
 2. `current_block < lock_until_block` (still active)
 3. Capability digest matches expected
-4. [SHIT VERSION] Claimed tier >= required tier
+4. Claimed tier >= required tier (tiered access check)
 
 **Use Cases**:
 - Gated content access
 - Service authentication
 - API rate limiting
 
-## Permission Checking: SHIT VERSION vs PROPER VERSION
+## Permission Checking: Tiered Access vs Bitmask Access
 
-**⚠️ THIS IS THE SHIT VERSION** - Uses tiered access with `less_than_strict`. See [security-analysis.md](../arch/security-analysis.md) Issue #2 for full analysis.
+The subscription contract supports two permission models:
 
-### SHIT VERSION: Tiered Access (Current Implementation)
+### Tiered Access (Current Implementation)
 
-The circuit uses a tiered approach that **LEAKS TIER LEVEL on-chain**:
+The circuit uses a tiered approach that **reveals tier level on-chain**:
 
 ```zk
 # Tier definitions:
@@ -260,23 +260,21 @@ The circuit uses a tiered approach that **LEAKS TIER LEVEL on-chain**:
 #   TIER_PREMIUM = 2  -> READ + WRITE
 #   TIER_ADMIN = 3    -> READ + WRITE + ADMIN
 
-# SHIT VERSION: Check claimed_tier >= required_tier
+# Check claimed_tier >= required_tier
 less_than_strict(required_tier - 1, permissions_claimed);
 ```
 
-**Privacy Leak**: The tier level (1, 2, or 3) is revealed on-chain. Anyone observing can tell if a subscriber has BASIC, PREMIUM, or ADMIN tier access.
+**Privacy Consideration**: The tier level (1, 2, or 3) is revealed on-chain. Anyone observing can tell if a subscriber has BASIC, PREMIUM, or ADMIN tier access.
 
 **Tradeoffs**:
 - ✅ Prevents unauthorized access (tier must be >= required)
-- ✅ Works with proven `less_than_strict` opcode
-- ❌ Leaks tier level (privacy regression)
+- ✅ Works with sound `less_than_strict` opcode
+- ❌ Reveals tier level (privacy consideration)
 - ❌ Cannot have arbitrary bitmask combinations (e.g., READ+ADMIN without WRITE)
 
-### PROPER VERSION: True Bitmask Checking (Now Possible with `base_div`)
+### True Bitmask Access (Future Enhancement)
 
-**Status**: `base_div` is now implemented (0x58). PROPER VERSION is now achievable.
-
-The proper implementation would enable true bitmask checking:
+With `base_div` now implemented (0x58), true bitmask checking is achievable:
 
 ```zk
 # Bit definitions:
@@ -292,12 +290,10 @@ The proper implementation would enable true bitmask checking:
 # This would preserve zero-knowledge (only "has access" vs "doesn't")
 ```
 
-**Benefits of Proper Version**:
+**Benefits of Bitmask Access**:
 - ✅ No tier level leak
 - ✅ Arbitrary permission combinations
 - ✅ True zero-knowledge permission verification
-
-**Status**: SHIT VERSION implemented to enable access control. PROPER VERSION with true bitmask checking is now possible with `base_div` implemented.
 
 ## Cross-Chain Integration
 

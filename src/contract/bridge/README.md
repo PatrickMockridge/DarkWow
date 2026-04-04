@@ -695,7 +695,7 @@ Light client integration to verify `external_block_hash` corresponds to a valid,
 
 ### Soundness Notes
 
-See [Experimental Opcodes](../../../doc/src/arch/experimental-opcodes.md) for detailed analysis of grey-market opcodes. This contract intentionally avoids all experimental opcodes.
+See [Opcodes Reference](../../../doc/src/arch/opcodes.md) for opcode soundness verification. This contract uses only verified-sound opcodes.
 
 **See also**:
 - [Contract MVP Status](../../../doc/src/arch/mvp_status.md) for the full cross-contract analysis

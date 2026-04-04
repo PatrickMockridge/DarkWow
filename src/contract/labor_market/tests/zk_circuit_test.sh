@@ -46,10 +46,15 @@ echo "[Test 7] Compiling refund_v1.zk..."
 $ZKAS_BIN ${LABOR_MARKET_PROOF_DIR}/refund_v1.zk -o ${OUTPUT_DIR}/refund_v1.zk.bin
 echo "  ✓ refund_v1.zk compiled successfully"
 
-# Test 8: Verify binary outputs exist
+# Test 8: MilestonePaymentV1
+echo "[Test 8] Compiling milestone_payment_v1.zk..."
+$ZKAS_BIN ${LABOR_MARKET_PROOF_DIR}/milestone_payment_v1.zk -o ${OUTPUT_DIR}/milestone_payment_v1.zk.bin
+echo "  ✓ milestone_payment_v1.zk compiled successfully"
+
+# Test 9: Verify binary outputs exist
 echo ""
-echo "[Test 8] Verifying compiled binaries..."
-for circuit in create_job accept_job submit_deliverable submit_git_deliverable confirm_delivery dispute refund; do
+echo "[Test 9] Verifying compiled binaries..."
+for circuit in create_job accept_job submit_deliverable submit_git_deliverable confirm_delivery dispute refund milestone_payment; do
     if [ -f "${OUTPUT_DIR}/${circuit}_v1.zk.bin" ]; then
         echo "  ✓ ${circuit}_v1.zk.bin exists ($(stat -c%s ${OUTPUT_DIR}/${circuit}_v1.zk.bin) bytes)"
     else

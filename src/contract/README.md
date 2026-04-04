@@ -155,7 +155,7 @@ less_than_strict(lhs, rhs_1);
 6. **Bridge Merkle is fixed** - `deposit_v1.zk` now uses real `merkle_root` opcode
 
 **See also**:
-- [Experimental Opcodes](../../doc/src/arch/experimental-opcodes.md) — Concise reference for contract authors
+- [Opcodes Reference](../../doc/src/arch/opcodes.md) — Concise reference for contract authors
 - [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) — Deep dive into opcode implementation
 
 ## Official Contracts
