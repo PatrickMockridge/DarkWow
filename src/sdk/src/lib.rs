@@ -62,3 +62,6 @@ pub mod util;
 #[cfg(feature = "wasm")]
 /// WASM API functions
 pub mod wasm;
+
+/// Game Room SDK for building game room applications
+pub mod game_room;

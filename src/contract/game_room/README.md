@@ -157,20 +157,29 @@ pub struct SettleParamsV1 {
 App developers use the Game Room SDK to integrate:
 
 ```rust
-use darkfi_sdk::game_room::{GameRoomClient, GameRoomConfig};
+use darkfi_sdk::game_room::{GameRoomClient, RoomConfig, BetType, EntropyMode};
+use darkfi_sdk::crypto::{ContractId, Keypair};
 
-// Join a room
-let client = GameRoomClient::new(room_id, user_keypair);
-client.deposit(amount).await?;
-client.place_bet(BetType::Ante, amount).await?;
+// Create a client
+let keypair = Keypair::random();
+let client = GameRoomClient::new("http://localhost:8080", contract_id, keypair);
 
-// Show proof of bet to other players (via DarkIRC message)
-let proof = client.generate_bet_proof(bet_id)?;
-send_to_channel("#poker-room", proof.serialize());
+// Deposit stake
+let deposit_tx = client.deposit(room_id, 500);
 
-// Win condition determined by owner DAO
-client.claim(pot_id).await?;
+// Place a bet
+let nonce = client.generate_nonce();
+let bet_tx = client.place_bet(room_id, 100, BetType::Ante, nonce);
+
+// Broadcast via DarkIRC, receive confirmations off-chain
 ```
+
+The SDK provides:
+- **Transaction builders**: `deposit()`, `withdraw()`, `place_bet()`, `raise()`, `call()`, `fold()`, `close_pot()`, `settle_pot()`, `contribute_entropy()`, `claim()`
+- **Raw builders**: `build_deposit_tx()`, `build_place_bet_tx()`, etc. for custom flows
+- **Helpers**: `generate_nonce()`, `derive_room_id()`
+
+See [`src/sdk/src/game_room/`](src/sdk/src/game_room/) for full SDK API.
 
 ## See Also
 

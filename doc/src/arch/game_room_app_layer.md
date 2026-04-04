@@ -38,27 +38,28 @@ App developers build game logic on top of the Game Room contract. The contract h
 ### Initialize Client
 
 ```rust
-use darkfi_sdk::game_room::{GameRoomClient, GameRoomConfig};
+use darkfi_sdk::game_room::{GameRoomClient, RoomConfig, EntropyMode};
+use darkfi_sdk::crypto::{ContractId, Keypair};
 
 // Connect to existing room
+let keypair = Keypair::random();
 let client = GameRoomClient::new(
-    rpc_client,
-    room_id,
-    user_keypair,
-    contract_id,
+    "http://localhost:8080",  // RPC URL
+    contract_id,              // Game Room contract ID
+    keypair,                  // User's keypair
 );
 
-// Room configuration
-let config = GameRoomConfig {
-    token_id: some_token_id,
-    min_stake: 100,
-    max_stake: 10000,
-    entropy_mode: EntropyMode::TrustedSetup,
-    confirmation_depth: 6,
-    required_entropy_contributions: 3,
-    entropy_contribution_deadline: current_block + 100,
-    max_players: 6,
-};
+// Room configuration (builder pattern)
+let config = RoomConfig::new(
+    owner_dao,
+    token_id,
+    100,                      // min_stake
+    10000,                    // max_stake
+    EntropyMode::TrustedSetup,
+)
+.with_confirmation_depth(6)
+.with_entropy_contributions(3, current_block + 100)
+.with_max_players(6);
 ```
 
 ### Create Room
