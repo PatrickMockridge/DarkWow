@@ -57,6 +57,7 @@
   - [Smart Contracts](arch/sc/sc.md)
     - [Transaction lifetime](arch/sc/tx-lifetime.md)
   - [DAO](arch/dao.md)
+  - [Slashing & Economic Security](arch/slashing.md)
   - [DEX](arch/dex.md)
   - [Identity](arch/identity.md)
   - [Stablecoin](arch/stablecoin.md)
