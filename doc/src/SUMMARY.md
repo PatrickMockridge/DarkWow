@@ -58,6 +58,7 @@
     - [Transaction lifetime](arch/sc/tx-lifetime.md)
   - [DAO](arch/dao.md)
   - [Slashing & Economic Security](arch/slashing.md)
+  - [Relayer Economics](arch/relayer_economics.md)
   - [DEX](arch/dex.md)
   - [Identity](arch/identity.md)
   - [Stablecoin](arch/stablecoin.md)
