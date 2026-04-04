@@ -77,6 +77,8 @@
   - [Betting Stake Contract](arch/betting_stake.md)
   - [Roulette Contract](arch/roulette.md)
   - [Slot Contract](arch/slot.md)
+  - [Game Room Contract](arch/game_room.md)
+  - [Game Room App Layer](arch/game_room_app_layer.md)
   - [DarkBet Exchange Contract](arch/darkbet_exchange.md)
   - [Private Authorization Layer](arch/privauth.md)
   - [Composability](arch/composability.md)
