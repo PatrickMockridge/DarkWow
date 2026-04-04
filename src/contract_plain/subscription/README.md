@@ -1,8 +1,14 @@
 # Subscription Plain Contract
 
+> **DEPRECATED**: Use `darkfi_subscription_contract` in `../../contract/subscription/` instead.
+>
+> ZK opcodes `base_div` and `less_than_or_equal` are now sound and implemented.
+
+---
+
 A **partial transparency** alternative to the ZK [`subscription`](../contract/subscription.md) contract. It prioritizes **expressivity over privacy** to overcome current ZK circuit limitations.
 
-## Why This Contract Exists
+## Why This Contract Exists (Historical)
 
 The existing ZK `subscription` contract is constrained by missing `base_div` opcode:
 - Cannot do true bitmask access control (only tiered linear approach)

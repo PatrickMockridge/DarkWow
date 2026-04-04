@@ -671,6 +671,94 @@ pub struct ExecuteGuaranteedWithdrawParams {
     pub execution_data: Vec<u8>,
 }
 
+// ============================================================================
+// HTLC TYPES (for Cross-Chain Atomic Swaps)
+// ============================================================================
+
+/// Parameters for creating an HTLC that coordinates with atomic swap
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CreateHtlcParams {
+    /// Swap ID (matches atomic_swap SwapId)
+    pub swap_id: [u8; 32],
+    /// Hash that locks the HTLC (poseidon_hash(secret))
+    pub hash: darkfi_sdk::pasta::pallas::Base,
+    /// Timelock block height (after which refund is allowed)
+    pub timelock: u64,
+    /// Amount locked in HTLC
+    pub amount: u64,
+    /// Recipient's address on external chain
+    pub external_recipient: Vec<u8>,
+    /// External chain to create HTLC on
+    pub chain: ExternalChain,
+    /// Deposit proof from external chain (merkle proof, etc)
+    pub deposit_proof: Vec<u8>,
+}
+
+/// Parameters for claiming an HTLC (when secret is revealed)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ClaimHtlcParams {
+    /// Swap ID of the HTLC
+    pub swap_id: [u8; 32],
+    /// The secret that unlocks the HTLC
+    pub secret: darkfi_sdk::pasta::pallas::Base,
+}
+
+/// Parameters for refunding an HTLC (after timelock)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RefundHtlcParams {
+    /// Swap ID of the HTLC
+    pub swap_id: [u8; 32],
+    /// Current block height (for timelock verification)
+    pub current_block: u64,
+}
+
+/// Update data for HTLC creation
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CreateHtlcUpdateV1 {
+    pub swap_id: [u8; 32],
+    pub hash: darkfi_sdk::pasta::pallas::Base,
+    pub timelock: u64,
+    pub amount: u64,
+    pub external_sender: Vec<u8>,
+    pub external_recipient: Vec<u8>,
+    pub chain: ExternalChain,
+}
+
+/// Update data for HTLC claim
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ClaimHtlcUpdateV1 {
+    pub swap_id: [u8; 32],
+    pub secret: darkfi_sdk::pasta::pallas::Base,
+}
+
+/// Update data for HTLC refund
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RefundHtlcUpdateV1 {
+    pub swap_id: [u8; 32],
+}
+
+/// HTLC state enum for database storage
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub enum HtlcSwapState {
+    Pending = 0,
+    Claimable = 1,
+    Claimed = 2,
+    Refunded = 3,
+}
+
+/// HTLC info stored in database
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct HtlcSwapInfo {
+    pub swap_id: [u8; 32],
+    pub hash: darkfi_sdk::pasta::pallas::Base,
+    pub timelock: u64,
+    pub amount: u64,
+    pub external_sender: Vec<u8>,
+    pub external_recipient: Vec<u8>,
+    pub state: u8,  // HtlcSwapState as u8
+    pub created_at: u64,
+}
+
 /// Relayer slash record
 ///
 /// Records relayer misbehavior for potential slashing.

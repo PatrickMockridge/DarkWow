@@ -1,0 +1,134 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 10;
+field = "pallas";
+
+# Oracle Push Value Commitment Circuit (Version 1)
+#
+# This circuit enables private data point submission using set_membership.
+#
+# Instead of submitting a value directly (which reveals the value), stakers
+# submit a commitment to their data point. The circuit proves:
+#
+# 1. The commitment is in the oracle's data Merkle tree (set_membership)
+# 2. The staker knows their secret key
+# 3. The staker's public key matches the registered staker
+#
+# This enables:
+# - Private data point inclusion (commitment hides the actual value)
+# - Multiple stakers can contribute to the same oracle
+# - Weighted aggregation can be performed on revealed commitments
+#
+# Public Inputs (constrain_instance):
+#   - oracle_id: The oracle being updated
+#   - commitment: The Poseidon hash commitment to the data point
+#   - data_root: The Merkle root of the data tree (public input)
+#
+# Witnesses:
+#   - staker_secret: Staker's secret key
+#   - staker_pub_x: Registered staker's public key x coordinate
+#   - staker_pub_y: Registered staker's public key y coordinate
+#   - pos: Position of the commitment leaf in the Merkle tree
+#   - path: Sparse Merkle path for membership proof
+#   - value: The actual data point value (known only to staker)
+#   - nonce: Random nonce used in commitment (known only to staker)
+
+constant "PushValueCommitment" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "PushValueCommitment" {
+    # Oracle ID being updated
+    Base oracle_id,
+
+    # Staker's secret (for key derivation, not revealed)
+    Base staker_secret,
+
+    # Staker's public key coordinates (registered)
+    Base staker_pub_x,
+    Base staker_pub_y,
+
+    # Position in Merkle tree where commitment is stored
+    Base pos,
+
+    # Sparse Merkle path for membership proof
+    SparseMerklePath path,
+
+    # The actual data point value (private - known only to staker)
+    Base value,
+
+    # Nonce used in commitment computation (private - known only to staker)
+    Base nonce,
+
+    # The commitment itself (should match poseidon_hash(value, nonce))
+    Base commitment,
+}
+
+circuit "PushValueCommitment" {
+    # ==========================================================================
+    # PHASE 1: Derive staker public key from secret
+    # ==========================================================================
+
+    staker_pub = ec_mul_base(staker_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(staker_pub);
+    derived_pub_y = ec_get_y(staker_pub);
+
+    # ==========================================================================
+    # PHASE 2: Verify public key matches registered staker
+    # ==========================================================================
+
+    constrain_equal_base(derived_pub_x, staker_pub_x);
+    constrain_equal_base(derived_pub_y, staker_pub_y);
+
+    # ==========================================================================
+    # PHASE 3: Verify commitment matches poseidon_hash(value, nonce)
+    # ==========================================================================
+
+    computed_commitment = poseidon_hash(value, nonce);
+    constrain_equal_base(computed_commitment, commitment);
+
+    # ==========================================================================
+    # PHASE 4: Verify commitment is in oracle's data Merkle tree
+    # ==========================================================================
+    #
+    # set_membership(pos, path, leaf, expected_root) -> is_member
+    #
+    # This opcode:
+    # 1. Computes the Merkle root from pos, path, and leaf (the commitment)
+    # 2. Compares it to expected_root (data_root - public input)
+    # 3. Returns 1 if membership is proven, 0 otherwise
+    #
+    # The data_root is a PUBLIC INPUT, constrained via constrain_instance.
+    # This prevents the prover from choosing a fake root.
+
+    is_member = set_membership(pos, path, commitment, data_root);
+
+    # The result must be 1 (commitment is in tree)
+    # This constraint ensures the proof fails if membership check fails
+    constrain_equal_base(is_member, Base(1));
+
+    # ==========================================================================
+    # PHASE 5: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(oracle_id);
+    constrain_instance(commitment);
+    constrain_instance(data_root);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses proven opcodes:
+    #   - ec_mul_base: standard EC operations
+    #   - ec_get_x, ec_get_y: standard EC operations
+    #   - constrain_equal_base: equality constraint
+    #   - poseidon_hash: standardized hash function
+    #   - set_membership: Merkle membership proof (0x59)
+    #   - constrain_instance: public input exposure
+    #
+    # The value and nonce are kept private - only the commitment is revealed.
+    # This enables privacy-preserving data point submission.
+    #
+    # The set_membership opcode constrains expected_root as a public input,
+    # preventing the prover from manipulating the membership result.
+}

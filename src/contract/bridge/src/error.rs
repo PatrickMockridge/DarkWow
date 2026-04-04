@@ -71,6 +71,9 @@ pub enum BridgeError {
 
     #[error("Unauthorized configuration update")]
     UnauthorizedConfigUpdate,
+
+    #[error("Invalid function or parameters")]
+    InvalidFunction,
 }
 
 impl From<BridgeError> for ContractError {
@@ -93,6 +96,7 @@ impl From<BridgeError> for ContractError {
             BridgeError::CommitmentNotFound => Self::Custom(15),
             BridgeError::InvalidZkProof => Self::Custom(16),
             BridgeError::UnauthorizedConfigUpdate => Self::Custom(17),
+            BridgeError::InvalidFunction => Self::Custom(18),
         }
     }
 }

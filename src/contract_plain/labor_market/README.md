@@ -1,8 +1,14 @@
 # Labor Market Plain Contract
 
+> **DEPRECATED**: Use `darkfi_labor_market_contract` in `../../contract/labor_market/` instead.
+>
+> ZK opcodes `base_div` and `less_than_or_equal` are now sound and implemented.
+
+---
+
 A **partial transparency** alternative to the ZK `labor_market` contract. It prioritizes **expressivity over privacy** to overcome current ZK circuit limitations.
 
-## Why This Contract Exists
+## Why This Contract Exists (Historical)
 
 The existing ZK `labor_market` contract is constrained by missing `base_div` opcode:
 - Cannot do time-weighted partial payment release

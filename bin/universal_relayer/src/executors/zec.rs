@@ -19,6 +19,11 @@
 //! Zcash executor for ZEC withdrawals
 
 use async_trait::async_trait;
+use darkfi_bridge_contract::chain_handler::{
+    ChainHandler as BridgeChainHandler, ChainId, ExternalDeposit, HtlcDeposit, TxHash as BridgeTxHash,
+    VerifiedWithdrawal, WithdrawalRequest,
+};
+use darkfi_sdk::{error::ContractResult, pasta::pallas};
 use super::super::chain::{ChainExecutor, ExternalChain};
 use super::super::config::ZcashConfig;
 use super::super::error::{PendingWithdrawal, Result, TxHash};
@@ -89,4 +94,121 @@ impl ChainExecutor for ZcashExecutor {
         // In production: query zcashd RPC for confirmations
         Ok(true)
     }
+}
+
+// =============================================================================
+// Bridge ChainHandler implementation (for unified interface)
+// =============================================================================
+
+#[async_trait]
+impl BridgeChainHandler for ZcashExecutor {
+    fn chain_id(&self) -> ChainId {
+        ChainId::Zcash
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.config.enabled && !self.config.node_rpc_url.is_empty()
+    }
+
+    async fn verify_deposit(&self, _deposit: &ExternalDeposit) -> ContractResult {
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn verify_withdrawal(&self, _withdrawal: &WithdrawalRequest) -> ContractResult {
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn execute(&self, verified: &VerifiedWithdrawal) -> ContractResult {
+        let pending = PendingWithdrawal {
+            withdrawal_id: verified.nullifier,
+            recipient_hash: address_to_hash(&verified.recipient_address),
+            amount: verified.amount,
+            chain: ChainId::Zcash.as_u8(),
+            request_height: 0,
+            timeout_height: u64::MAX,
+            relayer_fee: verified.fee,
+            feed_mode: 0,
+            guarantee_premium: 0,
+        };
+
+        <Self as ChainExecutor>::execute(self, &pending).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        Ok(())
+    }
+
+    async fn estimate_fee(&self, withdrawal: &WithdrawalRequest) -> ContractResult {
+        let pending = PendingWithdrawal {
+            withdrawal_id: withdrawal.nullifier,
+            recipient_hash: withdrawal.recipient_hash,
+            amount: withdrawal.amount,
+            chain: withdrawal.chain.as_u8(),
+            request_height: 0,
+            timeout_height: u64::MAX,
+            relayer_fee: withdrawal.fee,
+            feed_mode: 0,
+            guarantee_premium: 0,
+        };
+
+        let _fee = <Self as ChainExecutor>::estimate_fee(self, &pending).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        Ok(())
+    }
+
+    async fn verify_confirmation(&self, tx_hash: &BridgeTxHash) -> ContractResult {
+        let tx = TxHash { chain: tx_hash.chain.as_u8(), hash: tx_hash.hash };
+        <Self as ChainExecutor>::verify_confirmation(self, &tx).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        Ok(())
+    }
+
+    async fn verify_htlc_deposit(&self, htlc_deposit: &HtlcDeposit) -> ContractResult {
+        tracing::info!(
+            "Verifying ZEC HTLC deposit for swap_id: {}",
+            hex::encode(htlc_deposit.swap_id)
+        );
+        // In production:
+        // 1. Query Zcashd RPC for HTLC deposit (opcode SHA256)
+        // 2. Verify the deposit matches expected hash and timelock
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn execute_htlc_claim(
+        &self,
+        swap_id: &[u8; 32],
+        secret: pallas::Base,
+        recipient: &[u8],
+    ) -> ContractResult {
+        tracing::info!(
+            "Executing ZEC HTLC claim for swap_id: {}, secret: {:?}",
+            hex::encode(swap_id),
+            secret
+        );
+        // In production:
+        // 1. Connect to zcashd via RPC
+        // 2. Use raw transaction to claim with secret
+        // 3. Broadcast
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn execute_htlc_refund(&self, swap_id: &[u8; 32], sender: &[u8]) -> ContractResult {
+        tracing::info!(
+            "Executing ZEC HTLC refund for swap_id: {}, sender: {}",
+            hex::encode(swap_id),
+            hex::encode(sender)
+        );
+        // In production:
+        // 1. Connect to zcashd via RPC
+        // 2. Use raw transaction to refund after timelock
+        // 3. Broadcast
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn get_htlc_status(&self, swap_id: &[u8; 32]) -> ContractResult {
+        tracing::debug!("Getting ZEC HTLC status for swap_id: {}", hex::encode(swap_id));
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+}
+
+fn address_to_hash(address: &[u8]) -> [u8; 32] {
+    let mut hash = [0u8; 32];
+    let len = address.len().min(32);
+    hash[..len].copy_from_slice(&address[..len]);
+    hash
 }

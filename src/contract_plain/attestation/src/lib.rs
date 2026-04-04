@@ -18,6 +18,13 @@
 
 //! DarkFi Plain Attestation Contract
 //!
+//! # DEPRECATED
+//!
+//! This contract is deprecated. Use `darkfi_attestation_contract` in `../../contract/attestation/` instead.
+//!
+//! ZK opcodes `base_div` and `less_than_or_equal` are now sound and implemented.
+//! See `proofs/lean/src/Main.lean` for Lean 4 verification.
+//!
 //! # Overview
 //!
 //! This is a **"partial transparency"** alternative to the ZK `attestation` contract.

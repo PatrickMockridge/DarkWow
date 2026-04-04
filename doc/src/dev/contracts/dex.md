@@ -100,7 +100,7 @@ The DEX design is constrained by missing opcodes:
 
 | Opcode | Status | Impact |
 |--------|--------|-------|
-| `BaseDiv` | Not implemented | Cannot compute price ratios in circuit |
+| `BaseDiv` | Implemented (0x58) | Enables price ratio calculations in circuit |
 | `LessThanOrEqual` | Experimental | Uses safemath pattern for assertions |
 | Cross-contract ZK | Not implemented | Requires trusted setup for Money contract |
 | `schnorr_verify` | Not implemented | Signature verification split between host and circuit |

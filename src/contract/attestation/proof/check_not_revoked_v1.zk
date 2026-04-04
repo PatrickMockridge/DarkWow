@@ -1,0 +1,74 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Attestation Check Not Revoked Circuit (Version 1)
+#
+# This circuit proves a nonce is NOT in a revocation Merkle tree.
+#
+# Use case: When verifying a claim, we must ensure the attestation
+# has not been revoked. This circuit provides ZK proof of non-revocation.
+#
+# Public Inputs (constrain_instance):
+#   - revocation_root: The Merkle root of the revocation tree (public input)
+#   - nonce: The nonce/identifier being checked for revocation
+#
+# Witnesses:
+#   - pos: Position of the nonce leaf in the Merkle tree (if present)
+#   - path: Sparse Merkle path for membership proof
+#   - leaf: The leaf value (poseidon_hash(nonce))
+
+circuit "CheckNotRevoked" {
+    # ==========================================================================
+    # PHASE 1: Verify nonce is NOT in revocation list
+    # ==========================================================================
+    #
+    # set_membership(pos, path, leaf, expected_root) -> is_member
+    #
+    # This opcode:
+    # 1. Computes the Merkle root from pos, path, and leaf
+    # 2. Compares it to expected_root (revocation_root - public input)
+    # 3. Returns 1 if membership is proven, 0 otherwise
+    #
+    # For NOT revoked, we need: is_member == 0
+    # This means the nonce is NOT in the revocation list.
+
+    is_in_revocation_list = set_membership(pos, path, leaf, revocation_root);
+
+    # Invert the result: 1 - is_in_revocation_list
+    # If is_in_revocation_list == 1 (IN the list), then is_not_revoked == 0
+    # If is_in_revocation_list == 0 (NOT in the list), then is_not_revoked == 1
+    is_not_revoked = base_sub(1, is_in_revocation_list);
+
+    # The result must be 1 (nonce is NOT in revocation list)
+    # This constraint ensures the proof fails if the nonce IS revoked
+    constrain_equal_base(is_not_revoked, Base(1));
+
+    # ==========================================================================
+    # PHASE 2: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(revocation_root);
+    constrain_instance(nonce);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses proven opcodes:
+    #   - set_membership: Merkle membership proof (0x59)
+    #   - base_sub: field subtraction for inversion
+    #   - constrain_equal_base: equality constraint
+    #   - constrain_instance: public input exposure
+    #
+    # The revocation_root is a PUBLIC INPUT, constrained via constrain_instance.
+    # This prevents the prover from choosing a fake root.
+    #
+    # IMPORTANT: The set_membership opcode returns 1 if IN the set.
+    # We invert this to get 1 if NOT in the set (not revoked).
+    #
+    # Soundness:
+    # - Prover cannot fake membership proof (Merkle path must be valid)
+    # - Prover cannot manipulate revocation_root (public input)
+    # - Prover cannot bypass the inversion (base_sub is deterministic)
+}

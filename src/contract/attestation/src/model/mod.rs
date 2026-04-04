@@ -350,3 +350,111 @@ pub struct ValidateClaimUpdateV1 {
     /// Whether validation passed
     pub valid: bool,
 }
+
+/// Parameters for delegating an attestation
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DelegateAttestationParamsV1 {
+    /// ZK proof for delegation
+    pub proof: Vec<u8>,
+    /// Unique delegation ID
+    pub delegation_id: pallas::Base,
+    /// Delegator's public key x coordinate
+    pub delegator_pub_x: pallas::Base,
+    /// Delegator's public key y coordinate
+    pub delegator_pub_y: pallas::Base,
+    /// Delegatee's public key x coordinate
+    pub delegatee_pub_x: pallas::Base,
+    /// Delegatee's public key y coordinate
+    pub delegatee_pub_y: pallas::Base,
+    /// Maximum allowed delegation ratio (e.g., 10000 = 100%)
+    pub max_ratio: pallas::Base,
+    /// Revocation Merkle root
+    pub revocation_root: pallas::Base,
+    /// Current chain depth
+    pub chain_depth: pallas::Base,
+    /// Maximum allowed chain depth
+    pub max_depth: pallas::Base,
+    /// Delegator's stake amount
+    pub delegator_stake: pallas::Base,
+    /// Delegatee's stake amount
+    pub delegatee_stake: pallas::Base,
+}
+
+/// State update for DelegateAttestationV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DelegateAttestationUpdateV1 {
+    /// The delegation ID
+    pub delegation_id: pallas::Base,
+    /// Whether delegation was successful
+    pub success: bool,
+}
+
+/// Parameters for checking not revoked
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CheckNotRevokedParamsV1 {
+    /// ZK proof for non-revocation
+    pub proof: Vec<u8>,
+    /// Revocation Merkle root
+    pub revocation_root: pallas::Base,
+    /// Nonce being checked
+    pub nonce: pallas::Base,
+}
+
+/// State update for CheckNotRevokedV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CheckNotRevokedUpdateV1 {
+    /// Whether the nonce is not revoked
+    pub is_not_revoked: bool,
+}
+
+/// Parameters for verifying a delegation chain
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VerifyChainParamsV1 {
+    /// ZK proof for chain verification
+    pub proof: Vec<u8>,
+    /// Delegation ID being verified
+    pub delegation_id: pallas::Base,
+    /// Parent delegation ID in the chain
+    pub parent_id: pallas::Base,
+    /// Merkle root of the delegation chain tree
+    pub chain_root: pallas::Base,
+    /// Current depth in the delegation chain
+    pub current_depth: pallas::Base,
+    /// Maximum allowed chain depth
+    pub max_depth: pallas::Base,
+}
+
+/// State update for VerifyChainV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VerifyChainUpdateV1 {
+    /// Whether chain verification passed
+    pub success: bool,
+}
+
+/// Parameters for updating a delegation
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct UpdateDelegationParamsV1 {
+    /// ZK proof for delegation update
+    pub proof: Vec<u8>,
+    /// Original attestation ID being delegated
+    pub original_attestation_id: pallas::Base,
+    /// Type of delegation (0=None, 1=Full, 2=Restricted)
+    pub delegation_type: pallas::Base,
+    /// Current depth in the delegation chain (incremented)
+    pub current_depth: pallas::Base,
+    /// Maximum allowed chain depth
+    pub max_depth: pallas::Base,
+    /// Delegator's stake amount (for Restricted type)
+    pub delegator_stake: pallas::Base,
+    /// Delegatee's stake amount (for Restricted type)
+    pub delegatee_stake: pallas::Base,
+    /// Maximum allowed ratio (e.g., 10000 = 100%) (for Restricted type)
+    pub max_ratio: pallas::Base,
+}
+
+/// State update for UpdateDelegationV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct UpdateDelegationUpdateV1 {
+    /// Whether the update was successful
+    pub success: bool,
+}

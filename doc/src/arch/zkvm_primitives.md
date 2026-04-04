@@ -328,7 +328,7 @@ needed to deliver functionality already discussed publicly.
 | `IsEqualBase` (0x54) | ❌ Bug | delta_invert unconstrained when `a == b` |
 | `NotBase` (0x56) | ✅ Verified Sound | Input range-checked to `{0,1}` |
 | `BaseLtStrict` (0x57) | ✅ Verified Sound | Lean 4 exhaustive testing |
-| `BaseDiv` (0x58) | ✅ Verified | Mathematical properties proved (Fermat's little theorem), implementation missing |
+| `BaseDiv` (0x58) | ✅ **Implemented** | Binary exponentiation (~254 field muls) |
 
 #### `IsEqualBase` Bug Detail
 
@@ -342,17 +342,18 @@ When `a == b`:
 
 #### `BaseDiv` Status
 
+**IMPLEMENTED** ✅
+
 Mathematically verified via Fermat's little theorem:
 - `div_mul_cancel`: `(a / b) * b ≡ a (mod p)` for b ≠ 0
 - `a / 1 = a`
 - `0 / b = 0`
 
-**Implementation challenge**: ~254 field multiplications via binary exponentiation. Use cross-multiplication as a sound workaround.
+Implementation uses binary exponentiation (~254 field multiplications).
 
 #### Remaining Work
 
-- **Implement BaseDiv** — ~254 mul binary exponentiation
-- **Fix IsEqualBase** — Add `is_zero` gadget
+- **Fix IsEqualBase** — Add `is_zero` gadget to constrain delta_invert
 - **Implement BaseModExp** — For RSA verification, hash-based commitments
 
 ### `LessThanOrEqual(a, b)` → Base
@@ -640,9 +641,9 @@ less_than_strict(threshold, attribute_plus_one);  # Assert only
 
 The proper long-term approach is to implement comparison opcodes **correctly and formally verified** in the zkVM:
 
-1. **Fix `LessThanOrEqual` soundness**: The gate soundness concern needs formal analysis or a redesign
+1. **Fix `IsEqualBase` delta-invert**: Replace the selector-gate workaround with an explicit `is_zero` gadget
 
-2. **Fix `IsEqualBase` delta-invert**: Replace the selector-gate workaround with an explicit `is_zero` gadget
+Note: `LessThanOrEqual` soundness has been **verified** via Lean 4 exhaustive testing.
 
 3. **Single audit, universal benefit**: Once the opcodes are correct, every circuit using them is automatically secure
 
@@ -671,7 +672,7 @@ The proper long-term approach is to implement comparison opcodes **correctly and
 
 **See also**:
 - [Safemath](../safemath.md) — integration guide for darkfi-safemath templates
-- [Experimental Opcodes](experimental-opcodes.md) — LessThanOrEqual status and soundness concerns
+- [Opcodes Reference](opcodes.md) — LessThanOrEqual and BaseDiv verification
 
 ---
 

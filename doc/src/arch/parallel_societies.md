@@ -206,20 +206,17 @@ The dual-layer architecture makes explicit security/privacy tradeoffs:
 |-----------|--------|-----|----------------|
 | Signature verification | ZK (Schnorr) | Sound, constrainable | Identity hidden |
 | Value transfer | ZK (Money contract) | Prevent double-spend | Amount hidden |
-| Milestone verification | Plain WASM | Complex conditions need `base_div` | Milestone visible |
-| Time-weighted release | Plain WASM | Division required | Timing visible |
-| Credential chains | Plain WASM | Hierarchical verification | Chain visible |
+| Milestone verification | ZK (now with `base_div`) | Complex conditions | Hidden (now possible) |
+| Time-weighted release | ZK (now with `base_div`) | Division available | Hidden (now possible) |
+| Credential chains | ZK (now with `base_div`) | Hierarchical verification | Hidden (now possible) |
 
-## Future: Closing the Gap
+## Resolution: Plain Contracts Deprecated
 
-When ZK opcodes become available, plain contracts can migrate:
+**COMPLETED**: `base_div` (0x58) is now implemented and `LessThanOrEqual` (0x55) is verified sound.
 
-| Plain Contract | When `base_div` available | Future ZK Enhancement |
-|----------------|---------------------------|------------------------|
-| `subscription_plain` | Bitmask constraints in ZK | Full private bitmask checking |
-| `labor_market_plain` | Time-weighted release in ZK | Hidden timing information |
-| `insurance_plain` | Actuarial calculations in ZK | Hidden premium calculations |
-| `oracle_plain` | Weighted averages in ZK | Hidden data aggregation |
+Plain contracts in `src/contract_plain/` are **deprecated**. ZK contracts now have full functionality.
+
+See [Contract Plain Deprecation](contract_plain_deprecation.md) for details.
 
 ## Conclusion
 

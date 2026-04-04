@@ -67,6 +67,7 @@ define_contract_function!(SubscriptionFunction {
     RenewV1 = 0x03,
     VerifyAccessV1 = 0x04,
     DaoControlV1 = 0x05,
+    UpdateUsageV1 = 0x06,
 });
 
 /// Call parameters definitions
@@ -104,3 +105,7 @@ pub const SUBSCRIPTION_CONTRACT_STATE: &[u8] = b"state";
 pub const SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V1: &str = "Subscribe_V1";
 /// Verify access circuit namespace
 pub const SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V1: &str = "VerifyAccess_V1";
+/// Rate limit circuit namespace
+pub const SUBSCRIPTION_CONTRACT_ZKAS_RATELIMIT_NS_V1: &str = "RateLimit_V1";
+/// Update usage circuit namespace
+pub const SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1: &str = "UpdateUsage_V1";

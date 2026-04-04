@@ -3,8 +3,8 @@ field = "pallas";
 
 constant "MintStableV1" {
     EcFixedPointBase NULLIFIER_K,
-    EcFixedPoint VALUE_COMMIT,
-    EcFixedPoint RANDOM_COMMIT,
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
 witness "MintStableV1" {
@@ -21,8 +21,8 @@ witness "MintStableV1" {
     Base old_debt,
     Base new_collateral,
     Base new_debt,
-    Base collateral_blind,
-    Base debt_blind,
+    Scalar collateral_blind,
+    Scalar debt_blind,
 }
 
 circuit "MintStableV1" {
@@ -41,13 +41,13 @@ circuit "MintStableV1" {
 
     # New commitment verification
     # Pedersen commitment: C = value * G + blind * H
-    collateral_commit = ec_mul_short(new_collateral, VALUE_COMMIT);
-    collateral_random = ec_mul(collateral_blind, RANDOM_COMMIT);
+    collateral_commit = ec_mul_short(new_collateral, VALUE_COMMIT_VALUE);
+    collateral_random = ec_mul(collateral_blind, VALUE_COMMIT_RANDOM);
     collateral_total = ec_add(collateral_commit, collateral_random);
     collateral_x = ec_get_x(collateral_total);
 
-    debt_commit = ec_mul_short(new_debt, VALUE_COMMIT);
-    debt_random = ec_mul(debt_blind, RANDOM_COMMIT);
+    debt_commit = ec_mul_short(new_debt, VALUE_COMMIT_VALUE);
+    debt_random = ec_mul(debt_blind, VALUE_COMMIT_RANDOM);
     debt_total = ec_add(debt_commit, debt_random);
     debt_x = ec_get_x(debt_total);
 

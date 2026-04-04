@@ -22,6 +22,29 @@
 //! blockchains using Object Capability Security. Unlike VSS-based bridges,
 //! this design uses deterministic address derivation - users control their
 //! own funds via secrets, no threshold signing required.
+//!
+//! ## Architecture
+//!
+//! The bridge uses a modular, plugin-based architecture:
+//!
+//! - `chain_handler/`: Chain-specific handlers implementing `ChainHandler` trait
+//! - `light_client/`: Light client verification implementing `LightClient` trait
+//! - `capability/`: Object Capability derivation for authorization
+//!
+//! ## Security Model
+//!
+//! Object Capability model:
+//! - Capabilities are derived, never assigned
+//! - No VSS / threshold signing required
+//! - User alone authorizes via secret knowledge
+//! - Light client verification (no oracles)
+
+/// Chain handler module - plugin architecture for external chains
+pub mod chain_handler;
+/// Light client module - trustless external chain verification
+pub mod light_client;
+/// Object Capability module - capability derivation and verification
+pub mod capability;
 
 use darkfi_sdk::define_contract_function;
 
@@ -33,6 +56,10 @@ define_contract_function!(BridgeFunction {
     UpdateConfigV1 = 0x03,
     CancelWithdrawV1 = 0x04,  // Cancel timed-out withdrawal
     ExecuteGuaranteedWithdrawV1 = 0x05,  // Execute guaranteed withdrawal with pool stake
+    // HTLC operations for cross-chain atomic swaps
+    CreateHtlcV1 = 0x06,
+    ClaimHtlcV1 = 0x07,
+    RefundHtlcV1 = 0x08,
 });
 
 /// Internal contract errors
@@ -56,6 +83,9 @@ pub const BRIDGE_CONTRACT_WITHDRAWALS_TREE: &str = "withdrawals";
 pub const BRIDGE_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 pub const BRIDGE_CONTRACT_KEYS_TREE: &str = "keys";
 pub const BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE: &str = "pending_withdrawals";
+// HTLC trees for cross-chain atomic swaps
+pub const BRIDGE_CONTRACT_HTLCS_TREE: &str = "htlcs";
+pub const BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE: &str = "htlc_nullifiers";
 
 // These are keys inside the info tree
 pub const BRIDGE_CONTRACT_DB_VERSION: &[u8] = b"db_version";

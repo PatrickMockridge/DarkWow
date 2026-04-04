@@ -1,5 +1,15 @@
 # Plain Contracts: A Dual-Layer Architecture for Composable Privacy
 
+> **DEPRECATED**: This document describes the historical dual-layer architecture that has been **resolved**.
+> All ZK opcode limitations have been addressed:
+> - `LessThanOrEqual` (0x55) is **verified sound**
+> - `BaseDiv` (0x58) is **implemented**
+>
+> Plain contracts in `src/contract_plain/` are deprecated. Use ZK contracts in `src/contract/` instead.
+> See [Contract Plain Deprecation](contract_plain_deprecation.md) for the resolution.
+
+---
+
 *This document describes DarkFi's dual-layer contract architecture enabling both maximum privacy (ZK) and maximum expressivity (Plain WASM) for real-economy applications.*
 
 ## The Problem: ZK Circuit Limitations Create Structural Bias
@@ -225,20 +235,19 @@ Plain contracts can call ZK contracts and vice versa:
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## ZK Migration Path
+## ZK Migration Path (COMPLETED)
 
-`LessThanOrEqual` is **formally verified sound** and `BaseDiv` is **IMPLEMENTED**. Plain contracts can migrate to ZK:
+**COMPLETED**: All ZK opcode limitations have been resolved. Plain contracts are deprecated.
 
-### Phase 1: LessThanOrEqual Migration (Ready Now)
-- `subscription_plain` → Replace public bitmask with ZK Merkle tree + LessThanOrEqual
-- `attestation_plain` → ZK credential chains with verified comparison
+| Plain Contract | ZK Replacement | Status |
+|---------------|----------------|--------|
+| `subscription_plain` | `subscription` | ✅ Migrated |
+| `labor_market_plain` | `labor_market` | ✅ Migrated |
+| `insurance_plain` | `insurance_market` | ✅ Migrated |
+| `oracle_plain` | `oracle` | ✅ Migrated |
+| `attestation_plain` | `attestation` | ✅ Migrated |
 
-### Phase 2: BaseDiv Migration (Ready Now)
-- `labor_market_plain` → ZK time-weighted payment release
-- `insurance_plain` → ZK actuarial calculations
-- `oracle_plain` → ZK weighted aggregation
-
-### Migration Steps
+See [Contract Plain Deprecation](contract_plain_deprecation.md) for details.
 1. Replace native `&` bitmask with ZK Merkle tree constraint
 2. Replace `base_div` calls with native `base_div` opcode (now implemented) or cross-multiplication
 3. Keep subscription commitments private

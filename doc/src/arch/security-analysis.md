@@ -38,13 +38,13 @@ constrain_equal_base(computed_y, value_commit_y);
 
 ---
 
-#### Issue 2: Permission Bitmask Checking is Absent (MAJOR) — FIXED (SHIT VERSION)
+#### Issue 2: Permission Bitmask Checking is Absent (MAJOR) — FIXED (Tiered Approach)
 
 **Location**: [verify_access_v1.zk](file://../../src/contract/subscription/proof/verify_access_v1.zk)
 
 **Problem (Original)**: The circuit did not enforce permission bitmask checking - any subscriber could claim any permission level.
 
-**SHIT VERSION FIX Applied**: Tiered access approach using `less_than_strict`
+**Fix Applied**: Tiered access approach using `less_than_strict`
 
 The circuit now implements tiered permission checking:
 ```zk
@@ -53,21 +53,21 @@ The circuit now implements tiered permission checking:
 #   TIER_PREMIUM = 2  -> READ + WRITE
 #   TIER_ADMIN = 3    -> READ + WRITE + ADMIN
 
-# SHIT VERSION: Check claimed_tier >= required_tier
+# Current implementation: Check claimed_tier >= required_tier
 # Uses less_than_strict(required_tier - 1, claimed_tier)
 # This constrains: (required_tier - 1) < claimed_tier
 less_than_strict(required_tier - 1, permissions_claimed);
 ```
 
-**Impact** (SHIT VERSION - privacy leak):
+**Impact** (Current implementation - privacy limitation):
 - Permission tier IS revealed on-chain (privacy regression vs true zero-knowledge)
 - Tier 1 (BASIC), Tier 2 (PREMIUM), or Tier 3 (ADMIN) is exposed
 - Cannot do arbitrary bitmask combinations (READ+ADMIN without WRITE is impossible)
 - But: DOES prevent unauthorized access (tier must be >= required)
 
-**Proper Version (REQUIRES base_div opcode)**:
+**Note on base_div**: With `base_div` now implemented, a proper bitmask approach is theoretically possible:
 
-The SHIT version leaks tier level. The proper implementation using `base_div` would be:
+The current version leaks tier level. The implementation using `base_div` would be:
 
 ```zk
 # Proper bitmask checking with base_div (when available):
@@ -144,10 +144,10 @@ The SHIT version leaks tier level. The proper implementation using `base_div` wo
 #   #   # If required ⊆ claimed, the remainder relationship holds
 ```
 
-**Status**: FIXED (SHIT VERSION) - tiered access prevents unauthorized access but leaks tier level. Proper version requires `base_div` opcode.
+**Status**: FIXED (Tiered approach) - tiered access prevents unauthorized access but leaks tier level. Proper version requires `base_div` opcode (now implemented).
 
 **See Also**:
-- [Experimental Opcodes: base_div analysis](experimental-opcodes.md)
+- [Opcodes Reference: BaseDiv analysis](opcodes.md)
 
 ---
 
@@ -275,11 +275,13 @@ The current implementation requires ALL parties to reveal their secrets. The ide
    - Would use proper Pedersen commitments for all party verifications
    - But same security property
 
-3. **Future Opcodes That Would Help**:
-   - `base_div`: Would enable polynomial commitments for efficient threshold MPC
-   - **Native `LessThanOrEqual` with Boolean return**: Would enable threshold verification without full reveal — note that the identity contract currently uses safemath assertion gadgets (Level 0 zk_only) as a workaround, but a production-ready native opcode would enable Level 1 (selective disclosure) semantics with proper soundness
+3. **Opcodes That Would Help** (now resolved):
+   - `base_div`: **Implemented** (0x58) — enables polynomial commitments for efficient threshold MPC
+   - **`LessThanOrEqual` with Boolean return**: **Verified sound** ✅ — enables threshold verification without full reveal
 
-   **See also**: [Safemath](../safemath.md) — for current workaround using assertion templates
+   The identity contract uses safemath assertion gadgets (Level 0 zk_only). With `LessThanOrEqual` now verified sound, Level 1 (selective disclosure) semantics are achievable.
+
+   **See also**: [Safemath](../safemath.md) — for assertion template patterns
 
 **SIMPLIFICATION NOTE:**
 This implementation uses 3 parties, all must reveal (no threshold). This is simpler but less robust - if one party disappears, issuance fails. The ideal threshold MPC would be more complex to implement.
@@ -952,7 +954,7 @@ Several circuits reference other contracts (Subscription → DAO-Escrow, Atomic 
 
 ### Issue 15: Opcode Soundness Tradeoffs — Formal Analysis of Injection Attacks
 
-The circuits explicitly avoid `LessThanOrEqual` and `IsEqualBase` due to known soundness issues, choosing `less_than_strict` as a safer alternative. This section provides a formal characterization of the underlying vulnerability class.
+The circuits avoid `IsEqualBase` due to known soundness bug. `LessThanOrEqual` is now **verified sound** ✅ via Lean 4 exhaustive testing. This section provides a formal characterization of the underlying vulnerability class.
 
 #### Formal Model of a ZK Circuit
 
@@ -1154,7 +1156,7 @@ The `less_than_strict` opcode used throughout DarkFi's contracts avoids these is
 | # | Contract | Issue | Severity | Status |
 |---|----------|-------|----------|--------|
 | 1 | Subscription | Poseidon hash instead of Pedersen for value commitment | MAJOR | ✅ FIXED |
-| 2 | Subscription | Permission bitmask checking absent | MAJOR | ✅ FIXED (SHIT VERSION - tiered access with less_than_strict, privacy leak) |
+| 2 | Subscription | Permission bitmask checking absent | MAJOR | ✅ FIXED (Tiered approach - tiered access with less_than_strict, privacy limitation) |
 | 3 | Subscription | No cancellation nullifier verification | MODERATE | ⚠️ PROVISIONAL FIX (single-use, privacy leak) |
 | 4 | Subscription | Bulla used as blind factor | MODERATE | ✅ FIXED (MPC commit-reveal for bulla) |
 | 5 | Atomic Swap | State update no-ops | CRITICAL | ❌ UNFIXED |
@@ -1178,7 +1180,7 @@ The `less_than_strict` opcode used throughout DarkFi's contracts avoids these is
 
 ### Completed Fixes
 1. ✅ **Issue 1 (MAJOR)**: Pedersen commitment implemented in Subscription
-2. ✅ **Issue 2 (MAJOR)**: SHIT VERSION - tiered permission checking (leaks tier, privacy regression)
+2. ✅ **Issue 2 (MAJOR)**: Tiered permission checking (leaks tier, privacy limitation - tiered approach prevents unauthorized access)
 3. ✅ **Issue 3 (MODERATE)**: PROVISIONAL - cancellation nullifier (single-use, privacy leak)
 4. ✅ **Issue 4 (MODERATE)**: MPC commit-reveal for bulla generation (fixed)
 5. ✅ **Issue 5 (CRITICAL)**: atomic_swap state transitions now properly update state and track nullifiers
@@ -1191,7 +1193,7 @@ The `less_than_strict` opcode used throughout DarkFi's contracts avoids these is
 11. ✅ **Issue 12 (MODERATE)**: Minimum amount floor added to bridge (100_000_000)
 
 ### Cannot Fix Without Additional Primitives
-- **Issue 2 (PROPER VERSION)**: True bitmask checking requires `base_div` opcode (SHIT version uses tiered approach)
+- **Issue 2 (PROPER VERSION)**: True bitmask checking requires `base_div` opcode (now implemented)
 
 ### Contract-Level TODOs
 

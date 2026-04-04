@@ -1380,7 +1380,7 @@ Current ZK circuits can verify:
 
 Predicates like `attribute >= threshold` or `collateral >= 2 * debt` can use:
 - **Safemath assertion gadgets**: For assertion-only checks (no Boolean return value) — see [Safemath](../safemath.md)
-- **Native `LessThanOrEqual` opcode**: When a Boolean return value is needed for composability (experimental, grey-market)
+- **Native `LessThanOrEqual` opcode**: When a Boolean return value is needed for composability (verified sound ✅)
 
 See [zkVM Primitive Layer](zkvm_primitives.md) for the full analysis of:
 - Why `LessThanOrEqual` and `IsEqualBase` are systematically needed
@@ -1388,7 +1388,7 @@ See [zkVM Primitive Layer](zkvm_primitives.md) for the full analysis of:
 - What each opcode unlocks across identity, stablecoin, DEX, and AMM use cases
 - The safemath workaround vs native opcode tradeoffs
 
-**Current status**: `LessThanOrEqual` is implemented (experimental). stablecoin and identity use safemath for assertion-only checks. Full predicate expressiveness with return-value opcodes requires formal verification of the experimental opcode.
+**Current status**: `LessThanOrEqual` is **verified sound** ✅. stablecoin and identity can use either safemath (assertion-only) or LessThanOrEqual (Boolean return for composability). `BaseDiv` is also implemented.
 
 ### Relationship to AMM/DEX Work
 

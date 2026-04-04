@@ -82,4 +82,23 @@ pub enum LaborMarketError {
 
     #[error("Sled database error: {0}")]
     SledError(String),
+
+    // Milestone-specific errors
+    #[error("Invalid milestone index")]
+    InvalidMilestoneIndex,
+
+    #[error("Milestone already completed")]
+    MilestoneAlreadyCompleted,
+
+    #[error("Milestone deadline not reached")]
+    MilestoneDeadlineNotReached,
+
+    #[error("Invalid milestone payment amount")]
+    InvalidMilestonePaymentAmount,
+
+    #[error("Job does not have milestones")]
+    JobDoesNotHaveMilestones,
+
+    #[error("Milestone out of order")]
+    MilestoneOutOfOrder,
 }

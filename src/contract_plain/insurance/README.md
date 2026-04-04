@@ -1,8 +1,14 @@
 # Insurance Plain Contract
 
+> **DEPRECATED**: Use `darkfi_insurance_market_contract` in `../../contract/insurance_market/` instead.
+>
+> ZK opcodes `base_div` and `less_than_or_equal` are now sound and implemented.
+
+---
+
 A **partial transparency** alternative to a hypothetical ZK insurance contract. It prioritizes **expressivity over privacy** to overcome current ZK circuit limitations.
 
-## Why This Contract Exists
+## Why This Contract Exists (Historical)
 
 A hypothetical ZK insurance contract would be constrained by missing `base_div` opcode:
 - Cannot do actuarial premium calculations (need division)

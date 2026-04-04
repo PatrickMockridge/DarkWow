@@ -52,7 +52,7 @@ use darkfi_serial::deserialize;
 use crate::{
     model::{
         CancelUpdateV1, DaoControlParamsV1, DaoControlUpdateV1, RenewUpdateV1,
-        SubscribeUpdateV1,
+        SubscribeUpdateV1, UpdateUsageParamsV1, UpdateUsageUpdateV1,
     },
     SubscriptionFunction, SUBSCRIPTION_CONTRACT_INFO_TREE,
     SUBSCRIPTION_CONTRACT_PLANS_TREE, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE,
@@ -176,6 +176,13 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         SubscriptionFunction::VerifyAccessV1 => {
             // No state update needed - just verification
             msg!("[subscription::process_update] VerifyAccessV1 has no state update");
+            Ok(())
+        }
+        SubscriptionFunction::UpdateUsageV1 => {
+            let _update: UpdateUsageUpdateV1 = deserialize(&update_data[1..])?;
+            // TODO: Write updated usage to subscription state
+            // This would update: period_uses, last_access_block, uses_remaining
+            // And handle period reset logic
             Ok(())
         }
         SubscriptionFunction::DaoControlV1 => {

@@ -29,6 +29,7 @@ mod stake;
 mod watcher;
 
 use config::Config;
+use darkfi_sdk::crypto::pasta_prelude::PrimeField;
 use deployer::CapitalDeployer;
 use error::Result;
 use executors::ExecutorRegistry;
@@ -326,24 +327,26 @@ async fn show_status(config_path: &PathBuf) -> Result<()> {
 }
 
 fn derive_address(recipient_pub_x: &str, recipient_pub_y: &str, nonce: u64) -> Result<()> {
+    use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+
     // Parse the public key coordinates
     let x_bytes = hex::decode(recipient_pub_x)
         .map_err(|e| error::RelayerError::AddressDerivation(format!("Invalid pub_x hex: {}", e)))?;
     let y_bytes = hex::decode(recipient_pub_y)
         .map_err(|e| error::RelayerError::AddressDerivation(format!("Invalid pub_y hex: {}", e)))?;
 
-    // Combine inputs for hashing
-    let mut combined = Vec::with_capacity(x_bytes.len() + y_bytes.len() + 8);
-    combined.extend_from_slice(&x_bytes[..32]);
-    combined.extend_from_slice(&y_bytes[..32]);
-    combined.extend_from_slice(&nonce.to_le_bytes());
+    // Convert to pallas::Base
+    let x: [u8; 32] = x_bytes[..32].try_into().unwrap();
+    let y: [u8; 32] = y_bytes[..32].try_into().unwrap();
+    let x_base = pallas::Base::from_repr(x.into()).unwrap();
+    let y_base = pallas::Base::from_repr(y.into()).unwrap();
 
-    // Use blake3 for simple hash derivation (placeholder)
-    let bridge_secret = blake3::hash(&combined);
-    let bridge_address = blake3::hash(bridge_secret.as_bytes());
+    // Use poseidon for ZK-friendly derivation
+    let bridge_secret = poseidon_hash([x_base, y_base, pallas::Base::from(nonce)]);
+    let bridge_address = poseidon_hash([bridge_secret]);
 
-    println!("Bridge Address: {}", hex::encode(bridge_address.as_bytes()));
-    println!("Note: In production, this would use proper Poseidon hashing and chain-specific address encoding");
+    println!("Bridge Address: {}", hex::encode(bridge_address.to_repr()));
+    println!("Note: In production, chain-specific address encoding should be applied (e.g., 0x prefix for ETH)");
 
     Ok(())
 }

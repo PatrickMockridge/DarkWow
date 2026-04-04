@@ -49,6 +49,10 @@ define_contract_function!(LaborMarketFunction {
     DisputeV1 = 0x05,
     RefundV1 = 0x06,
     CancelV1 = 0x07,
+    CreateJobWithMilestonesV1 = 0x08,
+    SubmitMilestoneV1 = 0x09,
+    ConfirmMilestoneV1 = 0x0a,
+    InitiateDisputeV1 = 0x0b,
 });
 
 /// Internal contract errors
@@ -82,3 +86,4 @@ pub const LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V1: &str = "SubmitGitDel
 pub const LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1: &str = "ConfirmDelivery_V1";
 pub const LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1: &str = "Dispute_V1";
 pub const LABOR_CONTRACT_ZKAS_REFUND_NS_V1: &str = "Refund_V1";
+pub const LABOR_CONTRACT_ZKAS_MILESTONE_PAYMENT_NS_V1: &str = "MilestonePayment_V1";

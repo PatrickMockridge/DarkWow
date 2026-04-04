@@ -515,17 +515,17 @@ The bridge circuits use only **proven, production-ready opcodes**:
 - No need for complex arithmetic, division, or Boolean returns
 - Just hash constraints + merkle proofs + range checks
 
-### Where Missing Opcodes ARE Needed
+### Where Advanced Opcodes ARE Needed
 
 The **DEX Level 1+** (order book matching) and **advanced features** need these:
 
 | Opcode | Status | Needed For |
 |--------|--------|-----------|
-| `base_div` | Not implemented | Price ratio calculations (`alice_price = request / offer`) |
-| `LessThanOrEqual` | Experimental (soundness unverified) | Boolean returns for conditional logic |
+| `base_div` | ✅ Implemented (0x58) | Price ratio calculations (`alice_price = request / offer`) |
+| `LessThanOrEqual` | ✅ Verified Sound (0x55) | Boolean returns for conditional logic |
 | `schnorr_verify` | Not implemented | In-circuit signature verification |
 
-### The Current Limitation
+### The Current Status
 
 ```
 Current DEX (Level 0 - Atomic Swaps):
@@ -535,10 +535,10 @@ Current DEX (Level 0 - Atomic Swaps):
 └── Just atomic swap verification
 
 Future DEX (Level 1 - Order Matching):
-├── NEEDS base_div for price ratios
-├── NEEDS LessThanOrEqual for Boolean returns
+├── ✅ base_div implemented
+├── ✅ LessThanOrEqual verified sound
 ├── NEEDS schnorr_verify for in-circuit signatures
-└── NOT blocked, but requires opcode workarounds
+└── NOT blocked by comparison opcodes
 ```
 
 ### Bridge = Opcode-Independent ✅

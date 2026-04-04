@@ -42,7 +42,10 @@ use darkfi_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::OracleError,
-    model::{AttestValueParamsV1, Oracle, PushValueParamsV1, RegisterOracleParamsV1},
+    model::{
+        AggregateParamsV1, AttestValueParamsV1, Oracle, PushValueCommitmentParamsV1,
+        PushValueParamsV1, RegisterOracleParamsV1,
+    },
     OracleFunction, ORACLE_CONTRACT_ATTESTATIONS_TREE, ORACLE_CONTRACT_INFO_TREE,
     ORACLE_CONTRACT_ORACLES_TREE,
 };
@@ -100,6 +103,14 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         OracleFunction::AttestValueV1 => {
             let params: AttestValueParamsV1 = deserialize(&self_.data[1..])?;
             attest_value_get_metadata_v1(cid, call_idx, calls, params)?
+        }
+        OracleFunction::PushValueCommitmentV1 => {
+            let params: PushValueCommitmentParamsV1 = deserialize(&self_.data[1..])?;
+            push_value_commitment_get_metadata_v1(cid, call_idx, calls, params)?
+        }
+        OracleFunction::AggregateV1 => {
+            let params: AggregateParamsV1 = deserialize(&self_.data[1..])?;
+            aggregate_get_metadata_v1(cid, call_idx, calls, params)?
         }
     };
 
@@ -171,6 +182,51 @@ fn attest_value_get_metadata_v1(
     Ok(metadata)
 }
 
+fn push_value_commitment_get_metadata_v1(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+    params: PushValueCommitmentParamsV1,
+) -> ContractResult<Vec<pallas::Base>> {
+    msg!("[oracle::push_value_commitment_get_metadata_v1] Pushing commitment for oracle: {:?}", params.oracle_id);
+
+    // Public inputs: oracle_id, commitment, data_root
+    let mut public_inputs = vec![
+        params.oracle_id,
+        params.commitment,
+        params.data_root,
+    ];
+
+    let mut metadata = vec![];
+    (call_idx, &calls).encode(&mut metadata)?;
+    (crate::ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1, &public_inputs).encode(&mut metadata)?;
+
+    Ok(metadata)
+}
+
+fn aggregate_get_metadata_v1(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+    params: AggregateParamsV1,
+) -> ContractResult<Vec<pallas::Base>> {
+    msg!("[oracle::aggregate_get_metadata_v1] Aggregating for oracle: {:?}", params.oracle_id);
+
+    // Public inputs: oracle_id, result, min_result, max_result
+    let mut public_inputs = vec![
+        params.oracle_id,
+        params.result,
+        params.min_result,
+        params.max_result,
+    ];
+
+    let mut metadata = vec![];
+    (call_idx, &calls).encode(&mut metadata)?;
+    (crate::ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1, &public_inputs).encode(&mut metadata)?;
+
+    Ok(metadata)
+}
+
 // ============================================================================
 // INSTRUCTION PROCESSING
 // ============================================================================
@@ -195,6 +251,14 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         OracleFunction::AttestValueV1 => {
             let params: AttestValueParamsV1 = deserialize(&self_.data[1..])?;
             attest_value_v1(cid, params)
+        }
+        OracleFunction::PushValueCommitmentV1 => {
+            let params: PushValueCommitmentParamsV1 = deserialize(&self_.data[1..])?;
+            push_value_commitment_v1(cid, params)
+        }
+        OracleFunction::AggregateV1 => {
+            let params: AggregateParamsV1 = deserialize(&self_.data[1..])?;
+            aggregate_v1(cid, params)
         }
     }
 }
@@ -309,6 +373,92 @@ fn attest_value_v1(cid: ContractId, params: AttestValueParamsV1) -> ContractResu
     Ok(())
 }
 
+fn push_value_commitment_v1(cid: ContractId, params: PushValueCommitmentParamsV1) -> ContractResult {
+    msg!("[oracle::push_value_commitment_v1] Pushing commitment for oracle: {:?}", params.oracle_id);
+
+    // Verify ZK proof
+    wasm::zk::verify_zk_proof(cid, crate::ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1)?;
+
+    let oracles_db = wasm::db::db_get(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
+
+    // Get and verify oracle exists
+    let mut oracle: Oracle = match wasm::db::db_get(oracles_db, &serialize(&params.oracle_id))? {
+        Some(o) => o,
+        None => {
+            msg!("[oracle::push_value_commitment_v1] ERROR: Oracle not found");
+            return Err(ContractError::from(OracleError::OracleNotFound).into())
+        }
+    };
+
+    // Verify oracle is active
+    if !oracle.is_active {
+        msg!("[oracle::push_value_commitment_v1] ERROR: Oracle not active");
+        return Err(ContractError::from(OracleError::OracleNotActive).into())
+    }
+
+    // Note: The commitment is stored in the data Merkle tree by the caller.
+    // The ZK proof verifies:
+    // 1. The commitment is in the data tree (set_membership returns 1)
+    // 2. The staker knows the value and nonce that produce the commitment
+    // 3. The staker's public key matches the registered staker
+
+    msg!(
+        "[oracle::push_value_commitment_v1] Commitment pushed successfully: {:?}",
+        params.commitment
+    );
+    Ok(())
+}
+
+fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> ContractResult {
+    msg!("[oracle::aggregate_v1] Aggregating for oracle: {:?}", params.oracle_id);
+
+    // Verify ZK proof
+    wasm::zk::verify_zk_proof(cid, crate::ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1)?;
+
+    let oracles_db = wasm::db::db_get(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
+
+    // Get and verify oracle exists
+    let mut oracle: Oracle = match wasm::db::db_get(oracles_db, &serialize(&params.oracle_id))? {
+        Some(o) => o,
+        None => {
+            msg!("[oracle::aggregate_v1] ERROR: Oracle not found");
+            return Err(ContractError::from(OracleError::OracleNotFound).into())
+        }
+    };
+
+    // Verify oracle is active
+    if !oracle.is_active {
+        msg!("[oracle::aggregate_v1] ERROR: Oracle not active");
+        return Err(ContractError::from(OracleError::OracleNotActive).into())
+    }
+
+    // Verify result is within bounds
+    if params.result < params.min_result {
+        msg!("[oracle::aggregate_v1] ERROR: Result below minimum");
+        return Err(ContractError::from(OracleError::InvalidPredicate).into())
+    }
+
+    if params.result > params.max_result {
+        msg!("[oracle::aggregate_v1] ERROR: Result above maximum");
+        return Err(ContractError::from(OracleError::InvalidPredicate).into())
+    }
+
+    // Update oracle value with aggregated result
+    let current_block = wasm::chain::get_block_height()?;
+    oracle.value = params.result;
+    oracle.updated_at = current_block;
+
+    wasm::db::db_set(oracles_db, &serialize(&params.oracle_id), &serialize(&oracle))?;
+
+    msg!(
+        "[oracle::aggregate_v1] Aggregated successfully: result={:?}, min={:?}, max={:?}",
+        params.result,
+        params.min_result,
+        params.max_result
+    );
+    Ok(())
+}
+
 // ============================================================================
 // PROCESS UPDATE
 // ============================================================================
@@ -335,6 +485,24 @@ fn process_update(cid: ContractId, updates: &[u8]) -> ContractResult {
                     "[oracle::process_update] AttestValue: oracle={:?}, attestation={:?}",
                     oracle_id,
                     attestation_id
+                );
+            }
+            3 => {
+                let oracle_id = update.data[1];
+                let commitment = update.data[2];
+                msg!(
+                    "[oracle::process_update] PushValueCommitment: oracle={:?}, commitment={:?}",
+                    oracle_id,
+                    commitment
+                );
+            }
+            4 => {
+                let oracle_id = update.data[1];
+                let result = update.data[2];
+                msg!(
+                    "[oracle::process_update] Aggregate: oracle={:?}, result={:?}",
+                    oracle_id,
+                    result
                 );
             }
             _ => {

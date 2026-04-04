@@ -50,6 +50,10 @@ define_contract_function!(AttestationFunction {
     VerifyClaimV1 = 0x04,
     ConsumeClaimV1 = 0x05,
     ValidateClaimV1 = 0x06,
+    CheckNotRevokedV1 = 0x07,
+    DelegateAttestationV1 = 0x08,
+    VerifyChainV1 = 0x09,
+    UpdateDelegationV1 = 0x0a,
 });
 
 /// Internal contract errors
@@ -81,3 +85,7 @@ pub const ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateAttestation_V1";
 pub const ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1: &str = "CreateClaim_V1";
 pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1: &str = "VerifyClaim_V1";
 pub const ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V1: &str = "ConsumeClaim_V1";
+pub const ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V1: &str = "CheckNotRevoked_V1";
+pub const ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1: &str = "DelegateAttestation_V1";
+pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1: &str = "VerifyChain_V1";
+pub const ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1: &str = "UpdateDelegation_V1";

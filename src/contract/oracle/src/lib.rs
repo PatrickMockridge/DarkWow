@@ -46,6 +46,8 @@ define_contract_function!(OracleFunction {
     RegisterOracleV1 = 0x00,
     PushValueV1 = 0x01,
     AttestValueV1 = 0x02,
+    PushValueCommitmentV1 = 0x03,
+    AggregateV1 = 0x04,
 });
 
 /// Internal contract errors
@@ -71,3 +73,5 @@ pub const ORACLE_CONTRACT_INFO_TREE: &str = "info";
 pub const ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V1: &str = "RegisterOracle_V1";
 pub const ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V1: &str = "PushValue_V1";
 pub const ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V1: &str = "AttestValue_V1";
+pub const ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1: &str = "PushValueCommitment_V1";
+pub const ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1: &str = "Aggregate_V1";

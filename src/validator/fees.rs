@@ -94,6 +94,7 @@ pub fn circuit_gas_use(zkbin: &ZkBinary) -> u64 {
             Opcode::NotBase => 20,
             Opcode::BaseLtStrict => 100,
             Opcode::BaseDiv => 1000, // ~253 squarings + up to 253 multiplications
+            Opcode::SetMembership => 500, // Sparse Merkle tree membership check + comparison
             Opcode::DebugPrint => 100,
         };
 

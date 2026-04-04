@@ -1,14 +1,26 @@
 # DarkFi Safemath: Safe ZK Arithmetic Templates
 
+> **DEPRECATED**: `LessThanOrEqual` (0x55) is now **verified sound** and `BaseDiv` (0x58) is **implemented**.
+> Safemath workarounds are no longer necessary for sound ZK operations.
+> This document is retained for historical reference and for the assertion-only pattern which remains useful.
+>
+> See [Contract Plain Deprecation](contract_plain_deprecation.md) and [Opcodes Reference](opcodes.md).
+
+---
+
 [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) provides audited ZK template circuits for bounded integer relations in DarkFi circuits.
 
-## Why Safemath?
+## Why Safemath? (Legacy)
+
+> **Note**: With `LessThanOrEqual` now verified sound, safemath is **optional**. It remains useful for:
+> - Assertion-only patterns (no Boolean return needed)
+> - Bounded comparisons where you don't need the return value
 
 DarkFi's zkVM operates in the Pallas field where field arithmetic wraps at `p`. Direct comparisons and divisions don't work the same as integer arithmetic. Safemath provides:
 
 1. **Bounded range checks** — prevent field wraparound attacks
-2. **Safe comparison gadgets** — avoid experimental opcode soundness issues
-3. **Cross-multiplication patterns** — ratio checks without division
+2. **Safe comparison gadgets** — useful for assertion-only comparisons
+3. **Cross-multiplication patterns** — ratio checks without division (still useful even with BaseDiv available)
 
 ## Quick Reference
 
@@ -77,8 +89,8 @@ Safemath templates are **assertion gadgets** — they constrain but don't return
 
 | Use Case | Safemath Template | LessThanOrEqual Opcode |
 |----------|------------------|----------------------|
-| Assert `a <= b` passes | ✅ `assert_lte_u64_v1.zk` | ⚠️ Experimental |
-| Return 0/1 Boolean for public output | ❌ Not possible | ✅ Works but experimental |
+| Assert `a <= b` passes | ✅ `assert_lte_u64_v1.zk` | ✅ Verified Sound |
+| Return 0/1 Boolean for public output | ❌ Not possible | ✅ Verified Sound |
 
 **Why the distinction matters**:
 
@@ -95,7 +107,7 @@ less_than_strict(two_times_debt, collateral_plus_one);  # Pass/fail only
 # Can use safemath safely
 ```
 
-### Bounded Equation Construction (No LessThanOrEqual Needed)
+### Bounded Equation Construction (Alternative Pattern)
 
 There's an alternative approach that **returns a public 0/1 bit without LessThanOrEqual**:
 
@@ -190,13 +202,11 @@ less_than_strict(fill_amount, bob_amount);
 **Why safemath for DEX**:
 - Partial fill only needs assertion (fill must not exceed Alice's offer)
 - No Boolean return needed for further constraints
-- Safemath is production-ready; LessThanOrEqual gate soundness is unverified
+- Safemath pattern is still valid for assertion-only use cases
 
-**Why NOT LessThanOrEqual here**:
-- LessThanOrEqual returns Boolean (for composability)
-- But gate soundness is unverified (technical debt)
-- DEX only needs constrain-assertion, not Boolean return
-- Safemath provides production-safe workaround
+**LessThanOrEqual is now verified sound**, so either approach works:
+- LessThanOrEqual: Returns Boolean (useful for composability)
+- Safemath: Assertion-only (sufficient for DEX partial fill checks)
 
 ### Stablecoin Collateralization
 
@@ -240,7 +250,7 @@ bool_check(predicate_result);
 # Prover sets predicate_result to 1 if threshold <= attribute_value
 ```
 
-This preserves Level 1 semantics without LessThanOrEqual.
+This preserves Level 1 semantics using an alternative construction (LessThanOrEqual is now verified sound and can also be used).
 
 ## Source
 
@@ -249,7 +259,8 @@ This preserves Level 1 semantics without LessThanOrEqual.
 
 ## See Also
 
-- [Experimental Opcodes](experimental-opcodes.md) — LessThanOrEqual soundness issues
+- [Opcodes Reference](opcodes.md) — LessThanOrEqual and BaseDiv verification
+- [Contract Plain Deprecation](contract_plain_deprecation.md) — Resolution of dual-layer architecture
 - [Field Arithmetic Constraints](field_arithmetic.md) — Why field math differs from integer math
 - [zkVM Primitive Layer](zkvm_primitives.md) — Opcode implementation details
 - [Contract README](../../src/contract/README.md) — Circuit safety summary

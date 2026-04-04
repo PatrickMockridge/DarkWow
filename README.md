@@ -38,7 +38,7 @@ When `base_div`, `less_than_or_equal` (sound), and other missing opcodes are ava
 
 ## Architecture Documentation
 
-- [Experimental Opcodes](doc/src/arch/experimental-opcodes.md) — Grey-market opcode analysis with gate soundness issues
+- [Opcodes Reference](doc/src/arch/opcodes.md) — Opcode soundness verification with Lean 4 proofs
 - [Merkle Depth](doc/src/arch/merkle_depth.md) — Fixed-depth limitations and workarounds
 - [Composability](doc/src/arch/composability.md) — Smart contract composition patterns
 - [Safemath](doc/src/arch/safemath.md) — ZK arithmetic templates (LessThanOrEqual workaround)

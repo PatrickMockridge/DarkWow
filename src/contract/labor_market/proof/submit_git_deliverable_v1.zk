@@ -63,10 +63,11 @@ circuit "SubmitGitDeliverable" {
     # PHASE 2: Verify deadline has not passed
     # ==========================================================================
     #
-    # less_than_strict: constrains current_block < deadline_block
-    # If this fails, the deadline has passed and work is late.
+    # Verify: current_block <= deadline_block using less_than_or_equal (0x55)
 
-    less_than_strict(current_block, deadline_block);
+    ONE = witness_base(1);
+    deadline_ok = less_than_or_equal(current_block, deadline_block);
+    constrain_equal_base(deadline_ok, ONE);
 
     # ==========================================================================
     # PHASE 3: Compute nullifier to prevent double-submission

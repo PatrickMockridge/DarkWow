@@ -19,7 +19,7 @@ This document tracks the blockers to reaching MVP for each contract in `src/cont
 | `escrow` | None | ZK circuit compilation, Money integration | Partial |
 | `dao_escrow` | None | Entry point wiring, spend hook, Money integration | Partial |
 
-**Key insight**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), and `BaseLtStrict` (0x57) are implemented in the zkVM (commit `41b0629e0`). `stablecoin` and `identity` now use [safemath](../safemath.md) assertion gadgets instead of experimental `LessThanOrEqual`. Ratio checks use cross-multiplication via `base_mul + less_than_strict` — no `BaseDiv` needed. The experimental opcodes remain grey-market goods — see [zkVM Primitive Layer](zkvm_primitives.md) for production readiness requirements.
+**Key insight**: `LessThanOrEqual` (0x55) is **verified sound** ✅, `BaseDiv` (0x58) is **implemented** ✅. `stablecoin` and `identity` use [safemath](../safemath.md) assertion gadgets (still useful for assertion-only patterns). Ratio checks can use `BaseDiv` now. `IsEqualBase` remains with a known bug — see [Opcodes Reference](opcodes.md).
 
 ---
 
@@ -210,9 +210,9 @@ InitializeV1 (0x00), DepositCollateralV1 (0x01), WithdrawCollateralV1 (0x02), Mi
 
 **What it needs**: First: P2P oracle / AMM integration to supply TWAP price. Second: CDP Note integration with money contract. Third: integration testing of the full lifecycle.
 
-> **Note on division**: Ratio checks use cross-multiplication (see `dao/exec.zk` lines 118-126 for the exact pattern). `BaseDiv` is not needed and is not a blocker.
+> **Note on division**: Ratio checks can use cross-multiplication (see `dao/exec.zk` lines 118-126 for the exact pattern) or `BaseDiv` now that it's implemented.
 
-> **Note on safemath**: The stablecoin uses [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) assertion gadgets instead of `LessThanOrEqual`. See [Safemath](../safemath.md) for details.
+> **Note on safemath**: The stablecoin uses [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) assertion gadgets (LessThanOrEqual is now verified sound and can also be used). See [Safemath](../safemath.md) for details.
 
 **See also**:
 - [zkVM Primitive Layer](zkvm_primitives.md) for the full opcode dependency analysis.

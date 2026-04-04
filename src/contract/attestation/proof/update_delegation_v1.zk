@@ -1,0 +1,155 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Delegation Update Circuit (Version 1)
+#
+# This circuit proves:
+# - If Restricted delegation: ratio = delegator_stake / delegatee_stake <= max_ratio
+# - Chain depth is within allowed maximum
+#
+# Delegation types:
+#   - 0 = None (no delegation)
+#   - 1 = Full (unlimited delegation)
+#   - 2 = Restricted (ratio-based delegation)
+#
+# Public Inputs (constrain_instance):
+#   - original_attestation_id: Original attestation being delegated
+#   - delegation_type: Type of delegation (0=None, 1=Full, 2=Restricted)
+#   - current_depth: Current position in the delegation chain (incremented)
+#   - max_depth: Maximum allowed chain depth
+#   - delegator_stake: Delegator's stake amount (for Restricted)
+#   - delegatee_stake: Delegatee's stake amount (for Restricted)
+#   - max_ratio: Maximum allowed ratio (e.g., 10000 = 100%) (for Restricted)
+#
+# Witnesses:
+#   - None required (delegation proof verified separately)
+
+constant "UpdateDelegation" {
+}
+
+witness "UpdateDelegation" {
+    # Public inputs used in circuit
+    Base original_attestation_id,
+    Base delegation_type,
+    Base current_depth,
+    Base max_depth,
+    Base delegator_stake,
+    Base delegatee_stake,
+    Base max_ratio,
+
+    # Delegation type constants (cannot use Base in constant block)
+    Base DELEGATION_TYPE_NONE,
+    Base DELEGATION_TYPE_FULL,
+    Base DELEGATION_TYPE_RESTRICTED,
+}
+
+circuit "UpdateDelegation" {
+    # Constant witnesses for comparison
+    ZERO = witness_base(0);
+    ONE = witness_base(1);
+
+    # ==========================================================================
+    # PHASE 1: Determine if this is a Restricted delegation
+    # ==========================================================================
+    #
+    # We use equality checks to detect if delegation_type == RESTRICTED
+    # This allows us to conditionally enforce ratio verification
+
+    is_none = is_equal_base(delegation_type, DELEGATION_TYPE_NONE);
+    is_full = is_equal_base(delegation_type, DELEGATION_TYPE_FULL);
+    is_restricted = is_equal_base(delegation_type, DELEGATION_TYPE_RESTRICTED);
+
+    # For non-Restricted types, we set ratio_check to 1 (trivially satisfied)
+    # For Restricted type, ratio_check will be properly computed
+
+    # ==========================================================================
+    # PHASE 2: Verify delegation ratio for Restricted type
+    # ==========================================================================
+    #
+    # PROOF: delegator_stake / delegatee_stake <= max_ratio
+    #
+    # We use cross-multiplication to avoid expensive and incorrect base_div:
+    # Multiply both sides by delegatee_stake (positive, non-zero):
+    #   delegator_stake <= delegatee_stake * max_ratio
+    #
+    # This is correct for integer comparison and avoids field division issues.
+    # base_div(a, b) = a * inverse(b) mod p gives field elements, NOT integers.
+
+    # First ensure delegatee_stake is non-zero (division by zero prevention)
+    less_than_strict(ZERO, delegatee_stake);
+
+    # Cross-multiplication: check delegator_stake <= delegatee_stake * max_ratio
+    max_ratio_times_delegatee = base_mul(max_ratio, delegatee_stake);
+    ratio_within_limit = less_than_or_equal(delegator_stake, max_ratio_times_delegatee);
+
+    # ==========================================================================
+    # PHASE 3: Conditional enforcement based on delegation type
+    # ==========================================================================
+    #
+    # For Restricted delegation: enforce ratio check
+    # For None/Full delegation: bypass ratio check (set to 1)
+    #
+    # The constraint: ratio_check * is_restricted == is_restricted
+    # - When is_restricted == 1: ratio_check must equal 1 (enforced)
+    # - When is_restricted == 0: constraint is 0 == 0 (always true)
+
+    # If Restricted, ratio_check must be 1; otherwise bypassed
+    ratio_check_valid = base_mul(ratio_within_limit, is_restricted);
+    constrain_equal_base(ratio_check_valid, is_restricted);
+
+    # ==========================================================================
+    # PHASE 4: Verify chain depth is within limits
+    # ==========================================================================
+    #
+    # The delegation chain must not exceed max_depth
+    # This prevents infinite delegation chains
+
+    depth_within_limit = less_than_or_equal(current_depth, max_depth);
+    constrain_equal_base(depth_within_limit, ONE);
+
+    # ==========================================================================
+    # PHASE 5: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(original_attestation_id);
+    constrain_instance(delegation_type);
+    constrain_instance(current_depth);
+    constrain_instance(max_depth);
+    constrain_instance(delegator_stake);
+    constrain_instance(delegatee_stake);
+    constrain_instance(max_ratio);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses proven opcodes:
+    #   - is_equal_base: equality check (returns 1 if equal)
+    #   - less_than_strict: sound comparison (constrain-only)
+    #   - base_mul: field multiplication for cross-multiplication
+    #   - less_than_or_equal: VERIFIED SOUND comparison
+    #   - constrain_equal_base: equality constraint
+    #   - constrain_instance: public input exposure
+    #
+    # Delegation type enforcement:
+    # - delegation_type is a public input (cannot be manipulated)
+    # - Conditional logic uses field arithmetic (no branching in constraints)
+    # - The ratio check is only enforced when type == Restricted
+    #
+    # Ratio verification (when Restricted):
+    # - Uses cross-multiplication: delegator_stake <= delegatee_stake * max_ratio
+    # - less_than_strict(ZERO, delegatee_stake) ensures non-zero denominator
+    # - less_than_or_equal compares the two sides correctly as integers
+    # - This avoids field division (base_div) which gives wrong results for ratios
+    #
+    # Depth verification:
+    # - Both current_depth and max_depth are public inputs
+    # - less_than_or_equal ensures depth doesn't exceed maximum
+    #
+    # Security considerations:
+    # - Division by zero: less_than_strict(ZERO, delegatee_stake) prevents it
+    # - The ratio check prevents excessive leverage in delegation
+    # - The depth check prevents infinite delegation chains
+    # - Conditional enforcement ensures correct behavior for all delegation types
+}

@@ -372,9 +372,10 @@ proofs/lean/
 | Priority | Task | Notes |
 |----------|------|-------|
 | High | Fix IsEqualBase bug | Add `is_zero` gadget to constrain delta_invert |
-| Medium | Formal proof of LessThanOrEqual | Beyond exhaustive testing |
 | Medium | Implement PedersenCommit | Confidential txs |
 | Low | SignatureVerify | Bridges need ECDSA |
+
+Note: `LessThanOrEqual` (0x55) verification is complete via Lean 4 exhaustive testing. `BaseDiv` (0x58) is implemented.
 
 ---
 

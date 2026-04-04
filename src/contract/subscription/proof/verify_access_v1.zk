@@ -34,6 +34,22 @@ witness "VerifyAccessV1" {
     Uint64 lock_until_block,
 
     # =========================================================================
+    # RATE LIMIT PARAMETERS (public inputs)
+    # =========================================================================
+    # These are stored in the subscription state and verified ZK.
+
+    # Maximum uses per period
+    Uint64 uses_allowed,
+    # Period length in blocks
+    Uint64 rate_period,
+    # Uses in current period
+    Uint64 period_uses,
+    # Last access block
+    Uint64 last_access_block,
+    # Remaining uses in current period
+    Uint64 uses_remaining,
+
+    # =========================================================================
     # PROVISIONAL FIX: Cancellation Nullifier Verification
     # =========================================================================
     # [PROVISIONAL] This section adds cancellation verification.
@@ -332,6 +348,41 @@ circuit "VerifyAccessV1" {
     less_than_strict(subscription_state, 1);
 
     # ==========================================================================
+    # PHASE 6: RATE LIMIT VERIFICATION
+    # ==========================================================================
+    #
+    # Rate limiting ensures subscribers don't exceed their usage quota.
+    #
+    # The plain contract checks:
+    #   let blocks_since_last = current_block.saturating_sub(self.last_access_block);
+    #   if blocks_since_last >= self.rate_period {
+    #       return self.uses_allowed > 0
+    #   }
+    #   self.period_uses < self.uses_allowed
+    #
+    # In ZK, we verify:
+    #   1. uses_remaining > 0 (access granted only if we have uses left)
+    #   2. period_uses < uses_allowed (can't exceed limit in current period)
+    #   3. uses_allowed > 0 (subscription must allow some uses)
+    #
+    # The relationship between uses_remaining, period_uses, and uses_allowed:
+    #   - New period: uses_remaining = uses_allowed, period_uses = 0
+    #   - Same period: uses_remaining = uses_allowed - period_uses
+    #
+    # We verify these via range checks (less_than_strict).
+
+    # Core rate limit check: uses_remaining > 0
+    # This is the primary constraint for rate limiting.
+    # less_than_strict(0, uses_remaining) constrains: 0 < uses_remaining
+    less_than_strict(0, uses_remaining);
+
+    # Verify period_uses < uses_allowed (within period limit)
+    less_than_strict(period_uses, uses_allowed);
+
+    # Verify uses_allowed > 0 (subscription must have some uses)
+    less_than_strict(0, uses_allowed);
+
+    # ==========================================================================
     # WHAT THIS CIRCUIT PROVES
     # ==========================================================================
     #
@@ -341,6 +392,7 @@ circuit "VerifyAccessV1" {
     #   3. The capability digest matches the expected value
     #   4. [SHIT VERSION] The claimed tier is >= required tier
     #   5. [PROVISIONAL] The subscription is in Active state (via Merkle proof)
+    #   6. Rate limit is not exceeded (uses_remaining > 0, period_uses < uses_allowed)
     #
     # What it DOES NOT prove:
     #   - The plan is still active (DAO can deactivate plans)

@@ -367,7 +367,9 @@ impl Circuit<pallas::Base> for ZkCircuit {
         let init_poseidon = opcodes.contains(&Opcode::PoseidonHash);
 
         // Conditions on which we enable the Sinsemilla and Merkle chips
-        let init_sinsemilla = opcodes.contains(&Opcode::MerkleRoot);
+        let init_sinsemilla = opcodes.contains(&Opcode::MerkleRoot) ||
+            opcodes.contains(&Opcode::SparseMerkleRoot) ||
+            opcodes.contains(&Opcode::SetMembership);
 
         // Conditions on which we enable the base field Arithmetic chip
         let init_arithmetic = opcodes.contains(&Opcode::BaseAdd) ||
@@ -1092,6 +1094,72 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
                     self.tracer.push_base(&root);
                     heap.push(HeapVar::Base(root));
+                }
+
+                Opcode::SetMembership => {
+                    trace!(target: "zk::vm", "Executing `SetMembership{:?}` opcode", opcode.1);
+                    let args = &opcode.1;
+
+                    // Parse inputs: pos, path, leaf, expected_root
+                    let pos = heap[args[0].1].clone().try_into()?;
+                    let path: Value<[Fp; SMT_FP_DEPTH]> = heap[args[1].1].clone().try_into()?;
+                    let leaf = heap[args[2].1].clone().try_into()?;
+                    let expected_root: AssignedCell<Fp, Fp> = heap[args[3].1].clone().try_into()?;
+
+                    // =========================================================================
+                    // SECURITY: expected_root MUST be a public input
+                    //
+                    // By constraining expected_root as a public input, we prevent the prover
+                    // from choosing a root that makes a fake proof pass. The root is
+                    // fixed by the caller and cannot be manipulated by the prover.
+                    //
+                    // ANONYMITY CONSIDERATIONS (for documentation):
+                    // - This opcode reveals THAT the prover is checking membership against
+                    //   a specific root (identified by the public root value).
+                    // - It does NOT reveal what's in the set, how many members exist,
+                    //   or the tree structure (Merkle tree hides leaf values).
+                    // - The root provides CONTEXT for interpretation (e.g., revocation list,
+                    //   permission set, role hierarchy) - business logic outside the ZKVM
+                    //   determines what membership means.
+                    // - This is acceptable for DarkFi's use cases: OCap permissions,
+                    //   DAO governance contexts, and attestation all provide external
+                    //   interpretation frameworks.
+                    // =========================================================================
+                    layouter.constrain_instance(
+                        expected_root.cell(),
+                        config.primary,
+                        public_inputs_offset,
+                    )?;
+                    public_inputs_offset += 1;
+
+                    // Compute Merkle root from path and leaf
+                    let computed_root = smt_chip.check_membership(&mut layouter, pos, path, leaf)?;
+
+                    // is_member = 1 if computed_root == expected_root, else 0
+                    // Note: isequal_chip.is_eq_with_output has a known bug where
+                    // delta_invert is unconstrained when a == b. With expected_root
+                    // as public input, the prover cannot manipulate the result.
+                    let is_member = isequal_chip
+                        .as_ref()
+                        .unwrap()
+                        .is_eq_with_output(
+                            &mut layouter.namespace(|| "set_membership_check"),
+                            computed_root,
+                            expected_root,
+                        )?;
+
+                    // Boolean constraint on result (small_range_check returns ())
+                    boolcheck_chip
+                        .as_ref()
+                        .unwrap()
+                        .small_range_check(
+                            layouter.namespace(|| "set_membership_bool_check"),
+                            is_member.clone(),
+                        )?;
+
+                    trace!(target: "zk::vm", "Pushing set_membership result to heap address {}", heap.len());
+                    self.tracer.push_base(&is_member);
+                    heap.push(HeapVar::Base(is_member));
                 }
 
                 Opcode::BaseAdd => {

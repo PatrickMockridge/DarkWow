@@ -36,6 +36,32 @@ impl Default for DeliveryType {
     }
 }
 
+// ============================================================================
+// MILESTONE (For multi-stage jobs with time-weighted payments)
+// ============================================================================
+
+/// A milestone in a multi-stage job
+/// Each milestone has its own deadline and payment amount
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Milestone {
+    /// Milestone index (0-based)
+    pub index: u32,
+    /// Payment amount for this milestone
+    pub payment_amount: u64,
+    /// Deadline block for this milestone
+    pub deadline_block: u64,
+    /// Whether this milestone has been completed
+    pub completed: bool,
+    /// Block when completed
+    pub completed_at_block: Option<u64>,
+}
+
+impl Default for Milestone {
+    fn default() -> Self {
+        Self { index: 0, payment_amount: 0, deadline_block: 0, completed: false, completed_at_block: None }
+    }
+}
+
 /// Job state in the state machine
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
@@ -87,6 +113,12 @@ pub struct Job {
     pub state: JobState,
     /// DAO-Escrow bulla for dispute resolution
     pub dao_escrow_bulla: Option<pallas::Base>,
+    /// Milestones for this job (empty if no milestones)
+    pub milestones: Vec<Milestone>,
+    /// Current milestone index (0-based)
+    pub current_milestone: u32,
+    /// Accumulated payment released so far
+    pub released_payment: u64,
 }
 
 /// Parameters for creating a new job
@@ -219,4 +251,94 @@ pub struct CancelJobParamsV1 {
     pub employer_pub_x: pallas::Base,
     /// Employer's public key y coordinate
     pub employer_pub_y: pallas::Base,
+}
+
+// ============================================================================
+// MILESTONE-ENHANCED PARAMETERS (For jobs with milestones)
+// ============================================================================
+
+/// Parameters for creating a job with milestones
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateJobWithMilestonesParamsV1 {
+    /// ZK proof for job creation
+    pub proof: Vec<u8>,
+    /// Job ID (public input)
+    pub job_id: pallas::Base,
+    /// Employer's public key x coordinate
+    pub employer_pub_x: pallas::Base,
+    /// Employer's public key y coordinate
+    pub employer_pub_y: pallas::Base,
+    /// Attestation ID for deliverable verification
+    pub attestation_id: pallas::Base,
+    /// Type of deliverable (0 = Generic, 1 = Git)
+    pub delivery_type: u8,
+    /// Total payment amount (sum of all milestones)
+    pub payment_amount: u64,
+    /// Token being paid
+    pub payment_token: pallas::Base,
+    /// Payment commitment x coordinate
+    pub payment_commit_x: pallas::Base,
+    /// Payment commitment y coordinate
+    pub payment_commit_y: pallas::Base,
+    /// Overall deadline block
+    pub deadline_block: u64,
+    /// Number of milestones
+    pub milestone_count: u32,
+}
+
+/// Parameters for submitting a deliverable for a specific milestone
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SubmitMilestoneDeliverableParamsV1 {
+    /// ZK proof for milestone deliverable submission
+    pub proof: Vec<u8>,
+    /// Job ID being completed
+    pub job_id: pallas::Base,
+    /// Milestone index being submitted
+    pub milestone_index: u32,
+    /// Attestation claim ID
+    pub claim_id: pallas::Base,
+    /// Worker's public key x coordinate
+    pub worker_pub_x: pallas::Base,
+    /// Worker's public key y coordinate
+    pub worker_pub_y: pallas::Base,
+    /// Nullifier for preventing double-submission
+    pub spent_nullifier: pallas::Base,
+}
+
+/// Parameters for confirming a milestone and releasing payment
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConfirmMilestoneParamsV1 {
+    /// ZK proof for milestone confirmation
+    pub proof: Vec<u8>,
+    /// Job ID being confirmed
+    pub job_id: pallas::Base,
+    /// Milestone index being confirmed
+    pub milestone_index: u32,
+    /// Employer's public key x coordinate
+    pub employer_pub_x: pallas::Base,
+    /// Employer's public key y coordinate
+    pub employer_pub_y: pallas::Base,
+    /// Payment release amount for this milestone
+    pub payment_release: u64,
+    /// Nullifier for release authorization
+    pub spent_nullifier: pallas::Base,
+}
+
+/// Parameters for raising a dispute for a specific milestone
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InitiateDisputeParamsV1 {
+    /// ZK proof for dispute
+    pub proof: Vec<u8>,
+    /// Job ID being disputed
+    pub job_id: pallas::Base,
+    /// Milestone index being disputed
+    pub milestone_index: u32,
+    /// Disputer's public key x coordinate
+    pub disputer_pub_x: pallas::Base,
+    /// Disputer's public key y coordinate
+    pub disputer_pub_y: pallas::Base,
+    /// DAO-Escrow handling the dispute
+    pub dao_escrow_bulla: pallas::Base,
+    /// Nullifier for dispute
+    pub spent_nullifier: pallas::Base,
 }

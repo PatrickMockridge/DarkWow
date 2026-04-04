@@ -122,24 +122,21 @@ circuit "ExecuteSwapV1" {
     constrain_instance(computed_swap_id);
 
     # ==========================================================================
-    # PHASE 5: Partial fill check using safemath pattern
+    # PHASE 5: Partial fill check using LessThanOrEqual
     # ==========================================================================
     #
-    # SAFEMATH WORKAROUND: This circuit uses the safemath pattern to assert
+    # This circuit uses the verified LessThanOrEqual opcode (0x55) to assert
     # that fill_amount <= alice_amount (the fill does not exceed Alice's offer).
-    #
-    # The safemath pattern for a <= b is: a < b + 1
 
     # Both amounts must be valid u64
     range_check(64, alice_amount);
     range_check(64, bob_amount);
     range_check(64, fill_amount);
 
-    # Safemath assertion: fill_amount <= alice_amount
-    # Pattern: prove fill_amount < alice_amount + 1
+    # Assertion: fill_amount <= alice_amount using verified LessThanOrEqual
     ONE = witness_base(1);
-    alice_amount_plus_one = base_add(alice_amount, ONE);
-    less_than_strict(fill_amount, alice_amount_plus_one);
+    is_lte = less_than_or_equal(fill_amount, alice_amount);
+    constrain_equal_base(is_lte, ONE);
 
     # Additionally, Bob's amount must be >= fill_amount (Bob receives fill)
     less_than_strict(fill_amount, bob_amount);
@@ -159,14 +156,9 @@ circuit "ExecuteSwapV1" {
     #   - range_check: bounds verification
     #   - bool_check: boolean verification
     #   - less_than_strict: constrain-only comparison (NO return value)
+    #   - less_than_or_equal: VERIFIED SOUND comparison (returns Boolean)
     #
-    # LESS THAN OR EQUAL: IDEAL vs WORKAROUND
-    #   - IDEAL: LessThanOrEqual returns 0/1 Boolean for full composability
-    #   - WORKAROUND: Safemath assertion (this circuit) - constrain-only
-    #
-    # LessThanOrEqual (0x55) is NOT used here because:
-    #   1. Gate soundness is unverified (technical debt)
-    #   2. This circuit only needs assertion, not Boolean return
-    #
-    # SAFEMATH IS THE WORKAROUND for production-safe comparison assertions.
+    # LESS THAN OR EQUAL: Now using verified LessThanOrEqual (0x55)
+    #   - LessThanOrEqual is now verified sound
+    #   - Replaces safemath workaround pattern
 }

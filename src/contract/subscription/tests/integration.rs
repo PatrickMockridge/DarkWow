@@ -351,3 +351,196 @@ fn test_constants() {
     assert_eq!(SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE, "nullifiers");
     assert_eq!(SUBSCRIPTION_CONTRACT_PLANS_TREE, "plans");
 }
+
+// ============================================================================
+// RATE LIMITING TESTS
+// ============================================================================
+
+use darkfi_subscription_contract::model::{UpdateUsageParamsV1, UpdateUsageUpdateV1};
+
+#[test]
+fn test_update_usage_params_encoding() {
+    let params = UpdateUsageParamsV1 {
+        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        subscriber_secret: darkfi_sdk::pasta::pallas::Base::from(2),
+        current_block: 50000,
+        spent_nullifier: darkfi_sdk::pasta::pallas::Base::from(3),
+        merkle_proof: vec![darkfi_sdk::pasta::pallas::Base::from(4)],
+    };
+
+    let encoded = params.encode().unwrap();
+    let decoded = UpdateUsageParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+
+    assert_eq!(decoded.subscription_id, params.subscription_id);
+    assert_eq!(decoded.current_block, params.current_block);
+}
+
+#[test]
+fn test_update_usage_update_encoding() {
+    let update = UpdateUsageUpdateV1 {
+        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        period_uses: 5,
+        last_access_block: 50010,
+        uses_remaining: 95,
+        is_new_period: false,
+    };
+
+    let encoded = update.encode().unwrap();
+    let decoded = UpdateUsageUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+
+    assert_eq!(decoded.subscription_id, update.subscription_id);
+    assert_eq!(decoded.period_uses, update.period_uses);
+    assert_eq!(decoded.last_access_block, update.last_access_block);
+    assert_eq!(decoded.uses_remaining, update.uses_remaining);
+    assert_eq!(decoded.is_new_period, update.is_new_period);
+}
+
+#[test]
+fn test_update_usage_new_period_encoding() {
+    let update = UpdateUsageUpdateV1 {
+        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        period_uses: 0,
+        last_access_block: 100000,
+        uses_remaining: 100,
+        is_new_period: true,
+    };
+
+    let encoded = update.encode().unwrap();
+    let decoded = UpdateUsageUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+
+    assert_eq!(decoded.is_new_period, true);
+    assert_eq!(decoded.period_uses, 0);
+    assert_eq!(decoded.uses_remaining, 100);
+}
+
+#[test]
+fn test_subscription_with_rate_limits() {
+    let subscription = Subscription {
+        id: darkfi_sdk::pasta::pallas::Base::from(1),
+        subscriber_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
+            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
+        ),
+        plan_id: 1,
+        lock_until_block: 100000,
+        deposit: 1000,
+        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
+        value_commit: darkfi_sdk::pasta::pallas::Point::identity(),
+        state: SubscriptionState::Active,
+        spent_nullifier: darkfi_sdk::pasta::pallas::Base::ZERO,
+        created_at: 50000,
+        dao_escrow_bulla: None,
+        dao_membership_note: None,
+        // Rate limit fields
+        uses_allowed: 100,
+        rate_period: 1000,
+        period_uses: 5,
+        last_access_block: 50000,
+        uses_remaining: 95,
+    };
+
+    // Verify rate limit fields are set correctly
+    assert_eq!(subscription.uses_allowed, 100);
+    assert_eq!(subscription.rate_period, 1000);
+    assert_eq!(subscription.period_uses, 5);
+    assert_eq!(subscription.last_access_block, 50000);
+    assert_eq!(subscription.uses_remaining, 95);
+}
+
+#[test]
+fn test_subscription_encoding_with_rate_limits() {
+    let subscription = Subscription {
+        id: darkfi_sdk::pasta::pallas::Base::from(1),
+        subscriber_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
+            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
+        ),
+        plan_id: 1,
+        lock_until_block: 100000,
+        deposit: 1000,
+        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
+        value_commit: darkfi_sdk::pasta::pallas::Point::identity(),
+        state: SubscriptionState::Active,
+        spent_nullifier: darkfi_sdk::pasta::pallas::Base::ZERO,
+        created_at: 50000,
+        dao_escrow_bulla: None,
+        dao_membership_note: None,
+        // Rate limit fields
+        uses_allowed: 100,
+        rate_period: 1000,
+        period_uses: 5,
+        last_access_block: 50000,
+        uses_remaining: 95,
+    };
+
+    let encoded = subscription.encode().unwrap();
+    let decoded = Subscription::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+
+    assert_eq!(decoded.uses_allowed, 100);
+    assert_eq!(decoded.rate_period, 1000);
+    assert_eq!(decoded.period_uses, 5);
+    assert_eq!(decoded.last_access_block, 50000);
+    assert_eq!(decoded.uses_remaining, 95);
+}
+
+#[test]
+fn test_rate_limit_scenario_new_period() {
+    // Simulate a new period scenario
+    let uses_allowed: u64 = 100;
+    let rate_period: u64 = 1000;
+    let period_uses: u64 = 0;  // Reset in new period
+    let last_access_block: u64 = 50000;
+    let current_block: u64 = 51000;  // 1000 blocks later, new period
+
+    // Check if new period
+    let blocks_since_last = current_block.saturating_sub(last_access_block);
+    let is_new_period = blocks_since_last >= rate_period;
+
+    assert!(is_new_period);
+
+    // In new period, uses_remaining should equal uses_allowed
+    let uses_remaining = if is_new_period { uses_allowed } else { uses_allowed - period_uses };
+    assert_eq!(uses_remaining, 100);
+}
+
+#[test]
+fn test_rate_limit_scenario_same_period() {
+    // Simulate same period scenario
+    let uses_allowed: u64 = 100;
+    let rate_period: u64 = 1000;
+    let period_uses: u64 = 5;  // 5 uses already consumed
+    let last_access_block: u64 = 50000;
+    let current_block: u64 = 50500;  // Only 500 blocks later, same period
+
+    // Check if new period
+    let blocks_since_last = current_block.saturating_sub(last_access_block);
+    let is_new_period = blocks_since_last >= rate_period;
+
+    assert!(!is_new_period);
+
+    // In same period, uses_remaining = uses_allowed - period_uses
+    let uses_remaining = if is_new_period { uses_allowed } else { uses_allowed - period_uses };
+    assert_eq!(uses_remaining, 95);
+}
+
+#[test]
+fn test_rate_limit_scenario_exhausted() {
+    // Simulate exhausted rate limit scenario
+    let uses_allowed: u64 = 100;
+    let rate_period: u64 = 1000;
+    let period_uses: u64 = 100;  // All uses consumed
+    let last_access_block: u64 = 50000;
+    let current_block: u64 = 50500;  // Same period
+
+    // Check if new period
+    let blocks_since_last = current_block.saturating_sub(last_access_block);
+    let is_new_period = blocks_since_last >= rate_period;
+
+    assert!(!is_new_period);
+
+    // In same period, uses_remaining = uses_allowed - period_uses = 0
+    let uses_remaining = if is_new_period { uses_allowed } else { uses_allowed - period_uses };
+    assert_eq!(uses_remaining, 0);
+
+    // Access should be denied when uses_remaining == 0
+    let access_granted = uses_remaining > 0;
+    assert!(!access_granted);
+}

@@ -185,7 +185,7 @@ less_than_strict(threshold, attribute_plus_one);
 
 ### Level 1: Selective Disclosure (Bounded Equation)
 
-Level 1 uses the **bounded equation construction** to return a public `predicate_result` bit (0 or 1) without using `LessThanOrEqual`:
+Level 1 uses the **bounded equation construction** to return a public `predicate_result` bit (0 or 1). Note: `LessThanOrEqual` is now verified sound and could also be used:
 
 ```
 threshold + delta = attribute_value + (1 - predicate_result) * 2^64
@@ -223,7 +223,7 @@ lhs = base_add(threshold, delta);
 constrain_equal_base(lhs, rhs);
 ```
 
-**Why this matters**: The bounded equation uses only proven opcodes (`range_check`, `bool_check`, `base_mul`, `base_add`, `constrain_equal_base`). No `LessThanOrEqual` (gate soundness unverified) or `IsEqualBase` (delta-invert issue) needed.
+**Why this matters**: The bounded equation uses only proven opcodes (`range_check`, `bool_check`, `base_mul`, `base_add`, `constrain_equal_base`). `LessThanOrEqual` is now verified sound but the bounded equation remains useful. `IsEqualBase` has a known bug (delta-invert issue).
 
 **Use case**: When the verifier needs to know "is_over_18 = true" but nothing about the actual birthdate.
 

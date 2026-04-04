@@ -19,6 +19,11 @@
 //! Chain enumeration and executor trait
 
 use async_trait::async_trait;
+use darkfi_bridge_contract::chain_handler::{
+    ChainHandler as BridgeChainHandler, ChainId, ExternalDeposit, HtlcDeposit, TxHash as BridgeTxHash,
+    VerifiedWithdrawal, WithdrawalRequest,
+};
+use darkfi_sdk::{error::ContractResult, pasta::pallas};
 use super::error::{PendingWithdrawal, Result, TxHash};
 
 /// Supported external chains for the bridge
@@ -100,6 +105,18 @@ pub trait ChainExecutor: Send + Sync {
 /// Null struct for disabled chains
 pub struct DisabledExecutor;
 
+impl DisabledExecutor {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for DisabledExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl ChainExecutor for DisabledExecutor {
     async fn execute(&self, _withdrawal: &PendingWithdrawal) -> Result<TxHash> {
@@ -120,5 +137,62 @@ impl ChainExecutor for DisabledExecutor {
 
     async fn verify_confirmation(&self, _tx_hash: &TxHash) -> Result<bool> {
         Err(crate::error::RelayerError::ChainExecution("Chain is disabled".to_string()))
+    }
+}
+
+// DisabledExecutor also implements BridgeChainHandler (returns errors)
+#[async_trait]
+impl BridgeChainHandler for DisabledExecutor {
+    fn chain_id(&self) -> ChainId {
+        unreachable!("Disabled executor has no chain")
+    }
+
+    fn is_enabled(&self) -> bool {
+        false
+    }
+
+    async fn verify_deposit(&self, _deposit: &ExternalDeposit) -> ContractResult {
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn verify_withdrawal(&self, _withdrawal: &WithdrawalRequest) -> ContractResult {
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn execute(&self, _verified: &VerifiedWithdrawal) -> ContractResult {
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn estimate_fee(&self, _withdrawal: &WithdrawalRequest) -> ContractResult {
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn verify_confirmation(&self, _tx_hash: &BridgeTxHash) -> ContractResult {
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn verify_htlc_deposit(&self, _htlc_deposit: &HtlcDeposit) -> ContractResult {
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn execute_htlc_claim(
+        &self,
+        _swap_id: &[u8; 32],
+        _secret: pallas::Base,
+        _recipient: &[u8],
+    ) -> ContractResult {
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn execute_htlc_refund(
+        &self,
+        _swap_id: &[u8; 32],
+        _sender: &[u8],
+    ) -> ContractResult {
+        Err(darkfi_sdk::error::ContractError::Custom(2))
+    }
+
+    async fn get_htlc_status(&self, _swap_id: &[u8; 32]) -> ContractResult {
+        Err(darkfi_sdk::error::ContractError::Custom(2))
     }
 }

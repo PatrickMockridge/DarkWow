@@ -18,6 +18,13 @@
 
 //! DarkFi Plain Labor Market Contract
 //!
+//! # DEPRECATED
+//!
+//! This contract is deprecated. Use `darkfi_labor_market_contract` in `../../contract/labor_market/` instead.
+//!
+//! ZK opcodes `base_div` and `less_than_or_equal` are now sound and implemented.
+//! See `proofs/lean/src/Main.lean` for Lean 4 verification.
+//!
 //! # Overview
 //!
 //! This is a **"partial transparency"** alternative to the ZK `labor_market` contract.

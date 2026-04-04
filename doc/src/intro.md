@@ -6,20 +6,20 @@ This is a development fork of the official DarkFi repository. **Development occu
 
 This fork contains all additions compared to official DarkFi master:
 
-## New Smart Contracts
+## Smart Contracts
 
-### Workstream 1: ZK Contracts (Current Opcodes)
-
-ZK contracts using the existing opcode set. These prioritize **maximum privacy** but are constrained by circuit limitations.
+ZK contracts using the existing opcode set. These prioritize **maximum privacy** with full ZK expressiveness.
 
 | Contract | Description | Status |
 |----------|-------------|--------|
-| **attestation** | Generalized attestation and claims system | ✅ Complete + safemath predicates |
+| **attestation** | Generalized attestation and claims system | ✅ Complete |
 | **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
+| **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
 | **baccarat** | Privacy-preserving Baccarat casino game | ✅ Complete |
 | **betting_stake** | LP staking for betting contracts | ✅ Complete |
 | **block_height_prediction** | PoW-backed block height betting | ✅ Complete |
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
+| **dao** | DAO with voting and treasury management | ✅ Complete |
 | **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) + optional DrainProtection | ✅ Complete |
 | **darkbet_exchange** | Unified betting exchange (order-book + AMM) | ✅ Complete |
 | **darktoshi_dice** | Privacy-preserving Satoshi Dice clone | ✅ Complete |
@@ -27,31 +27,20 @@ ZK contracts using the existing opcode set. These prioritize **maximum privacy**
 | **drain_protection** | Endowment/treasury protections (8 best practices) | ✅ Complete |
 | **escrow** | Hashed Timelock Contract variant | ✅ Complete |
 | **game_room** | Generalized betting and pot management | ✅ Complete |
-| **identity** | ZK credential proofs using competency DAGs | ✅ Level 0 zk_only + Level 1 selective (bounded equation) |
+| **identity** | ZK credential proofs using competency DAGs | ✅ Level 0 zk_only + Level 1 selective |
 | **insurance_market** | Decentralized insurance marketplace | ✅ Complete |
 | **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
 | **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete |
-| **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
+| **money** | Original DarkFi money (v1) - upstream legacy | No |
+| **money_v2** | Secure version with constrain_equal_base | ✅ Standard |
 | **oracle** | Push-model oracle with attestation integration | ✅ Complete |
 | **roulette** | Privacy-preserving roulette casino game | ✅ Complete |
 | **slot** | Composable slot machine with modular paytables | ✅ Complete |
-| **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
-| **stablecoin** | Synthetix-style pooled debt with safemath | ✅ Uses safemath |
+| **stablecoin** | Synthetix-style pooled debt | ✅ Complete |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete |
+| **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
 
-### Workstream 2: Plain Contracts (Full Opcode Suite)
-
-Plain WASM contracts planning for the full opcode suite. These use **partial transparency** to overcome current ZK limitations. When `base_div`, `less_than_or_equal` (sound), and other missing opcodes are available, these can be ported to ZK.
-
-| Contract | Description | Status | Planning For |
-|----------|-------------|--------|-------------|
-| **subscription_plain** | Access control with bitmask permissions | ✅ Complete | `base_div` |
-| **labor_market_plain** | Escrow with time-weighted release | ✅ Complete | `base_div` |
-| **insurance_plain** | Actuarial calculations for premiums/claims | ✅ Complete | `base_div` |
-| **oracle_plain** | Weighted aggregation with slashable staking | ✅ Complete | `base_div`, `set_membership` |
-| **attestation_plain** | Delegation chains with depth limits | ✅ Complete | `base_div` |
-
-**Principle**: "A malicious proof is more dangerous than a public bug." Plain contracts use native Rust where ZK opcodes are unsound or missing. See [Plain Contracts Architecture](arch/plain_contracts.md).
+> **Note**: Plain contracts in `src/contract_plain/` have been **deprecated**. The ZK opcodes they workaround (`LessThanOrEqual`, `BaseDiv`) are now verified sound and implemented. See [Contract Plain Deprecation](arch/contract_plain_deprecation.md).
 
 ## Key Technical Changes
 
@@ -62,7 +51,7 @@ Plain WASM contracts planning for the full opcode suite. These use **partial tra
 - **Insurance Market**: Decentralized insurance marketplace with risk markets ecosystem
 - **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
 - **Identity refactor**: Level 0 (zk_only) + Level 1 selective disclosure (bounded equation)
-- **Safemath integration**: Production-ready ZK arithmetic templates as LessThanOrEqual workaround
+- **Safemath integration**: Legacy ZK arithmetic templates (LessThanOrEqual now verified sound - safemath still useful for assertion-only patterns)
 - **Bridge Merkle fix**: Real `merkle_root` opcode (not fake proof)
 - **Entropy module**: Shared `darkfi_sdk::crypto::entropy` for provable randomness across contracts
 - **Game Room**: Generalized betting and pot management contract. App developers build poker rooms, backgammon rooms, etc. on top using the SDK. Room owner uses escrow-DAO for game rules and dispute resolution.
@@ -71,14 +60,15 @@ Plain WASM contracts planning for the full opcode suite. These use **partial tra
 
 - [Opcodes and Formal Verification](arch/opcodes.md) — Opcode soundness verification with Lean 4 proofs
 - [Merkle Depth](arch/merkle_depth.md) — Fixed-depth limitations and workarounds
-- [Composability](arch/composability.md) — Smart contract composition patterns with plain contracts integration
+- [Composability](arch/composability.md) — Smart contract composition patterns
+- [Contract Plain Deprecation](arch/contract_plain_deprecation.md) — Resolution of dual-layer architecture
 - [Safemath](arch/safemath.md) — ZK arithmetic templates for assertion-only comparisons
 - [Field Arithmetic](arch/field_arithmetic.md) — zkVM primitive analysis
 - [DarkBet Exchange](arch/darkbet_exchange.md) — Unified betting exchange (order-book + AMM)
 - [Entropy Module](arch/entropy.md) — Provable randomness via block hash entropy
 - [Provable Randomness](arch/provable_randomness.md) — PoW randomness analysis with casino game case studies
 - [Game Room App Layer](arch/game_room_app_layer.md) — SDK integration guide for app developers
-- [Plain Contracts Architecture](arch/plain_contracts.md) — Dual-layer ZK/plain contract design
+- [Plain Contracts Architecture](arch/plain_contracts.md) — [DEPRECATED] Dual-layer ZK/plain contract design
 - [Parallel Societies](arch/parallel_societies.md) — Privacy for social reproduction industries (labor, healthcare, insurance, education)
 
 ## Security Status
@@ -109,17 +99,19 @@ Most comparison opcodes are now **formally verified** or **implemented**:
 
 | Contract | Feature | Status |
 |----------|---------|--------|
-| stablecoin | Collateralization checks | ✅ Safemath or LessThanOrEqual |
+| stablecoin | Collateralization checks | ✅ LessThanOrEqual or Safemath |
 | identity | Threshold predicates | ✅ LessThanOrEqual verified |
 | dex | Partial fills | ✅ LessThanOrEqual verified |
-| dao | Ratio checks | ✅ Cross-multiplication or BaseDiv |
+| dao | Ratio checks | ✅ BaseDiv or cross-multiplication |
 | **bridge** | All deposit/withdraw operations | ✅ No workarounds needed! |
 
-### Migration Path Available
+### Migration Complete
 
-Plain contracts (labor_market, insurance, oracle) can now migrate to ZK since:
+Plain contracts have been **deprecated** in favor of ZK contracts since:
 - `LessThanOrEqual` is formally verified sound
 - `BaseDiv` is implemented
+
+See [Contract Plain Deprecation](arch/contract_plain_deprecation.md) for details.
 
 ### Bridge = Opcode-Independent ✅
 
@@ -134,7 +126,7 @@ No division, no Boolean returns, no complex arithmetic. The bridge "just works" 
 
 See [Bridge Architecture](arch/bridge.md) for details on why the bridge doesn't need advanced opcodes.
 
-**See**: [Safemath](arch/safemath.md) and [Experimental Opcodes](arch/experimental-opcodes.md) for full analysis.
+**See**: [Safemath](arch/safemath.md) and [Opcodes Reference](arch/opcodes.md) for full analysis.
 
 ## Building
 

@@ -92,3 +92,35 @@ pub struct AttestValueParamsV1 {
     /// Threshold value for comparison predicates
     pub threshold: pallas::Base,
 }
+
+/// Parameters for pushing a commitment to a data point (private value submission)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct PushValueCommitmentParamsV1 {
+    /// ZK proof for commitment push
+    pub proof: Vec<u8>,
+    /// Oracle ID
+    pub oracle_id: OracleId,
+    /// Commitment (Poseidon hash of value and nonce)
+    pub commitment: pallas::Base,
+    /// Merkle root of the data tree (public input)
+    pub data_root: pallas::Base,
+    /// Position in Merkle tree
+    pub pos: pallas::Base,
+    /// Sparse Merkle path
+    pub path: Vec<pallas::Base>,
+}
+
+/// Parameters for aggregating multiple data points
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AggregateParamsV1 {
+    /// ZK proof for aggregation
+    pub proof: Vec<u8>,
+    /// Oracle ID
+    pub oracle_id: OracleId,
+    /// Computed weighted average result
+    pub result: pallas::Base,
+    /// Minimum acceptable result
+    pub min_result: pallas::Base,
+    /// Maximum acceptable result
+    pub max_result: pallas::Base,
+}

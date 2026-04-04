@@ -227,5 +227,5 @@ constrain_equal_base(nullifier_check, nullifier);
 - [Atomic Swap Contract](../../src/contract/atomic_swap/README.md)
 - [Subscription Contract](subscription.md)
 - [DAO-Escrow Contract](dao_escrow.md)
-- [Experimental Opcodes](experimental-opcodes.md)
+- [Opcodes Reference](opcodes.md)
 - [Opcode Universe](opcode_universe.md)

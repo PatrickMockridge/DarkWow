@@ -284,5 +284,5 @@ DAO-Escrow membership integrates with Subscription for tiered pricing:
 - [DAO-Escrow Contract README](../../src/contract/dao_escrow/README.md)
 - [Subscription Contract](subscription.md)
 - [DarkFi DAO Contract](dao.md)
-- [Experimental Opcodes](experimental-opcodes.md)
+- [Opcodes Reference](opcodes.md)
 - [Opcode Universe](opcode_universe.md)

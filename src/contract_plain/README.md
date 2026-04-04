@@ -1,6 +1,13 @@
-# Contract Plain — Partial Transparency for Real-Economy Applications
+# Contract Plain — DEPRECATED
 
-## Why This Directory Exists
+> **DEPRECATED**: This directory is deprecated. All functionality has been migrated to ZK contracts in `../contract/`.
+>
+> The ZK opcodes these contracts worked around (`base_div`, `less_than_or_equal`) are now sound and implemented.
+> See [Migration](#migration-to-zk-contracts) below.
+
+---
+
+## Why This Directory Exists (Historical Context)
 
 The existing DarkFi contracts (`src/contract/`) are built inside ZK circuits. This gives strong privacy, but forces a painful tradeoff: **only operations expressible in ZK constraints can be used**.
 
@@ -71,33 +78,46 @@ This is **composable privacy** — different operations use different privacy le
 
 ## Contracts in This Directory
 
-| Contract | Purpose | Key ZK Limitation Avoided |
-|----------|---------|---------------------------|
-| `subscription/` | Access control with bitmask permissions | `base_div` for ratio checks |
-| `labor_market/` | Freelance escrow with milestones | `base_div` for time-weighted release |
-| `insurance/` | Mutual insurance with actuarial math | `base_div` for premium/claim ratios |
-| `oracle/` | Data aggregation with slashable staking | `base_div` for weighted averages |
-| `attestation/` | Credential chains with delegation | `base_div` for delegation ratios |
+| Contract | Purpose | Key ZK Limitation Avoided | ZK Replacement |
+|----------|---------|---------------------------|---------------|
+| `subscription/` | Access control with bitmask permissions | `base_div` for ratio checks | `../contract/subscription/` |
+| `labor_market/` | Freelance escrow with milestones | `base_div` for time-weighted release | `../contract/labor_market/` |
+| `insurance/` | Mutual insurance with actuarial math | `base_div` for premium/claim ratios | `../contract/insurance_market/` |
+| `oracle/` | Data aggregation with slashable staking | `base_div` for weighted averages | `../contract/oracle/` |
+| `attestation/` | Credential chains with delegation | `base_div` for delegation ratios | `../contract/attestation/` |
 
-## Future Path: ZK Migration
+## Migration to ZK Contracts
 
-Now that `LessThanOrEqual` is **formally verified sound** and `BaseDiv` is **mathematically verified**:
-1. `LessThanOrEqual` (0x55) → Available for production use
-2. `BaseDiv` (0x58) → Implementation in progress (~254 mul binary exponentiation)
-3. Cross-multiplication workaround → Already sound and production-ready
+**COMPLETED**: All ZK opcodes are now sound and implemented:
 
-Plain contracts can now migrate to ZK:
-- `subscription/` → Replace public bitmask with ZK Merkle tree commitments
-- `labor_market/` → Replace native division with ZK-verified division
-- `insurance/` → ZK actuarial calculations when BaseDiv lands
-- `oracle/` → Private weighted aggregation (needs BaseDiv)
-- `attestation/` → ZK credential chains with delegation ratios
+| Opcode | Status | Lean 4 Proof |
+|--------|--------|--------------|
+| `LessThanOrEqual` (0x55) | ✅ **SOUND** | `proofs/lean/src/Main.lean` |
+| `BaseDiv` (0x58) | ✅ **IMPLEMENTED** | `proofs/lean/src/Main.lean` |
+| `IsEqualBase` (0x54) | ⚠️ Minor issue (doesn't enable false proofs) | `proofs/lean/src/Main.lean` |
 
-**Migration strategy**: Start with contracts that only need LessThanOrEqual, then progress to BaseDiv-dependent contracts.
+Plain contracts have been **deprecated**. Use the ZK versions in `../contract/` instead.
+
+### Why ZK Over Plain?
+
+| Aspect | Plain Contract | ZK Contract |
+|--------|---------------|-------------|
+| Privacy | Partial (amounts public) | Full (commitments hidden) |
+| Expressivity | Full Rust | Limited to circuit constraints |
+| Auditability | Visible on-chain | Requires proof verification |
+| Safety | Bug visible | Bug hidden but proof still verifies |
+
+The ZK contracts now have equivalent functionality with full privacy.
+
+## Further Reading
+
+- [ZK Contract Architecture](../../doc/src/arch/contract_architecture.md) — ZK contract design patterns
+- [Composability](../../doc/src/arch/composability.md) — Cross-contract composition
+- [Opcodes Reference](../../doc/src/arch/opcodes.md) — Opcode soundness verification (Lean 4 proofs)
 
 ## Further Reading
 
 - [Plain Contracts Architecture](../../doc/src/arch/plain_contracts.md) — Technical architecture details
 - [Composability](../../doc/src/arch/composability.md) — How plain and ZK contracts compose
 - [Parallel Societies](../../doc/src/arch/parallel_societies.md) — Privacy for social reproduction
-- [Experimental Opcodes](../../doc/src/arch/experimental-opcodes.md) — Analysis of missing ZK opcodes
+- [Opcodes Reference](../../doc/src/arch/opcodes.md) — Opcode soundness verification

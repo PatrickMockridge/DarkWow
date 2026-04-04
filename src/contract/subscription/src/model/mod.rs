@@ -105,6 +105,19 @@ pub struct Subscription {
     pub dao_escrow_bulla: Option<pallas::Base>,
     /// DAO-Escrow membership note (verifies insurance membership)
     pub dao_membership_note: Option<pallas::Base>,
+    // ========================================================================
+    // Rate Limiting Fields
+    // ========================================================================
+    /// Total uses allowed in a period (for rate-limited subscriptions)
+    pub uses_allowed: u64,
+    /// Rate period in blocks (resets after this many blocks)
+    pub rate_period: u64,
+    /// Accumulated uses in current period
+    pub period_uses: u64,
+    /// Block height of last access (for rate limiting)
+    pub last_access_block: u64,
+    /// Remaining uses in current period
+    pub uses_remaining: u64,
 }
 
 impl Subscription {
@@ -303,6 +316,36 @@ pub struct VerifyAccessParamsV1 {
     pub capability: pallas::Base,
     /// Nonce for the proof
     pub nonce: pallas::Base,
+}
+
+/// Parameters for `Subscription::UpdateUsageV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct UpdateUsageParamsV1 {
+    /// Subscription ID
+    pub subscription_id: SubscriptionId,
+    /// Subscriber's secret (proves ownership)
+    pub subscriber_secret: pallas::Base,
+    /// Current block height
+    pub current_block: u64,
+    /// Spent nullifier for this subscription
+    pub spent_nullifier: pallas::Base,
+    /// Merkle proof of the subscription state
+    pub merkle_proof: Vec<pallas::Base>,
+}
+
+/// State update for `Subscription::UpdateUsageV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct UpdateUsageUpdateV1 {
+    /// The subscription ID
+    pub subscription_id: SubscriptionId,
+    /// Updated period uses
+    pub period_uses: u64,
+    /// Updated last access block
+    pub last_access_block: u64,
+    /// Updated uses remaining
+    pub uses_remaining: u64,
+    /// Whether this was a period reset
+    pub is_new_period: bool,
 }
 
 /// Parameters for `Subscription::DaoControlV1`

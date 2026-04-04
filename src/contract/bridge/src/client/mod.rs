@@ -261,26 +261,29 @@ impl DepositBuilder {
 
 /// Derive bridge address from recipient identity and nonce
 fn derive_bridge_address(recipient_pub_x: [u8; 32], recipient_pub_y: [u8; 32], nonce: u64) -> [u8; 32] {
-    // In production: poseidon_hash(recipient_pub_x, recipient_pub_y, nonce)
-    // Then elliptic curve mul_base to get point, then hash of coordinates
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"bridge_address");
-    hasher.update(&recipient_pub_x);
-    hasher.update(&recipient_pub_y);
-    hasher.update(&nonce.to_le_bytes());
-    *hasher.finalize().as_bytes()
+    use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+
+    // Derive bridge_secret = poseidon_hash(recipient_pub_x, recipient_pub_y, nonce)
+    // Using poseidon ensures ZK-friendly derivation
+    let recipient_x = pallas::Base::from_repr(recipient_pub_x.into()).unwrap();
+    let recipient_y = pallas::Base::from_repr(recipient_pub_y.into()).unwrap();
+    let bridge_secret = poseidon_hash([recipient_x, recipient_y, pallas::Base::from(nonce)]);
+
+    // Return poseidon hash of the secret as the bridge address
+    let address_hash = poseidon_hash([bridge_secret]);
+    address_hash.to_repr()
 }
 
 /// Compute commitment from secret, amount, and bridge address
 fn compute_commitment(secret: [u8; 32], amount: u64, bridge_address: [u8; 32]) -> [u8; 32] {
-    // commitment = H(secret, amount, bridge_address)
-    // In production: poseidon_hash(secret, amount, bridge_address)
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"commitment");
-    hasher.update(&secret);
-    hasher.update(&amount.to_le_bytes());
-    hasher.update(&bridge_address);
-    *hasher.finalize().as_bytes()
+    use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+
+    // commitment = poseidon_hash(secret, amount, bridge_address)
+    // Using poseidon ensures ZK-friendly derivation
+    let secret_base = pallas::Base::from_repr(secret.into()).unwrap();
+    let addr_base = pallas::Base::from_repr(bridge_address.into()).unwrap();
+    let commitment = poseidon_hash([secret_base, pallas::Base::from(amount), addr_base]);
+    commitment.to_repr()
 }
 
 // ============================================================================
@@ -401,11 +404,12 @@ impl WithdrawBuilder {
 
 /// Compute nullifier from secret
 pub fn compute_nullifier(secret: [u8; 32]) -> [u8; 32] {
+    use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+
     // nullifier = poseidon_hash(secret)
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"nullifier");
-    hasher.update(&secret);
-    *hasher.finalize().as_bytes()
+    let secret_base = pallas::Base::from_repr(secret.into()).unwrap();
+    let nullifier = poseidon_hash([secret_base]);
+    nullifier.to_repr()
 }
 
 // ============================================================================
@@ -432,12 +436,11 @@ pub fn derive_bridge_address_external(
     user_pub_y: [u8; 32],
     nonce: u64,
 ) -> [u8; 32] {
-    // In production this uses poseidon for ZK-friendly hashing
-    // and elliptic curve multiplication for key derivation
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"external_bridge_addr");
-    hasher.update(&user_pub_x);
-    hasher.update(&user_pub_y);
-    hasher.update(&nonce.to_le_bytes());
-    *hasher.finalize().as_bytes()
+    use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+
+    // Use poseidon for ZK-friendly hashing
+    let pub_x = pallas::Base::from_repr(user_pub_x.into()).unwrap();
+    let pub_y = pallas::Base::from_repr(user_pub_y.into()).unwrap();
+    let cap_hash = poseidon_hash([pub_x, pub_y, pallas::Base::from(nonce)]);
+    cap_hash.to_repr()
 }

@@ -37,25 +37,21 @@ circuit "CreateClaimV1" {
     # Level 0 (zk_only): Verifier learns ONLY "proof is valid" or "invalid"
     # Level 1 (selective): Would reveal predicate_result publicly
     #
-    # Using safemath assert_lte pattern: threshold < attribute + 1
-    # This replaces LessThanOrEqual which was returning a Boolean publicly.
+    # Using verified LessThanOrEqual opcode (0x55) directly.
+    # less_than_or_equal(a, b) returns 1 if a <= b, 0 otherwise.
     #
     # ALTERNATIVE: For Level 1 with public bit, see bounded equation:
     #   threshold + delta = attribute_value + (1 - result) * 2^64
     # This returns a public predicate_result bit using only proven opcodes.
     # See: doc/src/arch/safemath.md#bounded-equation-construction
-    #
-    # See: doc/src/arch/safemath.md
-    # See: doc/src/arch/experimental-opcodes.md
     # ============================================================
 
     # Range checks to ensure inputs are well-formed (prevents field wraparound)
     range_check(64, attribute_value);
     range_check(64, threshold);
 
-    # Assert: threshold <= attribute_value
-    # Pattern from assert_lte_u64_v1.zk: prove lhs <= rhs via lhs < rhs + 1
+    # Assert: threshold <= attribute_value using verified LessThanOrEqual
     ONE = witness_base(1);
-    attribute_plus_one = base_add(attribute_value, ONE);
-    less_than_strict(threshold, attribute_plus_one);
+    is_lte = less_than_or_equal(threshold, attribute_value);
+    constrain_equal_base(is_lte, ONE);
 }

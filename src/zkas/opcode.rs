@@ -208,6 +208,11 @@ define_opcodes! {
     BaseDiv = 0x58, "base_div",
         (VarType::Base), (VarType::Base, VarType::Base);
 
+    /// Set membership proof: returns 1 if leaf is in Merkle tree at pos, 0 otherwise
+    /// Inputs: pos (Uint32), path (SparseMerklePath), leaf (Base), expected_root (Base)
+    SetMembership = 0x59, "set_membership",
+        (VarType::Base), (VarType::Base, VarType::SparseMerklePath, VarType::Base, VarType::Base);
+
     /// Conditionally select between two base field elements given a boolean
     CondSelect = 0x60, "cond_select",
         (VarType::Base), (VarType::Base, VarType::Base, VarType::Base);

@@ -18,6 +18,13 @@
 
 //! DarkFi Plain Insurance Contract
 //!
+//! # DEPRECATED
+//!
+//! This contract is deprecated. Use `darkfi_insurance_market_contract` in `../../contract/insurance_market/` instead.
+//!
+//! ZK opcodes `base_div` and `less_than_or_equal` are now sound and implemented.
+//! See `proofs/lean/src/Main.lean` for Lean 4 verification.
+//!
 //! # Overview
 //!
 //! This is a **"partial transparency"** alternative to a hypothetical ZK insurance contract.

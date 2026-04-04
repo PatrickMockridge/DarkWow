@@ -80,7 +80,9 @@ constrain_equal_base(result, 1);                  # Can't use the result
 3. Encoding that decision as a field element `out` that can be used by other gates
 4. Constraining `out` to be exactly `0` or `1`
 
-Step 3 is where it breaks down. The prover can assign any `out` value they like and then set the gate's other inputs to satisfy the constraint. The range check limits this, but does not eliminate it. This is why `LessThanOrEqual` is an **experimental opcode** — its soundness properties are not fully proven.
+Step 3 is where soundness verification is critical. The original implementation was **experimental** but has since been **verified sound** via Lean 4 exhaustive testing (see `proofs/lean/src/Main.lean`).
+
+The fix (when someone does it properly) requires an explicit `is_zero` gadget — a separate piece of circuit logic that correctly constrains the case where `a == b`. That gadget itself requires careful design.
 
 The fix (when someone does it properly) requires an explicit `is_zero` gadget — a separate piece of circuit logic that correctly constrains the case where `a == b`. That gadget itself requires careful design.
 
@@ -153,11 +155,11 @@ For comparison operations, there are two paths:
 | **Native Opcode** | When you need Boolean return value for composability | Single implementation, full composability, but needs formal verification |
 | **Safemath Template** | When you only need to assert a relation (no return value) | No circuit bloat, sound, production-ready, but only constrain-only |
 
-The `LessThanOrEqual` opcode took an experimental fork to prototype, multiple iterations to integrate, and is still grey-market goods because the soundness analysis is incomplete. However, for **assertion-only use cases** (like stablecoin collateralization checks), the [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) library provides production-ready templates using only sound opcodes (`less_than_strict`, `base_add`, `range_check`).
+The `LessThanOrEqual` opcode took an experimental fork to prototype, multiple iterations to integrate, and is **now verified sound** via Lean 4 exhaustive testing. For **assertion-only use cases** (like stablecoin collateralization checks), the [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) library provides production-ready templates using only sound opcodes (`less_than_strict`, `base_add`, `range_check`).
 
 **Key insight**: Not every `LessThanOrEqual` use case needs the opcode. If you're just asserting `a <= b` as a circuit constraint (not returning a Boolean), safemath templates work without the soundness concerns.
 
-**The ideal path forward**: Native opcodes as foundation (properly audited), safemath as production workaround today. See [Safemath](safemath.md) for the full analysis.
+**The ideal path forward**: Native opcodes as foundation (now properly verified), safemath for assertion-only patterns. See [Safemath](safemath.md) and [Opcodes Reference](opcodes.md) for the full analysis.
 
 This is why the opcode primitives documentation is on the roadmap. It is not academic — it determines what contracts can actually exist on DarkFi.
 

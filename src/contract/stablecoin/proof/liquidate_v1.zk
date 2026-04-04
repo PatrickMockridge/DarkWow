@@ -3,8 +3,8 @@ field = "pallas";
 
 constant "LiquidateV1" {
     EcFixedPointBase NULLIFIER_K,
-    EcFixedPoint VALUE_COMMIT,
-    EcFixedPoint RANDOM_COMMIT,
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
 witness "LiquidateV1" {
@@ -20,8 +20,8 @@ witness "LiquidateV1" {
 
     # Private inputs
     Base owner_secret,
-    Base collateral_blind,
-    Base debt_blind,
+    Scalar collateral_blind,
+    Scalar debt_blind,
     Base liquidator_reward,
 }
 
@@ -58,11 +58,8 @@ circuit "LiquidateV1" {
 
     # LESS THAN OR EQUAL LOGIC:
     # Proving liquidator_reward <= collateral_amount:
-    # Using safemath assert_lte pattern: prove a <= b by proving a < b + 1
-    # This replaces less_than_or_equal (experimental opcode)
-    #
-    # See: src/contract/safemath/templates/safemath/assert_lte_u64_v1.zk
+    # Using verified LessThanOrEqual (0x55)
     ONE = witness_base(1);
-    collateral_plus_one = base_add(collateral_amount, ONE);
-    less_than_strict(liquidator_reward, collateral_plus_one);
+    is_lte = less_than_or_equal(liquidator_reward, collateral_amount);
+    constrain_equal_base(is_lte, ONE);
 }

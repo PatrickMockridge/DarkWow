@@ -3,8 +3,8 @@ field = "pallas";
 
 constant "OpenPositionV1" {
     EcFixedPointBase NULLIFIER_K,
-    EcFixedPoint VALUE_COMMIT,
-    EcFixedPoint RANDOM_COMMIT,
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
 witness "OpenPositionV1" {
@@ -21,8 +21,8 @@ witness "OpenPositionV1" {
     Base owner_secret,
     Base collateral_amount,
     Base debt_amount,
-    Base collateral_blind,
-    Base debt_blind,
+    Scalar collateral_blind,
+    Scalar debt_blind,
     Base merkle_proof_0,
     Base merkle_proof_1,
     Base merkle_proof_2,
@@ -44,14 +44,14 @@ circuit "OpenPositionV1" {
 
     # Create Pedersen commitments for collateral and debt
     # Pedersen commitment: C = value * G + blind * H
-    collateral_commit = ec_mul_short(collateral_amount, VALUE_COMMIT);
-    collateral_random = ec_mul(collateral_blind, RANDOM_COMMIT);
+    collateral_commit = ec_mul_short(collateral_amount, VALUE_COMMIT_VALUE);
+    collateral_random = ec_mul(collateral_blind, VALUE_COMMIT_RANDOM);
     collateral_total = ec_add(collateral_commit, collateral_random);
     collateral_x = ec_get_x(collateral_total);
     collateral_y = ec_get_y(collateral_total);
 
-    debt_commit = ec_mul_short(debt_amount, VALUE_COMMIT);
-    debt_random = ec_mul(debt_blind, RANDOM_COMMIT);
+    debt_commit = ec_mul_short(debt_amount, VALUE_COMMIT_VALUE);
+    debt_random = ec_mul(debt_blind, VALUE_COMMIT_RANDOM);
     debt_total = ec_add(debt_commit, debt_random);
     debt_x = ec_get_x(debt_total);
     debt_y = ec_get_y(debt_total);
@@ -75,13 +75,10 @@ circuit "OpenPositionV1" {
     bool_check(debt_amount);
 
     # Collateralization check: collateral >= 2 * debt (200% minimum collateralization)
-    # Using safemath assert_lte pattern: prove a <= b by proving a < b + 1
-    # This replaces less_than_or_equal (experimental opcode)
-    #
-    # See: src/contract/safemath/templates/safemath/assert_lte_u64_v1.zk
+    # Using verified LessThanOrEqual (0x55)
     two_times_debt = base_add(debt_amount, debt_amount);
     range_check(64, two_times_debt);
     ONE = witness_base(1);
-    collateral_plus_one = base_add(collateral_amount, ONE);
-    less_than_strict(two_times_debt, collateral_plus_one);
+    is_lte = less_than_or_equal(two_times_debt, collateral_amount);
+    constrain_equal_base(is_lte, ONE);
 }

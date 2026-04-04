@@ -1,8 +1,14 @@
 # Attestation Plain Contract
 
+> **DEPRECATED**: Use `darkfi_attestation_contract` in `../../contract/attestation/` instead.
+>
+> ZK opcodes `base_div` and `less_than_or_equal` are now sound and implemented.
+
+---
+
 A **partial transparency** alternative to the ZK `attestation` contract. It prioritizes **expressivity over privacy** to overcome current ZK circuit limitations.
 
-## Why This Contract Exists
+## Why This Contract Exists (Historical)
 
 The existing ZK attestation contract is constrained by missing `base_div` opcode:
 - Cannot do delegation ratio calculations (need division)

@@ -272,9 +272,9 @@ less_than_strict(required_tier - 1, permissions_claimed);
 - ❌ Leaks tier level (privacy regression)
 - ❌ Cannot have arbitrary bitmask combinations (e.g., READ+ADMIN without WRITE)
 
-### PROPER VERSION: True Bitmask Checking (Requires `base_div`)
+### PROPER VERSION: True Bitmask Checking (Now Possible with `base_div`)
 
-**Requires**: `base_div` opcode (not yet available)
+**Status**: `base_div` is now implemented (0x58). PROPER VERSION is now achievable.
 
 The proper implementation would enable true bitmask checking:
 
@@ -297,7 +297,7 @@ The proper implementation would enable true bitmask checking:
 - ✅ Arbitrary permission combinations
 - ✅ True zero-knowledge permission verification
 
-**Status**: SHIT VERSION implemented to enable access control. PROPER VERSION awaits `base_div` opcode.
+**Status**: SHIT VERSION implemented to enable access control. PROPER VERSION with true bitmask checking is now possible with `base_div` implemented.
 
 ## Cross-Chain Integration
 
@@ -362,6 +362,6 @@ See [Atomic Swap Contract](atomic_swap.md) for full HTLC details.
 - [Object Capability Model](https://en.wikipedia.org/wiki/Object_capability_model)
 - [DAO Contract](dao.md)
 - [DAO-Escrow Contract](dao_escrow.md)
-- [Experimental Opcodes](experimental-opcodes.md)
+- [Opcodes Reference](opcodes.md)
 - [Complete Opcode Universe](opcode_universe.md)
 - [Escrow Contract](escrow.md)
