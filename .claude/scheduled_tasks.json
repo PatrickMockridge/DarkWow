@@ -1,0 +1,12 @@
+{
+  "tasks": [
+    {
+      "id": "20738e22",
+      "cron": "37 9 * * *",
+      "prompt": "Run the upstream sync script: /home/patrick/Darkfi/darkfi/scripts/sync-upstream.sh",
+      "createdAt": 1775228743206,
+      "recurring": true,
+      "lastFiredAt": 1775292720597
+    }
+  ]
+}

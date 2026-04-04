@@ -1,0 +1,75 @@
+# Universal Relayer Configuration
+# Handles withdrawals for all chains: ETH, XMR, ZEC, LTC, AZT
+
+[darkfi]
+# DarkFi RPC endpoint
+darkfid_url = "http://127.0.0.1:8543"
+# Poll interval in seconds
+poll_interval_secs = 10
+# Max concurrent withdrawal processing
+max_concurrent_withdrawals = 10
+
+[ethereum]
+# Enable Ethereum withdrawals
+enabled = true
+# Ethereum node URL (Infura/Alchemy/self-hosted geth)
+node_url = "https://mainnet.infura.io/v3/YOUR_INFURA_KEY"
+# Relayer private key (hex encoded, 0x prefix)
+relayer_private_key = "0x0000000000000000000000000000000000000000000000000000000000000001"
+# Max gas price in gwei
+max_gas_gwei = 50
+# Max gas limit for ETH transfers
+max_gas = 21000
+
+[monero]
+# Enable Monero withdrawals
+enabled = true
+# Monero wallet RPC URL
+wallet_rpc_url = "http://127.0.0.1:18083"
+# Monero full node RPC URL
+node_rpc_url = "http://127.0.0.1:18081"
+# View key (observation only, cannot spend)
+view_key = ""
+# Fee address (one-time address for relayer fees)
+fee_address = ""
+# Minimum confirmations
+min_confirmations = 10
+
+[zcash]
+# Enable Zcash withdrawals
+enabled = false
+# Zcash node RPC URL
+node_rpc_url = "http://127.0.0.1:8232"
+# Use shielded pool (zaddr) or transparent (taddr)
+shielded_pool = true
+# Minimum confirmations
+min_confirmations = 10
+
+[litecoin]
+# Enable Litecoin withdrawals
+enabled = false
+# Litecoin node RPC URL
+node_rpc_url = "http://127.0.0.1:9332"
+# RPC credentials
+rpc_user = "user"
+rpc_pass = "pass"
+# Minimum confirmations
+min_confirmations = 6
+
+[aztec]
+# Enable Aztec rollup withdrawals
+enabled = false
+# Aztec rollup contract address
+rollup_address = "0x0000000000000000000000000000000000000000"
+# Aztec sequencer URL
+sequencer_url = "https://aztec.network"
+# Minimum confirmations after rollup
+min_confirmations = 5
+
+[relayer]
+# Blocks before withdrawal can be cancelled (timeout)
+timeout_blocks = 100
+# Relayer fee percentage (1 = 1%)
+fee_percentage = 1
+# Optional log file path
+# log_file = "/var/log/universal_relayer.log"

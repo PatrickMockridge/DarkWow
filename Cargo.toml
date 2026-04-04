@@ -31,6 +31,7 @@ members = [
     "bin/zcash_relayer",
     "bin/aztec_relayer",
     "bin/litecoin_relayer",
+    "bin/universal_relayer",
 
     "src/sdk",
     "src/sdk/python",
