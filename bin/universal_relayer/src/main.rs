@@ -20,13 +20,21 @@
 
 mod chain;
 mod config;
+mod deployer;
 mod error;
 mod executors;
+mod feed;
+mod pool;
+mod stake;
 mod watcher;
 
 use config::Config;
+use deployer::CapitalDeployer;
 use error::Result;
 use executors::ExecutorRegistry;
+use feed::FeedManager;
+use pool::PoolManager;
+use stake::StakeManager;
 use std::path::PathBuf;
 use structopt::StructOpt;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -120,6 +128,32 @@ async fn run_relayer(config_path: &PathBuf, executor: Arc<smol::Executor<'_>>) -
     if config.is_litecoin_enabled() { tracing::info!("  - Litecoin"); }
     if config.is_aztec_enabled() { tracing::info!("  - Aztec"); }
 
+    // Initialize economic managers
+    let mut stake_manager = StakeManager::new(config.stake.clone());
+    let feed_manager = FeedManager::new(config.feed.clone(), config.relayer.fee_percentage);
+    let pool_manager = PoolManager::new(config.pool.clone());
+    let deployer_manager = CapitalDeployer::new(config.capital_deployer.clone());
+
+    // Log economic configuration
+    if stake_manager.is_enabled() {
+        tracing::info!("Stake coverage enabled: {} total, {} max withdrawal",
+            stake_manager.total_stake(), stake_manager.max_withdrawal());
+    }
+
+    if let config::FeedMode::Guaranteed { refund_premium_bp } = config.feed {
+        tracing::info!("Feed mode: Guaranteed with {}bp refund premium", refund_premium_bp);
+    } else {
+        tracing::info!("Feed mode: Standard (fee only)");
+    }
+
+    if pool_manager.is_enabled() {
+        tracing::info!("Pool enabled, ID: {:?}", pool_manager.pool_id());
+    }
+
+    if deployer_manager.is_enabled() {
+        tracing::info!("Capital deployer enabled");
+    }
+
     // Initialize executor registry
     let executors = ExecutorRegistry::new(&config);
     let enabled_chains = executors.enabled_chains();
@@ -141,6 +175,11 @@ async fn run_relayer(config_path: &PathBuf, executor: Arc<smol::Executor<'_>>) -
         let current_height = watcher.get_current_height().await?;
         tracing::debug!("Current block height: {}", current_height);
 
+        // Clean up expired withdrawals from stake tracking
+        if stake_manager.is_enabled() {
+            stake_manager.cleanup_expired(current_height);
+        }
+
         // Fetch pending withdrawals
         let pending = watcher.get_pending_withdrawals().await?;
         tracing::debug!("Found {} pending withdrawals", pending.len());
@@ -153,33 +192,108 @@ async fn run_relayer(config_path: &PathBuf, executor: Arc<smol::Executor<'_>>) -
                     hex::encode(&withdrawal.withdrawal_id),
                     withdrawal.timeout_height
                 );
+
+                // For guaranteed withdrawals, handle the refund
+                if withdrawal.feed_mode == 1 {
+                    tracing::info!(
+                        "Guaranteed withdrawal {} timed out - user can claim refund",
+                        hex::encode(&withdrawal.withdrawal_id)
+                    );
+                }
                 continue;
             }
 
+            // Check stake coverage if enabled
+            if stake_manager.is_enabled() {
+                if !stake_manager.can_accept(withdrawal.amount) {
+                    tracing::warn!(
+                        "Withdrawal {} exceeds available stake coverage (have {}, need {})",
+                        hex::encode(&withdrawal.withdrawal_id),
+                        stake_manager.available_stake(),
+                        withdrawal.amount
+                    );
+                    continue;
+                }
+
+                // Lock stake for this withdrawal
+                if let Err(e) = stake_manager.lock_for_withdrawal(&withdrawal) {
+                    tracing::error!(
+                        "Failed to lock stake for {}: {}",
+                        hex::encode(&withdrawal.withdrawal_id),
+                        e
+                    );
+                    continue;
+                }
+            }
+
+            // Price the withdrawal according to feed mode
+            let priced = match feed_manager.price_withdrawal(&withdrawal) {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to price withdrawal {}: {}",
+                        hex::encode(&withdrawal.withdrawal_id),
+                        e
+                    );
+                    continue;
+                }
+            };
+
             // Get the appropriate executor for this chain
             let chain = withdrawal.get_chain();
-            let executor = executors.get_executor(chain);
+            let exec = executors.get_executor(chain);
 
-            if !executor.is_enabled() {
+            if !exec.is_enabled() {
                 tracing::warn!("Withdrawal for disabled chain: {}", chain);
                 continue;
             }
 
             tracing::info!(
-                "Processing withdrawal: {} {} to {:?}",
+                "Processing withdrawal: {} {} to {:?} (fee: {}, premium: {})",
                 withdrawal.amount,
                 chain,
-                &withdrawal.recipient_hash
+                &withdrawal.recipient_hash,
+                priced.relayer_fee,
+                priced.guarantee_premium
             );
 
             // Execute withdrawal
-            match executor.execute(&withdrawal).await {
+            match exec.execute(&withdrawal).await {
                 Ok(tx_hash) => {
                     tracing::info!("Withdrawal executed: {} on {}", tx_hash, chain);
+
+                    // Release locked stake on success
+                    if stake_manager.is_enabled() {
+                        if let Err(e) = stake_manager.release(&withdrawal.withdrawal_id) {
+                            tracing::error!(
+                                "Failed to release stake for {}: {}",
+                                hex::encode(&withdrawal.withdrawal_id),
+                                e
+                            );
+                        }
+                    }
+
                     watcher.mark_processed(&withdrawal.withdrawal_id);
                 }
                 Err(e) => {
                     tracing::error!("Failed to execute withdrawal: {}", e);
+
+                    // For guaranteed withdrawals, user gets refund from stake
+                    if priced.is_guaranteed() && stake_manager.is_enabled() {
+                        tracing::warn!(
+                            "Guaranteed withdrawal {} failed - {} stake to be refunded to user",
+                            hex::encode(&withdrawal.withdrawal_id),
+                            priced.get_refund_amount()
+                        );
+
+                        if let Err(e) = stake_manager.slash_for_failure(&withdrawal.withdrawal_id) {
+                            tracing::error!(
+                                "Failed to slash stake for {}: {}",
+                                hex::encode(&withdrawal.withdrawal_id),
+                                e
+                            );
+                        }
+                    }
                     // Continue with next withdrawal
                 }
             }

@@ -32,6 +32,7 @@ define_contract_function!(BridgeFunction {
     WithdrawV1 = 0x02,
     UpdateConfigV1 = 0x03,
     CancelWithdrawV1 = 0x04,  // Cancel timed-out withdrawal
+    ExecuteGuaranteedWithdrawV1 = 0x05,  // Execute guaranteed withdrawal with pool stake
 });
 
 /// Internal contract errors

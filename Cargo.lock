@@ -2398,6 +2398,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkfi_pool_stake_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "once_cell",
+ "rand 0.8.5",
+ "smol",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
+name = "darkfi_relayer_endowment_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "once_cell",
+ "rand 0.8.5",
+ "smol",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
 name = "darkfi_roulette_contract"
 version = "0.1.0"
 dependencies = [

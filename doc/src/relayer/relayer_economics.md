@@ -245,6 +245,17 @@ pub fn create_pool(
 }
 ```
 
+### On-Chain Implementation
+
+The [Pool Stake Contract](./pool_stake.md) provides the on-chain implementation of staking pools:
+
+- **CreatePoolV1**: Create a new staking pool
+- **JoinPoolV1**: Stakers join pool to provide coverage
+- **LeavePoolV1**: Stakers exit after cooldown
+- **AllocateCoverageV1**: Coverage allocated for guaranteed withdrawals
+- **ReleaseCoverageV1**: Coverage released after successful execution
+- **SlashCoverageV1**: Coverage slashed on failed withdrawal
+
 ## Capital Deployers
 
 External capital providers can back relayers for yield:
@@ -303,6 +314,17 @@ External capital providers can back relayers for yield:
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+### On-Chain Implementation
+
+The [Relayer Endowment Contract](./endowment.md) provides the on-chain implementation of capital deployment:
+
+- **InitializeV1**: Relayer initializes endowment account
+- **DeployCapitalV1**: Backer deploys capital to relayer
+- **WithdrawDeploymentV1**: Backer withdraws deployment + earnings
+- **ClaimRelayerFeesV1**: Backer claims fee share
+- **SettleFeesV1**: Relayer settles fees to backers
+- **UpdateConfigV1**: Update fee configuration
 
 ### ZK Proof for Combined Stake
 

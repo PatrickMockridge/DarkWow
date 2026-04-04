@@ -62,6 +62,15 @@ Relayer Earns: 1 XMR
 Note: Fee percentage is configurable in relayer settings
 ```
 
+### Capital Backing
+
+Relayers can increase their coverage capacity through external capital backing:
+
+- **[Pool Stake Contract](pool_stake.md)**: Join staking pools to provide shared coverage for guaranteed withdrawals
+- **[Relayer Endowment Contract](endowment.md)**: Accept external capital from backers in exchange for a share of fees
+
+See [Relayer Economics](relayer_economics.md) for the full economic model.
+
 ## Supported Chains
 
 | Chain | Native Token | Privacy Model | Minimum Withdrawal |

@@ -276,6 +276,181 @@ impl Default for RelayerSettings {
     }
 }
 
+/// Feed market modes for withdrawal pricing
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(tag = "type", content = "value")]
+pub enum FeedMode {
+    /// Standard fee - relayer executes or user cancels
+    #[serde(rename = "standard")]
+    Standard,
+    /// Delivery guarantee - fee + premium, refund on failure
+    #[serde(rename = "guaranteed")]
+    Guaranteed { refund_premium_bp: u32 },
+}
+
+impl Default for FeedMode {
+    fn default() -> Self {
+        FeedMode::Standard
+    }
+}
+
+/// Stake configuration for relayer coverage
+#[derive(Debug, Clone, Deserialize)]
+pub struct StakeConfig {
+    /// Enable stake-based coverage
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// DAI amount staked
+    #[serde(default)]
+    pub dai_amount: u64,
+
+    /// NETHER amount staked
+    #[serde(default)]
+    pub nether_amount: u64,
+
+    /// DarkFi contract ID for DAI staking
+    #[serde(default)]
+    pub stake_contract_id: String,
+
+    /// DarkFi contract ID for NETHER staking
+    #[serde(default)]
+    pub nether_contract_id: String,
+
+    /// Minimum stake to be active
+    #[serde(default = "default_min_stake")]
+    pub min_stake: u64,
+
+    /// Maximum withdrawal amount (coverage limit)
+    #[serde(default = "default_max_withdrawal")]
+    pub max_withdrawal: u64,
+}
+
+fn default_min_stake() -> u64 { 1000 }
+fn default_max_withdrawal() -> u64 { 10000 }
+
+impl Default for StakeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            dai_amount: 0,
+            nether_amount: 0,
+            stake_contract_id: String::new(),
+            nether_contract_id: String::new(),
+            min_stake: default_min_stake(),
+            max_withdrawal: default_max_withdrawal(),
+        }
+    }
+}
+
+/// Staking pool configuration for shared coverage
+#[derive(Debug, Clone, Deserialize)]
+pub struct PoolConfig {
+    /// Enable pool participation
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Pool ID if joining existing pool
+    #[serde(default)]
+    pub pool_id: Option<String>,
+
+    /// Minimum pool members if creating new pool
+    #[serde(default = "default_min_pool_members")]
+    pub min_pool_members: usize,
+
+    /// Maximum pool coverage shared among members
+    #[serde(default = "default_max_pool_coverage")]
+    pub max_pool_coverage: u64,
+}
+
+fn default_min_pool_members() -> usize { 1 }
+fn default_max_pool_coverage() -> u64 { 100_000 }
+
+impl Default for PoolConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            pool_id: None,
+            min_pool_members: default_min_pool_members(),
+            max_pool_coverage: default_max_pool_coverage(),
+        }
+    }
+}
+
+/// Capital deployer configuration for external backing
+#[derive(Debug, Clone, Deserialize)]
+pub struct CapitalDeployerConfig {
+    /// Enable capital deployer functionality
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Contract ID for the endowment/escrow
+    #[serde(default)]
+    pub endowment_contract_id: String,
+
+    /// Minimum deployment amount
+    #[serde(default = "default_min_deploy")]
+    pub min_deploy: u64,
+
+    /// Maximum deployment amount
+    #[serde(default = "default_max_deploy")]
+    pub max_deploy: u64,
+
+    /// Cut percentage for capital provider (basis points, e.g., 1500 = 15%)
+    #[serde(default = "default_deployer_cut")]
+    pub deployer_cut_bp: u32,
+}
+
+fn default_min_deploy() -> u64 { 1000 }
+fn default_max_deploy() -> u64 { 100_000 }
+fn default_deployer_cut() -> u32 { 1500 }
+
+impl Default for CapitalDeployerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endowment_contract_id: String::new(),
+            min_deploy: default_min_deploy(),
+            max_deploy: default_max_deploy(),
+            deployer_cut_bp: default_deployer_cut(),
+        }
+    }
+}
+
+/// Betting configuration for market-based consensus
+#[derive(Debug, Clone, Deserialize)]
+pub struct BettingConfig {
+    /// Enable betting functionality
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Betting stake contract ID
+    #[serde(default)]
+    pub betting_contract_id: String,
+
+    /// Whether relayer accepts bets on their performance
+    #[serde(default = "default_accept_bets")]
+    pub accept_bets: bool,
+
+    /// Maximum bet amount the relayer will honor
+    #[serde(default = "default_max_bet")]
+    pub max_bet_amount: u64,
+}
+
+fn default_accept_bets() -> bool { true }
+fn default_max_bet() -> u64 { 1000 }
+
+impl Default for BettingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            betting_contract_id: String::new(),
+            accept_bets: default_accept_bets(),
+            max_bet_amount: default_max_bet(),
+        }
+    }
+}
+
 /// Master configuration structure
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -299,6 +474,21 @@ pub struct Config {
 
     #[serde(default)]
     pub relayer: RelayerSettings,
+
+    #[serde(default)]
+    pub stake: StakeConfig,
+
+    #[serde(default)]
+    pub feed: FeedMode,
+
+    #[serde(default)]
+    pub pool: PoolConfig,
+
+    #[serde(default)]
+    pub capital_deployer: CapitalDeployerConfig,
+
+    #[serde(default)]
+    pub betting: BettingConfig,
 }
 
 impl Default for DarkFiConfig {

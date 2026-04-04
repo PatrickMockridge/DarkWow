@@ -35,6 +35,9 @@
 # Relayer Operations
 
 - [Universal Relayer](relayer/relayer.md)
+  - [Pool Stake Contract](relayer/pool_stake.md)
+  - [Relayer Endowment Contract](relayer/endowment.md)
+  - [Relayer Economics](relayer/relayer_economics.md)
 
 # Developer Doc
 

@@ -625,6 +625,15 @@ pub struct PendingWithdrawal {
 
     /// Whether cancellation has been requested
     pub cancelled: bool,
+
+    /// Feed mode: 0=standard (fee only), 1=guaranteed (fee + premium)
+    pub feed_mode: u8,
+
+    /// Guarantee premium paid upfront (refunded on successful execution)
+    pub guarantee_premium: u64,
+
+    /// Pool stake coverage allocation ID (for guaranteed withdrawals)
+    pub stake_lock_id: Option<[u8; 32]>,
 }
 
 /// Cancellation parameters for timed-out withdrawals
@@ -639,6 +648,27 @@ pub struct CancelWithdrawParams {
     /// Original signature or proof that this withdrawal was valid
     /// This ensures only the original submitter can cancel
     pub proof: Vec<u8>,
+}
+
+/// Parameters for executing a guaranteed withdrawal with pool stake coverage
+///
+/// For guaranteed withdrawals, the relayer must prove they have allocated
+/// coverage from the pool_stake contract before execution is allowed.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ExecuteGuaranteedWithdrawParams {
+    /// Nullifier of the withdrawal to execute
+    pub nullifier: IntentNullifier,
+
+    /// ZK proof demonstrating:
+    /// 1. Knowledge of secret for the nullifier
+    /// 2. Pool stake coverage was allocated for this withdrawal
+    pub pool_stake_proof: Vec<u8>,
+
+    /// Relayer signature authorizing this execution
+    pub relayer_sig: Vec<u8>,
+
+    /// External chain-specific execution data (tx hash, etc)
+    pub execution_data: Vec<u8>,
 }
 
 /// Relayer slash record

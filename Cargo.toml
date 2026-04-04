@@ -62,6 +62,8 @@ members = [
     "src/contract/deployooor",
     "src/contract/dex",
     "src/contract/bridge",
+    "src/contract/pool_stake",
+    "src/contract/relayer_endowment",
     "src/contract/stablecoin",
 
     "src/contract_plain/subscription",

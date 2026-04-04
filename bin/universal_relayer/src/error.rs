@@ -68,6 +68,38 @@ pub enum RelayerError {
     #[error("Aztec error: {0}")]
     Aztec(String),
 
+    // Stake = Coverage errors
+    #[error("Insufficient stake for withdrawal: have {available}, need {required}")]
+    InsufficientStake { available: u64, required: u64 },
+
+    #[error("Stake locked for in-flight withdrawal")]
+    StakeLocked,
+
+    #[error("Stake claim failed verification")]
+    StakeClaimFailed,
+
+    // Feed market errors
+    #[error("Feed mode not supported")]
+    UnsupportedFeedMode,
+
+    #[error("Guarantee premium not paid")]
+    GuaranteePremiumNotPaid,
+
+    // Pool errors
+    #[error("Pool membership error: {0}")]
+    PoolError(String),
+
+    #[error("Pool full, cannot accept more coverage")]
+    PoolFull,
+
+    // Capital deployer errors
+    #[error("Capital deployer error: {0}")]
+    DeployerError(String),
+
+    // Betting errors
+    #[error("Betting market error: {0}")]
+    BettingError(String),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -98,6 +130,10 @@ pub struct PendingWithdrawal {
     pub timeout_height: u64,
     /// Fee percentage for relayer
     pub relayer_fee: u64,
+    /// Feed mode: 0=Standard, 1=Guaranteed
+    pub feed_mode: u8,
+    /// Guarantee premium paid (for Guaranteed mode)
+    pub guarantee_premium: u64,
 }
 
 impl PendingWithdrawal {
