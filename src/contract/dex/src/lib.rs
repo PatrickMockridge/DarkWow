@@ -43,6 +43,7 @@ define_contract_function!(DexFunction {
     ExecuteSwapV1 = 0x03,
     CancelSwapV1 = 0x04,
     UpdateConfigV1 = 0x05,
+    SetTransparencyLevelV1 = 0x06,
 });
 
 /// Internal contract errors
@@ -84,6 +85,8 @@ pub const DEX_CONTRACT_TIMEOUT: &[u8] = b"swap_timeout";
 pub const DEX_CONTRACT_FEE: &[u8] = b"dex_fee";
 /// Trusted money contract merkle root key
 pub const DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY: &[u8] = b"trusted_money_merkle_root";
+/// Transparency level key
+pub const DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY: &[u8] = b"transparency_level";
 
 // ============================================================================
 // ZK CIRCUIT NAMESPACES
@@ -97,3 +100,7 @@ pub const DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V1: &str = "AcceptSwap_V1";
 pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1: &str = "ExecuteSwap_V1";
 /// Cancel swap circuit namespace
 pub const DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1: &str = "CancelSwap_V1";
+/// Execute swap with slippage tolerance circuit namespace
+pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_SLIPPAGE_NS_V1: &str = "ExecuteSwapSlippage_V1";
+/// Execute swap with fee circuit namespace
+pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V1: &str = "ExecuteSwapFee_V1";

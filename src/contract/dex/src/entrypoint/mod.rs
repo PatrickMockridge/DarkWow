@@ -35,7 +35,7 @@
 use darkfi_sdk::{
     crypto::ContractId,
     dark_tree::DarkLeaf,
-    error::ContractResult,
+    error::{ContractError, ContractResult},
     msg,
     wasm, ContractCall,
 };
@@ -58,6 +58,32 @@ const DEX_SWAP_TIMEOUT_KEY: &[u8] = b"swap_timeout";
 const DEX_FEE_KEY: &[u8] = b"dex_fee";
 /// Key for storing the trusted money contract Merkle root
 pub const DEX_TRUSTED_MONEY_MERKLE_ROOT_KEY: &[u8] = b"trusted_money_merkle_root";
+/// Key for storing transparency level
+const DEX_TRANSPARENCY_LEVEL_KEY: &[u8] = b"transparency_level";
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+use crate::model::TransparencyLevel;
+
+/// Get current transparency level from config
+fn get_transparency_level(config_db: u32) -> Result<TransparencyLevel, ContractError> {
+    let data = wasm::db::db_get(config_db, DEX_TRANSPARENCY_LEVEL_KEY)?;
+    match data {
+        Some(d) => {
+            let level = d[0];
+            match level {
+                0 => Ok(TransparencyLevel::Dark),
+                1 => Ok(TransparencyLevel::Aggregate),
+                2 => Ok(TransparencyLevel::Anonymized),
+                3 => Ok(TransparencyLevel::Full),
+                _ => Ok(TransparencyLevel::Dark),
+            }
+        }
+        None => Ok(TransparencyLevel::Dark),
+    }
+}
 
 // ============================================================================
 // SUBMODULES
@@ -86,6 +112,9 @@ use cancel_swap_v1::{
     dex_cancel_swap_get_metadata_v1, dex_cancel_swap_process_instruction_v1,
     dex_cancel_swap_process_update_v1,
 };
+
+mod set_transparency_level_v1;
+use set_transparency_level_v1::dex_set_transparency_level_process_instruction_v1;
 
 // ============================================================================
 // CONTRACT DEFINITION
@@ -141,6 +170,12 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(config_db, DEX_SWAP_TIMEOUT_KEY, &params.timeout.to_le_bytes())?;
     wasm::db::db_set(config_db, DEX_FEE_KEY, &params.fee.to_le_bytes())?;
     wasm::db::db_set(config_db, DEX_TRUSTED_MONEY_MERKLE_ROOT_KEY, &params.trusted_money_merkle_root)?;
+    wasm::db::db_set(config_db, DEX_TRANSPARENCY_LEVEL_KEY, &[params.transparency_config.level as u8])?;
+
+    msg!("[dex::init_contract] Transparency level: {:?}", params.transparency_config.level);
+    msg!("[dex::init_contract] Price band size: {:?}", params.transparency_config.price_band_size);
+    msg!("[dex::init_contract] Volume bucket size: {:?}", params.transparency_config.volume_bucket_size);
+    msg!("[dex::init_contract] Anonymity group size: {:?}", params.transparency_config.anonymity_group_size);
 
     msg!("[dex::init_contract] DEX contract initialized successfully");
     msg!("[dex::init_contract] WARNING: Using trusted Merkle root from initialization");
@@ -166,6 +201,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DexFunction::ExecuteSwapV1 => dex_execute_swap_get_metadata_v1(cid, call_idx, calls)?,
         DexFunction::CancelSwapV1 => dex_cancel_swap_get_metadata_v1(cid, call_idx, calls)?,
         DexFunction::UpdateConfigV1 => vec![],
+        DexFunction::SetTransparencyLevelV1 => vec![],
     };
 
     wasm::util::set_return_data(&metadata)
@@ -189,6 +225,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         DexFunction::ExecuteSwapV1 => dex_execute_swap_process_instruction_v1(cid, call_idx, calls)?,
         DexFunction::CancelSwapV1 => dex_cancel_swap_process_instruction_v1(cid, call_idx, calls)?,
         DexFunction::UpdateConfigV1 => vec![],
+        DexFunction::SetTransparencyLevelV1 => vec![],
     };
 
     wasm::util::set_return_data(&update_data)
@@ -223,6 +260,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         }
         DexFunction::UpdateConfigV1 => {
             msg!("[dex::process_update] UpdateConfigV1 handled in process_instruction");
+            Ok(())
+        }
+        DexFunction::SetTransparencyLevelV1 => {
+            msg!("[dex::process_update] SetTransparencyLevelV1 handled in process_instruction");
             Ok(())
         }
     }

@@ -194,26 +194,34 @@ If Alice uses the same key for all orders, they're linkable.
 
 ## Expanding from MVP
 
+The transparency level is **configurable at deployment** - different DEXes can serve different privacy/compliance needs:
+
 ```
-Level 0 (MVP - NOW)
+Level 0 (Dark - Default)
+├── Complete darkness - nothing revealed
 ├── Atomic swaps via DAO
 ├── No order book
 ├── Bilateral price agreement
 └── ZK proofs for validity
 
-Level 1 (Future)
-├── Add SMT order book
-├── Hidden order commitments
+Level 1 (Aggregate)
+├── Aggregate market data - price ranges, volume bands
+├── Partial fills with slippage tolerance
+├── Fee calculations
 └── ZK proof of order matching
 
-Level 2 (Future)
-├── Aggregate depth proofs
-├── Time-bucketed volume bands
+Level 2 (Anonymized)
+├── Unlinkable trade data
+├── Anonymity groups
 └── Differential privacy noise
 
-Level 3 (Future)
-└── Opt-in full transparency
+Level 3 (Full)
+├── Opt-in full transparency
+├── Everything revealed
+└── Full compliance
 ```
+
+**Key insight**: DarkFi will have multiple DEXes with different transparency levels, not one size fits all. The level is set at deployment via `InitializeParams.transparency_config`.
 
 ## Key Components
 
@@ -223,9 +231,24 @@ Level 3 (Future)
 
 **accept_swap_v1.zk**: Proves acceptor has locked matching funds
 
-**execute_swap_v1.zk**: Proves both secrets known, locks valid, swap consistent
+**execute_swap_v1.zk**: Proves both secrets known, locks valid, swap consistent, partial fill
+
+**execute_swap_slippage_v1.zk**: Proves swap execution with slippage tolerance (BaseDiv)
+
+**execute_swap_fee_v1.zk**: Proves swap execution with fee deduction (BaseDiv)
 
 **cancel_swap_v1.zk**: Proves ownership of lock for cancellation
+
+### Per-Level Circuit Selection
+
+| Circuit | Dark | Aggregate | Anonymized | Full |
+|---------|------|-----------|------------|------|
+| `create_swap_v1.zk` | ✅ | ✅ | ✅ | ✅ |
+| `accept_swap_v1.zk` | ✅ | ✅ | ✅ | ✅ |
+| `execute_swap_v1.zk` | ✅ | ✅ | ✅ | ✅ |
+| `cancel_swap_v1.zk` | ✅ | ✅ | ✅ | ✅ |
+| `execute_swap_slippage_v1.zk` | ❌ | ✅ | ✅ | ✅ |
+| `execute_swap_fee_v1.zk` | ❌ | ✅ | ✅ | ✅ |
 
 ### Data Structures
 
@@ -313,8 +336,8 @@ requires opcodes that don't exist yet:
 | Opcode | Why It's Needed | Status |
 |--------|----------------|--------|
 | **schnorr_verify** | Verify signature in circuit | Not implemented |
-| **BaseDiv** | Division for ratio checks | **Implemented** (0x58) |
-| **LessThanOrEqual** | Price comparison for matching | **Verified sound** (0x55) |
+| **BaseDiv** | Division for ratio checks | **Implemented** (0x58) - slippage & fees |
+| **LessThanOrEqual** | Price comparison for matching | **Verified sound** (0x55) - partial fills |
 
 ### BaseDiv Implementation Impact
 
@@ -352,10 +375,10 @@ fill_ratio = base_div(fill_amount, total_amount);
 filled_value = base_mul(fill_amount, fill_ratio);
 ```
 
-The safemath pattern remains valid for simple assertions:
+Cross-multiplication optimization remains useful for simple assertions:
 
 ```zk
-# SAFEMATH PATTERN: Assert fill_amount <= total_amount
+# CROSS-MUL OPTIMIZATION: Assert fill_amount <= total_amount
 # Pattern: prove fill_amount < total_amount + 1
 ONE = witness_base(1);
 total_plus_one = base_add(total_amount, ONE);
@@ -366,21 +389,17 @@ less_than_strict(fill_amount, total_plus_one);
 
 `LessThanOrEqual` (0x55) is now **formally verified sound** via Lean 4 exhaustive testing.
 
-The DEX's `execute_swap_v1.zk` uses `less_than_strict` (constrain-only) for assertions:
+The DEX's `execute_swap_v1.zk` uses verified `less_than_or_equal` directly:
 
 ```zk
-# From execute_swap_v1.zk:
-# SAFEMATH WORKAROUND: This circuit uses the safemath pattern to assert
-# that fill_amount <= alice_amount (the fill does not exceed Alice's offer).
-#
-# The safemath pattern for a <= b is: a < b + 1
+# From execute_swap_v1.zk - using verified LessThanOrEqual:
 ONE = witness_base(1);
-alice_amount_plus_one = base_add(alice_amount, ONE);
-less_than_strict(fill_amount, alice_amount_plus_one);
+is_lte = less_than_or_equal(fill_amount, alice_amount);
+constrain_equal_base(is_lte, ONE);
 ```
 
-This is assertion-only (no Boolean return) but is sound because `less_than_strict`
-is proven to correctly fail when a >= b.
+LessThanOrEqual returns a Boolean for full composability. The circuit now uses
+it directly rather than the safemath workaround pattern.
 
 ### Signature Verification Without BaseDiv
 
@@ -468,47 +487,60 @@ fn verify_lock_proof(lock_commitment, lock_proof) {
 **Security trade-off**: If `trusted_money_merkle_root` is wrong/stale, invalid
 lock proofs may be accepted.
 
-### What BaseDiv Would Enable
+### What BaseDiv Enables
 
-With `BaseDiv`, the DEX could:
+With `BaseDiv` (0x58) **now implemented**, the DEX supports:
 
-**1. Compute exact price ratios for order matching (Level 1+)**
+**1. Slippage tolerance circuits**
 
 ```zk
-# If BaseDiv existed:
-alice_price = base_div(alice_request_amount, alice_offer_amount);
-bob_price = base_div(bob_offer_amount, bob_request_amount);
-# Compare: alice_price >= bob_price
+# From execute_swap_slippage_v1.zk:
+# Verify: received >= min_expected * (1 - slippage_tolerance)
+tolerance_multiplier = base_div(BPS - slippage_bps, BPS);
+min_acceptable = base_mul(bob_amount, tolerance_multiplier);
+less_than_or_equal(min_acceptable, received);
 ```
 
-**2. Compute percentage-based fees**
+**2. Fee calculation circuits**
 
 ```zk
-# Fee calculation:
-fee_amount = base_div(total_amount, fee_basis_points);
-# fee_amount = total * 100 / 10000  (for 1% fee)
+# From execute_swap_fee_v1.zk:
+# Calculate fee = fill_amount * fee_bps / 10000
+fee_numerator = base_mul(fill_amount, fee_bps);
+fee = base_div(fee_numerator, BPS);
+net_received = fill_amount - fee;
 ```
 
-**3. Compute exchange rates with precision**
+**3. Exchange rate bounds verification**
 
 ```zk
-# DEX to external price feed:
-exchange_rate = base_div(dex_amount, external_amount);
+# Verify exchange rate is within agreed bounds
+actual_rate = base_div(given, wanted);
+less_than_or_equal(rate_lower, actual_rate);
+less_than_or_equal(actual_rate, rate_upper);
 ```
 
-### What LessThanOrEqual (production-ready) Would Enable
+### What LessThanOrEqual Enables
 
-With `LessThanOrEqual` returning a Boolean value:
+With `LessThanOrEqual` (0x55) **verified sound** via Lean 4:
 
-**1. Predicate-based order matching**
+**1. Partial fill with verified comparison**
 
 ```zk
-# If LessThanOrEqual returned 0/1:
+# From execute_swap_v1.zk:
+is_lte = less_than_or_equal(fill_amount, alice_amount);
+constrain_equal_base(is_lte, ONE);
+```
+
+**2. Predicate-based order matching**
+
+```zk
+# LessThanOrEqual returns 0/1 Boolean:
 is_match = less_than_or_equal(my_price, market_price);
 constrain_instance(is_match);  # Public output
 ```
 
-**2. Conditional execution based on comparison**
+**3. Conditional execution based on comparison**
 
 ```zk
 # Execute only if fill meets minimum:
@@ -516,7 +548,7 @@ fills_enough = less_than_or_equal(min_fill_amount, fill_amount);
 execute_if_valid = cond_select(fills_enough, execute, abort);
 ```
 
-**3. Complex order types**
+**4. Complex order types**
 
 ```zk
 # Stop-loss order:
@@ -526,10 +558,11 @@ constrain_equal_base(stop_triggered, 1);
 
 ### Current Trade-offs in the DEX Design
 
-| Limitation | Workaround | Risk |
-|------------|-----------|------|
-| No `BaseDiv` (now implemented) | Cross-multiplication or BaseDiv | ✅ Resolved |
-| `LessThanOrEqual` verified sound | Safemath assertion or LessThanOrEqual | ✅ Resolved |
+| Capability | Status | Use in DEX |
+|------------|--------|-----------|
+| `BaseDiv` (0x58) | ✅ Implemented | Slippage tolerance, fee calculation |
+| `LessThanOrEqual` (0x55) | ✅ Verified Sound | Partial fill comparisons |
+| `less_than_strict` | ✅ Sound | Bounded comparisons |
 | No schnorr_verify in circuit | Split verification (host + circuit) | Extra verification step |
 | No cross-contract ZK | Trusted Merkle root setup | Trust assumption |
 
@@ -571,7 +604,7 @@ circuit "CreateSwapV1" {
 This would eliminate:
 - Host-level signature verification (circuit does it all)
 - Trusted setup for Money contract (cross-contract ZK composition)
-- Safemath workarounds (native opcodes)
+- The need for some workarounds (native opcodes now available)
 
 ### Related Opcode Documentation
 
@@ -664,7 +697,7 @@ This makes DarkFi a **privacy-preserving price discovery layer** that:
 1. **How does solver find matches without revealing queries?**
 2. **How do LPs assess risk with hidden order flow?**
 3. **What aggregate data can we reveal without deanonymizing?**
-4. **How to handle partial fills with ZK?**
+4. **How to handle partial fills with ZK?** - ✅ Resolved with LessThanOrEqual
 5. **Can we do limit orders with ZK without revealing price?**
 
 ## References

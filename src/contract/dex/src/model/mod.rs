@@ -79,6 +79,14 @@ pub const DEX_NAMESPACE: u64 = 0x0003;
 ///
 /// This includes a `trusted_money_merkle_root` which is used to verify lock_proofs.
 /// See module-level documentation for security considerations.
+///
+/// # Transparency Configuration
+///
+/// The `transparency_config` determines what data is revealed at each level:
+/// - Dark: Nothing revealed (MVP)
+/// - Aggregate: Price ranges and volume bands only
+/// - Anonymized: Anonymized trade data
+/// - Full: Everything revealed
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeParams {
     /// Swap timeout in blocks
@@ -95,6 +103,8 @@ pub struct InitializeParams {
     ///
     /// This is a workaround for lack of cross-contract ZK composition opcodes.
     pub trusted_money_merkle_root: [u8; 32],
+    /// Transparency configuration for this DEX deployment
+    pub transparency_config: TransparencyConfig,
 }
 
 /// Create swap proposal parameters
@@ -282,6 +292,24 @@ pub struct UpdateConfigParams {
     pub fee: u64,
 }
 
+/// Set transparency level parameters
+///
+/// Allows governance to change transparency level post-deployment.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SetTransparencyLevelParams {
+    /// New transparency level
+    pub level: TransparencyLevel,
+}
+
+/// Set full transparency configuration parameters
+///
+/// Allows governance to change transparency level AND parameters post-deployment.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SetTransparencyConfigParams {
+    /// New transparency configuration
+    pub config: TransparencyConfig,
+}
+
 /// Swap state
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub enum SwapState {
@@ -425,3 +453,63 @@ pub struct CancelSwapUpdateV1 {
 //   nullifier = H(secret)
 //
 // ============================================================================
+
+// ============================================================================
+// TRANSPARENCY CONFIGURATION
+// ============================================================================
+
+/// Transparency levels for the DEX
+///
+/// Different DEX deployments serve different users with different
+/// privacy/compliance needs. The transparency level is set at
+/// deployment time and can be adjusted by governance post-deployment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+pub enum TransparencyLevel {
+    /// Level 0: Complete darkness - no amounts, parties, or trade data revealed
+    Dark = 0,
+    /// Level 1: Aggregate market data only - price ranges, volume bands
+    Aggregate = 1,
+    /// Level 2: Anonymized trades - unlinkable trade data
+    Anonymized = 2,
+    /// Level 3: Full transparency - opt-in full disclosure
+    Full = 3,
+}
+
+/// Default price band size for Aggregate level (in token units)
+/// e.g., 100 means prices are bucketed into $100 bands
+const DEFAULT_PRICE_BAND_SIZE: u64 = 100;
+
+/// Default volume bucket size for Aggregate level (in token units)
+/// e.g., 1000 means volume is bucketed into 1000-token buckets
+const DEFAULT_VOLUME_BUCKET_SIZE: u64 = 1000;
+
+/// Default anonymity group size for Anonymized level
+/// e.g., 10 means trades are grouped in batches of 10
+const DEFAULT_ANONYMITY_GROUP_SIZE: u64 = 10;
+
+/// Transparency configuration for the DEX
+///
+/// This config determines what data is emitted in events and what
+/// circuit capabilities are enabled at each transparency level.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct TransparencyConfig {
+    /// Current transparency level
+    pub level: TransparencyLevel,
+    /// Price band size for Aggregate level (e.g., 100 = $100 bands)
+    pub price_band_size: u64,
+    /// Volume bucket size for Aggregate level (e.g., 1000 = 1000 token buckets)
+    pub volume_bucket_size: u64,
+    /// Anonymity group size for Anonymized level (e.g., 10 = groups of 10)
+    pub anonymity_group_size: u64,
+}
+
+impl Default for TransparencyConfig {
+    fn default() -> Self {
+        Self {
+            level: TransparencyLevel::Dark,
+            price_band_size: DEFAULT_PRICE_BAND_SIZE,
+            volume_bucket_size: DEFAULT_VOLUME_BUCKET_SIZE,
+            anonymity_group_size: DEFAULT_ANONYMITY_GROUP_SIZE,
+        }
+    }
+}

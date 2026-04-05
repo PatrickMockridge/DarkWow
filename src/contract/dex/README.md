@@ -395,6 +395,8 @@ No price discovery     ZK proof of match    Unlinkable           Noise for prote
 | `accept_swap_v1.zk` | ✅ Verified |
 | `execute_swap_v1.zk` | ✅ Verified with partial fill (LTE) |
 | `cancel_swap_v1.zk` | ✅ Verified |
+| `execute_swap_slippage_v1.zk` | ✅ Verified |
+| `execute_swap_fee_v1.zk` | ✅ Verified |
 
 ## Partial Fill Support
 
@@ -443,6 +445,78 @@ actual_rate = base_div(given, wanted);
 less_than_or_equal(rate_lower, actual_rate);
 less_than_or_equal(actual_rate, rate_upper);
 ```
+
+## Modular Transparency Architecture
+
+The DEX supports **configurable transparency levels** - different deployments can choose different privacy/compliance trade-offs:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    TRANSPARENCY LEVELS                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Level 0: Dark (Default)                                                     │
+│  ├── Nothing revealed - swap_id only                                         │
+│  ├── Maximum privacy for privacy-maximalist users                           │
+│  └── Ideal for: Maximum sovereignty users                                   │
+│                                                                              │
+│  Level 1: Aggregate                                                          │
+│  ├── Price ranges, volume bands only                                        │
+│  ├── Aggregate data for LP risk assessment                                  │
+│  └── Ideal for: Market makers, institutional traders                        │
+│                                                                              │
+│  Level 2: Anonymized                                                         │
+│  ├── Unlinkable trade data                                                  │
+│  ├── No direct identity linkage                                             │
+│  └── Ideal for: Regulated entities, compliance-friendly                     │
+│                                                                              │
+│  Level 3: Full                                                               │
+│  ├── Everything revealed                                                    │
+│  ├── Opt-in full transparency                                              │
+│  └── Ideal for: Full compliance, audit requirements                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Per-Level Circuit Selection
+
+| Circuit | Dark | Aggregate | Anonymized | Full |
+|---------|------|-----------|------------|------|
+| `create_swap_v1.zk` | ✅ | ✅ | ✅ | ✅ |
+| `accept_swap_v1.zk` | ✅ | ✅ | ✅ | ✅ |
+| `execute_swap_v1.zk` | ✅ | ✅ | ✅ | ✅ |
+| `cancel_swap_v1.zk` | ✅ | ✅ | ✅ | ✅ |
+| `execute_swap_slippage_v1.zk` | ❌ | ✅ | ✅ | ✅ |
+| `execute_swap_fee_v1.zk` | ❌ | ✅ | ✅ | ✅ |
+
+### Configuration
+
+```rust
+struct InitializeParams {
+    // ... existing fields ...
+    transparency_config: TransparencyConfig,
+}
+
+struct TransparencyConfig {
+    level: TransparencyLevel,        // Dark, Aggregate, Anonymized, Full
+    price_band_size: u64,           // For Aggregate (e.g., 100 = $100 bands)
+    volume_bucket_size: u64,       // For Aggregate (e.g., 1000 = token buckets)
+    anonymity_group_size: u64,     // For Anonymized (e.g., 10 = groups of 10)
+}
+```
+
+### Changing Transparency Post-Deployment
+
+Governance can adjust transparency level via `SetTransparencyLevelV1`:
+
+```rust
+enum Function {
+    // ... existing ...
+    SetTransparencyLevelV1 = 0x06,
+}
+```
+
+**Note**: Event emission varies by level - higher levels emit more data. Changing level affects what data is publicly visible going forward.
 
 ## Future: Level 1 (Order Book)
 
