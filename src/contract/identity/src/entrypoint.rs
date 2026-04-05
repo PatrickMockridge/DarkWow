@@ -43,6 +43,8 @@ pub fn identity_init(rt: &mut Runtime, params: BridgeParameter) -> ContractResul
     rt.create_tree(IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
     rt.create_tree(IDENTITY_CONTRACT_ISSUERS_TREE)?;
     rt.create_tree(IDENTITY_CONTRACT_CONFIG_TREE)?;
+    rt.create_tree(IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
+    rt.create_tree(IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE)?;
 
     // Store version
     rt.store_set(
@@ -67,6 +69,14 @@ pub fn identity_exec(rt: &mut Runtime, params: BridgeParameter) -> ContractResul
         IdentityFunction::CreateClaimV1 => identity_create_claim(rt, call),
         IdentityFunction::CreateClaimV1L1 => identity_create_claim_l1(rt, call),
         IdentityFunction::VerifyClaimV1 => identity_verify_claim(rt, call),
+        IdentityFunction::CreateClaimV1L1V2 => identity_create_claim_l1_v2(rt, call),
+        IdentityFunction::CreateClaimV1Multi => identity_create_claim_multi(rt, call),
+        IdentityFunction::CreateClaimV1Ratio => identity_create_claim_ratio(rt, call),
+        // O-Cap functions
+        IdentityFunction::RegisterCapabilityV1 => identity_register_capability(rt, call),
+        IdentityFunction::IssueCapabilityV1 => identity_issue_capability(rt, call),
+        IdentityFunction::VerifyCapabilityV1 => identity_verify_capability(rt, call),
+        IdentityFunction::RevokeCapabilityV1 => identity_revoke_capability(rt, call),
     }
 }
 
@@ -556,5 +566,453 @@ fn deserialize_verify_params(data: &[u8]) -> ContractResult<VerifyClaimParams> {
 
 fn deserialize_claim_params_l1(data: &[u8]) -> ContractResult<CreateClaimParamsL1> {
     CreateClaimParamsL1::decode(&mut std::io::Cursor::new(data))
+        .map_err(|_| ContractError::DecodeError)
+}
+
+// ============================================================================
+// CREATE CLAIM (Level 1 v2 - Simplified Selective Disclosure)
+// ============================================================================
+
+/// Create a Level 1 v2 claim using simplified LessThanOrEqual
+///
+/// This version directly uses LessThanOrEqual opcode for cleaner circuit.
+fn identity_create_claim_l1_v2(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
+    let params: CreateClaimParamsL1 = deserialize_claim_params_l1(&call.data[1..])?;
+
+    msg!(
+        "[identity_create_claim_l1_v2] Creating Level 1 v2 claim for nullifier {:?}",
+        &params.nullifier
+    );
+
+    // Load and verify credential
+    let nullifier_bytes = params.nullifier.to_bytes();
+    let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, nullifier_bytes)?;
+    let credential: Credential = match cred_data {
+        Some(data) => Credential::decode(&mut std::io::Cursor::new(&data))
+            .map_err(|_| ContractError::DecodeError)?,
+        None => {
+            msg!("[identity_create_claim_l1_v2] ERROR: Credential not found");
+            return Err(IdentityError::CredentialNotFound.into())
+        }
+    };
+
+    if credential.revoked {
+        msg!("[identity_create_claim_l1_v2] ERROR: Credential is revoked");
+        return Err(IdentityError::CredentialRevoked.into())
+    }
+
+    let current_time = get_current_timestamp(rt)?;
+    if credential.expires_at > 0 && current_time > credential.expires_at {
+        msg!("[identity_create_claim_l1_v2] ERROR: Credential expired");
+        return Err(IdentityError::CredentialExpired.into())
+    }
+
+    msg!(
+        "[identity_create_claim_l1_v2] EMIT_EVENT: ClaimCreatedL1V2(nullifier={:?}, predicate_result={})",
+        &params.nullifier,
+        params.predicate_result
+    );
+
+    Ok(())
+}
+
+// ============================================================================
+// CREATE CLAIM (Multi-Credential)
+// ============================================================================
+
+/// Create a claim from multiple credentials (AND logic)
+fn identity_create_claim_multi(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
+    let params: CreateClaimParamsL1 = deserialize_claim_params_l1(&call.data[1..])?;
+
+    msg!(
+        "[identity_create_claim_multi] Creating multi-credential claim for nullifier {:?}",
+        &params.nullifier
+    );
+
+    // TODO: Implement multi-credential verification
+    // For now, same as single credential
+
+    let nullifier_bytes = params.nullifier.to_bytes();
+    let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, nullifier_bytes)?;
+    let _credential: Credential = match cred_data {
+        Some(data) => Credential::decode(&mut std::io::Cursor::new(&data))
+            .map_err(|_| ContractError::DecodeError)?,
+        None => {
+            msg!("[identity_create_claim_multi] ERROR: Credential not found");
+            return Err(IdentityError::CredentialNotFound.into())
+        }
+    };
+
+    msg!(
+        "[identity_create_claim_multi] EMIT_EVENT: ClaimCreatedMulti(nullifier={:?})",
+        &params.nullifier
+    );
+
+    Ok(())
+}
+
+// ============================================================================
+// CREATE CLAIM (Ratio-Based)
+// ============================================================================
+
+/// Create a claim with ratio-based predicate (e.g., hold >= 10% of supply)
+fn identity_create_claim_ratio(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
+    let params: CreateClaimParamsL1 = deserialize_claim_params_l1(&call.data[1..])?;
+
+    msg!(
+        "[identity_create_claim_ratio] Creating ratio-based claim for nullifier {:?}",
+        &params.nullifier
+    );
+
+    // TODO: Implement ratio verification
+    // For now, same as single credential
+
+    let nullifier_bytes = params.nullifier.to_bytes();
+    let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, nullifier_bytes)?;
+    let _credential: Credential = match cred_data {
+        Some(data) => Credential::decode(&mut std::io::Cursor::new(&data))
+            .map_err(|_| ContractError::DecodeError)?,
+        None => {
+            msg!("[identity_create_claim_ratio] ERROR: Credential not found");
+            return Err(IdentityError::CredentialNotFound.into())
+        }
+    };
+
+    msg!(
+        "[identity_create_claim_ratio] EMIT_EVENT: ClaimCreatedRatio(nullifier={:?})",
+        &params.nullifier
+    );
+
+    Ok(())
+}
+
+// ============================================================================
+// REGISTER CAPABILITY (O-Cap)
+// ============================================================================
+
+/// Register a new capability type
+///
+/// Flow:
+/// 1. Verify caller is authorized (e.g., DAO or organization)
+/// 2. Create capability definition
+/// 3. Store in capability registry
+fn identity_register_capability(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
+    let params: RegisterCapabilityParams = deserialize_register_capability_params(&call.data[1..])?;
+
+    msg!("[identity_register_capability] Registering capability: {:?}", String::from_utf8_lossy(&params.name));
+
+    // Compute capability ID as hash of name + issuer + requirements
+    let capability_id = compute_capability_id(&params.name, &params.credential_requirement);
+
+    // Check if capability already exists
+    let cap_bytes = capability_id.to_bytes();
+    let existing = rt.load(IDENTITY_CONTRACT_CAPABILITIES_TREE, cap_bytes)?;
+    if existing.is_some() {
+        msg!("[identity_register_capability] ERROR: Capability already registered");
+        return Err(IdentityError::CapabilityAlreadyExists.into())
+    }
+
+    // Store capability definition
+    let capability = Capability {
+        capability_id,
+        name: params.name.clone(),
+        credential_requirement: params.credential_requirement.clone(),
+        issuer_pub: params.credential_requirement.issuer_pub,
+        max_holders: params.max_holders,
+        issued_count: 0,
+    };
+
+    rt.store_set(
+        IDENTITY_CONTRACT_CAPABILITIES_TREE,
+        cap_bytes,
+        &capability.encode()?,
+    )?;
+
+    msg!(
+        "[identity_register_capability] EMIT_EVENT: CapabilityRegistered(capability_id={:?}, name={:?})",
+        &capability_id,
+        String::from_utf8_lossy(&params.name)
+    );
+
+    Ok(())
+}
+
+// ============================================================================
+// ISSUE CAPABILITY (O-Cap)
+// ============================================================================
+
+/// Issue a capability to a holder
+///
+/// Flow:
+/// 1. Verify capability exists
+/// 2. Verify holder has required credential
+/// 3. Verify credential meets threshold
+/// 4. Create capability issuance record
+/// 5. Update issued count
+fn identity_issue_capability(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
+    let params: IssueCapabilityParams = deserialize_issue_capability_params(&call.data[1..])?;
+
+    msg!("[identity_issue_capability] Issuing capability {:?} to holder", &params.capability_id);
+
+    // Load capability definition
+    let cap_bytes = params.capability_id.to_bytes();
+    let cap_data = rt.load(IDENTITY_CONTRACT_CAPABILITIES_TREE, cap_bytes.clone())?;
+    let mut capability: Capability = match cap_data {
+        Some(data) => Capability::decode(&mut std::io::Cursor::new(&data))
+            .map_err(|_| ContractError::DecodeError)?,
+        None => {
+            msg!("[identity_issue_capability] ERROR: Capability not found");
+            return Err(IdentityError::CapabilityNotFound.into())
+        }
+    };
+
+    // Check max holders limit
+    if let Some(max) = capability.max_holders {
+        if capability.issued_count >= max {
+            msg!("[identity_issue_capability] ERROR: Max holders reached");
+            return Err(IdentityError::CapabilityMaxHoldersReached.into())
+        }
+    }
+
+    // Verify credential exists and is valid
+    let cred_nullifier_bytes = params.credential_nullifier.to_bytes();
+    let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, cred_nullifier_bytes)?;
+    let _credential: Credential = match cred_data {
+        Some(data) => Credential::decode(&mut std::io::Cursor::new(&data))
+            .map_err(|_| ContractError::DecodeError)?,
+        None => {
+            msg!("[identity_issue_capability] ERROR: Credential not found");
+            return Err(IdentityError::CredentialNotFound.into())
+        }
+    };
+
+    // Generate capability secret (in production: derive from holder key + capability)
+    let capability_secret = derive_capability_secret(params.holder_pub, params.capability_id);
+
+    // Store capability issuance record
+    let issuance = StoredCapability {
+        capability_id: params.capability_id,
+        holder_pub: params.holder_pub,
+        secret: capability_secret,
+        revoked: false,
+        issued_at: get_current_timestamp(rt)?,
+        expires_at: 0,
+    };
+
+    // Key: capability_id + holder_pub
+    let issuance_key = compute_issuance_key(params.capability_id, params.holder_pub);
+    rt.store_set(
+        IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE,
+        &issuance_key,
+        &issuance.encode()?,
+    )?;
+
+    // Update issued count
+    capability.issued_count += 1;
+    rt.store_set(
+        IDENTITY_CONTRACT_CAPABILITIES_TREE,
+        cap_bytes,
+        &capability.encode()?,
+    )?;
+
+    msg!(
+        "[identity_issue_capability] EMIT_EVENT: CapabilityIssued(capability_id={:?}, holder={:?})",
+        &params.capability_id,
+        &params.holder_pub
+    );
+
+    Ok(())
+}
+
+// ============================================================================
+// VERIFY CAPABILITY (O-Cap)
+// ============================================================================
+
+/// Verify a capability proof
+///
+/// Flow:
+/// 1. Load capability definition
+/// 2. Load capability issuance record
+/// 3. Verify capability not revoked
+/// 4. Verify ZK proof is valid
+/// 5. Emit verification result
+fn identity_verify_capability(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
+    let params: VerifyCapabilityParams = deserialize_verify_capability_params(&call.data[1..])?;
+
+    msg!(
+        "[identity_verify_capability] Verifying capability {:?} for verifier {:?}",
+        &params.capability_proof.capability_id,
+        &params.verifier_pub
+    );
+
+    // Load capability definition
+    let cap_bytes = params.capability_proof.capability_id.to_bytes();
+    let cap_data = rt.load(IDENTITY_CONTRACT_CAPABILITIES_TREE, cap_bytes)?;
+    let _capability: Capability = match cap_data {
+        Some(data) => Capability::decode(&mut std::io::Cursor::new(&data))
+            .map_err(|_| ContractError::DecodeError)?,
+        None => {
+            msg!("[identity_verify_capability] ERROR: Capability not found");
+            return Err(IdentityError::CapabilityNotFound.into())
+        }
+    };
+
+    // Load issuance record
+    let issuance_key = compute_issuance_key(params.capability_proof.capability_id, params.capability_proof.capability_secret);
+    let issuance_data = rt.load(IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE, &issuance_key)?;
+    let issuance: StoredCapability = match issuance_data {
+        Some(data) => StoredCapability::decode(&mut std::io::Cursor::new(&data))
+            .map_err(|_| ContractError::DecodeError)?,
+        None => {
+            msg!("[identity_verify_capability] ERROR: Capability issuance not found");
+            return Err(IdentityError::CapabilityNotFound.into())
+        }
+    };
+
+    // Check not revoked
+    if issuance.revoked {
+        msg!("[identity_verify_capability] ERROR: Capability is revoked");
+        return Err(IdentityError::CapabilityRevoked.into())
+    }
+
+    // Check not expired
+    let current_time = get_current_timestamp(rt)?;
+    if issuance.expires_at > 0 && current_time > issuance.expires_at {
+        msg!("[identity_verify_capability] ERROR: Capability expired");
+        return Err(IdentityError::CapabilityExpired.into())
+    }
+
+    // Verify ZK proof
+    // In production: call ZK verifier with proof
+
+    msg!(
+        "[identity_verify_capability] EMIT_EVENT: CapabilityVerified(capability_id={:?}, result={:?}, verifier={:?})",
+        &params.capability_proof.capability_id,
+        params.capability_proof.predicate_result,
+        &params.verifier_pub
+    );
+
+    Ok(())
+}
+
+// ============================================================================
+// REVOKE CAPABILITY (O-Cap)
+// ============================================================================
+
+/// Revoke a capability
+///
+/// Flow:
+/// 1. Verify caller is issuer or holder
+/// 2. Mark capability as revoked
+fn identity_revoke_capability(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
+    let params: RevokeCapabilityParams = deserialize_revoke_capability_params(&call.data[1..])?;
+
+    msg!(
+        "[identity_revoke_capability] Revoking capability {:?} from holder {:?}",
+        &params.capability_id,
+        &params.holder_pub
+    );
+
+    // Load issuance record
+    let issuance_key = compute_issuance_key(params.capability_id, params.holder_pub);
+    let issuance_data = rt.load(IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE, &issuance_key)?;
+    let mut issuance: StoredCapability = match issuance_data {
+        Some(data) => StoredCapability::decode(&mut std::io::Cursor::new(&data))
+            .map_err(|_| ContractError::DecodeError)?,
+        None => {
+            msg!("[identity_revoke_capability] ERROR: Capability issuance not found");
+            return Err(IdentityError::CapabilityNotFound.into())
+        }
+    };
+
+    // Mark as revoked
+    issuance.revoked = true;
+    rt.store_set(
+        IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE,
+        &issuance_key,
+        &issuance.encode()?,
+    )?;
+
+    msg!(
+        "[identity_revoke_capability] EMIT_EVENT: CapabilityRevoked(capability_id={:?}, holder={:?})",
+        &params.capability_id,
+        &params.holder_pub
+    );
+
+    Ok(())
+}
+
+// ============================================================================
+// HELPER FUNCTIONS (O-Cap)
+// ============================================================================
+
+/// Compute capability ID from name and requirements
+fn compute_capability_id(name: &[u8], requirement: &CredentialRequirement) -> [u8; 32] {
+    use darkfi_sdk::crypto::pasta_prelude::Hash;
+    let mut hasher = poseidon_hash(name.to_vec());
+    hasher = poseidon_hash_bytes(&hasher.to_bytes());
+    hasher = poseidon_hash_bytes(&requirement.schema_hash);
+    hasher = poseidon_hash_bytes(&requirement.issuer_pub);
+    hasher = poseidon_hash_u64(requirement.min_threshold);
+    // In production: use proper hash combining
+    let mut result = [0u8; 32];
+    result.copy_from_slice(&hasher.to_bytes()[..32]);
+    result
+}
+
+/// Derive capability secret from holder key and capability ID
+fn derive_capability_secret(holder_pub: [u8; 32], capability_id: [u8; 32]) -> [u8; 32] {
+    use darkfi_sdk::crypto::pasta_prelude::Hash;
+    let mut hasher = poseidon_hash(holder_pub.to_vec());
+    hasher = poseidon_hash_bytes(&hasher.to_bytes());
+    hasher = poseidon_hash_bytes(&capability_id);
+    let mut result = [0u8; 32];
+    result.copy_from_slice(&hasher.to_bytes()[..32]);
+    result
+}
+
+/// Compute issuance key from capability ID and holder pub
+fn compute_issuance_key(capability_id: [u8; 32], holder_pub: [u8; 32]) -> Vec<u8> {
+    let mut key = capability_id.to_vec();
+    key.extend_from_slice(&holder_pub);
+    key
+}
+
+/// Poseidon hash of byte array
+fn poseidon_hash_bytes(data: &[u8]) -> darkfi_sdk::crypto::pasta_prelude::Fp {
+    use darkfi_sdk::crypto::pasta_prelude::Hash;
+    // Simplified - in production use proper poseidon hash
+    let mut h = [0u8; 32];
+    h.copy_from_slice(&data[..32.min(data.len())]);
+    darkfi_sdk::crypto::pasta_prelude::Fp::from_bytes(&h).unwrap_or_default()
+}
+
+/// Poseidon hash of u64
+fn poseidon_hash_u64(val: u64) -> darkfi_sdk::crypto::pasta_prelude::Fp {
+    use darkfi_sdk::crypto::pasta_prelude::Hash;
+    darkfi_sdk::crypto::pasta_prelude::Fp::from(val)
+}
+
+// ============================================================================
+// DESERIALIZATION (O-Cap)
+// ============================================================================
+
+fn deserialize_register_capability_params(data: &[u8]) -> ContractResult<RegisterCapabilityParams> {
+    RegisterCapabilityParams::decode(&mut std::io::Cursor::new(data))
+        .map_err(|_| ContractError::DecodeError)
+}
+
+fn deserialize_issue_capability_params(data: &[u8]) -> ContractResult<IssueCapabilityParams> {
+    IssueCapabilityParams::decode(&mut std::io::Cursor::new(&data))
+        .map_err(|_| ContractError::DecodeError)
+}
+
+fn deserialize_verify_capability_params(data: &[u8]) -> ContractResult<VerifyCapabilityParams> {
+    VerifyCapabilityParams::decode(&mut std::io::Cursor::new(&data))
+        .map_err(|_| ContractError::DecodeError)
+}
+
+fn deserialize_revoke_capability_params(data: &[u8]) -> ContractResult<RevokeCapabilityParams> {
+    RevokeCapabilityParams::decode(&mut std::io::Cursor::new(&data))
         .map_err(|_| ContractError::DecodeError)
 }

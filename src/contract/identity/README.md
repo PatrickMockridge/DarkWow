@@ -1,223 +1,407 @@
 # DarkFi Identity Contract
 
-Minimal credential proofs for selective disclosure of attributes.
+**O-Cap (Object Capability) Authorization**: Prove you have access without revealing who you are.
 
-## The Problem: Identity Verification = Surveillance
+A paradigm shift from ACLs ("who has access") to capabilities ("can you prove you have access").
 
-Traditional identity verification requires revealing everything:
-- **KYC**: Name, DOB, address, SSN — all given to the verifier
-- **OAuth/OIDC**: Your identity handed to third parties
-- **Proof of Personhood**: Reveals who you are to verify humanness
+## The Paradigm Shift: ACLs vs O-Cap
 
-**But sometimes you just need to prove you're over 18, or hold a token, or are a DAO member — without revealing WHO you are.**
-
-## Our Solution: Minimal Viable Information (MVI)
-
-Release only the **minimum information necessary**:
+### Traditional Authorization (ACLs)
+**"Who has access?"**
 
 ```
-Traditional KYC:              DarkFi Identity (MVI):
-┌─────────────────────┐      ┌─────────────────────────┐
-│ Name: Alice          │      │ Age: ✓ (over 18)         │
-│ DOB: 1990-01-01      │ →    │ Residency: ✓            │
-│ Address: 123 Main St │      │ Not OFAC: ✓              │
-│ SSN: ***-**-1234     │      │ Credential: DAO Member ✓ │
-└─────────────────────┘      └─────────────────────────┘
-    ALL THE DATA                    JUST A PROOF
+┌──────────────────┐
+│ alice@co → repo  │
+│ bob@co → repo    │
+│ charlie@co → admin│
+└──────────────────┘
+
+PROBLEM: We know WHO has access, their identity, and can track every action.
 ```
 
-## Level 0 MVP: Issuer-Holder-Verifier
+### O-Cap Authorization
+**"Can you prove you have access?"**
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                  Identity Contract Flow                                  │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  ISSUER                                  HOLDER                       │
-│     │                                        │                        │
-│     │  1. Issues credential                  │                        │
-│     │     Credential = signed(               │                        │
-│     │       attributes,                      │                        │
-│     │       expiration                      │                        │
-│     │─────────────────────────────→         │                        │
-│     │                                        │                        │
-│     │  2. Holder creates claim               │                        │
-│     │     Claim = ZKProof{                   │                        │
-│     │       "I hold valid credential"        │                        │
-│     │       "age > 18"                       │                        │
-│     │       "nullifier"                      │                        │
-│     │     }                                  │                        │
-│     │←──────────────────────────────────────│                        │
-│     │                                        │                        │
-│     │  3. Verifier checks claim             │                        │
-│     │     ZK proof verifies:                 │                        │
-│     │       - Credential valid               │                        │
-│     │       - Conditions met               │                        │
-│     │       - Not revoked                  │                        │
-│     │───────────────────→───────────────────────→ VERIFIER            │
-│                                                                       │
-│  RESULT: ✓ or ✗ — NO additional information revealed                 │
-│                                                                       │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────┐
+│ prove(role>=Y)  │
+│ → ACCESS GRANTED │
+│ (identity hidden)│
+└──────────────────┘
+
+SOLUTION: Only learn WHAT they can do. Never learn WHO they are.
 ```
 
-## Privacy Properties (Level 0: zk_only)
+**Key insight:** O-Cap changes the question from "who are you?" to "what can you prove?".
 
-The identity contract currently implements **Level 0 (zk_only)** — the verifier learns ONLY that the proof is valid or invalid, not the actual predicate result.
+## The Ambient Authority Problem
 
-| What You Reveal | What Stays Hidden |
-|-----------------|-------------------|
-| "Proof is valid" | Who you are |
-| "Credential is valid" | Your actual attribute values |
-| "Not revoked" | When credential expires |
-| Issuer is trusted | Full credential contents |
-| Predicate is satisfied | Whether you meet the threshold |
+Traditional authorization systems suffer from **ambient authority** — every operation runs in an environment filled with the user's full identity and all permissions.
 
-**This is more private than Level 1 (selective disclosure)** — the verifier cannot learn the authorization decision from the proof.
-
-## Use Cases
-
-### Age Verification
-```rust
-// Prove you're over 18 without revealing DOB
-let claim = CreateClaimBuilder::new()
-    .claim_type(b"age_over_18")
-    .predicate(b">= 18")
-    .build()?;
-// Reveals: Only "proof is valid" — verifier learns nothing about age
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Ambient Authority Problem                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Alice logs into system                                           │
+│  → Her identity and ALL permissions are ambient (in environment) │
+│                                                                   │
+│  Alice's code runs:                                              │
+│  → Can it access resources it shouldn't?                         │
+│  → Can it leak data to unauthorized parties?                     │
+│  → Can it be tricked into acting for another user?               │
+│                                                                   │
+│  PROBLEM: Every operation runs in an environment                  │
+│  filled with ambient authority that can be exploited.            │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### DAO Membership
-```rust
-// Prove you're a DAO member without revealing wallet
-let claim = CreateClaimBuilder::new()
-    .claim_type(b"dao_member")
-    .predicate(b">= 1")
-    .build()?;
-// Reveals: Only "proof is valid" — verifier learns nothing about token balance
+**Why ACLs fail:**
+- Every request carries full identity context
+- Permissions persist as ambient state
+- Attackers can exploit any ambient authority
+- Privilege escalation is always possible
+
+## O-Caps Eliminate Ambient Authority
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    O-Cap Eliminates Ambient Authority               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Alice creates a proof:                                          │
+│  → Only the SPECIFIC capability is in the proof                  │
+│  → No other permissions are present in the environment           │
+│  → The verifier only sees the capability, not Alice's identity   │
+│                                                                   │
+│  Alice's code cannot:                                            │
+│  → Access resources beyond the specific capability                │
+│  → Leak data because it has no ambient identity to leak         │
+│  → Be tricked because there's nothing to impersonate             │
+│                                                                   │
+│  KEY INSIGHT: O-Caps make authority EXPLICIT and BOUNDED.        │
+│               The proof IS the authority - nothing more.          │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Accredited Investor
-```rust
-// Prove accredited status without revealing income
-let claim = CreateClaimBuilder::new()
-    .claim_type(b"accredited_investor")
-    .predicate(b"== true")
-    .build()?;
-// Reveals: Only "proof is valid" — verifier learns nothing about income
+## The Intuitive Privacy Rule
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  O-Cap Privacy: You reveal ONLY what you prove.                 │
+│                                                                   │
+│  If you prove "can_vote", verifier learns "can_vote"             │
+│  Nothing else. Nothing more. Always.                            │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Sybil Resistance
-```rust
-// Prove you're a unique human without deanonymizing
-let claim = CreateClaimBuilder::new()
-    .claim_type(b"unique_human")
-    .predicate(b"== true")
-    .build()?;
-// Reveals: Only "proof is valid" — verifier learns nothing about identity
+**Why this is intuitive:**
+- Privacy is PROVABLE, not just policy
+- The ZK proof GUARANTEES what is/isn't revealed
+- No trust in system admins or database security
+- Reasoning is LOCAL to the capability being proven
+
+## O-Cap in Action: Concrete Use Cases
+
+### Labor Markets: Prove Qualifications Without Revealing Identity
+
+**Traditional approach:**
+```
+Alice applies for job
+HR sees: Alice Smith, SSN, DOB, full resume, current salary...
 ```
 
-## Contract Functions
+**O-Cap approach:**
+```
+Alice proves:
+- "I have a CS degree from an accredited university"
+- "I have 5+ years of software engineering experience"
+- "I have completed security training"
 
-| Function | ID | Description |
-|---------|-----|-------------|
+HR learns only: ✓ Alice meets requirements
+                ✗ Alice's identity is NOT revealed
+```
+
+**Why this matters:**
+- Alice can't be discriminated by age, gender, or name
+- Alice's current employer doesn't know she's looking
+- Competitors can't poach by offering more than she revealed
+
+### Insurance: Prove Risk Profile Without Personal Data
+
+**Traditional approach:**
+```
+Insurer sees: John Doe, SSN, medical records, driving history, credit score...
+```
+
+**O-Cap approach:**
+```
+John proves:
+- "I am over 25 years old"
+- "I have no major violations in the last 3 years"
+- "My annual mileage is under 15,000"
+
+Insurer learns only: ✓ John meets risk criteria
+                    ✗ John's identity is NOT revealed
+```
+
+**Why this matters:**
+- Insurers can't discriminate based on protected characteristics
+- No data breach exposes full profiles
+- Customers prove characteristics, not surrender privacy
+
+### Tendering: Prove Credentials Without Revealing Bidders
+
+**Traditional approach:**
+```
+Requester sees: All bidder identities, their company names, past performance...
+```
+
+**O-Cap approach:**
+```
+Bidders prove (sealed):
+- "I have completed similar projects"
+- "I have required certifications"
+- "My team has relevant expertise"
+
+Requester learns only: ✓ These bidders are qualified
+                       ✗ Which bidder is which (until selection)
+```
+
+**Why this matters:**
+- Prevents corruption (bidders don't know who's competing)
+- Eliminates bias based on company size or reputation
+- Enables fair competition on purely qualifications
+
+## O-Cap Authorization Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              O-CAP AUTHORIZATION FLOW                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ISSUER (e.g., ACME Corp)         HOLDER (e.g., Alice)            │
+│       │                                    │                       │
+│       │  1. Issues credential              │                       │
+│       │     Credential = signed(          │                       │
+│       │       attributes: role=senior     │                       │
+│       │       secret                     │                       │
+│       │───────────────────────────────→ │                       │
+│       │                                    │                       │
+│       │  2. Registers capability           │                       │
+│       │     Capability: "can_merge_pr"    │                       │
+│       │     Requirement: role >= senior   │                       │
+│       │───────────────────────────────→ │                       │
+│       │                                    │                       │
+│       │                          CreateProof(                      │
+│       │                            prove: role >= senior          │
+│       │                          )──────────────────→              │
+│       │                                           │                │
+│       │  OTHER CONTRACT (DAO)                     │                │
+│       │       │                                   │                │
+│       │       │  verify_capability(                │                │
+│       │       │    capability="can_merge_pr",       │                │
+│       │       │    proof=Alice's_proof             │                │
+│       │       │  )────────────────────────────────→                │
+│       │       │                                                             │
+│       │       │  Result: VALID                                            │
+│       │       │  Alice's identity: NOT REVEALED                            │
+│       │       │  Only proven: "role >= senior" → can_merge_pr             │
+│       │       │                                                             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key insight:** The verifier learns ONLY that Alice meets the requirement, NOT:
+- Who Alice is
+- What her actual role is
+- What other attributes her credential contains
+
+## ACL vs O-Cap Comparison
+
+| Aspect | ACL (Traditional) | O-Cap (DarkFi) |
+|--------|------------------|----------------|
+| **Core Question** | "Who has access?" | "Can you prove access?" |
+| **Identity** | Always revealed | Never revealed |
+| **Authorization** | Identity-based | Capability-based |
+| **Delegation** | Identity chain | Capability chain |
+| **Revocation** | Remove from list | Revoke credential |
+| **Scalability** | O(n) per user | O(1) per capability |
+| **Privacy** | Full exposure | Minimal revelation |
+| **Audit Trail** | Who accessed what | (capability used) |
+
+**When to use ACL:**
+- Internal systems with trusted parties
+- When identity is required for business logic
+- Regulatory compliance requires identity
+
+**When to use O-Cap:**
+- Privacy is important
+- Identity not needed for the action
+- Minimal disclosure principle
+
+## Core O-Cap Functions (0x09-0x0c)
+
+| ID | Function | Description |
+|----|----------|-------------|
+| `RegisterCapabilityV1` | 0x09 | Register a new capability type |
+| `IssueCapabilityV1` | 0x0a | Issue capability to holder |
+| `VerifyCapabilityV1` | 0x0b | Verify capability proof |
+| `RevokeCapabilityV1` | 0x0c | Revoke capability |
+
+## Supporting Credential Functions (0x00-0x08)
+
+| ID | Function | Description |
+|----|----------|-------------|
 | `InitializeV1` | 0x00 | Initialize identity registry |
 | `IssueCredentialV1` | 0x01 | Issuer issues credential to holder |
 | `RevokeCredentialV1` | 0x02 | Issuer revokes a credential |
 | `CreateClaimV1` | 0x03 | Holder creates claim (Level 0 zk_only) |
 | `CreateClaimV1L1` | 0x05 | Holder creates claim (Level 1 selective) |
 | `VerifyClaimV1` | 0x04 | Verifier checks claim on-chain |
-
-### InitializeV1 (0x00)
-
-Initializes the identity contract:
-- Creates `credentials` tree for issued credentials
-- Creates `nullifiers` tree for revocation tracking
-- Creates `issuers` tree for trusted issuers
-- Creates `config` tree for settings
-
-### IssueCredentialV1 (0x01)
-
-Issuer creates a credential for a holder:
-- Verifies issuer is trusted
-- Verifies nullifier uniqueness
-- Stores credential record (commitment, not attributes)
-- Emits `CredentialIssued` event (only nullifier + issuer revealed)
-
-### RevokeCredentialV1 (0x02)
-
-Issuer revokes a credential:
-- Verifies issuer signature
-- Marks credential as revoked
-- Updates revocation list
-
-### CreateClaimV1 (0x03) - Level 0 (zk_only)
-
-Holder creates a claim from their credential:
-- Verifies credential exists and is valid
-- Verifies not expired or revoked
-- Generates ZK proof of predicate satisfaction
-- **Level 0**: Proof reveals only "valid" or "invalid" — no predicate result
-
-### CreateClaimV1L1 (0x05) - Level 1 (selective)
-
-Holder creates a claim with selective disclosure:
-- Same as CreateClaimV1 but with **public predicate result**
-- Verifier learns: "is_over_18 = true" (not actual DOB)
-- Uses bounded equation construction (not LessThanOrEqual)
-
-### VerifyClaimV1 (0x04)
-
-Verifier checks a claim on-chain:
-- Verifies ZK proof from CreateClaimV1 or CreateClaimV1L1
-- Verifies credential not revoked or expired
-- **Note**: Uses placeholder verification in entrypoint.rs
+| `CreateClaimV1L1V2` | 0x06 | Level 1 with LessThanOrEqual |
+| `CreateClaimV1Multi` | 0x07 | Multi-credential AND claim |
+| `CreateClaimV1Ratio` | 0x08 | Ratio-based predicate claim |
 
 ## ZK Circuits
 
-### issue_credential_v1.zk
+| Circuit | Namespace | Purpose |
+|---------|-----------|---------|
+| `issue_credential_v1.zk` | `IssueCredential_V1` | Prove credential valid |
+| `create_claim_v1.zk` | `CreateClaim_V1` | Level 0 zk_only claim |
+| `create_claim_v1_l1.zk` | `CreateClaim_V1_L1` | Level 1 bounded equation |
+| `create_claim_v1_l1_v2.zk` | `CreateClaim_V1L1V2` | Level 1 LessThanOrEqual |
+| `create_claim_v1_multi.zk` | `CreateClaim_V1Multi` | Multi-credential AND |
+| `create_claim_v1_ratio.zk` | `CreateClaim_V1Ratio` | Ratio-based predicate |
+| `verify_capability_v1.zk` | `VerifyCapability_V1` | Capability verification |
 
-Proves the issuer legitimately issued this credential:
-- **Public inputs**: commitment, issuer_pub, holder_pub, schema_hash
-- **Private inputs**: attributes, issuer_signature
-- **Verification**: Signature valid, commitment matches
-- **Bug**: Uses hardcoded `ISSUER_PK` constant (not a public input)
+## Database Trees
 
-### create_claim_v1.zk
+| Tree | Purpose |
+|------|---------|
+| `credentials` | Issued credentials |
+| `nullifiers` | Revocation tracking |
+| `issuers` | Trusted issuers |
+| `config` | Configuration |
+| `capabilities` | Capability definitions |
+| `capability_issuances` | Holder → capability mapping |
 
-Proves the claim without revealing attributes (Level 0 zk_only):
-- **Public inputs**: nullifier, claim_type, issuer_pub_x, issuer_pub_y, schema_hash
-- **Private inputs**: credential_secret, attribute_value, threshold, commitment
-- **Verification**: Credential valid, predicate satisfied, not revoked
-- **Uses safemath**: `less_than_strict` pattern for assertions
+## O-Cap Composability
 
-### create_claim_v1_l1.zk
+O-Cap authorization is a **cross-contract primitive** that integrates with other DarkFi contracts:
 
-Proves the claim with **selective disclosure** (Level 1):
-- **Public inputs**: nullifier, claim_type, issuer_pub_x, issuer_pub_y, schema_hash, **predicate_result**
-- **Private inputs**: credential_secret, attribute_value, threshold, commitment, delta
-- **Verification**: Bounded equation `threshold + delta = attribute_value + (1 - predicate_result) * 2^64`
-- **Key advantage**: Verifier learns predicate result (e.g., "is_over_18 = true") without learning actual attribute value
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    O-Cap Composability                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Identity Contract (O-Cap)                                          │
+│       │                                                              │
+│       ├── Registers capabilities (can_merge_pr, can_approve_audit)   │
+│       ├── Issues capabilities to holders                             │
+│       └── Verifies capability proofs                                 │
+│              │                                                       │
+│              ▼                                                       │
+│  DAO Contract                                                          │
+│       │                                                              │
+│       └── verify_capability("can_propose")                          │
+│              │                                                       │
+│              ▼                                                       │
+│  Result: ✓ Alice can propose (without revealing her identity)        │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
-### verify_claim_v1.zk
+**Example integrations:**
 
-**This circuit file does not exist.** The `VerifyClaimV1` function in entrypoint.rs uses placeholder verification.
+| Contract | O-Cap Usage | Capability |
+|----------|-------------|------------|
+| DAO | Submit proposal | `can_propose` |
+| DAO | Vote on proposal | `can_vote` |
+| Labor Market | Submit bid | `verified_contractor` |
+| Tender | Submit sealed bid | `qualified_provider` |
+| Insurance | Purchase coverage | `low_risk_profile` |
+| Bridge | Cross-chain transfer | `authorized_signer` |
+
+## What Engineers Can Prove
+
+| Credential | Proves | Enables |
+|-----------|--------|---------|
+| `software_engineer_v1` | Passed technical assessment | Commit to main branch |
+| `security_auditor` | Completed security training | Approve security-sensitive PRs |
+| `code_reviewer` | Minimum code review count | Approve PR merges |
+| `team_member` | HR verified employment | Access internal repos |
+| `senior_engineer` | 5+ years exp + reviews | Senior merge approvals |
+| `principal_engineer` | Distinguished + patents | Architecture decisions |
+
+## Key Properties of O-Cap System
+
+1. **No Identity Revealed**: Verifier only learns capability, not holder identity
+2. **Issuer-Based Revocation**: Issuer revokes credential → all capabilities fail
+3. **Composable**: Capabilities can require multiple credentials (AND logic)
+4. **Hierarchical**: Derived capabilities build on base credentials
+5. **Predicate-Based**: Can express "role >= X" or "balance >= Y" without revealing values
+6. **Bounded Authority**: Proof only contains the specific capability being proven
+7. **Transient Proofs**: Proofs don't persist as ambient authority
+
+## O-Cap Reduces Attack Surface
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    O-Cap Reduces Attack Surface                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ACL Attack Surface:                                              │
+│  1. Stolen credentials → full identity compromise                │
+│  2. SQL injection → ACL modification                              │
+│  3. Privilege escalation → admin access                          │
+│  4. Insider threat → ACL bypass                                   │
+│  5. Cross-site scripting → session hijacking                    │
+│  → ATTACK SURFACE: Every point where identity exists             │
+│                                                                   │
+│  O-Cap Attack Surface:                                           │
+│  1. Stolen credential_secret → specific cap only                 │
+│  2. No ACL to modify (capabilities are derived)                  │
+│  3. No privilege escalation (authority is explicit)              │
+│  4. No insider threat (identity never in system)                  │
+│  5. No session to hijack (proof is transient)                   │
+│  → ATTACK SURFACE: Only the specific capability being proven      │
+│                                                                   │
+│  WHY O-Caps REDUCE attack surface:                                │
+│  - Authority is BOUNDED to what's being proven                   │
+│  - Identity is NEVER in the system                               │
+│  - Proofs are TRANSIENT (don't persist as ambient authority)     │
+│  - Revocation is CASCADING (credential revoke → all caps fail)   │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## The Privacy Gradient
+
+O-Cap is NOT a privacy level - it's a paradigm that works at all privacy levels:
+
+| Privacy Level | O-Cap Behavior |
+|---------------|----------------|
+| `zk_only` | Prove capability without revealing result |
+| `selective` | Prove capability, reveal only pass/fail |
+| `attested` | Prove capability with issuer confirmation |
+
+## Comparison
+
+| Feature | Traditional KYC | ZK-Based Verifier | DarkFi O-Cap |
+|---------|-----------------|-------------------|--------------|
+| Identity revealed | Everything | Depends on verifier | Nothing (MVI) |
+| Data minimization | None | Partial | Full |
+| Revocability | Full | Limited | Full |
+| O-Cap authorization | No | No | Yes |
+| Offline verification | No | Possible | Possible |
 
 ## Base Field Arithmetic
 
-ZK circuits operate in a finite field — the Pallas field defined by prime `p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`. All arithmetic wraps at `p`, which breaks normal integer intuitions:
+ZK circuits operate in a finite field — the Pallas field defined by prime `p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1`. All arithmetic wraps at `p`, which breaks normal integer intuitions.
 
-```zk
-# In the field, p-1 ≡ -1, so comparisons must be carefully designed
-# The value "just below p" is actually "just above 0" in integer terms
-# An opcode that returns a comparison result must handle this correctly
-```
-
-**Why this matters for identity**: Predicate checks like "age >= 18" or "score >= threshold" require comparing field elements as integers. The field wraparound means naive comparison (`a < b` in circuit) can give incorrect results when values are near `p`. Comparison opcodes that return values (not just constrain) must account for this.
-
-**The core challenge**: Proving `a <= b` as integers requires determining whether `a - b` falls in `{0, 1, ..., (p-1)/2}` or `{(p+1)/2, ..., p-1}`. This is straightforward in normal code but requires careful gadget design in circuits.
-
-**See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
+**Why this matters for identity**: Predicate checks like "age >= 18" or "score >= threshold" require comparing field elements as integers. Comparison opcodes handle this with careful gadget design.
 
 ## Safemath Integration
 
@@ -233,230 +417,11 @@ attribute_plus_one = base_add(attribute_value, witness_base(1));
 less_than_strict(threshold, attribute_plus_one);
 ```
 
-**Why this works**:
-- Bounded inputs (u64) prevent field wraparound
-- `less_than_strict` is constrain-only (sound — no return value manipulation)
-- Adding 1 converts strict `<` to non-strict `<=`
+## Future Expansion
 
-**Key distinction from Level 1**:
-- Level 1 (selective disclosure): Would return Boolean publicly via `LessThanOrEqual`
-- Level 0 (zk_only): Asserts `threshold <= attribute_value` without returning a value
-
-**See**: [Safemath](../../../doc/src/arch/safemath.md) for full integration guide.
-
-## Key Blockers
-
-| Blocker | Severity | Description |
-|---------|----------|-------------|
-| No integration test | **High** | Cannot verify full issue → claim → verify flow |
-| `issue_credential_v1.zk` bug | **High** | Uses unsupported `ISSUER_PK` constant |
-| `verify_claim_v1.zk` stub | **Medium** | Needs full implementation |
-| Test harness integration | **High** | Contract uses outdated SDK API (`BridgeCall`) |
-
-## The Privacy Gradient
-
-Based on [ZK-Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags),
-we implement graduated privacy levels rather than binary public/private:
-
-| Level | Name | What Verifier Sees | Use Case | Status |
-|-------|------|-------------------|----------|--------|
-| **0** | `zk_only` | Nothing (proof valid/invalid only) | Maximum privacy | **Implemented** |
-| **1** | `selective` | Predicate result only | Basic verification | **Implemented** (bounded equation) |
-| **2** | `attested` | Issuer confirms | Trusted issuers | Future |
-| **3** | `public` | Full disclosure | Regulatory compliance | Future |
-
-```
-Example: Age Verification
-
-zk_only:    "I prove age >= 18" → Verifier sees: ✓ (proof valid)
-selective:   "age >= 18, issued by Gov" → Verifier sees: ✓ + issuer
-attested:    "DOB: 1990-01-01, issued by Gov" → Verifier sees: full DOB
-public:      Full KYC disclosure → Verifier sees: everything
-```
-
-**Current implementation is Level 0 (zk_only)** — the verifier learns only that the proof is valid or invalid, not the predicate result. This provides maximum privacy.
-
-## Roadmap: ZK-Verified Competency DAGs
-
-```
-Level 0 (MVP - NOW)     Level 1 (Future)        Level 2 (Future)        Level 3 (Future)
-─────────────────────────────────────────────────────────────────────────────────────────
-Issuer-Holder-          Competency DAG           Trust Networks           K-Assets
-  Verifier              Prerequisite chains      Graduated disclosure     Knowledge markets
-Single issuer           Multiple issuers        Web of Trust + ZK       Competency tokens
-Basic predicates        Derived competencies     Interaction history      Economic activation
-On-chain verify         Off-chain proofs        Anonymous reputation     Self-sovereign
-```
-
-### Level 0 (MVP - NOW): Issuer-Holder-Verifier
-
-- Minimal blast radius for bugs
-- Clear trust model (issuer is trusted)
-- Foundation for everything else
-- **What it proves**: Single credential → single claim
-
-### Level 1 (Future): Competency DAG
-
-Competencies form a DAG where derived competencies require prerequisite proofs:
-
-```
-                    ┌─────────────────┐
-                    │   K-ASSET       │
-                    │ (derived comp.) │
-                    └────────┬────────┘
-                             │
-          ┌──────────────────┼──────────────────┐
-          ▼                  ▼                  ▼
-   ┌────────────┐      ┌────────────┐      ┌────────────┐
-   │ COMPETENCY │      │ COMPETENCY │      │ COMPETENCY │
-   │   (L2+)    │      │   (L1)     │      │   (L0)     │
-   └─────┬──────┘      └─────┬──────┘      └─────┬──────┘
-         │                    │                    │
-         └────────────────────┼────────────────────┘
-                              ▼
-                    ┌─────────────────┐
-                    │    CREDENTIAL    │
-                    │   (Base Issued)  │
-                    └─────────────────┘
-```
-
-- **What it adds**: Credential chaining, prerequisite proofs
-- **What it proves**: Path exists in DAG without revealing full path
-
-### Level 2 (Future): Trust Networks
-
-Web of Trust meets ZK proofs:
-
-```
-Traditional Web of Trust:          DarkFi Trust Network:
-┌─────────────────────┐           ┌─────────────────────┐
-│ Alice trusts Bob    │           │ ZK proof of:        │
-│ Bob trusts Charlie  │     →     │ "Alice and Bob have  │
-│ Therefore Alice     │           │  interacted N times" │
-│ trusts Charlie      │           │                     │
-└─────────────────────┘           │ Result: Trust score │
-                                  │ No identities       │
-                                  └─────────────────────┘
-
-Trust Score = f(interaction_history, privacy_preferences)
-
-- Trust = 0.0 → zk_only
-- Trust = 0.5 → selective
-- Trust = 0.9+ → attested/public
-```
-
-- **What it adds**: Graduated disclosure based on trust
-- **What it proves**: Relationship exists without revealing identity
-
-### Level 3 (Future): K-Assets (Knowledge Assets)
-
-Competencies become tradeable economic assets:
-
-```
-Competency (proof) ──────→ K-Asset Token (ERC-20 style)
-                                  │
-               ┌──────────────────┼──────────────────┐
-               ▼                  ▼                  ▼
-        ┌───────────┐      ┌───────────┐      ┌───────────┐
-        │   Hire    │      │  Fraction │      │   Stake   │
-        │ (pay for  │      │  (split   │      │ (bond for │
-        │  skills)  │      │  value)   │      │  quality) │
-        └───────────┘      └───────────┘      └───────────┘
-```
-
-- **What it adds**: Market price for competencies
-- **What it enables**: Monetizing knowledge, quality bonding
-
-### Why This Roadmap?
-
-Each level builds on the previous:
-
-```
-Level 0: The Foundation
-├── Prove you have a credential
-├── Prove a predicate is met
-└── Minimal blast radius
-
-Level 1: The Structure
-├── Credentials form DAGs
-├── Prerequisites verifiable
-└── Building blocks for reputation
-
-Level 2: The Network
-├── Trust relationships verifiable
-├── Graduated disclosure
-└── Modeling human relationships
-
-Level 3: The Economy
-├── K-Assets have market value
-├── Economic activation
-└── Competency as capital
-```
-
-## Competency DAG Example
-
-```
-Level 0: Base Credentials
-├── "University Degree (MIT)" — Issued by MIT
-├── "5 Years Software Experience" — Issued by Employer
-└── "Open Source Contributor" — Verified by GitHub
-
-Level 1: Derived Competencies
-├── "Software Engineer" — Requires: Degree + Experience
-├── "ML Engineer" — Requires: Degree + ML Courses + Published Paper
-└── "Tech Lead" — Requires: Engineer + Management Course + Team Size
-
-Level 2: Expert Competencies
-├── "Principal Engineer" — Requires: Tech Lead + Patents + Speaking
-└── "Fellow" — Requires: Principal + Major Contributions + Recognition
-
-Level 3: K-Assets
-├── "Principal Engineer K-Token" — Tradeable, fractional
-└── "Fellow Recognition K-Token" — Reputation market
-```
-
-Each step reveals only "meets criteria" — full history stays private.
-
-## Comparison
-
-| Feature | Traditional KYC | ZK-Based Verifier | DarkFi Identity |
-|---------|-----------------|-------------------|-----------------|
-| Identity revealed | Everything | Depends on verifier | Nothing (MVI) |
-| Data minimization | None | Partial | Full |
-| Revocability | Full | Limited | Full |
-| Issuer tracking | Full | Partial | None |
-| Offline verification | No | Possible | Possible |
-
-## MVP Status
-
-**Partial MVP — Level 0 (zk_only) + Level 1 (selective disclosure)** — The contract implements:
-
-| Circuit | Status | Notes |
-|---------|--------|-------|
-| `issue_credential_v1.zk` | Bug | Uses hardcoded `ISSUER_PK` constant |
-| `create_claim_v1.zk` | ✅ Implemented | Level 0 zk_only |
-| `create_claim_v1_l1.zk` | ✅ Implemented | Level 1 selective via bounded equation |
-| `verify_claim_v1.zk` | ❌ Missing | No circuit file, placeholder in entrypoint |
-
-## Key Blockers
-
-| Blocker | Severity | Status |
-|---------|----------|--------|
-| `issue_credential_v1.zk` bug | High | `ISSUER_PK` should be public input |
-| `verify_claim_v1.zk` missing | Medium | No circuit file exists |
-| No integration test | High | Full issue → claim → verify flow not tested |
-| Test harness (BridgeCall API) | High | SDK API mismatch |
-
-## What It Needs
-
-- Fix `issue_credential_v1.zk` circuit (make `ISSUER_PK` a public input)
-- Implement `verify_claim_v1.zk` circuit file
-- Integration test: issue credential → create claim → verify claim
-- Full test harness integration (requires SDK API fixes)
-
-**See**:
-- [Safemath](../../../doc/src/arch/safemath.md) — safemath integration guide
-- [Contract MVP Status](../../../doc/src/arch/mvp_status.md) — full cross-contract analysis
+- **Delegation**: Capability delegation without identity leakage
+- **Trust Networks**: Graduated disclosure based on trust scores
+- **K-Assets**: Knowledge assets with market value
 
 ## References
 
@@ -464,7 +429,6 @@ Each step reveals only "meets criteria" — full history stays private.
 - [DarkFi DEX Contract](../dex/)
 - [DarkFi Money Contract](../money/)
 - [DarkFi Bridge Contract](../bridge/)
-- [Contract MVP Status](../../../doc/src/arch/mvp_status.md)
+- [Contract Architecture](../../../doc/src/arch/identity.md)
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)
-- [Differential Privacy](https://en.wikipedia.org/wiki/Differential_privacy)
 - [Anonymous Credentials](https://en.wikipedia.org/wiki/Anonymous_credentials)

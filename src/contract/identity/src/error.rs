@@ -77,6 +77,25 @@ pub enum IdentityError {
 
     #[error("Identity not initialized")]
     NotInitialized,
+
+    // O-Cap errors
+    #[error("Capability not found")]
+    CapabilityNotFound,
+
+    #[error("Capability already exists")]
+    CapabilityAlreadyExists,
+
+    #[error("Capability revoked")]
+    CapabilityRevoked,
+
+    #[error("Capability expired")]
+    CapabilityExpired,
+
+    #[error("Capability max holders reached")]
+    CapabilityMaxHoldersReached,
+
+    #[error("Capability requirement not met")]
+    CapabilityRequirementNotMet,
 }
 
 impl From<IdentityError> for ContractError {
@@ -101,6 +120,12 @@ impl From<IdentityError> for ContractError {
             IdentityError::PredicateFailed => Self::Custom(17),
             IdentityError::InsufficientFee => Self::Custom(18),
             IdentityError::NotInitialized => Self::Custom(19),
+            IdentityError::CapabilityNotFound => Self::Custom(20),
+            IdentityError::CapabilityAlreadyExists => Self::Custom(21),
+            IdentityError::CapabilityRevoked => Self::Custom(22),
+            IdentityError::CapabilityExpired => Self::Custom(23),
+            IdentityError::CapabilityMaxHoldersReached => Self::Custom(24),
+            IdentityError::CapabilityRequirementNotMet => Self::Custom(25),
         }
     }
 }

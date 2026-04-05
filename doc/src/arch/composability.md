@@ -43,6 +43,137 @@ See [Plain Contracts: A Dual-Layer Architecture](./plain_contracts.md) for full 
 
 ---
 
+## The O-Cap Paradigm: Authorization as Composition
+
+O-Cap (Object Capability) authorization provides the **common framework** for reasoning about composability across DarkFi contracts.
+
+### Why O-Cap Changes Everything
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    O-Cap as the Composition Primitive                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ACL REASONING (contract-specific):                              │
+│  "Alice has identity... Alice has credentials...                   │
+│   ...therefore Alice can vote"                                   │
+│  → Complex, cross-contract, identity-dependent                    │
+│                                                                   │
+│  O-Cap REASONING (capability-based):                            │
+│  "Prove can_vote capability... therefore ACCESS GRANTED"         │
+│  → Simple, local, identity-independent                            │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### How O-Caps Compose
+
+O-Caps compose through **capability chaining** - derived capabilities build on base capabilities:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    O-Cap Composition                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  IDENTITY CONTRACT (Base O-Cap):                                 │
+│  ┌─────────────────────────────────────────────────────────┐      │
+│  │ Credential: "software_engineer_v1"                       │      │
+│  │ Proves: role_level >= 5                                  │      │
+│  │ Issuer: ACME_Corp                                         │      │
+│  └─────────────────────────────────────────────────────────┘      │
+│                           │                                        │
+│                           ▼                                        │
+│  DERIVED CAPABILITY (DAO):                                       │
+│  ┌─────────────────────────────────────────────────────────┐      │
+│  │ can_propose = credential.software_engineer_v1           │      │
+│  │             + predicate(role >= 5)                      │      │
+│  └─────────────────────────────────────────────────────────┘      │
+│                           │                                        │
+│                           ▼                                        │
+│  FURTHER DERIVED (Tender):                                       │
+│  ┌─────────────────────────────────────────────────────────┐      │
+│  │ can_submit_bid = can_propose + credential.other_requirements│      │
+│  └─────────────────────────────────────────────────────────┘      │
+│                                                                   │
+│  COMPOSITION IS SIMPLE:                                          │
+│  - Each contract adds requirements, not amplifying authority       │
+│  - Each proof only reveals what's being proven                   │
+│  - No cross-contract identity linking                             │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### O-Caps Reduce Attack Surface Dramatically
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    O-Cap Reduces Attack Surface                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ACL Attack Surface:                                              │
+│  1. Stolen credentials → full identity compromise               │
+│  2. SQL injection → ACL modification                             │
+│  3. Privilege escalation → admin access                          │
+│  4. Insider threat → ACL bypass                                  │
+│  5. Cross-site scripting → session hijacking                     │
+│  → ATTACK SURFACE: Every point where identity exists              │
+│                                                                   │
+│  O-Cap Attack Surface:                                            │
+│  1. Stolen credential_secret → specific cap only                 │
+│  2. No ACL to modify (capabilities are derived)                  │
+│  3. No privilege escalation (authority is explicit)             │
+│  4. No insider threat (identity never in system)                  │
+│  5. No session to hijack (proof is transient)                    │
+│  → ATTACK SURFACE: Only the specific capability being proven       │
+│                                                                   │
+│  WHY O-Caps REDUCE attack surface:                               │
+│  - Authority is BOUNDED to what's being proven                   │
+│  - Identity is NEVER in the system                               │
+│  - Proofs are TRANSIENT (don't persist as ambient authority)     │
+│  - Revocation is CASCADING (credential revoke → all caps fail) │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Transaction Privacy with O-Caps
+
+Transaction context is **SEPARATE** from authorization - these are independent concerns:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                Transaction Privacy with O-Caps                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  TRADITIONAL TRANSACTION:                                         │
+│  Alice (0x1234) sends 100 tokens to Bob (0x5678)               │
+│  Revealed: Alice's identity, Bob's identity, amount, timing,     │
+│            complete transaction history                           │
+│  Privacy: ZERO                                                   │
+│                                                                   │
+│  O-Cap TRANSACTION:                                             │
+│  Prover proves: "I have can_transfer capability"                  │
+│                                                                   │
+│  What verifier learns:                                           │
+│  - can_transfer = VALID                                           │
+│  - predicate_result = 1                                          │
+│  - nullifier (exists, not who)                                   │
+│                                                                   │
+│  What verifier does NOT learn:                                    │
+│  - Who sent the transaction                                       │
+│  - Who received the transaction                                   │
+│  - What amount was transferred                                    │
+│  - When the transaction occurred                                  │
+│  - What the transaction was for                                   │
+│                                                                   │
+│  KEY INSIGHT: Authorization (O-Cap) proves CAPABILITY           │
+│  Transaction details are handled by the APPLICATION contract       │
+│  These are INDEPENDENT concerns.                                  │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## The Problem: Contract-Specific Reasoning
 
 Most smart contract designs reason about each contract in isolation:
@@ -112,13 +243,13 @@ All DarkFi contracts must represent state. The common patterns are:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Authorization Primitives
+### O-Cap: Authorization Primitives
 
-As detailed in [Private Authorization Layer](privauth.md), all DarkFi contracts share the same authorization pattern:
+As detailed in [Private Authorization Layer](privauth.md), O-Cap is the **central paradigm** that all DarkFi contracts use for authorization:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│              Shared Authorization Pattern                             │
+│              O-Cap Authorization Pattern                            │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  COMMITMENT          NULLIFIER           PROOF                   │
@@ -127,17 +258,30 @@ As detailed in [Private Authorization Layer](privauth.md), all DarkFi contracts 
 │       │                  │                    │                   │
 │       ▼                  ▼                    ▼                   │
 │  ┌─────────────────────────────────────────────────────┐         │
-│  │              Authorization Check                       │         │
+│  │  O-CAP: Authorization is BOUNDED and EXPLICIT        │         │
+│  │  • The proof IS the authority - nothing more          │         │
 │  │  • Commitment exists and is valid                     │         │
 │  │  • Nullifier has not been spent                       │         │
 │  │  • Proof verifies predicate without revealing secret   │         │
 │  └─────────────────────────────────────────────────────┘         │
 │                                                                   │
-│  KEY INSIGHT: Every contract uses the same pattern.              │
-│               Only the predicate changes.                         │
+│  KEY INSIGHT: O-Cap makes authority EXPLICIT and BOUNDED.      │
+│               Every DarkFi contract uses this pattern.            │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+**Identity Contract as O-Cap Baseline:**
+
+The [Identity Contract](../../src/contract/identity/) implements the canonical O-Cap pattern:
+
+| O-Cap Component | Identity Implementation |
+|-----------------|------------------------|
+| Capability | `Capability` struct: defines what capability allows and requires |
+| Credential | `CredentialRequirement`: specifies schema, issuer, threshold |
+| Proof | `CapabilityProof`: ZK proof of capability satisfaction |
+| Nullifier | `IntentNullifier`: prevents capability replay |
+| Revocation | `RevokeCapabilityV1`: issuer can revoke |
 
 ## The Attestation Primitive
 

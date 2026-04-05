@@ -132,6 +132,11 @@ define_contract_function!(IdentityFunction {
     CreateClaimV1L1V2 = 0x06,
     CreateClaimV1Multi = 0x07,
     CreateClaimV1Ratio = 0x08,
+    // O-Cap functions
+    RegisterCapabilityV1 = 0x09,
+    IssueCapabilityV1 = 0x0a,
+    VerifyCapabilityV1 = 0x0b,
+    RevokeCapabilityV1 = 0x0c,
 });
 
 /// Internal contract errors
@@ -160,6 +165,10 @@ pub const IDENTITY_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 pub const IDENTITY_CONTRACT_ISSUERS_TREE: &str = "issuers";
 /// Tree for configuration
 pub const IDENTITY_CONTRACT_CONFIG_TREE: &str = "config";
+/// Tree for registered capabilities
+pub const IDENTITY_CONTRACT_CAPABILITIES_TREE: &str = "capabilities";
+/// Tree for issued capability records (holder -> capability mapping)
+pub const IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE: &str = "capability_issuances";
 
 // ============================================================================
 // KEYS
@@ -171,6 +180,10 @@ pub const IDENTITY_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 pub const IDENTITY_CONTRACT_REVOCATION_LIST: &[u8] = b"revocation_list";
 /// Protocol version
 pub const IDENTITY_CONTRACT_VERSION: &[u8] = b"protocol_version";
+/// Capability registry key (stores capability definitions)
+pub const IDENTITY_CONTRACT_CAPABILITY_REGISTRY: &[u8] = b"capability_registry";
+/// Capability issuances key prefix
+pub const IDENTITY_CONTRACT_CAPABILITY_ISSUANCES: &[u8] = b"capability_issuances";
 
 // ============================================================================
 // ZK CIRCUIT NAMESPACES
@@ -190,3 +203,5 @@ pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_MULTI: &str = "CreateClaim_V1Multi"
 pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_RATIO: &str = "CreateClaim_V1Ratio";
 /// Claim verification circuit namespace
 pub const IDENTITY_CONTRACT_ZKAS_VERIFY_NS_V1: &str = "VerifyClaim_V1";
+/// Capability verification circuit namespace
+pub const IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V1: &str = "VerifyCapability_V1";

@@ -1,8 +1,100 @@
 # Private Authorization Layer (DRAFT)
 
-*This document describes a reusable pattern for privacy-preserving authorization in DarkFi smart contracts. This pattern appears across all DarkFi privacy-heavy contracts and should be considered a foundational primitive.*
+*This document describes O-Cap (Object Capability) authorization as the central paradigm for privacy-preserving authorization in DarkFi smart contracts. This pattern appears across all DarkFi privacy-heavy contracts and should be considered a foundational primitive.*
 
-## The Pattern
+## O-Cap: The Central Paradigm
+
+O-Cap is **not a feature** or an extension - it is the **central paradigm** for authorization in DarkFi.
+
+**The fundamental question:**
+- ACL: "WHO has access to X?"
+- O-Cap: "Can you prove you have access to X?"
+
+**The key insight:** Authorization should be based on **what you can prove**, not **who you are**.
+
+## The Ambient Authority Problem
+
+Traditional systems have **ambient authority** - your identity and permissions exist in the environment (OS, database, session) and ANY operation can potentially access them.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Ambient Authority Problem                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Alice logs into system                                           │
+│  → Her identity and ALL permissions are ambient (in environment) │
+│                                                                   │
+│  Alice's code runs:                                              │
+│  → Can it access resources it shouldn't?                         │
+│  → Can it leak data to unauthorized parties?                     │
+│  → Can it be tricked into acting for another user?               │
+│                                                                   │
+│  PROBLEM: Every operation runs in an environment                 │
+│  filled with ambient authority that can be exploited.             │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## O-Caps Eliminate Ambient Authority
+
+O-Caps make authority **EXPLICIT** and **BOUNDED**. The proof IS the authority - nothing more.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    O-Cap Eliminates Ambient Authority               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Alice creates a proof:                                           │
+│  → Only the SPECIFIC capability is in the proof                  │
+│  → No other permissions are present in the environment           │
+│  → The verifier only sees the capability, not Alice's identity   │
+│                                                                   │
+│  Alice's code cannot:                                            │
+│  → Access resources beyond the specific capability                │
+│  → Leak data because it has no ambient identity to leak          │
+│  → Be tricked because there's nothing to impersonate              │
+│                                                                   │
+│  KEY INSIGHT: O-Caps make authority EXPLICIT and BOUNDED.       │
+│               The proof IS the authority - nothing more.           │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## The Intuitive Privacy Rule
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│            O-Cap Makes Privacy Reasoning Intuitive                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ACL PRIVACY REASONING (hard):                                    │
+│  "Does this operation reveal Alice's identity?"                   │
+│  "Can this log be linked to other logs?"                          │
+│  "What does the admin see?"                                      │
+│  "If data breaches, what is exposed?"                            │
+│  → Complex, contextual, hard to reason about                     │
+│                                                                   │
+│  O-Cap PRIVACY REASONING (simple):                               │
+│  "What capability is being proven?"                               │
+│  "That's all the verifier learns - nothing more."                 │
+│  → SIMPLE, LOCAL, INTUITIVE                                      │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐      │
+│  │  In O-Cap, you reveal ONLY what you prove.            │      │
+│  │  If you prove "can_vote", verifier learns "can_vote"   │      │
+│  │  Nothing else. Nothing more. Always.                    │      │
+│  └─────────────────────────────────────────────────────────┘      │
+│                                                                   │
+│  WHY THIS IS INTUITIVE:                                          │
+│  - Privacy is PROVABLE, not just policy                          │
+│  - The ZK proof GUARANTEES what is/isn't revealed                │
+│  - No trust in system admins or database security                 │
+│  - Reasoning is LOCAL to the capability being proven               │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## The Pattern: How O-Caps Work
 
 Every privacy-preserving DarkFi contract needs to solve the same fundamental problem:
 
@@ -49,7 +141,7 @@ The solution is a reusable pattern with four components:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Why This Pattern Exists
+## Why O-Caps
 
 ### The Problem with Traditional Authorization
 
@@ -58,15 +150,19 @@ Traditional blockchain authorization reveals too much:
 - **Signatures** prove ownership but don't hide the transaction
 - **Balances** are visible to everyone
 - **Transaction graphs** can be analyzed to deanonymize users
+- **Ambient authority** exists in the environment, exploitable by code
 
-### The Privacy-Preserving Solution
+### The O-Cap Solution
 
-This pattern achieves **authorization without revelation**:
+O-Caps achieve **authorization without revelation**:
 
-1. **Commitment hides the secret**: `H(secret, params)` means only the holder knows the secret
-2. **Nullifier prevents reuse**: `H(secret)` can only be spent once
-3. **Proof enables authorization without disclosure**: ZK proof shows the secret is known without revealing it
-4. **Revocation provides control**: Issuer can invalidate before use
+1. **Capability bounds authority**: The proof IS the authority - nothing more
+2. **Commitment hides the secret**: `H(secret, params)` means only the holder knows the secret
+3. **Nullifier prevents reuse**: `H(secret)` can only be spent once
+4. **Proof enables authorization without disclosure**: ZK proof shows the secret is known without revealing it
+5. **Revocation provides control**: Issuer can invalidate before use
+
+**The key insight**: O-Caps answer the question "WHAT can you prove?" instead of "WHO are you?"
 
 ## Formal Definition
 
@@ -316,9 +412,22 @@ When using the authorization pattern across contracts:
 See [zkVM Primitive Layer](zkvm_primitives.md) for the full analysis of cross-contract
 ZK composition requirements.
 
-## SDK Primitives
+## SDK Primitives: O-Cap Building Blocks
 
-The DarkFi SDK provides reusable implementations of this pattern in `src/sdk/src/crypto/intent.rs` and `src/sdk/src/crypto/intent_set.rs`:
+The DarkFi SDK provides reusable O-Cap building blocks in `src/sdk/src/crypto/intent.rs` and `src/sdk/src/crypto/intent_set.rs`:
+
+**O-Cap is the paradigm, SDK primitives are the implementation:**
+
+| SDK Primitive | O-Cap Role |
+|---------------|------------|
+| `PrivateIntent` | Creates the capability commitment (bound to secret) |
+| `IntentNullifier` | Enables consumption with replay protection |
+| `IntentSetIndexV1` | Manages capability lifecycle (post/consume) |
+
+**Identity Contract uses these primitives for:**
+- `IssueCredentialV1`: Creates credential commitment
+- `CreateClaimV1`: Generates capability proof
+- `VerifyCapabilityV1`: Verifies capability proof (new O-Cap function)
 
 ### PrivateIntent
 
@@ -400,14 +509,62 @@ The [intent-amm fork](https://codeberg.org/rusticml/darkfi-intent-amm-proposal) 
 
 This provides a formally verified framework for the lifecycle described here. See [Composability](composability.md) for implementation details.
 
-### Predicate-Based Authorization
+### O-Cap: Predicate-Based Authorization
 
-This pattern naturally extends to predicate-based authorization:
-- "Prove you hold at least 100 tokens"
-- "Prove you're a DAO member"
-- "Prove you're over 18"
+O-Caps naturally extend to predicate-based authorization through **capabilities**:
 
-The predicate is verified in the ZK circuit, and only the result (true/false) is revealed.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    O-Cap Predicates in Action                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  CREDENTIAL (Base):                                              │
+│  ┌─────────────────────────────────────────────────────────┐      │
+│  │ "software_engineer_v1" credential                        │      │
+│  │ Attribute: role_level = 7                              │      │
+│  └─────────────────────────────────────────────────────────┘      │
+│                           │                                        │
+│                           ▼                                        │
+│  CAPABILITY (Derived):                                           │
+│  ┌─────────────────────────────────────────────────────────┐      │
+│  │ can_merge_pr = predicate(role_level >= 5)               │      │
+│  │                                                     │      │
+│  │ Prover reveals: "can_merge_pr = VALID"              │      │
+│  │ Prover hides: actual role_level (7)                     │      │
+│  └─────────────────────────────────────────────────────────┘      │
+│                                                                   │
+│  O-CAP CHAINS:                                                   │
+│  can_approve_security_pr = can_merge_pr + predicate(training=yes)  │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Identity Contract as Baseline Case Study:**
+
+The [Identity Contract](../../src/contract/identity/) implements O-Cap with:
+
+| Structure | Purpose |
+|----------|---------|
+| `Capability` | Defines what capability allows (e.g., "can_merge_pr") and what it requires (e.g., role >= 5) |
+| `CredentialRequirement` | Specifies the credential schema, issuer, and minimum threshold |
+| `CapabilityProof` | What the holder presents - proves they meet the requirement without revealing actual values |
+
+Example: Alice has a credential with `role_level = 7`. She wants to prove she can merge PRs (requires `role >= 5`).
+
+1. Alice creates `CapabilityProof`:
+   - `capability_id = can_merge_pr`
+   - `predicate_result = 1` (because 7 >= 5)
+   - ZK proof: "I know a credential with role >= 5"
+
+2. Verifier learns:
+   - `can_merge_pr = VALID`
+   - `predicate_result = 1`
+   - NULLIFIER (exists, not who)
+
+3. Verifier does NOT learn:
+   - Alice's identity
+   - Alice's actual role (7)
+   - That Alice has role_level = 7
 
 ## Predicate Verification and the Opcode Layer
 

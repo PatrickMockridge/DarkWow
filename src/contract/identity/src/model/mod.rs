@@ -287,6 +287,158 @@ pub struct Issuer {
 }
 
 // ============================================================================
+// O-CAP (OBJECT CAPABILITY) STRUCTURES
+// ============================================================================
+//
+// O-Cap authorization: Prove you have a CAPABILITY without revealing WHO you are.
+//
+// Instead of ACLs ("Alice has access to X"), we use:
+//   Capability: "Prove you have capability for X" → ACCESS GRANTED (identity hidden)
+//
+// Example: Instead of ACL: alice@company → can_merge_pr
+//          O-Cap: prove(role >= senior_engineer) → can_merge_pr
+//
+// This enables authorization without identity tracking.
+//
+// ============================================================================
+
+/// A named capability derived from a credential
+///
+/// Capabilities are issued by trusted issuers and prove that the holder
+/// meets certain requirements (e.g., role >= senior_engineer).
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct Capability {
+    /// Unique capability identifier (hash of name + issuer + requirements)
+    pub capability_id: [u8; 32],
+    /// Capability name (e.g., "can_merge_pr", "can_approve_security_pr")
+    pub name: Vec<u8>,
+    /// Credential requirements for this capability
+    pub credential_requirement: CredentialRequirement,
+    /// Issuer's public key (who can issue this capability)
+    pub issuer_pub: [u8; 32],
+    /// Maximum number of holders (None = unlimited)
+    pub max_holders: Option<u64>,
+    /// Current number of issued capabilities
+    pub issued_count: u64,
+}
+
+/// What a capability requires to be obtained
+///
+/// Describes the credential schema and threshold needed to qualify
+/// for a capability.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CredentialRequirement {
+    /// Schema hash this capability requires
+    pub schema_hash: [u8; 32],
+    /// Issuer public key (must be from this trusted issuer)
+    pub issuer_pub: [u8; 32],
+    /// Minimum threshold (e.g., role >= senior_engineer means min_threshold >= 5)
+    pub min_threshold: u64,
+    /// Attribute name to check (e.g., "role", "experience_years")
+    pub attribute_name: Vec<u8>,
+}
+
+/// A proof of capability presented to verifiers
+///
+/// This is what holders present to prove they have a capability.
+/// The proof reveals only that the holder meets the requirement,
+/// not their identity or actual attribute values.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CapabilityProof {
+    /// Hash of the capability definition
+    pub capability_id: [u8; 32],
+    /// Nullifier from the underlying credential (proves credential exists)
+    pub nullifier: IntentNullifier,
+    /// Public predicate result (1 if satisfied, 0 if not)
+    pub predicate_result: u8,
+    /// Issuer's public key
+    pub issuer_pub: [u8; 32],
+    /// Schema hash
+    pub schema_hash: [u8; 32],
+    /// ZK proof of capability satisfaction
+    pub proof: Vec<u8>,
+    /// Capability secret (proves holder owns this capability)
+    pub capability_secret: [u8; 32],
+    /// Timestamp when proof was created
+    pub created_at: u64,
+}
+
+/// Parameters for registering a new capability type
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RegisterCapabilityParams {
+    /// Capability name (e.g., "can_merge_pr")
+    pub name: Vec<u8>,
+    /// Credential requirement for this capability
+    pub credential_requirement: CredentialRequirement,
+    /// Maximum holders (None = unlimited)
+    pub max_holders: Option<u64>,
+    /// Fee paid for registration
+    pub fee: u64,
+}
+
+/// Parameters for issuing a capability to a holder
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct IssueCapabilityParams {
+    /// Capability ID being issued
+    pub capability_id: [u8; 32],
+    /// Holder's public key
+    pub holder_pub: [u8; 32],
+    /// Credential nullifier (proves holder has required credential)
+    pub credential_nullifier: IntentNullifier,
+    /// ZK proof of credential satisfaction
+    pub proof: Vec<u8>,
+    /// Issuer signature over the capability grant
+    pub issuer_sig: Vec<u8>,
+    /// Fee paid for issuance
+    pub fee: u64,
+}
+
+/// Parameters for verifying a capability
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VerifyCapabilityParams {
+    /// The capability proof to verify
+    pub capability_proof: CapabilityProof,
+    /// Verifier's public key (who is requesting verification)
+    pub verifier_pub: [u8; 32],
+    /// Fee paid for verification
+    pub fee: u64,
+}
+
+/// Parameters for revoking a capability
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RevokeCapabilityParams {
+    /// Capability ID being revoked
+    pub capability_id: [u8; 32],
+    /// Holder whose capability is being revoked
+    pub holder_pub: [u8; 32],
+    /// Capability secret (proves holder ownership)
+    pub capability_secret: [u8; 32],
+    /// Issuer or holder signature
+    pub signature: Vec<u8>,
+    /// Reason for revocation
+    pub reason: Vec<u8>,
+    /// Fee paid for revocation
+    pub fee: u64,
+}
+
+/// Stored capability record (who holds what capability)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct StoredCapability {
+    /// Capability ID
+    pub capability_id: [u8; 32],
+    /// Holder's public key
+    pub holder_pub: [u8; 32],
+    /// Capability secret (proves ownership)
+    pub secret: [u8; 32],
+    /// Whether this capability is revoked
+    pub revoked: bool,
+    /// Issuance timestamp
+    pub issued_at: u64,
+    /// Expiration timestamp (0 = never)
+    pub expires_at: u64,
+}
+
+// ============================================================================
 // MINIMAL VIABLE INFORMATION EXAMPLES
 // ============================================================================
 //
@@ -318,5 +470,14 @@ pub struct Issuer {
 // GOOD (MVI): Prove accredited = true only
 //   Claim: { predicate_result: true }
 //   Reveals: Only "user is accredited" - amounts hidden
+//
+// EXAMPLE 4: O-Cap Authorization
+// -----------------------------
+// Credential contains: { role: "senior_engineer", experience: 7 }
+//
+// ACL (traditional): alice@company → can_merge_pr
+// O-Cap: prove(role >= senior_engineer) → can_merge_pr
+//
+// Reveals: Only "user meets requirements" - identity and role hidden
 //
 // ============================================================================
