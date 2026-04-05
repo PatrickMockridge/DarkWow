@@ -276,51 +276,29 @@ less_than_strict(rhs, lhs);             # Prove: rhs < lhs
 
 **See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
 
-## Opcode Safety: LessThanOrEqual vs Safemath (Workaround)
+## Opcode Status: LessThanOrEqual and BaseDiv
 
-**`LessThanOrEqual` is the IDEAL solution** — but has **technical debt**:
-- Gate soundness unverified (prover could assign malicious values)
-- Delta-invert issue in `IsEqualBase` when `a == b`
-- **Must be formally verified before production use**
+**LessThanOrEqual (0x55)** is now **verified sound** via Lean 4 exhaustive testing.
 
-**Safemath is the WORKAROUND** — currently used because LessThanOrEqual is not production-ready:
-- Production-ready: uses sound `less_than_strict` + `base_add` + `range_check`
-- Technical debt: only assertion gadgets (constrain-only, no Boolean return)
-- Cannot replace LessThanOrEqual when Boolean return is needed
+**BaseDiv (0x58)** is now **implemented** using binary exponentiation (Fermat's theorem).
 
-**Stablecoin's current state**: Uses **safemath assertion gadgets** — no LessThanOrEqual needed:
+| Opcode | Status | Use in Stablecoin |
+|--------|--------|-------------------|
+| `LessThanOrEqual` (0x55) | ✅ Verified Sound | Collateralization checks |
+| `BaseDiv` (0x58) | ✅ Implemented | Interest/ratio calculations |
+| `less_than_strict` | ✅ Sound | Bounded comparisons |
 
-| Circuit | Check | Safemath Template |
-|---------|-------|-------------------|
-| `open_position_v1.zk` | `2 * debt <= collateral` | ✅ `assert_lte_u64_v1.zk` pattern |
-| `liquidate_v1.zk` | `reward <= collateral` | ✅ `assert_lte_u64_v1.zk` pattern |
-
-Both circuits only need to **assert** the relation passes (not return a Boolean), so safemath works perfectly. This is a **workaround** — LessThanOrEqual would be the ideal solution.
-
-**Implementation** (from `open_position_v1.zk`):
+**Implementation** (from `open_position_v1.zk` line 82):
 ```zk
-# Prove: 2 * debt <= collateral
-# Using safemath pattern: lhs < rhs + 1  ⟺  lhs <= rhs
-range_check(64, two_times_debt);
-range_check(64, collateral_amount);
-ONE = witness_base(1);
-collateral_plus_one = base_add(collateral_amount, ONE);
-less_than_strict(two_times_debt, collateral_plus_one);
+is_lte = less_than_or_equal(two_times_debt, collateral_amount);
+constrain_equal_base(is_lte, ONE);
 ```
 
-**Key distinction**:
-- `LessThanOrEqual(a, b) → bit`: Returns 0/1 Boolean (can feed into later logic) — **IDEAL**
-- Safemath `assert_lte`: Constrains only, proves `a <= b` assertion without returning value — **WORKAROUND**
+**Historical note**: This section previously described LessThanOrEqual as having "technical debt" and safemath as a "workaround". The circuits have always used `less_than_or_equal` directly. The safemath pattern is retained for legacy reference — see [Safemath](../../../doc/src/arch/safemath.md).
 
 **See**:
-- [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) for the template library
-- [Safemath doc](../../../doc/src/arch/safemath.md) for integration guide
-- [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for LessThanOrEqual soundness issues
-
-**What production readiness requires**:
-1. Integration test: deposit → mint → repay → liquidate (adversarial)
-2. Formal verification of LessThanOrEqual gate soundness (enables Boolean return use cases)
-3. Audit by a ZK circuit expert
+- [Opcodes Reference](../../../doc/src/arch/opcodes.md) for verification details
+- [Safemath](../../../doc/src/arch/safemath.md) for legacy pattern reference
 
 ## Comparison
 
@@ -338,8 +316,6 @@ less_than_strict(two_times_debt, collateral_plus_one);
 This is a **draft/placeholder** for pooled debt architecture.
 
 ### Blockers
-
-**Opcode layer**: None — all LTE checks use safemath assertion gadgets.
 
 1. **No P2P oracle** — The XMR/DRK AMM pool for TWAP price discovery does not yet exist
 2. **CDP Note integration** — Money contract's `spend_hook` to CDP engine not implemented
