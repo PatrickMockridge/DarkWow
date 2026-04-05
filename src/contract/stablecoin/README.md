@@ -378,6 +378,66 @@ constrain_equal_base(is_lte, ONE);
 | ZK complexity | Per-position | Pool-level |
 | Freeze authority | Maker Foundation | None |
 
+## Governance Best Practices
+
+**Governance integration is a compositional concern for deployers**, not the contract itself. The contract provides financial primitives; governance organization is your responsibility.
+
+### Pre-Deployment Checklist
+
+1. **DAO should pre-exist deployment**
+   - Create DAO and operational BEFORE stablecoin deployment
+   - Define governance token and initial supply
+   - Set up voting mechanisms
+
+2. **Deployment wallet = DAO multisig**
+   - Deployer wallet should be a DAO multisig, not an individual
+   - Dead man switch is backup — primary governance is the DAO
+   - All executive actions via DAO voting
+
+3. **Initial parameters via governance**
+   - Minimum collateralization ratio
+   - Liquidation thresholds
+   - PI controller settings
+   - Dead man switch configuration
+
+### Staking Integration (External)
+
+Staking tokens to the stablecoin contract for governance weight is configured at the **DAO level**, not the contract level:
+
+```
+DAO Configuration (external):
+  - Define governance token
+  - Set staking rewards
+  - Configure voting weight
+
+Stablecoin Contract (this):
+  - Provides financial primitives
+  - Dead man switch for safety
+  - Emits events for governance tracking
+```
+
+The contract just provides the financial primitives. How staking integrates with your DAO's governance is your design decision.
+
+### DrainProtection (Optional Layer)
+
+- **Dead man switch is the minimum** (already in contract)
+- Deployers can add [DrainProtection](../drain_protection/README.md) as an additional safety layer
+- 8 best practices available but not required
+- Your governance structure determines which practices make sense
+
+### Summary
+
+| Concern | Where Decided |
+|---------|--------------|
+| Collateral types | Contract deployment |
+| Model selection | Contract deployment |
+| Interest rates | DAO governance |
+| Emergency shutdown | Dead man switch (contract) + DAO |
+| Staking for governance | DAO organization |
+| Executive actions | DAO multisig |
+
+**The contract provides tools; your organization provides governance.**
+
 ## Implementation Status
 
 ### Complete
