@@ -1,4 +1,4 @@
-# Uncensored DarkFi Fork - Math and Code, Not Memes and Slogans
+# DarkFi: O-Cap Authorization for Privacy-Preserving ZK Contracts
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/darkrenaissance/darkfi/ci.yml?branch=master&style=flat-square)
 [![Web - dark.fi](https://img.shields.io/badge/Web-dark.fi-white?logo=firefox&logoColor=white&style=flat-square)](https://dark.fi)
@@ -11,172 +11,175 @@
 
 This is a development fork of the official DarkFi repository. **Development occurs on the `master` branch** (`PatrickM123/darkfi:master`).
 
-This fork contains all additions compared to official DarkFi master:
+---
 
-## Smart Contracts
+## The Problem: Authorization Without Privacy
 
-ZK contracts using the existing opcode set. Maximum privacy, full ZK expressiveness.
+**Traditional blockchain asks**: "WHO has access?"
+- Public keys link transactions to identities
+- Signatures prove ownership but don't hide the transaction
+- Transaction graphs can be analyzed to deanonymize users
 
-**New smart contracts**: Bridge, DEX, Identity, Stablecoin, Escrow, DAO-Escrow, Subscription, Atomic Swap, Labor Market, Auction, Tender, Attestation, Oracle, Baccarat, Roulette, Slot, Lottery, BettingStake, DarkBet Exchange, Insurance Market, Block Height Prediction, Game Room, Drain Protection
+**DarkFi asks**: "Can you prove you have access?"
+- Identity never revealed, only capabilities proven
+- O-Cap (Object Capability) = authorization without revelation
 
-- **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
-- **Identity refactor**: Level 0 (zk_only) + Level 1 selective disclosure
-- **Safemath integration**: Legacy ZK arithmetic templates (LessThanOrEqual now verified sound)
-- **Bridge Merkle fix**: Real `merkle_root` opcode (not fake proof)
-- **Entropy module**: Shared `darkfi_sdk::crypto::entropy` for provable randomness across contracts
-
-## Architecture Documentation
-
-- [Opcodes Reference](doc/src/arch/opcodes.md) — Opcode soundness verification with Lean 4 proofs
-- [Merkle Depth](doc/src/arch/merkle_depth.md) — Fixed-depth limitations and workarounds
-- [Composability](doc/src/arch/composability.md) — Smart contract composition patterns
-- [Safemath](doc/src/arch/safemath.md) — Legacy ZK arithmetic templates (LessThanOrEqual workaround, now optional)
-- [Entropy Module](doc/src/arch/entropy.md) — Provable randomness via block hash entropy
-- [Parallel Societies](doc/src/arch/parallel_societies.md) — Privacy for social reproduction industries
-- [Generalized Contract Invocation API](doc/src/arch/contract_invoke_api.md) — Single RPC endpoint for any contract
-
-## Key Features
-
-- **DarkBet Exchange**: Unified betting contract with order-book (back/lay) and AMM pool modes
-- **Lottery**: Configurable lottery bridging BettingStake and Insurance problem spaces
-- **Baccarat/Roulette/Slot**: Privacy-preserving casino games using cumulative PoW entropy. Slot uses same composability pattern as Baccarat (Commit → Reveal → Settle) with swappable paytables and reel configurations.
-- **Entropy module**: Shared `darkfi_sdk::crypto::entropy` for provable randomness across contracts
-- **DrainProtection**: 8 optional best practices (graduated tiers, exit queue, circuit breaker, guardian pause, observation period, split proposals, no-loss reserve, dead man's switch)
-- **Game Room**: Generalized betting and pot management contract for poker, backgammon, etc.
-
-**Security Status**: All new contracts are EXPERIMENTAL and UNAUDITED. Known security issues are documented in [Security Analysis](doc/src/arch/security-analysis.md). The official DarkFi repository should be consulted for the canonical, production-ready state.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    O-Cap Authorization                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Alice proves: "I am a verified smart contract auditor"          │
+│  Verifier learns: ✓ Alice can audit                               │
+│  Verifier DOES NOT learn: Alice's name, employer, salary          │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
+## The Complete O-Cap Pipeline
 
+DarkFi's contracts weave together into a complete privacy-preserving system:
 
-We aim to proliferate [anonymous digital
-markets](https://dark.fi/manifesto.html) by means of strong cryptography
-and peer-to-peer networks. We are establishing an online zone of freedom
-that is resistant to the surveillance state.
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  IDENTITY          →    TENDER         →    LABOR MARKET    →    INSURANCE    │
+│  (capabilities)         (selection)          (execution)           (risk)     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Worker registers capabilities once:                                         │
+│  - "qualified_contractor" from Identity contract                              │
+│  - "senior_engineer" via DAG (multiple paths to qualify)                    │
+│                                                                              │
+│  Worker proves capability everywhere without revealing identity:             │
+│  - Tender: Submit bid proving capability (0x08)                              │
+│  - Labor Market: Accept job proving same capability (0x0d)                   │
+│  - Insurance: Act as underwriter proving different capability (0x09-0x0c)     │
+│                                                                              │
+│  THE CAPABILITY FOLLOWS THE WORKER - IDENTITY NEVER REVEALED               │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-> Unfortunately, the law hasn't kept pace with technology, and this disconnect
-> has created a significant public safety problem. We call it "Going Dark".
+**Key insight**: Workers prove qualifications once via Identity, use those proofs everywhere. No re-verification, no identity disclosure.
 
-> James Comey, FBI director
+---
 
-So let there be dark.
+## O-Cap Authorization (0x09-0x0d)
 
-## About DarkFi
+The Identity contract provides full O-Cap authorization:
 
-DarkFi is a new Layer 1 blockchain, designed with anonymity at the
-forefront. It offers flexible private primitives that can be wielded
-to create any kind of application. DarkFi aims to make anonymous
-engineering highly accessible to developers.
+| Opcode | Function | Purpose |
+|--------|----------|---------|
+| `0x09` | `RegisterCapabilityV1` | Define capability types (e.g., "can_audit_smart_contracts") |
+| `0x0a` | `IssueCapabilityV1` | Issue capability to qualified holders |
+| `0x0b` | `VerifyCapabilityV1` | Cross-contract verification (authorization happens here) |
+| `0x0c` | `RevokeCapabilityV1` | Revoke capability (issuer can invalidate) |
+| `0x0d` | `CreateClaimDAGV1` | Multi-path competency (OR logic between paths, AND within) |
 
-DarkFi uses advances in zero-knowledge cryptography and includes a
-contracting language and developer toolkits to create uncensorable
-code.
+### DAG Example: "Senior Engineer" Competency
 
-In the open air of a fully dark, anonymous system, cryptocurrency has
-the potential to birth new technological concepts centered around
-sovereignty. This can be a creative, regenerative space - the dawn of
-a Dark Renaissance.
+```
+PATH A:                          PATH B:
+BSC Degree ──► 5yr Exp ──► Lead  │  Industry Cert ──► 10yr Exp
+        │                             │
+        └─────────────────────────────┼────► "Senior Engineer"
+                                      │      (Either path qualifies)
+```
 
-## Connect to DarkFi Alpha Testnet
+Worker proves they satisfied a path without revealing which path or exact credentials.
 
-DarkFi Alpha Testnet is a PoW blockchain that provides fully anonymous
-transactions, zero-knowledge contracts, anonymous atomic swaps, a
-self-governing anonymous DAO, and more.
+---
 
-- `darkfid` is the DarkFi fullnode. It validates blockchain
-transactions and stays connected to the p2p network.
-- `drk` is a CLI wallet. It provides an interface to smart contracts
-such as Money and DAO, manages our keys and coins, and scans the
-blockchain to update our balances.
-- `xmrig` is the mining daemon used in DarkFi. Connects to `darkfid`
-over its `Stratum` RPC, and requests new block headers to mine.
+## Smart Contracts by Purpose
 
-To connect to the alpha testnet, [follow the tutorial][tutorial].
+### Identity & Authorization
+- **Identity**: O-Cap primitives, credentials, DAG-based competency claims
 
-[tutorial]: https://dark.fi/book/testnet/node.html
+### Finance
+- **Money**: Token transfers, value storage
+- **Stablecoin**: Synthetix-style pooled debt model
+- **DEX**: Privacy-preserving decentralized exchange
+- **Escrow**: Conditional value escrow
+- **DAO-Escrow**: DAO-governed endowment with voting
+- **Subscription**: Recurring payment streams
+- **Bridge**: Cross-chain transfers
 
-## Connect to DarkFi IRC
+### Labor & Tendering
+- **Labor Market**: Job posting and acceptance with O-Cap (0x0d AcceptJobWithCapabilityV1)
+- **Tender**: Sealed-bid procurement with O-Cap (0x07-0x08 capability-based bids)
+- **Attestation**: Generalized claims and evidence verification
 
-Follow the [installation instructions][darkirc-instructions] for the
-P2P IRC daemon.
+### Risk & Insurance
+- **Insurance Market**: Underwriting and coverage with O-Cap (0x09-0x0c capability-based)
+- **Prediction Market**: Risk probability pricing
 
-[darkirc-instructions]: https://dark.fi/book/misc/darkirc/darkirc.html#installation
+### Gaming & Entertainment
+- **Baccarat**, **Roulette**, **Slot**: Privacy-preserving casino games
+- **Lottery**: Configurable lottery combining BettingStake and Insurance
+- **DarkBet Exchange**: Unified betting with order-book and AMM modes
+- **Game Room**: Generalized betting for poker, backgammon, etc.
+
+### Infrastructure
+- **Oracle**: Push-model oracle with attestation
+- **Block Height Prediction**: Entropy-based randomness
+
+---
+
+## Key Differentiators
+
+### O-Cap Authorization
+Authorization based on **what you can prove**, not **who you are**.
+- Identity hidden at every step
+- Only the specific capability is revealed
+- Capabilities are bound to secrets only the holder knows
+- Issuers can revoke capabilities
+
+### Composable Privacy
+Contracts build on each other:
+- **Auction** uses **Escrow** for deposits (not built-in)
+- **Tender** uses **Attestation** for competency claims
+- **Labor Market** creates jobs from **Tender** winners
+- **Insurance Market** integrates with **Money** for premiums/claims
+
+### ZK Circuits
+All contracts use zero-knowledge proofs for:
+- Commitment schemes (hide values on-chain)
+- Range proofs (e.g., "balance >= X" without revealing balance)
+- Membership proofs (e.g., Merkle tree verification)
+- Predicate verification (e.g., "age >= 18" without revealing age)
+
+### Provable Randomness
+Shared `darkfi_sdk::crypto::entropy` module for entropy across contracts.
+
+---
+
+## Architecture Documentation
+
+- [O-Cap & Composable Privacy](doc/src/arch/ocap.md) — The central paradigm
+- [Opcodes Reference](doc/src/arch/opcodes.md) — Opcode soundness with Lean 4 proofs
+- [Composability](doc/src/arch/composability.md) — Contract composition patterns
+- [Safemath](doc/src/arch/safemath.md) — Legacy ZK arithmetic templates
+- [Entropy Module](doc/src/arch/entropy.md) — Provable randomness via block hash
+- [Parallel Societies](doc/src/arch/parallel_societies.md) — Privacy for social reproduction
+
+---
 
 ## Build
-
-First you need to clone DarkFi repo and enter its root folder, if
-you haven't already done it:
 
 ```shell
 % git clone https://codeberg.org/PatrickM123/darkfi
 % cd darkfi
-```
-
-This project requires the Rust compiler to be installed.
-Please visit [Rustup](https://rustup.rs/) for instructions.
-
-You have to install a native toolchain, which is set up during Rust installation,
-and wasm32 target.
-To install wasm32 target, execute:
-
-```shell
 % rustup target add wasm32-unknown-unknown
-```
-Minimum Rust version supported is **1.87.0**.
-
-The following dependencies are also required:
-
-|   Dependency   |   Debian-based     |
-|----------------|--------------------|
-| git            | git                |
-| cmake          | cmake              |
-| make           | make               |
-| gcc            | gcc                |
-| g++            | g++                |
-| pkg-config     | pkg-config         |
-| alsa-lib       | libasound2-dev     |
-| clang          | libclang-dev       |
-| fontconfig     | libfontconfig1-dev |
-| lzma           | liblzma-dev        |
-| openssl        | libssl-dev         |
-| sqlcipher      | libsqlcipher-dev   |
-| sqlite3        | libsqlite3-dev     |
-
-Users of Debian-based systems (e.g. Ubuntu) can simply run the
-following to install the required dependencies:
-
-```shell
-# apt-get update
-# apt-get install -y git cmake make gcc g++ pkg-config libasound2-dev libclang-dev libfontconfig1-dev liblzma-dev libssl-dev libsqlcipher-dev libsqlite3-dev
-```
-
-Alternatively, users can try using the automated script under `contrib`
-folder by executing:
-
-```shell
-% sh contrib/dependency_setup.sh
-```
-
-The script will try to recognize which system you are running,
-and install dependencies accordingly. In case it does not find your
-package manager, please consider adding support for it into the script
-and sending a patch.
-
-Lastly, we can build the necessary binaries using the provided
-Makefile, to build the project. If you want to build specific ones,
-like `darkfid` or `darkirc`, skip this step, as it will build
-everything, and use their specific targets instead.
-
-```shell
 % make
 ```
 
-## Development
+Minimum Rust version: **1.87.0**.
 
-If you want to hack on the source code, make sure to read some
-introductory advice in the
-[DarkFi book](https://dark.fi/book/dev/dev.html).
+For development hacking, see the [DarkFi book](https://dark.fi/book/dev/dev.html).
+
+---
 
 ## Reference Materials
 
@@ -185,26 +188,23 @@ introductory advice in the
 DarkFi Reference Material stored permanently on Arweave:
 - [DarkFi Reference Material](https://app.ardrive.io/#/drives/f79597cd-8a4e-426e-840e-25c1453e418d?name=DarkFi+Reference+Material) - Textbooks, papers, and materials on ZK circuits, cryptography, and DarkFi
 
-## Installation (Optional)
+---
 
-This will install the binaries on your system (`/usr/local` by
-default). The configuration files for the binaries are bundled with the
-binaries and contain sane defaults. You'll have to run each daemon once
-in order for them to spawn a config file, which you can then review.
+## Security Status
 
-```shell
-# make install
-```
+All new contracts are **EXPERIMENTAL** and **UNAUDITED**.
 
-### Examples and usage
+Known issues are documented in [Security Analysis](doc/src/arch/security-analysis.md).
 
-See the [DarkFi book](https://dark.fi/book/)
+---
 
-## Go Dark
+## Connect
 
-Let's liberate people from the claws of big tech and create the
-democratic paradigm of technology.
+- [DarkFi Alpha Testnet](https://dark.fi/book/testnet/node.html) — PoW blockchain with anonymous transactions and ZK contracts
+- [DarkFi IRC](https://dark.fi/book/misc/darkirc/darkirc.html#installation) — P2P IRC daemon
 
-Self-defense is integral to any organism's survival and growth.
+---
 
-Power to the minuteman.
+**Go Dark.**
+
+Let's liberate people from the claws of big tech and create the democratic paradigm of technology. Self-defense is integral to any organism's survival and growth. Power to the minuteman.
