@@ -47,6 +47,17 @@ See [Plain Contracts: A Dual-Layer Architecture](./plain_contracts.md) for full 
 
 O-Cap (Object Capability) authorization provides the **common framework** for reasoning about composability across DarkFi contracts.
 
+### O-Cap Full Opcode Reference (0x09-0x0c)
+
+The Identity contract implements O-Cap authorization via these opcodes:
+
+| Opcode | Function | Description |
+|--------|----------|-------------|
+| `0x09` | `RegisterCapabilityV1` | Register a new capability type (e.g., `can_merge_pr`, `can_work_on_freelance_jobs`) |
+| `0x0a` | `IssueCapabilityV1` | Issue a capability to a holder based on their credential |
+| `0x0b` | `VerifyCapabilityV1` | Verify a capability proof (cross-contract authorization) |
+| `0x0c` | `RevokeCapabilityV1` | Revoke a capability (issuer action) |
+
 ### Why O-Cap Changes Everything
 
 ```
@@ -62,6 +73,9 @@ O-Cap (Object Capability) authorization provides the **common framework** for re
 │  O-Cap REASONING (capability-based):                            │
 │  "Prove can_vote capability... therefore ACCESS GRANTED"         │
 │  → Simple, local, identity-independent                            │
+│                                                                   │
+│  The key insight: Authorization (what you CAN do)               │
+│  doesn't require Identity (who you ARE)                          │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -273,15 +287,18 @@ As detailed in [Private Authorization Layer](privauth.md), O-Cap is the **centra
 
 **Identity Contract as O-Cap Baseline:**
 
-The [Identity Contract](../../src/contract/identity/) implements the canonical O-Cap pattern:
+The [Identity Contract](../../src/contract/identity/) implements the canonical O-Cap pattern with full opcode support (0x09-0x0c):
 
-| O-Cap Component | Identity Implementation |
-|-----------------|------------------------|
-| Capability | `Capability` struct: defines what capability allows and requires |
-| Credential | `CredentialRequirement`: specifies schema, issuer, threshold |
-| Proof | `CapabilityProof`: ZK proof of capability satisfaction |
-| Nullifier | `IntentNullifier`: prevents capability replay |
-| Revocation | `RevokeCapabilityV1`: issuer can revoke |
+| O-Cap Opcode | Function | Identity Implementation |
+|--------------|----------|------------------------|
+| `0x09` | `RegisterCapabilityV1` | Register capability types |
+| `0x0a` | `IssueCapabilityV1` | Issue capabilities to holders |
+| `0x0b` | `VerifyCapabilityV1` | Verify capability proofs (cross-contract) |
+| `0x0c` | `RevokeCapabilityV1` | Revoke capabilities |
+| Capability | `Capability` struct | Defines what capability allows and requires |
+| Credential | `CredentialRequirement` | Specifies schema, issuer, threshold |
+| Proof | `CapabilityProof` | ZK proof of capability satisfaction |
+| Nullifier | `IntentNullifier` | Prevents capability replay |
 
 ## The Attestation Primitive
 
@@ -635,115 +652,165 @@ if params.coverage_amount > available_coverage {
 underwriter.coverage_sold += update.amount;
 ```
 
-### Missing Opcodes That Would Enable Proper Authorization
+### O-Cap Authorization: Now Fully Implemented
 
-The issues above highlight missing opcodes in DarkFi's zkVM that prevent proper
-cross-contract authorization:
+The Identity contract provides full O-Cap authorization via these opcodes:
 
-| Missing Opcode | What It Would Enable | Current Workaround |
-|--------------|---------------------|-------------------|
-| `SchnorrVerify` | On-chain signature verification in ZK | Manual signature field, non-zero check only |
-| `ZKaSVerify` | Verify ZK proofs within contract | Access control via owner field |
-| `CrossCall` | Call other contracts' circuits | Trusted setup, manual root sync |
-| `MerkleProofVerify` | Prove membership in external Merkle tree | Store trusted Merkle root |
+| Opcode | Function | Description |
+|--------|----------|-------------|
+| `0x09` | `RegisterCapabilityV1` | Register a new capability type (e.g., `can_merge_pr`) |
+| `0x0a` | `IssueCapabilityV1` | Issue a capability to a holder based on their credential |
+| `0x0b` | `VerifyCapabilityV1` | Verify a capability proof |
+| `0x0c` | `RevokeCapabilityV1` | Revoke a capability |
 
-#### SchnorrVerify
+**Key insight**: O-Cap authorization is now a first-class cross-contract primitive. Contracts no longer need "missing opcodes" - they can use `VerifyCapabilityV1` to verify capability proofs from the Identity contract.
 
-```zk
-# Ideal interface:
-schnorr_verify(
-    pubkey: Point,
-    message: Base,
-    signature: (Point, Scalar)
-) -> Base  # 1 if valid, 0 if invalid
-
-# Would enable:
-# - Oracle signature verification in circuits
-# - Proof of ownership without revealing pubkey
-# - Cross-contract authorization via signatures
+```
+┌─────────────────────────────────────────────────────────────────┐
+│            O-Cap Authorization: Now Fully Implemented                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  IDENTITY CONTRACT (0x09-0x0c):                                 │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ RegisterCapabilityV1: Define "can_merge_pr"                 │ │
+│  │   - credential_requirement: role >= senior_engineer       │ │
+│  │   - issuer: ACME_Corp                                      │ │
+│  │                                                              │ │
+│  │ IssueCapabilityV1: Alice receives "can_merge_pr"           │ │
+│  │   - Proves: Alice has credential with role >= 5            │ │
+│  │   - Hides: Alice's actual role, employer, salary           │ │
+│  │                                                              │ │
+│  │ VerifyCapabilityV1: Verify Alice's capability proof       │ │
+│  │   - Returns: can_merge_pr = VALID                          │ │
+│  │   - Hides: Everything else                                 │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                           │                                       │
+│                           ▼                                       │
+│  OTHER CONTRACT (DAO, Labor Market, etc):                         │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ call identity.verify_capability(params)                    │ │
+│  │   - capability_id: can_merge_pr                            │ │
+│  │   - proof: Alice's ZK proof                                │ │
+│  │   - Returns: true/false                                    │ │
+│  │                                                              │ │
+│  │ Result: Alice can merge (without revealing identity)        │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-#### ZKaSVerify
+### O-Cap Enables Real-Economy Privacy
 
-```zk
-# Ideal interface:
-zkas_verify(
-    circuit_name: str,
-    public_inputs: [Base],
-    proof: Bytes
-) -> Base  # 1 if valid, 0 if invalid
+O-Cap transforms how privacy works for social reproduction:
 
-# Would enable:
-# - Claim winnings proof verification
-# - Attestation claim verification
-# - Any custom ZK predicate in contracts
 ```
-
-#### CrossCall
-
-```zk
-# Ideal interface:
-cross_call(
-    target_contract: ContractId,
-    function: u8,
-    inputs: [Base],
-    proof: Bytes
-) -> Base
-
-# Would enable:
-# - Contracts to call each other's circuits directly
-# - Atomic cross-contract transactions with proof verification
-# - No trusted setup required
+┌─────────────────────────────────────────────────────────────────┐
+│            O-Cap Transforms Social Reproduction                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  LABOR MARKET:                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ Job requires: can_work_on_freelance_jobs                    │ │
+│  │                                                              │ │
+│  │ Worker proves: can_work_on_freelance_jobs                    │ │
+│  │   - Verifier learns: Worker meets job requirements          │ │
+│  │   - Verifier DOES NOT learn: Who, employer, salary, age     │ │
+│  │   - Worker gets job WITHOUT revealing identity              │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+│  INSURANCE:                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ Coverage requires: can_purchase_standard_coverage           │ │
+│  │   - Proves: age >= 25, violations == 0, mileage < 15000   │ │
+│  │   - Hides: Actual age, exact mileage, violation details     │ │
+│  │                                                              │ │
+│  │ Customer proves: can_purchase_standard_coverage             │ │
+│  │   - Verifier learns: Customer is low-risk                  │ │
+│  │   - Verifier DOES NOT learn: Risk factor details           │ │
+│  │   - Customer gets coverage WITHOUT revealing profile        │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+│  TENDER:                                                         │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ Bid requires: qualified_contractor                          │ │
+│  │   - Proves: competency + certifications + insurance        │ │
+│  │   - Hides: Company name, past performance, pricing          │ │
+│  │                                                              │ │
+│  │ Bidder proves: qualified_contractor                        │ │
+│  │   - Verifier learns: Bidder is qualified                    │ │
+│  │   - Verifier DOES NOT learn: Who, what company, pricing     │ │
+│  │   - Sealed bid without revealing identity                  │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Impact on Risk Market Ecosystem
 
-The [Risk Market Ecosystem](./risk_market_ecosystem.md) case study demonstrates how these
-contracts compose:
+The [Risk Market Ecosystem](./risk_market_ecosystem.md) case study demonstrates O-Cap composition:
 
 ```
-Prediction Market ──→ Insurance Market ──→ Oracle/Attestation
-      │                     │
-      │                     └──→ Tender + Labor Market
-      │
-      └──→ DAO-Escrow (capital endowment)
+┌─────────────────────────────────────────────────────────────────┐
+│            O-Cap Risk Market Ecosystem                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Prediction Market ──→ Insurance Market ──→ Oracle/Attestation  │
+│        │                     │                      │            │
+│        │                     │                      │            │
+│        ▼                     ▼                      ▼            │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    O-CAP INTEGRATION                         │ │
+│  │                                                              │ │
+│  │  Insurance requires: verified_underwriter                     │ │
+│  │    - Proves: insurance_market.underwriter_capability        │ │
+│  │    - Verifier: Insurance contract                           │ │
+│  │                                                              │ │
+│  │  Tender requires: qualified_contractor                       │ │
+│  │    - Proves: identity.can_work_on_freelance_jobs           │ │
+│  │    - Proves: attestation.insurance_certified                │ │
+│  │    - Verifier: Tender contract                              │ │
+│  │                                                              │ │
+│  │  Labor Market requires: can_work_on_freelance_jobs         │ │
+│  │    - Proves: identity.capability.can_work_on_freelance_jobs│ │
+│  │    - Verifier: Labor Market contract                        │ │
+│  │                                                              │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-Without proper oracle signature verification:
-- Anyone can resolve prediction markets incorrectly
-- Insurance premiums based on wrong probabilities
+**Key properties**:
+- Underwriter capability verified without revealing identity
+- Contractor competency proven without revealing company
+- Worker capability proven without revealing employer or salary
+- All composition happens via O-Cap, not ACLs
 
-Without ZK proof verification:
-- Claim winnings can be claimed by non-owners
-- Insurance claims cannot be properly verified
+### When to Use Trusted Setup vs O-Cap
 
-The fixes applied (owner fields, non-zero checks) provide minimum viable security but
-are not cryptographically sound. Production deployment requires the missing opcodes.
-
-### When to Use Trusted Setup
-
-| Use Case | Trusted Setup Appropriate? |
-|----------|--------------------------|
-| DEX ↔ Money lock verification | Yes (temporary workaround) |
-| Cross-contract token transfers | No (use atomic transactions) |
-| Attestation references | No (use Attestation contract directly) |
-| Oracle data verification | Yes (oracle can attest to data) |
+| Use Case | Solution |
+|----------|---------|
+| DEX ↔ Money lock verification | Use O-Cap: `can_swap` capability from Identity |
+| Cross-contract token transfers | Use atomic transactions |
+| Attestation references | Use Attestation contract directly |
+| Oracle data verification | Use Oracle + Attestation |
+| Cross-contract capability verification | Use Identity's `VerifyCapabilityV1` (0x0b) |
 
 ## Cross-Contract Composability Matrix
 
-| Caller → | Money | DAO | Bridge | DEX | Attestation | Oracle | Labor Market | Tender | DarkToshi Dice | Prediction Market | Insurance Market |
-|----------|-------|-----|--------|-----|--------------|--------|-------------|--------|----------------|-------------------|-----------------|
-| **Money** | - | Token transfers | Token escrow | Swap settlement | - | - | Job payment escrow | Bid deposit escrow | Bet value lock | Bet value lock | Premium payments, claim payouts |
-| **DAO** | Treasury management | - | Governance of bridge | Governance of DEX | Attestation governance | - | Job approval governance | Tender authorization | House edge management | Market creation governance | Insurance governance |
-| **Bridge** | Cross-chain transfers | Relayer rewards | - | Liquidity provision | - | - | External job funding | External tender integration | - | - | - |
-| **DEX** | Swap execution | Fee distribution | - | - | - | - | - | - | - | - | - |
-| **Attestation** | - | - | - | - | - | Oracle data attestation | Deliverable verification | Competency verification | - | - | Claim resolution |
-| **Oracle** | Collateral pricing | - | - | Liquidity pricing | Creates attestations | - | - | - | Roll randomness | Outcome resolution | Claim validity |
-| **Labor Market** | Job payment settlement | Job DAO governance | External payment integration | - | Uses for delivery | - | - | Job creation from tender | - | - | Underwriter certification |
-| **Tender** | Bid deposit management | - | External tender integration | - | Uses for competency | - | Winner job creation | - | - | - | Insurance requirements |
-| **DarkToshi Dice** | Token settlements | - | - | - | - | Block hash randomness | - | - | - | - | - |
-| **Prediction Market** | Payout settlement | - | - | - | - | Oracle resolution | - | - | - | - | Risk probability pricing |
-| **Insurance Market** | Claim payouts | - | - | - | Claim verification | Oracle attestation | Underwriter bonding | Coverage requirements | - | Risk market integration | - |
+| Caller → | Identity (O-Cap) | Money | DAO | Bridge | DEX | Attestation | Oracle | Labor Market | Tender | DarkToshi Dice | Prediction Market | Insurance Market |
+|----------|-------------------|-------|-----|--------|-----|--------------|--------|-------------|--------|----------------|-------------------|-----------------|
+| **Identity (O-Cap)** | - | - | - | - | - | - | - | Capability verification | Capability verification | - | - | Capability verification |
+| **Money** | - | - | Token transfers | Token escrow | Swap settlement | - | - | Job payment escrow | Bid deposit escrow | Bet value lock | Bet value lock | Premium payments, claim payouts |
+| **DAO** | O-Cap governance | Treasury management | - | Governance of bridge | Governance of DEX | Attestation governance | - | Job approval governance | Tender authorization | House edge management | Market creation governance | Insurance governance |
+| **Bridge** | - | Cross-chain transfers | Relayer rewards | - | Liquidity provision | - | - | External job funding | External tender integration | - | - | - |
+| **DEX** | - | Swap execution | Fee distribution | - | - | - | - | - | - | - | - | - |
+| **Attestation** | - | - | - | - | - | - | Oracle data attestation | Deliverable verification | Competency verification | - | - | Claim resolution |
+| **Oracle** | - | Collateral pricing | - | - | Liquidity pricing | Creates attestations | - | - | - | Roll randomness | Outcome resolution | Claim validity |
+| **Labor Market** | O-Cap capability check | Job payment settlement | Job DAO governance | External payment integration | - | Uses for delivery | - | - | Job creation from tender | - | - | Underwriter certification |
+| **Tender** | O-Cap capability check | Bid deposit management | - | External tender integration | - | Uses for competency | - | Winner job creation | - | - | - | Insurance requirements |
+| **DarkToshi Dice** | - | Token settlements | - | - | - | - | Block hash randomness | - | - | - | - | - |
+| **Prediction Market** | - | Payout settlement | - | - | - | - | Oracle resolution | - | - | - | - | Risk probability pricing |
+| **Insurance Market** | O-Cap capability check | Claim payouts | - | - | - | Claim verification | Oracle attestation | Underwriter bonding | Coverage requirements | - | Risk market integration | - |
 
 ## General Primitive Composition Patterns
 
@@ -1267,14 +1334,69 @@ struct SelectWinnerParamsV1 {
 |-----------|------------------|
 | **Sealed Bids** | `poseidon_hash(amount, nonce)` hides bid until reveal deadline |
 | **Attestation Verification** | Attestation contract verifies competency/deliverable claims |
+| **O-Cap Verification** | Identity's `VerifyCapabilityV1` (0x0b) verifies capability proofs |
 | **State Machine** | Tender/Bid states prevent invalid transitions |
 | **Nullifier Namespace** | Bid submission and reveal use separate nullifiers |
 | **Escrow Integration** | Bid deposits held in escrow; refundable if outbid or cancelled |
+
+#### O-Cap Integration: Privacy for Workers
+
+O-Cap capabilities provide privacy for workers by hiding identity during job applications:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│            O-Cap Tender + Labor Market Flow                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  IDENTITY CONTRACT (O-Cap 0x09-0x0c):                                        │
+│     │                                                                       │
+│     │  RegisterCapability("qualified_contractor"):                         │
+│     │    - requires: credential.professional_license                      │
+│     │    - requires: predicate(experience >= 5)                           │
+│     │    - issuer: Industry Authority                                      │
+│     │                                                                       │
+│     │  IssueCapability(worker, "qualified_contractor"):                   │
+│     │    - worker proves: role >= senior, license valid                   │
+│     │    - Hides: name, employer, salary, exact experience                 │
+│     │                                                                       │
+│     ▼                                                                       │
+│  TENDER:                                                                    │
+│     │                                                                       │
+│     │  CreateJob(required_capability="qualified_contractor"):             │
+│     │    - Job listing visible (capability required)                      │
+│     │    - Prover identity HIDDEN                                          │
+│     │                                                                       │
+│     │  SubmitBid(prove: qualified_contractor):                             │
+│     │    - Verifier learns: qualified_contractor = VALID                  │
+│     │    - Verifier DOES NOT learn: Who, company, salary, experience     │
+│     │                                                                       │
+│     ▼                                                                       │
+│  LABOR MARKET:                                                              │
+│     │                                                                       │
+│     │  CreateJob(required_capability="qualified_contractor"):             │
+│     │    - Same pattern - capability required                             │
+│     │    - Worker identity HIDDEN                                         │
+│     │                                                                       │
+│     │  AcceptJob(verify: worker.has("qualified_contractor")):            │
+│     │    - Uses VerifyCapabilityV1 (0x0b)                                │
+│     │    - Verifier learns: worker has capability                        │
+│     │    - Verifier DOES NOT learn: worker identity                       │
+│     │                                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Why O-Cap matters for labor**:
+- Employer cannot discriminate by age, gender, ethnicity (not revealed)
+- Worker's current employer cannot see they're job hunting (identity hidden)
+- Salary negotiation is neutralized (actual salary not revealed)
+- Workers compete on capability, not identity
 
 #### Contract Integration Points
 
 | From | To | Integration |
 |------|----|-------------|
+| Identity (O-Cap) | Tender | `SubmitBid` verifies capability via `VerifyCapabilityV1` |
+| Identity (O-Cap) | Labor Market | `AcceptJob` verifies capability via `VerifyCapabilityV1` |
 | Attestation | Tender | `SubmitBid` verifies claim_id from Attestation |
 | Attestation | Labor Market | `SubmitDeliverable` verifies claim_id for deliverable |
 | Tender | Labor Market | `SelectWinner` creates job with tender's specification and winning bid details |

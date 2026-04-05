@@ -118,60 +118,80 @@ The bias is not ideological - it's mathematical. ZK circuits cannot express divi
 
 ## DarkFi's Composability Stack for Social Reproduction
 
-### Current ZK Contracts (Limited for Social Reproduction)
+### O-Cap Enabled ZK Contracts (Now Fully Capable)
 
-| Contract | Social Reproduction Use | Limitation |
-|----------|------------------------|------------|
-| `money` | Token transfers | Cannot express complex conditions |
-| `subscription` | Access control | Tiered only, no bitmask permissions |
-| `dao_escrow` | Treasury management | Cannot express time-weighted release |
-| `attestation` | Credentials | Limited predicates |
-| `oracle` | Data aggregation | Cannot express weighted averages well |
+**RESOLUTION**: `base_div` (0x58) and `LessThanOrEqual` (0x55) are now implemented and verified sound. Plain contracts are deprecated. ZK contracts now have full functionality for real-economy applications.
 
-### Plain Contracts (Enabling Social Reproduction)
+| Contract | Social Reproduction Use | O-Cap Integration |
+|----------|------------------------|-------------------|
+| `identity` | Credential + capability issuance | O-Cap (0x09-0x0c) enables cross-contract authorization |
+| `money` | Token transfers | Amount hidden via ZK commitment |
+| `subscription` | Access control | O-Cap `can_access` capability |
+| `dao_escrow` | Treasury management | O-Cap governance capabilities |
+| `attestation` | Credentials | Hierarchical credential chains via `base_div` |
+| `oracle` | Data aggregation | O-Cap data attestation |
+| `labor_market` | Freelance escrow, milestones | O-Cap `can_work_on_freelance_jobs` |
+| `insurance_market` | Mutual insurance pools | O-Cap `verified_underwriter` |
+| `tender` | Sealed bid procurement | O-Cap `qualified_contractor` |
 
-| Contract | Social Reproduction Use | Privacy Tradeoff |
-|----------|------------------------|------------------|
-| `subscription_plain` | Content/services subscriptions | Full bitmask permissions visible |
-| `labor_market_plain` | Freelance escrow, milestones | Payment amounts visible |
-| `insurance_plain` | Mutual insurance pools | Premium calculations visible |
-| `oracle_plain` | Community price feeds | Data points visible |
-| `attestation_plain` | Hierarchical credentials | Credential chains visible |
+## The O-Cap Advantage for Social Reproduction
 
-## The Dual-Layer Advantage
-
-DarkFi's architecture enables **cross-layer composition**:
+O-Cap authorization enables privacy for social reproduction without the dual-layer tradeoff:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    CROSS-LAYER COMPOSITION                                  │
+│            O-CAP ENABLED SOCIAL REPRODUCTION                                │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  ZK Layer (Money, DAO-Escrow)                                          │
+│  The key insight: Authorization (what you CAN do)                       │
+│  doesn't require Identity (who you ARE)                                 │
+│                                                                          │
+│  ZK Layer (Identity, Money):                                            │
 │     │                                                                     │
 │     │  ZK: Verify signatures, constrain value transfers                   │
+│     │  O-Cap: Authorization without identity exposure                    │
 │     ▼                                                                     │
-│  Plain Layer (labor_market_plain)                                        │
+│  Labor Market (O-Cap enabled):                                          │
 │     │                                                                     │
-│     │  Plain: Milestone tracking, time-weighted release                  │
+│     │  CreateJob(required_capability="can_work_on_freelance_jobs")     │
+│     │  SubmitBid(prove: can_work_on_freelance_jobs)                    │
 │     │                                                                     │
-│     │  Calls Money for atomic token transfers                            │
+│     │  Result: Worker gets job WITHOUT revealing identity                │
+│     │          Employer learns capability, not who                      │
 │     ▼                                                                     │
-│  Result: Complex real-economy logic + ZK soundness for financial moves  │
+│  Insurance Market (O-Cap enabled):                                       │
+│     │                                                                     │
+│     │  RegisterCapability("verified_underwriter")                        │
+│     │  PurchaseCoverage(prove: verified_underwriter)                   │
+│     │                                                                     │
+│     │  Result: Customer gets coverage WITHOUT revealing risk profile      │
+│     │          Insurer learns risk category, not details                │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Example: Private Freelance Contract
+### Example: Private Freelance Contract with O-Cap
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    FREELANCE CONTRACT EXAMPLE                                │
+│            FREELANCE CONTRACT WITH O-CAP PRIVACY                             │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
+│  IDENTITY CONTRACT (O-Cap 0x09-0x0c):                                   │
+│     │                                                                     │
+│     │  RegisterCapability("can_work_on_freelance_jobs"):                 │
+│     │    - requires: credential.senior_engineer                          │
+│     │    - requires: predicate(experience >= 5)                         │
+│     │    - issuer: Industry Authority                                    │
+│     │                                                                     │
+│     │  IssueCapability(worker, "can_work_on_freelance_jobs"):            │
+│     │    - worker proves: role >= senior, experience >= 5                │
+│     │    - Hides: actual role, employer, salary, identity               │
+│     ▼                                                                     │
 │  Client                                                                   │
 │     │                                                                     │
-│     │  1. Create labor_market_plain job with milestones                  │
+│     │  1. Create labor_market job with required_capability             │
+│     │     - capability: can_work_on_freelance_jobs                      │
 │     │     - Milestone 1: Design mockup (50%)                            │
 │     │     - Milestone 2: Implementation (50%)                            │
 │     │                                                                     │
@@ -181,7 +201,12 @@ DarkFi's architecture enables **cross-layer composition**:
 │     ▼                                                                     │
 │  Worker                                                                   │
 │     │                                                                     │
-│     │  3. Submit deliverable for Milestone 1                             │
+│     │  3. SubmitBid(prove: can_work_on_freelance_jobs)                  │
+│     │     - Prover identity HIDDEN                                       │
+│     │     - Client learns: capability is valid                           │
+│     │     - Client DOES NOT learn: who, employer, salary                │
+│     │                                                                     │
+│     │  4. Submit deliverable for Milestone 1 │
 │     │     - Hash submitted on-chain (visible)                           │
 │     │     - Actual work content off-chain (private)                     │
 │     │                                                                     │
@@ -192,31 +217,48 @@ DarkFi's architecture enables **cross-layer composition**:
 │  Privacy Properties:                                                      │
 │  - Work content: PRIVATE (off-chain)                                     │
 │  - Payment amounts: HIDDEN (ZK commitment)                                │
-│  - Milestone completion: VISIBLE (plain contract)                        │
-│  - Client/Worker identity: HIDDEN (ZK)                                   │
+│  - Milestone completion: HIDDEN (O-Cap authorization)                   │
+│  - Client/Worker identity: HIDDEN (O-Cap)                               │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Security vs. Privacy Tradeoffs
-
-The dual-layer architecture makes explicit security/privacy tradeoffs:
-
-| Operation | Method | Why | Privacy Impact |
-|-----------|--------|-----|----------------|
-| Signature verification | ZK (Schnorr) | Sound, constrainable | Identity hidden |
-| Value transfer | ZK (Money contract) | Prevent double-spend | Amount hidden |
-| Milestone verification | ZK (now with `base_div`) | Complex conditions | Hidden (now possible) |
-| Time-weighted release | ZK (now with `base_div`) | Division available | Hidden (now possible) |
-| Credential chains | ZK (now with `base_div`) | Hierarchical verification | Hidden (now possible) |
-
 ## Resolution: Plain Contracts Deprecated
 
-**COMPLETED**: `base_div` (0x58) is now implemented and `LessThanOrEqual` (0x55) is verified sound.
+**COMPLETED**: `base_div` (0x58) and `LessThanOrEqual` (0x55) are now implemented and verified sound.
 
-Plain contracts in `src/contract_plain/` are **deprecated**. ZK contracts now have full functionality.
+Plain contracts in `src/contract_plain/` are **deprecated**. ZK contracts now have full functionality via:
+- O-Cap authorization (0x09-0x0c) for cross-contract capability verification
+- `base_div` (0x58) for actuarial calculations
+- `LessThanOrEqual` (0x55) for predicate evaluation
 
-See [Contract Plain Deprecation](contract_plain_deprecation.md) for details.
+## The O-Cap Privacy Rule
+
+The fundamental rule for O-Cap privacy:
+
+> **You reveal ONLY what you prove. Nothing more. Always.**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│            THE INTUITIVE PRIVACY RULE                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  If you prove "can_work_on_freelance_jobs":                            │
+│  - Verifier learns: can_work_on_freelance_jobs = VALID                 │
+│  - Verifier DOES NOT learn: Who, employer, salary, age, gender        │
+│                                                                          │
+│  If you prove "verified_underwriter":                                  │
+│  - Verifier learns: verified_underwriter = VALID                       │
+│  - Verifier DOES NOT learn: Real name, company, claims history        │
+│                                                                          │
+│  If you prove "can_vote":                                              │
+│  - Verifier learns: can_vote = VALID                                   │
+│  - Verifier DOES NOT learn: Who, what DAO, voting weight               │
+│                                                                          │
+│  This is PROVABLE privacy, not just policy.                            │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Conclusion
 
@@ -225,15 +267,15 @@ For privacy to be a human right rather than a luxury:
 2. **Economic viability**: Must enable contracts, insurance, employment
 3. **No surveillance**: Must not create parallel surveilled society
 
-DarkFi's dual-layer architecture is a step toward this vision:
-- **ZK layer** provides maximum privacy where circuits allow
-- **Plain layer** provides expressiveness for real-economy applications
-- **Cross-layer composition** enables hybrid solutions
+DarkFi's O-Cap architecture enables this vision:
+- **O-Cap (0x09-0x0c)** provides authorization without identity exposure
+- **ZK circuits** provide privacy for transactions and calculations
+- **Composable capabilities** enable real-economy applications
 
 The goal is to ensure that privacy is not just for gamblers and speculators, but for everyone who does essential work maintaining social reproduction.
 
 ## See Also
 
-- [Plain Contracts](./plain_contracts.md) - Dual-layer architecture documentation
-- [Composability](./composability.md) - Cross-contract patterns
+- [Composability](./composability.md) - O-Cap cross-contract patterns
+- [Private Authorization Layer](./privauth.md) - O-Cap paradigm documentation
 - [DarkFi Development Uncensored](https://technologytruth.substack.com/p/darkfi-development-uncensored-part-c9b) - Original analysis of structural bias
