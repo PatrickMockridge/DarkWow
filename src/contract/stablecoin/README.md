@@ -190,7 +190,7 @@ pub struct DebtPool {
 
 /// Collateral pool for specific type
 pub struct CollateralPool {
-    pub collateral_type: CollateralType,  // XMR or DRK
+    pub collateral_type: CollateralType,  // XMR, DRK, or ETH
     pub total_deposited: u64,
     pub value_ratio: u64,
     pub last_update: u64,
@@ -380,17 +380,26 @@ constrain_equal_base(is_lte, ONE);
 
 ## Implementation Status
 
-This is a **draft/placeholder** for pooled debt architecture.
+### Complete
 
-### Blockers
+- Multi-collateral support (ETH, XMR, DRK)
+- Configurable models (PooledDebt, Liquity, Fractional, IndividualCdp)
+- Dead man switch safety feature
+- Hot/cold circuit separation
+- LessThanOrEqual verified sound
+- BaseDiv implemented
 
-1. **No P2P oracle** — The XMR/DRK AMM pool for TWAP price discovery does not yet exist
-2. **CDP Note integration** — Money contract's `spend_hook` to CDP engine not implemented
-3. **Integration tests needed** — Cannot verify full lifecycle without testnet
+### In Progress
 
-### What It Needs
+- Cold circuit implementation (GovernanceReportV1, AccrueInterestV1)
+- P2P oracle integration for TWAP price feed
+- CDP Note integration with Money contract
 
-First: P2P oracle / AMM integration to supply TWAP price. Second: integration testing of the full lifecycle.
+### Needed
+
+- Integration tests
+- AMM pool for price discovery
+- Full lifecycle testing
 
 ## References
 

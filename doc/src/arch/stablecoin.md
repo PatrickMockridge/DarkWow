@@ -1,234 +1,127 @@
-Monero-Collateralized Stablecoin on DarkFi (DRAFT)
-===================================================
+# DarkFi Stablecoin Architecture
 
-*This section proposes a privacy-preserving stablecoin collateralized by Monero (XMR),
-utilizing DarkFi's native token (DRK) and the universal bridge architecture.*
+*Privacy-preserving collateralized stablecoin with configurable models and multi-collateral support.*
 
-## Motivation: Why Monero Collateral?
+## Overview
 
-Unlike Ethereum-based CDPs (MakerDAO) that use ETH or WBTC as collateral,
-a Monero-collateralized stablecoin offers:
+The DarkFi stablecoin is a privacy-preserving collateralized stablecoin that supports:
 
-1. **Privacy-native collateral**: Monero already provides transaction privacy.
-   Using it as collateral maintains the privacy story end-to-end.
-2. **Censorship resistance**: Monero's adaptive block size and privacy features
-   make it resistant to censorship compared to transparent blockchains.
-3. **Deep liquidity**: XMR has established markets and liquidity pools.
+- **Multi-collateral**: XMR, DRK, and ETH (via bridge) as collateral
+- **Configurable models**: PooledDebt, Liquity, Fractional, or IndividualCDP
+- **Hot/Cold separation**: Cheap user operations, precise governance
+- **Dead man switch**: Emergency shutdown if executive authority unresponsive
+- **Full ZK privacy**: All positions, amounts, and identities hidden
 
-## Two Paths: Native XMR vs Wrapped XMR
-
-**Option A: Native XMR as Collateral**
-
-```
-User locks XMR directly → DarkFi CDP Engine holds XMR → Issues stablecoin
-```
-
-- Requires bridging XMR to DarkFi (atomic swap or bridge)
-- DarkFi must support Monero's privacy model natively
-- Complex: Monero uses ring signatures, not simple UTXOs
-
-**Option B: Wrapped XMR (wXMR) as Collateral**
-
-```
-Monero → Atomic Swap → DRK/XMR LP token → Use as CDP collateral
-```
-
-- More practical in near term
-- DRK/XMR pool provides:
-  - Liquidity for the swap
-  - TWAP price feed (P2P Oracle)
-  - LP tokens as collateral itself
-
-## The P2P Oracle: Data Bridging for Price Feeds
-
-*Critical insight: A CDP stablecoin doesn't just need asset bridging—it needs data bridging.*
-
-A collateralized stablecoin requires:
-
-| Data Type | Purpose | Source |
-|-----------|---------|--------|
-| **Price feed** | Collateral valuation | AMM TWAP (DRK/XMR pool) |
-| **TWAP window** | Manipulation resistance | Time-weighted average |
-| **Redemption rate** | Stability control | PI Controller |
-| **Liquidation threshold** | Safety margin | Contract parameter |
-
-The **P2P Oracle** design uses the DRK/XMR AMM pool itself as the price oracle:
-
-```
-NETHER (stablecoin) / DRK (collateral) pool → TWAP → PI Controller → Redemption Rate
-```
-
-This is **data bridging**: passing external chain state (AMM reserves, prices)
-into DarkFi for computation, without transferring value.
-
-## Architecture: Bridged Stablecoin + Universal Bridge
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Universal OCap Bridge                        │
+│                     Stablecoin Contract                            │
 ├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
+│                                                                   │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │ Asset Bridge │    │ Data Bridge  │    │ Compute Bridge│       │
-│  │ (value xfer) │    │ (price feeds)│    │ (ZK proofs)  │       │
+│  │   Collateral │    │   Debt Pool  │    │    PI        │       │
+│  │    Pools    │◄──▶│  (global)   │◄──▶│  Controller │       │
 │  └──────────────┘    └──────────────┘    └──────────────┘       │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              Monero-Collateralized Stablecoin                     │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │  CDP Engine  │    │ PI Controller │    │  AMM Pool    │       │
-│  │ (positions)  │    │ (rate adjust) │    │ (TWAP feed)  │       │
-│  └──────────────┘    └──────────────┘    └──────────────┘       │
-│                                                                 │
-│  Collateral: DRK/XMR LP tokens (via atomic swap or bridge)       │
-│  Stablecoin: NETHER (USD-pegged, privacy-preserving)             │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Flow: Creating a Monero-Collateralized Position
-
-```
-1. ATOMIC SWAP (Asset Bridge)
-   User sends XMR → Receives DRK/XMR LP tokens
-   (Trustless atomic swap, no intermediary)
-
-2. CDP OPEN (Universal Bridge → CDP Engine)
-   User deposits LP tokens as collateral
-   Commitment: C = H(secret, collateral, debt, owner)
-   ZK Proof: collateral >= minimum, ratio valid
-
-3. DATA BRIDGE (Price Feed)
-   AMM pool reports reserves to DarkFi
-   TWAP calculated: TWAP(DRK/XMR) over 1 hour window
-   This TWAP used to value collateral
-
-4. STABLECOIN MINT
-   CDP Engine mints NETHER (stablecoin) to user
-   Debt = NETHER minted
-
-5. ONGOING: PI CONTROLLER (Data Bridge)
-   If TWAP > $1 (premium):
-     Redemption rate increases
-     Borrowing more expensive → less minting → push TWAP down
-   If TWAP < $1 (discount):
-     Redemption rate decreases
-     Borrowing cheaper → more minting → push TWAP up
-```
-
-## Why Data Bridging is Essential
-
-Traditional CDP systems (MakerDAO) use **oracle networks** (Chainlink) to fetch prices.
-This creates:
-
-- **Centralization risk**: Single point of failure
-- **Manipulation risk**: Oracles can be attacked
-- **Censorship risk**: Oracle operators can refuse to serve
-
-The P2P Oracle approach **eliminates these risks** by using:
-
-1. **AMM TWAP**: The pool's own constant-product formula provides price discovery
-2. **Time-averaging**: TWAP naturally smooths manipulation attempts
-3. **Data bridging**: Price data flows through the bridge as **information**, not **value**
-
-```
-Comparison:
-
-Oracle Model:     External Chain → Oracle Network → Price Feed
-                                     ↑
-                              (centralized,
-                               can be censored)
-
-P2P Oracle Model:  External Chain → AMM Pool → TWAP → Data Bridge → DarkFi
-                                     ↑
-                              (decentralized,
-                               manipulation-resistant)
-```
-
-## Relationship to Universal OCap Bridge
-
-The universal bridge architecture supports:
-
-| Bridge Type | Capability | Stablecoin Use |
-|------------|------------|----------------|
-| **Asset Bridge** | Transfer value between chains | Lock collateral, mint/burn stablecoin |
-| **Data Bridge** | Pass state/information across chains | TWAP price feeds, reserve data |
-| **Compute Bridge** | Verify proofs computed elsewhere | ZK circuit verification |
-
-The **OCap security model** ensures:
-
-- **No VSS shards to steal**: User's collateral is self-sovereign
-- **Self-signed withdrawals**: User alone authorizes via their secret
-- **Censorship resistant**: No threshold can block valid operations
-
-## Multi-Chain Collateral Support
-
-The bridge now supports **multiple external chains**, enabling diverse collateral options:
-
-| Chain | Token | Bridge Status | Stablecoin Use |
-|-------|-------|---------------|----------------|
-| **Ethereum** | ETH | Implemented | Native collateral |
-| **Monero** | XMR | Implemented | Privacy-native collateral |
-| **Zcash** | ZEC | Implemented | Shielded collateral |
-| **Aztec** | ETH/DAI | Implemented | Private DeFi collateral |
-| **Litecoin** | LTC | Implemented | Trade pair collateral |
-
-This means users can collateralize the stablecoin with **any bridged asset**, enabling:
-- XMR-backed privacy-preserving debt positions
-- ETH-backed stablecoin minting
-- DAI-backed positions via Aztec (private DAI!)
-- LTC-backed positions (the Monero trade pair)
-
-### Bridged DAI as Price Anchor
-
-**Bridged DAI (via Aztec)** serves as a critical price anchor:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              Bridged DAI Price Anchoring                         │
-├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  External DAI/USD price → Aztec private pool → DarkFi TWAP     │
-│                              ↓                                    │
-│  Stablecoin redemption rate adjusted by PI Controller            │
-│                              ↓                                    │
-│  Keeps NETHER/USD price stable                                    │
-│                                                                   │
-│  Why DAI?                                                         │
-│  - DAI is pegged to USD (softly)                                 │
-│  - Aztec provides private DAI transfers                           │
-│  - DarkFi can observe DAI/USD without revealing users             │
+│  Collateral Types: XMR, DRK, ETH                                  │
+│  Models: PooledDebt | Liquity | Fractional | IndividualCDP        │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-The **price signal flow**:
-1. External price data (DAI/USD, XMR/USD) enters via bridge data
-2. AMM pools on DarkFi provide TWAP price feeds
-3. PI Controller adjusts redemption rates based on TWAP deviation
-4. Users mint/burn to arbitrage the stablecoin back to peg
+## Configurable Models
 
-This creates **price signals in and out of DarkFi**:
-- **Into DarkFi**: External asset prices inform collateral valuation
-- **Out of DarkFi**: NETHER price influences external markets via redemption
+The stablecoin deployer selects the model at initialization:
 
-## Open Questions
+| Model | Min Collateral | Liquidation | Governance |
+|-------|---------------|-------------|------------|
+| **PooledDebt** | 150% | Global pool | PI Controller |
+| **Liquity** | 110% | Stability pool | None |
+| **Fractional** | 80% | Mixed | Partial algorithmic |
+| **IndividualCDP** | 150% | Per-position | Per-asset |
 
-## Open Questions
+## Multi-Collateral Support
 
-1. **Atomic swap feasibility**: Can trustless XMR ↔ DRK swaps be implemented?
-2. **LP token stability**: Are DRK/XMR LP tokens suitable collateral?
-3. **Native XMR support**: Should DarkFi eventually support XMR natively?
-4. **PI Controller tuning**: What Kp/Ki values produce stable redemption rates?
+Collateral types and risk parameters:
 
-## References
+| Asset | Haircut | Liquidation Threshold | Max Debt Share |
+|-------|---------|---------------------|----------------|
+| ETH | 2% | 125% | 50% |
+| XMR | 1% | 130% | 30% |
+| DRK | 0% | 150% | 100% |
 
-- [P2P Oracle Design](https://technologytruth.substack.com/p/nether-say-nether-again)
-- [DarkFi Stablecoin Contract](../../src/contract/stablecoin/)
-- [Anonymous Bridge](./bridge.md)
-- [Atomic Swaps](../protocol/atomic-swap.md)
+**Haircut**: Value discount applied before collateral calculation
+**Max debt share**: Maximum % of total debt this collateral can back
+
+## Hot/Cold Circuit Separation
+
+Operations are split by computational cost:
+
+### Hot (Cheap, Frequent)
+
+| Operation | Method | Cost |
+|-----------|--------|------|
+| Deposit | LTE + cross-mul | ~100 constraints |
+| Mint | LTE + cross-mul | ~100 constraints |
+| Withdraw | LTE + cross-mul | ~100 constraints |
+| Repay | LTE + cross-mul | ~100 constraints |
+
+### Cold (Expensive, Rare)
+
+| Operation | Method | Cost |
+|-----------|--------|------|
+| `GovernanceReportV1` | BaseDiv | ~500 field muls |
+| `AccrueInterestV1` | BaseDiv | ~500 field muls |
+
+Cold operations are for monthly governance reporting and precise interest calculations. Hot operations handle user actions.
+
+## Dead Man Switch
+
+Emergency shutdown mechanism if executive authority becomes unresponsive:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | false | Opt-in safety feature |
+| `timeout_blocks` | 43200 | ~30 days at 1 block/min |
+
+**Trigger actions:**
+- `LiquidateAll`: Emergency settlement at current prices
+- `DisableMinting`: No new debt, positions remain
+- `EnableFreeWithdrawals`: Users can exit without ratio checks
+
+## Price Feed
+
+AMM-based TWAP price discovery (P2P Oracle):
+
+```
+External Pool → TWAP → PI Controller → Redemption Rate
+```
+
+No centralized oracles - the AMM pool itself provides price discovery.
+
+## Opcode Status
+
+| Opcode | Status | Use |
+|--------|--------|-----|
+| `LessThanOrEqual` (0x55) | ✅ Verified Sound | Collateralization checks |
+| `BaseDiv` (0x58) | ✅ Implemented | Interest/ratio calculations |
+| `less_than_strict` | ✅ Sound | Bounded comparisons |
+
+## Relationship to Bridge
+
+The bridge provides multi-collateral support:
+
+| Chain | Token | Integration |
+|-------|-------|-------------|
+| Ethereum | ETH | Native via bridge |
+| Monero | XMR | Privacy-native |
+| Zcash | ZEC | Shielded |
+| Litecoin | LTC | Trade pair |
+
+## See Also
+
+- [Stablecoin Contract](../../src/contract/stablecoin/)
+- [Bridge](./bridge.md)
+- [Opcodes](./opcodes.md)
+- [Safemath](./safemath.md)
