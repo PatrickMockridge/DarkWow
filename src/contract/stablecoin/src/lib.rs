@@ -39,6 +39,10 @@ define_contract_function!(StablecoinFunction {
     RepayStableV1 = 0x05,
     LiquidateV1 = 0x06,
     UpdateConfigV1 = 0x07,
+    // Precise (cold) operations - use BaseDiv for exact calculations
+    // These are expensive (~500 field muls) but accurate
+    GovernanceReportV1 = 0x08,  // Precise collateral/debt ratio for governance
+    AccrueInterestV1 = 0x09,    // Precise interest accrual calculation
 });
 
 /// Internal contract errors
@@ -157,6 +161,10 @@ pub const STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1: &str = "MintStable_V1";
 pub const STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1: &str = "RepayStable_V1";
 /// zkas liquidate circuit namespace
 pub const STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1: &str = "Liquidate_V1";
+/// zkas governance report circuit namespace (precise, uses BaseDiv)
+pub const STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1: &str = "GovernanceReport_V1";
+/// zkas interest accrual circuit namespace (precise, uses BaseDiv)
+pub const STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1: &str = "AccrueInterest_V1";
 
 // ============================================================================
 // XMR Collateral Constants

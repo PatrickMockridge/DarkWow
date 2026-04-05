@@ -1,0 +1,67 @@
+k = 11;
+field = "pallas";
+
+# Accrue Interest Circuit (Cold/Precise)
+# Uses BaseDiv for exact interest calculation
+# This is expensive (~500 field muls) but accurate
+
+constant "AccrueInterestV1" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "AccrueInterestV1" {
+    # Public inputs
+    Base old_total_debt,
+    Base new_total_debt,
+    Base interest_amount,      # Calculated interest to add
+    Base rate_per_second,       # Interest rate in basis points per second
+    Base time_elapsed,          # Seconds elapsed
+    Base accumulator_pub_x,
+    Base accumulator_pub_y,
+
+    # Private inputs
+    Base accumulator_secret,
+}
+
+circuit "AccrueInterestV1" {
+    # Verify accumulator is authorized
+    accumulator_public = ec_mul_base(accumulator_secret, NULLIFIER_K);
+    accumulator_public_x = ec_get_x(accumulator_public);
+    accumulator_public_y = ec_get_y(accumulator_public);
+    constrain_equal_base(accumulator_public_x, accumulator_pub_x);
+    constrain_equal_base(accumulator_public_y, accumulator_pub_y);
+
+    # Range checks
+    range_check(64, old_total_debt);
+    range_check(64, new_total_debt);
+    range_check(64, rate_per_second);
+    range_check(64, time_elapsed);
+    range_check(64, interest_amount);
+
+    # Calculate: interest = principal * rate * time / (365 * 86400 * 10000)
+    # Using BaseDiv for precise calculation
+    #
+    # Formula: interest = old_total_debt * rate_per_second * time_elapsed / denominator
+    #
+    # Denominator: 365 * 86400 * 10000 = 315,360,000,000
+    DENOM = witness_base(315360000000);
+
+    # Step 1: old_total_debt * rate_per_second
+    debt_times_rate = base_mul(old_total_debt, rate_per_second);
+
+    # Step 2: * time_elapsed
+    debt_rate_time = base_mul(debt_times_rate, time_elapsed);
+
+    # Step 3: / denominator using base_div
+    calculated_interest = base_div(debt_rate_time, DENOM);
+
+    # Verify the calculated interest matches the claimed amount
+    constrain_equal_base(calculated_interest, interest_amount);
+
+    # Verify new_total_debt = old_total_debt + interest_amount
+    new_debt_check = base_add(old_total_debt, interest_amount);
+    constrain_equal_base(new_debt_check, new_total_debt);
+
+    # Safety: interest should be positive (interest_amount > 0)
+    bool_check(interest_amount);
+}

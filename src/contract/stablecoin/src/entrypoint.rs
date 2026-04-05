@@ -135,6 +135,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         StablecoinFunction::RepayStableV1 => wasm::util::set_return_data(&vec![]),
         StablecoinFunction::LiquidateV1 => wasm::util::set_return_data(&vec![]),
         StablecoinFunction::UpdateConfigV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::GovernanceReportV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::AccrueInterestV1 => wasm::util::set_return_data(&vec![]),
     }
 }
 
@@ -178,6 +180,14 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         StablecoinFunction::UpdateConfigV1 => {
             msg!("[stablecoin::process_instruction] UpdateConfigV1 processed");
             wasm::util::set_return_data(&vec![])
+        }
+        StablecoinFunction::GovernanceReportV1 => {
+            msg!("[stablecoin::process_instruction] GovernanceReportV1 not yet implemented");
+            Err(ContractError::IoError("Not yet implemented".to_string()).into())
+        }
+        StablecoinFunction::AccrueInterestV1 => {
+            msg!("[stablecoin::process_instruction] AccrueInterestV1 not yet implemented");
+            Err(ContractError::IoError("Not yet implemented".to_string()).into())
         }
     }
 }
@@ -254,6 +264,14 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         StablecoinFunction::UpdateConfigV1 => {
             let params: UpdateConfigParams = deserialize(&update_data[1..])?;
             apply_config_update(cid, params)
+        }
+        StablecoinFunction::GovernanceReportV1 => {
+            msg!("[stablecoin::process_update] GovernanceReportV1 not yet implemented");
+            Ok(())
+        }
+        StablecoinFunction::AccrueInterestV1 => {
+            msg!("[stablecoin::process_update] AccrueInterestV1 not yet implemented");
+            Ok(())
         }
     }
 }

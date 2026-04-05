@@ -390,6 +390,70 @@ pub struct PriceFeed {
     pub timestamp: u64,
 }
 
+// ============================================================================
+// Cold/Precise Operations (BaseDiv - expensive but accurate)
+// ============================================================================
+
+/// Governance report parameters (cold/precise - uses BaseDiv)
+/// For monthly governance reporting and precise ratio calculations
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct GovernanceReportParams {
+    /// Current total collateral in pool
+    pub total_collateral: u64,
+
+    /// Current total debt in pool
+    pub total_debt: u64,
+
+    /// Calculated collateral ratio in basis points (collateral/debt * 10000)
+    pub collateral_ratio_bps: u64,
+
+    /// Interest accrued since last report
+    pub interest_accrued: u64,
+
+    /// Timestamp of this report
+    pub report_timestamp: u64,
+
+    /// Reporter's public key
+    pub reporter_pub_x: [u8; 32],
+    pub reporter_pub_y: [u8; 32],
+
+    /// ZK proof: governance_report_v1.zk
+    pub proof: Vec<u8>,
+
+    /// Fee paid for this operation
+    pub fee: u64,
+}
+
+/// Accrue interest parameters (cold/precise - uses BaseDiv)
+/// For precise interest accrual calculation
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AccrueInterestParams {
+    /// Total debt before interest accrual
+    pub old_total_debt: u64,
+
+    /// Total debt after interest accrual
+    pub new_total_debt: u64,
+
+    /// Calculated interest amount using BaseDiv
+    pub interest_amount: u64,
+
+    /// Interest rate per second (in basis points)
+    pub rate_per_second: u64,
+
+    /// Time elapsed since last accrual (seconds)
+    pub time_elapsed: u64,
+
+    /// Accumulator's public key
+    pub accumulator_pub_x: [u8; 32],
+    pub accumulator_pub_y: [u8; 32],
+
+    /// ZK proof: accrue_interest_v1.zk
+    pub proof: Vec<u8>,
+
+    /// Fee paid for this operation
+    pub fee: u64,
+}
+
 /// Global liquidation record
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct LiquidationRecord {

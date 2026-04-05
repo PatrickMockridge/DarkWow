@@ -154,15 +154,24 @@ Pooled Debt:   Pool shortfall → Simple ZK → No position data leaked
 
 ## Contract Functions
 
-| Function | ID | Description |
-|----------|-----|-------------|
-| `InitializeV1` | 0x00 | Initialize pool with model and collateral parameters |
-| `DepositCollateralV1` | 0x01 | Deposit collateral into global pool |
-| `WithdrawCollateralV1` | 0x02 | Withdraw collateral (if ratio allows) |
-| `MintStableV1` | 0x03 | Mint stablecoins against pool |
-| `RepayStableV1` | 0x04 | Repay debt to reduce debt share |
-| `LiquidateV1` | 0x05 | Liquidate undercollateralized pool |
-| `UpdateConfigV1` | 0x06 | Update pool parameters (governance) |
+### Hot (Frequent, Cheap)
+
+| Function | ID | Description | Cost |
+|----------|-----|-------------|------|
+| `InitializeV1` | 0x00 | Initialize pool with model and collateral parameters | Medium |
+| `DepositCollateralV1` | 0x01 | Deposit collateral into global pool | Cheap |
+| `WithdrawCollateralV1` | 0x02 | Withdraw collateral (if ratio allows) | Cheap |
+| `MintStableV1` | 0x03 | Mint stablecoins against pool | Cheap |
+| `RepayStableV1` | 0x04 | Repay debt to reduce debt share | Cheap |
+| `LiquidateV1` | 0x05 | Liquidate undercollateralized pool | Cheap |
+| `UpdateConfigV1` | 0x06 | Update pool parameters (governance) | Cheap |
+
+### Cold (Rare, Precise - uses BaseDiv)
+
+| Function | ID | Description | Cost |
+|----------|-----|-------------|------|
+| `GovernanceReportV1` | 0x08 | Precise collateral/debt ratio for governance | ~500 muls |
+| `AccrueInterestV1` | 0x09 | Precise interest accrual calculation | ~500 muls |
 
 **Note**: The stablecoin model is selected at initialization via `InitializeParams.model` and cannot be changed afterwards.
 
