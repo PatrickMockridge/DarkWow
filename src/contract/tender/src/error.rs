@@ -19,6 +19,7 @@
 //! Tender contract errors
 
 use thiserror::Error;
+use darkfi_sdk::error::ContractError;
 
 /// Tender contract errors
 #[derive(Error, Debug)]
@@ -82,4 +83,48 @@ pub enum TenderError {
 
     #[error("Sled database error: {0}")]
     SledError(String),
+
+    // O-Cap errors
+    #[error("Capability required for this operation")]
+    CapabilityRequired,
+
+    #[error("Capability requirement not met")]
+    CapabilityNotMet,
+
+    #[error("Invalid capability")]
+    InvalidCapability,
+
+    #[error("DAG requirement not met")]
+    DAGRequirementNotMet,
+}
+
+impl From<TenderError> for ContractError {
+    fn from(e: TenderError) -> Self {
+        match e {
+            TenderError::TenderNotFound => Self::Custom(1),
+            TenderError::BidNotFound => Self::Custom(2),
+            TenderError::InvalidTenderState { .. } => Self::Custom(3),
+            TenderError::InvalidBidState { .. } => Self::Custom(4),
+            TenderError::TenderNotAcceptingBids => Self::Custom(5),
+            TenderError::BiddingEnded => Self::Custom(6),
+            TenderError::RevealEnded => Self::Custom(7),
+            TenderError::BidAmountOutOfRange => Self::Custom(8),
+            TenderError::BidTooLow => Self::Custom(9),
+            TenderError::BidTooHigh => Self::Custom(10),
+            TenderError::NotRequester => Self::Custom(11),
+            TenderError::NotBidder => Self::Custom(12),
+            TenderError::BidAlreadyRevealed => Self::Custom(13),
+            TenderError::BidNotRevealed => Self::Custom(14),
+            TenderError::WinnerAlreadySelected => Self::Custom(15),
+            TenderError::CompetencyRequirementsNotMet => Self::Custom(16),
+            TenderError::NoBids => Self::Custom(17),
+            TenderError::NullifierSpent => Self::Custom(18),
+            TenderError::InvalidProof => Self::Custom(19),
+            TenderError::SledError(_) => Self::Custom(20),
+            TenderError::CapabilityRequired => Self::Custom(28),
+            TenderError::CapabilityNotMet => Self::Custom(29),
+            TenderError::InvalidCapability => Self::Custom(30),
+            TenderError::DAGRequirementNotMet => Self::Custom(31),
+        }
+    }
 }

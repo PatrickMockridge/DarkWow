@@ -49,9 +49,11 @@ use crate::{
     error::TenderError,
     model::{
         Bid, BidId, BidState, CancelTenderParamsV1, CancelTenderUpdateV1, CloseTenderParamsV1,
-        CloseTenderUpdateV1, CreateTenderParamsV1, CreateTenderUpdateV1, RejectBidParamsV1,
-        RejectBidUpdateV1, RevealBidParamsV1, RevealBidUpdateV1, SelectWinnerParamsV1,
-        SelectWinnerUpdateV1, SubmitBidParamsV1, SubmitBidUpdateV1, Tender, TenderId,
+        CloseTenderUpdateV1, CreateTenderParamsV1, CreateTenderUpdateV1,
+        CreateTenderWithCapabilityParamsV1, CreateTenderWithCapabilityUpdateV1,
+        RejectBidParamsV1, RejectBidUpdateV1, RevealBidParamsV1, RevealBidUpdateV1,
+        SelectWinnerParamsV1, SelectWinnerUpdateV1, SubmitBidParamsV1, SubmitBidUpdateV1,
+        SubmitBidWithCapabilityParamsV1, SubmitBidWithCapabilityUpdateV1, Tender, TenderId,
         TenderState,
     },
     TenderFunction, TENDER_CONTRACT_BIDS_TREE, TENDER_CONTRACT_INFO_TREE,
@@ -125,6 +127,12 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         TenderFunction::CancelTenderV1 => vec![],
         TenderFunction::RejectBidV1 => vec![],
+        // O-Cap enabled functions
+        TenderFunction::CreateTenderWithCapabilityV1 => vec![],
+        TenderFunction::SubmitBidWithCapabilityV1 => {
+            let params: SubmitBidWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            submit_bid_with_capability_get_metadata_v1(cid, call_idx, calls, params)?
+        }
     };
 
     wasm::util::set_return_data(&metadata)
@@ -205,6 +213,58 @@ fn submit_bid_get_metadata_v1(
     ];
 
     msg!("[tender::submit_bid_get_metadata_v1] Returning metadata: {:?}", public_inputs);
+    Ok(public_inputs)
+}
+
+fn submit_bid_with_capability_get_metadata_v1(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+    params: SubmitBidWithCapabilityParamsV1,
+) -> ContractResult<Vec<pallas::Base>> {
+    msg!("[tender::submit_bid_with_capability_get_metadata_v1] Submitting bid with capability: {:?}", params.bid_id);
+
+    // Verify tender exists and is accepting bids
+    let tenders_db = wasm::db::db_get(cid, TENDER_CONTRACT_TENDERS_TREE)?;
+    let tender: Tender = match wasm::db::db_get(tenders_db, &serialize(&params.tender_id))? {
+        Some(t) => t,
+        None => {
+            msg!("[tender::submit_bid_with_capability_get_metadata_v1] ERROR: Tender not found");
+            return Err(ContractError::InvalidInstruction.into())
+        }
+    };
+
+    // Verify tender is in Created or Bidding state
+    if tender.state != TenderState::Created && tender.state != TenderState::Bidding {
+        msg!("[tender::submit_bid_with_capability_get_metadata_v1] ERROR: Tender not accepting bids");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Verify bid is within range
+    if params.amount < tender.min_bid || params.amount > tender.max_bid {
+        msg!("[tender::submit_bid_with_capability_get_metadata_v1] ERROR: Bid out of range");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Get current block
+    let current_block = wasm::chain::get_block_height()?;
+
+    // Verify bidding deadline not passed
+    if current_block >= tender.bid_deadline {
+        msg!("[tender::submit_bid_with_capability_get_metadata_v1] ERROR: Bidding period ended");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Public inputs include bidder_pub_x, bidder_pub_y, and required_capability_id
+    let mut public_inputs = vec![
+        params.tender_id,
+        params.bid_id,
+        params.bidder_pub_x,
+        params.bidder_pub_y,
+        params.required_capability_id,
+    ];
+
+    msg!("[tender::submit_bid_with_capability_get_metadata_v1] Returning metadata: {:?}", public_inputs);
     Ok(public_inputs)
 }
 
@@ -346,6 +406,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         TenderFunction::RejectBidV1 => {
             let params: RejectBidParamsV1 = deserialize(&self_.data[1..])?;
             reject_bid_v1(cid, params)
+        }
+        // O-Cap enabled functions
+        TenderFunction::CreateTenderWithCapabilityV1 => {
+            let params: CreateTenderWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            create_tender_with_capability_v1(cid, params)
+        }
+        TenderFunction::SubmitBidWithCapabilityV1 => {
+            let params: SubmitBidWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            submit_bid_with_capability_v1(cid, params)
         }
     }
 }
@@ -721,6 +790,142 @@ fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> ContractResult {
 }
 
 // ============================================================================
+// O-CAP ENABLED FUNCTIONS (0x07-0x08)
+// ============================================================================
+
+fn create_tender_with_capability_v1(
+    cid: ContractId,
+    params: CreateTenderWithCapabilityParamsV1,
+) -> ContractResult {
+    msg!("[tender::create_tender_with_capability_v1] Creating tender with capability: {:?}", params.tender_id);
+
+    let tenders_db = wasm::db::db_get(cid, TENDER_CONTRACT_TENDERS_TREE)?;
+
+    // Check if tender already exists
+    let existing: Option<Tender> = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    if existing.is_some() {
+        msg!("[tender::create_tender_with_capability_v1] ERROR: Tender already exists");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Get current block
+    let current_block = wasm::chain::get_block_height()?;
+
+    // Create tender with O-Cap fields
+    let tender = Tender {
+        id: params.tender_id,
+        requester_pubkey: [params.requester_pub_x, params.requester_pub_y],
+        title: params.title.clone(),
+        specification: params.specification,
+        attestation_id: params.attestation_id,
+        min_bid: params.min_bid,
+        max_bid: params.max_bid,
+        bid_deadline: params.bid_deadline,
+        reveal_deadline: params.reveal_deadline,
+        delivery_deadline: params.delivery_deadline,
+        state: TenderState::Created,
+        selected_bid_id: None,
+        bid_count: 0,
+        created_at: current_block,
+        required_capability: params.required_capability,
+        required_dag_id: params.required_dag_id,
+    };
+
+    wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
+
+    msg!("[tender::create_tender_with_capability_v1] Tender created successfully");
+    Ok(())
+}
+
+fn submit_bid_with_capability_v1(
+    cid: ContractId,
+    params: SubmitBidWithCapabilityParamsV1,
+) -> ContractResult {
+    msg!("[tender::submit_bid_with_capability_v1] Submitting bid with capability: {:?}", params.bid_id);
+
+    let tenders_db = wasm::db::db_get(cid, TENDER_CONTRACT_TENDERS_TREE)?;
+    let bids_db = wasm::db::db_get(cid, TENDER_CONTRACT_BIDS_TREE)?;
+    let nullifiers_db = wasm::db::db_get(cid, TENDER_CONTRACT_NULLIFIERS_TREE)?;
+
+    // Get and verify tender
+    let mut tender: Tender = match wasm::db::db_get(tenders_db, &serialize(&params.tender_id))? {
+        Some(t) => t,
+        None => {
+            msg!("[tender::submit_bid_with_capability_v1] ERROR: Tender not found");
+            return Err(ContractError::InvalidInstruction.into())
+        }
+    };
+
+    // Verify tender is accepting bids
+    if tender.state != TenderState::Created && tender.state != TenderState::Bidding {
+        msg!("[tender::submit_bid_with_capability_v1] ERROR: Tender not accepting bids");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Get current block and verify deadline
+    let current_block = wasm::chain::get_block_height()?;
+    if current_block >= tender.bid_deadline {
+        msg!("[tender::submit_bid_with_capability_v1] ERROR: Bidding period ended");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Verify bid amount is in range
+    if params.amount < tender.min_bid || params.amount > tender.max_bid {
+        msg!("[tender::submit_bid_with_capability_v1] ERROR: Bid amount out of range");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Check for double submission using nullifier
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.bid_id))? {
+        msg!("[tender::submit_bid_with_capability_v1] ERROR: Bid already submitted");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Verify capability matches tender's requirement
+    if let Some(required_cap) = tender.required_capability {
+        if params.required_capability_id != required_cap {
+            msg!("[tender::submit_bid_with_capability_v1] ERROR: Capability mismatch");
+            return Err(ContractError::InvalidInstruction.into())
+        }
+    }
+
+    // Verify capability predicate result is 1 (satisfied)
+    if params.capability_predicate_result != pallas::Base::one() {
+        msg!("[tender::submit_bid_with_capability_v1] ERROR: Capability requirement not met");
+        return Err(ContractError::InvalidInstruction.into())
+    }
+
+    // Create bid
+    let bid = Bid {
+        id: params.bid_id,
+        tender_id: params.tender_id,
+        bidder_pubkey: [params.bidder_pub_x, params.bidder_pub_y],
+        amount: params.amount,
+        claim_id: params.claim_id,
+        encrypted_payload: params.encrypted_payload,
+        state: BidState::Sealed,
+        revealed_amount: None,
+        created_at: current_block,
+    };
+
+    // Store bid
+    wasm::db::db_set(bids_db, &serialize(&params.bid_id), &serialize(&bid))?;
+
+    // Store nullifier to prevent double submission
+    wasm::db::db_set(nullifiers_db, &serialize(&params.bid_id), &[])?;
+
+    // Update tender state and count
+    if tender.state == TenderState::Created {
+        tender.state = TenderState::Bidding;
+    }
+    tender.bid_count += 1;
+    wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
+
+    msg!("[tender::submit_bid_with_capability_v1] Bid submitted successfully");
+    Ok(())
+}
+
+// ============================================================================
 // PROCESS UPDATE
 // ============================================================================
 
@@ -758,6 +963,17 @@ fn process_update(cid: ContractId, updates: &[u8]) -> ContractResult {
             6 => {
                 let update_data: RejectBidUpdateV1 = deserialize(&serialize(&update.data[1..]))?;
                 msg!("[tender::process_update] RejectBid: {:?} {:?}", update_data.tender_id, update_data.bid_id);
+            }
+            // O-Cap enabled functions
+            7 => {
+                let update_data: CreateTenderWithCapabilityUpdateV1 =
+                    deserialize(&serialize(&update.data[1..]))?;
+                msg!("[tender::process_update] CreateTenderWithCapability: {:?}", update_data.tender_id);
+            }
+            8 => {
+                let update_data: SubmitBidWithCapabilityUpdateV1 =
+                    deserialize(&serialize(&update.data[1..]))?;
+                msg!("[tender::process_update] SubmitBidWithCapability: {:?} {:?}", update_data.tender_id, update_data.bid_id);
             }
             _ => {
                 msg!("[tender::process_update] ERROR: Unknown update type");

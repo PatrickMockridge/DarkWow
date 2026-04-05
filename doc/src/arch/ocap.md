@@ -1032,6 +1032,187 @@ O-Cap capabilities provide privacy for workers by hiding identity during job app
 - Salary negotiation is neutralized (actual salary not revealed)
 - Workers compete on capability, not identity
 
+### Case Study: The Complete O-Cap Pipeline - Workers to Executives
+
+This case study demonstrates how O-Cap capabilities flow through the entire DarkFi ecosystem, from supply chain workers proving qualifications via Identity, to executives securing contracts via Tender, to underwriters providing coverage via Insurance Market.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│              COMPLETE O-CAP PIPELINE: IDENTITY → TENDER → LABOR MARKET → INSURANCE      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ╔═══════════════════════════════════════════════════════════════════════╗  │
+│  ║                        SUPPLY CHAIN WORKERS                             ║  │
+│  ║                   (Identity Contract - O-Cap 0x09-0x0d)                 ║  │
+│  ╠═══════════════════════════════════════════════════════════════════════╣  │
+│  ║                                                                       ║  │
+│  ║  ISSUER (e.g., Professional Association)                             ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  RegisterCapability("verified_smart_contract_auditor")         ║  │
+│  ║     │    - requires: credential.auditor_license                      ║  │
+│  ║     │    - requires: predicate(experience >= 3)                      ║  │
+│  ║     │    - issuer: Industry Authority                                 ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  IssueCapability(alice, "verified_smart_contract_auditor")    ║  │
+│  ║     │    - alice proves: license valid, experience >= 3            ║  │
+│  ║     │    - Hides: name, employer, exact salary, projects           ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  CreateClaimDAG("senior_engineer")                            ║  │
+│  ║     │    - PATH A: BSC + 5yr exp + senior lead                      ║  │
+│  ║     │    - PATH B: Industry cert + 10yr exp                          ║  │
+│  ║     │    - Alice satisfies PATH B (hidden)                          ║  │
+│  ║     │                                                                  ║  │
+│  ║  RESULT: Alice has "verified_smart_contract_auditor" capability      ║  │
+│  ║          AND "senior_engineer" DAG competency                        ║  │
+│  ║          WITHOUT revealing: identity, employer, exact credentials  ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════╝  │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ╔═══════════════════════════════════════════════════════════════════════╗  │
+│  ║                         TENDER PROCESS                                  ║  │
+│  ║                   (Tender Contract - O-Cap 0x07-0x08)                   ║  │
+│  ╠═══════════════════════════════════════════════════════════════════════╣  │
+│  ║                                                                       ║  │
+│  ║  EXECUTIVE (Project Owner)                                            ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  CreateTenderWithCapability(                                   ║  │
+│  ║     │    title: "DeFi Protocol Security Audit"                       ║  │
+│  ║     │    required_capability: "verified_smart_contract_auditor",    ║  │
+│  ║     │    required_dag_id: Some("senior_engineer")                    ║  │
+│  ║     │  )                                                              ║  │
+│  ║     │                                                                  ║  │
+│  ║  ALICE SUBMITS BID:                                                   ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  SubmitBidWithCapability(                                      ║  │
+│  ║     │    tender_id: X,                                                ║  │
+│  ║     │    capability_proof: ZK(VerifyCapability(                      ║  │
+│  ║     │      "verified_smart_contract_auditor")),                      ║  │
+│  ║     │    dag_proof: ZK(CreateClaimDAG("senior_engineer")),           ║  │
+│  ║     │    sealed_bid_amount: 50000                                    ║  │
+│  ║     │  )                                                              ║  │
+│  ║     │                                                                  ║  │
+│  ║  TENDER VERIFIES:                                                    ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  verify_capability("verified_smart_contract_auditor")         ║  │
+│  ║     │  verify_dag_claim("senior_engineer")                           ║  │
+│  ║     │                                                                  ║  │
+│  ║  RESULT: ✓ Alice's bid accepted                                       ║  │
+│  ║          ✗ Alice's identity NOT revealed (only capability proven)   ║  │
+│  ║          ✗ Alice's employer NOT revealed                              ║  │
+│  ║          ✗ Other bidders don't know who competed                     ║  │
+│  ║     │                                                                  ║  │
+│  ║  WINNER SELECTED:                                                     ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  RevealBid() → Alice wins with 50000                          ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  SelectWinner() → Job created in Labor Market                  ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════╝  │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ╔═══════════════════════════════════════════════════════════════════════╗  │
+│  ║                      LABOR MARKET EXECUTION                            ║  │
+│  ║                   (Labor Market - O-Cap 0x0d)                         ║  │
+│  ╠═══════════════════════════════════════════════════════════════════════╣  │
+│  ║                                                                       ║  │
+│  ║  JOB CREATED FROM TENDER WIN:                                         ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  CreateJob(                                                    ║  │
+│  ║     │    client: project_owner,                                      ║  │
+│  ║     │    worker: alice (via capability),                              ║  │
+│  ║     │    required_capability: "verified_smart_contract_auditor",     ║  │
+│  ║     │    payment: 50000                                               ║  │
+│  ║     │  )                                                              ║  │
+│  ║     │                                                                  ║  │
+│  ║  ALICE ACCEPTS JOB:                                                   ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  AcceptJobWithCapability(                                      ║  │
+│  ║     │    job_id: Y,                                                   ║  │
+│  ║     │    capability_proof: ZK(VerifyCapability(                      ║  │
+│  ║     │      "verified_smart_contract_auditor")),                      ║  │
+│  ║     │  )                                                              ║  │
+│  ║     │                                                                  ║  │
+│  ║  ALICE DELIVERS WORK:                                                 ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  SubmitDeliverable(claim_id: Z)                                ║  │
+│  ║     │    - Attestation verifies work completion                      ║  │
+│  ║     │    - Payment released via Money contract                       ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════╝  │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ╔═══════════════════════════════════════════════════════════════════════╗  │
+│  ║                      INSURANCE MARKET                                  ║  │
+│  ║                (Insurance Market - O-Cap 0x09-0x0c)                  ║  │
+│  ╠═══════════════════════════════════════════════════════════════════════╣  │
+│  ║                                                                       ║  │
+│  ║  PROJECT OWNER PURCHASES COVERAGE:                                    ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  CreateMarket(                                                 ║  │
+│  ║     │    risk_type: SmartContractHack,                                ║  │
+│  ║     │    required_underwriter_capability: "auditor_bond",            ║  │
+│  ║     │    required_buyer_capability: Some("institutional_inv"),      ║  │
+│  ║     │  )                                                              ║  │
+│  ║     │                                                                  ║  │
+│  ║  UNDERWRITER PROVIDES COVERAGE:                                        ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  UnderwriteWithCapability(                                     ║  │
+│  ║     │    proof: ZK(VerifyCapability("auditor_bond")),               ║  │
+│  ║     │  )                                                              ║  │
+│  ║     │                                                                  ║  │
+│  ║  PROJECT OWNER PURCHASES COVERAGE:                                    ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  PurchaseCoverageWithCapability(                              ║  │
+│  ║     │    proof: ZK(VerifyCapability("institutional_inv")),          ║  │
+│  ║     │  )                                                              ║  │
+│  ║     │                                                                  ║  │
+│  ║  CLAIM FILED (if audit finds vulnerability):                          ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  FileClaim(evidence: audit_report)                             ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  ResolveClaimWithCapability(                                  ║  │
+│  ║     │    proof: ZK(VerifyCapability("oracle_resolution"))           ║  │
+│  ║     │  )                                                              ║  │
+│  ║     │                                                                  ║  │
+│  ║  RESULT: Payout released, coverage maintained                        ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════╝  │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐  │
+│  │                    THE ELEGANT WEAVE                                      │  │
+│  ├─────────────────────────────────────────────────────────────────────────┤  │
+│  │                                                                         │  │
+│  │  WORKER (alice) flows through entire system WITHOUT revealing identity: │  │
+│  │                                                                         │  │
+│  │  1. Proves "verified_smart_contract_auditor" via Identity              │  │
+│  │  2. Proves "senior_engineer" DAG via Identity                          │  │
+│  │  3. Submits bid to Tender WITHOUT revealing employer/salary            │  │
+│  │  4. Wins tender, job created in Labor Market                           │  │
+│  │  5. Accepts job via capability (same one from Identity)              │  │
+│  │  6. Delivers work, receives payment via Money                          │  │
+│  │  7. Later acts as underwriter via Insurance Market                      │  │
+│  │     (proves "auditor_bond" capability)                                │  │
+│  │                                                                         │  │
+│  │  THE CAPABILITY FOLLOWS ALICE EVERYWHERE - IDENTITY NEVER REVEALED    │  │
+│  │                                                                         │  │
+│  └─────────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Insights from the Complete Pipeline:**
+
+1. **Single Capability, Multiple Uses**: Alice's "verified_smart_contract_auditor" capability works across Identity, Tender, Labor Market, and Insurance - she never re-proves her identity, only reuses the same capability proof.
+
+2. **Identity Hidden at Every Step**: From job application to contract execution to underwriter bonding, Alice's identity remains hidden. Only her capabilities are revealed.
+
+3. **DAGs Enable Flexible Qualification**: The "senior_engineer" DAG allows multiple qualification paths - Alice could have taken PATH A or PATH B, but the verifier only learns she qualified, not which path.
+
+4. **Composability is Simple**: Each contract only needs to call `verify_capability()` on the Identity contract - no complex cross-contract state sharing needed.
+
+5. **Supply Chain to Executive Pipeline**: 
+   - **Supply chain workers** prove capabilities via Identity (0x09-0x0d)
+   - **Executives/Project owners** create tenders requiring capabilities (0x07-0x08 in Tender)
+   - **Workers flow to Labor Market** for execution (0x0d in Labor Market)
+   - **Insurance** provides risk coverage (0x09-0x0c in Insurance Market)
+
 ### Case Study: Subscription + DAO-Escrow + Atomic Swap
 
 The Subscription contract demonstrates DarkFi's full composability stack: DAO-Escrow membership verification via Merkle proofs, block-based time locks, and cross-chain atomic swap payments.

@@ -42,6 +42,9 @@ define_contract_function!(TenderFunction {
     SelectWinnerV1 = 0x04,
     CancelTenderV1 = 0x05,
     RejectBidV1 = 0x06,
+    // O-Cap enabled functions
+    CreateTenderWithCapabilityV1 = 0x07,
+    SubmitBidWithCapabilityV1 = 0x08,
 });
 
 /// Internal contract errors
@@ -72,3 +75,6 @@ pub const TENDER_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateTender_V1";
 pub const TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1: &str = "SubmitBid_V1";
 pub const TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1: &str = "RevealBid_V1";
 pub const TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V1: &str = "SelectWinner_V1";
+// O-Cap circuit namespaces
+pub const TENDER_CONTRACT_ZKAS_CREATE_WITH_CAP_NS_V1: &str = "CreateTenderWithCapability_V1";
+pub const TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V1: &str = "SubmitBidWithCapability_V1";

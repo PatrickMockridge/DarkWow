@@ -137,6 +137,10 @@ pub struct Tender {
     pub bid_count: u64,
     /// Block height when tender was created
     pub created_at: u64,
+    /// Required capability ID for bidders (None = any bidder via attestation)
+    pub required_capability: Option<[u8; 32]>,
+    /// Required DAG ID for multi-path qualification (None = no DAG requirement)
+    pub required_dag_id: Option<[u8; 32]>,
 }
 
 impl Tender {
@@ -377,5 +381,83 @@ pub struct RejectBidUpdateV1 {
     /// The tender ID
     pub tender_id: TenderId,
     /// The rejected bid ID
+    pub bid_id: BidId,
+}
+
+// ============================================================================
+// O-Cap Enabled Functions (0x07-0x08)
+// ============================================================================
+
+/// Parameters for creating a tender with capability requirements
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CreateTenderWithCapabilityParamsV1 {
+    /// ZK proof for tender creation
+    pub proof: Vec<u8>,
+    /// Tender ID
+    pub tender_id: TenderId,
+    /// Requester's public key x coordinate
+    pub requester_pub_x: pallas::Base,
+    /// Requester's public key y coordinate
+    pub requester_pub_y: pallas::Base,
+    /// Title of the tender
+    pub title: String,
+    /// Hash of the specification document
+    pub specification: pallas::Base,
+    /// Attestation ID for competency requirements
+    pub attestation_id: pallas::Base,
+    /// Minimum bid amount
+    pub min_bid: u64,
+    /// Maximum bid amount
+    pub max_bid: u64,
+    /// Bidding deadline block
+    pub bid_deadline: u64,
+    /// Reveal deadline block
+    pub reveal_deadline: u64,
+    /// Delivery deadline block
+    pub delivery_deadline: u64,
+    /// Required capability ID for bidders
+    pub required_capability: Option<[u8; 32]>,
+    /// Required DAG ID for multi-path qualification
+    pub required_dag_id: Option<[u8; 32]>,
+}
+
+/// State update for CreateTenderWithCapabilityV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CreateTenderWithCapabilityUpdateV1 {
+    /// The created tender ID
+    pub tender_id: TenderId,
+}
+
+/// Parameters for submitting a bid with capability proof
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SubmitBidWithCapabilityParamsV1 {
+    /// ZK proof for bid submission
+    pub proof: Vec<u8>,
+    /// Tender ID
+    pub tender_id: TenderId,
+    /// Bid ID
+    pub bid_id: BidId,
+    /// Bidder's public key x coordinate
+    pub bidder_pub_x: pallas::Base,
+    /// Bidder's public key y coordinate
+    pub bidder_pub_y: pallas::Base,
+    /// Bid amount (hidden)
+    pub amount: u64,
+    /// Attestation claim ID (from attestation.create_claim)
+    pub claim_id: pallas::Base,
+    /// Encrypted bid details
+    pub encrypted_payload: Vec<u8>,
+    /// Required capability ID (must match tender's requirement)
+    pub required_capability_id: [u8; 32],
+    /// Capability predicate result (from Identity contract)
+    pub capability_predicate_result: pallas::Base,
+}
+
+/// State update for SubmitBidWithCapabilityV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SubmitBidWithCapabilityUpdateV1 {
+    /// The tender ID
+    pub tender_id: TenderId,
+    /// The submitted bid ID
     pub bid_id: BidId,
 }
