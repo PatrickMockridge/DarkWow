@@ -839,8 +839,7 @@ This would allow the DEX to:
 
 - [DEX Contract](../../src/contract/dex/) — Implementation of trusted setup
 - [Money Contract](../../src/contract/money/) — Source of truth for locked funds
-- [Composability](composability.md) — Cross-contract patterns
-- [Private Authorization Layer](privauth.md) — Authorization primitives
+- [O-Cap & Composable Privacy](ocap.md) — Cross-contract patterns and authorization primitives
 
 ---
 
@@ -888,9 +887,7 @@ circuit "MyContract" {
 ## References
 
 - [Field Arithmetic Constraints](field_arithmetic.md) — foundational reading for understanding why ZK circuit arithmetic is hard
-- [Private Authorization Layer](privauth.md) — the authorization pattern these opcodes enable
-- [Composability & General Primitives](composability.md) — how these opcodes compose across contracts
-- [Contract MVP Status](mvp_status.md) — blockers for each contract and the single highest-leverage primitive to implement
+- [O-Cap & Composable Privacy](ocap.md) — the authorization pattern these opcodes enable and how they compose across contracts
 - [intent-amm fork (rusticml)](https://codeberg.org/rusticml/darkfi-intent-amm-proposal) — experimentation with intent-based AMM logic
 - [zkas bincode](../zkas/bincode.md) — existing opcode specifications
 - [Smart Contracts architecture](sc/sc.md) — contract layer built on zkVM

@@ -69,7 +69,7 @@ ZK contracts using the existing opcode set. These prioritize **maximum privacy**
 - [Provable Randomness](arch/provable_randomness.md) — PoW randomness analysis with casino game case studies
 - [Game Room App Layer](arch/game_room_app_layer.md) — SDK integration guide for app developers
 - [Plain Contracts Architecture](arch/plain_contracts.md) — [DEPRECATED] Dual-layer ZK/plain contract design
-- [Parallel Societies](arch/parallel_societies.md) — Privacy for social reproduction industries (labor, healthcare, insurance, education)
+- [O-Cap & Composable Privacy](arch/ocap.md) — Privacy for social reproduction industries (labor, healthcare, insurance, education)
 
 ## Security Status
 

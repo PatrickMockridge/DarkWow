@@ -180,7 +180,7 @@ The contracts that ship are the ones whose authors learned to think in field ari
 ## Further Reading
 
 - [zkVM Primitive Layer](zkvm_primitives.md) — Technical analysis of each implemented and planned opcode
-- [Contract MVP Status](mvp_status.md) — What contracts are blocked by which arithmetic gaps
+- [O-Cap & Composable Privacy](ocap.md) — O-Cap authorization pattern
 - [The Complete Mathematical Universe](https://technologytruth.substack.com/p/the-complete-mathematical-universe) — The broader context for why ZK arithmetic is hard
 - [Pallas Field Notes](https://hackmd.io/@poroo/H0_LdDzqy) — Field arithmetic edge cases for bn254
 - [ZK Maths Discord](https://discord.gg/zk) — Active community working through these problems
