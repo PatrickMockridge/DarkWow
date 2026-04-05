@@ -54,11 +54,51 @@ pub enum CollateralType {
     Xmr,
     /// DRK (DarkFi) collateral
     Drk,
+    /// ETH (Ethereum) collateral - large cap, DAI-backed
+    Eth,
+}
+
+/// Stablecoin model selector - determines the behavior of the stablecoin
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub enum StablecoinModel {
+    /// Synthetix-style pooled debt (default)
+    /// All collateral backs all debt. No individual position tracking.
+    /// Liquidation is global - pool is either healthy or not.
+    PooledDebt,
+    /// Liquity-style: Minimum 110% collateralization
+    /// Uses stability pool for redemptions. Instant liquidation.
+    /// No governance, no stability fee.
+    Liquity,
+    /// Frax-style: Fractional collateralization (e.g., 80% collateral + 20% algorithmic)
+    /// Partial backing with seigniorage share mechanism.
+    Fractional,
+    /// Individual CDP: Per-position tracking (complex ZK)
+    /// Each position has its own collateral/debt tracked separately.
+    /// More control but leaks more data.
+    IndividualCdp,
+}
+
+/// Per-collateral risk parameters (used for multi-collateral support)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CollateralParams {
+    /// Collateral type
+    pub collateral_type: CollateralType,
+    /// Haircut applied to this collateral (basis points, e.g., 9850 = 98.5% value)
+    /// Protects against price volatility before liquidation
+    pub haircut: u64,
+    /// Liquidation threshold for this collateral type (basis points)
+    pub liquidation_threshold: u64,
+    /// Maximum share of total debt this collateral can back (basis points)
+    /// e.g., 30000 = max 30% of debt can be backed by this collateral
+    pub max_debt_share: u64,
 }
 
 /// Pooled Debt Engine initialization parameters
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeParams {
+    /// The stablecoin model to use (PooledDebt, Liquity, Fractional, IndividualCdp)
+    pub model: StablecoinModel,
+
     /// Initial minimum collateralization ratio for pool (basis points, e.g., 15000 = 150%)
     pub min_collateralization_ratio: u64,
 
@@ -69,6 +109,7 @@ pub struct InitializeParams {
     pub liquidation_penalty: u64,
 
     /// Base stability fee (annual rate in basis points)
+    /// Note: Liquity model ignores this (no stability fee)
     pub base_rate: u64,
 
     /// PI controller proportional gain
@@ -82,6 +123,10 @@ pub struct InitializeParams {
 
     /// Price deviation threshold for PI adjustment (basis points)
     pub price_deviation_threshold: u64,
+
+    /// Per-collateral risk parameters (for multi-collateral support)
+    /// If empty, uses default single-collateral (DRK) with above params
+    pub collateral_params: Vec<CollateralParams>,
 }
 
 /// Deposit collateral into the pool

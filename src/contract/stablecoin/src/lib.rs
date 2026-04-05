@@ -82,6 +82,37 @@ pub const CDP_PRICE_FEED_TWAP_WINDOW: u64 = 3600;
 pub const CDP_PRICE_DEVIATION_THRESHOLD: u64 = 500; // 5%
 
 // ============================================================================
+// Model-Specific Constants
+// ============================================================================
+
+/// Liquity-style: Minimum collateralization (110% = 11000 basis points)
+pub const LIQUIDITY_MIN_COLLATERALIZATION: u64 = 11000;
+/// Liquity-style: Default stability pool size (percentage of debt)
+pub const LIQUIDITY_STABILITY_POOL_MIN: u64 = 1000; // 10%
+
+/// Frax-style: Default collateral ratio for fractional model (80% = 8000 basis points)
+pub const FRAX_DEFAULT_COLLATERAL_RATIO: u64 = 8000;
+/// Frax-style: Algorithmically mint limit per epoch
+pub const FRAX_ALGO_MINT_LIMIT: u64 = 1_000_000;
+
+/// Individual CDP: Default per-position min collateralization
+pub const CDP_INDIVIDUAL_MIN_COLLATERALIZATION: u64 = 15000;
+
+// ============================================================================
+// Per-Collateral Default Haircuts (for multi-collateral support)
+// ============================================================================
+
+/// ETH haircut (2% buffer for volatility - ETH can move fast)
+pub const ETH_HAIRCUT: u64 = 9800; // 98%
+/// XMR haircut (1% buffer - Monero more stable)
+pub const XMR_HAIRCUT: u64 = 9900; // 99%
+/// DRK haircut (no buffer for native token)
+pub const DRK_HAIRCUT: u64 = 10000; // 100%
+
+/// Maximum debt share per collateral (prevent over-concentration)
+pub const MAX_DEBT_SHARE_PER_COLLATERAL: u64 = 5000; // 50%
+
+// ============================================================================
 // Database Tree Names
 // ============================================================================
 

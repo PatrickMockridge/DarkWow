@@ -1,15 +1,42 @@
-# DarkFi Stablecoin Contract (Pooled Debt)
+# DarkFi Stablecoin Contract
 
-A privacy-preserving collateralized stablecoin for DarkFi using Synthetix-style pooled debt.
+A privacy-preserving collateralized stablecoin for DarkFi with configurable models and multi-collateral support.
 
 ## Overview
 
 This contract enables creation of a stablecoin (e.g., a USD-pegged token) that is:
 
 - **Privacy-preserving**: All positions, amounts, and identities are hidden via ZK proofs
-- **Pooled debt**: All collateral backs all debt — no individual position tracking
+- **Multi-collateral**: Support for XMR, DRK, and ETH (via bridge) as collateral
 - **Self-stabilizing**: AMM-based TWAP + PI Controller replaces governance
 - **Censorship-resistant**: No trusted price oracles, no centralized control
+- **Configurable models**: Choose between Pooled Debt, Liquity, Fractional, or Individual CDP
+
+## Configurable Models
+
+The stablecoin contract supports **four deployment models** selected at initialization:
+
+| Model | Min Collateral | Liquidation | Governance | Use Case |
+|-------|---------------|-------------|------------|----------|
+| **PooledDebt** (default) | 150% | Global pool shortfall | PI Controller | General purpose |
+| **Liquity** | 110% | Stability pool | None | Low collateral, fast redemptions |
+| **Fractional** | 80% | Mixed | Partial algorithmic | Capital efficient |
+| **IndividualCdp** | 150% | Per-position | Per-asset | Maximum control |
+
+## Multi-Collateral Support
+
+Collateral types supported:
+- **XMR** (Monero) - Privacy-native collateral
+- **DRK** (DarkFi) - Native token collateral
+- **ETH** (Ethereum) - Large cap, DAI-backed collateral
+
+Each collateral type has its own risk parameters:
+
+| Parameter | Description |
+|-----------|-------------|
+| `haircut` | Value discount applied (e.g., 98% for ETH) |
+| `liquidation_threshold` | Per-asset liquidation trigger |
+| `max_debt_share` | Max % of total debt this collateral can back |
 
 ## Architecture: Pooled Debt vs Individual CDP
 
@@ -109,13 +136,15 @@ Pooled Debt:   Pool shortfall → Simple ZK → No position data leaked
 
 | Function | ID | Description |
 |----------|-----|-------------|
-| `InitializeV1` | 0x00 | Initialize pool with parameters |
+| `InitializeV1` | 0x00 | Initialize pool with model and collateral parameters |
 | `DepositCollateralV1` | 0x01 | Deposit collateral into global pool |
 | `WithdrawCollateralV1` | 0x02 | Withdraw collateral (if ratio allows) |
 | `MintStableV1` | 0x03 | Mint stablecoins against pool |
 | `RepayStableV1` | 0x04 | Repay debt to reduce debt share |
 | `LiquidateV1` | 0x05 | Liquidate undercollateralized pool |
 | `UpdateConfigV1` | 0x06 | Update pool parameters (governance) |
+
+**Note**: The stablecoin model is selected at initialization via `InitializeParams.model` and cannot be changed afterwards.
 
 ## Data Structures
 
@@ -195,24 +224,33 @@ pub struct MintStableParams {
 - **TWAP window**: Configurable (e.g., 1 hour)
 - **Price deviation threshold**: Configurable (e.g., 5%)
 
-## Why Not Individual CDP?
+## Model Comparison
 
-Individual CDP is **possible** but **not part of MVP** because:
+### PooledDebt (Synthetix-style)
+- All collateral backs all debt (global pool)
+- Liquidation is global: pool is either healthy or not
+- Simpler ZK circuits, better privacy
+- PI Controller for rate adjustments
 
-1. **ZK complexity**: Per-position proofs require demonstrating each position's collateralization separately
-2. **Privacy leakage**: Position IDs and nullifiers allow observing who was liquidated
-3. **Liquidation complexity**: Liquidators must identify specific undercollateralized positions
-4. **Implementation time**: Pooled model is simpler and faster to implement
+### Liquity-style
+- Minimum 110% collateralization
+- Stability pool for redemptions
+- Instant liquidation (no oracle delays)
+- No governance, no stability fee
 
-### To Add Individual CDP Later
+### Fractional (Frax-style)
+- 80% collateral + 20% algorithmic
+- Seigniorage share mechanism
+- More capital efficient
+- Requires algorithmic minting logic
 
-Individual CDP can be layered on top of pooled debt:
+### Individual CDP
+- Per-position tracking (more ZK complex)
+- Position IDs and nullifiers leak some data
+- More control over individual positions
+- Each user chooses: pooled or individual
 
-1. Layer individual position tracking on top of pooled debt
-2. Use attestation contract to verify individual positions
-3. Each user chooses: pooled (simpler) or individual (more control)
-
-The pooled model provides a **privacy-preserving foundation**. Individual CDP adds complexity and information leakage that may not be acceptable in an anonymous context.
+The **PooledDebt model** is recommended for maximum privacy. Individual CDP is available for use cases requiring per-position control.
 
 ## ZK Circuits
 
