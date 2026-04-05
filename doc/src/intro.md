@@ -40,8 +40,6 @@ ZK contracts using the existing opcode set. These prioritize **maximum privacy**
 | **subscription** | Member subscription with DAO treasury | ✅ Complete |
 | **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
 
-> **Note**: Plain contracts in `src/contract_plain/` have been **deprecated**. The ZK opcodes they workaround (`LessThanOrEqual`, `BaseDiv`) are now verified sound and implemented. See [Contract Plain Deprecation](arch/contract_plain_deprecation.md).
-
 ## Key Technical Changes
 
 - **DarkBet Exchange**: Unified betting contract with order-book (back/lay) and AMM pool modes. Replaces prediction_market.
@@ -61,14 +59,12 @@ ZK contracts using the existing opcode set. These prioritize **maximum privacy**
 - [Opcodes and Formal Verification](arch/opcodes.md) — Opcode soundness verification with Lean 4 proofs
 - [Merkle Depth](arch/merkle_depth.md) — Fixed-depth limitations and workarounds
 - [Composability](arch/composability.md) — Smart contract composition patterns
-- [Contract Plain Deprecation](arch/contract_plain_deprecation.md) — Resolution of dual-layer architecture
 - [Safemath](arch/safemath.md) — ZK arithmetic templates for assertion-only comparisons
 - [Field Arithmetic](arch/field_arithmetic.md) — zkVM primitive analysis
 - [DarkBet Exchange](arch/darkbet_exchange.md) — Unified betting exchange (order-book + AMM)
 - [Entropy Module](arch/entropy.md) — Provable randomness via block hash entropy
 - [Provable Randomness](arch/provable_randomness.md) — PoW randomness analysis with casino game case studies
 - [Game Room App Layer](arch/game_room_app_layer.md) — SDK integration guide for app developers
-- [Plain Contracts Architecture](arch/plain_contracts.md) — [DEPRECATED] Dual-layer ZK/plain contract design
 - [O-Cap & Composable Privacy](arch/ocap.md) — Privacy for social reproduction industries (labor, healthcare, insurance, education)
 
 ## Security Status
@@ -110,8 +106,6 @@ Most comparison opcodes are now **formally verified** or **implemented**:
 Plain contracts have been **deprecated** in favor of ZK contracts since:
 - `LessThanOrEqual` is formally verified sound
 - `BaseDiv` is implemented
-
-See [Contract Plain Deprecation](arch/contract_plain_deprecation.md) for details.
 
 ### Bridge = Opcode-Independent ✅
 

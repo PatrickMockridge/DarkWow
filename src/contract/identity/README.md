@@ -263,6 +263,7 @@ Requester learns only: ✓ These bidders are qualified
 | `CreateClaimV1L1V2` | 0x06 | Level 1 with LessThanOrEqual |
 | `CreateClaimV1Multi` | 0x07 | Multi-credential AND claim |
 | `CreateClaimV1Ratio` | 0x08 | Ratio-based predicate claim |
+| `CreateClaimDAGV1` | 0x0d | DAG-based claim (multiple paths) |
 
 ## ZK Circuits
 
@@ -274,6 +275,7 @@ Requester learns only: ✓ These bidders are qualified
 | `create_claim_v1_l1_v2.zk` | `CreateClaim_V1L1V2` | Level 1 LessThanOrEqual |
 | `create_claim_v1_multi.zk` | `CreateClaim_V1Multi` | Multi-credential AND |
 | `create_claim_v1_ratio.zk` | `CreateClaim_V1Ratio` | Ratio-based predicate |
+| `create_claim_v1_dag.zk` | `CreateClaim_V1DAG` | Multi-path DAG claim |
 | `verify_capability_v1.zk` | `VerifyCapability_V1` | Capability verification |
 
 ## Database Trees
@@ -323,6 +325,35 @@ O-Cap authorization is a **cross-contract primitive** that integrates with other
 | Tender | Submit sealed bid | `qualified_provider` |
 | Insurance | Purchase coverage | `low_risk_profile` |
 | Bridge | Cross-chain transfer | `authorized_signer` |
+
+## Competency DAGs (0x0d)
+
+Competency DAGs enable **multiple credential paths** where any path can be satisfied to achieve a competency:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Competency DAG Example                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  PATH A:                          PATH B:                         │
+│  High School → Associate's → Bachelor's (AND chain)               │
+│                                    │                             │
+│                                    ▼                             │
+│                        Industry Certification                    │
+│                                    │                             │
+│                                    ▼                             │
+│                    "Qualified Developer" (either path)           │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Function:** `CreateClaimDAGV1` (0x0d)
+
+**Use cases:**
+- "Qualified Developer" via degree OR certifications
+- "Senior Engineer" via 10 years exp OR 5 years + certs
+- Medical licenses in multiple jurisdictions
+- Multi-path skill equivalency
 
 ## What Engineers Can Prove
 

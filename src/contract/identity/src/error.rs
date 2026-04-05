@@ -96,6 +96,16 @@ pub enum IdentityError {
 
     #[error("Capability requirement not met")]
     CapabilityRequirementNotMet,
+
+    // DAG errors
+    #[error("DAG not found")]
+    DAGNotFound,
+
+    #[error("Invalid DAG path")]
+    InvalidDAGPath,
+
+    #[error("DAG path not satisfied")]
+    DAGPathNotSatisfied,
 }
 
 impl From<IdentityError> for ContractError {
@@ -126,6 +136,9 @@ impl From<IdentityError> for ContractError {
             IdentityError::CapabilityExpired => Self::Custom(23),
             IdentityError::CapabilityMaxHoldersReached => Self::Custom(24),
             IdentityError::CapabilityRequirementNotMet => Self::Custom(25),
+            IdentityError::DAGNotFound => Self::Custom(26),
+            IdentityError::InvalidDAGPath => Self::Custom(27),
+            IdentityError::DAGPathNotSatisfied => Self::Custom(28),
         }
     }
 }

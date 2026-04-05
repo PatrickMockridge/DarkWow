@@ -453,8 +453,8 @@ These industries are essential for societal survival and NOW ENABLED with O-Cap 
 
 **COMPLETED**: `base_div` (0x58) and `LessThanOrEqual` (0x55) are now implemented and verified sound.
 
-Plain contracts in `src/contract_plain/` are **deprecated**. ZK contracts now have full functionality via:
-- O-Cap authorization (0x09-0x0c) for cross-contract capability verification
+The `contract_plain/` directory has been **deleted**. ZK contracts now have full functionality via:
+- O-Cap authorization (0x09-0x0d) for cross-contract capability verification
 - `base_div` (0x58) for actuarial calculations
 - `LessThanOrEqual` (0x55) for predicate evaluation
 
@@ -805,6 +805,122 @@ The Identity contract provides full O-Cap authorization via these opcodes:
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Competency DAGs
+
+Competency DAGs enable **multiple credential paths** where any path can be satisfied to achieve a competency. This is a generalization of the multi-credential AND logic into an OR structure across paths.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Competency DAG Example                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  PATH A:                          PATH B:                         │
+│  High School Diploma              Self-Taught + Portfolio         │
+│       │                               │                           │
+│       ▼                               ▼                           │
+│  Associate's Degree ─────┐     Industry Certification            │
+│       │                  │           │                           │
+│       ▼                  │           ▼                           │
+│  Bachelor's Degree ──────┼────► "Qualified Developer"           │
+│                          │           │                           │
+│       ┌──────────────────┘           │                           │
+│       ▼                              ▼                           │
+│  "Senior Developer" ◄────────────────┘                           │
+│                                                                   │
+│  OR LOGIC: Either PATH A OR PATH B leads to "Qualified"          │
+│  AND LOGIC: PATH A requires ALL credentials in sequence           │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### DAG Implementation in Identity Contract (0x0d)
+
+| Opcode | Function | Description |
+|--------|----------|-------------|
+| `0x0d` | `CreateClaimDAGV1` | Create claim verifying multiple credential paths |
+
+### DAG Data Structures
+
+```rust
+/// A single credential in a DAG path
+pub struct DAGCredential {
+    pub nullifier: IntentNullifier,     // Proves credential exists
+    pub predicate_result: u8,            // 1 if predicate satisfied
+    pub claim_type: [u8; 32],           // Type identifier
+}
+
+/// A single path (AND chain of credentials)
+pub struct CredentialPath {
+    pub credentials: Vec<DAGCredential>, // AND chain
+    pub path_hash: [u8; 32],            // Merkle root of path
+}
+
+/// Full DAG structure
+pub struct CompetencyDAG {
+    pub dag_id: [u8; 32],
+    pub name: Vec<u8>,
+    pub paths: Vec<CredentialPath>,     // OR between paths
+    pub dag_root: [u8; 32],
+    pub issuer_pub: [u8; 32],
+    pub created_at: u64,
+    pub expires_at: u64,
+}
+```
+
+### DAG ZK Circuit: `create_claim_v1_dag.zk`
+
+The circuit verifies one path is satisfied using AND logic within the path:
+
+```zk
+# For each credential in path:
+is_lte_1 = less_than_or_equal(threshold_1, attribute_1);
+is_lte_2 = less_than_or_equal(threshold_2, attribute_2);
+is_lte_3 = less_than_or_equal(threshold_3, attribute_3);
+
+# AND logic (all must pass)
+path_satisfied = base_mul(is_lte_1, is_lte_2);
+path_satisfied = base_mul(path_satisfied, is_lte_3);
+
+# Verify path result
+constrain_equal_base(path_satisfied, ONE);
+```
+
+### O-Cap + DAG Composition
+
+DAG claims compose with O-Cap capabilities:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│            O-Cap + Competency DAG Composition                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  DAG CLAIM:                                                      │
+│  "I have PATH_A OR PATH_B leading to Senior Developer"          │
+│  → Proves: Either credential chain satisfied                     │
+│  → Hides: Which path, exact credentials, issuers               │
+│                                                                   │
+│  DERIVED CAPABILITY:                                            │
+│  can_approve_architecture = Senior Developer DAG + predicate     │
+│                                                                   │
+│  O-Cap VERIFICATION:                                            │
+│  VerifyCapability(can_approve_architecture)                     │
+│  → Returns: VALID (DAG claim satisfied + predicate)            │
+│  → Hides: Everything else                                      │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Use Cases for DAGs
+
+| DAG Structure | Use Case |
+|--------------|----------|
+| Multiple education paths | "Qualified Developer" via degree OR certification |
+| Experience alternatives | "Senior Engineer" via 10 years exp OR 5 years + certifications |
+| Multi-jurisdiction | Medical license in any of US/EU/APAC |
+| Skill equivalency | CPA OR CA OR ACCA for accounting |
 
 ---
 

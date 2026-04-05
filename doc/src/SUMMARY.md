@@ -95,8 +95,6 @@
   - [Opcodes and Formal Verification](arch/opcodes.md)
   - [Safemath](arch/safemath.md)
   - [MerkleRoot Depth Limitation](arch/merkle_depth.md)
-  - [Plain Contracts Architecture](arch/plain_contracts.md) - [DEPRECATED]
-  - [Contract Plain Deprecation](arch/contract_plain_deprecation.md)
   - [Generalized Contract Invocation API](arch/contract_invoke_api.md)
   - [O-Cap & Composable Privacy](arch/ocap.md)
   - [Security Analysis](arch/security-analysis.md)

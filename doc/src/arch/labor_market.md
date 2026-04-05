@@ -200,3 +200,97 @@ No grey-market opcodes (`LessThanOrEqual`, `IsEqualBase`).
 3. **Escrow tiers**: Different trust levels for different payment amounts
 4. **Time tracking**: For ongoing hourly work, integrate with subscription
 5. **Arbitration marketplace**: Multiple DAOs can compete to handle disputes
+
+## O-Cap Integration (Capability-Aware Jobs)
+
+With O-Cap authorization (Identity contract 0x09-0x0d), jobs can require workers to prove specific capabilities without revealing identity.
+
+### New Function IDs
+
+| ID | Function | Description |
+|----|----------|-------------|
+| `0x0c` | `CreateJobWithCapabilityV1` | Create job requiring worker capability |
+| `0x0d` | `AcceptJobWithCapabilityV1` | Accept job with capability proof |
+| `0x0e` | `CreateJobWithMilestonesAndCapabilityV1` | Milestone job with capability requirement |
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                O-Cap Labor Market Flow                                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  IDENTITY CONTRACT (O-Cap):                                                 │
+│     │                                                                       │
+│     │  RegisterCapability("can_work_on_freelance_jobs"):                    │
+│     │    - requires: credential.professional_license                       │
+│     │    - requires: predicate(experience >= 3)                             │
+│     │                                                                       │
+│     │  IssueCapability(worker, "can_work_on_freelance_jobs"):               │
+│     │    - Worker proves qualifications via ZK                            │
+│     │    - Hides: name, employer, exact experience                          │
+│     │                                                                       │
+│     ▼                                                                       │
+│  EMPLOYER creates job:                                                      │
+│     │                                                                       │
+│     │  CreateJobWithCapabilityV1(                                          │
+│     │    required_capability_id: can_work_on_freelance_jobs,               │
+│     │    ...                                                                │
+│     │  )                                                                    │
+│     ▼                                                                       │
+│  WORKER accepts job:                                                       │
+│     │                                                                       │
+│     │  AcceptJobWithCapabilityV1(                                          │
+│     │    capability_proof: VerifyCapabilityV1(can_work_on_...),          │
+│     │    ...                                                                │
+│     │  )                                                                    │
+│     │                                                                       │
+│     Result: Worker identity hidden, only capability verified                 │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Job Struct Extension
+
+```rust
+pub struct Job {
+    // ... existing fields ...
+    /// Required capability ID for workers (None = any worker can accept)
+    pub required_capability_id: Option<[u8; 32]>,
+    /// Required DAG ID for multi-path qualification (None = no DAG requirement)
+    pub required_dag_id: Option<[u8; 32]>,
+}
+```
+
+### Use Cases
+
+| Job Type | Capability Required | DAG Path |
+|----------|---------------------|----------|
+| Senior Developer | `can_work_as_senior_dev` | CS Degree OR Industry Certs + 5yrs exp |
+| Medical Consultant | `can_consult_healthcare` | License + Board Cert + 5yrs exp |
+| Legal Advisor | `can_provide_legal_advice` | Bar membership + JD + 3yrs exp |
+| Financial Auditor | `can_audit_finance` | CPA OR CA + Experience + References |
+
+### ZK Circuit: `accept_job_with_capability_v1.zk`
+
+The circuit verifies:
+- Worker knows their secret key
+- Worker's public key is correctly derived
+- Capability predicate result is 1 (satisfied)
+
+```zk
+worker_pub = ec_mul_base(worker_secret, NULLIFIER_K);
+derived_pub_x = ec_get_x(worker_pub);
+constrain_equal_base(derived_pub_x, worker_pub_x);
+
+# Verify capability predicate is satisfied
+ONE = witness_base(1);
+constrain_equal_base(capability_predicate_result, ONE);
+```
+
+### Benefits
+
+1. **Worker privacy**: Employer learns only "worker has required capability", not who they are
+2. **Skill filtering**: Jobs can require specific qualifications without discrimination
+3. **DAG composition**: Multiple credential paths allow flexible qualification requirements
+4. **Revocation**: If capability is revoked (credential expires), job acceptance fails

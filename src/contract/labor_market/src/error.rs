@@ -101,4 +101,17 @@ pub enum LaborMarketError {
 
     #[error("Milestone out of order")]
     MilestoneOutOfOrder,
+
+    // O-Cap capability errors
+    #[error("Job requires capability")]
+    CapabilityRequired,
+
+    #[error("Capability requirement not met")]
+    CapabilityNotMet,
+
+    #[error("Invalid capability")]
+    InvalidCapability,
+
+    #[error("Capability revoked")]
+    CapabilityRevoked,
 }

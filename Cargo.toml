@@ -66,12 +66,6 @@ members = [
     "src/contract/relayer_endowment",
     "src/contract/stablecoin",
 
-    "src/contract_plain/subscription",
-    "src/contract_plain/labor_market",
-    "src/contract_plain/insurance",
-    "src/contract_plain/oracle",
-    "src/contract_plain/attestation",
-
     "example/dchat/dchatd",
 ]
 

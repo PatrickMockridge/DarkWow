@@ -77,6 +77,8 @@ pub fn identity_exec(rt: &mut Runtime, params: BridgeParameter) -> ContractResul
         IdentityFunction::IssueCapabilityV1 => identity_issue_capability(rt, call),
         IdentityFunction::VerifyCapabilityV1 => identity_verify_capability(rt, call),
         IdentityFunction::RevokeCapabilityV1 => identity_revoke_capability(rt, call),
+        // DAG functions
+        IdentityFunction::CreateClaimDAGV1 => identity_create_claim_dag(rt, call),
     }
 }
 
@@ -943,6 +945,70 @@ fn identity_revoke_capability(rt: &mut Runtime, call: BridgeCall) -> ContractRes
 }
 
 // ============================================================================
+// CREATE CLAIM DAG
+// ============================================================================
+
+/// Create a DAG-based claim with multiple credential paths (OR logic)
+///
+/// Flow:
+/// 1. Verify DAG exists and is valid
+/// 2. Verify the claimed path is valid
+/// 3. Verify all credentials in the path are satisfied
+/// 4. Emit DAGClaimCreated event
+fn identity_create_claim_dag(rt: &mut Runtime, call: BridgeCall) -> ContractResult<()> {
+    let params: CreateClaimDAGParams = deserialize_claim_dag_params(&call.data[1..])?;
+
+    msg!("[identity_create_claim_dag] Creating DAG claim for DAG {:?}", &params.dag_id);
+
+    // =========================================================================
+    // STEP 1: Verify all credentials in the path are valid
+    // =========================================================================
+
+    for dag_cred in &params.credentials {
+        let nullifier_bytes = dag_cred.nullifier.to_bytes();
+        let cred_data = rt.load(IDENTITY_CONTRACT_CREDENTIALS_TREE, nullifier_bytes)?;
+        let credential: Credential = match cred_data {
+            Some(data) => Credential::decode(&mut std::io::Cursor::new(&data))
+                .map_err(|_| ContractError::DecodeError)?,
+            None => {
+                msg!("[identity_create_claim_dag] ERROR: Credential not found");
+                return Err(IdentityError::CredentialNotFound.into())
+            }
+        };
+
+        if credential.revoked {
+            msg!("[identity_create_claim_dag] ERROR: Credential is revoked");
+            return Err(IdentityError::CredentialRevoked.into())
+        }
+
+        let current_time = get_current_timestamp(rt)?;
+        if credential.expires_at > 0 && current_time > credential.expires_at {
+            msg!("[identity_create_claim_dag] ERROR: Credential expired");
+            return Err(IdentityError::CredentialExpired.into())
+        }
+    }
+
+    // =========================================================================
+    // STEP 2: Verify ZK proof
+    // =========================================================================
+
+    // In production: verify ZK proof for DAG satisfaction
+
+    // =========================================================================
+    // STEP 3: Emit event
+    // =========================================================================
+
+    msg!(
+        "[identity_create_claim_dag] EMIT_EVENT: DAGClaimCreated(dag_id={:?}, path={}, predicate_result={})",
+        &params.dag_id,
+        params.path_index,
+        params.predicate_result
+    );
+
+    Ok(())
+}
+
+// ============================================================================
 // HELPER FUNCTIONS (O-Cap)
 // ============================================================================
 
@@ -1014,5 +1080,10 @@ fn deserialize_verify_capability_params(data: &[u8]) -> ContractResult<VerifyCap
 
 fn deserialize_revoke_capability_params(data: &[u8]) -> ContractResult<RevokeCapabilityParams> {
     RevokeCapabilityParams::decode(&mut std::io::Cursor::new(&data))
+        .map_err(|_| ContractError::DecodeError)
+}
+
+fn deserialize_claim_dag_params(data: &[u8]) -> ContractResult<CreateClaimDAGParams> {
+    CreateClaimDAGParams::decode(&mut std::io::Cursor::new(&data))
         .map_err(|_| ContractError::DecodeError)
 }

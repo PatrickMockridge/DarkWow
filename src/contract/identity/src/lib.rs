@@ -137,6 +137,8 @@ define_contract_function!(IdentityFunction {
     IssueCapabilityV1 = 0x0a,
     VerifyCapabilityV1 = 0x0b,
     RevokeCapabilityV1 = 0x0c,
+    // DAG functions
+    CreateClaimDAGV1 = 0x0d,
 });
 
 /// Internal contract errors

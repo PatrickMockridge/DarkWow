@@ -688,6 +688,69 @@ combined_predicates = base_mul(is_lte_1, is_lte_2);
 combined_predicates = base_mul(combined_predicates, is_lte_3);
 ```
 
+### Competency DAG Claims (0x0d)
+
+The `create_claim_v1_dag.zk` circuit supports multiple credential paths with OR logic between paths:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Competency DAG Example                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  PATH A:                          PATH B:                         │
+│  High School → Associate's → Bachelor's (AND chain)               │
+│                                    │                             │
+│                                    ▼                             │
+│                        Industry Certification                    │
+│                                    │                             │
+│                                    ▼                             │
+│                    "Qualified Developer" (either path)           │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+```zk
+# For each credential in the path (AND logic):
+is_lte_1 = less_than_or_equal(threshold_1, attribute_1);
+is_lte_2 = less_than_or_equal(threshold_2, attribute_2);
+is_lte_3 = less_than_or_equal(threshold_3, attribute_3);
+
+# Path satisfied if all credentials pass
+path_satisfied = base_mul(is_lte_1, is_lte_2);
+path_satisfied = base_mul(path_satisfied, is_lte_3);
+
+constrain_equal_base(path_satisfied, ONE);
+```
+
+**Function:** `CreateClaimDAGV1` (0x0d)
+
+**Data structures:**
+```rust
+/// A single credential in a DAG path
+pub struct DAGCredential {
+    pub nullifier: IntentNullifier,
+    pub predicate_result: u8,
+    pub claim_type: [u8; 32],
+}
+
+/// A single path (AND chain)
+pub struct CredentialPath {
+    pub credentials: Vec<DAGCredential>,
+    pub path_hash: [u8; 32],
+}
+
+/// Full DAG structure
+pub struct CompetencyDAG {
+    pub dag_id: [u8; 32],
+    pub name: Vec<u8>,
+    pub paths: Vec<CredentialPath>,  // OR between paths
+    pub dag_root: [u8; 32],
+    pub issuer_pub: [u8; 32],
+    pub created_at: u64,
+    pub expires_at: u64,
+}
+```
+
 ### Ratio-Based Claims
 
 The `create_claim_v1_ratio.zk` circuit enables supply-relative predicates:
@@ -709,8 +772,8 @@ Level 0 (MVP - NOW)
 ├── On-chain verification
 └── ZK proofs for attribute hiding
 
-Level 1 (Future)
-├── Competency DAG structure
+Level 1 (NOW)
+├── Competency DAG structure ✓
 ├── Derived competencies (prerequisite chains)
 ├── Multiple issuer support
 └── Credential chaining

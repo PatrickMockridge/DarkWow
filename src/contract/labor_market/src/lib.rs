@@ -53,6 +53,10 @@ define_contract_function!(LaborMarketFunction {
     SubmitMilestoneV1 = 0x09,
     ConfirmMilestoneV1 = 0x0a,
     InitiateDisputeV1 = 0x0b,
+    // O-Cap enabled functions
+    CreateJobWithCapabilityV1 = 0x0c,
+    AcceptJobWithCapabilityV1 = 0x0d,
+    CreateJobWithMilestonesAndCapabilityV1 = 0x0e,
 });
 
 /// Internal contract errors
@@ -87,3 +91,4 @@ pub const LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1: &str = "ConfirmDelivery_V1
 pub const LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1: &str = "Dispute_V1";
 pub const LABOR_CONTRACT_ZKAS_REFUND_NS_V1: &str = "Refund_V1";
 pub const LABOR_CONTRACT_ZKAS_MILESTONE_PAYMENT_NS_V1: &str = "MilestonePayment_V1";
+pub const LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1: &str = "AcceptJobWithCapability_V1";

@@ -119,6 +119,10 @@ pub struct Job {
     pub current_milestone: u32,
     /// Accumulated payment released so far
     pub released_payment: u64,
+    /// Required capability ID for workers (None = any worker can accept)
+    pub required_capability_id: Option<[u8; 32]>,
+    /// Required DAG ID for multi-path qualification (None = no DAG requirement)
+    pub required_dag_id: Option<[u8; 32]>,
 }
 
 /// Parameters for creating a new job
@@ -341,4 +345,87 @@ pub struct InitiateDisputeParamsV1 {
     pub dao_escrow_bulla: pallas::Base,
     /// Nullifier for dispute
     pub spent_nullifier: pallas::Base,
+}
+
+// ============================================================================
+// O-CAP ENABLED PARAMETERS (For capability-aware jobs)
+// ============================================================================
+
+/// Parameters for creating a job that requires workers to have a capability
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateJobWithCapabilityParamsV1 {
+    /// ZK proof for job creation
+    pub proof: Vec<u8>,
+    /// Job ID (public input)
+    pub job_id: pallas::Base,
+    /// Employer's public key x coordinate
+    pub employer_pub_x: pallas::Base,
+    /// Employer's public key y coordinate
+    pub employer_pub_y: pallas::Base,
+    /// Attestation ID for deliverable verification
+    pub attestation_id: pallas::Base,
+    /// Type of deliverable (0 = Generic, 1 = Git)
+    pub delivery_type: u8,
+    /// Payment amount
+    pub payment_amount: u64,
+    /// Token being paid
+    pub payment_token: pallas::Base,
+    /// Payment commitment x coordinate
+    pub payment_commit_x: pallas::Base,
+    /// Payment commitment y coordinate
+    pub payment_commit_y: pallas::Base,
+    /// Required capability ID for workers
+    pub required_capability_id: [u8; 32],
+    /// Required DAG ID (None if just capability required)
+    pub required_dag_id: Option<[u8; 32]>,
+}
+
+/// Parameters for accepting a job with capability proof
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AcceptJobWithCapabilityParamsV1 {
+    /// ZK proof for job acceptance
+    pub proof: Vec<u8>,
+    /// Job ID being accepted
+    pub job_id: pallas::Base,
+    /// Worker's public key x coordinate
+    pub worker_pub_x: pallas::Base,
+    /// Worker's public key y coordinate
+    pub worker_pub_y: pallas::Base,
+    /// Capability proof from Identity contract
+    pub capability_proof: Vec<u8>,
+    /// Capability secret (proves ownership)
+    pub capability_secret: [u8; 32],
+}
+
+/// Parameters for creating a milestone job with capability requirement
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateJobWithMilestonesAndCapabilityParamsV1 {
+    /// ZK proof for job creation
+    pub proof: Vec<u8>,
+    /// Job ID (public input)
+    pub job_id: pallas::Base,
+    /// Employer's public key x coordinate
+    pub employer_pub_x: pallas::Base,
+    /// Employer's public key y coordinate
+    pub employer_pub_y: pallas::Base,
+    /// Attestation ID for deliverable verification
+    pub attestation_id: pallas::Base,
+    /// Type of deliverable (0 = Generic, 1 = Git)
+    pub delivery_type: u8,
+    /// Total payment amount
+    pub payment_amount: u64,
+    /// Token being paid
+    pub payment_token: pallas::Base,
+    /// Payment commitment x coordinate
+    pub payment_commit_x: pallas::Base,
+    /// Payment commitment y coordinate
+    pub payment_commit_y: pallas::Base,
+    /// Overall deadline block
+    pub deadline_block: u64,
+    /// Number of milestones
+    pub milestone_count: u32,
+    /// Required capability ID for workers
+    pub required_capability_id: [u8; 32],
+    /// Required DAG ID (None if just capability required)
+    pub required_dag_id: Option<[u8; 32]>,
 }

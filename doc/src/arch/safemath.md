@@ -4,7 +4,7 @@
 > Safemath workarounds are no longer necessary for sound ZK operations.
 > This document is retained for historical reference and for the assertion-only pattern which remains useful.
 >
-> See [Contract Plain Deprecation](contract_plain_deprecation.md) and [Opcodes Reference](opcodes.md).
+> See [Opcodes Reference](opcodes.md).
 
 ---
 
@@ -260,7 +260,6 @@ This preserves Level 1 semantics using an alternative construction (LessThanOrEq
 ## See Also
 
 - [Opcodes Reference](opcodes.md) — LessThanOrEqual and BaseDiv verification
-- [Contract Plain Deprecation](contract_plain_deprecation.md) — Resolution of dual-layer architecture
 - [Field Arithmetic Constraints](field_arithmetic.md) — Why field math differs from integer math
 - [zkVM Primitive Layer](zkvm_primitives.md) — Opcode implementation details
 - [Contract README](../../src/contract/README.md) — Circuit safety summary

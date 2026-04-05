@@ -439,6 +439,116 @@ pub struct StoredCapability {
 }
 
 // ============================================================================
+// COMPETENCY DAG (DIRECTED ACYCLIC GRAPH) STRUCTURES
+// ============================================================================
+//
+// Competency DAGs allow credentials to chain in a DAG structure where
+// multiple paths can lead to the same competency.
+//
+// Example: "Qualified Developer" can be achieved via:
+//   PATH A: High School → Associate's → Bachelor's
+//   PATH B: Self-Taught + Industry Certification
+//
+// Each path is an AND chain of credentials.
+// Paths are combined with OR logic (any path passes).
+//
+// ============================================================================
+
+/// A single credential in a DAG path
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DAGCredential {
+    /// Credential nullifier (proves credential exists and is valid)
+    pub nullifier: IntentNullifier,
+    /// Predicate result for this credential (1 if satisfied, 0 if not)
+    pub predicate_result: u8,
+    /// Claim type identifier
+    pub claim_type: [u8; 32],
+}
+
+/// A single path in a competency DAG
+///
+/// A path is an AND chain of credentials. All credentials in a path
+/// must pass for the path to be considered "satisfied".
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CredentialPath {
+    /// Credentials in this path (AND chain)
+    pub credentials: Vec<DAGCredential>,
+    /// Merkle root of this path's structure
+    pub path_hash: [u8; 32],
+}
+
+/// A competency DAG structure
+///
+/// Defines multiple paths (OR logic) where any path can be satisfied
+/// to achieve the DAG's competency.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CompetencyDAG {
+    /// Unique DAG identifier
+    pub dag_id: [u8; 32],
+    /// DAG name (e.g., "Senior Developer", "Medical License")
+    pub name: Vec<u8>,
+    /// Multiple paths (OR between them)
+    pub paths: Vec<CredentialPath>,
+    /// Merkle root of entire DAG structure
+    pub dag_root: [u8; 32],
+    /// Issuer's public key (who defined this DAG)
+    pub issuer_pub: [u8; 32],
+    /// Creation timestamp
+    pub created_at: u64,
+    /// Expiration timestamp (0 = never)
+    pub expires_at: u64,
+}
+
+/// Parameters for creating a DAG claim
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CreateClaimDAGParams {
+    /// The DAG being claimed
+    pub dag_id: [u8; 32],
+    /// Which path is being satisfied (index into DAG.paths)
+    pub path_index: u32,
+    /// Credentials for this claim (one per credential in the path)
+    pub credentials: Vec<DAGCredential>,
+    /// ZK proof that this path is satisfied
+    pub proof: Vec<u8>,
+    /// Public predicate result (1 if path satisfied, 0 if not)
+    pub predicate_result: u8,
+    /// Fee paid for claim creation
+    pub fee: u64,
+}
+
+/// A DAG claim ready for verification
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DAGClaim {
+    /// DAG identifier
+    pub dag_id: [u8; 32],
+    /// Path that was satisfied
+    pub path_index: u32,
+    /// Credentials in this claim
+    pub credentials: Vec<DAGCredential>,
+    /// ZK proof
+    pub proof: Vec<u8>,
+    /// Public predicate result
+    pub predicate_result: u8,
+    /// Creation timestamp
+    pub created_at: u64,
+    /// Expiration (if any)
+    pub expires_at: u64,
+}
+
+/// Parameters for verifying a DAG claim
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VerifyDAGClaimParams {
+    /// The DAG claim to verify
+    pub claim: DAGClaim,
+    /// The DAG definition being claimed against
+    pub dag: CompetencyDAG,
+    /// Verifier's public key
+    pub verifier_pub: [u8; 32],
+    /// Fee paid for verification
+    pub fee: u64,
+}
+
+// ============================================================================
 // MINIMAL VIABLE INFORMATION EXAMPLES
 // ============================================================================
 //

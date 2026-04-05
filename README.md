@@ -25,17 +25,13 @@ ZK contracts using the existing opcode set. Maximum privacy, full ZK expressiven
 - **Bridge Merkle fix**: Real `merkle_root` opcode (not fake proof)
 - **Entropy module**: Shared `darkfi_sdk::crypto::entropy` for provable randomness across contracts
 
-> **Note**: Plain contracts in `src/contract_plain/` have been **deprecated**. The ZK opcodes they workaround (`LessThanOrEqual`, `BaseDiv`) are now verified sound and implemented. See [Contract Plain Deprecation](doc/src/arch/contract_plain_deprecation.md).
-
 ## Architecture Documentation
 
 - [Opcodes Reference](doc/src/arch/opcodes.md) — Opcode soundness verification with Lean 4 proofs
 - [Merkle Depth](doc/src/arch/merkle_depth.md) — Fixed-depth limitations and workarounds
 - [Composability](doc/src/arch/composability.md) — Smart contract composition patterns
-- [Contract Plain Deprecation](doc/src/arch/contract_plain_deprecation.md) — Resolution of dual-layer architecture
 - [Safemath](doc/src/arch/safemath.md) — Legacy ZK arithmetic templates (LessThanOrEqual workaround, now optional)
 - [Entropy Module](doc/src/arch/entropy.md) — Provable randomness via block hash entropy
-- [Plain Contracts Architecture](doc/src/arch/plain_contracts.md) — [DEPRECATED] Dual-layer ZK/plain contract design
 - [Parallel Societies](doc/src/arch/parallel_societies.md) — Privacy for social reproduction industries
 - [Generalized Contract Invocation API](doc/src/arch/contract_invoke_api.md) — Single RPC endpoint for any contract
 
