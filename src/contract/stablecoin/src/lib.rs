@@ -113,6 +113,15 @@ pub const DRK_HAIRCUT: u64 = 10000; // 100%
 pub const MAX_DEBT_SHARE_PER_COLLATERAL: u64 = 5000; // 50%
 
 // ============================================================================
+// Dead Man Switch Constants
+// ============================================================================
+
+/// Default dead man timeout (30 days at ~1 block/minute = 43200 blocks)
+pub const DEAD_MAN_DEFAULT_TIMEOUT: u64 = 43200;
+/// Disabled by default (opt-in for governance)
+pub const DEAD_MAN_DEFAULT_ENABLED: bool = false;
+
+// ============================================================================
 // Database Tree Names
 // ============================================================================
 

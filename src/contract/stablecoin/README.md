@@ -38,6 +38,26 @@ Each collateral type has its own risk parameters:
 | `liquidation_threshold` | Per-asset liquidation trigger |
 | `max_debt_share` | Max % of total debt this collateral can back |
 
+## Dead Man Switch
+
+The dead man switch is a **default safety feature** that triggers emergency shutdown if executive authority becomes unresponsive:
+
+| Setting | Description |
+|---------|-------------|
+| `enabled` | Enable/disable dead man switch |
+| `timeout_blocks` | Time without executive action before trigger (default: 43200 ≈ 30 days) |
+| `action` | What happens when triggered |
+
+**Trigger Actions:**
+
+| Action | Behavior |
+|--------|----------|
+| `LiquidateAll` | Emergency settlement of all positions at current prices |
+| `DisableMinting` | No new debt, existing positions remain |
+| `EnableFreeWithdrawals` | Users can withdraw without collateralization checks |
+
+**Use case**: If the governance multisig is compromised or the team disappears, the dead man switch ensures users can exit their positions rather than being locked into an unresponsive system.
+
 ## Architecture: Pooled Debt vs Individual CDP
 
 This contract uses **pooled debt** (Synthetix-style), not individual CDP (MakerDAO-style).

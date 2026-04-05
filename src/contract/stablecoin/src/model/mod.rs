@@ -93,6 +93,31 @@ pub struct CollateralParams {
     pub max_debt_share: u64,
 }
 
+/// What action to take when dead man switch triggers
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub enum DeadManAction {
+    /// Liquidate all positions at current prices (emergency settlement)
+    LiquidateAll,
+    /// Disable new minting but allow existing positions to remain
+    DisableMinting,
+    /// Allow free withdrawals without collateralization checks
+    EnableFreeWithdrawals,
+}
+
+/// Dead man switch configuration - emergency shutdown if no executive action
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DeadManSwitchConfig {
+    /// Enable dead man switch
+    pub enabled: bool,
+    /// Timeout in blocks (if no executive action for this many blocks, trigger)
+    pub timeout_blocks: u64,
+    /// Action to take when triggered
+    pub action: DeadManAction,
+    /// Last executive action block (tracked internally, not set by user)
+    #[doc(hidden)]
+    pub last_action_block: u64,
+}
+
 /// Pooled Debt Engine initialization parameters
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeParams {
@@ -127,6 +152,9 @@ pub struct InitializeParams {
     /// Per-collateral risk parameters (for multi-collateral support)
     /// If empty, uses default single-collateral (DRK) with above params
     pub collateral_params: Vec<CollateralParams>,
+
+    /// Dead man switch configuration (emergency shutdown)
+    pub dead_man_switch: DeadManSwitchConfig,
 }
 
 /// Deposit collateral into the pool
