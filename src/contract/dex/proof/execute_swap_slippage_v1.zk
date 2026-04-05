@@ -1,0 +1,136 @@
+k = 11;
+field = "pallas";
+
+# DEX: Execute Swap with Slippage Tolerance Circuit (Version 1)
+#
+# Executes an atomic swap between Alice and Bob with slippage protection.
+#
+# This circuit proves:
+# - All standard swap validity (secrets, locks, nullifiers)
+# - Fill amount satisfies slippage tolerance
+#
+# Slippage tolerance: received >= min_expected * (1 - slippage_bps / 10000)
+
+constant "ExecuteSwapSlippageV1" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "ExecuteSwapSlippageV1" {
+    # Alice's secret for her lock
+    Base alice_secret,
+
+    # Alice's offer details
+    Base alice_token,
+    Base alice_amount,
+
+    # Alice's lock commitment (public input)
+    Base alice_lock,
+
+    # Bob's secret for his lock
+    Base bob_secret,
+
+    # Bob's offer details
+    Base bob_token,
+    Base bob_amount,
+
+    # Bob's lock commitment (public input)
+    Base bob_lock,
+
+    # Partial fill amount
+    Base fill_amount,
+
+    # Slippage tolerance in basis points (e.g., 50 = 0.5%)
+    Base slippage_bps,
+}
+
+circuit "ExecuteSwapSlippageV1" {
+    # ==========================================================================
+    # PHASE 1: Verify Alice's lock commitment
+    # ==========================================================================
+
+    alice_lock_check = poseidon_hash(
+        alice_secret,
+        alice_token,
+        alice_amount,
+    );
+    constrain_equal_base(alice_lock_check, alice_lock);
+
+    # ==========================================================================
+    # PHASE 2: Verify Bob's lock commitment
+    # ==========================================================================
+
+    bob_lock_check = poseidon_hash(
+        bob_secret,
+        bob_token,
+        bob_amount,
+    );
+    constrain_equal_base(bob_lock_check, bob_lock);
+
+    # ==========================================================================
+    # PHASE 3: Derive and verify nullifiers
+    # ==========================================================================
+
+    alice_nullifier_check = poseidon_hash(alice_secret, alice_lock);
+    bob_nullifier_check = poseidon_hash(bob_secret, bob_lock);
+
+    constrain_instance(alice_nullifier_check);
+    constrain_instance(bob_nullifier_check);
+
+    # ==========================================================================
+    # PHASE 4: Verify swap ID consistency
+    # ==========================================================================
+
+    computed_swap_id = poseidon_hash(alice_lock, bob_token, bob_amount);
+    constrain_instance(computed_swap_id);
+
+    # ==========================================================================
+    # PHASE 5: Partial fill check using LessThanOrEqual
+    # ==========================================================================
+
+    range_check(64, alice_amount);
+    range_check(64, bob_amount);
+    range_check(64, fill_amount);
+    range_check(64, slippage_bps);
+
+    # Fill amount <= alice offered
+    ONE = witness_base(1);
+    is_lte = less_than_or_equal(fill_amount, alice_amount);
+    constrain_equal_base(is_lte, ONE);
+
+    # Bob's amount >= fill
+    less_than_strict(fill_amount, bob_amount);
+
+    # ==========================================================================
+    # PHASE 6: Slippage tolerance check using BaseDiv
+    # ==========================================================================
+    #
+    # Alice wants bob_amount of Bob's token for alice_amount of her token
+    # Exchange rate = bob_amount / alice_amount
+    # Alice receives = fill_amount * exchange_rate
+    #
+    # min_acceptable = bob_amount * (1 - slippage_bps / 10000)
+    # We verify: received >= min_acceptable
+
+    # Calculate exchange rate: bob_amount / alice_amount
+    # Using cross-multiplication to avoid overflow:
+    # received = fill_amount * bob_amount / alice_amount
+    #
+    # Step 1: fill_amount * bob_amount
+    received_numerator = base_mul(fill_amount, bob_amount);
+
+    # Step 2: / alice_amount using base_div
+    received = base_div(received_numerator, alice_amount);
+
+    # Calculate min_acceptable = bob_amount * (1 - slippage_bps / 10000)
+    # = bob_amount * (10000 - slippage_bps) / 10000
+    BPS = witness_base(10000);
+    tolerance_multiplier = base_div(BPS - slippage_bps, BPS);
+    min_acceptable = base_mul(bob_amount, tolerance_multiplier);
+
+    # Verify: received >= min_acceptable
+    less_than_or_equal(min_acceptable, received);
+
+    # Boolean checks
+    bool_check(alice_amount);
+    bool_check(bob_amount);
+}

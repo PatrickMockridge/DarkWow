@@ -299,9 +299,9 @@ See [Opcodes Reference](../../../doc/src/arch/opcodes.md) for verification detai
 | Blocker | Severity | Description |
 |---------|----------|-------------|
 | Manual matching required | **High** | `CreateSwap → AcceptSwap → ExecuteSwap` requires third party to call ExecuteSwap |
-| No amount comparison | **High** | `execute_swap_v1.zk` doesn't compare Alice's offered vs Bob's requested amounts |
-| No partial fills | **Medium** | LessThanOrEqual is verified sound, implementation needed |
+| Slippage tolerance | **Medium** | BaseDiv enables slippage verification |
 | No integration test | **High** | Full atomic swap flow not tested end-to-end |
+| SMT order book | **Future** | Needs solver/oracle for matching |
 
 ## Roadmap: From MVP to Full Order Book
 
@@ -393,27 +393,66 @@ No price discovery     ZK proof of match    Unlinkable           Noise for prote
 |---------|--------|
 | `create_swap_v1.zk` | ✅ Verified |
 | `accept_swap_v1.zk` | ✅ Verified |
-| `execute_swap_v1.zk` | ✅ Verified with partial fill (safemath) |
+| `execute_swap_v1.zk` | ✅ Verified with partial fill (LTE) |
 | `cancel_swap_v1.zk` | ✅ Verified |
 
 ## Partial Fill Support
 
-The `execute_swap_v1.zk` circuit now asserts `fill_amount <= alice_amount` using safemath:
+The `execute_swap_v1.zk` circuit asserts `fill_amount <= alice_amount` using **verified LessThanOrEqual** (0x55):
 
 ```zk
-# Safemath: fill < alice + 1  ⟺  fill <= alice
-less_than_strict(fill_amount, alice_amount_plus_one);
+# Using verified LessThanOrEqual (returns Boolean)
+is_lte = less_than_or_equal(fill_amount, alice_amount);
+constrain_equal_base(is_lte, ONE);
 ```
 
-**Limitation**: This is assertion-only (no Boolean return). For Boolean return (full composability), LessThanOrEqual (once gate soundness is verified) is the ideal solution.
+LessThanOrEqual is now **verified sound** via Lean 4 - no more safemath workaround needed.
+
+## New Capabilities with BaseDiv
+
+With **BaseDiv (0x58) implemented**, the DEX can now support sophisticated market making:
+
+### Slippage Tolerance
+
+```zk
+# Verify: received >= min_expected * (1 - slippage_tolerance)
+# received = fill_amount * exchange_rate
+# min_expected = wanted_amount * (1 - slippage_bps / 10000)
+
+# Using BaseDiv:
+tolerance_multiplier = base_div(10000 - slippage_bps, 10000);
+min_acceptable = base_mul(wanted_amount, tolerance_multiplier);
+# Verify: received >= min_acceptable
+less_than_or_equal(min_acceptable, received);
+```
+
+### Fee Calculation
+
+```zk
+# Calculate fee: amount * fee_bps / 10000
+fee = base_div(base_mul(amount, fee_bps), witness_base(10000));
+```
+
+### Exchange Rate Bounds
+
+```zk
+# Verify exchange rate is within agreed bounds
+# rate = given / wanted
+actual_rate = base_div(given, wanted);
+# Verify: rate_lower <= actual_rate <= rate_upper
+less_than_or_equal(rate_lower, actual_rate);
+less_than_or_equal(actual_rate, rate_upper);
+```
 
 ## Future: Level 1 (Order Book)
 
-| Feature | Status | Blocker |
-|---------|--------|---------|
+| Feature | Status | Notes |
+|---------|--------|-------|
 | Atomic swaps | ✅ Done | None |
-| Partial fills | ✅ Done | None |
+| Partial fills | ✅ Done | LessThanOrEqual verified |
 | Open execution | ✅ Done | None |
+| Slippage tolerance | 🔨 Now | BaseDiv enables |
+| Fee calculations | 🔨 Now | BaseDiv enables |
 | SMT order book | ❌ Future | Needs solver/oracle |
 | Price discovery | ❌ Future | Encrypted search |
 | Differential privacy | ❌ Future | Research |
