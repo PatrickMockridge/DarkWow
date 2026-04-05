@@ -253,6 +253,34 @@ Settlement and refund nullifiers prevent:
 - Double-claiming of winnings
 - Double-refunding of bids
 
+## O-Cap Integration Assessment
+
+The auction contract does **not** require O-Cap integration. Here's why:
+
+**Current design is sufficient:**
+- Escrow handles deposit management (composable, not built-in)
+- ZK circuits handle all authorization (seller, bidder, winner)
+- Privacy model already achieves: sealed bids, hidden amounts, identity protection via commitments
+- State machine handles all edge cases (outbid, refund, settlement)
+
+**O-Cap (0x09-0x0d) doesn't unlock new functionality here because:**
+- Auction is about **value exchange**, not identity/capability verification
+- The escrow contract already provides economic guarantees for deposits
+- ZK circuits already handle authorization without revealing identity
+- Adding capability verification would be orthogonal to the core purpose
+
+**Where O-Cap could theoretically help (not needed):**
+- KYC for high-value auctions (escrow provides sufficient trust)
+- Seller reputation tiers (economic guarantees via escrow suffice)
+- Anti-collusion via "not_blacklisted" (auction economics already deter this)
+
+The contract is composable as-is. O-Cap is most valuable when:
+- Identity/capability verification is the core purpose (Identity, Labor Market, Tender, Insurance)
+- Cross-contract authorization is required (Tender → Labor Market → Insurance pipeline)
+- Privacy of who-you-are matters more than what-you-prove
+
+For auction, what-you-prove (bid amount, winner status) already works with ZK proofs alone.
+
 ## References
 
 - [DarkFi Escrow Contract](../escrow/)
