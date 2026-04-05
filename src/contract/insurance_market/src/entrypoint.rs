@@ -107,6 +107,19 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         InsuranceMarketFunction::UpdatePremiumV1 => {
             return Err(InsuranceMarketError::InvalidParameter("Premium update not implemented".to_string()).into())
         }
+        // O-Cap enabled functions
+        InsuranceMarketFunction::UnderwriteWithCapabilityV1 => {
+            return Err(InsuranceMarketError::InvalidParameter("UnderwriteWithCapability not implemented yet".to_string()).into())
+        }
+        InsuranceMarketFunction::PurchaseCoverageWithCapabilityV1 => {
+            return Err(InsuranceMarketError::InvalidParameter("PurchaseCoverageWithCapability not implemented yet".to_string()).into())
+        }
+        InsuranceMarketFunction::PurchaseCoverageWithDAGV1 => {
+            return Err(InsuranceMarketError::InvalidParameter("PurchaseCoverageWithDAG not implemented yet".to_string()).into())
+        }
+        InsuranceMarketFunction::ResolveClaimWithCapabilityV1 => {
+            return Err(InsuranceMarketError::InvalidParameter("ResolveClaimWithCapability not implemented yet".to_string()).into())
+        }
     };
 
     wasm::util::set_return_data(&update_data)
@@ -148,6 +161,19 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         }
         InsuranceMarketFunction::UpdatePremiumV1 => {
             Err(InsuranceMarketError::InvalidParameter("Premium update not implemented".to_string()).into())
+        }
+        // O-Cap enabled functions
+        InsuranceMarketFunction::UnderwriteWithCapabilityV1 => {
+            Err(InsuranceMarketError::InvalidParameter("UnderwriteWithCapability not implemented yet".to_string()).into())
+        }
+        InsuranceMarketFunction::PurchaseCoverageWithCapabilityV1 => {
+            Err(InsuranceMarketError::InvalidParameter("PurchaseCoverageWithCapability not implemented yet".to_string()).into())
+        }
+        InsuranceMarketFunction::PurchaseCoverageWithDAGV1 => {
+            Err(InsuranceMarketError::InvalidParameter("PurchaseCoverageWithDAG not implemented yet".to_string()).into())
+        }
+        InsuranceMarketFunction::ResolveClaimWithCapabilityV1 => {
+            Err(InsuranceMarketError::InvalidParameter("ResolveClaimWithCapability not implemented yet".to_string()).into())
         }
     }
 }

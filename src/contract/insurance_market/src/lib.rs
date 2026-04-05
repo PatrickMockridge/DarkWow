@@ -50,6 +50,11 @@ pub enum InsuranceMarketFunction {
     ResolveClaimV1 = 0x06,
     WithdrawPremiumV1 = 0x07,
     UpdatePremiumV1 = 0x08,
+    // O-Cap enabled functions
+    UnderwriteWithCapabilityV1 = 0x09,
+    PurchaseCoverageWithCapabilityV1 = 0x0a,
+    PurchaseCoverageWithDAGV1 = 0x0b,
+    ResolveClaimWithCapabilityV1 = 0x0c,
 }
 
 impl TryFrom<u8> for InsuranceMarketFunction {
@@ -66,6 +71,11 @@ impl TryFrom<u8> for InsuranceMarketFunction {
             0x06 => Ok(Self::ResolveClaimV1),
             0x07 => Ok(Self::WithdrawPremiumV1),
             0x08 => Ok(Self::UpdatePremiumV1),
+            // O-Cap enabled functions
+            0x09 => Ok(Self::UnderwriteWithCapabilityV1),
+            0x0a => Ok(Self::PurchaseCoverageWithCapabilityV1),
+            0x0b => Ok(Self::PurchaseCoverageWithDAGV1),
+            0x0c => Ok(Self::ResolveClaimWithCapabilityV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }

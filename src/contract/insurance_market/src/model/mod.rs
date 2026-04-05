@@ -174,6 +174,12 @@ pub struct InsuranceMarket {
     pub created_at: u64,
     /// Block height when market closes (0 = no close)
     pub closes_at: u64,
+    /// Required capability ID for underwriters (None = any underwriter)
+    pub required_underwriter_capability: Option<[u8; 32]>,
+    /// Required capability ID for buyers (None = any buyer)
+    pub required_buyer_capability: Option<[u8; 32]>,
+    /// Required DAG ID for coverage tier qualification (None = no DAG)
+    pub required_dag_id: Option<[u8; 32]>,
 }
 
 /// Represents an underwriter's position
@@ -310,6 +316,9 @@ pub struct CreateMarketParamsV1 {
     pub deductible: u64,
     pub max_coverage_per_buyer: u64,
     pub closes_at: u64,
+    pub required_underwriter_capability: Option<[u8; 32]>,
+    pub required_buyer_capability: Option<[u8; 32]>,
+    pub required_dag_id: Option<[u8; 32]>,
 }
 
 /// State update for `CreateMarketV1`
@@ -323,6 +332,9 @@ pub struct CreateMarketUpdateV1 {
     pub deductible: u64,
     pub max_coverage_per_buyer: u64,
     pub created_at: u64,
+    pub required_underwriter_capability: Option<[u8; 32]>,
+    pub required_buyer_capability: Option<[u8; 32]>,
+    pub required_dag_id: Option<[u8; 32]>,
 }
 
 /// Parameters for `InsuranceMarket::UnderwriteV1`
@@ -433,6 +445,122 @@ pub struct WithdrawPremiumUpdateV1 {
 pub struct UpdatePremiumParamsV1 {
     pub market_id: MarketId,
     pub new_premium_rate: u32,
+}
+
+// ============================================================================
+// O-CAP ENABLED PARAMETERS
+// ============================================================================
+
+/// Parameters for `InsuranceMarket::UnderwriteWithCapabilityV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct UnderwriteWithCapabilityParamsV1 {
+    pub market_id: MarketId,
+    pub bond_amount: u64,
+    pub coverage_limit: u64,
+    pub underwriter: PublicKey,
+    /// Capability proof from Identity contract
+    pub capability_proof: Vec<u8>,
+    /// Capability secret (proves ownership)
+    pub capability_secret: [u8; 32],
+}
+
+/// State update for `UnderwriteWithCapabilityV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct UnderwriteWithCapabilityUpdateV1 {
+    pub underwriter_id: UnderwriterId,
+    pub market_id: MarketId,
+    pub owner: PublicKey,
+    pub bond_amount: u64,
+    pub coverage_provided: u64,
+    pub required_capability_id: [u8; 32],
+    pub created_at: u64,
+}
+
+/// Parameters for `InsuranceMarket::PurchaseCoverageWithCapabilityV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct PurchaseCoverageWithCapabilityParamsV1 {
+    pub market_id: MarketId,
+    pub underwriter_id: UnderwriterId,
+    pub buyer: PublicKey,
+    pub coverage_amount: u64,
+    pub value_commit: pallas::Point,
+    pub signature: pallas::Base,
+    /// Capability proof from Identity contract
+    pub capability_proof: Vec<u8>,
+    /// Capability secret (proves ownership)
+    pub capability_secret: [u8; 32],
+}
+
+/// State update for `PurchaseCoverageWithCapabilityV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct PurchaseCoverageWithCapabilityUpdateV1 {
+    pub coverage_id: CoverageId,
+    pub market_id: MarketId,
+    pub underwriter_id: UnderwriterId,
+    pub buyer: PublicKey,
+    pub amount: u64,
+    pub premium_paid: u64,
+    pub starts_at: u64,
+    pub expires_at: u64,
+    pub required_capability_id: [u8; 32],
+}
+
+/// Parameters for `InsuranceMarket::PurchaseCoverageWithDAGV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct PurchaseCoverageWithDAGParamsV1 {
+    pub market_id: MarketId,
+    pub underwriter_id: UnderwriterId,
+    pub buyer: PublicKey,
+    pub coverage_amount: u64,
+    pub value_commit: pallas::Point,
+    pub signature: pallas::Base,
+    /// DAG claim proof from Identity contract (CreateClaimDAGV1)
+    pub dag_proof: Vec<u8>,
+    /// Path index in the DAG that was satisfied
+    pub dag_path_index: u32,
+    /// Required DAG ID for this coverage tier
+    pub required_dag_id: [u8; 32],
+}
+
+/// State update for `PurchaseCoverageWithDAGV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct PurchaseCoverageWithDAGUpdateV1 {
+    pub coverage_id: CoverageId,
+    pub market_id: MarketId,
+    pub underwriter_id: UnderwriterId,
+    pub buyer: PublicKey,
+    pub amount: u64,
+    pub premium_paid: u64,
+    pub starts_at: u64,
+    pub expires_at: u64,
+    pub required_dag_id: [u8; 32],
+    pub dag_path_satisfied: u32,
+}
+
+/// Parameters for `InsuranceMarket::ResolveClaimWithCapabilityV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ResolveClaimWithCapabilityParamsV1 {
+    pub claim_id: ClaimId,
+    pub market_id: MarketId,
+    pub is_valid: bool,
+    pub payout_amount: u64,
+    pub attestation: Vec<u8>,
+    pub oracle_signature: pallas::Base,
+    /// Capability proof from Identity contract
+    pub capability_proof: Vec<u8>,
+    /// Capability secret (proves ownership)
+    pub capability_secret: [u8; 32],
+}
+
+/// State update for `ResolveClaimWithCapabilityV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ResolveClaimWithCapabilityUpdateV1 {
+    pub claim_id: ClaimId,
+    pub coverage_id: CoverageId,
+    pub is_valid: bool,
+    pub payout_amount: u64,
+    pub slash_amount: u64,
+    pub resolved_at: u64,
 }
 
 // ============================================================================

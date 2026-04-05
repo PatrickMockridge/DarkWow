@@ -102,6 +102,22 @@ pub enum InsuranceMarketError {
 
     #[error("Arithmetic overflow in calculation")]
     ArithmeticOverflow,
+
+    // O-Cap capability errors
+    #[error("Capability required for this operation")]
+    CapabilityRequired,
+
+    #[error("Capability requirement not met")]
+    CapabilityNotMet,
+
+    #[error("Invalid capability")]
+    InvalidCapability,
+
+    #[error("Capability revoked")]
+    CapabilityRevoked,
+
+    #[error("DAG requirement not met")]
+    DAGRequirementNotMet,
 }
 
 impl From<InsuranceMarketError> for ContractError {
@@ -134,6 +150,11 @@ impl From<InsuranceMarketError> for ContractError {
             InsuranceMarketError::TransferFailed => Self::Custom(25),
             InsuranceMarketError::InvalidParameter(_) => Self::Custom(26),
             InsuranceMarketError::ArithmeticOverflow => Self::Custom(27),
+            InsuranceMarketError::CapabilityRequired => Self::Custom(28),
+            InsuranceMarketError::CapabilityNotMet => Self::Custom(29),
+            InsuranceMarketError::InvalidCapability => Self::Custom(30),
+            InsuranceMarketError::CapabilityRevoked => Self::Custom(31),
+            InsuranceMarketError::DAGRequirementNotMet => Self::Custom(32),
         }
     }
 }

@@ -98,6 +98,9 @@ pub fn insurance_market_create_market_process_instruction_v1(
         deductible: params.deductible,
         max_coverage_per_buyer: params.max_coverage_per_buyer,
         created_at: current_block,
+        required_underwriter_capability: params.required_underwriter_capability,
+        required_buyer_capability: params.required_buyer_capability,
+        required_dag_id: params.required_dag_id,
     };
 
     msg!("[insurance_market::create_market] Market created: {:?}", market_id);
@@ -124,6 +127,9 @@ pub fn insurance_market_create_market_process_update_v1(
         active: true,
         created_at: update.created_at,
         closes_at: 0,
+        required_underwriter_capability: update.required_underwriter_capability,
+        required_buyer_capability: update.required_buyer_capability,
+        required_dag_id: update.required_dag_id,
     };
 
     // Store market
