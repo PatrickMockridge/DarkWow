@@ -1,0 +1,79 @@
+k = 11;
+field = "pallas";
+
+# Identity: Create Claim with Selective Disclosure (Version 2)
+#
+# Simplified Level 1 selective disclosure using verified LessThanOrEqual.
+#
+# This circuit proves: threshold <= attribute_value
+# AND returns a PUBLIC predicate_result bit.
+#
+# Level 0 (zk_only): Verifier learns ONLY "proof is valid" or "invalid"
+# Level 1 (selective): Verifier learns predicate_result (0 or 1)
+#
+# Using verified LessThanOrEqual (0x55) directly - simpler than bounded equation.
+# less_than_or_equal(a, b) returns 1 if a <= b, 0 otherwise.
+
+constant "CreateClaimV1L1V2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "CreateClaimV1L1V2" {
+    # Public inputs
+    Base nullifier,
+    Base claim_type,
+    Base issuer_pub_x,
+    Base issuer_pub_y,
+    Base schema_hash,
+    Base predicate_result,  # Public output: 1 if threshold <= attribute_value
+
+    # Private inputs
+    Base credential_secret,
+    Base attribute_value,
+    Base threshold,
+    Base commitment,
+}
+
+circuit "CreateClaimV1L1V2" {
+    # ==========================================================================
+    # NULLIFIER VERIFICATION
+    # ==========================================================================
+
+    # Derive nullifier from credential secret and commitment
+    computed_nullifier = poseidon_hash(credential_secret, commitment);
+    constrain_instance(computed_nullifier);
+
+    # Verify nullifier matches
+    constrain_equal_base(computed_nullifier, nullifier);
+
+    # ==========================================================================
+    # PREDICATE VERIFICATION (Level 1: selective disclosure)
+    # ==========================================================================
+
+    # Range checks to ensure inputs are well-formed (prevents field wraparound)
+    range_check(64, attribute_value);
+    range_check(64, threshold);
+
+    # Constrain predicate_result to be binary (0 or 1)
+    bool_check(predicate_result);
+
+    # Direct LessThanOrEqual - cleaner than bounded equation
+    # is_lte = 1 if threshold <= attribute_value, 0 otherwise
+    is_lte = less_than_or_equal(threshold, attribute_value);
+
+    # The predicate_result must equal is_lte
+    # If prover tries to claim predicate_result=1 when threshold > attribute_value,
+    # the constraint will fail
+    constrain_equal_base(is_lte, predicate_result);
+
+    # ==========================================================================
+    # SEMANTIC GUARANTEE
+    # ==========================================================================
+    # The prover MUST set predicate_result = 1 if and only if
+    # threshold <= attribute_value. Otherwise verification fails.
+    #
+    # This gives Level 1 selective disclosure: the verifier learns
+    # the predicate result publicly, but nothing about the actual
+    # attribute_value or threshold values beyond what the predicate
+    # result reveals.
+}

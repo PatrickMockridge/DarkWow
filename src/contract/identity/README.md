@@ -119,6 +119,15 @@ let claim = CreateClaimBuilder::new()
 
 ## Contract Functions
 
+| Function | ID | Description |
+|---------|-----|-------------|
+| `InitializeV1` | 0x00 | Initialize identity registry |
+| `IssueCredentialV1` | 0x01 | Issuer issues credential to holder |
+| `RevokeCredentialV1` | 0x02 | Issuer revokes a credential |
+| `CreateClaimV1` | 0x03 | Holder creates claim (Level 0 zk_only) |
+| `CreateClaimV1L1` | 0x05 | Holder creates claim (Level 1 selective) |
+| `VerifyClaimV1` | 0x04 | Verifier checks claim on-chain |
+
 ### InitializeV1 (0x00)
 
 Initializes the identity contract:
@@ -142,21 +151,27 @@ Issuer revokes a credential:
 - Marks credential as revoked
 - Updates revocation list
 
-### CreateClaimV1 (0x03)
+### CreateClaimV1 (0x03) - Level 0 (zk_only)
 
 Holder creates a claim from their credential:
 - Verifies credential exists and is valid
 - Verifies not expired or revoked
 - Generates ZK proof of predicate satisfaction
-- **Level 0 (zk_only)**: Proof reveals only "valid" or "invalid", not the actual predicate result
+- **Level 0**: Proof reveals only "valid" or "invalid" — no predicate result
+
+### CreateClaimV1L1 (0x05) - Level 1 (selective)
+
+Holder creates a claim with selective disclosure:
+- Same as CreateClaimV1 but with **public predicate result**
+- Verifier learns: "is_over_18 = true" (not actual DOB)
+- Uses bounded equation construction (not LessThanOrEqual)
 
 ### VerifyClaimV1 (0x04)
 
-Verifier checks a claim:
-- Verifies credential exists and is valid
-- Verifies ZK proof
-- Verifies not expired or revoked
-- **Level 0**: Result is "proof valid" or "proof invalid" only — no predicate result revealed
+Verifier checks a claim on-chain:
+- Verifies ZK proof from CreateClaimV1 or CreateClaimV1L1
+- Verifies credential not revoked or expired
+- **Note**: Uses placeholder verification in entrypoint.rs
 
 ## ZK Circuits
 
@@ -166,14 +181,15 @@ Proves the issuer legitimately issued this credential:
 - **Public inputs**: commitment, issuer_pub, holder_pub, schema_hash
 - **Private inputs**: attributes, issuer_signature
 - **Verification**: Signature valid, commitment matches
+- **Bug**: Uses hardcoded `ISSUER_PK` constant (not a public input)
 
 ### create_claim_v1.zk
 
 Proves the claim without revealing attributes (Level 0 zk_only):
 - **Public inputs**: nullifier, claim_type, issuer_pub_x, issuer_pub_y, schema_hash
 - **Private inputs**: credential_secret, attribute_value, threshold, commitment
-- **Verification**: Credential valid, predicate (threshold <= attribute) satisfied, not revoked
-- **Uses safemath**: `assert_lte_u64_v1.zk` pattern — no experimental opcodes
+- **Verification**: Credential valid, predicate satisfied, not revoked
+- **Uses safemath**: `less_than_strict` pattern for assertions
 
 ### create_claim_v1_l1.zk
 
@@ -181,20 +197,11 @@ Proves the claim with **selective disclosure** (Level 1):
 - **Public inputs**: nullifier, claim_type, issuer_pub_x, issuer_pub_y, schema_hash, **predicate_result**
 - **Private inputs**: credential_secret, attribute_value, threshold, commitment, delta
 - **Verification**: Bounded equation `threshold + delta = attribute_value + (1 - predicate_result) * 2^64`
-- **Uses bounded equation**: Returns public `predicate_result` bit without `LessThanOrEqual`
+- **Key advantage**: Verifier learns predicate result (e.g., "is_over_18 = true") without learning actual attribute value
 
-The bounded equation works as follows:
-- `predicate_result = 1`: Equation becomes `threshold + delta = attribute_value` (solvable iff `threshold <= attribute_value`)
-- `predicate_result = 0`: Equation becomes `threshold + delta = attribute_value + 2^64` (solvable iff `threshold > attribute_value`)
+### verify_claim_v1.zk
 
-**Key advantage over Level 0**: The verifier learns the predicate result (e.g., "is_over_18 = true") without learning the actual attribute value or threshold.
-
-### verify_claim_v1.zk (STUB)
-
-Proves the claim can be verified:
-- **Public inputs**: claim, verifier_pub
-- **Private inputs**: issuer_pub, holder_secret
-- **Verification**: Claim valid, issuer trusted, not double-spent
+**This circuit file does not exist.** The `VerifyClaimV1` function in entrypoint.rs uses placeholder verification.
 
 ## Base Field Arithmetic
 
@@ -422,20 +429,29 @@ Each step reveals only "meets criteria" — full history stays private.
 
 ## MVP Status
 
-**Partial MVP — safemath + bounded equation** — The contract implements:
-- **Level 0 (zk_only)**: `create_claim_v1.zk` uses safemath assertion gadgets
-- **Level 1 (selective)**: `create_claim_v1_l1.zk` uses bounded equation construction
+**Partial MVP — Level 0 (zk_only) + Level 1 (selective disclosure)** — The contract implements:
 
 | Circuit | Status | Notes |
 |---------|--------|-------|
-| `issue_credential_v1.zk` | **Bug** | Uses unsupported `ISSUER_PK` constant |
-| `create_claim_v1.zk` | **Implemented** | Uses safemath `assert_lte` pattern |
-| `create_claim_v1_l1.zk` | **Implemented** | Uses bounded equation for selective disclosure |
+| `issue_credential_v1.zk` | Bug | Uses hardcoded `ISSUER_PK` constant |
+| `create_claim_v1.zk` | ✅ Implemented | Level 0 zk_only |
+| `create_claim_v1_l1.zk` | ✅ Implemented | Level 1 selective via bounded equation |
+| `verify_claim_v1.zk` | ❌ Missing | No circuit file, placeholder in entrypoint |
 
-### What It Needs
+## Key Blockers
 
-- Integration test: issue credential → create claim → verify claim end-to-end
-- Fix `issue_credential_v1.zk` circuit (replace `ISSUER_PK` with proper constant)
+| Blocker | Severity | Status |
+|---------|----------|--------|
+| `issue_credential_v1.zk` bug | High | `ISSUER_PK` should be public input |
+| `verify_claim_v1.zk` missing | Medium | No circuit file exists |
+| No integration test | High | Full issue → claim → verify flow not tested |
+| Test harness (BridgeCall API) | High | SDK API mismatch |
+
+## What It Needs
+
+- Fix `issue_credential_v1.zk` circuit (make `ISSUER_PK` a public input)
+- Implement `verify_claim_v1.zk` circuit file
+- Integration test: issue credential → create claim → verify claim
 - Full test harness integration (requires SDK API fixes)
 
 **See**:

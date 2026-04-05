@@ -129,6 +129,9 @@ define_contract_function!(IdentityFunction {
     CreateClaimV1 = 0x03,
     CreateClaimV1L1 = 0x05,
     VerifyClaimV1 = 0x04,
+    CreateClaimV1L1V2 = 0x06,
+    CreateClaimV1Multi = 0x07,
+    CreateClaimV1Ratio = 0x08,
 });
 
 /// Internal contract errors
@@ -179,5 +182,11 @@ pub const IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V1: &str = "IssueCredential_V1";
 pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1: &str = "CreateClaim_V1";
 /// Claim generation circuit namespace (Level 1 - selective disclosure)
 pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1: &str = "CreateClaim_V1_L1";
+/// Claim generation circuit namespace (Level 1 v2 - simplified selective)
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1_V2: &str = "CreateClaim_V1L1V2";
+/// Multi-credential claim circuit namespace
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_MULTI: &str = "CreateClaim_V1Multi";
+/// Ratio-based claim circuit namespace
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_RATIO: &str = "CreateClaim_V1Ratio";
 /// Claim verification circuit namespace
 pub const IDENTITY_CONTRACT_ZKAS_VERIFY_NS_V1: &str = "VerifyClaim_V1";
