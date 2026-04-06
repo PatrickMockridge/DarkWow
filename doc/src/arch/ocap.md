@@ -168,6 +168,122 @@ O-Caps achieve **authorization without revelation**:
 
 ---
 
+## Authorization Inversion: The Mathematical Foundation
+
+*The authorization model in DarkFi is not merely a design choice—it is a mathematical necessity. What follows is the formal reasoning behind why O-Cap authorization is the only sound approach to privacy-preserving authorization.*
+
+### The ACL Privacy Gap Theorem
+
+Access Control Lists (ACLs) have a fundamental mathematical limitation:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│            The Authorization Equivalence Theorem                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  DEFINITION: ACL Privacy Gap                                      │
+│  When a verifier observes "ACCESS GRANTED", they learn the      │
+│  principal from the authorized set — reducing anonymity.        │
+│                                                                   │
+│  THEOREM:                                                         │
+│  "The ACL privacy gap is not an implementation flaw but a        │
+│   mathematical consequence of conditioning authorization          │
+│   on identity."                                                   │
+│                                                                   │
+│  PROOF SKETCH:                                                    │
+│  Let A = {principals authorized for action X}                    │
+│  When access is granted, verifier learns: ∃p ∈ A : p performed X│
+│  This directly reveals p's identity from the set A              │
+│  The only escape: don't condition on identity at all            │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**The core insight**: ACLs *cannot* avoid leaking identity information because the authorization decision IS conditioned on identity. This is a mathematical truth, not an engineering problem.
+
+### Authorization Inversion
+
+Authorization inversion resolves this by changing the fundamental question:
+
+```
+ACL:         "WHO has access to X?"
+O-Cap:       "Can you prove you have access to X?"
+
+ACL Response: alice@company → access granted (identity revealed)
+O-Cap Response: prove(predicate) → VALID (identity hidden)
+```
+
+Instead of checking "is this identity authorized?", O-Cap checks "does this proof satisfy the predicate?" The verifier learns:
+- **What** capability is being proven
+- **Whether** the predicate is satisfied (1/0)
+- **Nothing** about who holds the capability
+
+### Bounded Authority in ZK
+
+The O-Cap verification evaluates a zero-knowledge predicate:
+
+```
+∃ w : P_{r,s}(w) = 1
+```
+
+Where:
+- `w` = witness (hidden credential data)
+- `P_{r,s}` = predicate with public params r and secret params s
+- Result = 1 if requirements are met
+
+**Bounded Authority Guarantee:**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│         What the Verifier Learns (and doesn't learn)                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  LEARNS:                                                          │
+│  ✓ capability_id (what's being proven)                          │
+│  ✓ predicate_result (1 = pass, 0 = fail)                        │
+│  ✓ nullifier (exists, not who)                                   │
+│  ✓ proof validity                                                │
+│                                                                   │
+│  DOES NOT LEARN:                                                  │
+│  ✗ holder identity                                               │
+│  ✗ actual attribute values                                       │
+│  ✗ threshold values                                              │
+│  ✗ full credential contents                                      │
+│  ✗ when credential expires                                       │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+This bounded disclosure is **mathematically guaranteed** by the ZK proof construction—not by trust in the system.
+
+### LTE Gate: Formal Verification of Threshold Predicates
+
+The LessThanOrEqual (LTE) operation is central to O-Cap predicates, enabling threshold comparisons like `role >= senior_engineer`.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                 LTE Gate: Formally Verified                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  IMPLEMENTATION: less_than_or_equal(threshold, attribute_value) │
+│                                                                   │
+│  VERIFICATION: Lean 4 formal methods                              │
+│  - Proves circuit soundness for threshold comparisons             │
+│  - No floating-point approximations                             │
+│  - Mathematically correct boundary conditions                     │
+│                                                                   │
+│  WHY IT MATTERS:                                                  │
+│  O-Cap predicates rely on LTE for role thresholds,               │
+│  balance minimums, and credential requirements. If LTE          │
+│  were buggy, O-Cap authorization could be bypassed.             │
+│  Formal verification eliminates this entire class of risk.       │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+*This mathematical framework explains why O-Cap authorization is not a feature—it's the only sound approach to authorization that preserves privacy by design.*
+
 ## O-Cap Full Opcode Reference (0x09-0x0c)
 
 The Identity contract implements O-Cap authorization via these opcodes:
@@ -1402,3 +1518,4 @@ cargo update typed-index-collections@3.4.0 --precise 3.3.0
 - [DAO-Escrow Contract](./dao_escrow.md) - DAO-governed endowment with voting
 - [zkVM Primitive Layer](./zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
 - [DarkFi Development Uncensored](https://technologytruth.substack.com/p/darkfi-development-uncensored-part-c9b) - Original analysis of structural bias
+- [Zero-Knowledge Authorization (Authorization Inversion)](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) - Mathematical foundation for O-Cap authorization
