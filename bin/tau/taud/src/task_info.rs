@@ -188,6 +188,21 @@ impl Comment {
     }
 }
 
+/// Verification mode for task claiming
+#[derive(Clone, Debug, SerialEncodable, SerialDecodable, PartialEq)]
+pub enum VerificationMode {
+    /// Full ZK verification via identity contract (for unproven workers)
+    OnChain,
+    /// Local verification only (for trusted/proven workers)
+    OffChain,
+}
+
+impl Default for VerificationMode {
+    fn default() -> Self {
+        VerificationMode::OffChain
+    }
+}
+
 #[derive(Clone, Debug, SerialEncodable, SerialDecodable, PartialEq)]
 pub struct TaskInfo {
     pub ref_id: String,
@@ -204,6 +219,20 @@ pub struct TaskInfo {
     pub state: String,
     pub events: Vec<TaskEvent>,
     pub comments: Vec<Comment>,
+    /// O-Cap: Required capability ID to claim this task (None = any worker)
+    pub required_capability_id: Option<[u8; 32]>,
+    /// O-Cap: Who pays decides verification level
+    pub verification_mode: VerificationMode,
+    /// O-Cap: Which capability claimed this task (for payment linking)
+    pub assigned_capability: Option<[u8; 32]>,
+    /// Phase 3: Link to labor market job for payment
+    pub labor_job_id: Option<[u8; 32]>,
+    /// Phase 3: Link to attestation for deliverable verification
+    pub labor_attestation_id: Option<[u8; 32]>,
+    /// Phase 3: Payment token (token ID for the payment)
+    pub payment_token: Option<[u8; 32]>,
+    /// Phase 3: Payment amount in smallest unit
+    pub payment_amount: Option<u64>,
 }
 
 impl From<&TaskInfo> for JsonValue {
@@ -238,6 +267,47 @@ impl From<&TaskInfo> for JsonValue {
         let events: Vec<JsonValue> = task.events.iter().map(|x| x.clone().into()).collect();
         let comments: Vec<JsonValue> = task.comments.iter().map(|x| x.clone().into()).collect();
 
+        let required_capability_id = if let Some(cap_id) = task.required_capability_id {
+            JsonValue::String(bs58::encode(cap_id).into_string())
+        } else {
+            JsonValue::Null
+        };
+
+        let verification_mode = JsonValue::String(match task.verification_mode {
+            VerificationMode::OnChain => "onchain".to_string(),
+            VerificationMode::OffChain => "offchain".to_string(),
+        });
+
+        let assigned_capability = if let Some(cap_id) = task.assigned_capability {
+            JsonValue::String(bs58::encode(cap_id).into_string())
+        } else {
+            JsonValue::Null
+        };
+
+        let labor_job_id = if let Some(job_id) = task.labor_job_id {
+            JsonValue::String(bs58::encode(job_id).into_string())
+        } else {
+            JsonValue::Null
+        };
+
+        let labor_attestation_id = if let Some(att_id) = task.labor_attestation_id {
+            JsonValue::String(bs58::encode(att_id).into_string())
+        } else {
+            JsonValue::Null
+        };
+
+        let payment_token = if let Some(token) = task.payment_token {
+            JsonValue::String(bs58::encode(token).into_string())
+        } else {
+            JsonValue::Null
+        };
+
+        let payment_amount = if let Some(amount) = task.payment_amount {
+            JsonValue::Number(amount as f64)
+        } else {
+            JsonValue::Null
+        };
+
         JsonValue::Object(HashMap::from([
             ("ref_id".to_string(), ref_id),
             ("workspace".to_string(), workspace),
@@ -253,6 +323,13 @@ impl From<&TaskInfo> for JsonValue {
             ("state".to_string(), state),
             ("events".to_string(), JsonValue::Array(events)),
             ("comments".to_string(), JsonValue::Array(comments)),
+            ("required_capability_id".to_string(), required_capability_id),
+            ("verification_mode".to_string(), verification_mode),
+            ("assigned_capability".to_string(), assigned_capability),
+            ("labor_job_id".to_string(), labor_job_id),
+            ("labor_attestation_id".to_string(), labor_attestation_id),
+            ("payment_token".to_string(), payment_token),
+            ("payment_amount".to_string(), payment_amount),
         ]))
     }
 }
@@ -290,6 +367,32 @@ impl From<JsonValue> for TaskInfo {
         let events: Vec<TaskEvent> = events.iter().map(|x| x.into()).collect();
         let comments: Vec<Comment> = comments.iter().map(|x| (*x).clone().into()).collect();
 
+        let required_capability_id = if value["required_capability_id"].is_null() {
+            None
+        } else {
+            let cap_str = value["required_capability_id"].get::<String>().unwrap();
+            let decoded = bs58::decode(cap_str).into_vec().unwrap();
+            Some(decoded.as_slice().try_into().unwrap())
+        };
+
+        let verification_mode = if value["verification_mode"].is_null() {
+            VerificationMode::default()
+        } else {
+            let mode_str = value["verification_mode"].get::<String>().unwrap();
+            match mode_str.as_str() {
+                "onchain" => VerificationMode::OnChain,
+                _ => VerificationMode::OffChain,
+            }
+        };
+
+        let assigned_capability = if value["assigned_capability"].is_null() {
+            None
+        } else {
+            let cap_str = value["assigned_capability"].get::<String>().unwrap();
+            let decoded = bs58::decode(cap_str).into_vec().unwrap();
+            Some(decoded.as_slice().try_into().unwrap())
+        };
+
         TaskInfo {
             ref_id: value["ref_id"].get::<String>().unwrap().clone(),
             workspace: value["workspace"].get::<String>().unwrap().clone(),
@@ -305,6 +408,13 @@ impl From<JsonValue> for TaskInfo {
             state: value["state"].get::<String>().unwrap().clone(),
             events,
             comments,
+            required_capability_id,
+            verification_mode,
+            assigned_capability,
+            labor_job_id: None,
+            labor_attestation_id: None,
+            payment_token: None,
+            payment_amount: None,
         }
     }
 }
@@ -343,6 +453,13 @@ impl TaskInfo {
             state: "open".into(),
             comments: vec![],
             events: vec![],
+            required_capability_id: None,
+            verification_mode: VerificationMode::default(),
+            assigned_capability: None,
+            labor_job_id: None,
+            labor_attestation_id: None,
+            payment_token: None,
+            payment_amount: None,
         })
     }
 

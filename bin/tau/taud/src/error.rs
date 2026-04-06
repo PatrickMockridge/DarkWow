@@ -37,6 +37,14 @@ pub enum TaudError {
     DecryptionError(String),
     #[error("IO Error: `{0}`")]
     IoError(String),
+    #[error("Capability verification failed: `{0}`")]
+    CapabilityVerificationFailed(String),
+    #[error("Missing required capability for task: `{0}`")]
+    MissingRequiredCapability(String),
+    #[error("Parse failed: `{0}`")]
+    ParseFailed(String),
+    #[error("Unauthorized: `{0}`")]
+    Unauthorized(String),
 }
 
 pub type TaudResult<T> = std::result::Result<T, TaudError>;
@@ -76,6 +84,18 @@ pub fn to_json_result(res: TaudResult<JsonValue>, id: u16) -> JsonResult {
                 JsonError::new(ErrorCode::InternalError, Some(e.to_string()), id).into()
             }
             TaudError::IoError(e) => JsonError::new(ErrorCode::InternalError, Some(e), id).into(),
+            TaudError::CapabilityVerificationFailed(e) => {
+                JsonError::new(ErrorCode::InternalError, Some(e), id).into()
+            }
+            TaudError::MissingRequiredCapability(e) => {
+                JsonError::new(ErrorCode::InvalidParams, Some(e), id).into()
+            }
+            TaudError::ParseFailed(e) => {
+                JsonError::new(ErrorCode::InvalidParams, Some(e), id).into()
+            }
+            TaudError::Unauthorized(e) => {
+                JsonError::new(ErrorCode::InternalError, Some(e), id).into()
+            }
         },
     }
 }

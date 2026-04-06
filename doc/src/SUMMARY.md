@@ -74,6 +74,7 @@
   - [Oracle Contract](arch/oracle.md)
   - [Auction Contract](arch/auction.md)
   - [Tender Contract](arch/tender.md)
+  - [Tau Task Delegation](arch/tau.md)
   - [Drain Protection Contract](arch/drain_protection.md)
   - [Baccarat Contract](arch/baccarat.md)
   - [Entropy Module](arch/entropy.md)

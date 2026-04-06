@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+pub mod capability;
 pub mod error;
 pub mod month_tasks;
 pub mod task_info;

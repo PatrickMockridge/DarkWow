@@ -42,9 +42,10 @@ use darkfi::{
 };
 
 use taud::{
+    capability::{self, verify_capability_offchain, CapabilityProof},
     error::{to_json_result, TaudError, TaudResult},
     month_tasks::MonthTasks,
-    task_info::{Comment, TaskInfo},
+    task_info::{Comment, TaskInfo, VerificationMode},
     util::set_event,
 };
 
@@ -82,6 +83,9 @@ impl RequestHandler<()> for JsonRpcInterface {
             "import" => self.import_from(req.params).await,
             "fetch_deactive_tasks" => self.fetch_deactive_tasks(req.params).await,
             "fetch_archive_task" => self.fetch_archive_task(req.params).await,
+
+            "claim_task" => self.claim_task(req.params).await,
+            "set_task_capability" => self.set_task_capability(req.params).await,
 
             "ping" => return self.pong(req.id, req.params).await,
             "dnet.subscribe_events" => return self.dnet_subscribe_events(req.id, req.params).await,
@@ -771,5 +775,138 @@ impl JsonRpcInterface {
         }
 
         Ok(task)
+    }
+
+    // RPCAPI:
+    // Set required capability for a task (PM only).
+    // Returns `true` upon success.
+    //
+    // --> {"jsonrpc": "2.0", "method": "set_task_capability", "params": [task_id, required_capability_id, verification_mode], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": true, "id": 1}
+    //
+    // verification_mode: "onchain" or "offchain"
+    async fn set_task_capability(&self, params: JsonValue) -> TaudResult<JsonValue> {
+        let params = params.get::<Vec<JsonValue>>().unwrap();
+        debug!(target: "tau", "JsonRpc::set_task_capability() params {params:?}");
+
+        if params.len() != 3 || !params[0].is_string() || !params[1].is_string() || !params[2].is_string() {
+            return Err(TaudError::InvalidData("len of params should be 3".into()))
+        }
+
+        let ws = self.workspace.lock().await.clone();
+        if self.workspaces.get(&ws).unwrap().write_key.is_none() {
+            info!("You don't have write access!");
+            return Ok(JsonValue::Boolean(false))
+        }
+
+        let ref_id = params[0].get::<String>().unwrap();
+        let required_capability_id = params[1].get::<String>().unwrap();
+        let verification_mode = params[2].get::<String>().unwrap();
+
+        // Parse capability_id from bs58
+        let cap_id_bytes = bs58::decode(required_capability_id).into_vec().map_err(|_| {
+            TaudError::InvalidData("Invalid bs58 for required_capability_id".into())
+        })?;
+        let cap_id: [u8; 32] = cap_id_bytes.as_slice().try_into().map_err(|_| {
+            TaudError::InvalidData("Invalid length for required_capability_id".into())
+        })?;
+
+        // Parse verification mode
+        let mode = match verification_mode.as_str() {
+            "onchain" => VerificationMode::OnChain,
+            "offchain" => VerificationMode::OffChain,
+            _ => {
+                return Err(TaudError::InvalidData(
+                    "verification_mode should be 'onchain' or 'offchain'".into(),
+                ))
+            }
+        };
+
+        let mut task: TaskInfo = self.load_task_by_ref_id(&ref_id, ws)?;
+
+        // Set the capability requirement
+        task.required_capability_id = Some(cap_id);
+        task.verification_mode = mode;
+        set_event(
+            &mut task,
+            "capability_required",
+            &self.nickname,
+            &format!("{} ({})", required_capability_id, verification_mode),
+        );
+
+        self.notify_queue_sender.send(task).await.map_err(Error::from)?;
+
+        Ok(JsonValue::Boolean(true))
+    }
+
+    // RPCAPI:
+    // Claim a task by presenting a capability proof.
+    // Returns `true` if the claim is successful.
+    //
+    // --> {"jsonrpc": "2.0", "method": "claim_task", "params": [task_id, capability_proof], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": true, "id": 1}
+    async fn claim_task(&self, params: JsonValue) -> TaudResult<JsonValue> {
+        let params = params.get::<Vec<JsonValue>>().unwrap();
+        debug!(target: "tau", "JsonRpc::claim_task() params {params:?}");
+
+        if params.len() != 2 || !params[0].is_string() || !params[1].is_object() {
+            return Err(TaudError::InvalidData("len of params should be 2".into()))
+        }
+
+        let ws = self.workspace.lock().await.clone();
+
+        let ref_id = params[0].get::<String>().unwrap();
+        // params[1] is already a JsonValue (the capability proof object)
+        let proof_json = &params[1];
+
+        let mut task: TaskInfo = self.load_task_by_ref_id(&ref_id, ws)?;
+
+        // Check if task requires a capability
+        let required_capability_id = match task.required_capability_id {
+            Some(id) => id,
+            None => {
+                return Err(TaudError::MissingRequiredCapability(
+                    "Task does not require a capability".to_string(),
+                )
+                .into())
+            }
+        };
+
+        // Parse the capability proof
+        let proof: CapabilityProof = capability::parse_capability_proof(proof_json)?;
+
+        // Get the task owner's public key as verifier (PM who set the requirement)
+        let owner_pubkey = [0u8; 32]; // TODO: Look up owner's pubkey from workspace
+
+        // Verify based on the task's verification mode
+        let verification_result = match task.verification_mode {
+            VerificationMode::OffChain => {
+                verify_capability_offchain(&proof, &required_capability_id)?
+            }
+            VerificationMode::OnChain => {
+                // Identity contract ID (placeholder - would be configured)
+                let identity_contract_id = [0u8; 32];
+                capability::verify_capability_onchain(
+                    &proof,
+                    &required_capability_id,
+                    &owner_pubkey,
+                    &identity_contract_id,
+                )
+                .await?
+            }
+        };
+
+        if !verification_result.valid {
+            info!("Capability verification failed");
+            return Ok(JsonValue::Boolean(false))
+        }
+
+        // Set the assigned capability (not the worker's identity!)
+        task.assigned_capability = Some(proof.capability_id);
+        set_event(&mut task, "claimed", &self.nickname, "capability verified");
+
+        self.notify_queue_sender.send(task).await.map_err(Error::from)?;
+
+        Ok(JsonValue::Boolean(true))
     }
 }
