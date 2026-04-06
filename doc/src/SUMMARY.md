@@ -96,7 +96,6 @@
   - [Safemath](arch/safemath.md)
   - [MerkleRoot Depth Limitation](arch/merkle_depth.md)
   - [Generalized Contract Invocation API](arch/contract_invoke_api.md)
-  - [O-Cap & Composable Privacy](arch/ocap.md)
   - [Security Analysis](arch/security-analysis.md)
   - [[DEPRECATED] Async Serialization Lifetime Bug](arch/async_serial_lifetime_bug.md) - Content moved to Debugging FAQ
   - [Debugging FAQ](arch/debugging_faq.md)
