@@ -2349,56 +2349,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darkfi_plain_attestation_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi-sdk",
- "darkfi-serial",
- "pasta_curves",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "darkfi_plain_insurance_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi-sdk",
- "darkfi-serial",
- "pasta_curves",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "darkfi_plain_labor_market_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi-sdk",
- "darkfi-serial",
- "pasta_curves",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "darkfi_plain_oracle_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi-sdk",
- "darkfi-serial",
- "pasta_curves",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "darkfi_plain_subscription_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi-sdk",
- "darkfi-serial",
- "pasta_curves",
- "thiserror 2.0.17",
-]
-
-[[package]]
 name = "darkfi_pool_stake_contract"
 version = "0.1.0"
 dependencies = [
@@ -7731,6 +7681,38 @@ name = "target-lexicon"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1dd07eb858a2067e2f3c7155d54e929265c264e6f37efe3ee7a8d1b5a1dd0ba"
+
+[[package]]
+name = "tau_pallas"
+version = "0.5.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "blake3",
+ "bs58",
+ "chrono",
+ "darkfi",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "easy-parallel",
+ "futures",
+ "libc",
+ "rand 0.8.5",
+ "serde",
+ "signal-hook",
+ "signal-hook-async-std",
+ "sled-overlay",
+ "smol",
+ "structopt",
+ "structopt-toml",
+ "thiserror 2.0.17",
+ "tinyjson",
+ "toml 0.9.11+spec-1.1.0",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "url",
+]
 
 [[package]]
 name = "taud"

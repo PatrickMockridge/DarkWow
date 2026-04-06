@@ -2,6 +2,10 @@
 
 *Tau is a privacy-preserving task delegation system that integrates with the tender/labor market pipeline using Object Capabilities (O-Cap) for authorization.*
 
+**Note**: Tau exists in two variants:
+- **taud** (`bin/tau/taud/`) - Off-chain task management using NaCl/X25519
+- **tau_pallas** (`bin/tau/tau_pallas/`) - Pallas-native variant with on-chain DarkFi integration
+
 ## Overview
 
 ```
@@ -9,39 +13,35 @@
 │                    Tau + O-Cap Delegation System                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│   TENDER              LABOR MARKET              TAU                           │
-│   Contract              Contract          Task Delegation                       │
-│       │                   │                    │                              │
-│       ▼                   ▼                    ▼                              │
-│  ┌─────────┐        ┌─────────┐         ┌─────────┐                         │
-│  │ Award   │        │ Create  │         │ Create  │                         │
-│  │ winner  │──────▶│ job     │────────▶│ task    │                         │
-│  │         │        │         │         │ + cap   │                         │
-│  └─────────┘        └─────────┘         │ req     │                         │
-│                                          │ + mode  │                         │
-│                                          └────┬────┘                         │
-│                                               │                              │
-│                                               ▼                              │
-│  ┌─────────────────────────────────────────────────────────────┐            │
-│  │              WORKER CLAIMS TASK                              │            │
-│  │                                                              │            │
-│  │  1. Worker proves: can_work_on_task (identity hidden)        │            │
-│  │  2. Verification Mode determines HOW:                        │            │
-│  │     - OffChain: Local check (fast, for trusted workers)      │            │
-│  │     - OnChain: ZK verification via Identity (secure, new)     │            │
-│  │  3. Task assigned to worker's capability                     │            │
-│  │                                                              │            │
-│  └─────────────────────────────────────────────────────────────┘            │
-│                                               │                              │
-│                                               ▼                              │
-│                                          ┌─────────┐                        │
-│                                          │ Complete│                        │
-│                                          │ work    │                        │
-│                                          └────┬────┘                        │
-│                                               │                              │
-│                                               ▼                              │
-│                                       Labor Market Payment                    │
-│                                                                              │
+│   TENDER              LABOR MARKET         TAUD/TAU_PALLAS                    │
+│   Contract              Contract         Task Delegation                        │
+│       │                   │                    │                               │
+│       ▼                   ▼                    ▼                               │
+│  ┌─────────┐        ┌─────────┐         ┌─────────┐                          │
+│  │ Award   │        │ Create  │         │ Create  │                          │
+│  │ winner  │──────▶│ job     │────────▶│ task    │                          │
+│  │         │        │         │         │ + cap   │                          │
+│  └─────────┘        └─────────┘         │ req     │                          │
+│                                          │ + mode  │                          │
+│                                          └────┬────┘                          │
+│                                               │                               │
+│                                    ┌──────────┴──────────┐                    │
+│                                    │                     │                    │
+│                              ┌─────▼─────┐       ┌─────▼─────┐             │
+│                              │   TAUD    │       │TAU_PALLAS │             │
+│                              │(Off-chain)│       │(On-chain) │             │
+│                              └───────────┘       └─────┬─────┘             │
+│                                                         │                    │
+│                                                         ▼                    │
+│                                          ┌────────────────────────┐          │
+│                                          │      darkfid           │          │
+│                                          │  (tx.broadcast RPC)   │          │
+│                                          └───────────┬────────────┘          │
+│                                                      │                      │
+│                                          ┌───────────▼───────────┐           │
+│                                          │  Identity Contract   │           │
+│                                          │ (VerifyCapabilityV1)│           │
+│                                          └───────────────────────┘           │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -317,10 +317,82 @@ Created as a separate binary alongside `taud` for direct DarkFi integration:
 | darkfid RPC | N/A | DarkfidClient |
 | On-chain verification | Fallback only | Working |
 
-**Files**:
+#### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        TAU ECOSYSTEM                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│   ┌─────────────────┐              ┌─────────────────┐           │
+│   │      TAUD       │              │   TAU_PALLAS    │           │
+│   │  (Off-chain)    │              │  (On-chain)     │           │
+│   └────────┬─────────┘              └────────┬─────────┘           │
+│            │                                 │                      │
+│            │     ┌─────────────────┐       │                      │
+│            └────▶│  Task Storage   │◀──────┘                      │
+│                  │   (JSON files)   │                               │
+│                  └────────┬────────┘                               │
+│                           │                                          │
+│                           ▼                                          │
+│                  ┌─────────────────┐                               │
+│                  │    darkfid       │                               │
+│                  │  (blockchain)    │                               │
+│                  └────────┬────────┘                               │
+│                           │                                          │
+│                           ▼                                          │
+│                  ┌─────────────────┐                               │
+│                  │ Identity Contract│                               │
+│                  │ (capabilities)   │                               │
+│                  └─────────────────┘                               │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### DarkfidClient RPC
+
+The core of tau_pallas's on-chain capability is `DarkfidClient`:
+
+```rust
+// Create client connected to darkfid
+let client = DarkfidClient::new("http://localhost:18332", executor).await?;
+
+// Broadcast a transaction
+let tx_hash = client.broadcast_tx(&signed_tx).await?;
+```
+
+#### On-Chain Verification Flow
+
+When a worker claims a task with `verification_mode: OnChain`:
+
+```
+1. Worker submits CapabilityProof to tau_pallas
+2. tau_pallas constructs Identity contract call:
+   - Function: VerifyCapabilityV1 (0x0b)
+   - Params: capability_proof, verifier_pub, fee
+3. tau_pallas signs transaction with PM's Pallas secret key
+4. tau_pallas broadcasts via DarkfidClient.broadcast_tx()
+5. darkfid validates and includes tx in block
+6. Identity contract verifies ZK proof on-chain
+7. Identity contract emits CapabilityVerified event
+```
+
+#### Key Files
+
 - `bin/tau/tau_pallas/src/rpc_client.rs` - DarkfidClient for tx.broadcast
 - `bin/tau/tau_pallas/src/identity_client.rs` - VerifyCapability calldata builder
 - `bin/tau/tau_pallas/src/capability.rs` - Working on-chain verification
+
+#### When to Use Each
+
+| Use Case | Binary | Why |
+|----------|--------|-----|
+| Pure task management, no blockchain | taud | Lightweight, no dependencies |
+| On-chain capability verification | tau_pallas | Full Pallas/DarkFi integration |
+| Testing off-chain claims | taud | Fast local verification |
+| Production on-chain verification | tau_pallas | ZK proofs verified on-chain |
+| Low-value tasks, trusted workers | taud (OffChain mode) | Fast, cheap |
+| High-value tasks, new workers | tau_pallas (OnChain mode) | Maximum security |
 
 ### Phase 3: Full Pipeline Integration (IN PROGRESS)
 - [x] Add `labor_job_id` field to TaskInfo (link to labor market job)
