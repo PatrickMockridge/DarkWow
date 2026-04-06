@@ -1,0 +1,67 @@
+[package]
+name = "tau_pallas"
+description = "Pallas-native encrypted tasks management with DarkFi on-chain integration"
+version = "0.5.0"
+edition = "2021"
+authors = ["Dyne.org foundation <foundation@dyne.org>"]
+license = "AGPL-3.0-only"
+homepage = "https://dark.fi"
+repository = "https://codeberg.org/darkrenaissance/darkfi"
+
+[lib]
+name = "tau_pallas"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tau_pallas"
+path = "src/main.rs"
+
+[dependencies]
+darkfi = { path = "../../../", features = [
+    "bs58",
+    "async-daemonize",
+    "event-graph",
+    "rpc",
+    "tx",
+] }
+
+darkfi-sdk = {path = "../../../src/sdk", features = ["async"]}
+darkfi-serial = {path = "../../../src/serial"}
+
+# Event Graph DB
+sled-overlay = "0.1.20"
+
+# Crypto (Pallas-native from darkfi_sdk)
+blake3 = "1.8.2"
+rand = "0.8.5"
+
+# Encoding and parsing
+bs58 = "0.5.1"
+base64 = "0.22"
+toml = "0.9.8"
+
+# Misc
+async-trait = "0.1.89"
+chrono = "0.4.42"
+futures = "0.3.31"
+libc = "0.2.178"
+tracing = "0.1.44"
+thiserror = "2.0.17"
+tinyjson = "2.5.1"
+url = "2.5.7"
+
+# Daemon
+easy-parallel = "3.3.1"
+signal-hook-async-std = "0.4.0"
+signal-hook = "0.4.1"
+tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }
+tracing-appender = "0.2.4"
+smol = "2.0.2"
+
+# Argument parsing
+serde = { version = "1.0.228", features = ["derive"] }
+structopt = "0.3.26"
+structopt-toml = "0.5.1"
+
+[lints]
+workspace = true

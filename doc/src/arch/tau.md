@@ -292,37 +292,35 @@ fn verify_onchain(
 - [x] Add `set_task_capability` JSON-RPC method
 - [x] Build and test
 
-### Phase 2: On-Chain Verification (BLOCKED - Requires Wallet Integration)
+### Phase 2: On-Chain Verification (✅ UNBLOCKED via Tau_Pallas)
 - [x] Implement `verify_capability_onchain` with Identity contract interface
-- [ ] **BLOCKED**: Add wallet integration for transaction signing
-- [ ] **BLOCKED**: Connect to darkfid RPC for `tx_broadcast`
-- [ ] **BLOCKED**: Parse CapabilityVerified events
+- [x] **DONE**: Add wallet integration via Pallas-native darkfi_sdk crypto
+- [x] **DONE**: Connect to darkfid RPC for `tx.broadcast` via DarkfidClient
+- [x] **DONE**: Build and sign transactions with Pallas keys
 
-**Blocker**: Tau is a standalone daemon without wallet functionality. On-chain verification requires:
-- Wallet to sign transactions (PM's secret key)
-- Connection to darkfid RPC for `tx_broadcast`
-- Event subscription to parse `CapabilityVerified` events
+**Solution**: Created **Tau_Pallas** (`bin/tau/tau_pallas/`) - a Pallas-native variant of tau that:
+- Uses `darkfi_sdk::crypto::Keypair` for Pallas curve key management
+- Has `DarkfidClient::broadcast_tx()` for darkfid RPC integration
+- Can construct `Transaction` objects and sign with `tx.create_sigs()`
+- Implements working `verify_capability_onchain()` that broadcasts verification txs
 
-**Current workaround**: Off-chain verification works and is used as fallback.
+**Note**: `taud` (NaCl/X25519) remains for pure off-chain task management. `tau_pallas` is for on-chain integration.
 
-### Architectural Decision: Wallet Integration Belongs in App Layer
+### Tau_Pallas: Pallas-Native Variant
 
-On-chain verification with the Identity contract requires signing transactions with a Pallas scalar SecretKey, but tau uses NaCl/X25519 keys for task signing. These are incompatible cryptographic primitives:
+Created as a separate binary alongside `taud` for direct DarkFi integration:
 
-| Component | Key System | Purpose |
-|-----------|------------|---------|
-| Tau (task signing) | NaCl/X25519 | Task authentication |
-| DarkFi (tx signing) | Pallas scalar | Transaction authorization |
-| Identity contract | Pallas scalar | ZK verification |
+| Component | taud | tau_pallas |
+|-----------|------|------------|
+| Keypair | NaCl/X25519 | Pallas (darkfi_sdk) |
+| Signing | crypto_box | Schnorr (tx.create_sigs) |
+| darkfid RPC | N/A | DarkfidClient |
+| On-chain verification | Fallback only | Working |
 
-**Decision**: Wallet integration for on-chain verification belongs in the **app layer (UI/CLI)**, not in tau (base layer). The app layer provides:
-- Wallet key management (Pallas scalars)
-- Transaction construction and signing
-- RPC connection to darkfid for broadcasting
-
-Tau remains a standalone daemon focused on task management. App-layer tools (CLI, web UI) handle the bridge to DarkFi's on-chain components. This separation keeps tau simple and allows users to interact with tau through familiar interfaces while leveraging DarkFi's ZK capabilities when needed.
-
-**Implication**: Phase 2 on-chain verification is blocked at the tau layer, but can be unblocked by building app-layer integration that connects tau task events to DarkFi wallet operations.
+**Files**:
+- `bin/tau/tau_pallas/src/rpc_client.rs` - DarkfidClient for tx.broadcast
+- `bin/tau/tau_pallas/src/identity_client.rs` - VerifyCapability calldata builder
+- `bin/tau/tau_pallas/src/capability.rs` - Working on-chain verification
 
 ### Phase 3: Full Pipeline Integration (IN PROGRESS)
 - [x] Add `labor_job_id` field to TaskInfo (link to labor market job)
@@ -333,7 +331,7 @@ Tau remains a standalone daemon focused on task management. App-layer tools (CLI
 - [ ] Add `submit_task_deliverable` RPC method to trigger labor market deliverable submission
 - [ ] Add `register_capability` RPC method for tender winner to register capabilities
 
-**Blocker**: Phase 3 full implementation requires wallet integration (Phase 2 blocker).
+**Note**: Phase 3 integration with labor market can now use tau_pallas for on-chain operations.
 - [ ] Link tau tasks to labor market jobs
 - [ ] Capability registration from tender winner
 - [ ] Payment linking via attestation

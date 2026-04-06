@@ -25,6 +25,7 @@ members = [
     "bin/genev/genev-cli",
     "bin/darkirc",
     "bin/tau/taud",
+    "bin/tau/tau_pallas",
     "bin/vanityaddr",
     "bin/lilith",
     "bin/xmr_relayer",
