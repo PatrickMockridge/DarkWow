@@ -25,6 +25,7 @@
 pub mod capability;
 pub mod error;
 pub mod identity_client;
+pub mod jsonrpc;
 pub mod month_tasks;
 pub mod rpc_client;
 pub mod task_info;

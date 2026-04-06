@@ -51,6 +51,8 @@ pub enum TauPallasError {
     RpcError(String),
     #[error("Transaction error: `{0}`")]
     TransactionError(String),
+    #[error("Not implemented: `{0}`")]
+    NotImplemented(String),
 }
 
 pub type TauPallasResult<T> = std::result::Result<T, TauPallasError>;
@@ -100,6 +102,9 @@ pub fn to_json_result(res: TauPallasResult<JsonValue>, id: u16) -> JsonResult {
                 JsonError::new(ErrorCode::InternalError, Some(e), id).into()
             }
             TauPallasError::TransactionError(e) => {
+                JsonError::new(ErrorCode::InternalError, Some(e), id).into()
+            }
+            TauPallasError::NotImplemented(e) => {
                 JsonError::new(ErrorCode::InternalError, Some(e), id).into()
             }
         },
