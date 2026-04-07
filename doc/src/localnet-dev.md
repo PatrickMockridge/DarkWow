@@ -225,12 +225,12 @@ Tested WASM contract deployment on localnet.
 | roulette | 375B → 239KB | Gas estimation failed | ✅ Fixed |
 | betting_stake | 380B → 171KB | Gas estimation failed | ✅ Fixed |
 | drain_protection | 383B → 224KB | Gas estimation failed | ✅ Fixed |
-| bridge | 227KB | ParseFailed | Requires deploy instruction | Debugging in progress |
-| darkbet_exchange | 313KB | ParseFailed | Requires deploy instruction | Debugging in progress |
-| dex | 208KB | ParseFailed | Requires deploy instruction | Debugging in progress |
-| pool_stake | 212KB | ParseFailed | Requires deploy instruction | Debugging in progress |
-| stablecoin | 85KB | ParseFailed | Requires deploy instruction | Debugging in progress |
-| relayer_endowment | 181KB | ParseFailed | Requires deploy instruction | Debugging in progress |
+| bridge | 227KB | Money v1/v2 composition | Needs Money v1 refactor |
+| darkbet_exchange | 313KB | Money v1/v2 composition | Needs Money v1 refactor |
+| dex | 208KB | Money v1/v2 composition | Needs Money v1 refactor |
+| pool_stake | 212KB | Money v1/v2 composition | Needs Money v1 refactor |
+| stablecoin | 85KB | Money v1/v2 composition | Needs Money v1 refactor |
+| relayer_endowment | 181KB | Money v1/v2 composition | Needs Money v1 refactor |
 
 ### Common Betting Contract Bug Patterns
 
@@ -540,12 +540,60 @@ drk -c bin/drk/drk_config.toml -n localnet contract deploy $AUTH \
 
 **Completed**: Code fixes applied to all 6 contracts. WASM verified at proper sizes (84KB-314KB).
 
-**In Progress**: Deployment debugging. Issues encountered:
-- Wallet had insufficient confirmed balance for gas
-- Mining shares started getting rejected by stratum server
-- Need to restart darkfid and stratum server to continue
+**Blocked**: Deployment debugging halted by Money v1/v2 contract composition issue.
 
-**Next Steps**: Debug deployment infrastructure (stratum server rejections, wallet balance) to complete deployment of these 6 contracts.
+**Root Cause Identified**: The `drk` CLI wallet uses Money v1 for the native DARK token, but these contracts (bridge, dex, stablecoin) are written to use Money v2 ZK circuit patterns (specifically `constrain_equal_base` from `money/burn_v1.zk`).
+
+**Error Observed**:
+```
+thread 'main' panicked at bin/drk/src/money.rs:1300:75:
+called `Result::unwrap()` on an `Err` value: PositionNotMarked(Position(18))
+```
+
+This occurs when the wallet tries to spend a coin for gas - the Merkle tree lookup fails because DARK tokens exist on Money v1 but contracts expect Money v2's tree structure.
+
+**Next Steps**: Refactor contracts to use Money v1 patterns instead of Money v2 patterns.
+
+---
+
+## Money v1 vs v2 Contract Composition Issue
+
+### The Problem
+
+DarkFi maintains two versions of the money contract:
+- **`money` (v1)**: Original DarkFi money contract - used by `drk` CLI for DARK token
+- **`money_v2`**: Secure version with self-contained circuit design - NEW standard
+
+Contracts like bridge, dex, and stablecoin are written using Money v2 patterns:
+- Use `constrain_equal_base` for binding public inputs to witnesses
+- Reference `money/burn_v1.zk` patterns
+- Expect Money v2 Merkle tree structure
+
+But the `drk` CLI wallet only knows about Money v1 for the native DARK token.
+
+### Impact
+
+When deploying these contracts or when these contracts need to interact with DARK tokens:
+1. Transaction construction uses Money v1 Merkle tree structure
+2. Contract expects Money v2 structure
+3. `PositionNotMarked` error occurs at Merkle tree lookup
+
+### Files Affected
+
+| Contract | Money Version Used | Issue |
+|----------|-------------------|-------|
+| bridge | v2 | Uses `constrain_equal_base` pattern from money v2 |
+| dex | v2 | Uses `constrain_equal_base` pattern from money v2 |
+| stablecoin | v2 | Uses `constrain_equal_base` pattern from money v2 |
+| darkbet_exchange | ? | Likely same issue |
+| pool_stake | ? | Likely same issue |
+| relayer_endowment | ? | Likely same issue |
+
+### Solution
+
+These contracts need to be refactored to use Money v1 patterns instead of Money v2 patterns before they can be deployed to a network where `drk` manages the DARK token.
+
+See: [Money Version Bridge Decision](../../arch/money-version-bridge.md)
 
 ---
 
