@@ -51,6 +51,9 @@
 pub mod error;
 pub mod model;
 
+#[cfg(not(feature = "no-entrypoint"))]
+pub mod entrypoint;
+
 pub use model::*;
 
 // =============================================================================
@@ -93,11 +96,11 @@ impl TryFrom<u8> for BettingStakeFunction {
 // =============================================================================
 
 /// Name of the stake registry tree
-pub const BETTING_STAKE_REGISTRY_TREE: &[u8] = b"staking_registry";
+pub const BETTING_STAKE_REGISTRY_TREE: &str = "staking_registry";
 /// Name of the stakes tree
-pub const BETTING_STAKE_STAKES_TREE: &[u8] = b"staking_stakes";
+pub const BETTING_STAKE_STAKES_TREE: &str = "staking_stakes";
 /// Name of the earnings tree
-pub const BETTING_STAKE_EARNINGS_TREE: &[u8] = b"staking_earnings";
+pub const BETTING_STAKE_EARNINGS_TREE: &str = "staking_earnings";
 
 /// Minimum stake amount
 pub const MIN_STAKE_AMOUNT: u64 = 100;

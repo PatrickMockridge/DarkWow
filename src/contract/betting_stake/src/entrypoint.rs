@@ -19,10 +19,10 @@
 //! Betting Stake Contract Entrypoint
 
 use darkfi_sdk::{
-    crypto::ContractId,
+    crypto::{poseidon_hash, ContractId, PublicKey},
     dark_tree::DarkLeaf,
-    error::ContractResult,
-    wasm, ContractCall,
+    error::{ContractError, ContractResult},
+    msg, pasta::pallas, wasm, ContractCall,
 };
 use darkfi_serial::{deserialize, serialize};
 
@@ -53,7 +53,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 }
 
 /// Get metadata for verification
-fn _get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
+fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
@@ -62,7 +62,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = BettingStakeFunction::try_from(self_.data[0])?;
+    let func = BettingStakeFunction::try_from(self_.data[0]).map_err(|_| BettingStakeError::InvalidFunction)?;
 
     let update_data = match func {
         BettingStakeFunction::InitializeV1 => {
@@ -80,12 +80,13 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
     };
 
-    wasm::util::set_return_data(&update_data)
+    wasm::util::set_return_data(&update_data)?;
+    Ok(())
 }
 
 /// Process update
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
-    match BettingStakeFunction::try_from(update_data[0])? {
+    match BettingStakeFunction::try_from(update_data[0]).map_err(|_| BettingStakeError::InvalidFunction)? {
         BettingStakeFunction::InitializeV1 => {
             let update: InitializeUpdateV1 = deserialize(&update_data[1..])?;
             staking_initialize_process_update_v1(cid, update)
@@ -117,11 +118,11 @@ fn staking_initialize_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: InitializeParamsV1 = deserialize(&self_.data[1..])?;
 
-    wasm::msg!("[betting_stake::initialize] Initializing staking for contract");
+    msg!("[betting_stake::initialize] Initializing staking for contract");
 
     // Validate house edge
     if params.house_edge_bp > 10000 {
@@ -144,7 +145,8 @@ fn staking_initialize_process_instruction_v1(
         risk_profile: params.risk_profile,
     };
 
-    wasm::msg!("[betting_stake::initialize] Table {} initialized", table_id);
+    msg!("[betting_stake::initialize] Table initialized");
+    wasm::util::set_return_data(&serialize(&update))?;
     Ok(serialize(&update))
 }
 
@@ -162,7 +164,7 @@ fn staking_initialize_process_update_v1(cid: ContractId, update: InitializeUpdat
     };
 
     wasm::db::db_set(registry_db, &serialize(&update.table_id), &serialize(&registry))?;
-    wasm::msg!("[betting_stake::initialize::update] Registry stored");
+    msg!("[betting_stake::initialize::update] Registry stored");
 
     Ok(())
 }
@@ -175,11 +177,11 @@ fn staking_stake_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: StakeParamsV1 = deserialize(&self_.data[1..])?;
 
-    wasm::msg!("[betting_stake::stake] Staking {} against table", params.amount);
+    msg!("[betting_stake::stake] Staking {} against table", params.amount);
 
     // Get registry
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
@@ -216,7 +218,7 @@ fn staking_stake_process_instruction_v1(
         staker_count: table.staker_count,
     };
 
-    wasm::msg!("[betting_stake::stake] Stake {} created", stake_id);
+    msg!("[betting_stake::stake] Stake created");
     Ok(serialize(&update))
 }
 
@@ -248,7 +250,7 @@ fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> Co
     };
 
     wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
-    wasm::msg!("[betting_stake::stake::update] Stake stored in database");
+    msg!("[betting_stake::stake::update] Stake stored in database");
 
     Ok(())
 }
@@ -261,11 +263,11 @@ fn staking_unstake_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: UnstakeParamsV1 = deserialize(&self_.data[1..])?;
 
-    wasm::msg!("[betting_stake::unstake] Unstaking request for {}", params.stake_id);
+    msg!("[betting_stake::unstake] Unstaking request");
 
     // Get stake
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
@@ -300,7 +302,7 @@ fn staking_unstake_process_instruction_v1(
 
     let update = UnstakeUpdateV1 { stake_id: params.stake_id, payout_amount, unstake_penalty };
 
-    wasm::msg!("[betting_stake::unstake] Payout: {}", payout_amount);
+    msg!("[betting_stake::unstake] Payout: {}", payout_amount);
     Ok(serialize(&update))
 }
 
@@ -318,7 +320,7 @@ fn staking_unstake_process_update_v1(cid: ContractId, update: UnstakeUpdateV1) -
     stake.accumulated_earnings = 0;
 
     wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
-    wasm::msg!("[betting_stake::unstake::update] Stake deactivated");
+    msg!("[betting_stake::unstake::update] Stake deactivated");
 
     Ok(())
 }
@@ -331,11 +333,11 @@ fn staking_claim_earnings_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: ClaimEarningsParamsV1 = deserialize(&self_.data[1..])?;
 
-    wasm::msg!("[betting_stake::claim] Claiming earnings for {}", params.stake_id);
+    msg!("[betting_stake::claim] Claiming earnings");
 
     // Get stake
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
@@ -371,7 +373,7 @@ fn staking_claim_earnings_process_instruction_v1(
         remaining_earnings: stake.accumulated_earnings + claimable,
     };
 
-    wasm::msg!("[betting_stake::claim] Claimed: {}", claimable);
+    msg!("[betting_stake::claim] Claimed: {}", claimable);
     Ok(serialize(&update))
 }
 
@@ -387,7 +389,7 @@ fn staking_claim_earnings_process_update_v1(cid: ContractId, update: ClaimEarnin
     stake.accumulated_earnings = update.remaining_earnings;
 
     wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
-    wasm::msg!("[betting_stake::claim::update] Earnings updated");
+    msg!("[betting_stake::claim::update] Earnings updated");
 
     Ok(())
 }
@@ -400,11 +402,11 @@ fn staking_update_risk_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: UpdateRiskParamsV1 = deserialize(&self_.data[1..])?;
 
-    wasm::msg!("[betting_stake::update_risk] Processing payout of {}", params.payout_amount);
+    msg!("[betting_stake::update_risk] Processing payout of {}", params.payout_amount);
 
     // Get registry
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
@@ -418,13 +420,13 @@ fn staking_update_risk_process_instruction_v1(
     let staker_loss = params.payout_amount.saturating_sub(params.house_share);
 
     // House edge earnings
-    let house_edge_earnings = (params.payout_amount * table.house_edge_bp) / 10000;
+    let house_edge_earnings = (params.payout_amount * table.house_edge_bp as u64) / 10000;
     table.accumulated_earnings += house_edge_earnings;
     table.accumulated_losses += staker_loss;
 
     // If losses exceed stake, stakers get wiped out (clawback would be needed)
     if table.accumulated_losses > table.total_stake {
-        wasm::msg!("[betting_stake::update_risk] WARNING: Losses exceed stake!");
+        msg!("[betting_stake::update_risk] WARNING: Losses exceed stake!");
     }
 
     let update = UpdateRiskUpdateV1 {
@@ -435,7 +437,7 @@ fn staking_update_risk_process_instruction_v1(
         new_total_stake: table.total_stake.saturating_sub(staker_loss),
     };
 
-    wasm::msg!("[betting_stake::update_risk] Staker loss: {}", staker_loss);
+    msg!("[betting_stake::update_risk] Staker loss: {}", staker_loss);
     Ok(serialize(&update))
 }
 
@@ -451,7 +453,7 @@ fn staking_update_risk_process_update_v1(cid: ContractId, update: UpdateRiskUpda
     table.total_stake = update.new_total_stake;
 
     wasm::db::db_set(registry_db, &serialize(&update.table_id), &serialize(&table))?;
-    wasm::msg!("[betting_stake::update_risk::update] Table risk updated");
+    msg!("[betting_stake::update_risk::update] Table risk updated");
 
     Ok(())
 }
@@ -461,11 +463,9 @@ fn staking_update_risk_process_update_v1(cid: ContractId, update: UpdateRiskUpda
 // =============================================================================
 
 fn derive_table_id(betting_contract_id: pallas::Base, nonce: u64) -> pallas::Base {
-    use darkfi_sdk::crypto::poseidon_hash;
     poseidon_hash([betting_contract_id, pallas::Base::from(nonce)])
 }
 
 fn derive_stake_id(table_id: pallas::Base, staker_pub: &PublicKey, nonce: u64) -> pallas::Base {
-    use darkfi_sdk::crypto::poseidon_hash;
     poseidon_hash([table_id, staker_pub.x(), staker_pub.y(), pallas::Base::from(nonce)])
 }
