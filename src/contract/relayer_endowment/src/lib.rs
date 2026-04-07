@@ -101,6 +101,8 @@ pub const RELAYER_ENDOWMENT_REGISTRY_TREE: &str = "endowment_registry";
 pub const RELAYER_ENDOWMENT_DEPLOYMENTS_TREE: &str = "endowment_deployments";
 /// Accumulated fees tree - stores fee allocations per deployment
 pub const RELAYER_ENDOWMENT_FEES_TREE: &str = "endowment_fees";
+/// Info tree - stores contract info (version, config)
+pub const RELAYER_ENDOWMENT_INFO_TREE: &str = "relayer_endowment_info";
 
 // Database keys
 /// Database version key

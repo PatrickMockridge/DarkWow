@@ -115,6 +115,8 @@ pub const POOL_STAKE_MEMBERS_TREE: &str = "pool_members";
 pub const POOL_STAKE_ALLOCATIONS_TREE: &str = "pool_allocations";
 /// Accumulated fees tree - stores fee allocations per member
 pub const POOL_STAKE_FEES_TREE: &str = "pool_fees";
+/// Info tree - stores contract info (version, config)
+pub const POOL_STAKE_INFO_TREE: &str = "pool_stake_info";
 
 // Database keys
 /// Database version key

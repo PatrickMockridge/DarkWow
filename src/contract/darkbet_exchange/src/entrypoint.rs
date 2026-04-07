@@ -43,7 +43,8 @@ use crate::{
     DARKBET_EXCHANGE_LAY_ORDERS_TREE, DARKBET_EXCHANGE_MATCHES_TREE,
     DARKBET_EXCHANGE_NULLIFIERS_TREE, DARKBET_EXCHANGE_POSITIONS_TREE,
     DARKBET_EXCHANGE_LP_SHARES_TREE, DARKBET_EXCHANGE_MAX_MARKET_LIFETIME,
-    DARKBET_EXCHANGE_MIN_ORDER_SIZE, DEFAULT_PROTOCOL_FEE as SDK_PROTOCOL_FEE,
+    DARKBET_EXCHANGE_MIN_ORDER_SIZE, DARKBET_EXCHANGE_INFO_TREE,
+    DEFAULT_PROTOCOL_FEE as SDK_PROTOCOL_FEE,
     DEFAULT_LP_FEE as SDK_LP_FEE,
 };
 
@@ -56,14 +57,34 @@ darkfi_sdk::define_contract!(
 
 /// Initialize the contract
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
-    // Initialize database trees
-    wasm::db::db_init(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    wasm::db::db_init(cid, DARKBET_EXCHANGE_BACK_ORDERS_TREE)?;
-    wasm::db::db_init(cid, DARKBET_EXCHANGE_LAY_ORDERS_TREE)?;
-    wasm::db::db_init(cid, DARKBET_EXCHANGE_MATCHES_TREE)?;
-    wasm::db::db_init(cid, DARKBET_EXCHANGE_POSITIONS_TREE)?;
-    wasm::db::db_init(cid, DARKBET_EXCHANGE_LP_SHARES_TREE)?;
-    wasm::db::db_init(cid, DARKBET_EXCHANGE_NULLIFIERS_TREE)?;
+    // Initialize INFO_TREE with redeployment guard
+    let _info_db = match wasm::db::db_lookup(cid, DARKBET_EXCHANGE_INFO_TREE) {
+        Ok(v) => v,
+        Err(_) => wasm::db::db_init(cid, DARKBET_EXCHANGE_INFO_TREE)?,
+    };
+
+    // Initialize database trees with redeployment guards
+    if wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE).is_err() {
+        wasm::db::db_init(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
+    }
+    if wasm::db::db_lookup(cid, DARKBET_EXCHANGE_BACK_ORDERS_TREE).is_err() {
+        wasm::db::db_init(cid, DARKBET_EXCHANGE_BACK_ORDERS_TREE)?;
+    }
+    if wasm::db::db_lookup(cid, DARKBET_EXCHANGE_LAY_ORDERS_TREE).is_err() {
+        wasm::db::db_init(cid, DARKBET_EXCHANGE_LAY_ORDERS_TREE)?;
+    }
+    if wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MATCHES_TREE).is_err() {
+        wasm::db::db_init(cid, DARKBET_EXCHANGE_MATCHES_TREE)?;
+    }
+    if wasm::db::db_lookup(cid, DARKBET_EXCHANGE_POSITIONS_TREE).is_err() {
+        wasm::db::db_init(cid, DARKBET_EXCHANGE_POSITIONS_TREE)?;
+    }
+    if wasm::db::db_lookup(cid, DARKBET_EXCHANGE_LP_SHARES_TREE).is_err() {
+        wasm::db::db_init(cid, DARKBET_EXCHANGE_LP_SHARES_TREE)?;
+    }
+    if wasm::db::db_lookup(cid, DARKBET_EXCHANGE_NULLIFIERS_TREE).is_err() {
+        wasm::db::db_init(cid, DARKBET_EXCHANGE_NULLIFIERS_TREE)?;
+    }
 
     Ok(())
 }

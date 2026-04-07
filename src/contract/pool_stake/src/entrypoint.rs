@@ -33,7 +33,7 @@ use crate::model::*;
 use crate::PoolStakeFunction;
 use crate::{
     POOL_STAKE_ALLOCATIONS_TREE, POOL_STAKE_MEMBERS_TREE, POOL_STAKE_REGISTRY_TREE,
-    POOL_STAKE_MIN_STAKE,
+    POOL_STAKE_MIN_STAKE, POOL_STAKE_INFO_TREE,
 };
 
 darkfi_sdk::define_contract!(
@@ -48,9 +48,22 @@ darkfi_sdk::define_contract!(
 // ============================================================================
 
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
-    wasm::db::db_init(cid, POOL_STAKE_REGISTRY_TREE)?;
-    wasm::db::db_init(cid, POOL_STAKE_MEMBERS_TREE)?;
-    wasm::db::db_init(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
+    // Initialize INFO_TREE with redeployment guard
+    let _info_db = match wasm::db::db_lookup(cid, POOL_STAKE_INFO_TREE) {
+        Ok(v) => v,
+        Err(_) => wasm::db::db_init(cid, POOL_STAKE_INFO_TREE)?,
+    };
+
+    // Initialize database trees with redeployment guards
+    if wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE).is_err() {
+        wasm::db::db_init(cid, POOL_STAKE_REGISTRY_TREE)?;
+    }
+    if wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE).is_err() {
+        wasm::db::db_init(cid, POOL_STAKE_MEMBERS_TREE)?;
+    }
+    if wasm::db::db_lookup(cid, POOL_STAKE_ALLOCATIONS_TREE).is_err() {
+        wasm::db::db_init(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
+    }
     Ok(())
 }
 

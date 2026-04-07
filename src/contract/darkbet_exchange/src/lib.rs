@@ -131,6 +131,8 @@ pub const DARKBET_EXCHANGE_POSITIONS_TREE: &str = "darkbet_positions";
 pub const DARKBET_EXCHANGE_LP_SHARES_TREE: &str = "darkbet_lp_shares";
 /// Stores nullifiers to prevent double-spending
 pub const DARKBET_EXCHANGE_NULLIFIERS_TREE: &str = "darkbet_nullifiers";
+/// Stores contract info (version, config)
+pub const DARKBET_EXCHANGE_INFO_TREE: &str = "darkbet_info";
 
 // ============================================================================
 // CONSTANTS

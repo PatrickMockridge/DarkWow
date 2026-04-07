@@ -33,7 +33,7 @@ use crate::model::*;
 use crate::RelayerEndowmentFunction;
 use crate::{
     RELAYER_ENDOWMENT_DEPLOYMENTS_TREE, RELAYER_ENDOWMENT_REGISTRY_TREE,
-    RELAYER_ENDOWMENT_MIN_DEPLOY,
+    RELAYER_ENDOWMENT_MIN_DEPLOY, RELAYER_ENDOWMENT_INFO_TREE,
 };
 
 darkfi_sdk::define_contract!(
@@ -48,8 +48,19 @@ darkfi_sdk::define_contract!(
 // ============================================================================
 
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
-    wasm::db::db_init(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
-    wasm::db::db_init(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
+    // Initialize INFO_TREE with redeployment guard
+    let _info_db = match wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_INFO_TREE) {
+        Ok(v) => v,
+        Err(_) => wasm::db::db_init(cid, RELAYER_ENDOWMENT_INFO_TREE)?,
+    };
+
+    // Initialize database trees with redeployment guards
+    if wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE).is_err() {
+        wasm::db::db_init(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
+    }
+    if wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE).is_err() {
+        wasm::db::db_init(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
+    }
     Ok(())
 }
 
