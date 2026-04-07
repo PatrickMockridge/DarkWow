@@ -146,6 +146,58 @@ pkill -f "drk.*mine"
 ./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet balance
 ```
 
+## CLI Quirks
+
+### scan is a top-level subcommand, not wallet scan
+
+The `scan` command is not under `wallet` - it's a top-level subcommand:
+```bash
+drk scan                    # Correct - scan blockchain
+drk wallet scan             # Wrong - this doesn't exist
+```
+
+This differs from other wallet operations which are under `drk wallet <subcommand>`.
+
+### Config file must be passed explicitly
+
+There is no default config file location. Every command requires `-c`:
+```bash
+drk -c bin/drk/drk_config.toml -n localnet wallet balance  # Correct
+drk -n localnet wallet balance                              # Wrong - fails
+```
+
+### --reset uses space, not equals
+
+The `--reset` flag for scan uses space-separated syntax:
+```bash
+drk scan --reset 0     # Correct - space
+drk scan --reset=0    # Wrong - equals sign doesn't work
+```
+
+### broadcast reads base64 from stdin
+
+The `broadcast` command reads a base64-encoded transaction from stdin:
+```bash
+drk contract deploy <auth> <wasm> | drk broadcast  # Pipe output to broadcast
+```
+
+### balance shows unspent only
+
+`drk wallet balance` shows only unspent balances. Spent coins are not included in the balance calculation.
+
+### coin values are in raw units
+
+Coin values in `drk wallet coins` output are shown as raw values (e.g., `2000000000`) with a formatted version in parentheses (e.g., `(20)`). The DARK token has 8 decimal places.
+
+### contract list without args lists all authorities
+
+```bash
+drk contract list              # Lists ALL deploy authorities
+drk contract list <contract>  # Shows history for specific contract
+```
+
+The history lookup requires the deployment transaction hash (tx-hash), not the contract ID.
+
 ## File References
 
 - `bin/darkfid/src/rpc/miner.rs` - darkfid stratum server implementation
