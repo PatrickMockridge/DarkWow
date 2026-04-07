@@ -225,12 +225,12 @@ Tested WASM contract deployment on localnet.
 | roulette | 375B → 239KB | Gas estimation failed | ✅ Fixed |
 | betting_stake | 380B → 171KB | Gas estimation failed | ✅ Fixed |
 | drain_protection | 383B → 224KB | Gas estimation failed | ✅ Fixed |
-| bridge | 227KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
-| darkbet_exchange | 313KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
-| dex | 208KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
-| pool_stake | 212KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
-| stablecoin | 85KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
-| relayer_endowment | 181KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
+| bridge | 227KB | Deployed (tx broadcast) | Pending confirmation |
+| darkbet_exchange | 313KB | Deployed (tx broadcast) | Pending confirmation |
+| dex | 208KB | Deployed (tx broadcast) | Pending confirmation |
+| pool_stake | 212KB | Deployed (tx broadcast) | Pending confirmation |
+| stablecoin | 85KB | Deployed (tx broadcast) | Pending confirmation |
+| relayer_endowment | 181KB | Deployed (tx broadcast) | Pending confirmation |
 
 ### Common Betting Contract Bug Patterns
 
@@ -538,21 +538,21 @@ drk -c bin/drk/drk_config.toml -n localnet contract deploy $AUTH \
 
 ### Current Status (2026-04-07)
 
-**Completed**: Code fixes applied to all 6 contracts. WASM verified at proper sizes (84KB-314KB).
+**Completed**: Code fixes applied to all 6 contracts. WASM verified at proper sizes (84KB-314KB). Deployments broadcast successfully.
 
-**Blocked**: Deployment debugging halted by Money v1/v2 contract composition issue.
+**Root Cause (Refined)**: The `PositionNotMarked` error was a wallet Merkle tree sync issue, NOT a Money v1/v2 composition issue. After restarting darkfid and rescanning, deployments proceeded successfully.
 
-**Root Cause Identified**: The `drk` CLI wallet uses Money v1 for the native DARK token, but these contracts (bridge, dex, stablecoin) are written to use Money v2 ZK circuit patterns (specifically `constrain_equal_base` from `money/burn_v1.zk`).
+**Actual Issue**: Mining instability caused shares to be rejected when block template changed. This prevented timely block confirmation of deployment transactions.
 
-**Error Observed**:
-```
-thread 'main' panicked at bin/drk/src/money.rs:1300:75:
-called `Result::unwrap()` on an `Err` value: PositionNotMarked(Position(18))
-```
+**Deployments (2026-04-07)**: All 6 contracts' transactions were broadcast:
+- darkbet_exchange: d38125600ebfd718faf463f371e436c2a24c0fe483d8bac9f2ff392189409823
+- pool_stake: 117d4f5aba39470ff9fea88f5cab659997c87ed7bfebd027b1868d57e9499702
+- relayer_endowment: cf77ff3ea4c4cb916c1befce0281ee52ce535815e8fda043df18eed430a87ea5
+- bridge: a5a3394d2dd9f95a6f8c45126e1dfd2d856671aaa58f8196b644720f3c255ab3
+- dex: 5e1573f2e587c8aced4989cc3c2808a29f3af75c87497881b6b289ffb0b5daa2
+- stablecoin: b0be85b5927aa5023dc95af843d178325038b98a6c031e592eba35943f45be35
 
-This occurs when the wallet tries to spend a coin for gas - the Merkle tree lookup fails because DARK tokens exist on Money v1 but contracts expect Money v2's tree structure.
-
-**Next Steps**: Refactor contracts to use Money v1 patterns instead of Money v2 patterns.
+**Next Steps**: Need stable mining to confirm deployment transactions.
 
 ---
 
