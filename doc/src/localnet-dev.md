@@ -215,26 +215,28 @@ Tested WASM contract deployment on localnet.
 | escrow | 177KB | ✅ Deployed |
 | lottery | 228KB | ✅ Deployed |
 | roulette | 239KB | ✅ Deployed (2026-04-07) |
+| betting_stake | 171KB | ✅ Deployed (2026-04-07) |
 
 ### Contracts That Previously Failed to Deploy
 
-| Contract | WASM Size | Previous Error | Cause |
-|----------|------------|-------|-------|
-| betting_stake | 380B | Gas estimation failed | Missing `pub mod entrypoint;` + SDK API bugs |
-| drain_protection | 383B | Gas estimation failed | Missing `pub mod entrypoint;` + SDK API bugs |
-| roulette | 375B → 239KB | Gas estimation failed | Fixed (see Bug Patterns below) |
-| bridge | 227KB | ParseFailed | Requires deploy instruction or has bug |
-| darkbet_exchange | 313KB | ParseFailed | Requires deploy instruction or has bug |
-| dex | 208KB | ParseFailed | Requires deploy instruction or has bug |
-| pool_stake | 212KB | ParseFailed | Requires deploy instruction or has bug |
-| stablecoin | 85KB | ParseFailed | Requires deploy instruction or has bug |
-| relayer_endowment | 181KB | ParseFailed | Requires deploy instruction or has bug |
+| Contract | WASM Size | Previous Error | Status |
+|----------|------------|-------|--------|
+| betting_stake | 380B → 171KB | Gas estimation failed | ✅ Fixed (same bugs as roulette) |
+| drain_protection | 383B | Gas estimation failed | ⏳ Pending (same bugs) |
+| roulette | 375B → 239KB | Gas estimation failed | ✅ Fixed (see Bug Patterns below) |
+| bridge | 227KB | ParseFailed | Requires deploy instruction |
+| darkbet_exchange | 313KB | ParseFailed | Requires deploy instruction |
+| dex | 208KB | ParseFailed | Requires deploy instruction |
+| pool_stake | 212KB | ParseFailed | Requires deploy instruction |
+| stablecoin | 85KB | ParseFailed | Requires deploy instruction |
+| relayer_endowment | 181KB | ParseFailed | Requires deploy instruction |
 
-### Roulette Bug Patterns Fixed
+### Common Betting Contract Bug Patterns
 
-Roulette and Lottery are concept-wise >90% the same - both are privacy-preserving betting games. Comparing implementations revealed these bug patterns:
+Roulette, betting_stake, and Lottery are concept-wise >90% the same - privacy-preserving betting games with state machines. Comparing implementations revealed **identical bug patterns** across roulette and betting_stake:
 
 #### Bug 1: Missing `msg` Import
+Both roulette and betting_stake had `msg` missing from imports:
 ```rust
 // WRONG - msg not imported
 use darkfi_sdk::{wasm, ContractCall};
@@ -243,13 +245,15 @@ use darkfi_sdk::{wasm, ContractCall};
 use darkfi_sdk::{msg, wasm, ContractCall};
 ```
 
-#### Bug 2: Error Type in TryFrom
+Also: `wasm::msg!` should be just `msg!` (macro is exported from darkfi_sdk, not wasm module)
+
+#### Bug 2: Error Type in TryFrom (both roulette and betting_stake)
 ```rust
 // WRONG - TryFrom returns (), ? operator fails
-let func = RouletteFunction::try_from(self_.data[0])?;
+let func = BettingStakeFunction::try_from(self_.data[0])?;
 
 // CORRECT - map error to ContractError
-let func = RouletteFunction::try_from(self_.data[0]).map_err(|_| RouletteError::InvalidFunction)?;
+let func = BettingStakeFunction::try_from(self_.data[0]).map_err(|_| BettingStakeError::InvalidFunction)?;
 ```
 
 #### Bug 3: `process_instruction` Return Type Mismatch
@@ -309,6 +313,62 @@ if table.state != RouletteTableState::Spun && table.state != RouletteTableState:
 }
 ```
 
+#### Bug 6: `wasm::msg!` vs `msg!` (betting_stake)
+```rust
+// WRONG - wasm::msg! doesn't exist
+wasm::msg!("[betting_stake::stake] Staking {}", params.amount);
+
+// CORRECT - msg! is exported directly from darkfi_sdk
+msg!("[betting_stake::stake] Staking {}", params.amount);
+```
+
+#### Bug 7: `_get_metadata` vs `get_metadata` (betting_stake)
+```rust
+// WRONG - underscore prefix breaks define_contract! macro lookup
+fn _get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
+    Ok(())
+}
+
+// CORRECT - must be exact name match
+fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
+    Ok(())
+}
+```
+
+#### Bug 8: Type Mismatches (betting_stake)
+```rust
+// WRONG - multiplying u64 by u32 fails
+let house_edge_earnings = (params.payout_amount * table.house_edge_bp) / 10000;
+
+// CORRECT - cast to u64
+let house_edge_earnings = (params.payout_amount * table.house_edge_bp as u64) / 10000;
+
+// WRONG - pallas::Base in format string
+msg!("Stake {} created", stake_id);  // stake_id is pallas::Base
+
+// CORRECT - don't use pallas::Base in format strings
+msg!("Stake created");
+```
+
+#### Bug 9: Missing Imports (betting_stake)
+```rust
+// WRONG - missing pallas and PublicKey
+use darkfi_sdk::{crypto::ContractId, ...};
+
+// CORRECT - need both pallas and PublicKey for helper functions
+use darkfi_sdk::{crypto::{poseidon_hash, ContractId, PublicKey}, pasta::pallas, ...};
+```
+
+### Bug Pattern Root Cause
+
+All three contracts (roulette, betting_stake) were written by someone who:
+1. Read SDK docs but missed the `msg` import pattern
+2. Implemented logic correctly but didn't follow lottery's state machine pattern
+3. Forgot that `process_update` must return `Ok(())` and state via Update structs
+4. Didn't validate state transitions in transition functions
+5. Used wrong module prefix (`wasm::msg!` instead of `msg!`)
+6. Used underscore prefix that breaks macro lookup (`_get_metadata`)
+
 ### New Betting Contract Checklist
 
 Before declaring a betting contract "done", verify against lottery:
@@ -322,7 +382,7 @@ Before declaring a betting contract "done", verify against lottery:
 
 ---
 
-*SDK incompatibility: betting_stake and drain_protection still fail to compile - they need similar fixes.
+*drain_protection still fails to compile - same bugs as roulette and betting_stake.
 
 ### Deployment Command
 
