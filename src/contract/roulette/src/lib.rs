@@ -59,6 +59,9 @@
 pub mod error;
 pub mod model;
 
+#[cfg(not(feature = "no-entrypoint"))]
+pub mod entrypoint;
+
 pub use model::*;
 
 // =============================================================================
@@ -111,7 +114,7 @@ pub const EUROPEAN_HOUSE_EDGE_BP: u32 = 270;
 pub const AMERICAN_HOUSE_EDGE_BP: u32 = 526;
 
 /// Database tree names
-pub const ROULETTE_CONTRACT_TABLES_TREE: &[u8] = b"roulette_tables";
-pub const ROULETTE_CONTRACT_BETS_TREE: &[u8] = b"roulette_bets";
-pub const ROULETTE_CONTRACT_NULLIFIERS_TREE: &[u8] = b"roulette_nullifiers";
-pub const ROULETTE_CONTRACT_BETS_HISTORY_TREE: &[u8] = b"roulette_history";
+pub const ROULETTE_CONTRACT_TABLES_TREE: &str = "roulette_tables";
+pub const ROULETTE_CONTRACT_BETS_TREE: &str = "roulette_bets";
+pub const ROULETTE_CONTRACT_NULLIFIERS_TREE: &str = "roulette_nullifiers";
+pub const ROULETTE_CONTRACT_BETS_HISTORY_TREE: &str = "roulette_history";

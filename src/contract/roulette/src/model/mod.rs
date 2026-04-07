@@ -201,8 +201,10 @@ pub enum RouletteTableState {
     WaitingForSpin = 1,
     /// Spin in progress
     Spun = 2,
+    /// Bets settled after spin
+    Settled = 3,
     /// Table closed by house
-    Closed = 3,
+    Closed = 4,
 }
 
 // ============================================================================
@@ -298,6 +300,7 @@ pub struct InitializeParamsV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeUpdateV1 {
     pub table_id: pallas::Base,
+    pub house_pub: PublicKey,
     pub wheel_size: u8,
     pub house_edge_bp: u32,
     pub house_capital: u64,
@@ -377,6 +380,7 @@ pub struct SettleBetsUpdateV1 {
     pub settled_count: u64,
     pub house_payout: u64,
     pub house_new_capital: u64,
+    pub state: RouletteTableState,
 }
 
 /// Parameters for HouseCloseV1

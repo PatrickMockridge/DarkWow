@@ -214,14 +214,15 @@ Tested WASM contract deployment on localnet.
 | money_v2 | 496KB | ✅ Deployed |
 | escrow | 177KB | ✅ Deployed |
 | lottery | 228KB | ✅ Deployed |
+| roulette | 239KB | ✅ Deployed (2026-04-07) |
 
-### Contracts That Failed to Deploy
+### Contracts That Previously Failed to Deploy
 
-| Contract | WASM Size | Error | Cause |
+| Contract | WASM Size | Previous Error | Cause |
 |----------|------------|-------|-------|
-| betting_stake | 380B | Gas estimation failed | SDK incompatibility* |
-| drain_protection | 383B | Gas estimation failed | SDK incompatibility* |
-| roulette | 375B | Gas estimation failed | SDK incompatibility* |
+| betting_stake | 380B | Gas estimation failed | Missing `pub mod entrypoint;` + SDK API bugs |
+| drain_protection | 383B | Gas estimation failed | Missing `pub mod entrypoint;` + SDK API bugs |
+| roulette | 375B → 239KB | Gas estimation failed | Fixed (see Bug Patterns below) |
 | bridge | 227KB | ParseFailed | Requires deploy instruction or has bug |
 | darkbet_exchange | 313KB | ParseFailed | Requires deploy instruction or has bug |
 | dex | 208KB | ParseFailed | Requires deploy instruction or has bug |
@@ -229,7 +230,99 @@ Tested WASM contract deployment on localnet.
 | stablecoin | 85KB | ParseFailed | Requires deploy instruction or has bug |
 | relayer_endowment | 181KB | ParseFailed | Requires deploy instruction or has bug |
 
-*SDK incompatibility: These contracts have `entrypoint.rs` files with full implementations, but they're NOT compiled because `lib.rs` lacks `pub mod entrypoint;`. When we attempted to add the missing module declaration, the entrypoint code failed to compile due to SDK API mismatches (e.g., `db_init` expects `&str` but constants are `u32`). These are incomplete implementations, not deployable stubs.
+### Roulette Bug Patterns Fixed
+
+Roulette and Lottery are concept-wise >90% the same - both are privacy-preserving betting games. Comparing implementations revealed these bug patterns:
+
+#### Bug 1: Missing `msg` Import
+```rust
+// WRONG - msg not imported
+use darkfi_sdk::{wasm, ContractCall};
+
+// CORRECT - msg imported from darkfi_sdk
+use darkfi_sdk::{msg, wasm, ContractCall};
+```
+
+#### Bug 2: Error Type in TryFrom
+```rust
+// WRONG - TryFrom returns (), ? operator fails
+let func = RouletteFunction::try_from(self_.data[0])?;
+
+// CORRECT - map error to ContractError
+let func = RouletteFunction::try_from(self_.data[0]).map_err(|_| RouletteError::InvalidFunction)?;
+```
+
+#### Bug 3: `process_instruction` Return Type Mismatch
+```rust
+// WRONG - process_instruction returned data, process_update returned ()
+fn process_instruction(...) -> ContractResult {
+    ...
+    Ok(serialize(&update))  // Wrong!
+}
+fn process_update(...) -> ContractResult {
+    ...
+    Ok(())  // Wrong!
+}
+
+// CORRECT - process_instruction returns data for set_return_data
+fn process_instruction(...) -> ContractResult {
+    ...
+    wasm::util::set_return_data(&serialize(&update))?;
+    Ok(serialize(&update))  // Returns data
+}
+fn process_update(...) -> ContractResult {
+    ...
+    Ok(())  // process_update returns ()
+}
+```
+
+#### Bug 4: State Machine Not Updated in `process_update`
+```rust
+// WRONG - SettleBetsUpdateV1 missing state field
+pub struct SettleBetsUpdateV1 {
+    pub house_new_capital: u64,
+    // MISSING: pub state: RouletteTableState,
+}
+
+// CORRECT - Update struct includes state
+pub struct SettleBetsUpdateV1 {
+    pub house_new_capital: u64,
+    pub state: RouletteTableState,  // Added
+}
+
+// WRONG - process_update didn't update table state
+table.house_capital = update.house_new_capital;
+
+// CORRECT - process_update applies state
+table.house_capital = update.house_new_capital;
+table.state = update.state;
+```
+
+#### Bug 5: Missing State Validation on Transitions
+```rust
+// WRONG - house_close didn't validate state
+if params.house_pub != table.house_pub { ... }
+
+// CORRECT - validate state before allowing operation
+if table.state != RouletteTableState::Spun && table.state != RouletteTableState::Settled {
+    return Err(RouletteError::InvalidTableState.into())
+}
+```
+
+### New Betting Contract Checklist
+
+Before declaring a betting contract "done", verify against lottery:
+1. Is `msg` imported from `darkfi_sdk`?
+2. Does `TryFrom` error map to `ContractError`?
+3. Does `process_instruction` return `Ok(serialize(&update))` and call `set_return_data`?
+4. Does `process_update` return `Ok(())`?
+5. Does every `*UpdateV1` struct have a `state: StateEnum` field?
+6. Does `process_update` apply `model.state = update.state`?
+7. Does every state transition function validate the current state?
+
+---
+
+*SDK incompatibility: betting_stake and drain_protection still fail to compile - they need similar fixes.
 
 ### Deployment Command
 

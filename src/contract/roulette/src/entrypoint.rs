@@ -19,10 +19,10 @@
 //! Roulette Contract Entrypoint
 
 use darkfi_sdk::{
-    crypto::{poseidon_hash, schnorr::SchnorrPublic, ContractId},
+    crypto::{schnorr::SchnorrPublic, ContractId},
     dark_tree::DarkLeaf,
-    error::ContractResult,
-    wasm, ContractCall,
+    error::{ContractError, ContractResult},
+    msg, pasta::pallas, wasm, ContractCall,
 };
 use darkfi_serial::{deserialize, serialize};
 
@@ -58,16 +58,16 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 }
 
 /// Get metadata for verification
-fn _get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
+fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
 /// Process instruction
-fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
+fn process_instruction(cid: ContractId, ix: &[u8]) -> Result<(), ContractError> {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = RouletteFunction::try_from(self_.data[0])?;
+    let func = RouletteFunction::try_from(self_.data[0]).map_err(|_| RouletteError::InvalidFunction)?;
 
     let update_data = match func {
         RouletteFunction::InitializeV1 => {
@@ -90,7 +90,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 /// Process update
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
-    match RouletteFunction::try_from(update_data[0])? {
+    match RouletteFunction::try_from(update_data[0]).map_err(|_| RouletteError::InvalidFunction)? {
         RouletteFunction::InitializeV1 => {
             let update: InitializeUpdateV1 = deserialize(&update_data[1..])?;
             roulette_initialize_process_update_v1(cid, update)
@@ -111,6 +111,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: HouseCloseUpdateV1 = deserialize(&update_data[1..])?;
             roulette_house_close_process_update_v1(cid, update)
         }
+        _ => Err(RouletteError::InvalidFunction.into()),
     }
 }
 
@@ -122,7 +123,7 @@ fn roulette_initialize_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: InitializeParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -151,6 +152,7 @@ fn roulette_initialize_process_instruction_v1(
 
     let update = InitializeUpdateV1 {
         table_id,
+        house_pub: params.house_pub,
         wheel_size,
         house_edge_bp,
         house_capital: params.house_capital,
@@ -158,7 +160,8 @@ fn roulette_initialize_process_instruction_v1(
         bets_close_block: current_block + params.duration_blocks,
     };
 
-    msg!("[roulette::initialize] Table {} initialized", table_id);
+    msg!("[roulette::initialize] Table initialized");
+    wasm::util::set_return_data(&serialize(&update))?;
     Ok(serialize(&update))
 }
 
@@ -169,7 +172,7 @@ fn roulette_initialize_process_update_v1(cid: ContractId, update: InitializeUpda
     let table = if update.wheel_size == 38 {
         RouletteTable::new_american(
             update.table_id,
-            update.table_id.into(), // placeholder
+            update.house_pub,
             update.house_capital,
             update.max_straight_bet,
             update.bets_close_block - current_block,
@@ -178,7 +181,7 @@ fn roulette_initialize_process_update_v1(cid: ContractId, update: InitializeUpda
     } else {
         RouletteTable::new_european(
             update.table_id,
-            update.table_id.into(),
+            update.house_pub,
             update.house_capital,
             update.max_straight_bet,
             update.bets_close_block - current_block,
@@ -200,7 +203,7 @@ fn roulette_place_bet_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: PlaceBetParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -229,10 +232,10 @@ fn roulette_place_bet_process_instruction_v1(
         params.amount,
         table.spin_count,
         current_block,
-    );
+    ).ok_or(RouletteError::InvalidBetAmount)?;
 
     table.can_accept_bet(&bet, current_block)
-        .map_err(|e| RouletteError::TableNotActive)?;
+        .map_err(|_| RouletteError::TableNotActive)?;
 
     // Check table has enough capital for potential payout
     if table.house_capital < bet.payout {
@@ -262,7 +265,7 @@ fn roulette_place_bet_process_instruction_v1(
         total_bets: 0, // Would track in full impl
     };
 
-    msg!("[roulette::place_bet] Bet {} placed", bet.bet_id);
+    msg!("[roulette::place_bet] Bet placed");
     Ok(serialize(&update))
 }
 
@@ -312,7 +315,7 @@ fn roulette_spin_wheel_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: SpinWheelParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -354,9 +357,13 @@ fn roulette_spin_wheel_process_instruction_v1(
     // Get block hash for randomness
     let block_hash = wasm::util::get_block_hash(current_block as u32)?;
 
+    // Convert block_hash bytes to pallas::Base for entropy
+    let hash_bytes = block_hash.0;
+    let block_hash_base = pallas::Base::from(u64::from_le_bytes(hash_bytes[0..8].try_into().unwrap()));
+
     // Draw winning number
     let winning_number = draw_winning_number(
-        block_hash.0.into(),
+        block_hash_base,
         params.nonce,
         table.wheel_size,
     );
@@ -404,7 +411,7 @@ fn roulette_settle_bets_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: SettleBetsParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -463,6 +470,7 @@ fn roulette_settle_bets_process_instruction_v1(
         settled_count: params.bet_ids.len() as u64,
         house_payout,
         house_new_capital: new_capital,
+        state: RouletteTableState::Settled,
     };
 
     msg!("[roulette::settle] Total payout: {}", house_payout);
@@ -478,9 +486,10 @@ fn roulette_settle_bets_process_update_v1(cid: ContractId, update: SettleBetsUpd
     };
 
     table.house_capital = update.house_new_capital;
+    table.state = update.state;
 
     wasm::db::db_set(tables_db, &serialize(&update.table_id), &serialize(&table))?;
-    msg!("[roulette::settle::update] Bets settled, capital updated");
+    msg!("[roulette::settle::update] Bets settled, capital updated, state updated");
 
     Ok(())
 }
@@ -493,7 +502,7 @@ fn roulette_house_close_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -504,6 +513,11 @@ fn roulette_house_close_process_instruction_v1(
         Some(data) => deserialize(&data)?,
         None => return Err(RouletteError::TableNotFound.into()),
     };
+
+    // Validate table is in a state that allows closing (after spin)
+    if table.state != RouletteTableState::Spun && table.state != RouletteTableState::Settled {
+        return Err(RouletteError::InvalidTableState.into())
+    }
 
     // Verify house_pub matches the table's house
     if params.house_pub != table.house_pub {

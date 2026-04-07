@@ -36,6 +36,9 @@ pub enum RouletteError {
     #[error("Table already closed")]
     TableAlreadyClosed,
 
+    #[error("Invalid table state for operation")]
+    InvalidTableState,
+
     #[error("Invalid bet amount")]
     InvalidBetAmount,
 
@@ -98,6 +101,7 @@ impl From<RouletteError> for ContractError {
             RouletteError::TableNotFound => Self::Custom(2),
             RouletteError::TableNotActive => Self::Custom(3),
             RouletteError::TableAlreadyClosed => Self::Custom(4),
+            RouletteError::InvalidTableState => Self::Custom(23),
             RouletteError::InvalidBetAmount => Self::Custom(5),
             RouletteError::BetExceedsMaximum => Self::Custom(6),
             RouletteError::InsufficientCapital => Self::Custom(7),
