@@ -225,12 +225,12 @@ Tested WASM contract deployment on localnet.
 | roulette | 375B → 239KB | Gas estimation failed | ✅ Fixed |
 | betting_stake | 380B → 171KB | Gas estimation failed | ✅ Fixed |
 | drain_protection | 383B → 224KB | Gas estimation failed | ✅ Fixed |
-| bridge | 227KB | Money v1/v2 composition | Needs Money v1 refactor |
-| darkbet_exchange | 313KB | Money v1/v2 composition | Needs Money v1 refactor |
-| dex | 208KB | Money v1/v2 composition | Needs Money v1 refactor |
-| pool_stake | 212KB | Money v1/v2 composition | Needs Money v1 refactor |
-| stablecoin | 85KB | Money v1/v2 composition | Needs Money v1 refactor |
-| relayer_endowment | 181KB | Money v1/v2 composition | Needs Money v1 refactor |
+| bridge | 227KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
+| darkbet_exchange | 313KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
+| dex | 208KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
+| pool_stake | 212KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
+| stablecoin | 85KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
+| relayer_endowment | 181KB | Money v1/v2 composition | Needs Money v1 refactor (testing only) |
 
 ### Common Betting Contract Bug Patterns
 
@@ -591,7 +591,15 @@ When deploying these contracts or when these contracts need to interact with DAR
 
 ### Solution
 
-These contracts need to be refactored to use Money v1 patterns instead of Money v2 patterns before they can be deployed to a network where `drk` manages the DARK token.
+**This is a TESTING accommodation, not a production recommendation.**
+
+These contracts need to be refactored to use Money v1 patterns for localnet testing, where `drk` CLI manages DARK tokens using Money v1.
+
+**Important caveats**:
+- Money v2 is the more robust contract engineering-wise
+- The v1 vs v2 question for mainnet is still an open decision
+- This refactoring is purely for localnet testing compatibility
+- Production deployment should revisit whether to use v1 or v2 patterns based on the network's money contract version
 
 See: [Money Version Bridge Decision](../../arch/money-version-bridge.md)
 
