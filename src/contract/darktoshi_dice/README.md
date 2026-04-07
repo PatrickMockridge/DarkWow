@@ -82,6 +82,58 @@ let roll = draw_with_depth(&block_hashes, bet_id, 100);
 
 See [Entropy Module](../entropy/) for security levels and cumulative PoW entropy.
 
+## Localnet Testing (2026-04-07)
+
+The DarkToshi Dice contract was successfully deployed and tested on localnet.
+
+### Prerequisites
+
+```bash
+# Start darkfid with localnet config
+./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
+
+# Mine blocks to fund wallet
+./target/release/drk -c bin/drk/drk_config.toml -n localnet mine
+# Press Ctrl+C when sufficient DARK accumulated
+```
+
+### Deployment
+
+```bash
+# Generate deploy authority
+drk -c bin/drk/drk_config.toml -n localnet contract generate-deploy
+# Output: Contract ID: BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1
+
+# Deploy contract (pipe to broadcast)
+drk -c bin/drk/drk_config.toml -n localnet contract deploy \
+  BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
+  target/wasm32-unknown-unknown/release/darkfi_darktoshi_dice_contract.wasm \
+  | drk -c bin/drk/drk_config.toml -n localnet broadcast
+```
+
+### Verification
+
+```bash
+# Check balance
+drk -c bin/drk/drk_config.toml -n localnet wallet balance
+
+# List coins
+drk -c bin/drk/drk_config.toml -n localnet wallet coins
+
+# Scan blockchain
+drk -c bin/drk/drk_config.toml -n localnet scan
+# Or full rescan: drk -c bin/drk/drk_config.toml -n localnet scan --reset 0
+
+# List deployed contracts
+drk -c bin/drk/drk_config.toml -n localnet contract list
+```
+
+### Test Results (2026-04-07)
+
+- **Deployment TX**: `e15a50bae7940593057ca9674f774aaf7f50e107bd4b3483d6e65130e55d8e2f`
+- **Contract ID**: `BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1`
+- **Initial balance**: 120 DARK (from mining)
+
 ## Building
 
 ```bash

@@ -172,3 +172,41 @@ This contract establishes useful primitives for other games:
 - [Money Contract](money.md) - Value transfer integration
 - [Atomic Swap](../arch/atomic_swap.md) - Commit-reveal pattern reference
 - [Tender Contract](tender.md) - Sealed bid pattern reference
+
+## Localnet Testing (2026-04-07)
+
+The DarkToshi Dice contract was successfully deployed and tested on localnet.
+
+### Test Configuration
+
+- **Network**: localnet with `pow_fixed_difficulty=1`
+- **Mining**: `drk mine` against darkfid stratum server (port 48347)
+- **Block reward**: 20 DARK per block
+- **Wallet**: Initialized and funded via mining
+
+### Deployment Details
+
+```bash
+# Deploy contract
+drk contract deploy BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
+  target/wasm32-unknown-unknown/release/darkfi_darktoshi_dice_contract.wasm \
+  | drk broadcast
+
+# Transaction ID: e15a50bae7940593057ca9674f774aaf7f50e107bd4b3483d6e65130e55d8e2f
+# Contract ID: BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1
+```
+
+### Verified Workflow
+
+1. `drk wallet balance` - Check DARK tokens
+2. `drk wallet coins` - View unspent coins
+3. `drk contract list` - List deploy authorities
+4. `drk scan` - Discover blockchain updates
+5. `drk contract deploy | drk broadcast` - Deploy contract
+
+### CLI Notes
+
+- Config file required: `-c bin/drk/drk_config.toml`
+- Network flag: `-n localnet`
+- `scan` is a top-level subcommand (not `wallet scan`)
+- Values displayed in raw units (8 decimal places)
