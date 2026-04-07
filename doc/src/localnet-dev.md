@@ -209,6 +209,7 @@ Tested WASM contract deployment on localnet.
 | darktoshi_dice | 196KB | ✅ Deployed |
 | baccarat | 199KB | ✅ Deployed |
 | dao | 320KB | ✅ Deployed |
+| dao_escrow | 66KB | ✅ Deployed |
 | money | 496KB | ✅ Deployed |
 | money_v2 | 496KB | ✅ Deployed |
 | escrow | 177KB | ✅ Deployed |
@@ -227,7 +228,6 @@ Tested WASM contract deployment on localnet.
 | pool_stake | 212KB | ParseFailed | Requires deploy instruction or has bug |
 | stablecoin | 85KB | ParseFailed | Requires deploy instruction or has bug |
 | relayer_endowment | 181KB | ParseFailed | Requires deploy instruction or has bug |
-| dao_escrow | 66KB | Not tested | - |
 
 ### Deployment Command
 
