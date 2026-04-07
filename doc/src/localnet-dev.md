@@ -198,6 +198,52 @@ drk contract list <contract>  # Shows history for specific contract
 
 The history lookup requires the deployment transaction hash (tx-hash), not the contract ID.
 
+## Contract Deployment Testing (2026-04-07)
+
+Tested WASM contract deployment on localnet.
+
+### Successfully Deployed Contracts
+
+| Contract | WASM Size | Status |
+|----------|------------|--------|
+| darktoshi_dice | 196KB | ✅ Deployed |
+| baccarat | 199KB | ✅ Deployed |
+| dao | 320KB | ✅ Deployed |
+| money | 496KB | ✅ Deployed |
+| money_v2 | 496KB | ✅ Deployed |
+| escrow | 177KB | ✅ Deployed |
+| lottery | 228KB | ✅ Deployed |
+
+### Contracts That Failed to Deploy
+
+| Contract | WASM Size | Error | Likely Cause |
+|----------|------------|-------|--------------|
+| betting_stake | 380B | Gas estimation failed | Stub/placeholder |
+| drain_protection | 383B | Gas estimation failed | Stub/placeholder |
+| roulette | 375B | Gas estimation failed | Stub/placeholder |
+| bridge | 227KB | ParseFailed | Requires deploy instruction or has bug |
+| darkbet_exchange | 313KB | ParseFailed | Requires deploy instruction or has bug |
+| dex | 208KB | ParseFailed | Requires deploy instruction or has bug |
+| pool_stake | 212KB | ParseFailed | Requires deploy instruction or has bug |
+| stablecoin | 85KB | ParseFailed | Requires deploy instruction or has bug |
+| relayer_endowment | 181KB | ParseFailed | Requires deploy instruction or has bug |
+| dao_escrow | 66KB | Not tested | - |
+
+### Deployment Command
+
+```bash
+# Generate authority
+drk -c bin/drk/drk_config.toml -n localnet contract generate-deploy
+
+# Deploy (pipe to broadcast)
+drk -c bin/drk/drk_config.toml -n localnet contract deploy <auth> <wasm> | \
+  drk -c bin/drk/drk_config.toml -n localnet broadcast
+```
+
+### Note on Small WASM Files
+
+Contracts with WASM files under 1KB (betting_stake, drain_protection, roulette) are likely stubs or placeholder implementations that don't have actual contract logic.
+
 ## File References
 
 - `bin/darkfid/src/rpc/miner.rs` - darkfid stratum server implementation
