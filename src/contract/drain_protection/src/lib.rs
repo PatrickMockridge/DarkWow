@@ -34,6 +34,9 @@
 pub mod error;
 pub mod model;
 
+#[cfg(not(feature = "no-entrypoint"))]
+pub mod entrypoint;
+
 use error::DrainProtectionError;
 
 /// DrainProtection contract functions
@@ -83,25 +86,25 @@ impl TryFrom<u8> for DrainProtectionFunction {
 // ============================================================================
 
 /// Info tree: version, config
-pub const DRAIN_PROTECTION_CONTRACT_INFO_TREE: u32 = 0x0000_0001;
+pub const DRAIN_PROTECTION_CONTRACT_INFO_TREE: &str = "info";
 
 /// Funds tree: protected fund records
-pub const DRAIN_PROTECTION_CONTRACT_FUNDS_TREE: u32 = 0x0000_0002;
+pub const DRAIN_PROTECTION_CONTRACT_FUNDS_TREE: &str = "funds";
 
 /// Proposals tree: pending vote proposals
-pub const DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE: u32 = 0x0000_0003;
+pub const DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE: &str = "proposals";
 
 /// Members tree: member weights for exit calculations
-pub const DRAIN_PROTECTION_CONTRACT_MEMBERS_TREE: u32 = 0x0000_0004;
+pub const DRAIN_PROTECTION_CONTRACT_MEMBERS_TREE: &str = "members";
 
 /// Transfer history tree: for rate limiting
-pub const DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE: u32 = 0x0000_0005;
+pub const DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE: &str = "transfers";
 
 /// Exits tree: processed exit requests
-pub const DRAIN_PROTECTION_CONTRACT_EXITS_TREE: u32 = 0x0000_0006;
+pub const DRAIN_PROTECTION_CONTRACT_EXITS_TREE: &str = "exits";
 
 /// Vote history tree: for preventing double-voting
-pub const DRAIN_PROTECTION_CONTRACT_VOTES_TREE: u32 = 0x0000_0007;
+pub const DRAIN_PROTECTION_CONTRACT_VOTES_TREE: &str = "votes";
 
 /// ZK proof namespaces
 pub const DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V1: &str = "DRAIN_PROTECTION_EXIT_V1";

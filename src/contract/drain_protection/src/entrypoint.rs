@@ -40,21 +40,21 @@
 //! and require full implementation and security audit.
 
 use darkfi_sdk::{
-    crypto::pasta_prelude::*,
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use darkfi_serial::{deserialize, serialize};
 
 use crate::{
     error::DrainProtectionError,
     model::{
-        DrainProtectionFunction, ExitParamsV1, ExitUpdateV1, LockParamsV1, LockUpdateV1,
+        ExitParamsV1, ExitUpdateV1, LockParamsV1, LockUpdateV1,
         ProposeParamsV1, ProposeUpdateV1, ProtectedFund, RateLimit, UnlockParamsV1,
         UnlockUpdateV1, VoteAction, VoteParamsV1, VoteProposal, VoteThresholds, VoteUpdateV1,
     },
+    DrainProtectionFunction,
     DRAIN_PROTECTION_CONTRACT_EXITS_TREE, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE,
     DRAIN_PROTECTION_CONTRACT_INFO_TREE, DRAIN_PROTECTION_CONTRACT_MEMBERS_TREE,
     DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE, DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE,
@@ -257,10 +257,17 @@ fn init_fund_process_instruction_v1(
         lock_state: crate::model::LockState::Unlocked,
         rate_limit: RateLimit::default(),
         thresholds: VoteThresholds::default(),
+        drain_config: crate::model::DrainConfig::default(),
         members: vec![],
         lock_expires_at: 0,
         authority_change_timelock: 0,
-        created_at: wasm::util::get_verifying_block_height()?.into(),
+        created_at: wasm::util::get_verifying_block_height()? as u64,
+        exit_queue_state: vec![],
+        circuit_breaker_state: None,
+        guardian_pause_state: None,
+        dead_mans_switch_state: None,
+        no_loss_reserve_balance: 0,
+        observation_pending: vec![],
     };
 
     // Store fund directly (InitializeUpdateV1 only has fund_id)
@@ -288,20 +295,20 @@ fn propose_process_instruction_v1(
     let fund: ProtectedFund = deserialize(&fund_data)?;
 
     if fund.lock_state == crate::model::LockState::Locked {
-        if wasm::util::get_verifying_block_height()?.into() < fund.lock_expires_at {
+        if (wasm::util::get_verifying_block_height()? as u64) < fund.lock_expires_at {
             return Err(DrainProtectionError::FundsLocked.into())
         }
     }
 
     // Create proposal
     let proposal_id =
-        darkfi_sdk::crypto::poseidon_hash([fund.id, wasm::util::get_verifying_block_height()?.into()]);
+        darkfi_sdk::crypto::poseidon_hash([fund.id, pallas::Base::from(wasm::util::get_verifying_block_height()? as u64)]);
 
     let proposal = VoteProposal {
         id: proposal_id,
         action: params.action.clone(),
-        started_at: wasm::util::get_verifying_block_height()?.into(),
-        ends_at: wasm::util::get_verifying_block_height()?.into() + params.vote_period_blocks,
+        started_at: wasm::util::get_verifying_block_height()? as u64,
+        ends_at: wasm::util::get_verifying_block_height()? as u64 + params.vote_period_blocks,
         yes_votes: 0,
         no_votes: 0,
         concluded: false,
@@ -329,13 +336,13 @@ fn vote_process_instruction_v1(
     let mut proposal: VoteProposal = deserialize(&proposal_data)?;
 
     // Check voting period hasn't ended
-    let current_block = wasm::util::get_verifying_block_height()?.into();
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
     if current_block > proposal.ends_at {
         return Err(DrainProtectionError::ConfigurationError("Voting period ended".to_string()).into())
     }
 
     // Check not already voted
-    let vote_key = serialize(&(&params.proposal_id, &params.voter_pubkey));
+    let vote_key = serialize(&(params.proposal_id, params.voter_pubkey));
     if wasm::db::db_contains_key(votes_db, &vote_key)? {
         return Err(DrainProtectionError::ConfigurationError("Already voted".to_string()).into())
     }
@@ -370,7 +377,7 @@ fn execute_process_instruction_v1(
     let mut proposal: VoteProposal = deserialize(&proposal_data)?;
 
     // Check voting period has ended
-    let current_block = wasm::util::get_verifying_block_height()?.into();
+    let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
     if current_block < proposal.ends_at {
         return Err(DrainProtectionError::ConfigurationError("Voting period not ended".to_string()).into())
     }
@@ -450,7 +457,7 @@ fn exit_process_instruction_v1(
 
     let exit_id = darkfi_sdk::crypto::poseidon_hash([
         fund.id,
-        darkfi_sdk::crypto::pasta_prelude::Field::from(params.current_block),
+        pallas::Base::from(params.current_block),
     ]);
 
     wasm::db::db_set(exits_db, &serialize(&exit_id), &[1])?;
@@ -482,14 +489,14 @@ fn transfer_process_instruction_v1(
 
     // Check if locked
     if fund.lock_state == crate::model::LockState::Locked {
-        let current_block = wasm::util::get_verifying_block_height()?.into();
+        let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
         if current_block < fund.lock_expires_at {
             return Err(DrainProtectionError::FundsLocked.into())
         }
     }
 
     // Check rate limit
-    let current_block = wasm::util::get_verifying_block_height()?.into();
+    let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
     let rate_limited = check_rate_limit(&fund, transfers_db, params.amount, current_block)?;
 
     if rate_limited && !params.exceeds_rate_limit {
@@ -537,7 +544,7 @@ fn lock_process_instruction_v1(
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let mut fund: ProtectedFund = deserialize(&fund_data)?;
 
-    let current_block = wasm::util::get_verifying_block_height()?.into();
+    let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
 
     // Max lock duration is 7 days worth of blocks (~30240 blocks/day at 5min blocks)
     let max_lock_blocks = 7 * 30240;
@@ -569,7 +576,7 @@ fn unlock_process_instruction_v1(
     let mut fund: ProtectedFund = deserialize(&fund_data)?;
 
     // Check timelock (24hr after lock expires)
-    let current_block = wasm::util::get_verifying_block_height()?.into();
+    let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
     if fund.lock_state == crate::model::LockState::Locked {
         if current_block < fund.lock_expires_at + 1440 {
             // 24hr timelock
@@ -601,7 +608,7 @@ fn update_config_process_instruction_v1(
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let mut fund: ProtectedFund = deserialize(&fund_data)?;
 
-    let current_block = wasm::util::get_verifying_block_height()?.into();
+    let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
 
     // Update rate limit if provided
     if let Some(rate_limit) = params.rate_limit {

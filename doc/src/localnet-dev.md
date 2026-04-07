@@ -216,14 +216,15 @@ Tested WASM contract deployment on localnet.
 | lottery | 228KB | ✅ Deployed |
 | roulette | 239KB | ✅ Deployed (2026-04-07) |
 | betting_stake | 171KB | ✅ Deployed (2026-04-07) |
+| drain_protection | 224KB | ✅ Deployed (2026-04-07) |
 
 ### Contracts That Previously Failed to Deploy
 
 | Contract | WASM Size | Previous Error | Status |
 |----------|------------|-------|--------|
-| betting_stake | 380B → 171KB | Gas estimation failed | ✅ Fixed (same bugs as roulette) |
-| drain_protection | 383B | Gas estimation failed | ⏳ Pending (same bugs) |
-| roulette | 375B → 239KB | Gas estimation failed | ✅ Fixed (see Bug Patterns below) |
+| roulette | 375B → 239KB | Gas estimation failed | ✅ Fixed |
+| betting_stake | 380B → 171KB | Gas estimation failed | ✅ Fixed |
+| drain_protection | 383B → 224KB | Gas estimation failed | ✅ Fixed |
 | bridge | 227KB | ParseFailed | Requires deploy instruction |
 | darkbet_exchange | 313KB | ParseFailed | Requires deploy instruction |
 | dex | 208KB | ParseFailed | Requires deploy instruction |
@@ -382,8 +383,6 @@ Before declaring a betting contract "done", verify against lottery:
 
 ---
 
-*drain_protection still fails to compile - same bugs as roulette and betting_stake.
-
 ### Deployment Command
 
 ```bash
@@ -395,9 +394,7 @@ drk -c bin/drk/drk_config.toml -n localnet contract deploy <auth> <wasm> | \
   drk -c bin/drk/drk_config.toml -n localnet broadcast
 ```
 
-### Note on Small WASM Files
-
-Contracts with WASM files under 1KB (betting_stake, drain_protection, roulette) have entrypoint code that is never compiled due to missing `pub mod entrypoint;` in `lib.rs`. When this is added, the entrypoint fails to compile due to SDK API incompatibilities - these are incomplete implementations, not deployable stubs.
+All three previously-failed contracts (roulette, betting_stake, drain_protection) are now deployed with proper WASM sizes (171KB-239KB).
 
 ## File References
 
