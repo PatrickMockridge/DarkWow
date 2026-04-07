@@ -217,17 +217,19 @@ Tested WASM contract deployment on localnet.
 
 ### Contracts That Failed to Deploy
 
-| Contract | WASM Size | Error | Likely Cause |
-|----------|------------|-------|--------------|
-| betting_stake | 380B | Gas estimation failed | Stub/placeholder |
-| drain_protection | 383B | Gas estimation failed | Stub/placeholder |
-| roulette | 375B | Gas estimation failed | Stub/placeholder |
+| Contract | WASM Size | Error | Cause |
+|----------|------------|-------|-------|
+| betting_stake | 380B | Gas estimation failed | SDK incompatibility* |
+| drain_protection | 383B | Gas estimation failed | SDK incompatibility* |
+| roulette | 375B | Gas estimation failed | SDK incompatibility* |
 | bridge | 227KB | ParseFailed | Requires deploy instruction or has bug |
 | darkbet_exchange | 313KB | ParseFailed | Requires deploy instruction or has bug |
 | dex | 208KB | ParseFailed | Requires deploy instruction or has bug |
 | pool_stake | 212KB | ParseFailed | Requires deploy instruction or has bug |
 | stablecoin | 85KB | ParseFailed | Requires deploy instruction or has bug |
 | relayer_endowment | 181KB | ParseFailed | Requires deploy instruction or has bug |
+
+*SDK incompatibility: These contracts have `entrypoint.rs` files with full implementations, but they're NOT compiled because `lib.rs` lacks `pub mod entrypoint;`. When we attempted to add the missing module declaration, the entrypoint code failed to compile due to SDK API mismatches (e.g., `db_init` expects `&str` but constants are `u32`). These are incomplete implementations, not deployable stubs.
 
 ### Deployment Command
 
@@ -242,7 +244,7 @@ drk -c bin/drk/drk_config.toml -n localnet contract deploy <auth> <wasm> | \
 
 ### Note on Small WASM Files
 
-Contracts with WASM files under 1KB (betting_stake, drain_protection, roulette) are likely stubs or placeholder implementations that don't have actual contract logic.
+Contracts with WASM files under 1KB (betting_stake, drain_protection, roulette) have entrypoint code that is never compiled due to missing `pub mod entrypoint;` in `lib.rs`. When this is added, the entrypoint fails to compile due to SDK API incompatibilities - these are incomplete implementations, not deployable stubs.
 
 ## File References
 
