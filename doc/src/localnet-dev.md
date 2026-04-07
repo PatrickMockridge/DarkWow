@@ -80,7 +80,9 @@ drk -n localnet wallet balance
 
 ## File References
 
+- `bin/darkfid/src/rpc/miner.rs` - darkfid stratum server implementation (RPC `miner.mine`)
+- `bin/darkfid/src/lib.rs` - `DarkfiNode::is_localnet()` guard
 - `bin/drk/src/main.rs` - `Mine` subcommand enum and handler
-- `bin/drk/src/rpc.rs` - `miner_mine()` method with stratum protocol
+- `bin/drk/src/rpc.rs` - `miner_mine()` method with stratum protocol client
 - `bin/drk/Cargo.toml` - Dependencies: darkfi with async-daemonize, rpc, randomx features
-- `contrib/localnet/darkfid-single-node/darkfid.toml` - Localnet config with stratum server
+- `contrib/localnet/darkfid-single-node/darkfid.toml` - Localnet config
