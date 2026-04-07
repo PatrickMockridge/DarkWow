@@ -22,7 +22,9 @@ use std::{
     time::Instant,
 };
 
+use futures::{AsyncReadExt, AsyncWriteExt};
 use smol::channel::Sender;
+use smol::net::TcpStream;
 use url::Url;
 
 use darkfi::{
@@ -611,6 +613,183 @@ impl Drk {
         if let Some(ref rpc_client) = self.rpc_client {
             rpc_client.read().await.stop().await;
         };
+        Ok(())
+    }
+
+    /// Mine blocks and receive PoW reward (LOCALNET ONLY).
+    /// Connects to darkfid's stratum server and mines blocks using RandomX.
+    /// Mining runs in a background thread, continuously mining blocks.
+    /// Returns when interrupted.
+    pub async fn miner_mine(&self, recipient: &str) -> Result<()> {
+        // Stratum server address (from localnet config)
+        let stratum_addr = "127.0.0.1:48347";
+
+        println!("Connecting to stratum server at {}...", stratum_addr);
+
+        // Connect to stratum server via TCP
+        let stream = TcpStream::connect(stratum_addr).await?;
+        let mut buf_reader = smol::io::BufReader::new(stream);
+        println!("Connected to stratum server");
+
+        // Login request
+        let login_request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "login",
+            "params": {
+                "login": recipient,
+                "pass": "x",
+                "agent": "drk/1.0",
+                "algo": ["rx/0"]
+            },
+            "id": 1
+        });
+
+        // Send login request using the inner stream
+        let login_request_str = serde_json::to_string(&login_request).unwrap() + "\n";
+        buf_reader.get_mut().write_all(login_request_str.as_bytes()).await?;
+        buf_reader.get_mut().flush().await?;
+        println!("Sent login request");
+
+        // Read login response line by line
+        let mut response = String::new();
+        smol::io::AsyncBufReadExt::read_line(&mut buf_reader, &mut response).await?;
+        println!("Received response: {}", response);
+
+        let login_response: serde_json::Value = serde_json::from_str(&response).unwrap();
+
+        if login_response.get("error").is_some() {
+            return Err(Error::Custom("Stratum login error".to_string()));
+        }
+
+        let result = login_response.get("result").unwrap();
+        let client_id = result.get("id").unwrap().as_str().unwrap().to_string();
+        let job = result.get("job").unwrap();
+        let job_id = job.get("job_id").unwrap().as_str().unwrap().to_string();
+        let blob = job.get("blob").unwrap().as_str().unwrap().to_string();
+        let target = job.get("target").unwrap().as_str().unwrap().to_string();
+        let seed_hash = job.get("seed_hash").unwrap().as_str().unwrap().to_string();
+        let height = job.get("height").unwrap().as_f64().unwrap() as u32;
+
+        println!("Logged in! Client ID: {}", client_id);
+        println!("Job: height={}, job_id={}", height, job_id);
+
+        // Parse target (hex string to BigUint)
+        // The compact target is 8 bytes (MSB of full 32-byte target)
+        let target_bytes = hex::decode(&target).unwrap();
+        // Reconstruct full 32-byte target: compact_target becomes the MSB bytes
+        // In little-endian, the MSB bytes are at positions 24-31 in a 32-byte array
+        let mut full_target = [0u8; 32];
+        full_target[24..32].copy_from_slice(&target_bytes);
+        let target_biguint = num_bigint::BigUint::from_bytes_le(&full_target);
+
+        // Parse seed_hash for RandomX
+        let seed_bytes = hex::decode(&seed_hash).unwrap();
+
+        // Parse blob (hex block header - last 4 bytes are nonce)
+        let blob_bytes = hex::decode(&blob).unwrap();
+
+        println!("Starting mining loop...");
+        println!("Target: 0x{}", target);
+
+        // Create a channel to send shares from mining thread to submission thread
+        let (share_tx, share_rx) = smol::channel::bounded::<(u32, Vec<u8>)>(100);
+
+        // Mining loop - run in background thread
+        // Blob structure: [2 bytes padding][serialized header with nonce at byte offset 39 (4 bytes)]
+        let nonce_offset = 39; // Byte offset where nonce is in the blob
+        let _handle = std::thread::spawn(move || {
+            // Initialize RandomX VM in light mode (faster init, less memory)
+            let flags = randomx::RandomXFlags::get_recommended_flags();
+            let cache = randomx::RandomXCache::new(flags, &seed_bytes).unwrap();
+            let vm = randomx::RandomXVM::new(flags, Some(cache), None).unwrap();
+
+            let mut nonce: u32 = 0;
+            let mut local_blob = blob_bytes.clone();
+
+            loop {
+                // Update nonce in blob at correct byte offset
+                let nonce_bytes = nonce.to_le_bytes();
+                local_blob[nonce_offset..nonce_offset + 4].copy_from_slice(&nonce_bytes);
+
+                // Compute RandomX hash
+                let hash = vm.calculate_hash(&local_blob).unwrap();
+                let hash_biguint = num_bigint::BigUint::from_bytes_le(&hash);
+
+                // Check if hash meets target
+                if hash_biguint <= target_biguint {
+                    let result_hex = hex::encode(&hash);
+                    let nonce_hex = hex::encode(&nonce_bytes);
+                    println!(
+                        "Found valid share! nonce={} (0x{}), hash={}",
+                        nonce, nonce_hex, result_hex
+                    );
+
+                    // Send share to submission channel (ignore errors if channel is full)
+                    let _ = share_tx.try_send((nonce, hash.to_vec()));
+                }
+
+                nonce += 1;
+
+                // Print progress every 10 million nonces
+                if nonce % 10000000 == 0 {
+                    println!("Mining progress: {} nonces tried...", nonce);
+                }
+
+                // Simple rate limiting to avoid hammering CPU too much
+                if nonce % 1000000 == 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+        });
+
+        // Share submission loop - run in this async context
+        loop {
+            // Wait for a share from the mining thread
+            match share_rx.recv().await {
+                Ok((nonce, hash)) => {
+                    // Construct submit request
+                    let submit_request = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "method": "submit",
+                        "params": {
+                            "id": client_id,
+                            "job_id": job_id,
+                            "nonce": format!("{:08x}", nonce),
+                            "result": hex::encode(&hash)
+                        },
+                        "id": 1
+                    });
+
+                    let submit_str = serde_json::to_string(&submit_request).unwrap() + "\n";
+                    buf_reader.get_mut().write_all(submit_str.as_bytes()).await?;
+                    buf_reader.get_mut().flush().await?;
+
+                    // Read submit response with timeout
+                    let mut submit_response = String::new();
+                    match darkfi::system::io_timeout(
+                        std::time::Duration::from_secs(5),
+                        smol::io::AsyncBufReadExt::read_line(&mut buf_reader, &mut submit_response)
+                    ).await
+                    {
+                        Ok(_) => {
+                            if submit_response.contains("\"status\":\"OK\"") {
+                                println!("Share accepted! Block mined!");
+                            } else {
+                                println!("Share rejected: {}", submit_response);
+                            }
+                        }
+                        Err(_) => {
+                            println!("Share submission timed out");
+                        }
+                    }
+                }
+                Err(_) => {
+                    println!("Share channel closed");
+                    break
+                }
+            }
+        }
+
         Ok(())
     }
 }

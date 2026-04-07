@@ -224,6 +224,9 @@ enum Subcmd {
         /// Sub command to execute
         command: ContractSubcmd,
     },
+
+    /// Mine blocks and receive rewards (LOCALNET ONLY)
+    Mine,
 }
 
 #[derive(Clone, Debug, Deserialize, StructOpt)]
@@ -2799,5 +2802,37 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 drk.stop_rpc_client().await
             }
         },
+
+        Subcmd::Mine => {
+            let drk = new_wallet(
+                network,
+                blockchain_config.cache_path,
+                blockchain_config.wallet_path,
+                blockchain_config.wallet_pass,
+                Some(blockchain_config.endpoint),
+                &ex,
+                args.fun,
+            )
+            .await;
+
+            // Get default address for mining rewards
+            let public_key = match drk.default_address().await {
+                Ok(pk) => pk,
+                Err(e) => {
+                    eprintln!("Failed to get default address: {e}");
+                    exit(2);
+                }
+            };
+            let recipient: Address =
+                StandardAddress::from_public(drk.network, public_key).into();
+
+            println!("Mining blocks to {}...", recipient);
+            println!("Press Ctrl+C to stop mining");
+            if let Err(e) = drk.miner_mine(&recipient.to_string()).await {
+                eprintln!("Mining error: {}", e);
+                exit(2);
+            }
+            drk.stop_rpc_client().await
+        }
     }
 }

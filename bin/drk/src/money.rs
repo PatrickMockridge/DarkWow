@@ -40,8 +40,9 @@ use darkfi_money_contract::{
     },
     model::{
         Coin, Input, MoneyAuthTokenFreezeParamsV1, MoneyAuthTokenMintParamsV1, MoneyBurnParamsV1,
-        MoneyFeeParamsV1, MoneyGenesisMintParamsV1, MoneyPoWRewardParamsV1, MoneyTokenMintParamsV1,
-        MoneyTransferParamsV1, Nullifier, Output, TokenId, DARK_TOKEN_ID,
+        MoneyDevnetMintParamsV1, MoneyFeeParamsV1, MoneyGenesisMintParamsV1,
+        MoneyPoWRewardParamsV1, MoneyTokenMintParamsV1, MoneyTransferParamsV1, Nullifier, Output,
+        TokenId, DARK_TOKEN_ID,
     },
     MoneyFunction, MONEY_CONTRACT_ZKAS_FEE_NS_V1,
 };
@@ -812,6 +813,13 @@ impl Drk {
                 for input in params.inputs {
                     nullifiers.push(input.nullifier);
                 }
+            }
+            MoneyFunction::DevnetMintV1 => {
+                scan_cache.log(String::from("[parse_money_call] Found Money::DevnetMintV1 call"));
+                let params: MoneyDevnetMintParamsV1 = deserialize_async(&data[1..]).await?;
+                // DevnetMintV1 minting creates coins internally, but we can't
+                // parse the output here since it uses a different format.
+                // The coins will be discovered via the note decryption in scan.
             }
         }
 

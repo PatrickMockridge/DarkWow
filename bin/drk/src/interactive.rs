@@ -291,6 +291,10 @@ fn completion(buffer: &str, lc: &mut Vec<String>) {
         return
     }
 
+    if last.starts_with("fa") {
+        return
+    }
+
     // Now the catch alls
     if last.starts_with("a") {
         lc.push(prefix.clone() + "attach-fee");
