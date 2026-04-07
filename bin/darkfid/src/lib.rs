@@ -82,6 +82,8 @@ pub struct DarkfiNode {
     rpc_connections: Mutex<HashSet<StoppableTaskPtr>>,
     /// Management JSON-RPC connection tracker
     management_rpc_connections: Mutex<HashSet<StoppableTaskPtr>>,
+    /// Whether node is running in localnet mode
+    is_localnet: bool,
 }
 
 impl DarkfiNode {
@@ -91,6 +93,7 @@ impl DarkfiNode {
         registry: DarkfiMinersRegistryPtr,
         txs_batch_size: usize,
         subscribers: HashMap<&'static str, JsonSubscriber>,
+        is_localnet: bool,
     ) -> Result<DarkfiNodePtr> {
         Ok(Arc::new(Self {
             validator,
@@ -100,7 +103,13 @@ impl DarkfiNode {
             subscribers,
             rpc_connections: Mutex::new(HashSet::new()),
             management_rpc_connections: Mutex::new(HashSet::new()),
+            is_localnet,
         }))
+    }
+
+    /// Returns whether the node is running in localnet mode
+    pub fn is_localnet(&self) -> bool {
+        self.is_localnet
     }
 }
 
@@ -133,6 +142,7 @@ impl Darkfid {
         net_settings: &Settings,
         txs_batch_size: &Option<usize>,
         ex: &ExecutorPtr,
+        is_localnet: bool,
     ) -> Result<DarkfidPtr> {
         info!(target: "darkfid::Darkfid::init", "Initializing a Darkfi daemon...");
         // Initialize validator
@@ -165,7 +175,7 @@ impl Darkfid {
 
         // Initialize node
         let node =
-            DarkfiNode::new(validator, p2p_handler, registry, txs_batch_size, subscribers).await?;
+            DarkfiNode::new(validator, p2p_handler, registry, txs_batch_size, subscribers, is_localnet).await?;
 
         // Generate the background tasks
         let dnet_task = StoppableTask::new();

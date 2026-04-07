@@ -246,6 +246,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
 
     // Generate the daemon
+    let is_localnet = args.network == "localnet";
     let daemon = Darkfid::init(
         network,
         &sled_db,
@@ -253,6 +254,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         &p2p_settings,
         &blockchain_config.txs_batch_size,
         &ex,
+        is_localnet,
     )
     .await?;
 
