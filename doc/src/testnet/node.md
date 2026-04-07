@@ -151,7 +151,7 @@ initialize a wallet, and create a keypair. The wallet address shown in
 the outputs is explanatory and will be different from the one you get.
 
 ```shell
-$ ./drk wallet initialize
+$ ./drk -c bin/drk/drk_config.toml -n localnet wallet initialize
 
 Initializing Money Merkle tree
 Successfully initialized Merkle tree for the Money contract
@@ -161,7 +161,7 @@ Successfully initialized Merkle trees for the DAO contract
 ```
 
 ```shell
-$ ./drk wallet keygen
+$ ./drk -c bin/drk/drk_config.toml -n localnet wallet keygen
 
 Generating a new keypair
 New address:
@@ -169,7 +169,7 @@ New address:
 ```
 
 ```shell
-$ ./drk wallet default-address 1
+$ ./drk -c bin/drk/drk_config.toml -n localnet wallet default-address 1
 ```
 
 The second command will print out your new DarkFi address where you
@@ -177,7 +177,7 @@ can receive payments. Take note of it. Alternatively, you can always
 retrieve your default address using:
 
 ```shell
-$ ./drk wallet address
+$ ./drk -c bin/drk/drk_config.toml -n localnet wallet address
 
 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
@@ -389,7 +389,7 @@ $ cd contrib/localnet/darkfid-single-node/
 $ ./init-wallet.sh
 ```
 
-Then configure your `xmrig` mining daemon path in `tmux_sessions.sh`
+Then configure your mining daemon in `tmux_sessions.sh`
 script, start the daemons and wait until `darkfid` is initialized:
 
 ```shell
@@ -398,7 +398,7 @@ $ ./tmux_sessions.sh
 
 After some blocks have been generated we
 will see some `DRK` in our test wallet.
-On a different shell(or tmux pane in the session),
+On a different shell (or tmux pane in the session),
 navigate to `contrib/localnet/darkfid-single-node`
 folder again and check wallet balance
 
@@ -410,10 +410,20 @@ $ ./wallet-balance.sh
  241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRK     | 20
 ```
 
+Alternatively, use the drk CLI directly:
+
+```shell
+$ ./drk -c drk.toml wallet balance
+
+ Token ID                                     | Aliases | Balance
+----------------------------------------------+---------+---------
+ 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRK     | 20
+```
+
 Don't forget that when using this local node, all operations
 should be executed inside the `contrib/localnet/darkfid-single-node`
-folder, and `./drk` command to be replaced by
-`../../../drk -c drk.toml`. All paths should be relative to this one.
+folder. The `drk.toml` file in that folder contains the correct
+configuration for localnet.
 
 ## Advanced Usage
 

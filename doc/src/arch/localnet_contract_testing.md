@@ -2,221 +2,195 @@
 
 ## Overview
 
-This documents the current state of localnet smart contract testing in DarkFi. It is a **statement of fact** about what functionality is available, what is not, and the known issues affecting contract testing.
+This guide covers localnet smart contract testing in DarkFi using the `drk` CLI wallet with block mining to fund the wallet.
 
-## Current State (2026-03-30)
+## Current State (2026-04-07)
 
-Localnet smart contract testing is **partially functional** but has significant gaps due to:
+Localnet smart contract testing now **works fully** with the following workflow:
 
-1. **async-trait lifetime bug** - Prevents building integration tests from source (see [Async Serialization Lifetime Bug](./async_serial_lifetime_bug.md))
-2. **Missing wallet commands** - The `drk wallet` subcommand was removed or not implemented in v0.5.0
-3. **No test token minting** - No mechanism to obtain test DARK tokens on localnet
+1. Start `darkfid` with localnet configuration
+2. Mine blocks using `drk mine` (RandomX PoW)
+3. Scan blockchain to discover coins
+4. Deploy contracts using `drk contract deploy`
 
-> **Conda Users**: If using conda environments, be aware that conda's Python may conflict with system Python packages. Consider using `conda deactivate` before running DarkFi binaries, or use a separate venv as described in [Using dnet](../learn/dchat/network-tools/using-dnet.md).
+## Prerequisites
 
-## What Works
+- Compiled DarkFi binaries (`darkfid`, `drk`)
+- Config files in `contrib/localnet/darkfid-single-node/`
 
-### Binary Availability
-
-Pre-built DarkFiMain binaries (v0.5.0) work and can be used for:
-- Running a localnet validator node (`darkfid`)
-- CLI wallet operations (`drk`)
-- Mining via xmrig + p2pool (requires full Monero setup)
-- Contract compilation to WASM (via `cargo build --target wasm32-unknown-unknown`)
-
-Binaries location: `/home/patrick/DarkFiMain/darkfi/bin/`
-
-### Localnet Node
-
-A localnet validator node can be started with:
+## Quick Start
 
 ```bash
-darkfid --config localnet.config.toml run
+# Terminal 1: Start darkfid with localnet config
+./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
+
+# Terminal 2: Mine blocks to your wallet
+./target/release/drk -c bin/drk/drk_config.toml -n localnet mine
+
+# Terminal 3: Check balance
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet balance
 ```
 
-Configuration for localnet is in `/home/patrick/darkfi-testnet/`:
+## Full Workflow
 
-**localnet.config.toml** - Node configuration:
+### 1. Initialize wallet (first time only)
+
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet initialize
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet keygen
+```
+
+### 2. Start localnet node
+
+```bash
+./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
+```
+
+The localnet config uses:
+- `pow_fixed_difficulty=1` for fast mining
+- Stratum server on port `48347`
+- RPC endpoint on port `48345`
+
+### 3. Mine blocks
+
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet mine
+# Press Ctrl+C when sufficient DARK accumulated (20 DARK per block)
+```
+
+### 4. Check balance
+
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet balance
+```
+
+### 5. Scan blockchain
+
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet scan
+# Or reset and rescan from block 0:
+./target/release/drk -c bin/drk/drk_config.toml -n localnet scan --reset 0
+```
+
+### 6. List known coins
+
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet coins
+```
+
+### 7. Deploy a contract
+
+```bash
+# Generate deploy authority
+./target/release/drk -c bin/drk/drk_config.toml -n localnet contract generate-deploy
+
+# Deploy contract (pipe output to broadcast)
+./target/release/drk -c bin/drk/drk_config.toml -n localnet contract deploy <contract-id> <wasm-path> | ./target/release/drk -c bin/drk/drk_config.toml -n localnet broadcast
+```
+
+### 8. Verify deployment
+
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet contract list
+```
+
+## Available drk Commands
+
+### Global Flags
+
+```
+-c, --config <config>      Configuration file to use
+-n, --network <network>    Blockchain network to use [default: testnet]
+-f, --fun                  Flag for fun
+-v                         Increase verbosity (-vvv supported)
+```
+
+### Wallet Subcommands
+
+```
+drk wallet address            Get the default address
+drk wallet addresses          Print all addresses
+drk wallet balance            Query known balances
+drk wallet coins              Print all coins
+drk wallet default-address    Set default address
+drk wallet import-secrets     Import secret keys from stdin
+drk wallet initialize         Initialize wallet database
+drk wallet keygen             Generate new keypair
+drk wallet mining-config      Print wallet address mining configuration
+drk wallet secrets            Print all secret keys
+drk wallet tree               Print Merkle tree
+```
+
+### Contract Subcommands
+
+```
+drk contract deploy <auth> <wasm-path> [deploy-ix]    Deploy a smart contract
+drk contract export-data <tx-hash>                     Export wasm bincode + deploy ix
+drk contract generate-deploy                          Generate new deploy authority
+drk contract list [contract-id]                        List deploy authorities
+drk contract lock <deploy-auth>                        Lock a smart contract
+```
+
+### Other Useful Commands
+
+```
+drk scan [--reset <height>]    Scan the blockchain
+drk mine                       Mine blocks (LOCALNET ONLY)
+drk broadcast                   Broadcast a transaction from stdin
+drk token list                  List available tokens
+drk alias                       Manage token aliases
+```
+
+## Network Ports
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| darkfid RPC | 48345 | JSON-RPC for wallet commands |
+| darkfid stratum | 48347 | Stratum server for block mining |
+
+## Configuration
+
+The `drk` CLI requires a config file passed via `-c` flag. The config file at `bin/drk/drk_config.toml` contains network configurations:
+
 ```toml
-network = "localnet"
-skip_sync = true
-skip_fees = true
+network = "testnet"
+
+[network_config."localnet"]
+cache_path = "~/.local/share/darkfi/drk/localnet/cache"
+wallet_path = "~/.local/share/darkfi/drk/localnet/wallet.db"
+wallet_pass = "testpassword123"
+endpoint = "tcp://127.0.0.1:48345"
+history_path = "~/.local/share/darkfi/drk/localnet/history.txt"
 ```
 
-**drk.config.toml** - Wallet configuration:
-```toml
-network = "localnet"
-endpoint = "tcp://127.0.0.1:28345"
-wallet_pass = "test123"
-```
+## Troubleshooting
 
-### Contract WASM Compilation
-
-Contracts compile successfully to WASM:
-```bash
-cd src/contract/baccarat
-cargo build --target wasm32-unknown-unknown --release
-```
-
-Output: `target/wasm32-unknown-unknown/release/darkfi_baccarat_contract.wasm`
-
-### Available drk Commands
-
-The `drk` binary provides these subcommands:
-
-```
-drk alias          # Token alias management
-drk contract       # Contract deployment (deploy, generate-deploy, list, lock)
-drk token         # Token functionalities (freeze, generate-mint, import, list, mint)
-```
-
-#### Contract Deployment
-
-Contract deployment syntax:
-```
-drk contract deploy <deploy-auth> <wasm-path> <deploy-ix>
-```
-
-Where:
-- `<deploy-auth>` - Contract ID (deploy authority), generated via `drk contract generate-deploy`
-- `<wasm-path>` - Path to compiled WASM file
-- `<deploy-ix>` - Path to serialized deploy instruction
+### "Resource temporarily unavailable" on wallet db
 
 ```bash
-# Generate a deploy authority
-drk contract generate-deploy
+# Kill any running drk processes
+pkill -f "drk.*mine"
 
-# Deploy a contract (syntax: drk contract deploy <auth> <wasm> <ix>)
-drk contract deploy <authority-id> path/to/contract.wasm ./deploy_ix.bin
+# Then retry wallet commands
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet balance
 ```
 
-#### Token Operations
+### Mining not working
 
-```bash
-# Generate mint authority for custom token
-drk token generate-mint
-
-# Mint custom tokens (requires mint authority)
-drk token mint <token-id> <amount> <recipient>
-
-# List available mint authorities
-drk token list
-```
-
-## What Doesn't Work
-
-### drk wallet Commands
-
-**The `drk wallet` subcommand does not exist in v0.5.0.**
-
-This breaks:
-- Wallet creation (`drk wallet create`)
-- Token minting via mining (`drk wallet mine`)
-- Balance checking (`drk wallet balance`)
-- Coin listing (`drk wallet coins`)
-
-These commands were documented in older DarkFi documentation but are not present in the current binary.
-
-### Test Token Minting
-
-**There is no way to obtain test DARK tokens on localnet with current tooling.**
-
-The options that should exist but don't:
-1. `drk wallet mine` - Does not exist
-2. `drk wallet genesis-mint` - Does not exist
-3. Direct DARK token faucet - Does not exist
-
-The `Money::GenesisMintV1` contract function only works at block 0 (genesis), and is used internally by the test harness for setting up initial test conditions.
-
-### Integration Tests
-
-**Cannot compile due to async-trait bug.** See [Async Serialization Lifetime Bug](./async_serial_lifetime_bug.md) for details.
-
-The test harness that should provide:
-- Genesis minting for test setup
-- Contract function execution in isolation
-- State verification
-
-...cannot be built because of the async-trait lifetime issue affecting all Rust versions.
-
-## Architectural Connection to async-trait Issue
-
-The async-trait bug and the missing wallet commands are related:
-
-```
-async-trait bug (blocks building from source)
-    ↓
-Cannot build darkfid/drk from source
-    ↓
-Must use pre-built DarkFiMain binaries
-    ↓
-Pre-built binaries don't have wallet commands
-    ↓
-No test token minting on localnet
-```
-
-The test harness (which would bypass the token issue) cannot be compiled due to the async-trait bug. If we could build from source, we could:
-1. Potentially fix the async-trait issue
-2. Access wallet commands that exist in source but not binaries
-
-## Workarounds
-
-### Option 1: Full Mining Stack
-
-Set up Monero + p2pool + xmrig merge mining to earn DARK tokens:
-
-1. Sync Monero testnet
-2. Start p2pool with merge-mining enabled
-3. Start xmrig to mine blocks
-4. Earn block rewards (PoWRewardV1)
-
-See: [Merge Mining](../testnet/merge-mining.md)
-
-**Drawback**: Requires full Monero infrastructure, complex setup
-
-### Option 2: Custom Token with Mint Authority
-
-1. Create a custom token
-2. Generate mint authority
-3. Mint custom tokens for testing
-
-**Drawback**: Doesn't help with DARK token needed for contract deployment fees
-
-### Option 3: Wait for Tooling Fix
-
-1. Wait for DarkFiMain to restore `wallet` commands
-2. Or wait for async-trait fix to build from source
-
-**Drawback**: Blocks contract testing indefinitely
+Ensure `darkfid` is running with the localnet config and the stratum server is active on port 48347.
 
 ## File Locations
 
 | Component | Path |
 |-----------|------|
-| Localnet config | `/home/patrick/darkfi-testnet/localnet.config.toml` |
-| Wallet config | `/home/patrick/darkfi-testnet/drk.config.toml` |
-| DarkFiMain binaries | `/home/patrick/DarkFiMain/darkfi/bin/` |
-| Pre-built darkfid | `/home/patrick/DarkFiMain/darkfi/bin/darkfid/darkfid` |
-| Pre-built drk | `/home/patrick/DarkFiMain/darkfi/bin/drk/drk` |
-| Baccarat WASM | `/home/patrick/Darkfi/darkfi/src/contract/baccarat/darkfi_baccarat_contract.wasm` |
-| Async-trait issue | `/home/patrick/Darkfi/darkfi/doc/src/arch/async_serial_lifetime_bug.md` |
+| darkfid binary | `target/release/darkfid` |
+| drk binary | `target/release/drk` |
+| drk config | `bin/drk/drk_config.toml` |
+| localnet config | `contrib/localnet/darkfid-single-node/darkfid.toml` |
+| localnet drk config | `contrib/localnet/darkfid-single-node/drk.toml` |
 
 ## Related Documentation
 
-- [Async Serialization Lifetime Bug](./async_serial_lifetime_bug.md) - Integration test compilation failure
-- [Test Harness Guide](./test_harness_guide.md) - Expected test harness functionality
-- [Merge Mining](../testnet/merge-mining.md) - Full mining setup
+- [Local Devnet Setup](../localnet-dev.md) - More details on localnet mining
 - [Node Setup](../testnet/node.md) - DarkFi node configuration
-
-## Summary
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Localnet validator | ✅ Works | With skip_fees=true |
-| RPC connectivity | ✅ Works | tcp://127.0.0.1:28345 |
-| Contract WASM build | ✅ Works | Via cargo |
-| Contract deployment | ⚠️ Partial | Syntax differs from docs |
-| Test token minting | ❌ Broken | No wallet mine command |
-| Integration tests | ❌ Broken | async-trait bug |
-| Custom token minting | ⚠️ Partial | Requires mint authority |
-| Merge mining | ⚠️ Complex | Requires Monero infrastructure |
+- [Deploy Tutorial](../../learn/dchat/deployment/deploy.md) - Contract deployment guide

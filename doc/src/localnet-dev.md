@@ -31,27 +31,42 @@ A local development network (devnet) for DarkFi testing, funded via block mining
 
 ### darkfid (daemon)
 - Stratum server: `127.0.0.1:48347`
-- RPC endpoint: `127.0.0.1:8548`
+- RPC endpoint: `127.0.0.1:48345`
 - Config: `contrib/localnet/darkfid-single-node/darkfid.toml`
 - `pow_fixed_difficulty=1` makes mining fast for testing
 
 ### drk (CLI wallet)
-```bash
-# Mine blocks to default wallet address
-drk -n localnet mine
 
-# Check balance
-drk -n localnet wallet balance
-
-# Scan blockchain for new coins
-drk -n localnet scan
+**Global flags:**
+```
+-c, --config <config>      Configuration file to use
+-n, --network <network>    Blockchain network to use [default: testnet]
+-f, --fun                  Flag for fun
+-v                         Increase verbosity (-vvv supported)
 ```
 
-### drk_config.toml
-```toml
-[settings]
-network = "localnet"  # Critical - enables mining
-rpc_endpoint = "127.0.0.1:8548"
+**Wallet subcommands:**
+```
+drk wallet address            Get the default address
+drk wallet addresses          Print all addresses
+drk wallet balance            Query known balances
+drk wallet coins              Print all coins
+drk wallet default-address    Set default address
+drk wallet import-secrets     Import secret keys from stdin
+drk wallet initialize         Initialize wallet database
+drk wallet keygen             Generate new keypair
+drk wallet mining-config      Print wallet address mining configuration
+drk wallet secrets            Print all secret keys
+drk wallet tree               Print Merkle tree
+```
+
+**Contract subcommands:**
+```
+drk contract deploy <auth> <wasm-path> [deploy-ix]    Deploy a smart contract
+drk contract export-data <tx-hash>                     Export wasm bincode + deploy ix
+drk contract generate-deploy                          Generate new deploy authority
+drk contract list [contract-id]                        List deploy authorities
+drk contract lock <deploy-auth>                        Lock a smart contract
 ```
 
 ## Mining Details
@@ -63,9 +78,62 @@ rpc_endpoint = "127.0.0.1:8548"
 - **Target:** 8 bytes MSB of 32-byte target, padded with zeros to 32 bytes for comparison
 - **Nonce:** 4 bytes at blob byte offset 39 (little-endian u32)
 
-## Why Mining vs Faucet?
+## Full Workflow
 
-The `faucet.mint` RPC was broken (simulation errors). Mining provides a reliable way to fund the wallet for contract testing. Once faucet is fixed upstream, this mining approach can be abandoned.
+### 1. Initialize wallet (first time only)
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet initialize
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet keygen
+```
+
+### 2. Start localnet
+```bash
+./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
+```
+
+### 3. Mine blocks
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet mine
+# Press Ctrl+C when sufficient DARK accumulated
+```
+
+### 4. Check balance
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet balance
+```
+
+### 5. Scan blockchain
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet scan
+# Or reset and rescan from block 0:
+./target/release/drk -c bin/drk/drk_config.toml -n localnet scan --reset 0
+```
+
+### 6. List known coins
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet coins
+```
+
+### 7. Deploy a contract
+```bash
+# Generate deploy authority if needed
+./target/release/drk -c bin/drk/drk_config.toml -n localnet contract generate-deploy
+
+# Deploy contract (pipe output to broadcast)
+./target/release/drk -c bin/drk/drk_config.toml -n localnet contract deploy <contract-id> <wasm-path> | ./target/release/drk -c bin/drk/drk_config.toml -n localnet broadcast
+```
+
+### 8. Verify deployment
+```bash
+./target/release/drk -c bin/drk/drk_config.toml -n localnet contract list
+```
+
+## Network Ports
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| darkfid RPC | 48345 | JSON-RPC for wallet commands |
+| darkfid stratum | 48347 | Stratum server for block mining |
 
 ## Troubleshooting
 
@@ -75,14 +143,14 @@ The `faucet.mint` RPC was broken (simulation errors). Mining provides a reliable
 pkill -f "drk.*mine"
 
 # Then retry wallet commands
-drk -n localnet wallet balance
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet balance
 ```
 
 ## File References
 
-- `bin/darkfid/src/rpc/miner.rs` - darkfid stratum server implementation (RPC `miner.mine`)
+- `bin/darkfid/src/rpc/miner.rs` - darkfid stratum server implementation
 - `bin/darkfid/src/lib.rs` - `DarkfiNode::is_localnet()` guard
-- `bin/drk/src/main.rs` - `Mine` subcommand enum and handler
-- `bin/drk/src/rpc.rs` - `miner_mine()` method with stratum protocol client
-- `bin/drk/Cargo.toml` - Dependencies: darkfi with async-daemonize, rpc, randomx features
+- `bin/drk/src/main.rs` - Subcommand definitions and handlers
+- `bin/drk/src/rpc.rs` - `miner_mine()` stratum client
+- `bin/drk/drk_config.toml` - Network configuration
 - `contrib/localnet/darkfid-single-node/darkfid.toml` - Localnet config

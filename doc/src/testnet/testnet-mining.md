@@ -14,13 +14,13 @@ This guide covers setting up solo Proof-of-Work mining on DarkFi testnet using p
 
 ```bash
 # Initialize wallet
-drk wallet --initialize
+drk -c bin/drk/drk_config.toml -n testnet wallet initialize
 
 # Generate keypair
-drk wallet --keygen
+drk -c bin/drk/drk_config.toml -n testnet wallet keygen
 
 # Get your address
-drk wallet --address
+drk -c bin/drk/drk_config.toml -n testnet wallet address
 ```
 
 Save the address - you'll need it for mining rewards.
@@ -138,7 +138,7 @@ After blocks are mined, sync your wallet to see the DARK tokens:
 
 ```bash
 drk -c /home/patrick/darkfi-testnet/devnet_drk.config.toml scan
-drk -c /home/patrick/darkfi-testnet/devnet_drk.config.toml wallet --balance
+drk -c /home/patrick/darkfi-testnet/devnet_drk.config.toml wallet balance
 ```
 
 ## Troubleshooting
@@ -177,20 +177,20 @@ If darkfid won't sync:
 
 ```bash
 # Check wallet balance
-drk wallet --balance
+drk -c bin/drk/drk_config.toml -n testnet wallet balance
 
 # List tokens
-drk token list
+drk -c bin/drk/drk_config.toml -n testnet token list
 
 # List contracts
-drk contract list
+drk -c bin/drk/drk_config.toml -n testnet contract list
 
 # Deploy contract
-drk contract deploy <authority> <wasm-path> <deploy-ix>
+drk -c bin/drk/drk_config.toml -n testnet contract deploy <authority> <wasm-path> [deploy-ix]
 
 # Mint custom token
-drk token generate-mint
-drk token mint <token-id> <amount> <recipient>
+drk -c bin/drk/drk_config.toml -n testnet token generate-mint
+drk -c bin/drk/drk_config.toml -n testnet token mint <token-id> <amount> <recipient>
 ```
 
 ## Notes
