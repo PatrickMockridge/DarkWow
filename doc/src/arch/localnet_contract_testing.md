@@ -4,7 +4,7 @@
 
 This guide covers localnet smart contract testing in DarkFi using the `drk` CLI wallet with block mining to fund the wallet.
 
-## Current State (2026-04-07)
+## Current State (2026-04-08)
 
 Localnet smart contract testing now **works fully** with the following workflow:
 
@@ -12,6 +12,34 @@ Localnet smart contract testing now **works fully** with the following workflow:
 2. Mine blocks using `drk mine` (RandomX PoW)
 3. Scan blockchain to discover coins
 4. Deploy contracts using `drk contract deploy`
+
+## Verified Contracts
+
+The following contracts have been verified to work on localnet and/or have passing integration tests:
+
+### Identity Contract (darkfi-identity-contract)
+- **Status**: Fully verified on localnet
+- **Contract ID**: `9AhecnZbDH4npo3zg8VdYQpSb9jj6nqC3dR7HhuvEWAQ`
+- **Integration Tests**: 15 tests passing
+- **Deployment**: Successfully deployed to localnet
+
+### Betting Contracts
+
+| Contract | Build | Integration Tests | Localnet Verified |
+|----------|-------|-----------------|------------------|
+| baccarat | ✓ | 20 tests | Not yet |
+| lottery | ✓ | 6 tests | Not yet |
+| roulette | ✓ | None | Not yet |
+| slot | ✓ | None | Not yet |
+| darktoshi_dice | ✓ | None | Not yet |
+
+### DeFi Contracts
+
+| Contract | Build | Integration Tests |
+|----------|-------|------------------|
+| darkbet_exchange | ✓ | 30 tests |
+| pool_stake | ✓ | 23 tests |
+| relayer_endowment | ✓ | 20 tests |
 
 ## Prerequisites
 
@@ -94,6 +122,23 @@ The localnet config uses:
 ./target/release/drk -c bin/drk/drk_config.toml -n localnet contract list
 ```
 
+## Running Integration Tests
+
+All contracts with integration tests can be tested using cargo:
+
+```bash
+# Run integration tests for a specific contract
+cargo test -p darkfi_identity_contract --test integration
+cargo test -p darkfi_baccarat_contract --test integration
+cargo test -p darkfi_lottery_contract --test integration
+cargo test -p darkfi_darkbet_exchange_contract --test integration
+cargo test -p darkfi_pool_stake_contract --test integration
+cargo test -p darkfi_relayer_endowment_contract --test integration
+
+# Run all contract tests
+cargo test --workspace --exclude darkfi --exclude darkfi_money_contract --exclude darkfi_dao_contract
+```
+
 ## Available drk Commands
 
 ### Global Flags
@@ -127,8 +172,8 @@ drk wallet tree               Print Merkle tree
 drk contract deploy <auth> <wasm-path> [deploy-ix]    Deploy a smart contract
 drk contract export-data <tx-hash>                     Export wasm bincode + deploy ix
 drk contract generate-deploy                          Generate new deploy authority
-drk contract list [contract-id]                        List deploy authorities
-drk contract lock <deploy-auth>                        Lock a smart contract
+drk contract list [contract-id]                      List deploy authorities
+drk contract lock <deploy-auth>                       Lock a smart contract
 ```
 
 ### Other Useful Commands

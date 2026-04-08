@@ -27,9 +27,20 @@
 //! the test harness infrastructure (see test-harness/src/vks.rs).
 
 use darkfi_identity_contract::{
-    model::{Attribute, AttributeType, Claim, CreateClaimParams, CreateClaimParamsL1, Credential, CredentialSchema, InitializeParams, IssueCredentialParams, Issuer, VerifyClaimParams},
+    model::{Attribute, AttributeType, Claim, CreateClaimParams, CreateClaimParamsL1, Credential, CredentialSchema, InitializeParams, IssueCredentialParams, Issuer},
     IdentityFunction,
 };
+use darkfi_serial::{deserialize, serialize};
+
+/// Helper to create IntentNullifier from bytes
+fn make_nullifier(bytes: [u8; 32]) -> darkfi_sdk::crypto::IntentNullifier {
+    darkfi_sdk::crypto::IntentNullifier::from_bytes(bytes).unwrap()
+}
+
+/// Helper to create IntentCommitment from bytes
+fn make_commitment(bytes: [u8; 32]) -> darkfi_sdk::crypto::IntentCommitment {
+    darkfi_sdk::crypto::IntentCommitment::from_bytes(bytes).unwrap()
+}
 
 #[test]
 fn test_identity_function_enum_v0() {
@@ -51,16 +62,16 @@ fn test_identity_function_enum_v1_l1() {
 fn test_identity_function_enum_invalid() {
     // Test that invalid function IDs return errors
     assert!(IdentityFunction::try_from(0xFF).is_err());
-    assert!(IdentityFunction::try_from(0x06).is_err());
     assert!(IdentityFunction::try_from(0x10).is_err());
+    assert!(IdentityFunction::try_from(0x20).is_err());
 }
 
 #[test]
 fn test_initialize_params_encoding() {
     let params = InitializeParams { version: 1 };
 
-    let encoded = params.encode().unwrap();
-    let decoded = InitializeParams::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: InitializeParams = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.version, params.version);
 }
@@ -80,8 +91,8 @@ fn test_credential_schema_encoding() {
         optional_attributes: vec![],
     };
 
-    let encoded = schema.encode().unwrap();
-    let decoded = CredentialSchema::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&schema);
+    let decoded: CredentialSchema = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.name, schema.name);
     assert_eq!(decoded.version, schema.version);
@@ -120,16 +131,16 @@ fn test_issue_credential_params_encoding() {
         holder_pub: [2u8; 32],
         schema_hash: [3u8; 32],
         encrypted_attributes: vec![4u8; 64],
-        commitment: darkfi_sdk::crypto::IntentCommitment::from([5u8; 32]),
-        nullifier: darkfi_sdk::crypto::IntentNullifier::from([6u8; 32]),
+        commitment: make_commitment([5u8; 32]),
+        nullifier: make_nullifier([6u8; 32]),
         issued_at: 1000,
         expires_at: 2000,
         proof: vec![7u8; 128],
         fee: 100,
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = IssueCredentialParams::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: IssueCredentialParams = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.issuer_pub, params.issuer_pub);
     assert_eq!(decoded.holder_pub, params.holder_pub);
@@ -140,7 +151,7 @@ fn test_issue_credential_params_encoding() {
 #[test]
 fn test_create_claim_params_encoding() {
     let params = CreateClaimParams {
-        nullifier: darkfi_sdk::crypto::IntentNullifier::from([1u8; 32]),
+        nullifier: make_nullifier([1u8; 32]),
         claim_type: b"age_over_18".to_vec(),
         predicate: b">= 18".to_vec(),
         revealed_attributes: vec![b"age".to_vec()],
@@ -148,8 +159,8 @@ fn test_create_claim_params_encoding() {
         fee: 50,
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = CreateClaimParams::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: CreateClaimParams = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.claim_type, params.claim_type);
     assert_eq!(decoded.predicate, params.predicate);
@@ -159,7 +170,7 @@ fn test_create_claim_params_encoding() {
 #[test]
 fn test_create_claim_params_l1_encoding() {
     let params = CreateClaimParamsL1 {
-        nullifier: darkfi_sdk::crypto::IntentNullifier::from([1u8; 32]),
+        nullifier: make_nullifier([1u8; 32]),
         claim_type: b"age_over_18".to_vec(),
         predicate: b">= 18".to_vec(),
         revealed_attributes: vec![b"age".to_vec()],
@@ -168,8 +179,8 @@ fn test_create_claim_params_l1_encoding() {
         fee: 50,
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = CreateClaimParamsL1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: CreateClaimParamsL1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.claim_type, params.claim_type);
     assert_eq!(decoded.predicate_result, 1); // Level 1 reveals predicate result
@@ -179,18 +190,18 @@ fn test_create_claim_params_l1_encoding() {
 #[test]
 fn test_credential_encoding() {
     let credential = Credential {
-        nullifier: darkfi_sdk::crypto::IntentNullifier::from([1u8; 32]),
+        nullifier: make_nullifier([1u8; 32]),
         issuer_pub: [2u8; 32],
         holder_pub: [3u8; 32],
         schema_hash: [4u8; 32],
-        commitment: darkfi_sdk::crypto::IntentCommitment::from([5u8; 32]),
+        commitment: make_commitment([5u8; 32]),
         revoked: false,
         issued_at: 1000,
         expires_at: 2000,
     };
 
-    let encoded = credential.encode().unwrap();
-    let decoded = Credential::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&credential);
+    let decoded: Credential = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.nullifier, credential.nullifier);
     assert_eq!(decoded.revoked, false);
@@ -206,8 +217,8 @@ fn test_issuer_encoding() {
         trusted: true,
     };
 
-    let encoded = issuer.encode().unwrap();
-    let decoded = Issuer::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&issuer);
+    let decoded: Issuer = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.pub_key, issuer.pub_key);
     assert_eq!(decoded.name, issuer.name);
@@ -218,7 +229,7 @@ fn test_issuer_encoding() {
 #[test]
 fn test_claim_encoding() {
     let claim = Claim {
-        nullifier: darkfi_sdk::crypto::IntentNullifier::from([1u8; 32]),
+        nullifier: make_nullifier([1u8; 32]),
         issuer_pub: [2u8; 32],
         claim_type: [3u8; 32],
         predicate_result: vec![1], // "true"
@@ -228,8 +239,8 @@ fn test_claim_encoding() {
         expires_at: 2000,
     };
 
-    let encoded = claim.encode().unwrap();
-    let decoded = Claim::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&claim);
+    let decoded: Claim = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.nullifier, claim.nullifier);
     assert_eq!(decoded.predicate_result, vec![1]);
@@ -239,11 +250,11 @@ fn test_claim_encoding() {
 #[test]
 fn test_credential_not_revoked() {
     let credential = Credential {
-        nullifier: darkfi_sdk::crypto::IntentNullifier::from([1u8; 32]),
+        nullifier: make_nullifier([1u8; 32]),
         issuer_pub: [2u8; 32],
         holder_pub: [3u8; 32],
         schema_hash: [4u8; 32],
-        commitment: darkfi_sdk::crypto::IntentCommitment::from([5u8; 32]),
+        commitment: make_commitment([5u8; 32]),
         revoked: false,
         issued_at: 1000,
         expires_at: 0, // Never expires
@@ -257,11 +268,11 @@ fn test_credential_not_revoked() {
 fn test_credential_expired() {
     let current_time: u64 = 3000;
     let credential = Credential {
-        nullifier: darkfi_sdk::crypto::IntentNullifier::from([1u8; 32]),
+        nullifier: make_nullifier([1u8; 32]),
         issuer_pub: [2u8; 32],
         holder_pub: [3u8; 32],
         schema_hash: [4u8; 32],
-        commitment: darkfi_sdk::crypto::IntentCommitment::from([5u8; 32]),
+        commitment: make_commitment([5u8; 32]),
         revoked: false,
         issued_at: 1000,
         expires_at: 2000, // Expired at 2000
@@ -275,11 +286,11 @@ fn test_credential_expired() {
 #[test]
 fn test_credential_revoked() {
     let credential = Credential {
-        nullifier: darkfi_sdk::crypto::IntentNullifier::from([1u8; 32]),
+        nullifier: make_nullifier([1u8; 32]),
         issuer_pub: [2u8; 32],
         holder_pub: [3u8; 32],
         schema_hash: [4u8; 32],
-        commitment: darkfi_sdk::crypto::IntentCommitment::from([5u8; 32]),
+        commitment: make_commitment([5u8; 32]),
         revoked: true,
         issued_at: 1000,
         expires_at: 0,

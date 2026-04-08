@@ -1997,9 +1997,19 @@ dependencies = [
 name = "darkfi-identity-contract"
 version = "0.1.0"
 dependencies = [
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
  "darkfi-sdk",
  "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "once_cell",
+ "rand 0.8.5",
+ "smol",
  "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]
@@ -2946,15 +2956,18 @@ dependencies = [
  "darkfi_money_contract",
  "easy-parallel",
  "futures",
+ "hex",
  "lazy_static",
  "libc",
  "linenoise-rs",
  "num-bigint",
  "prettytable-rs",
  "rand 0.8.5",
+ "randomx",
  "rodio",
  "rusqlite",
  "serde",
+ "serde_json",
  "signal-hook",
  "signal-hook-async-std",
  "sled-overlay",

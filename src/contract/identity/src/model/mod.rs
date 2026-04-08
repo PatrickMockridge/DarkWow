@@ -44,7 +44,7 @@ use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier};
 pub const IDENTITY_NAMESPACE: u64 = 0x0001;
 
 /// Supported attribute types for credentials
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, PartialEq, Eq, SerialEncodable, SerialDecodable)]
 pub enum AttributeType {
     /// Boolean attribute (e.g., "is adult", "is citizen")
     Boolean,
@@ -591,3 +591,92 @@ pub struct VerifyDAGClaimParams {
 // Reveals: Only "user meets requirements" - identity and role hidden
 //
 // ============================================================================
+
+// ============================================================================
+// UPDATE TYPES (for apply_* functions)
+// ============================================================================
+
+/// Initialize update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct InitializeUpdateV1 {
+    pub version: u32,
+    pub created_at: u64,
+}
+
+/// Issue credential update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct IssueCredentialUpdateV1 {
+    pub nullifier: IntentNullifier,
+    pub issuer_pub: [u8; 32],
+    pub holder_pub: [u8; 32],
+    pub schema_hash: [u8; 32],
+    pub commitment: IntentCommitment,
+    pub issued_at: u64,
+    pub expires_at: u64,
+}
+
+/// Revoke credential update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RevokeCredentialUpdateV1 {
+    pub nullifier: IntentNullifier,
+    pub reason: Vec<u8>,
+    pub revoked: bool,
+}
+
+/// Create claim update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CreateClaimUpdateV1 {
+    pub nullifier: IntentNullifier,
+    pub claim_type: Vec<u8>,
+    pub created_at: u64,
+}
+
+/// Verify claim update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VerifyClaimUpdateV1 {
+    pub nullifier: IntentNullifier,
+    pub verified: bool,
+}
+
+/// Register capability update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RegisterCapabilityUpdateV1 {
+    pub capability_id: [u8; 32],
+    pub name: Vec<u8>,
+    pub credential_requirement: CredentialRequirement,
+    pub max_holders: Option<u64>,
+}
+
+/// Issue capability update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct IssueCapabilityUpdateV1 {
+    pub capability_id: [u8; 32],
+    pub holder_pub: [u8; 32],
+    pub capability_secret: [u8; 32],
+    pub expires_at: u64,
+    pub issuance_key: Vec<u8>,
+}
+
+/// Verify capability update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VerifyCapabilityUpdateV1 {
+    pub capability_id: [u8; 32],
+    pub holder_pub: [u8; 32],
+    pub verified: bool,
+}
+
+/// Revoke capability update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RevokeCapabilityUpdateV1 {
+    pub capability_id: [u8; 32],
+    pub holder_pub: [u8; 32],
+    pub issuance_key: Vec<u8>,
+}
+
+/// Create DAG claim update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CreateClaimDAGUpdateV1 {
+    pub dag_id: [u8; 32],
+    pub path_index: u32,
+    pub predicate_result: u8,
+}

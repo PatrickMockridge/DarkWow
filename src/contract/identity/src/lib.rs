@@ -119,10 +119,12 @@
 //! - Level 2: Anonymous credentials (CL signatures)
 //! - Level 3: Self-sovereign identity with revocation
 
-use darkfi_sdk::define_contract_function;
+use darkfi_sdk::error::ContractError;
 
-/// Functions available in the Identity contract
-define_contract_function!(IdentityFunction {
+/// Identity Functions
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum IdentityFunction {
     InitializeV1 = 0x00,
     IssueCredentialV1 = 0x01,
     RevokeCredentialV1 = 0x02,
@@ -132,14 +134,35 @@ define_contract_function!(IdentityFunction {
     CreateClaimV1L1V2 = 0x06,
     CreateClaimV1Multi = 0x07,
     CreateClaimV1Ratio = 0x08,
-    // O-Cap functions
     RegisterCapabilityV1 = 0x09,
     IssueCapabilityV1 = 0x0a,
     VerifyCapabilityV1 = 0x0b,
     RevokeCapabilityV1 = 0x0c,
-    // DAG functions
     CreateClaimDAGV1 = 0x0d,
-});
+}
+
+impl TryFrom<u8> for IdentityFunction {
+    type Error = ContractError;
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            0x00 => Ok(Self::InitializeV1),
+            0x01 => Ok(Self::IssueCredentialV1),
+            0x02 => Ok(Self::RevokeCredentialV1),
+            0x03 => Ok(Self::CreateClaimV1),
+            0x04 => Ok(Self::VerifyClaimV1),
+            0x05 => Ok(Self::CreateClaimV1L1),
+            0x06 => Ok(Self::CreateClaimV1L1V2),
+            0x07 => Ok(Self::CreateClaimV1Multi),
+            0x08 => Ok(Self::CreateClaimV1Ratio),
+            0x09 => Ok(Self::RegisterCapabilityV1),
+            0x0a => Ok(Self::IssueCapabilityV1),
+            0x0b => Ok(Self::VerifyCapabilityV1),
+            0x0c => Ok(Self::RevokeCapabilityV1),
+            0x0d => Ok(Self::CreateClaimDAGV1),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
+}
 
 /// Internal contract errors
 pub mod error;
@@ -186,6 +209,10 @@ pub const IDENTITY_CONTRACT_VERSION: &[u8] = b"protocol_version";
 pub const IDENTITY_CONTRACT_CAPABILITY_REGISTRY: &[u8] = b"capability_registry";
 /// Capability issuances key prefix
 pub const IDENTITY_CONTRACT_CAPABILITY_ISSUANCES: &[u8] = b"capability_issuances";
+
+// Info tree
+/// Info tree - stores contract info (version, config)
+pub const IDENTITY_CONTRACT_INFO_TREE: &str = "identity_info";
 
 // ============================================================================
 // ZK CIRCUIT NAMESPACES
