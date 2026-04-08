@@ -231,6 +231,7 @@ Tested WASM contract deployment on localnet.
 | pool_stake | 212KB | Deployed (tx broadcast) | Pending confirmation |
 | stablecoin | 85KB | Deployed (tx broadcast) | Pending confirmation |
 | relayer_endowment | 181KB | Deployed (tx broadcast) | Pending confirmation |
+| identity | N/A | SDK API incompatibility | Needs significant refactoring |
 
 ### Common Betting Contract Bug Patterns
 
@@ -600,6 +601,40 @@ These contracts need to be refactored to use Money v1 patterns for localnet test
 - The v1 vs v2 question for mainnet is still an open decision
 - This refactoring is purely for localnet testing compatibility
 - Production deployment should revisit whether to use v1 or v2 patterns based on the network's money contract version
+
+---
+
+## Identity Contract (2026-04-08)
+
+### Status
+
+The identity contract **cannot compile** - it uses SDK APIs that don't exist.
+
+### Issues Found
+
+**102 compilation errors** due to API incompatibility:
+
+1. **Missing SDK modules**: Imports from non-existent paths:
+   - `darkfi_sdk::bridge` (doesn't exist)
+   - `darkfi_sdk::contract` (doesn't exist)
+   - `darkfi_sdk::runtime` (doesn't exist)
+
+2. **Undefined constants**: Uses `IDENTITY_CONTRACT_*` constants that aren't defined in lib.rs
+
+3. **Wrong API pattern**: Uses `rt.create_tree()` which doesn't exist in current SDK
+
+### Root Cause
+
+The identity contract was written for a **future/different SDK version** that hasn't been implemented yet. It uses APIs (`Runtime::create_tree()`, `BridgeCall::decode()`) that don't exist in the current `darkfi-sdk` crate.
+
+### Solution
+
+The identity contract needs to be refactored to use the **current SDK API patterns**:
+- Use `wasm::db::db_init()` instead of `rt.create_tree()`
+- Use `wasm::util::*` instead of `Runtime::*`
+- Define `IDENTITY_CONTRACT_*` constants in lib.rs following the pattern of other contracts
+
+This is a **significant refactoring effort** - the contract's architecture would need to be adapted to match the current SDK design.
 
 See: [Money Version Bridge Decision](../../arch/money-version-bridge.md)
 
