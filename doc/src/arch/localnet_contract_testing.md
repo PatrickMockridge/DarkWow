@@ -64,6 +64,11 @@ The following contracts now have passing integration tests:
 | drain_protection | darkfi_drain_protection_contract | 24 tests | PASS |
 | block_height_prediction | darkfi_block_height_prediction_contract | 26 tests | PASS |
 | insurance_market | darkfi_insurance_market_contract | 13 tests | PASS |
+| **oracle** | darkfi_oracle_contract | 7 tests | PASS |
+| **auction** | darkfi_auction_contract | 23 tests | PASS |
+| **tender** | darkfi_tender_contract | 23 tests | PASS |
+| **attestation** | darkfi_attestation_contract | 23 tests | PASS |
+| **labor_market** | darkfi_labor_market_contract | 24 tests | PASS |
 
 ### Contracts with Tests Requiring darkfid
 
@@ -87,17 +92,6 @@ Run manually with: `cargo test -p darkfi_{contract}_contract --test integration 
 - `game_room_contract`
 - `darkfi_safemath_contract`
 
-### Contracts Not Buildable as Standalone
-
-These contracts exist in `src/contract/` but don't have `Cargo.toml` files and cannot be built or tested standalone:
-
-- `auction`
-- `attestation`
-- `labor_market`
-- `oracle`
-- `subscription`
-- `tender`
-
 ## Running Integration Tests
 
 All contracts with working integration tests can be tested using cargo:
@@ -113,6 +107,13 @@ cargo test -p darkfi_relayer_endowment_contract --test integration
 cargo test -p darkfi_bridge_contract --test integration
 cargo test -p darkfi_dex_contract --test integration
 cargo test -p atomic_swap_contract --test integration
+
+# Newly fixed contracts (2026-04-08)
+cargo test -p darkfi_oracle_contract --test integration
+cargo test -p darkfi_auction_contract --test integration
+cargo test -p darkfi_tender_contract --test integration
+cargo test -p darkfi_attestation_contract --test integration
+cargo test -p darkfi_labor_market_contract --test integration
 
 # Run all contract tests (excluding those needing test harness)
 cargo test --workspace --exclude darkfi --exclude darkfi_money_contract --exclude darkfi_dao_contract
@@ -413,11 +414,17 @@ Reference these contracts for correct patterns:
 | `darkfi_dao_escrow_contract` | BaseBlind wrapper usage |
 | `darkfi_stablecoin_contract` | Model constant tests |
 | `darkfi_drain_protection_contract` | Struct encoding tests |
+| `darkfi_oracle_contract` | Updated process_update pattern, x/y coordinate fields |
+| `darkfi_auction_contract` | Multi-function enum pattern |
+| `darkfi_tender_contract` | O-Cap capability pattern |
+| `darkfi_attestation_contract` | Complex state enum testing |
+| `darkfi_labor_market_contract` | bincode→darkfi_serial migration |
 
 ### Contract Test Status Summary (2026-04-08)
 
-- **98 tests passing** across 5 contracts (stablecoin, drain_protection, block_height_prediction, dao_escrow, insurance_market)
+- **221+ tests passing** across 19 contracts
 - **3 tests marked `#[ignore]`** (money, money_v2, dao) - require darkfid
+- **5 contracts fixed** (oracle, auction, tender, attestation, labor_market) - 100 new tests passing
 - All previously broken tests have been fixed
 
 ---

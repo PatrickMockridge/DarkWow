@@ -36,8 +36,10 @@ pub type AttestationId = pallas::Base;
 pub struct Oracle {
     /// Oracle identifier
     pub id: OracleId,
-    /// Oracle operator's public key
-    pub oracle_pubkey: PublicKey,
+    /// Oracle operator's public key x coordinate
+    pub oracle_pub_x: pallas::Base,
+    /// Oracle operator's public key y coordinate
+    pub oracle_pub_y: pallas::Base,
     /// Name/description of the data feed
     pub name: String,
     /// Type of data (e.g., "price", "weather", "score")
@@ -123,4 +125,51 @@ pub struct AggregateParamsV1 {
     pub min_result: pallas::Base,
     /// Maximum acceptable result
     pub max_result: pallas::Base,
+}
+
+// ============================================================================
+// UPDATE TYPES (for process_update)
+// ============================================================================
+
+/// Update for RegisterOracleV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RegisterOracleUpdateV1 {
+    /// Oracle ID
+    pub oracle_id: OracleId,
+}
+
+/// Update for PushValueV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct PushValueUpdateV1 {
+    /// Oracle ID
+    pub oracle_id: OracleId,
+    /// New value pushed by oracle
+    pub value: pallas::Base,
+}
+
+/// Update for AttestValueV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AttestValueUpdateV1 {
+    /// Oracle ID
+    pub oracle_id: OracleId,
+    /// Attestation ID
+    pub attestation_id: AttestationId,
+}
+
+/// Update for PushValueCommitmentV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct PushValueCommitmentUpdateV1 {
+    /// Oracle ID
+    pub oracle_id: OracleId,
+    /// Commitment hash
+    pub commitment: pallas::Base,
+}
+
+/// Update for AggregateV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AggregateUpdateV1 {
+    /// Oracle ID
+    pub oracle_id: OracleId,
+    /// Aggregated result
+    pub result: pallas::Base,
 }

@@ -18,6 +18,8 @@
 
 //! Oracle contract integration tests
 
+use darkfi_serial::{deserialize, serialize};
+use darkfi_sdk::pasta::pallas;
 use darkfi_oracle_contract::{
     model::{AttestValueParamsV1, Oracle, PushValueParamsV1, RegisterOracleParamsV1},
     OracleFunction,
@@ -35,7 +37,7 @@ fn test_oracle_function_enum_valid() {
 #[test]
 fn test_oracle_function_enum_invalid() {
     assert!(OracleFunction::try_from(0xFF).is_err());
-    assert!(OracleFunction::try_from(0x03).is_err());
+    assert!(OracleFunction::try_from(0x05).is_err());
     assert!(OracleFunction::try_from(0x10).is_err());
 }
 
@@ -43,9 +45,8 @@ fn test_oracle_function_enum_invalid() {
 fn test_oracle_encoding() {
     let oracle = Oracle {
         id: darkfi_sdk::pasta::pallas::Base::from(1),
-        oracle_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        oracle_pub_x: darkfi_sdk::pasta::pallas::Base::from(2),
+        oracle_pub_y: darkfi_sdk::pasta::pallas::Base::from(3),
         name: "BTC/USD Price Feed".to_string(),
         data_type: "price".to_string(),
         value: darkfi_sdk::pasta::pallas::Base::from(50000),
@@ -53,8 +54,8 @@ fn test_oracle_encoding() {
         is_active: true,
     };
 
-    let encoded = oracle.encode().unwrap();
-    let decoded = Oracle::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&oracle);
+    let decoded: Oracle = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.id, oracle.id);
     assert_eq!(decoded.name, oracle.name);
@@ -66,15 +67,15 @@ fn test_oracle_encoding() {
 fn test_register_oracle_params_encoding() {
     let params = RegisterOracleParamsV1 {
         proof: vec![1, 2, 3],
-        oracle_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        oracle_pub_x: darkfi_sdk::pasta::pallas::Base::from(2),
-        oracle_pub_y: darkfi_sdk::pasta::pallas::Base::from(3),
+        oracle_id: pallas::Base::from(1),
+        oracle_pub_x: pallas::Base::from(2),
+        oracle_pub_y: pallas::Base::from(3),
         name: "BTC/USD Price Feed".to_string(),
         data_type: "price".to_string(),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = RegisterOracleParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: RegisterOracleParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.oracle_id, params.oracle_id);
     assert_eq!(decoded.name, params.name);
@@ -85,12 +86,12 @@ fn test_register_oracle_params_encoding() {
 fn test_push_value_params_encoding() {
     let params = PushValueParamsV1 {
         proof: vec![1, 2, 3],
-        oracle_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        value: darkfi_sdk::pasta::pallas::Base::from(50000),
+        oracle_id: pallas::Base::from(1),
+        value: pallas::Base::from(50000),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = PushValueParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: PushValueParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.oracle_id, params.oracle_id);
     assert_eq!(decoded.value, params.value);
@@ -100,14 +101,14 @@ fn test_push_value_params_encoding() {
 fn test_attest_value_params_encoding() {
     let params = AttestValueParamsV1 {
         proof: vec![1, 2, 3],
-        oracle_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        attestation_id: darkfi_sdk::pasta::pallas::Base::from(2),
+        oracle_id: pallas::Base::from(1),
+        attestation_id: pallas::Base::from(2),
         predicate: 0, // Matches
-        threshold: darkfi_sdk::pasta::pallas::Base::from(50000),
+        threshold: pallas::Base::from(50000),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = AttestValueParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: AttestValueParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.oracle_id, params.oracle_id);
     assert_eq!(decoded.attestation_id, params.attestation_id);

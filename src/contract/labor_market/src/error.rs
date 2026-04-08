@@ -18,6 +18,7 @@
 
 //! Labor Market Contract Errors
 
+use darkfi_sdk::error::ContractError;
 use thiserror::Error;
 
 /// Contract error types
@@ -114,4 +115,41 @@ pub enum LaborMarketError {
 
     #[error("Capability revoked")]
     CapabilityRevoked,
+}
+
+impl From<LaborMarketError> for ContractError {
+    fn from(e: LaborMarketError) -> Self {
+        match e {
+            LaborMarketError::JobNotFound => Self::Custom(1),
+            LaborMarketError::InvalidStateTransition => Self::Custom(2),
+            LaborMarketError::JobAlreadyExists => Self::Custom(3),
+            LaborMarketError::DeadlinePassed => Self::Custom(4),
+            LaborMarketError::DeadlineNotPassed => Self::Custom(5),
+            LaborMarketError::DeliverableHashMismatch => Self::Custom(6),
+            LaborMarketError::WorkerAlreadyAssigned => Self::Custom(7),
+            LaborMarketError::NoWorkerAssigned => Self::Custom(8),
+            LaborMarketError::NotAuthorized => Self::Custom(9),
+            LaborMarketError::NotEmployer => Self::Custom(10),
+            LaborMarketError::NotWorker => Self::Custom(11),
+            LaborMarketError::AlreadySubmitted => Self::Custom(12),
+            LaborMarketError::AlreadySpent => Self::Custom(13),
+            LaborMarketError::IncorrectJobState => Self::Custom(14),
+            LaborMarketError::ZkProofVerificationFailed => Self::Custom(15),
+            LaborMarketError::InvalidSignature => Self::Custom(16),
+            LaborMarketError::InvalidDeliveryType => Self::Custom(17),
+            LaborMarketError::InvalidClaim => Self::Custom(18),
+            LaborMarketError::DaoEscrowRequired => Self::Custom(19),
+            LaborMarketError::SledError(_) => Self::Custom(20),
+            LaborMarketError::InvalidMilestoneIndex => Self::Custom(21),
+            LaborMarketError::MilestoneAlreadyCompleted => Self::Custom(22),
+            LaborMarketError::MilestoneDeadlineNotReached => Self::Custom(23),
+            LaborMarketError::InvalidMilestonePaymentAmount => Self::Custom(24),
+            LaborMarketError::JobDoesNotHaveMilestones => Self::Custom(25),
+            LaborMarketError::MilestoneOutOfOrder => Self::Custom(26),
+            LaborMarketError::CapabilityRequired => Self::Custom(27),
+            LaborMarketError::CapabilityNotMet => Self::Custom(28),
+            LaborMarketError::InvalidCapability => Self::Custom(29),
+            LaborMarketError::CapabilityRevoked => Self::Custom(30),
+        }
+    }
 }

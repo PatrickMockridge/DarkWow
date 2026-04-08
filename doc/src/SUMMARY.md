@@ -46,6 +46,8 @@
     - [Using Tor](dev/contrib/tor.md)
   - [API Rustdoc](dev/rustdoc.md)
   - [Native Contracts](dev/native_contracts.md)
+  - [Smart Contracts Overview](dev/contracts.md)
+  - [Contract Testing & Debugging](dev/contracts_testing.md)
   - [Seminars](dev/seminars.md)
   - [Benchmark](dev/bench.md)
 - [Architecture](arch/arch.md)

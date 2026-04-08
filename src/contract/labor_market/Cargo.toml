@@ -1,0 +1,47 @@
+[package]
+name = "darkfi_labor_market_contract"
+version = "0.1.0"
+edition = "2021"
+authors = ["DarkFi contributors"]
+description = "DarkFi Labor Market Contract - Token-curated registry of service providers"
+license = "AGPL-3.0-only"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+blake3 = "1.8.2"
+darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
+darkfi-serial = { path = "../../serial", features = ["derive", "crypto"] }
+thiserror = "2.0.17"
+
+darkfi = { path = "../../../", features = ["zk"], optional = true }
+chacha20poly1305 = { version = "0.10.1", optional = true }
+halo2_proofs = { version = "0.3.2", optional = true }
+tracing = { version = "0.1.44", optional = true }
+rand = { version = "0.8.5", optional = true }
+
+lazy_static = "1.5.0"
+
+[dev-dependencies]
+smol = "2.0.2"
+darkfi-contract-test-harness = {path = "../test-harness"}
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2.8", features = ["custom"] }
+darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
+
+[features]
+default = []
+no-entrypoint = []
+client = [
+    "darkfi",
+    "darkfi-serial/async",
+    "rand",
+    "chacha20poly1305",
+    "tracing",
+    "halo2_proofs",
+]
+
+[lints]
+workspace = true

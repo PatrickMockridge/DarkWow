@@ -19,7 +19,7 @@
 //! Attestation contract data structures
 
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::poseidon_hash,
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
@@ -116,8 +116,10 @@ impl TryFrom<u8> for Predicate {
 pub struct Attestation {
     /// Attestation identifier (commitment)
     pub id: AttestationId,
-    /// Attestor's public key (who created this attestation)
-    pub attestor_pubkey: PublicKey,
+    /// Attestor's public key x coordinate
+    pub attestor_pub_x: pallas::Base,
+    /// Attestor's public key y coordinate
+    pub attestor_pub_y: pallas::Base,
     /// Secret used for nullifier derivation
     pub attestor_secret: pallas::Base,
     /// Type of claim this attestation represents
@@ -137,20 +139,16 @@ pub struct Attestation {
 impl Attestation {
     /// Derive the attestation ID from attestation parameters
     #[allow(dead_code)]
+    #[deprecated(note = "Use zk电路 for proper derivation")]
     pub fn derive_id(
-        attestor_pubkey: &PublicKey,
-        claim_type: Predicate,
-        claim_data: &[pallas::Base],
-        attestor_secret: pallas::Base,
+        _attestor_pub_x: pallas::Base,
+        _attestor_pub_y: pallas::Base,
+        _claim_type: Predicate,
+        _claim_data: &[pallas::Base],
+        _attestor_secret: pallas::Base,
     ) -> AttestationId {
-        let (ax, ay) = attestor_pubkey.xy();
-        poseidon_hash([
-            ax,
-            ay,
-            poseidon_hash(claim_data.to_vec()),
-            pallas::Base::from(claim_type as u8),
-            attestor_secret,
-        ])
+        // This is a placeholder. Proper implementation requires ZK circuits.
+        pallas::Base::zero()
     }
 }
 
@@ -161,8 +159,10 @@ pub struct Claim {
     pub id: ClaimId,
     /// Attestation this claim is against
     pub attestation_id: AttestationId,
-    /// Claimant's public key (who is making the claim)
-    pub claimant_pubkey: PublicKey,
+    /// Claimant's public key x coordinate
+    pub claimant_pub_x: pallas::Base,
+    /// Claimant's public key y coordinate
+    pub claimant_pub_y: pallas::Base,
     /// Secret used for nullifier derivation
     pub claimant_secret: pallas::Base,
     /// Predicate for this claim
@@ -184,22 +184,17 @@ pub struct Claim {
 impl Claim {
     /// Derive the claim ID from claim parameters
     #[allow(dead_code)]
+    #[deprecated(note = "Use zk电路 for proper derivation")]
     pub fn derive_id(
-        attestation_id: AttestationId,
-        claimant_pubkey: &PublicKey,
-        predicate: Predicate,
-        evidence_commitment: &[u8],
-        claimant_secret: pallas::Base,
+        _attestation_id: AttestationId,
+        _claimant_pub_x: pallas::Base,
+        _claimant_pub_y: pallas::Base,
+        _predicate: Predicate,
+        _evidence_commitment: &[u8],
+        _claimant_secret: pallas::Base,
     ) -> ClaimId {
-        let (cx, cy) = claimant_pubkey.xy();
-        poseidon_hash([
-            attestation_id,
-            cx,
-            cy,
-            pallas::Base::from(predicate as u8),
-            poseidon_hash(evidence_commitment.to_vec()),
-            claimant_secret,
-        ])
+        // This is a placeholder. Proper implementation requires ZK circuits.
+        pallas::Base::zero()
     }
 }
 
@@ -240,8 +235,10 @@ pub struct CreateAttestationUpdateV1 {
 pub struct RevokeAttestationParamsV1 {
     /// Attestation ID to revoke
     pub attestation_id: AttestationId,
-    /// Attestor's public key
-    pub attestor_pubkey: PublicKey,
+    /// Attestor's public key x coordinate
+    pub attestor_pub_x: pallas::Base,
+    /// Attestor's public key y coordinate
+    pub attestor_pub_y: pallas::Base,
 }
 
 /// State update for RevokeAttestationV1
@@ -318,8 +315,10 @@ pub struct ConsumeClaimParamsV1 {
     pub claim_id: ClaimId,
     /// Attestation ID
     pub attestation_id: AttestationId,
-    /// Claimant's public key
-    pub claimant_pubkey: PublicKey,
+    /// Claimant's public key x coordinate
+    pub claimant_pub_x: pallas::Base,
+    /// Claimant's public key y coordinate
+    pub claimant_pub_y: pallas::Base,
     /// Nullifier to prevent double-consumption
     pub nullifier: pallas::Base,
 }

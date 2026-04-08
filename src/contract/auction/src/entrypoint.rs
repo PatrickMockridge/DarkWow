@@ -40,19 +40,17 @@
 //! - Seller settles to receive the winning bid amount
 
 use darkfi_sdk::{
-    crypto::pasta_prelude::*,
+    crypto::ContractId,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
-    msg,
-    pasta::pallas,
-    wasm, ContractCall,
+    msg, pasta, ContractCall,
+    wasm,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use darkfi_serial::{deserialize, serialize};
 
 use crate::{
-    error::AuctionError,
     model::{
-        Auction, AuctionId, AuctionState, Bid, BidId, BidState, ClaimWinningsParamsV1,
+        Auction, AuctionState, Bid, BidState, ClaimWinningsParamsV1,
         ClaimWinningsUpdateV1, CloseAuctionParamsV1, CloseAuctionUpdateV1,
         CreateAuctionParamsV1, CreateAuctionUpdateV1, PlaceBidParamsV1, PlaceBidUpdateV1,
         RefundBidParamsV1, RefundBidUpdateV1, SettleAuctionParamsV1, SettleAuctionUpdateV1,
@@ -104,7 +102,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 // ============================================================================
 
 /// Fetch metadata for ZK proof verification
-fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
@@ -112,282 +110,130 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[auction::get_metadata] Processing function: {:?}", func);
 
-    let metadata = match func {
+    match func {
         AuctionFunction::CreateAuctionV1 => {
             let params: CreateAuctionParamsV1 = deserialize(&self_.data[1..])?;
-            create_auction_get_metadata_v1(cid, call_idx, calls, params)?
+            create_auction_get_metadata_v1(params)?
         }
         AuctionFunction::PlaceBidV1 => {
             let params: PlaceBidParamsV1 = deserialize(&self_.data[1..])?;
-            place_bid_get_metadata_v1(cid, call_idx, calls, params)?
+            place_bid_get_metadata_v1(params)?
         }
         AuctionFunction::CloseAuctionV1 => {
             let params: CloseAuctionParamsV1 = deserialize(&self_.data[1..])?;
-            close_auction_get_metadata_v1(cid, call_idx, calls, params)?
+            close_auction_get_metadata_v1(params)?
         }
         AuctionFunction::ClaimWinningsV1 => {
             let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
-            claim_winnings_get_metadata_v1(cid, call_idx, calls, params)?
+            claim_winnings_get_metadata_v1(params)?
         }
         AuctionFunction::SettleAuctionV1 => {
             let params: SettleAuctionParamsV1 = deserialize(&self_.data[1..])?;
-            settle_auction_get_metadata_v1(cid, call_idx, calls, params)?
+            settle_auction_get_metadata_v1(params)?
         }
         AuctionFunction::RefundBidV1 => {
             let params: RefundBidParamsV1 = deserialize(&self_.data[1..])?;
-            refund_bid_get_metadata_v1(cid, call_idx, calls, params)?
+            refund_bid_get_metadata_v1(params)?
         }
     };
 
-    wasm::util::set_return_data(&metadata)
+    Ok(())
 }
 
 /// `get_metadata` for CreateAuctionV1
-fn create_auction_get_metadata_v1(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-    params: CreateAuctionParamsV1,
-) -> ContractResult<Vec<pallas::Base>> {
+fn create_auction_get_metadata_v1(params: CreateAuctionParamsV1) -> ContractResult {
     msg!("[auction::create_auction_get_metadata_v1] Creating auction: {:?}", params.auction_id);
-
-    // Verify the auction doesn't already exist
-    let auctions_db = wasm::db::db_get(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let existing: Option<Auction> = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
-    if existing.is_some() {
-        msg!("[auction::create_auction_get_metadata_v1] ERROR: Auction already exists");
-        return Err(ContractError::InvalidInstruction.into())
-    }
 
     // TODO: ZK proof verification would go here
     // For now, we just return the public inputs
-    let mut public_inputs = vec![
+    let public_inputs = vec![
         params.auction_id,
         params.seller_commitment,
     ];
 
+    let encoded = serialize(&public_inputs);
+    wasm::util::set_return_data(&encoded)?;
     msg!("[auction::create_auction_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(public_inputs)
+    Ok(())
 }
 
 /// `get_metadata` for PlaceBidV1
-fn place_bid_get_metadata_v1(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-    params: PlaceBidParamsV1,
-) -> ContractResult<Vec<pallas::Base>> {
+fn place_bid_get_metadata_v1(params: PlaceBidParamsV1) -> ContractResult {
     msg!("[auction::place_bid_get_metadata_v1] Placing bid: {:?}", params.bid_id);
 
-    // Verify the auction exists and is active
-    let auctions_db = wasm::db::db_get(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let auction: Auction = match wasm::db::db_get(auctions_db, &serialize(&params.auction_id))? {
-        Some(a) => a,
-        None => {
-            msg!("[auction::place_bid_get_metadata_v1] ERROR: Auction not found");
-            return Err(ContractError::InvalidInstruction.into())
-        }
-    };
-
-    if auction.state != AuctionState::Created && auction.state != AuctionState::Active {
-        msg!("[auction::place_bid_get_metadata_v1] ERROR: Auction not active");
-        return Err(ContractError::InvalidInstruction.into())
-    }
-
-    // SECURITY FIX: Verify auction hasn't ended (deadline not passed)
-    // Get current block and verify deadline_block > current_block
-    let current_block = wasm::chain::get_block_height()?;
-    if current_block >= auction.deadline_block {
-        msg!("[auction::place_bid_get_metadata_v1] ERROR: Auction has ended");
-        return Err(ContractError::InvalidInstruction.into())
-    }
-
-    // Verify bid amount > current highest bid (if there is one)
-    if let Some(highest_bid) = auction.highest_bid {
-        if params.amount <= highest_bid {
-            msg!("[auction::place_bid_get_metadata_v1] ERROR: Bid too low");
-            return Err(ContractError::InvalidInstruction.into())
-        }
-    }
-
-    // Verify bid >= reserve price
-    if params.amount < auction.reserve_price {
-        msg!("[auction::place_bid_get_metadata_v1] ERROR: Below reserve price");
-        return Err(ContractError::InvalidInstruction.into())
-    }
-
     // TODO: ZK proof verification would go here
-    let mut public_inputs = vec![
+    let public_inputs = vec![
         params.auction_id,
         params.bid_id,
-        pallas::Base::from(params.amount),
+        pasta::pallas::Base::from(params.amount),
     ];
 
+    let encoded = serialize(&public_inputs);
+    wasm::util::set_return_data(&encoded)?;
     msg!("[auction::place_bid_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(public_inputs)
+    Ok(())
 }
 
 /// `get_metadata` for CloseAuctionV1
-fn close_auction_get_metadata_v1(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-    params: CloseAuctionParamsV1,
-) -> ContractResult<Vec<pallas::Base>> {
+fn close_auction_get_metadata_v1(params: CloseAuctionParamsV1) -> ContractResult {
     msg!("[auction::close_auction_get_metadata_v1] Closing auction: {:?}", params.auction_id);
 
-    // Verify the auction exists
-    let auctions_db = wasm::db::db_get(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let auction: Auction = match wasm::db::db_get(auctions_db, &serialize(&params.auction_id))? {
-        Some(a) => a,
-        None => {
-            msg!("[auction::close_auction_get_metadata_v1] ERROR: Auction not found");
-            return Err(ContractError::InvalidInstruction.into())
-        }
-    };
-
-    // Verify seller is the caller
-    if auction.seller_pubkey != params.seller_pubkey {
-        msg!("[auction::close_auction_get_metadata_v1] ERROR: Not seller");
-        return Err(ContractError::InvalidInstruction.into())
-    }
-
     // TODO: ZK proof verification would go here
-    let mut public_inputs = vec![
+    let public_inputs = vec![
         params.auction_id,
         params.winner_bid_id,
     ];
 
+    let encoded = serialize(&public_inputs);
+    wasm::util::set_return_data(&encoded)?;
     msg!("[auction::close_auction_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(public_inputs)
+    Ok(())
 }
 
 /// `get_metadata` for ClaimWinningsV1
-fn claim_winnings_get_metadata_v1(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-    params: ClaimWinningsParamsV1,
-) -> ContractResult<Vec<pallas::Base>> {
+fn claim_winnings_get_metadata_v1(params: ClaimWinningsParamsV1) -> ContractResult {
     msg!("[auction::claim_winnings_get_metadata_v1] Claiming winnings: {:?}", params.auction_id);
 
-    // Verify the auction exists and is closed
-    let auctions_db = wasm::db::db_get(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let auction: Auction = match wasm::db::db_get(auctions_db, &serialize(&params.auction_id))? {
-        Some(a) => a,
-        None => {
-            msg!("[auction::claim_winnings_get_metadata_v1] ERROR: Auction not found");
-            return Err(ContractError::InvalidInstruction.into())
-        }
-    };
-
-    // Verify auction is closed
-    if auction.state != AuctionState::Closed {
-        msg!("[auction::claim_winnings_get_metadata_v1] ERROR: Auction not closed");
-        return Err(ContractError::InvalidInstruction.into())
-    }
-
-    // Verify winner_bid_id matches
-    if auction.highest_bid_id != Some(params.winner_bid_id) {
-        msg!("[auction::claim_winnings_get_metadata_v1] ERROR: Winner bid mismatch");
-        return Err(ContractError::InvalidInstruction.into())
-    }
-
     // TODO: ZK proof verification would go here
-    let mut public_inputs = vec![
+    let public_inputs = vec![
         params.auction_id,
         params.winner_bid_id,
     ];
 
+    let encoded = serialize(&public_inputs);
+    wasm::util::set_return_data(&encoded)?;
     msg!("[auction::claim_winnings_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(public_inputs)
+    Ok(())
 }
 
 /// `get_metadata` for SettleAuctionV1
-fn settle_auction_get_metadata_v1(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-    params: SettleAuctionParamsV1,
-) -> ContractResult<Vec<pallas::Base>> {
+fn settle_auction_get_metadata_v1(params: SettleAuctionParamsV1) -> ContractResult {
     msg!("[auction::settle_auction_get_metadata_v1] Settling auction: {:?}", params.auction_id);
 
-    // Verify the auction exists and is closed
-    let auctions_db = wasm::db::db_get(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let auction: Auction = match wasm::db::db_get(auctions_db, &serialize(&params.auction_id))? {
-        Some(a) => a,
-        None => {
-            msg!("[auction::settle_auction_get_metadata_v1] ERROR: Auction not found");
-            return Err(ContractError::InvalidInstruction.into())
-        }
-    };
-
-    // Verify seller is the caller
-    if auction.seller_pubkey != params.seller_pubkey {
-        msg!("[auction::settle_auction_get_metadata_v1] ERROR: Not seller");
-        return Err(ContractError::InvalidInstruction.into())
-    }
-
-    // Verify auction is closed
-    if auction.state != AuctionState::Closed {
-        msg!("[auction::settle_auction_get_metadata_v1] ERROR: Auction not closed");
-        return Err(ContractError::InvalidInstruction.into())
-    }
-
-    // SECURITY FIX: Verify settlement nullifier hasn't been used (prevent double-settlement)
-    let nullifiers_db = wasm::db::db_get(cid, AUCTION_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.settlement_nullifier))? {
-        msg!("[auction::settle_auction_get_metadata_v1] ERROR: Already settled");
-        return Err(ContractError::InvalidInstruction.into())
-    }
-
     // TODO: ZK proof verification would go here
-    let mut public_inputs = vec![
+    let public_inputs = vec![
         params.auction_id,
     ];
 
+    let encoded = serialize(&public_inputs);
+    wasm::util::set_return_data(&encoded)?;
     msg!("[auction::settle_auction_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(public_inputs)
+    Ok(())
 }
 
 /// `get_metadata` for RefundBidV1
-fn refund_bid_get_metadata_v1(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-    params: RefundBidParamsV1,
-) -> ContractResult<Vec<pallas::Base>> {
+fn refund_bid_get_metadata_v1(params: RefundBidParamsV1) -> ContractResult {
     msg!("[auction::refund_bid_get_metadata_v1] Refunding bid: {:?}", params.bid_id);
 
-    // Verify the bid exists
-    let bids_db = wasm::db::db_get(cid, AUCTION_CONTRACT_BIDS_TREE)?;
-    let bid: Bid = match wasm::db::db_get(bids_db, &serialize(&params.bid_id))? {
-        Some(b) => b,
-        None => {
-            msg!("[auction::refund_bid_get_metadata_v1] ERROR: Bid not found");
-            return Err(ContractError::InvalidInstruction.into())
-        }
-    };
-
-    // Verify bidder is the caller
-    if bid.bidder_pubkey != params.bidder_pubkey {
-        msg!("[auction::refund_bid_get_metadata_v1] ERROR: Not bidder");
-        return Err(ContractError::InvalidInstruction.into())
-    }
-
-    // Verify bid is outbid
-    if bid.state != BidState::Outbid {
-        msg!("[auction::refund_bid_get_metadata_v1] ERROR: Bid not outbid");
-        return Err(ContractError::InvalidInstruction.into())
-    }
-
     // TODO: ZK proof verification would go here
-    let mut public_inputs = vec![
+    let public_inputs = vec![
         params.bid_id,
     ];
 
+    let encoded = serialize(&public_inputs);
+    wasm::util::set_return_data(&encoded)?;
     msg!("[auction::refund_bid_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(public_inputs)
+    Ok(())
 }
 
 // ============================================================================
@@ -436,15 +282,19 @@ fn create_auction_v1(cid: ContractId, params: CreateAuctionParamsV1) -> Contract
     msg!("[auction::create_auction_v1] Creating auction: {:?}", params.auction_id);
 
     // Verify the auction doesn't already exist
-    let auctions_db = wasm::db::db_get(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let existing: Option<Auction> = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
+    let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
+    let existing_data = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
+    let existing: Option<Auction> = match existing_data {
+        Some(data) => Some(deserialize(&data)?),
+        None => None,
+    };
     if existing.is_some() {
         msg!("[auction::create_auction_v1] ERROR: Auction already exists");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // Get current block
-    let current_block = wasm::chain::get_block_height()?;
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
 
     // Create new auction
     let auction = Auction {
@@ -474,52 +324,54 @@ fn place_bid_v1(cid: ContractId, params: PlaceBidParamsV1) -> ContractResult {
     msg!("[auction::place_bid_v1] Placing bid: {:?}", params.bid_id);
 
     // Verify the auction exists and is active
-    let auctions_db = wasm::db::db_get(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let mut auction: Auction = match wasm::db::db_get(auctions_db, &serialize(&params.auction_id))? {
-        Some(a) => a,
+    let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
+    let auction_data = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
+    let mut auction: Auction = match auction_data {
+        Some(a) => deserialize(&a)?,
         None => {
             msg!("[auction::place_bid_v1] ERROR: Auction not found");
-            return Err(ContractError::InvalidInstruction.into())
+            return Err(ContractError::InvalidFunction.into())
         }
     };
 
     // Verify auction is accepting bids
     if auction.state != AuctionState::Created && auction.state != AuctionState::Active {
         msg!("[auction::place_bid_v1] ERROR: Auction not accepting bids");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // Get current block
-    let current_block = wasm::chain::get_block_height()?;
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
 
     // Verify auction hasn't ended
     if current_block >= auction.deadline_block {
         msg!("[auction::place_bid_v1] ERROR: Auction has ended");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // Verify bid > current highest bid
     if let Some(highest_bid) = auction.highest_bid {
         if params.amount <= highest_bid {
             msg!("[auction::place_bid_v1] ERROR: Bid too low");
-            return Err(ContractError::InvalidInstruction.into())
+            return Err(ContractError::InvalidFunction.into())
         }
     }
 
     // Verify bid >= reserve price
     if params.amount < auction.reserve_price {
         msg!("[auction::place_bid_v1] ERROR: Below reserve price");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // If there was a previous highest bid, mark it as outbid
     if let Some(prev_bid_id) = auction.highest_bid_id {
-        let bids_db = wasm::db::db_get(cid, AUCTION_CONTRACT_BIDS_TREE)?;
-        let mut prev_bid: Bid = match wasm::db::db_get(bids_db, &serialize(&prev_bid_id))? {
-            Some(b) => b,
+        let bids_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_BIDS_TREE)?;
+        let prev_bid_data = wasm::db::db_get(bids_db, &serialize(&prev_bid_id))?;
+        let mut prev_bid: Bid = match prev_bid_data {
+            Some(b) => deserialize(&b)?,
             None => {
                 msg!("[auction::place_bid_v1] ERROR: Previous bid not found");
-                return Err(ContractError::InvalidInstruction.into())
+                return Err(ContractError::InvalidFunction.into())
             }
         };
         prev_bid.state = BidState::Outbid;
@@ -527,7 +379,7 @@ fn place_bid_v1(cid: ContractId, params: PlaceBidParamsV1) -> ContractResult {
     }
 
     // Create new bid
-    let bids_db = wasm::db::db_get(cid, AUCTION_CONTRACT_BIDS_TREE)?;
+    let bids_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_BIDS_TREE)?;
     let bid = Bid {
         id: params.bid_id,
         auction_id: params.auction_id,
@@ -558,25 +410,26 @@ fn close_auction_v1(cid: ContractId, params: CloseAuctionParamsV1) -> ContractRe
     msg!("[auction::close_auction_v1] Closing auction: {:?}", params.auction_id);
 
     // Verify the auction exists
-    let auctions_db = wasm::db::db_get(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let mut auction: Auction = match wasm::db::db_get(auctions_db, &serialize(&params.auction_id))? {
-        Some(a) => a,
+    let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
+    let auction_data = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
+    let mut auction: Auction = match auction_data {
+        Some(a) => deserialize(&a)?,
         None => {
             msg!("[auction::close_auction_v1] ERROR: Auction not found");
-            return Err(ContractError::InvalidInstruction.into())
+            return Err(ContractError::InvalidFunction.into())
         }
     };
 
     // Verify seller is the caller
     if auction.seller_pubkey != params.seller_pubkey {
         msg!("[auction::close_auction_v1] ERROR: Not seller");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // Verify auction is active
     if auction.state != AuctionState::Active {
         msg!("[auction::close_auction_v1] ERROR: Auction not active");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // Update auction state
@@ -585,12 +438,13 @@ fn close_auction_v1(cid: ContractId, params: CloseAuctionParamsV1) -> ContractRe
 
     // Mark winning bid as won
     if let Some(winner_bid_id) = auction.highest_bid_id {
-        let bids_db = wasm::db::db_get(cid, AUCTION_CONTRACT_BIDS_TREE)?;
-        let mut winner_bid: Bid = match wasm::db::db_get(bids_db, &serialize(&winner_bid_id))? {
-            Some(b) => b,
+        let bids_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_BIDS_TREE)?;
+        let winner_bid_data = wasm::db::db_get(bids_db, &serialize(&winner_bid_id))?;
+        let mut winner_bid: Bid = match winner_bid_data {
+            Some(b) => deserialize(&b)?,
             None => {
                 msg!("[auction::close_auction_v1] ERROR: Winner bid not found");
-                return Err(ContractError::InvalidInstruction.into())
+                return Err(ContractError::InvalidFunction.into())
             }
         };
         winner_bid.state = BidState::Won;
@@ -606,25 +460,26 @@ fn claim_winnings_v1(cid: ContractId, params: ClaimWinningsParamsV1) -> Contract
     msg!("[auction::claim_winnings_v1] Claiming winnings: {:?}", params.auction_id);
 
     // Verify the auction exists and is closed
-    let auctions_db = wasm::db::db_get(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let auction: Auction = match wasm::db::db_get(auctions_db, &serialize(&params.auction_id))? {
-        Some(a) => a,
+    let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
+    let auction_data = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
+    let auction: Auction = match auction_data {
+        Some(a) => deserialize(&a)?,
         None => {
             msg!("[auction::claim_winnings_v1] ERROR: Auction not found");
-            return Err(ContractError::InvalidInstruction.into())
+            return Err(ContractError::InvalidFunction.into())
         }
     };
 
     // Verify auction is closed
     if auction.state != AuctionState::Closed {
         msg!("[auction::claim_winnings_v1] ERROR: Auction not closed");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // Verify winner_bid_id matches
     if auction.highest_bid_id != Some(params.winner_bid_id) {
         msg!("[auction::claim_winnings_v1] ERROR: Winner bid mismatch");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     msg!("[auction::claim_winnings_v1] Winnings claimed successfully");
@@ -636,32 +491,33 @@ fn settle_auction_v1(cid: ContractId, params: SettleAuctionParamsV1) -> Contract
     msg!("[auction::settle_auction_v1] Settling auction: {:?}", params.auction_id);
 
     // Verify the auction exists and is closed
-    let auctions_db = wasm::db::db_get(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let mut auction: Auction = match wasm::db::db_get(auctions_db, &serialize(&params.auction_id))? {
-        Some(a) => a,
+    let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
+    let auction_data = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
+    let mut auction: Auction = match auction_data {
+        Some(a) => deserialize(&a)?,
         None => {
             msg!("[auction::settle_auction_v1] ERROR: Auction not found");
-            return Err(ContractError::InvalidInstruction.into())
+            return Err(ContractError::InvalidFunction.into())
         }
     };
 
     // Verify seller is the caller
     if auction.seller_pubkey != params.seller_pubkey {
         msg!("[auction::settle_auction_v1] ERROR: Not seller");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // Verify auction is closed
     if auction.state != AuctionState::Closed {
         msg!("[auction::settle_auction_v1] ERROR: Auction not closed");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // SECURITY FIX: Verify settlement nullifier hasn't been used
-    let nullifiers_db = wasm::db::db_get(cid, AUCTION_CONTRACT_NULLIFIERS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_NULLIFIERS_TREE)?;
     if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.settlement_nullifier))? {
         msg!("[auction::settle_auction_v1] ERROR: Already settled");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // Update auction state
@@ -669,7 +525,7 @@ fn settle_auction_v1(cid: ContractId, params: SettleAuctionParamsV1) -> Contract
     wasm::db::db_set(auctions_db, &serialize(&params.auction_id), &serialize(&auction))?;
 
     // SECURITY FIX: Store settlement nullifier to prevent double-settlement
-    wasm::db::db_put(nullifiers_db, &serialize(&params.settlement_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &serialize(&params.settlement_nullifier), &[])?;
 
     msg!("[auction::settle_auction_v1] Auction settled successfully");
     Ok(())
@@ -680,25 +536,26 @@ fn refund_bid_v1(cid: ContractId, params: RefundBidParamsV1) -> ContractResult {
     msg!("[auction::refund_bid_v1] Refunding bid: {:?}", params.bid_id);
 
     // Verify the bid exists
-    let bids_db = wasm::db::db_get(cid, AUCTION_CONTRACT_BIDS_TREE)?;
-    let mut bid: Bid = match wasm::db::db_get(bids_db, &serialize(&params.bid_id))? {
-        Some(b) => b,
+    let bids_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_BIDS_TREE)?;
+    let bid_data = wasm::db::db_get(bids_db, &serialize(&params.bid_id))?;
+    let mut bid: Bid = match bid_data {
+        Some(b) => deserialize(&b)?,
         None => {
             msg!("[auction::refund_bid_v1] ERROR: Bid not found");
-            return Err(ContractError::InvalidInstruction.into())
+            return Err(ContractError::InvalidFunction.into())
         }
     };
 
     // Verify bidder is the caller
     if bid.bidder_pubkey != params.bidder_pubkey {
         msg!("[auction::refund_bid_v1] ERROR: Not bidder");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // Verify bid is outbid
     if bid.state != BidState::Outbid {
         msg!("[auction::refund_bid_v1] ERROR: Bid not outbid");
-        return Err(ContractError::InvalidInstruction.into())
+        return Err(ContractError::InvalidFunction.into())
     }
 
     // Update bid state
@@ -714,49 +571,41 @@ fn refund_bid_v1(cid: ContractId, params: RefundBidParamsV1) -> ContractResult {
 // ============================================================================
 
 /// Apply state updates
-fn process_update(cid: ContractId, updates: &[u8]) -> ContractResult {
-    let updates: Vec<DarkLeaf<pallas::Base>> = deserialize(updates)?;
-    msg!("[auction::process_update] Applying {} updates", updates.len());
-
-    for update in updates {
-        match update.data[0] {
-            0 => {
-                // CreateAuctionV1 update
-                let update_data: CreateAuctionUpdateV1 = deserialize(&serialize(&update.data[1..]))?;
-                msg!("[auction::process_update] CreateAuction: {:?}", update_data.auction_id);
-            }
-            1 => {
-                // PlaceBidV1 update
-                let update_data: PlaceBidUpdateV1 = deserialize(&serialize(&update.data[1..]))?;
-                msg!("[auction::process_update] PlaceBid: {:?} highest: {}", update_data.auction_id, update_data.highest_bid);
-            }
-            2 => {
-                // CloseAuctionV1 update
-                let update_data: CloseAuctionUpdateV1 = deserialize(&serialize(&update.data[1..]))?;
-                msg!("[auction::process_update] CloseAuction: {:?}", update_data.auction_id);
-            }
-            3 => {
-                // ClaimWinningsV1 update
-                let update_data: ClaimWinningsUpdateV1 = deserialize(&serialize(&update.data[1..]))?;
-                msg!("[auction::process_update] ClaimWinnings: {:?}", update_data.auction_id);
-            }
-            4 => {
-                // SettleAuctionV1 update
-                let update_data: SettleAuctionUpdateV1 = deserialize(&serialize(&update.data[1..]))?;
-                msg!("[auction::process_update] SettleAuction: {:?}", update_data.auction_id);
-            }
-            5 => {
-                // RefundBidV1 update
-                let update_data: RefundBidUpdateV1 = deserialize(&serialize(&update.data[1..]))?;
-                msg!("[auction::process_update] RefundBid: {:?}", update_data.bid_id);
-            }
-            _ => {
-                msg!("[auction::process_update] ERROR: Unknown update type");
-                return Err(ContractError::InvalidInstruction.into())
-            }
+fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
+    match AuctionFunction::try_from(update_data[0])? {
+        AuctionFunction::CreateAuctionV1 => {
+            let update: CreateAuctionUpdateV1 = deserialize(&update_data[1..])?;
+            msg!("[auction::process_update] CreateAuction: {:?}", update.auction_id);
+            Ok(())
+        }
+        AuctionFunction::PlaceBidV1 => {
+            let update: PlaceBidUpdateV1 = deserialize(&update_data[1..])?;
+            msg!(
+                "[auction::process_update] PlaceBid: {:?} highest: {:?}",
+                update.auction_id,
+                update.highest_bid
+            );
+            Ok(())
+        }
+        AuctionFunction::CloseAuctionV1 => {
+            let update: CloseAuctionUpdateV1 = deserialize(&update_data[1..])?;
+            msg!("[auction::process_update] CloseAuction: {:?}", update.auction_id);
+            Ok(())
+        }
+        AuctionFunction::ClaimWinningsV1 => {
+            let update: ClaimWinningsUpdateV1 = deserialize(&update_data[1..])?;
+            msg!("[auction::process_update] ClaimWinnings: {:?}", update.auction_id);
+            Ok(())
+        }
+        AuctionFunction::SettleAuctionV1 => {
+            let update: SettleAuctionUpdateV1 = deserialize(&update_data[1..])?;
+            msg!("[auction::process_update] SettleAuction: {:?}", update.auction_id);
+            Ok(())
+        }
+        AuctionFunction::RefundBidV1 => {
+            let update: RefundBidUpdateV1 = deserialize(&update_data[1..])?;
+            msg!("[auction::process_update] RefundBid: {:?}", update.bid_id);
+            Ok(())
         }
     }
-
-    msg!("[auction::process_update] All updates applied successfully");
-    Ok(())
 }

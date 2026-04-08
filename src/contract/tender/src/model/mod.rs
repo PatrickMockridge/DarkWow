@@ -35,7 +35,7 @@
 //! ```
 
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::poseidon_hash,
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
@@ -111,8 +111,10 @@ impl TryFrom<u8> for BidState {
 pub struct Tender {
     /// Tender identifier (commitment)
     pub id: TenderId,
-    /// Requester's public key (who created the tender)
-    pub requester_pubkey: PublicKey,
+    /// Requester's public key x coordinate
+    pub requester_pub_x: pallas::Base,
+    /// Requester's public key y coordinate
+    pub requester_pub_y: pallas::Base,
     /// Title of the tender
     pub title: String,
     /// Hash of the specification document
@@ -147,7 +149,8 @@ impl Tender {
     /// Derive the tender ID from tender parameters
     #[allow(dead_code)]
     pub fn derive_id(
-        requester_pubkey: &PublicKey,
+        requester_pub_x: pallas::Base,
+        requester_pub_y: pallas::Base,
         title: &str,
         specification: pallas::Base,
         attestation_id: pallas::Base,
@@ -158,11 +161,11 @@ impl Tender {
         delivery_deadline: u64,
         requester_secret: pallas::Base,
     ) -> TenderId {
-        let (rx, ry) = requester_pubkey.xy();
         poseidon_hash([
-            rx,
-            ry,
-            pallas::Base::from_text(&title).unwrap_or_default(),
+            requester_pub_x,
+            requester_pub_y,
+            // Note: title conversion would need proper implementation
+            pallas::Base::zero(),
             specification,
             attestation_id,
             pallas::Base::from(min_bid),
@@ -182,8 +185,10 @@ pub struct Bid {
     pub id: BidId,
     /// Tender this bid is for
     pub tender_id: TenderId,
-    /// Bidder's public key
-    pub bidder_pubkey: PublicKey,
+    /// Bidder's public key x coordinate
+    pub bidder_pub_x: pallas::Base,
+    /// Bidder's public key y coordinate
+    pub bidder_pub_y: pallas::Base,
     /// Bid amount (hidden until reveal)
     pub amount: u64,
     /// Attestation claim ID (proving competency via attestation contract)
@@ -203,15 +208,15 @@ impl Bid {
     #[allow(dead_code)]
     pub fn derive_id(
         tender_id: TenderId,
-        bidder_pubkey: &PublicKey,
+        bidder_pub_x: pallas::Base,
+        bidder_pub_y: pallas::Base,
         amount: u64,
         bid_nonce: pallas::Base,
     ) -> BidId {
-        let (bx, by) = bidder_pubkey.xy();
         poseidon_hash([
             tender_id,
-            bx,
-            by,
+            bidder_pub_x,
+            bidder_pub_y,
             pallas::Base::from(amount),
             bid_nonce,
         ])
@@ -311,8 +316,10 @@ pub struct RevealBidUpdateV1 {
 pub struct CloseTenderParamsV1 {
     /// Tender ID
     pub tender_id: TenderId,
-    /// Requester's public key
-    pub requester_pubkey: PublicKey,
+    /// Requester's public key x coordinate
+    pub requester_pub_x: pallas::Base,
+    /// Requester's public key y coordinate
+    pub requester_pub_y: pallas::Base,
 }
 
 /// State update for CloseTenderV1
@@ -331,8 +338,10 @@ pub struct SelectWinnerParamsV1 {
     pub tender_id: TenderId,
     /// Winner's bid ID
     pub winner_bid_id: BidId,
-    /// Winner's public key
-    pub winner_pubkey: PublicKey,
+    /// Winner's public key x coordinate
+    pub winner_pub_x: pallas::Base,
+    /// Winner's public key y coordinate
+    pub winner_pub_y: pallas::Base,
     /// Winning bid amount
     pub winning_amount: u64,
 }
@@ -353,8 +362,10 @@ pub struct SelectWinnerUpdateV1 {
 pub struct CancelTenderParamsV1 {
     /// Tender ID
     pub tender_id: TenderId,
-    /// Requester's public key
-    pub requester_pubkey: PublicKey,
+    /// Requester's public key x coordinate
+    pub requester_pub_x: pallas::Base,
+    /// Requester's public key y coordinate
+    pub requester_pub_y: pallas::Base,
 }
 
 /// State update for CancelTenderV1
@@ -371,8 +382,10 @@ pub struct RejectBidParamsV1 {
     pub tender_id: TenderId,
     /// Bid ID being rejected
     pub bid_id: BidId,
-    /// Requester's public key
-    pub requester_pubkey: PublicKey,
+    /// Requester's public key x coordinate
+    pub requester_pub_x: pallas::Base,
+    /// Requester's public key y coordinate
+    pub requester_pub_y: pallas::Base,
 }
 
 /// State update for RejectBidV1

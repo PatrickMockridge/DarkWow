@@ -18,6 +18,7 @@
 
 //! Oracle Contract Errors
 
+use darkfi_sdk::error::ContractError;
 use thiserror::Error;
 
 /// Contract error types
@@ -46,4 +47,19 @@ pub enum OracleError {
 
     #[error("ZK proof verification failed")]
     ZkProofVerificationFailed,
+}
+
+impl From<OracleError> for ContractError {
+    fn from(e: OracleError) -> Self {
+        match e {
+            OracleError::OracleNotFound => Self::Custom(1),
+            OracleError::OracleNotActive => Self::Custom(2),
+            OracleError::NotAuthorized => Self::Custom(3),
+            OracleError::OracleAlreadyExists => Self::Custom(4),
+            OracleError::InvalidPredicate => Self::Custom(5),
+            OracleError::UpdateTooSoon => Self::Custom(6),
+            OracleError::InvalidSignature => Self::Custom(7),
+            OracleError::ZkProofVerificationFailed => Self::Custom(8),
+        }
+    }
 }

@@ -18,10 +18,11 @@
 
 //! Labor Market Contract Data Structures
 
-use serde::{Deserialize, Serialize};
+use darkfi_sdk::pasta::pallas;
+use darkfi_serial::{SerialDecodable, SerialEncodable};
 
 /// Delivery type for job work
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
 #[repr(u8)]
 pub enum DeliveryType {
     /// Generic deliverable: hash of a zip file
@@ -42,7 +43,7 @@ impl Default for DeliveryType {
 
 /// A milestone in a multi-stage job
 /// Each milestone has its own deadline and payment amount
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Milestone {
     /// Milestone index (0-based)
     pub index: u32,
@@ -63,7 +64,7 @@ impl Default for Milestone {
 }
 
 /// Job state in the state machine
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
 #[repr(u8)]
 pub enum JobState {
     /// Job created, awaiting worker acceptance
@@ -89,7 +90,7 @@ impl Default for JobState {
 }
 
 /// A job posting in the labor market
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Job {
     /// Unique job identifier (Poseidon hash commitment)
     pub id: pallas::Base,
@@ -126,7 +127,7 @@ pub struct Job {
 }
 
 /// Parameters for creating a new job
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct CreateJobParamsV1 {
     /// ZK proof for job creation
     pub proof: Vec<u8>,
@@ -151,7 +152,7 @@ pub struct CreateJobParamsV1 {
 }
 
 /// Parameters for accepting a job
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct AcceptJobParamsV1 {
     /// ZK proof for job acceptance
     pub proof: Vec<u8>,
@@ -164,7 +165,7 @@ pub struct AcceptJobParamsV1 {
 }
 
 /// Parameters for submitting a generic deliverable (zip hash)
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct SubmitDeliverableParamsV1 {
     /// ZK proof for deliverable submission
     pub proof: Vec<u8>,
@@ -181,7 +182,7 @@ pub struct SubmitDeliverableParamsV1 {
 }
 
 /// Parameters for submitting a git deliverable (commit hash)
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct SubmitGitDeliverableParamsV1 {
     /// ZK proof for git deliverable submission
     pub proof: Vec<u8>,
@@ -198,7 +199,7 @@ pub struct SubmitGitDeliverableParamsV1 {
 }
 
 /// Parameters for confirming delivery and releasing payment
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct ConfirmDeliveryParamsV1 {
     /// ZK proof for confirmation
     pub proof: Vec<u8>,
@@ -213,7 +214,7 @@ pub struct ConfirmDeliveryParamsV1 {
 }
 
 /// Parameters for escalating to DAO dispute resolution
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct DisputeParamsV1 {
     /// ZK proof for dispute
     pub proof: Vec<u8>,
@@ -230,7 +231,7 @@ pub struct DisputeParamsV1 {
 }
 
 /// Parameters for timeout refund
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct RefundParamsV1 {
     /// ZK proof for refund
     pub proof: Vec<u8>,
@@ -245,7 +246,7 @@ pub struct RefundParamsV1 {
 }
 
 /// Parameters for cancelling a job before acceptance
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct CancelJobParamsV1 {
     /// ZK proof for cancellation
     pub proof: Vec<u8>,
@@ -262,7 +263,7 @@ pub struct CancelJobParamsV1 {
 // ============================================================================
 
 /// Parameters for creating a job with milestones
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct CreateJobWithMilestonesParamsV1 {
     /// ZK proof for job creation
     pub proof: Vec<u8>,
@@ -291,7 +292,7 @@ pub struct CreateJobWithMilestonesParamsV1 {
 }
 
 /// Parameters for submitting a deliverable for a specific milestone
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct SubmitMilestoneDeliverableParamsV1 {
     /// ZK proof for milestone deliverable submission
     pub proof: Vec<u8>,
@@ -310,7 +311,7 @@ pub struct SubmitMilestoneDeliverableParamsV1 {
 }
 
 /// Parameters for confirming a milestone and releasing payment
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct ConfirmMilestoneParamsV1 {
     /// ZK proof for milestone confirmation
     pub proof: Vec<u8>,
@@ -329,7 +330,7 @@ pub struct ConfirmMilestoneParamsV1 {
 }
 
 /// Parameters for raising a dispute for a specific milestone
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct InitiateDisputeParamsV1 {
     /// ZK proof for dispute
     pub proof: Vec<u8>,
@@ -352,7 +353,7 @@ pub struct InitiateDisputeParamsV1 {
 // ============================================================================
 
 /// Parameters for creating a job that requires workers to have a capability
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct CreateJobWithCapabilityParamsV1 {
     /// ZK proof for job creation
     pub proof: Vec<u8>,
@@ -381,7 +382,7 @@ pub struct CreateJobWithCapabilityParamsV1 {
 }
 
 /// Parameters for accepting a job with capability proof
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct AcceptJobWithCapabilityParamsV1 {
     /// ZK proof for job acceptance
     pub proof: Vec<u8>,
@@ -398,7 +399,7 @@ pub struct AcceptJobWithCapabilityParamsV1 {
 }
 
 /// Parameters for creating a milestone job with capability requirement
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, SerialEncodable, SerialDecodable)]
 pub struct CreateJobWithMilestonesAndCapabilityParamsV1 {
     /// ZK proof for job creation
     pub proof: Vec<u8>,
