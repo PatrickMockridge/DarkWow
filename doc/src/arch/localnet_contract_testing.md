@@ -22,6 +22,13 @@ Localnet smart contract testing now **works fully** with the following workflow:
 - **Test Command**: `cargo test -p darkfi-identity-contract --test integration`
 - **Tests Cover**: Function enum parsing, data structure encoding/decoding, model invariants (Attribute, Claim, Credential, Issuer types)
 
+### Subscription Contract (subscription_contract)
+- **Status**: Fixed and verified on localnet (2026-04-08)
+- **Integration Tests**: 42 tests passing
+- **Test Command**: `cargo test -p subscription_contract --test integration`
+- **Tests Cover**: Function enum parsing, data structure encoding/decoding, rate limiting, state persistence
+- **Fix Applied**: Implemented state persistence in `process_update` - subscriptions now persist correctly
+
 ### Betting Contracts
 
 | Contract | Package Name | Integration Tests | Status |
@@ -51,6 +58,7 @@ The following contracts now have passing integration tests:
 | Contract | Package Name | Integration Tests | Status |
 |----------|--------------|-------------------|--------|
 | identity | darkfi-identity-contract | 15 tests | PASS |
+| subscription | subscription_contract | 42 tests | PASS |
 | baccarat | darkfi_baccarat_contract | 20 tests | PASS |
 | lottery | darkfi_lottery_contract | 6 tests | PASS |
 | darkbet_exchange | darkfi_darkbet_exchange_contract | 30 tests | PASS |
@@ -101,6 +109,7 @@ All contracts with working integration tests can be tested using cargo:
 ```bash
 # Run integration tests for a specific contract
 cargo test -p darkfi-identity-contract --test integration
+cargo test -p subscription_contract --test integration
 cargo test -p darkfi_baccarat_contract --test integration
 cargo test -p darkfi_lottery_contract --test integration
 cargo test -p darkfi_darkbet_exchange_contract --test integration
@@ -111,6 +120,8 @@ cargo test -p darkfi_dex_contract --test integration
 cargo test -p atomic_swap_contract --test integration
 
 # Newly fixed contracts (2026-04-08)
+cargo test -p subscription_contract --test integration  # State persistence fix
+cargo test -p darkfi_stablecoin_contract --test integration  # UpdateConfigV1 fix
 cargo test -p darkfi_oracle_contract --test integration
 cargo test -p darkfi_auction_contract --test integration
 cargo test -p darkfi_tender_contract --test integration

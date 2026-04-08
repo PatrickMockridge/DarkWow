@@ -162,7 +162,6 @@ Shared `darkfi_sdk::crypto::entropy` module for entropy across contracts.
 - [Composability](doc/src/arch/composability.md) — Contract composition patterns
 - [Safemath](doc/src/arch/safemath.md) — Legacy ZK arithmetic templates
 - [Entropy Module](doc/src/arch/entropy.md) — Provable randomness via block hash
-- [Parallel Societies](doc/src/arch/parallel_societies.md) — Privacy for social reproduction
 
 ---
 

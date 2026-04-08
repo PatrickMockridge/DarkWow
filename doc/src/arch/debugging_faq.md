@@ -332,6 +332,80 @@ let _info_db = match wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE) {
 
 ---
 
+## Subscription Contract
+
+### Contract Overview
+
+The Subscription contract (`src/contract/subscription/`) manages recurring subscriptions with DAO escrow integration and rate limiting.
+
+### Function Codes
+
+| Function | Code | Description |
+|----------|------|-------------|
+| InitializeV1 | 0x00 | Create subscription plan |
+| SubscribeV1 | 0x01 | User subscribes to a plan |
+| CancelV1 | 0x02 | Cancel active subscription |
+| RenewV1 | 0x03 | Renew an expired subscription |
+| VerifyAccessV1 | 0x04 | Verify subscriber access |
+| DaoControlV1 | 0x05 | DAO controls subscription |
+| UpdateUsageV1 | 0x06 | Update usage counters |
+
+### State Machine
+
+Subscriptions follow this state flow:
+- `Created` → `Active` (on SubscribeV1)
+- `Active` → `Cancelled` (on CancelV1)
+- `Active` → `Expired` (if not renewed past `lock_until_block`)
+- `Cancelled`/`Expired` → `Active` (on RenewV1)
+
+### Common Implementation Issues
+
+**State not persisting**: The `process_update` function must write the full `Subscription` object to the database:
+```rust
+fn subscribe_apply_v1(cid: ContractId, update: SubscribeUpdateV1) -> ContractResult {
+    let subscription_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+    // Must serialize the full subscription, not just the ID
+    wasm::db::db_set(subscription_db, &update.subscription.id.to_repr(), &serialize(&update.subscription))?;
+    Ok(())
+}
+```
+
+**Key serialization**: Use `to_repr()` not `to_bytes()` for pallas::Base keys:
+```rust
+// CORRECT
+wasm::db::db_set(db, &subscription.id.to_repr(), &serialize(&subscription)?);
+
+// WRONG - to_bytes() doesn't exist on pallas::Base
+wasm::db::db_set(db, &subscription.id.to_bytes(), &serialize(&subscription)?);
+```
+
+**Block height casting**: `get_verifying_block_height()` returns `u32`, cast to `u64`:
+```rust
+// CORRECT
+let current_block = wasm::util::get_verifying_block_height()? as u64;
+
+// WRONG - type mismatch
+let current_block = wasm::util::get_verifying_block_height()?;
+```
+
+### Model Update Structs
+
+Update structs must carry full objects, not just IDs:
+
+```rust
+// WRONG - apply handler needs full subscription
+pub struct SubscribeUpdateV1 {
+    pub subscription_id: SubscriptionId,
+}
+
+// CORRECT - apply handler has everything it needs
+pub struct SubscribeUpdateV1 {
+    pub subscription: Subscription,
+}
+```
+
+---
+
 ## ZK Circuit Debugging
 
 ### Gadget Errors

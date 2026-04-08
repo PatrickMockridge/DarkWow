@@ -116,6 +116,74 @@ fn test_derive_id() {
 }
 ```
 
+## Test Helper Functions
+
+Many contracts use helper functions to create consistent test data:
+
+```rust
+use darkfi_sdk::crypto::pasta_prelude::{Field, Group};
+
+/// Create a public key for testing
+fn make_pubkey(seed: u64) -> PublicKey {
+    let secret = SecretKey::from(pallas::Base::from_u64(seed));
+    PublicKey::from_secret(secret)
+}
+
+/// Create a dummy subscription for testing
+fn create_dummy_subscription(id: SubscriptionId) -> Subscription {
+    let keypair = darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng);
+    let subscriber_pubkey = darkfi_sdk::crypto::PublicKey::from_secret(keypair.secret);
+    Subscription {
+        id,
+        subscriber_pubkey,
+        plan_id: 1,
+        lock_until_block: 100000,
+        deposit: 1000,
+        token_id: Field::zero(),
+        value_commit: Group::identity(),
+        state: SubscriptionState::Active,
+        spent_nullifier: Field::zero(),
+        created_at: 50000,
+        dao_escrow_bulla: None,
+        dao_membership_note: None,
+        uses_allowed: 100,
+        rate_period: 1000,
+        period_uses: 5,
+        last_access_block: 50000,
+        uses_remaining: 95,
+    }
+}
+```
+
+## Correct Serialization API
+
+Use `serialize()`/`deserialize()` NOT `encode()`/`decode()`:
+
+```rust
+// CORRECT
+let encoded = serialize(&params);
+let decoded: ParamsV1 = deserialize(&encoded).unwrap();
+
+// WRONG (old API)
+let encoded = params.encode().unwrap();
+let decoded = ParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+```
+
+## Correct Field Constructors
+
+```rust
+// CORRECT
+pallas::Base::zero()    // not pallas::Base::ZERO
+pallas::Base::one()      // not pallas::Base::ONE
+Group::identity()         // not pallas::Point::identity()
+
+// PublicKey from secret
+let pubkey = PublicKey::from_secret(secret_key);
+
+// From u64 to Base
+pallas::Base::from_u64(42)  // for u64 values
+```
+
 ## Debugging Failed Tests
 
 ### Compilation Errors
