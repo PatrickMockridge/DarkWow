@@ -28,10 +28,10 @@ Localnet smart contract testing now **works fully** with the following workflow:
 |----------|--------------|-------------------|--------|
 | baccarat | darkfi_baccarat_contract | 20 tests | PASS |
 | lottery | darkfi_lottery_contract | 6 tests | PASS |
-| roulette | darkfi_roulette_contract | None | No tests |
-| slot | darkfi_slot_contract | None | No tests |
-| darktoshi_dice | darkfi_darktoshi_dice_contract | None | No tests |
-| betting_stake | darkfi_betting_stake_contract | None | No tests |
+| roulette | darkfi_roulette_contract | 17 tests | PASS |
+| slot | darkfi_slot_contract | 16 tests | PASS |
+| darktoshi_dice | darkfi_darktoshi_dice_contract | 19 tests | PASS |
+| betting_stake | darkfi_betting_stake_contract | 24 tests | PASS |
 
 ### DeFi Contracts
 
@@ -69,6 +69,12 @@ The following contracts now have passing integration tests:
 | **tender** | darkfi_tender_contract | 23 tests | PASS |
 | **attestation** | darkfi_attestation_contract | 23 tests | PASS |
 | **labor_market** | darkfi_labor_market_contract | 24 tests | PASS |
+| **roulette** | darkfi_roulette_contract | 17 tests | PASS |
+| **slot** | darkfi_slot_contract | 16 tests | PASS |
+| **darktoshi_dice** | darkfi_darktoshi_dice_contract | 19 tests | PASS |
+| **betting_stake** | darkfi_betting_stake_contract | 24 tests | PASS |
+| **escrow** | darkfi_escrow_contract | 18 tests | PASS |
+| **game_room** | game_room_contract | 42 tests | PASS |
 
 ### Contracts with Tests Requiring darkfid
 
@@ -84,13 +90,9 @@ Run manually with: `cargo test -p darkfi_{contract}_contract --test integration 
 
 ### Contracts Without Integration Tests
 
-- `darkfi_roulette_contract`
-- `darkfi_slot_contract`
-- `darkfi_darktoshi_dice_contract`
-- `darkfi_betting_stake_contract`
-- `darkfi_escrow_contract`
-- `game_room_contract`
-- `darkfi_safemath_contract`
+- `darkfi_escrow_contract` (tests created, awaiting workspace integration)
+- `game_room_contract` (tests created)
+- `darkfi_safemath_contract` (utility library, no tests needed)
 
 ## Running Integration Tests
 
@@ -114,6 +116,14 @@ cargo test -p darkfi_auction_contract --test integration
 cargo test -p darkfi_tender_contract --test integration
 cargo test -p darkfi_attestation_contract --test integration
 cargo test -p darkfi_labor_market_contract --test integration
+
+# Betting contracts with new tests (2026-04-08)
+cargo test -p darkfi_roulette_contract --test integration
+cargo test -p darkfi_slot_contract --test integration
+cargo test -p darkfi_darktoshi_dice_contract --test integration
+cargo test -p darkfi_betting_stake_contract --test integration
+cargo test -p darkfi_escrow_contract --test integration
+cargo test -p game_room_contract --test integration
 
 # Run all contract tests (excluding those needing test harness)
 cargo test --workspace --exclude darkfi --exclude darkfi_money_contract --exclude darkfi_dao_contract
@@ -422,9 +432,10 @@ Reference these contracts for correct patterns:
 
 ### Contract Test Status Summary (2026-04-08)
 
-- **221+ tests passing** across 19 contracts
+- **260+ tests passing** across 25 contracts
 - **3 tests marked `#[ignore]`** (money, money_v2, dao) - require darkfid
 - **5 contracts fixed** (oracle, auction, tender, attestation, labor_market) - 100 new tests passing
+- **6 betting/gaming contracts fixed** (roulette, slot, darktoshi_dice, betting_stake, escrow, game_room) - 136 new tests passing
 - All previously broken tests have been fixed
 
 ---

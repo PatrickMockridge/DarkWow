@@ -66,6 +66,13 @@ members = [
     "src/contract/pool_stake",
     "src/contract/relayer_endowment",
     "src/contract/stablecoin",
+    "src/contract/subscription",
+    "src/contract/auction",
+    "src/contract/attestation",
+    "src/contract/oracle",
+    "src/contract/tender",
+    "src/contract/labor_market",
+    "src/contract/game_room",
 
     "example/dchat/dchatd",
 ]
