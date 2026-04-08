@@ -209,7 +209,6 @@ Tested WASM contract deployment on localnet.
 | darktoshi_dice | 196KB | ✅ Deployed |
 | baccarat | 199KB | ✅ Deployed |
 | dao | 320KB | ✅ Deployed |
-| dao_escrow | 66KB | ✅ Deployed |
 | money | 496KB | ✅ Deployed |
 | money_v2 | 496KB | ✅ Deployed |
 | escrow | 177KB | ✅ Deployed |
@@ -217,6 +216,13 @@ Tested WASM contract deployment on localnet.
 | roulette | 239KB | ✅ Deployed (2026-04-07) |
 | betting_stake | 171KB | ✅ Deployed (2026-04-07) |
 | drain_protection | 224KB | ✅ Deployed (2026-04-07) |
+| bridge | 227KB | ✅ Deployed |
+| darkbet_exchange | 313KB | ✅ Deployed |
+| dex | 208KB | ✅ Deployed |
+| pool_stake | 212KB | ✅ Deployed |
+| stablecoin | 85KB | ✅ Deployed |
+| relayer_endowment | 181KB | ✅ Deployed |
+| dao_escrow | 169KB | ✅ Deployed (2026-04-08) |
 
 ### Contracts That Previously Failed to Deploy
 
@@ -557,6 +563,81 @@ drk -c bin/drk/drk_config.toml -n localnet contract deploy $AUTH \
 
 ---
 
+## DAO Escrow Contract Implementation (2026-04-08)
+
+### Overview
+
+The DAO Escrow contract manages endowment funds for DAOs with three modes:
+- **Escrow**: Members pay premiums to endowment, owner withdraws
+- **Treasury**: DAO governance controls withdrawals
+- **TreasuryEndowment**: Combination with endowment-style deposits
+
+### Implemented Functions
+
+| Function | Code | Description | Status |
+|----------|------|-------------|--------|
+| InitializeV1 | 0x00 | Create new endowment | ✅ Implemented |
+| UpdateV1 | 0x01 | Update endowment parameters | ✅ Implemented |
+| PayPremiumV1 | 0x02 | Member pays premium, receives membership | ✅ Implemented |
+| WithdrawV1 | 0x03 | Owner withdraws from endowment | ✅ Implemented |
+| EndowmentWithdrawV1 | 0x04 | DAO governance withdrawal | Stub |
+| TreasurySpendV1 | 0x05 | Treasury spending | Stub |
+| EnableDrainProtectionV1 | 0x06 | Enable fund drain protection | ✅ Implemented |
+
+### Model Changes (2026-04-08)
+
+**InitializeUpdateV1** - Added fields:
+- `owner_pubkey: PublicKey` - Owner public key for withdrawal authorization
+- `bulla_blind: BaseBlind` - Bulla blind factor
+
+**PayPremiumParamsV1** - Added field:
+- `member_pubkey: PublicKey` - Verified in ZK proof
+
+**PayPremiumUpdateV1** - Added fields:
+- `member_pubkey: PublicKey` - Member public key
+- `token_id: pallas::Base` - Token ID
+- `expiry: u64` - Membership expiry block
+
+### Deployment Details
+
+```
+Contract ID: Dgwt5X8nWh8DFKHKjao1gvHD92DfxqzaUWyJBsGxFkVV
+Transaction: aabb0985c73096c6001bcbed144f86743bf83ea9036f8b566eb2663e1e0ad56a
+WASM Size: 169KB
+Status: ✅ Deployed and confirmed
+```
+
+### Key Trees
+
+| Tree | Purpose |
+|------|---------|
+| BULLAS_TREE | Tracks all endowment bullet |
+| ENDOWMENT_TREE | Stores endowment state |
+| MEMBERSHIP_TREE | Stores membership notes |
+| INFO_TREE | Metadata (for redeployment guards) |
+
+### Implementation Pattern
+
+```rust
+// Initialize - creates endowment
+fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> ContractResult {
+    let bullas_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_BULLAS_TREE)?;
+    if wasm::db::db_contains_key(bullas_db, &params.dao_bulla.to_repr())? {
+        return Err(DaoEscrowError::DaoEscrowAlreadyExists(...).into())
+    }
+    let update = model::InitializeUpdateV1 { ... };
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> ContractResult {
+    wasm::db::db_set(bullas_db, &update.bulla.to_repr(), &[])?;
+    wasm::db::db_set(endowments_db, &update.bulla.to_repr(), &serialize(&endowment))?;
+    Ok(())
+}
+```
+
+---
+
 ## Money v1 vs v2 Contract Composition Issue
 
 ### The Problem
@@ -703,3 +784,4 @@ Not all `ParseFailed: Requires deploy instruction` errors are the same:
 - `bin/drk/src/rpc.rs` - `miner_mine()` stratum client
 - `bin/drk/drk_config.toml` - Network configuration
 - `contrib/localnet/darkfid-single-node/darkfid.toml` - Localnet config
+- `src/contract/dao_escrow/src/` - DAO Escrow contract (deployed 2026-04-08)

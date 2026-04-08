@@ -2076,6 +2076,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkfi_attestation_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.5",
+ "smol",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
+name = "darkfi_auction_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.5",
+ "smol",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
 name = "darkfi_baccarat_contract"
 version = "0.1.0"
 dependencies = [
@@ -2122,6 +2160,7 @@ version = "0.1.0"
 dependencies = [
  "darkfi-sdk",
  "darkfi-serial",
+ "getrandom 0.2.17",
  "thiserror 2.0.17",
 ]
 
@@ -2293,8 +2332,28 @@ version = "0.1.0"
 dependencies = [
  "darkfi-sdk",
  "darkfi-serial",
+ "getrandom 0.2.17",
  "rand 0.8.5",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "darkfi_labor_market_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.5",
+ "smol",
+ "thiserror 2.0.17",
+ "tracing",
 ]
 
 [[package]]
@@ -2344,6 +2403,25 @@ version = "0.6.0"
 dependencies = [
  "blake3",
  "bs58",
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.5",
+ "smol",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
+name = "darkfi_oracle_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
  "chacha20poly1305",
  "darkfi",
  "darkfi-contract-test-harness",
@@ -2431,6 +2509,25 @@ dependencies = [
 [[package]]
 name = "darkfi_stablecoin_contract"
 version = "0.5.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "darkfi",
+ "darkfi-contract-test-harness",
+ "darkfi-sdk",
+ "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.5",
+ "smol",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
+name = "darkfi_tender_contract"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
@@ -3811,6 +3908,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
 dependencies = [
  "byteorder",
+]
+
+[[package]]
+name = "game_room_contract"
+version = "0.1.0"
+dependencies = [
+ "darkfi-sdk",
+ "darkfi-serial",
+ "serial_test",
 ]
 
 [[package]]
@@ -6895,6 +7001,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "scc"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46e6f046b7fef48e2660c57ed794263155d713de679057f2d0c169bfc6e756cc"
+dependencies = [
+ "sdd",
+]
+
+[[package]]
 name = "schemars"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6923,6 +7038,12 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sdd"
+version = "3.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490dcfcbfef26be6800d11870ff2df8774fa6e86d047e3e8c8a76b25655e41ca"
 
 [[package]]
 name = "sealed"
@@ -7094,6 +7215,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52a8e3ca0ca629121f70ab50f95249e5a6f925cc0f6ffe8256c45b728875706c"
 dependencies = [
  "darling 0.21.3",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
+name = "serial_test"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "911bd979bf1070a3f3aa7b691a3b3e9968f339ceeec89e08c280a8a22207a32f"
+dependencies = [
+ "futures-executor",
+ "futures-util",
+ "log",
+ "once_cell",
+ "parking_lot 0.12.5",
+ "scc",
+ "serial_test_derive",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a7d91949b85b0d2fb687445e448b40d322b6b3e4af6b44a29b21d9a5f33e6d9"
+dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -7533,6 +7680,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "subscription_contract"
+version = "0.1.0"
+dependencies = [
+ "darkfi-sdk",
+ "darkfi-serial",
 ]
 
 [[package]]

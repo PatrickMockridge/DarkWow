@@ -256,6 +256,10 @@ pub struct InitializeParamsV1 {
 pub struct InitializeUpdateV1 {
     /// The created endowment bulla
     pub bulla: DaoEscrowBulla,
+    /// Owner public key (for withdrawal authorization)
+    pub owner_pubkey: PublicKey,
+    /// Bulla blind factor
+    pub bulla_blind: BaseBlind,
 }
 
 /// Parameters for `DaoEscrow::UpdateV1`
@@ -291,6 +295,8 @@ pub struct PayPremiumParamsV1 {
     pub membership_blind: BaseBlind,
     /// Value blind factor
     pub value_blind: BaseBlind,
+    /// Member public key (verified in ZK proof)
+    pub member_pubkey: PublicKey,
 }
 
 /// State update for `DaoEscrow::PayPremiumV1`
@@ -304,6 +310,12 @@ pub struct PayPremiumUpdateV1 {
     pub total_endowment: u64,
     /// Updated member count
     pub member_count: u64,
+    /// Member public key
+    pub member_pubkey: PublicKey,
+    /// Token ID
+    pub token_id: pallas::Base,
+    /// Membership expiry block
+    pub expiry: u64,
 }
 
 /// Parameters for `DaoEscrow::WithdrawV1`

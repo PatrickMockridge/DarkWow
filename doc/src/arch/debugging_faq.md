@@ -231,6 +231,107 @@ The `IntentSetIndexV1` tracks consumed nullifiers in memory. On restart, this st
 
 ---
 
+## DAO Escrow Contract
+
+### Contract Overview
+
+The DAO Escrow contract (`src/contract/dao_escrow/`) manages endowment funds for DAOs with three modes:
+- **Escrow**: Members pay premiums to endowment, owner withdraws
+- **Treasury**: DAO governance controls withdrawals
+- **TreasuryEndowment**: Combination with endowment-style deposits
+
+### Function Codes
+
+| Function | Code | Description |
+|----------|------|-------------|
+| InitializeV1 | 0x00 | Create new endowment |
+| UpdateV1 | 0x01 | Update endowment parameters |
+| PayPremiumV1 | 0x02 | Member pays premium, receives membership |
+| WithdrawV1 | 0x03 | Owner withdraws from endowment |
+| EndowmentWithdrawV1 | 0x04 | DAO governance withdrawal (not implemented) |
+| TreasurySpendV1 | 0x05 | Treasury spending (not implemented) |
+| EnableDrainProtectionV1 | 0x06 | Enable fund drain protection |
+
+### Common Implementation Patterns
+
+**InitializeV1** - Creates a new DAO-Escrow endowment:
+```rust
+fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> ContractResult {
+    // Verify endowment doesn't already exist
+    let bullas_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_BULLAS_TREE)?;
+    if wasm::db::db_contains_key(bullas_db, &params.dao_bulla.to_repr())? {
+        return Err(DaoEscrowError::DaoEscrowAlreadyExists(...).into())
+    }
+    // Derive endowment bulla and create update
+    let update = model::InitializeUpdateV1 { ... };
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> ContractResult {
+    // Store in bullas tree and endowment tree
+    wasm::db::db_set(bullas_db, &update.bulla.to_repr(), &[])?;
+    wasm::db::db_set(endowments_db, &update.bulla.to_repr(), &serialize(&endowment))?;
+    Ok(())
+}
+```
+
+**WithdrawV1** - Endowment owner withdrawals:
+```rust
+fn withdraw_v1(cid: ContractId, params: model::WithdrawParamsV1) -> ContractResult {
+    // Verify caller is endowment owner
+    if endowment.owner_pubkey != params.recipient_pubkey {
+        return Err(DaoEscrowError::NotAuthorizedToWithdraw.into())
+    }
+    // Verify sufficient balance
+    if endowment.total_endowment < params.value {
+        return Err(DaoEscrowError::InsufficientEndowment.into())
+    }
+    // Create update with new total
+    Ok(())
+}
+```
+
+### Model Update Structs
+
+The Update structs returned by instruction handlers must include all fields needed by the apply handler:
+
+```rust
+// WRONG - missing fields in update
+pub struct WithdrawUpdateV1 {
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    pub value: u64,
+    // Missing: total_endowment needed by apply handler!
+}
+
+// CORRECT - apply handler has everything it needs
+pub struct WithdrawUpdateV1 {
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    pub value: u64,
+    pub total_endowment: u64,  // Updated balance after withdrawal
+}
+```
+
+### Key Trees
+
+| Tree | Purpose |
+|------|---------|
+| BULLAS_TREE | Tracks all endowment bullet |
+| ENDOWMENT_TREE | Stores endowment state |
+| MEMBERSHIP_TREE | Stores membership notes |
+| INFO_TREE | Metadata (for redeployment guards) |
+
+### Redeployment Guard Pattern
+
+To allow safe redeployment, use db_lookup before db_init:
+```rust
+let _info_db = match wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE) {
+    Ok(v) => v,
+    Err(_) => wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?,
+};
+```
+
+---
+
 ## ZK Circuit Debugging
 
 ### Gadget Errors
