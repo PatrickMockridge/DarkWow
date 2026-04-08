@@ -21,7 +21,9 @@ The following contracts have been verified to work on localnet and/or have passi
 - **Status**: Fully verified on localnet
 - **Contract ID**: `9AhecnZbDH4npo3zg8VdYQpSb9jj6nqC3dR7HhuvEWAQ`
 - **Integration Tests**: 15 tests passing
+- **Test Command**: `cargo test -p darkfi_identity_contract --test integration`
 - **Deployment**: Successfully deployed to localnet
+- **Tests Cover**: Function enum parsing, data structure encoding/decoding, model invariants (Attribute, Claim, Credential, Issuer types)
 
 ### Betting Contracts
 
@@ -40,6 +42,8 @@ The following contracts have been verified to work on localnet and/or have passi
 | darkbet_exchange | ✓ | 30 tests |
 | pool_stake | ✓ | 23 tests |
 | relayer_endowment | ✓ | 20 tests |
+
+All DeFi contracts were verified with `cargo build` and have passing integration tests.
 
 ## Prerequisites
 
