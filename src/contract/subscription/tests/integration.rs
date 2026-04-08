@@ -18,6 +18,7 @@
 
 //! Subscription contract integration tests
 
+use darkfi_sdk::crypto::pasta_prelude::{Field, Group};
 use darkfi_subscription_contract::{
     model::{
         permissions, CancelParamsV1, CancelUpdateV1, DaoControlAction, DaoControlParamsV1,
@@ -30,6 +31,31 @@ use darkfi_subscription_contract::{
     SUBSCRIPTION_CONTRACT_INFO_TREE, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE,
     SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE, SUBSCRIPTION_CONTRACT_PLANS_TREE,
 };
+
+/// Helper to create a dummy subscription for testing
+fn create_dummy_subscription(id: SubscriptionId) -> Subscription {
+    let keypair = darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng);
+    let subscriber_pubkey = darkfi_sdk::crypto::PublicKey::from_secret(keypair.secret);
+    Subscription {
+        id,
+        subscriber_pubkey,
+        plan_id: 1,
+        lock_until_block: 100000,
+        deposit: 1000,
+        token_id: Field::zero(),
+        value_commit: Group::identity(),
+        state: SubscriptionState::Active,
+        spent_nullifier: Field::zero(),
+        created_at: 50000,
+        dao_escrow_bulla: None,
+        dao_membership_note: None,
+        uses_allowed: 100,
+        rate_period: 1000,
+        period_uses: 5,
+        last_access_block: 50000,
+        uses_remaining: 95,
+    }
+}
 
 #[test]
 fn test_subscription_function_enum_valid() {
@@ -239,26 +265,25 @@ fn test_subscribe_params_encoding() {
 
 #[test]
 fn test_subscribe_update_encoding() {
-    let update = SubscribeUpdateV1 {
-        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
-    };
+    let subscription = create_dummy_subscription(Field::zero());
+    let update = SubscribeUpdateV1 { subscription: subscription.clone() };
 
     let encoded = update.encode().unwrap();
     let decoded = SubscribeUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
 
-    assert_eq!(decoded.subscription_id, update.subscription_id);
+    assert_eq!(decoded.subscription.id, subscription.id);
 }
 
 #[test]
 fn test_cancel_params_encoding() {
+    let keypair = darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng);
+    let recipient_pubkey = darkfi_sdk::crypto::PublicKey::from_secret(keypair.secret);
     let params = CancelParamsV1 {
-        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        subscriber_secret: darkfi_sdk::pasta::pallas::Base::from(2),
-        spent_nullifier: darkfi_sdk::pasta::pallas::Base::from(3),
+        subscription_id: Field::zero(),
+        subscriber_secret: Field::zero(),
+        spent_nullifier: Field::zero(),
         current_block: 50000,
-        recipient_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        recipient_pubkey,
     };
 
     let encoded = params.encode().unwrap();
@@ -270,9 +295,11 @@ fn test_cancel_params_encoding() {
 
 #[test]
 fn test_cancel_update_encoding() {
+    let subscription = create_dummy_subscription(Field::zero());
     let update = CancelUpdateV1 {
-        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        spent_nullifier: darkfi_sdk::pasta::pallas::Base::from(2),
+        subscription_id: subscription.id,
+        spent_nullifier: Field::zero(),
+        updated_subscription: subscription.clone(),
     };
 
     let encoded = update.encode().unwrap();
@@ -280,6 +307,7 @@ fn test_cancel_update_encoding() {
 
     assert_eq!(decoded.subscription_id, update.subscription_id);
     assert_eq!(decoded.spent_nullifier, update.spent_nullifier);
+    assert_eq!(decoded.updated_subscription.id, subscription.id);
 }
 
 #[test]
@@ -302,9 +330,11 @@ fn test_renew_params_encoding() {
 
 #[test]
 fn test_renew_update_encoding() {
+    let subscription = create_dummy_subscription(Field::zero());
     let update = RenewUpdateV1 {
-        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        spent_nullifier: darkfi_sdk::pasta::pallas::Base::from(2),
+        subscription_id: subscription.id,
+        spent_nullifier: Field::zero(),
+        new_subscription: subscription.clone(),
     };
 
     let encoded = update.encode().unwrap();
@@ -312,6 +342,7 @@ fn test_renew_update_encoding() {
 
     assert_eq!(decoded.subscription_id, update.subscription_id);
     assert_eq!(decoded.spent_nullifier, update.spent_nullifier);
+    assert_eq!(decoded.new_subscription.id, subscription.id);
 }
 
 #[test]

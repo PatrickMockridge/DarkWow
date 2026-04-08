@@ -42,20 +42,23 @@
 //! - **Atomic swap**: Cross-chain payments via HTLC pattern
 
 use darkfi_sdk::{
-    crypto::ContractId,
-    error::ContractResult,
+    crypto::{pasta_prelude::PrimeField, ContractId},
+    error::{ContractError, ContractResult},
     msg,
+    pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::deserialize;
+use darkfi_serial::{deserialize, serialize};
 
 use crate::{
     model::{
-        CancelUpdateV1, DaoControlParamsV1, DaoControlUpdateV1, RenewUpdateV1,
-        SubscribeUpdateV1, UpdateUsageParamsV1, UpdateUsageUpdateV1,
+        CancelParamsV1, CancelUpdateV1, DaoControlAction, DaoControlParamsV1, DaoControlUpdateV1,
+        Plan, RenewParamsV1, RenewUpdateV1, SubscribeParamsV1, SubscribeUpdateV1, Subscription,
+        SubscriptionState, UpdateUsageParamsV1, UpdateUsageUpdateV1,
     },
     SubscriptionFunction, SUBSCRIPTION_CONTRACT_INFO_TREE,
-    SUBSCRIPTION_CONTRACT_PLANS_TREE, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE,
+    SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE, SUBSCRIPTION_CONTRACT_PLANS_TREE,
+    SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE,
 };
 
 // ============================================================================
@@ -139,14 +142,37 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[subscription::process_instruction] Processing function: {:?}", func);
 
-    // TODO: Implement actual instruction processing
-    // This would:
-    // 1. Deserialize call parameters
-    // 2. Verify ZK proofs
-    // 3. Check state transitions
-    // 4. Return update data if valid
-
-    wasm::util::set_return_data(&[])
+    match func {
+        SubscriptionFunction::SubscribeV1 => {
+            let params: SubscribeParamsV1 = deserialize(&self_.data[1..])?;
+            subscribe_v1(cid, params)
+        }
+        SubscriptionFunction::CancelV1 => {
+            let params: CancelParamsV1 = deserialize(&self_.data[1..])?;
+            cancel_v1(cid, params)
+        }
+        SubscriptionFunction::RenewV1 => {
+            let params: RenewParamsV1 = deserialize(&self_.data[1..])?;
+            renew_v1(cid, params)
+        }
+        SubscriptionFunction::VerifyAccessV1 => {
+            // No state update needed - just verification
+            msg!("[subscription::process_instruction] VerifyAccessV1 has no state update");
+            wasm::util::set_return_data(&[])
+        }
+        SubscriptionFunction::UpdateUsageV1 => {
+            let params: UpdateUsageParamsV1 = deserialize(&self_.data[1..])?;
+            update_usage_v1(cid, params)
+        }
+        SubscriptionFunction::DaoControlV1 => {
+            let params: DaoControlParamsV1 = deserialize(&self_.data[1..])?;
+            dao_control_v1(cid, params)
+        }
+        SubscriptionFunction::InitializeV1 => {
+            msg!("[subscription::process_instruction] InitializeV1 has no update data");
+            wasm::util::set_return_data(&[])
+        }
+    }
 }
 
 // ============================================================================
@@ -159,19 +185,16 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         SubscriptionFunction::SubscribeV1 => {
-            let _update: SubscribeUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Write subscription to state tree
-            Ok(())
+            let update: SubscribeUpdateV1 = deserialize(&update_data[1..])?;
+            subscribe_apply_v1(cid, update)
         }
         SubscriptionFunction::CancelV1 => {
-            let _update: CancelUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Mark subscription as Cancelled, record nullifier
-            Ok(())
+            let update: CancelUpdateV1 = deserialize(&update_data[1..])?;
+            cancel_apply_v1(cid, update)
         }
         SubscriptionFunction::RenewV1 => {
-            let _update: RenewUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Mark old subscription nullified, create new subscription
-            Ok(())
+            let update: RenewUpdateV1 = deserialize(&update_data[1..])?;
+            renew_apply_v1(cid, update)
         }
         SubscriptionFunction::VerifyAccessV1 => {
             // No state update needed - just verification
@@ -179,16 +202,12 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         SubscriptionFunction::UpdateUsageV1 => {
-            let _update: UpdateUsageUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Write updated usage to subscription state
-            // This would update: period_uses, last_access_block, uses_remaining
-            // And handle period reset logic
-            Ok(())
+            let update: UpdateUsageUpdateV1 = deserialize(&update_data[1..])?;
+            update_usage_apply_v1(cid, update)
         }
         SubscriptionFunction::DaoControlV1 => {
-            let _update: DaoControlUpdateV1 = deserialize(&update_data[1..])?;
-            // TODO: Execute DAO control action
-            Ok(())
+            let update: DaoControlUpdateV1 = deserialize(&update_data[1..])?;
+            dao_control_apply_v1(cid, update)
         }
         SubscriptionFunction::InitializeV1 => {
             msg!("[subscription::process_update] InitializeV1 has no update data");
@@ -198,44 +217,373 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 }
 
 // ============================================================================
-// PLACEHOLDER IMPLEMENTATIONS
+// INSTRUCTION HANDLERS
 // ============================================================================
-//
-// The following functions are placeholder implementations showing the
-// intended logic. Full ZK circuit integration is TODO.
-//
-// The actual subscription logic will verify:
-//
-// Subscribe:
-//   - Subscriber creates deposit commitment: C = PoseidonHash(value, token, nonce)
-//   - Merkle proof verifies C is in the subscriber's commitment tree
-//   - Plan Merkle root verifies plan_id is valid
-//   - Subscriber proves knowledge of subscriber_secret
-//   - lock_until_block = current_block + plan.duration_blocks
-//
-// Cancel (user):
-//   - Subscriber proves knowledge of subscriber_secret
-//   - State transitions: Active -> Cancelled
-//   - Refund available at lock_until_block
-//   - Emit: spent_nullifier
-//
-// Renew:
-//   - Subscriber proves knowledge of subscriber_secret
-//   - old subscription: State stays Active, emit nullifier
-//   - new subscription: new lock_until_block, new commitment
-//
-// VerifyAccess:
-//   - Prove subscription is Active (not cancelled/expired)
-//   - Prove current_block < lock_until_block
-//   - Prove subscriber matches subscription
-//   - Derive capability: PoseidonHash(subscriber, plan_id, subscription_id, permissions)
-//   - Constrain: capability == expected
-//
-// DaoControl:
-//   - UpdatePlan: DAO governance updates plan parameters
-//   - SetPlanActive: DAO enables/disables plans
-//   - EmergencyPause: DAO pauses all subscriptions
-//   - EndowmentWithdraw: DAO withdraws from endowment
-//   - Slash: DAO punishes malicious subscribers
-//
-// ============================================================================
+
+/// SubscribeV1 instruction - create a new subscription
+fn subscribe_v1(cid: ContractId, params: SubscribeParamsV1) -> ContractResult {
+    msg!("[subscription::subscribe_v1] Creating subscription for plan {}", params.plan_id);
+
+    // Look up the plan to get duration and settings
+    let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
+    let plan_bytes = wasm::db::db_get(plans_db, &params.plan_id.to_le_bytes())?;
+    let plan: Plan = match plan_bytes {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[subscription::subscribe_v1] ERROR: Plan not found");
+            return Err(ContractError::Custom(1).into())
+        }
+    };
+
+    // Verify plan is active
+    if !plan.active {
+        msg!("[subscription::subscribe_v1] ERROR: Plan is not active");
+        return Err(ContractError::Custom(1).into())
+    }
+
+    let current_block = wasm::util::get_verifying_block_height()?;
+
+    // Create subscription
+    let subscription = Subscription {
+        id: params.commitment,
+        subscriber_pubkey: params.subscriber_pubkey,
+        plan_id: params.plan_id,
+        lock_until_block: current_block as u64 + plan.duration_blocks as u64,
+        deposit: plan.price,
+        token_id: plan.token_id,
+        value_commit: params.value_commit,
+        state: SubscriptionState::Active,
+        spent_nullifier: pallas::Base::zero(),
+        created_at: current_block as u64,
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        dao_membership_note: params.dao_membership_note,
+        uses_allowed: 0,
+        rate_period: 0,
+        period_uses: 0,
+        last_access_block: current_block as u64,
+        uses_remaining: 0,
+    };
+
+    let update = SubscribeUpdateV1 { subscription };
+    msg!("[subscription::subscribe_v1] Subscription created: {:?}", update.subscription.id);
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+/// SubscribeV1 apply - store subscription
+fn subscribe_apply_v1(cid: ContractId, update: SubscribeUpdateV1) -> ContractResult {
+    let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE)?;
+
+    // Write subscription to subscriptions tree
+    wasm::db::db_set(
+        subs_db,
+        &update.subscription.id.to_repr(),
+        &serialize(&update.subscription),
+    )?;
+
+    // Record nullifier placeholder (not spent yet - tracks subscription existence)
+    wasm::db::db_set(nullifiers_db, &update.subscription.id.to_repr(), &[])?;
+
+    msg!("[subscription::subscribe_apply_v1] Subscription stored: {:?}", update.subscription.id);
+    Ok(())
+}
+
+/// CancelV1 instruction - cancel an existing subscription
+fn cancel_v1(cid: ContractId, params: CancelParamsV1) -> ContractResult {
+    msg!("[subscription::cancel_v1] Cancelling subscription {:?}", params.subscription_id);
+
+    // Look up the subscription
+    let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+    let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_repr())?;
+    let mut subscription: Subscription = match sub_bytes {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[subscription::cancel_v1] ERROR: Subscription not found");
+            return Err(ContractError::Custom(1).into())
+        }
+    };
+
+    // Verify subscription is active
+    if subscription.state != SubscriptionState::Active {
+        msg!("[subscription::cancel_v1] ERROR: Subscription not active");
+        return Err(ContractError::Custom(3).into())
+    }
+
+    // Compute the nullifier to verify ownership
+    let expected_nullifier = subscription.compute_nullifier(params.subscriber_secret);
+    if expected_nullifier != params.spent_nullifier {
+        msg!("[subscription::cancel_v1] ERROR: Invalid nullifier");
+        return Err(ContractError::Custom(4).into())
+    }
+
+    // Update subscription state to Cancelled
+    subscription.state = SubscriptionState::Cancelled;
+
+    let update = CancelUpdateV1 {
+        subscription_id: params.subscription_id,
+        spent_nullifier: params.spent_nullifier,
+        updated_subscription: subscription,
+    };
+
+    msg!("[subscription::cancel_v1] Cancellation prepared for: {:?}", params.subscription_id);
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+/// CancelV1 apply - mark subscription cancelled and record nullifier
+fn cancel_apply_v1(cid: ContractId, update: CancelUpdateV1) -> ContractResult {
+    let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE)?;
+
+    // Write updated subscription with Cancelled state
+    wasm::db::db_set(
+        subs_db,
+        &update.subscription_id.to_repr(),
+        &serialize(&update.updated_subscription),
+    )?;
+
+    // Record the nullifier as spent
+    wasm::db::db_set(nullifiers_db, &update.spent_nullifier.to_repr(), &[])?;
+
+    msg!("[subscription::cancel_apply_v1] Subscription cancelled: {:?}", update.subscription_id);
+    Ok(())
+}
+
+/// RenewV1 instruction - renew an existing subscription
+fn renew_v1(cid: ContractId, params: RenewParamsV1) -> ContractResult {
+    msg!("[subscription::renew_v1] Renewing subscription {:?}", params.subscription_id);
+
+    // Look up the existing subscription
+    let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+    let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_repr())?;
+    let old_subscription: Subscription = match sub_bytes {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[subscription::renew_v1] ERROR: Subscription not found");
+            return Err(ContractError::Custom(1).into())
+        }
+    };
+
+    // Verify subscription is active
+    if old_subscription.state != SubscriptionState::Active {
+        msg!("[subscription::renew_v1] ERROR: Subscription not active");
+        return Err(ContractError::Custom(3).into())
+    }
+
+    // Look up the plan to get duration
+    let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
+    let plan_bytes = wasm::db::db_get(plans_db, &old_subscription.plan_id.to_le_bytes())?;
+    let plan: Plan = match plan_bytes {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[subscription::renew_v1] ERROR: Plan not found");
+            return Err(ContractError::Custom(1).into())
+        }
+    };
+
+    let current_block = wasm::util::get_verifying_block_height()?;
+
+    // Create new subscription with renewed lock_until_block
+    let new_subscription = Subscription {
+        id: params.subscription_id, // Same ID for continuity
+        subscriber_pubkey: old_subscription.subscriber_pubkey,
+        plan_id: old_subscription.plan_id,
+        lock_until_block: params.new_lock_until_block,
+        deposit: old_subscription.deposit,
+        token_id: old_subscription.token_id,
+        value_commit: params.value_commit,
+        state: SubscriptionState::Active,
+        spent_nullifier: pallas::Base::zero(),
+        created_at: current_block as u64,
+        dao_escrow_bulla: old_subscription.dao_escrow_bulla,
+        dao_membership_note: old_subscription.dao_membership_note,
+        uses_allowed: old_subscription.uses_allowed,
+        rate_period: old_subscription.rate_period,
+        period_uses: old_subscription.period_uses,
+        last_access_block: current_block as u64,
+        uses_remaining: old_subscription.uses_remaining,
+    };
+
+    let update = RenewUpdateV1 {
+        subscription_id: params.subscription_id,
+        spent_nullifier: params.spent_nullifier,
+        new_subscription,
+    };
+
+    msg!("[subscription::renew_v1] Renewal prepared for: {:?}", params.subscription_id);
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+/// RenewV1 apply - nullify old, create new subscription
+fn renew_apply_v1(cid: ContractId, update: RenewUpdateV1) -> ContractResult {
+    let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE)?;
+
+    // Write new subscription
+    wasm::db::db_set(
+        subs_db,
+        &update.subscription_id.to_repr(),
+        &serialize(&update.new_subscription),
+    )?;
+
+    // Record old nullifier as spent
+    wasm::db::db_set(nullifiers_db, &update.spent_nullifier.to_repr(), &[])?;
+
+    msg!("[subscription::renew_apply_v1] Subscription renewed: {:?}", update.subscription_id);
+    Ok(())
+}
+
+/// UpdateUsageV1 instruction - record usage of a subscription
+fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> ContractResult {
+    msg!("[subscription::update_usage_v1] Updating usage for: {:?}", params.subscription_id);
+
+    // Look up the subscription
+    let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+    let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_repr())?;
+    let subscription: Subscription = match sub_bytes {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[subscription::update_usage_v1] ERROR: Subscription not found");
+            return Err(ContractError::Custom(1).into())
+        }
+    };
+
+    // Compute the nullifier to verify ownership
+    let expected_nullifier = subscription.compute_nullifier(params.subscriber_secret);
+    if expected_nullifier != params.spent_nullifier {
+        msg!("[subscription::update_usage_v1] ERROR: Invalid nullifier");
+        return Err(ContractError::Custom(4).into())
+    }
+
+    // Check if this is a new period
+    let blocks_since_last = params.current_block.saturating_sub(subscription.last_access_block);
+    let is_new_period = blocks_since_last >= subscription.rate_period;
+
+    // Calculate new usage values
+    let (period_uses, uses_remaining, last_access_block) = if is_new_period {
+        // Reset period counters
+        (1u64, subscription.uses_allowed.saturating_sub(1), params.current_block)
+    } else {
+        // Increment within period
+        (
+            subscription.period_uses + 1,
+            subscription.uses_remaining.saturating_sub(1),
+            params.current_block,
+        )
+    };
+
+    let update = UpdateUsageUpdateV1 {
+        subscription_id: params.subscription_id,
+        period_uses,
+        last_access_block,
+        uses_remaining,
+        is_new_period,
+    };
+
+    msg!("[subscription::update_usage_v1] Usage update prepared for: {:?}", params.subscription_id);
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+/// UpdateUsageV1 apply - write updated usage to subscription
+fn update_usage_apply_v1(cid: ContractId, update: UpdateUsageUpdateV1) -> ContractResult {
+    let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+
+    // Get current subscription
+    let sub_bytes = wasm::db::db_get(subs_db, &update.subscription_id.to_repr())?;
+    let mut subscription: Subscription = match sub_bytes {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[subscription::update_usage_apply_v1] ERROR: Subscription not found");
+            return Err(ContractError::Custom(1).into())
+        }
+    };
+
+    // Update usage fields
+    subscription.period_uses = update.period_uses;
+    subscription.last_access_block = update.last_access_block;
+    subscription.uses_remaining = update.uses_remaining;
+
+    wasm::db::db_set(
+        subs_db,
+        &update.subscription_id.to_repr(),
+        &serialize(&subscription),
+    )?;
+
+    msg!("[subscription::update_usage_apply_v1] Usage updated for: {:?}", update.subscription_id);
+    Ok(())
+}
+
+/// DaoControlV1 instruction - execute DAO governance action
+fn dao_control_v1(_cid: ContractId, params: DaoControlParamsV1) -> ContractResult {
+    msg!("[subscription::dao_control_v1] Executing DAO control action");
+
+    // Convert params to action for update
+    let action = match params {
+        DaoControlParamsV1::UpdatePlan(plan) => DaoControlAction::PlanUpdated(plan.id),
+        DaoControlParamsV1::SetPlanActive { plan_id, active } => {
+            DaoControlAction::PlanStatusChanged { plan_id, active }
+        }
+        DaoControlParamsV1::EmergencyPause { pause, reason: _ } => {
+            DaoControlAction::EmergencyPauseToggled(pause)
+        }
+        DaoControlParamsV1::EndowmentWithdraw { amount, recipient } => {
+            DaoControlAction::EndowmentWithdrawn { amount, recipient }
+        }
+        DaoControlParamsV1::Slash { subscription_id, reason: _ } => {
+            DaoControlAction::SubscriptionSlashed(subscription_id)
+        }
+    };
+
+    let update = DaoControlUpdateV1 { action };
+
+    msg!("[subscription::dao_control_v1] DAO control action prepared");
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+/// DaoControlV1 apply - execute DAO governance action
+fn dao_control_apply_v1(cid: ContractId, update: DaoControlUpdateV1) -> ContractResult {
+    match update.action {
+        DaoControlAction::PlanUpdated(plan_id) => {
+            // The plan was already updated during instruction, nothing to do here
+            msg!("[subscription::dao_control_apply_v1] Plan updated: {}", plan_id);
+        }
+        DaoControlAction::PlanStatusChanged { plan_id, active } => {
+            let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
+            let plan_bytes = wasm::db::db_get(plans_db, &plan_id.to_le_bytes())?;
+            let mut plan: Plan = match plan_bytes {
+                Some(data) => deserialize(&data)?,
+                None => {
+                    msg!("[subscription::dao_control_apply_v1] ERROR: Plan not found");
+                    return Err(ContractError::Custom(1).into())
+                }
+            };
+            plan.active = active;
+            wasm::db::db_set(plans_db, &plan_id.to_le_bytes(), &serialize(&plan))?;
+            msg!("[subscription::dao_control_apply_v1] Plan {} active status: {}", plan_id, active);
+        }
+        DaoControlAction::EmergencyPauseToggled(pause) => {
+            // In a full implementation, this would set a global pause flag
+            msg!("[subscription::dao_control_apply_v1] Emergency pause: {}", pause);
+        }
+        DaoControlAction::EndowmentWithdrawn { amount: _, recipient: _ } => {
+            // In a full implementation, this would transfer funds from endowment
+            msg!("[subscription::dao_control_apply_v1] Endowment withdraw executed");
+        }
+        DaoControlAction::SubscriptionSlashed(subscription_id) => {
+            // Mark subscription as slashed/cancelled
+            let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
+            let sub_bytes = wasm::db::db_get(subs_db, &subscription_id.to_repr())?;
+            let mut subscription: Subscription = match sub_bytes {
+                Some(data) => deserialize(&data)?,
+                None => {
+                    msg!("[subscription::dao_control_apply_v1] ERROR: Subscription not found");
+                    return Err(ContractError::Custom(1).into())
+                }
+            };
+            subscription.state = SubscriptionState::Cancelled;
+            wasm::db::db_set(subs_db, &subscription_id.to_repr(), &serialize(&subscription))?;
+            msg!("[subscription::dao_control_apply_v1] Subscription slashed: {:?}", subscription_id);
+        }
+    }
+
+    Ok(())
+}

@@ -136,7 +136,7 @@ impl Subscription {
         poseidon_hash([
             bx,
             by,
-            pallas::Base::from(plan_id),
+            pallas::Base::from(plan_id as u64),
             pallas::Base::from(deposit),
             token_id,
             pallas::Base::from(lock_until_block),
@@ -210,9 +210,9 @@ impl SubscriptionCapability {
         poseidon_hash([
             bx,
             by,
-            pallas::Base::from(plan_id),
+            pallas::Base::from(plan_id as u64),
             subscription_id,
-            pallas::Base::from(permissions),
+            pallas::Base::from(permissions as u64),
             pallas::Base::from(expires_at),
             nonce,
         ])
@@ -253,8 +253,8 @@ pub struct SubscribeParamsV1 {
 /// State update for `Subscription::SubscribeV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct SubscribeUpdateV1 {
-    /// The created subscription ID
-    pub subscription_id: SubscriptionId,
+    /// The full subscription object
+    pub subscription: Subscription,
 }
 
 /// Parameters for `Subscription::CancelV1`
@@ -279,6 +279,8 @@ pub struct CancelUpdateV1 {
     pub subscription_id: SubscriptionId,
     /// Nullifier for the cancelled subscription
     pub spent_nullifier: pallas::Base,
+    /// The updated subscription with Cancelled state
+    pub updated_subscription: Subscription,
 }
 
 /// Parameters for `Subscription::RenewV1`
@@ -305,6 +307,8 @@ pub struct RenewUpdateV1 {
     pub subscription_id: SubscriptionId,
     /// Nullifier for the old subscription
     pub spent_nullifier: pallas::Base,
+    /// The new subscription object
+    pub new_subscription: Subscription,
 }
 
 /// Parameters for `Subscription::VerifyAccessV1`
