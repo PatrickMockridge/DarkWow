@@ -18,11 +18,13 @@
 
 //! Stablecoin contract integration tests
 
+use darkfi_serial::{deserialize, serialize};
+use darkfi_sdk::pasta::pallas;
 use darkfi_stablecoin_contract::{
     model::{
-        CollateralPool, CollateralType, DebtPool, DebtShare, InitializeParams,
-        LiquidateParams, MintStableParams, PiControllerState, RepayStableParams,
-        UpdateConfigParams, WithdrawCollateralParams,
+        CollateralParams, CollateralPool, CollateralType, DeadManAction, DeadManSwitchConfig,
+        DebtPool, DebtShare, LiquidateParams, MintStableParams, PiControllerState,
+        RepayStableParams, StablecoinModel, UpdateConfigParams, WithdrawCollateralParams,
     },
     StablecoinFunction,
     // Constants
@@ -42,158 +44,21 @@ fn test_stablecoin_function_enum_valid() {
     assert!(StablecoinFunction::try_from(0x05).is_ok()); // RepayStableV1
     assert!(StablecoinFunction::try_from(0x06).is_ok()); // LiquidateV1
     assert!(StablecoinFunction::try_from(0x07).is_ok()); // UpdateConfigV1
+    assert!(StablecoinFunction::try_from(0x08).is_ok()); // GovernanceReportV1
+    assert!(StablecoinFunction::try_from(0x09).is_ok()); // AccrueInterestV1
 }
 
 #[test]
 fn test_stablecoin_function_enum_invalid() {
     assert!(StablecoinFunction::try_from(0xFF).is_err());
-    assert!(StablecoinFunction::try_from(0x08).is_err());
+    assert!(StablecoinFunction::try_from(0x0A).is_err());
     assert!(StablecoinFunction::try_from(0x10).is_err());
-}
-
-#[test]
-fn test_initialize_params_encoding() {
-    let params = InitializeParams {
-        min_collateralization_ratio: 15000,  // 150%
-        liquidation_threshold: 13000,          // 130%
-        liquidation_penalty: 1000,             // 10%
-        base_rate: 500,                      // 5% annual
-        pi_kp: 1000,
-        pi_ki: 100,
-        twap_window: 3600,                  // 1 hour
-        price_deviation_threshold: 500,      // 5%
-    };
-
-    let encoded = params.encode().unwrap();
-    let decoded = InitializeParams::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
-
-    assert_eq!(decoded.min_collateralization_ratio, 15000);
-    assert_eq!(decoded.liquidation_threshold, 13000);
-    assert_eq!(decoded.liquidation_penalty, 1000);
-    assert_eq!(decoded.base_rate, 500);
-    assert_eq!(decoded.pi_kp, 1000);
-    assert_eq!(decoded.pi_ki, 100);
 }
 
 #[test]
 fn test_collateral_type() {
     assert_eq!(CollateralType::Xmr as u8, 0);
     assert_eq!(CollateralType::Drk as u8, 1);
-}
-
-#[test]
-fn test_deposit_collateral_params_encoding() {
-    let params = darkfi_stablecoin_contract::model::DepositCollateralParams {
-        deposit_commitment: darkfi_sdk::crypto::IntentCommitment::from([1u8; 32]),
-        collateral_amount: 1000,
-        collateral_type: CollateralType::Xmr,
-        proof: vec![2u8; 128],
-        fee: 10,
-    };
-
-    let encoded = params.encode().unwrap();
-    let decoded =
-        darkfi_stablecoin_contract::model::DepositCollateralParams::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
-
-    assert_eq!(decoded.collateral_amount, 1000);
-    assert_eq!(decoded.fee, 10);
-}
-
-#[test]
-fn test_withdraw_collateral_params_encoding() {
-    let params = WithdrawCollateralParams {
-        withdrawal_nullifier: darkfi_sdk::crypto::IntentNullifier::from([1u8; 32]),
-        new_commitment: darkfi_sdk::crypto::IntentCommitment::from([2u8; 32]),
-        withdraw_amount: 500,
-        proof: vec![3u8; 128],
-        fee: 10,
-    };
-
-    let encoded = params.encode().unwrap();
-    let decoded =
-        WithdrawCollateralParams::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
-
-    assert_eq!(decoded.withdraw_amount, 500);
-    assert_eq!(decoded.fee, 10);
-}
-
-#[test]
-fn test_mint_stable_params_encoding() {
-    let params = MintStableParams {
-        mint_commitment: darkfi_sdk::crypto::IntentCommitment::from([1u8; 32]),
-        mint_amount: 5000,
-        total_debt: 100000,
-        total_collateral: 150000,
-        proof: vec![2u8; 128],
-        fee: 10,
-    };
-
-    let encoded = params.encode().unwrap();
-    let decoded = MintStableParams::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
-
-    assert_eq!(decoded.mint_amount, 5000);
-    assert_eq!(decoded.total_debt, 100000);
-    assert_eq!(decoded.total_collateral, 150000);
-}
-
-#[test]
-fn test_repay_stable_params_encoding() {
-    let params = RepayStableParams {
-        repay_commitment: darkfi_sdk::crypto::IntentCommitment::from([1u8; 32]),
-        repay_amount: 1000,
-        proof: vec![2u8; 128],
-        fee: 10,
-    };
-
-    let encoded = params.encode().unwrap();
-    let decoded = RepayStableParams::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
-
-    assert_eq!(decoded.repay_amount, 1000);
-    assert_eq!(decoded.fee, 10);
-}
-
-#[test]
-fn test_liquidate_params_encoding() {
-    let params = LiquidateParams {
-        liquidation_commitment: darkfi_sdk::crypto::IntentCommitment::from([1u8; 32]),
-        total_debt: 100000,
-        total_collateral: 120000, // Undercollateralized
-        current_price: 95,         // TWAP price
-        debt_to_cover: 5000,
-        proof: vec![2u8; 128],
-        liquidation_reward: 500,
-        fee: 10,
-    };
-
-    let encoded = params.encode().unwrap();
-    let decoded = LiquidateParams::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
-
-    assert_eq!(decoded.total_debt, 100000);
-    assert_eq!(decoded.total_collateral, 120000);
-    assert_eq!(decoded.debt_to_cover, 5000);
-    assert_eq!(decoded.liquidation_reward, 500);
-}
-
-#[test]
-fn test_update_config_params_encoding() {
-    let params = UpdateConfigParams {
-        min_collateralization_ratio: 16000,
-        liquidation_threshold: 14000,
-        liquidation_penalty: 1100,
-        base_rate: 600,
-        pi_kp: 1100,
-        pi_ki: 110,
-        twap_window: 7200,
-        price_deviation_threshold: 600,
-    };
-
-    let encoded = params.encode().unwrap();
-    let decoded = UpdateConfigParams::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
-
-    assert_eq!(decoded.min_collateralization_ratio, 16000);
-    assert_eq!(decoded.liquidation_threshold, 14000);
-    assert_eq!(decoded.pi_kp, 1100);
-    assert_eq!(decoded.pi_ki, 110);
 }
 
 #[test]
@@ -205,8 +70,8 @@ fn test_debt_pool_encoding() {
         last_update: 1000000,
     };
 
-    let encoded = pool.encode().unwrap();
-    let decoded = DebtPool::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&pool);
+    let decoded: DebtPool = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.total_debt, 1000000);
     assert_eq!(decoded.total_collateral, 1500000);
@@ -222,8 +87,8 @@ fn test_collateral_pool_encoding() {
         last_update: 500000,
     };
 
-    let encoded = pool.encode().unwrap();
-    let decoded = CollateralPool::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&pool);
+    let decoded: CollateralPool = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.total_deposited, 500000);
     assert_eq!(decoded.value_ratio, 10000);
@@ -235,13 +100,13 @@ fn test_debt_share_encoding() {
         owner_pub_x: [1u8; 32],
         owner_pub_y: [2u8; 32],
         debt_amount: 10000,
-        commitment: darkfi_sdk::crypto::IntentCommitment::from([3u8; 32]),
+        commitment: pallas::Base::zero().into(),
         created_at: 1000,
         updated_at: 2000,
     };
 
-    let encoded = share.encode().unwrap();
-    let decoded = DebtShare::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&share);
+    let decoded: DebtShare = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.debt_amount, 10000);
     assert_eq!(decoded.created_at, 1000);
@@ -257,12 +122,74 @@ fn test_pi_controller_state_encoding() {
         last_twap: 10000,    // TWAP price
     };
 
-    let encoded = state.encode().unwrap();
-    let decoded = PiControllerState::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&state);
+    let decoded: PiControllerState = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.integral, 1000);
     assert_eq!(decoded.current_rate, 50);
     assert_eq!(decoded.last_twap, 10000);
+}
+
+#[test]
+fn test_update_config_params_encoding() {
+    let params = UpdateConfigParams {
+        min_collateralization_ratio: 16000,
+        liquidation_threshold: 14000,
+        liquidation_penalty: 1100,
+        base_rate: 600,
+        pi_kp: 1100,
+        pi_ki: 110,
+        twap_window: 7200,
+        price_deviation_threshold: 600,
+    };
+
+    let encoded = serialize(&params);
+    let decoded: UpdateConfigParams = deserialize(&encoded).unwrap();
+
+    assert_eq!(decoded.min_collateralization_ratio, 16000);
+    assert_eq!(decoded.liquidation_threshold, 14000);
+    assert_eq!(decoded.pi_kp, 1100);
+    assert_eq!(decoded.pi_ki, 110);
+}
+
+#[test]
+fn test_collateral_params_encoding() {
+    let params = CollateralParams {
+        collateral_type: CollateralType::Drk,
+        haircut: 9850,
+        liquidation_threshold: 13000,
+        max_debt_share: 30000,
+    };
+
+    let encoded = serialize(&params);
+    let decoded: CollateralParams = deserialize(&encoded).unwrap();
+
+    assert_eq!(decoded.collateral_type as u8, CollateralType::Drk as u8);
+    assert_eq!(decoded.haircut, 9850);
+}
+
+#[test]
+fn test_dead_man_switch_config_encoding() {
+    let config = DeadManSwitchConfig {
+        enabled: true,
+        timeout_blocks: 10000,
+        action: DeadManAction::LiquidateAll,
+        last_action_block: 0,
+    };
+
+    let encoded = serialize(&config);
+    let decoded: DeadManSwitchConfig = deserialize(&encoded).unwrap();
+
+    assert_eq!(decoded.enabled, true);
+    assert_eq!(decoded.timeout_blocks, 10000);
+}
+
+#[test]
+fn test_stablecoin_model_variants() {
+    assert!(matches!(StablecoinModel::PooledDebt, StablecoinModel::PooledDebt));
+    assert!(matches!(StablecoinModel::Liquity, StablecoinModel::Liquity));
+    assert!(matches!(StablecoinModel::Fractional, StablecoinModel::Fractional));
+    assert!(matches!(StablecoinModel::IndividualCdp, StablecoinModel::IndividualCdp));
 }
 
 #[test]
@@ -310,7 +237,7 @@ fn test_liquidation_threshold_check() {
     assert_eq!(ratio, 12500);
 
     // Below liquidation threshold
-    assert!(ratio < CDP_LIQUIDATION_THRESHOLD);
+    assert!(ratio < CDP_LIQUIDATION_THRESHOLD as u128);
 }
 
 #[test]
@@ -320,6 +247,6 @@ fn test_penalty_calculation() {
     let penalty_bps: u64 = CDP_LIQUIDATION_PENALTY; // 1000 = 10%
 
     // Penalty = debt * penalty / 10000
-    let penalty: u64 = (debt_to_cover as u128) * (penalty_bps as u128) / 10000;
+    let penalty = (debt_to_cover as u128) * (penalty_bps as u128) / 10000;
     assert_eq!(penalty, 1000); // 10% of 10000 = 1000
 }

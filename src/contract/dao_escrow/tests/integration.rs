@@ -19,18 +19,31 @@
 //! DAO-Escrow contract integration tests
 
 use darkfi_dao_escrow_contract::{
-    dao_escrow::{modes, FeeConfig, Membership},
+    modes::{MODE_ESCROW, MODE_TREASURY, MODE_TREASURY_ENDOWMENT},
     model::{
-        DaoEscrow, DaoEscrowBulla, DaoEscrowMode, EnableDrainProtectionParamsV1,
-        EnableDrainProtectionUpdateV1, InitializeParamsV1, InitializeUpdateV1,
-        MembershipNote, PayPremiumParamsV1, PayPremiumUpdateV1, UpdateParamsV1,
-        UpdateUpdateV1, WithdrawParamsV1, WithdrawUpdateV1,
+        DaoEscrow, DaoEscrowMode, EnableDrainProtectionParamsV1, EnableDrainProtectionUpdateV1,
+        FeeConfig, InitializeParamsV1, InitializeUpdateV1, Membership, PayPremiumParamsV1,
+        PayPremiumUpdateV1, UpdateParamsV1, UpdateUpdateV1, WithdrawParamsV1, WithdrawUpdateV1,
     },
-    DaoEscrowFunction,
-    // Constants
-    DAO_ESCROW_CONTRACT_INFO_TREE, DAO_ESCROW_CONTRACT_BULLAS_TREE,
-    DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE,
+    DaoEscrowFunction, DAO_ESCROW_CONTRACT_BULLAS_TREE, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE,
+    DAO_ESCROW_CONTRACT_INFO_TREE, DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE,
 };
+use darkfi_serial::{deserialize, serialize};
+use darkfi_sdk::{
+    crypto::{pasta_prelude::Group, BaseBlind, PublicKey, SecretKey},
+    pasta::pallas,
+};
+
+/// Helper to create PublicKey from a numeric seed
+fn make_pubkey(seed: u64) -> PublicKey {
+    let secret = SecretKey::from(pallas::Base::from(seed));
+    PublicKey::from_secret(secret)
+}
+
+/// Helper to create BaseBlind from a numeric seed
+fn make_blind(seed: u64) -> BaseBlind {
+    BaseBlind::from(seed)
+}
 
 #[test]
 fn test_dao_escrow_function_enum_valid() {
@@ -40,40 +53,48 @@ fn test_dao_escrow_function_enum_valid() {
     assert!(DaoEscrowFunction::try_from(0x03).is_ok()); // WithdrawV1
     assert!(DaoEscrowFunction::try_from(0x04).is_ok()); // EndowmentWithdrawV1
     assert!(DaoEscrowFunction::try_from(0x05).is_ok()); // TreasurySpendV1
+    assert!(DaoEscrowFunction::try_from(0x06).is_ok()); // EnableDrainProtectionV1
 }
 
 #[test]
 fn test_dao_escrow_function_enum_invalid() {
     assert!(DaoEscrowFunction::try_from(0xFF).is_err());
-    assert!(DaoEscrowFunction::try_from(0x06).is_err());
+    assert!(DaoEscrowFunction::try_from(0x07).is_err());
     assert!(DaoEscrowFunction::try_from(0x10).is_err());
 }
 
 #[test]
-fn test_dao_escrow_mode_from_u8() {
-    assert_eq!(DaoEscrowMode::try_from(0), Ok(DaoEscrowMode::Escrow));
-    assert_eq!(DaoEscrowMode::try_from(1), Ok(DaoEscrowMode::Treasury));
-    assert_eq!(DaoEscrowMode::try_from(2), Ok(DaoEscrowMode::TreasuryEndowment));
-    assert!(DaoEscrowMode::try_from(3).is_err());
-    assert!(DaoEscrowMode::try_from(255).is_err());
+fn test_dao_escrow_mode_encoding() {
+    let escrow = DaoEscrowMode::Escrow;
+    let treasury = DaoEscrowMode::Treasury;
+    let endowment = DaoEscrowMode::TreasuryEndowment;
+
+    let encoded_escrow = serialize(&escrow);
+    let decoded_escrow: DaoEscrowMode = deserialize(&encoded_escrow).unwrap();
+    assert_eq!(decoded_escrow, DaoEscrowMode::Escrow);
+
+    let encoded_treasury = serialize(&treasury);
+    let decoded_treasury: DaoEscrowMode = deserialize(&encoded_treasury).unwrap();
+    assert_eq!(decoded_treasury, DaoEscrowMode::Treasury);
+
+    let encoded_endowment = serialize(&endowment);
+    let decoded_endowment: DaoEscrowMode = deserialize(&encoded_endowment).unwrap();
+    assert_eq!(decoded_endowment, DaoEscrowMode::TreasuryEndowment);
 }
 
 #[test]
 fn test_mode_constants() {
-    assert_eq!(modes::MODE_ESCROW, 0);
-    assert_eq!(modes::MODE_TREASURY, 1);
-    assert_eq!(modes::MODE_TREASURY_ENDOWMENT, 2);
+    assert_eq!(MODE_ESCROW, 0);
+    assert_eq!(MODE_TREASURY, 1);
+    assert_eq!(MODE_TREASURY_ENDOWMENT, 2);
 }
 
 #[test]
 fn test_fee_config_encoding() {
-    let config = FeeConfig {
-        treasury_share: 7000,
-        endowment_share: 3000,
-    };
+    let config = FeeConfig { treasury_share: 7000, endowment_share: 3000 };
 
-    let encoded = config.encode().unwrap();
-    let decoded = FeeConfig::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&config);
+    let decoded: FeeConfig = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.treasury_share, config.treasury_share);
     assert_eq!(decoded.endowment_share, config.endowment_share);
@@ -81,12 +102,10 @@ fn test_fee_config_encoding() {
 
 #[test]
 fn test_dao_escrow_derive_bulla() {
-    let owner_pubkey = darkfi_sdk::crypto::PublicKey::from_publickey(
-        &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-    );
-    let pool_token_id = darkfi_sdk::pasta::pallas::Base::ONE;
+    let owner_pubkey = make_pubkey(1);
+    let pool_token_id = pallas::Base::one();
     let fee_config = Some(FeeConfig { treasury_share: 7000, endowment_share: 3000 });
-    let bulla_blind = darkfi_sdk::crypto::BaseBlind::new(darkfi_sdk::pasta::pallas::Base::from(42));
+    let bulla_blind = make_blind(42);
 
     let bulla = DaoEscrow::derive_bulla(
         DaoEscrowMode::TreasuryEndowment,
@@ -119,14 +138,12 @@ fn test_dao_escrow_derive_bulla() {
 
 #[test]
 fn test_membership_derive_note() {
-    let dao_escrow_bulla = darkfi_sdk::pasta::pallas::Base::from(1);
-    let member_pubkey = darkfi_sdk::crypto::PublicKey::from_publickey(
-        &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-    );
+    let dao_escrow_bulla = pallas::Base::from(1);
+    let member_pubkey = make_pubkey(1);
     let value: u64 = 1000;
-    let token_id = darkfi_sdk::pasta::pallas::Base::ONE;
+    let token_id = pallas::Base::one();
     let expiry: u64 = 100000;
-    let blind = darkfi_sdk::crypto::BaseBlind::new(darkfi_sdk::pasta::pallas::Base::from(42));
+    let blind = make_blind(42);
 
     let note = Membership::derive_note(
         dao_escrow_bulla,
@@ -163,12 +180,10 @@ fn test_membership_derive_note() {
 #[test]
 fn test_dao_escrow_encoding() {
     let escrow = DaoEscrow {
-        bulla: darkfi_sdk::pasta::pallas::Base::from(1),
+        bulla: pallas::Base::from(1),
         mode: DaoEscrowMode::TreasuryEndowment,
-        owner_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
-        pool_token_id: darkfi_sdk::pasta::pallas::Base::ONE,
+        owner_pubkey: make_pubkey(1),
+        pool_token_id: pallas::Base::one(),
         total_pool: 100000,
         total_treasury: 70000,
         total_endowment: 30000,
@@ -177,14 +192,14 @@ fn test_dao_escrow_encoding() {
         min_premium: 100,
         max_members: 1000,
         created_at: 50000,
-        bulla_blind: darkfi_sdk::crypto::BaseBlind::new(darkfi_sdk::pasta::pallas::Base::from(42)),
+        bulla_blind: make_blind(42),
         paused: false,
         drain_protection_enabled: true,
-        drain_protection_bulla: Some(darkfi_sdk::pasta::pallas::Base::from(2)),
+        drain_protection_bulla: Some(pallas::Base::from(2)),
     };
 
-    let encoded = escrow.encode().unwrap();
-    let decoded = DaoEscrow::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&escrow);
+    let decoded: DaoEscrow = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.bulla, escrow.bulla);
     assert_eq!(decoded.mode, escrow.mode);
@@ -196,19 +211,17 @@ fn test_dao_escrow_encoding() {
 #[test]
 fn test_membership_encoding() {
     let membership = Membership {
-        note: darkfi_sdk::pasta::pallas::Base::from(1),
-        dao_escrow_bulla: darkfi_sdk::pasta::pallas::Base::from(2),
-        member_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        note: pallas::Base::from(1),
+        dao_escrow_bulla: pallas::Base::from(2),
+        member_pubkey: make_pubkey(1),
         value: 1000,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
+        token_id: pallas::Base::one(),
         expiry: 100000,
         created_at: 50000,
     };
 
-    let encoded = membership.encode().unwrap();
-    let decoded = Membership::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&membership);
+    let decoded: Membership = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.note, membership.note);
     assert_eq!(decoded.value, membership.value);
@@ -218,17 +231,15 @@ fn test_membership_encoding() {
 #[test]
 fn test_initialize_params_encoding() {
     let params = InitializeParamsV1 {
-        dao_bulla: darkfi_sdk::pasta::pallas::Base::from(1),
-        owner_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
-        endowment_token_id: darkfi_sdk::pasta::pallas::Base::ONE,
-        bulla_blind: darkfi_sdk::crypto::BaseBlind::new(darkfi_sdk::pasta::pallas::Base::from(42)),
+        dao_bulla: pallas::Base::from(1),
+        owner_pubkey: make_pubkey(1),
+        endowment_token_id: pallas::Base::one(),
+        bulla_blind: make_blind(42),
         enable_drain_protection: true,
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = InitializeParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: InitializeParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.dao_bulla, params.dao_bulla);
     assert_eq!(decoded.enable_drain_protection, params.enable_drain_protection);
@@ -236,36 +247,30 @@ fn test_initialize_params_encoding() {
 
 #[test]
 fn test_initialize_update_encoding() {
-    let update = InitializeUpdateV1 {
-        bulla: darkfi_sdk::pasta::pallas::Base::from(1),
-    };
+    let update = InitializeUpdateV1 { bulla: pallas::Base::from(1) };
 
-    let encoded = update.encode().unwrap();
-    let decoded = InitializeUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: InitializeUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.bulla, update.bulla);
 }
 
 #[test]
 fn test_update_params_encoding() {
-    let params = UpdateParamsV1 {
-        bulla: darkfi_sdk::pasta::pallas::Base::from(1),
-    };
+    let params = UpdateParamsV1 { bulla: pallas::Base::from(1) };
 
-    let encoded = params.encode().unwrap();
-    let decoded = UpdateParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: UpdateParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.bulla, params.bulla);
 }
 
 #[test]
 fn test_update_update_encoding() {
-    let update = UpdateUpdateV1 {
-        bulla: darkfi_sdk::pasta::pallas::Base::from(1),
-    };
+    let update = UpdateUpdateV1 { bulla: pallas::Base::from(1) };
 
-    let encoded = update.encode().unwrap();
-    let decoded = UpdateUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: UpdateUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.bulla, update.bulla);
 }
@@ -273,18 +278,18 @@ fn test_update_update_encoding() {
 #[test]
 fn test_pay_premium_params_encoding() {
     let params = PayPremiumParamsV1 {
-        dao_escrow_bulla: darkfi_sdk::pasta::pallas::Base::from(1),
-        membership_note: darkfi_sdk::pasta::pallas::Base::from(2),
-        value_commit: darkfi_sdk::pasta::pallas::Point::identity(),
+        dao_escrow_bulla: pallas::Base::from(1),
+        membership_note: pallas::Base::from(2),
+        value_commit: pallas::Point::identity(),
         value: 500,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
+        token_id: pallas::Base::one(),
         expiry: 100000,
-        membership_blind: darkfi_sdk::crypto::BaseBlind::new(darkfi_sdk::pasta::pallas::Base::from(42)),
-        value_blind: darkfi_sdk::crypto::BaseBlind::new(darkfi_sdk::pasta::pallas::Base::from(43)),
+        membership_blind: make_blind(42),
+        value_blind: make_blind(43),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = PayPremiumParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: PayPremiumParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.dao_escrow_bulla, params.dao_escrow_bulla);
     assert_eq!(decoded.value, params.value);
@@ -294,14 +299,14 @@ fn test_pay_premium_params_encoding() {
 #[test]
 fn test_pay_premium_update_encoding() {
     let update = PayPremiumUpdateV1 {
-        dao_escrow_bulla: darkfi_sdk::pasta::pallas::Base::from(1),
-        membership_note: darkfi_sdk::pasta::pallas::Base::from(2),
+        dao_escrow_bulla: pallas::Base::from(1),
+        membership_note: pallas::Base::from(2),
         total_endowment: 10500,
         member_count: 11,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = PayPremiumUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: PayPremiumUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.dao_escrow_bulla, update.dao_escrow_bulla);
     assert_eq!(decoded.total_endowment, update.total_endowment);
@@ -311,15 +316,13 @@ fn test_pay_premium_update_encoding() {
 #[test]
 fn test_withdraw_params_encoding() {
     let params = WithdrawParamsV1 {
-        dao_escrow_bulla: darkfi_sdk::pasta::pallas::Base::from(1),
+        dao_escrow_bulla: pallas::Base::from(1),
         value: 500,
-        recipient_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        recipient_pubkey: make_pubkey(1),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = WithdrawParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: WithdrawParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.dao_escrow_bulla, params.dao_escrow_bulla);
     assert_eq!(decoded.value, params.value);
@@ -328,13 +331,13 @@ fn test_withdraw_params_encoding() {
 #[test]
 fn test_withdraw_update_encoding() {
     let update = WithdrawUpdateV1 {
-        dao_escrow_bulla: darkfi_sdk::pasta::pallas::Base::from(1),
+        dao_escrow_bulla: pallas::Base::from(1),
         value: 500,
         total_endowment: 9500,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = WithdrawUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: WithdrawUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.dao_escrow_bulla, update.dao_escrow_bulla);
     assert_eq!(decoded.value, update.value);
@@ -344,12 +347,12 @@ fn test_withdraw_update_encoding() {
 #[test]
 fn test_enable_drain_protection_params_encoding() {
     let params = EnableDrainProtectionParamsV1 {
-        dao_escrow_bulla: darkfi_sdk::pasta::pallas::Base::from(1),
-        drain_protection_bulla: darkfi_sdk::pasta::pallas::Base::from(2),
+        dao_escrow_bulla: pallas::Base::from(1),
+        drain_protection_bulla: pallas::Base::from(2),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = EnableDrainProtectionParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: EnableDrainProtectionParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.dao_escrow_bulla, params.dao_escrow_bulla);
     assert_eq!(decoded.drain_protection_bulla, params.drain_protection_bulla);
@@ -358,12 +361,12 @@ fn test_enable_drain_protection_params_encoding() {
 #[test]
 fn test_enable_drain_protection_update_encoding() {
     let update = EnableDrainProtectionUpdateV1 {
-        dao_escrow_bulla: darkfi_sdk::pasta::pallas::Base::from(1),
-        drain_protection_bulla: darkfi_sdk::pasta::pallas::Base::from(2),
+        dao_escrow_bulla: pallas::Base::from(1),
+        drain_protection_bulla: pallas::Base::from(2),
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = EnableDrainProtectionUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: EnableDrainProtectionUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.dao_escrow_bulla, update.dao_escrow_bulla);
     assert_eq!(decoded.drain_protection_bulla, update.drain_protection_bulla);

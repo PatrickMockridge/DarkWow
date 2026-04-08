@@ -21,6 +21,7 @@ use darkfi_contract_test_harness::{init_logger, Holder, TestHarness};
 use darkfi_sdk::blockchain::expected_reward;
 
 #[test]
+#[ignore] // Requires running darkfid node - run manually with: cargo test -p darkfi_money_contract --test integration -- --ignored
 fn money_integration() -> Result<()> {
     smol::block_on(async {
         init_logger();

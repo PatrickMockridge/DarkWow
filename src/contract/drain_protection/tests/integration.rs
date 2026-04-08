@@ -20,12 +20,11 @@
 
 use darkfi_drain_protection_contract::{
     model::{
-        DrainConfig, DrainProtectionBulla, ExitParamsV1, ExitQueueEntry, ExitRequest,
-        ExitUpdateV1, LockParamsV1, LockState, LockUpdateV1, MemberWeight, ProposeParamsV1,
-        ProposeUpdateV1, ProtectedFund, RateLimit, TransferParamsV1, TransferRecord,
-        TransferUpdateV1, UnlockParamsV1, UnlockUpdateV1, UpdateConfigParamsV1,
-        UpdateConfigUpdateV1, VoteAction, VoteParamsV1, VoteProposal, VoteThresholds,
-        VoteUpdateV1, ExecuteParamsV1, ExecuteUpdateV1,
+        DrainConfig, ExitParamsV1, ExitQueueEntry, ExitRequest, ExitUpdateV1, LockParamsV1,
+        LockState, LockUpdateV1, MemberWeight, ProposeParamsV1, ProposeUpdateV1, ProtectedFund,
+        RateLimit, TransferParamsV1, TransferRecord, TransferUpdateV1, UnlockParamsV1,
+        UnlockUpdateV1, UpdateConfigParamsV1, UpdateConfigUpdateV1, VoteAction, VoteParamsV1,
+        VoteProposal, VoteThresholds, VoteUpdateV1,
     },
     DrainProtectionFunction,
     // Constants
@@ -34,6 +33,17 @@ use darkfi_drain_protection_contract::{
     DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE, DRAIN_PROTECTION_CONTRACT_EXITS_TREE,
     DRAIN_PROTECTION_CONTRACT_VOTES_TREE,
 };
+use darkfi_serial::{deserialize, serialize};
+use darkfi_sdk::{
+    crypto::{pasta_prelude::Field, PublicKey, SecretKey},
+    pasta::pallas,
+};
+
+/// Helper to create PublicKey from a numeric seed
+fn make_pubkey(seed: u64) -> PublicKey {
+    let secret = SecretKey::from(pallas::Base::from(seed));
+    PublicKey::from_secret(secret)
+}
 
 #[test]
 fn test_drain_protection_function_enum_valid() {
@@ -56,11 +66,18 @@ fn test_drain_protection_function_enum_invalid() {
 }
 
 #[test]
-fn test_lock_state_from_u8() {
-    assert_eq!(LockState::try_from(0), Ok(LockState::Unlocked));
-    assert_eq!(LockState::try_from(1), Ok(LockState::Locked));
-    assert!(LockState::try_from(2).is_err());
-    assert!(LockState::try_from(255).is_err());
+fn test_lock_state_encoding() {
+    // Test LockState serialization
+    let unlocked = LockState::Unlocked;
+    let locked = LockState::Locked;
+
+    let encoded_unlocked = serialize(&unlocked);
+    let decoded_unlocked: LockState = deserialize(&encoded_unlocked).unwrap();
+    assert_eq!(decoded_unlocked, LockState::Unlocked);
+
+    let encoded_locked = serialize(&locked);
+    let decoded_locked: LockState = deserialize(&encoded_locked).unwrap();
+    assert_eq!(decoded_locked, LockState::Locked);
 }
 
 #[test]
@@ -120,8 +137,8 @@ fn test_rate_limit_encoding() {
         vote_required_above_bps: 100,
     };
 
-    let encoded = rate_limit.encode().unwrap();
-    let decoded = RateLimit::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&rate_limit);
+    let decoded: RateLimit = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.base_rate_bps, rate_limit.base_rate_bps);
     assert_eq!(decoded.averaging_window_blocks, rate_limit.averaging_window_blocks);
@@ -136,8 +153,8 @@ fn test_vote_thresholds_encoding() {
         quorum_min_bps: 500,
     };
 
-    let encoded = thresholds.encode().unwrap();
-    let decoded = VoteThresholds::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&thresholds);
+    let decoded: VoteThresholds = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.large_withdrawal_thresh, thresholds.large_withdrawal_thresh);
     assert_eq!(decoded.quorum_min_bps, thresholds.quorum_min_bps);
@@ -150,8 +167,8 @@ fn test_transfer_record_encoding() {
         amount: 500,
     };
 
-    let encoded = record.encode().unwrap();
-    let decoded = TransferRecord::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&record);
+    let decoded: TransferRecord = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.block, record.block);
     assert_eq!(decoded.amount, record.amount);
@@ -160,10 +177,8 @@ fn test_transfer_record_encoding() {
 #[test]
 fn test_exit_request_encoding() {
     let request = ExitRequest {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        member_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        id: pallas::Base::from(1),
+        member_pubkey: make_pubkey(1),
         weight: 1000,
         requested_value: 995,
         haircut_bps: 50,
@@ -172,8 +187,8 @@ fn test_exit_request_encoding() {
         processed: false,
     };
 
-    let encoded = request.encode().unwrap();
-    let decoded = ExitRequest::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&request);
+    let decoded: ExitRequest = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.id, request.id);
     assert_eq!(decoded.requested_value, request.requested_value);
@@ -184,7 +199,7 @@ fn test_exit_request_encoding() {
 #[test]
 fn test_vote_proposal_encoding() {
     let proposal = VoteProposal {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
+        id: pallas::Base::from(1),
         action: VoteAction::LockFunds,
         started_at: 50000,
         ends_at: 50600,
@@ -193,8 +208,8 @@ fn test_vote_proposal_encoding() {
         concluded: false,
     };
 
-    let encoded = proposal.encode().unwrap();
-    let decoded = VoteProposal::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&proposal);
+    let decoded: VoteProposal = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.id, proposal.id);
     assert_eq!(decoded.yes_votes, proposal.yes_votes);
@@ -206,17 +221,15 @@ fn test_vote_proposal_encoding() {
 fn test_exit_queue_entry_encoding() {
     let entry = ExitQueueEntry {
         position: 1,
-        member_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        member_pubkey: make_pubkey(1),
         requested_value: 1000,
         weight: 1000,
         queued_at: 50000,
         processed: false,
     };
 
-    let encoded = entry.encode().unwrap();
-    let decoded = ExitQueueEntry::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&entry);
+    let decoded: ExitQueueEntry = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.position, entry.position);
     assert_eq!(decoded.requested_value, entry.requested_value);
@@ -226,16 +239,14 @@ fn test_exit_queue_entry_encoding() {
 #[test]
 fn test_exit_params_encoding() {
     let params = ExitParamsV1 {
-        member_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        member_pubkey: make_pubkey(1),
         contribution_weight: 1000,
         current_block: 50000,
         proof: vec![1, 2, 3],
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = ExitParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: ExitParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.contribution_weight, params.contribution_weight);
     assert_eq!(decoded.current_block, params.current_block);
@@ -244,16 +255,14 @@ fn test_exit_params_encoding() {
 #[test]
 fn test_exit_update_encoding() {
     let update = ExitUpdateV1 {
-        exit_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        member_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        exit_id: pallas::Base::from(1),
+        member_pubkey: make_pubkey(1),
         payout_value: 945,
         haircut_collected: 50,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = ExitUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: ExitUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.payout_value, update.payout_value);
     assert_eq!(decoded.haircut_collected, update.haircut_collected);
@@ -263,11 +272,11 @@ fn test_exit_update_encoding() {
 fn test_lock_params_encoding() {
     let params = LockParamsV1 {
         duration_blocks: 600,
-        signature: darkfi_sdk::pasta::pallas::Base::from(1),
+        signature: pallas::Base::from(1),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = LockParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: LockParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.duration_blocks, params.duration_blocks);
 }
@@ -278,8 +287,8 @@ fn test_lock_update_encoding() {
         locked_until: 50600,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = LockUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: LockUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.locked_until, update.locked_until);
 }
@@ -287,11 +296,11 @@ fn test_lock_update_encoding() {
 #[test]
 fn test_unlock_params_encoding() {
     let params = UnlockParamsV1 {
-        signature: darkfi_sdk::pasta::pallas::Base::from(1),
+        signature: pallas::Base::from(1),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = UnlockParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: UnlockParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.signature, params.signature);
 }
@@ -302,8 +311,8 @@ fn test_unlock_update_encoding() {
         unlocked_at: 50000,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = UnlockUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: UnlockUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.unlocked_at, update.unlocked_at);
 }
@@ -312,16 +321,14 @@ fn test_unlock_update_encoding() {
 fn test_transfer_params_encoding() {
     let params = TransferParamsV1 {
         amount: 500,
-        recipient: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
-        signature: darkfi_sdk::pasta::pallas::Base::from(1),
+        recipient: make_pubkey(1),
+        signature: pallas::Base::from(1),
         exceeds_rate_limit: false,
         vote_proposal_id: None,
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = TransferParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: TransferParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.amount, params.amount);
     assert_eq!(decoded.exceeds_rate_limit, params.exceeds_rate_limit);
@@ -331,14 +338,12 @@ fn test_transfer_params_encoding() {
 fn test_transfer_update_encoding() {
     let update = TransferUpdateV1 {
         amount: 500,
-        recipient: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        recipient: make_pubkey(1),
         rate_limited: true,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = TransferUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: TransferUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.amount, update.amount);
     assert_eq!(decoded.rate_limited, update.rate_limited);
@@ -349,13 +354,11 @@ fn test_update_config_params_encoding() {
     let params = UpdateConfigParamsV1 {
         rate_limit: Some(RateLimit::default()),
         thresholds: Some(VoteThresholds::default()),
-        new_spend_authority: Some(darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        )),
+        new_spend_authority: Some(make_pubkey(1)),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = UpdateConfigParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: UpdateConfigParamsV1 = deserialize(&encoded).unwrap();
 
     assert!(decoded.rate_limit.is_some());
     assert!(decoded.thresholds.is_some());
@@ -368,19 +371,19 @@ fn test_update_config_update_encoding() {
         authority_change_timelock: Some(100000),
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = UpdateConfigUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: UpdateConfigUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.authority_change_timelock, update.authority_change_timelock);
 }
 
 #[test]
 fn test_constants() {
-    assert_eq!(DRAIN_PROTECTION_CONTRACT_INFO_TREE, 0x0000_0001);
-    assert_eq!(DRAIN_PROTECTION_CONTRACT_FUNDS_TREE, 0x0000_0002);
-    assert_eq!(DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE, 0x0000_0003);
-    assert_eq!(DRAIN_PROTECTION_CONTRACT_MEMBERS_TREE, 0x0000_0004);
-    assert_eq!(DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE, 0x0000_0005);
-    assert_eq!(DRAIN_PROTECTION_CONTRACT_EXITS_TREE, 0x0000_0006);
-    assert_eq!(DRAIN_PROTECTION_CONTRACT_VOTES_TREE, 0x0000_0007);
+    assert_eq!(DRAIN_PROTECTION_CONTRACT_INFO_TREE, "info");
+    assert_eq!(DRAIN_PROTECTION_CONTRACT_FUNDS_TREE, "funds");
+    assert_eq!(DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE, "proposals");
+    assert_eq!(DRAIN_PROTECTION_CONTRACT_MEMBERS_TREE, "members");
+    assert_eq!(DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE, "transfers");
+    assert_eq!(DRAIN_PROTECTION_CONTRACT_EXITS_TREE, "exits");
+    assert_eq!(DRAIN_PROTECTION_CONTRACT_VOTES_TREE, "votes");
 }

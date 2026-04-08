@@ -20,22 +20,29 @@
 
 use darkfi_block_height_prediction_contract::{
     model::{
-        derive_market_id, derive_position_id, position_wins, calculate_payout,
-        validate_confirmation_depth, validate_tolerance, validate_amount,
-        Market, MarketState, Position, PositionType, PositionOutcome,
-        CreateMarketParamsV1, CreateMarketUpdateV1, CreatePositionParamsV1,
-        CreatePositionUpdateV1, ResolveMarketParamsV1, ResolveMarketUpdateV1,
-        ClaimWinningsParamsV1, ClaimWinningsUpdateV1, CancelMarketParamsV1,
-        CancelMarketUpdateV1,
+        calculate_payout, derive_market_id, derive_position_id, position_wins, validate_amount,
+        validate_confirmation_depth, validate_tolerance, CancelMarketParamsV1, CancelMarketUpdateV1,
+        ClaimWinningsParamsV1, ClaimWinningsUpdateV1, CreateMarketParamsV1, CreateMarketUpdateV1,
+        CreatePositionParamsV1, CreatePositionUpdateV1, Market, MarketState, Position,
+        PositionOutcome, PositionType, ResolveMarketParamsV1, ResolveMarketUpdateV1,
     },
-    BlockHeightPredictionFunction,
-    // Constants
-    BLOCK_HEIGHT_PREDICTION_MARKETS_TREE, BLOCK_HEIGHT_PREDICTION_POSITIONS_TREE,
-    BLOCK_HEIGHT_PREDICTION_INFO_TREE, BLOCK_HEIGHT_PREDICTION_CLAIMS_TREE,
-    DEFAULT_PROTOCOL_FEE, MIN_PROTOCOL_FEE, MAX_PROTOCOL_FEE,
-    DEFAULT_RESOLUTION_TIMEOUT, DEFAULT_CONFIRMATION_DEPTH, MAX_CONFIRMATION_DEPTH,
-    MAX_TOLERANCE, EXPECTED_BLOCK_TIME,
+    BlockHeightPredictionFunction, BLOCK_HEIGHT_PREDICTION_CLAIMS_TREE,
+    BLOCK_HEIGHT_PREDICTION_INFO_TREE, BLOCK_HEIGHT_PREDICTION_MARKETS_TREE,
+    BLOCK_HEIGHT_PREDICTION_POSITIONS_TREE, DEFAULT_CONFIRMATION_DEPTH, DEFAULT_PROTOCOL_FEE,
+    DEFAULT_RESOLUTION_TIMEOUT, EXPECTED_BLOCK_TIME, MAX_CONFIRMATION_DEPTH, MAX_PROTOCOL_FEE,
+    MAX_TOLERANCE, MIN_PROTOCOL_FEE,
 };
+use darkfi_serial::{deserialize, serialize};
+use darkfi_sdk::{
+    crypto::{pasta_prelude::{Field, Group}, PublicKey, SecretKey},
+    pasta::pallas,
+};
+
+/// Helper to create PublicKey from a numeric seed
+fn make_pubkey(seed: u64) -> PublicKey {
+    let secret = SecretKey::from(pallas::Base::from(seed));
+    PublicKey::from_secret(secret)
+}
 
 #[test]
 fn test_block_height_prediction_function_enum_valid() {
@@ -55,30 +62,48 @@ fn test_block_height_prediction_function_enum_invalid() {
 }
 
 #[test]
-fn test_market_state_from_u8() {
-    assert_eq!(MarketState::try_from(0), Ok(MarketState::Active));
-    assert_eq!(MarketState::try_from(1), Ok(MarketState::Resolved));
-    assert_eq!(MarketState::try_from(2), Ok(MarketState::Cancelled));
-    assert!(MarketState::try_from(3).is_err());
-    assert!(MarketState::try_from(255).is_err());
+fn test_market_state_encoding() {
+    let active = MarketState::Active;
+    let resolved = MarketState::Resolved;
+    let cancelled = MarketState::Cancelled;
+
+    let encoded_active = serialize(&active);
+    let decoded_active: MarketState = deserialize(&encoded_active).unwrap();
+    assert_eq!(decoded_active, MarketState::Active);
+
+    let encoded_resolved = serialize(&resolved);
+    let decoded_resolved: MarketState = deserialize(&encoded_resolved).unwrap();
+    assert_eq!(decoded_resolved, MarketState::Resolved);
+
+    let encoded_cancelled = serialize(&cancelled);
+    let decoded_cancelled: MarketState = deserialize(&encoded_cancelled).unwrap();
+    assert_eq!(decoded_cancelled, MarketState::Cancelled);
 }
 
 #[test]
-fn test_position_type_from_u8() {
-    assert_eq!(PositionType::try_from(0), Ok(PositionType::Below));
-    assert_eq!(PositionType::try_from(1), Ok(PositionType::Exact));
-    assert_eq!(PositionType::try_from(2), Ok(PositionType::Above));
-    assert!(PositionType::try_from(3).is_err());
-    assert!(PositionType::try_from(255).is_err());
+fn test_position_type_encoding() {
+    let below = PositionType::Below;
+    let exact = PositionType::Exact;
+    let above = PositionType::Above;
+
+    let encoded_below = serialize(&below);
+    let decoded_below: PositionType = deserialize(&encoded_below).unwrap();
+    assert_eq!(decoded_below, PositionType::Below);
+
+    let encoded_exact = serialize(&exact);
+    let decoded_exact: PositionType = deserialize(&encoded_exact).unwrap();
+    assert_eq!(decoded_exact, PositionType::Exact);
+
+    let encoded_above = serialize(&above);
+    let decoded_above: PositionType = deserialize(&encoded_above).unwrap();
+    assert_eq!(decoded_above, PositionType::Above);
 }
 
 #[test]
 fn test_derive_market_id() {
-    let creator = darkfi_sdk::crypto::PublicKey::from_publickey(
-        &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-    );
+    let creator = make_pubkey(1);
     let target_time: u64 = 1700000000;
-    let token_id = darkfi_sdk::pasta::pallas::Base::ONE;
+    let token_id = pallas::Base::one();
     let confirmation_depth: u8 = 6;
 
     let id = derive_market_id(&creator, target_time, token_id, confirmation_depth);
@@ -94,14 +119,12 @@ fn test_derive_market_id() {
 
 #[test]
 fn test_derive_position_id() {
-    let market_id = darkfi_sdk::pasta::pallas::Base::from(1);
-    let owner = darkfi_sdk::crypto::PublicKey::from_publickey(
-        &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-    );
+    let market_id = pallas::Base::from(1);
+    let owner = make_pubkey(1);
     let predicted_height: u64 = 100000;
     let position_type = PositionType::Below;
     let amount: u64 = 500;
-    let secret_nonce = darkfi_sdk::pasta::pallas::Base::from(42);
+    let secret_nonce = pallas::Base::from(42);
 
     let id = derive_position_id(
         market_id, &owner, predicted_height, position_type, amount, secret_nonce,
@@ -152,11 +175,9 @@ fn test_validate_amount() {
 #[test]
 fn test_position_wins_below() {
     let position = Position {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        market_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        owner: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        id: pallas::Base::from(1),
+        market_id: pallas::Base::from(1),
+        owner: make_pubkey(1),
         predicted_height: 100000,
         tolerance: 5,
         position_type: PositionType::Below,
@@ -179,11 +200,9 @@ fn test_position_wins_below() {
 #[test]
 fn test_position_wins_exact() {
     let position = Position {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        market_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        owner: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        id: pallas::Base::from(1),
+        market_id: pallas::Base::from(1),
+        owner: make_pubkey(1),
         predicted_height: 100000,
         tolerance: 5,
         position_type: PositionType::Exact,
@@ -208,11 +227,9 @@ fn test_position_wins_exact() {
 #[test]
 fn test_position_wins_above() {
     let position = Position {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        market_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        owner: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        id: pallas::Base::from(1),
+        market_id: pallas::Base::from(1),
+        owner: make_pubkey(1),
         predicted_height: 100000,
         tolerance: 5,
         position_type: PositionType::Above,
@@ -248,10 +265,8 @@ fn test_calculate_payout() {
 #[test]
 fn test_market_encoding() {
     let market = Market {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        creator: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        id: pallas::Base::from(1),
+        creator: make_pubkey(1),
         target_time: 1700000000,
         base_block_height: 50000,
         created_at: 49000,
@@ -264,12 +279,12 @@ fn test_market_encoding() {
         resolution_block: 0,
         confirmation_depth: 6,
         protocol_fee: 100,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
+        token_id: pallas::Base::one(),
         position_count: 10,
     };
 
-    let encoded = market.encode().unwrap();
-    let decoded = Market::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&market);
+    let decoded: Market = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.id, market.id);
     assert_eq!(decoded.target_time, market.target_time);
@@ -280,11 +295,9 @@ fn test_market_encoding() {
 #[test]
 fn test_position_encoding() {
     let position = Position {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        market_id: darkfi_sdk::pasta::pallas::Base::from(2),
-        owner: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        id: pallas::Base::from(1),
+        market_id: pallas::Base::from(2),
+        owner: make_pubkey(1),
         predicted_height: 100000,
         tolerance: 5,
         position_type: PositionType::Below,
@@ -294,8 +307,8 @@ fn test_position_encoding() {
         created_at: 50000,
     };
 
-    let encoded = position.encode().unwrap();
-    let decoded = Position::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&position);
+    let decoded: Position = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.id, position.id);
     assert_eq!(decoded.predicted_height, position.predicted_height);
@@ -306,18 +319,16 @@ fn test_position_encoding() {
 #[test]
 fn test_create_market_params_encoding() {
     let params = CreateMarketParamsV1 {
-        creator: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        creator: make_pubkey(1),
         target_time: 1700000000,
         initial_prediction: 100000,
         confirmation_depth: 6,
         protocol_fee: 100,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
+        token_id: pallas::Base::one(),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = CreateMarketParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: CreateMarketParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.target_time, params.target_time);
     assert_eq!(decoded.initial_prediction, params.initial_prediction);
@@ -327,20 +338,18 @@ fn test_create_market_params_encoding() {
 #[test]
 fn test_create_market_update_encoding() {
     let update = CreateMarketUpdateV1 {
-        market_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        creator: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        market_id: pallas::Base::from(1),
+        creator: make_pubkey(1),
         target_time: 1700000000,
         base_block_height: 50000,
         confirmation_depth: 6,
         protocol_fee: 100,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
+        token_id: pallas::Base::one(),
         created_at: 49000,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = CreateMarketUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: CreateMarketUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.market_id, update.market_id);
     assert_eq!(decoded.target_time, update.target_time);
@@ -349,20 +358,18 @@ fn test_create_market_update_encoding() {
 #[test]
 fn test_create_position_params_encoding() {
     let params = CreatePositionParamsV1 {
-        market_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        market_id: pallas::Base::from(1),
         predicted_height: 100000,
         tolerance: 5,
         position_type: 0,
         amount: 500,
-        owner: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
-        value_commit: darkfi_sdk::pasta::pallas::Point::identity(),
-        signature: darkfi_sdk::pasta::pallas::Base::ZERO,
+        owner: make_pubkey(1),
+        value_commit: pallas::Point::identity(),
+        signature: pallas::Base::zero(),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = CreatePositionParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: CreatePositionParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.predicted_height, params.predicted_height);
     assert_eq!(decoded.tolerance, params.tolerance);
@@ -372,11 +379,9 @@ fn test_create_position_params_encoding() {
 #[test]
 fn test_create_position_update_encoding() {
     let update = CreatePositionUpdateV1 {
-        position_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        market_id: darkfi_sdk::pasta::pallas::Base::from(2),
-        owner: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        position_id: pallas::Base::from(1),
+        market_id: pallas::Base::from(2),
+        owner: make_pubkey(1),
         predicted_height: 100000,
         tolerance: 5,
         position_type: PositionType::Below,
@@ -384,8 +389,8 @@ fn test_create_position_update_encoding() {
         created_at: 50000,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = CreatePositionUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: CreatePositionUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.position_id, update.position_id);
     assert_eq!(decoded.predicted_height, update.predicted_height);
@@ -395,13 +400,13 @@ fn test_create_position_update_encoding() {
 #[test]
 fn test_resolve_market_params_encoding() {
     let params = ResolveMarketParamsV1 {
-        market_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        market_id: pallas::Base::from(1),
         observed_height: 100005,
         proof: vec![1, 2, 3],
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = ResolveMarketParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: ResolveMarketParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.market_id, params.market_id);
     assert_eq!(decoded.observed_height, params.observed_height);
@@ -410,14 +415,14 @@ fn test_resolve_market_params_encoding() {
 #[test]
 fn test_resolve_market_update_encoding() {
     let update = ResolveMarketUpdateV1 {
-        market_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        market_id: pallas::Base::from(1),
         resolved_height: 100005,
         resolution_block: 51000,
         state: MarketState::Resolved,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = ResolveMarketUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: ResolveMarketUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.resolved_height, update.resolved_height);
     assert_eq!(decoded.state, update.state);
@@ -426,16 +431,14 @@ fn test_resolve_market_update_encoding() {
 #[test]
 fn test_claim_winnings_params_encoding() {
     let params = ClaimWinningsParamsV1 {
-        position_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        market_id: darkfi_sdk::pasta::pallas::Base::from(2),
-        owner: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        position_id: pallas::Base::from(1),
+        market_id: pallas::Base::from(2),
+        owner: make_pubkey(1),
         proof: vec![1, 2, 3],
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = ClaimWinningsParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: ClaimWinningsParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.position_id, params.position_id);
     assert_eq!(decoded.market_id, params.market_id);
@@ -444,13 +447,13 @@ fn test_claim_winnings_params_encoding() {
 #[test]
 fn test_claim_winnings_update_encoding() {
     let update = ClaimWinningsUpdateV1 {
-        position_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        position_id: pallas::Base::from(1),
         payout: 495,
         claimed: true,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = ClaimWinningsUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: ClaimWinningsUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.payout, update.payout);
     assert_eq!(decoded.claimed, update.claimed);
@@ -459,14 +462,12 @@ fn test_claim_winnings_update_encoding() {
 #[test]
 fn test_cancel_market_params_encoding() {
     let params = CancelMarketParamsV1 {
-        market_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        canceller: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        market_id: pallas::Base::from(1),
+        canceller: make_pubkey(1),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = CancelMarketParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: CancelMarketParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.market_id, params.market_id);
 }
@@ -474,16 +475,16 @@ fn test_cancel_market_params_encoding() {
 #[test]
 fn test_cancel_market_update_encoding() {
     let update = CancelMarketUpdateV1 {
-        market_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        market_id: pallas::Base::from(1),
         state: MarketState::Cancelled,
         refund_amounts: vec![
-            (darkfi_sdk::pasta::pallas::Base::from(1), 500),
-            (darkfi_sdk::pasta::pallas::Base::from(2), 300),
+            (pallas::Base::from(1), 500),
+            (pallas::Base::from(2), 300),
         ],
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = CancelMarketUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: CancelMarketUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.market_id, update.market_id);
     assert_eq!(decoded.state, update.state);

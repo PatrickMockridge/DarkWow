@@ -83,6 +83,7 @@ struct DaoKeys {
 }
 
 #[test]
+#[ignore] // Requires running darkfid node - run manually with: cargo test -p darkfi_dao_contract --test integration -- --ignored
 fn integration_test() -> Result<()> {
     smol::block_on(async {
         init_logger();

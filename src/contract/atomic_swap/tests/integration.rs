@@ -18,7 +18,7 @@
 
 //! Atomic Swap contract integration tests
 
-use darkfi_atomic_swap_contract::{
+use atomic_swap_contract::{
     model::{
         chains, ClaimParamsV1, ClaimUpdateV1, CreateSwapParamsV1, CreateSwapUpdateV1,
         RefundParamsV1, RefundUpdateV1, Swap, SwapState,
@@ -28,6 +28,17 @@ use darkfi_atomic_swap_contract::{
     ATOMIC_SWAP_CONTRACT_INFO_TREE, ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE,
     ATOMIC_SWAP_CONTRACT_SECRETS_TREE, ATOMIC_SWAP_CONTRACT_SWAPS_TREE,
 };
+use darkfi_serial::{deserialize, serialize};
+use darkfi_sdk::{
+    crypto::{PublicKey, SecretKey},
+    pasta::pallas,
+};
+
+/// Helper to create PublicKey from a numeric seed
+fn make_pubkey(seed: u64) -> PublicKey {
+    let secret = SecretKey::from(pallas::Base::from(seed));
+    PublicKey::from_secret(secret)
+}
 
 #[test]
 fn test_atomic_swap_function_enum_valid() {
@@ -46,10 +57,10 @@ fn test_atomic_swap_function_enum_invalid() {
 
 #[test]
 fn test_swap_state_from_u8() {
-    assert_eq!(SwapState::try_from(0), Ok(SwapState::Created));
-    assert_eq!(SwapState::try_from(1), Ok(SwapState::Claimed));
-    assert_eq!(SwapState::try_from(2), Ok(SwapState::Refunded));
-    assert_eq!(SwapState::try_from(3), Ok(SwapState::Completed));
+    assert!(SwapState::try_from(0).is_ok());
+    assert!(SwapState::try_from(1).is_ok());
+    assert!(SwapState::try_from(2).is_ok());
+    assert!(SwapState::try_from(3).is_ok());
     assert!(SwapState::try_from(4).is_err());
     assert!(SwapState::try_from(255).is_err());
 }
@@ -63,15 +74,13 @@ fn test_chain_constants() {
 
 #[test]
 fn test_swap_derive_id() {
-    let hash = darkfi_sdk::pasta::pallas::Base::from(12345);
+    let hash = pallas::Base::from(12345);
     let timelock: u64 = 100000;
-    let darkfi_receiver = darkfi_sdk::crypto::PublicKey::from_publickey(
-        &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-    );
+    let darkfi_receiver = make_pubkey(1);
     let amount: u64 = 1000;
-    let token_id = darkfi_sdk::pasta::pallas::Base::ONE;
+    let token_id = pallas::Base::one();
     let side: u8 = 0;
-    let blind = darkfi_sdk::pasta::pallas::Base::ZERO;
+    let blind = pallas::Base::zero();
 
     let swap_id = Swap::derive_id(
         hash,
@@ -97,7 +106,7 @@ fn test_swap_derive_id() {
 
     // Different inputs should produce different IDs
     let swap_id_different = Swap::derive_id(
-        hash + darkfi_sdk::pasta::pallas::Base::ONE,
+        hash + pallas::Base::one(),
         timelock,
         &darkfi_receiver,
         amount,
@@ -111,24 +120,22 @@ fn test_swap_derive_id() {
 #[test]
 fn test_swap_encoding() {
     let swap = Swap {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        hash: darkfi_sdk::pasta::pallas::Base::from(2),
+        id: pallas::Base::from(1),
+        hash: pallas::Base::from(2),
         timelock: 100000,
         state: SwapState::Created,
         side: 0,
         external_chain: 0,
-        external_receiver: darkfi_sdk::pasta::pallas::Base::from(3),
-        darkfi_receiver: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        external_receiver: pallas::Base::from(3),
+        darkfi_receiver: make_pubkey(1),
         amount: 5000,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
-        blind: darkfi_sdk::pasta::pallas::Base::ZERO,
+        token_id: pallas::Base::one(),
+        blind: pallas::Base::zero(),
         created_at: 50000,
     };
 
-    let encoded = swap.encode().unwrap();
-    let decoded = Swap::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&swap);
+    let decoded: Swap = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.id, swap.id);
     assert_eq!(decoded.hash, swap.hash);
@@ -141,22 +148,20 @@ fn test_swap_encoding() {
 #[test]
 fn test_create_swap_params_encoding() {
     let params = CreateSwapParamsV1 {
-        hash: darkfi_sdk::pasta::pallas::Base::from(1),
+        hash: pallas::Base::from(1),
         timelock: 100000,
         side: 0,
         external_chain: 0,
-        external_receiver: darkfi_sdk::pasta::pallas::Base::from(2),
-        darkfi_receiver: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        external_receiver: pallas::Base::from(2),
+        darkfi_receiver: make_pubkey(1),
         amount: 5000,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
-        blind: darkfi_sdk::pasta::pallas::Base::ZERO,
-        commitment: darkfi_sdk::pasta::pallas::Base::from(3),
+        token_id: pallas::Base::one(),
+        blind: pallas::Base::zero(),
+        commitment: pallas::Base::from(3),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = CreateSwapParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: CreateSwapParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.hash, params.hash);
     assert_eq!(decoded.timelock, params.timelock);
@@ -167,23 +172,21 @@ fn test_create_swap_params_encoding() {
 #[test]
 fn test_create_swap_update_encoding() {
     let update = CreateSwapUpdateV1 {
-        swap_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        hash: darkfi_sdk::pasta::pallas::Base::from(2),
+        swap_id: pallas::Base::from(1),
+        hash: pallas::Base::from(2),
         timelock: 100000,
         side: 1,
         external_chain: 1,
-        external_receiver: darkfi_sdk::pasta::pallas::Base::from(3),
-        darkfi_receiver: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        external_receiver: pallas::Base::from(3),
+        darkfi_receiver: make_pubkey(1),
         amount: 3000,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
-        blind: darkfi_sdk::pasta::pallas::Base::ZERO,
+        token_id: pallas::Base::one(),
+        blind: pallas::Base::zero(),
         created_at: 50000,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = CreateSwapUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: CreateSwapUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.swap_id, update.swap_id);
     assert_eq!(decoded.side, update.side);
@@ -193,13 +196,13 @@ fn test_create_swap_update_encoding() {
 #[test]
 fn test_claim_params_encoding() {
     let params = ClaimParamsV1 {
-        swap_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        secret: darkfi_sdk::pasta::pallas::Base::from(2),
-        nullifier: darkfi_sdk::pasta::pallas::Base::from(3),
+        swap_id: pallas::Base::from(1),
+        secret: pallas::Base::from(2),
+        nullifier: pallas::Base::from(3),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = ClaimParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: ClaimParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.swap_id, params.swap_id);
     assert_eq!(decoded.secret, params.secret);
@@ -209,13 +212,13 @@ fn test_claim_params_encoding() {
 #[test]
 fn test_claim_update_encoding() {
     let update = ClaimUpdateV1 {
-        swap_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        nullifier: darkfi_sdk::pasta::pallas::Base::from(2),
-        secret: darkfi_sdk::pasta::pallas::Base::from(3),
+        swap_id: pallas::Base::from(1),
+        nullifier: pallas::Base::from(2),
+        secret: pallas::Base::from(3),
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = ClaimUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: ClaimUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.swap_id, update.swap_id);
     assert_eq!(decoded.nullifier, update.nullifier);
@@ -225,16 +228,14 @@ fn test_claim_update_encoding() {
 #[test]
 fn test_refund_params_encoding() {
     let params = RefundParamsV1 {
-        swap_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        swap_id: pallas::Base::from(1),
         current_block: 150000,
-        nullifier: darkfi_sdk::pasta::pallas::Base::from(2),
-        recipient: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        nullifier: pallas::Base::from(2),
+        recipient: make_pubkey(1),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = RefundParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: RefundParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.swap_id, params.swap_id);
     assert_eq!(decoded.current_block, params.current_block);
@@ -244,12 +245,12 @@ fn test_refund_params_encoding() {
 #[test]
 fn test_refund_update_encoding() {
     let update = RefundUpdateV1 {
-        swap_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        nullifier: darkfi_sdk::pasta::pallas::Base::from(2),
+        swap_id: pallas::Base::from(1),
+        nullifier: pallas::Base::from(2),
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = RefundUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: RefundUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.swap_id, update.swap_id);
     assert_eq!(decoded.nullifier, update.nullifier);

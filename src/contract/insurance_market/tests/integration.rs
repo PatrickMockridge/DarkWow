@@ -21,12 +21,8 @@
 use darkfi_insurance_market_contract::{
     model::{
         calculate_max_coverage, calculate_premium, calculate_slash, derive_claim_id,
-        derive_coverage_id, derive_risk_type_id, derive_underwriter_id, Claim, Coverage,
-        CoverageId, CoverageState, CreateMarketParamsV1, CreateMarketUpdateV1, EndowmentPool,
-        FileClaimParamsV1, FileClaimUpdateV1, InsuranceMarket, RegisterRiskTypeParamsV1,
-        RegisterRiskTypeUpdateV1, ResolveClaimParamsV1, ResolveClaimUpdateV1, RiskCategory,
-        RiskType, RiskTypeId, UnderwriteParamsV1, UnderwriteUpdateV1, WithdrawPremiumParamsV1,
-        WithdrawPremiumUpdateV1,
+        derive_coverage_id, derive_risk_type_id, derive_underwriter_id, ClaimState, CoverageState,
+        RiskCategory,
     },
     InsuranceMarketFunction,
     // Constants
@@ -36,6 +32,16 @@ use darkfi_insurance_market_contract::{
     DEFAULT_COVERAGE_PERIOD, DEFAULT_PREMIUM_RATE, MIN_BOND_RATE,
     DEFAULT_COVERAGE_LEVERAGE, MAX_COVERAGE_LEVERAGE,
 };
+use darkfi_sdk::{
+    crypto::{PublicKey, SecretKey},
+    pasta::pallas,
+};
+
+/// Helper to create PublicKey from a numeric seed
+fn make_pubkey(seed: u64) -> PublicKey {
+    let secret = SecretKey::from(pallas::Base::from(seed));
+    PublicKey::from_secret(secret)
+}
 
 #[test]
 fn test_insurance_market_function_enum_valid() {
@@ -53,65 +59,61 @@ fn test_insurance_market_function_enum_valid() {
 #[test]
 fn test_insurance_market_function_enum_invalid() {
     assert!(InsuranceMarketFunction::try_from(0xFF).is_err());
-    assert!(InsuranceMarketFunction::try_from(0x09).is_err());
+    assert!(InsuranceMarketFunction::try_from(0x0d).is_err());
     assert!(InsuranceMarketFunction::try_from(0x10).is_err());
 }
 
 #[test]
 fn test_risk_category_from_u8() {
-    assert_eq!(RiskCategory::try_from(0), Ok(RiskCategory::SmartContractHack));
-    assert_eq!(RiskCategory::try_from(1), Ok(RiskCategory::OracleManipulation));
-    assert_eq!(RiskCategory::try_from(2), Ok(RiskCategory::KeyManagementFailure));
-    assert_eq!(RiskCategory::try_from(3), Ok(RiskCategory::ProtocolInsolvency));
-    assert_eq!(RiskCategory::try_from(4), Ok(RiskCategory::StablecoinDepeg));
-    assert_eq!(RiskCategory::try_from(5), Ok(RiskCategory::LiquidityCrunch));
-    assert_eq!(RiskCategory::try_from(6), Ok(RiskCategory::GovernanceCapture));
-    assert_eq!(RiskCategory::try_from(7), Ok(RiskCategory::RegulatoryClampdown));
-    assert_eq!(RiskCategory::try_from(8), Ok(RiskCategory::Custom));
+    assert!(matches!(RiskCategory::try_from(0), Ok(RiskCategory::SmartContractHack)));
+    assert!(matches!(RiskCategory::try_from(1), Ok(RiskCategory::OracleManipulation)));
+    assert!(matches!(RiskCategory::try_from(2), Ok(RiskCategory::KeyManagementFailure)));
+    assert!(matches!(RiskCategory::try_from(3), Ok(RiskCategory::ProtocolInsolvency)));
+    assert!(matches!(RiskCategory::try_from(4), Ok(RiskCategory::StablecoinDepeg)));
+    assert!(matches!(RiskCategory::try_from(5), Ok(RiskCategory::LiquidityCrunch)));
+    assert!(matches!(RiskCategory::try_from(6), Ok(RiskCategory::GovernanceCapture)));
+    assert!(matches!(RiskCategory::try_from(7), Ok(RiskCategory::RegulatoryClampdown)));
+    assert!(matches!(RiskCategory::try_from(8), Ok(RiskCategory::Custom)));
     assert!(RiskCategory::try_from(9).is_err());
     assert!(RiskCategory::try_from(255).is_err());
 }
 
 #[test]
 fn test_coverage_state_from_u8() {
-    assert_eq!(CoverageState::try_from(0), Ok(CoverageState::Active));
-    assert_eq!(CoverageState::try_from(1), Ok(CoverageState::Expired));
-    assert_eq!(CoverageState::try_from(2), Ok(CoverageState::Claimed));
-    assert_eq!(CoverageState::try_from(3), Ok(CoverageState::Cancelled));
+    assert!(matches!(CoverageState::try_from(0), Ok(CoverageState::Active)));
+    assert!(matches!(CoverageState::try_from(1), Ok(CoverageState::Expired)));
+    assert!(matches!(CoverageState::try_from(2), Ok(CoverageState::Claimed)));
+    assert!(matches!(CoverageState::try_from(3), Ok(CoverageState::Cancelled)));
     assert!(CoverageState::try_from(4).is_err());
     assert!(CoverageState::try_from(255).is_err());
 }
 
 #[test]
 fn test_claim_state_from_u8() {
-    assert_eq!(crate::model::ClaimState::try_from(0), Ok(crate::model::ClaimState::Filed));
-    assert_eq!(crate::model::ClaimState::try_from(1), Ok(crate::model::ClaimState::Resolved));
-    assert_eq!(crate::model::ClaimState::try_from(2), Ok(crate::model::ClaimState::Rejected));
-    assert_eq!(crate::model::ClaimState::try_from(3), Ok(crate::model::ClaimState::Paid));
-    assert!(crate::model::ClaimState::try_from(4).is_err());
-    assert!(crate::model::ClaimState::try_from(255).is_err());
+    assert!(matches!(ClaimState::try_from(0), Ok(ClaimState::Filed)));
+    assert!(matches!(ClaimState::try_from(1), Ok(ClaimState::Resolved)));
+    assert!(matches!(ClaimState::try_from(2), Ok(ClaimState::Rejected)));
+    assert!(matches!(ClaimState::try_from(3), Ok(ClaimState::Paid)));
+    assert!(ClaimState::try_from(4).is_err());
+    assert!(ClaimState::try_from(255).is_err());
 }
 
 #[test]
 fn test_derive_risk_type_id() {
-    let oracle_pubkey = darkfi_sdk::crypto::PublicKey::from_publickey(
-        &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-    );
+    let oracle_pubkey = make_pubkey(1);
     let description = b"Smart contract hack protection";
 
-    let id = derive_risk_type_id(&RiskCategory::SmartContractHack, description, &oracle_pubkey);
+    let id = derive_risk_type_id(RiskCategory::SmartContractHack, description, &oracle_pubkey);
 
     // Should be deterministic
-    let id2 = derive_risk_type_id(&RiskCategory::SmartContractHack, description, &oracle_pubkey);
+    let id2 = derive_risk_type_id(RiskCategory::SmartContractHack, description, &oracle_pubkey);
     assert_eq!(id, id2);
 }
 
 #[test]
 fn test_derive_underwriter_id() {
-    let market_id = darkfi_sdk::pasta::pallas::Base::from(1);
-    let owner = darkfi_sdk::crypto::PublicKey::from_publickey(
-        &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-    );
+    let market_id = pallas::Base::from(1);
+    let owner = make_pubkey(1);
     let bond_amount: u64 = 1000;
 
     let id = derive_underwriter_id(market_id, &owner, bond_amount);
@@ -123,10 +125,8 @@ fn test_derive_underwriter_id() {
 
 #[test]
 fn test_derive_coverage_id() {
-    let market_id = darkfi_sdk::pasta::pallas::Base::from(1);
-    let buyer = darkfi_sdk::crypto::PublicKey::from_publickey(
-        &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-    );
+    let market_id = pallas::Base::from(1);
+    let buyer = make_pubkey(1);
     let amount: u64 = 500;
     let timestamp: u64 = 1700000000;
 
@@ -139,8 +139,8 @@ fn test_derive_coverage_id() {
 
 #[test]
 fn test_derive_claim_id() {
-    let coverage_id = darkfi_sdk::pasta::pallas::Base::from(1);
-    let evidence_hash = darkfi_sdk::pasta::pallas::Base::from(2);
+    let coverage_id = pallas::Base::from(1);
+    let evidence_hash = pallas::Base::from(2);
     let timestamp: u64 = 1700000000;
 
     let id = derive_claim_id(coverage_id, evidence_hash, timestamp);
