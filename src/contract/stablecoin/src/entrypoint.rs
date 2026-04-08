@@ -43,7 +43,7 @@ use darkfi_serial::{deserialize, serialize, Decodable, SerialDecodable, SerialEn
 
 use crate::{
     error::StablecoinError,
-    model::{DepositCollateralParams, UpdateConfigParams},
+    model::{DepositCollateralParams, UpdateConfigParams, UpdateConfigUpdateV1},
     StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
     STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
     STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
@@ -178,8 +178,19 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             Err(ContractError::IoError("Not yet implemented".to_string()).into())
         }
         StablecoinFunction::UpdateConfigV1 => {
+            let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
             msg!("[stablecoin::process_instruction] UpdateConfigV1 processed");
-            wasm::util::set_return_data(&vec![])
+            let update = UpdateConfigUpdateV1 {
+                min_collateralization_ratio: params.min_collateralization_ratio,
+                liquidation_threshold: params.liquidation_threshold,
+                liquidation_penalty: params.liquidation_penalty,
+                base_rate: params.base_rate,
+                pi_kp: params.pi_kp,
+                pi_ki: params.pi_ki,
+                twap_window: params.twap_window,
+                price_deviation_threshold: params.price_deviation_threshold,
+            };
+            wasm::util::set_return_data(&serialize(&update))
         }
         StablecoinFunction::GovernanceReportV1 => {
             msg!("[stablecoin::process_instruction] GovernanceReportV1 not yet implemented");
@@ -262,8 +273,8 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         StablecoinFunction::UpdateConfigV1 => {
-            let params: UpdateConfigParams = deserialize(&update_data[1..])?;
-            apply_config_update(cid, params)
+            let update: UpdateConfigUpdateV1 = deserialize(&update_data[1..])?;
+            apply_config_update(cid, update)
         }
         StablecoinFunction::GovernanceReportV1 => {
             msg!("[stablecoin::process_update] GovernanceReportV1 not yet implemented");
@@ -295,11 +306,11 @@ fn apply_open_position_update(cid: ContractId, update: OpenPositionUpdateV1) -> 
 }
 
 /// Apply configuration update
-fn apply_config_update(cid: ContractId, params: UpdateConfigParams) -> ContractResult {
+fn apply_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> ContractResult {
     let config_db = wasm::db::db_lookup(cid, "config")?;
 
-    wasm::db::db_set(config_db, CDP_MIN_RATIO_KEY, &params.min_collateralization_ratio.to_le_bytes())?;
-    wasm::db::db_set(config_db, CDP_LIQ_THRESHOLD_KEY, &params.liquidation_threshold.to_le_bytes())?;
+    wasm::db::db_set(config_db, CDP_MIN_RATIO_KEY, &update.min_collateralization_ratio.to_le_bytes())?;
+    wasm::db::db_set(config_db, CDP_LIQ_THRESHOLD_KEY, &update.liquidation_threshold.to_le_bytes())?;
 
     msg!("[stablecoin::process_update] Configuration updated successfully");
     Ok(())

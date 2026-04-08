@@ -292,6 +292,34 @@ pub struct UpdateConfigParams {
     pub price_deviation_threshold: u64,
 }
 
+/// Update data for configuration changes (sent from instruction to update phase)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct UpdateConfigUpdateV1 {
+    /// New minimum collateralization ratio
+    pub min_collateralization_ratio: u64,
+
+    /// New liquidation threshold
+    pub liquidation_threshold: u64,
+
+    /// New liquidation penalty
+    pub liquidation_penalty: u64,
+
+    /// New base rate
+    pub base_rate: u64,
+
+    /// New PI controller Kp
+    pub pi_kp: i64,
+
+    /// New PI controller Ki
+    pub pi_ki: i64,
+
+    /// New TWAP window
+    pub twap_window: u64,
+
+    /// New price deviation threshold
+    pub price_deviation_threshold: u64,
+}
+
 // ============================================================================
 // POOLED DEBT STATE (not per-user positions)
 // ============================================================================
