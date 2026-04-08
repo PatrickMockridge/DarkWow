@@ -55,8 +55,6 @@
 //! - "Prove you hold ≥100 tokens" → exact balance hidden
 //! - "Prove you're accredited" → income hidden
 
-use darkfi_sdk::error::ClientError;
-
 /// Identity client errors
 #[derive(Debug, thiserror::Error)]
 pub enum IdentityClientError {
@@ -71,6 +69,9 @@ pub enum IdentityClientError {
 
     #[error("Invalid ZK proof: {0}")]
     InvalidProof(String),
+
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
 }
 
 // ============================================================================
@@ -136,16 +137,17 @@ impl IssueCredentialBuilder {
     }
 
     /// Build the issue credential transaction
-    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
+    pub fn build(&mut self) -> Result<Vec<u8>, IdentityClientError> {
         let issuer_pub =
-            self.issuer_pub.ok_or_else(|| ClientError::InvalidInput("issuer_pub required".into()))?;
+            self.issuer_pub.take().ok_or_else(|| IdentityClientError::InvalidInput("issuer_pub required".into()))?;
         let holder_pub =
-            self.holder_pub.ok_or_else(|| ClientError::InvalidInput("holder_pub required".into()))?;
+            self.holder_pub.take().ok_or_else(|| IdentityClientError::InvalidInput("holder_pub required".into()))?;
         let schema_hash =
-            self.schema_hash.ok_or_else(|| ClientError::InvalidInput("schema_hash required".into()))?;
+            self.schema_hash.take().ok_or_else(|| IdentityClientError::InvalidInput("schema_hash required".into()))?;
         let encrypted_attributes = self
             .encrypted_attributes
-            .ok_or_else(|| ClientError::InvalidInput("encrypted_attributes required".into()))?;
+            .take()
+            .ok_or_else(|| IdentityClientError::InvalidInput("encrypted_attributes required".into()))?;
 
         // Compute commitment
         let commitment = compute_credential_commitment(
@@ -255,16 +257,17 @@ impl CreateClaimBuilder {
     }
 
     /// Build the create claim transaction
-    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
+    pub fn build(&mut self) -> Result<Vec<u8>, IdentityClientError> {
         let nullifier =
-            self.nullifier.ok_or_else(|| ClientError::InvalidInput("nullifier required".into()))?;
+            self.nullifier.take().ok_or_else(|| IdentityClientError::InvalidInput("nullifier required".into()))?;
         let claim_type =
-            self.claim_type.ok_or_else(|| ClientError::InvalidInput("claim_type required".into()))?;
+            self.claim_type.take().ok_or_else(|| IdentityClientError::InvalidInput("claim_type required".into()))?;
         let predicate =
-            self.predicate.ok_or_else(|| ClientError::InvalidInput("predicate required".into()))?;
+            self.predicate.take().ok_or_else(|| IdentityClientError::InvalidInput("predicate required".into()))?;
         let revealed_attributes = self
             .revealed_attributes
-            .ok_or_else(|| ClientError::InvalidInput("revealed_attributes required".into()))?;
+            .take()
+            .ok_or_else(|| IdentityClientError::InvalidInput("revealed_attributes required".into()))?;
 
         // TODO: Generate ZK proof
         let proof = vec![0u8; 64];
@@ -317,11 +320,11 @@ impl VerifyClaimBuilder {
     }
 
     /// Build the verify claim transaction
-    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
+    pub fn build(&mut self) -> Result<Vec<u8>, IdentityClientError> {
         let claim =
-            self.claim.ok_or_else(|| ClientError::InvalidInput("claim required".into()))?;
+            self.claim.take().ok_or_else(|| IdentityClientError::InvalidInput("claim required".into()))?;
         let verifier_pub =
-            self.verifier_pub.ok_or_else(|| ClientError::InvalidInput("verifier_pub required".into()))?;
+            self.verifier_pub.take().ok_or_else(|| IdentityClientError::InvalidInput("verifier_pub required".into()))?;
 
         let mut call_data = Vec::new();
         call_data.push(0x04); // VerifyClaimV1
@@ -361,11 +364,11 @@ impl RevokeCredentialBuilder {
     }
 
     /// Build the revoke credential transaction
-    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
+    pub fn build(&mut self) -> Result<Vec<u8>, IdentityClientError> {
         let nullifier =
-            self.nullifier.ok_or_else(|| ClientError::InvalidInput("nullifier required".into()))?;
+            self.nullifier.take().ok_or_else(|| IdentityClientError::InvalidInput("nullifier required".into()))?;
         let reason =
-            self.reason.ok_or_else(|| ClientError::InvalidInput("reason required".into()))?;
+            self.reason.take().ok_or_else(|| IdentityClientError::InvalidInput("reason required".into()))?;
 
         // TODO: Generate issuer signature
         let issuer_sig = vec![0u8; 64];
