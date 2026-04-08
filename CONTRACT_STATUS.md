@@ -27,10 +27,15 @@ cargo test -p darkfi_{contract}_contract --test integration
 |----------|--------------|-------|------------------|--------|
 | identity | darkfi-identity-contract | ✓ | 15 tests | PASS |
 
-### Subscription (FIXED 2026-04-08)
-| Contract | Package Name | Build | Integration Tests | Status |
-|----------|--------------|-------|------------------|--------|
-| subscription | subscription_contract | ✓ | 42 tests | PASS |
+### Subscription (ZK PROOFS IMPLEMENTED 2026-04-08)
+| Contract | Package Name | Build | ZK Proofs | Status |
+|----------|--------------|-------|-----------|--------|
+| subscription | subscription_contract | ✓ | 3/3 circuits | PASS |
+
+**ZK Circuits implemented**:
+- `subscribe_v1.zk` - Subscription creation with DAO-Escrow integration
+- `verify_access_v1.zk` - Access verification with rate limiting
+- `rate_limit_v1.zk` - Rate limit enforcement
 
 ### Stablecoin (ZK PROOFS IMPLEMENTED 2026-04-08)
 | Contract | Package Name | Build | ZK Proofs | Status |
@@ -60,23 +65,52 @@ cargo test -p darkfi_{contract}_contract --test integration
 | darkbet_exchange | darkfi_darkbet_exchange_contract | ✓ | 30 tests | PASS |
 | pool_stake | darkfi_pool_stake_contract | ✓ | 23 tests | PASS |
 | relayer_endowment | darkfi_relayer_endowment_contract | ✓ | 20 tests | PASS |
-| bridge | darkfi_bridge_contract | ✓ | 3 tests | PASS |
+| bridge | darkfi_bridge_contract | ✓ | 3 tests + ZK proofs | PASS |
 | dex | darkfi_dex_contract | ✓ | 9 tests + ZK proofs | PASS |
 
-**ZK Circuits implemented**:
+**DEX ZK Circuits**:
 - `create_swap_v1.zk` - Swap creation with lock commitment
 - `accept_swap_v1.zk` - Swap acceptance
 - `execute_swap_v1.zk` - Swap execution
 - `execute_swap_slippage_v1.zk` - Slippage-protected execution
 - `execute_swap_fee_v1.zk` - Fee-on-transfer execution
 - `cancel_swap_v1.zk` - Swap cancellation
+
+**Bridge ZK Circuits**:
+- `deposit_v1.zk` - Cross-chain deposit with Merkle proof
+- `withdraw_v1.zk` - Cross-chain withdrawal
+- `ltc_deposit_v1.zk` - Litecoin deposit (with MWEB support)
+- `xmr_deposit_v1.zk` - Monero deposit (with DLEq proof)
+- `azt_deposit_v1.zk` - Aztec deposit (with note commitment)
+- `zec_deposit_v1.zk` - Zcash deposit (with Sapling proof)
+
 | atomic_swap | atomic_swap_contract | ✓ | 13 tests | PASS |
-| stablecoin | darkfi_stablecoin_contract | ✓ | 15 tests | PASS |
+
+**Atomic Swap ZK Circuits**:
+- `create_swap_v1.zk` - HTLC creation with secret hash commitment
+- `claim_v1.zk` - Swap claim with secret reveal
+- `refund_v1.zk` - Timelock refund after expiration
+
+| stablecoin | darkfi_stablecoin_contract | ✓ | 15 tests + ZK proofs | PASS |
+
+**Stablecoin ZK Circuits**:
+- `open_position_v1.zk` - Position opening with Pedersen commitments
+- `mint_stable_v1.zk` - Stablecoin minting
+- `liquidate_v1.zk` - CDP liquidation with penalty
+- `governance_report_v1.zk` - Precise collateral/debt ratio via BaseDiv
+- `accrue_interest_v1.zk` - Interest calculation via BaseDiv
 | dao_escrow | darkfi_dao_escrow_contract | ✓ | 20 tests | PASS |
 | drain_protection | darkfi_drain_protection_contract | ✓ | 24 tests | PASS |
 | block_height_prediction | darkfi_block_height_prediction_contract | ✓ | 26 tests | PASS |
 | insurance_market | darkfi_insurance_market_contract | ✓ | 13 tests | PASS |
-| escrow | darkfi_escrow_contract | ✓ | none | No tests |
+| escrow | darkfi_escrow_contract | ✓ | 4/4 circuits | PASS |
+
+**Escrow ZK Circuits**:
+- `create_escrow_v1.zk` - Escrow creation with buyer/seller keys
+- `fund_v1.zk` - Funding with Pedersen commitment
+- `claim_v1.zk` - Seller claim with H(seller_pub) privacy
+- `refund_v1.zk` - Buyer refund after timeout
+
 | game_room | game_room_contract | ✓ | 42 tests | PASS |
 
 ### Governance & Marketplace Contracts

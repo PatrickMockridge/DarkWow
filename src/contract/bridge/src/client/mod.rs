@@ -45,7 +45,18 @@
 //! 5. DarkFi verifies proof, marks nullifier spent
 //! 6. Relayer broadcasts withdrawal to external chain
 
-use darkfi_sdk::error::ClientError;
+use darkfi_sdk::error::ContractError;
+
+// ============================================================================
+// ZK Proof Generation Modules
+// ============================================================================
+
+pub mod deposit_v1;
+pub mod withdraw_v1;
+pub mod ltc_deposit_v1;
+pub mod xmr_deposit_v1;
+pub mod azt_deposit_v1;
+pub mod zec_deposit_v1;
 
 /// Bridge client errors
 #[derive(Debug, thiserror::Error)]
@@ -64,6 +75,15 @@ pub enum BridgeClientError {
 
     #[error("No bridge operators available")]
     NoOperatorsAvailable,
+
+    #[error("{0}")]
+    ContractError(String),
+}
+
+impl From<ContractError> for BridgeClientError {
+    fn from(e: ContractError) -> Self {
+        BridgeClientError::ContractError(format!("{:?}", e))
+    }
 }
 
 // ============================================================================
@@ -200,17 +220,17 @@ impl DepositBuilder {
     /// 2. commitment = H(secret, amount, bridge_address)
     /// 3. ZK proof that proves deposit exists and commitment is valid
     /// 4. Encoded call data for the bridge contract
-    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
+    pub fn build(&self) -> Result<Vec<u8>, BridgeClientError> {
         // Validate all required fields
-        let secret = self.secret.ok_or_else(|| ClientError::InvalidInput("secret required".into()))?;
-        let amount = self.amount.ok_or_else(|| ClientError::InvalidInput("amount required".into()))?;
-        let recipient_pub_x = self.recipient_pub_x.ok_or_else(|| ClientError::InvalidInput("recipient_pub_x required".into()))?;
-        let recipient_pub_y = self.recipient_pub_y.ok_or_else(|| ClientError::InvalidInput("recipient_pub_y required".into()))?;
-        let nonce = self.bridge_nonce.ok_or_else(|| ClientError::InvalidInput("nonce required".into()))?;
-        let chain = self.chain.ok_or_else(|| ClientError::InvalidInput("chain required".into()))?;
-        let merkle_proof = self.merkle_proof.ok_or_else(|| ClientError::InvalidInput("merkle_proof required".into()))?;
-        let block_hash = self.external_block_hash.ok_or_else(|| ClientError::InvalidInput("external_block_hash required".into()))?;
-        let state_root = self.external_state_root.ok_or_else(|| ClientError::InvalidInput("external_state_root required".into()))?;
+        let secret = self.secret.ok_or_else(|| BridgeClientError::InvalidDepositProof("secret required".into()))?;
+        let amount = self.amount.ok_or_else(|| BridgeClientError::InvalidDepositProof("amount required".into()))?;
+        let recipient_pub_x = self.recipient_pub_x.ok_or_else(|| BridgeClientError::InvalidDepositProof("recipient_pub_x required".into()))?;
+        let recipient_pub_y = self.recipient_pub_y.ok_or_else(|| BridgeClientError::InvalidDepositProof("recipient_pub_y required".into()))?;
+        let nonce = self.bridge_nonce.ok_or_else(|| BridgeClientError::InvalidDepositProof("nonce required".into()))?;
+        let chain = self.chain.ok_or_else(|| BridgeClientError::InvalidDepositProof("chain required".into()))?;
+        let merkle_proof = self.merkle_proof.clone().ok_or_else(|| BridgeClientError::InvalidDepositProof("merkle_proof required".into()))?;
+        let block_hash = self.external_block_hash.ok_or_else(|| BridgeClientError::InvalidDepositProof("external_block_hash required".into()))?;
+        let state_root = self.external_state_root.ok_or_else(|| BridgeClientError::InvalidDepositProof("external_state_root required".into()))?;
         let fee = self.fee.unwrap_or(1000); // Default fee
 
         // Step 1: Derive bridge_address
@@ -261,7 +281,7 @@ impl DepositBuilder {
 
 /// Derive bridge address from recipient identity and nonce
 fn derive_bridge_address(recipient_pub_x: [u8; 32], recipient_pub_y: [u8; 32], nonce: u64) -> [u8; 32] {
-    use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+    use darkfi_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
 
     // Derive bridge_secret = poseidon_hash(recipient_pub_x, recipient_pub_y, nonce)
     // Using poseidon ensures ZK-friendly derivation
@@ -276,7 +296,7 @@ fn derive_bridge_address(recipient_pub_x: [u8; 32], recipient_pub_y: [u8; 32], n
 
 /// Compute commitment from secret, amount, and bridge address
 fn compute_commitment(secret: [u8; 32], amount: u64, bridge_address: [u8; 32]) -> [u8; 32] {
-    use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+    use darkfi_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
 
     // commitment = poseidon_hash(secret, amount, bridge_address)
     // Using poseidon ensures ZK-friendly derivation
@@ -370,10 +390,10 @@ impl WithdrawBuilder {
     ///    - Deposit hasn't been spent (nullifier not in spent tree)
     ///    - Amount is valid (<= deposited amount)
     /// 2. Encoded call data for the bridge contract
-    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
-        let nullifier = self.nullifier.ok_or_else(|| ClientError::InvalidInput("nullifier required".into()))?;
-        let recipient_hash = self.recipient_hash.ok_or_else(|| ClientError::InvalidInput("recipient_hash required".into()))?;
-        let amount = self.amount.ok_or_else(|| ClientError::InvalidInput("amount required".into()))?;
+    pub fn build(&self) -> Result<Vec<u8>, BridgeClientError> {
+        let nullifier = self.nullifier.ok_or_else(|| BridgeClientError::InvalidWithdrawalProof("nullifier required".into()))?;
+        let recipient_hash = self.recipient_hash.ok_or_else(|| BridgeClientError::InvalidWithdrawalProof("recipient_hash required".into()))?;
+        let amount = self.amount.ok_or_else(|| BridgeClientError::InvalidWithdrawalProof("amount required".into()))?;
         let fee = self.fee.unwrap_or(1000);
 
         // Generate ZK proof
@@ -404,7 +424,7 @@ impl WithdrawBuilder {
 
 /// Compute nullifier from secret
 pub fn compute_nullifier(secret: [u8; 32]) -> [u8; 32] {
-    use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+    use darkfi_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
 
     // nullifier = poseidon_hash(secret)
     let secret_base = pallas::Base::from_repr(secret.into()).unwrap();
@@ -436,7 +456,7 @@ pub fn derive_bridge_address_external(
     user_pub_y: [u8; 32],
     nonce: u64,
 ) -> [u8; 32] {
-    use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+    use darkfi_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
 
     // Use poseidon for ZK-friendly hashing
     let pub_x = pallas::Base::from_repr(user_pub_x.into()).unwrap();

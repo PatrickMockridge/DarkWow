@@ -12,4 +12,12 @@ darkfi-serial = { path = "../../serial" }
 
 [features]
 default = []
-client = []
+client = ["dep:darkfi", "dep:rand"]
+
+[dependencies.darkfi]
+optional = true
+path = "../../../../darkfi"
+
+[dependencies.rand]
+optional = true
+version = "0.8"

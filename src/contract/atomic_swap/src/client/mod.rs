@@ -16,9 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Escrow contract client module
+//! AtomicSwap contract client module
 
-pub mod create_escrow_v1;
-pub mod fund_v1;
-pub mod claim_v1;
-pub mod refund_v1;
+pub mod create_swap_v1;
+pub mod claim_swap_v1;
+pub mod refund_swap_v1;

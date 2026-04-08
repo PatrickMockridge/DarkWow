@@ -1,0 +1,167 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! WithdrawV1 ZK proof generation
+
+use darkfi::{
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
+    zkas::ZkBinary,
+    Result,
+};
+use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+use rand::rngs::OsRng;
+
+/// WithdrawV1 circuit public inputs (in order of constrain_instance)
+#[derive(Debug, Clone)]
+pub struct WithdrawPublicInputs {
+    /// Nullifier derived from secret
+    pub nullifier: pallas::Base,
+    /// Hash of recipient address on external chain
+    pub recipient_hash: pallas::Base,
+    /// Amount being withdrawn
+    pub amount: pallas::Base,
+    /// Bridge address this withdrawal is from
+    pub bridge_address: pallas::Base,
+    /// Merkle root of the deposit tree
+    pub merkle_root: pallas::Base,
+    /// Commitment being spent
+    pub commitment: pallas::Base,
+}
+
+impl WithdrawPublicInputs {
+    /// Convert to vector for ZK proof creation
+    /// Order must match constrain_instance calls in withdraw_v1.zk
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![
+            self.nullifier,
+            self.recipient_hash,
+            self.amount,
+            self.bridge_address,
+            self.merkle_root,
+            self.commitment,
+        ]
+    }
+}
+
+/// Input data for Withdraw proof generation
+#[derive(Debug, Clone)]
+pub struct WithdrawCallData {
+    /// User's secret for the deposit
+    pub secret: pallas::Base,
+    /// Amount being withdrawn
+    pub amount: u64,
+    /// Recipient address hash on external chain
+    pub recipient_hash: pallas::Base,
+    /// Bridge address this withdrawal is from
+    pub bridge_address: pallas::Base,
+    /// Merkle root of deposit tree
+    pub merkle_root: pallas::Base,
+    /// Merkle proof path (4 elements)
+    pub merkle_proof: [pallas::Base; 4],
+    /// Leaf index in Merkle tree
+    pub leaf_index: u64,
+}
+
+impl WithdrawCallData {
+    /// Create new call data
+    pub fn new(
+        secret: pallas::Base,
+        amount: u64,
+        recipient_hash: pallas::Base,
+        bridge_address: pallas::Base,
+        merkle_root: pallas::Base,
+        merkle_proof: [pallas::Base; 4],
+        leaf_index: u64,
+    ) -> Self {
+        Self {
+            secret,
+            amount,
+            recipient_hash,
+            bridge_address,
+            merkle_root,
+            merkle_proof,
+            leaf_index,
+        }
+    }
+
+    /// Compute nullifier: poseidon_hash(secret)
+    pub fn compute_nullifier(&self) -> pallas::Base {
+        poseidon_hash([self.secret])
+    }
+
+    /// Compute commitment: H(secret, amount, bridge_address)
+    pub fn compute_commitment(&self) -> pallas::Base {
+        poseidon_hash([self.secret, pallas::Base::from(self.amount), self.bridge_address])
+    }
+
+    /// Compute deposit leaf: H(secret, amount)
+    pub fn compute_deposit_leaf(&self) -> pallas::Base {
+        poseidon_hash([self.secret, pallas::Base::from(self.amount)])
+    }
+
+    /// Compute public inputs for this call
+    pub fn compute_public_inputs(&self) -> WithdrawPublicInputs {
+        WithdrawPublicInputs {
+            nullifier: self.compute_nullifier(),
+            recipient_hash: self.recipient_hash,
+            amount: pallas::Base::from(self.amount),
+            bridge_address: self.bridge_address,
+            merkle_root: self.merkle_root,
+            commitment: self.compute_commitment(),
+        }
+    }
+
+    /// Generate prover witnesses for the circuit
+    pub fn to_witnesses(&self) -> Vec<Witness> {
+        let public_inputs = self.compute_public_inputs();
+        let _deposit_leaf = self.compute_deposit_leaf();
+        let _derived_recipient = poseidon_hash([self.recipient_hash]);
+
+        vec![
+            // Public inputs
+            Witness::Base(Value::known(public_inputs.nullifier)),
+            Witness::Base(Value::known(public_inputs.recipient_hash)),
+            Witness::Base(Value::known(public_inputs.amount)),
+            Witness::Base(Value::known(public_inputs.bridge_address)),
+            Witness::Base(Value::known(public_inputs.merkle_root)),
+            Witness::Base(Value::known(public_inputs.commitment)),
+            // Private inputs
+            Witness::Base(Value::known(self.secret)),
+            Witness::Base(Value::known(self.merkle_proof[0])),
+            Witness::Base(Value::known(self.merkle_proof[1])),
+            Witness::Base(Value::known(self.merkle_proof[2])),
+            Witness::Base(Value::known(self.merkle_proof[3])),
+            Witness::Uint32(Value::known(self.leaf_index as u32)),
+        ]
+    }
+}
+
+/// Create a Withdraw ZK proof
+pub fn create_withdraw_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &WithdrawCallData,
+) -> Result<(Proof, WithdrawPublicInputs)> {
+    let public_inputs = input.compute_public_inputs();
+    let witnesses = input.to_witnesses();
+
+    let circuit = ZkCircuit::new(witnesses, zkbin);
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+
+    Ok((proof, public_inputs))
+}

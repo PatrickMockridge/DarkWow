@@ -451,6 +451,78 @@ Reference these contracts for correct patterns:
 
 ---
 
+## ZK Proof Client Modules (2026-04-08)
+
+The following contracts now have complete ZK proof client implementations for proof generation:
+
+| Contract | Package Name | Circuits | Files |
+|----------|-------------|----------|-------|
+| atomic_swap | atomic_swap_contract | 3 | `create_swap_v1.rs`, `claim_swap_v1.rs`, `refund_swap_v1.rs` |
+| bridge | darkfi_bridge_contract | 6 | `deposit_v1.rs`, `withdraw_v1.rs`, `ltc_deposit_v1.rs`, `xmr_deposit_v1.rs`, `azt_deposit_v1.rs`, `zec_deposit_v1.rs` |
+| subscription | subscription_contract | 3 | `subscribe_v1.rs`, `verify_access_v1.rs`, `rate_limit_v1.rs` |
+| escrow | darkfi_escrow_contract | 4 | `create_escrow_v1.rs`, `fund_v1.rs`, `claim_v1.rs`, `refund_v1.rs` |
+| stablecoin | darkfi_stablecoin_contract | 5 | `open_position_v1.rs`, `mint_stable_v1.rs`, `liquidate_v1.rs`, `governance_report_v1.rs`, `accrue_interest_v1.rs` |
+| dex | darkfi_dex_contract | 6 | (pre-existing client modules) |
+
+### Building with ZK Proof Client Features
+
+```bash
+# Build contract with ZK proof client modules
+cargo build -p atomic_swap_contract --features client
+cargo build -p darkfi_bridge_contract --features client
+cargo build -p subscription_contract --features client
+cargo build -p darkfi_escrow_contract --features client
+cargo build -p darkfi_stablecoin_contract --features client
+cargo build -p darkfi_dex_contract --features client
+```
+
+### ZK Proof Client Structure
+
+Each client module provides:
+
+```rust
+// Public inputs struct
+pub struct [Function]PublicInputs {
+    pub key: pallas::Base,
+    // ...
+}
+
+impl [Function]PublicInputs {
+    pub fn to_vec(&self) -> Vec<pallas::Base> { ... }
+}
+
+// Call data struct with private inputs
+pub struct [Function]CallData {
+    pub secret: pallas::Base,
+    // ...
+}
+
+impl [Function]CallData {
+    pub fn compute_public_inputs(&self) -> [Function]PublicInputs { ... }
+    pub fn to_witnesses(&self) -> Vec<Witness> { ... }
+}
+
+// Proof generation function
+pub fn create_[function]_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &[Function]CallData,
+) -> Result<(Proof, [Function]PublicInputs)> { ... }
+```
+
+### Contracts Still Needing ZK Proof Client Modules
+
+| Contract | Circuits | Status |
+|----------|----------|--------|
+| identity | 8 | Client exists with stubs (`vec![0u8; 64]`) |
+| labor_market | 9 | Client is placeholder |
+| oracle | 4 | Needs verification |
+| auction | 6 | Needs verification |
+| tender | 4 | Needs verification |
+| attestation | 7 | Needs verification |
+
+---
+
 ## Related Documentation
 
 - [Local Devnet Setup](../localnet-dev.md) - More details on localnet mining

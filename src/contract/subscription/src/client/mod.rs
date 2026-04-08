@@ -16,9 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Escrow contract client module
+//! Subscription contract client module
 
-pub mod create_escrow_v1;
-pub mod fund_v1;
-pub mod claim_v1;
-pub mod refund_v1;
+pub mod subscribe_v1;
+pub mod verify_access_v1;
+pub mod rate_limit_v1;
