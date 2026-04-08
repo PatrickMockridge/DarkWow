@@ -1,0 +1,131 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Labor Market submit_deliverable_v1 ZK proof generation
+
+use darkfi::{
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
+    zkas::ZkBinary,
+    Result,
+};
+use darkfi_sdk::{
+    crypto::{poseidon_hash, PublicKey},
+    pasta::pallas,
+};
+use rand::rngs::OsRng;
+
+/// SubmitDeliverableV1 circuit public inputs
+#[derive(Debug, Clone)]
+pub struct SubmitDeliverableV1PublicInputs {
+    pub job_id: pallas::Base,
+    pub claim_id: pallas::Base,
+    pub worker_pub_x: pallas::Base,
+    pub worker_pub_y: pallas::Base,
+    pub spent_nullifier: pallas::Base,
+}
+
+impl SubmitDeliverableV1PublicInputs {
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![
+            self.job_id,
+            self.claim_id,
+            self.worker_pub_x,
+            self.worker_pub_y,
+            self.spent_nullifier,
+        ]
+    }
+}
+
+/// Input data for submit_deliverable proof generation
+#[derive(Debug, Clone)]
+pub struct SubmitDeliverableV1CallData {
+    pub worker_secret: pallas::Base,
+    // Public inputs
+    pub worker_public: PublicKey,
+    pub job_id: pallas::Base,
+    pub claim_id: pallas::Base,
+    pub deadline_block: pallas::Base,
+    pub current_block: pallas::Base,
+}
+
+impl SubmitDeliverableV1CallData {
+    pub fn new(
+        worker_secret: pallas::Base,
+        worker_public: PublicKey,
+        job_id: pallas::Base,
+        claim_id: pallas::Base,
+        deadline_block: pallas::Base,
+        current_block: pallas::Base,
+    ) -> Self {
+        Self {
+            worker_secret,
+            worker_public,
+            job_id,
+            claim_id,
+            deadline_block,
+            current_block,
+        }
+    }
+
+    /// Compute nullifier from job_id and worker_secret
+    pub fn compute_nullifier(&self) -> pallas::Base {
+        poseidon_hash([self.job_id, self.worker_secret])
+    }
+
+    pub fn compute_public_inputs(&self) -> SubmitDeliverableV1PublicInputs {
+        let (ix, iy) = self.worker_public.xy();
+        SubmitDeliverableV1PublicInputs {
+            job_id: self.job_id,
+            claim_id: self.claim_id,
+            worker_pub_x: ix,
+            worker_pub_y: iy,
+            spent_nullifier: self.compute_nullifier(),
+        }
+    }
+
+    pub fn to_witnesses(&self) -> Vec<Witness> {
+        let (ix, iy) = self.worker_public.xy();
+        vec![
+            // Public inputs as witnesses
+            Witness::Base(Value::known(self.job_id)),
+            Witness::Base(Value::known(self.claim_id)),
+            Witness::Base(Value::known(ix)),
+            Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(self.compute_nullifier())),
+            // Private inputs
+            Witness::Base(Value::known(self.worker_secret)),
+            Witness::Base(Value::known(self.deadline_block)),
+            Witness::Base(Value::known(self.current_block)),
+        ]
+    }
+}
+
+/// Create a SubmitDeliverable ZK proof
+pub fn submit_deliverable_v1_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &SubmitDeliverableV1CallData,
+) -> Result<(Proof, SubmitDeliverableV1PublicInputs)> {
+    let public_inputs = input.compute_public_inputs();
+    let witnesses = input.to_witnesses();
+
+    let circuit = ZkCircuit::new(witnesses, zkbin);
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+
+    Ok((proof, public_inputs))
+}

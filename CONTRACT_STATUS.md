@@ -22,7 +22,90 @@ cargo test -p darkfi_{contract}_contract --test integration
 
 ## Contract Registry
 
-### Identity
+### Identity (ZK PROOFS IMPLEMENTED 2026-04-08)
+| Contract | Package Name | Build | ZK Proofs | Status |
+|----------|--------------|-------|-----------|--------|
+| identity | darkfi-identity-contract | ✓ | 8/8 circuits | PASS |
+
+**ZK Circuits implemented**:
+- `issue_credential_v1.zk` - Credential issuance with attributes
+- `create_claim_v1.zk` - Basic claim creation
+- `create_claim_v1_l1.zk` - Level 1 selective disclosure with bounded equation
+- `create_claim_v1_l1_v2.zk` - Level 1 V2 using less_than_or_equal
+- `create_claim_v1_multi.zk` - Multi-credential AND logic
+- `create_claim_v1_ratio.zk` - Ratio-based claims with base_div
+- `create_claim_v1_dag.zk` - DAG-based claims
+- `verify_capability_v1.zk` - O-Cap capability verification
+
+### Labor Market (ZK PROOFS IMPLEMENTED 2026-04-08)
+| Contract | Package Name | Build | ZK Proofs | Status |
+|----------|--------------|-------|-----------|--------|
+| labor_market | darkfi_labor_market_contract | ✓ | 9/9 circuits | PASS |
+
+**ZK Circuits implemented**:
+- `create_job_v1.zk` - Simple employer key derivation
+- `accept_job_v1.zk` - Worker accepts job
+- `accept_job_with_capability_v1.zk` - Worker with capability verification
+- `submit_deliverable_v1.zk` - Generic deliverable submission
+- `submit_git_deliverable_v1.zk` - Git deliverable submission
+- `confirm_delivery_v1.zk` - Employer confirms delivery
+- `milestone_payment_v1.zk` - Time-weighted milestone payment
+- `dispute_v1.zk` - Dispute escalation to DAO
+- `refund_v1.zk` - HTLC-style timeout refund
+
+### Oracle (ZK PROOFS IMPLEMENTED 2026-04-08)
+| Contract | Package Name | Build | ZK Proofs | Status |
+|----------|--------------|-------|-----------|--------|
+| oracle | darkfi_oracle_contract | ✓ | 5/5 circuits | PASS |
+
+**ZK Circuits implemented**:
+- `register_oracle_v1.zk` - Oracle registration
+- `push_value_v1.zk` - Value push with public key derivation
+- `attest_value_v1.zk` - Value attestation
+- `push_value_commitment_v1.zk` - Private data commitment with Merkle proof
+- `aggregate_v1.zk` - Weighted average aggregation
+
+### Auction (ZK PROOFS IMPLEMENTED 2026-04-08)
+| Contract | Package Name | Build | ZK Proofs | Status |
+|----------|--------------|-------|-----------|--------|
+| auction | darkfi_auction_contract | ✓ | 6/6 circuits | PASS |
+
+**ZK Circuits implemented**:
+- `create_auction_v1.zk` - Auction creation with seller commitment
+- `place_bid_v1.zk` - Bid placement with deadline check
+- `close_auction_v1.zk` - Auction close by seller
+- `claim_winnings_v1.zk` - Winner claims item
+- `settle_auction_v1.zk` - Seller settles auction
+- `refund_bid_v1.zk` - Outbid bidder refunds
+
+### Tender (ZK PROOFS IMPLEMENTED 2026-04-08)
+| Contract | Package Name | Build | ZK Proofs | Status |
+|----------|--------------|-------|-----------|--------|
+| tender | darkfi_tender_contract | ✓ | 5/5 circuits | PASS |
+
+**ZK Circuits implemented**:
+- `create_tender_v1.zk` - Tender creation
+- `submit_bid_v1.zk` - Sealed bid submission
+- `reveal_bid_v1.zk` - Bid reveal after deadline
+- `select_winner_v1.zk` - Winner selection by requester
+- `submit_bid_with_capability_v1.zk` - Bid with capability proof
+
+### Attestation (ZK PROOFS IMPLEMENTED 2026-04-08)
+| Contract | Package Name | Build | ZK Proofs | Status |
+|----------|--------------|-------|-----------|--------|
+| attestation | darkfi_attestation_contract | ✓ | 8/8 circuits | PASS |
+
+**ZK Circuits implemented**:
+- `create_attestation_v1.zk` - Attestation creation
+- `create_claim_v1.zk` - Claim creation against attestation
+- `verify_claim_v1.zk` - Claim verification with predicate logic
+- `consume_claim_v1.zk` - Claim consumption with nullifier
+- `check_not_revoked_v1.zk` - Non-revocation proof
+- `delegate_attestation_v1.zk` - Delegation with stake ratio check
+- `verify_chain_v1.zk` - Delegation chain verification
+- `update_delegation_v1.zk` - Delegation update with ratio enforcement
+
+### Subscription (ZK PROOFS IMPLEMENTED 2026-04-08)
 | Contract | Package Name | Build | Integration Tests | Status |
 |----------|--------------|-------|------------------|--------|
 | identity | darkfi-identity-contract | ✓ | 15 tests | PASS |
@@ -114,14 +197,14 @@ cargo test -p darkfi_{contract}_contract --test integration
 | game_room | game_room_contract | ✓ | 42 tests | PASS |
 
 ### Governance & Marketplace Contracts
-| Contract | Package Name | Build | Integration Tests | Status |
-|----------|--------------|-------|------------------|--------|
-| labor_market | darkfi_labor_market_contract | ✓ | 24 tests | PASS |
-| oracle | darkfi_oracle_contract | ✓ | 7 tests | PASS |
-| auction | darkfi_auction_contract | ✓ | 23 tests | PASS |
-| tender | darkfi_tender_contract | ✓ | 23 tests | PASS |
-| attestation | darkfi_attestation_contract | ✓ | 23 tests | PASS |
-| dao | darkfi_dao_contract | ✓ | 1 test | IGNORE (needs darkfid) |
+| Contract | Package Name | Build | Integration Tests | ZK Proofs | Status |
+|----------|--------------|-------|------------------|-----------|--------|
+| labor_market | darkfi_labor_market_contract | ✓ | 24 tests | 9/9 circuits | PASS |
+| oracle | darkfi_oracle_contract | ✓ | 7 tests | 5/5 circuits | PASS |
+| auction | darkfi_auction_contract | ✓ | 23 tests | 6/6 circuits | PASS |
+| tender | darkfi_tender_contract | ✓ | 23 tests | 5/5 circuits | PASS |
+| attestation | darkfi_attestation_contract | ✓ | 23 tests | 8/8 circuits | PASS |
+| dao | darkfi_dao_contract | ✓ | 1 test | N/A | IGNORE (needs darkfid) |
 
 ### Money Contracts
 | Contract | Package Name | Build | Integration Tests | Status |

@@ -16,14 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Oracle Contract Client API
-//!
-//! Client-side builders for interacting with the oracle contract.
+//! Oracle ZK proof client modules
 
-/// Placeholder for client API builders
-pub mod builders {
-    // TODO: Implement client builders for:
-    // - RegisterOracleBuilder
-    // - PushValueBuilder
-    // - AttestValueBuilder
-}
+pub mod register_oracle_v1;
+pub mod push_value_v1;
+pub mod attest_value_v1;
+pub mod push_value_commitment_v1;
+pub mod aggregate_v1;

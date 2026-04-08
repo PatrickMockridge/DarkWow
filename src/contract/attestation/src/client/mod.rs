@@ -19,6 +19,19 @@
 //! Attestation contract client API
 //!
 //! This module provides builder structs for constructing attestation contract calls.
+//! Also includes ZK proof generation modules for circuit verification.
+
+pub mod builders;
+
+//! ZK proof client modules
+pub mod create_attestation_v1;
+pub mod create_claim_v1;
+pub mod verify_claim_v1;
+pub mod consume_claim_v1;
+pub mod check_not_revoked_v1;
+pub mod delegate_attestation_v1;
+pub mod verify_chain_v1;
+pub mod update_delegation_v1;
 
 use darkfi_sdk::{
     crypto::{pasta_prelude::*, PublicKey},

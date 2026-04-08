@@ -19,6 +19,16 @@
 //! Tender contract client API
 //!
 //! This module provides builder structs for constructing tender contract calls.
+//! Also includes ZK proof generation modules for circuit verification.
+
+pub mod builders;
+
+//! ZK proof client modules
+pub mod create_tender_v1;
+pub mod reveal_bid_v1;
+pub mod select_winner_v1;
+pub mod submit_bid_v1;
+pub mod submit_bid_with_capability_v1;
 
 use darkfi_sdk::{
     crypto::{PublicKey, TOKEN_ID_DARK},

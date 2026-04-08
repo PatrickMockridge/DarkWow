@@ -1,0 +1,103 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Labor Market accept_job_v1 ZK proof generation
+
+use darkfi::{
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
+    zkas::ZkBinary,
+    Result,
+};
+use darkfi_sdk::{
+    crypto::{poseidon_hash, PublicKey},
+    pasta::pallas,
+};
+use rand::rngs::OsRng;
+
+/// AcceptJobV1 circuit public inputs
+#[derive(Debug, Clone)]
+pub struct AcceptJobV1PublicInputs {
+    pub job_id: pallas::Base,
+    pub worker_pub_x: pallas::Base,
+    pub worker_pub_y: pallas::Base,
+}
+
+impl AcceptJobV1PublicInputs {
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![
+            self.job_id,
+            self.worker_pub_x,
+            self.worker_pub_y,
+        ]
+    }
+}
+
+/// Input data for accept_job proof generation
+#[derive(Debug, Clone)]
+pub struct AcceptJobV1CallData {
+    pub worker_secret: pallas::Base,
+    // Public inputs
+    pub worker_public: PublicKey,
+    pub job_id: pallas::Base,
+}
+
+impl AcceptJobV1CallData {
+    pub fn new(worker_secret: pallas::Base, worker_public: PublicKey, job_id: pallas::Base) -> Self {
+        Self {
+            worker_secret,
+            worker_public,
+            job_id,
+        }
+    }
+
+    pub fn compute_public_inputs(&self) -> AcceptJobV1PublicInputs {
+        let (ix, iy) = self.worker_public.xy();
+        AcceptJobV1PublicInputs {
+            job_id: self.job_id,
+            worker_pub_x: ix,
+            worker_pub_y: iy,
+        }
+    }
+
+    pub fn to_witnesses(&self) -> Vec<Witness> {
+        let (ix, iy) = self.worker_public.xy();
+        vec![
+            // Public inputs as witnesses
+            Witness::Base(Value::known(self.job_id)),
+            Witness::Base(Value::known(ix)),
+            Witness::Base(Value::known(iy)),
+            // Private inputs
+            Witness::Base(Value::known(self.worker_secret)),
+        ]
+    }
+}
+
+/// Create an AcceptJob ZK proof
+pub fn accept_job_v1_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &AcceptJobV1CallData,
+) -> Result<(Proof, AcceptJobV1PublicInputs)> {
+    let public_inputs = input.compute_public_inputs();
+    let witnesses = input.to_witnesses();
+
+    let circuit = ZkCircuit::new(witnesses, zkbin);
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+
+    Ok((proof, public_inputs))
+}

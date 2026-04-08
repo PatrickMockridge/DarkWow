@@ -220,6 +220,32 @@ echo ""
 echo "=== All <Name> circuit compilation tests passed ==="
 ```
 
+## ZK Proof Client Module Implementation Status
+
+The following contracts have full ZK proof client modules implemented for proof generation:
+
+| Contract | Circuits | Module Location |
+|----------|----------|-----------------|
+| identity | 8 | `src/contract/identity/src/client/` |
+| labor_market | 9 | `src/contract/labor_market/src/client/` |
+| oracle | 5 | `src/contract/oracle/src/client/` |
+| auction | 6 | `src/contract/auction/src/client/` |
+| tender | 5 | `src/contract/tender/src/client/` |
+| attestation | 8 | `src/contract/attestation/src/client/` |
+| subscription | 3 | `src/contract/subscription/src/client/` |
+| escrow | 4 | `src/contract/escrow/src/client/` |
+| stablecoin | 5 | `src/contract/stablecoin/src/client/` |
+| bridge | 6 | `src/contract/bridge/src/client/` |
+| dex | 6 | `src/contract/dex/src/client/` |
+| atomic_swap | 3 | `src/contract/atomic_swap/src/client/` |
+
+Each client module provides:
+- `*PublicInputs` struct with `to_vec()` for circuit public inputs
+- `*CallData` struct with private/public input data  
+- `compute_public_inputs()` method
+- `to_witnesses()` method returning `Vec<Witness>` for `ZkCircuit`
+- `*_proof()` function that creates `Proof`
+
 ## Verifying Your Tests
 
 ### Run ZK Circuit Tests

@@ -1,11 +1,36 @@
 # Local Devnet Contract Testing Results
 
 **Date**: 2026-04-08
+**Updated**: 2026-04-08 with ZK proof client module implementation status
 **Tested by**: Claude Code
 
 ## Summary
 
 Extensive local devnet smart contract testing was performed on DarkFi contracts. Results show that the localnet infrastructure is functional but deployment confirmations are slow/blocked.
+
+## ZK Proof Client Module Implementation (2026-04-08 Update)
+
+All 6 governance/marketplace contracts now have full ZK proof client modules:
+
+| Contract | Circuits | Status |
+|----------|----------|--------|
+| identity | 8 circuits | ✅ IMPLEMENTED |
+| labor_market | 9 circuits | ✅ IMPLEMENTED |
+| oracle | 5 circuits | ✅ IMPLEMENTED |
+| auction | 6 circuits | ✅ IMPLEMENTED |
+| tender | 5 circuits | ✅ IMPLEMENTED |
+| attestation | 8 circuits | ✅ IMPLEMENTED |
+
+**Total**: 41 ZK proof client modules across 6 contracts
+
+Each module follows the standard pattern:
+- `*PublicInputs` struct with `to_vec()` for public inputs
+- `*CallData` struct with input data
+- `compute_public_inputs()` for deriving public inputs
+- `to_witnesses()` returning `Vec<Witness>` for `ZkCircuit`
+- `*_proof()` function creating `Proof`
+
+See `doc/src/arch/test_harness_guide.md` for full implementation status.
 
 ## Prerequisites Verified
 

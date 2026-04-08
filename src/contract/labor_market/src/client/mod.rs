@@ -16,21 +16,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Labor Market Contract Client API
-//!
-//! Client-side builders for interacting with the labor market contract.
+//! Labor Market ZK proof client modules
 
-use darkfi_sdk::crypto::pasta_prelude::*;
-
-/// Placeholder for client API builders
-pub mod builders {
-    // TODO: Implement client builders for:
-    // - CreateJobBuilder
-    // - AcceptJobBuilder
-    // - SubmitDeliverableBuilder
-    // - SubmitGitDeliverableBuilder
-    // - ConfirmDeliveryBuilder
-    // - DisputeBuilder
-    // - RefundBuilder
-    // - CancelJobBuilder
-}
+pub mod accept_job_v1;
+pub mod accept_job_with_capability_v1;
+pub mod confirm_delivery_v1;
+pub mod create_job_v1;
+pub mod dispute_v1;
+pub mod milestone_payment_v1;
+pub mod refund_v1;
+pub mod submit_deliverable_v1;
+pub mod submit_git_deliverable_v1;
