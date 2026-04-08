@@ -1,0 +1,183 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! ExecuteSwapSlippage ZK proof generation
+
+use darkfi::{
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
+    zkas::ZkBinary,
+    Result,
+};
+use darkfi_sdk::{
+    crypto::poseidon_hash,
+    pasta::pallas,
+};
+use rand::rngs::OsRng;
+
+/// ExecuteSwapSlippage circuit public inputs (in order of constrain_instance)
+#[derive(Debug, Clone)]
+pub struct ExecuteSwapSlippagePublicInputs {
+    /// Alice's lock commitment
+    pub alice_lock: pallas::Base,
+    /// Bob's lock commitment
+    pub bob_lock: pallas::Base,
+    /// Alice's nullifier = poseidon_hash([alice_secret, alice_lock])
+    pub alice_nullifier: pallas::Base,
+    /// Bob's nullifier = poseidon_hash([bob_secret, bob_lock])
+    pub bob_nullifier: pallas::Base,
+    /// Swap ID = poseidon_hash([alice_lock, bob_token, bob_amount])
+    pub swap_id: pallas::Base,
+}
+
+impl ExecuteSwapSlippagePublicInputs {
+    /// Convert to vector for ZK proof creation
+    /// Order must match constrain_instance calls in execute_swap_slippage_v1.zk
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![
+            self.alice_nullifier,
+            self.bob_nullifier,
+            self.swap_id,
+        ]
+    }
+}
+
+/// Input data for ExecuteSwapSlippage proof generation
+#[derive(Debug, Clone)]
+pub struct ExecuteSwapSlippageCallData {
+    /// Alice's secret for her lock
+    pub alice_secret: pallas::Base,
+    /// Alice's offered token
+    pub alice_token: pallas::Base,
+    /// Alice's offered amount
+    pub alice_amount: pallas::Base,
+    /// Alice's lock commitment (public input)
+    pub alice_lock: pallas::Base,
+    /// Bob's secret for his lock
+    pub bob_secret: pallas::Base,
+    /// Bob's offered token
+    pub bob_token: pallas::Base,
+    /// Bob's offered amount
+    pub bob_amount: pallas::Base,
+    /// Bob's lock commitment (public input)
+    pub bob_lock: pallas::Base,
+    /// Partial fill amount
+    pub fill_amount: pallas::Base,
+    /// Slippage tolerance in basis points (e.g., 50 = 0.5%)
+    pub slippage_bps: pallas::Base,
+}
+
+impl ExecuteSwapSlippageCallData {
+    /// Create new call data
+    pub fn new(
+        alice_secret: pallas::Base,
+        alice_token: pallas::Base,
+        alice_amount: pallas::Base,
+        alice_lock: pallas::Base,
+        bob_secret: pallas::Base,
+        bob_token: pallas::Base,
+        bob_amount: pallas::Base,
+        bob_lock: pallas::Base,
+        fill_amount: pallas::Base,
+        slippage_bps: pallas::Base,
+    ) -> Self {
+        Self {
+            alice_secret,
+            alice_token,
+            alice_amount,
+            alice_lock,
+            bob_secret,
+            bob_token,
+            bob_amount,
+            bob_lock,
+            fill_amount,
+            slippage_bps,
+        }
+    }
+
+    /// Compute public inputs for this call
+    pub fn compute_public_inputs(&self) -> ExecuteSwapSlippagePublicInputs {
+        // Compute Alice's nullifier
+        let alice_nullifier = poseidon_hash([self.alice_secret, self.alice_lock]);
+
+        // Compute Bob's nullifier
+        let bob_nullifier = poseidon_hash([self.bob_secret, self.bob_lock]);
+
+        // Compute swap ID
+        let swap_id = poseidon_hash([self.alice_lock, self.bob_token, self.bob_amount]);
+
+        ExecuteSwapSlippagePublicInputs {
+            alice_lock: self.alice_lock,
+            bob_lock: self.bob_lock,
+            alice_nullifier,
+            bob_nullifier,
+            swap_id,
+        }
+    }
+
+    /// Generate prover witnesses for the circuit
+    pub fn to_witnesses(&self) -> Vec<Witness> {
+        vec![
+            // Base alice_secret
+            Witness::Base(Value::known(self.alice_secret)),
+            // Base alice_token
+            Witness::Base(Value::known(self.alice_token)),
+            // Base alice_amount
+            Witness::Base(Value::known(self.alice_amount)),
+            // Base alice_lock (public input)
+            Witness::Base(Value::known(self.alice_lock)),
+            // Base bob_secret
+            Witness::Base(Value::known(self.bob_secret)),
+            // Base bob_token
+            Witness::Base(Value::known(self.bob_token)),
+            // Base bob_amount
+            Witness::Base(Value::known(self.bob_amount)),
+            // Base bob_lock (public input)
+            Witness::Base(Value::known(self.bob_lock)),
+            // Base fill_amount
+            Witness::Base(Value::known(self.fill_amount)),
+            // Base slippage_bps
+            Witness::Base(Value::known(self.slippage_bps)),
+        ]
+    }
+}
+
+/// Create an ExecuteSwapSlippage ZK proof
+///
+/// # Arguments
+///
+/// * `zkbin` - The compiled ZK binary for ExecuteSwapSlippage circuit
+/// * `pk` - The proving key for the circuit
+/// * `input` - The call data containing secrets and parameters
+///
+/// # Returns
+///
+/// * `(Proof, ExecuteSwapSlippagePublicInputs)` - The ZK proof and public inputs
+pub fn create_execute_swap_slippage_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &ExecuteSwapSlippageCallData,
+) -> Result<(Proof, ExecuteSwapSlippagePublicInputs)> {
+    let public_inputs = input.compute_public_inputs();
+    let witnesses = input.to_witnesses();
+
+    //darkfi::zk::export_witness_json("proof/witness/execute_swap_slippage_v1.json", &witnesses, &public_inputs.to_vec());
+    let circuit = ZkCircuit::new(witnesses, zkbin);
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+
+    Ok((proof, public_inputs))
+}

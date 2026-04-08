@@ -44,7 +44,25 @@
 //!     .build()?;
 //! ```
 
-use darkfi_sdk::error::ClientError;
+pub mod accept_swap_v1;
+pub mod cancel_swap_v1;
+pub mod create_swap_v1;
+pub mod execute_swap_fee_v1;
+pub mod execute_swap_slippage_v1;
+pub mod execute_swap_v1;
+
+pub use accept_swap_v1::{create_accept_swap_proof, AcceptSwapCallData};
+pub use cancel_swap_v1::{create_cancel_swap_proof, CancelSwapCallData};
+pub use create_swap_v1::{create_create_swap_proof, CreateSwapCallData};
+pub use execute_swap_fee_v1::{create_execute_swap_fee_proof, ExecuteSwapFeeCallData};
+pub use execute_swap_slippage_v1::{create_execute_swap_slippage_proof, ExecuteSwapSlippageCallData};
+pub use execute_swap_v1::{create_execute_swap_proof, ExecuteSwapCallData};
+
+use darkfi_sdk::{
+    crypto::{poseidon_hash, SecretKey},
+    pasta::pallas,
+};
+pub use crate::{model::CreateSwapParams, DexFunction};
 
 /// DEX client errors
 #[derive(Debug, thiserror::Error)]
@@ -68,11 +86,12 @@ pub enum DexClientError {
 
 /// Builder for creating an atomic swap proposal
 pub struct CreateSwapBuilder {
-    secret: Option<[u8; 32]>,
-    offer_token: Option<[u8; 32]>,
+    secret: Option<pallas::Base>,
+    offer_token: Option<pallas::Base>,
     offer_amount: Option<u64>,
-    request_token: Option<[u8; 32]>,
+    request_token: Option<pallas::Base>,
     request_amount: Option<u64>,
+    signature_secret: Option<SecretKey>,
 }
 
 impl CreateSwapBuilder {
@@ -83,17 +102,18 @@ impl CreateSwapBuilder {
             offer_amount: None,
             request_token: None,
             request_amount: None,
+            signature_secret: None,
         }
     }
 
-    /// Set the secret for the lock
-    pub fn secret(&mut self, secret: [u8; 32]) -> &mut Self {
+    /// Set the secret for the lock (as pallas::Base)
+    pub fn secret(&mut self, secret: pallas::Base) -> &mut Self {
         self.secret = Some(secret);
         self
     }
 
     /// Set the token being offered
-    pub fn offer_token(&mut self, token: [u8; 32]) -> &mut Self {
+    pub fn offer_token(&mut self, token: pallas::Base) -> &mut Self {
         self.offer_token = Some(token);
         self
     }
@@ -105,7 +125,7 @@ impl CreateSwapBuilder {
     }
 
     /// Set the token being requested
-    pub fn request_token(&mut self, token: [u8; 32]) -> &mut Self {
+    pub fn request_token(&mut self, token: pallas::Base) -> &mut Self {
         self.request_token = Some(token);
         self
     }
@@ -116,72 +136,54 @@ impl CreateSwapBuilder {
         self
     }
 
-    /// Build the create swap transaction
+    /// Set the signature secret key
+    pub fn signature_secret(&mut self, secret: SecretKey) -> &mut Self {
+        self.signature_secret = Some(secret);
+        self
+    }
+
+    /// Build the create swap call data
     ///
-    /// lock_commitment = H(secret, offer_token, offer_amount)
-    /// swap_id = H(lock_commitment, request_token, request_amount, nonce)
-    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
-        let secret = self.secret.ok_or_else(|| ClientError::InvalidInput("secret required".into()))?;
-        let offer_token = self.offer_token.ok_or_else(|| ClientError::InvalidInput("offer_token required".into()))?;
-        let offer_amount = self.offer_amount.ok_or_else(|| ClientError::InvalidInput("offer_amount required".into()))?;
-        let request_token = self.request_token.ok_or_else(|| ClientError::InvalidInput("request_token required".into()))?;
-        let request_amount = self.request_amount.ok_or_else(|| ClientError::InvalidInput("request_amount required".into()))?;
+    /// Returns the call data and the derived public inputs for ZK proof generation.
+    pub fn build(&self) -> Result<CreateSwapCallData, DexClientError> {
+        let secret = self.secret.ok_or_else(|| DexClientError::MissingField("secret".into()))?;
+        let offer_token = self.offer_token.ok_or_else(|| DexClientError::MissingField("offer_token".into()))?;
+        let offer_amount = self.offer_amount.ok_or_else(|| DexClientError::MissingField("offer_amount".into()))?;
+        let request_token = self.request_token.ok_or_else(|| DexClientError::MissingField("request_token".into()))?;
+        let request_amount = self.request_amount.ok_or_else(|| DexClientError::MissingField("request_amount".into()))?;
+        let signature_secret = self.signature_secret.ok_or_else(|| DexClientError::MissingField("signature_secret".into()))?;
 
-        // Compute lock commitment
-        let lock_commitment = compute_lock_commitment(secret, offer_token, offer_amount);
-
-        // Compute swap ID
-        let swap_id = compute_swap_id(lock_commitment, request_token, request_amount);
-
-        // TODO: Generate Merkle proof for lock
-        let lock_proof = vec![];
-
-        // TODO: Generate signature
-        let signature = vec![];
-
-        // Encode call data
-        let mut call_data = Vec::new();
-        call_data.push(0x01); // CreateSwapV1
-        call_data.extend_from_slice(&swap_id);
-        call_data.extend_from_slice(&offer_token);
-        call_data.extend_from_slice(&offer_amount.to_le_bytes());
-        call_data.extend_from_slice(&request_token);
-        call_data.extend_from_slice(&request_amount.to_le_bytes());
-        call_data.extend_from_slice(&lock_commitment);
-        call_data.extend_from_slice(&(lock_proof.len() as u32).to_le_bytes());
-        for p in &lock_proof {
-            call_data.extend_from_slice(p);
-        }
-        call_data.extend_from_slice(&(signature.len() as u32).to_le_bytes());
-        call_data.extend_from_slice(&signature);
-        call_data.extend_from_slice(&0u64.to_le_bytes()); // fee
-
-        Ok(call_data)
+        Ok(CreateSwapCallData::new(
+            secret,
+            offer_token,
+            offer_amount,
+            request_token,
+            request_amount,
+            signature_secret,
+        ))
     }
 }
 
-/// Compute lock commitment
-fn compute_lock_commitment(secret: [u8; 32], token: [u8; 32], amount: u64) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"lock_commitment");
-    hasher.update(&secret);
-    hasher.update(&token);
-    hasher.update(&amount.to_le_bytes());
-    *hasher.finalize().as_bytes()
+/// Compute lock commitment using poseidon_hash
+/// lock_commitment = poseidon_hash([secret, offer_token, offer_amount, token_blind, amount_blind])
+pub fn compute_lock_commitment(
+    secret: pallas::Base,
+    token: pallas::Base,
+    amount: pallas::Base,
+    token_blind: pallas::Base,
+    amount_blind: pallas::Base,
+) -> pallas::Base {
+    poseidon_hash([secret, token, amount, token_blind, amount_blind])
 }
 
-/// Compute swap ID
-fn compute_swap_id(
-    lock_commitment: [u8; 32],
-    request_token: [u8; 32],
-    request_amount: u64,
-) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"swap_id");
-    hasher.update(&lock_commitment);
-    hasher.update(&request_token);
-    hasher.update(&request_amount.to_le_bytes());
-    *hasher.finalize().as_bytes()
+/// Compute swap ID using poseidon_hash
+/// swap_id = poseidon_hash([lock_commitment, request_token, request_amount])
+pub fn compute_swap_id(
+    lock_commitment: pallas::Base,
+    request_token: pallas::Base,
+    request_amount: pallas::Base,
+) -> pallas::Base {
+    poseidon_hash([lock_commitment, request_token, request_amount])
 }
 
 // ============================================================================
@@ -190,36 +192,46 @@ fn compute_swap_id(
 
 /// Builder for accepting an atomic swap
 pub struct AcceptSwapBuilder {
-    swap_id: Option<[u8; 32]>,
-    secret: Option<[u8; 32]>,
-    offer_token: Option<[u8; 32]>,
+    swap_id: Option<pallas::Base>,
+    proposer_lock_commitment: Option<pallas::Base>,
+    secret: Option<pallas::Base>,
+    offer_token: Option<pallas::Base>,
     offer_amount: Option<u64>,
+    signature_secret: Option<SecretKey>,
 }
 
 impl AcceptSwapBuilder {
     pub fn new() -> Self {
         Self {
             swap_id: None,
+            proposer_lock_commitment: None,
             secret: None,
             offer_token: None,
             offer_amount: None,
+            signature_secret: None,
         }
     }
 
     /// Set the swap ID to accept
-    pub fn swap_id(&mut self, swap_id: [u8; 32]) -> &mut Self {
+    pub fn swap_id(&mut self, swap_id: pallas::Base) -> &mut Self {
         self.swap_id = Some(swap_id);
         self
     }
 
+    /// Set the proposer's lock commitment
+    pub fn proposer_lock_commitment(&mut self, commitment: pallas::Base) -> &mut Self {
+        self.proposer_lock_commitment = Some(commitment);
+        self
+    }
+
     /// Set the secret for the lock
-    pub fn secret(&mut self, secret: [u8; 32]) -> &mut Self {
+    pub fn secret(&mut self, secret: pallas::Base) -> &mut Self {
         self.secret = Some(secret);
         self
     }
 
     /// Set the token being offered (should match request)
-    pub fn offer_token(&mut self, token: [u8; 32]) -> &mut Self {
+    pub fn offer_token(&mut self, token: pallas::Base) -> &mut Self {
         self.offer_token = Some(token);
         self
     }
@@ -230,34 +242,29 @@ impl AcceptSwapBuilder {
         self
     }
 
-    /// Build the accept swap transaction
-    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
-        let swap_id = self.swap_id.ok_or_else(|| ClientError::InvalidInput("swap_id required".into()))?;
-        let secret = self.secret.ok_or_else(|| ClientError::InvalidInput("secret required".into()))?;
-        let offer_token = self.offer_token.ok_or_else(|| ClientError::InvalidInput("offer_token required".into()))?;
-        let offer_amount = self.offer_amount.ok_or_else(|| ClientError::InvalidInput("offer_amount required".into()))?;
+    /// Set the signature secret key
+    pub fn signature_secret(&mut self, secret: SecretKey) -> &mut Self {
+        self.signature_secret = Some(secret);
+        self
+    }
 
-        let lock_commitment = compute_lock_commitment(secret, offer_token, offer_amount);
+    /// Build the accept swap call data
+    pub fn build(&self) -> Result<AcceptSwapCallData, DexClientError> {
+        let swap_id = self.swap_id.ok_or_else(|| DexClientError::MissingField("swap_id".into()))?;
+        let proposer_lock_commitment = self.proposer_lock_commitment.ok_or_else(|| DexClientError::MissingField("proposer_lock_commitment".into()))?;
+        let secret = self.secret.ok_or_else(|| DexClientError::MissingField("secret".into()))?;
+        let offer_token = self.offer_token.ok_or_else(|| DexClientError::MissingField("offer_token".into()))?;
+        let offer_amount = self.offer_amount.ok_or_else(|| DexClientError::MissingField("offer_amount".into()))?;
+        let signature_secret = self.signature_secret.ok_or_else(|| DexClientError::MissingField("signature_secret".into()))?;
 
-        // TODO: Generate Merkle proof
-        let lock_proof = vec![];
-
-        // TODO: Generate signature
-        let signature = vec![];
-
-        let mut call_data = Vec::new();
-        call_data.push(0x02); // AcceptSwapV1
-        call_data.extend_from_slice(&swap_id);
-        call_data.extend_from_slice(&lock_commitment);
-        call_data.extend_from_slice(&(lock_proof.len() as u32).to_le_bytes());
-        for p in &lock_proof {
-            call_data.extend_from_slice(p);
-        }
-        call_data.extend_from_slice(&(signature.len() as u32).to_le_bytes());
-        call_data.extend_from_slice(&signature);
-        call_data.extend_from_slice(&0u64.to_le_bytes()); // fee
-
-        Ok(call_data)
+        Ok(AcceptSwapCallData::new(
+            swap_id,
+            proposer_lock_commitment,
+            secret,
+            offer_token,
+            offer_amount,
+            signature_secret,
+        ))
     }
 }
 
@@ -267,54 +274,278 @@ impl AcceptSwapBuilder {
 
 /// Builder for executing an atomic swap
 pub struct ExecuteSwapBuilder {
-    swap_id: Option<[u8; 32]>,
-    alice_secret: Option<[u8; 32]>,
-    bob_secret: Option<[u8; 32]>,
+    alice_secret: Option<pallas::Base>,
+    alice_token: Option<pallas::Base>,
+    alice_amount: Option<u64>,
+    alice_lock: Option<pallas::Base>,
+    bob_secret: Option<pallas::Base>,
+    bob_token: Option<pallas::Base>,
+    bob_amount: Option<u64>,
+    bob_lock: Option<pallas::Base>,
+    fill_amount: Option<u64>,
 }
 
 impl ExecuteSwapBuilder {
     pub fn new() -> Self {
         Self {
-            swap_id: None,
             alice_secret: None,
+            alice_token: None,
+            alice_amount: None,
+            alice_lock: None,
             bob_secret: None,
+            bob_token: None,
+            bob_amount: None,
+            bob_lock: None,
+            fill_amount: None,
         }
     }
 
-    pub fn swap_id(&mut self, swap_id: [u8; 32]) -> &mut Self {
-        self.swap_id = Some(swap_id);
-        self
-    }
-
-    pub fn alice_secret(&mut self, secret: [u8; 32]) -> &mut Self {
+    pub fn alice_secret(&mut self, secret: pallas::Base) -> &mut Self {
         self.alice_secret = Some(secret);
         self
     }
 
-    pub fn bob_secret(&mut self, secret: [u8; 32]) -> &mut Self {
+    pub fn alice_token(&mut self, token: pallas::Base) -> &mut Self {
+        self.alice_token = Some(token);
+        self
+    }
+
+    pub fn alice_amount(&mut self, amount: u64) -> &mut Self {
+        self.alice_amount = Some(amount);
+        self
+    }
+
+    pub fn alice_lock(&mut self, lock: pallas::Base) -> &mut Self {
+        self.alice_lock = Some(lock);
+        self
+    }
+
+    pub fn bob_secret(&mut self, secret: pallas::Base) -> &mut Self {
         self.bob_secret = Some(secret);
         self
     }
 
-    /// Build the execute swap transaction
-    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
-        let swap_id = self.swap_id.ok_or_else(|| ClientError::InvalidInput("swap_id required".into()))?;
-        let alice_secret = self.alice_secret.ok_or_else(|| ClientError::InvalidInput("alice_secret required".into()))?;
-        let bob_secret = self.bob_secret.ok_or_else(|| ClientError::InvalidInput("bob_secret required".into()))?;
+    pub fn bob_token(&mut self, token: pallas::Base) -> &mut Self {
+        self.bob_token = Some(token);
+        self
+    }
 
-        // TODO: Generate ZK proof
-        let proof = vec![0u8; 64];
+    pub fn bob_amount(&mut self, amount: u64) -> &mut Self {
+        self.bob_amount = Some(amount);
+        self
+    }
 
-        let mut call_data = Vec::new();
-        call_data.push(0x03); // ExecuteSwapV1
-        call_data.extend_from_slice(&swap_id);
-        call_data.extend_from_slice(&alice_secret);
-        call_data.extend_from_slice(&bob_secret);
-        call_data.extend_from_slice(&(proof.len() as u32).to_le_bytes());
-        call_data.extend_from_slice(&proof);
-        call_data.extend_from_slice(&0u64.to_le_bytes()); // fee
+    pub fn bob_lock(&mut self, lock: pallas::Base) -> &mut Self {
+        self.bob_lock = Some(lock);
+        self
+    }
 
-        Ok(call_data)
+    pub fn fill_amount(&mut self, amount: u64) -> &mut Self {
+        self.fill_amount = Some(amount);
+        self
+    }
+
+    /// Build the execute swap call data
+    pub fn build(&self) -> Result<ExecuteSwapCallData, DexClientError> {
+        let alice_secret = self.alice_secret.ok_or_else(|| DexClientError::MissingField("alice_secret".into()))?;
+        let alice_token = self.alice_token.ok_or_else(|| DexClientError::MissingField("alice_token".into()))?;
+        let alice_amount = self.alice_amount.ok_or_else(|| DexClientError::MissingField("alice_amount".into()))?;
+        let alice_lock = self.alice_lock.ok_or_else(|| DexClientError::MissingField("alice_lock".into()))?;
+        let bob_secret = self.bob_secret.ok_or_else(|| DexClientError::MissingField("bob_secret".into()))?;
+        let bob_token = self.bob_token.ok_or_else(|| DexClientError::MissingField("bob_token".into()))?;
+        let bob_amount = self.bob_amount.ok_or_else(|| DexClientError::MissingField("bob_amount".into()))?;
+        let bob_lock = self.bob_lock.ok_or_else(|| DexClientError::MissingField("bob_lock".into()))?;
+        let fill_amount = self.fill_amount.ok_or_else(|| DexClientError::MissingField("fill_amount".into()))?;
+
+        Ok(ExecuteSwapCallData::new(
+            alice_secret,
+            alice_token,
+            alice_amount,
+            alice_lock,
+            bob_secret,
+            bob_token,
+            bob_amount,
+            bob_lock,
+            fill_amount,
+        ))
+    }
+}
+
+// ============================================================================
+// EXECUTE SWAP WITH SLIPPAGE BUILDER
+// ============================================================================
+
+/// Builder for executing an atomic swap with slippage protection
+pub struct ExecuteSwapSlippageBuilder {
+    inner: ExecuteSwapBuilder,
+    slippage_bps: Option<u64>,
+}
+
+impl ExecuteSwapSlippageBuilder {
+    pub fn new() -> Self {
+        Self {
+            inner: ExecuteSwapBuilder::new(),
+            slippage_bps: None,
+        }
+    }
+
+    pub fn alice_secret(&mut self, secret: pallas::Base) -> &mut Self {
+        self.inner.alice_secret(secret);
+        self
+    }
+
+    pub fn alice_token(&mut self, token: pallas::Base) -> &mut Self {
+        self.inner.alice_token(token);
+        self
+    }
+
+    pub fn alice_amount(&mut self, amount: u64) -> &mut Self {
+        self.inner.alice_amount(amount);
+        self
+    }
+
+    pub fn alice_lock(&mut self, lock: pallas::Base) -> &mut Self {
+        self.inner.alice_lock(lock);
+        self
+    }
+
+    pub fn bob_secret(&mut self, secret: pallas::Base) -> &mut Self {
+        self.inner.bob_secret(secret);
+        self
+    }
+
+    pub fn bob_token(&mut self, token: pallas::Base) -> &mut Self {
+        self.inner.bob_token(token);
+        self
+    }
+
+    pub fn bob_amount(&mut self, amount: u64) -> &mut Self {
+        self.inner.bob_amount(amount);
+        self
+    }
+
+    pub fn bob_lock(&mut self, lock: pallas::Base) -> &mut Self {
+        self.inner.bob_lock(lock);
+        self
+    }
+
+    pub fn fill_amount(&mut self, amount: u64) -> &mut Self {
+        self.inner.fill_amount(amount);
+        self
+    }
+
+    /// Set slippage tolerance in basis points (e.g., 50 = 0.5%)
+    pub fn slippage_bps(&mut self, bps: u64) -> &mut Self {
+        self.slippage_bps = Some(bps);
+        self
+    }
+
+    /// Build the execute swap with slippage call data
+    pub fn build(&self) -> Result<ExecuteSwapSlippageCallData, DexClientError> {
+        let inner = self.inner.build()?;
+        let slippage_bps = self.slippage_bps.ok_or_else(|| DexClientError::MissingField("slippage_bps".into()))?;
+
+        Ok(ExecuteSwapSlippageCallData::new(
+            inner.alice_secret,
+            inner.alice_token,
+            inner.alice_amount,
+            inner.alice_lock,
+            inner.bob_secret,
+            inner.bob_token,
+            inner.bob_amount,
+            inner.bob_lock,
+            inner.fill_amount,
+            pallas::Base::from(slippage_bps),
+        ))
+    }
+}
+
+// ============================================================================
+// EXECUTE SWAP WITH FEE BUILDER
+// ============================================================================
+
+/// Builder for executing an atomic swap with fee deduction
+pub struct ExecuteSwapFeeBuilder {
+    inner: ExecuteSwapBuilder,
+    fee_bps: Option<u64>,
+}
+
+impl ExecuteSwapFeeBuilder {
+    pub fn new() -> Self {
+        Self {
+            inner: ExecuteSwapBuilder::new(),
+            fee_bps: None,
+        }
+    }
+
+    pub fn alice_secret(&mut self, secret: pallas::Base) -> &mut Self {
+        self.inner.alice_secret(secret);
+        self
+    }
+
+    pub fn alice_token(&mut self, token: pallas::Base) -> &mut Self {
+        self.inner.alice_token(token);
+        self
+    }
+
+    pub fn alice_amount(&mut self, amount: u64) -> &mut Self {
+        self.inner.alice_amount(amount);
+        self
+    }
+
+    pub fn alice_lock(&mut self, lock: pallas::Base) -> &mut Self {
+        self.inner.alice_lock(lock);
+        self
+    }
+
+    pub fn bob_secret(&mut self, secret: pallas::Base) -> &mut Self {
+        self.inner.bob_secret(secret);
+        self
+    }
+
+    pub fn bob_token(&mut self, token: pallas::Base) -> &mut Self {
+        self.inner.bob_token(token);
+        self
+    }
+
+    pub fn bob_amount(&mut self, amount: u64) -> &mut Self {
+        self.inner.bob_amount(amount);
+        self
+    }
+
+    pub fn bob_lock(&mut self, lock: pallas::Base) -> &mut Self {
+        self.inner.bob_lock(lock);
+        self
+    }
+
+    pub fn fill_amount(&mut self, amount: u64) -> &mut Self {
+        self.inner.fill_amount(amount);
+        self
+    }
+
+    /// Set fee basis points (e.g., 30 = 0.3%)
+    pub fn fee_bps(&mut self, bps: u64) -> &mut Self {
+        self.fee_bps = Some(bps);
+        self
+    }
+
+    /// Build the execute swap with fee call data
+    pub fn build(&self) -> Result<ExecuteSwapFeeCallData, DexClientError> {
+        let inner = self.inner.build()?;
+        let fee_bps = self.fee_bps.ok_or_else(|| DexClientError::MissingField("fee_bps".into()))?;
+
+        Ok(ExecuteSwapFeeCallData::new(
+            inner.alice_secret,
+            inner.alice_token,
+            inner.alice_amount,
+            inner.alice_lock,
+            inner.bob_secret,
+            inner.bob_token,
+            inner.bob_amount,
+            inner.bob_lock,
+            inner.fill_amount,
+            pallas::Base::from(fee_bps),
+        ))
     }
 }
 
@@ -324,44 +555,57 @@ impl ExecuteSwapBuilder {
 
 /// Builder for cancelling an atomic swap
 pub struct CancelSwapBuilder {
-    swap_id: Option<[u8; 32]>,
-    secret: Option<[u8; 32]>,
+    swap_id: Option<pallas::Base>,
+    lock_commitment: Option<pallas::Base>,
+    secret: Option<pallas::Base>,
+    token: Option<pallas::Base>,
+    amount: Option<u64>,
 }
 
 impl CancelSwapBuilder {
     pub fn new() -> Self {
         Self {
             swap_id: None,
+            lock_commitment: None,
             secret: None,
+            token: None,
+            amount: None,
         }
     }
 
-    pub fn swap_id(&mut self, swap_id: [u8; 32]) -> &mut Self {
+    pub fn swap_id(&mut self, swap_id: pallas::Base) -> &mut Self {
         self.swap_id = Some(swap_id);
         self
     }
 
-    pub fn secret(&mut self, secret: [u8; 32]) -> &mut Self {
+    pub fn lock_commitment(&mut self, commitment: pallas::Base) -> &mut Self {
+        self.lock_commitment = Some(commitment);
+        self
+    }
+
+    pub fn secret(&mut self, secret: pallas::Base) -> &mut Self {
         self.secret = Some(secret);
         self
     }
 
-    /// Build the cancel swap transaction
-    pub fn build(&self) -> Result<Vec<u8>, ClientError> {
-        let swap_id = self.swap_id.ok_or_else(|| ClientError::InvalidInput("swap_id required".into()))?;
-        let secret = self.secret.ok_or_else(|| ClientError::InvalidInput("secret required".into()))?;
+    pub fn token(&mut self, token: pallas::Base) -> &mut Self {
+        self.token = Some(token);
+        self
+    }
 
-        // TODO: Generate ZK proof
-        let proof = vec![0u8; 64];
+    pub fn amount(&mut self, amount: u64) -> &mut Self {
+        self.amount = Some(amount);
+        self
+    }
 
-        let mut call_data = Vec::new();
-        call_data.push(0x04); // CancelSwapV1
-        call_data.extend_from_slice(&swap_id);
-        call_data.extend_from_slice(&secret);
-        call_data.extend_from_slice(&(proof.len() as u32).to_le_bytes());
-        call_data.extend_from_slice(&proof);
-        call_data.extend_from_slice(&0u64.to_le_bytes()); // fee
+    /// Build the cancel swap call data
+    pub fn build(&self) -> Result<CancelSwapCallData, DexClientError> {
+        let swap_id = self.swap_id.ok_or_else(|| DexClientError::MissingField("swap_id".into()))?;
+        let lock_commitment = self.lock_commitment.ok_or_else(|| DexClientError::MissingField("lock_commitment".into()))?;
+        let secret = self.secret.ok_or_else(|| DexClientError::MissingField("secret".into()))?;
+        let token = self.token.ok_or_else(|| DexClientError::MissingField("token".into()))?;
+        let amount = self.amount.ok_or_else(|| DexClientError::MissingField("amount".into()))?;
 
-        Ok(call_data)
+        Ok(CancelSwapCallData::new(swap_id, lock_commitment, secret, token, amount))
     }
 }

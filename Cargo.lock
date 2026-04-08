@@ -1997,6 +1997,7 @@ dependencies = [
 name = "darkfi-identity-contract"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "chacha20poly1305",
  "darkfi",
  "darkfi-contract-test-harness",
