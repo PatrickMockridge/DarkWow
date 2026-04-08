@@ -1,4 +1,0 @@
-Anonymous NFT (DRAFT)
-=====================
-
-TODO
