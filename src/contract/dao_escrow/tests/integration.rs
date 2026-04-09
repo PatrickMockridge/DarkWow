@@ -247,12 +247,18 @@ fn test_initialize_params_encoding() {
 
 #[test]
 fn test_initialize_update_encoding() {
-    let update = InitializeUpdateV1 { bulla: pallas::Base::from(1) };
+    let update = InitializeUpdateV1 {
+        bulla: pallas::Base::from(1),
+        owner_pubkey: make_pubkey(1),
+        bulla_blind: make_blind(42),
+    };
 
     let encoded = serialize(&update);
     let decoded: InitializeUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.bulla, update.bulla);
+    assert_eq!(decoded.owner_pubkey, update.owner_pubkey);
+    assert_eq!(decoded.bulla_blind, update.bulla_blind);
 }
 
 #[test]
@@ -280,12 +286,13 @@ fn test_pay_premium_params_encoding() {
     let params = PayPremiumParamsV1 {
         dao_escrow_bulla: pallas::Base::from(1),
         membership_note: pallas::Base::from(2),
-        value_commit: pallas::Point::identity(),
+        value_commit: Group::identity(),
         value: 500,
         token_id: pallas::Base::one(),
         expiry: 100000,
         membership_blind: make_blind(42),
         value_blind: make_blind(43),
+        member_pubkey: make_pubkey(1),
     };
 
     let encoded = serialize(&params);
@@ -294,6 +301,7 @@ fn test_pay_premium_params_encoding() {
     assert_eq!(decoded.dao_escrow_bulla, params.dao_escrow_bulla);
     assert_eq!(decoded.value, params.value);
     assert_eq!(decoded.expiry, params.expiry);
+    assert_eq!(decoded.member_pubkey, params.member_pubkey);
 }
 
 #[test]
@@ -303,6 +311,9 @@ fn test_pay_premium_update_encoding() {
         membership_note: pallas::Base::from(2),
         total_endowment: 10500,
         member_count: 11,
+        member_pubkey: make_pubkey(1),
+        token_id: pallas::Base::one(),
+        expiry: 100000,
     };
 
     let encoded = serialize(&update);
@@ -311,6 +322,9 @@ fn test_pay_premium_update_encoding() {
     assert_eq!(decoded.dao_escrow_bulla, update.dao_escrow_bulla);
     assert_eq!(decoded.total_endowment, update.total_endowment);
     assert_eq!(decoded.member_count, update.member_count);
+    assert_eq!(decoded.member_pubkey, update.member_pubkey);
+    assert_eq!(decoded.token_id, update.token_id);
+    assert_eq!(decoded.expiry, update.expiry);
 }
 
 #[test]
