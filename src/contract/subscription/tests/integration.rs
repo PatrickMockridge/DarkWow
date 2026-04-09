@@ -18,13 +18,17 @@
 
 //! Subscription contract integration tests
 
-use darkfi_sdk::crypto::pasta_prelude::{Field, Group};
-use darkfi_subscription_contract::{
+use darkfi_serial::{deserialize, serialize};
+use darkfi_sdk::{
+    crypto::{pasta_prelude::Group, PublicKey, SecretKey},
+    pasta::pallas,
+};
+use subscription_contract::{
     model::{
         permissions, CancelParamsV1, CancelUpdateV1, DaoControlAction, DaoControlParamsV1,
         DaoControlUpdateV1, Plan, RenewParamsV1, RenewUpdateV1, SubscribeParamsV1,
         SubscribeUpdateV1, Subscription, SubscriptionCapability, SubscriptionId, SubscriptionState,
-        VerifyAccessParamsV1,
+        UpdateUsageParamsV1, UpdateUsageUpdateV1, VerifyAccessParamsV1,
     },
     SubscriptionFunction,
     // Constants
@@ -32,20 +36,24 @@ use darkfi_subscription_contract::{
     SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE, SUBSCRIPTION_CONTRACT_PLANS_TREE,
 };
 
+/// Helper to create PublicKey from a numeric seed
+fn make_pubkey(seed: u64) -> PublicKey {
+    let secret = SecretKey::from(pallas::Base::from(seed));
+    PublicKey::from_secret(secret)
+}
+
 /// Helper to create a dummy subscription for testing
 fn create_dummy_subscription(id: SubscriptionId) -> Subscription {
-    let keypair = darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng);
-    let subscriber_pubkey = darkfi_sdk::crypto::PublicKey::from_secret(keypair.secret);
     Subscription {
         id,
-        subscriber_pubkey,
+        subscriber_pubkey: make_pubkey(1),
         plan_id: 1,
         lock_until_block: 100000,
         deposit: 1000,
-        token_id: Field::zero(),
+        token_id: pallas::Base::zero(),
         value_commit: Group::identity(),
         state: SubscriptionState::Active,
-        spent_nullifier: Field::zero(),
+        spent_nullifier: pallas::Base::zero(),
         created_at: 50000,
         dao_escrow_bulla: None,
         dao_membership_note: None,
@@ -65,35 +73,34 @@ fn test_subscription_function_enum_valid() {
     assert!(SubscriptionFunction::try_from(0x03).is_ok()); // RenewV1
     assert!(SubscriptionFunction::try_from(0x04).is_ok()); // VerifyAccessV1
     assert!(SubscriptionFunction::try_from(0x05).is_ok()); // DaoControlV1
+    assert!(SubscriptionFunction::try_from(0x06).is_ok()); // UpdateUsageV1
 }
 
 #[test]
 fn test_subscription_function_enum_invalid() {
     assert!(SubscriptionFunction::try_from(0xFF).is_err());
-    assert!(SubscriptionFunction::try_from(0x06).is_err());
+    assert!(SubscriptionFunction::try_from(0x07).is_err());
     assert!(SubscriptionFunction::try_from(0x10).is_err());
 }
 
 #[test]
 fn test_subscription_state_from_u8() {
-    assert_eq!(SubscriptionState::try_from(0), Ok(SubscriptionState::Active));
-    assert_eq!(SubscriptionState::try_from(1), Ok(SubscriptionState::Cancelled));
-    assert_eq!(SubscriptionState::try_from(2), Ok(SubscriptionState::Expired));
+    assert_eq!(SubscriptionState::try_from(0).unwrap(), SubscriptionState::Active);
+    assert_eq!(SubscriptionState::try_from(1).unwrap(), SubscriptionState::Cancelled);
+    assert_eq!(SubscriptionState::try_from(2).unwrap(), SubscriptionState::Expired);
     assert!(SubscriptionState::try_from(3).is_err());
     assert!(SubscriptionState::try_from(255).is_err());
 }
 
 #[test]
 fn test_subscription_derive_id() {
-    let subscriber_pubkey = darkfi_sdk::crypto::PublicKey::from_publickey(
-        &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-    );
+    let subscriber_pubkey = make_pubkey(42);
     let plan_id: u32 = 1;
     let deposit: u64 = 1000;
-    let token_id = darkfi_sdk::pasta::pallas::Base::ONE;
+    let token_id = pallas::Base::zero();
     let lock_until_block: u64 = 100000;
-    let subscriber_secret = darkfi_sdk::pasta::pallas::Base::from(42);
-    let plan_nonce = darkfi_sdk::pasta::pallas::Base::from(1);
+    let subscriber_secret = pallas::Base::from(42);
+    let plan_nonce = pallas::Base::from(1);
 
     let id = Subscription::derive_id(
         &subscriber_pubkey,
@@ -120,24 +127,8 @@ fn test_subscription_derive_id() {
 
 #[test]
 fn test_subscription_compute_nullifier() {
-    let subscription = Subscription {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        subscriber_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
-        plan_id: 1,
-        lock_until_block: 100000,
-        deposit: 1000,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
-        value_commit: darkfi_sdk::pasta::pallas::Point::identity(),
-        state: SubscriptionState::Active,
-        spent_nullifier: darkfi_sdk::pasta::pallas::Base::ZERO,
-        created_at: 50000,
-        dao_escrow_bulla: None,
-        dao_membership_note: None,
-    };
-
-    let secret = darkfi_sdk::pasta::pallas::Base::from(99);
+    let subscription = create_dummy_subscription(pallas::Base::from(1));
+    let secret = pallas::Base::from(99);
     let nullifier = subscription.compute_nullifier(secret);
 
     // Should be deterministic
@@ -147,14 +138,12 @@ fn test_subscription_compute_nullifier() {
 
 #[test]
 fn test_subscription_capability_derive() {
-    let subscriber = darkfi_sdk::crypto::PublicKey::from_publickey(
-        &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-    );
+    let subscriber = make_pubkey(42);
     let plan_id: u32 = 1;
-    let subscription_id = darkfi_sdk::pasta::pallas::Base::from(1);
+    let subscription_id = pallas::Base::from(1);
     let permissions: u8 = permissions::READ | permissions::WRITE;
     let expires_at: u64 = 100000;
-    let nonce = darkfi_sdk::pasta::pallas::Base::from(42);
+    let nonce = pallas::Base::from(42);
 
     let capability = SubscriptionCapability::derive_capability(
         &subscriber,
@@ -189,24 +178,27 @@ fn test_permission_constants() {
 #[test]
 fn test_subscription_encoding() {
     let subscription = Subscription {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        subscriber_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        id: pallas::Base::from(1),
+        subscriber_pubkey: make_pubkey(1),
         plan_id: 1,
         lock_until_block: 100000,
         deposit: 1000,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
-        value_commit: darkfi_sdk::pasta::pallas::Point::identity(),
+        token_id: pallas::Base::zero(),
+        value_commit: Group::identity(),
         state: SubscriptionState::Active,
-        spent_nullifier: darkfi_sdk::pasta::pallas::Base::ZERO,
+        spent_nullifier: pallas::Base::zero(),
         created_at: 50000,
-        dao_escrow_bulla: Some(darkfi_sdk::pasta::pallas::Base::from(2)),
-        dao_membership_note: Some(darkfi_sdk::pasta::pallas::Base::from(3)),
+        dao_escrow_bulla: Some(pallas::Base::from(2)),
+        dao_membership_note: Some(pallas::Base::from(3)),
+        uses_allowed: 100,
+        rate_period: 1000,
+        period_uses: 5,
+        last_access_block: 50000,
+        uses_remaining: 95,
     };
 
-    let encoded = subscription.encode().unwrap();
-    let decoded = Subscription::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&subscription);
+    let decoded: Subscription = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.id, subscription.id);
     assert_eq!(decoded.plan_id, subscription.plan_id);
@@ -218,19 +210,19 @@ fn test_subscription_encoding() {
 fn test_plan_encoding() {
     let plan = Plan {
         id: 1,
-        name_hash: darkfi_sdk::pasta::pallas::Base::from(1),
+        name_hash: pallas::Base::from(1),
         price: 1000,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
+        token_id: pallas::Base::zero(),
         duration_blocks: 10000,
         treasury_share: 8000,
         endowment_share: 2000,
         active: true,
         dao_escrow_discount: 2000,
-        required_dao_escrow: Some(darkfi_sdk::pasta::pallas::Base::from(2)),
+        required_dao_escrow: Some(pallas::Base::from(2)),
     };
 
-    let encoded = plan.encode().unwrap();
-    let decoded = Plan::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&plan);
+    let decoded: Plan = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.id, plan.id);
     assert_eq!(decoded.price, plan.price);
@@ -242,22 +234,20 @@ fn test_plan_encoding() {
 fn test_subscribe_params_encoding() {
     let params = SubscribeParamsV1 {
         plan_id: 1,
-        subscriber_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
-        commitment: darkfi_sdk::pasta::pallas::Base::from(1),
-        value_commit: darkfi_sdk::pasta::pallas::Point::identity(),
-        merkle_proof: vec![darkfi_sdk::pasta::pallas::Base::from(1)],
-        merkle_root: darkfi_sdk::pasta::pallas::Base::from(2),
-        dao_escrow_bulla: Some(darkfi_sdk::pasta::pallas::Base::from(3)),
-        dao_membership_note: Some(darkfi_sdk::pasta::pallas::Base::from(4)),
-        dao_escrow_merkle_root: Some(darkfi_sdk::pasta::pallas::Base::from(5)),
-        dao_merkle_proof: Some(vec![darkfi_sdk::pasta::pallas::Base::from(6)]),
+        subscriber_pubkey: make_pubkey(1),
+        commitment: pallas::Base::from(1),
+        value_commit: Group::identity(),
+        merkle_proof: vec![pallas::Base::from(1)],
+        merkle_root: pallas::Base::from(2),
+        dao_escrow_bulla: Some(pallas::Base::from(3)),
+        dao_membership_note: Some(pallas::Base::from(4)),
+        dao_escrow_merkle_root: Some(pallas::Base::from(5)),
+        dao_merkle_proof: Some(vec![pallas::Base::from(6)]),
         dao_leaf_pos: Some(1),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = SubscribeParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: SubscribeParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.plan_id, params.plan_id);
     assert_eq!(decoded.commitment, params.commitment);
@@ -265,29 +255,28 @@ fn test_subscribe_params_encoding() {
 
 #[test]
 fn test_subscribe_update_encoding() {
-    let subscription = create_dummy_subscription(Field::zero());
+    let subscription = create_dummy_subscription(pallas::Base::zero());
     let update = SubscribeUpdateV1 { subscription: subscription.clone() };
 
-    let encoded = update.encode().unwrap();
-    let decoded = SubscribeUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: SubscribeUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.subscription.id, subscription.id);
 }
 
 #[test]
 fn test_cancel_params_encoding() {
-    let keypair = darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng);
-    let recipient_pubkey = darkfi_sdk::crypto::PublicKey::from_secret(keypair.secret);
+    let recipient_pubkey = make_pubkey(1);
     let params = CancelParamsV1 {
-        subscription_id: Field::zero(),
-        subscriber_secret: Field::zero(),
-        spent_nullifier: Field::zero(),
+        subscription_id: pallas::Base::zero(),
+        subscriber_secret: pallas::Base::zero(),
+        spent_nullifier: pallas::Base::zero(),
         current_block: 50000,
         recipient_pubkey,
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = CancelParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: CancelParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.subscription_id, params.subscription_id);
     assert_eq!(decoded.current_block, params.current_block);
@@ -295,15 +284,15 @@ fn test_cancel_params_encoding() {
 
 #[test]
 fn test_cancel_update_encoding() {
-    let subscription = create_dummy_subscription(Field::zero());
+    let subscription = create_dummy_subscription(pallas::Base::zero());
     let update = CancelUpdateV1 {
         subscription_id: subscription.id,
-        spent_nullifier: Field::zero(),
+        spent_nullifier: pallas::Base::zero(),
         updated_subscription: subscription.clone(),
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = CancelUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: CancelUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.subscription_id, update.subscription_id);
     assert_eq!(decoded.spent_nullifier, update.spent_nullifier);
@@ -313,16 +302,16 @@ fn test_cancel_update_encoding() {
 #[test]
 fn test_renew_params_encoding() {
     let params = RenewParamsV1 {
-        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        subscriber_secret: darkfi_sdk::pasta::pallas::Base::from(2),
+        subscription_id: pallas::Base::from(1),
+        subscriber_secret: pallas::Base::from(2),
         new_lock_until_block: 110000,
-        spent_nullifier: darkfi_sdk::pasta::pallas::Base::from(3),
-        value_commit: darkfi_sdk::pasta::pallas::Point::identity(),
-        merkle_proof: vec![darkfi_sdk::pasta::pallas::Base::from(4)],
+        spent_nullifier: pallas::Base::from(3),
+        value_commit: Group::identity(),
+        merkle_proof: vec![pallas::Base::from(4)],
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = RenewParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: RenewParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.subscription_id, params.subscription_id);
     assert_eq!(decoded.new_lock_until_block, params.new_lock_until_block);
@@ -330,15 +319,15 @@ fn test_renew_params_encoding() {
 
 #[test]
 fn test_renew_update_encoding() {
-    let subscription = create_dummy_subscription(Field::zero());
+    let subscription = create_dummy_subscription(pallas::Base::zero());
     let update = RenewUpdateV1 {
         subscription_id: subscription.id,
-        spent_nullifier: Field::zero(),
+        spent_nullifier: pallas::Base::zero(),
         new_subscription: subscription.clone(),
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = RenewUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: RenewUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.subscription_id, update.subscription_id);
     assert_eq!(decoded.spent_nullifier, update.spent_nullifier);
@@ -348,13 +337,13 @@ fn test_renew_update_encoding() {
 #[test]
 fn test_verify_access_params_encoding() {
     let params = VerifyAccessParamsV1 {
-        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        capability: darkfi_sdk::pasta::pallas::Base::from(2),
-        nonce: darkfi_sdk::pasta::pallas::Base::from(3),
+        subscription_id: pallas::Base::from(1),
+        capability: pallas::Base::from(2),
+        nonce: pallas::Base::from(3),
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = VerifyAccessParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: VerifyAccessParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.subscription_id, params.subscription_id);
     assert_eq!(decoded.capability, params.capability);
@@ -366,8 +355,8 @@ fn test_dao_control_update_encoding() {
         action: DaoControlAction::PlanUpdated(1),
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = DaoControlUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: DaoControlUpdateV1 = deserialize(&encoded).unwrap();
 
     match decoded.action {
         DaoControlAction::PlanUpdated(id) => assert_eq!(id, 1),
@@ -383,24 +372,18 @@ fn test_constants() {
     assert_eq!(SUBSCRIPTION_CONTRACT_PLANS_TREE, "plans");
 }
 
-// ============================================================================
-// RATE LIMITING TESTS
-// ============================================================================
-
-use darkfi_subscription_contract::model::{UpdateUsageParamsV1, UpdateUsageUpdateV1};
-
 #[test]
 fn test_update_usage_params_encoding() {
     let params = UpdateUsageParamsV1 {
-        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
-        subscriber_secret: darkfi_sdk::pasta::pallas::Base::from(2),
+        subscription_id: pallas::Base::from(1),
+        subscriber_secret: pallas::Base::from(2),
         current_block: 50000,
-        spent_nullifier: darkfi_sdk::pasta::pallas::Base::from(3),
-        merkle_proof: vec![darkfi_sdk::pasta::pallas::Base::from(4)],
+        spent_nullifier: pallas::Base::from(3),
+        merkle_proof: vec![pallas::Base::from(4)],
     };
 
-    let encoded = params.encode().unwrap();
-    let decoded = UpdateUsageParamsV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&params);
+    let decoded: UpdateUsageParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.subscription_id, params.subscription_id);
     assert_eq!(decoded.current_block, params.current_block);
@@ -409,15 +392,15 @@ fn test_update_usage_params_encoding() {
 #[test]
 fn test_update_usage_update_encoding() {
     let update = UpdateUsageUpdateV1 {
-        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        subscription_id: pallas::Base::from(1),
         period_uses: 5,
         last_access_block: 50010,
         uses_remaining: 95,
         is_new_period: false,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = UpdateUsageUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: UpdateUsageUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.subscription_id, update.subscription_id);
     assert_eq!(decoded.period_uses, update.period_uses);
@@ -429,15 +412,15 @@ fn test_update_usage_update_encoding() {
 #[test]
 fn test_update_usage_new_period_encoding() {
     let update = UpdateUsageUpdateV1 {
-        subscription_id: darkfi_sdk::pasta::pallas::Base::from(1),
+        subscription_id: pallas::Base::from(1),
         period_uses: 0,
         last_access_block: 100000,
         uses_remaining: 100,
         is_new_period: true,
     };
 
-    let encoded = update.encode().unwrap();
-    let decoded = UpdateUsageUpdateV1::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&update);
+    let decoded: UpdateUsageUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.is_new_period, true);
     assert_eq!(decoded.period_uses, 0);
@@ -447,21 +430,18 @@ fn test_update_usage_new_period_encoding() {
 #[test]
 fn test_subscription_with_rate_limits() {
     let subscription = Subscription {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        subscriber_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        id: pallas::Base::from(1),
+        subscriber_pubkey: make_pubkey(1),
         plan_id: 1,
         lock_until_block: 100000,
         deposit: 1000,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
-        value_commit: darkfi_sdk::pasta::pallas::Point::identity(),
+        token_id: pallas::Base::zero(),
+        value_commit: Group::identity(),
         state: SubscriptionState::Active,
-        spent_nullifier: darkfi_sdk::pasta::pallas::Base::ZERO,
+        spent_nullifier: pallas::Base::zero(),
         created_at: 50000,
         dao_escrow_bulla: None,
         dao_membership_note: None,
-        // Rate limit fields
         uses_allowed: 100,
         rate_period: 1000,
         period_uses: 5,
@@ -480,21 +460,18 @@ fn test_subscription_with_rate_limits() {
 #[test]
 fn test_subscription_encoding_with_rate_limits() {
     let subscription = Subscription {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        subscriber_pubkey: darkfi_sdk::crypto::PublicKey::from_publickey(
-            &darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng).public,
-        ),
+        id: pallas::Base::from(1),
+        subscriber_pubkey: make_pubkey(1),
         plan_id: 1,
         lock_until_block: 100000,
         deposit: 1000,
-        token_id: darkfi_sdk::pasta::pallas::Base::ONE,
-        value_commit: darkfi_sdk::pasta::pallas::Point::identity(),
+        token_id: pallas::Base::zero(),
+        value_commit: Group::identity(),
         state: SubscriptionState::Active,
-        spent_nullifier: darkfi_sdk::pasta::pallas::Base::ZERO,
+        spent_nullifier: pallas::Base::zero(),
         created_at: 50000,
         dao_escrow_bulla: None,
         dao_membership_note: None,
-        // Rate limit fields
         uses_allowed: 100,
         rate_period: 1000,
         period_uses: 5,
@@ -502,8 +479,8 @@ fn test_subscription_encoding_with_rate_limits() {
         uses_remaining: 95,
     };
 
-    let encoded = subscription.encode().unwrap();
-    let decoded = Subscription::decode(&mut std::io::Cursor::new(&encoded)).unwrap();
+    let encoded = serialize(&subscription);
+    let decoded: Subscription = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.uses_allowed, 100);
     assert_eq!(decoded.rate_period, 1000);
