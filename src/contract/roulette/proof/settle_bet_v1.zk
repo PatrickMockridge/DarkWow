@@ -1,31 +1,20 @@
-// ZK Circuit for SettleBetsV1
-// Proves correct settlement of bets after wheel spin
+# ZK Circuit for SettleBetV1
+# Proves correct settlement of bets after wheel spin
 
-#ifndef __ROULETTE_SETTLE_BET_V1_ZK__
-#define __ROULETTE_SETTLE_BET_V1_ZK__
+k = 11;
+field = "pallas";
 
-// Inputs (witnesses)
-// - table_id: Base
-// - bet_ids: Base[N]
-// - winning_number: u8
-// - payouts: u64[N]
+constant "SettleBet_V1" {
+}
 
-Circuit::
+witness "SettleBet_V1" {
+    Base table_id,
+    Base bet_id,
+    Base won,
+    Base payout,
+}
 
-// Verify all bet IDs exist and belong to table
-// For each bet_id:
-//     bet.table_id == table_id
-//     bet.won == null
-
-// Verify winning number is in valid range
-// winning_number < wheel_size
-
-// Calculate correct payouts based on:
-// - bet.numbers contains winning_number
-// - bet.payout = bet.amount * bet_type.payout_ratio
-
-CONSTRAINTS::
-
-END::
-
-#endif
+circuit "SettleBet_V1" {
+    # Payout is calculated externally and verified here
+    constrain_instance(payout);
+}

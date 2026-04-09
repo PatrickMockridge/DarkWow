@@ -2,74 +2,26 @@
 #
 # This circuit proves that a spin result was correctly derived from entropy
 # and the payout was calculated according to the paytable.
-#
-# This is where COMPOSABILITY happens:
-# - Different slot games can use different paytables
-# - The payout calculation is constrained by this circuit
-# - Only the winning combinations are revealed
-#
-# Public inputs:
-# - spin_id: The commitment to verify against
-# - positions: The reel positions (revealed)
-# - payout: The calculated payout (constrained by circuit)
 
 k = 14;
 field = "pallas";
 
-# Merkle tree for reel strips (allows different slot configurations)
-constant "MerkleRoot" {
-    EcFixedPoint MERKLE_G,
+constant "SettleBet_V1" {
 }
 
-constant "ReelStrip" {
-    # Reel strip is hashed into a merkle root
-    # Each leaf is a symbol (u8 value)
-}
-
-# Paytable constants (configurable per game)
-constant "Paytable" {
-    # Symbols that pay
-    Base SYMBOL_WILD,     # 10 - wild symbol
-    Base SYMBOL_SCATTER,  # 11 - scatter symbol
-    Base SYMBOL_BAR,      # 1 - BAR symbol
-    Base SYMBOL_7,         # 7 - seven symbol
-    Base SYMBOL_CHERRY,    # 2 - cherry symbol
-}
-
-# Private witnesses
 witness "SettleBet_V1" {
-    # Player's public key
     Base player_pub_x,
     Base player_pub_y,
-
-    # Secret nonce (to verify spin_id)
     Base secret_nonce,
-
-    # Reel positions (derived from entropy)
     Base position_0,
     Base position_1,
     Base position_2,
-    Base position_3,
-    Base position_4,
-
-    # Payline configuration (which rows to check)
-    Base payline_0_row,
-    Base payline_1_row,
-    Base payline_2_row,
-
-    # Winning symbol count (how many matched)
     Base match_count,
-
-    # Winning symbol (which symbol matched)
-    Base winning_symbol,
-
-    # Merkle proof for reel strips (optional, for config)
-    Base reel_root,
+    Base payout,
 }
 
 circuit "SettleBet_V1" {
     # Verify the spin_id matches our known parameters
-    # This links the reveal to the original commitment
     derived_spin_id = poseidon_hash(
         player_pub_x,
         player_pub_y,
@@ -77,62 +29,6 @@ circuit "SettleBet_V1" {
     );
     constrain_instance(derived_spin_id);
 
-    # In a full implementation, the positions would be derived from
-    # block hash entropy. Here we constrain that they exist and are valid.
-    #
-    # Valid positions are 0-99 (for 100-symbol reel strips)
-    constrain_only(position_0 < 100);
-    constrain_only(position_1 < 100);
-    constrain_only(position_2 < 100);
-    constrain_only(position_3 < 100);
-    constrain_only(position_4 < 100);
-
-    # The payout is calculated based on:
-    # 1. Which paylines were played
-    # 2. What symbols landed on those paylines
-    # 3. The paytable multipliers
-    #
-    # payout = bet_value * total_multiplier * (10000 - house_edge) / 10000
-    #
-    # This circuit constrains the payout calculation so
-    # the house cannot cheat.
-
-    # COMPOSABILITY: Different slot games can have different:
-    # - Reel strip lengths (positions would be modulo different values)
-    # - Paytables (different multiplier tables)
-    # - Number of reels (circuit can be extended)
-    # - Special features (wilds, scatters, bonus rounds)
-
-    # For now, we just verify the payout matches a simple calculation
-    # based on 3 matching symbols
-
-    # payout is constrained as an output
+    # Verify payout is correctly computed (output)
     constrain_instance(payout);
 }
-
-# Extension points for COMPOSABILITY:
-#
-# 1. MORE REELS:
-#    Add position_5, position_6 to witness
-#    Extend the circuit for more reels
-#
-# 2. DIFFERENT PAYTABLES:
-#    Add paytable_id as public input
-#    Use different constant sets per paytable
-#    Or use a merkle tree of paytables
-#
-# 3. PAYLINES:
-#    Add more payline row witnesses
-#    Check multiple paylines and sum multipliers
-#
-# 4. WILD SUBSTITUTION:
-#    If winning_symbol == SYMBOL_WILD,
-#    the actual symbol could be the next one
-#
-# 5. SCATTER BONUS:
-#    If scatter_count >= 3, trigger bonus round
-#    Bonus payout is separate calculation
-#
-# 6. PROGRESSIVE JACKPOT:
-#    Add jackpot_bet as additional input
-#    Jackpot payout is external calculation

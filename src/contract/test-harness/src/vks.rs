@@ -171,6 +171,21 @@ pub fn get_cached_pks_and_vks() -> Result<(Pks, Vks)> {
         &include_bytes!("../../dex/proof/cancel_swap_v1.zk.bin")[..],
         &include_bytes!("../../dex/proof/execute_swap_fee_v1.zk.bin")[..],
         &include_bytes!("../../dex/proof/execute_swap_slippage_v1.zk.bin")[..],
+        // Lottery (WASM contract - deployed via deployooor)
+        &include_bytes!("../../lottery/proof/commit_ticket_v1.zk.bin")[..],
+        &include_bytes!("../../lottery/proof/reveal_ticket_v1.zk.bin")[..],
+        // Slot (WASM contract - deployed via deployooor)
+        &include_bytes!("../../slot/proof/commit_bet_v1.zk.bin")[..],
+        &include_bytes!("../../slot/proof/settle_bet_v1.zk.bin")[..],
+        // Baccarat (WASM contract - deployed via deployooor)
+        &include_bytes!("../../baccarat/proof/commit_bet_v1.zk.bin")[..],
+        &include_bytes!("../../baccarat/proof/settle_bet_v1.zk.bin")[..],
+        // DarkToshi Dice (WASM contract - deployed via deployooor)
+        &include_bytes!("../../darktoshi_dice/proof/commit_bet_v1.zk.bin")[..],
+        &include_bytes!("../../darktoshi_dice/proof/settle_bet_v1.zk.bin")[..],
+        // Roulette (WASM contract - deployed via deployooor)
+        &include_bytes!("../../roulette/proof/place_bet_v1.zk.bin")[..],
+        &include_bytes!("../../roulette/proof/settle_bet_v1.zk.bin")[..],
     ];
 
     let mut pks = vec![];

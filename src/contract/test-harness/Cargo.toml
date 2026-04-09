@@ -17,6 +17,12 @@ darkfi-identity-contract = {path = "../identity", features = ["no-entrypoint"]}
 darkfi_money_contract = {path = "../money", features = ["client", "no-entrypoint"]}
 darkfi_deployooor_contract = {path = "../deployooor", features = ["client", "no-entrypoint"]}
 darkfi_stablecoin_contract = {path = "../stablecoin", features = ["client", "no-entrypoint"]}
+darkfi_lottery_contract = {path = "../lottery", features = ["no-entrypoint"]}
+darkfi_slot_contract = {path = "../slot", features = ["no-entrypoint"]}
+darkfi_baccarat_contract = {path = "../baccarat", features = ["no-entrypoint"]}
+darkfi_darktoshi_dice_contract = {path = "../darktoshi_dice", features = ["no-entrypoint"]}
+darkfi_roulette_contract = {path = "../roulette", features = ["no-entrypoint"]}
+darkfi_game_room_contract = { path = "../game_room", package = "game_room_contract" }
 
 num-bigint = "0.4.6"
 blake3 = "1.8.2"

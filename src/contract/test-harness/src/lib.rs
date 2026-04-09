@@ -107,6 +107,24 @@ mod stablecoin;
 /// `Dex::CreateSwap`, `AcceptSwap`, `ExecuteSwap`, etc.
 mod dex;
 
+/// `Lottery::Initialize`, `BuyTicket`, `DrawWinners`, etc.
+mod lottery;
+
+/// `Slot::Initialize`, `CommitSpin`, `RevealSpin`, etc.
+mod slot;
+
+/// `Baccarat::Initialize`, `CommitBet`, `DrawCards`, etc.
+mod baccarat;
+
+/// `DarkToshiDice::Initialize`, `CommitBet`, `RevealRoll`, etc.
+mod darktoshi_dice;
+
+/// `Roulette::Initialize`, `PlaceBet`, `SpinWheel`, etc.
+mod roulette;
+
+/// `GameRoom::CreateRoom`, `Deposit`, `PlaceBet`, etc.
+mod game_room;
+
 /// PoW target
 const POW_TARGET: u32 = 120;
 
