@@ -85,6 +85,73 @@ impl TestHarness {
         Ok(baccarat_contract_id)
     }
 
+    /// Create a `Baccarat::InitializeV1` transaction.
+    ///
+    /// House initializes the baccarat table.
+    pub async fn baccarat_initialize(
+        &mut self,
+        holder: &Holder,
+        baccarat_contract_id: ContractId,
+        block_height: u32,
+    ) -> Result<(Transaction, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let data = vec![BaccaratFunction::InitializeV1 as u8];
+        let call = ContractCall { contract_id: baccarat_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, fee_params))
+    }
+
+    /// Execute a `Baccarat::InitializeV1` transaction.
+    pub async fn execute_baccarat_initialize_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("baccarat::initialize", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+
     /// Create a `Baccarat::CommitBetV1` transaction.
     ///
     /// Player commits to a bet on Player/Banker/Tie.

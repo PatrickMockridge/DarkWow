@@ -258,6 +258,306 @@ impl TestHarness {
         Ok(wallet.process_fee(fee_params, holder))
     }
 
+    /// Create a `GameRoom::WithdrawV1` transaction.
+    ///
+    /// Player withdraws their stake from the game room.
+    pub async fn game_room_withdraw(
+        &mut self,
+        holder: &Holder,
+        game_room_contract_id: ContractId,
+        room_id: pallas::Base,
+        player: PublicKey,
+        amount: u64,
+        block_height: u32,
+    ) -> Result<(Transaction, WithdrawParamsV1, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = WithdrawParamsV1 { room_id, player, amount };
+
+        let mut data = vec![GameRoomFunction::WithdrawV1 as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: game_room_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute a `GameRoom::WithdrawV1` transaction.
+    pub async fn execute_game_room_withdraw_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &WithdrawParamsV1,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("game_room::withdraw", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+
+    /// Create a `GameRoom::RaiseV1` transaction.
+    ///
+    /// Player raises the bet in a poker-style game.
+    pub async fn game_room_raise(
+        &mut self,
+        holder: &Holder,
+        game_room_contract_id: ContractId,
+        room_id: pallas::Base,
+        player: PublicKey,
+        amount: u64,
+        block_height: u32,
+    ) -> Result<(Transaction, RaiseParamsV1, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = RaiseParamsV1 { room_id, player, amount, nonce: pallas::Base::zero() };
+
+        let mut data = vec![GameRoomFunction::RaiseV1 as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: game_room_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute a `GameRoom::RaiseV1` transaction.
+    pub async fn execute_game_room_raise_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &RaiseParamsV1,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("game_room::raise", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+
+    /// Create a `GameRoom::ClosePotV1` transaction.
+    ///
+    /// Owner closes the pot after game round ends.
+    pub async fn game_room_close_pot(
+        &mut self,
+        holder: &Holder,
+        game_room_contract_id: ContractId,
+        room_id: pallas::Base,
+        block_height: u32,
+    ) -> Result<(Transaction, ClosePotParamsV1, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = ClosePotParamsV1 { room_id, pot_id: pallas::Base::zero() };
+
+        let mut data = vec![GameRoomFunction::ClosePotV1 as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: game_room_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute a `GameRoom::ClosePotV1` transaction.
+    pub async fn execute_game_room_close_pot_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &ClosePotParamsV1,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("game_room::close_pot", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+
+    /// Create a `GameRoom::ContributeEntropyV1` transaction.
+    ///
+    /// Contributor provides entropy for randomness.
+    pub async fn game_room_contribute_entropy(
+        &mut self,
+        holder: &Holder,
+        game_room_contract_id: ContractId,
+        room_id: pallas::Base,
+        caller: PublicKey,
+        entropy: pallas::Base,
+        mode: EntropyMode,
+        block_height: u32,
+    ) -> Result<(Transaction, ContributeEntropyParamsV1, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = ContributeEntropyParamsV1 {
+            room_id,
+            player: caller,
+            commitment: entropy,
+            reveal: None,
+        };
+
+        let mut data = vec![GameRoomFunction::ContributeEntropyV1 as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: game_room_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute a `GameRoom::ContributeEntropyV1` transaction.
+    pub async fn execute_game_room_contribute_entropy_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &ContributeEntropyParamsV1,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("game_room::contribute_entropy", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+
     /// Create a `GameRoom::PlaceBetV1` transaction.
     ///
     /// Player places a bet/ante in the game.
