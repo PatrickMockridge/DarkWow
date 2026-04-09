@@ -1,127 +1,22 @@
 k = 11;
 field = "pallas";
 
-# Atomic Swap: Claim Circuit (Version 1)
-#
-# Claims funds by revealing the secret.
-#
-# This circuit proves:
-# - Claimer knows the secret
-# - The poseidon_hash of the secret matches the stored hash
-# - The nullifier is correctly computed
-#
-# Public Inputs (constrain_instance):
-#   - nullifier: Prevents double-claim
-#
-# Witnesses:
-#   - secret: The secret (revealed on-chain)
-#   - hash: The stored poseidon_hash(secret) from CreateSwap
-#   - swap_id: The swap being claimed
-#   - timelock: For reference only (not enforced in claim)
-#   - side: 0 = Alice, 1 = Bob
-
 constant "ClaimSwap" {
     EcFixedPointBase NULLIFIER_K,
-    # NULLIFIER_K is used to derive public keys.
 }
 
 witness "ClaimSwap" {
-    # Swap ID being claimed
     Base swap_id,
-
-    # The secret (revealed on-chain)
     Base secret,
-
-    # The stored poseidon_hash(secret) from CreateSwap
     Base hash,
-
-    # Timelock for reference
-    Uint64 timelock,
-
-    # Side: 0 = Alice, 1 = Bob
-    Uint8 side,
+    Base timelock,
+    Base side,
 }
 
 circuit "ClaimSwap" {
-    # ==========================================================================
-    # PHASE 1: Verify the secret hash matches
-    # ==========================================================================
-    #
-    # The secret is revealed, and we verify it matches the stored hash.
-    # This proves the claimer knows the secret.
-
     computed_hash = poseidon_hash(secret);
     constrain_equal_base(computed_hash, hash);
 
-    # ==========================================================================
-    # PHASE 2: Compute and verify nullifier - PUBLIC INPUT
-    # ==========================================================================
-    #
-    # Nullifier prevents double-claim of the same swap.
-    # Once claimed, the swap cannot be claimed again or refunded.
-    # The nullifier is a PUBLIC INPUT provided by the verifier.
-
     nullifier_check = poseidon_hash(swap_id, secret);
-
-    # This is the PUBLIC INPUT - nullifier must be provided by verifier
     constrain_instance(nullifier_check);
-
-    # ==========================================================================
-    # SOUNDNESS NOTES
-    # ==========================================================================
-    #
-    # This circuit uses ONLY proven opcodes:
-    #   - poseidon_hash: field-proven, standard in DarkFi
-    #   - constrain_equal_base: equality constraint
-    #   - constrain_instance: public input commitment
-    #
-    # There are NO uses of experimental opcodes.
-    #
-    # The poseidon_hash is verified in-circuit (Phase 1).
-    # The nullifier is a public input verified via constrain_instance.
-
-    # ==========================================================================
-    # WHAT THIS CIRCUIT PROVES
-    # ==========================================================================
-    #
-    # This circuit proves:
-    #   1. The claimer knows the secret
-    #   2. The secret's poseidon_hash matches the stored hash
-    #   3. The nullifier is correctly computed from swap_id and secret
-    #
-    # What it DOES NOT prove:
-    #   1. External chain hash binding (requires bridge/oracle)
-    #   2. The funds haven't been refunded (nullifier check handles this)
-    #   3. The timelock has passed (not required for claim - only for refund)
-
-    # ==========================================================================
-    # ATOMIC SWAP COMPLETION FLOW
-    # ==========================================================================
-    #
-    # After this circuit succeeds:
-    #
-    # 1. Secret is revealed on DarkFi blockchain
-    #    - Bob (on DarkFi) can now see the secret
-    #
-    # 2. Bob claims his funds on DarkFi
-    #    - funds released to Bob
-    #
-    # 3. Bob reveals secret on external chain
-    #    - Alice's HTLC on external chain can now be claimed
-    #
-    # 4. Alice claims on external chain
-    #    - funds released to Alice
-    #
-    # The swap is now complete. Both parties have their funds.
-
-    # ==========================================================================
-    # REFUND FLOW (if timelock expires) - see refund_v1.zk
-    # ==========================================================================
-    #
-    # If the swap is not completed before timelock:
-    #
-    # 1. After timelock expires, either party can refund
-    # 2. Refund circuit verifies: current_block >= timelock
-    # 3. Refund emits nullifier (prevents later claim)
-    # 4. Funds returned to original depositor
 }

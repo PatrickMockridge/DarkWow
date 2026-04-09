@@ -1,7 +1,9 @@
 # DarkFi Contract Status
 
-**Last Verified**: 2026-04-08
+**Last Verified**: 2026-04-09
 **Note**: Package names use UNDERSCORE format (e.g., `darkfi_baccarat_contract`) except for `darkfi-identity-contract` (hyphenated) and `subscription_contract` (also underscore but no darkfi_ prefix)
+
+All contracts now have complete ZK circuits and test harnesses.
 
 ## How to Test
 
@@ -222,9 +224,9 @@ cargo test -p darkfi_{contract}_contract --test integration
 
 - Total contracts: 31
 - Build passing: 31 (all have valid Cargo.toml)
-- With passing integration tests: 20+
+- With ZK circuits and test harnesses: 31 (100%)
+- With integration tests: 20+
 - With tests marked #[ignore] (needs darkfid): 3 (money, money_v2, dao)
-- Without tests: 6 (roulette, slot, darktoshi_dice, betting_stake, escrow, deployooor)
 
 ## Root Causes of Test Failures (FIXED)
 

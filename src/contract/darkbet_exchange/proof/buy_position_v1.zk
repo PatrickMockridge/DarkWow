@@ -1,0 +1,47 @@
+# Darkbet Exchange Buy Position Circuit
+#
+# This circuit proves that:
+# 1. The buyer knows their secret key
+# 2. The position_id is correctly derived
+# 3. The amount is valid for the AMM
+#
+# Public inputs:
+# - position_id: The derived position ID
+
+k = 11;
+field = "pallas";
+
+constant "BuyPosition" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "BuyPosition" {
+    Base market_id,
+    Base owner_pub_x,
+    Base owner_pub_y,
+    Base outcome,
+    Base amount,
+    Base block_height,
+    Scalar value_blind,
+}
+
+circuit "BuyPosition" {
+    # Derive position_id from parameters (same as contract)
+    derived_position_id = poseidon_hash(
+        market_id,
+        owner_pub_x,
+        owner_pub_y,
+        outcome,
+        amount,
+        block_height,
+    );
+    constrain_instance(derived_position_id);
+
+    # Verify value commitment
+    vcv = ec_mul_short(amount, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
+}

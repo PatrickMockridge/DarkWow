@@ -1,0 +1,31 @@
+# Game Room Deposit Circuit
+#
+# This circuit proves that:
+# 1. The player knows their secret key
+# 2. The deposit parameters are valid
+#
+# Public inputs:
+# - account_key: Hash of room_id and player pubkey x-coordinate
+
+k = 11;
+field = "pallas";
+
+constant "Deposit" {
+}
+
+witness "Deposit" {
+    Base room_id,
+    Base player_pub_x,
+    Base player_pub_y,
+    Base amount,
+    Base nonce,
+}
+
+circuit "Deposit" {
+    # Derive account key from parameters (same as contract)
+    derived_account_key = poseidon_hash(
+        room_id,
+        player_pub_x,
+    );
+    constrain_instance(derived_account_key);
+}

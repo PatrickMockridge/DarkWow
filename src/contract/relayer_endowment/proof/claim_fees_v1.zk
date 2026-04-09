@@ -1,0 +1,24 @@
+k = 11;
+field = "pallas";
+
+constant "ClaimFees" {
+}
+
+witness "ClaimFees" {
+    Base deployment_id,
+    Base backer_pub_x,
+    Base backer_pub_y,
+    Base fee_share,
+    Base nonce,
+}
+
+circuit "ClaimFees" {
+    derived_claim_id = poseidon_hash(
+        deployment_id,
+        backer_pub_x,
+        backer_pub_y,
+        fee_share,
+        nonce
+    );
+    constrain_instance(derived_claim_id);
+}

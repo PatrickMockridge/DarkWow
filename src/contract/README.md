@@ -6,28 +6,28 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 
 | Contract | Description | Status |
 |----------|-------------|--------|
-| **attestation** | Generalized attestation and claims system | ✅ Complete |
-| **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
-| **baccarat** | Privacy-preserving Baccarat (Punto Banco) casino game | ✅ Complete |
-| **block_height_prediction** | PoW-backed block height betting | ✅ Complete |
-| **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
-| **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete |
-| **darkbet_exchange** | Unified betting exchange (order-book + AMM) | ✅ Complete |
-| **darktoshi_dice** | Privacy-preserving Satoshi Dice clone | ✅ Complete |
-| **dex** | Atomic swap DAO with partial fills + open execution | ✅ Complete |
-| **drain_protection** | Endowment/treasury drain protections with 8 best practices | ✅ Complete |
-| **escrow** | Hashed Timelock Contract variant | ✅ Complete |
-| **game_room** | Generalized betting and pot management | ✅ Complete |
-| **identity** | ZK credential proofs using competency DAGs | ✅ Uses safemath (Level 0 zk_only) |
-| **insurance_market** | Decentralized insurance marketplace | ✅ Complete |
-| **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
-| **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
-| **oracle** | Push-model oracle with attestation integration | ✅ Complete |
-| **roulette** | Privacy-preserving roulette casino game | ✅ Complete |
-| **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete |
-| **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
-| **stablecoin** | Monero-collateralized stablecoin | ✅ Uses safemath |
-| **subscription** | Member subscription with DAO treasury | ✅ Complete |
+| **attestation** | Generalized attestation and claims system | ✅ Complete ZK + Test Harness |
+| **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete ZK + Test Harness |
+| **baccarat** | Privacy-preserving Baccarat (Punto Banco) casino game | ✅ Complete ZK + Test Harness |
+| **block_height_prediction** | PoW-backed block height betting | ✅ Complete ZK + Test Harness |
+| **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete ZK + Test Harness |
+| **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete ZK + Test Harness |
+| **darkbet_exchange** | Unified betting exchange (order-book + AMM) | ✅ Complete ZK + Test Harness |
+| **darktoshi_dice** | Privacy-preserving Satoshi Dice clone | ✅ Complete ZK + Test Harness |
+| **dex** | Atomic swap DAO with partial fills + open execution | ✅ Complete ZK + Test Harness |
+| **drain_protection** | Endowment/treasury drain protections with 8 best practices | ✅ Complete ZK + Test Harness |
+| **escrow** | Hashed Timelock Contract variant | ✅ Complete ZK + Test Harness |
+| **game_room** | Generalized betting and pot management | ✅ Complete ZK + Test Harness |
+| **identity** | ZK credential proofs using competency DAGs | ✅ Complete ZK + Test Harness |
+| **insurance_market** | Decentralized insurance marketplace | ✅ Complete ZK + Test Harness |
+| **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete ZK + Test Harness |
+| **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete ZK + Test Harness |
+| **oracle** | Push-model oracle with attestation integration | ✅ Complete ZK + Test Harness |
+| **roulette** | Privacy-preserving roulette casino game | ✅ Complete ZK + Test Harness |
+| **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete ZK + Test Harness |
+| **tender** | Sealed-bid tendering with competency verification | ✅ Complete ZK + Test Harness |
+| **stablecoin** | Monero-collateralized stablecoin | ✅ Complete ZK + Test Harness |
+| **subscription** | Member subscription with DAO treasury | ✅ Complete ZK + Test Harness |
 
 **Randomness**: See [Provable Randomness](../../doc/src/arch/provable_randomness.md) for analysis of randomness sources in DarkToshi Dice, Roulette, Lottery, and leveraging PoW for trustless randomness.
 

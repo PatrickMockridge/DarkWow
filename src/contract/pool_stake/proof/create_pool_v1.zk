@@ -1,0 +1,22 @@
+k = 11;
+field = "pallas";
+
+constant "CreatePool" {
+}
+
+witness "CreatePool" {
+    Base creator_pub_x,
+    Base creator_pub_y,
+    Base pool_config_hash,
+    Base nonce,
+}
+
+circuit "CreatePool" {
+    derived_pool_id = poseidon_hash(
+        creator_pub_x,
+        creator_pub_y,
+        pool_config_hash,
+        nonce
+    );
+    constrain_instance(derived_pool_id);
+}

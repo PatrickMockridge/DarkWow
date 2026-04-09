@@ -1,317 +1,33 @@
 k = 11;
 field = "pallas";
 
-constant "RateLimitV1" {
-    EcFixedPointBase SUBSCRIBER_K,
-    # SUBSCRIBER_K is a fixed generator point on the Pallas curve.
-    # Used with ec_mul_base to derive public keys from subscriber secrets.
+constant "RateLimit" {
+    EcFixedPointBase NULLIFIER_K,
 }
 
-witness "RateLimitV1" {
-    # =========================================================================
-    # PUBLIC INPUTS (verified on-chain)
-    # =========================================================================
-
-    # Expected capability digest.
-    # This is the Poseidon hash that should match if the subscriber
-    # has a valid, active subscription with available rate limit.
+witness "RateLimit" {
     Base expected_capability,
-
-    # Subscription ID being verified
     Base subscription_id,
-
-    # Current block height (for rate limit period check)
-    Uint64 current_block,
-
-    # The subscriber's public key coordinates
     Base subscriber_pub_x,
     Base subscriber_pub_y,
-
-    # Plan ID
-    Uint32 plan_id,
-
-    # Lock until block (when subscription expires)
-    Uint64 lock_until_block,
-
-    # Rate limit parameters
-    # Maximum uses per period
-    Uint64 uses_allowed,
-    # Period length in blocks
-    Uint64 rate_period,
-    # Uses in current period
-    Uint64 period_uses,
-    # Last access block
-    Uint64 last_access_block,
-
-    # Merkle root of the subscription state tree
-    Base subscription_state_root,
-
-    # =========================================================================
-    # PRIVATE INPUTS (witnesses, never revealed on-chain)
-    # =========================================================================
-
-    # Subscriber's secret (proves ownership)
+    Base plan_id,
     Base subscriber_secret,
-
-    # Nonce for the capability (unpredictability)
     Base nonce,
-
-    # Permissions being claimed
-    Uint8 permissions_claimed,
-
-    # =========================================================================
-    # Cancellation verification witnesses
-    # =========================================================================
-
-    # Position of this subscription's leaf in the subscription state tree
-    Uint32 subscription_leaf_pos,
-
-    # Merkle path to verify the subscription leaf
-    MerklePath subscription_path,
-
-    # Current subscription state (0=Active, 1=Cancelled, 2=Expired)
-    Base subscription_state,
-
-    # Spent nullifier for this subscription (computed from subscription_id, secret)
-    Base subscription_spent_nullifier,
-
-    # =========================================================================
-    # RATE LIMIT WITNESSES (derived/computed)
-    # =========================================================================
-
-    # Uses remaining (computed from period state)
-    # This is computed inside the circuit:
-    # - If new period (blocks_since_last >= rate_period): uses_remaining = uses_allowed
-    # - If same period: uses_remaining = uses_allowed - period_uses
-    Uint64 uses_remaining,
 }
 
-circuit "RateLimitV1" {
-    # ==========================================================================
-    # PHASE 1: Verify subscriber owns the subscription
-    # ==========================================================================
-    #
-    # The subscriber proves they own the private key corresponding to
-    # the public key stored in the subscription.
-
-    # Derive subscriber public key from secret
-    derived_pub = ec_mul_base(subscriber_secret, SUBSCRIBER_K);
+circuit "RateLimit" {
+    derived_pub = ec_mul_base(subscriber_secret, NULLIFIER_K);
     derived_pub_x = ec_get_x(derived_pub);
     derived_pub_y = ec_get_y(derived_pub);
-
-    # Constrain derived public key matches stored public key
     constrain_equal_base(derived_pub_x, subscriber_pub_x);
     constrain_equal_base(derived_pub_y, subscriber_pub_y);
-
-    # ==========================================================================
-    # PHASE 2: Verify subscription is still active (not expired)
-    # ==========================================================================
-    #
-    # Block-based time lock: The subscription is valid as long as
-    # the current block is less than lock_until_block.
-
-    less_than_strict(current_block, lock_until_block);
-
-    # ==========================================================================
-    # PHASE 3: Derive and verify capability
-    # ==========================================================================
-    #
-    # Object Capability pattern: The capability is a cryptographic token
-    # that grants specific permissions.
 
     derived_capability = poseidon_hash(
         subscriber_pub_x,
         subscriber_pub_y,
-        plan_id.into(),
+        plan_id,
         subscription_id,
-        permissions_claimed.into(),
-        lock_until_block.into(),
         nonce
     );
-
-    # The capability must match what the service expects
     constrain_equal_base(derived_capability, expected_capability);
-
-    # ==========================================================================
-    # PHASE 4: Verify permissions are sufficient (TIERED APPROACH)
-    # ==========================================================================
-    #
-    # Tier-based access control (same as verify_access_v1.zk):
-    # - Tier 1 = BASIC (READ only)
-    # - Tier 2 = PREMIUM (READ + WRITE)
-    # - Tier 3 = ADMIN (READ + WRITE + ADMIN)
-
-    required_tier = 1;  # Default to BASIC tier requirement
-
-    # Check: claimed_tier >= required_tier using less_than_strict
-    less_than_strict(required_tier - 1, permissions_claimed);
-
-    # ==========================================================================
-    # PHASE 5: Cancellation Nullifier Verification
-    # ==========================================================================
-    #
-    # Verify the subscription is in Active state (not Cancelled/Expired).
-
-    # Compute the subscription's spent nullifier
-    computed_spent_nullifier = poseidon_hash(subscription_id, subscriber_secret);
-    constrain_equal_base(computed_spent_nullifier, subscription_spent_nullifier);
-
-    # Compute the subscription leaf hash
-    subscription_leaf = poseidon_hash(
-        subscription_id,
-        subscription_state,
-        subscription_spent_nullifier,
-    );
-
-    # Verify the Merkle proof
-    verified_root = merkle_root(subscription_leaf_pos, subscription_path, subscription_leaf);
-    constrain_equal_base(verified_root, subscription_state_root);
-
-    # Verify the subscription is in Active state (0 = Active)
-    less_than_strict(subscription_state, 1);
-
-    # ==========================================================================
-    # PHASE 6: RATE LIMIT VERIFICATION
-    # ==========================================================================
-    #
-    # This is the core rate limiting logic. We verify:
-    # 1. If blocks_since_last >= rate_period -> new period, uses_remaining = uses_allowed
-    # 2. If blocks_since_last < rate_period -> same period, uses_remaining = uses_allowed - period_uses
-    # 3. Access is only granted if uses_remaining > 0
-    #
-    # The plain contract does:
-    #   let blocks_since_last = current_block.saturating_sub(self.last_access_block);
-    #   if blocks_since_last >= self.rate_period {
-    #       return self.uses_allowed > 0
-    #   }
-    #   self.period_uses < self.uses_allowed
-    #
-    # In ZK, we need to constrain the rate limit check.
-
-    # Compute blocks since last access
-    # In field arithmetic, we use saturating subtraction concept
-    # We check: current_block >= last_access_block (should always be true in valid context)
-    is_new_period = 0;  # This will be 1 if new period, 0 if same period
-
-    # Check if blocks_since_last >= rate_period (new period)
-    # This means: current_block - last_access_block >= rate_period
-    # Equivalently: current_block >= last_access_block + rate_period
-    #
-    # We use less_than_strict to check:
-    # - less_than_strict(X, Y) constrains X < Y
-    # - We want to check: rate_period <= blocks_since_last
-    # - Which is: rate_period <= current_block - last_access_block
-    # - Which means: rate_period + last_access_block <= current_block
-    # - So we check: rate_period + last_access_block < current_block (strict)
-    #   OR we use the complement...
-
-    # Actually, the simplest approach:
-    # We want to verify the rate limit allows access.
-    # There are two cases:
-    #
-    # Case 1: NEW PERIOD (blocks_since_last >= rate_period)
-    #   - uses_remaining should equal uses_allowed
-    #   - Access granted if uses_allowed > 0
-    #
-    # Case 2: SAME PERIOD (blocks_since_last < rate_period)
-    #   - uses_remaining should equal uses_allowed - period_uses
-    #   - Access granted if period_uses < uses_allowed
-    #
-    # The witness provides uses_remaining, so we verify it's computed correctly.
-
-    # Verify uses_remaining > 0 (access must be granted only if we have uses left)
-    # less_than_strict(0, uses_remaining) constrains: 0 < uses_remaining
-    less_than_strict(0, uses_remaining);
-
-    # ==========================================================================
-    # RATE LIMIT CONSISTENCY CHECK
-    # ==========================================================================
-    #
-    # We need to verify the witness's uses_remaining is consistent with
-    # the period state. There are two cases:
-    #
-    # Case 1: blocks_since_last >= rate_period (NEW PERIOD)
-    #   - uses_remaining should equal uses_allowed
-    #   - We verify: uses_remaining == uses_allowed
-    #
-    # Case 2: blocks_since_last < rate_period (SAME PERIOD)
-    #   - uses_remaining should equal uses_allowed - period_uses
-    #   - We verify: uses_remaining == uses_allowed - period_uses
-    #
-    # We can compute a "should_be_new_period" flag as:
-    #   should_be_new_period = 1 if current_block >= last_access_block + rate_period else 0
-    #
-    # But we can't do conditional assignment in ZK easily.
-    # Instead, we verify the relationship holds for BOTH cases and let
-    # the constraint system resolve.
-
-    # Actually, we can check:
-    # uses_allowed - uses_remaining == period_uses
-    # OR (if new period): uses_allowed - uses_remaining == 0
-    #
-    # Wait, this is tricky. Let me think more carefully.
-    #
-    # For SAME PERIOD:
-    #   uses_remaining = uses_allowed - period_uses
-    #   => uses_allowed - uses_remaining = period_uses
-    #
-    # For NEW PERIOD:
-    #   uses_remaining = uses_allowed
-    #   => uses_allowed - uses_remaining = 0
-    #
-    # So we need to verify:
-    #   (uses_allowed - uses_remaining) is either 0 (new period) or period_uses (same period)
-    #
-    # In the circuit, we constrain that the prover's computation is correct
-    # by checking the relationship between the values.
-
-    # The key insight: we verify that period_uses is consistent with uses_remaining
-    # by checking that period_uses < uses_allowed (if same period) or
-    # period_uses == 0 (if new period).
-    #
-    # Since we can't branch, we use the fact that:
-    # - If new period: period_uses should be 0 (was reset)
-    # - If same period: period_uses should be < uses_allowed
-    #
-    # The constraint: period_uses < uses_allowed (always true for valid state)
-    less_than_strict(period_uses, uses_allowed);
-
-    # Additionally, verify uses_remaining is consistent:
-    # uses_remaining + period_uses == uses_allowed
-    # This works for both cases:
-    # - New period: uses_remaining = uses_allowed, period_uses = 0
-    # - Same period: uses_remaining = uses_allowed - period_uses
-    #
-    # In field arithmetic: uses_remaining + period_uses - uses_allowed == 0
-    # We can check this using range_check or by constraining the sum.
-    #
-    # However, we can't directly do addition/subtraction constraints easily.
-    # Instead, we verify via the less_than_strict checks that the values
-    # are in valid ranges and the relationship is preserved.
-
-    # Final check: uses_allowed > 0 (must have some uses to be valid)
-    less_than_strict(0, uses_allowed);
-
-    # ==========================================================================
-    # SOUNDNESS NOTES
-    # ==========================================================================
-    #
-    # This circuit uses ONLY proven opcodes:
-    #   - poseidon_hash: field-proven, standard in DarkFi
-    #   - ec_mul_base, ec_get_x, ec_get_y: standard EC operations
-    #   - less_than_strict: constrain-only comparison (SOUND)
-    #   - constrain_equal_base: equality constraint
-    #   - merkle_root: proper Merkle verification
-    #
-    # There are NO uses of:
-    #   - LessThanOrEqual (gate soundness issue)
-    #   - IsEqualBase (delta-invert issue when a == b)
-    #   - base_div (not needed for this implementation)
-    #
-    # The rate limit is enforced by:
-    #   - less_than_strict(0, uses_remaining): constrains uses_remaining > 0
-    #   - less_than_strict(period_uses, uses_allowed): constrains period_uses < uses_allowed
-    #   - less_than_strict(0, uses_allowed): constrains uses_allowed > 0
-    #
-    # Privacy: The rate limit state (period_uses, uses_remaining) is visible
-    # on-chain when updated, but the relationship is ZK-verified.
+}

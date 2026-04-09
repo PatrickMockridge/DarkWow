@@ -1,0 +1,49 @@
+# Betting Stake Unstake Circuit
+#
+# This circuit proves that:
+# 1. The caller knows the secret that owns the stake
+# 2. The stake ID is valid
+#
+# Public inputs:
+# - stake_id: The stake ID being unstaked
+
+k = 11;
+field = "pallas";
+
+constant "Unstake" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "Unstake" {
+    Base table_id,
+    Base staker_pub_x,
+    Base staker_pub_y,
+    Base original_amount,
+    Base current_amount,
+    Base accumulated_earnings,
+    Base token_id,
+    Base nonce,
+    Scalar value_blind,
+}
+
+circuit "Unstake" {
+    # Derive stake_id from parameters (same as contract)
+    derived_stake_id = poseidon_hash(
+        table_id,
+        staker_pub_x,
+        staker_pub_y,
+        original_amount,
+        nonce,
+    );
+    constrain_instance(derived_stake_id);
+
+    # Verify the original value commitment
+    vcv = ec_mul_short(original_amount, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
+
+    # At this point we've enforced all of our public inputs.
+}

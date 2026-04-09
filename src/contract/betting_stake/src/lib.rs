@@ -134,3 +134,18 @@ impl RiskProfile {
         }
     }
 }
+
+// =============================================================================
+// ZK CIRCUIT NAMESPACES
+// =============================================================================
+
+/// ZK namespace for Init circuit
+pub const BETTING_STAKE_ZKAS_INIT_NS: &str = "Init";
+/// ZK namespace for Stake circuit
+pub const BETTING_STAKE_ZKAS_STAKE_NS: &str = "Stake";
+/// ZK namespace for Unstake circuit
+pub const BETTING_STAKE_ZKAS_UNSTAKE_NS: &str = "Unstake";
+/// ZK namespace for Claim circuit
+pub const BETTING_STAKE_ZKAS_CLAIM_NS: &str = "Claim";
+/// ZK namespace for UpdateRisk circuit
+pub const BETTING_STAKE_ZKAS_UPDATE_RISK_NS: &str = "UpdateRisk";

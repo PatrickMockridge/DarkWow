@@ -1,0 +1,24 @@
+k = 11;
+field = "pallas";
+
+constant "CreateMarket" {
+}
+
+witness "CreateMarket" {
+    Base creator_pub_x,
+    Base creator_pub_y,
+    Base target_timestamp,
+    Base close_block,
+    Base nonce,
+}
+
+circuit "CreateMarket" {
+    derived_market_id = poseidon_hash(
+        creator_pub_x,
+        creator_pub_y,
+        target_timestamp,
+        close_block,
+        nonce
+    );
+    constrain_instance(derived_market_id);
+}

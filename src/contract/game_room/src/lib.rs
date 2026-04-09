@@ -75,6 +75,21 @@ pub enum GameRoomFunction {
     ClaimV1 = 0x0A,
 }
 
+// =============================================================================
+// ZK CIRCUIT NAMESPACES
+// =============================================================================
+
+/// ZK namespace for CreateRoom circuit
+pub const GAME_ROOM_ZKAS_CREATE_ROOM_NS: &str = "CreateRoom";
+/// ZK namespace for Deposit circuit
+pub const GAME_ROOM_ZKAS_DEPOSIT_NS: &str = "Deposit";
+/// ZK namespace for PlaceBet circuit
+pub const GAME_ROOM_ZKAS_PLACE_BET_NS: &str = "PlaceBet";
+/// ZK namespace for SettlePot circuit
+pub const GAME_ROOM_ZKAS_SETTLE_POT_NS: &str = "SettlePot";
+/// ZK namespace for Claim circuit
+pub const GAME_ROOM_ZKAS_CLAIM_NS: &str = "Claim";
+
 impl TryFrom<u8> for GameRoomFunction {
     type Error = GameRoomError;
 

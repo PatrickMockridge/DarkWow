@@ -1,0 +1,22 @@
+k = 11;
+field = "pallas";
+
+constant "Initialize" {
+}
+
+witness "Initialize" {
+    Base relayer_pub_x,
+    Base relayer_pub_y,
+    Base config_hash,
+    Base nonce,
+}
+
+circuit "Initialize" {
+    derived_endowment_id = poseidon_hash(
+        relayer_pub_x,
+        relayer_pub_y,
+        config_hash,
+        nonce
+    );
+    constrain_instance(derived_endowment_id);
+}

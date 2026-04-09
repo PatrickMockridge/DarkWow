@@ -23,6 +23,7 @@ darkfi_baccarat_contract = {path = "../baccarat", features = ["no-entrypoint"]}
 darkfi_darktoshi_dice_contract = {path = "../darktoshi_dice", features = ["no-entrypoint"]}
 darkfi_roulette_contract = {path = "../roulette", features = ["no-entrypoint"]}
 darkfi_game_room_contract = { path = "../game_room", package = "game_room_contract" }
+darkfi_auction_contract = {path = "../auction", features = ["no-entrypoint"]}
 
 num-bigint = "0.4.6"
 blake3 = "1.8.2"

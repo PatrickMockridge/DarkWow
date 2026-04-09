@@ -1,0 +1,32 @@
+# Darkbet Exchange Create Market Circuit
+#
+# This circuit proves that:
+# 1. The market_id is correctly derived from the creator and parameters
+#
+# Public inputs:
+# - market_id: The derived market ID
+
+k = 11;
+field = "pallas";
+
+constant "CreateMarket" {
+}
+
+witness "CreateMarket" {
+    Base creator_pub_x,
+    Base creator_pub_y,
+    Base close_block,
+    Base block_height,
+    Base nonce,
+}
+
+circuit "CreateMarket" {
+    # Derive market_id from parameters (same as contract)
+    derived_market_id = poseidon_hash(
+        creator_pub_x,
+        creator_pub_y,
+        close_block,
+        block_height,
+    );
+    constrain_instance(derived_market_id);
+}

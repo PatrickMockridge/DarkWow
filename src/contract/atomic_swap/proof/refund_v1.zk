@@ -1,124 +1,16 @@
 k = 11;
 field = "pallas";
 
-# Atomic Swap: Refund Circuit (Version 1)
-#
-# Refunds funds after timelock expiration.
-#
-# This circuit proves:
-# - The timelock has expired (current_block >= timelock)
-# - The refund is authorized (prover knows the secret)
-# - The nullifier is correctly computed
-#
-# Public Inputs (constrain_instance):
-#   - nullifier: Prevents double-refund
-#   - timelock: The block height at which refund becomes valid
-#   - current_block: The current block height (from transaction)
-#
-# Witnesses:
-#   - secret: The secret known to the original swap creator
-#   - swap_id: The swap being refunded
-
 constant "RefundSwap" {
     EcFixedPointBase NULLIFIER_K,
-    # NULLIFIER_K is used to derive public keys.
 }
 
 witness "RefundSwap" {
-    # Swap ID being refunded
     Base swap_id,
-
-    # The secret (known to the original swap creator)
     Base secret,
 }
 
 circuit "RefundSwap" {
-    # ==========================================================================
-    # PHASE 1: Verify nullifier is correctly computed - PUBLIC INPUT
-    # ==========================================================================
-    #
-    # Nullifier prevents double-refund of the same swap.
-    # The nullifier is a PUBLIC INPUT provided by the verifier.
-
     nullifier_check = poseidon_hash(swap_id, secret);
-
-    # This is the PUBLIC INPUT - nullifier must be provided by verifier
     constrain_instance(nullifier_check);
-
-    # ==========================================================================
-    # PHUNDAMT 2: Verify timelock has expired - PUBLIC INPUTS
-    # ==========================================================================
-    #
-    # The timelock must have passed for a refund to be valid.
-    # Both timelock and current_block are PUBLIC INPUTS.
-    #
-    # We verify: current_block >= timelock
-    # Which is equivalent to: current_block - timelock >= 0
-    #
-    # Using the safemath pattern for <= check:
-    # To prove current_block >= timelock (i.e., timelock <= current_block)
-    # We use: timelock < current_block + 1
-    #
-    # Note: We use Uint64 for block heights to match DarkFi's block model
-
-    # The timelock and current_block are passed as public inputs
-    # But we need to constrain them within the field
-    # Uint64 values are directly usable in field operations
-
-    # For refund, we just need to verify the timelock has passed.
-    # The comparison is done outside the circuit in the contract code.
-    # The circuit just commits to the values.
-
-    # ==========================================================================
-    # SOUNDNESS NOTES
-    # ==========================================================================
-    #
-    # This circuit uses ONLY proven opcodes:
-    #   - poseidon_hash: field-proven, standard in DarkFi
-    #   - constrain_equal_base: equality constraint
-    #   - constrain_instance: public input commitment
-    #
-    # There are NO uses of experimental opcodes.
-
-    # ==========================================================================
-    # WHAT THIS CIRCUIT PROVES
-    # ==========================================================================
-    #
-    # This circuit proves:
-    #   1. The prover knows the secret for this swap
-    #   2. The nullifier is correctly computed from swap_id and secret
-    #
-    # What it DOES NOT prove:
-    #   1. The timelock has passed (this is verified by the contract,
-    #      not in the ZK circuit - the contract checks current_block >= timelock)
-    #
-    # The timelock check is done in process_instruction, not in the circuit,
-    # because we need access to the current block height which comes from
-    # the blockchain, not from private witnesses.
-
-    # ==========================================================================
-    # REFUND FLOW
-    # ==========================================================================
-    #
-    # Refund can only happen after the timelock has expired:
-    #
-    # 1. Either party can initiate a refund after timelock
-    # 2. The refund circuit proves they know the secret (authorization)
-    # 3. The nullifier is emitted to prevent double-refund
-    # 4. The funds are returned to the original depositor
-    #
-    # Note: Once refunded, the swap cannot be claimed (nullifier prevents it)
-
-    # ==========================================================================
-    # SECURITY CONSIDERATIONS
-    # ==========================================================================
-    #
-    # The timelock check is CRITICAL and must be enforced by the contract:
-    # - process_instruction must verify current_block >= timelock
-    # - This is NOT done in the circuit because block height is not a ZK witness
-    # - The circuit only proves knowledge of secret and correct nullifier
-    #
-    # A malicious prover could:
-    # - Generate a valid proof for a swap they created
-    # - But they cannot bypass the timelock check in the contract
 }

@@ -38,6 +38,7 @@ use darkfi::{
     zkas::ZkBinary,
     Result,
 };
+use darkfi_auction_contract::model::{AuctionId, BidId};
 use darkfi_dao_contract::model::{Dao, DaoBulla, DaoProposal, DaoProposalBulla, DaoVoteParams};
 use darkfi_money_contract::{
     client::{MoneyNote, OwnCoin},
@@ -124,6 +125,45 @@ mod roulette;
 
 /// `GameRoom::CreateRoom`, `Deposit`, `PlaceBet`, etc.
 mod game_room;
+
+/// `Auction::CreateAuction`, `PlaceBid`, `CloseAuction`, etc.
+mod auction;
+
+/// `AtomicSwap::CreateSwap`, `Claim`, `Refund`, etc.
+mod atomic_swap;
+
+/// `Attestation::CreateAttestation`, `CreateClaim`, etc.
+mod attestation;
+
+/// `BlockHeightPrediction::CreateMarket`, `CreatePosition`, etc.
+mod block_height_prediction;
+
+/// `Bridge::Deposit`, `Withdraw`, etc.
+mod bridge;
+
+/// `Escrow::CreateEscrow`, `Claim`, `Refund`, etc.
+mod escrow;
+
+/// `InsuranceMarket::RegisterRisk`, `CreateMarket`, etc.
+mod insurance_market;
+
+/// `LaborMarket::CreateJob`, `SubmitDeliverable`, etc.
+mod labor_market;
+
+/// `Oracle::Register`, `SubmitValue`, etc.
+mod oracle;
+
+/// `PoolStake::CreatePool`, `JoinPool`, `AllocateCoverage`, etc.
+mod pool_stake;
+
+/// `RelayerEndowment::Initialize`, `DeployCapital`, `ClaimFees`, etc.
+mod relayer_endowment;
+
+/// `Subscription::Subscribe`, `Cancel`, `Renew`, etc.
+mod subscription;
+
+/// `Tender::CreateTender`, `SubmitBid`, `RevealBid`, etc.
+mod tender;
 
 /// PoW target
 const POW_TARGET: u32 = 120;

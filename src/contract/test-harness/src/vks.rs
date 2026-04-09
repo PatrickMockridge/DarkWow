@@ -68,6 +68,21 @@ pub const DAO_ESCROW_ZKAS_PREMIUM_NS: &str = "PayPremium";
 
 /// Identity contract ZK namespaces (WASM contract, ID derived at deployment)
 pub const IDENTITY_CONTRACT_ZKAS_CREATE_CLAIM_V1_NS: &str = "create_claim_v1";
+
+/// MoneyV2 contract ZK namespaces (WASM contract, ID derived at deployment)
+pub const MONEY_V2_CONTRACT_ZKAS_FEE_NS_V1: &str = "Fee_V2";
+pub const MONEY_V2_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V2";
+pub const MONEY_V2_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V2";
+pub const MONEY_V2_CONTRACT_ZKAS_TOKEN_MINT_NS_V1: &str = "TokenMint_V2";
+pub const MONEY_V2_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1: &str = "AuthTokenMint_V2";
+
+/// Auction contract ZK namespaces (WASM contract, ID derived at deployment)
+pub const AUCTION_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateAuction_V1";
+pub const AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V1: &str = "PlaceBid_V1";
+pub const AUCTION_CONTRACT_ZKAS_CLOSE_NS_V1: &str = "CloseAuction_V1";
+pub const AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V1: &str = "ClaimWinnings_V1";
+pub const AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1: &str = "SettleAuction_V1";
+pub const AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1: &str = "RefundBid_V1";
 pub const IDENTITY_CONTRACT_ZKAS_CREATE_CLAIM_V1_L1_NS: &str = "create_claim_v1_l1";
 
 /// Build a `PathBuf` to a cachefile
@@ -195,6 +210,19 @@ pub fn get_cached_pks_and_vks() -> Result<(Pks, Vks)> {
         // Roulette (WASM contract - deployed via deployooor)
         &include_bytes!("../../roulette/proof/place_bet_v1.zk.bin")[..],
         &include_bytes!("../../roulette/proof/settle_bet_v1.zk.bin")[..],
+        // MoneyV2 (WASM contract - deployed via deployooor)
+        &include_bytes!("../../money_v2/proof/fee_v1.zk.bin")[..],
+        &include_bytes!("../../money_v2/proof/mint_v1.zk.bin")[..],
+        &include_bytes!("../../money_v2/proof/burn_v1.zk.bin")[..],
+        &include_bytes!("../../money_v2/proof/token_mint_v1.zk.bin")[..],
+        &include_bytes!("../../money_v2/proof/auth_token_mint_v1.zk.bin")[..],
+        // Auction (WASM contract - deployed via deployooor)
+        &include_bytes!("../../auction/proof/create_auction_v1.zk.bin")[..],
+        &include_bytes!("../../auction/proof/place_bid_v1.zk.bin")[..],
+        &include_bytes!("../../auction/proof/close_auction_v1.zk.bin")[..],
+        &include_bytes!("../../auction/proof/claim_winnings_v1.zk.bin")[..],
+        &include_bytes!("../../auction/proof/settle_auction_v1.zk.bin")[..],
+        &include_bytes!("../../auction/proof/refund_bid_v1.zk.bin")[..],
     ];
 
     let mut pks = vec![];
@@ -311,6 +339,27 @@ pub fn inject(overlay: &BlockchainOverlayPtr, vks: &Vks) -> Result<()> {
             DEX_CONTRACT_ZKAS_EXECUTE_SWAP_SLIPPAGE_NS_V1 |
             DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V1 => {
                 debug!("DEX ZK namespace {} skipped - WASM contract, injected post-deployment", namespace);
+            }
+
+            // MoneyV2 contract circuits (WASM contract - dynamically deployed)
+            // VK injection for money_v2 must happen after contract deployment.
+            MONEY_V2_CONTRACT_ZKAS_FEE_NS_V1 |
+            MONEY_V2_CONTRACT_ZKAS_MINT_NS_V1 |
+            MONEY_V2_CONTRACT_ZKAS_BURN_NS_V1 |
+            MONEY_V2_CONTRACT_ZKAS_TOKEN_MINT_NS_V1 |
+            MONEY_V2_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1 => {
+                debug!("MoneyV2 ZK namespace {} skipped - WASM contract, injected post-deployment", namespace);
+            }
+
+            // Auction contract circuits (WASM contract - dynamically deployed)
+            // VK injection for auction must happen after contract deployment.
+            AUCTION_CONTRACT_ZKAS_CREATE_NS_V1 |
+            AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V1 |
+            AUCTION_CONTRACT_ZKAS_CLOSE_NS_V1 |
+            AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V1 |
+            AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1 |
+            AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1 => {
+                debug!("Auction ZK namespace {} skipped - WASM contract, injected post-deployment", namespace);
             }
 
             x => panic!("Found unhandled zkas namespace {x}"),

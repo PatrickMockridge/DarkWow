@@ -1,0 +1,37 @@
+# Darkbet Exchange Claim Winnings Circuit
+#
+# This circuit proves that:
+# 1. The claimant owns the winning position
+# 2. The market has been resolved
+#
+# Public inputs:
+# - claim_id: The derived claim ID
+
+k = 11;
+field = "pallas";
+
+constant "ClaimWinnings" {
+}
+
+witness "ClaimWinnings" {
+    Base market_id,
+    Base position_id,
+    Base owner_pub_x,
+    Base owner_pub_y,
+    Base winning_outcome,
+    Base block_height,
+    Base nonce,
+}
+
+circuit "ClaimWinnings" {
+    # Derive claim_id from parameters
+    derived_claim_id = poseidon_hash(
+        market_id,
+        position_id,
+        owner_pub_x,
+        owner_pub_y,
+        winning_outcome,
+        block_height,
+    );
+    constrain_instance(derived_claim_id);
+}

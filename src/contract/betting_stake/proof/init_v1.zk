@@ -1,0 +1,29 @@
+# Betting Stake Initialize Circuit
+#
+# This circuit proves that:
+# 1. The staking table ID is correctly derived from the betting contract
+#
+# Public inputs:
+# - table_id: The derived table ID for this staking instance
+
+k = 11;
+field = "pallas";
+
+constant "Init" {
+}
+
+witness "Init" {
+    Base betting_contract_id,
+    Base house_edge_bp,
+    Base risk_profile,
+    Base nonce,
+}
+
+circuit "Init" {
+    # Derive table_id from betting_contract_id and nonce (must match contract logic)
+    derived_table_id = poseidon_hash(
+        betting_contract_id,
+        nonce,
+    );
+    constrain_instance(derived_table_id);
+}

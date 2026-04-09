@@ -1,104 +1,36 @@
 k = 11;
 field = "pallas";
 
-# Atomic Swap: Create Swap Circuit (Version 1)
-#
-# Creates a hashed timelock contract (HTLC) on DarkFi.
-#
-# This circuit proves:
-# - Creator knows the secret (but doesn't reveal it yet)
-# - The poseidon_hash of the secret is computed correctly
-# - The timelock is set correctly
-#
-# Public Inputs (constrain_instance):
-#   - swap_id: H(hash, timelock, receiver_pub, amount, token_id, side, blind)
-#
-# Witnesses:
-#   - secret: The secret (never revealed on-chain in this step)
-#   - hash: poseidon_hash(secret)
-#   - timelock: block height before which refund is not allowed
-#   - amount: Swap amount
-#   - token_id: Token being swapped
-#   - side: 0 = Alice (initiator), 1 = Bob (responder)
-#   - blind: Blinding factor for commitment
-#   - receiver_pub_x, receiver_pub_y: DarkFi public key of recipient
-
 constant "CreateSwap" {
     EcFixedPointBase NULLIFIER_K,
-    # NULLIFIER_K is used to derive public keys from secrets.
 }
 
 witness "CreateSwap" {
-    # Hash of the secret (poseidon_hash, verified in-circuit)
-    Base hash,
-
-    # Timelock block height
-    # Refund not allowed before this block
-    Uint64 timelock,
-
-    # The secret (known only to the initiator)
-    # NOT revealed on-chain during CreateSwap
+    Base swap_id,
     Base secret,
-
-    # Swap details
+    Base hash,
+    Base timelock,
     Base amount,
     Base token_id,
-
-    # Which side: 0 = Alice (initiator), 1 = Bob (responder)
-    Uint8 side,
-
-    # Blinding factor
+    Base side,
     Base blind,
-
-    # Receiver public key
     Base receiver_pub_x,
     Base receiver_pub_y,
 }
 
 circuit "CreateSwap" {
-    # ==========================================================================
-    # PHASE 1: Compute and verify hash of the secret
-    # ==========================================================================
-    #
-    # We compute poseidon_hash(secret) and verify it matches the witness hash.
-    # This proves the creator knows the secret without revealing it.
-
     computed_hash = poseidon_hash(secret);
     constrain_equal_base(computed_hash, hash);
 
-    # ==========================================================================
-    # PHASE 2: Derive swap ID (commitment) - PUBLIC INPUT
-    # ==========================================================================
-    #
-    # The swap ID commits to all swap parameters.
-    # This is what gets stored on-chain.
-    # It is a PUBLIC INPUT - the verifier passes this value.
-
-    derived_swap_id = poseidon_hash([
+    derived_swap_id = poseidon_hash(
         hash,
-        timelock.into(),
+        timelock,
         receiver_pub_x,
         receiver_pub_y,
         amount,
         token_id,
-        side.into(),
+        side,
         blind
-    ]);
-
-    # This is the PUBLIC INPUT - swap_id must be provided by verifier
+    );
     constrain_instance(derived_swap_id);
-
-    # ==========================================================================
-    # SOUNDNESS NOTES
-    # ==========================================================================
-    #
-    # This circuit uses ONLY proven opcodes:
-    #   - poseidon_hash: field-proven, standard in DarkFi
-    #   - constrain_equal_base: equality constraint
-    #   - constrain_instance: public input commitment
-    #
-    # There are NO uses of experimental opcodes.
-    #
-    # The poseidon_hash is verified in-circuit (Phase 1).
-    # The swap_id is a public input verified via constrain_instance.
 }

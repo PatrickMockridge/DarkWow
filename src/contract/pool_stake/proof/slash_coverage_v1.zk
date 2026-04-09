@@ -1,0 +1,24 @@
+k = 11;
+field = "pallas";
+
+constant "SlashCoverage" {
+}
+
+witness "SlashCoverage" {
+    Base allocation_id,
+    Base slashed_amount,
+    Base slashed_to_pub_x,
+    Base slashed_to_pub_y,
+    Base nonce,
+}
+
+circuit "SlashCoverage" {
+    derived_slash_id = poseidon_hash(
+        allocation_id,
+        slashed_amount,
+        slashed_to_pub_x,
+        slashed_to_pub_y,
+        nonce
+    );
+    constrain_instance(derived_slash_id);
+}

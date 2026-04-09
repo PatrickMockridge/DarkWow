@@ -155,6 +155,19 @@ pub const MIN_PROTOCOL_FEE: u32 = 10;
 /// Maximum protocol fee (10%)
 pub const MAX_PROTOCOL_FEE: u32 = 1000;
 
+// =============================================================================
+// ZK CIRCUIT NAMESPACES
+// =============================================================================
+
+/// ZK namespace for CreateMarket circuit
+pub const DARKBET_EXCHANGE_ZKAS_CREATE_MARKET_NS: &str = "CreateMarket";
+/// ZK namespace for BuyPosition circuit
+pub const DARKBET_EXCHANGE_ZKAS_BUY_POSITION_NS: &str = "BuyPosition";
+/// ZK namespace for ClaimWinnings circuit
+pub const DARKBET_EXCHANGE_ZKAS_CLAIM_WINNINGS_NS: &str = "ClaimWinnings";
+/// ZK namespace for AddLiquidity circuit
+pub const DARKBET_EXCHANGE_ZKAS_ADD_LIQUIDITY_NS: &str = "AddLiquidity";
+
 // ============================================================================
 // COMPOSED CONTRACTS
 // ============================================================================

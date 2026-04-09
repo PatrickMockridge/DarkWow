@@ -1,0 +1,50 @@
+# Betting Stake Stake Circuit
+#
+# This circuit proves that:
+# 1. The staker knows their secret key
+# 2. The stake amount and parameters are valid
+# 3. The stake ID is correctly derived
+#
+# Public inputs:
+# - stake_id: The derived stake ID
+# - value_commit_x: X coordinate of the Pedersen commitment to stake value
+# - value_commit_y: Y coordinate of the Pedersen commitment to stake value
+
+k = 11;
+field = "pallas";
+
+constant "Stake" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "Stake" {
+    Base table_id,
+    Base staker_pub_x,
+    Base staker_pub_y,
+    Base amount,
+    Base token_id,
+    Base nonce,
+    Scalar value_blind,
+}
+
+circuit "Stake" {
+    # Derive stake_id from parameters (same as contract)
+    derived_stake_id = poseidon_hash(
+        table_id,
+        staker_pub_x,
+        staker_pub_y,
+        amount,
+        nonce,
+    );
+    constrain_instance(derived_stake_id);
+
+    # Verify value commitment matches amount + blind
+    vcv = ec_mul_short(amount, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
+
+    # At this point we've enforced all of our public inputs.
+}

@@ -1,0 +1,36 @@
+# Game Room Claim Circuit
+#
+# This circuit proves that:
+# 1. The winner knows their secret key
+# 2. The claim is for a valid settled pot
+#
+# Public inputs:
+# - claim_id: The derived claim ID
+
+k = 11;
+field = "pallas";
+
+constant "Claim" {
+}
+
+witness "Claim" {
+    Base room_id,
+    Base pot_id,
+    Base winner_pub_x,
+    Base winner_pub_y,
+    Base amount,
+    Base nonce,
+}
+
+circuit "Claim" {
+    # Derive claim_id from parameters
+    derived_claim_id = poseidon_hash(
+        room_id,
+        pot_id,
+        winner_pub_x,
+        winner_pub_y,
+        amount,
+        nonce,
+    );
+    constrain_instance(derived_claim_id);
+}

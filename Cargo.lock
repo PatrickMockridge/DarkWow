@@ -1964,6 +1964,7 @@ dependencies = [
  "darkfi-identity-contract",
  "darkfi-sdk",
  "darkfi-serial",
+ "darkfi_auction_contract",
  "darkfi_baccarat_contract",
  "darkfi_dao_contract",
  "darkfi_dao_escrow_contract",

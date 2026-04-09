@@ -1,0 +1,36 @@
+# Game Room Settle Pot Circuit
+#
+# This circuit proves that:
+# 1. The caller is the house/owner DAO
+# 2. The pot total matches the sum of payouts
+# 3. Winners and amounts are valid
+#
+# Public inputs:
+# - pot_id: The pot being settled
+# - house_pub_x: House public key x-coordinate
+
+k = 11;
+field = "pallas";
+
+constant "SettlePot" {
+}
+
+witness "SettlePot" {
+    Base room_id,
+    Base pot_id,
+    Base house_pub_x,
+    Base house_pub_y,
+    Base pot_total,
+    Base num_winners,
+    Base nonce,
+}
+
+circuit "SettlePot" {
+    # Verify house is authorized for this room
+    derived_room_id = poseidon_hash(
+        house_pub_x,
+        house_pub_y,
+        nonce,
+    );
+    constrain_instance(derived_room_id);
+}

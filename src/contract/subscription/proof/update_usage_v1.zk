@@ -1,0 +1,24 @@
+k = 11;
+field = "pallas";
+
+constant "UpdateUsage" {
+}
+
+witness "UpdateUsage" {
+    Base subscription_id,
+    Base subscriber_pub_x,
+    Base subscriber_pub_y,
+    Base usage_timestamp,
+    Base nonce,
+}
+
+circuit "UpdateUsage" {
+    derived_id = poseidon_hash(
+        subscription_id,
+        subscriber_pub_x,
+        subscriber_pub_y,
+        usage_timestamp,
+        nonce
+    );
+    constrain_instance(derived_id);
+}

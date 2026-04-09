@@ -1,360 +1,51 @@
 k = 11;
 field = "pallas";
 
-constant "SubscribeV1" {
-    EcFixedPointBase SUBSCRIBER_K,
-    # SUBSCRIBER_K is a fixed generator point on the Pallas curve.
-    # Used with ec_mul_base to derive public keys from subscriber secrets.
-    # This is the same base point used throughout DarkFi for key derivation.
-
+constant "Subscribe" {
+    EcFixedPointBase NULLIFIER_K,
     EcFixedPointShort VALUE_COMMIT_VALUE,
-    # Pedersen generator for the deposit value.
-    # Used in: value_commit = deposit * VALUE_COMMIT_VALUE + blind * VALUE_COMMIT_RANDOM
-
     EcFixedPoint VALUE_COMMIT_RANDOM,
-    # Pedersen generator for the blinding factor.
-    # Used in: value_commit = deposit * VALUE_COMMIT_VALUE + blind * VALUE_COMMIT_RANDOM
 }
 
-witness "SubscribeV1" {
-    # =========================================================================
-    # PUBLIC INPUTS (verified on-chain)
-    # =========================================================================
-
-    # Subscription identifier (commitment).
-    # User must prove: id = H(subscriber_pub, plan_id, deposit, token, lock_until_block)
+witness "Subscribe" {
     Base subscription_id,
-
-    # Subscriber's DarkFi public key (X coordinate)
     Base subscriber_pub_x,
-
-    # Subscriber's DarkFi public key (Y coordinate)
     Base subscriber_pub_y,
-
-    # Plan ID for this subscription
-    Uint32 plan_id,
-
-    # Deposit amount held in escrow (subscription fee + security deposit)
+    Base plan_id,
     Base deposit,
-
-    # Token ID for the deposit
     Base token_id,
-
-    # Block height when subscription expires (time lock)
-    # User cannot get refund until this block is reached.
-    # Block-based lock: no oracle needed, DarkFi has deterministic blocks.
-    Uint64 lock_until_block,
-
-    # Merkle root of the plan registry.
-    # Proves plan_id corresponds to a valid plan in the subscription service.
-    Base plan_merkle_root,
-
-    # Current block height (for time lock verification)
-    Uint64 current_block,
-
-    # Value commitment (Pedersen commitment to deposit amount)
-    # C = deposit * G1 + blind * G2
-    # This is the commitment the user creates to hide their deposit.
+    Base lock_until_block,
     Base value_commit_x,
     Base value_commit_y,
-
-    # =========================================================================
-    # DAO-ESCROW INTEGRATION (optional, for insurance tier discount)
-    # =========================================================================
-
-    # DAO-Escrow bulla (identifies the insurance pool)
-    Base dao_escrow_bulla,
-
-    # DAO-Escrow membership note (proves membership)
-    Base dao_membership_note,
-
-    # DAO-Escrow Merkle root (for verifying membership note)
-    Base dao_escrow_merkle_root,
-
-    # =========================================================================
-    # PRIVATE INPUTS (witnesses, never revealed on-chain)
-    # =========================================================================
-
-    # Subscriber's secret.
-    # NEVER revealed on-chain. Used to derive:
-    #   - derived_id = H(subscriber_pub, plan_id, deposit, token, lock_until_block, secret, nonce)
-    #   - subscriber_capability for access control
     Base subscriber_secret,
-
-    # Nonce for the subscription (unpredictability)
     Base nonce,
-
-    # Merkle proof of the plan.
-    # Proves plan_id exists in the plan Merkle tree.
-    Base plan_merkle_proof[3],
-
-    # Blinding factor used in value commitment
-    Base value_blind,
-
-    # DAO-Escrow membership details
-    Base dao_member_pub_x,
-    Base dao_member_pub_y,
-    Base dao_membership_expiry,
-    Base dao_membership_value,
-    Uint32 dao_leaf_pos,
-    MerklePath dao_path,
-
-    # =========================================================================
-    # MERKLE PROOF (plan verification)
-    # =========================================================================
-
-    # Position of the plan leaf in the Merkle tree
-    Uint32 plan_leaf_pos,
-
-    # Plan authentication path
-    MerklePath plan_path,
+    Scalar value_blind,
 }
 
-circuit "SubscribeV1" {
-    # ==========================================================================
-    # PHASE 1: Derive subscriber public key from secret
-    # ==========================================================================
-    #
-    # Object Capability model: The subscriber proves they own the private key
-    # by deriving the public key from the secret in zero knowledge.
-    #
-    # This is the same pattern used in DarkFi's money contract for
-    # sender authentication - proving knowledge of secret without revealing it.
-
-    # Derive subscriber public key
-    # subscriber_pub = subscriber_secret * SUBSCRIBER_K
-    derived_subscriber_pub = ec_mul_base(subscriber_secret, SUBSCRIBER_K);
-
-    # Extract coordinates
+circuit "Subscribe" {
+    derived_subscriber_pub = ec_mul_base(subscriber_secret, NULLIFIER_K);
     derived_sub_x = ec_get_x(derived_subscriber_pub);
     derived_sub_y = ec_get_y(derived_subscriber_pub);
-
-    # Constrain derived public key matches the public input
     constrain_equal_base(derived_sub_x, subscriber_pub_x);
     constrain_equal_base(derived_sub_y, subscriber_pub_y);
-
-    # ==========================================================================
-    # PHASE 2: Verify subscription ID (commitment)
-    # ==========================================================================
-    #
-    # The subscription ID is a commitment that binds:
-    #   - subscriber: who owns this subscription
-    #   - plan_id: what plan they're subscribing to
-    #   - deposit: how much they're locking
-    #   - token: which token
-    #   - lock_until_block: when they can get refund
-    #   - secret + nonce: ensures only subscriber can use this
-    #
-    # This is similar to how DarkFi's money contract uses commitments
-    # to hide values while binding them to specific conditions.
 
     derived_id = poseidon_hash(
         subscriber_pub_x,
         subscriber_pub_y,
-        plan_id.into(),
+        plan_id,
         deposit,
         token_id,
-        lock_until_block.into(),
+        lock_until_block,
         subscriber_secret,
         nonce
     );
-
-    # Constrain subscription ID matches
     constrain_equal_base(derived_id, subscription_id);
 
-    # ==========================================================================
-    # PHASE 3: Verify plan Merkle proof
-    # ==========================================================================
-    #
-    # This proves plan_id corresponds to a valid, approved subscription plan.
-    # The plan defines:
-    #   - price: subscription fee
-    #   - duration: how long the subscription lasts
-    #   - treasury_share: percentage going to DAO treasury
-    #   - endowment_share: percentage going to insurance fund
-    #
-    # The plan Merkle tree is managed by the subscription service DAO.
-
-    # Create the plan leaf hash
-    plan_leaf = poseidon_hash(plan_id.into());
-
-    # Verify the Merkle proof
-    plan_root = merkle_root(plan_leaf_pos, plan_path, plan_leaf);
-    constrain_equal_base(plan_root, plan_merkle_root);
-
-    # ==========================================================================
-    # PHASE 4: Verify time lock (block-based, no oracle needed)
-    # ==========================================================================
-    #
-    # DarkFi has deterministic block heights - we can trust the block number
-    # without needing an external oracle. This is a key advantage over
-    # Ethereum-style timestamp-based locks which can be manipulated by miners.
-    #
-    # The subscriber is proving:
-    #   - current_block < lock_until_block (subscription is active)
-    #   - lock_until_block is in the future (not expired)
-
-    # less_than_strict: constrains current_block < lock_until_block
-    # This fails the circuit if current_block >= lock_until_block
-    # The subscriber must prove the subscription hasn't expired yet.
-    less_than_strict(current_block, lock_until_block);
-
-    # ==========================================================================
-    # PHASE 5: Verify DAO-Escrow membership (COMPOSABILITY)
-    # ==========================================================================
-    #
-    # COMPOSABILITY PATTERN: This circuit verifies membership in DAO-Escrow
-    # by checking a Merkle proof of the membership note.
-    #
-    # This demonstrates DarkFi's cross-contract composability:
-    # - DAO-Escrow issues membership notes via pay_premium()
-    # - Subscription verifies those notes via Merkle proof
-    # - No direct state sharing - pure ZK verification
-    #
-    # The subscriber proves:
-    #   - They are a valid DAO-Escrow member (Merkle proof)
-    #   - Their membership hasn't expired (dao_membership_expiry > current_block)
-    #   - Their public key matches the DAO-Escrow registration
-    #
-    # This enables tiered benefits:
-    #   - DAO-Escrow members get subscription discounts
-    #   - Premium subscribers have insurance backing
-    #   - Services can require insurance membership
-
-    # First verify the DAO-Escrow membership note matches what we expect
-    # The note is computed as: H(member_pub, value, token_id, expiry, blind)
-    derived_dao_note = poseidon_hash(
-        dao_member_pub_x,
-        dao_member_pub_y,
-        dao_membership_value,
-        token_id,
-        dao_membership_expiry,
-        dao_escrow_bulla,  # Using bulla as blind factor
-    );
-    constrain_equal_base(derived_dao_note, dao_membership_note);
-
-    # Verify the member's public key matches their subscription public key
-    # This links the DAO-Escrow membership to the subscription
-    constrain_equal_base(dao_member_pub_x, subscriber_pub_x);
-    constrain_equal_base(dao_member_pub_y, subscriber_pub_y);
-
-    # Verify DAO-Escrow membership hasn't expired
-    less_than_strict(current_block, dao_membership_expiry);
-
-    # Verify the Merkle proof of the membership note against DAO-Escrow root
-    # This proves the membership note is in the DAO-Escrow's membership tree
-    dao_root = merkle_root(dao_leaf_pos, dao_path, dao_membership_note);
-    constrain_equal_base(dao_root, dao_escrow_merkle_root);
-
-    # ==========================================================================
-    # PHASE 6: Verify value commitment (deposit)
-    # ==========================================================================
-    #
-    # The subscriber creates a Pedersen commitment to their deposit.
-    # This hides the amount while allowing:
-    #   - Anyone to verify the commitment is valid
-    #   - The subscriber to later prove the amount for refunds
-    #
-    # value_commit = deposit * VALUE_COMMIT_VALUE + value_blind * VALUE_COMMIT_RANDOM
-    # This is proper Pedersen commitment - same as used in money contract.
-
-    # Compute: deposit * VALUE_COMMIT_VALUE
     vcv = ec_mul_short(deposit, VALUE_COMMIT_VALUE);
-
-    # Compute: value_blind * VALUE_COMMIT_RANDOM
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
-
-    # Sum: deposit * G1 + blind * G2
     value_commit_computed = ec_add(vcv, vcr);
-
-    # Extract coordinates
     computed_x = ec_get_x(value_commit_computed);
     computed_y = ec_get_y(value_commit_computed);
-
-    # Verify the commitment matches the public input
     constrain_equal_base(computed_x, value_commit_x);
     constrain_equal_base(computed_y, value_commit_y);
-
-    # ==========================================================================
-    # PHASE 7: Derive subscriber capability (for access control)
-    # ==========================================================================
-    #
-    # The Object Capability pattern: once subscribed, the user receives a
-    # "capability" that grants access rights. The capability is derived from:
-    #   - subscriber: who holds this capability
-    #   - plan_id: what plan they're subscribed to
-    #   - subscription_id: which specific subscription instance
-    #   - permissions: what they can do (read, write, cancel, renew)
-    #   - expires_at: when the capability expires
-    #   - nonce: prevents replay attacks
-    #   - dao_escrow_bulla: insurance tier (if applicable)
-    #
-    # The capability digest is what gets verified when the user wants
-    # to access subscription-only services.
-
-    permissions = 0b0000_0001;  # READ access only for basic subscription
-
-    capability = poseidon_hash(
-        subscriber_pub_x,
-        subscriber_pub_y,
-        plan_id.into(),
-        subscription_id,
-        permissions.into(),
-        lock_until_block.into(),
-        nonce,
-        dao_escrow_bulla  # Include insurance tier in capability
-    );
-
-    # ==========================================================================
-    # COMPOSABILITY NOTES
-    # ==========================================================================
-    #
-    # This circuit demonstrates DarkFi's COMPOSABLE CONTRACT pattern:
-    #
-    # 1. DAO-Escrow issues membership notes (pay_premium_v1.zk)
-    #    - Member pays premium → receives membership note
-    #    - Note includes: member_pub, value, expiry, DAO bulla
-    #
-    # 2. Subscription verifies membership (subscribe_v1.zk)
-    #    - Merkle proof verifies note is in DAO-Escrow tree
-    #    - less_than_strict verifies note hasn't expired
-    #    - Public key linking verifies member identity
-    #
-    # 3. No direct state sharing!
-    #    - DAO-Escrow state is Merklized
-    #    - Subscription verifies Merkle proof
-    #    - Nullifiers prevent double-spending
-    #
-    # This pattern enables:
-    # - Tiered services (member vs non-member pricing)
-    # - Insurance-backed subscriptions
-    # - Cross-contract loyalty programs
-    # - Composable DeFi primitives
-
-    # ==========================================================================
-    # SOUNDNESS NOTES
-    # ==========================================================================
-    #
-    # This circuit uses ONLY proven opcodes (no grey-market opcodes):
-    #   - poseidon_hash: field-proven, standard in DarkFi
-    #   - ec_mul_base, ec_get_x, ec_get_y: standard EC operations
-    #   - less_than_strict: constrain-only comparison (SOUND)
-    #   - merkle_root: properly implemented Merkle verification
-    #   - constrain_equal_base: equality constraint
-    #
-    # There are NO uses of:
-    #   - LessThanOrEqual (gate soundness issue)
-    #   - IsEqualBase (delta-invert issue when a == b)
-    #   - NotBase, BaseLtStrict (unused experimental)
-    #
-    # The block-based time lock (less_than_strict) is sound because:
-    #   - DarkFi block numbers are deterministic
-    #   - The constraint only verifies current_block < lock_until_block
-    #   - If lock_until_block is in the past, the constraint fails
-    #   - This is a simple inequality comparison, not an expensive gate
-    #
-    # DAO-Escrow verification is sound because:
-    #   - Merkle proof verification is deterministic
-    #   - less_than_strict ensures membership hasn't expired
-    #   - Public key linking prevents membership transfer fraud
 }

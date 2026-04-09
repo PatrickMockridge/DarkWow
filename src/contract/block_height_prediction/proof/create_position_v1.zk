@@ -1,0 +1,36 @@
+k = 11;
+field = "pallas";
+
+constant "CreatePosition" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "CreatePosition" {
+    Base market_id,
+    Base player_pub_x,
+    Base player_pub_y,
+    Base predicted_height,
+    Base amount,
+    Base token_id,
+    Base nonce,
+    Scalar value_blind,
+}
+
+circuit "CreatePosition" {
+    derived_position_id = poseidon_hash(
+        market_id,
+        player_pub_x,
+        player_pub_y,
+        predicted_height,
+        amount,
+        nonce
+    );
+    constrain_instance(derived_position_id);
+
+    vcv = ec_mul_short(amount, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
+}
