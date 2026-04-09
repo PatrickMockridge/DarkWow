@@ -1966,6 +1966,7 @@ dependencies = [
  "darkfi_dao_contract",
  "darkfi_deployooor_contract",
  "darkfi_money_contract",
+ "darkfi_stablecoin_contract",
  "num-bigint",
  "rand 0.8.5",
  "sled-overlay",
@@ -7687,8 +7688,10 @@ dependencies = [
 name = "subscription_contract"
 version = "0.1.0"
 dependencies = [
+ "darkfi",
  "darkfi-sdk",
  "darkfi-serial",
+ "rand 0.8.5",
 ]
 
 [[package]]
