@@ -24,6 +24,8 @@ Different DEX deployments serve different users with different privacy/complianc
 | `CancelSwapV1` | 0x04 | Either party cancels (triggers refund) |
 | `UpdateConfigV1` | 0x05 | Update timeout/fee (governance) |
 | `SetTransparencyLevelV1` | 0x06 | Change transparency level (governance) |
+| `ExecuteSwapFeeV1` | 0x07 | Atomic swap with fee deduction (ZK verified) |
+| `ExecuteSwapSlippageV1` | 0x08 | Atomic swap with slippage tolerance (ZK verified) |
 
 ### InitializeV1 (0x00)
 
@@ -122,14 +124,15 @@ net_received = fill_amount - fee;
 ### Complete
 
 - [x] Contract structure and entrypoint
-- [x] All 7 functions (0x00-0x06)
+- [x] All 9 functions (0x00-0x08)
 - [x] Atomic swap DAO implementation
-- [x] 6 ZK circuits
+- [x] 6 ZK circuits (all compiled)
 - [x] Partial fill via LessThanOrEqual
 - [x] Open execution (open_execution + immediate_execute)
-- [x] Slippage tolerance circuits (BaseDiv)
-- [x] Fee calculation circuits (BaseDiv)
+- [x] Slippage tolerance circuits (execute_swap_slippage_v1.zk)
+- [x] Fee calculation circuits (execute_swap_fee_v1.zk)
 - [x] Modular transparency architecture
+- [x] Test harness with full entrypoint coverage
 
 ### Future
 
