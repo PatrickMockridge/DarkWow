@@ -95,6 +95,9 @@ mod dao_propose;
 /// `Dao::Vote` functionality
 mod dao_vote;
 
+/// `DaoEscrow::Initialize`, `PayPremium`, `Withdraw`, etc.
+mod dao_escrow;
+
 /// `Stablecoin::Initialize`, `OpenPosition`, `MintStable`, etc.
 mod stablecoin;
 

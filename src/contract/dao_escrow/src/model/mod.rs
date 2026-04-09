@@ -66,7 +66,7 @@
 //! to the single pool.
 
 use darkfi_sdk::{
-    crypto::{poseidon_hash, BaseBlind, PublicKey},
+    crypto::{poseidon_hash, BaseBlind, PublicKey, ScalarBlind},
     pasta::pallas,
 };
 #[cfg(feature = "async")]
@@ -294,7 +294,7 @@ pub struct PayPremiumParamsV1 {
     /// Membership blind factor
     pub membership_blind: BaseBlind,
     /// Value blind factor
-    pub value_blind: BaseBlind,
+    pub value_blind: ScalarBlind,
     /// Member public key (verified in ZK proof)
     pub member_pubkey: PublicKey,
 }
@@ -360,4 +360,85 @@ pub struct EnableDrainProtectionUpdateV1 {
     pub dao_escrow_bulla: DaoEscrowBulla,
     /// DrainProtection bulla now associated
     pub drain_protection_bulla: DaoEscrowBulla,
+}
+
+// ============================================================================
+// CLAIM / ENDOWMENT WITHDRAWAL TYPES (for EndowmentWithdrawV1)
+// ============================================================================
+
+/// Claim identifier
+pub type ClaimId = pallas::Base;
+
+/// Vote type for claims
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+pub enum VoteType {
+    /// Yes vote
+    Yes = 0,
+    /// No vote
+    No = 1,
+}
+
+impl TryFrom<u8> for VoteType {
+    type Error = darkfi_sdk::error::ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Yes),
+            1 => Ok(Self::No),
+            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+        }
+    }
+}
+
+/// Parameters for proposing an endowment withdrawal (claim)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ProposeClaimParamsV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Claim identifier
+    pub claim_id: ClaimId,
+    /// Amount being claimed
+    pub value: u64,
+    /// Description hash
+    pub description_hash: pallas::Base,
+    /// Recipient public key
+    pub recipient_pubkey: PublicKey,
+    /// Proposer public key
+    pub proposer_pubkey: PublicKey,
+}
+
+/// State update for `ProposeClaimV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ProposeClaimUpdateV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Claim identifier
+    pub claim_id: ClaimId,
+    /// Amount being claimed
+    pub value: u64,
+}
+
+/// Parameters for voting on a claim
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VoteClaimParamsV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Claim identifier
+    pub claim_id: ClaimId,
+    /// Vote type
+    pub vote: VoteType,
+    /// Voter's public key
+    pub voter_pubkey: PublicKey,
+}
+
+/// State update for `VoteClaimV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VoteClaimUpdateV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Claim identifier
+    pub claim_id: ClaimId,
+    /// Updated vote tally
+    pub yes_votes: u64,
+    pub no_votes: u64,
 }
