@@ -769,4 +769,402 @@ impl TestHarness {
 
         Ok(wallet.process_fee(fee_params, holder))
     }
+
+    /// Create an `Identity::VerifyClaimV1` transaction.
+    pub async fn identity_verify_claim(
+        &mut self,
+        holder: &Holder,
+        identity_contract_id: ContractId,
+        claim: darkfi_identity_contract::model::Claim,
+        verifier_pub: [u8; 32],
+        block_height: u32,
+    ) -> Result<(Transaction, VerifyClaimParams, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = VerifyClaimParams { claim, verifier_pub, fee: 0 };
+
+        let mut data = vec![IdentityFunction::VerifyClaimV1 as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: identity_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute an `Identity::VerifyClaimV1` transaction.
+    pub async fn execute_identity_verify_claim_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &VerifyClaimParams,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("identity::verify_claim", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+
+    /// Create an `Identity::CreateClaimV1L1V2` transaction (Level 1 v2).
+    pub async fn identity_create_claim_l1_v2(
+        &mut self,
+        holder: &Holder,
+        identity_contract_id: ContractId,
+        nullifier: IntentNullifier,
+        claim_type: Vec<u8>,
+        predicate: Vec<u8>,
+        revealed_attributes: Vec<Vec<u8>>,
+        predicate_result: u8,
+        block_height: u32,
+    ) -> Result<(Transaction, CreateClaimParamsL1, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = CreateClaimParamsL1 {
+            nullifier,
+            claim_type,
+            predicate,
+            revealed_attributes,
+            proof: vec![],
+            predicate_result,
+            fee: 0,
+        };
+
+        let mut data = vec![IdentityFunction::CreateClaimV1L1V2 as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: identity_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute an `Identity::CreateClaimV1L1V2` transaction.
+    pub async fn execute_identity_create_claim_l1_v2_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &CreateClaimParamsL1,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("identity::create_claim_l1_v2", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+
+    /// Create an `Identity::CreateClaimV1Multi` transaction (multi-credential).
+    pub async fn identity_create_claim_multi(
+        &mut self,
+        holder: &Holder,
+        identity_contract_id: ContractId,
+        nullifier: IntentNullifier,
+        claim_type: Vec<u8>,
+        predicate: Vec<u8>,
+        revealed_attributes: Vec<Vec<u8>>,
+        predicate_result: u8,
+        block_height: u32,
+    ) -> Result<(Transaction, CreateClaimParamsL1, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = CreateClaimParamsL1 {
+            nullifier,
+            claim_type,
+            predicate,
+            revealed_attributes,
+            proof: vec![],
+            predicate_result,
+            fee: 0,
+        };
+
+        let mut data = vec![IdentityFunction::CreateClaimV1Multi as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: identity_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute an `Identity::CreateClaimV1Multi` transaction.
+    pub async fn execute_identity_create_claim_multi_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &CreateClaimParamsL1,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("identity::create_claim_multi", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+
+    /// Create an `Identity::CreateClaimV1Ratio` transaction (ratio-based).
+    pub async fn identity_create_claim_ratio(
+        &mut self,
+        holder: &Holder,
+        identity_contract_id: ContractId,
+        nullifier: IntentNullifier,
+        claim_type: Vec<u8>,
+        predicate: Vec<u8>,
+        revealed_attributes: Vec<Vec<u8>>,
+        predicate_result: u8,
+        block_height: u32,
+    ) -> Result<(Transaction, CreateClaimParamsL1, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = CreateClaimParamsL1 {
+            nullifier,
+            claim_type,
+            predicate,
+            revealed_attributes,
+            proof: vec![],
+            predicate_result,
+            fee: 0,
+        };
+
+        let mut data = vec![IdentityFunction::CreateClaimV1Ratio as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: identity_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute an `Identity::CreateClaimV1Ratio` transaction.
+    pub async fn execute_identity_create_claim_ratio_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &CreateClaimParamsL1,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("identity::create_claim_ratio", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+
+    /// Create an `Identity::RevokeCapabilityV1` transaction.
+    pub async fn identity_revoke_capability(
+        &mut self,
+        holder: &Holder,
+        identity_contract_id: ContractId,
+        capability_id: [u8; 32],
+        holder_pub: [u8; 32],
+        capability_secret: [u8; 32],
+        signature: Vec<u8>,
+        reason: Vec<u8>,
+        block_height: u32,
+    ) -> Result<(Transaction, RevokeCapabilityParams, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = RevokeCapabilityParams {
+            capability_id,
+            holder_pub,
+            capability_secret,
+            signature,
+            reason,
+            fee: 0,
+        };
+
+        let mut data = vec![IdentityFunction::RevokeCapabilityV1 as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: identity_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute an `Identity::RevokeCapabilityV1` transaction.
+    pub async fn execute_identity_revoke_capability_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &RevokeCapabilityParams,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("identity::revoke_capability", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
 }
