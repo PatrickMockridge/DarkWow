@@ -28,8 +28,10 @@ use darkfi::{
 use darkfi_dao_escrow_contract::{
     model::{
         DaoEscrowBulla, EnableDrainProtectionParamsV1, EnableDrainProtectionUpdateV1,
-        InitializeParamsV1, InitializeUpdateV1, MembershipNote, PayPremiumParamsV1,
-        PayPremiumUpdateV1, UpdateParamsV1, UpdateUpdateV1, WithdrawParamsV1, WithdrawUpdateV1,
+        EndowmentWithdrawParamsV1, EndowmentWithdrawUpdateV1, InitializeParamsV1,
+        InitializeUpdateV1, MembershipNote, PayPremiumParamsV1, PayPremiumUpdateV1,
+        TreasurySpendParamsV1, TreasurySpendUpdateV1, UpdateParamsV1, UpdateUpdateV1,
+        WithdrawParamsV1, WithdrawUpdateV1,
     },
     DaoEscrowFunction,
 };
@@ -498,6 +500,172 @@ impl TestHarness {
         let wallet = self.wallet_mut(holder);
 
         wallet.add_transaction("dao_escrow::enable_drain_protection", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+
+    /// Create a `DaoEscrow::EndowmentWithdrawV1` transaction.
+    ///
+    /// Executes an approved claim from the endowment pool.
+    pub async fn dao_escrow_endowment_withdraw(
+        &mut self,
+        holder: &Holder,
+        dao_escrow_contract_id: ContractId,
+        dao_escrow_bulla: DaoEscrowBulla,
+        claim_id: pallas::Base,
+        value: u64,
+        recipient_pubkey: PublicKey,
+        block_height: u32,
+    ) -> Result<(Transaction, EndowmentWithdrawParamsV1, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = EndowmentWithdrawParamsV1 {
+            dao_escrow_bulla,
+            claim_id,
+            recipient_pubkey,
+            value,
+        };
+
+        // Build contract call data
+        let mut data = vec![DaoEscrowFunction::EndowmentWithdrawV1 as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: dao_escrow_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        // If we have tx fees enabled, make an offering
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        // Build and sign the transaction
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute a `DaoEscrow::EndowmentWithdrawV1` transaction.
+    pub async fn execute_dao_escrow_endowment_withdraw_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &EndowmentWithdrawParamsV1,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("dao_escrow::endowment_withdraw", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+
+    /// Create a `DaoEscrow::TreasurySpendV1` transaction.
+    ///
+    /// Executes an approved treasury spend proposal.
+    pub async fn dao_escrow_treasury_spend(
+        &mut self,
+        holder: &Holder,
+        dao_escrow_contract_id: ContractId,
+        dao_escrow_bulla: DaoEscrowBulla,
+        proposal_id: pallas::Base,
+        value: u64,
+        recipient_pubkey: PublicKey,
+        block_height: u32,
+    ) -> Result<(Transaction, TreasurySpendParamsV1, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = TreasurySpendParamsV1 {
+            dao_escrow_bulla,
+            proposal_id,
+            recipient_pubkey,
+            value,
+        };
+
+        // Build contract call data
+        let mut data = vec![DaoEscrowFunction::TreasurySpendV1 as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: dao_escrow_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        // If we have tx fees enabled, make an offering
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        // Build and sign the transaction
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute a `DaoEscrow::TreasurySpendV1` transaction.
+    pub async fn execute_dao_escrow_treasury_spend_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &TreasurySpendParamsV1,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("dao_escrow::treasury_spend", tx, block_height).await?;
 
         if !append {
             return Ok(vec![]);

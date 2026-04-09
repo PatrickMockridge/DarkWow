@@ -442,3 +442,63 @@ pub struct VoteClaimUpdateV1 {
     pub yes_votes: u64,
     pub no_votes: u64,
 }
+
+// ============================================================================
+// ENDOWMENT WITHDRAWAL (Execute approved claim)
+// ============================================================================
+
+/// Parameters for executing an approved endowment withdrawal (claim)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct EndowmentWithdrawParamsV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Claim identifier (must have been approved by DAO vote)
+    pub claim_id: ClaimId,
+    /// Recipient of the funds
+    pub recipient_pubkey: PublicKey,
+    /// Amount to withdraw
+    pub value: u64,
+}
+
+/// State update for `EndowmentWithdrawV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct EndowmentWithdrawUpdateV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Claim identifier
+    pub claim_id: ClaimId,
+    /// Amount withdrawn
+    pub value: u64,
+    /// Updated total endowment
+    pub total_endowment: u64,
+}
+
+// ============================================================================
+// TREASURY SPEND (Execute approved treasury proposal)
+// ============================================================================
+
+/// Parameters for executing an approved treasury spend
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct TreasurySpendParamsV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Proposal identifier
+    pub proposal_id: pallas::Base,
+    /// Recipient of the funds
+    pub recipient_pubkey: PublicKey,
+    /// Amount to spend
+    pub value: u64,
+}
+
+/// State update for `TreasurySpendV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct TreasurySpendUpdateV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Proposal identifier
+    pub proposal_id: pallas::Base,
+    /// Amount spent
+    pub value: u64,
+    /// Updated total treasury
+    pub total_treasury: u64,
+}

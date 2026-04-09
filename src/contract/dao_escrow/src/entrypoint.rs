@@ -141,14 +141,12 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             withdraw_v1(cid, params)
         }
         DaoEscrowFunction::EndowmentWithdrawV1 => {
-            // TODO: Implement endowment withdrawal (requires DAO governance)
-            msg!("[dao_escrow::process_instruction] EndowmentWithdrawV1 not yet implemented");
-            Err(crate::error::DaoEscrowError::EndowmentWithdrawUnauthorized.into())
+            let params: model::EndowmentWithdrawParamsV1 = deserialize(&self_.data[1..])?;
+            endowment_withdraw_v1(cid, params)
         }
         DaoEscrowFunction::TreasurySpendV1 => {
-            // TODO: Implement treasury spending (standard DAO governance)
-            msg!("[dao_escrow::process_instruction] TreasurySpendV1 not yet implemented");
-            Err(crate::error::DaoEscrowError::InsufficientEndowment.into())
+            let params: model::TreasurySpendParamsV1 = deserialize(&self_.data[1..])?;
+            treasury_spend_v1(cid, params)
         }
         DaoEscrowFunction::EnableDrainProtectionV1 => {
             let params: model::EnableDrainProtectionParamsV1 = deserialize(&self_.data[1..])?;
@@ -183,14 +181,12 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             withdraw_apply_v1(cid, update)
         }
         DaoEscrowFunction::EndowmentWithdrawV1 => {
-            // TODO: Process endowment withdrawal (requires DAO vote)
-            msg!("[dao_escrow::process_update] EndowmentWithdrawV1 not yet implemented");
-            Ok(())
+            let update: model::EndowmentWithdrawUpdateV1 = deserialize(&update_data[1..])?;
+            endowment_withdraw_apply_v1(cid, update)
         }
         DaoEscrowFunction::TreasurySpendV1 => {
-            // TODO: Process treasury spending (standard DAO governance)
-            msg!("[dao_escrow::process_update] TreasurySpendV1 not yet implemented");
-            Ok(())
+            let update: model::TreasurySpendUpdateV1 = deserialize(&update_data[1..])?;
+            treasury_spend_apply_v1(cid, update)
         }
         DaoEscrowFunction::EnableDrainProtectionV1 => {
             let update: model::EnableDrainProtectionUpdateV1 = deserialize(&update_data[1..])?;
@@ -461,5 +457,141 @@ fn enable_drain_protection_apply_v1(
     }
 
     msg!("[dao_escrow::enable_drain_protection_apply_v1] Drain protection enabled");
+    Ok(())
+}
+
+/// EndowmentWithdrawV1 instruction - executes an approved claim from endowment
+fn endowment_withdraw_v1(
+    cid: ContractId,
+    params: model::EndowmentWithdrawParamsV1,
+) -> ContractResult {
+    msg!("[dao_escrow::endowment_withdraw_v1] Processing endowment withdrawal");
+
+    // Verify endowment exists
+    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment: model::DaoEscrow = match endowment_data {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[dao_escrow::endowment_withdraw_v1] ERROR: Endowment not found");
+            return Err(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()).into())
+        }
+    };
+
+    // Verify sufficient endowment balance
+    if endowment.total_endowment < params.value {
+        msg!("[dao_escrow::endowment_withdraw_v1] ERROR: Insufficient endowment balance");
+        return Err(DaoEscrowError::InsufficientEndowment.into())
+    }
+
+    // Calculate new total
+    let new_total_endowment = endowment.total_endowment - params.value;
+
+    // Create update
+    let update = model::EndowmentWithdrawUpdateV1 {
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        claim_id: params.claim_id,
+        value: params.value,
+        total_endowment: new_total_endowment,
+    };
+
+    msg!(
+        "[dao_escrow::endowment_withdraw_v1] Endowment withdrawal processed: {} to {:?}",
+        params.value,
+        params.recipient_pubkey
+    );
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+/// EndowmentWithdrawV1 apply - update endowment totals
+fn endowment_withdraw_apply_v1(
+    cid: ContractId,
+    update: model::EndowmentWithdrawUpdateV1,
+) -> ContractResult {
+    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
+
+    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
+    if let Some(data) = endowment_data {
+        let mut endowment: model::DaoEscrow = deserialize(&data)?;
+        endowment.total_endowment = update.total_endowment;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
+    }
+
+    msg!(
+        "[dao_escrow::endowment_withdraw_apply_v1] Endowment updated: new total = {}",
+        update.total_endowment
+    );
+    Ok(())
+}
+
+/// TreasurySpendV1 instruction - executes an approved treasury spend
+fn treasury_spend_v1(
+    cid: ContractId,
+    params: model::TreasurySpendParamsV1,
+) -> ContractResult {
+    msg!("[dao_escrow::treasury_spend_v1] Processing treasury spend");
+
+    // Verify endowment exists and is in treasury mode
+    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment: model::DaoEscrow = match endowment_data {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[dao_escrow::treasury_spend_v1] ERROR: Endowment not found");
+            return Err(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()).into())
+        }
+    };
+
+    // Verify treasury mode or treasury+endowment mode
+    if endowment.mode != model::DaoEscrowMode::Treasury &&
+        endowment.mode != model::DaoEscrowMode::TreasuryEndowment
+    {
+        msg!("[dao_escrow::treasury_spend_v1] ERROR: Not a treasury mode DAO-Escrow");
+        return Err(DaoEscrowError::InvalidState { expected: "Treasury mode".to_string(), actual: "Escrow mode".to_string() }.into())
+    }
+
+    // Verify sufficient treasury balance
+    if endowment.total_treasury < params.value {
+        msg!("[dao_escrow::treasury_spend_v1] ERROR: Insufficient treasury balance");
+        return Err(DaoEscrowError::InsufficientEndowment.into())
+    }
+
+    // Calculate new total
+    let new_total_treasury = endowment.total_treasury - params.value;
+
+    // Create update
+    let update = model::TreasurySpendUpdateV1 {
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        proposal_id: params.proposal_id,
+        value: params.value,
+        total_treasury: new_total_treasury,
+    };
+
+    msg!(
+        "[dao_escrow::treasury_spend_v1] Treasury spend processed: {} to {:?}",
+        params.value,
+        params.recipient_pubkey
+    );
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+/// TreasurySpendV1 apply - update treasury totals
+fn treasury_spend_apply_v1(
+    cid: ContractId,
+    update: model::TreasurySpendUpdateV1,
+) -> ContractResult {
+    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
+
+    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
+    if let Some(data) = endowment_data {
+        let mut endowment: model::DaoEscrow = deserialize(&data)?;
+        endowment.total_treasury = update.total_treasury;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
+    }
+
+    msg!(
+        "[dao_escrow::treasury_spend_apply_v1] Treasury updated: new total = {}",
+        update.total_treasury
+    );
     Ok(())
 }
