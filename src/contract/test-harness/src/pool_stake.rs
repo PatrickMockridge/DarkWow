@@ -69,18 +69,18 @@ impl TestHarness {
         &mut self,
         holder: &Holder,
         contract_id: ContractId,
-        creator_pub: pallas::Base,
+        owner_pub: darkfi_sdk::crypto::PublicKey,
         max_coverage_ratio: u32,
-        fee_bp: u32,
+        operator_fee_bp: u32,
         block_height: u32,
     ) -> Result<(Transaction, CreatePoolParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
         let params = CreatePoolParamsV1 {
-            creator_pub,
+            owner_pub,
             max_coverage_ratio,
-            fee_bp,
+            operator_fee_bp,
         };
 
         let mut data = vec![PoolStakeFunction::CreatePoolV1 as u8];

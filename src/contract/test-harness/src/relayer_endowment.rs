@@ -69,16 +69,14 @@ impl TestHarness {
         &mut self,
         holder: &Holder,
         contract_id: ContractId,
-        relayer_pub: pallas::Base,
-        backer_cut_bp: u32,
+        default_backer_cut_bp: u32,
         block_height: u32,
     ) -> Result<(Transaction, InitializeParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
         let params = InitializeParamsV1 {
-            relayer_pub,
-            backer_cut_bp,
+            default_backer_cut_bp,
         };
 
         let mut data = vec![RelayerEndowmentFunction::InitializeV1 as u8];
@@ -143,20 +141,18 @@ impl TestHarness {
         &mut self,
         holder: &Holder,
         contract_id: ContractId,
-        endowment_id: pallas::Base,
-        backer_pub: pallas::Base,
+        relayer_pub: darkfi_sdk::crypto::PublicKey,
         amount: u64,
-        token_id: pallas::Base,
+        backer_cut_bp: u32,
         block_height: u32,
     ) -> Result<(Transaction, DeployCapitalParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
         let params = DeployCapitalParamsV1 {
-            endowment_id,
-            backer_pub,
+            relayer_pub,
             amount,
-            token_id,
+            backer_cut_bp,
         };
 
         let mut data = vec![RelayerEndowmentFunction::DeployCapitalV1 as u8];

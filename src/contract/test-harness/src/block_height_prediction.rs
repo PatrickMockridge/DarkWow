@@ -71,18 +71,24 @@ impl TestHarness {
         &mut self,
         holder: &Holder,
         contract_id: ContractId,
-        creator_pub: pallas::Base,
-        target_timestamp: u64,
-        close_block: u64,
+        creator: darkfi_sdk::crypto::PublicKey,
+        target_time: u64,
+        initial_prediction: u64,
+        confirmation_depth: u8,
+        protocol_fee: u32,
+        token_id: pallas::Base,
         block_height: u32,
     ) -> Result<(Transaction, CreateMarketParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
         let params = CreateMarketParamsV1 {
-            creator_pub,
-            target_timestamp,
-            close_block,
+            creator,
+            target_time,
+            initial_prediction,
+            confirmation_depth,
+            protocol_fee,
+            token_id,
         };
 
         let mut data = vec![BlockHeightPredictionFunction::CreateMarketV1 as u8];
@@ -148,10 +154,13 @@ impl TestHarness {
         holder: &Holder,
         contract_id: ContractId,
         market_id: pallas::Base,
-        player_pub: pallas::Base,
         predicted_height: u64,
+        tolerance: u8,
+        position_type: u8,
         amount: u64,
-        token_id: pallas::Base,
+        owner: darkfi_sdk::crypto::PublicKey,
+        value_commit: pallas::Point,
+        signature: pallas::Base,
         block_height: u32,
     ) -> Result<(Transaction, CreatePositionParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
@@ -159,10 +168,13 @@ impl TestHarness {
 
         let params = CreatePositionParamsV1 {
             market_id,
-            player_pub,
             predicted_height,
+            tolerance,
+            position_type,
             amount,
-            token_id,
+            owner,
+            value_commit,
+            signature,
         };
 
         let mut data = vec![BlockHeightPredictionFunction::CreatePositionV1 as u8];

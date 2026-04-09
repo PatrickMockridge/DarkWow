@@ -25,6 +25,19 @@ darkfi_roulette_contract = {path = "../roulette", features = ["no-entrypoint"]}
 darkfi_game_room_contract = { path = "../game_room", package = "game_room_contract" }
 darkfi_auction_contract = {path = "../auction", features = ["no-entrypoint"]}
 
+darkfi_atomic_swap_contract = {package = "atomic_swap_contract", path = "../atomic_swap", features = ["no-entrypoint"]}
+darkfi_attestation_contract = {path = "../attestation", features = ["no-entrypoint"]}
+darkfi_block_height_prediction_contract = {path = "../block_height_prediction", features = ["no-entrypoint"]}
+darkfi_bridge_contract = {path = "../bridge", features = ["no-entrypoint"]}
+darkfi_escrow_contract = {path = "../escrow", features = ["no-entrypoint"]}
+darkfi_insurance_market_contract = {path = "../insurance_market", features = ["no-entrypoint"]}
+darkfi_labor_market_contract = {path = "../labor_market", features = ["no-entrypoint"]}
+darkfi_oracle_contract = {path = "../oracle", features = ["no-entrypoint"]}
+darkfi_pool_stake_contract = {path = "../pool_stake", features = ["no-entrypoint"]}
+darkfi_relayer_endowment_contract = {path = "../relayer_endowment", features = ["no-entrypoint"]}
+darkfi_subscription_contract = {package = "subscription_contract", path = "../subscription"}
+darkfi_tender_contract = {path = "../tender", features = ["no-entrypoint"]}
+
 num-bigint = "0.4.6"
 blake3 = "1.8.2"
 tracing = "0.1.44"

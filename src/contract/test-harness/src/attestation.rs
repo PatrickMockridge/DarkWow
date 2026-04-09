@@ -34,7 +34,10 @@ use darkfi_sdk::{
 use darkfi_serial::Encodable;
 use tracing::debug;
 use darkfi_attestation_contract::{
-    model::{CreateAttestationParamsV1, CreateClaimParamsV1, RevokeAttestationParamsV1, ExpireAttestationParamsV1},
+    model::{
+        CreateAttestationParamsV1, CreateClaimParamsV1, RevokeAttestationParamsV1,
+        ExpireAttestationParamsV1, Predicate,
+    },
     AttestationFunction,
 };
 
@@ -72,10 +75,12 @@ impl TestHarness {
         &mut self,
         holder: &Holder,
         attestation_contract_id: ContractId,
+        attestation_id: pallas::Base,
         attestor_pub_x: pallas::Base,
         attestor_pub_y: pallas::Base,
-        claim_type: u8,
+        claim_type: Predicate,
         claim_data: Vec<pallas::Base>,
+        metadata: Vec<u8>,
         expires_at: Option<u64>,
         block_height: u32,
     ) -> Result<(Transaction, CreateAttestationParamsV1, Option<MoneyFeeParamsV1>)> {
@@ -83,10 +88,13 @@ impl TestHarness {
         let holder_secret = wallet.keypair.secret;
 
         let params = CreateAttestationParamsV1 {
+            proof: vec![],
+            attestation_id,
             attestor_pub_x,
             attestor_pub_y,
             claim_type,
             claim_data,
+            metadata,
             expires_at,
         };
 
@@ -152,22 +160,27 @@ impl TestHarness {
         &mut self,
         holder: &Holder,
         attestation_contract_id: ContractId,
+        claim_id: pallas::Base,
         attestation_id: pallas::Base,
         claimant_pub_x: pallas::Base,
         claimant_pub_y: pallas::Base,
-        predicate: u8,
+        predicate: Predicate,
         evidence_commitment: Vec<u8>,
+        revealed_result: Vec<u8>,
         block_height: u32,
     ) -> Result<(Transaction, CreateClaimParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
         let params = CreateClaimParamsV1 {
+            proof: vec![],
+            claim_id,
             attestation_id,
             claimant_pub_x,
             claimant_pub_y,
             predicate,
             evidence_commitment,
+            revealed_result,
         };
 
         let mut data = vec![AttestationFunction::CreateClaimV1 as u8];

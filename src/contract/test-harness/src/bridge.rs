@@ -24,7 +24,7 @@ use darkfi::{
 };
 use darkfi_money_contract::{client::OwnCoin, model::MoneyFeeParamsV1};
 use darkfi_sdk::{
-    crypto::ContractId,
+    crypto::{ContractId, pasta_prelude::PrimeField},
     pasta::pallas,
     ContractCall,
 };
@@ -75,12 +75,12 @@ impl TestHarness {
         let holder_secret = wallet.keypair.secret;
 
         let mut data = vec![0x01]; // DepositV1 function
-        data.extend_from_slice(&user_pub.inner().to_bytes());
+        data.extend_from_slice(&user_pub.to_repr());
         data.extend_from_slice(&amount.to_le_bytes());
-        data.extend_from_slice(&token_id.to_bytes());
-        data.extend_from_slice(&destination.to_bytes());
+        data.extend_from_slice(&token_id.to_repr());
+        data.extend_from_slice(&destination.to_repr());
 
-        let call = ContractCall { contract_id, data };
+        let call = ContractCall { contract_id, data: data.clone() };
 
         let mut tx_builder =
             TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;

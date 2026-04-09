@@ -69,20 +69,34 @@ impl TestHarness {
         &mut self,
         holder: &Holder,
         contract_id: ContractId,
-        subscriber_pub: pallas::Base,
         plan_id: u32,
-        duration: u64,
-        token_id: pallas::Base,
+        subscriber_pubkey: darkfi_sdk::crypto::PublicKey,
+        commitment: pallas::Base,
+        value_commit: pallas::Point,
+        merkle_proof: Vec<pallas::Base>,
+        merkle_root: pallas::Base,
+        dao_escrow_bulla: Option<pallas::Base>,
+        dao_membership_note: Option<pallas::Base>,
+        dao_escrow_merkle_root: Option<pallas::Base>,
+        dao_merkle_proof: Option<Vec<pallas::Base>>,
+        dao_leaf_pos: Option<u32>,
         block_height: u32,
     ) -> Result<(Transaction, SubscribeParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
         let params = SubscribeParamsV1 {
-            subscriber_pub,
             plan_id,
-            duration,
-            token_id,
+            subscriber_pubkey,
+            commitment,
+            value_commit,
+            merkle_proof,
+            merkle_root,
+            dao_escrow_bulla,
+            dao_membership_note,
+            dao_escrow_merkle_root,
+            dao_merkle_proof,
+            dao_leaf_pos,
         };
 
         let mut data = vec![SubscriptionFunction::SubscribeV1 as u8];
@@ -148,12 +162,22 @@ impl TestHarness {
         holder: &Holder,
         contract_id: ContractId,
         subscription_id: pallas::Base,
+        subscriber_secret: pallas::Base,
+        spent_nullifier: pallas::Base,
+        current_block: u64,
+        recipient_pubkey: darkfi_sdk::crypto::PublicKey,
         block_height: u32,
     ) -> Result<(Transaction, CancelParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
-        let params = CancelParamsV1 { subscription_id };
+        let params = CancelParamsV1 {
+            subscription_id,
+            subscriber_secret,
+            spent_nullifier,
+            current_block,
+            recipient_pubkey,
+        };
 
         let mut data = vec![SubscriptionFunction::CancelV1 as u8];
         params.encode(&mut data)?;

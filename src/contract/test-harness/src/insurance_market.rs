@@ -24,7 +24,7 @@ use darkfi::{
 };
 use darkfi_money_contract::{client::OwnCoin, model::MoneyFeeParamsV1};
 use darkfi_sdk::{
-    crypto::ContractId,
+    crypto::{ContractId, pasta_prelude::PrimeField},
     pasta::pallas,
     ContractCall,
 };
@@ -77,11 +77,11 @@ impl TestHarness {
         let holder_secret = wallet.keypair.secret;
 
         let mut data = vec![InsuranceMarketFunction::RegisterRiskTypeV1 as u8];
-        data.extend_from_slice(&risk_type_id.to_bytes());
+        data.extend_from_slice(&risk_type_id.to_repr());
         data.extend_from_slice(&(description.len() as u64).to_le_bytes());
         data.extend_from_slice(description.as_bytes());
 
-        let call = ContractCall { contract_id, data };
+        let call = ContractCall { contract_id, data: data.clone() };
 
         let mut tx_builder =
             TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;

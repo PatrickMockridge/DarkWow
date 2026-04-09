@@ -69,20 +69,35 @@ impl TestHarness {
         &mut self,
         holder: &Holder,
         contract_id: ContractId,
-        requester_pub: pallas::Base,
-        tender_hash: pallas::Base,
-        deposit_amount: u64,
-        token_id: pallas::Base,
+        tender_id: pallas::Base,
+        requester_pub_x: pallas::Base,
+        requester_pub_y: pallas::Base,
+        title: String,
+        specification: pallas::Base,
+        attestation_id: pallas::Base,
+        min_bid: u64,
+        max_bid: u64,
+        bid_deadline: u64,
+        reveal_deadline: u64,
+        delivery_deadline: u64,
         block_height: u32,
     ) -> Result<(Transaction, CreateTenderParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
         let params = CreateTenderParamsV1 {
-            requester_pub,
-            tender_hash,
-            deposit_amount,
-            token_id,
+            proof: vec![],
+            tender_id,
+            requester_pub_x,
+            requester_pub_y,
+            title,
+            specification,
+            attestation_id,
+            min_bid,
+            max_bid,
+            bid_deadline,
+            reveal_deadline,
+            delivery_deadline,
         };
 
         let mut data = vec![TenderFunction::CreateTenderV1 as u8];
@@ -148,17 +163,26 @@ impl TestHarness {
         holder: &Holder,
         contract_id: ContractId,
         tender_id: pallas::Base,
-        bidder_pub: pallas::Base,
-        bid_hash: pallas::Base,
+        bid_id: pallas::Base,
+        bidder_pub_x: pallas::Base,
+        bidder_pub_y: pallas::Base,
+        amount: u64,
+        claim_id: pallas::Base,
+        encrypted_payload: Vec<u8>,
         block_height: u32,
     ) -> Result<(Transaction, SubmitBidParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
         let params = SubmitBidParamsV1 {
+            proof: vec![],
             tender_id,
-            bidder_pub,
-            bid_hash,
+            bid_id,
+            bidder_pub_x,
+            bidder_pub_y,
+            amount,
+            claim_id,
+            encrypted_payload,
         };
 
         let mut data = vec![TenderFunction::SubmitBidV1 as u8];

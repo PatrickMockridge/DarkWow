@@ -31,7 +31,7 @@ use darkfi_sdk::{
 use darkfi_serial::Encodable;
 use tracing::debug;
 use darkfi_oracle_contract::{
-    model::{RegisterOracleParamsV1, SubmitValueParamsV1, ResolveParamsV1},
+    model::{RegisterOracleParamsV1, PushValueParamsV1, AttestValueParamsV1},
     OracleFunction,
 };
 
@@ -69,16 +69,23 @@ impl TestHarness {
         &mut self,
         holder: &Holder,
         contract_id: ContractId,
-        oracle_pub: pallas::Base,
-        description: String,
+        oracle_id: pallas::Base,
+        oracle_pub_x: pallas::Base,
+        oracle_pub_y: pallas::Base,
+        name: String,
+        data_type: String,
         block_height: u32,
     ) -> Result<(Transaction, RegisterOracleParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
         let params = RegisterOracleParamsV1 {
-            oracle_pub,
-            description,
+            proof: vec![],
+            oracle_id,
+            oracle_pub_x,
+            oracle_pub_y,
+            name,
+            data_type,
         };
 
         let mut data = vec![OracleFunction::RegisterOracleV1 as u8];

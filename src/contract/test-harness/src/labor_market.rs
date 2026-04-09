@@ -69,22 +69,31 @@ impl TestHarness {
         &mut self,
         holder: &Holder,
         contract_id: ContractId,
-        employer_pub: pallas::Base,
-        deliverable_hash: pallas::Base,
-        budget: u64,
-        token_id: pallas::Base,
-        deadline: u64,
+        job_id: pallas::Base,
+        employer_pub_x: pallas::Base,
+        employer_pub_y: pallas::Base,
+        attestation_id: pallas::Base,
+        delivery_type: u8,
+        payment_amount: u64,
+        payment_token: pallas::Base,
+        payment_commit_x: pallas::Base,
+        payment_commit_y: pallas::Base,
         block_height: u32,
     ) -> Result<(Transaction, CreateJobParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
         let params = CreateJobParamsV1 {
-            employer_pub,
-            deliverable_hash,
-            budget,
-            token_id,
-            deadline,
+            proof: vec![],
+            job_id,
+            employer_pub_x,
+            employer_pub_y,
+            attestation_id,
+            delivery_type,
+            payment_amount,
+            payment_token,
+            payment_commit_x,
+            payment_commit_y,
         };
 
         let mut data = vec![LaborMarketFunction::CreateJobV1 as u8];

@@ -31,7 +31,7 @@ use darkfi_sdk::{
 use darkfi_serial::Encodable;
 use tracing::debug;
 use darkfi_escrow_contract::{
-    model::{CreateEscrowParamsV1, FundEscrowParamsV1, ClaimParamsV1, RefundParamsV1},
+    model::{CreateEscrowParamsV1, FundEscrowParamsV1, ClaimEscrowParamsV1, RefundEscrowParamsV1},
     EscrowFunction,
 };
 
@@ -69,22 +69,26 @@ impl TestHarness {
         &mut self,
         holder: &Holder,
         contract_id: ContractId,
-        creator_pub: pallas::Base,
-        recipient_pub: pallas::Base,
-        amount: u64,
+        buyer_pubkey: darkfi_sdk::crypto::PublicKey,
+        seller_pubkey: darkfi_sdk::crypto::PublicKey,
+        value: u64,
         token_id: pallas::Base,
-        arbiter_pub: pallas::Base,
+        timeout: u64,
+        commitment: pallas::Base,
+        merkle_root: darkfi_sdk::crypto::MerkleNode,
         block_height: u32,
     ) -> Result<(Transaction, CreateEscrowParamsV1, Option<MoneyFeeParamsV1>)> {
         let wallet = self.wallet(holder);
         let holder_secret = wallet.keypair.secret;
 
         let params = CreateEscrowParamsV1 {
-            creator_pub,
-            recipient_pub,
-            amount,
+            buyer_pubkey,
+            seller_pubkey,
+            value,
             token_id,
-            arbiter_pub,
+            timeout,
+            commitment,
+            merkle_root,
         };
 
         let mut data = vec![EscrowFunction::CreateEscrowV1 as u8];
