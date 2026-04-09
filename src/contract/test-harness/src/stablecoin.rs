@@ -887,4 +887,92 @@ impl TestHarness {
 
         Ok(wallet.process_fee(fee_params, holder))
     }
+
+    /// Create a `Stablecoin::UpdateConfigV1` transaction.
+    ///
+    /// Updates pool configuration parameters.
+    pub async fn stablecoin_update_config(
+        &mut self,
+        holder: &Holder,
+        stablecoin_contract_id: ContractId,
+        min_collateralization_ratio: u64,
+        liquidation_threshold: u64,
+        liquidation_penalty: u64,
+        base_rate: u64,
+        pi_kp: i64,
+        pi_ki: i64,
+        twap_window: u64,
+        price_deviation_threshold: u64,
+        block_height: u32,
+    ) -> Result<(Transaction, UpdateConfigParams, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+        let holder_secret = wallet.keypair.secret;
+
+        let params = UpdateConfigParams {
+            min_collateralization_ratio,
+            liquidation_threshold,
+            liquidation_penalty,
+            base_rate,
+            pi_kp,
+            pi_ki,
+            twap_window,
+            price_deviation_threshold,
+        };
+
+        let mut data = vec![StablecoinFunction::UpdateConfigV1 as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: stablecoin_contract_id, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        let mut fee_params = None;
+        let mut fee_signature_secrets = None;
+        if self.verify_fees {
+            let mut tx = tx_builder.build()?;
+            let sigs = tx.create_sigs(&[holder_secret])?;
+            tx.signatures = vec![sigs];
+
+            let (fee_call, fee_proofs, fee_secrets, _spent_fee_coins, fee_call_params) =
+                self.append_fee_call(holder, tx, block_height, &[]).await?;
+
+            tx_builder.append(
+                ContractCallLeaf { call: fee_call, proofs: fee_proofs },
+                vec![],
+            )?;
+            fee_signature_secrets = Some(fee_secrets);
+            fee_params = Some(fee_call_params);
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[holder_secret])?;
+        tx.signatures = vec![sigs];
+        if let Some(fee_signature_secrets) = fee_signature_secrets {
+            let sigs = tx.create_sigs(&fee_signature_secrets)?;
+            tx.signatures.push(sigs);
+        }
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute a `Stablecoin::UpdateConfigV1` transaction.
+    pub async fn execute_stablecoin_update_config_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        _params: &UpdateConfigParams,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+
+        wallet.add_transaction("stablecoin::update_config", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
 }
