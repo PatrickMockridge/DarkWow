@@ -36,7 +36,7 @@ witness "PayPremium" {
     Base dao_escrow_bulla,
 
     # Current block height (public input for time lock)
-    Uint64 current_block,
+    Base current_block,
 
     # Member's secret key
     Base member_secret,
@@ -46,10 +46,10 @@ witness "PayPremium" {
     Base token_id,
 
     # Membership expiry block (must be > current_block)
-    Uint64 expiry,
+    Base expiry,
 
     # Blinding factors
-    Scalar membership_blind,
+    Base membership_blind,
     Scalar value_blind,
 
     # ==========================================================================
@@ -100,8 +100,8 @@ circuit "PayPremium" {
     # - Members choosing 100-year memberships
     # - Long-term lockup that bypasses DAO governance
 
-    max_membership_blocks = 52560;
-    max_expiry = add(current_block, max_membership_blocks);
+    max_membership_blocks = witness_base(52560);
+    max_expiry = base_add(current_block, max_membership_blocks);
     less_than_strict(expiry, max_expiry);
 
     # ==========================================================================
@@ -297,3 +297,4 @@ circuit "PayPremium" {
     #    - Haircut proceeds remain as insurance reserve
     #
     # See security-analysis.md Issue #10 for full details and remaining work.
+}

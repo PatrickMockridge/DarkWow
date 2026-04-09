@@ -159,11 +159,20 @@ pub fn get_cached_pks_and_vks() -> Result<(Pks, Vks)> {
         &include_bytes!("../../stablecoin/proof/open_position_v1.zk.bin")[..],
         &include_bytes!("../../stablecoin/proof/mint_stable_v1.zk.bin")[..],
         &include_bytes!("../../stablecoin/proof/liquidate_v1.zk.bin")[..],
+        &include_bytes!("../../stablecoin/proof/accrue_interest_v1.zk.bin")[..],
+        &include_bytes!("../../stablecoin/proof/governance_report_v1.zk.bin")[..],
         // DAO-Escrow (WASM contract - deployed via deployooor)
         &include_bytes!("../../dao_escrow/proof/init_v1.zk.bin")[..],
+        &include_bytes!("../../dao_escrow/proof/pay_premium_v1.zk.bin")[..],
         // Identity (WASM contract - deployed via deployooor)
         &include_bytes!("../../identity/proof/create_claim_v1.zk.bin")[..],
         &include_bytes!("../../identity/proof/create_claim_v1_l1.zk.bin")[..],
+        &include_bytes!("../../identity/proof/create_claim_v1_dag.zk.bin")[..],
+        &include_bytes!("../../identity/proof/create_claim_v1_l1_v2.zk.bin")[..],
+        &include_bytes!("../../identity/proof/create_claim_v1_multi.zk.bin")[..],
+        &include_bytes!("../../identity/proof/create_claim_v1_ratio.zk.bin")[..],
+        &include_bytes!("../../identity/proof/issue_credential_v1.zk.bin")[..],
+        &include_bytes!("../../identity/proof/verify_capability_v1.zk.bin")[..],
         // DEX (WASM contract - deployed via deployooor)
         &include_bytes!("../../dex/proof/create_swap_v1.zk.bin")[..],
         &include_bytes!("../../dex/proof/accept_swap_v1.zk.bin")[..],
