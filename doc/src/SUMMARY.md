@@ -51,6 +51,8 @@
   - [Seminars](dev/seminars.md)
   - [Benchmark](dev/bench.md)
 - [Architecture](arch/README.md)
+  - [DarkFi Daemon](darkfid.md)
+  - [Contract Deployment Pipeline](arch/darkfid_contract_pipeline.md)
   - [Overview](arch/overview.md)
   - [Anonymous assets](arch/anonymous_assets.md)
   - [Consensus](arch/consensus.md)
