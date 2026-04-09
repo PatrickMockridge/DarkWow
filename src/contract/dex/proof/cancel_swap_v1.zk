@@ -46,7 +46,7 @@ circuit "CancelSwapV1" {
     # The lock should be derivable from the secret, token, and amount.
     # This proves the canceller knows the lock details.
 
-    derived_lock = poseidon_hash([secret, token, amount]);
+    derived_lock = poseidon_hash(secret, token, amount);
     constrain_equal_base(derived_lock, lock_commitment);
 
     # ==========================================================================
@@ -56,14 +56,14 @@ circuit "CancelSwapV1" {
     # nullifier = poseidon_hash(secret, lock_commitment)
     # This prevents cancelling the same swap twice.
 
-    computed_nullifier = poseidon_hash([secret, lock_commitment]);
+    computed_nullifier = poseidon_hash(secret, lock_commitment);
     constrain_instance(computed_nullifier);
 
     # ==========================================================================
     # PHASE 3: Verify swap ID consistency - PUBLIC INPUT
     # ==========================================================================
 
-    computed_swap_id = poseidon_hash([lock_commitment]);
+    computed_swap_id = poseidon_hash(lock_commitment);
     constrain_instance(computed_swap_id);
 
     # ==========================================================================

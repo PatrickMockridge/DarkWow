@@ -116,6 +116,18 @@ use cancel_swap_v1::{
 mod set_transparency_level_v1;
 use set_transparency_level_v1::dex_set_transparency_level_process_instruction_v1;
 
+mod execute_swap_fee_v1;
+use execute_swap_fee_v1::{
+    dex_execute_swap_fee_get_metadata_v1, dex_execute_swap_fee_process_instruction_v1,
+    dex_execute_swap_fee_process_update_v1,
+};
+
+mod execute_swap_slippage_v1;
+use execute_swap_slippage_v1::{
+    dex_execute_swap_slippage_get_metadata_v1, dex_execute_swap_slippage_process_instruction_v1,
+    dex_execute_swap_slippage_process_update_v1,
+};
+
 // ============================================================================
 // CONTRACT DEFINITION
 // ============================================================================
@@ -202,6 +214,8 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DexFunction::CancelSwapV1 => dex_cancel_swap_get_metadata_v1(cid, call_idx, calls)?,
         DexFunction::UpdateConfigV1 => vec![],
         DexFunction::SetTransparencyLevelV1 => vec![],
+        DexFunction::ExecuteSwapFeeV1 => dex_execute_swap_fee_get_metadata_v1(cid, call_idx, calls)?,
+        DexFunction::ExecuteSwapSlippageV1 => dex_execute_swap_slippage_get_metadata_v1(cid, call_idx, calls)?,
     };
 
     wasm::util::set_return_data(&metadata)
@@ -226,6 +240,8 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         DexFunction::CancelSwapV1 => dex_cancel_swap_process_instruction_v1(cid, call_idx, calls)?,
         DexFunction::UpdateConfigV1 => vec![],
         DexFunction::SetTransparencyLevelV1 => vec![],
+        DexFunction::ExecuteSwapFeeV1 => dex_execute_swap_fee_process_instruction_v1(cid, call_idx, calls)?,
+        DexFunction::ExecuteSwapSlippageV1 => dex_execute_swap_slippage_process_instruction_v1(cid, call_idx, calls)?,
     };
 
     wasm::util::set_return_data(&update_data)
@@ -265,6 +281,14 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         DexFunction::SetTransparencyLevelV1 => {
             msg!("[dex::process_update] SetTransparencyLevelV1 handled in process_instruction");
             Ok(())
+        }
+        DexFunction::ExecuteSwapFeeV1 => {
+            let update: ExecuteSwapUpdateV1 = deserialize(&update_data[1..])?;
+            dex_execute_swap_fee_process_update_v1(cid, update)
+        }
+        DexFunction::ExecuteSwapSlippageV1 => {
+            let update: ExecuteSwapUpdateV1 = deserialize(&update_data[1..])?;
+            dex_execute_swap_slippage_process_update_v1(cid, update)
         }
     }
 }

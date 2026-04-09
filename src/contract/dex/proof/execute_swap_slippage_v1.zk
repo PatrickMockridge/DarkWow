@@ -124,7 +124,8 @@ circuit "ExecuteSwapSlippageV1" {
     # Calculate min_acceptable = bob_amount * (1 - slippage_bps / 10000)
     # = bob_amount * (10000 - slippage_bps) / 10000
     BPS = witness_base(10000);
-    tolerance_multiplier = base_div(BPS - slippage_bps, BPS);
+    slippage_sub = base_sub(BPS, slippage_bps);
+    tolerance_multiplier = base_div(slippage_sub, BPS);
     min_acceptable = base_mul(bob_amount, tolerance_multiplier);
 
     # Verify: received >= min_acceptable

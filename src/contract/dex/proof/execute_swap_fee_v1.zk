@@ -115,9 +115,7 @@ circuit "ExecuteSwapFeeV1" {
     fee = base_div(fee_numerator, BPS);
 
     # Calculate: net_received = fill_amount - fee
-    gross_as_field = fill_amount;
-    fee_as_field = fee;
-    net_received = gross_as_field - fee_as_field;
+    net_received = base_sub(fill_amount, fee);
 
     # Verify net_received >= 0 (sanity check)
     bool_check(net_received);

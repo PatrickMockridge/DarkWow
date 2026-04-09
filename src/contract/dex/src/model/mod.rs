@@ -283,6 +283,81 @@ pub struct CancelSwapParams {
     pub fee: u64,
 }
 
+/// Execute swap with fee parameters
+///
+/// This allows executing a swap with a fee deducted from the received amount.
+/// Fee calculation: fee = fill_amount * fee_bps / 10000
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ExecuteSwapFeeParams {
+    /// Swap ID to execute
+    pub swap_id: [u8; 32],
+
+    /// Prover's secret for Alice's lock
+    pub alice_secret: [u8; 32],
+
+    /// Prover's secret for Bob's lock
+    pub bob_secret: [u8; 32],
+
+    /// Alice's lock commitment
+    pub alice_lock: IntentCommitment,
+
+    /// Bob's lock commitment
+    pub bob_lock: IntentCommitment,
+
+    /// Alice's nullifier
+    pub alice_nullifier: IntentNullifier,
+
+    /// Bob's nullifier
+    pub bob_nullifier: IntentNullifier,
+
+    /// Fee basis points (e.g., 30 = 0.3%)
+    pub fee_bps: u64,
+
+    /// ZK proof
+    pub proof: Vec<u8>,
+
+    /// Fee paid for execution
+    pub fee: u64,
+}
+
+/// Execute swap with slippage tolerance parameters
+///
+/// This allows executing a swap where the received amount can vary
+/// within a slippage tolerance.
+/// Slippage tolerance: received >= min_expected * (1 - slippage_bps / 10000)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ExecuteSwapSlippageParams {
+    /// Swap ID to execute
+    pub swap_id: [u8; 32],
+
+    /// Prover's secret for Alice's lock
+    pub alice_secret: [u8; 32],
+
+    /// Prover's secret for Bob's lock
+    pub bob_secret: [u8; 32],
+
+    /// Alice's lock commitment
+    pub alice_lock: IntentCommitment,
+
+    /// Bob's lock commitment
+    pub bob_lock: IntentCommitment,
+
+    /// Alice's nullifier
+    pub alice_nullifier: IntentNullifier,
+
+    /// Bob's nullifier
+    pub bob_nullifier: IntentNullifier,
+
+    /// Slippage tolerance in basis points (e.g., 50 = 0.5%)
+    pub slippage_bps: u64,
+
+    /// ZK proof
+    pub proof: Vec<u8>,
+
+    /// Fee paid for execution
+    pub fee: u64,
+}
+
 /// Update configuration parameters
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct UpdateConfigParams {

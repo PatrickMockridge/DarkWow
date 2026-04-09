@@ -62,13 +62,13 @@ circuit "AcceptSwapV1" {
     # Acceptor's lock = poseidon_hash(acceptor_secret, offer_token, offer_amount, blinds)
     # This proves the acceptor has locked funds for this swap.
 
-    computed_lock = poseidon_hash([
+    computed_lock = poseidon_hash(
         acceptor_secret,
         offer_token,
         offer_amount,
         token_blind,
         amount_blind,
-    ]);
+    );
 
     # The acceptor_lock_commitment is a PUBLIC INPUT
     constrain_instance(computed_lock);
@@ -80,7 +80,7 @@ circuit "AcceptSwapV1" {
     # acceptor_nullifier = poseidon_hash(acceptor_secret, acceptor_lock)
     # This prevents accepting the same swap twice.
 
-    acceptor_nullifier = poseidon_hash([acceptor_secret, computed_lock]);
+    acceptor_nullifier = poseidon_hash(acceptor_secret, computed_lock);
     constrain_instance(acceptor_nullifier);
 
     # ==========================================================================

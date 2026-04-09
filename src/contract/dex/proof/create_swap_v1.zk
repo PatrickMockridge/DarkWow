@@ -59,13 +59,13 @@ circuit "CreateSwapV1" {
     # Lock commitment = poseidon_hash(secret, offer_token, offer_amount, blinds)
     # This proves Alice has locked funds for this swap.
 
-    computed_lock = poseidon_hash([
+    computed_lock = poseidon_hash(
         secret,
         offer_token,
         offer_amount,
         token_blind,
         amount_blind,
-    ]);
+    );
 
     # The lock_commitment is a PUBLIC INPUT
     constrain_instance(computed_lock);
@@ -77,11 +77,11 @@ circuit "CreateSwapV1" {
     # swap_id = poseidon_hash(lock_commitment, request_token, request_amount)
     # This binds the swap parameters together.
 
-    computed_swap_id = poseidon_hash([
+    computed_swap_id = poseidon_hash(
         computed_lock,  # Use the computed lock
         request_token,
         request_amount,
-    ]);
+    );
 
     # The swap_id is a PUBLIC INPUT
     constrain_instance(computed_swap_id);
@@ -93,7 +93,7 @@ circuit "CreateSwapV1" {
     # nullifier = poseidon_hash(secret, lock_commitment)
     # This prevents creating the same swap twice.
 
-    nullifier = poseidon_hash([secret, computed_lock]);
+    nullifier = poseidon_hash(secret, computed_lock);
     constrain_instance(nullifier);
 
     # ==========================================================================

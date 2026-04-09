@@ -43,6 +43,11 @@ use darkfi_money_contract::{
 use darkfi_sdk::crypto::contract_id::{
     DAO_CONTRACT_ID, MONEY_CONTRACT_ID, SMART_CONTRACT_ZKAS_DB_NAME,
 };
+use darkfi_dex_contract::{
+    DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V1, DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1,
+    DEX_CONTRACT_ZKAS_CREATE_SWAP_NS_V1, DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V1,
+    DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1, DEX_CONTRACT_ZKAS_EXECUTE_SWAP_SLIPPAGE_NS_V1,
+};
 use darkfi_serial::{deserialize, serialize};
 
 use tracing::debug;
@@ -159,6 +164,13 @@ pub fn get_cached_pks_and_vks() -> Result<(Pks, Vks)> {
         // Identity (WASM contract - deployed via deployooor)
         &include_bytes!("../../identity/proof/create_claim_v1.zk.bin")[..],
         &include_bytes!("../../identity/proof/create_claim_v1_l1.zk.bin")[..],
+        // DEX (WASM contract - deployed via deployooor)
+        &include_bytes!("../../dex/proof/create_swap_v1.zk.bin")[..],
+        &include_bytes!("../../dex/proof/accept_swap_v1.zk.bin")[..],
+        &include_bytes!("../../dex/proof/execute_swap_v1.zk.bin")[..],
+        &include_bytes!("../../dex/proof/cancel_swap_v1.zk.bin")[..],
+        &include_bytes!("../../dex/proof/execute_swap_fee_v1.zk.bin")[..],
+        &include_bytes!("../../dex/proof/execute_swap_slippage_v1.zk.bin")[..],
     ];
 
     let mut pks = vec![];
@@ -264,6 +276,17 @@ pub fn inject(overlay: &BlockchainOverlayPtr, vks: &Vks) -> Result<()> {
             IDENTITY_CONTRACT_ZKAS_CREATE_CLAIM_V1_NS |
             IDENTITY_CONTRACT_ZKAS_CREATE_CLAIM_V1_L1_NS => {
                 debug!("Identity ZK namespace {} skipped - WASM contract, injected post-deployment", namespace);
+            }
+
+            // DEX contract circuits (WASM contract - dynamically deployed)
+            // VK injection for DEX must happen after contract deployment.
+            DEX_CONTRACT_ZKAS_CREATE_SWAP_NS_V1 |
+            DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V1 |
+            DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1 |
+            DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1 |
+            DEX_CONTRACT_ZKAS_EXECUTE_SWAP_SLIPPAGE_NS_V1 |
+            DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V1 => {
+                debug!("DEX ZK namespace {} skipped - WASM contract, injected post-deployment", namespace);
             }
 
             x => panic!("Found unhandled zkas namespace {x}"),

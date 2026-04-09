@@ -44,6 +44,8 @@ define_contract_function!(DexFunction {
     CancelSwapV1 = 0x04,
     UpdateConfigV1 = 0x05,
     SetTransparencyLevelV1 = 0x06,
+    ExecuteSwapFeeV1 = 0x07,
+    ExecuteSwapSlippageV1 = 0x08,
 });
 
 /// Internal contract errors

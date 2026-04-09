@@ -104,6 +104,9 @@ mod identity;
 /// `Stablecoin::Initialize`, `OpenPosition`, `MintStable`, etc.
 mod stablecoin;
 
+/// `Dex::CreateSwap`, `AcceptSwap`, `ExecuteSwap`, etc.
+mod dex;
+
 /// PoW target
 const POW_TARGET: u32 = 120;
 
