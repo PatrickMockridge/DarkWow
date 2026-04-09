@@ -261,6 +261,23 @@ If cache is deleted or stale, full regeneration occurs.
 - Fresh generation: ~5-10 minutes for all VKs
 - Subsequent runs with valid cache: ~1-2 seconds
 
+### Stack Overflow During Proof Generation
+
+Complex ZK circuits can exhaust the default Rust stack (~8MB) during proof synthesis. If you see:
+
+```
+thread 'money_integration' panicked at src/zk/vm.rs:936:29:
+index out of bounds: the len is 16 but the index is 17
+```
+
+This may indicate stack exhaustion, not just index error. Try increasing stack size:
+
+```bash
+RUST_MIN_STACK=67108864 cargo test -p darkfi_money_contract --test integration -- --ignored
+```
+
+This sets 64MB stack. For even larger circuits, try 128MB or 256MB.
+
 #### Circuits in the Cache
 
 The test harness builds VKs for these circuit groups:
