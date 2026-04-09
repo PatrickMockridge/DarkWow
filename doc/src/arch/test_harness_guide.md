@@ -105,6 +105,330 @@ Your integration tests verify:
 
 This is still valuable - it catches type errors and serialization bugs early.
 
+### 3. Full Darkfid Test Harness (`darkfi-contract-test-harness`)
+
+This is the **full integration test harness** that tests:
+- Full contract execution with darkfid
+- ZK proof generation and verification
+- State machine transitions
+- Multi-holder workflows
+- Transaction building with multiple contract calls
+
+**Location:** `src/contract/test-harness/`
+
+**What it tests:**
+- ✅ Full contract business logic
+- ✅ ZK proof generation and verification
+- ✅ State transitions (apply_update)
+- ✅ Multi-holder interactions
+- ✅ Transaction building with ContractCall, TransactionBuilder
+- ✅ Fee handling with append_fee_call()
+
+**What it requires:**
+- Running darkfid instance or embedded validator
+- Compiled ZK proof binaries (`.zk.bin`)
+- Contract WASM binaries (for WASM contracts)
+- Full darkfi SDK with validator feature
+
+**Why Two Levels of Testing?**
+
+Integration tests (`integration.rs`) catch type errors and serialization bugs quickly without needing the full darkfi stack. The full test harness (`darkfi-contract-test-harness`) verifies actual contract behavior end-to-end.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Test Pyramid                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│                        darkfid                                   │
+│                    (Full Node/Test Harness)                      │
+│         - ZK proof generation/verification                       │
+│         - Contract execution                                      │
+│         - State transitions                                       │
+│         - Multi-contract transactions                            │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│              darkfi-contract-test-harness                        │
+│                   (Integration Tests)                             │
+│         - Contract interaction API                                │
+│         - Transaction building                                    │
+│         - Wallet/Holder pattern                                 │
+│         - Multi-holder workflows                                 │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│               Contract integration.rs                           │
+│                  (Unit Tests)                                    │
+│         - Model serialization                                     │
+│         - Enum conversions                                       │
+│         - Derivation functions                                    │
+│         - Constants                                              │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## DarkFi Test Harness Architecture
+
+### Core Components
+
+#### TestHarness Struct
+
+The `TestHarness` is the main entry point for testing contracts:
+
+```rust
+pub struct TestHarness {
+    /// Initialized holders for this instance
+    pub holders: HashMap<Holder, Wallet>,
+    /// Ordered list of all holder keys (for broadcast operations)
+    pub holder_keys: Vec<Holder>,
+    /// Cached ProvingKeys for ZK proving
+    pub proving_keys: HashMap<String, (ProvingKey, ZkBinary)>,
+    /// The genesis block for this harness
+    pub genesis_block: BlockInfo,
+    /// Marker to know if we're supposed to include tx fees
+    pub verify_fees: bool,
+}
+```
+
+#### Holder Enum
+
+Represents different participants in a test scenario:
+
+```rust
+pub enum Holder {
+    Alice,    // Primary test participant
+    Bob,      // Secondary participant
+    Charlie,  // Tertiary participant
+    Dao,      // DAO governance
+    Rachel,   // Additional participant
+}
+```
+
+#### Wallet Struct
+
+Each holder has a `Wallet` containing their keypairs and state:
+
+```rust
+pub struct Wallet {
+    /// Main holder keypair
+    pub keypair: Keypair,
+    /// Keypair for arbitrary token minting
+    pub token_mint_authority: Keypair,
+    /// Keypair for arbitrary contract deployment
+    pub contract_deploy_authority: Keypair,
+    /// Holder's Validator instance
+    pub validator: ValidatorPtr,
+    /// Holder's Money Merkle tree
+    pub money_merkle_tree: MerkleTree,
+    /// Holder's Money nullifiers SMT
+    pub money_null_smt: SmtMemoryFp,
+    /// Unspent OwnCoins from Money contract
+    pub unspent_money_coins: Vec<OwnCoin>,
+    // ... additional state
+}
+```
+
+### Native vs WASM Contracts
+
+DarkFi contracts come in two types:
+
+#### Native Contracts
+
+Native contracts are compiled into darkfid and have **static ContractIds** defined in the SDK:
+
+```rust
+// In darkfi_sdk::crypto::contract_id
+pub static ref MONEY_CONTRACT_ID: ContractId =
+    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(0)]));
+pub static ref DAO_CONTRACT_ID: ContractId =
+    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(1)]));
+pub static ref DEPLOYOOOR_CONTRACT_ID: ContractId =
+    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(2)]));
+```
+
+**Test Harness for Native Contracts:**
+- VKs are injected at harness initialization (in `vks.rs::inject()`)
+- Contract ID is known at compile time
+- No deployment step needed
+
+#### WASM Contracts
+
+WASM contracts are deployed via the `Deployooor` contract. Their **ContractId is derived from the deploy public key**:
+
+```rust
+let stablecoin_contract_id = ContractId::derive_public(deploy_public_key);
+```
+
+**Test Harness for WASM Contracts:**
+- VKs are injected **after deployment** (not in `vks.rs::inject()`)
+- Contract ID is only known after deployment
+- Must deploy before use
+- Use `Deployooor::Deploy` to deploy
+
+## Creating a Test Harness
+
+### For Native Contracts
+
+**Step 1: Add Dependency**
+
+In `src/contract/test-harness/Cargo.toml`:
+
+```toml
+darkfi_<contract>_contract = { path = "../<contract>", features = ["client", "no-entrypoint"] }
+```
+
+**Step 2: Add ZK Proof Bins**
+
+In `src/contract/test-harness/src/vks.rs`, add to the `bins` vector:
+
+```rust
+&include_bytes!("../../<contract>/proof/circuit_v1.zk.bin")[..],
+```
+
+**Step 3: Add Namespace Handling**
+
+In `vks.rs::inject()`, add a match arm for the new namespaces:
+
+```rust
+"<CONTRACT>_CONTRACT_ZKAS_NS" => {
+    let key = serialize(&namespace.as_str());
+    let value = serialize(&(bincode.clone(), vk.clone()));
+    overlay.insert(&contract_db_name, &key, &value)?;
+}
+```
+
+**Step 4: Create Harness Module**
+
+Create `src/contract/test-harness/src/contract_<func>.rs`:
+
+```rust
+use darkfi::{
+    tx::{ContractCallLeaf, Transaction, TransactionBuilder},
+    Result,
+};
+use darkfi_money_contract::{client::OwnCoin, model::MoneyFeeParamsV1};
+use darkfi_sdk::{
+    crypto::contract_id::CONTRACT_ID, ContractCall,
+};
+use darkfi_serial::Encodable;
+
+use super::{Holder, TestHarness};
+
+impl TestHarness {
+    /// Create a `Contract::Function` transaction
+    pub async fn contract_function(
+        &mut self,
+        holder: &Holder,
+        // ... function-specific params
+        block_height: u32,
+    ) -> Result<(Transaction, FunctionParams, Option<MoneyFeeParamsV1>)> {
+        let wallet = self.wallet(holder);
+
+        // Build contract params
+        let params = FunctionParams { /* ... */ };
+
+        // Build contract call
+        let mut data = vec![FunctionEnum::FunctionV1 as u8];
+        params.encode(&mut data)?;
+        let call = ContractCall { contract_id: *CONTRACT_ID, data };
+
+        let mut tx_builder =
+            TransactionBuilder::new(ContractCallLeaf { call, proofs: vec![] }, vec![])?;
+
+        // Fee handling
+        let mut fee_params = None;
+        if self.verify_fees {
+            // ... append fee call
+        }
+
+        let mut tx = tx_builder.build()?;
+        let sigs = tx.create_sigs(&[wallet.keypair.secret])?;
+        tx.signatures = vec![sigs];
+
+        Ok((tx, params, fee_params))
+    }
+
+    /// Execute a transaction
+    pub async fn execute_contract_function_tx(
+        &mut self,
+        holder: &Holder,
+        tx: Transaction,
+        params: &FunctionParams,
+        fee_params: &Option<MoneyFeeParamsV1>,
+        block_height: u32,
+        append: bool,
+    ) -> Result<Vec<OwnCoin>> {
+        let wallet = self.wallet_mut(holder);
+        wallet.add_transaction("contract::function", tx, block_height).await?;
+
+        if !append {
+            return Ok(vec![]);
+        }
+
+        Ok(wallet.process_fee(fee_params, holder))
+    }
+}
+```
+
+**Step 5: Add Module to lib.rs**
+
+In `src/contract/test-harness/src/lib.rs`:
+
+```rust
+/// `Contract::Function` functionality
+mod contract_function;
+```
+
+**Step 6: Create *_to_all() Convenience Method**
+
+In `lib.rs`, add:
+
+```rust
+pub async fn contract_function_to_all(
+    &mut self,
+    // ... params
+) -> Result<...> {
+    let (tx, params, fee_params) = self.contract_function(/* ... */).await?;
+
+    for h in &self.holder_keys {
+        self.execute_contract_function_tx(h, tx.clone(), &params, &fee_params, block_height, true).await?;
+    }
+
+    self.assert_all_trees();
+    Ok(...)
+}
+```
+
+### For WASM Contracts
+
+**Same as native, except:**
+
+1. **VK injection is skipped** in `vks.rs::inject()` - WASM contract VKs are injected post-deployment
+
+2. **Deploy first** - Add a `deploy_contract()` function:
+
+```rust
+pub async fn deploy_contract(
+    &mut self,
+    holder: &Holder,
+    wasm_bincode: Vec<u8>,
+    block_height: u32,
+) -> Result<ContractId> {
+    let deploy_public = self.wallet(holder).contract_deploy_authority.public;
+
+    let (tx, _, fee_params) =
+        self.deploy_contract(holder, wasm_bincode, block_height).await?;
+
+    let contract_id = ContractId::derive_public(deploy_public);
+
+    self.execute_deploy_tx(holder, tx, &deploy_params, &fee_params, block_height, true).await?;
+
+    Ok(contract_id)
+}
+```
+
+3. **Track contract_id** - Store the derived contract ID and use it for subsequent calls
+
 ## Best Practices
 
 ### Writing Integration Tests

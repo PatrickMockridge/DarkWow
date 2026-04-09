@@ -320,6 +320,97 @@ pub struct UpdateConfigUpdateV1 {
     pub price_deviation_threshold: u64,
 }
 
+/// Update data for adding collateral
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AddCollateralUpdateV1 {
+    /// The position commitment (for tracking)
+    pub position_commitment: IntentCommitment,
+    /// Additional collateral amount
+    pub added_collateral: u64,
+    /// Collateral type
+    pub collateral_type: CollateralType,
+}
+
+/// Update data for removing collateral
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RemoveCollateralUpdateV1 {
+    /// The position nullifier (proves ownership)
+    pub position_nullifier: IntentNullifier,
+    /// New commitment after withdrawal
+    pub new_commitment: IntentCommitment,
+    /// Collateral type
+    pub collateral_type: CollateralType,
+    /// Amount removed
+    pub removed_collateral: u64,
+}
+
+/// Update data for minting stablecoin
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct MintStableUpdateV1 {
+    /// Position commitment
+    pub position_commitment: IntentCommitment,
+    /// Amount minted
+    pub mint_amount: u64,
+    /// New total debt after minting
+    pub new_total_debt: u64,
+}
+
+/// Update data for repaying stablecoin debt
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RepayStableUpdateV1 {
+    /// Position nullifier
+    pub position_nullifier: IntentNullifier,
+    /// New commitment after repayment
+    pub new_commitment: IntentCommitment,
+    /// Amount repaid
+    pub repay_amount: u64,
+    /// New total debt after repayment
+    pub new_total_debt: u64,
+}
+
+/// Update data for liquidating the pool
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct LiquidateUpdateV1 {
+    /// Liquidation record
+    pub debt_covered: u64,
+    /// Collateral seized
+    pub collateral_seized: u64,
+    /// Liquidation penalty
+    pub penalty: u64,
+    /// New total debt after liquidation
+    pub new_total_debt: u64,
+    /// New total collateral after liquidation
+    pub new_total_collateral: u64,
+}
+
+/// Update data for governance report
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct GovernanceReportUpdateV1 {
+    /// Reported collateral ratio in basis points
+    pub collateral_ratio_bps: u64,
+    /// Interest accrued since last report
+    pub interest_accrued: u64,
+    /// Reporter's public key x
+    pub reporter_pub_x: [u8; 32],
+    /// Reporter's public key y
+    pub reporter_pub_y: [u8; 32],
+}
+
+/// Update data for interest accrual
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AccrueInterestUpdateV1 {
+    /// Old total debt before accrual
+    pub old_total_debt: u64,
+    /// New total debt after accrual
+    pub new_total_debt: u64,
+    /// Interest amount accrued
+    pub interest_amount: u64,
+    /// Accumulator's public key x
+    pub accumulator_pub_x: [u8; 32],
+    /// Accumulator's public key y
+    pub accumulator_pub_y: [u8; 32],
+}
+
 // ============================================================================
 // POOLED DEBT STATE (not per-user positions)
 // ============================================================================

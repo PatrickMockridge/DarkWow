@@ -52,6 +52,11 @@ use tracing::debug;
 const PKS_HASH: &str = "35ce1debf6ab12d1ec6db2b8c0c2a8a9b1fd25c2ff15c1258548923ce00f781f";
 const VKS_HASH: &str = "415cb6ae64917b4dac078ac47d49408549799b71a39603d5fa4d3e6934eeece9";
 
+/// Stablecoin contract ZK namespaces (WASM contract, ID derived at deployment)
+pub const STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1: &str = "OpenPosition_V1";
+pub const STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1: &str = "MintStable_V1";
+pub const STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1: &str = "Liquidate_V1";
+
 /// Build a `PathBuf` to a cachefile
 fn cache_path(typ: &str) -> Result<PathBuf> {
     let output = Command::new("git").arg("rev-parse").arg("--show-toplevel").output()?.stdout;
@@ -137,6 +142,10 @@ pub fn get_cached_pks_and_vks() -> Result<(Pks, Vks)> {
         &include_bytes!("../../dao/proof/early-exec.zk.bin")[..],
         &include_bytes!("../../dao/proof/auth-money-transfer.zk.bin")[..],
         &include_bytes!("../../dao/proof/auth-money-transfer-enc-coin.zk.bin")[..],
+        // Stablecoin (WASM contract - deployed via deployooor)
+        &include_bytes!("../../stablecoin/proof/open_position_v1.zk.bin")[..],
+        &include_bytes!("../../stablecoin/proof/mint_stable_v1.zk.bin")[..],
+        &include_bytes!("../../stablecoin/proof/liquidate_v1.zk.bin")[..],
     ];
 
     let mut pks = vec![];
@@ -218,6 +227,16 @@ pub fn inject(overlay: &BlockchainOverlayPtr, vks: &Vks) -> Result<()> {
                 let key = serialize(&namespace.as_str());
                 let value = serialize(&(bincode.clone(), vk.clone()));
                 overlay.insert(&dao_db_name, &key, &value)?;
+            }
+
+            // Stablecoin contract circuits (WASM contract - dynamically deployed)
+            // These namespaces are built but NOT injected here because stablecoin
+            // is a WASM contract whose ID is derived at deployment time.
+            // VK injection for stablecoin must happen after contract deployment.
+            STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1 |
+            STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1 |
+            STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1 => {
+                debug!("Stablecoin ZK namespace {} skipped - WASM contract, injected post-deployment", namespace);
             }
 
             x => panic!("Found unhandled zkas namespace {x}"),

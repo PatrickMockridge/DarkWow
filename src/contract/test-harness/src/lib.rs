@@ -95,6 +95,9 @@ mod dao_propose;
 /// `Dao::Vote` functionality
 mod dao_vote;
 
+/// `Stablecoin::Initialize`, `OpenPosition`, `MintStable`, etc.
+mod stablecoin;
+
 /// PoW target
 const POW_TARGET: u32 = 120;
 
