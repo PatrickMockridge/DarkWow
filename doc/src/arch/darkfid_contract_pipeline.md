@@ -206,6 +206,76 @@ The namespace MUST match between:
 - What the contract entrypoint references (namespace constant)
 - What the VK is stored under in the database
 
+### VK Generation Process
+
+Verification Keys are generated from compiled ZK circuit binaries (`.zk.bin` files) and cached on disk for performance.
+
+#### The Cache Files
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `pks.bin` | `src/contract/test-harness/` | ProvingKeys for ZK proof generation |
+| `vks.bin` | `src/contract/test-harness/` | VerificationKeys for ZK proof verification |
+
+These files are **generated once** and reused until the circuit code changes.
+
+#### Generation Process
+
+```
+1. Read .zk.bin files from src/contract/<contract>/proof/*.zk.bin
+   ↓
+2. For each circuit binary:
+   - ZkBinary::decode(bincode) → parses circuit metadata
+   - empty_witnesses(&zkbin) → creates empty witness placeholder
+   - ZkCircuit::new(witnesses, &zkbin) → builds circuit structure
+   ↓
+3. Build VerificationKey:
+   - VerifyingKey::build(zkbin.k, &circuit)
+   - Serializes to bytes
+   ↓
+4. Cache to disk:
+   - pks.bin / vks.bin written with blake3 hash for validation
+```
+
+#### Cache Validation
+
+On subsequent runs, the cache is validated via hash:
+
+```rust
+let known_hash = blake3::Hash::from_hex(VKS_HASH)?;
+let found_hash = blake3::hash(&data);
+if known_hash == found_hash {
+    vks = Some(deserialize(&data)?)  // Cache HIT - skip generation
+}
+// Cache MISS - regenerate VKs from .zk.bin files
+```
+
+If the hash matches, VK generation is **skipped entirely** (fast).
+If cache is deleted or stale, full regeneration occurs.
+
+#### Why VK Generation is Slow
+
+- Each circuit has `k = 11` (2^11 = 2048 rows) or higher
+- Building VK involves polynomial arithmetic and commitment schemes
+- There are **50+ circuits** across all contracts
+- Fresh generation: ~5-10 minutes for all VKs
+- Subsequent runs with valid cache: ~1-2 seconds
+
+#### Circuits in the Cache
+
+The test harness builds VKs for these circuit groups:
+
+| Contract Group | Circuits | Notes |
+|---------------|----------|-------|
+| Money (V1) | Fee, Mint, Burn, TokenMint, AuthTokenMint | Native - VKs injected at genesis |
+| DAO | Mint, ProposeInput, ProposeMain, VoteInput, VoteMain, Exec, EarlyExec, AuthTransfer, AuthTransferEnc | Native |
+| Stablecoin | OpenPosition, MintStable, Liquidate, AccrueInterest, GovernanceReport | WASM - skipped at genesis |
+| Identity | CreateClaimV1, CreateClaimV1L1, CreateClaimV1DAG, CreateClaimV1L1V2, CreateClaimV1Multi, CreateClaimV1Ratio, IssueCredential, VerifyCapability | WASM |
+| DEX | CreateSwap, AcceptSwap, ExecuteSwap, CancelSwap, ExecuteSwapSlippage, ExecuteSwapFee | WASM |
+| MoneyV2 | Fee, Mint, Burn, TokenMint, AuthTokenMint | WASM |
+| Auction | CreateAuction, PlaceBid, CloseAuction, ClaimWinnings, SettleAuction, RefundBid | WASM |
+| Game contracts | Lottery, Slot, Baccarat, DarkToshiDice, Roulette | WASM |
+
 ---
 
 ## Test Harness Integration
