@@ -61,6 +61,10 @@ pub const STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1: &str = "Liquidate_V1";
 pub const DAO_ESCROW_ZKAS_INIT_NS: &str = "Init";
 pub const DAO_ESCROW_ZKAS_PREMIUM_NS: &str = "PayPremium";
 
+/// Identity contract ZK namespaces (WASM contract, ID derived at deployment)
+pub const IDENTITY_CONTRACT_ZKAS_CREATE_CLAIM_V1_NS: &str = "create_claim_v1";
+pub const IDENTITY_CONTRACT_ZKAS_CREATE_CLAIM_V1_L1_NS: &str = "create_claim_v1_l1";
+
 /// Build a `PathBuf` to a cachefile
 fn cache_path(typ: &str) -> Result<PathBuf> {
     let output = Command::new("git").arg("rev-parse").arg("--show-toplevel").output()?.stdout;
@@ -152,6 +156,9 @@ pub fn get_cached_pks_and_vks() -> Result<(Pks, Vks)> {
         &include_bytes!("../../stablecoin/proof/liquidate_v1.zk.bin")[..],
         // DAO-Escrow (WASM contract - deployed via deployooor)
         &include_bytes!("../../dao_escrow/proof/init_v1.zk.bin")[..],
+        // Identity (WASM contract - deployed via deployooor)
+        &include_bytes!("../../identity/proof/create_claim_v1.zk.bin")[..],
+        &include_bytes!("../../identity/proof/create_claim_v1_l1.zk.bin")[..],
     ];
 
     let mut pks = vec![];
@@ -250,6 +257,13 @@ pub fn inject(overlay: &BlockchainOverlayPtr, vks: &Vks) -> Result<()> {
             DAO_ESCROW_ZKAS_INIT_NS |
             DAO_ESCROW_ZKAS_PREMIUM_NS => {
                 debug!("DAO-Escrow ZK namespace {} skipped - WASM contract, injected post-deployment", namespace);
+            }
+
+            // Identity contract circuits (WASM contract - dynamically deployed)
+            // VK injection for identity must happen after contract deployment.
+            IDENTITY_CONTRACT_ZKAS_CREATE_CLAIM_V1_NS |
+            IDENTITY_CONTRACT_ZKAS_CREATE_CLAIM_V1_L1_NS => {
+                debug!("Identity ZK namespace {} skipped - WASM contract, injected post-deployment", namespace);
             }
 
             x => panic!("Found unhandled zkas namespace {x}"),

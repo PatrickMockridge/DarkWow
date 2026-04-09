@@ -12,6 +12,7 @@ darkfi-serial = {path = "../../serial", features = ["crypto"]}
 
 darkfi_dao_contract = {path = "../dao", features = ["client", "no-entrypoint"]}
 darkfi_dao_escrow_contract = {path = "../dao_escrow", features = ["no-entrypoint"]}
+darkfi-identity-contract = {path = "../identity", features = ["no-entrypoint"]}
 darkfi_money_contract = {path = "../money", features = ["client", "no-entrypoint"]}
 darkfi_deployooor_contract = {path = "../deployooor", features = ["client", "no-entrypoint"]}
 darkfi_stablecoin_contract = {path = "../stablecoin", features = ["client", "no-entrypoint"]}

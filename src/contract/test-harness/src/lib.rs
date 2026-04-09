@@ -98,6 +98,9 @@ mod dao_vote;
 /// `DaoEscrow::Initialize`, `PayPremium`, `Withdraw`, etc.
 mod dao_escrow;
 
+/// `Identity::IssueCredential`, `CreateClaim`, `VerifyCapability`, etc.
+mod identity;
+
 /// `Stablecoin::Initialize`, `OpenPosition`, `MintStable`, etc.
 mod stablecoin;
 
