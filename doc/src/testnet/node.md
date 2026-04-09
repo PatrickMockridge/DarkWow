@@ -425,6 +425,149 @@ should be executed inside the `contrib/localnet/darkfid-single-node`
 folder. The `drk.toml` file in that folder contains the correct
 configuration for localnet.
 
+## DIY Public Testnet
+
+If the official testnet is unavailable, you can create a standalone public
+testnet for yourself or a small group. This section explains how to set up
+a self-contained network with its own genesis block, seed node, and mining.
+
+### Overview
+
+A DIY testnet differs from localnet in several ways:
+- **No `skip_sync`**: Nodes must sync from peers, not start instantly
+- **Seed configuration**: New nodes need seed addresses to discover peers
+- **Public ports**: Seed nodes must listen on ports accessible to others
+- **Fresh genesis**: Every participant must use identical genesis state
+
+### Network Parameters
+
+Choose network parameters that don't conflict with mainnet or testnet:
+
+| Parameter | Example Value |
+|-----------|---------------|
+| Network name | `diynet` or `localnet` |
+| P2P Port | `18340` (or custom) |
+| RPC Port | `18345` |
+| Management RPC | `18346` |
+| Stratum Mining | `18347` |
+| PoW Target | `60` seconds |
+| Confirmation Threshold | `3` blocks |
+
+### Step 1: Create Configuration
+
+Create a configuration file for your seed node (`diynet-darkfid.toml`):
+
+```toml
+network = "diynet"
+
+[network_config."diynet"]
+database = "~/.local/share/darkfi/darkfid/diynet"
+threshold = 3
+pow_target = 60
+pow_fixed_difficulty = 4
+skip_sync = false
+skip_fees = false
+
+[network_config."diynet".rpc]
+rpc_listen = "tcp://0.0.0.0:18345"
+
+[network_config."diynet".management_rpc]
+rpc_listen = "tcp://0.0.0.0:18346"
+
+[network_config."diynet".stratum_rpc]
+rpc_listen = "tcp://0.0.0.0:18347"
+
+[network_config."diynet".net]
+localnet = false
+active_profiles = ["tcp+tls"]
+
+[network_config."diynet".net.profiles."tcp+tls"]
+inbound = ["tcp+tls://0.0.0.0:18340"]
+seeds = []
+```
+
+Create a corresponding wallet configuration (`diynet-drk.toml`):
+
+```toml
+network = "diynet"
+
+[wallet]
+wallet_pass = "your_secure_password"
+wallet_db = "~/.local/share/darkfi/drk/diynet"
+
+[network_config."diynet"]
+rpc_url = "http://127.0.0.1:18345"
+stratum_url = "tcp://127.0.0.1:18347"
+```
+
+### Step 2: Initialize Wallet
+
+```shell
+./drk -c diynet-drk.toml -n diynet wallet initialize
+./drk -c diynet-drk.toml -n diynet wallet keygen
+./drk -c diynet-drk.toml -n diynet wallet default-address 1
+```
+
+Save your wallet address for the mining step.
+
+### Step 3: Start Seed Node
+
+On the machine that will act as seed node:
+
+```shell
+./darkfid -c diynet-darkfid.toml
+```
+
+On first startup, the node will generate a genesis block. Share the
+configuration and genesis state with other participants.
+
+### Step 4: Connect Mining Nodes
+
+Start xmrig with your wallet address as the recipient:
+
+```shell
+./xmrig -u x+1 -o tcp://SEED_IP:18347 -t 4 -u YOUR_WALLET_ADDRESS
+```
+
+Or use `drk` for integrated mining:
+
+```shell
+./drk -c diynet-drk.toml -n diynet mine
+```
+
+### Step 5: Share Configuration
+
+For other participants to join your testnet, they need:
+1. Your configuration files
+2. The same genesis block (auto-generated on first start if using same config)
+3. Your seed node's IP address and port
+
+### Multi-Node Setup
+
+To add more nodes, configure them to connect to your seed node:
+
+```toml
+[network_config."diynet".net.profiles."tcp+tls"]
+seeds = ["tcp+tls://SEED_IP:18340"]
+```
+
+### Troubleshooting
+
+**Node won't start**: Check that ports are available and not in use.
+
+**Mining not working**: Ensure stratum RPC is enabled and reachable.
+
+**Genesis mismatch**: All nodes must use identical configuration and
+genesis block. Clear database and restart if genesis differs.
+
+**Wallet locked**: Kill any running `drk` processes and retry.
+
+### Restoring from Snapshot
+
+If you have a database snapshot, place it in the database directory before
+starting the node. The node will verify the snapshot matches the expected
+state.
+
 ## Advanced Usage
 
 To run a node in full debug mode:
