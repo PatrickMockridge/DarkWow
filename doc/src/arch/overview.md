@@ -39,3 +39,19 @@ zkVM aims to be a general-purpose zkSNARK virtual machine that empowers
 developers to quickly prototype and debug zk contracts. It uses a
 trustless zero-knowledge proof system called Halo 2 with no trusted
 setup.
+
+**Genesis Contracts:** DarkFi starts with a minimal set of contracts at
+genesis (Satoshi-style). Only **Deployooor** (for deploying additional
+WASM contracts) and **Money** (for block rewards and token operations)
+are included. This provides a clean foundation where additional contracts
+can be composed as needed.
+
+**WASM Contracts:** DarkFi supports WASM smart contracts that can be
+deployed via the Deployooor contract. This allows for upgradeable contracts
+without hard forking the network. Examples include Money V2, DAO Escrow,
+and various application contracts (lottery, auction, etc.).
+
+**Native vs WASM Contracts:**
+- **Native contracts** (Money V1, DAO V1) are compiled into darkfid and cannot be upgraded
+- **WASM contracts** are deployed on-chain and can be upgraded via Deployooor
+- This fork uses Money V2 (WASM) for all token operations

@@ -1,5 +1,12 @@
 # DAO
 
+> [!WARNING]
+> **DEPRECATED**: DAO V1 is deprecated on this fork.
+>
+> DAO V1 had tight coupling to Money V1's ACL, creating forced vendor lock-in that breaks privacy/anonymity. Use **DAO Escrow** (WASM) instead.
+>
+> See [DAO Escrow Contract](../../contract/dao_escrow/README.md) for the recommended governance solution.
+
 On the testnet, we can also create anonymous DAOs. Using the `drk`
 CLI tool, we have a `dao` subcommand that can perform the necessary
 operations.

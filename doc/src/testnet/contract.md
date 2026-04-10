@@ -1,5 +1,10 @@
 # Custom Smart Contracts
 
+> [!NOTE]
+> **Money V2**: This documentation uses Money V2 for deployments.
+> Money V2 is the WASM-based successor to Money V1, with secure ZK circuits
+> and full composability. Legacy Money V1 is deprecated.
+
 Users can deploy their own zero-knowledge contracts, written for the
 DarkFi [zkVM][1], becoming anonymous engineers themselves!
 

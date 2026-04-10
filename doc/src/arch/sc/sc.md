@@ -217,6 +217,19 @@ For signature verification, the data we are verifying is simply
 the entire transactions minus the actual signatures. That's why the
 signatures are a separate top level field in the transaction.
 
+## Namespace Uniqueness in ZK Circuits
+
+> [!IMPORTANT]
+> Each ZK circuit namespace must be unique across all contracts.
+> Namespace collisions cause verification failures (EcGetX errors) in the zkVM.
+
+When building composable contracts, ensure each circuit has a unique namespace
+string. For example, instead of generic names like `Mint` or `Burn`, use
+contract-specific namespacing like `MoneyV2_Mint` or `DaoEscrow_Mint`.
+
+This prevents the EcGetX/EcGetY opcode errors that occur when the VM attempts
+to look up verification keys with colliding namespaces.
+
 This section of the book documents smart contract development.
 
 ## Invoking Contracts
