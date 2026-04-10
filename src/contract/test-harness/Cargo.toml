@@ -15,6 +15,7 @@ darkfi_dao_escrow_contract = {path = "../dao_escrow", features = ["no-entrypoint
 darkfi_dex_contract = {path = "../dex", features = ["no-entrypoint"]}
 darkfi-identity-contract = {path = "../identity", features = ["no-entrypoint"]}
 darkfi_money_contract = {path = "../money", features = ["client", "no-entrypoint"]}
+darkfi_money_v2_contract = {path = "../money_v2", features = ["client", "no-entrypoint"]}
 darkfi_deployooor_contract = {path = "../deployooor", features = ["client", "no-entrypoint"]}
 darkfi_stablecoin_contract = {path = "../stablecoin", features = ["client", "no-entrypoint"]}
 darkfi_lottery_contract = {path = "../lottery", features = ["no-entrypoint"]}

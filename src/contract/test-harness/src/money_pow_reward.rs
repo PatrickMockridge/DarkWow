@@ -24,13 +24,13 @@ use darkfi::{
     validator::verification::apply_producer_transaction,
     Result,
 };
-use darkfi_money_contract::{
-    client::{pow_reward_v1::PoWRewardCallBuilder, OwnCoin},
-    model::MoneyPoWRewardParamsV1,
-    MoneyFunction, MONEY_CONTRACT_ZKAS_MINT_NS_V1,
+use darkfi_money_contract::client::OwnCoin as OwnCoinBase;
+use darkfi_money_v2_contract::{
+    client::pow_reward_v1::PoWRewardCallBuilder, client::OwnCoin,
+    model::MoneyPoWRewardParamsV1, MoneyFunction, MONEY_CONTRACT_ZKAS_MINT_NS_V2,
 };
 use darkfi_sdk::{
-    crypto::{contract_id::MONEY_CONTRACT_ID, MerkleTree},
+    crypto::{contract_id::MONEY_V2_CONTRACT_ID, MerkleTree},
     ContractCall,
 };
 use darkfi_serial::Encodable;
@@ -39,7 +39,7 @@ use tracing::info;
 use super::{Holder, TestHarness};
 
 impl TestHarness {
-    /// Create a `Money::PoWReward` transaction for a given [`Holder`].
+    /// Create a `MoneyV2::PoWReward` transaction for a given [`Holder`].
     ///
     /// Optionally takes a specific reward recipient and a nonstandard
     /// reward value.
@@ -53,7 +53,8 @@ impl TestHarness {
     ) -> Result<(Transaction, MoneyPoWRewardParamsV1)> {
         let wallet = self.wallet(holder);
 
-        let (mint_pk, mint_zkbin) = self.proving_keys.get(MONEY_CONTRACT_ZKAS_MINT_NS_V1).unwrap();
+        let (mint_pk, mint_zkbin) =
+            self.proving_keys.get(MONEY_CONTRACT_ZKAS_MINT_NS_V2).unwrap();
 
         // Reference the last block in the holder's blockchain
         let last_block = wallet.validator.read().await.blockchain.last_block()?;
@@ -64,7 +65,7 @@ impl TestHarness {
         // If there's fees paid, use them, otherwise set to zero
         let fees = fees.unwrap_or_default();
 
-        // Build the transaction
+        // Build the transaction using Money V2
         let builder = PoWRewardCallBuilder {
             signature_keypair: wallet.keypair,
             block_height: last_block.header.height + 1,
@@ -81,10 +82,10 @@ impl TestHarness {
             None => builder.build()?,
         };
 
-        // Encode the transaction
-        let mut data = vec![MoneyFunction::PoWRewardV1 as u8];
+        // Encode the transaction using Money V2
+        let mut data = vec![MoneyFunction::PoWRewardV2 as u8];
         debris.params.encode(&mut data)?;
-        let call = ContractCall { contract_id: *MONEY_CONTRACT_ID, data };
+        let call = ContractCall { contract_id: *MONEY_V2_CONTRACT_ID, data };
         let mut tx_builder =
             TransactionBuilder::new(ContractCallLeaf { call, proofs: debris.proofs }, vec![])?;
         let mut tx = tx_builder.build()?;
@@ -152,7 +153,7 @@ impl TestHarness {
         for holder in holders {
             let wallet = self.wallet_mut(holder);
             wallet.validator.write().await.add_test_blocks(&[block.clone()]).await?;
-            found_owncoins.extend(wallet.process_outputs(slice::from_ref(&params.output), holder));
+            found_owncoins.extend(wallet.process_money_v2_outputs(slice::from_ref(&params.output), holder));
         }
 
         Ok(found_owncoins)

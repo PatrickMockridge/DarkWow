@@ -56,15 +56,23 @@ lazy_static! {
     pub static ref DEPLOYOOOR_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(2)]));
 
+    /// Contract ID for the Money V2 contract (hardcoded at genesis)
+    ///
+    /// Money V2 replaces Money V1 as the native token contract for block rewards.
+    /// It uses WASM execution but has a hardcoded ContractId for genesis availability.
+    pub static ref MONEY_V2_CONTRACT_ID: ContractId =
+        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(3)]));
+
     /// Native contract IDs bytes, for various checks
-    pub static ref NATIVE_CONTRACT_IDS_BYTES: [[u8; 32]; 3] =
-        [MONEY_CONTRACT_ID.to_bytes(), DAO_CONTRACT_ID.to_bytes(), DEPLOYOOOR_CONTRACT_ID.to_bytes()];
+    pub static ref NATIVE_CONTRACT_IDS_BYTES: [[u8; 32]; 4] =
+        [MONEY_CONTRACT_ID.to_bytes(), DAO_CONTRACT_ID.to_bytes(), DEPLOYOOOR_CONTRACT_ID.to_bytes(), MONEY_V2_CONTRACT_ID.to_bytes()];
 
     /// Native contract zkas circuits database trees, for various checks
-    pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 3] = [
+    pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 4] = [
         MONEY_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
         DAO_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
         DEPLOYOOOR_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
+        MONEY_V2_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
     ];
 }
 

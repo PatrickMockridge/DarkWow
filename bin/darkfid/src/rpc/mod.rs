@@ -53,9 +53,6 @@ pub mod misc;
 /// Node management JSON-RPC methods
 pub mod management;
 
-/// Faucet methods for local development
-pub mod faucet;
-
 /// Miner methods for local development
 pub mod miner;
 
@@ -105,11 +102,6 @@ impl RequestHandler<DefaultRpcHandler> for DarkfiNode {
             // Contract methods
             // =======================
             "contract.invoke" => self.contract_invoke(req.id, req.params).await,
-
-            // ==============
-            // Faucet methods
-            // ==============
-            "faucet.mint" => self.faucet_mint(req.id, req.params).await,
 
             // ==============
             // Miner methods

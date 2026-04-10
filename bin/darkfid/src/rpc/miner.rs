@@ -30,11 +30,11 @@ use darkfi::{
         JsonError, JsonResponse, JsonResult,
     },
     tx::{ContractCallLeaf, TransactionBuilder},
-    validator::consensus::Fork,
+    zk::{empty_witnesses, ZkCircuit, ProvingKey},
 };
-use darkfi_money_contract::{client::pow_reward_v1::PoWRewardCallBuilder, MoneyFunction};
+use darkfi_money_v2_contract::{client::pow_reward_v1::PoWRewardCallBuilder, MoneyFunction};
 use darkfi_sdk::{
-    crypto::{keypair::Keypair, MerkleTree, MONEY_CONTRACT_ID},
+    crypto::{keypair::Keypair, pasta_prelude::PrimeField, MerkleTree, MONEY_V2_CONTRACT_ID},
     tx::ContractCall,
 };
 use tinyjson::JsonValue;
@@ -111,7 +111,28 @@ impl DarkfiNode {
         // Get validator state
         let mut validator = self.validator.write().await;
 
-        // Get current fork
+        // Get ZK proving keys (needs validator immutable borrow)
+        let zkbin = match validator.blockchain.contracts.get_zkas(
+            &validator.blockchain.sled_db,
+            &MONEY_V2_CONTRACT_ID,
+            darkfi_money_v2_contract::MONEY_CONTRACT_ZKAS_MINT_NS_V2,
+        ) {
+            Ok(z) => z.0,
+            Err(e) => {
+                error!(target: "darkfid::rpc::miner", "Failed to get zkas: {}", e);
+                return JsonError::new(
+                    InternalError,
+                    Some(format!("Failed to get zkas: {}", e)),
+                    id,
+                )
+                .into()
+            }
+        };
+
+        // Copy verify_fees before getting mutable fork
+        let verify_fees = validator.verify_fees;
+
+        // Get current fork (needs validator mutable borrow)
         let fork = match validator.consensus.forks.first_mut() {
             Some(f) => f,
             None => {
@@ -136,32 +157,8 @@ impl DarkfiNode {
 
         let block_height = previous.header.height + 1;
 
-        // Get ZK proving keys
-        let zkbin = match validator.blockchain.contracts.get_zkas(
-            &validator.blockchain.sled_db,
-            &MONEY_CONTRACT_ID,
-            darkfi_money_contract::MONEY_CONTRACT_ZKAS_MINT_NS_V1,
-        ) {
-            Ok(z) => z.0,
-            Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to get zkas: {}", e);
-                return JsonError::new(
-                    InternalError,
-                    Some(format!("Failed to get zkas: {}", e)),
-                    id,
-                )
-                .into()
-            }
-        };
-
-        let circuit = match ZkCircuit::new(
-            empty_witnesses(&zkbin).map_err(|e| {
-                error!(target: "darkfid::rpc::miner", "Failed to create circuit: {}", e);
-                JsonError::new(InternalError, Some(format!("Failed to create circuit: {}", e)), id)
-            })?,
-            &zkbin,
-        ) {
-            Ok(c) => c,
+        let witnesses = match empty_witnesses(&zkbin) {
+            Ok(w) => w,
             Err(e) => {
                 error!(target: "darkfid::rpc::miner", "Failed to create circuit: {}", e);
                 return JsonError::new(
@@ -172,6 +169,7 @@ impl DarkfiNode {
                 .into()
             }
         };
+        let circuit = ZkCircuit::new(witnesses, &zkbin);
 
         let pk = ProvingKey::build(zkbin.k, &circuit);
 
@@ -181,7 +179,7 @@ impl DarkfiNode {
         // Build the PoWReward transaction
         // Note: recipient is None so the reward goes to the block signing keypair
         // The secret key will be exported so it can be imported to wallet
-        let debris = match PoWRewardCallBuilder {
+        let debris = match (PoWRewardCallBuilder {
             signature_keypair: block_signing_keypair,
             block_height,
             fees: 0,
@@ -190,7 +188,7 @@ impl DarkfiNode {
             user_data: None,
             mint_zkbin: zkbin.clone(),
             mint_pk: pk.clone(),
-        }
+        })
         .build()
         {
             Ok(d) => d,
@@ -205,14 +203,14 @@ impl DarkfiNode {
             }
         };
 
-        let mut data = vec![MoneyFunction::PoWRewardV1 as u8];
+        let mut data = vec![MoneyFunction::PoWRewardV2 as u8];
         if let Err(e) = debris.params.encode(&mut data) {
             error!(target: "darkfid::rpc::miner", "Failed to encode params: {}", e);
             return JsonError::new(InternalError, Some(format!("Failed to encode: {}", e)), id)
                 .into()
         }
 
-        let call = ContractCall { contract_id: *MONEY_CONTRACT_ID, data };
+        let call = ContractCall { contract_id: *MONEY_V2_CONTRACT_ID, data };
 
         let mut tx_builder = match TransactionBuilder::new(
             ContractCallLeaf { call, proofs: debris.proofs },
@@ -355,7 +353,7 @@ impl DarkfiNode {
             &block,
             &previous,
             true,
-            validator.verify_fees,
+            verify_fees,
         )
         .await
         {

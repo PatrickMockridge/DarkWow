@@ -20,9 +20,10 @@ DarkFi has two distinct contract types with fundamentally different deployment m
 
 | Contract | Package | ContractID | Deployed By |
 |----------|---------|------------|-------------|
-| Money | `darkfi_money_contract` | Hardcoded `MONEY_CONTRACT_ID` | darkfid at startup |
-| DAO | `darkfi_dao_contract` | Hardcoded `DAO_CONTRACT_ID` | darkfid at startup |
-| Deployooor | `darkfi_deployooor_contract` | Hardcoded `DEPLOYOOOR_CONTRACT_ID` | darkfid at startup |
+| Money | `darkfi_money_contract` | Hardcoded `MONEY_CONTRACT_ID` (index 0) | darkfid at startup |
+| DAO | `darkfi_dao_contract` | Hardcoded `DAO_CONTRACT_ID` (index 1) | darkfid at startup |
+| Deployooor | `darkfi_deployooor_contract` | Hardcoded `DEPLOYOOOR_CONTRACT_ID` (index 2) | darkfid at startup |
+| MoneyV2 | `darkfi_money_v2_contract` | Hardcoded `MONEY_V2_CONTRACT_ID` (index 3) | darkfid at startup |
 
 **Characteristics:**
 - ContractID known at compile time (static)
@@ -30,11 +31,12 @@ DarkFi has two distinct contract types with fundamentally different deployment m
 - VKs (Verification Keys) injected at genesis during initialization
 - No deployment transaction needed - available immediately
 
+**Note:** MoneyV2 is the native token contract for block rewards (PoWRewardV2). MoneyV1 remains for backward compatibility but should not be used for new functionality.
+
 ### WASM Contracts
 
 | Contract | Package | ContractID | Deployed By |
 |----------|---------|------------|-------------|
-| MoneyV2 | `darkfi_money_v2_contract` | Derived from deployer's pubkey | Deployooor contract |
 | Stablecoin | `darkfi_stablecoin_contract` | Derived from deployer's pubkey | Deployooor contract |
 | Identity | `darkfi_identity_contract` | Derived from deployer's pubkey | Deployooor contract |
 | DEX | `darkfi_dex_contract` | Derived from deployer's pubkey | Deployooor contract |
@@ -110,6 +112,7 @@ DarkFi has two distinct contract types with fundamentally different deployment m
 │   │  Money Contract    │ MONEY_CONTRACT_ID     │ include_bytes!(...)   │      │
 │   │  DAO Contract      │ DAO_CONTRACT_ID       │ include_bytes!(...)   │      │
 │   │  Deployooor       │ DEPLOYOOOR_CONTRACT_ID│ include_bytes!(...)   │      │
+│   │  MoneyV2          │ MONEY_V2_CONTRACT_ID  │ include_bytes!(...)   │      │
 │   └────────────────────────────────────────────────────────────────────┘      │
 │                                                                                │
 │   For each: Runtime::deploy() → WASM initialized with ContractID              │
@@ -136,7 +139,7 @@ DarkFi has two distinct contract types with fundamentally different deployment m
 
   User/Test                    TestHarness                  Deployooor              Blockchain
      │                              │                            │                     │
-     │  deploy_money_v2()            │                            │                     │
+     │  deploy_stablecoin()         │                            │                     │
      │──────────────────────────────►│                            │                     │
      │                              │                            │                     │
      │                              │  deploy_contract()         │                     │
@@ -159,7 +162,7 @@ DarkFi has two distinct contract types with fundamentally different deployment m
      │                              │                            │                     │
      │         ⚠️ VK INJECTION NEVER HAPPENS!                      │                     │
      │                              │                            │                     │
-     │  use money_v2()              │                            │                     │
+     │  use stablecoin()            │                            │                     │
      │──────────────────────────────►                            │                     │
      │                              │                            │                     │
      │                              │                 generate_proof()              │
@@ -286,10 +289,10 @@ The test harness builds VKs for these circuit groups:
 |---------------|----------|-------|
 | Money (V1) | Fee, Mint, Burn, TokenMint, AuthTokenMint | Native - VKs injected at genesis |
 | DAO | Mint, ProposeInput, ProposeMain, VoteInput, VoteMain, Exec, EarlyExec, AuthTransfer, AuthTransferEnc | Native |
+| MoneyV2 | Fee, Mint, Burn, TokenMint, AuthTokenMint, PoWReward | Native - VKs injected at genesis |
 | Stablecoin | OpenPosition, MintStable, Liquidate, AccrueInterest, GovernanceReport | WASM - skipped at genesis |
 | Identity | CreateClaimV1, CreateClaimV1L1, CreateClaimV1DAG, CreateClaimV1L1V2, CreateClaimV1Multi, CreateClaimV1Ratio, IssueCredential, VerifyCapability | WASM |
 | DEX | CreateSwap, AcceptSwap, ExecuteSwap, CancelSwap, ExecuteSwapSlippage, ExecuteSwapFee | WASM |
-| MoneyV2 | Fee, Mint, Burn, TokenMint, AuthTokenMint | WASM |
 | Auction | CreateAuction, PlaceBid, CloseAuction, ClaimWinnings, SettleAuction, RefundBid | WASM |
 | Game contracts | Lottery, Slot, Baccarat, DarkToshiDice, Roulette | WASM |
 
@@ -310,7 +313,7 @@ pub async fn new(holders: &[Holder], verify_fees: bool) -> Result<Self> {
     // 3. Inject VKs (same as darkfid startup)
     vks::inject(&overlay, &vks)?;
 
-    // 4. Deploy native contracts (Money, DAO, Deployooor)
+    // 4. Deploy native contracts (Money, DAO, Deployooor, MoneyV2)
     deploy_native_contracts(&overlay, POW_TARGET).await?;
 
     // 5. Create wallets for each holder
@@ -329,11 +332,12 @@ TestHarness::new()
        │
        ├── vks::inject() → Money VKs → money_db_name
        │                      DAO VKs → dao_db_name
+       │                      MoneyV2 VKs → money_v2_db_name
        │
-       └── deploy_native_contracts() → Money, DAO, Deployooor deployed
+       └── deploy_native_contracts() → Money, DAO, Deployooor, MoneyV2 deployed
                                         with hardcoded IDs
 
-th.generate_block_all() → Uses Money contract (native, VKs present) ✅
+th.generate_block_all() → Uses MoneyV2 contract (native, VKs present) ✅
 th.transfer_to_all()     → Uses Money contract (native, VKs present) ✅
 ```
 
@@ -344,16 +348,16 @@ TestHarness::new()
        │
        ├── vks::inject() → WASM VKs → SKIPPED (IDs unknown)
        │
-       └── deploy_native_contracts() → Money, DAO, Deployooor ONLY
-                                        (MoneyV2 NOT deployed)
+       └── deploy_native_contracts() → Money, DAO, Deployooor, MoneyV2 ONLY
+                                        (WASM contracts NOT deployed)
 
-th.deploy_money_v2() → Deploys MoneyV2 via Deployooor
-       │              → ContractID derived (e.g., 0x4A7B...)
-       │              → VKs NOT injected
+th.deploy_stablecoin() → Deploys Stablecoin via Deployooor
+       │                → ContractID derived (e.g., 0x4A7B...)
+       │                → VKs NOT injected
        │
-       th.money_v2_mint() → Generates proof using PK
-               │          → Verifies against VK in blockchain
-               │          → VK NOT FOUND 💥
+       th.stablecoin_mint() → Generates proof using PK
+               │             → Verifies against VK in blockchain
+               │             → VK NOT FOUND 💥
                ▼
         vm.rs:936 panic: EcGetX try_into() failed
 ```
@@ -414,8 +418,8 @@ pub async fn deploy_money_v2(&mut self, holder: &Holder, wasm_bincode: Vec<u8>, 
 
 | Contract Type | VK Injection | Status |
 |--------------|---------------|--------|
-| Native (MoneyV1, DAO) | At genesis | ✅ Works |
-| WASM (MoneyV2, Stablecoin, Identity, DEX) | Never | ❌ Fails |
+| Native (MoneyV1, MoneyV2, DAO) | At genesis | ✅ Works |
+| WASM (Stablecoin, Identity, DEX) | Never | ❌ Fails |
 
 ---
 

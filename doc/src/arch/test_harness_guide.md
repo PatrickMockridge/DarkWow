@@ -244,12 +244,16 @@ pub static ref DAO_CONTRACT_ID: ContractId =
     ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(1)]));
 pub static ref DEPLOYOOOR_CONTRACT_ID: ContractId =
     ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(2)]));
+pub static ref MONEY_V2_CONTRACT_ID: ContractId =
+    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(3)]));
 ```
 
 **Test Harness for Native Contracts:**
 - VKs are injected at harness initialization (in `vks.rs::inject()`)
 - Contract ID is known at compile time
 - No deployment step needed
+
+**Note:** MoneyV2 is the native contract for block rewards (PoWRewardV2).
 
 #### WASM Contracts
 

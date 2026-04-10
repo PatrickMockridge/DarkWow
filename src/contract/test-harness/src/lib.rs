@@ -48,6 +48,10 @@ use darkfi_money_contract::{
     },
     MoneyFunction,
 };
+use darkfi_money_v2_contract::{
+    client::OwnCoin as OwnCoinV2,
+    model::Output as OutputV2,
+};
 use darkfi_sdk::{
     bridgetree,
     crypto::{
@@ -227,6 +231,8 @@ pub struct Wallet {
     pub unspent_money_coins: Vec<OwnCoin>,
     /// Holder's set of spent [`OwnCoin`]s from the `Money` contract
     pub spent_money_coins: Vec<OwnCoin>,
+    /// Holder's set of unspent [`OwnCoinV2`]s from the `MoneyV2` contract
+    pub unspent_money_coins_v2: Vec<OwnCoinV2>,
     /// Witnessed leaf positions of DAO bullas in the `dao_merkle_tree`
     pub dao_leafs: HashMap<DaoBulla, bridgetree::Position>,
     /// Dao Proposal snapshots
@@ -290,6 +296,7 @@ impl Wallet {
             dao_proposals_tree: MerkleTree::new(1),
             unspent_money_coins: vec![],
             spent_money_coins: vec![],
+            unspent_money_coins_v2: vec![],
             dao_leafs: HashMap::new(),
             dao_prop_leafs: HashMap::new(),
             bench_wasm: false,
@@ -370,6 +377,41 @@ impl Wallet {
 
             debug!("Found new OwnCoin({}) for {:?}", owncoin.coin, holder);
             self.unspent_money_coins.push(owncoin.clone());
+            found.push(owncoin);
+        }
+
+        found
+    }
+
+    /// Process a set of Money V2 [`Output`]s.
+    /// Append each coin to the Merkle tree and attempt to decrypt the note.
+    /// Returns any new OwnCoins found.
+    pub fn process_money_v2_outputs(
+        &mut self,
+        outputs: &[OutputV2],
+        holder: &Holder,
+    ) -> Vec<OwnCoinV2> {
+        let mut found = vec![];
+
+        for output in outputs {
+            self.money_merkle_tree.append(MerkleNode::from(output.coin.inner()));
+
+            let Ok(note) = output.note.decrypt::<darkfi_money_v2_contract::client::MoneyNote>(
+                &self.keypair.secret,
+            )
+            else {
+                continue
+            };
+
+            let owncoin = OwnCoinV2 {
+                coin: output.coin,
+                note: note.clone(),
+                secret: self.keypair.secret,
+                leaf_position: self.money_merkle_tree.mark().unwrap(),
+            };
+
+            debug!("Found new OwnCoinV2({}) for {:?}", owncoin.coin, holder);
+            self.unspent_money_coins_v2.push(owncoin.clone());
             found.push(owncoin);
         }
 
@@ -690,7 +732,7 @@ impl TestHarness {
     /// Generate a new block mined by `miner` and broadcast to all registered
     /// holders. Convenience wrapper around `generate_block` that uses
     /// `holder_keys` instead of requiring the caller to pass holders.
-    pub async fn generate_block_all(&mut self, miner: &Holder) -> Result<Vec<OwnCoin>> {
+    pub async fn generate_block_all(&mut self, miner: &Holder) -> Result<Vec<OwnCoinV2>> {
         let holders = self.holder_keys.clone();
         self.generate_block(miner, &holders).await
     }
