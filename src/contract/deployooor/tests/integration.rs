@@ -26,7 +26,9 @@
 //!   5. Negative: deploying to a locked contract fails
 
 use darkfi::Result;
-use darkfi_contract_test_harness::{init_logger, Holder, TestHarness};
+use darkfi_contract_test_harness::{
+    contract_graph::Contract, init_logger, Holder, TestHarness,
+};
 use tracing::info;
 
 #[test]
@@ -37,7 +39,7 @@ fn deploy_integration() -> Result<()> {
         use Holder::Alice;
 
         let block_height = 0;
-        let mut th = TestHarness::new(&[Alice], false).await?;
+        let mut th = TestHarness::new(&[Alice], false, &[Contract::Money, Contract::Deployooor]).await?;
 
         let dao_wasm = include_bytes!("../../dao/darkfi_dao_contract.wasm");
         let money_wasm = include_bytes!("../../money/darkfi_money_contract.wasm");

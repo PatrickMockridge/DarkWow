@@ -17,7 +17,9 @@
  */
 
 use darkfi::Result;
-use darkfi_contract_test_harness::{init_logger, Holder, TestHarness};
+use darkfi_contract_test_harness::{
+    contract_graph::Contract, init_logger, Holder, TestHarness,
+};
 use tracing::info;
 
 #[test]
@@ -31,7 +33,7 @@ fn token_mint_burn() -> Result<()> {
 
         let block_height = 0;
 
-        let mut th = TestHarness::new(&[Alice, Bob], false).await?;
+        let mut th = TestHarness::new(&[Alice, Bob], false, &[Contract::Money, Contract::MoneyV2]).await?;
 
         // Mint BOB token
         info!("Minting BOB token");

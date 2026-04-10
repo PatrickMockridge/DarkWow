@@ -29,7 +29,7 @@ use std::sync::Arc;
 
 use crate::tests::{Harness, HarnessConfig};
 use darkfi::validator::{consensus::BLOCK_GAS_LIMIT, utils::best_fork_index};
-use darkfi_contract_test_harness::{init_logger, Holder, TestHarness};
+use darkfi_contract_test_harness::{contract_graph::Contract, init_logger, Holder, TestHarness};
 use darkfi_sdk::{crypto::BaseBlind, num_traits::One};
 use num_bigint::BigUint;
 use rand::rngs::OsRng;
@@ -69,7 +69,7 @@ async fn simulate_unproposed_txs(
 
     // Create contract test harness
     const HOLDERS: [Holder; 1] = [Holder::Alice];
-    let mut contract_test_harness = TestHarness::new(&HOLDERS, false).await?;
+    let mut contract_test_harness = TestHarness::new(&HOLDERS, false, &[Contract::Money]).await?;
 
     // Create and add pending transactions
     for counter in 0..num_txs {

@@ -28,7 +28,9 @@
 //! TODO: Malicious cases
 
 use darkfi::Result;
-use darkfi_contract_test_harness::{init_logger, Holder, TestHarness};
+use darkfi_contract_test_harness::{
+    contract_graph::Contract, init_logger, Holder, TestHarness,
+};
 use tracing::info;
 
 #[test]
@@ -44,7 +46,7 @@ fn mint_pay_swap() -> Result<()> {
         const BOB_SEND: u64 = 180;
         let block_height = 0;
 
-        let mut th = TestHarness::new(&[Alice, Bob], false).await?;
+        let mut th = TestHarness::new(&[Alice, Bob], false, &[Contract::Money]).await?;
 
         // Mint tokens for Alice and Bob
         info!(target: "money", "Minting tokens for Alice and Bob");

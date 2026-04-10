@@ -932,6 +932,23 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     trace!(target: "zk::vm", "Executing `EcGetX{:?}` opcode", opcode.1);
                     let args = &opcode.1;
 
+                    // DEBUG: Log heap access info before crashing
+                    trace!(
+                        target: "zk::vm",
+                        "EcGetX: args[0].1={}, heap.len={}",
+                        args[0].1,
+                        heap.len()
+                    );
+                    if args[0].1 >= heap.len() {
+                        error!(
+                            target: "zk::vm",
+                            "EcGetX: heap index {} >= heap.len() {}",
+                            args[0].1,
+                            heap.len()
+                        );
+                        return Err(plonk::Error::Synthesis)
+                    }
+
                     let point: Point<pallas::Affine, EccChip<OrchardFixedBases>> =
                         heap[args[0].1].clone().try_into()?;
 
@@ -945,6 +962,23 @@ impl Circuit<pallas::Base> for ZkCircuit {
                 Opcode::EcGetY => {
                     trace!(target: "zk::vm", "Executing `EcGetY{:?}` opcode", opcode.1);
                     let args = &opcode.1;
+
+                    // DEBUG: Log heap access info before crashing
+                    trace!(
+                        target: "zk::vm",
+                        "EcGetY: args[0].1={}, heap.len={}",
+                        args[0].1,
+                        heap.len()
+                    );
+                    if args[0].1 >= heap.len() {
+                        error!(
+                            target: "zk::vm",
+                            "EcGetY: heap index {} >= heap.len() {}",
+                            args[0].1,
+                            heap.len()
+                        );
+                        return Err(plonk::Error::Synthesis)
+                    }
 
                     let point: Point<pallas::Affine, EccChip<OrchardFixedBases>> =
                         heap[args[0].1].clone().try_into()?;

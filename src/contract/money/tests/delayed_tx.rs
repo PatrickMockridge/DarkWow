@@ -21,7 +21,9 @@ use darkfi::{
     zk::halo2::Field,
     Result,
 };
-use darkfi_contract_test_harness::{init_logger, Holder, TestHarness};
+use darkfi_contract_test_harness::{
+    contract_graph::Contract, init_logger, Holder, TestHarness,
+};
 use darkfi_money_contract::{
     client::{
         compute_remainder_blind,
@@ -55,7 +57,7 @@ fn delayed_tx() -> Result<()> {
         const HOLDERS: [Holder; 3] = [Holder::Alice, Holder::Bob, Holder::Charlie];
 
         // Initialize harness
-        let mut th = TestHarness::new(&HOLDERS, true).await?;
+        let mut th = TestHarness::new(&HOLDERS, true, &[Contract::Money]).await?;
 
         // Generate one new block mined by Alice
         th.generate_block(&Holder::Alice, &HOLDERS).await?;

@@ -67,6 +67,10 @@ use tracing::{debug, warn};
 /// Utility module for caching ZK proof PKs and VKs
 pub mod vks;
 
+/// Contract dependency graph for selective loading
+pub mod contract_graph;
+use crate::contract_graph::Contract;
+
 /// `Money::Burn` functionality
 mod money_burn;
 /// `Money::Fee` functionality
@@ -404,7 +408,8 @@ pub struct TestHarness {
 impl TestHarness {
     /// Instantiate a new [`TestHarness`] given a slice of [`Holder`]s.
     /// Additionally, a `verify_fees` boolean will enforce tx fee verification.
-    pub async fn new(holders: &[Holder], verify_fees: bool) -> Result<Self> {
+    /// The `contracts` parameter specifies which contracts to load VKs for.
+    pub async fn new(holders: &[Holder], verify_fees: bool, contracts: &[Contract]) -> Result<Self> {
         // Create a genesis block
         let mut genesis_block = BlockInfo::default();
         genesis_block.header.timestamp = Timestamp::from_u64(1689772567);
@@ -414,8 +419,8 @@ impl TestHarness {
         // Deterministic PRNG
         let mut rng = Pcg32::new(42);
 
-        // Build or read cached ZK PKs and VKs
-        let (pks, vks) = vks::get_cached_pks_and_vks()?;
+        // Build or read cached ZK PKs and VKs for the specified contracts
+        let (pks, vks) = vks::get_vks_for(contracts)?;
         let mut proving_keys = HashMap::new();
         for (bincode, namespace, pk) in pks {
             let mut reader = Cursor::new(pk);

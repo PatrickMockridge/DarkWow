@@ -33,7 +33,9 @@
 //!   * Rachel — recipient of transfer proposals
 
 use darkfi::{util::pcg::Pcg32, Result};
-use darkfi_contract_test_harness::{init_logger, Holder, TestHarness};
+use darkfi_contract_test_harness::{
+    contract_graph::Contract, init_logger, Holder, TestHarness,
+};
 use darkfi_dao_contract::{
     blockwindow,
     model::{Dao, DaoBlindAggregateVote, DaoVoteParams},
@@ -90,7 +92,9 @@ fn integration_test() -> Result<()> {
 
         use Holder::{Alice, Bob, Charlie, Dao, Rachel};
 
-        let mut th = TestHarness::new(&[Alice, Bob, Charlie, Dao, Rachel], false).await?;
+        let mut th =
+            TestHarness::new(&[Alice, Bob, Charlie, Dao, Rachel], false, &[Contract::Money, Contract::Dao])
+                .await?;
         let mut height: u32 = 0;
 
         // Derive DAO governance token ID from Alice's mint authority

@@ -17,7 +17,9 @@
  */
 
 use darkfi::Result;
-use darkfi_contract_test_harness::{init_logger, Holder, TestHarness};
+use darkfi_contract_test_harness::{
+    contract_graph::Contract, init_logger, Holder, TestHarness,
+};
 use darkfi_sdk::blockchain::expected_reward;
 
 #[test]
@@ -28,7 +30,7 @@ fn money_integration() -> Result<()> {
 
         use Holder::{Alice, Bob};
 
-        let mut th = TestHarness::new(&[Alice, Bob], true).await?;
+        let mut th = TestHarness::new(&[Alice, Bob], true, &[Contract::Money, Contract::MoneyV2]).await?;
 
         // Mine 2 blocks each
         th.generate_block_all(&Alice).await?;
