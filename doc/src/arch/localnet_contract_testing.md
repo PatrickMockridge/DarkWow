@@ -4,9 +4,51 @@
 
 This guide covers localnet smart contract testing in DarkFi using the `drk` CLI wallet with block mining to fund the wallet.
 
-## Current State (2026-04-08)
+## Architecture Update (2026-04-10)
 
-Localnet smart contract testing now **works fully** with the following workflow:
+This fork introduces significant architectural changes to DarkFi's contract system:
+
+### Clean Genesis
+
+Genesis now deploys only **Deployooor + Money V2** (Satoshi-style):
+
+| Contract | Type | Purpose |
+|----------|------|---------|
+| Deployooor | Native | WASM contract deployment |
+| Money V2 | WASM | Block rewards, token operations |
+
+This provides a minimal foundation where additional contracts can be composed as needed.
+
+### VM Heap Fix
+
+The EcGetX/EcGetY panic has been fixed with bounds checking in `src/zk/vm.rs`:
+
+```rust
+if args[0].1 >= heap.len() {
+    error!(
+        target: "zk::vm",
+        "EcGetX: heap index {} >= heap.len() {}",
+        args[0].1,
+        heap.len()
+    );
+    return Err(plonk::Error::Synthesis)
+}
+```
+
+### Namespace Uniqueness
+
+Circuit namespaces must now be unique across contracts. Namespace collisions cause verification failures. The test harness includes compile-time detection of duplicate namespaces.
+
+### Contract Deprecation
+
+- **Money V1**: Deprecated - non-composable, ACL-based architecture
+- **Money V2**: Current - WASM-based, secure ZK circuits with `constrain_equal_base`
+- **DAO V1**: Deprecated - tight coupling to Money V1 ACL breaks privacy
+- **DAO Escrow**: Recommended alternative - WASM, Merkle proofs, privacy-preserving
+
+## Current State (2026-04-10)
+
+Localnet smart contract testing **works fully** with the following workflow:
 
 1. Start `darkfid` with localnet configuration
 2. Mine blocks using `drk mine` (RandomX PoW)
@@ -90,11 +132,13 @@ These contracts have integration tests but require a running darkfid node (marke
 
 | Contract | Package Name | Reason |
 |----------|--------------|--------|
-| money | darkfi_money_contract | Requires TestHarness with darkfid |
-| money_v2 | darkfi_money_v2_contract | Requires TestHarness with darkfid |
-| dao | darkfi_dao_contract | Requires TestHarness with darkfid |
+| money_v1 | darkfi_money_contract | Legacy V1, deprecated |
+| money_v2 | darkfi_money_v2_contract | Current Money contract |
+| dao_v1 | darkfi_dao_contract | Deprecated, use DAO Escrow |
 
 Run manually with: `cargo test -p darkfi_{contract}_contract --test integration -- --ignored`
+
+> **Note**: Money V2 uses the standard Money package on this fork. DAO V1 is deprecated - use DAO Escrow for governance.
 
 ### Contracts Without Integration Tests
 
@@ -441,10 +485,12 @@ Reference these contracts for correct patterns:
 | `darkfi_attestation_contract` | Complex state enum testing |
 | `darkfi_labor_market_contract` | bincode→darkfi_serial migration |
 
-### Contract Test Status Summary (2026-04-08)
+### Contract Test Status Summary (2026-04-10)
 
 - **260+ tests passing** across 25 contracts
-- **3 tests marked `#[ignore]`** (money, money_v2, dao) - require darkfid
+- **VM Heap Fix**: EcGetX/EcGetY bounds checking now prevents panics
+- **Selective VK Loading**: Test harness supports loading only needed contracts
+- **3 tests marked `#[ignore]`** (money_v1, money_v2, dao_v1) - require darkfid
 - **5 contracts fixed** (oracle, auction, tender, attestation, labor_market) - 100 new tests passing
 - **6 betting/gaming contracts fixed** (roulette, slot, darktoshi_dice, betting_stake, escrow, game_room) - 136 new tests passing
 - All previously broken tests have been fixed
