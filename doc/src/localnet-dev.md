@@ -638,27 +638,47 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
 
 ---
 
-## Money v1 vs v2 Contract Composition Issue
+## Money V1 is DEPRECATED
 
-### The Problem
+**Money V1 is deprecated. Money V2 is the current standard.**
 
-DarkFi maintains two versions of the money contract:
-- **`money` (v1)**: Original DarkFi money contract - used by `drk` CLI for DARK token
-- **`money_v2`**: Secure version with self-contained circuit design - NEW standard
+- **`money` (v1)**: DEPRECATED - Original DarkFi money contract
+- **`money_v2`**: CURRENT - Secure version with self-contained circuit design
 
-Contracts like bridge, dex, and stablecoin are written using Money v2 patterns:
-- Use `constrain_equal_base` for binding public inputs to witnesses
-- Reference `money/burn_v1.zk` patterns
-- Expect Money v2 Merkle tree structure
+All new code and tests must use Money V2. Using V1 contract IDs with V2 circuits causes the EcGetX heap error.
 
-But the `drk` CLI wallet only knows about Money v1 for the native DARK token.
+### The Bug: Mixing V1 Contract IDs with V2 Circuits
 
-### Impact
+```
+EcGetX: heap index 6 >= heap.len() 5
+```
 
-When deploying these contracts or when these contracts need to interact with DARK tokens:
-1. Transaction construction uses Money v1 Merkle tree structure
-2. Contract expects Money v2 structure
-3. `PositionNotMarked` error occurs at Merkle tree lookup
+**Root Cause**:
+
+| Component | Money V1 (DEPRECATED) | Money V2 (CURRENT) |
+|-----------|----------------------|-------------------|
+| Contract ID | `MONEY_CONTRACT_ID` (0x00) | `MONEY_V2_CONTRACT_ID` |
+| Function enum | `MoneyFunction::*V1` | `MoneyV2Function::*V2` |
+| ZK namespaces | `*_V1` (e.g. `TokenMint_V1`) | `*_V2` (e.g. `TokenMint_V2`) |
+| WASM | money_contract.wasm | money_v2_contract.wasm |
+
+When a transaction uses:
+- `contract_id = MONEY_CONTRACT_ID` (V1 - DEPRECATED)
+- `function = TokenMintV2` (V2 function code)
+- `zkbin namespace = "TokenMint_V2"` (V2 circuit)
+
+The V1 WASM doesn't understand V2 function codes, causing heap layout mismatch.
+
+**The Fix**: Always use V2 components:
+```rust
+// WRONG - using deprecated V1 contract ID
+ContractCall { contract_id: *MONEY_CONTRACT_ID, data: vec![MoneyV2Function::TokenMintV2 as u8, ...] }
+
+// CORRECT - using current V2 contract ID
+ContractCall { contract_id: *MONEY_V2_CONTRACT_ID, data: vec![MoneyV2Function::TokenMintV2 as u8, ...] }
+```
+
+See [test_harness_guide.md](arch/test_harness_guide.md) for detailed test harness architecture documentation.
 
 ### Files Affected
 

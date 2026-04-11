@@ -680,6 +680,94 @@ Check that:
 2. Circuit source files exist in `proof/` directory
 3. The `.zk` files have valid syntax
 
+### EcGetX: heap index error
+
+```
+EcGetX: heap index 6 >= heap.len() 5
+```
+
+**Root Cause**: Mixing money v1 contract IDs with money v2 ZK circuits.
+
+When a transaction uses:
+- `contract_id = MONEY_CONTRACT_ID` (v1)
+- `function = TokenMintV2` (v2 function code)
+- `zkbin namespace = "TokenMint_V2"` (v2 circuit)
+
+The v1 WASM doesn't understand v2 function codes, causing heap layout mismatch.
+
+**Fix**: Ensure contract IDs match contract versions:
+
+```rust
+// WRONG - v1 ID with v2 function
+ContractCall { contract_id: *MONEY_CONTRACT_ID, data: vec![MoneyV2Function::TokenMintV2 as u8, ...] }
+
+// CORRECT - v2 ID with v2 function
+ContractCall { contract_id: *MONEY_V2_CONTRACT_ID, data: vec![MoneyV2Function::TokenMintV2 as u8, ...] }
+```
+
+### PositionNotMarked Error
+
+**Cause**: Merkle tree not properly synchronized with wallet state.
+
+When processing outputs, the wallet appends to its Merkle tree. If the tree gets out of sync with the actual blockchain state, `witness()` lookups fail.
+
+**Fix**: Ensure `wallet.process_money_v2_outputs()` is called after every output-producing transaction.
+
+## Money V1 is DEPRECATED (Money V2 is Current)
+
+**Money V1 is deprecated and should not be used in new code or tests.**
+
+| Component | Money V1 (DEPRECATED) | Money V2 (CURRENT) |
+|-----------|----------------------|-------------------|
+| Contract ID | `MONEY_CONTRACT_ID` (0x00) | `MONEY_V2_CONTRACT_ID` |
+| Function enum | `MoneyFunction::*V1` | `MoneyV2Function::*V2` |
+| ZK namespaces | `*_V1` (e.g. `TokenMint_V1`) | `*_V2` (e.g. `TokenMint_V2`) |
+| WASM | money_contract.wasm | money_v2_contract.wasm |
+| OwnCoin type | `darkfi_money_contract::OwnCoin` | `darkfi_money_v2_contract::OwnCoin` |
+
+### Why Legacy V1 Code Causes Bugs
+
+The test harness wallet still has some legacy V1 types for backward compatibility, but **using V1 contract IDs with V2 circuits causes the EcGetX heap error**:
+
+```
+EcGetX: heap index 6 >= heap.len() 5
+```
+
+When a transaction uses:
+- `contract_id = MONEY_CONTRACT_ID` (V1 - DEPRECATED)
+- `function = TokenMintV2` (V2 function code)
+- `zkbin namespace = "TokenMint_V2"` (V2 circuit)
+
+The V1 WASM doesn't understand V2 function codes, causing heap layout mismatch.
+
+**The fix: Always use matching V2 components**
+
+```rust
+// WRONG - using deprecated V1 contract ID
+ContractCall { contract_id: *MONEY_CONTRACT_ID, data: vec![MoneyV2Function::TokenMintV2 as u8, ...] }
+
+// CORRECT - using current V2 contract ID
+ContractCall { contract_id: *MONEY_V2_CONTRACT_ID, data: vec![MoneyV2Function::TokenMintV2 as u8, ...] }
+```
+
+### Wallet Processing Methods for Money V2
+
+When writing tests use these V2 methods (not the legacy V1 ones):
+
+```rust
+// Mark V2 nullifiers as spent
+pub fn mark_spent_nullifier_v2(&mut self, nullifier: Nullifier, holder: &Holder)
+
+// Process V2 inputs (nullifier insertion)
+pub fn process_money_v2_inputs(&mut self, inputs: &[InputV2], holder: &Holder)
+
+// Process V2 outputs
+pub fn process_money_v2_outputs(&mut self, outputs: &[OutputV2], holder: &Holder) -> Vec<OwnCoinV2>
+
+// Process fee for V2 transactions
+pub fn process_fee_v2(&mut self, fee_params: &Option<MoneyFeeParamsV1>, holder: &Holder) -> Vec<OwnCoinV2>
+```
+
 ## See Also
 
 - [ZK Circuit Testing](./zk_circuit_testing.md)
