@@ -132,13 +132,11 @@ These contracts have integration tests but require a running darkfid node (marke
 
 | Contract | Package Name | Reason |
 |----------|--------------|--------|
-| money_v1 | darkfi_money_contract | Legacy V1, deprecated |
-| money_v2 | darkfi_money_v2_contract | Current Money contract |
-| dao_v1 | darkfi_dao_contract | Deprecated, use DAO Escrow |
+| money_v2 | darkfi_money_v2_contract | Current Money contract (only Money contract on this fork) |
 
 Run manually with: `cargo test -p darkfi_{contract}_contract --test integration -- --ignored`
 
-> **Note**: Money V2 uses the standard Money package on this fork. DAO V1 is deprecated - use DAO Escrow for governance.
+> **Note**: Money V1 and DAO V1 have been **removed** from this fork. Only Money V2 exists. For governance, use DAO Escrow (`dao_escrow`).
 
 ### Contracts Without Integration Tests
 

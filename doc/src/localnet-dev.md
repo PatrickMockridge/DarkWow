@@ -208,9 +208,7 @@ Tested WASM contract deployment on localnet.
 |----------|------------|--------|
 | darktoshi_dice | 196KB | ✅ Deployed |
 | baccarat | 199KB | ✅ Deployed |
-| dao | 320KB | ✅ Deployed |
-| money | 496KB | ✅ Deployed |
-| money_v2 | 496KB | ✅ Deployed |
+| money_v2 | 496KB | ✅ Deployed (only Money contract on this fork) |
 | escrow | 177KB | ✅ Deployed |
 | lottery | 228KB | ✅ Deployed |
 | roulette | 239KB | ✅ Deployed (2026-04-07) |
@@ -223,6 +221,8 @@ Tested WASM contract deployment on localnet.
 | stablecoin | 85KB | ✅ Deployed |
 | relayer_endowment | 181KB | ✅ Deployed |
 | dao_escrow | 169KB | ✅ Deployed (2026-04-08) |
+
+> **Note**: Money V1 and DAO V1 have been **removed** from this fork. Only Money V2 exists for tokens. DAO Escrow replaces DAO V1 for governance.
 
 ### Contracts That Previously Failed to Deploy
 

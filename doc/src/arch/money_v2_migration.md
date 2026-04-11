@@ -2,83 +2,50 @@
 
 ## Executive Summary
 
-This document describes a critical architectural change in DarkFi: **block rewards are now paid through Money V2 instead of Money V1**, and Money V2 is deployed as a **native contract at genesis** with a hardcoded `ContractId`.
+This document describes the architecture of DarkFi on this fork:
+
+- **Money V1 is DEPRECATED and REMOVED** - Only Money V2 exists
+- **DAO v1 is DEPRECATED and REMOVED** - Use `dao_escrow` contract instead
+- **Money V2 is the ONLY money contract** - deployed as a native contract at genesis
+- **Block rewards use Money V2** (`PoWRewardV2`)
 
 This change constitutes a **hard fork** of the DarkFi protocol. Nodes running the old software will reject the new genesis block because:
-1. Money V2 was not a native contract in the original protocol
-2. Block rewards used `MoneyFunction::PoWRewardV1` instead of `PoWRewardV2`
+1. Money V1 was not removed in the original protocol
+2. DAO v1 was not removed in the original protocol
+3. Block rewards used `MoneyFunction::PoWRewardV1` instead of `PoWRewardV2`
 
-## Background: The Money V1 / DAO Coupling Problem
+## Current Architecture (This Fork)
 
-### Original Architecture
+### Contract Status
 
-In the original DarkFi design:
+| Contract | Status | Replacement |
+|----------|--------|-------------|
+| Money (v1) | **REMOVED** | Use Money V2 |
+| DAO (v1) | **REMOVED** | Use `dao_escrow` |
+| Money V2 | **ACTIVE** | Standard money contract |
+| DAO Escrow | **ACTIVE** | Governance with endowment/treasury modes |
 
-| Contract | Type | ContractId | Purpose |
-|----------|------|------------|---------|
-| Money | Native | Hardcoded `MONEY_CONTRACT_ID` (index 0) | DARK token, PoWRewardV1 |
-| DAO | Native | Hardcoded `DAO_CONTRACT_ID` (index 1) | Governance |
-| Deployooor | Native | Hardcoded `DEPLOYOOOR_CONTRACT_ID` (index 2) | Deploy WASM contracts |
-| MoneyV2 | WASM | Derived at runtime | Next-gen token (initially deployed via Deployooor) |
+### Genesis Block (This Fork)
 
-### The Coupling Issue
-
-The DAO contract has a critical dependency on the Money contract:
-
-```rust
-// In contract_graph.rs
-Contract::Dao => vec![Contract::Money], // DAO uses Money for governance token
+```
+Genesis Block
+    │
+    ├── MoneyV2 Contract (MONEY_V2_CONTRACT_ID, index 0)
+    │       └── PoWRewardV2 ← block rewards use this
+    │
+    └── Deployooor (DEPLOYOOOR_CONTRACT_ID, index 1)
+            └── Deploy WASM contracts (DAO Escrow, and all other contracts)
 ```
 
-This dependency exists because:
+Note: DAO Escrow is a **WASM contract** deployed via Deployooor, not a native contract.
 
-1. **DAO Governance Uses DARK Token**: DAO proposals can include `AuthMoneyTransfer` calls that move DARK tokens held by the DAO treasury. This requires the DAO to call into the Money contract.
-
-2. **Token Minting**: DAOs can mint new governance tokens via `DaoFunction::Mint`, which creates tokens tracked in the Money contract's state.
-
-3. **Voting Weight**: DAO voting weight is tied to DARK token holdings managed by the Money contract.
-
-### Why This Coupling Was Problematic
-
-The Money V1 contract had several issues that affected the DAO:
-
-1. **State Corruption Risk**: If Money V1's Merkle tree or nullifier SMT became corrupted, the DAO would fail catastrophically since it couldn't process governance transactions.
-
-2. **No Clear Separation**: Governance (DAO) and monetary policy (Money) were tightly coupled through the same contract state.
-
-3. **Upgrade Path Blocked**: Upgrading Money meant potentially breaking DAO functionality since they share state.
-
-## Money V2: The Solution
-
-### What is Money V2?
-
-Money V2 is a separate contract that implements the same token functionality as Money V1:
-
-| Feature | Money V1 | Money V2 |
-|---------|----------|----------|
-| DARK Token | Yes | Yes |
-| PoWReward | `PoWRewardV1` | `PoWRewardV2` |
-| Fee handling | `FeeV1` | `FeeV2` |
-| Transfer | `TransferV1` | `TransferV2` |
-| Deployment | Native at genesis | **Native at genesis (new)** |
-
-### Key Differences
-
-1. **Separate State**: Money V2 has its own Merkle tree, nullifiers, and coins database. It does NOT share state with Money V1.
-
-2. **New ZK Circuits**: Money V2 uses `Mint_V2`, `Fee_V2`, `Burn_V2` circuit namespaces instead of `Mint_V1`, `Fee_V1`, etc.
-
-3. **PoWRewardV2**: The new block reward function uses `MONEY_CONTRACT_ZKAS_MINT_NS_V2` for ZK proofs.
-
-## The Migration: Block Rewards Switch
-
-### Before (Original Protocol)
+### Before (Original DarkFi)
 
 ```
 Genesis Block
     │
     ├── Money Contract (MONEY_CONTRACT_ID, index 0)
-    │       └── PoWRewardV1 ← block rewards
+    │       └── PoWRewardV1 ← original block rewards
     │
     ├── DAO Contract (DAO_CONTRACT_ID, index 1)
     │
@@ -87,37 +54,46 @@ Genesis Block
             └── MoneyV2 (deployed via WASM, NOT at genesis)
 ```
 
-Block reward transaction:
-```rust
-let call = ContractCall {
-    contract_id: *MONEY_CONTRACT_ID,  // Money V1
-    data: vec![MoneyFunction::PoWRewardV1 as u8, ...],
-};
-```
+## Why Money V1 and DAO v1 Were Removed
 
-### After (This Fork)
+### Problems with Money V1
 
-```
-Genesis Block
-    │
-    ├── Money Contract (MONEY_CONTRACT_ID, index 0)
-    │       └── (still exists for backward compatibility)
-    │
-    ├── DAO Contract (DAO_CONTRACT_ID, index 1)
-    │
-    ├── Deployooor (DEPLOYOOOR_CONTRACT_ID, index 2)
-    │
-    └── MoneyV2 Contract (MONEY_V2_CONTRACT_ID, index 3) ← NEW
-            └── PoWRewardV2 ← block rewards NOW use this
-```
+1. **State Corruption Risk**: If Money V1's Merkle tree or nullifier SMT became corrupted, dependent contracts would fail catastrophically.
 
-Block reward transaction:
-```rust
-let call = ContractCall {
-    contract_id: *MONEY_V2_CONTRACT_ID,  // Money V2
-    data: vec![MoneyFunction::PoWRewardV2 as u8, ...],
-};
-```
+2. **No Clear Separation**: Governance and monetary policy were tightly coupled through the same contract state.
+
+3. **Upgrade Path Blocked**: Upgrading Money meant potentially breaking DAO functionality since they share state.
+
+### Problems with DAO v1
+
+1. **Complex Governance**: Required multiple ZK circuits for propose/vote/exec lifecycle
+2. **Tightly Coupled**: Had hard dependency on Money V1 for governance tokens
+3. **Inflexible**: Single governance mode, couldn't adapt to different DAO structures
+
+### Solution: Money V2 + DAO Escrow
+
+- **Money V2**: Separate state, self-contained ZK proofs, no coupling issues
+- **DAO Escrow**: Flexible modes (Escrow/Treasury/Endowment), uses Money V2 for funds
+
+## Satoshi-Style Governance Model
+
+This fork implements **Satoshi-style voluntary opt-in governance**:
+
+1. **Proof of Work Consensus**: Block rewards are the primary sybil resistance mechanism, identical to Bitcoin/Satoshi's vision
+
+2. **Voluntary Governance Participation**: No mandatory governance tokens. Anyone can participate in any DAO Escrow if they voluntarily deposit funds
+
+3. **Opt-In Only**: Governance rights are attached to deposited funds, not to identity or token holdings. Users choose which DAOs to join
+
+4. **No Pre-Mined Tokens**: No governance token airdrops or强迫. All value is earned through PoW mining or providing liquidity/services
+
+5. **Minimal Attack Surface**: No token-based governance means no token-holder voting attacks (vote buying, whale manipulation, governance token concentration)
+
+This differs fundamentally from:
+- **Ethereum-style**: Validator deposits (bonded proof of stake) - mandatory if you want to validate
+- **DAO Token-style**: Token-holder voting with airdropped/foundation tokens
+
+Our model: **Mining → Earn DARK → Optionally deposit into DAO Escrow → Participate in governance**
 
 ## Implementation Details
 
@@ -129,30 +105,21 @@ ContractIds are derived using poseidon hash with a prefix and index:
 // In darkfi_sdk::crypto::contract_id
 pub static ref CONTRACT_ID_PREFIX: pallas::Base = pallas::Base::from(42);
 
-pub static ref MONEY_CONTRACT_ID: ContractId =
+pub static ref MONEY_V2_CONTRACT_ID: ContractId =
     ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(0)]));
 
-pub static ref DAO_CONTRACT_ID: ContractId =
-    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(1)]));
-
 pub static ref DEPLOYOOOR_CONTRACT_ID: ContractId =
-    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(2)]));
-
-// NEW: Money V2 at index 3
-pub static ref MONEY_V2_CONTRACT_ID: ContractId =
-    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(3)]));
+    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(1)]));
 ```
 
 ### Native Contracts at Genesis
 
-The `deploy_native_contracts()` function now deploys 4 native contracts:
+The `deploy_native_contracts()` function deploys 2 native contracts:
 
 ```rust
 let native_contracts = vec![
-    ("Money Contract", *MONEY_CONTRACT_ID, include_bytes!("../contract/money/darkfi_money_contract.wasm").to_vec(), vec![]),
-    ("DAO Contract", *DAO_CONTRACT_ID, include_bytes!("../contract/dao/darkfi_dao_contract.wasm").to_vec(), vec![]),
+    ("MoneyV2 Contract", *MONEY_V2_CONTRACT_ID, include_bytes!("../contract/money_v2/darkfi_money_contract.wasm").to_vec(), vec![]),
     ("Deployooor Contract", *DEPLOYOOOR_CONTRACT_ID, include_bytes!("../contract/deployooor/darkfi_deployooor_contract.wasm").to_vec(), vec![]),
-    ("Money V2 Contract", *MONEY_V2_CONTRACT_ID, include_bytes!("../contract/money_v2/darkfi_money_contract.wasm").to_vec(), vec![]),  // NEW
 ];
 ```
 
@@ -162,11 +129,9 @@ Verification Keys are injected at genesis for all native contracts:
 
 ```rust
 // In vks.rs::inject()
-pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 4] = [
-    MONEY_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
-    DAO_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
+pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 2] = [
+    MONEY_V2_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
     DEPLOYOOOR_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
-    MONEY_V2_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),  // NEW
 ];
 ```
 
@@ -218,7 +183,7 @@ The `expected_reward` function returns a predefined schedule that decreases over
 
 1. **Genesis Block Hash Change**: The new genesis block includes Money V2's state and VKs, producing a completely different state root hash.
 
-2. **ContractId Space**: Money V2 now occupies `ContractId` index 3 at genesis. Old nodes don't know about this contract.
+2. **ContractId Space**: Money V2 now occupies `ContractId` index 0 at genesis. Old nodes don't know about this contract.
 
 3. **Transaction Validation**: Old nodes would reject `PoWRewardV2` transactions because:
    - They don't recognize `MONEY_V2_CONTRACT_ID`
@@ -228,9 +193,10 @@ The `expected_reward` function returns a predefined schedule that decreases over
 
 | Rule | Old | New |
 |------|-----|-----|
-| Block reward contract | Money V1 | Money V2 |
+| Money contract | Money V1 | Money V2 |
+| Governance contract | DAO v1 | DAO Escrow (WASM) |
 | ZK circuit namespace | `Mint_V1` | `Mint_V2` |
-| Native contracts at genesis | 3 | 4 |
+| Native contracts at genesis | 3 | 2 |
 
 ### Upstream Rejection
 
@@ -240,33 +206,6 @@ This fork is **incompatible with upstream DarkFi** because:
 2. Upstream does not have Money V2 as a native contract
 3. Upstream's genesis block configuration is different
 
-## Backward Compatibility
-
-### Money V1 Still Exists
-
-Money V1 is **not removed** and still functions for:
-
-- Existing DARK tokens in Money V1 state
-- DAO contract dependencies (DAO still uses Money V1 for governance tokens)
-- Any legacy transactions that reference Money V1
-
-### Dual Token State
-
-The blockchain now has **two separate token states**:
-
-```
-Blockchain State
-├── Money V1 State
-│   ├── Coins Merkle Tree
-│   ├── Nullifiers SMT
-│   └── Fees Accumulator
-│
-└── Money V2 State
-    ├── Coins Merkle Tree
-    ├── Nullifiers SMT
-    └── Fees Accumulator
-```
-
 ## Migration Path for Full Nodes
 
 1. **Update software** to this fork version
@@ -275,7 +214,7 @@ Blockchain State
 
 ```rust
 // Genesis verification would check:
-// - MONEY_V2_CONTRACT_ID exists at index 3
+// - MONEY_V2_CONTRACT_ID exists at index 0
 // - VKs for Mint_V2 are injected
 // - State root matches expected value
 ```
