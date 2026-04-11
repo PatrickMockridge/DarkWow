@@ -48,6 +48,8 @@ pub enum GameRoomError {
     EntropyDeadlinePassed,
     EntropyRevealMismatch,
     UnauthorizedCaller,
+    InvalidChildrenIndexes,
+    InvalidChildCall,
     IoError(String),
 }
 
@@ -82,6 +84,8 @@ impl From<GameRoomError> for ContractError {
             GameRoomError::EntropyDeadlinePassed => ContractError::InvalidFunction,
             GameRoomError::EntropyRevealMismatch => ContractError::InvalidFunction,
             GameRoomError::UnauthorizedCaller => ContractError::InvalidFunction,
+            GameRoomError::InvalidChildrenIndexes => ContractError::InvalidFunction,
+            GameRoomError::InvalidChildCall => ContractError::InvalidFunction,
             GameRoomError::IoError(_) => ContractError::InvalidFunction,
         }
     }

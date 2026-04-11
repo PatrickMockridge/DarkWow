@@ -285,4 +285,3 @@ For auction, what-you-prove (bid amount, winner status) already works with ZK pr
 
 - [DarkFi Escrow Contract](../escrow/)
 - [DarkFi zkVM](../zkas/)
-- [DarkFi DAO Contract](../dao/)

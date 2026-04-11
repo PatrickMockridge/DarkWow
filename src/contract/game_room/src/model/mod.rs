@@ -484,11 +484,19 @@ pub struct ContributeEntropyUpdateV1 {
 }
 
 /// Parameters for ClaimV1
+///
+/// Money Integration: This function REQUIRES money::TransferV2 child calls to be
+/// bundled for distributing the prize payout to the winner. The child call should
+/// transfer the claimed amount to the winner's public key.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ClaimParamsV1 {
     pub room_id: RoomId,
     pub pot_id: PotId,
     pub winner: PublicKey,
+    /// The payout amount the winner is claiming (must match settled payout)
+    pub payout_amount: u64,
+    /// ZK proof that the payout_amount is correct for this winner
+    pub proof: Vec<u8>,
 }
 
 /// State update for ClaimV1

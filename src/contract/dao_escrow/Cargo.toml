@@ -10,7 +10,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
 darkfi-serial = { path = "../../serial", features = ["derive", "crypto"] }
-darkfi_money_contract = { path = "../money", features = ["no-entrypoint"] }
 thiserror = "2.0.17"
 serde = "1.0"
 sled = "0.34"

@@ -75,6 +75,8 @@ pub struct EndowmentDeployment {
 pub struct InitializeParamsV1 {
     /// Default fee cut for backers (basis points)
     pub default_backer_cut_bp: u32,
+    /// Public key of the relayer (from transaction signature)
+    pub signature_public: PublicKey,
 }
 
 /// Update returned after initializing endowment
@@ -94,6 +96,8 @@ pub struct DeployCapitalParamsV1 {
     pub amount: u64,
     /// Backer's desired cut of relayer fees (basis points)
     pub backer_cut_bp: u32,
+    /// Backer's public key (from transaction signature)
+    pub signature_public: PublicKey,
 }
 
 /// Update returned after deploying capital

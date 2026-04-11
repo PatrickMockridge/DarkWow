@@ -30,10 +30,21 @@
 //!    - Prover knows alice_secret and bob_secret
 //!    - The nullifiers are correctly computed
 //!    - The swap ID is consistent
+//!    - The money::OtcSwapV2 calls are bundled (cross-contract atomic swap)
 //!
 //! 3. **Contract** (this file) verifies:
 //!    - The nullifiers provided match what's on-chain (double-spend check)
 //!    - The swap exists and is in correct state
+//!    - Child contract calls include money::OtcSwapV2 for atomic token swap
+//!
+//! ## Money Integration
+//!
+//! This function REQUIRES money::OtcSwapV2 child calls to be bundled for atomic token swap:
+//! - Child call 0: money::OtcSwapV2 for Alice's token to Bob
+//! - Child call 1: money::OtcSwapV2 for Bob's token to Alice
+//!
+//! The ZK circuit includes FuncRefs from these child calls as public inputs,
+//! ensuring the atomic swap was executed as part of the same transaction.
 //!
 //! ## Limitations
 //!
@@ -42,7 +53,7 @@
 //! - The contract verifies nullifiers against on-chain state to prevent double-execution
 
 use darkfi_sdk::{
-    crypto::pasta_prelude::PrimeField,
+    crypto::{pasta_prelude::PrimeField, FuncRef},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -64,6 +75,7 @@ use crate::{
 /// - alice_nullifier: from params (computed by prover)
 /// - bob_nullifier: from params (computed by prover)
 /// - swap_id: from params
+/// - FuncRefs from money::OtcSwapV2 child calls (cross-contract atomic swap)
 ///
 /// The host uses these to verify the ZK proof.
 pub(crate) fn dex_execute_swap_get_metadata_v1(
@@ -71,14 +83,40 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params: ExecuteSwapParams = deserialize(&self_.data[1..])?;
+    let self_ = &calls[call_idx];
+
+    // Validate children_indexes to ensure money::OtcSwapV2 calls are bundled
+    // For atomic token swap, we need 2 OtcSwapV2 calls:
+    // - Child 0: Alice's tokens to Bob (offer_token/offer_amount)
+    // - Child 1: Bob's tokens to Alice (request_token/request_amount)
+    if self_.children_indexes.len() != 2 {
+        msg!(
+            "[ExecuteSwapV1] Error: Expected 2 child calls (money::OtcSwapV2), got {}",
+            self_.children_indexes.len()
+        );
+        return Err(DexError::InvalidChildrenIndexes.into())
+    }
+
+    // Extract FuncRefs from child money::OtcSwapV2 calls
+    let mut child_func_ids: Vec<pallas::Base> = Vec::with_capacity(2);
+    for &child_idx in self_.children_indexes.iter() {
+        let child_call = &calls[child_idx].data;
+        let child_contract_id = child_call.contract_id;
+        let child_func_code = child_call.data[0];
+        let child_func_id =
+            FuncRef { contract_id: child_contract_id, func_code: child_func_code }.to_func_id();
+        child_func_ids.push(child_func_id.inner());
+    }
+
+    let params: ExecuteSwapParams = deserialize(&self_.data.data[1..])?;
 
     // Public inputs for the ZK proof verification
     // The order must match the `constrain_instance` calls in execute_swap_v1.zk:
     // 1. alice_nullifier_check
     // 2. bob_nullifier_check
     // 3. computed_swap_id
+    // 4. alice_otc_func_id (FuncRef for Alice's OtcSwapV2)
+    // 5. bob_otc_func_id (FuncRef for Bob's OtcSwapV2)
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
     // The prover computed the nullifiers externally and passed them in params.
@@ -91,9 +129,16 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
         None => return Err(ContractError::IoError("Invalid swap_id".to_string()).into()),
     };
 
+    // Include OtcSwapV2 FuncRefs for cross-contract atomic swap verification
     zk_public_inputs.push((
         DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1.to_string(),
-        vec![alice_nullifier, bob_nullifier, swap_id],
+        vec![
+            alice_nullifier,
+            bob_nullifier,
+            swap_id,
+            child_func_ids[0], // Alice's OtcSwapV2 FuncRef
+            child_func_ids[1], // Bob's OtcSwapV2 FuncRef
+        ],
     ));
 
     // Serialize metadata for ZK verification
@@ -202,10 +247,9 @@ pub(crate) fn dex_execute_swap_process_update_v1(
     // Store updated swap
     wasm::db::db_set(swaps_db, &update.swap_id, &serialize(&swap))?;
 
-    // Remove participants (funds have been transferred)
-    // In a full implementation, we would also call the money contract
-    // to perform the actual token transfers
-    // Using nullifiers for deletion (proper double-spend prevention)
+    // Remove participants (funds have been transferred via money::OtcSwapV2)
+    // The atomic token swap is executed via bundled money::OtcSwapV2 child calls.
+    // We use nullifiers for deletion (proper double-spend prevention).
     wasm::db::db_del(participants_db, &swap.proposer_nullifier.to_bytes())?;
     wasm::db::db_del(participants_db, &swap.acceptor_nullifier.to_bytes())?;
 

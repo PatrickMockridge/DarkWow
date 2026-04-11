@@ -116,6 +116,12 @@ pub enum DaoEscrowError {
 
     #[error("Invalid signature")]
     InvalidSignature,
+
+    #[error("Invalid children indexes: expected money::TransferV2 call")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call: expected money::TransferV2")]
+    InvalidChildCall,
 }
 
 impl From<DaoEscrowError> for ContractError {
@@ -153,6 +159,8 @@ impl From<DaoEscrowError> for ContractError {
             DaoEscrowError::MaxClaimAmountExceeded => Self::Custom(30),
             DaoEscrowError::MinimumStakeNotMet => Self::Custom(31),
             DaoEscrowError::InvalidSignature => Self::Custom(32),
+            DaoEscrowError::InvalidChildrenIndexes => Self::Custom(33),
+            DaoEscrowError::InvalidChildCall => Self::Custom(34),
         }
     }
 }

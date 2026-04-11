@@ -74,6 +74,9 @@ pub enum DexError {
 
     #[error("Fee too low")]
     FeeTooLow,
+
+    #[error("Invalid children indexes: expected money::OtcSwapV2 calls")]
+    InvalidChildrenIndexes,
 }
 
 impl From<DexError> for ContractError {
@@ -97,6 +100,7 @@ impl From<DexError> for ContractError {
             DexError::DexNotInitialized => Self::Custom(16),
             DexError::InvalidConfiguration => Self::Custom(17),
             DexError::FeeTooLow => Self::Custom(18),
+            DexError::InvalidChildrenIndexes => Self::Custom(19),
         }
     }
 }

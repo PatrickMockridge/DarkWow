@@ -150,8 +150,8 @@ fn process_initialize_instruction(
         return Err(RelayerEndowmentError::InvalidParams("backer_cut_bp > 10000".into()).into());
     }
 
-    // For now, use a placeholder public key - in production this would come from tx signer
-    let relayer_pub = PublicKey::from_secret(pallas::Base::zero().into());
+    // Use signature_public from params as the relayer's public key
+    let relayer_pub = params.signature_public;
 
     let update = InitializeUpdateV1 {
         relayer_pub,
@@ -214,8 +214,8 @@ fn process_deploy_capital_instruction(
         };
 
     // Generate deployment ID
-    // TODO: In production, backer_pub should come from tx signer
-    let backer_pub = PublicKey::from_secret(pallas::Base::from(0u64).into());
+    // Use signature_public from params as the backer's public key
+    let backer_pub = params.signature_public;
     let deployment_id = derive_deployment_id(
         params.relayer_pub,
         &backer_pub,

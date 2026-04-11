@@ -403,8 +403,7 @@ Unlike other contracts, escrow has **no opcode blockers**. All required function
 ## References
 
 - [DarkFi Escrow MVP Analysis](../../../doc/src/arch/escrow.md)
-- [DarkFi Money Contract](../money/)
-- [DarkFi DAO Contract](../dao/)
+- [DarkFi Money Contract](../money_v2/)
 - [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md)
 - [Contract MVP Status](../../../doc/src/arch/mvp_status.md)
 - [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md)

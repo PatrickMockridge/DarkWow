@@ -16,6 +16,20 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+//! ClaimV1 entrypoint - Winner claims their share of a settled pot
+//!
+//! ## Money Integration
+//!
+//! This function REQUIRES money::TransferV2 child calls to be bundled for
+//! distributing the prize payout. The child call transfers the payout_amount
+//! to the winner's public key.
+//!
+//! ## Flow
+//!
+//! 1. Owner calls `settle_pot` to determine winners and payouts
+//! 2. Each winner calls `claim` to receive their payout
+//! 3. The claim must bundle money::TransferV2 for actual token transfer
+
 use darkfi_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -39,11 +53,35 @@ pub(crate) fn game_room_claim_process_instruction_v1(
     let params: ClaimParamsV1 = darkfi_serial::deserialize(&self_.data[1..])?;
 
     msg!(
-        "[Claim] Claiming pot {:?} in room {:?} for winner {:?}",
+        "[Claim] Claiming pot {:?} in room {:?} for winner {:?}, amount: {}",
         params.pot_id,
         params.room_id,
-        params.winner
+        params.winner,
+        params.payout_amount
     );
+
+    // Validate children_indexes to ensure money::TransferV2 is bundled
+    // The child call should transfer params.payout_amount to params.winner
+    let children = &calls[call_idx].children_indexes;
+    if children.len() != 1 {
+        msg!(
+            "[Claim] Error: Expected 1 child call (money::TransferV2), got {}",
+            children.len()
+        );
+        return Err(GameRoomError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money::TransferV2
+    let child_idx = children[0];
+    let child_call = &calls[child_idx].data;
+    // money::TransferV2 function code is 0x03
+    if child_call.data[0] != 0x03 {
+        msg!(
+            "[Claim] Error: Expected money::TransferV2 (0x03), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(GameRoomError::InvalidChildCall.into())
+    }
 
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
@@ -78,10 +116,16 @@ pub(crate) fn game_room_claim_process_instruction_v1(
         return Err(GameRoomError::AlreadyClaimed.into())
     }
 
-    // Find the payout amount for this winner
-    // In a real implementation, this would be passed as a parameter or looked up
-    // For now, we assume the winner is in the settled pot
-    let payout_amount = pot.total; // Simplified - actual implementation would track per-winner amounts
+    // Validate payout_amount against the pot total
+    // The payout must not exceed the pot total
+    if params.payout_amount > pot.total {
+        msg!(
+            "[Claim] Error: Payout {} exceeds pot total {}",
+            params.payout_amount,
+            pot.total
+        );
+        return Err(GameRoomError::InvalidAmount.into())
+    }
 
     // Get winner's account
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
@@ -93,14 +137,12 @@ pub(crate) fn game_room_claim_process_instruction_v1(
     let mut account: PlayerAccount =
         darkfi_serial::deserialize(&account_data)?;
 
-    // Calculate new balance (unlock the amount they had in the pot and add winnings)
-    // Note: locked amount stays locked until explicitly unlocked
-    // The winnings go to balance
-    let winnings = payout_amount; // Simplified
+    // Calculate new balance - add winnings to balance
+    // Note: In a full implementation with locked funds tracking, we would unlock
+    // the winner's contribution to the pot here.
+    let winnings = params.payout_amount;
     account.balance += winnings;
 
-    // If they had locked funds from this pot, reduce locked
-    // (In a real implementation, we'd track how much each player locked)
     let new_balance = account.balance;
 
     // Store updated account
@@ -110,7 +152,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
     wasm::db::db_set(nullifiers_db, &claim_key, &[])?;
 
     msg!(
-        "[Claim] Claim applied: winner {:?} received {} (new balance: {})",
+        "[Claim] Claim prepared: winner {:?} will receive {} (new balance: {})",
         params.winner,
         winnings,
         new_balance

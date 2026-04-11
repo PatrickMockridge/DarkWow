@@ -138,15 +138,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DaoEscrowFunction::WithdrawV1 => {
             let params: model::WithdrawParamsV1 = deserialize(&self_.data[1..])?;
-            withdraw_v1(cid, params)
+            withdraw_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::EndowmentWithdrawV1 => {
             let params: model::EndowmentWithdrawParamsV1 = deserialize(&self_.data[1..])?;
-            endowment_withdraw_v1(cid, params)
+            endowment_withdraw_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::TreasurySpendV1 => {
             let params: model::TreasurySpendParamsV1 = deserialize(&self_.data[1..])?;
-            treasury_spend_v1(cid, params)
+            treasury_spend_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::EnableDrainProtectionV1 => {
             let params: model::EnableDrainProtectionParamsV1 = deserialize(&self_.data[1..])?;
@@ -365,8 +365,37 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
 }
 
 /// WithdrawV1 instruction - endowment owner withdraws funds
-fn withdraw_v1(cid: ContractId, params: model::WithdrawParamsV1) -> ContractResult {
+///
+/// Money Integration: This function REQUIRES money::TransferV2 child calls to be
+/// bundled for the actual token transfer to the recipient.
+fn withdraw_v1(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>,
+    params: model::WithdrawParamsV1,
+) -> ContractResult {
     msg!("[dao_escrow::withdraw_v1] Processing withdrawal");
+
+    // Validate children_indexes to ensure money::TransferV2 is bundled
+    let self_ = &calls[call_idx];
+    if self_.children_indexes.len() != 1 {
+        msg!(
+            "[WithdrawV1] Error: Expected 1 child call (money::TransferV2), got {}",
+            self_.children_indexes.len()
+        );
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money::TransferV2 (function code 0x03)
+    let child_idx = self_.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x03 {
+        msg!(
+            "[WithdrawV1] Error: Expected money::TransferV2 (0x03), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(DaoEscrowError::InvalidChildCall.into())
+    }
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
@@ -461,11 +490,37 @@ fn enable_drain_protection_apply_v1(
 }
 
 /// EndowmentWithdrawV1 instruction - executes an approved claim from endowment
+///
+/// Money Integration: This function REQUIRES money::TransferV2 child calls to be
+/// bundled for the actual token transfer to the recipient.
 fn endowment_withdraw_v1(
     cid: ContractId,
+    call_idx: usize,
+    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::EndowmentWithdrawParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::endowment_withdraw_v1] Processing endowment withdrawal");
+
+    // Validate children_indexes to ensure money::TransferV2 is bundled
+    let self_ = &calls[call_idx];
+    if self_.children_indexes.len() != 1 {
+        msg!(
+            "[EndowmentWithdrawV1] Error: Expected 1 child call (money::TransferV2), got {}",
+            self_.children_indexes.len()
+        );
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money::TransferV2 (function code 0x03)
+    let child_idx = self_.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x03 {
+        msg!(
+            "[EndowmentWithdrawV1] Error: Expected money::TransferV2 (0x03), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(DaoEscrowError::InvalidChildCall.into())
+    }
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
@@ -525,11 +580,37 @@ fn endowment_withdraw_apply_v1(
 }
 
 /// TreasurySpendV1 instruction - executes an approved treasury spend
+///
+/// Money Integration: This function REQUIRES money::TransferV2 child calls to be
+/// bundled for the actual token transfer to the recipient.
 fn treasury_spend_v1(
     cid: ContractId,
+    call_idx: usize,
+    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::TreasurySpendParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::treasury_spend_v1] Processing treasury spend");
+
+    // Validate children_indexes to ensure money::TransferV2 is bundled
+    let self_ = &calls[call_idx];
+    if self_.children_indexes.len() != 1 {
+        msg!(
+            "[TreasurySpendV1] Error: Expected 1 child call (money::TransferV2), got {}",
+            self_.children_indexes.len()
+        );
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money::TransferV2 (function code 0x03)
+    let child_idx = self_.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x03 {
+        msg!(
+            "[TreasurySpendV1] Error: Expected money::TransferV2 (0x03), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(DaoEscrowError::InvalidChildCall.into())
+    }
 
     // Verify endowment exists and is in treasury mode
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;

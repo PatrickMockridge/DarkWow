@@ -68,9 +68,6 @@ pub enum SlotError {
     #[error("Cross-contract call failed")]
     CrossContractFailed,
 
-    #[error("Bonus round not implemented")]
-    BonusNotImplemented,
-
     #[error("Paytable mismatch")]
     PaytableMismatch,
 
@@ -96,8 +93,7 @@ impl From<SlotError> for ContractError {
             SlotError::ArithmeticOverflow => Self::Custom(13),
             SlotError::InvalidFunction => Self::Custom(14),
             SlotError::CrossContractFailed => Self::Custom(15),
-            SlotError::BonusNotImplemented => Self::Custom(16),
-            SlotError::PaytableMismatch => Self::Custom(17),
+            SlotError::PaytableMismatch => Self::Custom(16),
             SlotError::HouseNotInitialized => Self::Custom(18),
         }
     }

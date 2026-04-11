@@ -166,7 +166,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         SubscriptionFunction::DaoControlV1 => {
             let params: DaoControlParamsV1 = deserialize(&self_.data[1..])?;
-            dao_control_v1(cid, params)
+            dao_control_v1(cid, call_idx, calls, params)
         }
         SubscriptionFunction::InitializeV1 => {
             msg!("[subscription::process_instruction] InitializeV1 has no update data");
@@ -513,8 +513,46 @@ fn update_usage_apply_v1(cid: ContractId, update: UpdateUsageUpdateV1) -> Contra
 }
 
 /// DaoControlV1 instruction - execute DAO governance action
-fn dao_control_v1(_cid: ContractId, params: DaoControlParamsV1) -> ContractResult {
+///
+/// Money Integration: When executing `EndowmentWithdraw`, this function REQUIRES
+/// a money::TransferV2 child call to be bundled to transfer the endowment funds.
+fn dao_control_v1(
+    _cid: ContractId,
+    call_idx: usize,
+    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>,
+    params: DaoControlParamsV1,
+) -> ContractResult {
     msg!("[subscription::dao_control_v1] Executing DAO control action");
+
+    // Validate children_indexes for EndowmentWithdraw
+    if let DaoControlParamsV1::EndowmentWithdraw { amount, recipient } = params {
+        // Validate children_indexes to ensure money::TransferV2 is bundled
+        let self_ = &calls[call_idx];
+        if self_.children_indexes.len() != 1 {
+            msg!(
+                "[DaoControlV1] Error: EndowmentWithdraw requires 1 child call (money::TransferV2), got {}",
+                self_.children_indexes.len()
+            );
+            return Err(ContractError::Custom(1).into())
+        }
+
+        // Verify child call is money::TransferV2 (function code 0x03)
+        let child_idx = self_.children_indexes[0];
+        let child_call = &calls[child_idx].data;
+        if child_call.data[0] != 0x03 {
+            msg!(
+                "[DaoControlV1] Error: Expected money::TransferV2 (0x03), got 0x{:02x}",
+                child_call.data[0]
+            );
+            return Err(ContractError::Custom(2).into())
+        }
+
+        msg!(
+            "[DaoControlV1] EndowmentWithdraw validated: {} to {:?}",
+            amount,
+            recipient
+        );
+    }
 
     // Convert params to action for update
     let action = match params {

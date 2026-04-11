@@ -297,6 +297,10 @@ pub struct VerifyClaimParamsV1 {
     pub claim_id: ClaimId,
     /// Attestation ID
     pub attestation_id: AttestationId,
+    /// Evidence commitment to verify against attestation data
+    pub evidence_commitment: pallas::Base,
+    /// Revealed result from ZK proof verification
+    pub revealed_result: pallas::Base,
 }
 
 /// State update for VerifyClaimV1
