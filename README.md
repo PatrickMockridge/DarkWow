@@ -1,15 +1,44 @@
-# DarkFi: O-Cap Authorization for Privacy-Preserving ZK Contracts
+# DarkFi-Jailbroken: O-Cap Authorization for Privacy-Preserving ZK Contracts
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/darkrenaissance/darkfi/ci.yml?branch=master&style=flat-square)
 [![Web - dark.fi](https://img.shields.io/badge/Web-dark.fi-white?logo=firefox&logoColor=white&style=flat-square)](https://dark.fi)
 [![Manifesto - unsystem](https://img.shields.io/badge/Manifesto-unsystem-informational?logo=minutemailer&logoColor=white&style=flat-square)](https://dark.fi/manifesto.html)
 [![Book - mdbook](https://img.shields.io/badge/Book-mdbook-orange?logo=gitbook&logoColor=white&style=flat-square)](https://dark.fi/book/)
 
-## Development Fork
+## Fork Name: "Jailbroken"
 
-**WARNING: This branch contains experimental, unaudited smart contracts. Do NOT deploy or use these contracts with real funds. They are for research and educational purposes only.**
+**This fork is called "darkfi-jailbroken" because we broke free from the upstream's governance lock-in.**
 
-This is a development fork of the official DarkFi repository. **Development occurs on the `master` branch** (`PatrickM123/darkfi:master`).
+Upstream DarkFi has a problematic genesis block setup:
+- **Pre-mine**: Early investors, team, and SAFT participants received DARK tokens at genesis
+- **Venture Capital Influence**: Large token holders can dominate governance proposals
+- **Whale Problem**: Token concentration allows wealthy entities to control DAO voting
+- **Limited Participation**: True Satoshi-style voluntary participation was not possible
+
+**We removed Money V1, DAO V1, and all pre-mined/controlled token distributions.**
+**We run on pure Proof of Work - the only legitimate sybil resistance.**
+
+### What We Changed
+
+| Aspect | Upstream DarkFi | darkfi-jailbroken |
+|--------|-----------------|-------------------|
+| Money Contract | Money V1 (legacy) + V2 | Money V2 only |
+| Governance | DAO V1 (token-holder voting) | DAO Escrow (voluntary endowment) |
+| Block Rewards | Mixed V1/V2 | Money V2 only |
+| Genesis | Pre-mine, SAFT, team tokens | Pure PoW - earn through mining |
+| Consensus | PoW + governance tokens | **Pure PoW only** |
+
+### Satoshi-Style Principles
+
+True to Bitcoin's original vision:
+1. **No Pre-Mined Tokens**: Every DARK is earned through PoW mining
+2. **Voluntary Governance**: Opt-in DAO Escrow - no forced governance
+3. **No SAFT/VC Distribution**: No early investor advantages
+4. **Pure Sybil Resistance**: PoW is the only consensus mechanism
+
+This fork is for those who believe in **mining true randomness** and **voluntary governance** - not astroturfed token-holder democracy.
+
+**Development occurs on the `master` branch** (`PatrickM123/darkfi-jailbroken:master`).
 
 ---
 
@@ -168,8 +197,8 @@ Shared `darkfi_sdk::crypto::entropy` module for entropy across contracts.
 ## Build
 
 ```shell
-% git clone https://codeberg.org/PatrickM123/darkfi
-% cd darkfi
+% git clone https://codeberg.org/PatrickM123/darkfi-jailbroken
+% cd darkfi-jailbroken
 % rustup target add wasm32-unknown-unknown
 % make
 ```
