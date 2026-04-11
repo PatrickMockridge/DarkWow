@@ -25,10 +25,12 @@ use crate::error::LotteryError;
 use crate::model::{
     derive_nullifier, derive_ticket_id, BuyTicketParamsV1, BuyTicketUpdateV1, Ticket,
 };
-use crate::LOTTERY_CONTRACT_CURRENT_LOTTERY;
-use crate::LOTTERY_CONTRACT_LOTTERIES_TREE;
-use crate::LOTTERY_CONTRACT_NULLIFIERS_TREE;
-use crate::LOTTERY_CONTRACT_TICKETS_TREE;
+use crate::{
+    LOTTERY_CONTRACT_CURRENT_LOTTERY, LOTTERY_CONTRACT_LATEST_TICKET_ROOT,
+    LOTTERY_CONTRACT_LOTTERIES_TREE, LOTTERY_CONTRACT_NULLIFIERS_TREE,
+    LOTTERY_CONTRACT_TICKETS_ROOTS_TREE, LOTTERY_CONTRACT_TICKETS_SMT_TREE,
+    LOTTERY_CONTRACT_TICKETS_TREE,
+};
 
 /// Process instruction for BuyTicketV1
 pub fn lottery_buy_ticket_process_instruction_v1(
@@ -115,6 +117,24 @@ pub fn lottery_buy_ticket_process_update_v1(
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
     let tickets_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_TICKETS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_NULLIFIERS_TREE)?;
+    let smt_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_TICKETS_SMT_TREE)?;
+    let roots_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_TICKETS_ROOTS_TREE)?;
+
+    // Insert ticket commitment into the SMT and update the Merkle root
+    wasm::merkle::sparse_merkle_insert_batch(
+        lotteries_db,
+        smt_db,
+        roots_db,
+        LOTTERY_CONTRACT_LATEST_TICKET_ROOT,
+        &[update.commitment],
+    )?;
+
+    // Read the new Merkle root from the info database
+    let new_merkle_root_bytes =
+        wasm::db::db_get(lotteries_db, LOTTERY_CONTRACT_LATEST_TICKET_ROOT)?.unwrap();
+    let new_merkle_root: pallas::Base = deserialize(&new_merkle_root_bytes)?;
+
+    msg!("[lottery::buy_ticket::update] Ticket SMT root: {:?}", new_merkle_root);
 
     // Get and update lottery
     let mut lottery: crate::model::Lottery =
@@ -122,10 +142,11 @@ pub fn lottery_buy_ticket_process_update_v1(
 
     lottery.ticket_count = update.ticket_count;
     lottery.gross_pool = update.gross_pool;
+    lottery.ticket_merkle_root = new_merkle_root;
 
     // Store updated lottery
     wasm::db::db_set(lotteries_db, &serialize(&update.lottery_id), &serialize(&lottery))?;
-    msg!("[lottery::buy_ticket::update] Lottery updated");
+    msg!("[lottery::buy_ticket::update] Lottery updated with new Merkle root");
 
     // Create ticket state
     let ticket = Ticket {

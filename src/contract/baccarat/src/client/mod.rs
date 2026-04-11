@@ -21,7 +21,7 @@
 //! This module provides the client-side API for building Baccarat contract calls.
 
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey, SecretKey},
+    crypto::{pedersen_commitment_u64, poseidon_hash, PublicKey, ScalarBlind, SecretKey},
     pasta::pallas,
 };
 
@@ -119,9 +119,8 @@ impl CommitBetV1Builder {
             self.token_id,
         );
 
-        // TODO: Create actual value commitment via money contract
-        // For now, placeholder - client should set this properly
-        let value_commit = pallas::Point::identity();
+        // Create proper value commitment using Pedersen commitment
+        let value_commit = pedersen_commitment_u64(self.bet_value, ScalarBlind::from(self.blind));
 
         let params = CommitBetParamsV1 {
             player_pub,

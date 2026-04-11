@@ -53,6 +53,9 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_TICKETS_TREE)?;
     wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_NULLIFIERS_TREE)?;
     wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_CLAIMS_TREE)?;
+    // Initialize SMT databases for ticket Merkle tree
+    wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_TICKETS_SMT_TREE)?;
+    wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_TICKETS_ROOTS_TREE)?;
 
     Ok(())
 }

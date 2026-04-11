@@ -88,6 +88,10 @@ pub const LOTTERY_CONTRACT_TICKETS_TREE: &str = "tickets";
 pub const LOTTERY_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 /// Stores prize claims indexed by ticket_id
 pub const LOTTERY_CONTRACT_CLAIMS_TREE: &str = "claims";
+/// SMT database for ticket commitments (used for Merkle tree of tickets)
+pub const LOTTERY_CONTRACT_TICKETS_SMT_TREE: &str = "tickets_smt";
+/// SMT roots database for ticket commitments (historical roots)
+pub const LOTTERY_CONTRACT_TICKETS_ROOTS_TREE: &str = "tickets_roots";
 
 // ============================================================================
 // DATABASE KEYS
@@ -99,6 +103,8 @@ pub const LOTTERY_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 pub const LOTTERY_CONTRACT_HOUSE_PUBKEY: &[u8] = b"house_pubkey";
 /// Current lottery ID being run
 pub const LOTTERY_CONTRACT_CURRENT_LOTTERY: &[u8] = b"current_lottery";
+/// Key for latest ticket Merkle root in info database
+pub const LOTTERY_CONTRACT_LATEST_TICKET_ROOT: &[u8] = b"latest_ticket_root";
 
 // ============================================================================
 // ZK CIRCUIT NAMESPACES

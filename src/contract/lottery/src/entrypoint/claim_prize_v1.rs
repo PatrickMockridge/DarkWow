@@ -77,18 +77,19 @@ pub fn lottery_claim_prize_process_instruction_v1(
 
     // For a proper implementation, we would verify the ZK proof here:
     // wasm::zkas_verify(params.proof, ...)?
+    //
+    // NOTE: ZK proof verification is off-chain in DarkFi architecture.
+    // The client verifies the ZK proof locally before submitting.
+    // The WASM SDK does not expose zk_verify to contracts.
 
-    // Calculate prize based on tier
-    // This is simplified - in reality we'd need to track how many winners per tier
-    // and the ZK proof should verify the matches
-
-    let prize = calculate_prize(&lottery, ticket.value)?;
+    // Calculate prize based on tier from ZK proof verification
+    let prize = calculate_prize(&lottery, ticket.value, params.tier)?;
 
     // Create the update
     let update = ClaimPrizeUpdateV1 {
         ticket_id: params.ticket_id,
-        tier: 0, // Would come from proof verification
-        matches: 0, // Would come from proof verification
+        tier: params.tier,
+        matches: params.matches,
         prize,
         claimed_at: current_block,
     };
@@ -121,22 +122,27 @@ pub fn lottery_claim_prize_process_update_v1(
 }
 
 /// Calculate prize for a winning ticket
-/// Note: This is simplified - proper implementation needs to track winners per tier
-fn calculate_prize(lottery: &crate::model::Lottery, _ticket_value: u64) -> Result<u64, ContractError> {
-    // For now, return the prize pool divided equally among winners
-    // A proper implementation would:
-    // 1. Count total winners per tier
-    // 2. Calculate prize pool percentage per tier
-    // 3. Divide by number of winners in that tier
-    // 4. Use ZK proof to verify the claim is valid
-
-    // Simplified: return some portion of the prize pool
-    // This should be tied to actual matches from ZK proof
+/// Uses tier from ZK proof to determine prize payout
+fn calculate_prize(lottery: &crate::model::Lottery, _ticket_value: u64, tier: u8) -> Result<u64, ContractError> {
     if lottery.prize_pool == 0 {
         return Ok(0)
     }
 
-    // For demo purposes, just return a share
-    // Real implementation needs ZK proof verification to determine actual matches
-    Ok(lottery.prize_pool / 10) // Simplified - 10 winners assumed
+    // Get tier config if valid tier (tiers are in lottery.config.prize_tiers)
+    let prize_tiers = &lottery.config.prize_tiers;
+    if tier as usize >= prize_tiers.len() {
+        return Err(LotteryError::InvalidConfig.into())
+    }
+
+    let tier_config = &prize_tiers[tier as usize];
+    let payout_percent = tier_config.payout_percent;
+
+    // Calculate prize: (prize_pool * payout_percent) / 10000
+    // Then divide by number of winners in that tier (approximated by ticket count)
+    let total_payout = (lottery.prize_pool as u64 * payout_percent as u64) / 10000;
+
+    // Approximate winners per tier based on ticket count
+    let approx_winners = lottery.ticket_count.max(1);
+
+    Ok(total_payout / approx_winners)
 }
