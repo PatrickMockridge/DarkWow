@@ -56,19 +56,94 @@ Genesis Block
 
 ## Why Money V1 and DAO v1 Were Removed
 
+### The Fundamental Problem: ACL-Based Authorization
+
+The upstream DarkFi architecture used an **Access Control List (ACL) model** for governance, which is mathematically unsound from a privacy-first perspective.
+
+From [The Zero-Knowledge Authorization](https://technologytruth.substack.com/p/the-zero-knowledge-authorization):
+
+> *"I_min(p; grant) = log_2 |{ p' ∈ P : (p', r, s) ∈ L }|"*
+>
+> When authorization succeeds A(p,r,s) = 1, observers learn that **p is in the authorized set**. The anonymity set is bounded by the size of that set, not the total principals.
+
+**This is the ACL Privacy Gap**: Traditional authorization reveals identity upon successful access.
+
+### Why DAO v1 Was Mathematically Unsound
+
+DAO v1 used **token-holder voting** - an ACL model where:
+- Your **public key** = your **identity**
+- Your **token balance** = your **voting weight**
+- **Merkle proofs** = ACL membership proofs that reveal your holdings
+
+```
+Upstream DAO v1 Authorization (ACL Model):
+┌─────────────────────────────────────────────────────────────┐
+│  Vote(pubkey, proposal, amount)                            │
+│                                                             │
+│  1. Merkle proof: "pubkey ∈ MoneyMerkleTree"              │
+│     → LEAKS: Your exact token balance to all observers      │
+│                                                             │
+│  2. Check: amount > proposal.quorum_threshold              │
+│     → LEAKS: Your voting weight is now public              │
+│                                                             │
+│  Result: When your vote succeeds, observers learn:         │
+│  - Your public key (who you are)                          │
+│  - Your DARK token balance (how much power you have)      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**The Math Doesn't Work for Privacy:**
+
+| Property | ACL/DAO v1 Model | ZK Predicate Model |
+|----------|-------------------|-------------------|
+| Authorization result | Reveals `p ∈ L` | Reveals only "boolean true" |
+| Information leakage | Identity + set size | Nothing |
+| Vote weight | Public via Merkle proof | Private via ZK commitment |
+| Coin ownership | Linked to public key | Hidden in Pedersen commitment |
+
 ### Problems with Money V1
 
-1. **State Corruption Risk**: If Money V1's Merkle tree or nullifier SMT became corrupted, dependent contracts would fail catastrophically.
+1. **Merkle Tree Membership = Identity Linkage**: Money V1's coin model required proving `pubkey ∈ MerkleTree` to spend coins. This **permanently links your public key to your balance** on-chain.
 
-2. **No Clear Separation**: Governance and monetary policy were tightly coupled through the same contract state.
+2. **State Corruption Risk**: If Money V1's Merkle tree or nullifier SMT became corrupted, dependent contracts would fail catastrophically.
 
-3. **Upgrade Path Blocked**: Upgrading Money meant potentially breaking DAO functionality since they share state.
+3. **No Clear Separation**: Governance and monetary policy were tightly coupled through the same contract state.
+
+4. **The ACL-ZK Gap**: Money V1 couldn't escape its ACL roots - every transaction revealed coin ownership via Merkle proofs.
 
 ### Problems with DAO v1
 
-1. **Complex Governance**: Required multiple ZK circuits for propose/vote/exec lifecycle
-2. **Tightly Coupled**: Had hard dependency on Money V1 for governance tokens
-3. **Inflexible**: Single governance mode, couldn't adapt to different DAO structures
+1. **Inherited ACL Privacy Leakage**: DAO v1's governance depended on Money V1's Merkle proofs, meaning **every governance action revealed the participant's token balance**.
+
+2. **Complex Governance**: Required multiple ZK circuits for propose/vote/exec lifecycle, but all circuits operated on public ACL data.
+
+3. **Tightly Coupled**: Had hard dependency on Money V1 for governance tokens - couldn't separate governance from the token's ACL model.
+
+4. **Inflexible**: Single governance mode, couldn't adapt to different DAO structures.
+
+### The ZK Predicate Solution (Our Fork)
+
+Our architecture uses **ZK predicate evaluation** instead of ACL membership:
+
+```
+Our DAO Escrow Authorization (ZK Predicate Model):
+┌─────────────────────────────────────────────────────────────┐
+│  Prove: "∃ w such that P(w) = true"                      │
+│                                                             │
+│  P(w) = "w is a valid deposit in DAO Escrow"            │
+│                                                             │
+│  Proof reveals: ONLY the boolean result (true/false)       │
+│  Proof hides: depositor identity, deposit amount, witness │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Differences:**
+- **No Merkle proofs** for authorization - use Pedersen commitments instead
+- **No public key → balance linkage** - balances are hidden in commitments
+- **ZK circuits prove predicates**, not set membership
+- **Vote weight is private** - only proven to exceed threshold, amount hidden
+
+See: [The Zero-Knowledge Authorization](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) for the mathematical foundation.
 
 ### Solution: Money V2 + DAO Escrow
 

@@ -23,10 +23,14 @@ Upstream DarkFi has a problematic genesis block setup:
 | Aspect | Upstream DarkFi | darkfi-jailbroken |
 |--------|-----------------|-------------------|
 | Money Contract | Money V1 (legacy) + V2 | Money V2 only |
-| Governance | DAO V1 (token-holder voting) | DAO Escrow (voluntary endowment) |
+| Governance | DAO V1 (ACL/token-holder voting) | DAO Escrow (ZK predicate, voluntary) |
+| Authorization | Merkle proofs leak balance | Pedersen commitments hide balance |
 | Block Rewards | Mixed V1/V2 | Money V2 only |
 | Genesis | Pre-mine, SAFT, team tokens | Pure PoW - earn through mining |
 | Consensus | PoW + governance tokens | **Pure PoW only** |
+| Privacy Math | ACL model leaks identity | ZK predicates reveal only boolean |
+
+**The Fundamental Problem with Upstream**: Their ACL-based governance (token-holder voting via Merkle proofs) is mathematically unsound for privacy. When you vote, observers learn your public key AND your token balance. See [The Zero-Knowledge Authorization](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) for the proof.
 
 ### Satoshi-Style Principles
 
