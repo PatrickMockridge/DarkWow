@@ -70,10 +70,16 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|window| window == needle)
 }
 
-fn find_section(bytes: &[u8], section: &[u8]) -> Result<usize> {
-    find_subslice(bytes, section).ok_or_else(|| {
-        ZkasErr(format!("Could not find {} section", String::from_utf8_lossy(section)))
-    })
+/// Find a section marker in the binary, searching only in valid regions.
+/// This prevents false positives from section marker substrings appearing
+/// in constant names (e.g., "NULLIFIER_K.literal.witness" contains ".literal").
+/// The min_offset ensures we search only after the previous section's data ends.
+fn find_section(bytes: &[u8], section: &[u8], min_offset: usize) -> Result<usize> {
+    find_subslice(&bytes[min_offset..], section)
+        .map(|offset| offset + min_offset)
+        .ok_or_else(|| {
+            ZkasErr(format!("Could not find {} section", String::from_utf8_lossy(section)))
+        })
 }
 
 /// Validate that a count is within limits and reasonable for the remaining bytes
@@ -112,14 +118,20 @@ struct SectionOffsets {
 }
 
 impl SectionOffsets {
-    /// Find all section offsets in the binary and validate their order
+    /// Find all section offsets in the binary and validate their order.
+    /// We search for each section marker only in valid regions (after the previous
+    /// section's data ends) to prevent false matches from section marker substrings
+    /// appearing in constant names.
     fn find(bytes: &[u8]) -> Result<Self> {
-        let constant = find_section(bytes, SECTION_CONSTANT)?;
-        let literal = find_section(bytes, SECTION_LITERAL)?;
-        let witness = find_section(bytes, SECTION_WITNESS)?;
-        let circuit = find_section(bytes, SECTION_CIRCUIT)?;
-        // Debug section is optional, so use end of bytes if not present
-        let debug = find_subslice(bytes, SECTION_DEBUG).unwrap_or(bytes.len());
+        // Search for each section only in valid regions (after previous section ends)
+        let constant = find_section(bytes, SECTION_CONSTANT, 0)?;
+        let literal = find_section(bytes, SECTION_LITERAL, constant + SECTION_CONSTANT.len())?;
+        let witness = find_section(bytes, SECTION_WITNESS, literal + SECTION_LITERAL.len())?;
+        let circuit = find_section(bytes, SECTION_CIRCUIT, witness + SECTION_WITNESS.len())?;
+        // Debug section is optional, so search only after circuit section
+        let debug = find_subslice(&bytes[circuit + SECTION_CIRCUIT.len()..], SECTION_DEBUG)
+            .map(|offset| offset + circuit + SECTION_CIRCUIT.len())
+            .unwrap_or(bytes.len());
 
         // Validate section order
         let sections = [
