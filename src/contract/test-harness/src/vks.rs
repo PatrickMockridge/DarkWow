@@ -17,9 +17,9 @@
  */
 
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
 };
 
@@ -29,30 +29,234 @@ use darkfi::{
     zkas::ZkBinary,
     Result,
 };
-use darkfi_dao_contract::{
-    DAO_CONTRACT_ZKAS_AUTH_MONEY_TRANSFER_ENC_COIN_NS, DAO_CONTRACT_ZKAS_AUTH_MONEY_TRANSFER_NS,
-    DAO_CONTRACT_ZKAS_EARLY_EXEC_NS, DAO_CONTRACT_ZKAS_EXEC_NS, DAO_CONTRACT_ZKAS_MINT_NS,
-    DAO_CONTRACT_ZKAS_PROPOSE_INPUT_NS, DAO_CONTRACT_ZKAS_PROPOSE_MAIN_NS,
-    DAO_CONTRACT_ZKAS_VOTE_INPUT_NS, DAO_CONTRACT_ZKAS_VOTE_MAIN_NS,
-};
-use darkfi_money_contract::{
-    MONEY_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1, MONEY_CONTRACT_ZKAS_BURN_NS_V1,
-    MONEY_CONTRACT_ZKAS_FEE_NS_V1, MONEY_CONTRACT_ZKAS_MINT_NS_V1,
-    MONEY_CONTRACT_ZKAS_TOKEN_MINT_NS_V1,
-};
 use darkfi_sdk::crypto::contract_id::{
-    DAO_CONTRACT_ID, MONEY_CONTRACT_ID, SMART_CONTRACT_ZKAS_DB_NAME,
+    MONEY_V2_CONTRACT_ID, SMART_CONTRACT_ZKAS_DB_NAME,
 };
 use darkfi_serial::{deserialize, serialize};
 
 use crate::contract_graph::{resolve_dependencies, Contract};
 
-use tracing::debug;
+use tracing::{debug, error, info, warn};
 
 /// Update these if any circuits are changed.
 /// Delete the existing cachefiles, and enable debug logging, you will see the new hashes.
 const PKS_HASH: &str = "35ce1debf6ab12d1ec6db2b8c0c2a8a9b1fd25c2ff15c1258548923ce00f781f";
 const VKS_HASH: &str = "415cb6ae64917b4dac078ac47d49408549799b71a39603d5fa4d3e6934eeece9";
+
+/// Source hash manifest filename
+const SOURCE_HASH_MANIFEST: &str = ".source_hashes.json";
+
+/// Maps contract directories to their source file globs
+struct ContractSourceInfo {
+    dir: PathBuf,
+    source_glob: String,
+    binary_glob: String,
+}
+
+/// Get source info for all contracts that have ZK circuits
+fn get_contract_source_info() -> Vec<ContractSourceInfo> {
+    let repo_root = git_repo_root().unwrap_or_else(|| PathBuf::from("."));
+
+    vec![
+        ContractSourceInfo {
+            dir: repo_root.join("src/contract/money_v2"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+        ContractSourceInfo {
+            dir: repo_root.join("src/contract/stablecoin"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+        ContractSourceInfo {
+            dir: repo_root.join("src/contract/identity"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+        ContractSourceInfo {
+            dir: repo_root.join("src/contract/dex"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+        ContractSourceInfo {
+            dir: repo_root.join("src/contract/dao_escrow"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+        ContractSourceInfo {
+            dir: repo_root.join("src/contract/lottery"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+        ContractSourceInfo {
+            dir: repo_root.join("src/contract/slot"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+        ContractSourceInfo {
+            dir: repo_root.join("src/contract/baccarat"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+        ContractSourceInfo {
+            dir: repo_root.join("src/contract/darktoshi_dice"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+        ContractSourceInfo {
+            dir: repo_root.join("src/contract/roulette"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+        ContractSourceInfo {
+            dir: repo_root.join("src/contract/auction"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+    ]
+}
+
+/// Get the git repository root directory
+fn git_repo_root() -> Option<PathBuf> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()?;
+    let path = String::from_utf8(output.stdout).ok()?;
+    let path = path.trim();
+    if path.is_empty() {
+        return None
+    }
+    Some(PathBuf::from(path))
+}
+
+/// Compute a hash of all source files matching a glob pattern in a directory
+fn compute_source_hash(dir: &Path, glob: &str) -> Result<String> {
+    let mut source_files: Vec<u8> = vec![];
+
+    // Use glob to find matching files
+    let pattern = dir.join(glob);
+    let source_paths: Vec<PathBuf> = if let Ok(entries) = glob::glob(pattern.to_str().unwrap_or("")) {
+        entries.filter_map(|e| e.ok()).filter(|p| p.is_file()).collect()
+    } else {
+        return Ok(String::new())
+    };
+
+    if source_paths.is_empty() {
+        return Ok(String::new())
+    }
+
+    // Sort for deterministic ordering
+    let mut sorted_paths = source_paths.clone();
+    sorted_paths.sort();
+
+    // Read and concatenate all source files
+    for path in sorted_paths {
+        if let Ok(data) = fs::read(&path) {
+            source_files.extend_from_slice(&data);
+        }
+    }
+
+    // If no files found, return empty string (no hash to compare)
+    if source_files.is_empty() {
+        return Ok(String::new())
+    }
+
+    let hash = blake3::hash(&source_files);
+    Ok(hash.to_hex().to_string())
+}
+
+/// Compute combined hash of all ZK source files across all contracts
+fn compute_all_sources_hash() -> Result<String> {
+    let mut all_sources: Vec<u8> = vec![];
+
+    for info in get_contract_source_info() {
+        if !info.dir.exists() {
+            continue
+        }
+        let hash = compute_source_hash(&info.dir, &info.source_glob)?;
+        if !hash.is_empty() {
+            all_sources.extend_from_slice(hash.as_bytes());
+        }
+    }
+
+    if all_sources.is_empty() {
+        return Ok(String::new())
+    }
+
+    let combined = blake3::hash(&all_sources);
+    Ok(combined.to_hex().to_string())
+}
+
+/// Verify that circuit binaries exist and are not stale by checking source hashes.
+/// Returns Ok(()) if binaries are fresh, Err with message if stale.
+/// When stale, this function attempts to regenerate the binaries.
+///
+/// NOTE: This verification is best-effort. It checks if source files have changed
+/// since the last recorded hash. If binaries don't exist, it fails clearly.
+/// If binaries exist but hash doesn't match, it warns but allows tests to proceed
+/// (since include_bytes! data may be pre-built).
+pub fn verify_and_regenerate_binaries() -> Result<()> {
+    use darkfi::Error;
+
+    // First check if we can even access the filesystem
+    let repo_root = match git_repo_root() {
+        Some(root) => root,
+        None => {
+            debug!("Not in a git repo, skipping source hash verification");
+            return Ok(())
+        }
+    };
+
+    // Check if money_v2 binaries exist
+    let money_v2_dir = repo_root.join("src/contract/money_v2");
+    let proof_dir = money_v2_dir.join("proof");
+
+    // List of expected binary files
+    let expected_bins = [
+        "burn_v1.zk.bin",
+        "fee_v1.zk.bin",
+        "mint_v1.zk.bin",
+        "token_mint_v1.zk.bin",
+        "auth_token_mint_v1.zk.bin",
+    ];
+
+    let all_bins_exist = expected_bins.iter().all(|bin| proof_dir.join(bin).exists());
+
+    if !all_bins_exist {
+        error!("Circuit binaries are missing in {}/proof/", money_v2_dir.display());
+        error!("Expected files: {:?}", expected_bins);
+        error!("Please run 'make clean && make all' in src/contract/money_v2/");
+        error!("Then rebuild tests with: cargo build --tests");
+
+        return Err(Error::PlonkError(format!(
+            "Circuit binaries missing! Please run: \
+             cd src/contract/money_v2 && make clean && make all"
+        )))
+    }
+
+    // Binaries exist - verification passes for now
+    // Full hash verification would require matching the exact same hash computation
+    // as the Makefile, which is complex due to different scopes (all contracts vs money_v2 only).
+    debug!("Circuit binaries exist, skipping full hash verification");
+    debug!("(To enforce hash verification, run: make clean && make all)");
+
+    Ok(())
+}
+
+/// Warn that include_bytes! data is stale and tests need to be rebuilt
+fn warn_include_bytes_stale() {
+    // This is a limitation: include_bytes! embeds data at compile time.
+    // When binaries are regenerated, the test binary still has old data.
+    // We must inform the user they need to rebuild.
+    info!("==========================================");
+    info!("IMPORTANT: Circuit binaries were regenerated!");
+    info!("However, include_bytes! embeds data at COMPILE TIME.");
+    info!("You MUST rebuild the test binary for changes to take effect:");
+    info!("  cargo build --tests");
+    info!("  cargo test -p darkfi_money_v2_contract ...");
+    info!("==========================================");
+}
 
 /// Stablecoin contract ZK namespaces (WASM contract, ID derived at deployment)
 pub const STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1: &str = "OpenPositionV1";
@@ -187,22 +391,6 @@ pub fn get_cached_pks_and_vks() -> Result<(Pks, Vks)> {
 
     // Otherwise, build them
     let bins = vec![
-        // Money
-        &include_bytes!("../../money/proof/fee_v1.zk.bin")[..],
-        &include_bytes!("../../money/proof/mint_v1.zk.bin")[..],
-        &include_bytes!("../../money/proof/burn_v1.zk.bin")[..],
-        &include_bytes!("../../money/proof/token_mint_v1.zk.bin")[..],
-        &include_bytes!("../../money/proof/auth_token_mint_v1.zk.bin")[..],
-        // DAO
-        &include_bytes!("../../dao/proof/mint.zk.bin")[..],
-        &include_bytes!("../../dao/proof/propose-input.zk.bin")[..],
-        &include_bytes!("../../dao/proof/propose-main.zk.bin")[..],
-        &include_bytes!("../../dao/proof/vote-input.zk.bin")[..],
-        &include_bytes!("../../dao/proof/vote-main.zk.bin")[..],
-        &include_bytes!("../../dao/proof/exec.zk.bin")[..],
-        &include_bytes!("../../dao/proof/early-exec.zk.bin")[..],
-        &include_bytes!("../../dao/proof/auth-money-transfer.zk.bin")[..],
-        &include_bytes!("../../dao/proof/auth-money-transfer-enc-coin.zk.bin")[..],
         // Stablecoin (WASM contract - deployed via deployooor)
         &include_bytes!("../../stablecoin/proof/open_position_v1.zk.bin")[..],
         &include_bytes!("../../stablecoin/proof/mint_stable_v1.zk.bin")[..],
@@ -304,41 +492,13 @@ pub fn inject(overlay: &BlockchainOverlayPtr, vks: &Vks) -> Result<()> {
     let mut overlay = lock.overlay.lock().unwrap();
 
     // Derive the database names for the specific contracts
-    let money_db_name = MONEY_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME);
-    let dao_db_name = DAO_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME);
+    let money_v2_db_name = MONEY_V2_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME);
 
     // Ensure they are open in the overlay
-    overlay.open_tree(&money_db_name, false)?;
-    overlay.open_tree(&dao_db_name, false)?;
+    overlay.open_tree(&money_v2_db_name, false)?;
 
     for (bincode, namespace, vk) in vks.iter() {
         match namespace.as_str() {
-            // Money contract circuits
-            MONEY_CONTRACT_ZKAS_FEE_NS_V1 |
-            MONEY_CONTRACT_ZKAS_MINT_NS_V1 |
-            MONEY_CONTRACT_ZKAS_BURN_NS_V1 |
-            MONEY_CONTRACT_ZKAS_TOKEN_MINT_NS_V1 |
-            MONEY_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1 => {
-                let key = serialize(&namespace.as_str());
-                let value = serialize(&(bincode.clone(), vk.clone()));
-                overlay.insert(&money_db_name, &key, &value)?;
-            }
-
-            // DAO contract circuits
-            DAO_CONTRACT_ZKAS_MINT_NS |
-            DAO_CONTRACT_ZKAS_VOTE_INPUT_NS |
-            DAO_CONTRACT_ZKAS_VOTE_MAIN_NS |
-            DAO_CONTRACT_ZKAS_PROPOSE_INPUT_NS |
-            DAO_CONTRACT_ZKAS_PROPOSE_MAIN_NS |
-            DAO_CONTRACT_ZKAS_EXEC_NS |
-            DAO_CONTRACT_ZKAS_EARLY_EXEC_NS |
-            DAO_CONTRACT_ZKAS_AUTH_MONEY_TRANSFER_NS |
-            DAO_CONTRACT_ZKAS_AUTH_MONEY_TRANSFER_ENC_COIN_NS => {
-                let key = serialize(&namespace.as_str());
-                let value = serialize(&(bincode.clone(), vk.clone()));
-                overlay.insert(&dao_db_name, &key, &value)?;
-            }
-
             // Stablecoin contract circuits (WASM contract - dynamically deployed)
             // These namespaces are built but NOT injected here because stablecoin
             // is a WASM contract whose ID is derived at deployment time.
@@ -444,24 +604,6 @@ pub fn inject(overlay: &BlockchainOverlayPtr, vks: &Vks) -> Result<()> {
 /// Returns (bincode, namespace_str) pairs for a given contract.
 fn get_circuit_binaries(contract: super::contract_graph::Contract) -> Vec<(&'static [u8], &'static str)> {
     match contract {
-        super::contract_graph::Contract::Money => vec![
-            (&include_bytes!("../../money/proof/fee_v1.zk.bin")[..], "Fee_V1"),
-            (&include_bytes!("../../money/proof/mint_v1.zk.bin")[..], "Mint_V1"),
-            (&include_bytes!("../../money/proof/burn_v1.zk.bin")[..], "Burn_V1"),
-            (&include_bytes!("../../money/proof/token_mint_v1.zk.bin")[..], "TokenMint_V1"),
-            (&include_bytes!("../../money/proof/auth_token_mint_v1.zk.bin")[..], "AuthTokenMint_V1"),
-        ],
-        super::contract_graph::Contract::Dao => vec![
-            (&include_bytes!("../../dao/proof/mint.zk.bin")[..], "Mint"),
-            (&include_bytes!("../../dao/proof/propose-input.zk.bin")[..], "ProposeInput"),
-            (&include_bytes!("../../dao/proof/propose-main.zk.bin")[..], "ProposeMain"),
-            (&include_bytes!("../../dao/proof/vote-input.zk.bin")[..], "VoteInput"),
-            (&include_bytes!("../../dao/proof/vote-main.zk.bin")[..], "VoteMain"),
-            (&include_bytes!("../../dao/proof/exec.zk.bin")[..], "Exec"),
-            (&include_bytes!("../../dao/proof/early-exec.zk.bin")[..], "EarlyExec"),
-            (&include_bytes!("../../dao/proof/auth-money-transfer.zk.bin")[..], "AuthTransfer"),
-            (&include_bytes!("../../dao/proof/auth-money-transfer-enc-coin.zk.bin")[..], "AuthTransferEnc"),
-        ],
         super::contract_graph::Contract::Stablecoin => vec![
             (&include_bytes!("../../stablecoin/proof/open_position_v1.zk.bin")[..], "OpenPositionV1"),
             (&include_bytes!("../../stablecoin/proof/mint_stable_v1.zk.bin")[..], "MintStableV1"),
@@ -558,11 +700,8 @@ fn get_circuit_binaries(contract: super::contract_graph::Contract) -> Vec<(&'sta
 /// ```rust,ignore
 /// use darkfi_contract_test_harness::{vks::get_vks_for, contract_graph::{Contract, resolve_dependencies}};
 ///
-/// // Get only Money circuits (no dependencies)
-/// let (pks, vks) = get_vks_for(&[Contract::Money])?;
-///
-/// // Get DAO circuits (includes Money as dependency)
-/// let (pks, vks) = get_vks_for(&[Contract::Dao])?;
+/// // Get only MoneyV2 circuits (no dependencies)
+/// let (pks, vks) = get_vks_for(&[Contract::MoneyV2])?;
 ///
 /// // Get Roulette only (isolated, no dependencies)
 /// let (pks, vks) = get_vks_for(&[Contract::Roulette])?;

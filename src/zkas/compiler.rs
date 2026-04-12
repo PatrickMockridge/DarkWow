@@ -23,14 +23,15 @@ use darkfi_serial::{serialize, VarInt};
 use super::{
     ast::{Arg, Constant, Literal, Statement, StatementType, Witness},
     constants::{
-        SECTION_CIRCUIT, SECTION_CONSTANT, SECTION_DEBUG, SECTION_LITERAL, SECTION_WITNESS,
+        SECTION_TYPE_CIRCUIT, SECTION_TYPE_CONSTANT, SECTION_TYPE_DEBUG, SECTION_TYPE_LITERAL,
+        SECTION_TYPE_SOURCE_HASH, SECTION_TYPE_WITNESS,
     },
     error::ErrorEmitter,
     types::HeapType,
 };
 
 /// Version of the binary
-pub const BINARY_VERSION: u8 = 2;
+pub const BINARY_VERSION: u8 = 3;
 /// Magic bytes prepended to the binary
 pub const MAGIC_BYTES: [u8; 4] = [0x0b, 0x01, 0xb1, 0x35];
 
@@ -42,6 +43,7 @@ pub struct Compiler {
     statements: Vec<Statement>,
     literals: Vec<Literal>,
     debug_info: bool,
+    source_hash: Option<String>,
     error: ErrorEmitter,
 }
 
@@ -57,13 +59,14 @@ impl Compiler {
         statements: Vec<Statement>,
         literals: Vec<Literal>,
         debug_info: bool,
+        source_hash: Option<String>,
     ) -> Self {
         // For nice error reporting, we'll load everything into a string
         // vector so we have references to lines.
         let lines: Vec<String> = source.as_str().lines().map(|x| x.to_string()).collect();
         let error = ErrorEmitter::new("Compiler", filename, lines);
 
-        Self { namespace, k, constants, witnesses, statements, literals, debug_info, error }
+        Self { namespace, k, constants, witnesses, statements, literals, debug_info, source_hash, error }
     }
 
     pub fn compile(&self) -> Result<Vec<u8>> {
@@ -79,46 +82,63 @@ impl Compiler {
         // Write the circuit's namespace
         bincode.extend_from_slice(&serialize(&self.namespace));
 
+        // Write source hash section (version 3+)
+        if let Some(ref hash) = self.source_hash {
+            let mut section_data = vec![];
+            section_data.extend_from_slice(&serialize(hash));
+            bincode.push(SECTION_TYPE_SOURCE_HASH);
+            bincode.extend_from_slice(&u32::to_le_bytes(section_data.len() as u32));
+            bincode.extend_from_slice(&section_data);
+        }
+
         // Temporary heap vector for lookups
         let mut tmp_heap = vec![];
 
-        // In the .constant section of the binary, we write the constant's type,
-        // and the name so the VM can look it up from `src/crypto/constants/`.
-        bincode.extend_from_slice(SECTION_CONSTANT);
+        // Write .constant section: [type=2][length:4][data]
+        // Data format: for each constant: [1 byte type][varint string length][string bytes]
+        let mut constant_data = vec![];
         for i in &self.constants {
             tmp_heap.push(i.name.as_str());
-            bincode.push(i.typ as u8);
-            bincode.extend_from_slice(&serialize(&i.name));
+            constant_data.push(i.typ as u8);
+            constant_data.extend_from_slice(&serialize(&i.name));
         }
+        bincode.push(SECTION_TYPE_CONSTANT);
+        bincode.extend_from_slice(&u32::to_le_bytes(constant_data.len() as u32));
+        bincode.extend_from_slice(&constant_data);
 
-        // Currently, our literals are only Uint64 types, in the binary we'll
-        // add them here in the .literal section. In the VM, they will be on
-        // their own heap, used for reference by opcodes.
-        bincode.extend_from_slice(SECTION_LITERAL);
+        // Write .literal section: [type=3][length:4][data]
+        // Data format: for each literal: [1 byte type][varint string length][string bytes]
+        let mut literal_data = vec![];
         for i in &self.literals {
-            bincode.push(i.typ as u8);
-            bincode.extend_from_slice(&serialize(&i.name));
+            literal_data.push(i.typ as u8);
+            literal_data.extend_from_slice(&serialize(&i.name));
         }
+        bincode.push(SECTION_TYPE_LITERAL);
+        bincode.extend_from_slice(&u32::to_le_bytes(literal_data.len() as u32));
+        bincode.extend_from_slice(&literal_data);
 
-        // In the .witness section, we write all our witness types, on the heap
-        // they're in order of appearance.
-        bincode.extend_from_slice(SECTION_WITNESS);
+        // Write .witness section: [type=4][length:4][data]
+        // Data format: for each witness: [1 byte type]
+        let mut witness_data = vec![];
         for i in &self.witnesses {
             tmp_heap.push(i.name.as_str());
-            bincode.push(i.typ as u8);
+            witness_data.push(i.typ as u8);
         }
+        bincode.push(SECTION_TYPE_WITNESS);
+        bincode.extend_from_slice(&u32::to_le_bytes(witness_data.len() as u32));
+        bincode.extend_from_slice(&witness_data);
 
-        bincode.extend_from_slice(SECTION_CIRCUIT);
+        // Write .circuit section: [type=5][length:4][data]
+        let mut circuit_data = vec![];
         for i in &self.statements {
             match i.typ {
                 StatementType::Assign => tmp_heap.push(&i.lhs.as_ref().unwrap().name),
-                // In case of a simple call, we don't append anything to the heap
                 StatementType::Call => {}
                 _ => unreachable!("Invalid statement type in circuit: {:?}", i.typ),
             }
 
-            bincode.push(i.opcode as u8);
-            bincode.extend_from_slice(&serialize(&VarInt(i.rhs.len() as u64)));
+            circuit_data.push(i.opcode as u8);
+            circuit_data.extend_from_slice(&serialize(&VarInt(i.rhs.len() as u64)));
 
             for arg in &i.rhs {
                 match arg {
@@ -132,8 +152,8 @@ impl Compiler {
                                 )
                             })?;
 
-                        bincode.push(HeapType::Var as u8);
-                        bincode.extend_from_slice(&serialize(&VarInt(heap_idx as u64)));
+                        circuit_data.push(HeapType::Var as u8);
+                        circuit_data.extend_from_slice(&serialize(&VarInt(heap_idx as u64)));
                     }
                     Arg::Lit(lit) => {
                         let lit_idx = Compiler::lookup_literal(&self.literals, &lit.name)
@@ -145,59 +165,62 @@ impl Compiler {
                                 )
                             })?;
 
-                        bincode.push(HeapType::Lit as u8);
-                        bincode.extend_from_slice(&serialize(&VarInt(lit_idx as u64)));
+                        circuit_data.push(HeapType::Lit as u8);
+                        circuit_data.extend_from_slice(&serialize(&VarInt(lit_idx as u64)));
                     }
                     _ => unreachable!(),
                 };
             }
         }
+        bincode.push(SECTION_TYPE_CIRCUIT);
+        bincode.extend_from_slice(&u32::to_le_bytes(circuit_data.len() as u32));
+        bincode.extend_from_slice(&circuit_data);
 
-        // If we're not doing debug info, we're done here and can return.
+        // If we're not doing debug info, we're done here.
         if !self.debug_info {
             return Ok(bincode)
         }
 
-        // Otherwise, we proceed appending debug info.
-        bincode.extend_from_slice(SECTION_DEBUG);
+        // Write .debug section: [type=6][length:4][data]
+        let mut debug_data = vec![];
 
         // Write source locations for each opcode.
-        // This allows mapping runtime errors back to source lines.
-        bincode.extend_from_slice(&serialize(&VarInt(self.statements.len() as u64)));
+        debug_data.extend_from_slice(&serialize(&VarInt(self.statements.len() as u64)));
         for stmt in &self.statements {
-            bincode.extend_from_slice(&serialize(&VarInt(stmt.line as u64)));
-            // For column, use the lhs variable's column if available
+            debug_data.extend_from_slice(&serialize(&VarInt(stmt.line as u64)));
             let column = stmt.lhs.as_ref().map(|v| v.column).unwrap_or(0);
-            bincode.extend_from_slice(&serialize(&VarInt(column as u64)));
+            debug_data.extend_from_slice(&serialize(&VarInt(column as u64)));
         }
 
         // Write heap variable names.
-        // The heap contains constants, witnesses, assigned variables (in order).
-        // This allows showing meaningful names instead of heap indices.
         let heap_size = self.constants.len() +
             self.witnesses.len() +
             self.statements.iter().filter(|s| s.typ == StatementType::Assign).count();
-        bincode.extend_from_slice(&serialize(&VarInt(heap_size as u64)));
+        debug_data.extend_from_slice(&serialize(&VarInt(heap_size as u64)));
 
         for constant in &self.constants {
-            bincode.extend_from_slice(&serialize(&constant.name));
+            debug_data.extend_from_slice(&serialize(&constant.name));
         }
 
         for witness in &self.witnesses {
-            bincode.extend_from_slice(&serialize(&witness.name));
+            debug_data.extend_from_slice(&serialize(&witness.name));
         }
 
         for stmt in &self.statements {
             if stmt.typ == StatementType::Assign {
-                bincode.extend_from_slice(&serialize(&stmt.lhs.as_ref().unwrap().name));
+                debug_data.extend_from_slice(&serialize(&stmt.lhs.as_ref().unwrap().name));
             }
         }
 
-        // Write literal names (the literal values as strings, e.g. "42")
-        bincode.extend_from_slice(&serialize(&VarInt(self.literals.len() as u64)));
+        // Write literal names
+        debug_data.extend_from_slice(&serialize(&VarInt(self.literals.len() as u64)));
         for literal in &self.literals {
-            bincode.extend_from_slice(&serialize(&literal.name));
+            debug_data.extend_from_slice(&serialize(&literal.name));
         }
+
+        bincode.push(SECTION_TYPE_DEBUG);
+        bincode.extend_from_slice(&u32::to_le_bytes(debug_data.len() as u32));
+        bincode.extend_from_slice(&debug_data);
 
         Ok(bincode)
     }

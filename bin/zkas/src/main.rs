@@ -44,6 +44,7 @@ Options:
   -p         Preprocess only; do not compile
   -i         Interactive semantic analysis
   -e         Examine decoded bytecode
+  --version  Print version and exit
   -h         Print this help
 "#;
 
@@ -52,12 +53,21 @@ fn usage() {
 }
 
 fn main() -> ExitCode {
+    // Check for --version flag BEFORE any argument parsing
+    // This must be done from raw env args to avoid Args library parsing issues
+    let args_vec: Vec<String> = std::env::args().collect();
+    if args_vec.len() == 2 && args_vec[1] == "--version" {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS
+    }
+
     let argv;
     let mut pflag = false;
     let mut iflag = false;
     let mut eflag = false;
     let mut sflag = false;
     let mut hflag = false;
+    let mut vflag = false;
     let mut output = String::new();
 
     {
@@ -66,11 +76,18 @@ fn main() -> ExitCode {
             'i' => iflag = true,
             'e' => eflag = true,
             's' => sflag = true,
+            'v' => vflag = true,
             'o' => output = args.eargf().to_string(),
             _ => hflag = true,
         });
 
         argv = args.parse();
+    }
+
+    // Version flag just prints the version hash and exits
+    if vflag {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS
     }
 
     if hflag || argv.is_empty() {
@@ -128,6 +145,9 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS
     }
 
+    // Compute source hash for binary verification
+    let source_hash = blake3::hash(source.as_bytes()).to_hex().to_string();
+
     let compiler = Compiler::new(
         filename,
         source.chars(),
@@ -138,6 +158,7 @@ fn main() -> ExitCode {
         analyzer.statements,
         analyzer.literals,
         !sflag,
+        Some(source_hash),
     );
 
     let bincode = match compiler.compile() {

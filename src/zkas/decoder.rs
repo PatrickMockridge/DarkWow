@@ -22,8 +22,9 @@ use super::{
     compiler::MAGIC_BYTES,
     constants::{
         MAX_ARGS_PER_OPCODE, MAX_BIN_SIZE, MAX_CONSTANTS, MAX_HEAP_SIZE, MAX_K, MAX_LITERALS,
-        MAX_NS_LEN, MAX_OPCODES, MAX_STRING_LEN, MAX_WITNESSES, MIN_BIN_SIZE, SECTION_CIRCUIT,
-        SECTION_CONSTANT, SECTION_DEBUG, SECTION_LITERAL, SECTION_WITNESS,
+        MAX_NS_LEN, MAX_OPCODES, MAX_STRING_LEN, MAX_WITNESSES, MIN_BIN_SIZE,
+        SECTION_TYPE_CIRCUIT, SECTION_TYPE_CONSTANT, SECTION_TYPE_DEBUG, SECTION_TYPE_LITERAL,
+        SECTION_TYPE_SOURCE_HASH, SECTION_TYPE_WITNESS,
     },
     types::HeapType,
     LitType, Opcode, VarType,
@@ -34,12 +35,14 @@ use crate::{Error::ZkasDecoderError as ZkasErr, Result};
 /// This is used by the zkvm.
 ///
 /// The binary format consists of:
-/// - Header: magic bytes, version, k param, namespace
-/// - `.constant` section: constant types and names
-/// - `.literal` section: literal types and values
-/// - `.witness` section: witness types
-/// - `.circuit` section: opcoddes and their arguments
-/// - `.debug` section (optional): debug informatioon
+/// - Header: magic bytes (4), version (1), k param (4), namespace (VarInt length + UTF-8)
+/// - Sections in any order: [1 byte type][4 bytes length][data]
+///   - type 1: source_hash
+///   - type 2: constants
+///   - type 3: literals
+///   - type 4: witnesses
+///   - type 5: circuit (required)
+///   - type 6: debug (optional)
 #[derive(Clone, Debug)]
 // ANCHOR: zkbinary-struct
 pub struct ZkBinary {
@@ -50,6 +53,8 @@ pub struct ZkBinary {
     pub witnesses: Vec<VarType>,
     pub opcodes: Vec<(Opcode, Vec<(HeapType, usize)>)>,
     pub debug_info: Option<DebugInfo>,
+    /// Source file hash (version 3+ binaries only)
+    pub source_hash: Option<String>,
 }
 // ANCHOR_END: zkbinary-struct
 
@@ -63,23 +68,6 @@ pub struct DebugInfo {
     pub heap_names: Vec<String>,
     /// Literal values as strings
     pub literal_names: Vec<String>,
-}
-
-// https://stackoverflow.com/questions/35901547/how-can-i-find-a-subsequence-in-a-u8-slice
-fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|window| window == needle)
-}
-
-/// Find a section marker in the binary, searching only in valid regions.
-/// This prevents false positives from section marker substrings appearing
-/// in constant names (e.g., "NULLIFIER_K.literal.witness" contains ".literal").
-/// The min_offset ensures we search only after the previous section's data ends.
-fn find_section(bytes: &[u8], section: &[u8], min_offset: usize) -> Result<usize> {
-    find_subslice(&bytes[min_offset..], section)
-        .map(|offset| offset + min_offset)
-        .ok_or_else(|| {
-            ZkasErr(format!("Could not find {} section", String::from_utf8_lossy(section)))
-        })
 }
 
 /// Validate that a count is within limits and reasonable for the remaining bytes
@@ -109,79 +97,54 @@ fn validate_count(
     Ok(count)
 }
 
-struct SectionOffsets {
-    constant: usize,
-    literal: usize,
-    witness: usize,
-    circuit: usize,
-    debug: usize,
+/// Length-prefixed section reader for new binary format.
+/// Each section is: [1 byte type][4 bytes length][data]
+struct SectionReader<'a> {
+    bytes: &'a [u8],
+    pos: usize,
 }
 
-impl SectionOffsets {
-    /// Find all section offsets in the binary and validate their order.
-    /// We search for each section marker only in valid regions (after the previous
-    /// section's data ends) to prevent false matches from section marker substrings
-    /// appearing in constant names.
-    fn find(bytes: &[u8]) -> Result<Self> {
-        // Search for each section only in valid regions (after previous section ends)
-        let constant = find_section(bytes, SECTION_CONSTANT, 0)?;
-        let literal = find_section(bytes, SECTION_LITERAL, constant + SECTION_CONSTANT.len())?;
-        let witness = find_section(bytes, SECTION_WITNESS, literal + SECTION_LITERAL.len())?;
-        let circuit = find_section(bytes, SECTION_CIRCUIT, witness + SECTION_WITNESS.len())?;
-        // Debug section is optional, so search only after circuit section
-        let debug = find_subslice(&bytes[circuit + SECTION_CIRCUIT.len()..], SECTION_DEBUG)
-            .map(|offset| offset + circuit + SECTION_CIRCUIT.len())
-            .unwrap_or(bytes.len());
+impl<'a> SectionReader<'a> {
+    fn new(bytes: &'a [u8], start: usize) -> Self {
+        Self { bytes, pos: start }
+    }
 
-        // Validate section order
-        let sections = [
-            (constant, ".constant"),
-            (literal, ".literal"),
-            (witness, ".witness"),
-            (circuit, ".circuit"),
-            (debug, "debug/EOF"),
-        ];
-
-        for i in 0..sections.len() - 1 {
-            if sections[i].0 > sections[i + 1].0 {
-                return Err(ZkasErr(format!(
-                    "{} section appeared before {}",
-                    sections[i + 1].1,
-                    sections[i].1
-                )));
-            }
+    /// Read next section: returns (section_type, section_data)
+    /// Returns None when no more sections (end of data or reached circuit section for older parsers)
+    fn next_section(&mut self) -> Result<Option<(u8, Vec<u8>)>> {
+        if self.pos >= self.bytes.len() {
+            return Ok(None);
         }
 
-        Ok(Self { constant, literal, witness, circuit, debug })
-    }
+        let section_type = self.bytes[self.pos];
+        self.pos += 1;
 
-    /// Extract the bytes for the constant section
-    fn constant_bytes<'a>(&self, bytes: &'a [u8]) -> &'a [u8] {
-        &bytes[self.constant + SECTION_CONSTANT.len()..self.literal]
-    }
-
-    /// Extract the bytes for the literal section
-    fn literal_bytes<'a>(&self, bytes: &'a [u8]) -> &'a [u8] {
-        &bytes[self.literal + SECTION_LITERAL.len()..self.witness]
-    }
-
-    /// Extract the bytes for the witness section
-    fn witness_bytes<'a>(&self, bytes: &'a [u8]) -> &'a [u8] {
-        &bytes[self.witness + SECTION_WITNESS.len()..self.circuit]
-    }
-
-    /// Extract the bytes for the circuit section
-    fn circuit_bytes<'a>(&self, bytes: &'a [u8]) -> &'a [u8] {
-        &bytes[self.circuit + SECTION_CIRCUIT.len()..self.debug]
-    }
-
-    /// Extract the bytes for the debug section if present
-    fn debug_bytes<'a>(&self, bytes: &'a [u8]) -> Option<&'a [u8]> {
-        if self.debug < bytes.len() {
-            Some(&bytes[self.debug + SECTION_DEBUG.len()..])
-        } else {
-            None
+        if self.pos + 4 > self.bytes.len() {
+            return Err(ZkasErr(format!("Unexpected end of binary when reading section length")));
         }
+
+        let section_len = u32::from_le_bytes([
+            self.bytes[self.pos],
+            self.bytes[self.pos + 1],
+            self.bytes[self.pos + 2],
+            self.bytes[self.pos + 3],
+        ]) as usize;
+        self.pos += 4;
+
+        if self.pos + section_len > self.bytes.len() {
+            return Err(ZkasErr(format!(
+                "Section data extends beyond binary end: type={}, len={}, pos={}, binary_len={}",
+                section_type,
+                section_len,
+                self.pos,
+                self.bytes.len()
+            )));
+        }
+
+        let section_data = self.bytes[self.pos..self.pos + section_len].to_vec();
+        self.pos += section_len;
+
+        Ok(Some((section_type, section_data)))
     }
 }
 
@@ -222,24 +185,66 @@ impl ZkBinary {
         let (namespace, _) = deserialize_limited_partial::<String>(&bytes[9..], MAX_NS_LEN)?;
 
         // ===============
-        // Section parsing
+        // Section parsing using length-prefixed format
         // ===============
-        let offsets = SectionOffsets::find(bytes)?;
+        // Sections start after the namespace (VarInt encoded string)
+        // First figure out where namespace ends
+        let (namespace_len, varint_len) = deserialize_partial::<VarInt>(&bytes[9..])?;
+        let section_start = 9 + varint_len + namespace_len.0 as usize;
 
-        let constants = Self::parse_constants(offsets.constant_bytes(bytes))?;
-        let literals = Self::parse_literals(offsets.literal_bytes(bytes))?;
-        let witnesses = Self::parse_witnesses(offsets.witness_bytes(bytes))?;
-        let opcodes = Self::parse_circuit(offsets.circuit_bytes(bytes))?;
+        let mut reader = SectionReader::new(bytes, section_start);
 
+        let mut constants = vec![];
+        let mut literals = vec![];
+        let mut witnesses = vec![];
+        let mut opcodes = vec![];
         let mut debug_info = None;
-        if decode_debug_symbols {
-            debug_info = match offsets.debug_bytes(bytes) {
-                Some(debug_bytes) => Some(Self::parse_debug(debug_bytes)?),
-                None => None,
-            };
+        let mut source_hash = None;
+
+        loop {
+            match reader.next_section()? {
+                None => break,
+                Some((section_type, section_data)) => {
+                    match section_type {
+                        SECTION_TYPE_SOURCE_HASH => {
+                            let (hash, _) = deserialize_limited_partial::<String>(&section_data, 64)?;
+                            source_hash = Some(hash);
+                        }
+                        SECTION_TYPE_CONSTANT => {
+                            constants = Self::parse_constants(&section_data)?;
+                        }
+                        SECTION_TYPE_LITERAL => {
+                            literals = Self::parse_literals(&section_data)?;
+                        }
+                        SECTION_TYPE_WITNESS => {
+                            witnesses = Self::parse_witnesses(&section_data)?;
+                        }
+                        SECTION_TYPE_CIRCUIT => {
+                            opcodes = Self::parse_circuit(&section_data)?;
+                        }
+                        SECTION_TYPE_DEBUG => {
+                            if decode_debug_symbols {
+                                debug_info = Some(Self::parse_debug(&section_data)?);
+                            }
+                        }
+                        _ => {
+                            return Err(ZkasErr(format!("Unknown section type: {}", section_type)))
+                        }
+                    }
+                }
+            }
         }
 
-        let binary = Self { namespace, k, constants, literals, witnesses, opcodes, debug_info };
+        let binary = Self {
+            namespace,
+            k,
+            constants,
+            literals,
+            witnesses,
+            opcodes,
+            debug_info,
+            source_hash,
+        };
 
         // Validate cross-references between sections
         binary.validate()?;
