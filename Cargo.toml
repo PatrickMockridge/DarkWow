@@ -43,7 +43,7 @@ members = [
 
     "src/contract/test-harness",
     "src/contract/money_v2",
-    "src/contract/simplecoin",
+    "src/contract/native_token",
     "src/contract/darktoshi_dice",
     "src/contract/baccarat",
     "src/contract/block_height_prediction",

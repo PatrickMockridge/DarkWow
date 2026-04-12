@@ -190,7 +190,7 @@ impl Transaction {
             return false;
         }
 
-        self.calls[0].data.is_money_pow_reward()
+        self.calls[0].data.is_native_token_pow_reward()
     }
 
     /// Returns true if the transaction consists of a single call with non-empty data.

@@ -50,12 +50,6 @@ pub mod cli_util;
 /// Drk interactive shell
 pub mod interactive;
 
-/// Wallet functionality related to Money
-pub mod money;
-
-/// Wallet functionality related to Dao
-pub mod dao;
-
 /// Wallet functionality related to Deployooor
 pub mod deploy;
 
@@ -144,14 +138,6 @@ impl Drk {
     pub fn reset(&self, output: &mut Vec<String>) -> WalletDbResult<()> {
         output.push(String::from("Resetting full wallet state"));
         self.reset_scanned_blocks(output)?;
-        self.reset_money_tree(output)?;
-        self.reset_money_smt(output)?;
-        self.reset_money_coins(output)?;
-        self.reset_mint_authorities(output)?;
-        self.reset_dao_trees(output)?;
-        self.reset_daos(output)?;
-        self.reset_dao_proposals(output)?;
-        self.reset_dao_votes(output)?;
         self.reset_deploy_authorities(output)?;
         self.reset_deploy_history(output)?;
         self.reset_tx_history(output)?;

@@ -639,7 +639,6 @@ dependencies = [
  "darkfi-sdk",
  "darkfi-serial",
  "darkfi_bridge_contract",
- "darkfi_money_contract",
  "ethers-core",
  "hex",
  "serde",
@@ -1970,7 +1969,6 @@ dependencies = [
  "darkfi_baccarat_contract",
  "darkfi_block_height_prediction_contract",
  "darkfi_bridge_contract",
- "darkfi_dao_contract",
  "darkfi_dao_escrow_contract",
  "darkfi_darktoshi_dice_contract",
  "darkfi_deployooor_contract",
@@ -1979,8 +1977,8 @@ dependencies = [
  "darkfi_insurance_market_contract",
  "darkfi_labor_market_contract",
  "darkfi_lottery_contract",
- "darkfi_money_contract",
  "darkfi_money_v2_contract",
+ "darkfi_native_token_contract",
  "darkfi_oracle_contract",
  "darkfi_pool_stake_contract",
  "darkfi_relayer_endowment_contract",
@@ -2074,9 +2072,7 @@ dependencies = [
  "darkfi",
  "darkfi-sdk",
  "darkfi-serial",
- "darkfi_dao_contract",
  "darkfi_deployooor_contract",
- "darkfi_money_contract",
  "halo2_gadgets",
  "halo2_proofs",
  "plotters",
@@ -2211,33 +2207,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "darkfi_dao_contract"
-version = "0.5.0"
-dependencies = [
- "blake2b_simd",
- "bs58",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_money_contract",
- "getrandom 0.2.17",
- "halo2_proofs",
- "rand 0.8.5",
- "smol",
- "thiserror 2.0.17",
- "tracing",
-]
-
-[[package]]
 name = "darkfi_dao_escrow_contract"
 version = "0.1.0"
 dependencies = [
  "darkfi",
  "darkfi-sdk",
  "darkfi-serial",
- "darkfi_money_contract",
  "getrandom 0.2.17",
  "rand 0.8.5",
  "serde",
@@ -2403,8 +2378,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "darkfi_money_contract"
-version = "0.5.0"
+name = "darkfi_money_v2_contract"
+version = "0.6.0"
 dependencies = [
  "blake3",
  "bs58",
@@ -2423,21 +2398,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "darkfi_money_v2_contract"
-version = "0.6.0"
+name = "darkfi_native_token_contract"
+version = "0.1.0"
 dependencies = [
- "blake3",
- "bs58",
  "chacha20poly1305",
  "darkfi",
- "darkfi-contract-test-harness",
  "darkfi-sdk",
  "darkfi-serial",
  "getrandom 0.2.17",
  "halo2_proofs",
- "lazy_static",
+ "pasta_curves",
  "rand 0.8.5",
- "smol",
  "thiserror 2.0.17",
  "tracing",
 ]
@@ -2577,11 +2548,10 @@ dependencies = [
  "blake3",
  "bs58",
  "darkfi",
- "darkfi-contract-test-harness",
  "darkfi-sdk",
  "darkfi-serial",
- "darkfi_money_contract",
  "darkfi_money_v2_contract",
+ "darkfi_native_token_contract",
  "easy-parallel",
  "hex",
  "monero",
@@ -3074,9 +3044,7 @@ dependencies = [
  "darkfi",
  "darkfi-sdk",
  "darkfi-serial",
- "darkfi_dao_contract",
  "darkfi_deployooor_contract",
- "darkfi_money_contract",
  "easy-parallel",
  "futures",
  "hex",
@@ -3475,7 +3443,6 @@ dependencies = [
  "darkfi-sdk",
  "darkfi-serial",
  "darkfi_deployooor_contract",
- "darkfi_money_contract",
  "easy-parallel",
  "hex",
  "monero",
@@ -4965,7 +4932,6 @@ dependencies = [
  "darkfi-sdk",
  "darkfi-serial",
  "darkfi_bridge_contract",
- "darkfi_money_contract",
  "hex",
  "serde",
  "shellexpand",
@@ -9591,7 +9557,6 @@ dependencies = [
  "ctrlc",
  "darkfi",
  "darkfi-sdk",
- "darkfi_money_contract",
  "rand 0.8.5",
  "rayon",
 ]
@@ -10552,7 +10517,6 @@ dependencies = [
  "darkfi-sdk",
  "darkfi-serial",
  "darkfi_bridge_contract",
- "darkfi_money_contract",
  "hex",
  "monero",
  "serde",
@@ -10627,7 +10591,6 @@ dependencies = [
  "darkfi-sdk",
  "darkfi-serial",
  "darkfi_bridge_contract",
- "darkfi_money_contract",
  "hex",
  "serde",
  "shellexpand",

@@ -38,18 +38,6 @@ lazy_static! {
     /// Derivation prefix for `ContractId`
     pub static ref CONTRACT_ID_PREFIX: pallas::Base = pallas::Base::from(42);
 
-    /// Contract ID for the native money contract
-    ///
-    /// `BZHKGQ26bzmBithTQYTJtjo2QdCqpkR9tjSBopT4yf4o`
-    pub static ref MONEY_CONTRACT_ID: ContractId =
-        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(0)]));
-
-    /// Contract ID for the native DAO contract
-    ///
-    /// `Fd8kfCuqU8BoFFp6GcXv5pC8XXRkBK7gUPQX5XDz7iXj`
-    pub static ref DAO_CONTRACT_ID: ContractId =
-        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(1)]));
-
     /// Contract ID for the native Deployooor contract
     ///
     /// `EJs7oEjKkvCeEVCmpRsd6fEoTGCFJ7WKUBfmAjwaegN`
@@ -71,13 +59,11 @@ lazy_static! {
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(4)]));
 
     /// Native contract IDs bytes, for various checks
-    pub static ref NATIVE_CONTRACT_IDS_BYTES: [[u8; 32]; 5] =
-        [MONEY_CONTRACT_ID.to_bytes(), DAO_CONTRACT_ID.to_bytes(), DEPLOYOOOR_CONTRACT_ID.to_bytes(), MONEY_V2_CONTRACT_ID.to_bytes(), NATIVE_TOKEN_CONTRACT_ID.to_bytes()];
+    pub static ref NATIVE_CONTRACT_IDS_BYTES: [[u8; 32]; 3] =
+        [DEPLOYOOOR_CONTRACT_ID.to_bytes(), MONEY_V2_CONTRACT_ID.to_bytes(), NATIVE_TOKEN_CONTRACT_ID.to_bytes()];
 
     /// Native contract zkas circuits database trees, for various checks
-    pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 5] = [
-        MONEY_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
-        DAO_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
+    pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 3] = [
         DEPLOYOOOR_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
         MONEY_V2_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
         NATIVE_TOKEN_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),

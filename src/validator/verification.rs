@@ -668,7 +668,7 @@ pub async fn verify_transaction(
         // transaction.
         let mut found_fee = false;
         for (call_idx, call) in tx.calls.iter().enumerate() {
-            if !call.data.is_money_fee() {
+            if !call.data.is_native_token_fee() {
                 continue
             }
 
@@ -710,13 +710,13 @@ pub async fn verify_transaction(
         debug!(target: "validator::verification::verify_transaction", "Executing contract call {idx}");
 
         // Transaction must not contain a Pow reward call
-        if call.data.is_money_pow_reward() {
+        if call.data.is_native_token_pow_reward() {
             error!(target: "validator::verification::verify_transaction", "Reward transaction detected");
             return Err(TxVerifyFailed::ErroneousTxs(vec![tx.clone()]).into())
         }
 
         // Check if its the fee call so we only pass its payload
-        let (call_idx, call_payload) = if call.data.is_money_fee() {
+        let (call_idx, call_payload) = if call.data.is_native_token_fee() {
             _call_payload = vec![];
             vec![call.clone()].encode_async(&mut _call_payload).await?;
             (0_u8, &_call_payload)

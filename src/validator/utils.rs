@@ -19,7 +19,7 @@
 use std::sync::LazyLock;
 
 use darkfi_sdk::{
-    crypto::{DAO_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID, MONEY_CONTRACT_ID, MONEY_V2_CONTRACT_ID},
+    crypto::{DEPLOYOOOR_CONTRACT_ID, MONEY_V2_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID},
     tx::TransactionHash,
 };
 use num_bigint::BigUint;
@@ -57,31 +57,16 @@ pub async fn deploy_native_contracts(
 ) -> Result<()> {
     info!(target: "validator::utils::deploy_native_contracts", "Deploying native WASM contracts");
 
-    // The Money contract uses an empty payload to deploy itself.
-    let money_contract_deploy_payload = vec![];
-
-    // The DAO contract uses an empty payload to deploy itself.
-    let dao_contract_deploy_payload = vec![];
-
     // The Deployooor contract uses an empty payload to deploy itself.
     let deployooor_contract_deploy_payload = vec![];
 
-    // Money V2 contract also uses an empty payload.
+    // Money V2 contract also uses an empty payload (legacy - being phased out).
     let money_v2_contract_deploy_payload = vec![];
 
+    // Native Token contract also uses an empty payload.
+    let native_token_contract_deploy_payload = vec![];
+
     let native_contracts = vec![
-        (
-            "Money Contract",
-            *MONEY_CONTRACT_ID,
-            include_bytes!("../contract/money/darkfi_money_contract.wasm").to_vec(),
-            money_contract_deploy_payload,
-        ),
-        (
-            "DAO Contract",
-            *DAO_CONTRACT_ID,
-            include_bytes!("../contract/dao/darkfi_dao_contract.wasm").to_vec(),
-            dao_contract_deploy_payload,
-        ),
         (
             "Deployooor Contract",
             *DEPLOYOOOR_CONTRACT_ID,
@@ -93,6 +78,12 @@ pub async fn deploy_native_contracts(
             *MONEY_V2_CONTRACT_ID,
             include_bytes!("../contract/money_v2/darkfi_money_contract.wasm").to_vec(),
             money_v2_contract_deploy_payload,
+        ),
+        (
+            "Native Token Contract",
+            *NATIVE_TOKEN_CONTRACT_ID,
+            include_bytes!("../contract/native_token/darkfi_native_token_contract.wasm").to_vec(),
+            native_token_contract_deploy_payload,
         ),
     ];
 

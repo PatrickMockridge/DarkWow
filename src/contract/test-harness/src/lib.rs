@@ -39,15 +39,6 @@ use darkfi::{
     Result,
 };
 use darkfi_auction_contract::model::{AuctionId, BidId};
-use darkfi_dao_contract::model::{Dao, DaoBulla, DaoProposal, DaoProposalBulla, DaoVoteParams};
-use darkfi_money_contract::{
-    client::{MoneyNote, OwnCoin},
-    model::{
-        CoinAttributes, Input, MoneyFeeParamsV1, MoneyGenesisMintParamsV1, Nullifier, Output,
-        TokenAttributes, TokenId,
-    },
-    MoneyFunction,
-};
 use darkfi_money_v2_contract::{
     client::OwnCoin as OwnCoinV2,
     model::Output as OutputV2,
@@ -56,7 +47,6 @@ use crate::native_token::OwnCoinNativeToken;
 use darkfi_sdk::{
     bridgetree,
     crypto::{
-        contract_id::MONEY_CONTRACT_ID,
         poseidon_hash,
         smt::{MemoryStorageFp, PoseidonFp, SmtMemoryFp, EMPTY_NODES_FP},
         BaseBlind, FuncRef, Keypair, MerkleNode, MerkleTree, ScalarBlind, SecretKey,
@@ -76,34 +66,10 @@ pub mod vks;
 pub mod contract_graph;
 use crate::contract_graph::Contract;
 
-/// `Money::Burn` functionality
-mod money_burn;
-/// `Money::Fee` functionality
-mod money_fee;
-/// `Money::GenesisMint` functionality
-mod money_genesis_mint;
-/// `Money::OtcSwap` functionality
-mod money_otc_swap;
-/// `Money::PoWReward` functionality
-mod money_pow_reward;
-/// `Money::TokenMint` functionality
-mod money_token;
-/// `Money::Transfer` functionality
-mod money_transfer;
-
 /// `Deployooor::Deploy` functionality
 mod contract_deploy;
 /// `Deployooor::Lock` functionality
 mod contract_lock;
-
-/// `Dao::Exec` functionality
-mod dao_exec;
-/// `Dao::Mint` functionality
-mod dao_mint;
-/// `Dao::Propose` functionality
-mod dao_propose;
-/// `Dao::Vote` functionality
-mod dao_vote;
 
 /// `DaoEscrow::Initialize`, `PayPremium`, `Withdraw`, etc.
 mod dao_escrow;
@@ -204,7 +170,6 @@ pub enum Holder {
     Alice,
     Bob,
     Charlie,
-    Dao,
     Rachel,
 }
 
@@ -218,31 +183,10 @@ pub struct Wallet {
     pub contract_deploy_authority: Keypair,
     /// Holder's [`Validator`] instance
     pub validator: ValidatorPtr,
-    /// Holder's instance of the Merkle tree for the `Money` contract
-    pub money_merkle_tree: MerkleTree,
-    /// Holder's instance of the nullifiers SMT tree for the `Money` contract
-    pub money_null_smt: SmtMemoryFp,
-    /// Holder's instance of the nullifiers SMT tree for the `Money` contract
-    /// snapshotted for `DAO::Propose`
-    pub money_null_smt_snapshot: Option<SmtMemoryFp>,
-    /// Holder's instance of the Merkle tree for the `DAO` contract
-    /// holding DAO bullas
-    pub dao_merkle_tree: MerkleTree,
-    /// Holder's instance of the Merkle tree for the `DAO` contract
-    /// holding DAO proposals
-    pub dao_proposals_tree: MerkleTree,
-    /// Holder's set of unspent [`OwnCoin`]s from the `Money` contract
-    pub unspent_money_coins: Vec<OwnCoin>,
-    /// Holder's set of spent [`OwnCoin`]s from the `Money` contract
-    pub spent_money_coins: Vec<OwnCoin>,
     /// Holder's set of unspent [`OwnCoinV2`]s from the `MoneyV2` contract
     pub unspent_money_coins_v2: Vec<OwnCoinV2>,
     /// Holder's set of unspent [`OwnCoinNativeToken`]s from the `NativeToken` contract
     pub unspent_native_token_coins: Vec<OwnCoinNativeToken>,
-    /// Witnessed leaf positions of DAO bullas in the `dao_merkle_tree`
-    pub dao_leafs: HashMap<DaoBulla, bridgetree::Position>,
-    /// Dao Proposal snapshots
-    pub dao_prop_leafs: HashMap<DaoProposalBulla, (bridgetree::Position, MerkleTree)>,
     /// Create bench.csv file
     pub bench_wasm: bool,
 }
@@ -280,32 +224,13 @@ impl Wallet {
         };
         let validator = Validator::new(&sled_db, &validator_config).await?;
 
-        // The Merkle tree for the Money contract is initialized with a
-        // "null" leaf at position 0.
-        let mut money_merkle_tree = MerkleTree::new(1);
-        money_merkle_tree.append(MerkleNode::from(pallas::Base::ZERO));
-        money_merkle_tree.mark().unwrap();
-
-        let hasher = PoseidonFp::new();
-        let store = MemoryStorageFp::new();
-        let money_null_smt = SmtMemoryFp::new(store, hasher, &EMPTY_NODES_FP);
-
         Ok(Self {
             keypair,
             token_mint_authority,
             contract_deploy_authority,
             validator,
-            money_merkle_tree,
-            money_null_smt,
-            money_null_smt_snapshot: None,
-            dao_merkle_tree: MerkleTree::new(1),
-            dao_proposals_tree: MerkleTree::new(1),
-            unspent_money_coins: vec![],
-            spent_money_coins: vec![],
             unspent_money_coins_v2: vec![],
             unspent_native_token_coins: vec![],
-            dao_leafs: HashMap::new(),
-            dao_prop_leafs: HashMap::new(),
             bench_wasm: false,
         })
     }

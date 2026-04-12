@@ -51,10 +51,10 @@ pub enum ContractHandlerError {
 
 /// Trait for contract handlers.
 ///
-/// Each contract implementation (money, dao_escrow, etc.)
+/// Each contract implementation (dao_escrow, native_token, etc.)
 /// provides a handler that can build calldata from JSON params.
 pub trait ContractHandler: Send + Sync {
-    /// Returns the contract identifier string (e.g., "dao_escrow", "money")
+    /// Returns the contract identifier string (e.g., "dao_escrow", "native_token")
     fn contract_id(&self) -> &'static str;
 
     /// Returns the function selector (first byte of calldata) for a given function name.
@@ -106,21 +106,20 @@ impl Default for ContractRegistry {
 
 /// Resolve a contract identifier string to a ContractId.
 ///
-/// For native contracts (money, dao, deployooor), returns the hardcoded ID.
+/// For native contracts (native_token, deployooor), returns the hardcoded ID.
 /// For WASM contracts (dao_escrow), returns an error indicating it must be deployed first.
 pub async fn resolve_contract_id(
     contract_id_str: &str,
     _validator: &darkfi::validator::Validator,
 ) -> HandlerResult<ContractId> {
     match contract_id_str {
-        "money" => Ok(*darkfi_sdk::crypto::MONEY_CONTRACT_ID),
-        "dao" => Ok(*darkfi_sdk::crypto::DAO_CONTRACT_ID),
+        "native_token" => Ok(*darkfi_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID),
         "deployooor" => Ok(*darkfi_sdk::crypto::DEPLOYOOOR_CONTRACT_ID),
         // dao_escrow is a WASM contract, not native - must be deployed first
         "dao_escrow" => {
             error!(target: "contract_registry", "DAO-Escrow is a WASM contract and must be deployed first");
             Err(ContractHandlerError::ContractNotFound(
-                "DAO-Escrow is a WASM contract and must be deployed first. Native contracts: money, dao, deployooor".to_string(),
+                "DAO-Escrow is a WASM contract and must be deployed first. Native contracts: native_token, deployooor".to_string(),
             ))
         }
         _ => {
@@ -130,7 +129,7 @@ pub async fn resolve_contract_id(
                 contract_id_str
             );
             Err(ContractHandlerError::ContractNotFound(format!(
-                "Contract '{}' not found. Available: money, dao, deployooor",
+                "Contract '{}' not found. Available: native_token, deployooor",
                 contract_id_str
             )))
         }

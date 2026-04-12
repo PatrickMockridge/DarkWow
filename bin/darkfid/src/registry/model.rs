@@ -41,14 +41,12 @@ use darkfi::{
     zkas::ZkBinary,
     Error, Result,
 };
-use darkfi_money_contract::{
-    client::pow_reward_v1::PoWRewardCallBuilder, MoneyFunction, MONEY_CONTRACT_ZKAS_MINT_NS_V1,
-};
+use darkfi_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1};
 use darkfi_sdk::{
     crypto::{
         keypair::{Address, Keypair, Network, SecretKey},
         pasta_prelude::PrimeField,
-        FuncId, MerkleTree, MONEY_CONTRACT_ID,
+        FuncId, MerkleTree, NATIVE_TOKEN_CONTRACT_ID,
     },
     pasta::pallas,
     ContractCall,
@@ -240,8 +238,8 @@ impl PowRewardV1Zk {
         let validator = validator.read().await;
         let (zkbin, _) = validator.blockchain.contracts.get_zkas(
             &validator.blockchain.sled_db,
-            &MONEY_CONTRACT_ID,
-            MONEY_CONTRACT_ZKAS_MINT_NS_V1,
+            &NATIVE_TOKEN_CONTRACT_ID,
+            NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1,
         )?;
 
         let circuit = ZkCircuit::new(empty_witnesses(&zkbin)?, &zkbin);
@@ -367,7 +365,7 @@ fn generate_transaction(
         block_height,
         fees,
         recipient: Some(*recipient_config.recipient.public_key()),
-        spend_hook: recipient_config.spend_hook,
+        spend_hook: recipient_config.spend_hook.map(|h| h.inner()),
         user_data: recipient_config.user_data,
         mint_zkbin: zkbin.clone(),
         mint_pk: pk.clone(),
@@ -375,9 +373,9 @@ fn generate_transaction(
     .build()?;
 
     // Generate and sign the actual transaction
-    let mut data = vec![MoneyFunction::PoWRewardV1 as u8];
+    let mut data = vec![NativeTokenFunction::PoWRewardV1 as u8];
     debris.params.encode(&mut data)?;
-    let call = ContractCall { contract_id: *MONEY_CONTRACT_ID, data };
+    let call = ContractCall { contract_id: *NATIVE_TOKEN_CONTRACT_ID, data };
     let mut tx_builder =
         TransactionBuilder::new(ContractCallLeaf { call, proofs: debris.proofs }, vec![])?;
     let mut tx = tx_builder.build()?;

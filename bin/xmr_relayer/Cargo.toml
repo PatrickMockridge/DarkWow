@@ -14,7 +14,6 @@ darkfi = {path = "../../", features = ["async-daemonize", "rpc", "async-serial"]
 darkfi-sdk = {path = "../../src/sdk", features = ["async"]}
 darkfi-serial = {path = "../../src/serial", features = ["async"]}
 darkfi_bridge_contract = {path = "../../src/contract/bridge"}
-darkfi_money_contract = {path = "../../src/contract/money"}
 
 # Serialization
 serde = {version = "1.0.228", features = ["derive"]}

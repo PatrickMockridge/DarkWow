@@ -14,7 +14,6 @@ bs58 = "0.5.1"
 ctrlc = "3.5.1"
 darkfi = {path = "../../", features = ["async-serial", "util"]}
 darkfi-sdk = {path = "../../src/sdk", features = ["async"]}
-darkfi_money_contract = {path = "../../src/contract/money", features = ["no-entrypoint", "client"]}
 rand = "0.8.5"
 rayon = "1.11.0"
 

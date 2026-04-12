@@ -238,14 +238,12 @@ Native contracts are compiled into darkfid and have **static ContractIds** defin
 
 ```rust
 // In darkfi_sdk::crypto::contract_id
-pub static ref MONEY_CONTRACT_ID: ContractId =
-    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(0)]));
-pub static ref DAO_CONTRACT_ID: ContractId =
-    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(1)]));
 pub static ref DEPLOYOOOR_CONTRACT_ID: ContractId =
-    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(2)]));
+    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(0)]));
 pub static ref MONEY_V2_CONTRACT_ID: ContractId =
-    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(3)]));
+    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(1)]));
+pub static ref NATIVE_TOKEN_CONTRACT_ID: ContractId =
+    ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(2)]));
 ```
 
 **Test Harness for Native Contracts:**
@@ -253,7 +251,7 @@ pub static ref MONEY_V2_CONTRACT_ID: ContractId =
 - Contract ID is known at compile time
 - No deployment step needed
 
-**Note:** MoneyV2 is the native contract for block rewards (PoWRewardV2).
+**Note:** NativeToken is the consensus-first native contract for block rewards (PoWRewardV1) and fees (FeeV1). MoneyV2 is deprecated.
 
 #### WASM Contracts
 
@@ -718,10 +716,11 @@ When processing outputs, the wallet appends to its Merkle tree. If the tree gets
 **Money V1 and Money V2 are deprecated. Native Token is the current standard.**
 
 | Component | Money V1 (DEPRECATED) | Money V2 (DEPRECATED) | Native Token (CURRENT) |
-|-----------|----------------------|----------------------|----------------------|
-| Contract ID | `MONEY_CONTRACT_ID` (0x00) | `MONEY_V2_CONTRACT_ID` | `NATIVE_TOKEN_CONTRACT_ID` |
+|-----------|----------------------|----------------------|-----------------------|
+| Contract ID | `MONEY_CONTRACT_ID` (removed) | `MONEY_V2_CONTRACT_ID` | `NATIVE_TOKEN_CONTRACT_ID` |
 | Design | ACL-based | ZK circuits | Consensus-first |
 | DAO Coupling | Tight | Moderate | Decoupled |
+| WASM Binary | None (deleted) | money_v2/*.wasm.bin | native_token/*.wasm.bin |
 
 ### Why Native Token Replaces Money V2
 

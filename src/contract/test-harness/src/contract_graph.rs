@@ -47,10 +47,6 @@ use std::collections::HashSet;
 /// Supported contracts in the DarkFi ecosystem
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Contract {
-    /// Money V1 (native) - handles DARK token
-    Money,
-    /// DAO (native) - governance contract
-    Dao,
     /// Stablecoin WASM - USD-pegged token
     Stablecoin,
     /// Identity WASM - credentials and claims
@@ -59,7 +55,7 @@ pub enum Contract {
     Dex,
     /// DAO-Escrow WASM - DAO with escrow
     DaoEscrow,
-    /// Money V2 WASM - next version of Money
+    /// Money V2 WASM - legacy money contract
     MoneyV2,
     /// Native Token WASM - consensus-first native token
     NativeToken,
@@ -117,24 +113,6 @@ impl Contract {
     /// Get all circuit namespaces for this contract
     pub fn circuits(&self) -> Vec<&'static str> {
         match self {
-            Contract::Money => vec![
-                "Fee_V1",
-                "Mint_V1",
-                "Burn_V1",
-                "TokenMint_V1",
-                "AuthTokenMint_V1",
-            ],
-            Contract::Dao => vec![
-                "Mint",
-                "ProposeInput",
-                "ProposeMain",
-                "VoteInput",
-                "VoteMain",
-                "Exec",
-                "EarlyExec",
-                "AuthTransfer",
-                "AuthTransferEnc",
-            ],
             Contract::Stablecoin => vec![
                 "OpenPositionV1",
                 "MintStableV1",
@@ -211,8 +189,6 @@ impl Contract {
     /// Human-readable name for logging
     pub fn name(&self) -> &'static str {
         match self {
-            Contract::Money => "Money",
-            Contract::Dao => "Dao",
             Contract::Stablecoin => "Stablecoin",
             Contract::Identity => "Identity",
             Contract::Dex => "Dex",
@@ -249,12 +225,7 @@ impl Contract {
     /// Get direct dependencies of this contract
     pub fn dependencies(&self) -> Vec<Contract> {
         match self {
-            // Native contracts have no dependencies on other contracts
-            Contract::Money => vec![],
-            Contract::Dao => vec![Contract::Money], // DAO uses Money for governance token
             Contract::Deployooor => vec![],
-            // WASM contracts depend on Deployooor being deployed first
-            // but for VK purposes, they're standalone
             Contract::Stablecoin
             | Contract::Identity
             | Contract::Dex
@@ -289,10 +260,7 @@ impl Contract {
 
     /// Returns true if this is a native contract (deployed at genesis)
     pub fn is_native(&self) -> bool {
-        matches!(
-            self,
-            Contract::Money | Contract::Dao | Contract::Deployooor
-        )
+        matches!(self, Contract::Deployooor)
     }
 }
 
@@ -340,25 +308,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_resolve_dependencies_money_alone() {
-        let contracts = vec![Contract::Money];
-        let resolved = resolve_dependencies(&contracts);
-        assert_eq!(resolved, vec![Contract::Money]);
-    }
-
-    #[test]
-    fn test_resolve_dependencies_dao_includes_money() {
-        let contracts = vec![Contract::Dao];
-        let resolved = resolve_dependencies(&contracts);
-        // Money should appear before DAO
-        assert!(resolved.contains(&Contract::Money));
-        assert!(resolved.contains(&Contract::Dao));
-        let money_idx = resolved.iter().position(|c| *c == Contract::Money).unwrap();
-        let dao_idx = resolved.iter().position(|c| *c == Contract::Dao).unwrap();
-        assert!(money_idx < dao_idx);
-    }
-
-    #[test]
     fn test_resolve_dependencies_roulette_isolated() {
         let contracts = vec![Contract::Roulette];
         let resolved = resolve_dependencies(&contracts);
@@ -367,10 +316,9 @@ mod tests {
 
     #[test]
     fn test_resolve_dependencies_multiple() {
-        let contracts = vec![Contract::Dao, Contract::Roulette];
+        let contracts = vec![Contract::NativeToken, Contract::Roulette];
         let resolved = resolve_dependencies(&contracts);
-        assert!(resolved.contains(&Contract::Money));
-        assert!(resolved.contains(&Contract::Dao));
+        assert!(resolved.contains(&Contract::NativeToken));
         assert!(resolved.contains(&Contract::Roulette));
     }
 }

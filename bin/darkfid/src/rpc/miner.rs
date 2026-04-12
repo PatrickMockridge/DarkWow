@@ -32,9 +32,9 @@ use darkfi::{
     tx::{ContractCallLeaf, TransactionBuilder},
     zk::{empty_witnesses, ZkCircuit, ProvingKey},
 };
-use darkfi_money_v2_contract::{client::pow_reward_v1::PoWRewardCallBuilder, MoneyFunction};
+use darkfi_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction};
 use darkfi_sdk::{
-    crypto::{keypair::Keypair, pasta_prelude::PrimeField, MerkleTree, MONEY_V2_CONTRACT_ID},
+    crypto::{keypair::Keypair, pasta_prelude::PrimeField, MerkleTree, NATIVE_TOKEN_CONTRACT_ID},
     tx::ContractCall,
 };
 use tinyjson::JsonValue;
@@ -114,8 +114,8 @@ impl DarkfiNode {
         // Get ZK proving keys (needs validator immutable borrow)
         let zkbin = match validator.blockchain.contracts.get_zkas(
             &validator.blockchain.sled_db,
-            &MONEY_V2_CONTRACT_ID,
-            darkfi_money_v2_contract::MONEY_CONTRACT_ZKAS_MINT_NS_V2,
+            &NATIVE_TOKEN_CONTRACT_ID,
+            darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1,
         ) {
             Ok(z) => z.0,
             Err(e) => {
@@ -203,14 +203,14 @@ impl DarkfiNode {
             }
         };
 
-        let mut data = vec![MoneyFunction::PoWRewardV2 as u8];
+        let mut data = vec![NativeTokenFunction::PoWRewardV1 as u8];
         if let Err(e) = debris.params.encode(&mut data) {
             error!(target: "darkfid::rpc::miner", "Failed to encode params: {}", e);
             return JsonError::new(InternalError, Some(format!("Failed to encode: {}", e)), id)
                 .into()
         }
 
-        let call = ContractCall { contract_id: *MONEY_V2_CONTRACT_ID, data };
+        let call = ContractCall { contract_id: *NATIVE_TOKEN_CONTRACT_ID, data };
 
         let mut tx_builder = match TransactionBuilder::new(
             ContractCallLeaf { call, proofs: debris.proofs },
