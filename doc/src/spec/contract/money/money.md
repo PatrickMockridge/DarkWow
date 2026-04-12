@@ -1,11 +1,11 @@
 # Money
 
 > [!NOTE]
-> **Money V2**: This is Money V2 (formerly known as Money V2), now simply called "Money" on this fork.
+> **DEPRECATED**: Money V1 and Money V2 are deprecated. Native Token is the current native token contract.
 >
-> Money V2 is a WASM-based contract with secure ZK circuits using `constrain_equal_base` for provably correct proofs. It is fully composable and replaces the deprecated Money V1.
+> See [Native Token](../../dev/contracts/native_token.md) for the current implementation.
 >
-> The legacy Money V1 remains available but is **deprecated** due to non-composable architecture.
+> This document describes the legacy Money V2 contract for historical reference.
 
 ## Abstract
 

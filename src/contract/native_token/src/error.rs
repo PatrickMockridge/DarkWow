@@ -16,14 +16,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! SimpleCoin Error types
+//! NativeToken Error types
 
 use darkfi_sdk::error::ContractError;
 use thiserror::Error;
 
-/// SimpleCoin-specific errors
+/// NativeToken-specific errors
 #[derive(Debug, Error)]
-pub enum SimplecoinError {
+pub enum NativeTokenError {
     #[error("Insufficient balance")]
     InsufficientBalance,
 
@@ -59,10 +59,25 @@ pub enum SimplecoinError {
 
     #[error("No coins to melt")]
     NoCoinsToMelt,
+
+    #[error("Roots value data mismatch")]
+    RootsValueDataMismatch,
+
+    #[error("Merkle root not found in previous state")]
+    TransferMerkleRootNotFound,
+
+    #[error("Duplicate coin found")]
+    DuplicateCoin,
+
+    #[error("Missing inputs in transfer")]
+    TransferMissingInputs,
+
+    #[error("Missing outputs in transfer")]
+    TransferMissingOutputs,
 }
 
-impl From<SimplecoinError> for ContractError {
-    fn from(e: SimplecoinError) -> Self {
+impl From<NativeTokenError> for ContractError {
+    fn from(e: NativeTokenError) -> Self {
         ContractError::Custom(e as u32)
     }
 }

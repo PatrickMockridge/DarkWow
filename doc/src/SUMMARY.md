@@ -114,7 +114,7 @@
     - [Identity Contract](dev/contracts/identity.md)
     - [Stablecoin Contract](dev/contracts/stablecoin.md)
     - [Building SDKs and Apps](dev/building_sdks_apps.md)
-    - [SimpleCoin Contract](dev/contracts/simplecoin.md)
+    - [NativeToken Contract](dev/contracts/native_token.md)
 - [zkas](zkas/index.md)
   - [Writing ZK Proofs](zkas/writing-zk-proofs.md)
   - [Bincode](zkas/bincode.md)

@@ -10,12 +10,12 @@ This fork introduces significant architectural changes to DarkFi's contract syst
 
 ### Clean Genesis
 
-Genesis now deploys only **Deployooor + Money V2** (Satoshi-style):
+Genesis now deploys only **Deployooor + Native Token** (Satoshi-style):
 
 | Contract | Type | Purpose |
 |----------|------|---------|
 | Deployooor | Native | WASM contract deployment |
-| Money V2 | WASM | Block rewards, token operations |
+| Native Token | WASM | Block rewards, token operations, fees |
 
 This provides a minimal foundation where additional contracts can be composed as needed.
 
@@ -42,7 +42,8 @@ Circuit namespaces must now be unique across contracts. Namespace collisions cau
 ### Contract Deprecation
 
 - **Money V1**: Deprecated - non-composable, ACL-based architecture
-- **Money V2**: Current - WASM-based, secure ZK circuits with `constrain_equal_base`
+- **Money V2**: Deprecated - replaced by Native Token (consensus-first design)
+- **Native Token**: Current - WASM-based, consensus-first, DAO-decoupled
 - **DAO V1**: Deprecated - tight coupling to Money V1 ACL breaks privacy
 - **DAO Escrow**: Recommended alternative - WASM, Merkle proofs, privacy-preserving
 
@@ -132,11 +133,11 @@ These contracts have integration tests but require a running darkfid node (marke
 
 | Contract | Package Name | Reason |
 |----------|--------------|--------|
-| money_v2 | darkfi_money_v2_contract | Current Money contract (only Money contract on this fork) |
+| native_token | darkfi_native_token_contract | Native Token contract (consensus-first) |
 
 Run manually with: `cargo test -p darkfi_{contract}_contract --test integration -- --ignored`
 
-> **Note**: Money V1 and DAO V1 have been **removed** from this fork. Only Money V2 exists. For governance, use DAO Escrow (`dao_escrow`).
+> **Note**: Money V1, Money V2, and DAO V1 have been **deprecated**. Native Token is the current native token. For governance, use DAO Escrow (`dao_escrow`).
 
 ### Contracts Without Integration Tests
 
@@ -488,7 +489,7 @@ Reference these contracts for correct patterns:
 - **260+ tests passing** across 25 contracts
 - **VM Heap Fix**: EcGetX/EcGetY bounds checking now prevents panics
 - **Selective VK Loading**: Test harness supports loading only needed contracts
-- **3 tests marked `#[ignore]`** (money_v1, money_v2, dao_v1) - require darkfid
+- **Tests marked `#[ignore]`** (money_v1, money_v2, dao_v1, native_token) - require darkfid
 - **5 contracts fixed** (oracle, auction, tender, attestation, labor_market) - 100 new tests passing
 - **6 betting/gaming contracts fixed** (roulette, slot, darktoshi_dice, betting_stake, escrow, game_room) - 136 new tests passing
 - All previously broken tests have been fixed

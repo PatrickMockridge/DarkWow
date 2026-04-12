@@ -1,0 +1,58 @@
+# Mint circuit - proves new coins are valid (for genesis and block rewards)
+# CONSENSUS CRITICAL: This circuit must be bulletproof for initial supply and PoW rewards
+k = 11;
+field = "pallas";
+
+constant "Mint_V1" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,   # G_v for Pedersen value commitment
+    EcFixedPoint VALUE_COMMIT_RANDOM,       # G_r for blinding
+    EcFixedPointBase NULLIFIER_K,           # For deriving public keys from secrets
+}
+
+witness "Mint_V1" {
+    # CoinAttributes (recipient info)
+    Base coin_public_x,      # Recipient public key X
+    Base coin_public_y,      # Recipient public key Y
+    Base coin_value,         # Coin value (hidden in commitment)
+    Base coin_token_id,      # Token ID (DARK is token_id = 0)
+    Base coin_spend_hook,    # Spend hook (0 for simple transfers)
+    Base coin_user_data,     # User data field
+    Base coin_blind,         # Blinding factor for coin commitment
+
+    # Blinding factors for commitments
+    Scalar value_blind,      # Blinding for value commitment
+    Base token_id_blind,     # Blinding for token ID commitment
+}
+
+circuit "Mint_V1" {
+    # Coin commitment - poseidon hash of all coin attributes
+    # This is the public input that gets stored in the Merkle tree
+    C = poseidon_hash(
+        coin_public_x,
+        coin_public_y,
+        coin_value,
+        coin_token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+    constrain_instance(C);
+
+    # Value commitment - Pedersen commitment of the value
+    # Homomorphic: allows arithmetic on hidden values
+    # V = v * G_v + r * G_r
+    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    coin_value_commit = ec_add(vcv, vcr);
+    # Expose coordinates as public inputs
+    constrain_instance(ec_get_x(coin_value_commit));
+    constrain_instance(ec_get_y(coin_value_commit));
+
+    # Token ID commitment - poseidon hash (cheaper than EC, no homomorphic needed)
+    coin_token_id_commit = poseidon_hash(coin_token_id, token_id_blind);
+    constrain_instance(coin_token_id_commit);
+
+    # Range proof for value - ensure value is in valid range [0, 2^64)
+    # This is CONSENSUS CRITICAL: prevents overflow attacks
+    range_check(64, coin_value);
+}

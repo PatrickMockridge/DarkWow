@@ -1,9 +1,9 @@
 # Custom Smart Contracts
 
 > [!NOTE]
-> **Money V2**: This documentation uses Money V2 for deployments.
-> Money V2 is the WASM-based successor to Money V1, with secure ZK circuits
-> and full composability. Legacy Money V1 is deprecated.
+> **Native Token**: This fork uses Native Token for all native token operations.
+> Native Token is the consensus-first native token contract with DAO-decoupled design,
+> replacing the deprecated Money V1 and Money V2.
 
 Users can deploy their own zero-knowledge contracts, written for the
 DarkFi [zkVM][1], becoming anonymous engineers themselves!

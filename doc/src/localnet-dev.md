@@ -222,7 +222,7 @@ Tested WASM contract deployment on localnet.
 | relayer_endowment | 181KB | ✅ Deployed |
 | dao_escrow | 169KB | ✅ Deployed (2026-04-08) |
 
-> **Note**: Money V1 and DAO V1 have been **removed** from this fork. Only Money V2 exists for tokens. DAO Escrow replaces DAO V1 for governance.
+> **Note**: Money V1 and Money V2 have been **deprecated**. Native Token is the current native token contract. DAO Escrow replaces DAO V1 for governance.
 
 ### Contracts That Previously Failed to Deploy
 
@@ -638,70 +638,38 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
 
 ---
 
-## Money V1 is DEPRECATED
+## Money V1 and Money V2 are DEPRECATED
 
-**Money V1 is deprecated. Money V2 is the current standard.**
+**Money V1 is deprecated. Money V2 is deprecated. Native Token is the current standard.**
 
 - **`money` (v1)**: DEPRECATED - Original DarkFi money contract
-- **`money_v2`**: CURRENT - Secure version with self-contained circuit design
+- **`money_v2`**: DEPRECATED - Replaced by Native Token
+- **`native_token`**: CURRENT - Consensus-first native token contract
 
-All new code and tests must use Money V2. Using V1 contract IDs with V2 circuits causes the EcGetX heap error.
+### Migration Path
 
-### The Bug: Mixing V1 Contract IDs with V2 Circuits
+| Old Contract | Status | Replacement |
+|-------------|--------|-------------|
+| Money V1 | DEPRECATED | Native Token |
+| Money V2 | DEPRECATED | Native Token |
 
-```
-EcGetX: heap index 6 >= heap.len() 5
-```
+Native Token provides:
+- Consensus-first design (fees, rewards work reliably)
+- DAO-decoupled (no ACL dependencies)
+- Simple genesis mint
+- Minimal ZK circuit complexity
 
-**Root Cause**:
+### Historical Context
 
-| Component | Money V1 (DEPRECATED) | Money V2 (CURRENT) |
-|-----------|----------------------|-------------------|
-| Contract ID | `MONEY_CONTRACT_ID` (0x00) | `MONEY_V2_CONTRACT_ID` |
-| Function enum | `MoneyFunction::*V1` | `MoneyV2Function::*V2` |
-| ZK namespaces | `*_V1` (e.g. `TokenMint_V1`) | `*_V2` (e.g. `TokenMint_V2`) |
-| WASM | money_contract.wasm | money_v2_contract.wasm |
+The Money V1 → Money V2 migration addressed:
+- `EcGetX` heap indexing bugs
+- ACL-based authorization issues
+- Circuit complexity problems
 
-When a transaction uses:
-- `contract_id = MONEY_CONTRACT_ID` (V1 - DEPRECATED)
-- `function = TokenMintV2` (V2 function code)
-- `zkbin namespace = "TokenMint_V2"` (V2 circuit)
-
-The V1 WASM doesn't understand V2 function codes, causing heap layout mismatch.
-
-**The Fix**: Always use V2 components:
-```rust
-// WRONG - using deprecated V1 contract ID
-ContractCall { contract_id: *MONEY_CONTRACT_ID, data: vec![MoneyV2Function::TokenMintV2 as u8, ...] }
-
-// CORRECT - using current V2 contract ID
-ContractCall { contract_id: *MONEY_V2_CONTRACT_ID, data: vec![MoneyV2Function::TokenMintV2 as u8, ...] }
-```
-
-See [test_harness_guide.md](arch/test_harness_guide.md) for detailed test harness architecture documentation.
-
-### Files Affected
-
-| Contract | Money Version Used | Issue |
-|----------|-------------------|-------|
-| bridge | v2 | Uses `constrain_equal_base` pattern from money v2 |
-| dex | v2 | Uses `constrain_equal_base` pattern from money v2 |
-| stablecoin | v2 | Uses `constrain_equal_base` pattern from money v2 |
-| darkbet_exchange | ? | Likely same issue |
-| pool_stake | ? | Likely same issue |
-| relayer_endowment | ? | Likely same issue |
-
-### Solution
-
-**This is a TESTING accommodation, not a production recommendation.**
-
-These contracts need to be refactored to use Money v1 patterns for localnet testing, where `drk` CLI manages DARK tokens using Money v1.
-
-**Important caveats**:
-- Money v2 is the more robust contract engineering-wise
-- The v1 vs v2 question for mainnet is still an open decision
-- This refactoring is purely for localnet testing compatibility
-- Production deployment should revisit whether to use v1 or v2 patterns based on the network's money contract version
+The Money V2 → Native Token migration addresses:
+- Tight DAO coupling via ACL
+- Complex multi-step token authorization
+- Consensus-first design philosophy
 
 ---
 

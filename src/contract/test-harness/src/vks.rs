@@ -64,6 +64,11 @@ fn get_contract_source_info() -> Vec<ContractSourceInfo> {
             binary_glob: "proof/*.zk.bin".to_string(),
         },
         ContractSourceInfo {
+            dir: repo_root.join("src/contract/native_token"),
+            source_glob: "proof/*.zk".to_string(),
+            binary_glob: "proof/*.zk.bin".to_string(),
+        },
+        ContractSourceInfo {
             dir: repo_root.join("src/contract/stablecoin"),
             source_glob: "proof/*.zk".to_string(),
             binary_glob: "proof/*.zk.bin".to_string(),
@@ -294,6 +299,11 @@ pub const MONEY_V2_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V2";
 pub const MONEY_V2_CONTRACT_ZKAS_TOKEN_MINT_NS_V1: &str = "TokenMint_V1";
 pub const MONEY_V2_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1: &str = "AuthTokenMint_V1";
 
+/// NativeToken contract ZK namespaces (WASM contract, ID derived at deployment)
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1: &str = "Fee_V1";
+
 /// Auction contract ZK namespaces (WASM contract, ID derived at deployment)
 pub const AUCTION_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateAuction";
 pub const AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V1: &str = "PlaceBid";
@@ -437,6 +447,10 @@ pub fn get_cached_pks_and_vks() -> Result<(Pks, Vks)> {
         &include_bytes!("../../money_v2/proof/burn_v1.zk.bin")[..],
         &include_bytes!("../../money_v2/proof/token_mint_v1.zk.bin")[..],
         &include_bytes!("../../money_v2/proof/auth_token_mint_v1.zk.bin")[..],
+        // NativeToken (WASM contract - deployed via deployooor)
+        &include_bytes!("../../native_token/proof/mint_v1.zk.bin")[..],
+        &include_bytes!("../../native_token/proof/burn_v1.zk.bin")[..],
+        &include_bytes!("../../native_token/proof/fee_v1.zk.bin")[..],
         // Auction (WASM contract - deployed via deployooor)
         &include_bytes!("../../auction/proof/create_auction_v1.zk.bin")[..],
         &include_bytes!("../../auction/proof/place_bid_v1.zk.bin")[..],
@@ -552,6 +566,14 @@ pub fn inject(overlay: &BlockchainOverlayPtr, vks: &Vks) -> Result<()> {
                 debug!("MoneyV2 ZK namespace {} skipped - WASM contract, injected post-deployment", namespace);
             }
 
+            // NativeToken contract circuits (WASM contract - dynamically deployed)
+            // VK injection for native_token must happen after contract deployment.
+            NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1 |
+            NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1 |
+            NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1 => {
+                debug!("NativeToken ZK namespace {} skipped - WASM contract, injected post-deployment", namespace);
+            }
+
             // Auction contract circuits (WASM contract - dynamically deployed)
             // VK injection for auction must happen after contract deployment.
             AUCTION_CONTRACT_ZKAS_CREATE_NS_V1 |
@@ -639,6 +661,11 @@ fn get_circuit_binaries(contract: super::contract_graph::Contract) -> Vec<(&'sta
             (&include_bytes!("../../money_v2/proof/burn_v1.zk.bin")[..], "Burn_V2"),
             (&include_bytes!("../../money_v2/proof/token_mint_v1.zk.bin")[..], "TokenMint_V1"),
             (&include_bytes!("../../money_v2/proof/auth_token_mint_v1.zk.bin")[..], "AuthTokenMint_V1"),
+        ],
+        super::contract_graph::Contract::NativeToken => vec![
+            (&include_bytes!("../../native_token/proof/mint_v1.zk.bin")[..], "Mint_V1"),
+            (&include_bytes!("../../native_token/proof/burn_v1.zk.bin")[..], "Burn_V1"),
+            (&include_bytes!("../../native_token/proof/fee_v1.zk.bin")[..], "Fee_V1"),
         ],
         super::contract_graph::Contract::Auction => vec![
             (&include_bytes!("../../auction/proof/create_auction_v1.zk.bin")[..], "CreateAuction"),

@@ -52,6 +52,7 @@ use darkfi_money_v2_contract::{
     client::OwnCoin as OwnCoinV2,
     model::Output as OutputV2,
 };
+use crate::native_token::OwnCoinNativeToken;
 use darkfi_sdk::{
     bridgetree,
     crypto::{
@@ -173,6 +174,9 @@ mod subscription;
 /// `Tender::CreateTender`, `SubmitBid`, `RevealBid`, etc.
 mod tender;
 
+/// `NativeToken::Transfer`, `GenesisMint`, `PoWReward`, `Fee`, etc.
+mod native_token;
+
 /// PoW target
 const POW_TARGET: u32 = 120;
 
@@ -233,6 +237,8 @@ pub struct Wallet {
     pub spent_money_coins: Vec<OwnCoin>,
     /// Holder's set of unspent [`OwnCoinV2`]s from the `MoneyV2` contract
     pub unspent_money_coins_v2: Vec<OwnCoinV2>,
+    /// Holder's set of unspent [`OwnCoinNativeToken`]s from the `NativeToken` contract
+    pub unspent_native_token_coins: Vec<OwnCoinNativeToken>,
     /// Witnessed leaf positions of DAO bullas in the `dao_merkle_tree`
     pub dao_leafs: HashMap<DaoBulla, bridgetree::Position>,
     /// Dao Proposal snapshots
@@ -297,6 +303,7 @@ impl Wallet {
             unspent_money_coins: vec![],
             spent_money_coins: vec![],
             unspent_money_coins_v2: vec![],
+            unspent_native_token_coins: vec![],
             dao_leafs: HashMap::new(),
             dao_prop_leafs: HashMap::new(),
             bench_wasm: false,
@@ -416,6 +423,15 @@ impl Wallet {
         }
 
         found
+    }
+
+    /// Process a set of NativeToken [`Output`]s.
+    /// Append each coin to the Merkle tree and attempt to decrypt the note.
+    /// Returns any new OwnCoins found.
+    pub fn process_native_token_outputs(&mut self) -> Vec<OwnCoinNativeToken> {
+        // For now, return empty since NativeToken doesn't have encrypted notes like MoneyV2
+        // TODO: Implement proper NativeToken output processing when client module is added
+        vec![]
     }
 
     /// Process the fee component of a transaction (if present).

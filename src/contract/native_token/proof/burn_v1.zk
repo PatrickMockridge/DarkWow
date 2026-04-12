@@ -1,0 +1,99 @@
+# Burn circuit - proves spending with nullifier reveal
+# Following money_v2 burn pattern: nullifier = poseidon_hash(coin_secret, coin)
+# PRIVACY CRITICAL: This circuit enables private transfers
+k = 11;
+field = "pallas";
+
+constant "Burn_V1" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,   # G_v for Pedersen value commitment
+    EcFixedPoint VALUE_COMMIT_RANDOM,       # G_r for blinding
+    EcFixedPointBase NULLIFIER_K,           # For deriving public keys from secrets
+}
+
+witness "Burn_V1" {
+    # Secret key for spending
+    Base coin_secret,
+    # Coin attributes (same as in mint)
+    Base coin_value,
+    Base coin_token_id,
+    Base coin_spend_hook,
+    Base coin_user_data,
+    Base coin_blind,
+    # Blinding factors
+    Scalar value_blind,
+    Base token_id_blind,
+    Base user_data_blind,
+    # Merkle proof
+    Uint32 leaf_pos,
+    MerklePath path,
+    # Signature secret key
+    Base signature_secret,
+    # Signature public key coordinates (public inputs - bound below)
+    Base signature_public_x,
+    Base signature_public_y,
+}
+
+circuit "Burn_V1" {
+    # Derive public key from secret (same pattern as money_v2)
+    pub = ec_mul_base(coin_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(pub);
+    derived_pub_y = ec_get_y(pub);
+
+    # Coin hash using derived public key coordinates
+    coin = poseidon_hash(
+        derived_pub_x,
+        derived_pub_y,
+        coin_value,
+        coin_token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+
+    # Nullifier - follows money_v2 pattern: nullifier = poseidon_hash(coin_secret, coin)
+    # This breaks the link between mint and burn
+    nullifier = poseidon_hash(coin_secret, coin);
+    constrain_instance(nullifier);
+
+    # Value commitment - Pedersen commitment of the value
+    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    coin_value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(coin_value_commit));
+    constrain_instance(ec_get_y(coin_value_commit));
+
+    # Token ID commitment
+    coin_token_id_commit = poseidon_hash(coin_token_id, token_id_blind);
+    constrain_instance(coin_token_id_commit);
+
+    # Merkle proof - using zero_cond trick like money_v2 for dummy inputs
+    coin_incl = zero_cond(coin_value, coin);
+    root = merkle_root(leaf_pos, path, coin_incl);
+    constrain_instance(root);
+
+    # Encrypted user data
+    coin_user_data_enc = poseidon_hash(coin_user_data, user_data_blind);
+    constrain_instance(coin_user_data_enc);
+
+    # Reveal spend hook
+    constrain_instance(coin_spend_hook);
+
+    # Derive signature public key from signature secret
+    signature_public = ec_mul_base(signature_secret, NULLIFIER_K);
+    derived_sig_pub_x = ec_get_x(signature_public);
+    derived_sig_pub_y = ec_get_y(signature_public);
+
+    # CRITICAL SECURITY: Bind derived signature public key to public input
+    # This prevents the "fundamental bug" where a malicious prover could
+    # forge proofs claiming any public key without knowing the secret.
+    # The constrain_equal_base ensures: derived_sig_pub_x == signature_public_x
+    # and: derived_sig_pub_y == signature_public_y
+    constrain_equal_base(derived_sig_pub_x, signature_public_x);
+    constrain_equal_base(derived_sig_pub_y, signature_public_y);
+
+    constrain_instance(signature_public_x);
+    constrain_instance(signature_public_y);
+
+    # Range proof - ensure value is valid
+    range_check(64, coin_value);
+}

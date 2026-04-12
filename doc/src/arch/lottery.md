@@ -245,7 +245,7 @@ See [Insurance Market Contract](./insurance_market.md) for underwriter infrastru
 - [DarkToshi Dice](./darktoshi_dice.md) - Commit-reveal gambling with house edge
 - [Roulette](./roulette.md) - Fixed-odds betting (native BettingStake fit)
 - [Baccarat](./baccarat.md) - Multi-round card game contract
-- [Money V2](../spec/contract/money/money.md) - Value transfer and token minting
+- [Native Token](../dev/contracts/native_token.md) - Consensus-first native token
 
 ## Status
 

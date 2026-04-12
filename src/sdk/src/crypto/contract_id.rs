@@ -63,16 +63,24 @@ lazy_static! {
     pub static ref MONEY_V2_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(3)]));
 
+    /// Contract ID for the Native Token contract (hardcoded at genesis)
+    ///
+    /// Native Token is the consensus-first native token contract.
+    /// It uses WASM execution but has a hardcoded ContractId for genesis availability.
+    pub static ref NATIVE_TOKEN_CONTRACT_ID: ContractId =
+        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(4)]));
+
     /// Native contract IDs bytes, for various checks
-    pub static ref NATIVE_CONTRACT_IDS_BYTES: [[u8; 32]; 4] =
-        [MONEY_CONTRACT_ID.to_bytes(), DAO_CONTRACT_ID.to_bytes(), DEPLOYOOOR_CONTRACT_ID.to_bytes(), MONEY_V2_CONTRACT_ID.to_bytes()];
+    pub static ref NATIVE_CONTRACT_IDS_BYTES: [[u8; 32]; 5] =
+        [MONEY_CONTRACT_ID.to_bytes(), DAO_CONTRACT_ID.to_bytes(), DEPLOYOOOR_CONTRACT_ID.to_bytes(), MONEY_V2_CONTRACT_ID.to_bytes(), NATIVE_TOKEN_CONTRACT_ID.to_bytes()];
 
     /// Native contract zkas circuits database trees, for various checks
-    pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 4] = [
+    pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 5] = [
         MONEY_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
         DAO_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
         DEPLOYOOOR_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
         MONEY_V2_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
+        NATIVE_TOKEN_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
     ];
 }
 

@@ -61,6 +61,8 @@ pub enum Contract {
     DaoEscrow,
     /// Money V2 WASM - next version of Money
     MoneyV2,
+    /// Native Token WASM - consensus-first native token
+    NativeToken,
     /// Auction WASM - auction house
     Auction,
     /// Lottery WASM - lottery game
@@ -166,6 +168,11 @@ impl Contract {
                 "TokenMint_V1",
                 "AuthTokenMint_V1",
             ],
+            Contract::NativeToken => vec![
+                "Mint_V1",
+                "Burn_V1",
+                "Fee_V1",
+            ],
             Contract::Auction => vec![
                 "CreateAuction",
                 "PlaceBid",
@@ -211,6 +218,7 @@ impl Contract {
             Contract::Dex => "Dex",
             Contract::DaoEscrow => "DaoEscrow",
             Contract::MoneyV2 => "MoneyV2",
+            Contract::NativeToken => "NativeToken",
             Contract::Auction => "Auction",
             Contract::Lottery => "Lottery",
             Contract::Slot => "Slot",
@@ -252,6 +260,7 @@ impl Contract {
             | Contract::Dex
             | Contract::DaoEscrow
             | Contract::MoneyV2
+            | Contract::NativeToken
             | Contract::Auction
             | Contract::Lottery
             | Contract::Slot

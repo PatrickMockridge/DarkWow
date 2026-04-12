@@ -1,9 +1,9 @@
 [package]
-name = "darkfi_simplecoin_contract"
+name = "darkfi_native_token_contract"
 version = "0.1.0"
 edition = "2021"
 authors = ["DarkFi contributors"]
-description = "DarkFi Simple UTXO Token Contract - Baseline Bitcoin-like token"
+description = "DarkFi Native Token Contract - Consensus-first native token"
 license = "AGPL-3.0-only"
 
 [lib]

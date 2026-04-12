@@ -713,59 +713,37 @@ When processing outputs, the wallet appends to its Merkle tree. If the tree gets
 
 **Fix**: Ensure `wallet.process_money_v2_outputs()` is called after every output-producing transaction.
 
-## Money V1 is DEPRECATED (Money V2 is Current)
+## Money V1 and Money V2 are DEPRECATED (Native Token is Current)
 
-**Money V1 is deprecated and should not be used in new code or tests.**
+**Money V1 and Money V2 are deprecated. Native Token is the current standard.**
 
-| Component | Money V1 (DEPRECATED) | Money V2 (CURRENT) |
-|-----------|----------------------|-------------------|
-| Contract ID | `MONEY_CONTRACT_ID` (0x00) | `MONEY_V2_CONTRACT_ID` |
-| Function enum | `MoneyFunction::*V1` | `MoneyV2Function::*V2` |
-| ZK namespaces | `*_V1` (e.g. `TokenMint_V1`) | `*_V2` (e.g. `TokenMint_V2`) |
-| WASM | money_contract.wasm | money_v2_contract.wasm |
-| OwnCoin type | `darkfi_money_contract::OwnCoin` | `darkfi_money_v2_contract::OwnCoin` |
+| Component | Money V1 (DEPRECATED) | Money V2 (DEPRECATED) | Native Token (CURRENT) |
+|-----------|----------------------|----------------------|----------------------|
+| Contract ID | `MONEY_CONTRACT_ID` (0x00) | `MONEY_V2_CONTRACT_ID` | `NATIVE_TOKEN_CONTRACT_ID` |
+| Design | ACL-based | ZK circuits | Consensus-first |
+| DAO Coupling | Tight | Moderate | Decoupled |
 
-### Why Legacy V1 Code Causes Bugs
+### Why Native Token Replaces Money V2
 
-The test harness wallet still has some legacy V1 types for backward compatibility, but **using V1 contract IDs with V2 circuits causes the EcGetX heap error**:
+Native Token addresses fundamental issues:
+- **Consensus-first**: Block rewards and fees are paramount
+- **DAO-decoupled**: No ACL dependencies
+- **Simple genesis**: Single GenesisMintV1 call
+- **Minimal circuits**: Only essential ZK operations
 
-```
-EcGetX: heap index 6 >= heap.len() 5
-```
+### Wallet Processing Methods for Native Token
 
-When a transaction uses:
-- `contract_id = MONEY_CONTRACT_ID` (V1 - DEPRECATED)
-- `function = TokenMintV2` (V2 function code)
-- `zkbin namespace = "TokenMint_V2"` (V2 circuit)
-
-The V1 WASM doesn't understand V2 function codes, causing heap layout mismatch.
-
-**The fix: Always use matching V2 components**
+When writing tests use these Native Token methods:
 
 ```rust
-// WRONG - using deprecated V1 contract ID
-ContractCall { contract_id: *MONEY_CONTRACT_ID, data: vec![MoneyV2Function::TokenMintV2 as u8, ...] }
+// Process Native Token outputs
+pub fn process_native_token_outputs(&mut self) -> Vec<OwnCoinNativeToken>
 
-// CORRECT - using current V2 contract ID
-ContractCall { contract_id: *MONEY_V2_CONTRACT_ID, data: vec![MoneyV2Function::TokenMintV2 as u8, ...] }
-```
+// Deploy Native Token contract
+pub async fn deploy_native_token(&mut self, holder: &Holder, wasm_bincode: Vec<u8>, block_height: u32) -> Result<ContractId>
 
-### Wallet Processing Methods for Money V2
-
-When writing tests use these V2 methods (not the legacy V1 ones):
-
-```rust
-// Mark V2 nullifiers as spent
-pub fn mark_spent_nullifier_v2(&mut self, nullifier: Nullifier, holder: &Holder)
-
-// Process V2 inputs (nullifier insertion)
-pub fn process_money_v2_inputs(&mut self, inputs: &[InputV2], holder: &Holder)
-
-// Process V2 outputs
-pub fn process_money_v2_outputs(&mut self, outputs: &[OutputV2], holder: &Holder) -> Vec<OwnCoinV2>
-
-// Process fee for V2 transactions
-pub fn process_fee_v2(&mut self, fee_params: &Option<MoneyFeeParamsV1>, holder: &Holder) -> Vec<OwnCoinV2>
+// Native Token transfers
+pub async fn native_token_transfer(&mut self, ...) -> Result<...>
 ```
 
 ## See Also

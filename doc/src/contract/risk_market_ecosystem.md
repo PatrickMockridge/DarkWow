@@ -307,4 +307,4 @@ struct EndowmentPool {
 - [Tender Contract](../tender/) - Project allocation
 - [Labor Market Contract](../labor_market/) - Talent allocation
 - [DaoEscrow Contract](../dao_escrow/) - Capital endowment
-- [Money V2 Contract](../money_v2/) - Value transfer
+- [Native Token Contract](../dev/contracts/native_token.md) - Consensus-first native token
