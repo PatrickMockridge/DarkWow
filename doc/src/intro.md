@@ -27,12 +27,13 @@ DarkFi implements privacy-preserving smart contracts across multiple domains:
 
 ### Native Token Contract
 
-The [`native_token`](dev/contracts/native_token.md) contract is the consensus-first native token:
+The [`native_token`](dev/contracts/native_token.md) contract handles consensus and implements a **Z-cash style burn-mint privacy model** with **no token freezing**:
 
 - **PoWRewardV1**: Block rewards for miners
 - **FeeV1**: Network fee payment
+- **MintV1**: Create new coins with Pedersen commitments
+- **BurnV1**: Destroy coins (with nullifier to prevent double-spend)
 - **TransferV1**: Private token transfers
-- **GenesisMintV1**: Initial supply creation
 
 ## Architecture
 

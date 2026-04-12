@@ -6,44 +6,18 @@ license = "AGPL-3.0-only"
 edition = "2021"
 
 [dependencies]
-darkfi = {path = "../../../", features = ["validator"]}
+darkfi = {path = "../../../", features = ["zk"]}
 darkfi-sdk = {path = "../../sdk"}
 darkfi-serial = {path = "../../serial", features = ["crypto"]}
-
-darkfi_dao_escrow_contract = {path = "../dao_escrow", features = ["no-entrypoint"]}
-darkfi_dex_contract = {path = "../dex", features = ["no-entrypoint"]}
-darkfi-identity-contract = {path = "../identity", features = ["no-entrypoint"]}
-darkfi_money_v2_contract = {path = "../money_v2", features = ["client", "no-entrypoint"]}
 darkfi_native_token_contract = {path = "../native_token", features = ["client", "no-entrypoint"]}
-darkfi_deployooor_contract = {path = "../deployooor", features = ["client", "no-entrypoint"]}
-darkfi_stablecoin_contract = {path = "../stablecoin", features = ["client", "no-entrypoint"]}
-darkfi_lottery_contract = {path = "../lottery", features = ["no-entrypoint"]}
-darkfi_slot_contract = {path = "../slot", features = ["no-entrypoint"]}
-darkfi_baccarat_contract = {path = "../baccarat", features = ["no-entrypoint"]}
-darkfi_darktoshi_dice_contract = {path = "../darktoshi_dice", features = ["no-entrypoint"]}
-darkfi_roulette_contract = {path = "../roulette", features = ["no-entrypoint"]}
-darkfi_game_room_contract = { path = "../game_room", package = "game_room_contract" }
-darkfi_auction_contract = {path = "../auction", features = ["no-entrypoint"]}
 
-darkfi_atomic_swap_contract = {package = "atomic_swap_contract", path = "../atomic_swap", features = ["no-entrypoint"]}
-darkfi_attestation_contract = {path = "../attestation", features = ["no-entrypoint"]}
-darkfi_block_height_prediction_contract = {path = "../block_height_prediction", features = ["no-entrypoint"]}
-darkfi_bridge_contract = {path = "../bridge", features = ["no-entrypoint"]}
-darkfi_escrow_contract = {path = "../escrow", features = ["no-entrypoint"]}
-darkfi_insurance_market_contract = {path = "../insurance_market", features = ["no-entrypoint"]}
-darkfi_labor_market_contract = {path = "../labor_market", features = ["no-entrypoint"]}
-darkfi_oracle_contract = {path = "../oracle", features = ["no-entrypoint"]}
-darkfi_pool_stake_contract = {path = "../pool_stake", features = ["no-entrypoint"]}
-darkfi_relayer_endowment_contract = {path = "../relayer_endowment", features = ["no-entrypoint"]}
-darkfi_subscription_contract = {package = "subscription_contract", path = "../subscription"}
-darkfi_tender_contract = {path = "../tender", features = ["no-entrypoint"]}
-
-num-bigint = "0.4.6"
-blake3 = "1.8.2"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }
 rand = "0.8.5"
-sled-overlay = "0.1.20"
+
+[[bin]]
+name = "test_native_token"
+path = "src/native_token.rs"
 
 [lints]
 workspace = true

@@ -22,10 +22,10 @@ Upstream DarkFi has a problematic genesis block setup:
 
 | Aspect | Upstream DarkFi | darkfi-jailbroken |
 |--------|-----------------|-------------------|
-| Money Contract | Money V1 (legacy) + V2 | Native Token (consensus-first) |
+| Money Contract | Money V1 (legacy) | Money V2 (refactored to fix bugs) + Native Token (Z-cash burn-mint, no freezing) |
 | Governance | DAO V1 (ACL/token-holder voting) | DAO Escrow (ZK predicate, voluntary) |
 | Authorization | Merkle proofs leak balance | Pedersen commitments hide balance |
-| Block Rewards | Mixed V1/V2 | Native Token only |
+| Block Rewards | Mixed V1/V2 | Native Token + Money V2 |
 | Genesis | Pre-mine, SAFT, team tokens | Pure PoW - earn through mining |
 | Consensus | PoW + governance tokens | **Pure PoW only** |
 | Privacy Math | ACL model leaks identity | ZK predicates reveal only boolean |

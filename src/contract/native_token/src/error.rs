@@ -72,8 +72,23 @@ pub enum NativeTokenError {
     #[error("Missing inputs in transfer")]
     TransferMissingInputs,
 
+    #[error("Burn call must have at least one input")]
+    BurnMissingInputs,
+
     #[error("Missing outputs in transfer")]
     TransferMissingOutputs,
+
+    #[error("Token mismatch")]
+    TokenMismatch,
+
+    #[error("Duplicate nullifier (double-spend)")]
+    DuplicateNullifier,
+
+    #[error("Invalid function (deprecated or removed)")]
+    InvalidFunction,
+
+    #[error("Value mismatch")]
+    ValueMismatch,
 }
 
 impl From<NativeTokenError> for ContractError {

@@ -22,7 +22,7 @@
 //! Uses Pedersen commitments for hidden values and nullifiers for double-spend prevention.
 
 use darkfi_sdk::{
-    crypto::{note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, MerkleNode, PublicKey},
+    crypto::{note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, Blind, MerkleNode, PublicKey},
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
@@ -129,6 +129,20 @@ pub struct Input {
     pub user_data_enc: pallas::Base,
     /// Signature public key
     pub signature_public: PublicKey,
+    /// Value of the coin being spent (for burn proof)
+    pub value: u64,
+    /// Token ID
+    pub token_id: pallas::Base,
+    /// Spend hook
+    pub spend_hook: pallas::Base,
+    /// User data
+    pub user_data: pallas::Base,
+    /// Coin blind
+    pub coin_blind: pallas::Base,
+    /// Leaf position in Merkle tree (for proof generation)
+    pub leaf_position: u64,
+    /// Merkle path (for proof generation)
+    pub merkle_path: Vec<MerkleNode>,
 }
 
 /// Output of a transaction - creates new coins (money_v2 style)
@@ -152,7 +166,7 @@ pub struct ClearInput {
     /// Input token ID
     pub token_id: pallas::Base,
     /// Value blinding factor
-    pub value_blind: pallas::Scalar,
+    pub value_blind: Blind<pallas::Scalar>,
     /// Token blinding factor
     pub token_blind: pallas::Base,
     /// Signature public key
@@ -238,14 +252,28 @@ pub struct SpendUpdateV1 {
     pub coin: Coin,
 }
 
-/// Parameters for MeltV1 - destroy coins (PRIVACY)
+/// Parameters for MintV1 - create new coins (Z-cash style mint)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct MeltParamsV1 {
+pub struct MintParamsV1 {
+    /// The newly minted coin
+    pub coin: Coin,
+}
+
+/// State update for MintV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct MintUpdateV1 {
+    pub coin: Coin,
+}
+
+/// Parameters for BurnV1 - destroy coins (Z-cash style burn)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct BurnParamsV1 {
+    /// Anonymous inputs being burned
     pub inputs: Vec<Input>,
 }
 
-/// State update for MeltV1
+/// State update for BurnV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct MeltUpdateV1 {
+pub struct BurnUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
 }

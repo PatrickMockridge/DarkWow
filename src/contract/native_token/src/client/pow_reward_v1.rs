@@ -107,7 +107,7 @@ impl PoWRewardCallBuilder {
         let c_input = ClearInput {
             value,
             token_id,
-            value_blind: value_blind.inner(),
+            value_blind,
             token_blind: token_blind.inner(),
             signature_public: self.signature_keypair.public,
         };

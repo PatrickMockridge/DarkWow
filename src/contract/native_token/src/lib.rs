@@ -39,24 +39,23 @@
 //! | Function | Opcode | Purpose | Priority |
 //! |----------|--------|---------|----------|
 //! | FeeV1 | 0x00 | Pay network fees | CONSENSUS |
-//! | GenesisMintV1 | 0x01 | Create initial supply | CONSENSUS |
-//! | PoWRewardV1 | 0x02 | Distribute block rewards | CONSENSUS |
+//! | MintV1 | 0x01 | Create new coins | PRIVACY |
+//! | BurnV1 | 0x02 | Destroy coins | PRIVACY |
 //! | TransferV1 | 0x03 | Private transfers | PRIVACY |
 //! | SpendV1 | 0x04 | Spend with change | PRIVACY |
-//! | MeltV1 | 0x05 | Destroy coins | PRIVACY |
 
 use darkfi_sdk::{error::ContractError, pasta::pallas};
 
-/// Functions available in the contract (matches money_v2 function codes)
+/// Functions available in the contract
 #[repr(u8)]
 #[derive(Debug)]
 pub enum NativeTokenFunction {
     FeeV1 = 0x00,
-    GenesisMintV1 = 0x01,
-    PoWRewardV1 = 0x02,
+    MintV1 = 0x01,
+    BurnV1 = 0x02,
     TransferV1 = 0x03,
     SpendV1 = 0x04,
-    MeltV1 = 0x05,
+    PoWRewardV1 = 0x05,
 }
 
 impl TryFrom<u8> for NativeTokenFunction {
@@ -65,11 +64,11 @@ impl TryFrom<u8> for NativeTokenFunction {
     fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
         match b {
             0x00 => Ok(Self::FeeV1),
-            0x01 => Ok(Self::GenesisMintV1),
-            0x02 => Ok(Self::PoWRewardV1),
+            0x01 => Ok(Self::MintV1),
+            0x02 => Ok(Self::BurnV1),
             0x03 => Ok(Self::TransferV1),
             0x04 => Ok(Self::SpendV1),
-            0x05 => Ok(Self::MeltV1),
+            0x05 => Ok(Self::PoWRewardV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }
@@ -106,6 +105,8 @@ pub const NATIVE_TOKEN_CONTRACT_INFO_TREE: &str = "info";
 pub const NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE: &str = "coin_roots";
 /// Stores nullifier roots for historical verification
 pub const NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
+/// Stores accumulated fees per block height
+pub const NATIVE_TOKEN_CONTRACT_FEES_TREE: &str = "fees";
 
 // ============================================================================
 // DATABASE KEYS

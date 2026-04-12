@@ -41,3 +41,8 @@ darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
 
 [lints]
 workspace = true
+
+# These are used just for the integration tests
+[dev-dependencies]
+smol = "2.0.2"
+rand = "0.8.5"

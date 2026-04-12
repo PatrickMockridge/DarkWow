@@ -17,7 +17,7 @@
  */
 
 use darkfi_sdk::{
-    crypto::pasta_prelude::PrimeField,
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, SecretKey},
     error::ContractError,
     pasta::pallas,
 };
@@ -37,6 +37,12 @@ impl Nullifier {
     /// Reference the raw inner base field element
     pub fn inner(&self) -> pallas::Base {
         self.0
+    }
+
+    /// Create a new Nullifier from spending key and coin hash
+    /// nullifier = poseidon_hash(spending_key, coin_hash)
+    pub fn new(secret: SecretKey, coin_hash: pallas::Base) -> Self {
+        Self(poseidon_hash([secret.inner(), coin_hash]))
     }
 
     /// Create a `Nullifier` object from given bytes

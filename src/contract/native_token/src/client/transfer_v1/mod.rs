@@ -3,14 +3,14 @@
  * Copyright (C) 2020-2026 Dyne.org foundation
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
+ * it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
- * details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along with
  * this program.  If not, see <https://www.gnu.org/licenses/>.
@@ -19,8 +19,10 @@
 //! NativeToken Transfer API
 //!
 //! Transfer V1 uses the same mint proof as PoWReward since both create new coins.
+//! Burn proof is used for destroying coins.
 
-pub(crate) mod proof;
+pub mod proof;
 
 // Re-export TransferCallOutput as CoinAttributes for compatibility
 pub use crate::model::CoinAttributes as TransferCallOutput;
+pub use crate::model::Input as TransferCallInput;

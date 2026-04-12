@@ -1,8 +1,8 @@
-# NativeToken: Consensus-First Native Token
+# NativeToken: Z-Cash Style Burn-Mint Native Token
 
 ## Overview
 
-NativeToken is the primary native token contract for DarkFi, designed with a **CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD** philosophy.
+NativeToken is DarkFi's native token contract for consensus (block rewards, fees), implementing a **Z-cash style burn-mint privacy model**. Unlike MoneyV2 (which has token freezing), NativeToken has **no token freezing** capability, eliminating freeze-key attack vectors while providing full privacy for transfers.
 
 **Key Principle**: The native token must be reliable for consensus before anything else. Privacy is layered on top, never compromising block rewards or fee payment.
 
@@ -13,12 +13,14 @@ The original MoneyV2 had significant issues:
 - Complex multi-step token authorization (AuthTokenMint + TokenMint)
 - EC operations in circuits led to heap bugs
 - Genesis minting tied to governance parameters
+- Token freezing capabilities introduced attack vectors
 
 NativeToken solves these by being:
 1. **DAO-Decoupled**: No ACL, no governance coupling
 2. **Simple Genesis**: Single GenesisMintV1 call at startup
 3. **Minimal Circuits**: Only essential ZK operations
 4. **Consensus-First**: Block rewards and fees are paramount
+5. **No Token Freezing**: Eliminated freeze-key attack vectors entirely
 
 ## Design Philosophy: CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD
 
@@ -27,6 +29,22 @@ This design philosophy prioritizes the core functions of a blockchain native tok
 1. **Consensus Reward** - Block rewards for PoW mining must be reliable
 2. **Network Fees** - Transaction fee payment must be deterministic
 3. **Privacy Layer** - Privacy on top, never compromising consensus
+
+## Z-Cash Style Burn-Mint Model
+
+NativeToken implements a Z-cash style privacy model:
+
+| Operation | Z-Cash Analogy | Description |
+|-----------|----------------|-------------|
+| **MintV1** | transparent-to-private | Creates new coins with Pedersen commitments |
+| **BurnV1** | 0x02 | Destroy coins with nullifier |
+| **TransferV1** | private-to-private | Private transfers between parties |
+
+### Key Privacy Properties
+
+- **Mint**: Creates coins privately - value hidden via Pedersen commitment
+- **Burn**: Destroys coins with nullifier - enables private coin destruction
+- **Transfer**: Private sends between parties
 
 ## Token Model
 
@@ -56,16 +74,18 @@ struct CoinAttributes {
 nullifier = poseidon_hash(coin_secret, coin)
 ```
 
+Nullifiers prevent double-spending by hashing the spending key with the coin hash.
+
 ## Contract Functions
 
 | Function | Opcode | Purpose | Priority |
 |----------|--------|---------|----------|
 | FeeV1 | 0x00 | Pay network fees | CONSENSUS |
-| GenesisMintV1 | 0x01 | Create initial supply | CONSENSUS |
-| PoWRewardV1 | 0x02 | Block rewards | CONSENSUS |
+| MintV1 | 0x01 | Create new coins | CONSENSUS |
+| BurnV1 | 0x02 | Destroy coins with nullifier | PRIVACY |
 | TransferV1 | 0x03 | Private transfers | PRIVACY |
-| SpendV1 | 0x04 | Spend with change | PRIVACY |
-| MeltV1 | 0x05 | Destroy coins | PRIVACY |
+| SpendV1 | 0x04 | (removed - merged into BurnV1) | - |
+| PoWRewardV1 | 0x05 | Block rewards | CONSENSUS |
 
 ### FeeV1 (0x00)
 
@@ -81,34 +101,39 @@ struct FeeParamsV1 {
 }
 ```
 
-### GenesisMintV1 (0x01)
+### MintV1 (0x01)
 
-Creates the initial coin supply at blockchain start. CONSENSUS CRITICAL - happens exactly once.
+Creates new coins with Pedersen commitments. Used for genesis minting and general coin creation.
 
 **Parameters:**
 ```rust
-struct GenesisMintParamsV1 {
-    input: ClearInput,      // Clear input (no privacy needed for genesis)
+struct MintParamsV1 {
+    input: ClearInput,      // Clear input (no privacy needed for minting)
     outputs: Vec<Output>,   // Anonymous outputs
 }
 ```
 
-**Validation:**
-- Genesis can only happen once (checked via `info_db`)
-- All outputs must have valid coin commitments
-- Total supply tracked in `info_db`
+**ZK Circuit:** `mint_v1.zk`
 
-### PoWRewardV1 (0x02)
+### BurnV1 (0x02)
 
-Distributes block rewards to miners. CONSENSUS CRITICAL - this is how mining is incentivized.
+Destroys coins with nullifier generation for double-spend prevention.
 
 **Parameters:**
 ```rust
-struct PoWRewardParamsV1 {
-    input: ClearInput,      // Clear input for reward amount
-    output: Output,        // Coin to reward
+struct BurnParamsV1 {
+    inputs: Vec<Input>,     // Coins being burned
 }
 ```
+
+**Validation:**
+- Nullifier not already spent
+- Merkle proof verification for each input
+- ZK proof of burn
+
+**ZK Circuit:** `burn_v1.zk`
+
+**Current Status:** Contract-side logic implemented. Client API stubbed pending Merkle proof infrastructure.
 
 ### TransferV1 (0x03)
 
@@ -128,28 +153,19 @@ struct TransferParamsV1 {
 - Double-spend check: nullifiers not already in database
 - Merkle proof verification
 
-### SpendV1 (0x04)
+### PoWRewardV1 (0x05)
 
-Consume a single coin and create a change output.
-
-**Parameters:**
-```rust
-struct SpendParamsV1 {
-    input: Input,           // Coin being spent
-    output: Output,         // Change output
-}
-```
-
-### MeltV1 (0x05)
-
-Destroy coins (e.g., for fees or voluntary supply reduction).
+Distributes block rewards to miners. CONSENSUS CRITICAL - this is how mining is incentivized.
 
 **Parameters:**
 ```rust
-struct MeltParamsV1 {
-    inputs: Vec<Input>,     // Coins being melted
+struct PoWRewardParamsV1 {
+    input: ClearInput,      // Clear input for reward amount
+    output: Output,        // Coin to reward
 }
 ```
+
+**ZK Circuit:** `mint_v1.zk` (reused for mint operation)
 
 ## Key Differences from MoneyV2
 
@@ -160,6 +176,22 @@ struct MeltParamsV1 {
 | Genesis Mint | Complex multi-step | Single GenesisMintV1 |
 | EC Operations | Required in circuits | Minimal |
 | Authorization | ACL Merkle proofs | ZK predicates |
+| Token Freezing | Yes | **No** (eliminated) |
+
+## No Token Freezing
+
+Unlike MoneyV2, NativeToken has **no token freezing capability**. This was an intentional design decision to:
+
+- **Simplify the security model** - Fewer attack vectors
+- **Remove freeze-key complexity** - No freeze authority management
+- **Enable true decentralization** - No single party can freeze tokens
+
+### Sacrifices
+
+By removing token freezing:
+- No on-chain regulatory controls
+- Burn client API is stubbed (requires Merkle proof infrastructure)
+- SpendV1 merged into BurnV1 for simplicity
 
 ## Decoupled from DAO
 
@@ -175,8 +207,8 @@ DAO can optionally use NativeToken for governance token, but NativeToken is stan
 
 | Circuit | Namespace | Purpose |
 |---------|-----------|---------|
-| mint_v1.zk | `Mint_V1` | Genesis mint and PoW rewards |
-| burn_v1.zk | `Burn_V1` | Spending with nullifier |
+| mint_v1.zk | `Mint_V1` | Mint and PoW rewards |
+| burn_v1.zk | `Burn_V1` | Burning with nullifier |
 | fee_v1.zk | `Fee_V1` | Fee payment |
 
 ### Circuit Design Principles
@@ -187,6 +219,7 @@ The ZK circuits follow strict security principles:
 2. **Range proofs**: Value overflow prevention
 3. **Merkle proofs**: Coin existence verification
 4. **Nullifier proofs**: Double-spend prevention
+5. **No EC heap operations**: Avoiding the heap bugs in MoneyV2
 
 ## Database Trees
 
@@ -206,21 +239,25 @@ NATIVE_TOKEN_CONTRACT_INFO_TREE           - contract metadata
   - `src/model/mod.rs` - Data models (Coin, Input, Output, etc.)
   - `src/model/nullifier.rs` - Nullifier type
   - `src/entrypoint/mod.rs` - WASM entrypoint
+  - `src/client/` - Client API (burn_v1, pow_reward_v1, transfer_v1)
   - `proof/*.zk` - ZK circuit source
   - `proof/*.zk.bin` - Compiled circuit binaries
+  - `docs/engineering_spec.md` - Detailed engineering specification
 
 ## Testing
 
 ```bash
 # Build native_token contract
-cd src/contract/native_token && make all
+cargo build -p darkfi_native_token_contract
 
-# Run integration tests
-cargo test -p darkfi_native_token_contract --test integration
-
-# Run with test harness
-cargo test -p darkfi_contract_test_harness -- native_token
+# Run test harness
+cargo run -p darkfi-contract-test-harness --bin test_native_token
 ```
+
+**Test Status:**
+- [x] MintV1 test passes
+- [x] PoWRewardCallBuilder generates real ZK proofs
+- [ ] BurnV1 client API (stubbed - pending Merkle infrastructure)
 
 ## Success Criteria
 
@@ -231,3 +268,4 @@ cargo test -p darkfi_contract_test_harness -- native_token
 - [x] Block rewards via PoWRewardV1
 - [x] Fee payment via FeeV1
 - [x] ZK circuits with constrain_equal_base binding
+- [x] No token freezing capability
