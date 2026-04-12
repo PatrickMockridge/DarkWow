@@ -4,132 +4,133 @@
 
 This is a development fork of the official DarkFi repository. **Development occurs on the `master` branch** (`PatrickM123/darkfi:master`).
 
-This fork contains all additions compared to official DarkFi master:
+## What is DarkFi?
+
+DarkFi is a privacy-first blockchain with a focus on ZK-powered smart contracts. Key differentiators:
+
+- **ZK-Native Contracts**: All contracts use zero-knowledge proofs for privacy
+- **Consensus-First Token**: Native token (`native_token`) handles block rewards and fees as top priority
+- **Privacy by Default**: Shielded transactions, anonymous voting, encrypted state
+- **Multi-Chain Support**: Atomic swaps, bridges, and cross-chain interoperability
 
 ## Smart Contracts
 
-ZK contracts using the existing opcode set. These prioritize **maximum privacy** with full ZK expressiveness.
+DarkFi implements privacy-preserving smart contracts across multiple domains:
 
-| Contract | Description | Status |
-|----------|-------------|--------|
-| **attestation** | Generalized attestation and claims system | ✅ Complete |
-| **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete |
-| **auction** | Privacy-preserving auction using escrow for bids | ✅ Complete |
-| **baccarat** | Privacy-preserving Baccarat casino game | ✅ Complete |
-| **betting_stake** | LP staking for betting contracts | ✅ Complete |
-| **block_height_prediction** | PoW-backed block height betting | ✅ Complete |
-| **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete |
-| **dao** | DAO with voting and treasury management | ✅ Complete |
-| **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) + optional DrainProtection | ✅ Complete |
-| **darkbet_exchange** | Unified betting exchange (order-book + AMM) | ✅ Complete |
-| **darktoshi_dice** | Privacy-preserving Satoshi Dice clone | ✅ Complete |
-| **dex** | Atomic swap DAO with incremental transparency | ✅ Complete |
-| **drain_protection** | Endowment/treasury protections (8 best practices) | ✅ Complete |
-| **escrow** | Hashed Timelock Contract variant | ✅ Complete |
-| **game_room** | Generalized betting and pot management | ✅ Complete |
-| **identity** | ZK credential proofs using competency DAGs | ✅ Level 0 zk_only + Level 1 selective |
-| **insurance_market** | Decentralized insurance marketplace | ✅ Complete |
-| **labor_market** | Job/labor market with escrow and DAO governance | ✅ Complete |
-| **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete |
-| **money** | Original DarkFi money (v1) - upstream legacy | No |
-| **money_v2** | Secure version with constrain_equal_base | ✅ Standard |
-| **oracle** | Push-model oracle with attestation integration | ✅ Complete |
-| **roulette** | Privacy-preserving roulette casino game | ✅ Complete |
-| **slot** | Composable slot machine with modular paytables | ✅ Complete |
-| **stablecoin** | Synthetix-style pooled debt | ✅ Complete |
-| **subscription** | Member subscription with DAO treasury | ✅ Complete |
-| **tender** | Sealed-bid tendering with competency verification | ✅ Complete |
+| Category | Contracts |
+|----------|-----------|
+| **Finance** | stablecoin, bridge, dex, atomic_swap, pool_stake |
+| **Gaming** | lottery, baccarat, roulette, slot, darktoshi_dice, betting_stake |
+| **Governance** | dao_escrow, subscription, labor_market, tender |
+| **Identity** | attestation, oracle, identity |
+| **Exchange** | auction, escrow, darkbet_exchange |
 
-## Key Technical Changes
+### Native Token Contract
 
-- **DarkBet Exchange**: Unified betting contract with order-book (back/lay) and AMM pool modes. Replaces prediction_market.
-- **DrainProtection**: 8 optional best practices (graduated tiers, exit queue, circuit breaker, guardian pause, observation period, split proposals, no-loss reserve, dead man's switch). All features configurable by contract deployer and controllable by DAO members via governance.
-- **Baccarat/Roulette/Slot**: Privacy-preserving casino games using cumulative PoW block hash entropy for dealing. Slot uses same composability pattern as Baccarat (Commit → Reveal → Settle) with swappable paytables and reel configurations.
-- **Lottery**: Configurable lottery bridging BettingStake and Insurance market problem spaces
-- **Insurance Market**: Decentralized insurance marketplace with risk markets ecosystem
-- **Stablecoin refactor**: Synthetix-style pooled debt model (replacing individual CDPs)
-- **Identity refactor**: Level 0 (zk_only) + Level 1 selective disclosure (bounded equation)
-- **Safemath integration**: Legacy ZK arithmetic templates (LessThanOrEqual now verified sound - safemath still useful for assertion-only patterns)
-- **Bridge Merkle fix**: Real `merkle_root` opcode (not fake proof)
-- **Entropy module**: Shared `darkfi_sdk::crypto::entropy` for provable randomness across contracts
-- **Game Room**: Generalized betting and pot management contract. App developers build poker rooms, backgammon rooms, etc. on top using the SDK. Room owner uses escrow-DAO for game rules and dispute resolution.
+The [`native_token`](dev/contracts/native_token.md) contract is the consensus-first native token:
 
-## Architecture Documentation
+- **PoWRewardV1**: Block rewards for miners
+- **FeeV1**: Network fee payment
+- **TransferV1**: Private token transfers
+- **GenesisMintV1**: Initial supply creation
 
-- [Opcodes and Formal Verification](arch/opcodes.md) — Opcode soundness verification with Lean 4 proofs
-- [Merkle Depth](arch/merkle_depth.md) — Fixed-depth limitations and workarounds
-- [Composability](arch/composability.md) — Smart contract composition patterns
-- [Safemath](arch/safemath.md) — ZK arithmetic templates for assertion-only comparisons
-- [Field Arithmetic](arch/field_arithmetic.md) — zkVM primitive analysis
-- [DarkBet Exchange](arch/darkbet_exchange.md) — Unified betting exchange (order-book + AMM)
-- [Entropy Module](arch/entropy.md) — Provable randomness via block hash entropy
-- [Provable Randomness](arch/provable_randomness.md) — PoW randomness analysis with casino game case studies
-- [Game Room App Layer](arch/game_room_app_layer.md) — SDK integration guide for app developers
-- [O-Cap & Composable Privacy](arch/ocap.md) — Privacy for social reproduction industries (labor, healthcare, insurance, education)
+## Architecture
 
-## Security Status
+Key architectural documents:
 
-All contracts are **EXPERIMENTAL** and **UNAUDITED**. Known security issues are documented in [Security Analysis](arch/security-analysis.md). The official DarkFi repository should be consulted for the canonical, production-ready state.
+- [Architecture Overview](arch/overview.md) — System design and components
+- [Native Contracts](dev/native_contracts.md) — Built-in contracts (native_token, deployooor)
+- [Consensus](arch/consensus.md) — PoW mining and block reward distribution
+- [Transactions](arch/tx_lifetime.md) — Transaction lifecycle and ZK verification
+- [ZK Circuits](zkas/index.md) — Zero-knowledge proof system
 
-## Technical Debt: Opcode Layer
+## Security
 
-### Current Status (Updated)
+All contracts are **EXPERIMENTAL** and **UNAUDITED**.
 
-Most comparison opcodes are now **formally verified** or **implemented**:
+Known security issues are documented in [Security Analysis](arch/security-analysis.md).
 
-| Opcode | Status | Notes |
-|--------|--------|-------|
-| `LessThanOrEqual` (0x55) | ✅ **Verified Sound** | Lean 4 exhaustive testing |
-| `LessThanStrict` (0x51) | ✅ Sound | Constrain-only, inherently safe |
-| `LessThanLoose` (0x52) | ✅ Sound | Constrain-only |
-| `NotBase` (0x56) | ✅ Verified | Production-ready |
-| `BaseLtStrict` (0x57) | ✅ Verified | Production-ready |
-| `BaseDiv` (0x58) | ✅ **Implemented** | Binary exponentiation (Fermat's theorem) |
-| `IsEqualBase` (0x54) | ❌ Bug | Delta-invert unconstrained when `a == b` - do not use |
+For ZK circuit security, see [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md).
 
-### Remaining Issues
+## Getting Started
 
-**IsEqualBase (0x54)** has a bug: when `a == b`, `delta_invert` is unconstrained. Use `ConstrainEqualBase` for assertion-only checks.
+### Running a Node
 
-### What Works Now
+See [Running a Node](testnet/node.md) for setup instructions.
 
-| Contract | Feature | Status |
-|----------|---------|--------|
-| stablecoin | Collateralization checks | ✅ LessThanOrEqual or Safemath |
-| identity | Threshold predicates | ✅ LessThanOrEqual verified |
-| dex | Partial fills | ✅ LessThanOrEqual verified |
-| dao | Ratio checks | ✅ BaseDiv or cross-multiplication |
-| **bridge** | All deposit/withdraw operations | ✅ No workarounds needed! |
-
-### Migration Complete
-
-Plain contracts have been **deprecated** in favor of ZK contracts since:
-- `LessThanOrEqual` is formally verified sound
-- `BaseDiv` is implemented
-
-### Bridge = Opcode-Independent ✅
-
-**The bridge is NOT held up by missing opcodes.**
-
-The bridge uses **atomic swap semantics** which only need:
-- Hash constraints (poseidon_hash)
-- Merkle proofs (merkle_root)
-- Range checks (range_check)
-
-No division, no Boolean returns, no complex arithmetic. The bridge "just works" because atomic operations don't need the advanced opcodes.
-
-See [Bridge Architecture](arch/bridge.md) for details on why the bridge doesn't need advanced opcodes.
-
-**See**: [Safemath](arch/safemath.md) and [Opcodes Reference](arch/opcodes.md) for full analysis.
-
-## Building
+### Building from Source
 
 ```bash
 # Clone this fork
 git clone https://codeberg.org/PatrickM123/darkfi
 cd darkfi
 
+# Build the project
+cargo build --release
+
 # Build documentation
 cd doc
 mdbook build
 ```
+
+### Local Development
+
+```bash
+# Start localnet
+./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
+
+# Mine tokens for testing
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet initialize
+./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet keygen
+./target/release/drk -c bin/drk/drk_config.toml -n localnet mine
+```
+
+See [Localnet Development](localnet-dev.md) for detailed setup.
+
+## Documentation Structure
+
+```
+doc/src/
+├── intro.md              # This file
+├── start-here.md         # Detailed project overview
+├── dev/                  # Developer documentation
+│   ├── dev.md           # Development guide
+│   ├── contracts/       # Contract specifications
+│   │   └── native_token.md
+│   └── zk-circuit-troubleshooting.md
+├── arch/                 # Architecture documentation
+│   ├── overview.md
+│   ├── consensus.md
+│   └── opcodes-status.md
+├── zkas/                # ZK proof documentation
+└── testnet/             # User guides
+```
+
+## Technical Debt
+
+### Opcode Status
+
+Opcodes for ZK circuits are being formally verified. Current status:
+
+| Opcode | Status |
+|--------|--------|
+| `LessThanOrEqual` | ✅ Verified Sound |
+| `BaseDiv` | ✅ Implemented |
+| `IsEqualBase` | ⚠️ Use `ConstrainEqualBase` instead |
+
+See [Opcodes and Formal Verification](arch/opcodes.md) for full analysis.
+
+### Contract Status
+
+| Contract | Status |
+|----------|--------|
+| native_token | ✅ Production-ready |
+| dao_escrow | ✅ Complete |
+| All other WASM contracts | ⚠️ Experimental |
+
+## Join the Community
+
+The core community organizes through our anonymous p2p chat system:
+
+- Every Monday at 14:00 UTC (DST) or 15:00 UTC (ST) in #dev
+- See [DarkIRC](misc/darkirc/darkirc.md) for joining instructions

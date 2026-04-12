@@ -97,16 +97,10 @@ Source code is under `src/` subdirectory. Main interesting modules are:
     * Verifying sigs or call depth ahead of time helps make the chain
       more attack resistant.
 * `contract/` contains our native smart contracts. Namely:
-    * `money`, which is multi-asset anonymous transfers, anonymous
-      swaps and token issuance. The token issuance is programmatic.
-      When creating a token, it commits to a smart contract which
-      specifies how the token is allowed to be issued.
-    * `deploy` for deploying smart contracts.
-    * `dao`, which is a fully anonymous DAO. All the DAOs on chain are
-      anonymous, including the amounts and activity of the treasury.
-      All participants are anonymous, proposals are anonymous and votes
-      are anonymous including the token weighted vote amount, and user
-      identity. You cannot see who is in the DAO.
+    * `native_token`, the consensus-first native token for block rewards and fees.
+      Handles PoWRewardV1, FeeV1, TransferV1, and GenesisMintV1.
+    * `deployooor` for deploying WASM smart contracts.
+    * `dao_escrow`, a DAO with three modes (Escrow/Treasury/Endowment) for governance.
     * `game_room`, a generalized betting and pot management contract for
       privacy-preserving staked games. App developers build poker rooms,
       backgammon rooms, etc. on top using the SDK. The room owner uses

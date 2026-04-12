@@ -98,6 +98,7 @@
   - [Field Arithmetic Constraints](arch/field_arithmetic.md)
   - [zkVM Primitive Layer](arch/zkvm_primitives.md)
   - [Opcodes and Formal Verification](arch/opcodes.md)
+  - [Opcode Status](arch/opcodes-status.md)
   - [Safemath](arch/safemath.md)
   - [MerkleRoot Depth Limitation](arch/merkle_depth.md)
   - [Generalized Contract Invocation API](arch/contract_invoke_api.md)
