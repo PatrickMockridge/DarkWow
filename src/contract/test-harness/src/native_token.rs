@@ -162,7 +162,7 @@ fn run_tests() -> Result<(), Box<dyn std::error::Error>> {
 
     test_mint()?;
     test_pow_reward_call_builder()?;
-    // test_burn_call_builder()?; // TODO: fix burn proof generation
+    // test_burn_call_builder()?; // Requires proper Merkle tree infrastructure
 
     info!(target: "test_harness::native_token", "All NativeToken tests PASSED");
     Ok(())
