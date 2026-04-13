@@ -184,3 +184,44 @@ pub fn create_liquidate_proof(
 
     Ok((proof, public_inputs))
 }
+
+// ============================================================================
+// MoneyV3 Integration: Liquidation via spend_hook
+// ============================================================================
+// Liquidation in the pooled debt model works differently than individual CDPs:
+//
+// 1. Pool is undercollateralized (global ratio < threshold)
+// 2. Liquidator calls MoneyV3::BurnV1 to burn stablecoin (spend_hook = stablecoin)
+// 3. spend_hook triggers stablecoin's exec() with seizure parameters
+// 4. Stablecoin updates pool state, releases collateral proportionally
+// 5. Liquidator receives seized collateral via MoneyV3::MintV1
+//
+// In the pooled model, there's no individual position - the entire pool is either:
+// - Healthy (all collateral backs all debt)
+// - Liquidated (seizure triggered, all positions affected)
+
+// ============================================================================
+// INTEGRATION NOTES: spend_hook Callback Handler
+// ============================================================================
+// The spend_hook mechanism enables atomic cross-contract operations:
+//
+// 1. User calls MoneyV3::BurnV1 with spend_hook = stablecoin_contract_id
+//    user_data encodes: (mint_amount, stablecoin_token_id, sender_pub)
+//
+// 2. MoneyV3 verifies the burn proof, marks nullifier as spent
+//
+// 3. MoneyV3 calls stablecoin_contract.exec(user_data)
+//    - This is the callback that stablecoin must implement
+//    - stablecoin receives: mint_amount, sender, etc.
+//
+// 4. Stablecoin's exec() should:
+//    - Verify the burn was valid (check nullifier)
+//    - Update pool state (decrease debt, decrease collateral)
+//    - Return success so MoneyV3 commits the burn
+//
+// 5. If stablecoin's exec() succeeds, MoneyV3 finalizes the burn
+//    If stablecoin's exec() fails, the entire tx aborts (atomic)
+//
+// NOTE: The actual spend_hook exec() handler in stablecoin entrypoint
+// has not been implemented yet - this is documented here as the
+// integration point for future work.

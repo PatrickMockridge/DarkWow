@@ -17,6 +17,16 @@
  */
 
 //! MintStable ZK proof generation (Poseidon-only)
+//!
+//! ## MoneyV3 Integration
+//!
+//! When minting stablecoin:
+//! 1. User burns collateral receipt tokens via MoneyV3::BurnV1 with spend_hook
+//! 2. The spend_hook triggers stablecoin's exec() callback
+//! 3. Stablecoin verifies the burn, then mints stablecoin tokens via MoneyV3::MintV1
+//! 4. User receives stablecoin tokens
+//!
+//! The spend_hook enables atomic: burn collateral → mint stablecoin
 
 use darkfi::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -28,6 +38,8 @@ use darkfi_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+
+use crate::model::{CollateralType, MintStableParams};
 
 /// MintStable circuit public inputs (in order of constrain_instance)
 #[derive(Debug, Clone)]
@@ -185,4 +197,83 @@ pub fn create_mint_stable_proof(
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
+}
+
+// ============================================================================
+// MoneyV3 Integration: Collateral Burn for Stablecoin Mint
+// ============================================================================
+
+/// Debris for burning collateral tokens via MoneyV3 to mint stablecoin
+///
+/// Flow:
+/// 1. User calls MoneyV3::BurnV1 with spend_hook = stablecoin contract
+/// 2. user_data encodes the mint parameters
+/// 3. Stablecoin's exec() is called with user_data
+/// 4. Stablecoin verifies burn, then mints stablecoin to user via MoneyV3::MintV1
+#[derive(Debug, Clone)]
+pub struct CollateralBurnDebris {
+    /// The coin being burned (collateral receipt)
+    pub coin: pallas::Base,
+    /// Nullifier for the burned coin
+    pub nullifier: pallas::Base,
+    /// Stablecoin contract ID (spend_hook target)
+    pub spend_hook: pallas::Base,
+    /// User data encoding mint parameters for stablecoin
+    pub user_data: pallas::Base,
+    /// Mint amount (stablecoin to receive)
+    pub mint_amount: u64,
+}
+
+/// Builder for burning collateral to mint stablecoin
+///
+/// Usage:
+/// ```ignore
+/// let burn_debris = CollateralBurnBuilder {
+///     collateral_coin: coin_from_open_position,
+///     owner_secret: user_secret,
+///     mint_amount: 1000,
+///     stablecoin_contract_id: stablecoin_id,
+///     token_id: collateral_token_id,
+/// }.build();
+///
+/// // Execute MoneyV3::BurnV1 with spend_hook to stablecoin
+/// // Stablecoin's exec() verifies burn and mints stablecoin
+/// ```
+pub struct CollateralBurnBuilder {
+    /// The collateral receipt coin to burn
+    pub collateral_coin: pallas::Base,
+    /// Owner's secret key
+    pub owner_secret: pallas::Base,
+    /// Amount of stablecoin to mint
+    pub mint_amount: u64,
+    /// Stablecoin contract ID (for spend_hook)
+    pub stablecoin_contract_id: pallas::Base,
+    /// Token ID for stablecoin
+    pub stablecoin_token_id: pallas::Base,
+    /// Collateral token ID (being burned)
+    pub collateral_token_id: pallas::Base,
+}
+
+impl CollateralBurnBuilder {
+    /// Build the collateral burn debris for MoneyV3::BurnV1
+    pub fn build(&self) -> CollateralBurnDebris {
+        // Compute nullifier: poseidon_hash(secret, coin)
+        let nullifier = poseidon_hash([self.owner_secret, self.collateral_coin]);
+
+        // User data encodes mint params: (mint_amount, stablecoin_token_id, sender_pub)
+        // This gets passed to stablecoin's exec() during spend_hook callback
+        let user_data = poseidon_hash([
+            pallas::Base::from(self.mint_amount),
+            self.stablecoin_token_id,
+            poseidon_hash([self.owner_secret]), // sender public key
+        ]);
+
+        CollateralBurnDebris {
+            coin: self.collateral_coin,
+            nullifier,
+            spend_hook: self.stablecoin_contract_id,
+            user_data,
+            mint_amount: self.mint_amount,
+        }
+    }
 }

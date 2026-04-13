@@ -17,6 +17,15 @@
  */
 
 //! OpenPosition ZK proof generation (Poseidon-only)
+//!
+//! ## MoneyV3 Integration
+//!
+//! When opening a position, the user:
+//! 1. Deposits collateral (e.g., wXMR) to stablecoin
+//! 2. Receives collateral receipt tokens via MoneyV3 MintV1
+//!
+//! The collateral receipt token is minted with spend_hook = stablecoin contract ID,
+//! enabling atomic operations like MintStableV1 (burn collateral, mint stablecoin).
 
 use darkfi::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -24,10 +33,12 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, BaseBlind},
+    crypto::{poseidon_hash, BaseBlind, ContractId},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+
+use crate::model::CollateralType;
 
 /// OpenPosition circuit public inputs (in order of constrain_instance)
 #[derive(Debug, Clone)]
@@ -171,4 +182,66 @@ pub fn create_open_position_proof(
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
+}
+
+// ============================================================================
+// MoneyV3 Integration: Collateral Token Minting
+// ============================================================================
+
+/// Debris for minting collateral receipt tokens via MoneyV3
+///
+/// When opening a position, the user mints collateral receipt tokens
+/// via MoneyV3. These tokens have spend_hook = stablecoin contract ID,
+/// enabling atomic operations (burn collateral → mint stablecoin).
+#[derive(Debug, Clone)]
+pub struct CollateralMintDebris {
+    /// The recipient public key for minted tokens
+    pub recipient_pub: pallas::Base,
+    /// Amount of collateral tokens to mint
+    pub mint_amount: u64,
+    /// Token ID for collateral tokens
+    pub token_id: pallas::Base,
+    /// Spend hook - stablecoin contract ID for atomic operations
+    pub spend_hook: pallas::Base,
+    /// User data passed to spend hook
+    pub user_data: pallas::Base,
+}
+
+/// Builder for creating collateral receipt tokens via MoneyV3
+///
+/// Flow:
+/// 1. User calls OpenPositionV1 on stablecoin
+/// 2. Client also calls MoneyV3::MintV1 to mint collateral receipt tokens
+/// 3. User receives collateral tokens with spend_hook = stablecoin
+/// 4. When user calls MintStableV1, tokens are burned with spend_hook trigger
+pub struct CollateralMintBuilder {
+    /// Owner's public key (poseidon_hash of secret)
+    pub owner_pub: pallas::Base,
+    /// Collateral amount
+    pub collateral_amount: u64,
+    /// Collateral type
+    pub collateral_type: CollateralType,
+    /// Token ID for this collateral type
+    pub token_id: pallas::Base,
+    /// Stablecoin contract ID (for spend_hook)
+    pub stablecoin_contract_id: ContractId,
+    /// User data for spend_hook (position commitment)
+    pub user_data: pallas::Base,
+}
+
+impl CollateralMintBuilder {
+    /// Build the collateral mint call debris
+    pub fn build(&self) -> CollateralMintDebris {
+        // The spend_hook is the stablecoin contract ID, enabling atomic
+        // operations like burn collateral → mint stablecoin
+        let spend_hook = self.stablecoin_contract_id.inner();
+
+        CollateralMintDebris {
+            recipient_pub: self.owner_pub,
+            mint_amount: self.collateral_amount,
+            token_id: self.token_id,
+            spend_hook,
+            user_data: self.user_data,
+        }
+    }
 }
