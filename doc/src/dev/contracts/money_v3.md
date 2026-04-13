@@ -350,3 +350,35 @@ MoneyV2 is deprecated due to EC heap bugs. Migration path:
 - Full token privacy (hidden token_id)
 - 100% fungibility
 - Simpler authorization model
+
+## Integration Examples
+
+### Stablecoin Integration
+
+The [stablecoin](../stablecoin/stablecoin.md) contract uses MoneyV3 as its token layer:
+
+```
+Stablecoin → MoneyV3 Integration:
+├── InitializeV1: Creates USDx token type in MoneyV3
+├── OpenPositionV1: Mints collateral receipt tokens (MoneyV3 MintV1)
+├── MintStableV1: Burns collateral tokens via spend_hook → mints USDx
+├── RepayStableV1: Burns USDx → mints collateral tokens back
+└── LiquidateV1: Seizure via spend_hook → rewards in USDx
+```
+
+This enables stablecoin to focus on CDP mechanics while delegating token management to MoneyV3.
+
+### DEX Integration
+
+See [dex.md](dex.md) for DEX integration using spend_hook for atomic swaps.
+
+## Standards Reference
+
+For security standards (Poseidon-only, NativeToken vs MoneyV3 separation), see [standards.md](standards.md).
+
+## References
+
+- [Stablecoin Integration](../stablecoin/stablecoin.md)
+- [DEX Integration](dex.md)
+- [Standards](standards.md)
+- [NativeToken](../native_token/native_token.md)
