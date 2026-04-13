@@ -1,18 +1,18 @@
 [package]
-name = "darkfi_money_v2_contract"
-version = "0.6.0"
-authors = ["Dyne.org foundation <foundation@dyne.org>"]
-license = "AGPL-3.0-only"
+name = "darkfi_money_v3_contract"
+version = "0.1.0"
 edition = "2021"
+authors = ["DarkFi contributors"]
+description = "DarkFi Money V3 Contract - Privacy-first, no EC operations"
+license = "AGPL-3.0-only"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-blake3 = "1.8.2"
-bs58 = "0.5.1"
 darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
 darkfi-serial = { path = "../../serial", features = ["derive", "crypto"] }
+pasta_curves = "0.5.1"
 thiserror = "2.0.17"
 
 # The following dependencies are used for the client API and
@@ -23,31 +23,26 @@ halo2_proofs = { version = "0.3.2", optional = true }
 tracing = { version = "0.1.44", optional = true }
 rand = { version = "0.8.5", optional = true }
 
-# Misc
-lazy_static = "1.5.0"
-
-# These are used just for the integration tests
-[dev-dependencies]
-smol = "2.0.2"
-
-# We need to disable random using "custom" which makes the crate a noop
-# so the wasm32-unknown-unknown target is enabled.
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2.8", features = ["custom"] }
-darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
-
 [features]
 default = []
 no-entrypoint = []
 client = [
     "darkfi",
     "darkfi-serial/async",
-
     "rand",
     "chacha20poly1305",
     "tracing",
     "halo2_proofs",
 ]
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2.8", features = ["custom"] }
+darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
+
 [lints]
 workspace = true
+
+# These are used just for the integration tests
+[dev-dependencies]
+smol = "2.0.2"
+rand = "0.8.5"

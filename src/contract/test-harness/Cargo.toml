@@ -10,6 +10,7 @@ darkfi = {path = "../../../", features = ["zk"]}
 darkfi-sdk = {path = "../../sdk"}
 darkfi-serial = {path = "../../serial", features = ["crypto"]}
 darkfi_native_token_contract = {path = "../native_token", features = ["client", "no-entrypoint"]}
+darkfi_deployooor_contract = {path = "../deployooor", features = ["client", "no-entrypoint"]}
 
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }
@@ -18,6 +19,10 @@ rand = "0.8.5"
 [[bin]]
 name = "test_native_token"
 path = "src/native_token.rs"
+
+[[bin]]
+name = "test_deployooor"
+path = "src/deployooor.rs"
 
 [lints]
 workspace = true

@@ -1,0 +1,81 @@
+# Burn circuit - proves spending with nullifier reveal
+# PRIVACY FIRST: All operations use Poseidon hash, no EC operations
+# This eliminates heap bugs from EC operations
+# Uses Schnorr-style signature where public_key = poseidon_hash(secret)
+k = 11;
+field = "pallas";
+
+constant "Burn_V1" {
+    # No EC constants needed - using Poseidon-only design
+}
+
+witness "Burn_V1" {
+    # Secret key for spending
+    Base coin_secret,
+    # Coin attributes
+    Base coin_value,
+    Base coin_token_id,
+    Base coin_spend_hook,
+    Base coin_user_data,
+    Base coin_blind,
+    # Blinding factors
+    Base value_blind,
+    Base token_id_blind,
+    Base user_data_blind,
+    # Merkle proof
+    Uint32 leaf_pos,
+    MerklePath path,
+    # Signature secret key (Schnorr-style)
+    Base signature_secret,
+}
+
+circuit "Burn_V1" {
+    # Derive public key from secret using Poseidon (not EC)
+    # Schnorr-style: public_key = poseidon_hash(secret)
+    pub = poseidon_hash(coin_secret);
+
+    # Coin hash using derived public key (single field element, not EC point)
+    coin = poseidon_hash(
+        pub,
+        coin_value,
+        coin_token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+
+    # Nullifier - breaks the link between mint and burn
+    # nullifier = poseidon_hash(coin_secret, coin)
+    nullifier = poseidon_hash(coin_secret, coin);
+    constrain_instance(nullifier);
+
+    # Value commitment - Poseidon hash (not Pedersen)
+    # Commitment: poseidon_hash(value, blind)
+    value_commit = poseidon_hash(coin_value, value_blind);
+    constrain_instance(value_commit);
+
+    # Token ID commitment
+    token_commit = poseidon_hash(coin_token_id, token_id_blind);
+    constrain_instance(token_commit);
+
+    # Merkle proof - verify coin exists in the Merkle tree
+    # Uses zero_cond trick for dummy zero-value inputs
+    coin_incl = zero_cond(coin_value, coin);
+    root = merkle_root(leaf_pos, path, coin_incl);
+    constrain_instance(root);
+
+    # Encrypted user data
+    user_data_enc = poseidon_hash(coin_user_data, user_data_blind);
+    constrain_instance(user_data_enc);
+
+    # Reveal spend hook (can be used for cross-contract composition)
+    constrain_instance(coin_spend_hook);
+
+    # Derive signature public key using Schnorr-style Poseidon hash
+    # signature_public = poseidon_hash(signature_secret)
+    signature_public = poseidon_hash(signature_secret);
+    constrain_instance(signature_public);
+
+    # Range proof - ensure value is valid
+    range_check(64, coin_value);
+}

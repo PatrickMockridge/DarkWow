@@ -1,0 +1,56 @@
+# TokenMint circuit - creates a new token type
+# PRIVACY FIRST: All operations use Poseidon hash, no EC operations
+# This is how MoneyV3 handles wrapped tokens, stablecoins, etc.
+k = 11;
+field = "pallas";
+
+constant "TokenMint_V1" {
+    # No EC constants needed - using Poseidon-only design
+}
+
+witness "TokenMint_V1" {
+    # Authority parent - who has permission to mint this token
+    Base token_auth_parent,
+    # User data for the token
+    Base token_user_data,
+    # Blinding factor for token ID
+    Base token_blind,
+    # Coin attributes for initial mint
+    Base coin_public,
+    Base coin_value,
+    Base coin_token_id,
+    Base coin_spend_hook,
+    Base coin_user_data,
+    Base coin_blind,
+    # Value commitment blinds
+    Base value_blind,
+}
+
+circuit "TokenMint_V1" {
+    # Derive token ID from auth_parent, user_data, and blind
+    # This creates a commitment that hides the token identity
+    # Token ID = poseidon_hash(auth_parent, user_data, blind)
+    token_id = poseidon_hash(token_auth_parent, token_user_data, token_blind);
+    constrain_instance(token_id);
+
+    # The token auth parent is revealed (public authority)
+    constrain_instance(token_auth_parent);
+
+    # Create the coin with this token_id
+    coin = poseidon_hash(
+        coin_public,
+        coin_value,
+        token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+    constrain_instance(coin);
+
+    # Value commitment using Poseidon hash
+    value_commit = poseidon_hash(coin_value, value_blind);
+    constrain_instance(value_commit);
+
+    # Range proof for value
+    range_check(64, coin_value);
+}

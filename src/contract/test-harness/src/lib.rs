@@ -16,9 +16,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! NativeToken contract test harness
+//! DarkFi Contract Test Harness
 //!
-//! This is a simple isolated test harness for the NativeToken contract.
-//! No blockchain overlay needed - just tests the client API directly.
+//! Simple isolated test harnesses for DarkFi contracts.
+//! No blockchain overlay needed - just tests the client APIs directly.
 
+pub mod contract_graph;
 pub mod native_token;
+pub mod deployooor;

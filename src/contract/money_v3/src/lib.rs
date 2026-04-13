@@ -1,0 +1,185 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Money V3 - DeFi Token Contract (ERC-20 style)
+//!
+//! Design Philosophy: PRIVACY FIRST, COMPOSABILITY SECOND, SIMPLICITY THIRD
+//!
+//! MoneyV3 is the privacy-focused token contract for DeFi use cases:
+//! - Wrapped tokens (wBTC, wETH, etc.)
+//! - Stablecoins (USD, EUR, etc.)
+//! - ERC-20 style tokens
+//!
+//! NativeToken handles consensus (PoW rewards, fees).
+//! MoneyV3 handles DeFi tokens (no consensus responsibility).
+//!
+//! ## Token Model
+//!
+//! Unlike NativeToken which has a single native token (DARK),
+//! MoneyV3 supports MULTIPLE tokens via token authorization.
+//!
+//! ## Key Differences from NativeToken
+//!
+//! | Aspect | NativeToken | MoneyV3 |
+//! |--------|-------------|---------|
+//! | Purpose | Consensus (PoW rewards, fees) | DeFi tokens |
+//! | Tokens | Single (DARK) | Multiple (via AuthTokenMint) |
+//! | Authorization | None | AuthTokenMint required |
+//! | Privacy | Full privacy | Full privacy |
+//!
+//! ## No EC = No Heap Bugs
+//!
+//! Money V2 had a heap bug caused by EC operations. Money V3 eliminates
+//! ALL EC operations by using Poseidon hash for everything.
+//!
+//! ## Privacy Architecture
+//!
+//! ```text
+//! TokenMint: token_id = poseidon_hash(auth_parent, user_data, blind)
+//! Mint:      C = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)
+//! Burn:      N = poseidon_hash(secret, C)  // Nullifier breaks mint<->burn link
+//! ```
+//!
+//! ## Contract Functions
+//!
+//! | Function | Opcode | Purpose |
+//! |----------|--------|---------|
+//! | TokenMintV1 | 0x00 | Create new token type (stablecoin, wrapped, etc.) |
+//! | AuthTokenMintV1 | 0x01 | Authorization to mint new tokens |
+//! | MintV1 | 0x02 | Mint tokens of existing token type |
+//! | BurnV1 | 0x03 | Burn/destroy tokens |
+//! | TransferV1 | 0x04 | Private token transfer |
+
+use darkfi_sdk::{error::ContractError, pasta::pallas};
+
+/// Functions available in the contract
+#[repr(u8)]
+#[derive(Debug)]
+pub enum MoneyV3Function {
+    /// Create a new token type (stablecoin, wrapped token, etc.)
+    TokenMintV1 = 0x00,
+    /// Authorization to mint tokens of an existing token type
+    AuthTokenMintV1 = 0x01,
+    /// Mint tokens of an existing token type
+    MintV1 = 0x02,
+    /// Burn/destroy tokens
+    BurnV1 = 0x03,
+    /// Private token transfer
+    TransferV1 = 0x04,
+}
+
+impl TryFrom<u8> for MoneyV3Function {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
+        match b {
+            0x00 => Ok(Self::TokenMintV1),
+            0x01 => Ok(Self::AuthTokenMintV1),
+            0x02 => Ok(Self::MintV1),
+            0x03 => Ok(Self::BurnV1),
+            0x04 => Ok(Self::TransferV1),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
+}
+
+/// Internal contract errors
+pub mod error;
+
+/// Call parameters definitions
+pub mod model;
+
+#[cfg(not(feature = "no-entrypoint"))]
+/// WASM entrypoint functions
+pub mod entrypoint;
+
+#[cfg(feature = "client")]
+/// Client API for proof generation
+pub mod client;
+
+// ============================================================================
+// DATABASE TREES
+// ============================================================================
+
+/// Stores coin data indexed by coin_id
+pub const MONEY_V3_CONTRACT_COINS_TREE: &str = "coins";
+/// Stores nullifiers to prevent double-spending
+pub const MONEY_V3_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
+/// Stores Merkle tree of all coins
+pub const MONEY_V3_CONTRACT_MERKLE_TREE: &str = "merkle";
+/// Stores contract info
+pub const MONEY_V3_CONTRACT_INFO_TREE: &str = "info";
+
+/// Stores coin roots for historical verification
+pub const MONEY_V3_CONTRACT_COIN_ROOTS_TREE: &str = "coin_roots";
+/// Stores nullifier roots for historical verification
+pub const MONEY_V3_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
+/// Stores accumulated fees per block height
+pub const MONEY_V3_CONTRACT_FEES_TREE: &str = "fees";
+
+// ============================================================================
+// DATABASE KEYS
+// ============================================================================
+
+/// Version key for database migrations
+pub const MONEY_V3_CONTRACT_DB_VERSION: &[u8] = b"db_version";
+/// Genesis coin root (initial Merkle root)
+pub const MONEY_V3_CONTRACT_GENESIS_ROOT: &[u8] = b"genesis_root";
+/// Total supply tracking key
+pub const MONEY_V3_CONTRACT_TOTAL_SUPPLY: &[u8] = b"total_supply";
+/// Latest coin Merkle root
+pub const MONEY_V3_CONTRACT_LATEST_COIN_ROOT: &[u8] = b"last_coin_root";
+/// Latest nullifier root
+pub const MONEY_V3_CONTRACT_LATEST_NULLIFIER_ROOT: &[u8] = b"last_nullifier_root";
+/// Coin Merkle tree data key
+pub const MONEY_V3_CONTRACT_COIN_MERKLE_TREE: &[u8] = b"coin_merkle_tree";
+
+// ============================================================================
+// EMPTY TREE ROOTS
+// ============================================================================
+
+/// Precalculated root hash for a tree containing only a single Fp::ZERO coin.
+/// Used to save gas.
+pub const EMPTY_COINS_TREE_ROOT: [u8; 32] = [
+    0xb8, 0xc1, 0x07, 0x5a, 0x80, 0xa8, 0x09, 0x65, 0xc2, 0x39, 0x8f, 0x71, 0x1f, 0xe7, 0x3e, 0x05,
+    0xb4, 0xed, 0xae, 0xde, 0xf1, 0x62, 0xf2, 0x61, 0xd4, 0xee, 0xd7, 0xcd, 0x72, 0x74, 0x8d, 0x17,
+];
+
+// ============================================================================
+// ZK CIRCUIT NAMESPACES
+// ============================================================================
+
+/// zkas token mint circuit namespace (create new token type)
+pub const MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1: &str = "TokenMint_V1";
+/// zkas auth token mint circuit namespace (authorize minting)
+pub const MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1: &str = "AuthTokenMint_V1";
+/// zkas mint circuit namespace (mint tokens of existing type)
+pub const MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
+/// zkas burn circuit namespace (for spending)
+pub const MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/// Maximum coins per transaction
+pub const MONEY_V3_MAX_COINS_PER_TX: usize = 16;
+/// Maximum value per coin (to prevent overflow)
+pub const MONEY_V3_MAX_COIN_VALUE: u64 = 1_000_000_000_000;
+/// Minimum coin value
+pub const MONEY_V3_MIN_COIN_VALUE: u64 = 1;

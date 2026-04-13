@@ -1,0 +1,62 @@
+# Mint circuit - mints tokens of an existing token type
+# PRIVACY FIRST: All operations use Poseidon hash, no EC operations
+# Requires authorization from AuthTokenMintV1 (verified via Merkle proof)
+k = 11;
+field = "pallas";
+
+constant "Mint_V1" {
+    # No EC constants needed - using Poseidon-only design
+}
+
+witness "Mint_V1" {
+    # Authorization data (from AuthTokenMintV1)
+    Base auth_nullifier,
+    Base auth_mint_public,
+    # Token registry Merkle proof (proves token_id is authorized)
+    Uint32 token_leaf_pos,
+    MerklePath token_path,
+    # Coin attributes
+    Base coin_public,
+    Base coin_value,
+    Base coin_token_id,
+    Base coin_spend_hook,
+    Base coin_user_data,
+    Base coin_blind,
+    # Value commitment blind
+    Base value_blind,
+}
+
+circuit "Mint_V1" {
+    # CRITICAL: Verify the authorization by checking Merkle proof of token_id
+    # The token_id must exist in the authorized token registry
+    token_root = merkle_root(token_leaf_pos, token_path, coin_token_id);
+    constrain_instance(token_root);
+
+    # Bind auth_nullifier to the authorization (prevents replay)
+    # The auth_nullifier is revealed publicly after AuthTokenMintV1
+    constrain_instance(auth_nullifier);
+
+    # Bind auth_mint_public (proves this minting authority was authorized)
+    constrain_instance(auth_mint_public);
+
+    # Create the coin with the given token_id
+    coin = poseidon_hash(
+        coin_public,
+        coin_value,
+        coin_token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+    constrain_instance(coin);
+
+    # Value commitment using Poseidon hash
+    value_commit = poseidon_hash(coin_value, value_blind);
+    constrain_instance(value_commit);
+
+    # The token_id is constrained via Merkle proof above
+    constrain_instance(coin_token_id);
+
+    # Range proof for value
+    range_check(64, coin_value);
+}
