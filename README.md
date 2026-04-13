@@ -7,13 +7,30 @@
 
 ## Fork Name: "Jailbroken"
 
-**This fork is called "darkfi-jailbroken" because we broke free from the upstream's governance lock-in.**
+**This fork is called "darkfi-jailbroken" because we broke free from upstream's security flaws and governance lock-in.**
 
-Upstream DarkFi has a problematic genesis block setup:
+### Security Advantage Over Upstream
+
+**Upstream DarkFi has critical ZK circuit heap bugs** caused by elliptic curve (EC) operations in their circuits:
+
+| Upstream Circuit | EC Operations | Status |
+|-----------------|---------------|--------|
+| Fee_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
+| Mint_V2 | ec_mul_short, ec_mul, ec_add | **BUGGY** |
+| Burn_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
+| AuthTokenMint_V2 | ec_mul_base | **BUGGY** |
+
+**This fork uses Poseidon-only circuits.** EC heap bugs cannot occur in pure Poseidon arithmetic — there is no memory corruption vector when no EC operations exist.
+
+See [Contract Standards](doc/src/dev/contracts/standards.md) for full analysis.
+
+### Governance Problems
+
+Upstream DarkFi also has problematic governance:
+
 - **Pre-mine**: Early investors, team, and SAFT participants received DARK tokens at genesis
 - **Venture Capital Influence**: Large token holders can dominate governance proposals
 - **Whale Problem**: Token concentration allows wealthy entities to control DAO voting
-- **Limited Participation**: True Satoshi-style voluntary participation was not possible
 
 **We removed Money V1, DAO V1, and all pre-mined/controlled token distributions.**
 **We run on pure Proof of Work - the only legitimate sybil resistance.**

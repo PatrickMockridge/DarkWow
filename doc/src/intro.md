@@ -45,9 +45,55 @@ Key architectural documents:
 - [Transactions](arch/tx_lifetime.md) — Transaction lifecycle and ZK verification
 - [ZK Circuits](zkas/index.md) — Zero-knowledge proof system
 
-## Security
+## Security Status
 
 All contracts are **EXPERIMENTAL** and **UNAUDITED**.
+
+This fork addresses **critical security vulnerabilities** in upstream DarkFi's ZK circuit design.
+
+### ZK Circuit Heap Bugs: Why Poseidon-Only
+
+Upstream DarkFi's Money V1, V2, and related contracts use **elliptic curve (EC) operations** in ZK circuits. These operations have caused heap memory corruption bugs:
+
+| Circuit | EC Operations | Status |
+|---------|-------------|--------|
+| Fee_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
+| Mint_V2 | ec_mul_short, ec_mul, ec_add | **BUGGY** |
+| Burn_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
+| AuthTokenMint_V2 | ec_mul_base | **BUGGY** |
+
+**This fork uses Poseidon-only circuits.** EC heap bugs cannot occur in pure Poseidon arithmetic — there is no memory corruption vector when no EC operations exist.
+
+See [Contract Standards](dev/contracts/standards.md) for full analysis of EC vs Poseidon tradeoffs.
+
+### Why Poseidon is Sufficient for DarkFi
+
+DarkFi uses **burn-mint** (not transfer-with-change):
+
+```
+TRADITIONAL (Pedersen/homomorphic):
+  Spend coin A → Receive coin B
+  Need: C_change = C_input - C_output  ← Requires EC addition
+
+DARKFI (burn-mint):
+  Burn coin A (emit nullifier)
+  Mint coin B (new commitment)
+  Value balance checked at contract layer
+  No EC addition needed
+```
+
+For the full security rationale, see [standards.md](dev/contracts/standards.md).
+
+### Cold vs Hot Circuits
+
+| Circuit Type | Example | Design Choice |
+|-------------|---------|---------------|
+| **Hot** (frequent) | open_position, mint_stable | Poseidon-only (no bugs) |
+| **Cold** (rare) | governance_report, accrue_interest | BaseDiv for precision |
+
+Cold circuits execute monthly and can use more complex arithmetic. Hot circuits execute thousands of times per day and must be bug-free.
+
+### Known Security Issues
 
 Known security issues are documented in [Security Analysis](arch/security-analysis.md).
 
