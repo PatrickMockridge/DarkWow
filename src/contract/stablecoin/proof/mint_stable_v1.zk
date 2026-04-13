@@ -1,10 +1,8 @@
 k = 11;
 field = "pallas";
 
+# No EC constants needed - using Poseidon only
 constant "MintStableV1" {
-    EcFixedPointBase NULLIFIER_K,
-    EcFixedPointShort VALUE_COMMIT_VALUE,
-    EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
 witness "MintStableV1" {
@@ -21,35 +19,41 @@ witness "MintStableV1" {
     Base old_debt,
     Base new_collateral,
     Base new_debt,
-    Scalar collateral_blind,
-    Scalar debt_blind,
+    Base collateral_blind,
+    Base debt_blind,
 }
 
 circuit "MintStableV1" {
+    # Derive owner public key (Poseidon hash, no EC)
+    owner_pub = poseidon_hash(owner_secret);
+
     # Verify nullifier matches
     nullifier_check = poseidon_hash(owner_secret, old_commitment);
     constrain_instance(nullifier_check);
     constrain_equal_base(nullifier_check, position_nullifier);
 
     # Verify new debt is old debt + mint_amount
-    # base_add exists in zkVM (opcode 0x30)
     mint_check = base_add(old_debt, mint_amount);
     constrain_equal_base(mint_check, new_debt);
 
     # Verify collateral unchanged (for simple minting)
     constrain_equal_base(old_collateral, new_collateral);
 
-    # New commitment verification
-    # Pedersen commitment: C = value * G + blind * H
-    collateral_commit = ec_mul_short(new_collateral, VALUE_COMMIT_VALUE);
-    collateral_random = ec_mul(collateral_blind, VALUE_COMMIT_RANDOM);
-    collateral_total = ec_add(collateral_commit, collateral_random);
-    collateral_x = ec_get_x(collateral_total);
+    # New commitment verification using Poseidon (no Pedersen, no EC)
+    # old_commitment = poseidon_hash(old_collateral, old_debt, owner_pub, collateral_blind, debt_blind)
+    # But we just need to verify transition: old → new
 
-    debt_commit = ec_mul_short(new_debt, VALUE_COMMIT_VALUE);
-    debt_random = ec_mul(debt_blind, VALUE_COMMIT_RANDOM);
-    debt_total = ec_add(debt_commit, debt_random);
-    debt_x = ec_get_x(debt_total);
+    # Compute old commitment components
+    old_collateral_commit = poseidon_hash(old_collateral, collateral_blind);
+    old_debt_commit = poseidon_hash(old_debt, debt_blind);
+    old_position = poseidon_hash(old_collateral_commit, old_debt_commit, owner_pub);
+    constrain_equal_base(old_position, old_commitment);
+
+    # Compute new commitment components
+    new_collateral_commit = poseidon_hash(new_collateral, collateral_blind);
+    new_debt_commit = poseidon_hash(new_debt, debt_blind);
+    new_position = poseidon_hash(new_collateral_commit, new_debt_commit, owner_pub);
+    constrain_equal_base(new_position, new_commitment);
 
     # Range check for mint_amount
     range_check(64, mint_amount);

@@ -30,7 +30,7 @@
 //! - TransferV1: Private token transfer
 
 use darkfi_sdk::{
-    crypto::{note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, MerkleNode},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, MerkleNode},
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
@@ -38,6 +38,9 @@ use darkfi_serial::{SerialDecodable, SerialEncodable};
 // async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
 use darkfi_serial::async_trait;
+
+// Re-export for use in client modules
+pub use darkfi_sdk::crypto::note::AeadEncryptedNote;
 
 // ============================================================================
 // TOKEN/SYMBOLIC CONSTANTS
@@ -69,6 +72,11 @@ impl Nullifier {
     /// Reference the raw inner base field element
     pub fn inner(&self) -> pallas::Base {
         self.0
+    }
+
+    /// Create a Nullifier directly from a base field element (for client use)
+    pub fn from_base(base: pallas::Base) -> Self {
+        Nullifier(base)
     }
 
     /// Convert into 32 raw bytes

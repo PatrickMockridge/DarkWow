@@ -215,7 +215,7 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 
 /// Metadata for AuthTokenMintV1
 fn auth_token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
-    let self_ = &calls[call_idx];
+    let self_ = &calls[call_idx].data;
     let params: AuthTokenMintParamsV1 = deserialize(&self_.data[1..]).unwrap();
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -238,7 +238,7 @@ fn auth_token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Da
 
 /// Metadata for MintV1
 fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
-    let self_ = &calls[call_idx];
+    let self_ = &calls[call_idx].data;
     let params: MintParamsV1 = deserialize(&self_.data[1..]).unwrap();
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];

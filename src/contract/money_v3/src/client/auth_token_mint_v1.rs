@@ -26,6 +26,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
+    bridgetree::Hashable,
     crypto::{pasta_prelude::*, poseidon_hash, MerkleNode},
     pasta::pallas,
 };

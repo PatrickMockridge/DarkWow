@@ -106,3 +106,9 @@ impl From<MoneyV3Error> for ContractError {
         ContractError::Custom(e as u32)
     }
 }
+
+impl From<MoneyV3Error> for darkfi::Error {
+    fn from(e: MoneyV3Error) -> Self {
+        darkfi::Error::from(ContractError::from(e))
+    }
+}

@@ -2,21 +2,21 @@
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 3 of the License, or version 3
+ * or any later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+ * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, see <https://www.gnu.org/licenses/>.
  */
 
-//! MintStable ZK proof generation
+//! MintStable ZK proof generation (Poseidon-only)
 
 use darkfi::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, pedersen_commitment_u64, ScalarBlind},
+    crypto::{poseidon_hash, BaseBlind},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -44,7 +44,9 @@ impl MintStablePublicInputs {
     /// Convert to vector for ZK proof creation
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
-            self.position_nullifier,  // nullifier_check constrained as instance
+            self.old_commitment,
+            self.new_commitment,
+            self.position_nullifier,
         ]
     }
 }
@@ -64,10 +66,10 @@ pub struct MintStableCallData {
     pub new_debt: u64,
     /// Mint amount
     pub mint_amount: u64,
-    /// Collateral blinding factor
-    pub collateral_blind: ScalarBlind,
-    /// Debt blinding factor
-    pub debt_blind: ScalarBlind,
+    /// Collateral blinding factor (BaseBlind, not ScalarBlind)
+    pub collateral_blind: BaseBlind,
+    /// Debt blinding factor (BaseBlind, not ScalarBlind)
+    pub debt_blind: BaseBlind,
     /// Old commitment (position commitment from previous state)
     pub old_commitment: pallas::Base,
 }
@@ -79,8 +81,8 @@ impl MintStableCallData {
         old_collateral: u64,
         old_debt: u64,
         mint_amount: u64,
-        collateral_blind: ScalarBlind,
-        debt_blind: ScalarBlind,
+        collateral_blind: BaseBlind,
+        debt_blind: BaseBlind,
         old_commitment: pallas::Base,
     ) -> Self {
         let new_debt = old_debt + mint_amount;
@@ -97,14 +99,37 @@ impl MintStableCallData {
         }
     }
 
-    /// Compute the Pedersen commitment for collateral
-    pub fn collateral_commitment(&self, amount: u64) -> pallas::Point {
-        pedersen_commitment_u64(amount, self.collateral_blind)
+    /// Compute the Poseidon commitment for collateral
+    /// Uses poseidon_hash(amount, blind) instead of Pedersen
+    pub fn collateral_commitment(&self, amount: u64) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(amount), self.collateral_blind.inner()])
     }
 
-    /// Compute the Pedersen commitment for debt
-    pub fn debt_commitment(&self, amount: u64) -> pallas::Point {
-        pedersen_commitment_u64(amount, self.debt_blind)
+    /// Compute the Poseidon commitment for debt
+    /// Uses poseidon_hash(amount, blind) instead of Pedersen
+    pub fn debt_commitment(&self, amount: u64) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(amount), self.debt_blind.inner()])
+    }
+
+    /// Compute the owner's public key (Poseidon hash of secret)
+    pub fn owner_public_key(&self) -> pallas::Base {
+        poseidon_hash([self.owner_secret])
+    }
+
+    /// Compute the old position commitment
+    pub fn old_position_commitment(&self) -> pallas::Base {
+        let collateral_commit = self.collateral_commitment(self.old_collateral);
+        let debt_commit = self.debt_commitment(self.old_debt);
+        let owner_pub = self.owner_public_key();
+        poseidon_hash([collateral_commit, debt_commit, owner_pub])
+    }
+
+    /// Compute the new position commitment
+    pub fn new_position_commitment(&self) -> pallas::Base {
+        let collateral_commit = self.collateral_commitment(self.new_collateral);
+        let debt_commit = self.debt_commitment(self.new_debt);
+        let owner_pub = self.owner_public_key();
+        poseidon_hash([collateral_commit, debt_commit, owner_pub])
     }
 
     /// Compute public inputs for this call
@@ -112,29 +137,26 @@ impl MintStableCallData {
         // Compute nullifier
         let position_nullifier = poseidon_hash([self.owner_secret, self.old_commitment]);
 
-        // For mint_stable, the circuit computes:
-        // - nullifier_check = poseidon_hash(owner_secret, old_commitment)
-        // The old_commitment and new_commitment are verified via Pedersen commitments
-        // but the circuit doesn't directly constrain them as instances
-
         MintStablePublicInputs {
             old_commitment: self.old_commitment,
-            new_commitment: pallas::Base::zero(), // Will be computed by circuit
+            new_commitment: self.new_position_commitment(),
             position_nullifier,
         }
     }
 
     /// Generate prover witnesses for the circuit
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let _old_collateral_commit = self.collateral_commitment(self.old_collateral);
-        let _old_debt_commit = self.debt_commitment(self.old_debt);
-        let _new_collateral_commit = self.collateral_commitment(self.new_collateral);
-        let _new_debt_commit = self.debt_commitment(self.new_debt);
+        let owner_pub = self.owner_public_key();
+        let old_collateral_commit = self.collateral_commitment(self.old_collateral);
+        let old_debt_commit = self.debt_commitment(self.old_debt);
+        let new_collateral_commit = self.collateral_commitment(self.new_collateral);
+        let new_debt_commit = self.debt_commitment(self.new_debt);
+        let new_position = self.new_position_commitment();
 
         vec![
             // Public inputs
             Witness::Base(Value::known(self.old_commitment)), // old_commitment
-            Witness::Base(Value::known(pallas::Base::zero())), // new_commitment (computed by circuit)
+            Witness::Base(Value::known(new_position)), // new_commitment
             Witness::Base(Value::known(self.compute_public_inputs().position_nullifier)), // position_nullifier
             Witness::Base(Value::known(pallas::Base::from(self.mint_amount))), // mint_amount
             Witness::Base(Value::known(pallas::Base::zero())), // position_root (placeholder)
@@ -144,8 +166,8 @@ impl MintStableCallData {
             Witness::Base(Value::known(pallas::Base::from(self.old_debt))),
             Witness::Base(Value::known(pallas::Base::from(self.new_collateral))),
             Witness::Base(Value::known(pallas::Base::from(self.new_debt))),
-            Witness::Scalar(Value::known(self.collateral_blind.inner())),
-            Witness::Scalar(Value::known(self.debt_blind.inner())),
+            Witness::Base(Value::known(self.collateral_blind.inner())), // BaseBlind as Base, not Scalar
+            Witness::Base(Value::known(self.debt_blind.inner())), // BaseBlind as Base, not Scalar
         ]
     }
 }

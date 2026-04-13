@@ -41,7 +41,6 @@ members = [
     "src/serial/derive",
     "src/serial/derive-internal",
 
-    "src/contract/test-harness",
     "src/contract/money_v2",
     "src/contract/native_token",
     "src/contract/darktoshi_dice",
@@ -72,6 +71,7 @@ members = [
     "src/contract/tender",
     "src/contract/labor_market",
     "src/contract/game_room",
+    "src/contract/test-harness",
 
     "example/dchat/dchatd",
 ]

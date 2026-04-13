@@ -5,11 +5,15 @@ authors = ["Dyne.org foundation <foundation@dyne.org>"]
 license = "AGPL-3.0-only"
 edition = "2021"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 darkfi = {path = "../../../", features = ["zk"]}
 darkfi-sdk = {path = "../../sdk"}
 darkfi-serial = {path = "../../serial", features = ["crypto"]}
 darkfi_native_token_contract = {path = "../native_token", features = ["client", "no-entrypoint"]}
+darkfi_money_v3_contract = {path = "../money_v3", features = ["client", "no-entrypoint"]}
 darkfi_deployooor_contract = {path = "../deployooor", features = ["client", "no-entrypoint"]}
 
 tracing = "0.1.44"

@@ -2,21 +2,21 @@
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 3 of the License, or version 3
+ * or any later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+ * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, see <https://www.gnu.org/licenses/>.
  */
 
-//! OpenPosition ZK proof generation
+//! OpenPosition ZK proof generation (Poseidon-only)
 
 use darkfi::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{pasta_prelude::*, poseidon_hash, pedersen_commitment_u64, PublicKey, SecretKey, ScalarBlind},
+    crypto::{poseidon_hash, BaseBlind},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -32,7 +32,7 @@ use rand::rngs::OsRng;
 /// OpenPosition circuit public inputs (in order of constrain_instance)
 #[derive(Debug, Clone)]
 pub struct OpenPositionPublicInputs {
-    /// Position commitment = poseidon_hash(collateral_x, collateral_y, debt_x, debt_y, owner_pub_x, owner_pub_y)
+    /// Position commitment = poseidon_hash(collateral_commit, debt_commit, owner_pub, collateral_type)
     pub position_commitment: pallas::Base,
     /// Nullifier = poseidon_hash(owner_secret, position_commitment)
     pub position_nullifier: pallas::Base,
@@ -52,98 +52,103 @@ impl OpenPositionPublicInputs {
 /// Input data for OpenPosition proof generation
 #[derive(Debug, Clone)]
 pub struct OpenPositionCallData {
-    /// Owner's secret key
-    pub owner_secret: SecretKey,
-    /// Owner's public key (derived from secret)
-    pub owner_public: PublicKey,
+    /// Owner's secret key (as pallas::Base field element, not SecretKey)
+    pub owner_secret: pallas::Base,
     /// Collateral amount (u64)
     pub collateral_amount: u64,
     /// Debt amount (u64)
     pub debt_amount: u64,
-    /// Collateral type
+    /// Collateral type (as pallas::Base field element)
     pub collateral_type: pallas::Base,
-    /// Collateral blinding factor
-    pub collateral_blind: ScalarBlind,
-    /// Debt blinding factor
-    pub debt_blind: ScalarBlind,
+    /// Collateral blinding factor (BaseBlind, not ScalarBlind)
+    pub collateral_blind: BaseBlind,
+    /// Debt blinding factor (BaseBlind, not ScalarBlind)
+    pub debt_blind: BaseBlind,
 }
 
 impl OpenPositionCallData {
     /// Create new call data with random blinds
     pub fn new(
-        owner_secret: SecretKey,
+        owner_secret: pallas::Base,
         collateral_amount: u64,
         debt_amount: u64,
         collateral_type: pallas::Base,
     ) -> Self {
-        let owner_public = PublicKey::from_secret(owner_secret);
-        let collateral_blind = ScalarBlind::random(&mut OsRng);
-        let debt_blind = ScalarBlind::random(&mut OsRng);
+        let collateral_blind = BaseBlind::random(&mut OsRng);
+        let debt_blind = BaseBlind::random(&mut OsRng);
 
-        Self { owner_secret, owner_public, collateral_amount, debt_amount, collateral_type, collateral_blind, debt_blind }
+        Self {
+            owner_secret,
+            collateral_amount,
+            debt_amount,
+            collateral_type,
+            collateral_blind,
+            debt_blind,
+        }
     }
 
-    /// Compute the Pedersen commitment for collateral
-    pub fn collateral_commitment(&self) -> pallas::Point {
-        pedersen_commitment_u64(self.collateral_amount, self.collateral_blind)
+    /// Compute the Poseidon commitment for collateral
+    /// Uses poseidon_hash(amount, blind) instead of Pedersen
+    pub fn collateral_commitment(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(self.collateral_amount), self.collateral_blind.inner()])
     }
 
-    /// Compute the Pedersen commitment for debt
-    pub fn debt_commitment(&self) -> pallas::Point {
-        pedersen_commitment_u64(self.debt_amount, self.debt_blind)
+    /// Compute the Poseidon commitment for debt
+    /// Uses poseidon_hash(amount, blind) instead of Pedersen
+    pub fn debt_commitment(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(self.debt_amount), self.debt_blind.inner()])
+    }
+
+    /// Compute the owner's public key (Poseidon hash of secret)
+    pub fn owner_public_key(&self) -> pallas::Base {
+        poseidon_hash([self.owner_secret])
+    }
+
+    /// Compute the position commitment
+    pub fn position_commitment(&self) -> pallas::Base {
+        let collateral_commit = self.collateral_commitment();
+        let debt_commit = self.debt_commitment();
+        let owner_pub = self.owner_public_key();
+        poseidon_hash([collateral_commit, debt_commit, owner_pub, self.collateral_type])
+    }
+
+    /// Compute the position nullifier
+    pub fn position_nullifier(&self) -> pallas::Base {
+        let pos_commit = self.position_commitment();
+        poseidon_hash([self.owner_secret, pos_commit])
     }
 
     /// Compute public inputs for this call
     pub fn compute_public_inputs(&self) -> OpenPositionPublicInputs {
-        let collateral_commit = self.collateral_commitment();
-        let debt_commit = self.debt_commitment();
-
-        let collateral_coords = collateral_commit.to_affine().coordinates().unwrap();
-        let debt_coords = debt_commit.to_affine().coordinates().unwrap();
-
-        let (owner_pub_x, owner_pub_y) = self.owner_public.xy();
-
-        // Compute position commitment
-        let position_commitment = poseidon_hash(
-            [*collateral_coords.x(), *debt_coords.x(), owner_pub_x, owner_pub_y]
-        );
-
-        // Compute nullifier
-        let position_nullifier = poseidon_hash([self.owner_secret.inner(), position_commitment]);
-
-        OpenPositionPublicInputs { position_commitment, position_nullifier }
+        OpenPositionPublicInputs {
+            position_commitment: self.position_commitment(),
+            position_nullifier: self.position_nullifier(),
+        }
     }
 
     /// Generate prover witnesses for the circuit
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        let owner_pub = self.owner_public_key();
         let collateral_commit = self.collateral_commitment();
         let debt_commit = self.debt_commitment();
-
-        let collateral_coords = collateral_commit.to_affine().coordinates().unwrap();
-        let debt_coords = debt_commit.to_affine().coordinates().unwrap();
-
-        let (owner_pub_x, owner_pub_y) = self.owner_public.xy();
-        let position_commitment = poseidon_hash(
-            [*collateral_coords.x(), *debt_coords.x(), owner_pub_x, owner_pub_y]
-        );
-        let position_nullifier = poseidon_hash([self.owner_secret.inner(), position_commitment]);
+        let position_commitment = self.position_commitment();
+        let position_nullifier = self.position_nullifier();
 
         vec![
             // Public inputs as witnesses (for constrain_instance)
             Witness::Base(Value::known(position_commitment)),
-            Witness::Base(Value::known(owner_pub_x)),
-            Witness::Base(Value::known(owner_pub_y)),
+            Witness::Base(Value::known(owner_pub)),
             Witness::Base(Value::known(self.collateral_type)),
             Witness::Base(Value::known(position_nullifier)),
             // Merkle proof placeholders (not implemented yet - would need actual tree)
             Witness::Base(Value::known(pallas::Base::zero())),
             Witness::Base(Value::known(pallas::Base::zero())),
             // Private inputs
-            Witness::Base(Value::known(self.owner_secret.inner())),
+            Witness::Base(Value::known(self.owner_secret)),
             Witness::Base(Value::known(pallas::Base::from(self.collateral_amount))),
             Witness::Base(Value::known(pallas::Base::from(self.debt_amount))),
-            Witness::Scalar(Value::known(self.collateral_blind.inner())),
-            Witness::Scalar(Value::known(self.debt_blind.inner())),
+            Witness::Base(Value::known(self.collateral_blind.inner())),
+            Witness::Base(Value::known(self.debt_blind.inner())),
             // Merkle proof witnesses (4 levels)
             Witness::Base(Value::known(pallas::Base::zero())),
             Witness::Base(Value::known(pallas::Base::zero())),

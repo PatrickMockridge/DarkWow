@@ -22,5 +22,6 @@
 //! No blockchain overlay needed - just tests the client APIs directly.
 
 pub mod contract_graph;
+pub mod harness;
 pub mod native_token;
 pub mod deployooor;

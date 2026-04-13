@@ -1,10 +1,8 @@
 k = 11;
 field = "pallas";
 
+# No EC constants needed - using Poseidon only
 constant "LiquidateV1" {
-    EcFixedPointBase NULLIFIER_K,
-    EcFixedPointShort VALUE_COMMIT_VALUE,
-    EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
 witness "LiquidateV1" {
@@ -20,16 +18,31 @@ witness "LiquidateV1" {
 
     # Private inputs
     Base owner_secret,
-    Scalar collateral_blind,
-    Scalar debt_blind,
+    Base collateral_blind,
+    Base debt_blind,
     Base liquidator_reward,
 }
 
 circuit "LiquidateV1" {
+    # Derive owner public key (Poseidon hash, no EC)
+    owner_pub = poseidon_hash(owner_secret);
+
     # Verify nullifier matches
     nullifier_check = poseidon_hash(owner_secret, old_commitment);
     constrain_instance(nullifier_check);
     constrain_equal_base(nullifier_check, position_nullifier);
+
+    # Verify old commitment matches computed
+    old_collateral_commit = poseidon_hash(collateral_amount, collateral_blind);
+    old_debt_commit = poseidon_hash(debt_amount, debt_blind);
+    old_position = poseidon_hash(old_collateral_commit, old_debt_commit, owner_pub);
+    constrain_equal_base(old_position, old_commitment);
+
+    # Verify new commitment after liquidation
+    new_collateral_commit = poseidon_hash(new_collateral, collateral_blind);
+    new_debt_commit = poseidon_hash(debt_amount, debt_blind);
+    new_position = poseidon_hash(new_collateral_commit, new_debt_commit, owner_pub);
+    constrain_equal_base(new_position, new_commitment);
 
     # Calculate if position is undercollateralized
     # base_mul, base_add, base_sub all exist in zkVM

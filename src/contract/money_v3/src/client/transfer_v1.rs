@@ -34,7 +34,7 @@ use darkfi_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{Coin, CoinAttributes, Input, Nullifier, Output, TransferParamsV1};
+use crate::model::{AeadEncryptedNote, Coin, CoinAttributes, Input, Nullifier, Output, TransferParamsV1};
 
 /// Public inputs revealed after burn proof (part of transfer)
 pub struct TransferBurnRevealed {
@@ -75,6 +75,7 @@ impl TransferMintRevealed {
 }
 
 /// Input coin for transfer
+#[derive(Clone)]
 pub struct TransferCallInput {
     /// Value of the coin being transferred
     pub value: u64,
@@ -97,6 +98,7 @@ pub struct TransferCallInput {
 }
 
 /// Output coin for transfer
+#[derive(Clone)]
 pub struct TransferCallOutput {
     /// Recipient public key
     pub recipient: pallas::Base,
@@ -200,13 +202,19 @@ impl TransferCallBuilder {
             proofs.push(mint_proof);
 
             let token_commit = poseidon_hash([output.token_id, output.coin_blind]);
-            let note = Default::default(); // Transfer doesn't need note encryption
+            // Create placeholder note for output (real encryption would use recipient's public key)
+            let dummy_note = {
+                use darkfi_sdk::crypto::{PublicKey, SecretKey};
+                let ephem_secret = SecretKey::random(&mut OsRng);
+                let ephem_public = PublicKey::from_secret(ephem_secret);
+                AeadEncryptedNote { ciphertext: vec![], ephem_public }
+            };
 
             outputs.push(Output {
                 value_commit: poseidon_hash([pallas::Base::from(output.value), value_blind.inner()]),
                 token_commit,
                 coin: mint_coin,
-                note,
+                note: dummy_note,
             });
         }
 

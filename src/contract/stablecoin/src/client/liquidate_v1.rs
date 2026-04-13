@@ -2,21 +2,21 @@
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 3 of the License, or version 3
+ * or any later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+ * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Liquidate ZK proof generation
+//! Liquidate ZK proof generation (Poseidon-only)
 
 use darkfi::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, ScalarBlind},
+    crypto::{poseidon_hash, BaseBlind},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -44,7 +44,9 @@ impl LiquidatePublicInputs {
     /// Convert to vector for ZK proof creation
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
-            self.position_nullifier,  // nullifier_check constrained as instance
+            self.old_commitment,
+            self.new_commitment,
+            self.position_nullifier,
         ]
     }
 }
@@ -64,10 +66,10 @@ pub struct LiquidateCallData {
     pub current_price: u64,
     /// Reward to liquidator (seized collateral)
     pub liquidator_reward: u64,
-    /// Collateral blinding factor
-    pub collateral_blind: ScalarBlind,
-    /// Debt blinding factor
-    pub debt_blind: ScalarBlind,
+    /// Collateral blinding factor (BaseBlind, not ScalarBlind)
+    pub collateral_blind: BaseBlind,
+    /// Debt blinding factor (BaseBlind, not ScalarBlind)
+    pub debt_blind: BaseBlind,
     /// Old commitment (position commitment before liquidation)
     pub old_commitment: pallas::Base,
 }
@@ -81,8 +83,8 @@ impl LiquidateCallData {
         liquidation_penalty: u64,
         current_price: u64,
         liquidator_reward: u64,
-        collateral_blind: ScalarBlind,
-        debt_blind: ScalarBlind,
+        collateral_blind: BaseBlind,
+        debt_blind: BaseBlind,
         old_commitment: pallas::Base,
     ) -> Self {
         Self {
@@ -98,6 +100,39 @@ impl LiquidateCallData {
         }
     }
 
+    /// Compute the owner's public key (Poseidon hash of secret)
+    pub fn owner_public_key(&self) -> pallas::Base {
+        poseidon_hash([self.owner_secret])
+    }
+
+    /// Compute the Poseidon commitment for collateral
+    pub fn collateral_commitment(&self, amount: u64) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(amount), self.collateral_blind.inner()])
+    }
+
+    /// Compute the Poseidon commitment for debt
+    pub fn debt_commitment(&self, amount: u64) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(amount), self.debt_blind.inner()])
+    }
+
+    /// Compute the old position commitment
+    pub fn old_position_commitment(&self) -> pallas::Base {
+        let collateral_commit = self.collateral_commitment(self.collateral_amount);
+        let debt_commit = self.debt_commitment(self.debt_amount);
+        let owner_pub = self.owner_public_key();
+        poseidon_hash([collateral_commit, debt_commit, owner_pub])
+    }
+
+    /// Compute the new position commitment after liquidation
+    pub fn new_position_commitment(&self) -> pallas::Base {
+        // New collateral after seizure
+        let new_collateral = self.collateral_amount.saturating_sub(self.liquidator_reward);
+        let collateral_commit = self.collateral_commitment(new_collateral);
+        let debt_commit = self.debt_commitment(self.debt_amount);
+        let owner_pub = self.owner_public_key();
+        poseidon_hash([collateral_commit, debt_commit, owner_pub])
+    }
+
     /// Compute public inputs for this call
     pub fn compute_public_inputs(&self) -> LiquidatePublicInputs {
         // Compute nullifier
@@ -105,17 +140,21 @@ impl LiquidateCallData {
 
         LiquidatePublicInputs {
             old_commitment: self.old_commitment,
-            new_commitment: pallas::Base::zero(), // Will be computed by circuit
+            new_commitment: self.new_position_commitment(),
             position_nullifier,
         }
     }
 
     /// Generate prover witnesses for the circuit
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        let owner_pub = self.owner_public_key();
+        let new_position = self.new_position_commitment();
+        let new_collateral = self.collateral_amount.saturating_sub(self.liquidator_reward);
+
         vec![
             // Public inputs
             Witness::Base(Value::known(self.old_commitment)), // old_commitment
-            Witness::Base(Value::known(pallas::Base::zero())), // new_commitment (computed by circuit)
+            Witness::Base(Value::known(new_position)), // new_commitment
             Witness::Base(Value::known(self.compute_public_inputs().position_nullifier)), // position_nullifier
             Witness::Base(Value::known(pallas::Base::from(self.collateral_amount))), // collateral_amount
             Witness::Base(Value::known(pallas::Base::from(self.debt_amount))), // debt_amount
@@ -124,8 +163,8 @@ impl LiquidateCallData {
             Witness::Base(Value::known(pallas::Base::zero())), // position_root (placeholder)
             // Private inputs
             Witness::Base(Value::known(self.owner_secret)),
-            Witness::Scalar(Value::known(self.collateral_blind.inner())),
-            Witness::Scalar(Value::known(self.debt_blind.inner())),
+            Witness::Base(Value::known(self.collateral_blind.inner())), // BaseBlind as Base
+            Witness::Base(Value::known(self.debt_blind.inner())), // BaseBlind as Base
             Witness::Base(Value::known(pallas::Base::from(self.liquidator_reward))), // liquidator_reward
         ]
     }

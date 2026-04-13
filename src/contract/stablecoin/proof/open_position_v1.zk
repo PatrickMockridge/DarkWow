@@ -1,17 +1,14 @@
 k = 11;
 field = "pallas";
 
+# No EC constants needed - using Poseidon only
 constant "OpenPositionV1" {
-    EcFixedPointBase NULLIFIER_K,
-    EcFixedPointShort VALUE_COMMIT_VALUE,
-    EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
 witness "OpenPositionV1" {
     # Public inputs
     Base position_commitment,
-    Base owner_pub_x,
-    Base owner_pub_y,
+    Base owner_pub,         # Poseidon hash of owner_secret (as field element, not EC point)
     Base collateral_type,
     Base position_nullifier,
     Base position_root,
@@ -21,8 +18,8 @@ witness "OpenPositionV1" {
     Base owner_secret,
     Base collateral_amount,
     Base debt_amount,
-    Scalar collateral_blind,
-    Scalar debt_blind,
+    Base collateral_blind,
+    Base debt_blind,
     Base merkle_proof_0,
     Base merkle_proof_1,
     Base merkle_proof_2,
@@ -30,43 +27,34 @@ witness "OpenPositionV1" {
 }
 
 circuit "OpenPositionV1" {
-    # Derive owner public key from secret
-    owner_public = ec_mul_base(owner_secret, NULLIFIER_K);
-    owner_public_x = ec_get_x(owner_public);
-    owner_public_y = ec_get_y(owner_public);
-    constrain_equal_base(owner_public_x, owner_pub_x);
-    constrain_equal_base(owner_public_y, owner_pub_y);
+    # Derive owner public key from secret using Poseidon (no EC)
+    # owner_pub = poseidon_hash(owner_secret) as a field element
+    owner_pub_check = poseidon_hash(owner_secret);
+    constrain_equal_base(owner_pub_check, owner_pub);
 
-    # Derive nullifier for this position
-    nullifier_check = poseidon_hash(owner_secret, position_commitment);
-    constrain_instance(nullifier_check);
-    constrain_equal_base(nullifier_check, position_nullifier);
+    # Create Poseidon commitments for collateral and debt (no Pedersen, no EC)
+    # collateral_commit = poseidon_hash(collateral_amount, collateral_blind)
+    collateral_commit = poseidon_hash(collateral_amount, collateral_blind);
 
-    # Create Pedersen commitments for collateral and debt
-    # Pedersen commitment: C = value * G + blind * H
-    collateral_commit = ec_mul_short(collateral_amount, VALUE_COMMIT_VALUE);
-    collateral_random = ec_mul(collateral_blind, VALUE_COMMIT_RANDOM);
-    collateral_total = ec_add(collateral_commit, collateral_random);
-    collateral_x = ec_get_x(collateral_total);
-    collateral_y = ec_get_y(collateral_total);
+    # debt_commit = poseidon_hash(debt_amount, debt_blind)
+    debt_commit = poseidon_hash(debt_amount, debt_blind);
 
-    debt_commit = ec_mul_short(debt_amount, VALUE_COMMIT_VALUE);
-    debt_random = ec_mul(debt_blind, VALUE_COMMIT_RANDOM);
-    debt_total = ec_add(debt_commit, debt_random);
-    debt_x = ec_get_x(debt_total);
-    debt_y = ec_get_y(debt_total);
-
-    # Position commitment = H(collateral_x, collateral_y, debt_x, debt_y, owner_pub)
+    # Position commitment = Poseidon hash of all components
+    # H(collateral_commit, debt_commit, owner_pub, collateral_type)
     position_check = poseidon_hash(
-        collateral_x,
-        collateral_y,
-        debt_x,
-        debt_y,
-        owner_pub_x,
-        owner_pub_y,
+        collateral_commit,
+        debt_commit,
+        owner_pub,
+        collateral_type
     );
     constrain_instance(position_check);
     constrain_equal_base(position_check, position_commitment);
+
+    # Derive nullifier for this position
+    # nullifier = poseidon_hash(owner_secret, position_commitment)
+    nullifier_check = poseidon_hash(owner_secret, position_commitment);
+    constrain_instance(nullifier_check);
+    constrain_equal_base(nullifier_check, position_nullifier);
 
     # Range checks for amounts (64-bit values)
     range_check(64, collateral_amount);
@@ -75,7 +63,7 @@ circuit "OpenPositionV1" {
     bool_check(debt_amount);
 
     # Collateralization check: collateral >= 2 * debt (200% minimum collateralization)
-    # Using verified LessThanOrEqual (0x55)
+    # Using verified LessThanOrEqual
     two_times_debt = base_add(debt_amount, debt_amount);
     range_check(64, two_times_debt);
     ONE = witness_base(1);

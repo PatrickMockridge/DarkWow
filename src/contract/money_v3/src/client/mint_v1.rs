@@ -33,7 +33,7 @@ use darkfi_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{Coin, CoinAttributes, MintParamsV1};
+use crate::model::{AuthProof, Coin, CoinAttributes, MintParamsV1, Nullifier};
 
 /// Public inputs revealed after mint proof creation
 pub struct MintRevealed {
@@ -47,6 +47,14 @@ pub struct MintRevealed {
 
 /// Input for building a mint call
 pub struct MintCallInput {
+    /// Authorization nullifier from AuthTokenMintV1
+    pub auth_nullifier: pallas::Base,
+    /// Authorization mint public key
+    pub auth_mint_public: pallas::Base,
+    /// Token registry Merkle tree leaf position
+    pub token_leaf_pos: u32,
+    /// Token registry Merkle path
+    pub token_path: Vec<darkfi_sdk::crypto::MerkleNode>,
     /// Recipient public key (poseidon_hash of secret)
     pub recipient: pallas::Base,
     /// Value to mint
@@ -128,7 +136,14 @@ impl MintCallBuilder {
         let proof = Proof::create(&self.mint_pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
         Ok(MintCallDebris {
-            params: MintParamsV1 { coin },
+            params: MintParamsV1 {
+                auth_proof: AuthProof {
+                    nullifier: Nullifier::from_base(self.input.auth_nullifier),
+                    mint_public: self.input.auth_mint_public,
+                },
+                coin,
+                value_commit,
+            },
             proofs: vec![proof],
         })
     }
