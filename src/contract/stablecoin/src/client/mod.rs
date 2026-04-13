@@ -17,13 +17,25 @@
  */
 
 //! Client-side transaction builders for stablecoin contract
+//!
+//! ## MoneyV3 Integration
+//!
+//! Stablecoin uses MoneyV3 for token management. When initializing:
+//! 1. `InitializeV1` creates a MoneyV3 token type (e.g., "USDx")
+//! 2. `OpenPositionV1` mints collateral receipt tokens via MoneyV3
+//! 3. `MintStableV1` burns collateral tokens, mints stablecoin via MoneyV3
+//! 4. `LiquidateV1` uses spend_hook for seizure callbacks
 
 use crate::model::*;
+
+#[cfg(feature = "client")]
+pub use darkfi_money_v3_contract::client::token_mint_v1::TokenMintCallInput;
 
 // ============================================================================
 // ZK Proof Generation Modules
 // ============================================================================
 
+pub mod initialize_v1;
 pub mod open_position_v1;
 pub mod mint_stable_v1;
 pub mod liquidate_v1;

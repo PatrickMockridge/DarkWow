@@ -155,6 +155,16 @@ pub struct InitializeParams {
 
     /// Dead man switch configuration (emergency shutdown)
     pub dead_man_switch: DeadManSwitchConfig,
+
+    /// Authority public key for MoneyV3 token minting authorization
+    /// Stablecoin contract needs AuthTokenMint to mint/burn tokens
+    pub token_authority_pub: [u8; 32],
+
+    /// Whether to create a new MoneyV3 token for this stablecoin
+    pub create_token: bool,
+
+    /// Token symbol for the stablecoin (e.g., "USDx") - used if create_token is true
+    pub token_symbol: [u8; 32],
 }
 
 /// Deposit collateral into the pool
