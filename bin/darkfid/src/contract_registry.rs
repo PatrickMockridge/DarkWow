@@ -95,6 +95,7 @@ impl ContractRegistry {
     /// Register default handlers.
     fn register_default_handlers(&mut self) {
         self.register(Box::new(crate::contract_handler::DaoEscrowContractHandler::new()));
+        self.register(Box::new(crate::contract_handler::NativeTokenContractHandler::new()));
     }
 }
 

@@ -19,18 +19,21 @@
 use std::collections::HashMap;
 
 use darkfi::{tx::Transaction, util::parse::encode_base10, zk::halo2::Field};
-use darkfi_money_contract::{client::OwnCoin, model::TokenId};
 use darkfi_sdk::{
     crypto::{
         keypair::{Address, Network, PublicKey, SecretKey, StandardAddress},
-        BaseBlind, ContractId, FuncId, DAO_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID, MONEY_CONTRACT_ID,
+        ContractId, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
     },
     pasta::pallas,
 };
+
+// DAO_CONTRACT_ID removed - DAO is disabled on this fork
+use crate::contract_imports::MONEY_CONTRACT_ID;
 use darkfi_serial::{deserialize, serialize};
 use prettytable::{format, row, Table};
 
-use crate::money::BALANCE_BASE10_DECIMALS;
+use crate::contract_imports::money::{MoneyV3Note, TokenId, BALANCE_BASE10_DECIMALS};
+use darkfi_sdk::crypto::util::FieldElemAsStr;
 
 pub fn prettytable_addrs(
     network: Network,
@@ -73,62 +76,47 @@ pub fn prettytable_balance(
 }
 
 pub fn prettytable_coins(
-    coins: &[(OwnCoin, u32, bool, Option<u32>, String)],
+    coins: &[MoneyV3Note],
     alimap: &HashMap<String, String>,
 ) -> Table {
     let mut table = Table::new();
     table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
     table.set_titles(row![
-        "Coin",
         "Token ID",
         "Aliases",
         "Value",
         "Spend Hook",
         "User Data",
-        "Creation Height",
-        "Spent",
-        "Spent Height",
-        "Spent TX",
     ]);
 
     for coin in coins {
-        let alias = match alimap.get(&coin.0.note.token_id.to_string()) {
+        let alias = match alimap.get(&coin.token_id.to_string()) {
             Some(v) => v,
             None => "-",
         };
 
-        let spend_hook = if coin.0.note.spend_hook != FuncId::none() {
-            format!("{}", coin.0.note.spend_hook)
+        let spend_hook = if coin.spend_hook != pallas::Base::zero() {
+            format!("{:?}", coin.spend_hook)
         } else {
             String::from("-")
         };
 
-        let user_data = if coin.0.note.user_data != pallas::Base::ZERO {
-            bs58::encode(serialize(&coin.0.note.user_data)).into_string().to_string()
+        let user_data = if coin.user_data != pallas::Base::ZERO {
+            bs58::encode(serialize(&coin.user_data)).into_string().to_string()
         } else {
             String::from("-")
-        };
-
-        let spent_height = match coin.3 {
-            Some(spent_height) => spent_height.to_string(),
-            None => String::from("-"),
         };
 
         table.add_row(row![
-            bs58::encode(&serialize(&coin.0.coin.inner())).into_string().to_string(),
-            coin.0.note.token_id,
+            coin.token_id,
             alias,
             format!(
                 "{} ({})",
-                coin.0.note.value,
-                encode_base10(coin.0.note.value, BALANCE_BASE10_DECIMALS)
+                coin.value,
+                encode_base10(coin.value, BALANCE_BASE10_DECIMALS)
             ),
             spend_hook,
             user_data,
-            coin.1,
-            coin.2,
-            spent_height,
-            coin.4,
         ]);
     }
 
@@ -136,7 +124,7 @@ pub fn prettytable_coins(
 }
 
 pub fn prettytable_tokenlist(
-    tokens: &[(TokenId, SecretKey, BaseBlind, bool, Option<u32>)],
+    tokens: &[(TokenId, SecretKey, pallas::Base, bool, Option<u32>)],
     alimap: &HashMap<String, String>,
 ) -> Table {
     let mut table = Table::new();
@@ -150,7 +138,7 @@ pub fn prettytable_tokenlist(
         "Freeze Height",
     ]);
 
-    for (token_id, authority, blind, frozen, freeze_height) in tokens {
+    for (token_id, authority, _blind, frozen, freeze_height) in tokens {
         let alias = match alimap.get(&token_id.to_string()) {
             Some(v) => v,
             None => "-",
@@ -161,7 +149,7 @@ pub fn prettytable_tokenlist(
             None => String::from("-"),
         };
 
-        table.add_row(row![token_id, alias, authority, blind, frozen, freeze_height]);
+        table.add_row(row![token_id, alias, authority, "-", frozen, freeze_height]);
     }
 
     table
@@ -231,7 +219,12 @@ pub fn pretty_tx(tx: &Transaction) -> String {
     table.add_row(row!["", "Contract", "Function"]);
 
     for (i, call) in tx.calls.iter().enumerate() {
-        if call.data.is_money_fee() {
+        // Money contract fee check: contract ID matches and function byte is 0x00 (FeeV2)
+        let is_money_fee = call.data.contract_id == *MONEY_CONTRACT_ID.get().unwrap()
+            && !call.data.data.is_empty()
+            && call.data.data[0] == 0x00;
+
+        if is_money_fee {
             if let Ok(fee) = deserialize(&call.data.data[1..9]) {
                 fees.push(format!("{} DRK", encode_base10(fee, BALANCE_BASE10_DECIMALS)));
                 fees_total = fees_total.checked_add(fee).unwrap_or_else(|| {
@@ -244,8 +237,8 @@ pub fn pretty_tx(tx: &Transaction) -> String {
         }
 
         let contract_name = match call.data.contract_id {
-            id if id == *MONEY_CONTRACT_ID => "Money",
-            id if id == *DAO_CONTRACT_ID => "DAO",
+            id if id == *MONEY_CONTRACT_ID.get().unwrap() => "Money",
+            // DAO disabled on this fork
             id if id == *DEPLOYOOOR_CONTRACT_ID => "Deployooor",
             _ => "Custom",
         };

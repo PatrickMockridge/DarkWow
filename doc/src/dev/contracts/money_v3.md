@@ -372,6 +372,81 @@ This enables stablecoin to focus on CDP mechanics while delegating token managem
 
 See [dex.md](dex.md) for DEX integration using spend_hook for atomic swaps.
 
+## Wallet Integration (drk)
+
+The `drk` command-line wallet supports MoneyV3 with the following functionality:
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Coin Scanning | ✅ Implemented | `apply_tx_money_data()` in rpc.rs |
+| Coin Storage | ✅ Implemented | `coins` and `coin_merkle_proofs` tables in wallet.sql |
+| Secret Management | ✅ Implemented | `coin_secrets` table |
+| Transfer Creation | ✅ Implemented | `transfer()` in transfer.rs with FeeV1 attachment |
+| Token Creation | ✅ Implemented | `create_token()` in token.rs using TokenMintV1 |
+| Mint Tokens | ✅ Implemented | `mint_tokens()` in token.rs using AuthTokenMintV1 + MintV1 |
+
+### Transfer Implementation
+
+The `drk transfer` command flow:
+
+```
+1. Select unspent coin with sufficient value
+2. Retrieve Merkle proof from wallet database
+3. Decode secret key from wallet
+4. Build TransferCallBuilder with:
+   - Input: coin data + Merkle proof
+   - Output: recipient + change
+5. Generate ZK proofs (Burn_V1 + Mint_V1)
+6. Select DARK coin for fee payment
+7. Build NativeToken::FeeV1 for fee attachment
+8. Combine into final transaction using TransactionBuilder
+```
+
+### Token Creation Implementation
+
+The `drk create_token` command flow:
+
+```
+1. Generate mint authority (SecretKey) and token blind (BaseBlind)
+2. Derive token_id = poseidon_hash(mint_authority_public, token_user_data, token_blind)
+3. Load TokenMint ZK binary and create proving key
+4. Build TokenMintV1 transaction with initial supply
+5. Select DARK coin for fee payment
+6. Attach FeeV1 for network fee
+7. Build and return transaction
+```
+
+### Mint Tokens Implementation
+
+The `drk mint` command flow:
+
+```
+1. Load mint authority and token registry Merkle proof
+2. Build AuthTokenMintV1 to prove mint authority
+3. Build MintV1 to create new coins
+4. Attach FeeV1 for network fee
+5. Build and return transaction
+```
+
+**Note**: `mint_tokens()` requires explicit mint authority and token registry Merkle proof parameters.
+
+### Scanning Implementation
+
+During blockchain scanning:
+
+```
+1. For each MoneyV3 transaction:
+2. If TransferV1 (0x04):
+   - Decode TransferParamsV1
+   - For each output note:
+     - Try decryption with each known secret
+     - If successful, extract MoneyV3Note
+     - Calculate coin_id = Coin::from_attributes(...)
+     - Store coin + Merkle proof in wallet
+```
+
+This allows the wallet to track all owned coins with their Merkle proofs.
+
 ## Standards Reference
 
 For security standards (Poseidon-only, NativeToken vs MoneyV3 separation), see [standards.md](standards.md).

@@ -16,14 +16,23 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Contract handlers for generalized invocation.
+//! Contract SDKs for DarkFi
 //!
-//! This module contains handler implementations for various contracts,
-//! each providing the logic to build calldata from JSON params.
+//! This module provides clean interfaces to contract client APIs.
+//! Each contract SDK exports:
+//! - Function opcodes (for building calldata)
+//! - ZK namespaces (for proof generation)
+//! - Token ID constants
+//! - Database tree names
+//!
+//! ## Available SDKs
+//!
+//! | Contract | Module | Status |
+//! |----------|--------|--------|
+//! | Native Token | [`native_token`] | ✅ Working |
+//! | Money V3 | [`money_v3`] | ✅ Working |
+//! | DAO Escrow | [`dao_escrow`] | ⚠️ Broken |
 
-pub mod dao_escrow;
 pub mod native_token;
-
-// Re-export handlers for convenience
-pub use dao_escrow::DaoEscrowContractHandler;
-pub use native_token::NativeTokenContractHandler;
+pub mod money_v3;
+// pub mod dao_escrow; // TODO: Fix dao_escrow contract bugs

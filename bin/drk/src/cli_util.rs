@@ -39,7 +39,7 @@ use darkfi::{
     zk::Proof,
     Error, Result,
 };
-use darkfi_money_contract::model::TokenId;
+use crate::contract_imports::money::TokenId;
 use darkfi_sdk::{
     crypto::{
         keypair::{Address, Network},

@@ -92,6 +92,12 @@ impl Cache {
         Ok(())
     }
 
+    /// Get a Merkle tree by name from the cache.
+    pub fn get_merkle_tree(&self, name: &[u8]) -> Option<MerkleTree> {
+        let tree_bytes = self.merkle_trees.get(name).ok()??;
+        deserialize(&tree_bytes).ok()
+    }
+
     /// Insert a `u32` and a block inverse diff into store's inverse
     /// diffs tree. The block height is used as the key, and the
     /// serialized database inverse diff is used as value.

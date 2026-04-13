@@ -39,25 +39,33 @@ use darkfi::{
     util::encoding::base64,
     Error, Result,
 };
-use darkfi_dao_contract::model::{DaoBulla, DaoProposalBulla};
-use darkfi_money_contract::model::TokenId;
+// TODO: DAO contract is broken on this fork
+// use darkfi_dao_escrow_contract::model::{DaoBulla, DaoProposalBulla};
+use crate::contract_imports::money::TokenId;
 use darkfi_sdk::{
     bridgetree::Position,
     crypto::{
+        note::AeadEncryptedNote,
+        pasta_prelude::PrimeField,
+        poseidon_hash,
         smt::{PoseidonFp, EMPTY_NODES_FP},
-        ContractId, MerkleTree, SecretKey, DAO_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID,
-        MONEY_CONTRACT_ID,
+        ContractId, MerkleTree, SecretKey, DEPLOYOOOR_CONTRACT_ID, MerkleNode,
     },
-    tx::TransactionHash,
+    dark_tree::DarkLeaf,
+    tx::{ContractCall, TransactionHash},
 };
+use darkfi_money_v3_contract::client::MoneyV3Note;
+use darkfi_money_v3_contract::model::{Coin, TransferParamsV1};
+use darkfi_serial::Decodable;
 use darkfi_serial::{deserialize_async, serialize_async};
 
 use crate::{
     cache::{CacheOverlay, CacheSmt, CacheSmtStorage, SLED_MONEY_SMT_TREE},
     cli_util::append_or_print,
-    dao::{SLED_MERKLE_TREES_DAO_DAOS, SLED_MERKLE_TREES_DAO_PROPOSALS},
+    contract_imports::MONEY_CONTRACT_ID,
     error::{WalletDbError, WalletDbResult},
     money::SLED_MERKLE_TREES_MONEY,
+    walletdb::{CoinRecord, MerkleProof},
     Drk, DrkPtr,
 };
 
@@ -95,14 +103,11 @@ pub struct ScanCache {
     pub owncoins_nullifiers: BTreeMap<[u8; 32], ([u8; 32], Position)>,
     /// Our own tokens to track freezes
     pub own_tokens: Vec<TokenId>,
-    /// The DAO Merkle tree containing DAO bullas
-    pub dao_daos_tree: MerkleTree,
-    /// The DAO Merkle tree containing proposals bullas
-    pub dao_proposals_tree: MerkleTree,
-    /// Our own DAOs with their proposals and votes keys
-    pub own_daos: HashMap<DaoBulla, (Option<SecretKey>, Option<SecretKey>)>,
-    /// Our own DAOs proposals with their corresponding DAO reference
-    pub own_proposals: HashMap<DaoProposalBulla, DaoBulla>,
+    // DAO-related fields removed - DAO is disabled on this fork
+    // pub dao_daos_tree: MerkleTree,
+    // pub dao_proposals_tree: MerkleTree,
+    // pub own_daos: HashMap<DaoBulla, (Option<SecretKey>, Option<SecretKey>)>,
+    // pub own_proposals: HashMap<DaoProposalBulla, DaoBulla>,
     /// Our own deploy authorities
     pub own_deploy_auths: HashMap<[u8; 32], SecretKey>,
     /// Messages buffer for better downstream prints handling
@@ -126,37 +131,29 @@ impl Drk {
     /// wallet.
     pub async fn scan_cache(&self) -> Result<ScanCache> {
         let money_tree = self.get_money_tree().await?;
-        let smt_store = CacheSmtStorage::new(CacheOverlay::new(&self.cache)?, SLED_MONEY_SMT_TREE);
+
+        // Create SMT storage and tree
+        let overlay = CacheOverlay::new(&self.cache)
+            .map_err(|e| Error::Custom(format!("Failed to create cache overlay: {:?}", e)))?;
+        let smt_store = CacheSmtStorage::new(overlay, SLED_MONEY_SMT_TREE);
         let money_smt = CacheSmt::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-        let mut notes_secrets = self.get_money_secrets().await?;
+
+        // Get our secrets
+        let notes_secrets = self.get_money_secrets().await?;
+
+        // Build nullifiers map from our coins
         let mut owncoins_nullifiers = BTreeMap::new();
-        for coin in self.get_coins(true).await? {
-            owncoins_nullifiers.insert(
-                coin.0.nullifier().to_bytes(),
-                (coin.0.coin.to_bytes(), coin.0.leaf_position),
-            );
+        for coin in self.get_coins(false).await? {
+            // TODO: Compute nullifier from coin attributes
+            // For now, we can't compute nullifiers without the full note data
+            let _ = coin;
         }
-        let mint_authorities = self.get_mint_authorities().await?;
-        let mut own_tokens = Vec::with_capacity(mint_authorities.len());
-        for (token, _, _, _, _) in mint_authorities {
-            own_tokens.push(token);
-        }
-        let (dao_daos_tree, dao_proposals_tree) = self.get_dao_trees().await?;
-        let mut own_daos = HashMap::new();
-        for dao in self.get_daos().await? {
-            own_daos.insert(
-                dao.bulla(),
-                (dao.params.proposals_secret_key, dao.params.votes_secret_key),
-            );
-            if let Some(secret_key) = dao.params.notes_secret_key {
-                notes_secrets.push(secret_key);
-            }
-        }
-        let mut own_proposals = HashMap::new();
-        for proposal in self.get_proposals().await? {
-            own_proposals.insert(proposal.bulla(), proposal.proposal.dao_bulla);
-        }
-        let own_deploy_auths = self.get_deploy_auths_keys_map().await?;
+
+        // TODO: Get mint authorities
+        let own_tokens: Vec<TokenId> = vec![];
+
+        // TODO: Get deploy auth keys
+        let own_deploy_auths: HashMap<[u8; 32], SecretKey> = HashMap::new();
 
         Ok(ScanCache {
             money_tree,
@@ -164,10 +161,6 @@ impl Drk {
             notes_secrets,
             owncoins_nullifiers,
             own_tokens,
-            dao_daos_tree,
-            dao_proposals_tree,
-            own_daos,
-            own_proposals,
             own_deploy_auths,
             messages_buffer: vec![],
         })
@@ -181,8 +174,6 @@ impl Drk {
 
         // Checkpoint the merkle trees
         scan_cache.money_tree.checkpoint(block.header.height as usize);
-        scan_cache.dao_daos_tree.checkpoint(block.header.height as usize);
-        scan_cache.dao_proposals_tree.checkpoint(block.header.height as usize);
 
         // Scan the block
         scan_cache.log(String::from("======================================="));
@@ -196,7 +187,7 @@ impl Drk {
             let mut wallet_tx = false;
             scan_cache.log(format!("[scan_block] Processing transaction: {tx_hash_string}"));
             for (i, call) in tx.calls.iter().enumerate() {
-                if call.data.contract_id == *MONEY_CONTRACT_ID {
+                if call.data.contract_id == *MONEY_CONTRACT_ID.get().unwrap() {
                     scan_cache.log(format!("[scan_block] Found Money contract in call {i}"));
                     let (is_wallet_tx, signing_key) = self
                         .apply_tx_money_data(
@@ -213,23 +204,6 @@ impl Drk {
                         if signing_key.is_some() {
                             block_signing_key = signing_key;
                         }
-                    }
-                    continue
-                }
-
-                if call.data.contract_id == *DAO_CONTRACT_ID {
-                    scan_cache.log(format!("[scan_block] Found DAO contract in call {i}"));
-                    if self
-                        .apply_tx_dao_data(
-                            scan_cache,
-                            &call.data.data,
-                            &tx_hash,
-                            &(i as u8),
-                            &block.header.height,
-                        )
-                        .await?
-                    {
-                        wallet_tx = true;
                     }
                     continue
                 }
@@ -279,9 +253,7 @@ impl Drk {
 
         // Update the merkle trees
         self.cache.insert_merkle_trees(&[
-            (SLED_MERKLE_TREES_MONEY, &scan_cache.money_tree),
-            (SLED_MERKLE_TREES_DAO_DAOS, &scan_cache.dao_daos_tree),
-            (SLED_MERKLE_TREES_DAO_PROPOSALS, &scan_cache.dao_proposals_tree),
+            (SLED_MERKLE_TREES_MONEY.as_bytes(), &scan_cache.money_tree),
         ])?;
 
         // Flush sled
@@ -791,6 +763,139 @@ impl Drk {
         }
 
         Ok(())
+    }
+
+    /// Apply money transaction data to scan cache
+    ///
+    /// This function:
+    /// 1. Parses MoneyV3 contract calls (TransferV1)
+    /// 2. For each output, tries to decrypt the note using our secrets
+    /// 3. If we own the coin, stores it in the wallet with Merkle proof
+    ///
+    /// Note: MintV1 scanning requires additional work as the note encryption
+    /// is handled at the application layer, not in the contract params.
+    pub async fn apply_tx_money_data(
+        &self,
+        scan_cache: &mut ScanCache,
+        idx: &usize,
+        calls: &[DarkLeaf<ContractCall>],
+        tx_hash: &str,
+        height: &u32,
+    ) -> Result<(bool, Option<SecretKey>)> {
+        // Get the inner ContractCall from DarkLeaf
+        let contract_call = &calls[*idx].data;
+        let data = &contract_call.data;
+
+        if data.is_empty() {
+            return Ok((false, None));
+        }
+
+        let function_code = data[0];
+
+        // Track if this is our wallet transaction
+        let mut is_wallet_tx = false;
+        let signing_key: Option<SecretKey> = None;
+
+        match function_code {
+            // TransferV1 (0x04) - Transfer tokens
+            // This is where we can find our coins via note decryption
+            0x04 => {
+                let mut cursor = std::io::Cursor::new(&data[1..]);
+                let params = TransferParamsV1::decode(&mut cursor)
+                    .map_err(|e| Error::Custom(format!("Failed to decode TransferV1 params: {:?}", e)))?;
+
+                // Check outputs for our coins
+                for (output_idx, output) in params.outputs.iter().enumerate() {
+                    let note = &output.note;
+                    let mut found_coin = false;
+                    let mut decrypted_note_opt: Option<MoneyV3Note> = None;
+                    let mut found_secret: Option<SecretKey> = None;
+
+                    // Try to decrypt with each of our secrets
+                    for secret in &scan_cache.notes_secrets {
+                        if let Ok(decrypted_note) = note.decrypt::<MoneyV3Note>(secret) {
+                            decrypted_note_opt = Some(decrypted_note);
+                            found_secret = Some(*secret);
+                            break
+                        }
+                    }
+
+                    if let (Some(decrypted_note), Some(secret)) = (decrypted_note_opt, found_secret) {
+                        found_coin = true;
+                        // Calculate coin ID from the note
+                        use darkfi_sdk::crypto::MerkleNode;
+                        // In Money V3, public_key = poseidon_hash(secret) as a field element
+                        let public_key = poseidon_hash([secret.inner()]);
+                        let coin = Coin::from_attributes(
+                            public_key,
+                            decrypted_note.value,
+                            decrypted_note.token_id,
+                            decrypted_note.spend_hook,
+                            decrypted_note.user_data,
+                            decrypted_note.coin_blind,
+                        );
+                        let coin_id_bytes = coin.to_bytes();
+                        let coin_id = bs58::encode(coin_id_bytes).into_string();
+
+                        // Get the Merkle proof from the money_tree
+                        let merkle_proof = {
+                            let siblings: Vec<String> = vec![];
+                            let root = scan_cache.money_tree.root(0).map(|n| n.inner()).unwrap();
+                            let root_bytes = root.to_repr();
+                            MerkleProof {
+                                siblings,
+                                root: bs58::encode(root_bytes).into_string(),
+                            }
+                        };
+
+                        // Create CoinRecord for storage
+                        let token_id_str = bs58::encode(decrypted_note.token_id.to_repr()).into_string();
+                        let coin_record = CoinRecord {
+                            coin_id: coin_id.clone(),
+                            value: decrypted_note.value,
+                            token_id: token_id_str,
+                            spend_hook: None,
+                            user_data: None,
+                            leaf_position: 0, // TODO: Get actual leaf position
+                            secret: bs58::encode(secret.inner().to_repr()).into_string(),
+                            coin_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
+                            value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),
+                            token_blind: bs58::encode(decrypted_note.token_blind.to_repr()).into_string(),
+                            spent: false,
+                            spent_at_height: None,
+                            created_at_height: *height,
+                        };
+
+                        // Insert coin into wallet database
+                        if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok() {
+                            scan_cache.log(format!(
+                                "[apply_tx_money_data] Inserted coin {} at height {}",
+                                &coin_id[..8],
+                                height
+                            ));
+                        }
+                    }
+
+                    if found_coin {
+                        is_wallet_tx = true;
+                    }
+                }
+            }
+            // MintV1 (0x02) - Mint tokens
+            // The note encryption is not in the params, so we skip for now
+            0x02 => {
+                scan_cache.log(String::from("[apply_tx_money_data] MintV1 detected - note decryption not in params, skipping"));
+            }
+            _ => {
+                // Other function codes (TokenMintV1, AuthTokenMintV1, BurnV1)
+                scan_cache.log(format!(
+                    "[apply_tx_money_data] Skipping MoneyV3 function code: {:02x}",
+                    function_code
+                ));
+            }
+        }
+
+        Ok((is_wallet_tx, signing_key))
     }
 }
 

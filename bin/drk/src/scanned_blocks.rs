@@ -20,7 +20,6 @@ use darkfi_serial::deserialize;
 
 use crate::{
     cache::CacheOverlay,
-    dao::{SLED_MERKLE_TREES_DAO_DAOS, SLED_MERKLE_TREES_DAO_PROPOSALS},
     error::{WalletDbError, WalletDbResult},
     money::SLED_MERKLE_TREES_MONEY,
     Drk,
@@ -134,13 +133,14 @@ impl Drk {
                 return Err(WalletDbError::GenericError)
             }
         };
-        let (mut dao_daos_tree, mut dao_proposals_tree) = match self.get_dao_trees().await {
-            Ok(p) => p,
-            Err(e) => {
-                output.push(format!("[reset_to_height] DAO merkle trees retrieval failed: {e}"));
-                return Err(WalletDbError::GenericError)
-            }
-        };
+        // DAO trees removed - DAO is disabled on this fork
+        // let (mut dao_daos_tree, mut dao_proposals_tree) = match self.get_dao_trees().await {
+        //     Ok(p) => p,
+        //     Err(e) => {
+        //         output.push(format!("[reset_to_height] DAO merkle trees retrieval failed: {e}"));
+        //         return Err(WalletDbError::GenericError)
+        //     }
+        // };
 
         // Create an overlay to apply the reverse diffs
         let mut overlay = match CacheOverlay::new(&self.cache) {
@@ -186,12 +186,13 @@ impl Drk {
 
             // Rewind and update the merkle trees
             money_tree.rewind();
-            dao_daos_tree.rewind();
-            dao_proposals_tree.rewind();
+            // DAO trees removed - DAO is disabled on this fork
+            // dao_daos_tree.rewind();
+            // dao_proposals_tree.rewind();
             if let Err(e) = self.cache.insert_merkle_trees(&[
-                (SLED_MERKLE_TREES_MONEY, &money_tree),
-                (SLED_MERKLE_TREES_DAO_DAOS, &dao_daos_tree),
-                (SLED_MERKLE_TREES_DAO_PROPOSALS, &dao_proposals_tree),
+                (SLED_MERKLE_TREES_MONEY.as_bytes(), &money_tree),
+                // (SLED_MERKLE_TREES_DAO_DAOS, &dao_daos_tree),
+                // (SLED_MERKLE_TREES_DAO_PROPOSALS, &dao_proposals_tree),
             ]) {
                 output.push(format!("[reset_to_height] Updating merkle trees failed: {e}"));
                 return Err(WalletDbError::GenericError)
@@ -214,19 +215,20 @@ impl Drk {
         // height.
         self.unfreeze_mint_authorities_after(&height, output)?;
 
+        // DAO methods removed - DAO is disabled on this fork
         // Unconfirm DAOs minted after the reset height
-        self.unconfirm_daos_after(&height, output)?;
+        // self.unconfirm_daos_after(&height, output)?;
 
         // Unconfirm DAOs proposals minted after the reset height
-        self.unconfirm_dao_proposals_after(&height, output)?;
+        // self.unconfirm_dao_proposals_after(&height, output)?;
 
         // Reset execution information for DAOs proposals executed
         // after the reset height.
-        self.unexec_dao_proposals_after(&height, output)?;
+        // self.unexec_dao_proposals_after(&height, output)?;
 
         // Remove all DAOs proposals votes created after the reset
         // height.
-        self.remove_dao_votes_after(&height, output)?;
+        // self.remove_dao_votes_after(&height, output)?;
 
         // Unlock all contracts frozen after the reset height
         self.unlock_deploy_authorities_after(&height, output)?;

@@ -14,10 +14,14 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Darkfi
-darkfi = {path = "../../", features = ["async-daemonize", "bs58", "rpc", "randomx"]}
+darkfi = {path = "../../", features = ["async-daemonize", "bs58", "rpc", "randomx", "tx", "blockchain"]}
 darkfi_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
 darkfi-sdk = {path = "../../src/sdk", features = ["async"]}
-darkfi-serial = {path = "../../src/serial"}
+darkfi-serial = {path = "../../src/serial", features = ["async", "derive"]}
+
+# Contract crates for drk wallet
+darkfi_money_v3_contract = {path = "../../src/contract/money_v3", features = ["client"]}
+darkfi_native_token_contract = {path = "../../src/contract/native_token", features = ["client"]}
 
 # Misc
 blake3 = "1.8.2"

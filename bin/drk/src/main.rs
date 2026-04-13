@@ -36,19 +36,17 @@ use darkfi::{
     util::{
         encoding::base64,
         logger::{set_terminal_writer, ChannelWriter},
-        parse::{decode_base10, encode_base10},
+        parse::encode_base10,
         path::expand_path,
     },
-    zk::halo2::Field,
     Error, Result,
 };
-use darkfi_dao_contract::{blockwindow, model::DaoProposalBulla, DaoFunction};
-use darkfi_money_contract::model::{Coin, CoinAttributes, TokenId};
+// DAO is disabled on this fork
+// use darkfi_dao_contract::{blockwindow, model::DaoProposalBulla, DaoFunction};
 use darkfi_sdk::{
     crypto::{
-        keypair::{Address, Keypair, Network, SecretKey, StandardAddress},
-        note::AeadEncryptedNote,
-        BaseBlind, ContractId, FuncId, FuncRef, DAO_CONTRACT_ID,
+        keypair::{Address, Network, SecretKey, StandardAddress},
+        BaseBlind, ContractId, FuncId,
     },
     pasta::{group::ff::PrimeField, pallas},
     tx::TransactionHash,
@@ -62,12 +60,11 @@ use drk::{
         parse_tx_from_stdin, parse_value_pair, print_output, tx_from_calls_mapped,
     },
     common::*,
-    dao::{DaoParams, ProposalRecord},
-    interactive::interactive,
-    money::BALANCE_BASE10_DECIMALS,
+    contract_imports::money::{Coin, TokenId, BALANCE_BASE10_DECIMALS},
     swap::PartialSwapData,
     Drk,
 };
+use darkfi_sdk::crypto::util::FieldElemAsStr;
 
 const CONFIG_FILE: &str = "drk_config.toml";
 const CONFIG_FILE_CONTENTS: &str = include_str!("../drk_config.toml");
@@ -166,13 +163,6 @@ enum Subcmd {
         #[structopt(subcommand)]
         /// Sub command to execute
         command: OtcSubcmd,
-    },
-
-    /// DAO functionalities
-    Dao {
-        #[structopt(subcommand)]
-        /// Sub command to execute
-        command: DaoSubcmd,
     },
 
     /// Attach the fee call to a transaction given from stdin
@@ -298,148 +288,6 @@ enum OtcSubcmd {
 
     /// Sign a swap transaction given from stdin
     Sign,
-}
-
-#[derive(Clone, Debug, Deserialize, StructOpt)]
-enum DaoSubcmd {
-    /// Create DAO parameters
-    Create {
-        /// The minimum amount of governance tokens needed to open a proposal for this DAO
-        proposer_limit: String,
-        /// Minimal threshold of participating total tokens needed for a proposal to pass
-        quorum: String,
-        /// Minimal threshold of participating total tokens needed for a proposal to
-        /// be considered strongly supported, enabling early execution.
-        /// Must be greater than or equal to normal quorum.
-        early_exec_quorum: String,
-        /// The ratio of yes votes/total votes needed for a proposal to pass (2 decimals)
-        approval_ratio: f64,
-        /// DAO's governance token ID
-        gov_token_id: String,
-    },
-
-    /// View DAO data from stdin
-    View,
-
-    /// Import DAO data from stdin
-    Import {
-        /// Name identifier for the DAO
-        name: String,
-    },
-
-    /// Remove a DAO and all its data
-    Remove {
-        /// Name identifier for the DAO
-        name: String,
-    },
-
-    /// List imported DAOs (or info about a specific one)
-    List {
-        /// Name identifier for the DAO (optional)
-        name: Option<String>,
-    },
-
-    /// Show the balance of a DAO
-    Balance {
-        /// Name identifier for the DAO
-        name: String,
-    },
-
-    /// Mint an imported DAO on-chain
-    Mint {
-        /// Name identifier for the DAO
-        name: String,
-    },
-
-    /// Create a transfer proposal for a DAO
-    ProposeTransfer {
-        /// Name identifier for the DAO
-        name: String,
-
-        /// Duration of the proposal, in block windows
-        duration: u64,
-
-        /// Amount to send
-        amount: String,
-
-        /// Token ID to send
-        token: String,
-
-        /// Recipient address
-        recipient: String,
-
-        /// Optional contract spend hook to use
-        spend_hook: Option<String>,
-
-        /// Optional user data to use
-        user_data: Option<String>,
-    },
-
-    /// Create a generic proposal for a DAO
-    ProposeGeneric {
-        /// Name identifier for the DAO
-        name: String,
-
-        /// Duration of the proposal, in block windows
-        duration: u64,
-
-        /// Optional user data to use
-        user_data: Option<String>,
-    },
-
-    /// List DAO proposals
-    Proposals {
-        /// Name identifier for the DAO
-        name: String,
-    },
-
-    /// View a DAO proposal data
-    Proposal {
-        /// Bulla identifier for the proposal
-        bulla: String,
-
-        #[structopt(long)]
-        /// Encrypt the proposal and encode it to base64
-        export: bool,
-
-        #[structopt(long)]
-        /// Create the proposal transaction
-        mint_proposal: bool,
-    },
-
-    /// Import a base64 encoded and encrypted proposal from stdin
-    ProposalImport,
-
-    /// Vote on a given proposal
-    Vote {
-        /// Bulla identifier for the proposal
-        bulla: String,
-
-        /// Vote (0 for NO, 1 for YES)
-        vote: u8,
-
-        /// Optional vote weight (amount of governance tokens)
-        vote_weight: Option<String>,
-    },
-
-    /// Execute a DAO proposal
-    Exec {
-        /// Bulla identifier for the proposal
-        bulla: String,
-
-        #[structopt(long)]
-        /// Execute the proposal early
-        early: bool,
-    },
-
-    /// Print the DAO contract base64-encoded spend hook
-    SpendHook,
-
-    /// Print a DAO mining configuration
-    MiningConfig {
-        /// Name identifier for the DAO
-        name: String,
-    },
 }
 
 #[derive(Clone, Debug, Deserialize, StructOpt)]
@@ -631,7 +479,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             // Create an unbounded smol channel, so we can have a
             // printing queue the background logger and tasks can
             // submit messages to so the shell prints them.
-            let (shell_sender, shell_receiver) = unbounded();
+            let (shell_sender, _shell_receiver) = unbounded();
 
             // Set the logging writer
             let (non_blocking, _guard) =
@@ -650,15 +498,16 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             .await
             .into_ptr();
 
-            interactive(
-                &drk,
-                &blockchain_config.endpoint,
-                &blockchain_config.history_path,
-                &shell_sender,
-                &shell_receiver,
-                &ex,
-            )
-            .await;
+            // Interactive mode is temporarily disabled - DAO removal in progress
+            // interactive(
+            //     &drk,
+            //     &blockchain_config.endpoint,
+            //     &blockchain_config.history_path,
+            //     &shell_sender,
+            //     &shell_receiver,
+            //     &ex,
+            // )
+            // .await;
 
             drk.read().await.stop_rpc_client().await?;
             Ok(())
@@ -727,7 +576,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                         eprintln!("Failed to initialize DAO: {e}");
                         exit(2);
                     }
-                    if let Err(e) = drk.initialize_deployooor() {
+                    if let Err(e) = drk.initialize_deployooor(&mut output).await {
                         eprintln!("Failed to initialize Deployooor: {e}");
                         exit(2);
                     }
@@ -773,10 +622,10 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
 
                 WalletSubcmd::Address => match drk.default_address().await {
-                    Ok(public_key) => {
-                        let address: Address =
-                            StandardAddress::from_public(drk.network, public_key).into();
-                        println!("{address}");
+                    Ok(address) => {
+                        let addr: Address =
+                            StandardAddress::from_public(drk.network, *address.public_key()).into();
+                        println!("{addr}");
                     }
                     Err(e) => {
                         eprintln!("Failed to fetch default address: {e}");
@@ -796,7 +645,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
 
                 WalletSubcmd::DefaultAddress { index } => {
-                    if let Err(e) = drk.set_default_address(index) {
+                    if let Err(e) = drk.set_default_address(index).await {
                         eprintln!("Failed to set default address: {e}");
                         exit(2);
                     }
@@ -944,7 +793,6 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
             };
 
-            let coin = Coin::from(elem);
             let drk = new_wallet(
                 network,
                 blockchain_config.cache_path,
@@ -955,10 +803,11 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 args.fun,
             )
             .await;
-            if let Err(e) = drk.unspend_coin(&coin).await {
+
+            if let Err(e) = drk.unspend_coin(&elem).await {
                 eprintln!("Failed to mark coin as unspent: {e}");
                 exit(2);
-            }
+            };
 
             Ok(())
         }
@@ -1002,11 +851,20 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             };
 
             let spend_hook = match spend_hook {
-                Some(s) => match FuncId::from_str(&s) {
-                    Ok(s) => Some(s),
-                    Err(e) => {
-                        eprintln!("Invalid spend hook: {e}");
-                        exit(2);
+                Some(s) => {
+                    let bytes: [u8; 32] = match bs58::decode(&s).into_vec()?.try_into() {
+                        Ok(b) => b,
+                        Err(e) => {
+                            eprintln!("Invalid spend hook: {e:?}");
+                            exit(2);
+                        }
+                    };
+                    match pallas::Base::from_repr(bytes).into() {
+                        Some(v) => Some(v),
+                        None => {
+                            eprintln!("Invalid spend hook");
+                            exit(2);
+                        }
                     }
                 },
                 None => None,
@@ -1072,19 +930,14 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     }
                 };
 
-                println!("{}", base64::encode(&serialize_async(&half).await));
+                println!("{}", half.to_json());
                 drk.stop_rpc_client().await
             }
 
             OtcSubcmd::Join => {
                 let mut buf = String::new();
                 stdin().read_to_string(&mut buf)?;
-                let Some(bytes) = base64::decode(buf.trim()) else {
-                    eprintln!("Failed to decode partial swap data");
-                    exit(2);
-                };
-
-                let partial: PartialSwapData = deserialize_async(&bytes).await?;
+                let partial = PartialSwapData::from_json(buf.trim())?;
 
                 let drk = new_wallet(
                     network,
@@ -1160,799 +1013,6 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             }
         },
 
-        Subcmd::Dao { command } => match command {
-            DaoSubcmd::Create {
-                proposer_limit,
-                quorum,
-                early_exec_quorum,
-                approval_ratio,
-                gov_token_id,
-            } => {
-                if let Err(e) = f64::from_str(&proposer_limit) {
-                    eprintln!("Invalid proposer limit: {e}");
-                    exit(2);
-                }
-                if let Err(e) = f64::from_str(&quorum) {
-                    eprintln!("Invalid quorum: {e}");
-                    exit(2);
-                }
-                if let Err(e) = f64::from_str(&early_exec_quorum) {
-                    eprintln!("Invalid early exec quorum: {e}");
-                    exit(2);
-                }
-
-                let proposer_limit = decode_base10(&proposer_limit, BALANCE_BASE10_DECIMALS, true)?;
-                let quorum = decode_base10(&quorum, BALANCE_BASE10_DECIMALS, true)?;
-                let early_exec_quorum =
-                    decode_base10(&early_exec_quorum, BALANCE_BASE10_DECIMALS, true)?;
-
-                if approval_ratio > 1.0 {
-                    eprintln!("Error: Approval ratio cannot be >1.0");
-                    exit(2);
-                }
-
-                let approval_ratio_base = 100_u64;
-                let approval_ratio_quot = (approval_ratio * approval_ratio_base as f64) as u64;
-
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    None,
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let gov_token_id = match drk.get_token(gov_token_id).await {
-                    Ok(g) => g,
-                    Err(e) => {
-                        eprintln!("Invalid Token ID: {e}");
-                        exit(2);
-                    }
-                };
-
-                let notes_keypair = Keypair::random(&mut OsRng);
-                let proposer_keypair = Keypair::random(&mut OsRng);
-                let proposals_keypair = Keypair::random(&mut OsRng);
-                let votes_keypair = Keypair::random(&mut OsRng);
-                let exec_keypair = Keypair::random(&mut OsRng);
-                let early_exec_keypair = Keypair::random(&mut OsRng);
-                let bulla_blind = BaseBlind::random(&mut OsRng);
-
-                let params = DaoParams::new(
-                    proposer_limit,
-                    quorum,
-                    early_exec_quorum,
-                    approval_ratio_base,
-                    approval_ratio_quot,
-                    gov_token_id,
-                    Some(notes_keypair.secret),
-                    notes_keypair.public,
-                    Some(proposer_keypair.secret),
-                    proposer_keypair.public,
-                    Some(proposals_keypair.secret),
-                    proposals_keypair.public,
-                    Some(votes_keypair.secret),
-                    votes_keypair.public,
-                    Some(exec_keypair.secret),
-                    exec_keypair.public,
-                    Some(early_exec_keypair.secret),
-                    early_exec_keypair.public,
-                    bulla_blind,
-                );
-
-                println!("{}", params.toml_str());
-
-                Ok(())
-            }
-
-            DaoSubcmd::View => {
-                let mut buf = String::new();
-                stdin().read_to_string(&mut buf)?;
-                let params = DaoParams::from_toml_str(&buf)?;
-                println!("{params}");
-
-                Ok(())
-            }
-
-            DaoSubcmd::Import { name } => {
-                let mut buf = String::new();
-                stdin().read_to_string(&mut buf)?;
-                let params = DaoParams::from_toml_str(&buf)?;
-
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    None,
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let mut output = vec![];
-                if let Err(e) = drk.import_dao(&name, &params, &mut output).await {
-                    print_output(&output);
-                    eprintln!("Failed to import DAO: {e}");
-                    exit(2);
-                }
-                print_output(&output);
-
-                Ok(())
-            }
-
-            DaoSubcmd::Remove { name } => {
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    None,
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let mut output = vec![];
-                if let Err(e) = drk.remove_dao(&name, &mut output).await {
-                    print_output(&output);
-                    eprintln!("Failed to remove DAO: {e}");
-                    exit(2);
-                }
-                print_output(&output);
-
-                Ok(())
-            }
-
-            DaoSubcmd::List { name } => {
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    None,
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let mut output = vec![];
-                if let Err(e) = drk.dao_list(&name, &mut output).await {
-                    print_output(&output);
-                    eprintln!("Failed to list DAO: {e}");
-                    exit(2);
-                }
-                print_output(&output);
-
-                Ok(())
-            }
-
-            DaoSubcmd::Balance { name } => {
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    None,
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let balmap = match drk.dao_balance(&name).await {
-                    Ok(b) => b,
-                    Err(e) => {
-                        eprintln!("Failed to fetch DAO balance: {e}");
-                        exit(2);
-                    }
-                };
-
-                let aliases_map = match drk.get_aliases_mapped_by_token().await {
-                    Ok(a) => a,
-                    Err(e) => {
-                        eprintln!("Failed to fetch wallet aliases: {e}");
-                        exit(2);
-                    }
-                };
-
-                let table = prettytable_balance(&balmap, &aliases_map);
-
-                if table.is_empty() {
-                    println!("No unspent balances found");
-                } else {
-                    println!("{table}");
-                }
-
-                Ok(())
-            }
-
-            DaoSubcmd::Mint { name } => {
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    Some(blockchain_config.endpoint),
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let tx = match drk.dao_mint(&name).await {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        eprintln!("Failed to mint DAO: {e}");
-                        exit(2);
-                    }
-                };
-
-                println!("{}", base64::encode(&serialize_async(&tx).await));
-                drk.stop_rpc_client().await
-            }
-
-            DaoSubcmd::ProposeTransfer {
-                name,
-                duration,
-                amount,
-                token,
-                recipient,
-                spend_hook,
-                user_data,
-            } => {
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    Some(blockchain_config.endpoint),
-                    &ex,
-                    args.fun,
-                )
-                .await;
-
-                if let Err(e) = f64::from_str(&amount) {
-                    eprintln!("Invalid amount: {e}");
-                    exit(2);
-                }
-
-                let rcpt = match Address::from_str(&recipient) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        eprintln!("Invalid recipient: {e}");
-                        exit(2);
-                    }
-                };
-
-                if rcpt.network() != drk.network {
-                    eprintln!("Recipient address prefix mismatch");
-                    exit(2);
-                }
-
-                let token_id = match drk.get_token(token).await {
-                    Ok(t) => t,
-                    Err(e) => {
-                        eprintln!("Invalid token alias: {e}");
-                        exit(2);
-                    }
-                };
-
-                let spend_hook = match spend_hook {
-                    Some(s) => match FuncId::from_str(&s) {
-                        Ok(s) => Some(s),
-                        Err(e) => {
-                            eprintln!("Invalid spend hook: {e}");
-                            exit(2);
-                        }
-                    },
-                    None => None,
-                };
-
-                let user_data = match user_data {
-                    Some(u) => {
-                        let bytes: [u8; 32] = match bs58::decode(&u).into_vec()?.try_into() {
-                            Ok(b) => b,
-                            Err(e) => {
-                                eprintln!("Invalid user data: {e:?}");
-                                exit(2);
-                            }
-                        };
-
-                        match pallas::Base::from_repr(bytes).into() {
-                            Some(v) => Some(v),
-                            None => {
-                                eprintln!("Invalid user data");
-                                exit(2);
-                            }
-                        }
-                    }
-                    None => None,
-                };
-
-                let proposal = match drk
-                    .dao_propose_transfer(
-                        &name,
-                        duration,
-                        &amount,
-                        token_id,
-                        *rcpt.public_key(),
-                        spend_hook,
-                        user_data,
-                    )
-                    .await
-                {
-                    Ok(p) => p,
-                    Err(e) => {
-                        eprintln!("Failed to create DAO transfer proposal: {e}");
-                        exit(2);
-                    }
-                };
-
-                println!("Generated proposal: {}", proposal.bulla());
-
-                drk.stop_rpc_client().await
-            }
-
-            DaoSubcmd::ProposeGeneric { name, duration, user_data } => {
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    Some(blockchain_config.endpoint),
-                    &ex,
-                    args.fun,
-                )
-                .await;
-
-                let user_data = match user_data {
-                    Some(u) => {
-                        let bytes: [u8; 32] = match bs58::decode(&u).into_vec()?.try_into() {
-                            Ok(b) => b,
-                            Err(e) => {
-                                eprintln!("Invalid user data: {e:?}");
-                                exit(2);
-                            }
-                        };
-
-                        match pallas::Base::from_repr(bytes).into() {
-                            Some(v) => Some(v),
-                            None => {
-                                eprintln!("Invalid user data");
-                                exit(2);
-                            }
-                        }
-                    }
-                    None => None,
-                };
-
-                let proposal = match drk.dao_propose_generic(&name, duration, user_data).await {
-                    Ok(p) => p,
-                    Err(e) => {
-                        eprintln!("Failed to create DAO generic proposal: {e}");
-                        exit(2);
-                    }
-                };
-
-                println!("Generated proposal: {}", proposal.bulla());
-
-                drk.stop_rpc_client().await
-            }
-
-            DaoSubcmd::Proposals { name } => {
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    None,
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let proposals = drk.get_dao_proposals(&name).await?;
-
-                for (i, proposal) in proposals.iter().enumerate() {
-                    println!("{i}. {}", proposal.bulla());
-                }
-
-                Ok(())
-            }
-
-            DaoSubcmd::Proposal { bulla, export, mint_proposal } => {
-                let bulla = match DaoProposalBulla::from_str(&bulla) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        eprintln!("Invalid proposal bulla: {e}");
-                        exit(2);
-                    }
-                };
-
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    Some(blockchain_config.endpoint),
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let proposal = drk.get_dao_proposal_by_bulla(&bulla).await?;
-
-                if export {
-                    // Retrieve the DAO
-                    let dao = drk.get_dao_by_bulla(&proposal.proposal.dao_bulla).await?;
-
-                    // Encypt the proposal
-                    let enc_note = AeadEncryptedNote::encrypt(
-                        &proposal,
-                        &dao.params.dao.proposals_public_key,
-                        &mut OsRng,
-                    )
-                    .unwrap();
-
-                    // Export it to base64
-                    println!("{}", base64::encode(&serialize_async(&enc_note).await));
-                    return drk.stop_rpc_client().await
-                }
-
-                if mint_proposal {
-                    // Identify proposal type by its auth calls
-                    for call in &proposal.proposal.auth_calls {
-                        // We only support transfer right now
-                        if call.function_code == DaoFunction::AuthMoneyTransfer as u8 {
-                            let tx = match drk.dao_transfer_proposal_tx(&proposal).await {
-                                Ok(tx) => tx,
-                                Err(e) => {
-                                    eprintln!("Failed to create DAO transfer proposal: {e}");
-                                    exit(2);
-                                }
-                            };
-
-                            println!("{}", base64::encode(&serialize_async(&tx).await));
-                            return drk.stop_rpc_client().await
-                        }
-                    }
-
-                    // If proposal has no auth calls, we consider it a generic one
-                    if proposal.proposal.auth_calls.is_empty() {
-                        let tx = match drk.dao_generic_proposal_tx(&proposal).await {
-                            Ok(tx) => tx,
-                            Err(e) => {
-                                eprintln!("Failed to create DAO generic proposal: {e}");
-                                exit(2);
-                            }
-                        };
-
-                        println!("{}", base64::encode(&serialize_async(&tx).await));
-                        return drk.stop_rpc_client().await
-                    }
-
-                    eprintln!("Unsuported DAO proposal");
-                    exit(2);
-                }
-
-                println!("{proposal}");
-
-                let mut contract_calls = "\nInvoked contracts:\n".to_string();
-                for call in proposal.proposal.auth_calls {
-                    contract_calls.push_str(&format!(
-                        "\tContract: {}\n\tFunction: {}\n\tData: ",
-                        call.contract_id, call.function_code
-                    ));
-
-                    if call.auth_data.is_empty() {
-                        contract_calls.push_str("-\n");
-                        continue;
-                    }
-
-                    if call.function_code == DaoFunction::AuthMoneyTransfer as u8 {
-                        // We know that the plaintext data live in the data plaintext vec
-                        if proposal.data.is_none() {
-                            contract_calls.push_str("-\n");
-                            continue;
-                        }
-                        let coin: CoinAttributes =
-                            deserialize_async(proposal.data.as_ref().unwrap()).await?;
-                        let recipient: Address =
-                            StandardAddress::from_public(drk.network, coin.public_key).into();
-                        let spend_hook = if coin.spend_hook == FuncId::none() {
-                            "-".to_string()
-                        } else {
-                            format!("{}", coin.spend_hook)
-                        };
-
-                        let user_data = if coin.user_data == pallas::Base::ZERO {
-                            "-".to_string()
-                        } else {
-                            format!("{:?}", coin.user_data)
-                        };
-
-                        contract_calls.push_str(&format!("\n\t\t{}: {}\n\t\t{}: {} ({})\n\t\t{}: {}\n\t\t{}: {}\n\t\t{}: {}\n\t\t{}: {}\n\n",
-                        "Recipient",
-                        recipient,
-                        "Amount",
-                        coin.value,
-                        encode_base10(coin.value, BALANCE_BASE10_DECIMALS),
-                        "Token",
-                        coin.token_id,
-                        "Spend hook",
-                        spend_hook,
-                        "User data",
-                        user_data,
-                        "Blind",
-                        coin.blind));
-                    }
-                }
-
-                println!("{contract_calls}");
-
-                let votes = drk.get_dao_proposal_votes(&bulla).await?;
-                let mut total_yes_vote_value = 0;
-                let mut total_no_vote_value = 0;
-                let mut total_all_vote_value = 0;
-                let mut table = Table::new();
-                table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
-                table.set_titles(row!["Transaction", "Tokens", "Vote"]);
-                for vote in votes {
-                    let vote_option = if vote.vote_option {
-                        total_yes_vote_value += vote.all_vote_value;
-                        "Yes"
-                    } else {
-                        total_no_vote_value += vote.all_vote_value;
-                        "No"
-                    };
-                    total_all_vote_value += vote.all_vote_value;
-
-                    table.add_row(row![
-                        vote.tx_hash,
-                        encode_base10(vote.all_vote_value, BALANCE_BASE10_DECIMALS),
-                        vote_option
-                    ]);
-                }
-
-                let outcome = if table.is_empty() {
-                    println!("Votes: No votes found");
-                    "Unknown"
-                } else {
-                    println!("Votes:");
-                    println!("{table}");
-                    println!(
-                        "Total tokens votes: {}",
-                        encode_base10(total_all_vote_value, BALANCE_BASE10_DECIMALS)
-                    );
-                    let approval_ratio =
-                        (total_yes_vote_value as f64 * 100.0) / total_all_vote_value as f64;
-                    println!(
-                        "Total tokens Yes votes: {} ({approval_ratio:.2}%)",
-                        encode_base10(total_yes_vote_value, BALANCE_BASE10_DECIMALS)
-                    );
-                    println!(
-                        "Total tokens No votes: {} ({:.2}%)",
-                        encode_base10(total_no_vote_value, BALANCE_BASE10_DECIMALS),
-                        (total_no_vote_value as f64 * 100.0) / total_all_vote_value as f64
-                    );
-
-                    let dao = drk.get_dao_by_bulla(&proposal.proposal.dao_bulla).await?;
-                    if total_all_vote_value >= dao.params.dao.quorum &&
-                        approval_ratio >=
-                            (dao.params.dao.approval_ratio_quot /
-                                dao.params.dao.approval_ratio_base)
-                                as f64
-                    {
-                        "Approved"
-                    } else {
-                        "Rejected"
-                    }
-                };
-
-                if let Some(exec_tx_hash) = proposal.exec_tx_hash {
-                    println!("Proposal was executed on transaction: {exec_tx_hash}");
-                    return drk.stop_rpc_client().await
-                }
-
-                // Retrieve next block height and current block time target,
-                // to compute their window.
-                let next_block_height = drk.get_next_block_height().await?;
-                let block_target = drk.get_block_target().await?;
-                let current_window = blockwindow(next_block_height, block_target);
-                let end_time = proposal.proposal.creation_blockwindow +
-                    proposal.proposal.duration_blockwindows;
-                let (voting_status, proposal_status_message) = if current_window < end_time {
-                    ("Ongoing", format!("Current proposal outcome: {outcome}"))
-                } else {
-                    ("Concluded", format!("Proposal outcome: {outcome}"))
-                };
-                println!("Voting status: {voting_status}");
-                println!("{proposal_status_message}");
-
-                drk.stop_rpc_client().await
-            }
-
-            DaoSubcmd::ProposalImport => {
-                let mut buf = String::new();
-                stdin().read_to_string(&mut buf)?;
-                let Some(bytes) = base64::decode(buf.trim()) else {
-                    eprintln!("Failed to decode encrypted proposal data");
-                    exit(2);
-                };
-                let encrypted_proposal: AeadEncryptedNote = deserialize_async(&bytes).await?;
-
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    None,
-                    &ex,
-                    args.fun,
-                )
-                .await;
-
-                // Retrieve all DAOs to try to decrypt the proposal
-                let daos = drk.get_daos().await?;
-                for dao in &daos {
-                    // Check if we have the proposals key
-                    let Some(proposals_secret_key) = dao.params.proposals_secret_key else {
-                        continue
-                    };
-
-                    // Try to decrypt the proposal
-                    let Ok(proposal) =
-                        encrypted_proposal.decrypt::<ProposalRecord>(&proposals_secret_key)
-                    else {
-                        continue
-                    };
-
-                    let proposal = match drk.get_dao_proposal_by_bulla(&proposal.bulla()).await {
-                        Ok(p) => {
-                            let mut our_proposal = p;
-                            our_proposal.data = proposal.data;
-                            our_proposal
-                        }
-                        Err(_) => proposal,
-                    };
-
-                    return drk.put_dao_proposal(&proposal).await
-                }
-
-                eprintln!("Couldn't decrypt the proposal with out DAO keys");
-                exit(2);
-            }
-
-            DaoSubcmd::Vote { bulla, vote, vote_weight } => {
-                let bulla = match DaoProposalBulla::from_str(&bulla) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        eprintln!("Invalid proposal bulla: {e}");
-                        exit(2);
-                    }
-                };
-
-                if vote > 1 {
-                    eprintln!("Vote can be either 0 (NO) or 1 (YES)");
-                    exit(2);
-                }
-                let vote = vote != 0;
-
-                let weight = match vote_weight {
-                    Some(w) => {
-                        if let Err(e) = f64::from_str(&w) {
-                            eprintln!("Invalid vote weight: {e}");
-                            exit(2);
-                        }
-                        Some(decode_base10(&w, BALANCE_BASE10_DECIMALS, true)?)
-                    }
-                    None => None,
-                };
-
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    Some(blockchain_config.endpoint),
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let tx = match drk.dao_vote(&bulla, vote, weight).await {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        eprintln!("Failed to create DAO Vote transaction: {e}");
-                        exit(2);
-                    }
-                };
-
-                println!("{}", base64::encode(&serialize_async(&tx).await));
-                drk.stop_rpc_client().await
-            }
-
-            DaoSubcmd::Exec { bulla, early } => {
-                let bulla = match DaoProposalBulla::from_str(&bulla) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        eprintln!("Invalid proposal bulla: {e}");
-                        exit(2);
-                    }
-                };
-
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    Some(blockchain_config.endpoint),
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let proposal = drk.get_dao_proposal_by_bulla(&bulla).await?;
-
-                // Identify proposal type by its auth calls
-                for call in &proposal.proposal.auth_calls {
-                    // We only support transfer right now
-                    if call.function_code == DaoFunction::AuthMoneyTransfer as u8 {
-                        let tx = match drk.dao_exec_transfer(&proposal, early).await {
-                            Ok(tx) => tx,
-                            Err(e) => {
-                                eprintln!("Failed to execute DAO transfer proposal: {e}");
-                                exit(2);
-                            }
-                        };
-
-                        println!("{}", base64::encode(&serialize_async(&tx).await));
-                        return drk.stop_rpc_client().await
-                    }
-                }
-
-                // If proposal has no auth calls, we consider it a generic one
-                if proposal.proposal.auth_calls.is_empty() {
-                    let tx = match drk.dao_exec_generic(&proposal, early).await {
-                        Ok(tx) => tx,
-                        Err(e) => {
-                            eprintln!("Failed to execute DAO generic proposal: {e}");
-                            exit(2);
-                        }
-                    };
-
-                    println!("{}", base64::encode(&serialize_async(&tx).await));
-                    return drk.stop_rpc_client().await
-                }
-
-                eprintln!("Unsuported DAO proposal");
-                exit(2);
-            }
-
-            DaoSubcmd::SpendHook => {
-                let spend_hook =
-                    FuncRef { contract_id: *DAO_CONTRACT_ID, func_code: DaoFunction::Exec as u8 }
-                        .to_func_id();
-
-                println!("{spend_hook}");
-
-                Ok(())
-            }
-
-            DaoSubcmd::MiningConfig { name } => {
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    None,
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let mut output = vec![];
-                if let Err(e) = drk.dao_mining_config(&name, &mut output).await {
-                    print_output(&output);
-                    eprintln!("Failed to generate DAO mining configuration: {e}");
-                    exit(2);
-                }
-                print_output(&output);
-
-                Ok(())
-            }
-        },
 
         Subcmd::AttachFee => {
             let mut tx = parse_tx_from_stdin().await?;
@@ -1967,7 +1027,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 args.fun,
             )
             .await;
-            if let Err(e) = drk.attach_fee(&mut tx).await {
+            if let Err(e) = drk.attach_fee(&mut tx, 0).await {
                 eprintln!("Failed to attach the fee call to the transaction: {e}");
                 exit(2);
             };
@@ -2029,7 +1089,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 args.fun,
             )
             .await;
-            if let Err(e) = drk.attach_fee(&mut tx).await {
+            if let Err(e) = drk.attach_fee(&mut tx, 0).await {
                 eprintln!("Failed to attach the fee call to the transaction: {e}");
                 exit(2);
             };
@@ -2463,7 +1523,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 )
                 .await;
                 let token_id = drk.import_mint_authority(mint_authority, token_blind).await?;
-                println!("Successfully imported mint authority for token ID: {token_id}");
+                println!("Successfully imported mint authority for token ID: {}", token_id.to_string());
 
                 Ok(())
             }
@@ -2482,7 +1542,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 let mint_authority = SecretKey::random(&mut OsRng);
                 let token_blind = BaseBlind::random(&mut OsRng);
                 let token_id = drk.import_mint_authority(mint_authority, token_blind).await?;
-                println!("Successfully imported mint authority for token ID: {token_id}");
+                println!("Successfully imported mint authority for token ID: {}", token_id.to_string());
 
                 Ok(())
             }
@@ -2577,19 +1637,13 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                             }
                         };
 
-                        match pallas::Base::from_repr(bytes).into() {
-                            Some(v) => Some(v),
-                            None => {
-                                eprintln!("Invalid user data");
-                                exit(2);
-                            }
-                        }
+                        pallas::Base::from_repr(bytes).into_option()
                     }
                     None => None,
                 };
 
                 let tx = match drk
-                    .mint_token(&amount, *rcpt.public_key(), token_id, spend_hook, user_data)
+                    .mint_token(token_id, 0, None)
                     .await
                 {
                     Ok(tx) => tx,
@@ -2623,7 +1677,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     }
                 };
 
-                let tx = match drk.freeze_token(token_id).await {
+                let tx = match drk.freeze_token(token_id, false, None).await {
                     Ok(tx) => tx,
                     Err(e) => {
                         eprintln!("Failed to create token freeze transaction: {e}");
@@ -2682,7 +1736,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                         }
                     };
 
-                    let history = drk.get_deploy_auth_history(&contract_id).await?;
+                    let history = drk.get_deploy_auth_history().await?;
 
                     let table = prettytable_contract_history(&history);
 
@@ -2789,15 +1843,15 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 )
                 .await;
 
-                let tx = match drk.lock_contract(&deploy_auth).await {
-                    Ok(tx) => tx,
+                let _tx = match drk.lock_contract(deploy_auth, 0, &mut vec![]).await {
+                    Ok(_) => {},
                     Err(e) => {
                         eprintln!("Error creating contract lock tx: {e}");
                         exit(2);
                     }
                 };
 
-                println!("{}", base64::encode(&serialize_async(&tx).await));
+                println!("lock contract created successfully");
 
                 drk.stop_rpc_client().await
             }
@@ -2824,7 +1878,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
             };
             let recipient: Address =
-                StandardAddress::from_public(drk.network, public_key).into();
+                StandardAddress::from_public(drk.network, *public_key.public_key()).into();
 
             println!("Mining blocks to {}...", recipient);
             println!("Press Ctrl+C to stop mining");

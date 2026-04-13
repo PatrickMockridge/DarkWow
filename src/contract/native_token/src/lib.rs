@@ -148,6 +148,20 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1: &str = "Fee_V1";
 
 // ============================================================================
+// ZK CIRCUIT BINARIES (for client-side proof generation)
+// ============================================================================
+
+/// Mint_V1 zkas circuit binary
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN: &[u8] =
+    include_bytes!("../proof/mint_v1.zk.bin");
+/// Burn_V1 zkas circuit binary
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN: &[u8] =
+    include_bytes!("../proof/burn_v1.zk.bin");
+/// Fee_V1 zkas circuit binary
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN: &[u8] =
+    include_bytes!("../proof/fee_v1.zk.bin");
+
+// ============================================================================
 // CONSTANTS
 // ============================================================================
 

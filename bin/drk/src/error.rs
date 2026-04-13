@@ -68,3 +68,9 @@ impl std::fmt::Display for WalletDbError {
 }
 
 impl std::error::Error for WalletDbError {}
+
+impl From<rusqlite::Error> for WalletDbError {
+    fn from(_: rusqlite::Error) -> Self {
+        WalletDbError::QueryExecutionFailed
+    }
+}

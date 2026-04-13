@@ -44,13 +44,14 @@ use darkfi::{
     zk::halo2::Field,
     Error,
 };
-use darkfi_dao_contract::{blockwindow, model::DaoProposalBulla, DaoFunction};
-use darkfi_money_contract::model::{Coin, CoinAttributes, TokenId};
+// TODO: DAO contract is broken on this fork
+// use darkfi_dao_contract::{blockwindow, model::DaoProposalBulla, DaoFunction};
+use darkfi_money_v2_contract::model::{Coin, CoinAttributes, TokenId};
 use darkfi_sdk::{
     crypto::{
         keypair::{Address, StandardAddress},
         note::AeadEncryptedNote,
-        BaseBlind, ContractId, FuncId, FuncRef, Keypair, SecretKey, DAO_CONTRACT_ID,
+        BaseBlind, ContractId, FuncId, FuncRef, Keypair, SecretKey,
     },
     pasta::{group::ff::PrimeField, pallas},
     tx::TransactionHash,
