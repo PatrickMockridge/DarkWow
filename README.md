@@ -7,57 +7,84 @@
 
 ## Fork Name: "Jailbroken"
 
-**This fork is called "darkfi-jailbroken" because we broke free from upstream's security flaws and governance lock-in.**
+**This fork is called "darkfi-jailbroken" because we broke free from upstream's governance attacks and identity leakage.**
 
-### Security Advantage Over Upstream
+### Critical Issues in Upstream DarkFi
 
-**Upstream DarkFi has critical ZK circuit heap bugs** caused by elliptic curve (EC) operations in their circuits:
+#### 1. Governance Can Freeze Native Token
 
-| Upstream Circuit | EC Operations | Status |
-|-----------------|---------------|--------|
-| Fee_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| Mint_V2 | ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| Burn_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| AuthTokenMint_V2 | ec_mul_base | **BUGGY** |
+Upstream DarkFi's DAO can freeze the native token through token-holder voting:
 
-**This fork uses Poseidon-only circuits.** EC heap bugs cannot occur in pure Poseidon arithmetic — there is no memory corruption vector when no EC operations exist.
+```
+Attack Vector:
+1. Large token holders form coalition via DAO
+2. Vote to restrict native token minting/burning
+3. Miners can't get paid → PoW consensus fails
+4. Network becomes extortable
+```
 
-See [Contract Standards](doc/src/dev/contracts/standards.md) for full analysis.
+**Why this is catastrophic for PoW:**
+- Native token pays block rewards to miners
+- Native token pays fees to validators
+- If governance can restrict it, consensus itself becomes attackable
 
-### Governance Problems
+See [Contract Standards](doc/src/dev/contracts/standards.md) Part 3 for full analysis.
 
-Upstream DarkFi also has problematic governance:
+#### 2. ACL Identity Leakage (Poor to Rich Deanonymization)
 
-- **Pre-mine**: Early investors, team, and SAFT participants received DARK tokens at genesis
-- **Venture Capital Influence**: Large token holders can dominate governance proposals
-- **Whale Problem**: Token concentration allows wealthy entities to control DAO voting
+Upstream uses ACL-based governance where voters must reveal:
 
-**We removed Money V1, DAO V1, and all pre-mined/controlled token distributions.**
-**We run on pure Proof of Work - the only legitimate sybil resistance.**
+| What is revealed | Impact |
+|-----------------|--------|
+| Public key | Wallet address traceable |
+| Token balance | Rich/poor status exposed |
+| Vote choices | Political views deanonymized |
+
+**"The Fundamental Problem with Upstream ACL":**
+When you vote via token-holder DAO, observers learn your public key AND your token balance. This leaks identity from poor to rich - if you're poor, your vote matters less; if you're rich, you're a target.
+
+#### 3. SAFT Pre-mine at Genesis
+
+Upstream DarkFi distributed tokens at genesis to:
+- Early investors
+- Team members
+- SAFT participants
+
+This creates **whale dominance** in governance - the richest token holders control the DAO.
+
+### This Fork: No Governance, No Identity Leakage
+
+**We removed:**
+- All pre-mined/SAFT token distributions
+- ACL-based token-holder voting (leaks identity)
+- Governance control over native token (freezing vectors)
+
+**We keep:**
+- Pure Proof of Work (only legitimate sybil resistance)
+- ZK predicates for authorization (reveals only boolean, not balance)
+- Voluntary DAO Escrow (opt-in, no identity leakage)
 
 ### What We Changed
 
 | Aspect | Upstream DarkFi | darkfi-jailbroken |
 |--------|-----------------|-------------------|
-| Money Contract | Money V1 (legacy) | Money V2 (refactored to fix bugs) + Native Token (Z-cash burn-mint, no freezing) |
-| Governance | DAO V1 (ACL/token-holder voting) | DAO Escrow (ZK predicate, voluntary) |
-| Authorization | Merkle proofs leak balance | Pedersen commitments hide balance |
-| Block Rewards | Mixed V1/V2 | Native Token + Money V2 |
-| Genesis | Pre-mine, SAFT, team tokens | Pure PoW - earn through mining |
+| Token distribution | SAFT/pre-mine at genesis | Pure PoW mining only |
+| Governance | ACL DAO (leaks identity) | DAO Escrow (ZK predicate, voluntary) |
+| Native token | Controllable via DAO | No governance, no freeze |
+| Authorization | Merkle proofs leak balance | ZK predicates reveal boolean only |
 | Consensus | PoW + governance tokens | **Pure PoW only** |
-| Privacy Math | ACL model leaks identity | ZK predicates reveal only boolean |
 
-**The Fundamental Problem with Upstream**: Their ACL-based governance (token-holder voting via Merkle proofs) is mathematically unsound for privacy. When you vote, observers learn your public key AND your token balance. See [The Zero-Knowledge Authorization](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) for the proof.
+**The Fundamental Problem with Upstream**: Their ACL-based governance (token-holder voting) is mathematically unsound for privacy. When you vote, observers learn your public key AND your token balance. See [The Zero-Knowledge Authorization](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) for the proof.
 
 ### Satoshi-Style Principles
 
 True to Bitcoin's original vision:
 1. **No Pre-Mined Tokens**: Every DARK is earned through PoW mining
-2. **Voluntary Governance**: Opt-in DAO Escrow - no forced governance
-3. **No SAFT/VC Distribution**: No early investor advantages
+2. **No ACL Governance**: No token-holder voting that leaks identity
+3. **No Native Token Control**: Governance cannot freeze consensus tokens
 4. **Pure Sybil Resistance**: PoW is the only consensus mechanism
 
-This fork is for those who believe in **mining true randomness** and **voluntary governance** - not astroturfed token-holder democracy.
+This fork is for those who believe in **mining true randomness** and **ZK-based authorization** - not astroturfed token-holder democracy that freezes when the rich disagree.
 
 **Development occurs on the `master` branch** (`PatrickM123/darkfi-jailbroken:master`).
 

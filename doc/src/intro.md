@@ -27,13 +27,15 @@ DarkFi implements privacy-preserving smart contracts across multiple domains:
 
 ### Native Token Contract
 
-The [`native_token`](dev/contracts/native_token.md) contract handles consensus and implements a **Z-cash style burn-mint privacy model** with **no token freezing**:
+The [`native_token`](dev/contracts/native_token.md) contract handles consensus and implements a **Z-cash style burn-mint privacy model** with **no governance control**:
 
 - **PoWRewardV1**: Block rewards for miners
 - **FeeV1**: Network fee payment
-- **MintV1**: Create new coins with Pedersen commitments
+- **MintV1**: Create new coins with Poseidon commitments
 - **BurnV1**: Destroy coins (with nullifier to prevent double-spend)
 - **TransferV1**: Private token transfers
+
+**Critical difference from upstream:** This contract has NO governance. Upstream's DAO can freeze their native token through token-holder voting — this fork cannot.
 
 ## Architecture
 
@@ -49,49 +51,75 @@ Key architectural documents:
 
 All contracts are **EXPERIMENTAL** and **UNAUDITED**.
 
-This fork addresses **critical security vulnerabilities** in upstream DarkFi's ZK circuit design.
+This fork addresses **critical governance and identity leakage vulnerabilities** in upstream DarkFi.
 
-### ZK Circuit Heap Bugs: Why Poseidon-Only
+### Why This Fork Exists: Upstream DarkFi's Critical Flaws
 
-Upstream DarkFi's Money V1, V2, and related contracts use **elliptic curve (EC) operations** in ZK circuits. These operations have caused heap memory corruption bugs:
+#### 1. Governance Can Freeze Native Token (Catastrophic for PoW)
 
-| Circuit | EC Operations | Status |
-|---------|-------------|--------|
-| Fee_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| Mint_V2 | ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| Burn_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| AuthTokenMint_V2 | ec_mul_base | **BUGGY** |
-
-**This fork uses Poseidon-only circuits.** EC heap bugs cannot occur in pure Poseidon arithmetic — there is no memory corruption vector when no EC operations exist.
-
-See [Contract Standards](dev/contracts/standards.md) for full analysis of EC vs Poseidon tradeoffs.
-
-### Why Poseidon is Sufficient for DarkFi
-
-DarkFi uses **burn-mint** (not transfer-with-change):
+Upstream's DAO can control the native token, creating a **plutocratic freeze attack**:
 
 ```
-TRADITIONAL (Pedersen/homomorphic):
-  Spend coin A → Receive coin B
-  Need: C_change = C_input - C_output  ← Requires EC addition
-
-DARKFI (burn-mint):
-  Burn coin A (emit nullifier)
-  Mint coin B (new commitment)
-  Value balance checked at contract layer
-  No EC addition needed
+Attack Scenario:
+1. Large token holders dominate DAO via SAFT/pre-mine holdings
+2. Vote to restrict native token operations
+3. Miners can't receive block rewards → PoW consensus fails
+4. Validators can't collect fees → Consensus weakens
+5. Network becomes extortable
 ```
 
-For the full security rationale, see [standards.md](dev/contracts/standards.md).
+**Why this breaks PoW:**
+- Native token serves consensus-critical functions (block rewards, fees)
+- If governance can freeze minting, miners may not get paid
+- The network becomes attackable by wealthy token holders
 
-### Cold vs Hot Circuits
+#### 2. ACL Identity Leakage: Poor to Rich Deanonymization
 
-| Circuit Type | Example | Design Choice |
-|-------------|---------|---------------|
-| **Hot** (frequent) | open_position, mint_stable | Poseidon-only (no bugs) |
-| **Cold** (rare) | governance_report, accrue_interest | BaseDiv for precision |
+Upstream DarkFi uses **ACL-based governance** where voters must reveal:
 
-Cold circuits execute monthly and can use more complex arithmetic. Hot circuits execute thousands of times per day and must be bug-free.
+| What is revealed | Impact |
+|-----------------|--------|
+| Public key | Wallet address traceable |
+| Token balance | Rich/poor status exposed |
+| Vote choices | Political views deanonymized |
+
+This leaks identity from poor to rich. If you're poor, your vote matters less. If you're rich, you're a target.
+
+#### 3. SAFT Pre-mine Creates Whale Dominance
+
+Upstream distributed DARK tokens at genesis to:
+- Early investors
+- Team members
+- SAFT participants
+
+This concentrates governance in the hands of the wealthiest token holders.
+
+### This Fork's Solutions
+
+| Problem | Upstream | This Fork (darkfi-jailbroken) |
+|---------|----------|-------------------------------|
+| Native token freeze | DAO can control it | **No governance, no freeze** |
+| Identity leakage | ACL voting reveals balance | **ZK predicates reveal boolean only** |
+| Token distribution | SAFT/pre-mine at genesis | **Pure PoW mining only** |
+| Governance | Token-holder ACL voting | **DAO Escrow (ZK predicate, voluntary)** |
+
+For the full analysis, see [Contract Standards](dev/contracts/standards.md).
+
+### Privacy Architecture
+
+DarkFi uses **ZK predicates** instead of ACL:
+
+```
+ZK Predicate (GOOD):
+  - Prove: "I am a verified contractor"
+  - Verifier learns: ✓ Boolean (yes/no)
+  - Verifier DOES NOT learn: Public key, balance, identity
+
+ACL (BAD - upstream uses this):
+  - Prove: "I have 1000 tokens"
+  - Verifier learns: Public key AND token balance
+  - Identity leaked from rich to poor
+```
 
 ### Known Security Issues
 
