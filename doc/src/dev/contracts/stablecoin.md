@@ -10,38 +10,94 @@ The stablecoin contract enables minting a privacy-preserving stablecoin (e.g., a
 
 ## Architecture
 
-Based on the Nethermind P2P Oracle design with DarkFi privacy:
+Based on the Nethermind P2P Oracle design with DarkFi privacy. Uses **Pooled Debt Model** (Synthetix-style) where all collateral backs all debt.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                 Stablecoin System                                   │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  COLLATERAL (XMR)                                               │
+│  User Deposits Collateral                                         │
 │       │                                                           │
-│       │  Lock in contract                                        │
 │       ▼                                                           │
 │  ┌─────────────┐    ┌──────────────┐                            │
-│  │ Collateral  │───→│ Price Oracle │                            │
-│  │ Tracker     │    │ (P2P)        │                            │
+│  │ MoneyV3     │───→│ Stablecoin   │                            │
+│  │ (Token)     │    │ (CDP Engine) │                            │
+│  │ collateral  │    │              │                            │
+│  │ receipt     │    │ Pooled Debt  │                            │
 │  └─────────────┘    └──────────────┘                            │
-│       │                    │                                      │
-│       │                    ▼                                      │
-│       │            ┌──────────────┐                               │
-│       │            │ Stability    │                               │
-│       │            │ Mechanism    │                               │
-│       │            └──────────────┘                               │
-│       │                    │                                      │
-│       ▼                    ▼                                      │
-│  ┌─────────────────────────────────────┐                         │
-│  │         Stablecoin (USDx)           │                         │
-│  │  - Anonymous transfers               │                         │
-│  │  - Collateral ratio tracking         │                         │
-│  │  - Liquidation mechanism            │                         │
-│  └─────────────────────────────────────┘                         │
+│                           │                                       │
+│       ┌───────────────────┴───────────────────┐                  │
+│       ▼                                       ▼                  │
+│  ┌─────────────┐                      ┌─────────────┐         │
+│  │ MintStable  │                      │ Liquidate   │         │
+│  │ (burn col,  │                      │ (burn USDx, │         │
+│  │  mint USDx) │                      │  seize col) │         │
+│  └─────────────┘                      └─────────────┘         │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Pooled Debt Model
+
+Unlike individual CDP models (MakerDAO), this uses pooled debt:
+- **All collateral backs all debt** (no individual positions)
+- **Simpler ZK circuits** (no per-position Merkle proofs)
+- **Better privacy** (no position IDs that could leak)
+- **Entire pool is liquidatable** (not individual positions)
+
+See [model/mod.rs](../../contract/stablecoin/src/model/mod.rs) for `StablecoinModel` enum (PooledDebt, Liquity, Fractional, IndividualCdp).
+
+## MoneyV3 Integration
+
+Stablecoin uses **MoneyV3** for token management via `spend_hook`:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Cross-Contract Flow                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  1. OPEN POSITION                                                     │
+│     User ──► Stablecoin::OpenPositionV1                              │
+│              │                                                        │
+│              └───► MoneyV3::MintV1 (mint collateral receipt tokens)   │
+│                       spend_hook = stablecoin_contract_id               │
+│                                                                      │
+│  2. MINT STABLE                                                       │
+│     User ──► MoneyV3::BurnV1 (burn collateral tokens)                 │
+│              │                                                        │
+│              └───► spend_hook ──► Stablecoin::exec()                  │
+│                                        │                              │
+│                                        └───► MoneyV3::MintV1 (mint USDx)│
+│                                                                      │
+│  3. REPAY STABLE                                                      │
+│     User ──► MoneyV3::BurnV1 (burn USDx)                              │
+│              │                                                        │
+│              └───► spend_hook ──► Stablecoin::exec()                  │
+│                                        │                              │
+│                                        └───► MoneyV3::MintV1 (mint col)│
+│                                                                      │
+│  4. LIQUIDATE                                                         │
+│     User ──► MoneyV3::BurnV1 (burn USDx to cover debt)               │
+│              │                                                        │
+│              └───► spend_hook ──► Stablecoin::exec() (seizure)       │
+│                                        │                              │
+│                                        └───► MoneyV3::MintV1 (col seized)
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### spend_hook Mechanism
+
+When a token is burned with `spend_hook`:
+1. MoneyV3 verifies the burn proof
+2. MoneyV3 calls `stablecoin.exec(user_data)`
+3. If stablecoin returns success, the burn is finalized
+4. If stablecoin returns error, the entire transaction aborts
+
+This enables **atomic cross-contract operations**:
+- Burn collateral token → Mint stablecoin (in one transaction)
+- Burn stablecoin → Receive collateral (in one transaction)
 
 ## P2P Oracle: Avoiding Front-Running
 
@@ -112,28 +168,6 @@ All stablecoin circuits use **Poseidon-only** design for maximum security and si
 
 This avoids the heap bug issues that affected MoneyV2 circuits. See [standards.md](./standards.md) for full analysis.
 
-### MoneyV3 Integration
-
-Stablecoin uses MoneyV3 for token management:
-
-```
-Stablecoin Contract          MoneyV3 Contract
-┌─────────────────┐         ┌─────────────────┐
-│ CDP Mechanics    │──┐      │ Token Types     │
-│ (collateral,     │  │      │ (USDx, collat)  │
-│  debt, liquidation)         │                 │
-└─────────────────┘  │      └─────────────────┘
-                      │      ┌─────────────────┐
-                      └───→  │ Mint/Burn       │
-                             │ (via spend_hook)│
-                             └─────────────────┘
-```
-
-- **InitializeV1**: Creates MoneyV3 token type for stablecoin
-- **OpenPositionV1**: Mints collateral receipt tokens (MoneyV3 MintV1)
-- **MintStableV1**: Burns collateral tokens, mints stablecoin (MoneyV3)
-- **LiquidateV1**: Seizure via spend_hook callback, rewards via MoneyV3
-
 ### Cold Circuits (BaseDiv)
 
 Circuits `governance_report_v1.zk` and `accrue_interest_v1.zk` use BaseDiv for precision interest calculations. These are executed rarely (monthly) so the attack surface is minimal.
@@ -153,30 +187,47 @@ Circuits `governance_report_v1.zk` and `accrue_interest_v1.zk` use BaseDiv for p
 | GovernanceReportV1 | 0x08 | Update governance parameters | governance_report_v1.zk |
 | UpdateConfigV1 | 0x09 | Update contract parameters | - |
 
-## Liquidation Flow
+## Liquidation Flow (Pooled Debt Model)
+
+In the pooled debt model, liquidation is **global** - the entire pool is either healthy or liquidatable:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                 Liquidation Flow                                   │
+│                 Pooled Liquidation Flow                           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  1. Position undercollateralized (ratio < 150%)                   │
-│     → Liquidator detects opportunity                             │
+│  1. Pool becomes undercollateralized (ratio < threshold)          │
+│     → Global check, not per-position                              │
 │                                                                   │
-│  2. Liquidator submits liquidation proof                          │
-│     → ZK proof: position is undercollateralized                   │
-│     → ZK proof: liquidator is authorized                          │
+│  2. Liquidator calls MoneyV3::BurnV1                              │
+│     → spend_hook = stablecoin_contract_id                         │
+│     → user_data encodes seizure parameters                       │
 │                                                                   │
-│  3. Contract executes:                                            │
-│     → Liquidator pays stablecoin (debt)                          │
-│     → Liquidator receives collateral (XMR)                        │
-│     → Position closed                                             │
+│  3. Stablecoin::exec() callback verifies:                          │
+│     → Pool ratio is below threshold                              │
+│     → Debt coverage is valid                                     │
+│     → Seizure calculation correct                               │
 │                                                                   │
-│  4. Bonus to liquidator (e.g., 10% of collateral)                 │
-│     → Incentivizes active liquidation                             │
+│  4. Contract executes:                                            │
+│     → Burn USDx (debt coverage)                                  │
+│     → Release seized collateral proportionally                   │
+│     → Liquidator receives via MoneyV3::MintV1                     │
+│                                                                   │
+│  NOTE: Individual positions are NOT tracked.                     │
+│        The pool itself is the only state.                       │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Difference from Individual CDP Model
+
+| Aspect | Individual CDP (MakerDAO) | Pooled Debt (This) |
+|--------|--------------------------|-------------------|
+| State | Per-position tracking | Global pool only |
+| Liquidation | Per-position | Entire pool |
+| Privacy | Position IDs leak | No positions |
+| ZK Complexity | Complex per-position | Simple global |
+| Risk | Individual position | Whole pool risk |
 
 ## Structure
 
@@ -190,19 +241,30 @@ src/contract/stablecoin/
 │   └── governance_report_v1.zk  # Cold circuit (BaseDiv)
 ├── src/
 │   ├── client/
-│   │   ├── mod.rs
-│   │   ├── open_position_v1.rs  # Poseidon commitment, BaseBlind
-│   │   ├── mint_stable_v1.rs    # Poseidon commitment, BaseBlind
-│   │   └── liquidate_v1.rs      # Poseidon commitment, BaseBlind
+│   │   ├── mod.rs               # Exports TokenMintCallInput from MoneyV3
+│   │   ├── initialize_v1.rs     # Creates MoneyV3 token (USDx)
+│   │   ├── open_position_v1.rs  # CollateralMintBuilder
+│   │   ├── mint_stable_v1.rs    # CollateralBurnBuilder
+│   │   └── liquidate_v1.rs      # spend_hook documentation
 │   ├── entrypoint.rs            # WASM entrypoint
 │   ├── error.rs
 │   ├── lib.rs                   # Function enum, constants
 │   └── model/
-│       └── mod.rs               # Data types
+│       └── mod.rs               # Data types, InitializeParams
 ├── Cargo.toml                   # Depends on darkfi_money_v3_contract
 ├── Makefile
 └── tests/
 ```
+
+### Client API Integration Points
+
+| Function | MoneyV3 Integration |
+|----------|-------------------|
+| `InitializeV1` | Creates stablecoin token type in MoneyV3 |
+| `OpenPositionV1` | Mints collateral receipt tokens via MoneyV3::MintV1 |
+| `MintStableV1` | Burns collateral via MoneyV3::BurnV1 with spend_hook |
+| `RepayStableV1` | Burns stablecoin, mints collateral via spend_hook |
+| `LiquidateV1` | Burns stablecoin, seized collateral via spend_hook |
 
 ## Building
 
@@ -213,11 +275,48 @@ cargo build --features client  # Build with client APIs
 cargo test    # Run tests
 ```
 
-**Note**: Client APIs use `BaseBlind` (Poseidon) instead of `ScalarBlind` (EC).
-This is consistent with MoneyV3 and avoids EC heap bugs.
+### Client API Usage
+
+```rust
+use darkfi_stablecoin_contract::client::{
+    initialize_v1::InitializeCallBuilder,
+    open_position_v1::CollateralMintBuilder,
+    mint_stable_v1::CollateralBurnBuilder,
+};
+
+// Initialize and create MoneyV3 token
+let init_debris = InitializeCallBuilder {
+    model: StablecoinModel::PooledDebt,
+    create_token: true,
+    token_symbol: "USDx".into(),
+    ..Default::default()
+}.build();
+
+// Open position, mint collateral receipt
+let mint_debris = CollateralMintBuilder {
+    owner_pub: user_public_key,
+    collateral_amount: 1000,
+    collateral_type: CollateralType::Xmr,
+    token_id: collateral_token_id,
+    stablecoin_contract_id,
+    user_data: position_commitment,
+}.build();
+
+// Mint stablecoin by burning collateral
+let burn_debris = CollateralBurnBuilder {
+    collateral_coin: receipt_coin,
+    owner_secret: user_secret,
+    mint_amount: 500,
+    stablecoin_contract_id: stablecoin_id,
+    stablecoin_token_id: usdx_token_id,
+    collateral_token_id,
+}.build();
+```
 
 ## References
 
+- [MoneyV3 Integration](money_v3.md) - Token contract used by stablecoin
+- [Contract Standards](standards.md) - Poseidon-only, spend_hook design
 - [Stablecoin Architecture](../../arch/stablecoin.md)
 - [Nethermind P2P Oracle](https://github.com/NethermindEth/p2p-oracle)
 - [MakerDAO DSR](https://docs.makerdao.com/)
