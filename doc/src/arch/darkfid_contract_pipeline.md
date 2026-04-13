@@ -425,7 +425,7 @@ pub async fn deploy_money_v2(&mut self, holder: &Holder, wasm_bincode: Vec<u8>, 
 
 ## Related Documentation
 
-- [Money V2 Migration](./money_v2_migration.md) - Block rewards switch and genesis changes (HARD FORK)
+- [Money V3 Migration](./money_v3_migration.md) - Privacy-first DeFi tokens with Poseidon-only circuits (HARD FORK)
 - [Test Harness Guide](./test_harness_guide.md) - Detailed test harness architecture
 - [Localnet Contract Testing](./localnet_contract_testing.md) - Testing workflows
 - [Contract Overview](./sc/sc.md) - Smart contract architecture

@@ -51,7 +51,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 - [OCap](./ocap.md) - Object-capability security model
 - [Entropy](./entropy.md) - Randomness generation
 - [Transaction Lifetime](./tx_lifetime.md) - Transaction processing lifecycle
-- [Money V2 Migration](./money_v2_migration.md) - Block rewards switch and genesis changes (HARD FORK)
+- [Money V3 Migration](./money_v3_migration.md) - Privacy-first DeFi tokens with Poseidon-only circuits (HARD FORK)
 
 ## Reference
 
