@@ -1,5 +1,16 @@
 # DarkFi Money V2 Contract
 
+> [!WARNING]
+> **DEPRECATED**: Money V2 is deprecated and should not be used for new development.
+>
+> **Replacement contracts:**
+> - **[NativeToken](../native_token/)** - For consensus functions (PoW mining rewards, network fees)
+> - **[MoneyV3](../money_v3/)** - For DeFi functions (ERC-20 tokens, stablecoins, wrapped assets)
+>
+> Money V2 contains EC heap bugs in 4 of its 5 circuits (Fee_V2, Mint_V2, Burn_V2, AuthTokenMint_V2). Only TokenMint_V2 is safe (Poseidon-only).
+>
+> See the [MoneyV3 documentation](../../doc/src/dev/contracts/money_v3.md) for the privacy-first DeFi token contract.
+
 **money_v2** is our standard money contract for this fork, featuring improved circuit design with self-contained ZK proofs.
 
 ## Overview
@@ -70,8 +81,9 @@ make test-integration
 ```
 src/contract/
 ├── money/           # Original DarkFi money (v1) - upstream legacy
-├── money_v2/        # Our secure version (v2) - STANDARD GOING FORWARD
-└── ...
+├── money_v2/        # DEPRECATED - EC heap bugs, use MoneyV3 instead
+├── native_token/    # Consensus contract (PoW rewards, fees)
+└── money_v3/        # DeFi contract (tokens, stablecoins, ERC-20)
 ```
 
 ## Documentation
@@ -83,6 +95,11 @@ src/contract/
 
 ## Status
 
-**money_v2 is our standard** for this fork. Use it for all new development.
+> [!WARNING]
+> **DEPRECATED** - Do not use for new development.
+
+Money V2 is replaced by:
+- **NativeToken**: Consensus (PoW rewards, network fees)
+- **MoneyV3**: DeFi (tokens, stablecoins, wrapped assets)
 
 The original `money/` contract is maintained for network compatibility with upstream DarkFi.

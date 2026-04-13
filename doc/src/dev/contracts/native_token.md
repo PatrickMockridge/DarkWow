@@ -22,6 +22,9 @@ NativeToken solves these by being:
 4. **Consensus-First**: Block rewards and fees are paramount
 5. **No Token Freezing**: Eliminated freeze-key attack vectors entirely
 
+> [!NOTE]
+> **For DeFi functionality (tokens, stablecoins, wrapped assets), see [MoneyV3](./money_v3.md)** - the privacy-first ERC-20 style contract with zero EC operations and 100% fungible tokens.
+
 ## Design Philosophy: CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD
 
 This design philosophy prioritizes the core functions of a blockchain native token:
@@ -86,6 +89,23 @@ Nullifiers prevent double-spending by hashing the spending key with the coin has
 | TransferV1 | 0x03 | Private transfers | PRIVACY |
 | SpendV1 | 0x04 | (removed - merged into BurnV1) | - |
 | PoWRewardV1 | 0x05 | Block rewards | CONSENSUS |
+
+> [!NOTE]
+> **NativeToken vs MoneyV3**: NativeToken handles **consensus functions** (PoW rewards, network fees). For **DeFi functions** (ERC-20 tokens, stablecoins, wrapped assets), use [MoneyV3](./money_v3.md).
+
+### Function Demarcation
+
+| Use Case | Contract | Functions |
+|----------|----------|-----------|
+| PoW Mining Rewards | NativeToken | PoWRewardV1 |
+| Network Fees | NativeToken | FeeV1 |
+| Genesis Minting | NativeToken | MintV1 |
+| Token Transfers (native) | NativeToken | TransferV1 |
+| **Create Token Types** | **MoneyV3** | **TokenMintV1** |
+| **Authorize Minting** | **MoneyV3** | **AuthTokenMintV1** |
+| **Mint Tokens (ERC-20)** | **MoneyV3** | **MintV1** |
+| **Burn Tokens** | **MoneyV3** | **BurnV1** |
+| **Token Transfers (DeFi)** | **MoneyV3** | **TransferV1** |
 
 ### FeeV1 (0x00)
 
@@ -193,6 +213,62 @@ By removing token freezing:
 - Burn client API is stubbed (requires Merkle proof infrastructure)
 - SpendV1 merged into BurnV1 for simplicity
 
+## The EC Heap Bug in MoneyV2
+
+**Critical Issue**: MoneyV2 circuits contain EC operations that caused heap memory corruption bugs.
+
+### The Bug
+
+MoneyV2's circuits use elliptic curve operations:
+- `ec_mul_base(secret, NULLIFIER_K)` - Deriving public keys
+- `ec_mul_short(value, VALUE_COMMIT_VALUE)` - Pedersen commitments
+- `ec_mul(blind, VALUE_COMMIT_RANDOM)` - Commitment blinding
+- `ec_add(vcv, vcr)` - Combining commitment parts
+
+These EC operations were implemented incorrectly in the halo2 stack, leading to heap corruption when processing certain inputs. The bug manifested as:
+
+```
+heap buffer overflow
+ec_mul_base operation corrupted heap state
+```
+
+### Affected Circuits in MoneyV2
+
+| Circuit | EC Operations | Status |
+|---------|---------------|--------|
+| `fee_v1.zk` (Fee_V2) | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
+| `mint_v1.zk` (Mint_V2) | ec_mul_short, ec_mul, ec_add | **BUGGY** |
+| `burn_v1.zk` (Burn_V2) | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
+| `auth_token_mint_v1.zk` | ec_mul_base | **BUGGY** |
+| `token_mint_v1.zk` | None (uses Poseidon only) | **SAFE** |
+
+### Why NativeToken Still Uses EC
+
+Unfortunately, NativeToken's circuits (`mint_v1.zk`, `burn_v1.zk`, `fee_v1.zk`) also use the same EC operations - they have the same heap bug vulnerability.
+
+The difference is that NativeToken prioritizes consensus reliability over privacy circuit safety. The EC operations are consensus-critical for value commitments, and NativeToken's simpler design makes it easier to work around known issues.
+
+### The Solution: MoneyV3 (Poseidon-Only)
+
+MoneyV3 (see `src/contract/money_v3/`) implements a **complete Poseidon-only** design:
+
+- **Zero EC operations** - No heap bug possible
+- **Value commitment**: `poseidon_hash(value, blind)` instead of Pedersen
+- **Public key**: `poseidon_hash(secret)` instead of `ec_mul_base`
+- **100% fungible** - Token ID is a hidden commitment
+
+The trade-off is losing the homomorphic property of Pedersen commitments, but DarkFi's transaction validation doesn't actually use homomorphic addition of commitments, so this is acceptable.
+
+### Security Comparison
+
+| Aspect | Money V2 | NativeToken | Money V3 |
+|--------|----------|-------------|----------|
+| EC operations | 4 circuits | 3 circuits | 0 (none!) |
+| Heap bug risk | YES | YES | NO |
+| Value commitment | Pedersen (EC) | Pedersen (EC) | Poseidon hash |
+| Public key | ec_mul_base | ec_mul_base | poseidon_hash |
+| Token ID privacy | Revealed | Revealed | Hidden commitment |
+
 ## Decoupled from DAO
 
 NativeToken does NOT require DAO for:
@@ -243,6 +319,11 @@ NATIVE_TOKEN_CONTRACT_INFO_TREE           - contract metadata
   - `proof/*.zk` - ZK circuit source
   - `proof/*.zk.bin` - Compiled circuit binaries
   - `docs/engineering_spec.md` - Detailed engineering specification
+
+## See Also
+
+- [MoneyV3](./money_v3.md) - Privacy-first DeFi token contract for ERC-20 style tokens, stablecoins, and wrapped assets
+- [Money V2 Deprecation Notice](./money_v2.md) - Migration path from legacy MoneyV2
 
 ## Testing
 
