@@ -116,6 +116,9 @@ use cancel_swap_v1::{
 mod set_transparency_level_v1;
 use set_transparency_level_v1::dex_set_transparency_level_process_instruction_v1;
 
+mod update_config_v1;
+use update_config_v1::dex_update_config_process_instruction_v1;
+
 mod execute_swap_fee_v1;
 use execute_swap_fee_v1::{
     dex_execute_swap_fee_get_metadata_v1, dex_execute_swap_fee_process_instruction_v1,
@@ -238,8 +241,8 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         DexFunction::AcceptSwapV1 => dex_accept_swap_process_instruction_v1(cid, call_idx, calls)?,
         DexFunction::ExecuteSwapV1 => dex_execute_swap_process_instruction_v1(cid, call_idx, calls)?,
         DexFunction::CancelSwapV1 => dex_cancel_swap_process_instruction_v1(cid, call_idx, calls)?,
-        DexFunction::UpdateConfigV1 => vec![],
-        DexFunction::SetTransparencyLevelV1 => vec![],
+        DexFunction::UpdateConfigV1 => dex_update_config_process_instruction_v1(cid, call_idx, calls)?,
+        DexFunction::SetTransparencyLevelV1 => dex_set_transparency_level_process_instruction_v1(cid, call_idx, calls)?,
         DexFunction::ExecuteSwapFeeV1 => dex_execute_swap_fee_process_instruction_v1(cid, call_idx, calls)?,
         DexFunction::ExecuteSwapSlippageV1 => dex_execute_swap_slippage_process_instruction_v1(cid, call_idx, calls)?,
     };

@@ -77,6 +77,15 @@ pub enum DexError {
 
     #[error("Invalid children indexes: expected money::OtcSwapV2 calls")]
     InvalidChildrenIndexes,
+
+    #[error("Governance not set")]
+    GovernanceNotSet,
+
+    #[error("Invalid governance key")]
+    InvalidGovernanceKey,
+
+    #[error("Not authorized")]
+    NotAuthorized,
 }
 
 impl From<DexError> for ContractError {
@@ -101,6 +110,9 @@ impl From<DexError> for ContractError {
             DexError::InvalidConfiguration => Self::Custom(17),
             DexError::FeeTooLow => Self::Custom(18),
             DexError::InvalidChildrenIndexes => Self::Custom(19),
+            DexError::GovernanceNotSet => Self::Custom(20),
+            DexError::InvalidGovernanceKey => Self::Custom(21),
+            DexError::NotAuthorized => Self::Custom(22),
         }
     }
 }

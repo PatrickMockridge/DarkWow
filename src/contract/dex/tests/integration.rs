@@ -28,7 +28,7 @@ use darkfi_dex_contract::{
 };
 use darkfi_serial::{deserialize, serialize};
 use darkfi_sdk::{
-    crypto::{PublicKey, SecretKey},
+    crypto::{schnorr::Signature, PublicKey, SecretKey},
     pasta::pallas,
 };
 
@@ -179,6 +179,7 @@ fn test_update_config_params_encoding() {
     let params = UpdateConfigParams {
         timeout: 200,
         fee: 3000,
+        signature: Signature::dummy(),
     };
 
     let encoded = serialize(&params);

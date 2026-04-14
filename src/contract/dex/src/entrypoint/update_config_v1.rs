@@ -16,32 +16,32 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! SetTransparencyLevelV1 entrypoint functions
+//! UpdateConfigV1 entrypoint functions
 //!
-//! Allows governance to change the transparency level post-deployment.
+//! Allows governance to update DEX configuration parameters.
 
 use darkfi_sdk::{crypto::PublicKey, crypto::schnorr::SchnorrPublic, error::ContractError, msg, wasm};
 use darkfi_serial::{deserialize, serialize};
 
 use crate::{
     error::DexError,
-    model::SetTransparencyLevelParams,
-    DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY,
-    DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY,
+    model::UpdateConfigParams,
+    DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_FEE, DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY,
+    DEX_CONTRACT_TIMEOUT,
 };
 
-/// `process_instruction` function for `Dex::SetTransparencyLevelV1`
+/// `process_instruction` function for `Dex::UpdateConfigV1`
 ///
-/// Verifies the caller is authorized (governance) and updates transparency level.
-pub(crate) fn dex_set_transparency_level_process_instruction_v1(
+/// Verifies the caller is authorized (governance) and updates configuration.
+pub(crate) fn dex_update_config_process_instruction_v1(
     cid: darkfi_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: SetTransparencyLevelParams = deserialize(&self_.data[1..])?;
+    let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
 
-    msg!("[SetTransparencyLevelV1] Setting transparency level to: {:?}", params.level);
+    msg!("[UpdateConfigV1] Updating config: timeout={}, fee={}", params.timeout, params.fee);
 
     // Verify caller is authorized (governance check)
     let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
@@ -49,16 +49,20 @@ pub(crate) fn dex_set_transparency_level_process_instruction_v1(
         .ok_or(DexError::GovernanceNotSet)?;
 
     // Verify signature - params must be signed by governance key
+    // Encode the config changes for signature verification
+    let config_data = serialize(&(params.timeout, params.fee));
     let governance_pubkey = PublicKey::from_bytes(governance_pubkey_data.as_slice().try_into().map_err(|_| DexError::InvalidGovernanceKey)?)
         .map_err(|_| DexError::InvalidGovernanceKey)?;
-    let signature_msg = serialize(&params.level);
-    if !governance_pubkey.verify(&signature_msg, &params.signature) {
+    if !governance_pubkey.verify(&config_data, &params.signature) {
         return Err(DexError::NotAuthorized.into());
     }
 
-    // Update transparency level in config
-    wasm::db::db_set(config_db, DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY, &[params.level as u8])?;
+    // Update timeout in config
+    wasm::db::db_set(config_db, DEX_CONTRACT_TIMEOUT, &params.timeout.to_le_bytes())?;
 
-    msg!("[SetTransparencyLevelV1] Transparency level updated successfully");
+    // Update fee in config
+    wasm::db::db_set(config_db, DEX_CONTRACT_FEE, &params.fee.to_le_bytes())?;
+
+    msg!("[UpdateConfigV1] Configuration updated successfully");
     Ok(vec![])
 }

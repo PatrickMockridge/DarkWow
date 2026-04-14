@@ -89,6 +89,8 @@ pub const DEX_CONTRACT_FEE: &[u8] = b"dex_fee";
 pub const DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY: &[u8] = b"trusted_money_merkle_root";
 /// Transparency level key
 pub const DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY: &[u8] = b"transparency_level";
+/// Governance public key for authorization
+pub const DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY: &[u8] = b"governance_pubkey";
 
 // ============================================================================
 // ZK CIRCUIT NAMESPACES

@@ -68,7 +68,7 @@
 //! - Event-based state synchronization between contracts
 
 use darkfi_serial::{SerialDecodable, SerialEncodable};
-use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
+use darkfi_sdk::crypto::{schnorr::Signature, IntentCommitment, IntentNullifier, PublicKey};
 
 /// Namespace for DEX intents (used with generic intent primitives)
 pub const DEX_NAMESPACE: u64 = 0x0003;
@@ -365,6 +365,8 @@ pub struct UpdateConfigParams {
     pub timeout: u32,
     /// New fee (basis points)
     pub fee: u64,
+    /// Signature from governance key authorizing this change
+    pub signature: Signature,
 }
 
 /// Set transparency level parameters
@@ -374,6 +376,8 @@ pub struct UpdateConfigParams {
 pub struct SetTransparencyLevelParams {
     /// New transparency level
     pub level: TransparencyLevel,
+    /// Signature from governance key authorizing this change
+    pub signature: Signature,
 }
 
 /// Set full transparency configuration parameters
