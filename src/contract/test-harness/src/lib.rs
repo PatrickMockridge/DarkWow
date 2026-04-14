@@ -26,4 +26,3 @@ pub mod harness;
 pub mod native_token;
 pub use native_token::init_logger;
 pub mod deployooor;
-pub mod vks;

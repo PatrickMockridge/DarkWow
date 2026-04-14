@@ -33,7 +33,6 @@ use darkfi::{
     zk::{empty_witnesses, ProvingKey, ZkCircuit},
     Result,
 };
-use darkfi_contract_test_harness::vks;
 use darkfi_native_token_contract::{
     client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1,
@@ -68,7 +67,6 @@ pub struct HarnessConfig {
 
 pub struct Harness {
     pub config: HarnessConfig,
-    pub vks: Vec<(Vec<u8>, String, Vec<u8>)>,
     pub validator_config: ValidatorConfig,
     pub alice: DarkfiNodePtr,
     pub bob: DarkfiNodePtr,
@@ -92,8 +90,6 @@ impl Harness {
         // Compute genesis contracts states monotree root
         let sled_db = sled::Config::new().temporary(true).open()?;
         let overlay = BlockchainOverlay::new(&Blockchain::new(&sled_db)?)?;
-        let (_, vks) = vks::get_cached_pks_and_vks()?;
-        vks::inject(&overlay, &vks)?;
         deploy_native_contracts(&overlay, config.pow_target).await?;
         let diff = overlay.lock().unwrap().overlay.lock().unwrap().diff(&[])?;
         genesis_block.header.state_root =
@@ -118,15 +114,15 @@ impl Harness {
         // Alice
         let alice_url = Url::parse(&config.alice_url)?;
         settings.inbound_addrs = vec![alice_url.clone()];
-        let alice = generate_node(&vks, &validator_config, &settings, ex, true, None).await?;
+        let alice = generate_node(&validator_config, &settings, ex, true, None).await?;
 
         // Bob
         let bob_url = Url::parse(&config.bob_url)?;
         settings.inbound_addrs = vec![bob_url];
         settings.peers = vec![alice_url];
-        let bob = generate_node(&vks, &validator_config, &settings, ex, false, None).await?;
+        let bob = generate_node(&validator_config, &settings, ex, false, None).await?;
 
-        Ok(Self { config, vks, validator_config, alice, bob })
+        Ok(Self { config, validator_config, alice, bob })
     }
 
     pub async fn validate_chains(&self, total_blocks: usize) -> Result<()> {
@@ -278,7 +274,6 @@ impl Harness {
 
 // Note: This function should mirror `darkfid::Darkfid::init`
 pub async fn generate_node(
-    vks: &Vec<(Vec<u8>, String, Vec<u8>)>,
     config: &ValidatorConfig,
     settings: &Settings,
     ex: &Arc<smol::Executor<'static>>,
@@ -287,7 +282,6 @@ pub async fn generate_node(
 ) -> Result<DarkfiNodePtr> {
     let sled_db = sled::Config::new().temporary(true).open()?;
     let overlay = BlockchainOverlay::new(&Blockchain::new(&sled_db)?)?;
-    vks::inject(&overlay, vks)?;
     deploy_native_contracts(&overlay, config.pow_target).await?;
     let diff = overlay.lock().unwrap().overlay.lock().unwrap().diff(&[])?;
     overlay.lock().unwrap().contracts.update_state_monotree(&diff)?;

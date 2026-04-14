@@ -46,6 +46,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 ## Consensus & Protocol
 
 - [Consensus](./consensus.md) - PoW consensus algorithm
+- [Sync](./sync.md) - Block synchronization module
 - [Tau](./tau.md) - Token distribution and staking
 - [Slashing](./slashing.md) - Validator punishment mechanism
 - [OCap](./ocap.md) - Object-capability security model

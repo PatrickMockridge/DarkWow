@@ -16,10 +16,28 @@
  * this program; if not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Verification keys re-export for backwards compatibility.
-//!
-//! This module re-exports VK utilities from darkfi::zk::vks.
+//! Types for the clean sync module.
 
-pub use darkfi::zk::get_cached_pks_and_vks;
-pub use darkfi::zk::inject;
-pub type VkEntry = darkfi::zk::VkEntry;
+use crate::blockchain::BlockInfo;
+
+/// Sync block type - reuses existing BlockInfo
+pub type SyncBlock = BlockInfo;
+
+/// Verification result
+#[derive(Debug, Clone)]
+pub enum VerifyResult {
+    Ok,
+    InvalidSignature,
+    InvalidZkProof,
+    InvalidHeader,
+}
+
+/// Sync state machine states
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncState {
+    Idle,
+    Syncing,
+    Verifying,
+    Applying,
+    Synced,
+}

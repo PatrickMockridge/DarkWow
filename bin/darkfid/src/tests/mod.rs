@@ -39,6 +39,10 @@ mod forks;
 
 mod sync_forks;
 
+mod sync_simple;
+
+mod sync_native;
+
 // TODO: re-enable once TestHarness/Holder types are implemented
 // mod unproposed_txs;
 
@@ -117,7 +121,6 @@ async fn sync_blocks_real(ex: Arc<Executor<'static>>) -> Result<()> {
     let bob_url = th.bob.p2p_handler.p2p.settings().read().await.inbound_addrs[0].clone();
     settings.peers = vec![bob_url];
     let charlie = generate_node(
-        &th.vks,
         &th.validator_config,
         &settings,
         &ex,
@@ -256,8 +259,6 @@ fn darkfid_programmatic_control() -> Result<()> {
                     &darkfi::blockchain::Blockchain::new(&sled_db).unwrap(),
                 )
                 .unwrap();
-                let (_, vks) = darkfi_contract_test_harness::vks::get_cached_pks_and_vks().unwrap();
-                darkfi_contract_test_harness::vks::inject(&overlay, &vks).unwrap();
                 darkfi::validator::utils::deploy_native_contracts(&overlay, 20).await.unwrap();
                 let diff = overlay.lock().unwrap().overlay.lock().unwrap().diff(&[]).unwrap();
                 genesis_block.header.state_root =
