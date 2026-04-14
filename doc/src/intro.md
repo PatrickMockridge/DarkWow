@@ -37,6 +37,16 @@ The [`native_token`](dev/contracts/native_token.md) contract handles consensus a
 
 **Critical difference from upstream:** This contract has NO governance. Upstream's DAO can freeze their native token through token-holder voting — this fork cannot.
 
+> **Design Philosophy: Tokens are Infrastructure**
+>
+> DarkFi's tokens (NativeToken, MoneyV3) follow a minimal design: they move value, nothing more. Business logic lives in smart contracts (DEX, stablecoin, etc.). This is intentional:
+>
+> - **Simplicity** = fewer bugs in frequently-called code
+> - **Isolation** = bugs in DEX don't cascade to all token transfers
+> - **Permissionless** = anyone can deploy custom token contracts
+>
+> This mirrors process safety principles: isolate complexity to where it's required, don't over-instrument the pipework.
+
 ## Architecture
 
 Key architectural documents:

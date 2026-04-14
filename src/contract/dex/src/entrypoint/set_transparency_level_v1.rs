@@ -41,7 +41,14 @@ pub(crate) fn dex_set_transparency_level_process_instruction_v1(
 
     // Verify caller is authorized ( governance check )
     // TODO: Add proper governance authorization check
-    // For now, we just update the level
+    // Implementation requires:
+    // 1. Add governance_pubkey to InitializeParams
+    // 2. Store governance_pubkey in config during init
+    // 3. Add signature field to SetTransparencyLevelParams
+    // 4. Verify signature against stored governance_pubkey
+    //
+    // For now, this function is unprotected - governance should be handled
+    // by a separate governance contract before production use
 
     // Update transparency level in config
     let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;

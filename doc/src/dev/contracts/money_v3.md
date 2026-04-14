@@ -6,6 +6,18 @@ MoneyV3 is DarkFi's DeFi token contract designed for ERC-20 style functionality 
 
 **Key Principle**: Privacy-first with 100% fungibility. Token IDs are hidden commitments, not traceable identifiers.
 
+> [!NOTE]
+> **Design Philosophy: Tokens are Infrastructure, Not Business Logic**
+>
+> MoneyV3 is intentionally minimal. Tokens move value - that's their only job. Complexity lives in smart contracts (DEX, stablecoin, etc.), not in the token layer. This is a deliberate security decision:
+>
+> - **Tokens are called frequently** - Every transfer, swap, and mint touches them
+> - **Simpler = fewer bugs** - Minimal code surface means fewer vulnerabilities
+> - **Bugs in tokens cascade** - A bug in a token affects every operation
+> - **Bugs in smart contracts are isolated** - A bug in DEX only affects DEX operations
+>
+> See [MoneyV3 Architecture](../arch/money_v3_migration.md) for migration details.
+
 ## Why MoneyV3?
 
 MoneyV3 was created to address fundamental limitations in both MoneyV2 and NativeToken:

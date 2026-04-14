@@ -33,13 +33,14 @@
 //! - **Pooled Debt**: All collateral backs all debt, no individual positions
 
 use darkfi_sdk::{
-    crypto::{ContractId, IntentNullifier},
+    crypto::{pasta_prelude::PrimeField, ContractId, IntentNullifier},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
+    pasta::pallas,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize, Decodable, SerialDecodable, SerialEncodable};
+use darkfi_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
 use crate::{
     error::StablecoinError,
@@ -53,7 +54,11 @@ use crate::{
     StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
     STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
     STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
-    STABLECOIN_CONTRACT_STABLECOIN_TREE,
+    STABLECOIN_CONTRACT_STABLECOIN_TREE, STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1,
+    STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1, STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1,
+    STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1, STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1,
+    STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1, STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1,
+    STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1,
 };
 
 // ============================================================================
@@ -132,6 +137,9 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 // ============================================================================
 
 /// Fetch metadata for ZK proof verification
+///
+/// Returns public inputs for ZK proof verification based on the function being called.
+/// The host uses these to look up the correct VK and verify the proof.
 fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
@@ -141,18 +149,130 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     match func {
         StablecoinFunction::InitializeV1 => wasm::util::set_return_data(&vec![]),
         StablecoinFunction::OpenPositionV1 => {
-            // TODO: Return ZK public inputs for open position proof
-            msg!("[stablecoin::get_metadata] OpenPositionV1 metadata requested");
-            wasm::util::set_return_data(&vec![])
+            let params: DepositCollateralParams = deserialize(&self_.data[1..])?;
+
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1.to_string(),
+                params.zk_public_inputs,
+            ));
+
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
         }
-        StablecoinFunction::AddCollateralV1 => wasm::util::set_return_data(&vec![]),
-        StablecoinFunction::RemoveCollateralV1 => wasm::util::set_return_data(&vec![]),
-        StablecoinFunction::MintStableV1 => wasm::util::set_return_data(&vec![]),
-        StablecoinFunction::RepayStableV1 => wasm::util::set_return_data(&vec![]),
-        StablecoinFunction::LiquidateV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::AddCollateralV1 => {
+            let params: DepositCollateralParams = deserialize(&self_.data[1..])?;
+
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1.to_string(),
+                params.zk_public_inputs,
+            ));
+
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
+        }
+        StablecoinFunction::RemoveCollateralV1 => {
+            let params: WithdrawCollateralParams = deserialize(&self_.data[1..])?;
+
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1.to_string(),
+                params.zk_public_inputs,
+            ));
+
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
+        }
+        StablecoinFunction::MintStableV1 => {
+            let params: MintStableParams = deserialize(&self_.data[1..])?;
+
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1.to_string(),
+                params.zk_public_inputs,
+            ));
+
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
+        }
+        StablecoinFunction::RepayStableV1 => {
+            let params: RepayStableParams = deserialize(&self_.data[1..])?;
+
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1.to_string(),
+                params.zk_public_inputs,
+            ));
+
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
+        }
+        StablecoinFunction::LiquidateV1 => {
+            let params: LiquidateParams = deserialize(&self_.data[1..])?;
+
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1.to_string(),
+                params.zk_public_inputs,
+            ));
+
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
+        }
         StablecoinFunction::UpdateConfigV1 => wasm::util::set_return_data(&vec![]),
-        StablecoinFunction::GovernanceReportV1 => wasm::util::set_return_data(&vec![]),
-        StablecoinFunction::AccrueInterestV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::GovernanceReportV1 => {
+            let params: GovernanceReportParams = deserialize(&self_.data[1..])?;
+
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1.to_string(),
+                vec![
+                    pallas::Base::from(params.total_collateral),
+                    pallas::Base::from(params.total_debt),
+                    pallas::Base::from(params.collateral_ratio_bps),
+                    pallas::Base::from(params.interest_accrued),
+                    pallas::Base::from(params.report_timestamp),
+                    pallas::Base::from_repr(params.reporter_pub_x)
+                        .unwrap_or(pallas::Base::zero()),
+                    pallas::Base::from_repr(params.reporter_pub_y)
+                        .unwrap_or(pallas::Base::zero()),
+                ],
+            ));
+
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
+        }
+        StablecoinFunction::AccrueInterestV1 => {
+            let params: AccrueInterestParams = deserialize(&self_.data[1..])?;
+
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1.to_string(),
+                vec![
+                    pallas::Base::from(params.old_total_debt),
+                    pallas::Base::from(params.new_total_debt),
+                    pallas::Base::from(params.interest_amount),
+                    pallas::Base::from(params.rate_per_second),
+                    pallas::Base::from(params.time_elapsed),
+                    pallas::Base::from_repr(params.accumulator_pub_x)
+                        .unwrap_or(pallas::Base::zero()),
+                    pallas::Base::from_repr(params.accumulator_pub_y)
+                        .unwrap_or(pallas::Base::zero()),
+                ],
+            ));
+
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
+        }
     }
 }
 

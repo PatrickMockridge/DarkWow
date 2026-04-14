@@ -55,13 +55,15 @@ fn test_dex_function_enum_valid() {
     assert!(DexFunction::try_from(0x04).is_ok()); // CancelSwapV1
     assert!(DexFunction::try_from(0x05).is_ok()); // UpdateConfigV1
     assert!(DexFunction::try_from(0x06).is_ok()); // SetTransparencyLevelV1
+    assert!(DexFunction::try_from(0x07).is_ok()); // ExecuteSwapFeeV1
+    assert!(DexFunction::try_from(0x08).is_ok()); // ExecuteSwapSlippageV1
 }
 
 #[test]
 fn test_dex_function_enum_invalid() {
     assert!(DexFunction::try_from(0xFF).is_err());
     assert!(DexFunction::try_from(0x10).is_err());
-    assert!(DexFunction::try_from(0x07).is_err());
+    assert!(DexFunction::try_from(0x09).is_err());
 }
 
 #[test]

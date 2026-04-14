@@ -43,9 +43,11 @@
 //! let reward = native_token.mint_pow_reward(keypair, block_height, fees)?;
 //! ```
 
+pub mod dex;
 pub mod money_v3;
 pub mod native_token;
 
 // Re-export for convenience
+pub use dex::DexHarness;
 pub use money_v3::{MoneyV3Harness, TokenCreationResult, MintResult};
 pub use native_token::{NativeTokenHarness, PoWRewardResult, BurnResult, BurnCallInput};

@@ -42,7 +42,10 @@
 //! - No position IDs that could leak information
 
 use darkfi_serial::{SerialDecodable, SerialEncodable};
-use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier};
+use darkfi_sdk::{
+    crypto::{IntentCommitment, IntentNullifier},
+    pasta::pallas,
+};
 
 /// Namespace for stablecoin intents
 pub const STABLECOIN_NAMESPACE: u64 = 0x0005;
@@ -184,6 +187,10 @@ pub struct DepositCollateralParams {
 
     /// Fee paid for this operation
     pub fee: u64,
+
+    /// ZK public inputs for proof verification: [position_nullifier, position_commitment]
+    /// The prover computes these from their secret values
+    pub zk_public_inputs: Vec<pallas::Base>,
 }
 
 /// Withdraw collateral from the pool (only if collateralization ratio allows)
@@ -203,6 +210,10 @@ pub struct WithdrawCollateralParams {
 
     /// Fee paid for this operation
     pub fee: u64,
+
+    /// ZK public inputs for proof verification: [nullifier]
+    /// The prover computes the nullifier from their secret
+    pub zk_public_inputs: Vec<pallas::Base>,
 }
 
 /// Mint stablecoin against collateral pool
@@ -225,6 +236,10 @@ pub struct MintStableParams {
 
     /// Fee paid for this operation
     pub fee: u64,
+
+    /// ZK public inputs for proof verification: [old_commitment, new_commitment, position_nullifier]
+    /// The prover computes these from their secret values
+    pub zk_public_inputs: Vec<pallas::Base>,
 }
 
 /// Repay stablecoin debt to reduce debt share
@@ -241,6 +256,10 @@ pub struct RepayStableParams {
 
     /// Fee paid for this operation
     pub fee: u64,
+
+    /// ZK public inputs for proof verification: [commitment]
+    /// The prover computes the commitment from their secret values
+    pub zk_public_inputs: Vec<pallas::Base>,
 }
 
 /// Liquidate pool if undercollateralized
@@ -272,6 +291,10 @@ pub struct LiquidateParams {
 
     /// Fee paid for this operation
     pub fee: u64,
+
+    /// ZK public inputs for proof verification: [old_commitment, new_commitment, position_nullifier]
+    /// The prover computes these from their secret values
+    pub zk_public_inputs: Vec<pallas::Base>,
 }
 
 /// Update pool configuration (governance)

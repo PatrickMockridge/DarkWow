@@ -6,6 +6,21 @@ NativeToken is DarkFi's native token contract for consensus (block rewards, fees
 
 **Key Principle**: The native token must be reliable for consensus before anything else. Privacy is layered on top, never compromising block rewards or fee payment.
 
+> [!NOTE]
+> **Design Philosophy: Minimal Viable Circuits, Maximum Reliability**
+>
+> NativeToken follows a "do one thing well" philosophy:
+>
+> - **Minimum viable ZK circuits** - Only what's strictly necessary for consensus
+> - **Tokens are infrastructure** - Simple value movement, no business logic
+> - **Smart contracts own complexity** - DEX, stablecoin, etc. handle business logic
+> - **Permissionless deployment** - Anyone can deploy their own token contracts with custom logic
+>
+> This is a process safety principle: isolate complexity where it's required, not in the most frequently-called code.
+
+> [!IMPORTANT]
+> **For custom token logic**: NativeToken provides the consensus layer. For custom token contracts with different business logic, deployment is permissionless - deploy your own token contract. DarkFi's architecture encourages innovation at the smart contract layer while keeping the base token layer stable and minimal.
+
 ## Why NativeToken?
 
 The original MoneyV2 had significant issues:

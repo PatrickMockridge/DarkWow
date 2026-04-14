@@ -158,6 +158,24 @@ less_than_strict(lhs, rhs_1);
 - [Opcodes Reference](../../doc/src/arch/opcodes.md) — Concise reference for contract authors
 - [zkVM Primitive Layer](../../doc/src/arch/zkvm_primitives.md) — Deep dive into opcode implementation
 
+## Token Design Philosophy
+
+DarkFi's token contracts (MoneyV3, NativeToken) follow a **minimal infrastructure** philosophy:
+
+> **Tokens are pipework, not reactors.**
+>
+> - Tokens move value. That's their job.
+> - Business logic lives in smart contracts (DEX, stablecoin, etc.)
+> - Tokens are the most frequently called contracts - simplicity minimizes attack surface
+> - A bug in a token cascades to every operation; a bug in a smart contract is isolated
+
+**Practical implications:**
+- NativeToken: Minimal viable circuits for consensus (fees, rewards). One job, do it well.
+- MoneyV3: Poseidon-only design for DeFi tokens. Zero EC operations = zero heap bugs.
+- Custom tokens: Permissionless deployment. Anyone can deploy token contracts with custom logic.
+
+This is a process safety principle applied to DeFi: isolate complexity where it's required, not in the infrastructure that everything depends on.
+
 ## Official Contracts
 
 - **Money**: Private token transfers and basic operations
