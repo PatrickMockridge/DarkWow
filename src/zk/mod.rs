@@ -35,6 +35,12 @@ pub use proof::{Proof, ProvingKey, VerifyingKey};
 mod tracer;
 pub use tracer::DebugOpValue;
 
+/// Verification keys for native contracts (blockchain feature)
+#[cfg(feature = "blockchain")]
+pub mod vks;
+#[cfg(feature = "blockchain")]
+pub use vks::{get_cached_pks_and_vks, inject, VkEntry};
+
 mod debug;
 pub use debug::zkas_type_checks;
 

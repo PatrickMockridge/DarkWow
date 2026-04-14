@@ -34,13 +34,14 @@ use darkfi::{
     Result,
 };
 use darkfi_contract_test_harness::vks;
-use darkfi_money_contract::{
-    client::pow_reward_v1::PoWRewardCallBuilder, MoneyFunction, MONEY_CONTRACT_ZKAS_MINT_NS_V1,
+use darkfi_native_token_contract::{
+    client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction,
+    NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1,
 };
 use darkfi_sdk::{
     crypto::{
         keypair::{Keypair, Network},
-        MerkleTree, MONEY_CONTRACT_ID,
+        MerkleTree, NATIVE_TOKEN_CONTRACT_ID,
     },
     ContractCall,
 };
@@ -203,7 +204,7 @@ impl Harness {
             .lock()
             .unwrap()
             .contracts
-            .get_zkas(&MONEY_CONTRACT_ID, MONEY_CONTRACT_ZKAS_MINT_NS_V1)?;
+            .get_zkas(&NATIVE_TOKEN_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1)?;
         let circuit = ZkCircuit::new(empty_witnesses(&zkbin)?, &zkbin);
         let pk = ProvingKey::build(zkbin.k, &circuit);
 
@@ -221,9 +222,9 @@ impl Harness {
         .build()?;
 
         // Generate and sign the actual transaction
-        let mut data = vec![MoneyFunction::PoWRewardV1 as u8];
+        let mut data = vec![NativeTokenFunction::PoWRewardV1 as u8];
         debris.params.encode(&mut data)?;
-        let call = ContractCall { contract_id: *MONEY_CONTRACT_ID, data };
+        let call = ContractCall { contract_id: *NATIVE_TOKEN_CONTRACT_ID, data };
         let mut tx_builder =
             TransactionBuilder::new(ContractCallLeaf { call, proofs: debris.proofs }, vec![])?;
         let mut tx = tx_builder.build()?;

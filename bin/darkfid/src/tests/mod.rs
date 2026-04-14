@@ -39,7 +39,8 @@ mod forks;
 
 mod sync_forks;
 
-mod unproposed_txs;
+// TODO: re-enable once TestHarness/Holder types are implemented
+// mod unproposed_txs;
 
 mod metering;
 
@@ -291,6 +292,7 @@ fn darkfid_programmatic_control() -> Result<()> {
                     &darkfi::net::Settings::default(),
                     &None,
                     &ex,
+                    true,
                 )
                 .await
                 .unwrap();

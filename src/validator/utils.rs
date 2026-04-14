@@ -60,9 +60,6 @@ pub async fn deploy_native_contracts(
     // The Deployooor contract uses an empty payload to deploy itself.
     let deployooor_contract_deploy_payload = vec![];
 
-    // Money V2 contract also uses an empty payload (legacy - being phased out).
-    let money_v2_contract_deploy_payload = vec![];
-
     // Native Token contract also uses an empty payload.
     let native_token_contract_deploy_payload = vec![];
 
@@ -72,12 +69,6 @@ pub async fn deploy_native_contracts(
             *DEPLOYOOOR_CONTRACT_ID,
             include_bytes!("../contract/deployooor/darkfi_deployooor_contract.wasm").to_vec(),
             deployooor_contract_deploy_payload,
-        ),
-        (
-            "Money V2 Contract",
-            *MONEY_V2_CONTRACT_ID,
-            include_bytes!("../contract/money_v2/darkfi_money_contract.wasm").to_vec(),
-            money_v2_contract_deploy_payload,
         ),
         (
             "Native Token Contract",
