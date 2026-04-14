@@ -4,7 +4,7 @@ A clean, minimal blockchain synchronization module for DarkFi validator.
 
 ## Overview
 
-The sync module provides stateless block verification and application, decoupled from the validator's block production machinery. This design eliminates the previous sled VK storage issues and simplifies testing.
+The sync module provides stateless block verification and application, decoupled from the validator's block production machinery. This design eliminates the previous sled VK storage issues and provides deterministic ZK proof verification.
 
 ## Motivation
 
@@ -14,58 +14,76 @@ The previous synchronization code suffered from:
 
 2. **Coupled Verification**: Block verification was intertwined with WASM contract execution and state updates via `apply_producer_transaction()`.
 
-3. **Testing Complexity**: The old sync tests required intricate setup to deploy contracts, manage overlays, and handle VK persistence.
-
-```
-Old flow (broken):
-deploy() → zkas_db_set(VK) → overlay.apply() → [zkas tree NOT flushed] → new overlay reads from sled → UnexpectedEof
-```
+3. **Non-deterministic Verification**: VKs were retrieved from sled which could be missing or corrupted, making verification unreliable during sync.
 
 ## Design Principles
 
-### 1. No Sled for VKs During Sync
+### 1. Pure ZK Verification
 
-The node still uses sled for block storage, contract state, and transaction history. However, **VK retrieval during sync verification bypasses sled** - VKs are derived from `zkbin_bytes` passed alongside the block.
+ZK proof verification is completely stateless and deterministic using the `verify_zkp` function:
+
+```rust
+pub fn verify_zkp(
+    proof: &Proof,
+    zkbin_bytes: &[u8],
+    instances: &[pallas::Base],
+) -> ZkVerifyResult
+```
+
+- Same inputs always produce same output
+- No sled, no WASM, no side effects
+- VK is derived fresh at verification time from `zkbin_bytes`
+
+### 2. ZkBinEntry for Sync
+
+The `ZkBinEntry` type carries all data needed for sync verification:
+
+```rust
+pub type ZkBinEntry = (ContractId, String, Vec<u8>, Vec<pallas::Base>);
+//                       contract_id,  zkas_ns,  zkbin_bytes,  instances
+```
+
+This format is used throughout the sync flow:
+- `ExtendedProposalMessage` contains `Vec<ZkBinEntry>` for P2P transmission
+- `BlockInfo.zkbin_data` stores zkbin entries for verification
+- `Proposal.zkbin_data` carries data through the consensus layer
+
+### 3. No Sled for VKs During Sync
+
+VK retrieval during sync verification **bypasses sled completely** - VKs are derived from `zkbin_bytes` passed alongside the block.
 
 This fixes the `UnexpectedEof` bug where the zkas tree wasn't properly flushed to sled during `apply()`.
 
-```rust
-pub async fn verify_block(
-    block: &BlockInfo,
-    previous: &BlockInfo,
-    zkbin_bytes: &[u8],  // VK derived from this at verification time
-) -> Result<()> {
-    let zkbin = ZkBinary::decode(zkbin_bytes, false)?;
-    let circuit = ZkCircuit::new(empty_witnesses(&zkbin)?, &zkbin);
-    let vk = VerifyingKey::build(zkbin.k, &circuit);
+## Architecture
 
-    verify_header(block, previous)?;
-    // ZK proof verification using derived VK
-    Ok(())
-}
+### Data Flow
+
+```
+Block Created
+    ↓
+BlockInfo.zkbin_data populated with (contract_id, zkas_ns, zkbin_bytes, instances)
+    ↓
+ExtendedProposalMessage broadcast via P2P
+    ↓
+handle_receive_proposal extracts zkbin_data
+    ↓
+sync::verify_block(&block, &previous, &zkbin_data)
+    ↓
+verify_zkp(proof, zkbin_bytes, instances) for each proof
+    ↓
+validator.append_proposal(&proposal)
 ```
 
-### 2. Modular Operations
+### Key Components
 
-The sync module provides three separate operations:
-
-| Function | Purpose |
-|----------|---------|
-| `verify_header()` | Validates block structure (height, timestamp, has txs) |
-| `verify_block()` | Verifies header + ZK proofs (VK derived from bytes) |
-| `apply_block()` | Persists verified block (placeholder) |
-
-Each function is independently testable.
-
-### 3. Stateless Verification
-
-The `verify_block` function is **stateless** - it takes all required data as parameters:
-
-- `block`: The block to verify
-- `previous`: The previous block (for continuity checks)
-- `zkbin_bytes`: ZkBinary bytes (for VK derivation)
-
-No global state, no sled databases, no overlay management.
+| Component | File | Purpose |
+|-----------|------|---------|
+| `verify_zkp` | `src/zk/verifier.rs` | Pure ZK verification function |
+| `ZkVerifyResult` | `src/zk/verifier.rs` | Verification result enum |
+| `ZkBinEntry` | `src/validator/sync/types.rs` | `(ContractId, String, Vec<u8>, Vec<pallas::Base>)` |
+| `ExtendedProposalMessage` | `bin/darkfid/src/proto/protocol_proposal.rs` | P2P message with zkbin_data |
+| `verify_block` | `src/validator/sync/verify.rs` | Verifies header + ZK proofs |
+| `handle_receive_proposal` | `bin/darkfid/src/proto/protocol_proposal.rs` | Calls verify_block before append |
 
 ## API
 
@@ -86,13 +104,18 @@ Validates:
 pub async fn verify_block(
     block: &BlockInfo,
     previous: &BlockInfo,
-    zkbin_bytes: &[u8],
+    zkbin_data: &[ZkBinEntry],
 ) -> Result<()>
 ```
 
 Validates:
 - Header via `verify_header()`
-- ZK proofs using VK derived from `zkbin_bytes`
+- ZK proofs using VK derived from `zkbin_data`
+
+For each transaction call:
+1. Match proof to `(zkbin_bytes, instances)` using contract_id + zkas_ns lookup
+2. Call `verify_zkp(proof, zkbin_bytes, instances)`
+3. If verification fails, return error
 
 ### apply_block
 
@@ -105,43 +128,127 @@ Persists the block. Currently a placeholder - actual implementation would:
 2. Update state monotree
 3. Append block to chain
 
+## Types
+
+### ZkBinEntry
+
+```rust
+pub type ZkBinEntry = (ContractId, String, Vec<u8>, Vec<pallas::Base>);
+//                       contract_id,  zkas_ns,  zkbin_bytes,  instances
+```
+
+- `contract_id`: Identifies the contract
+- `zkas_ns`: Namespace of the ZK circuit (e.g., "Mint_V1")
+- `zkbin_bytes`: Compiled circuit binary
+- `instances`: Public inputs for proof verification
+
+### ZkVerifyResult
+
+```rust
+pub enum ZkVerifyResult {
+    Ok,
+    InvalidProof,
+    InvalidVk,
+}
+```
+
+Result of pure ZK verification.
+
+## P2P Protocol
+
+### ExtendedProposalMessage
+
+```rust
+pub struct ExtendedProposalMessage {
+    pub proposal: Proposal,
+    pub zkbin_data: Vec<ZkBinEntry>,
+}
+```
+
+Replaces `ProposalMessage` for sync. The `zkbin_data` field carries all circuit data needed for stateless verification.
+
+### handle_receive_proposal Flow
+
+```rust
+// Get previous block for verification
+let previous_block = validator.blockchain.get_blocks_by_hash(&[previous_hash])?;
+
+// Verify ZK proofs statelessly using zkbin_data
+sync::verify_block(&proposal.block, &previous, &zkbin_data).await?;
+
+// Only then append to validator
+validator.append_proposal(&proposal).await?;
+```
+
 ## Comparison
 
 | Aspect | Old Sync | New Sync |
 |--------|----------|----------|
-| VK for Verification | Retrieved from sled | Derived from block data |
+| VK for Verification | Retrieved from sled | Derived from zkbin_bytes |
 | Verification | Coupled with state updates | Independent function |
 | Testing | Required complex harness | Simple unit test |
 | Sled for VK | Required (but flush was broken) | Not needed for sync |
 | State Management | Global overlay state | Passed as parameters |
 | Code Complexity | Required apply(), diff(), overlay trees | Single function call |
+| ZK Verification | Placeholder | Full verification via verify_zkp |
 
-**Note**: Sled is still used for block storage, contract state, and transaction history. The difference is that VK retrieval during sync no longer depends on sled.
+## Why This Is Better
 
-## Why This Is Simpler
+1. **No sled VK retrieval**: The old code needed VK from sled during verification, but the zkas tree wasn't properly flushed. The new code derives VK from `zkbin_bytes` parameter.
 
-1. **No VK retrieval from sled**: The old code needed VK from sled during verification, but the zkas tree wasn't properly flushed. The new code derives VK from `zkbin_bytes` parameter.
+2. **Deterministic verification**: Same `zkbin_bytes` + `instances` always produces same result. No dependency on sled state.
 
-2. **No overlay management for sync**: The old code required `BlockchainOverlay`, `apply()`, `diff()` for VK retrieval. The new sync function takes parameters.
-
-3. **Testable in isolation**: `verify_block` can be tested with just `BlockInfo` and bytes - no need to set up sled databases for VK lookup.
+3. **Testable in isolation**: `verify_block` can be tested with just `BlockInfo` and `zkbin_data` - no need to set up sled databases for VK lookup.
 
 4. **Clear separation**: The sync module only does sync verification - it doesn't know about consensus, mining, or contract execution.
 
+5. **P2P Integration**: `ExtendedProposalMessage` carries zkbin_data over the wire, enabling stateless verification on the receiving end.
+
 ## Usage Example
 
+### Test with Real ZK Verification
+
 ```rust
-use darkfi::validator::sync::{verify_block, apply_block};
+// Generate block with PoW reward transaction
+let debris = PoWRewardCallBuilder { ... }.build()?;
 
-// In a test - zkbin loaded directly, no sled:
-let zkbin_bytes = include_bytes!("../../contract/native_token/proof/mint_v1.zk.bin").to_vec();
-verify_block(&block, &previous, &zkbin_bytes).await?;
-apply_block(&block).await?;
+// Extract public inputs for verification
+let public_inputs = vec![
+    debris.params.output.coin.inner(),
+    value_coords.x(),
+    value_coords.y(),
+    debris.params.output.token_commit,
+];
 
-// In production sync:
-let zkbin_bytes = fetch_circuit_from_peer().await?;
-verify_block(&block, &previous, &zkbin_bytes).await?;
-apply_block(&block).await?;
+// Attach zkbin_data to block
+block.zkbin_data = vec![(
+    *NATIVE_TOKEN_CONTRACT_ID,
+    "Mint_V1".to_string(),
+    zkbin_bytes,
+    public_inputs,
+)];
+
+// Verify using sync module - VK derived from zkbin_bytes
+verify_block(&block, &previous, &block.zkbin_data).await?;
+```
+
+### Production Sync Flow
+
+```rust
+// Receive ExtendedProposalMessage via P2P
+let (channel, message) = handler.receiver.recv().await;
+let proposal = message.proposal;
+let zkbin_data = message.zkbin_data;
+
+// Get previous block
+let previous_hash = validator.blockchain.get_block_hash_by_height(block.header.height - 1)?;
+let previous_block = validator.blockchain.get_blocks_by_hash(&[previous_hash])?;
+
+// Verify ZK proofs statelessly
+sync::verify_block(&proposal.block, &previous_block, &zkbin_data).await?;
+
+// Only then append
+validator.append_proposal(&proposal).await?;
 ```
 
 ## Breaking Changes
@@ -159,23 +266,22 @@ Previously, VKs were fetched from the local sled database during verification:
 let (zkbin, vk) = overlay.get_zkas(&contract_id, "Mint_V1")?;
 ```
 
-Now, verification requires external provision of ZkBinary bytes:
+Now, verification requires zkbin_data:
 
 ```rust
-// NEW - VK derived from bytes
-let zkbin_bytes = include_bytes!("..."); // or fetch from network
-verify_block(&block, &previous, &zkbin_bytes).await?;
+// NEW - VK derived from zkbin_data
+sync::verify_block(&block, &previous, &block.zkbin_data).await?;
 ```
 
 ### 3. P2P Protocol Change
 
-Blocks must now be accompanied by circuit data during synchronization. The P2P protocol must be updated to include ZkBinary bytes alongside block data.
+Blocks must now be accompanied by circuit data during synchronization via `ExtendedProposalMessage`. The old `ProposalMessage` does not carry zkbin_data.
 
 ## Trade-offs
 
 | Aspect | Impact |
 |--------|--------|
-| **Performance** | Minor loss - circuit data transmitted per block (~100KB) |
+| **Performance** | Minor loss - zkbin_data transmitted per block (~100KB) |
 | **Robustness** | Major gain - no sled VK retrieval failures |
 | **Resilience** | Major gain - sync works even if sled VK storage is corrupted |
 | **Determinism** | Major gain - VK always derived from known-good circuit data |
@@ -184,26 +290,38 @@ Blocks must now be accompanied by circuit data during synchronization. The P2P p
 
 **Note**: This doesn't remove sled from the node - the node still uses sled for block storage, contract state, etc. It only removes sled dependency for VK retrieval during sync verification.
 
-## Future Work
+## Implementation Status
 
-- [ ] `apply_block()` currently returns `Ok(())`. Actual block persistence needs implementation.
-- [ ] ZK proof verification is currently a placeholder. Full ZK verification with derived VK needed.
-- [ ] P2P protocol update needed to include ZkBinary bytes with blocks during sync.
-- [ ] Integration with validator consensus module.
+- [x] `verify_zkp` - Pure ZK verification function
+- [x] `ZkVerifyResult` - Verification result enum
+- [x] `ZkBinEntry` - Type for sync verification data
+- [x] `verify_block` - Verifies header + ZK proofs
+- [x] `ExtendedProposalMessage` - P2P message with zkbin_data
+- [x] `handle_receive_proposal` - Calls verify_block before append
+- [ ] `apply_block` - Currently a placeholder
 
 ## Files
 
 ```
+src/zk/
+└── verifier.rs          # Pure ZK verification (verify_zkp, ZkVerifyResult)
+
 src/validator/sync/
-├── mod.rs      # Module exports
-├── types.rs    # SyncBlock, VerifyResult, SyncState
-├── verify.rs   # verify_header, verify_block
-├── apply.rs    # apply_block (placeholder)
-└── README.md   # This documentation
+├── mod.rs               # Module exports
+├── types.rs             # ZkBinEntry, SyncBlock, VerifyResult, SyncState
+├── verify.rs            # verify_header, verify_block
+└── apply.rs             # apply_block (placeholder)
+
+bin/darkfid/src/proto/
+└── protocol_proposal.rs  # ExtendedProposalMessage, handle_receive_proposal
+
+bin/darkfid/src/tests/
+├── sync_simple.rs       # Basic sync test
+└── sync_native.rs       # Full ZK verification test
 ```
 
 ## Related Documentation
 
+- [ZK Verification](./zk_verification.md) - Detailed ZK verifier design
 - [Consensus](./consensus.md) - PoW consensus algorithm
 - [Transaction Lifetime](./tx_lifetime.md) - Transaction processing lifecycle
-- [Test Harness Guide](./test_harness_guide.md) - Writing contract integration tests

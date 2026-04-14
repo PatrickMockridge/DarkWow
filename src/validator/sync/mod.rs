@@ -29,5 +29,5 @@ pub mod types;
 pub mod verify;
 
 pub use apply::apply_block;
-pub use types::{SyncBlock, SyncState, VerifyResult};
+pub use types::{SyncBlock, SyncState, VerifyResult, ZkBinEntry};
 pub use verify::{verify_block, verify_header};

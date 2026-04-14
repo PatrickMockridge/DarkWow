@@ -31,6 +31,10 @@ pub mod gadget;
 pub mod proof;
 pub use proof::{Proof, ProvingKey, VerifyingKey};
 
+/// Pure ZK proof verification (stateless, deterministic)
+pub mod verifier;
+pub use verifier::{verify_zkp, ZkVerifyResult};
+
 /// Trace computation of intermediate values in circuit
 mod tracer;
 pub use tracer::DebugOpValue;

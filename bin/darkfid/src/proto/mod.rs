@@ -29,7 +29,9 @@ use crate::DarkfiNodePtr;
 
 /// Block proposal broadcast protocol
 mod protocol_proposal;
-pub use protocol_proposal::{ProposalMessage, ProtocolProposalHandler, ProtocolProposalHandlerPtr};
+pub use protocol_proposal::{
+    ExtendedProposalMessage, ProposalMessage, ProtocolProposalHandler, ProtocolProposalHandlerPtr,
+};
 
 /// Validator blockchain sync protocol
 mod protocol_sync;

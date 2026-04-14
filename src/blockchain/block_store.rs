@@ -82,6 +82,8 @@ pub struct BlockInfo {
     pub txs: Vec<Transaction>,
     /// Block producer signature
     pub signature: Signature,
+    /// ZK binary data for sync verification: (contract_id, zkas_ns, zkbin_bytes, instances)
+    pub zkbin_data: Vec<(darkfi_sdk::crypto::ContractId, String, Vec<u8>, Vec<darkfi_sdk::pasta::pallas::Base>)>,
 }
 // ANCHOR_END: blockinfo
 
@@ -92,13 +94,14 @@ impl Default for BlockInfo {
             header: Header::default(),
             txs: vec![Transaction::default()],
             signature: Signature::dummy(),
+            zkbin_data: vec![],
         }
     }
 }
 
 impl BlockInfo {
     pub fn new(header: Header, txs: Vec<Transaction>, signature: Signature) -> Self {
-        Self { header, txs, signature }
+        Self { header, txs, signature, zkbin_data: vec![] }
     }
 
     /// Generate an empty block for provided Header.
@@ -106,7 +109,7 @@ impl BlockInfo {
     pub fn new_empty(header: Header) -> Self {
         let txs = vec![];
         let signature = Signature::dummy();
-        Self { header, txs, signature }
+        Self { header, txs, signature, zkbin_data: vec![] }
     }
 
     /// A block's hash is the same as the hash of its header

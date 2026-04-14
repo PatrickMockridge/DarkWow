@@ -27,6 +27,7 @@ use tinyjson::JsonValue;
 use tracing::{debug, error};
 
 use darkfi::{
+    error::Error,
     impl_p2p_message,
     net::{
         metering::MeteringConfiguration,
@@ -42,9 +43,10 @@ use darkfi::{
         encoding::base64,
         time::{NanoTimestamp, Timestamp},
     },
-    validator::{consensus::Proposal, ValidatorPtr},
-    Error, Result,
+    validator::{consensus::Proposal, sync, ValidatorPtr},
 };
+use darkfi::Result;
+use darkfi_sdk::pasta::pallas;
 use darkfi_serial::{serialize_async, SerialDecodable, SerialEncodable};
 
 use crate::{task::handle_unknown_proposals, DarkfiNodePtr};
@@ -69,14 +71,42 @@ impl_p2p_message!(
     }
 );
 
+/// Extended proposal message that includes ZkBinary bytes for sync verification.
+///
+/// This allows the receiver to verify ZK proofs without retrieving VKs from sled.
+#[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
+pub struct ExtendedProposalMessage {
+    /// The block proposal
+    pub proposal: Proposal,
+    /// ZkBinary bytes for circuits used in this proposal's transactions.
+    /// Format: vec of (contract_id, zkas_ns, zkbin_bytes, instances)
+    /// - contract_id: identifies the contract
+    /// - zkas_ns: namespace of the ZK circuit
+    /// - zkbin_bytes: compiled circuit binary
+    /// - instances: public inputs for proof verification
+    pub zkbin_data: Vec<(darkfi_sdk::crypto::ContractId, String, Vec<u8>, Vec<pallas::Base>)>,
+}
+
+impl_p2p_message!(
+    ExtendedProposalMessage,
+    "extended_proposal",
+    0,
+    1,
+    MeteringConfiguration {
+        threshold: 50,
+        sleep_step: 500,
+        expiry_time: NanoTimestamp::from_secs(5),
+    }
+);
+
 /// Atomic pointer to the `ProtocolProposal` handler.
 pub type ProtocolProposalHandlerPtr = Arc<ProtocolProposalHandler>;
 
 /// Handler managing [`Proposal`] messages, over a generic P2P
 /// protocol.
 pub struct ProtocolProposalHandler {
-    /// The generic handler for [`Proposal`] messages.
-    proposals_handler: ProtocolGenericHandlerPtr<ProposalMessage, ProposalMessage>,
+    /// The generic handler for [`ExtendedProposal`] messages.
+    proposals_handler: ProtocolGenericHandlerPtr<ExtendedProposalMessage, ExtendedProposalMessage>,
     /// Unknown proposals queue to be checked for reorg.
     unknown_proposals: Arc<RwLock<HashSet<[u8; 32]>>>,
     /// Unknown proposals channels to ban them after 5 consecutive
@@ -87,16 +117,16 @@ pub struct ProtocolProposalHandler {
 }
 
 impl ProtocolProposalHandler {
-    /// Initialize a generic prototocol handler for [`Proposal`] messages
+    /// Initialize a generic prototocol handler for [`ExtendedProposal`] messages
     /// and registers it to the provided P2P network, using the default session flag.
     pub async fn init(p2p: &P2pPtr) -> ProtocolProposalHandlerPtr {
         debug!(
             target: "darkfid::proto::protocol_proposal::init",
-            "Adding ProtocolProposal to the protocol registry"
+            "Adding ExtendedProposal to the protocol registry"
         );
 
         let proposals_handler =
-            ProtocolGenericHandler::new(p2p, "ProtocolProposal", SESSION_DEFAULT).await;
+            ProtocolGenericHandler::new(p2p, "ExtendedProposal", SESSION_DEFAULT).await;
         let unknown_proposals = Arc::new(RwLock::new(HashSet::new()));
         let unknown_proposals_channels = Arc::new(RwLock::new(HashMap::new()));
         let unknown_proposals_handler = StoppableTask::new();
@@ -167,7 +197,7 @@ impl ProtocolProposalHandler {
 
 /// Background handler function for ProtocolProposal.
 async fn handle_receive_proposal(
-    handler: ProtocolGenericHandlerPtr<ProposalMessage, ProposalMessage>,
+    handler: ProtocolGenericHandlerPtr<ExtendedProposalMessage, ExtendedProposalMessage>,
     sender: Sender<(Proposal, u32)>,
     unknown_proposals: Arc<RwLock<HashSet<[u8; 32]>>>,
     unknown_proposals_channels: Arc<RwLock<HashMap<u32, (u8, u64)>>>,
@@ -177,7 +207,7 @@ async fn handle_receive_proposal(
     debug!(target: "darkfid::proto::protocol_proposal::handle_receive_proposal", "START");
     loop {
         // Wait for a new proposal message
-        let (channel, proposal) = match handler.receiver.recv().await {
+        let (channel, message) = match handler.receiver.recv().await {
             Ok(r) => r,
             Err(e) => {
                 debug!(
@@ -187,6 +217,10 @@ async fn handle_receive_proposal(
                 continue
             }
         };
+
+        // Extract proposal and zkbin_data from extended message
+        let proposal = message.proposal;
+        let zkbin_data = message.zkbin_data;
 
         // Check if node has finished syncing its blockchain
         let mut validator = validator.write().await;
@@ -216,8 +250,33 @@ async fn handle_receive_proposal(
             drop(unknown_proposals_channels);
         }
 
+        // Get previous block for verification
+        let previous_height = proposal.block.header.height.saturating_sub(1);
+        let previous_hash = validator.blockchain.get_block_hash_by_height(previous_height)?;
+        let previous_block = if let Some(hash) = previous_hash {
+            let blocks = validator.blockchain.get_blocks_by_hash(&[hash])?;
+            blocks.into_iter().next()
+        } else {
+            None
+        };
+
+        // Verify ZK proofs statelessly using zkbin_data
+        if let Some(previous) = previous_block {
+            match sync::verify_block(&proposal.block, &previous, &zkbin_data).await {
+                Ok(()) => {}
+                Err(e) => {
+                    debug!(
+                        target: "darkfid::proto::protocol_proposal::handle_receive_proposal",
+                        "ZK verification failed: {e}",
+                    );
+                    handler.send_action(channel, ProtocolGenericAction::Skip).await;
+                    return Err(e)
+                }
+            }
+        }
+
         // Append proposal
-        match validator.append_proposal(&proposal.0).await {
+        match validator.append_proposal(&proposal).await {
             Ok(()) => {
                 // Signal handler to broadcast the valid proposal to rest nodes
                 handler.send_action(channel, ProtocolGenericAction::Broadcast).await;
@@ -249,22 +308,22 @@ async fn handle_receive_proposal(
         // Check if we already have the unknown proposal record in our
         // queue.
         let mut lock = unknown_proposals.write().await;
-        if lock.contains(proposal.0.hash.inner()) {
+        if lock.contains(proposal.hash.inner()) {
             debug!(
                 target: "darkfid::proto::protocol_proposal::handle_receive_proposal",
                 "Proposal {} is already in our unknown proposals queue.",
-                proposal.0.hash,
+                proposal.hash,
             );
             drop(lock);
             continue
         }
 
         // Insert new record in our queue
-        lock.insert(proposal.0.hash.0);
+        lock.insert(proposal.hash.0);
         drop(lock);
 
         // Notify the unknown proposals handler task
-        if let Err(e) = sender.send((proposal.0, channel)).await {
+        if let Err(e) = sender.send((proposal, channel)).await {
             debug!(
                 target: "darkfid::proto::protocol_proposal::handle_receive_proposal",
                 "Channel {channel} send fail: {e}"

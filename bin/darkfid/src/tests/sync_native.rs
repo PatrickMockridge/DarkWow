@@ -32,11 +32,13 @@ use darkfi::{
 };
 use darkfi_native_token_contract::{
     client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction,
+    NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
 };
 use darkfi_sdk::{
     crypto::{
         keypair::Keypair,
-        MerkleTree, NATIVE_TOKEN_CONTRACT_ID,
+        pasta_prelude::{Curve, CurveAffine},
+        NATIVE_TOKEN_CONTRACT_ID,
     },
     num_traits::One,
     ContractCall,
@@ -67,6 +69,7 @@ async fn generate_native_block(
 
     // Get zkbin directly from include_bytes - no sled lookup needed!
     let zkbin = get_mint_zkbin()?;
+    let zkbin_bytes = NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN.to_vec();
     let circuit = ZkCircuit::new(empty_witnesses(&zkbin)?, &zkbin);
     let pk = ProvingKey::build(zkbin.k, &circuit);
 
@@ -82,6 +85,16 @@ async fn generate_native_block(
         mint_pk: pk.clone(),
     }
     .build()?;
+
+    // Extract public inputs from the output for verification
+    // These are the instances that will be used for ZK proof verification
+    let value_coords = debris.params.output.value_commit.to_affine().coordinates().unwrap();
+    let public_inputs = vec![
+        debris.params.output.coin.inner(),  // coin
+        *value_coords.x(),                   // value_commit_x
+        *value_coords.y(),                  // value_commit_y
+        debris.params.output.token_commit,  // token_commit
+    ];
 
     // Generate and sign the actual transaction
     let mut data = vec![NativeTokenFunction::PoWRewardV1 as u8];
@@ -102,6 +115,14 @@ async fn generate_native_block(
     // Generate the block
     let mut block = BlockInfo::new_empty(header);
     block.append_txs(vec![tx]);
+
+    // Attach zkbin_data for sync verification
+    block.zkbin_data = vec![(
+        *NATIVE_TOKEN_CONTRACT_ID,
+        NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
+        zkbin_bytes,
+        public_inputs,
+    )];
 
     // Compute state root - but we skip apply_producer_transaction
     // since we're not executing WASM for state, just building the block
@@ -139,15 +160,12 @@ async fn test_sync_native_impl(ex: Arc<Executor<'static>>) -> Result<()> {
     let block = generate_native_block(&mut fork, &keypair).await?;
     tracing::info!("Generated block: {:?}", block.hash());
 
-    // Get zkbin bytes for verification
-    let zkbin_bytes =
-        include_bytes!("../../../../src/contract/native_token/proof/mint_v1.zk.bin").to_vec();
-
     // Get previous block
     let previous = fork.overlay.lock().unwrap().last_block()?;
 
     // Verify using sync module - VK derived from zkbin_bytes
-    verify_block(&block, &previous, &zkbin_bytes).await?;
+    // block.zkbin_data now contains the zkbin bytes and public inputs
+    verify_block(&block, &previous, &block.zkbin_data).await?;
 
     // Apply using sync module
     apply_block(&block).await?;

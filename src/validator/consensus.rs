@@ -664,12 +664,15 @@ pub struct Proposal {
     pub hash: HeaderHash,
     /// Block data
     pub block: BlockInfo,
+    /// ZK binary data for sync verification: (contract_id, zkas_ns, zkbin_bytes, instances)
+    pub zkbin_data: Vec<(darkfi_sdk::crypto::ContractId, String, Vec<u8>, Vec<darkfi_sdk::pasta::pallas::Base>)>,
 }
 
 impl Proposal {
     pub fn new(block: BlockInfo) -> Self {
         let hash = block.hash();
-        Self { hash, block }
+        let zkbin_data = block.zkbin_data.clone();
+        Self { hash, block, zkbin_data }
     }
 }
 

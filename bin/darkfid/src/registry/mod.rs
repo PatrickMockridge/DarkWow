@@ -45,7 +45,7 @@ use darkfi_sdk::{
 use darkfi_serial::serialize_async;
 
 use crate::{
-    proto::{DarkfidP2pHandlerPtr, ProposalMessage},
+    proto::{DarkfidP2pHandlerPtr, ExtendedProposalMessage},
     rpc::{stratum::StratumRpcHandler, xmr::MmRpcHandler},
     DarkfiNode, DarkfiNodePtr,
 };
@@ -186,7 +186,7 @@ impl DarkfiMinersRegistryState {
         p2p_handler: &DarkfidP2pHandlerPtr,
         block: BlockInfo,
     ) -> Result<()> {
-        let proposal = Proposal::new(block);
+        let proposal = Proposal::new(block.clone());
         validator.append_proposal(&proposal).await?;
 
         info!(
@@ -202,7 +202,8 @@ impl DarkfiMinersRegistryState {
             target: "darkfid::registry::mod::DarkfiMinersRegistry::submit",
             "Broadcasting new block to network",
         );
-        let message = ProposalMessage(proposal);
+        // Send ExtendedProposalMessage with zkbin_data for sync verification
+        let message = ExtendedProposalMessage { proposal, zkbin_data: block.zkbin_data };
         p2p_handler.p2p.broadcast(&message).await;
 
         Ok(())

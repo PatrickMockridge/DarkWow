@@ -18,10 +18,16 @@
 
 //! Types for the clean sync module.
 
+use darkfi_sdk::{crypto::ContractId, pasta::pallas};
+
 use crate::blockchain::BlockInfo;
 
 /// Sync block type - reuses existing BlockInfo
 pub type SyncBlock = BlockInfo;
+
+/// ZK data entry from ExtendedProposalMessage
+/// Format: (contract_id, zkas_ns, zkbin_bytes, instances)
+pub type ZkBinEntry = (ContractId, String, Vec<u8>, Vec<pallas::Base>);
 
 /// Verification result
 #[derive(Debug, Clone)]
