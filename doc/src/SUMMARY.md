@@ -106,6 +106,8 @@
   - [[DEPRECATED] Async Serialization Lifetime Bug](arch/async_serial_lifetime_bug.md) - Content moved to Debugging FAQ
   - [Debugging FAQ](arch/debugging_faq.md)
   - [Test Harness Guide](arch/test_harness_guide.md)
+  - [Genesis Harness](arch/genesis_harness.md)
+  - [Contract Testing Pipeline](arch/pipeline.md)
 - [Localnet Contract Testing](arch/localnet_contract_testing.md)
   - [Public Key Constraint Hook](arch/pubkey-constraint-hook.md)
   - [Money Version Bridge](arch/legacy/money-version-bridge.md)
