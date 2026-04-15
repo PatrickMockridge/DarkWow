@@ -2547,6 +2547,7 @@ dependencies = [
  "darkfi_money_v2_contract",
  "darkfi_native_token_contract",
  "easy-parallel",
+ "glob",
  "hex",
  "monero",
  "num-bigint",
@@ -10700,6 +10701,7 @@ name = "zkas"
 version = "0.5.0"
 dependencies = [
  "arg",
+ "blake3",
  "darkfi",
 ]
 

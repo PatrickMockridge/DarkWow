@@ -18,7 +18,7 @@
 
 //! Money V3 Error types
 
-use darkfi_sdk::error::ContractError;
+pub use darkfi_sdk::error::ContractError;
 use thiserror::Error;
 
 /// MoneyV3-specific errors
@@ -104,11 +104,5 @@ pub enum MoneyV3Error {
 impl From<MoneyV3Error> for ContractError {
     fn from(e: MoneyV3Error) -> Self {
         ContractError::Custom(e as u32)
-    }
-}
-
-impl From<MoneyV3Error> for darkfi::Error {
-    fn from(e: MoneyV3Error) -> Self {
-        darkfi::Error::from(ContractError::from(e))
     }
 }

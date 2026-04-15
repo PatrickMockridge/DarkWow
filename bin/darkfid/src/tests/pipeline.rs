@@ -70,7 +70,6 @@
 //! ```
 
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use darkfi_sdk::{crypto::ContractId, num_traits::One};
@@ -152,6 +151,75 @@ pub struct PipelineStatusReport {
 }
 
 // ============================================================================
+// Contract Manifest
+// ============================================================================
+
+/// Contract manifest parsed from pipeline.toml
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ContractManifest {
+    pub name: String,
+    pub dependencies: Vec<String>,
+}
+
+impl ContractManifest {
+    /// Get the base directory for contracts
+    fn base_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("src")
+            .join("contract")
+    }
+
+    /// Load manifest for a contract by name
+    pub fn load(contract_name: &str) -> std::result::Result<Self, PipelineError> {
+        let manifest_path = Self::base_dir()
+            .join(contract_name)
+            .join("pipeline.toml");
+
+        if !manifest_path.exists() {
+            // Return empty manifest if no pipeline.toml exists
+            return Ok(ContractManifest {
+                name: contract_name.to_string(),
+                dependencies: vec![],
+            });
+        }
+
+        let content = std::fs::read_to_string(&manifest_path)
+            .map_err(|e| PipelineError::ManifestFailed(format!("Failed to read {}: {}", manifest_path.display(), e)))?;
+
+        toml::from_str(&content)
+            .map_err(|e| PipelineError::ManifestFailed(format!("Failed to parse {}: {}", manifest_path.display(), e)))
+    }
+
+    /// Resolve all dependencies recursively, returning in deployment order
+    pub fn resolve_dependencies(&self) -> std::result::Result<Vec<String>, PipelineError> {
+        let mut resolved = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        self.resolve_deps_recursive(&mut resolved, &mut seen)?;
+        Ok(resolved)
+    }
+
+    fn resolve_deps_recursive(
+        &self,
+        resolved: &mut Vec<String>,
+        seen: &mut std::collections::HashSet<String>,
+    ) -> std::result::Result<(), PipelineError> {
+        for dep in &self.dependencies {
+            if !seen.contains(dep) {
+                seen.insert(dep.clone());
+                let manifest = ContractManifest::load(dep)?;
+                manifest.resolve_deps_recursive(resolved, seen)?;
+                if !resolved.contains(&dep.clone()) {
+                    resolved.push(dep.clone());
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+// ============================================================================
 // ContractTestingPipeline
 // ============================================================================
 
@@ -196,6 +264,12 @@ pub enum PipelineError {
 
     #[error("Genesis not initialized. Call ensure_genesis() first.")]
     GenesisNotInitialized,
+
+    #[error("Manifest error: {0}")]
+    ManifestFailed(String),
+
+    #[error("Dependency cycle detected involving: {0}")]
+    DependencyCycle(String),
 }
 
 // ============================================================================
@@ -274,6 +348,103 @@ impl ContractTestingPipeline {
         bins
     }
 
+    /// Get path to zkas compiler binary
+    fn zkas_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("target")
+            .join("release")
+            .join("zkas")
+    }
+
+    /// Check zkas compiler status
+    pub fn check_zkas() -> BinaryStatus {
+        let path = Self::zkas_path();
+        if !path.exists() {
+            return BinaryStatus::Missing;
+        }
+        BinaryStatus::Current
+    }
+
+    /// Build zkas compiler if missing
+    pub async fn build_zkas_if_needed(&self) -> std::result::Result<BinaryStatus, PipelineError> {
+        let status = Self::check_zkas();
+        if matches!(status, BinaryStatus::Current) {
+            info!("zkas compiler is current at {:?}", Self::zkas_path());
+            return Ok(status);
+        }
+
+        info!("Building zkas compiler...");
+        let output = std::process::Command::new("cargo")
+            .args(["build", "--release", "-p", "zkas"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .map_err(|e| PipelineError::BuildFailed(format!("Failed to run cargo build: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(PipelineError::BuildFailed(stderr.to_string()));
+        }
+
+        info!("zkas compiler built successfully");
+        Ok(BinaryStatus::Current)
+    }
+
+    /// Build ZK binaries from .zk source files for this contract
+    pub async fn build_zk_bins(&self) -> std::result::Result<(), PipelineError> {
+        let zkas = Self::zkas_path();
+        let zk_src_dir = &self.zkbin_dir;
+
+        let src_pattern = zk_src_dir.join("*.zk");
+        let src_files: Vec<PathBuf> = glob::glob(&src_pattern.to_string_lossy())
+            .map_err(|e| PipelineError::BuildFailed(e.to_string()))?
+            .flatten()
+            .collect();
+
+        if src_files.is_empty() {
+            info!("No .zk source files found in {:?}", zk_src_dir);
+            return Ok(());
+        }
+
+        info!("Found {} .zk source files in {:?}", src_files.len(), zk_src_dir);
+
+        for src in src_files {
+            let bin_path = src.with_extension("zk.bin");
+
+            // Check if binary exists and is newer than source
+            if bin_path.exists() {
+                if let (Ok(src_meta), Ok(bin_meta)) = (src.metadata(), bin_path.metadata()) {
+                    if let (Ok(src_modified), Ok(bin_modified)) =
+                        (src_meta.modified(), bin_meta.modified())
+                    {
+                        if bin_modified > src_modified {
+                            info!("ZK binary {:?} is current, skipping", bin_path);
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            info!("Building ZK binary {:?} from {:?}", bin_path, src);
+            let output = std::process::Command::new(&zkas)
+                .arg(src)
+                .arg("-o")
+                .arg(&bin_path)
+                .output()
+                .map_err(|e| PipelineError::BuildFailed(format!("Failed to run zkas: {}", e)))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(PipelineError::BuildFailed(stderr.to_string()));
+            }
+
+            info!("ZK binary {:?} built successfully", bin_path);
+        }
+
+        Ok(())
+    }
+
     /// Check if genesis has been run
     pub async fn check_genesis(&self) -> std::result::Result<GenesisStatus, PipelineError> {
         if !self.state_file.exists() {
@@ -289,12 +460,19 @@ impl ContractTestingPipeline {
         }
     }
 
-    /// Build WASM binary if missing
-    pub async fn build_if_needed(&self) -> std::result::Result<BinaryStatus, PipelineError> {
+    /// Build WASM binary (with ZK binaries first) for this contract
+    pub async fn build_contract(&self) -> std::result::Result<BinaryStatus, PipelineError> {
+        // Build zkas compiler first
+        self.build_zkas_if_needed().await?;
+
+        // Build ZK binaries for this contract
+        self.build_zk_bins().await?;
+
+        // Build WASM
         let status = self.check_wasm();
         if matches!(status, BinaryStatus::Current) {
             info!("WASM binary is current at {:?}", self.wasm_path);
-            return Ok(status)
+            return Ok(status);
         }
 
         info!("Building WASM binary for {}...", self.contract_name);
@@ -376,39 +554,83 @@ impl ContractTestingPipeline {
         Ok(state)
     }
 
-    /// Deploy the contract using stored GenesisHarness
-    pub async fn deploy(&mut self) -> std::result::Result<ContractId, PipelineError> {
+    /// Deploy a single contract by name using the stored GenesisHarness
+    async fn deploy_single_contract(
+        &mut self,
+        contract_name: &str,
+    ) -> std::result::Result<ContractId, PipelineError> {
+        let wasm_path = ContractManifest::base_dir()
+            .join(contract_name)
+            .join(format!("darkfi_{}_contract.wasm", contract_name));
+
         // Make sure WASM exists
-        if !matches!(self.check_wasm(), BinaryStatus::Current) {
-            return Err(PipelineError::WasmNotFound(self.wasm_path.to_string_lossy().to_string()));
+        if !wasm_path.exists() {
+            return Err(PipelineError::WasmNotFound(wasm_path.to_string_lossy().to_string()));
         }
 
-        // Use the stored genesis harness (set by ensure_genesis())
+        // Use the stored genesis harness
         let genesis = self.genesis.as_mut().ok_or(PipelineError::GenesisNotInitialized)?;
 
         // Read WASM binary
-        let wasm = smol::fs::read(&self.wasm_path).await
+        let wasm = smol::fs::read(&wasm_path).await
             .map_err(|e| PipelineError::DeploymentFailed(e.to_string()))?;
 
         // Deploy via genesis harness
-        let contract_id = genesis.deploy_contract(wasm, &self.contract_name).await
+        let contract_id = genesis.deploy_contract(wasm, contract_name).await
             .map_err(|e| PipelineError::DeploymentFailed(e.to_string()))?;
 
-        info!("Deployed {} contract: {:?}", self.contract_name, contract_id);
+        info!("Deployed {} contract: {:?}", contract_name, contract_id);
         Ok(contract_id)
+    }
+
+    /// Deploy the contract and all its dependencies using stored GenesisHarness
+    pub async fn deploy(&mut self) -> std::result::Result<ContractId, PipelineError> {
+        // Load manifest for this contract
+        let manifest = ContractManifest::load(&self.contract_name)?;
+
+        // Resolve dependencies in deployment order
+        let deployment_order = manifest.resolve_dependencies()?;
+
+        info!(
+            "Deploying {} with dependencies: {:?}",
+            self.contract_name,
+            deployment_order
+        );
+
+        // Deploy dependencies first
+        for dep in &deployment_order {
+            self.deploy_single_contract(dep).await?;
+        }
+
+        // Deploy this contract
+        let contract_name = self.contract_name.clone();
+        self.deploy_single_contract(&contract_name).await
     }
 
     /// One-shot: ensure everything is ready and deploy
     pub async fn ensure_ready_and_deploy(
         &mut self,
     ) -> std::result::Result<ContractId, PipelineError> {
-        // 1. Build WASM if needed
-        self.build_if_needed().await?;
+        // Load manifest for this contract
+        let manifest = ContractManifest::load(&self.contract_name)?;
+
+        // Resolve dependencies
+        let deployment_order = manifest.resolve_dependencies()?;
+
+        // 1. Build all contracts if needed
+        for contract_name in deployment_order.iter().chain(std::iter::once(&self.contract_name)) {
+            let pipeline = ContractTestingPipeline::new(
+                contract_name,
+                self.harness_config.clone(),
+                self.ex.clone(),
+            ).await?;
+            pipeline.build_contract().await?;
+        }
 
         // 2. Run genesis if needed (populate self.genesis)
         self.ensure_genesis().await?;
 
-        // 3. Deploy contract (use stored genesis harness)
+        // 3. Deploy contract and dependencies
         self.deploy().await
     }
 
@@ -431,7 +653,7 @@ impl ContractTestingPipeline {
 // Tests
 // ============================================================================
 
-/// Test the pipeline with genesis only (no WASM deployment since no contract exists)
+/// Test the pipeline - verify dependency resolution and genesis
 pub async fn test_pipeline_impl(ex: Arc<Executor<'static>>) -> std::result::Result<(), PipelineError> {
     let config = HarnessConfig {
         pow_target: 20,
@@ -452,12 +674,17 @@ pub async fn test_pipeline_impl(ex: Arc<Executor<'static>>) -> std::result::Resu
         report.zkbin_status.len(),
         report.genesis_status);
 
-    // Run genesis (no WASM deployment since dex has no wasm binary)
+    // Run genesis
     info!("Ensuring genesis...");
     let state = pipeline.ensure_genesis().await?;
     info!("Genesis state: block_height={}", state.block_height);
 
-    info!("test_pipeline PASSED - pipeline verified");
+    // Verify dependency resolution works
+    let manifest = ContractManifest::load("dex")?;
+    let deps = manifest.resolve_dependencies()?;
+    info!("Dex dependencies resolved: {:?}", deps);
+
+    info!("test_pipeline PASSED - genesis and dependency resolution verified");
     Ok(())
 }
 

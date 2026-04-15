@@ -109,7 +109,10 @@ impl BurnCallBuilder {
         debug!(target: "contract::money_v3::client::burn", "Building MoneyV3::BurnV1 contract call");
 
         if self.inputs.is_empty() {
-            return Err(crate::error::MoneyV3Error::BurnMissingInputs.into());
+            return Err(crate::error::ContractError::Custom(
+                crate::error::MoneyV3Error::BurnMissingInputs as u32,
+            )
+            .into());
         }
 
         let mut proofs = vec![];

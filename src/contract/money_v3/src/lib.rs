@@ -65,7 +65,8 @@
 //! | BurnV1 | 0x03 | Burn/destroy tokens |
 //! | TransferV1 | 0x04 | Private token transfer |
 
-use darkfi_sdk::{error::ContractError, pasta::pallas};
+use darkfi_sdk::pasta::pallas;
+pub use darkfi_sdk::error::ContractError;
 
 /// Functions available in the contract
 #[repr(u8)]

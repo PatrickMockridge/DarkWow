@@ -144,10 +144,16 @@ impl TransferCallBuilder {
         debug!(target: "contract::money_v3::client::transfer", "Building MoneyV3::TransferV1 contract call");
 
         if self.inputs.is_empty() {
-            return Err(crate::error::MoneyV3Error::TransferMissingInputs.into())
+            return Err(crate::error::ContractError::Custom(
+                crate::error::MoneyV3Error::TransferMissingInputs as u32,
+            )
+            .into());
         }
         if self.outputs.is_empty() {
-            return Err(crate::error::MoneyV3Error::TransferMissingOutputs.into())
+            return Err(crate::error::ContractError::Custom(
+                crate::error::MoneyV3Error::TransferMissingOutputs as u32,
+            )
+            .into());
         }
 
         let mut proofs = vec![];

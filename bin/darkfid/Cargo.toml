@@ -20,6 +20,7 @@ darkfi-serial = {path = "../../src/serial"}
 
 # Misc
 blake3 = "1.8.2"
+glob = "0.3"
 thiserror = "2.0"
 bs58 = "0.5.1"
 tracing = "0.1.44"

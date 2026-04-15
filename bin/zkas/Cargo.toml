@@ -10,6 +10,7 @@ edition = "2021"
 
 [dependencies]
 arg = {git = "https://github.com/parazyd/arg"}
+blake3 = "1.8"
 darkfi = {path = "../../", features = ["zkas"]}
 
 [lints]
