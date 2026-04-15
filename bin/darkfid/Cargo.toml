@@ -13,6 +13,7 @@ edition = "2021"
 darkfi = {path = "../../", features = ["async-daemonize", "bs58", "validator", "net", "rpc"]}
 darkfi_money_v2_contract = {path = "../../src/contract/money_v2"}
 darkfi_native_token_contract = {path = "../../src/contract/native_token", features = ["client"]}
+darkfi_deployooor_contract = {path = "../../src/contract/deployooor", features = ["client"]}
 darkfi-contract-test-harness = {path = "../../src/contract/test-harness"}  # TEMPORARILY DISABLED - needs cleanup
 darkfi-sdk = {path = "../../src/sdk"}
 darkfi-serial = {path = "../../src/serial"}
