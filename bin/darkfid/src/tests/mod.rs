@@ -43,6 +43,8 @@ mod sync_simple;
 
 mod sync_native;
 
+pub mod genesis;
+
 // TODO: re-enable once TestHarness/Holder types are implemented
 // mod unproposed_txs;
 

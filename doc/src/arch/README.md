@@ -68,6 +68,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 ## Testing & Development
 
 - [Test Harness Guide](./test_harness_guide.md) - Writing contract integration tests
+- [Genesis Harness](./genesis_harness.md) - Baseline chain setup for WASM contract tests
 - [Localnet Contract Testing](./localnet_contract_testing.md) - Local devnet testing
 - [Debugging FAQ](./debugging_faq.md) - Common issues and solutions
 - [Async Serial Lifetime Bug](./async_serial_lifetime_bug.md) - Rust 1.90+ compatibility

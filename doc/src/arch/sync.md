@@ -316,6 +316,7 @@ bin/darkfid/src/proto/
 └── protocol_proposal.rs  # ExtendedProposalMessage, handle_receive_proposal
 
 bin/darkfid/src/tests/
+├── genesis.rs           # GenesisHarness - baseline chain for WASM contract tests
 ├── sync_simple.rs       # Basic sync test
 └── sync_native.rs       # Full ZK verification test
 ```
@@ -323,5 +324,6 @@ bin/darkfid/src/tests/
 ## Related Documentation
 
 - [ZK Verification](./zk_verification.md) - Detailed ZK verifier design
+- [Genesis Harness](./genesis_harness.md) - Baseline chain setup for WASM contract tests
 - [Consensus](./consensus.md) - PoW consensus algorithm
 - [Transaction Lifetime](./tx_lifetime.md) - Transaction processing lifecycle
