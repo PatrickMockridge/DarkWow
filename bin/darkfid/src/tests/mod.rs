@@ -45,6 +45,10 @@ mod sync_native;
 
 pub mod genesis;
 
+pub mod deployer;
+
+pub mod pipeline;
+
 // TODO: re-enable once TestHarness/Holder types are implemented
 // mod unproposed_txs;
 

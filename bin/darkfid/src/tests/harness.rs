@@ -56,6 +56,7 @@ use crate::{
     DarkfiNode, DarkfiNodePtr,
 };
 
+#[derive(Clone)]
 pub struct HarnessConfig {
     pub pow_target: u32,
     pub pow_fixed_difficulty: Option<BigUint>,
