@@ -2,7 +2,9 @@
 
 ## Overview
 
-The `GenesisHarness` provides a reusable baseline chain setup for DarkFi contract testing. It initializes NativeToken (consensus-first token) and Deployooor (WASM contract deployer), allowing you to test any WASM contract on top of a functioning chain.
+The `GenesisHarness` provides a reusable baseline chain setup for DarkFi contract testing. It initializes **NativeToken** (consensus-first token) and **Deployooor** (WASM contract deployer) - the two mandatory consensus contracts.
+
+**GenesisHarness is for NativeToken + Deployooor ONLY.** It does NOT deploy WASM contracts. Use `ContractTestingPipeline` for full WASM contract testing.
 
 **Location:** `bin/darkfid/src/tests/genesis.rs`
 
@@ -13,7 +15,6 @@ Previously, contract tests required manually setting up:
 - Native contracts deployment
 - Fork initialization
 - Block generation with PoW rewards
-- Contract deployment via Deployooor
 
 This was error-prone and duplicated across tests. `GenesisHarness` wraps all of this into a single struct.
 
@@ -22,7 +23,7 @@ This was error-prone and duplicated across tests. `GenesisHarness` wraps all of 
 ```rust
 use crate::tests::genesis::GenesisHarness;
 
-async fn test_my_contract() -> Result<()> {
+async fn test_native_token() -> Result<()> {
     let config = HarnessConfig {
         pow_target: 20,
         pow_fixed_difficulty: Some(BigUint::one()),
@@ -37,11 +38,8 @@ async fn test_my_contract() -> Result<()> {
     // Generate 3 genesis blocks (mints NativeToken via PoW)
     genesis.generate_genesis_blocks(3).await?;
 
-    // Deploy your WASM contract via Deployooor
-    let wasm_bincode = include_bytes!("../../my_contract/darkfi_my_contract.wasm").to_vec();
-    let contract_id = genesis.deploy_contract(wasm_bincode, "MyContract").await?;
-
-    // Now test your contract...
+    // Genesis is ready with NativeToken + Deployooor
+    // Use ContractTestingPipeline for WASM contract deployment
     Ok(())
 }
 ```
@@ -153,7 +151,7 @@ fn test_genesis() -> Result<()> {
 }
 ```
 
-### `test_native_token_deployoor` - Full Deployment
+### `test_native_token_deployoor` - Baseline Verification
 
 ```rust
 #[test]
@@ -162,14 +160,12 @@ fn test_native_token_deployoor() -> Result<()> {
         let config = HarnessConfig { /* ... */ };
         let mut genesis = GenesisHarness::new(config, &ex).await?;
 
-        // Set up baseline
+        // Set up baseline with NativeToken + Deployooor
         genesis.generate_genesis_blocks(2).await?;
 
-        // Deploy MoneyV2 via Deployooor
-        let wasm = include_bytes!("../../money_v2/darkfi_money_contract.wasm").to_vec();
-        let contract_id = genesis.deploy_contract(wasm, "MoneyV2").await?;
-
-        tracing::info!("Deployed: {:?}", contract_id);
+        // Verify genesis state
+        let height = genesis.block_height()?;
+        tracing::info!("Genesis height: {}", height);
         Ok(())
     })
 }

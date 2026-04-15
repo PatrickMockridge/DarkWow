@@ -750,5 +750,6 @@ pub async fn native_token_transfer(&mut self, ...) -> Result<...>
 - [ZK Circuit Testing](./zk_circuit_testing.md)
 - [Async Serialization Lifetime Bug](./async_serial_lifetime_bug.md) (if using Rust 1.90+)
 - [Contract Architecture](./sc/sc.md)
-- [Genesis Harness](./genesis_harness.md) - Baseline chain setup for WASM contract tests
+- [Genesis Harness](./genesis_harness.md) - NativeToken + Deployooor baseline only
+- [Contract Testing Pipeline](./pipeline.md) - Unified binary check + genesis + deploy workflow
 - [Baccarat Contract](./baccarat.md) (example)
