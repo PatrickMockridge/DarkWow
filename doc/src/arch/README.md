@@ -32,6 +32,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 ### Cross-Chain
 - [Atomic Swap](./atomic_swap.md) - Trustless cross-chain swaps
 - [Bridge](./bridge.md) - Multi-chain bridge with deposit/withdraw
+- [Relayer Endowment](./relayer_endowment.md) - External capital backing for relayers
 - [Monero](./monero.md) - Monero integration and privacy comparison
 
 ### Other

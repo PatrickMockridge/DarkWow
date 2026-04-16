@@ -31,6 +31,7 @@
 //! The protections described here are provisionally specified
 //! and require full implementation and security review.
 
+pub mod client;
 pub mod error;
 pub mod model;
 
