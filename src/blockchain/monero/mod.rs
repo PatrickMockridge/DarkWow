@@ -48,6 +48,7 @@ pub mod keccak;
 use keccak::{keccak_from_bytes, keccak_to_bytes};
 
 pub mod utils;
+pub use utils::check_aux_chains;
 use utils::{create_blockhashing_blob, create_merkle_proof, tree_hash};
 
 pub mod merkle_tree_parameters;
@@ -476,6 +477,27 @@ pub fn extract_aux_merkle_root(extra_field: &RawExtraField) -> Result<Option<mon
     }
 }
 
+/// Extract both merge mining parameters and merkle root from coinbase tx extra field.
+///
+/// Returns `(merge_mining_params, aux_chain_merkle_root)` if found.
+pub fn extract_merge_mining_params_and_root(
+    extra_field: &RawExtraField,
+) -> Result<Option<(monero::VarInt, monero::Hash)>> {
+    let extra_field = parse_extra_field_truncate_on_error(extra_field);
+    let mut result: Option<(monero::VarInt, monero::Hash)> = None;
+
+    for item in &extra_field.0 {
+        if let SubField::MergeMining(params, merge_mining_hash) = item {
+            if result.is_some() {
+                return Err(MoneroMergeMineError("More than one MM tag found in coinbase".to_string()))
+            }
+            result = Some((params.clone(), *merge_mining_hash));
+        }
+    }
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -561,5 +583,54 @@ mod tests {
 
         assert_eq!(de_sync_digest, powdata_digest);
         assert_eq!(de_async_digest, powdata_digest);
+    }
+
+    // Test that is_coinbase_valid_merkle_root returns true for a valid coinbase
+    #[test]
+    fn test_monero_powdata_coinbase_merkle_root_validation() {
+        let block = monero_block_deserialize(XMR_BLOCK).unwrap();
+        let seed = FixedByteArray::from_bytes(&hex::decode(SEED_HASH).unwrap()).unwrap();
+
+        // The Merkle proof is fake to keep it simple.
+        let tx_hashes = &[
+            "d96756959949db23764592fea0bfe88c790e1fd131dabb676948b343aa9ecc24",
+            "77d1a87df131c36da4832a7ec382db9b8fe947576a60ec82cc1c66a220f6ee42",
+        ]
+        .iter()
+        .map(|hash| monero::Hash::from_str(hash).unwrap())
+        .collect::<Vec<_>>();
+
+        let aux_chain_merkle_proof = create_merkle_proof(tx_hashes, &tx_hashes[0]).unwrap();
+
+        // Construct PowData
+        let powdata = MoneroPowData::new(block, seed, aux_chain_merkle_proof).unwrap();
+
+        // Verify the coinbase merkle root is valid
+        assert!(powdata.is_coinbase_valid_merkle_root());
+    }
+
+    // Test that to_block_hashing_blob produces a non-empty blob
+    #[test]
+    fn test_monero_powdata_block_hashing_blob() {
+        let block = monero_block_deserialize(XMR_BLOCK).unwrap();
+        let seed = FixedByteArray::from_bytes(&hex::decode(SEED_HASH).unwrap()).unwrap();
+
+        let tx_hashes = &[
+            "d96756959949db23764592fea0bfe88c790e1fd131dabb676948b343aa9ecc24",
+            "77d1a87df131c36da4832a7ec382db9b8fe947576a60ec82cc1c66a220f6ee42",
+        ]
+        .iter()
+        .map(|hash| monero::Hash::from_str(hash).unwrap())
+        .collect::<Vec<_>>();
+
+        let aux_chain_merkle_proof = create_merkle_proof(tx_hashes, &tx_hashes[0]).unwrap();
+
+        let powdata = MoneroPowData::new(block, seed, aux_chain_merkle_proof).unwrap();
+        let blob = powdata.to_block_hashing_blob();
+
+        // Blob should not be empty
+        assert!(!blob.is_empty());
+        // Blob should be at least header size + merkle root + varint
+        assert!(blob.len() > 32);
     }
 }

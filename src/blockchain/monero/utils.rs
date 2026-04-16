@@ -197,8 +197,12 @@ pub fn create_blockhashing_blob(
     blockhashing_blob
 }
 
-#[allow(unused)]
-fn check_aux_chains(
+/// Validates the aux chain merkle proof.
+///
+/// This function verifies that:
+/// 1. The merkle proof correctly proves `darkfi_hash` was included in `aux_chain_merkle_root`
+/// 2. The position in the merkle tree matches the expected position
+pub fn check_aux_chains(
     monero_data: &MoneroPowData,
     merge_mining_params: VarInt,
     aux_chain_merkle_root: &monero::Hash,

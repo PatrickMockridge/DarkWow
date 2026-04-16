@@ -41,6 +41,8 @@ mod sync_forks;
 
 mod sync_simple;
 
+mod merge_mining;
+
 mod sync_native;
 
 pub mod genesis;

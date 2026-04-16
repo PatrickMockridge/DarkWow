@@ -31,8 +31,8 @@ use darkfi::{
     blockchain::{
         header_store::PowData,
         monero::{
-            fixed_array::FixedByteArray, merkle_proof::MerkleProof, monero_block_deserialize,
-            MoneroPowData,
+            check_aux_chains, extract_merge_mining_params_and_root, fixed_array::FixedByteArray,
+            merkle_proof::MerkleProof, monero_block_deserialize, MoneroPowData,
         },
         HeaderHash,
     },
@@ -405,7 +405,7 @@ impl DarkfiNode {
         let Some(merkle_proof) = MerkleProof::try_construct(merkle_proof, path) else {
             return server_error(RpcError::MinerMerkleProofConstructionFailed, id, None)
         };
-        let monero_pow_data = match MoneroPowData::new(block, seed_hash, merkle_proof) {
+        let monero_pow_data = match MoneroPowData::new(block.clone(), seed_hash, merkle_proof) {
             Ok(v) => v,
             Err(e) => {
                 error!(
@@ -415,6 +415,39 @@ impl DarkfiNode {
                 return server_error(RpcError::MinerMoneroPowDataConstructionFailed, id, None)
             }
         };
+
+        // Extract merge mining params and aux chain merkle root from coinbase tx
+        let Some((merge_mining_params, aux_chain_merkle_root)) =
+            extract_merge_mining_params_and_root(&block.miner_tx.prefix.extra).unwrap_or(None)
+        else {
+            error!(
+                target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
+                "[RPC-XMR] No merge mining tag found in coinbase tx",
+            );
+            return miner_status_response(id, "rejected")
+        };
+
+        // Validate the aux chain merkle proof
+        let Ok(darkfi_hash) = HeaderHash::from_str(aux_hash) else {
+            return miner_status_response(id, "rejected")
+        };
+        let genesis_hash = match self.validator.read().await.blockchain.genesis() {
+            Ok(v) => v.1,
+            Err(_) => return miner_status_response(id, "rejected"),
+        };
+        if !check_aux_chains(
+            &monero_pow_data,
+            merge_mining_params,
+            &aux_chain_merkle_root,
+            darkfi_hash,
+            genesis_hash,
+        ) {
+            error!(
+                target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
+                "[RPC-XMR] Aux chain merkle proof validation failed",
+            );
+            return miner_status_response(id, "rejected")
+        }
 
         // Append MoneroPowData to the DarkFi block and sign it
         let mut block = block_template.block.clone();

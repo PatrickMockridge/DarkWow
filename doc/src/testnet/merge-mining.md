@@ -253,5 +253,55 @@ And `xmrig`:
 $ ./xmrig -u x+1 20000 -o 127.0.0.1:3333 -t 1
 ```
 
+## Localnet merge mining testing
+
+DarkFi's localnet configuration includes `mm_rpc` settings enabled by default,
+allowing you to test merge mining without external Monero infrastructure.
+The configuration files are located in `contrib/localnet/`:
+
+- `darkfid-single-node/darkfid.toml` - Single node setup
+- `darkfid-small/darkfid0.toml` - Small multi-node setup
+- `darkfid-five-nodes/darkfid0.toml` - Five node setup
+
+To test merge mining locally:
+
+1. Ensure `mm_rpc` is enabled in your `darkfid.toml`:
+
+```toml
+[network_config."localnet".mm_rpc]
+rpc_listen = "http+tcp://127.0.0.1:48348"
+```
+
+2. Start `darkfid` with localnet configuration:
+
+```shell
+$ ./darkfid --network localnet --config contrib/localnet/darkfid-single-node/darkfid.toml
+```
+
+3. Verify `mm_rpc` is listening:
+
+```shell
+$ curl -X jsonrpc -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"merge_mining_get_chain_id","id":1}' \
+    http://127.0.0.1:48348
+```
+
+4. To integrate with p2pool for full localnet testing, configure p2pool's
+   merge-mining to point to this address:
+
+```shell
+$ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 \
+    --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 \
+    --data-dir ./p2pool-data --no-igd \
+    --merge-mine 127.0.0.1:48348 {YOUR_DARKFI_WALLET_ADDRESS}
+```
+
+For full integration testing of the merge mining RPC implementation, use the
+test suite:
+
+```shell
+$ cargo test -p darkfid merge_mining
+```
+
 [1]: https://github.com/monero-project/monero?tab=readme-ov-file#dependencies
 [2]: https://github.com/SChernykh/p2pool?tab=readme-ov-file#prerequisites
