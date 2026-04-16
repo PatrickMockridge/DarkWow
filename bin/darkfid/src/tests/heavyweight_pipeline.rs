@@ -49,6 +49,7 @@
 //! pipeline.exec(function_id, call_data, proofs).await?;
 //! ```
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use darkfi::{
@@ -223,6 +224,28 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
 }
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/// Get the base directory for contracts
+fn contract_base_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("src")
+        .join("contract")
+}
+
+/// Read WASM binary for a contract
+async fn read_wasm(contract_name: &str) -> std::result::Result<Vec<u8>, HeavyweightError> {
+    let wasm_path = contract_base_dir()
+        .join(contract_name)
+        .join(format!("darkfi_{}_contract.wasm", contract_name));
+
+    smol::fs::read(&wasm_path).await.map_err(|e| HeavyweightError::DeploymentFailed(e.to_string()))
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -264,9 +287,15 @@ async fn test_dex_heavyweight_impl(
     let mut pipeline =
         HeavyweightPipeline::new(harness, "dex", config, ex).await?;
 
-    info!("Heavyweight pipeline created successfully");
-    info!("test_dex_heavyweight PASSED");
+    // Generate genesis blocks
+    pipeline.generate_genesis_blocks(3).await?;
 
+    // Read and deploy WASM
+    let wasm = read_wasm("dex").await?;
+    let contract_id = pipeline.deploy(wasm).await?;
+    info!("DEX deployed: {:?}", contract_id);
+
+    info!("test_dex_heavyweight PASSED");
     Ok(())
 }
 
@@ -308,8 +337,14 @@ async fn test_money_v3_heavyweight_impl(
     let mut pipeline =
         HeavyweightPipeline::new(harness, "money_v3", config, ex).await?;
 
-    info!("Heavyweight pipeline created successfully");
-    info!("test_money_v3_heavyweight PASSED");
+    // Generate genesis blocks
+    pipeline.generate_genesis_blocks(3).await?;
 
+    // Read and deploy WASM
+    let wasm = read_wasm("money_v3").await?;
+    let contract_id = pipeline.deploy(wasm).await?;
+    info!("MoneyV3 deployed: {:?}", contract_id);
+
+    info!("test_money_v3_heavyweight PASSED");
     Ok(())
 }

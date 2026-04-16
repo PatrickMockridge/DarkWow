@@ -653,6 +653,15 @@ impl ContractTestingPipeline {
 // Tests
 // ============================================================================
 
+/// All deployable contracts (those with test harnesses)
+const ALL_CONTRACTS: [&str; 24] = [
+    "atomic_swap", "attestation", "auction", "baccarat", "block_height_prediction",
+    "bridge", "dao_escrow", "darkbet_exchange", "darktoshi_dice", "dex",
+    "escrow", "identity", "insurance_market", "labor_market", "lottery",
+    "money_v3", "oracle", "pool_stake", "relayer_endowment", "slot",
+    "stablecoin", "subscription", "tender", "native_token",
+];
+
 /// Test the pipeline - deploy any contract by CONTRACT_NAME env var
 pub async fn test_pipeline_impl(ex: Arc<Executor<'static>>) -> std::result::Result<(), PipelineError> {
     let contract_name =
@@ -698,6 +707,51 @@ fn test_pipeline() -> std::result::Result<(), PipelineError> {
         .finish(|| {
             smol::block_on(async {
                 test_pipeline_impl(ex.clone()).await.unwrap();
+                drop(signal);
+            })
+        });
+
+    Ok(())
+}
+
+/// Batch test: deploy all contracts via ContractTestingPipeline
+pub async fn test_all_contracts_deploy_impl(
+    ex: Arc<Executor<'static>>,
+) -> std::result::Result<(), PipelineError> {
+    let config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(BigUint::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18550".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18551".to_string(),
+    };
+
+    for contract_name in ALL_CONTRACTS {
+        info!("[{}] Starting deployment test...", contract_name);
+
+        let mut pipeline =
+            ContractTestingPipeline::new(contract_name, config.clone(), ex.clone()).await?;
+
+        pipeline.ensure_ready_and_deploy().await?;
+
+        info!("[{}] ✓ Deployed successfully", contract_name);
+    }
+
+    info!("All {} contracts deployed successfully!", ALL_CONTRACTS.len());
+    Ok(())
+}
+
+#[test]
+fn test_all_contracts_deploy() -> std::result::Result<(), PipelineError> {
+    let ex = Arc::new(Executor::new());
+    let (signal, shutdown) = smol::channel::unbounded::<()>();
+
+    easy_parallel::Parallel::new()
+        .each(0..1, |_| smol::block_on(ex.run(shutdown.recv())))
+        .finish(|| {
+            smol::block_on(async {
+                test_all_contracts_deploy_impl(ex.clone()).await.unwrap();
                 drop(signal);
             })
         });
