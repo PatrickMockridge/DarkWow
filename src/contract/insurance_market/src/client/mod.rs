@@ -20,6 +20,9 @@
 //!
 //! This module provides the client-side API for building Insurance Market contract calls.
 
+pub mod underwrite_with_capability_v1;
+pub mod purchase_coverage_with_capability_v1;
+
 use darkfi_sdk::{
     crypto::{pasta_prelude::Group, PublicKey},
     pasta::pallas,
@@ -138,6 +141,9 @@ impl CreateMarketV1Builder {
             deductible: self.deductible,
             max_coverage_per_buyer: self.max_coverage_per_buyer,
             closes_at: self.closes_at,
+            required_underwriter_capability: None,
+            required_buyer_capability: None,
+            required_dag_id: None,
         }
     }
 }
@@ -226,16 +232,18 @@ impl PurchaseCoverageV1Builder {
 pub struct FileClaimV1Builder {
     coverage_id: pallas::Base,
     market_id: pallas::Base,
+    buyer: PublicKey,
     amount: u64,
     evidence: Vec<u8>,
 }
 
 impl FileClaimV1Builder {
     /// Create a new file claim builder
-    pub fn new(coverage_id: pallas::Base, market_id: pallas::Base, amount: u64) -> Self {
+    pub fn new(coverage_id: pallas::Base, market_id: pallas::Base, buyer: PublicKey, amount: u64) -> Self {
         Self {
             coverage_id,
             market_id,
+            buyer,
             amount,
             evidence: vec![],
         }
@@ -252,6 +260,7 @@ impl FileClaimV1Builder {
         FileClaimParamsV1 {
             coverage_id: self.coverage_id,
             market_id: self.market_id,
+            buyer: self.buyer,
             amount: self.amount,
             evidence: self.evidence,
         }

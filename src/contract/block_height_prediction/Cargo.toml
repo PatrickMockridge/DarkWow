@@ -14,10 +14,19 @@ darkfi-serial = { path = "../../serial", features = ["derive", "crypto"] }
 thiserror = "2.0.17"
 getrandom = { version = "0.2", features = ["js"] }
 
+darkfi = { path = "../../../", features = ["zk"], optional = true }
+halo2_proofs = { version = "0.3.2", optional = true }
+rand = { version = "0.8.5", optional = true }
+
 [features]
 no-entrypoint = []
 default = []
-client = []
+client = [
+    "darkfi",
+    "darkfi-serial/async",
+    "rand",
+    "halo2_proofs",
+]
 
 [lints]
 workspace = true

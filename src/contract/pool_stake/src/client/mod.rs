@@ -20,6 +20,11 @@
 //!
 //! This module provides the client-side API for building Pool Stake contract calls.
 
+pub mod create_pool_v1;
+pub mod join_pool_v1;
+pub mod allocate_coverage_v1;
+pub mod slash_coverage_v1;
+
 use darkfi_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
@@ -308,7 +313,7 @@ impl UpdatePoolConfigV1Builder {
 /// Validate minimum stake amount
 pub fn validate_min_stake(amount: u64) -> Result<(), crate::error::PoolStakeError> {
     if amount < 1_000_000 {
-        return Err(crate::error::PoolStakeError::InsufficientStake)
+        return Err(crate::error::PoolStakeError::InsufficientStake(1_000_000))
     }
     Ok(())
 }
@@ -328,7 +333,7 @@ pub fn validate_coverage_ratio(ratio: u32) -> Result<(), crate::error::PoolStake
 pub fn validate_operator_fee(fee_bp: u32) -> Result<(), crate::error::PoolStakeError> {
     if fee_bp > 1000 {
         // Max 10%
-        return Err(crate::error::PoolStakeError::InvalidOperatorFee)
+        return Err(crate::error::PoolStakeError::InvalidParams("Operator fee exceeds maximum 10%".to_string()))
     }
     Ok(())
 }

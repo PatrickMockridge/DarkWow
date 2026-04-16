@@ -1,0 +1,126 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Pool Stake SlashCoverage ZK proof generation
+
+use darkfi::{
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
+    zkas::ZkBinary,
+    Result,
+};
+use darkfi_sdk::{
+    crypto::{poseidon_hash, PublicKey},
+    pasta::pallas,
+};
+use rand::rngs::OsRng;
+
+/// SlashCoverageV1 circuit public inputs
+#[derive(Debug, Clone)]
+pub struct SlashCoverageV1PublicInputs {
+    pub allocation_id: pallas::Base,
+    pub slashed_amount: pallas::Base,
+    pub slashed_to_pub_x: pallas::Base,
+    pub slashed_to_pub_y: pallas::Base,
+    pub nonce: pallas::Base,
+    pub derived_slash_id: pallas::Base,
+}
+
+impl SlashCoverageV1PublicInputs {
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![
+            self.allocation_id,
+            self.slashed_amount,
+            self.slashed_to_pub_x,
+            self.slashed_to_pub_y,
+            self.nonce,
+            self.derived_slash_id,
+        ]
+    }
+}
+
+/// Input data for SlashCoverage proof generation
+#[derive(Debug, Clone)]
+pub struct SlashCoverageV1CallData {
+    pub allocation_id: pallas::Base,
+    pub slashed_amount: u64,
+    pub slashed_to_pub_x: pallas::Base,
+    pub slashed_to_pub_y: pallas::Base,
+    pub nonce: u64,
+}
+
+impl SlashCoverageV1CallData {
+    pub fn new(
+        allocation_id: pallas::Base,
+        slashed_amount: u64,
+        slashed_to_public: PublicKey,
+        nonce: u64,
+    ) -> Self {
+        let (sx, sy) = slashed_to_public.xy();
+        Self {
+            allocation_id,
+            slashed_amount,
+            slashed_to_pub_x: sx,
+            slashed_to_pub_y: sy,
+            nonce,
+        }
+    }
+
+    pub fn compute_public_inputs(&self) -> SlashCoverageV1PublicInputs {
+        let derived_slash_id = poseidon_hash([
+            self.allocation_id,
+            pallas::Base::from(self.slashed_amount),
+            self.slashed_to_pub_x,
+            self.slashed_to_pub_y,
+            pallas::Base::from(self.nonce),
+        ]);
+        SlashCoverageV1PublicInputs {
+            allocation_id: self.allocation_id,
+            slashed_amount: pallas::Base::from(self.slashed_amount),
+            slashed_to_pub_x: self.slashed_to_pub_x,
+            slashed_to_pub_y: self.slashed_to_pub_y,
+            nonce: pallas::Base::from(self.nonce),
+            derived_slash_id,
+        }
+    }
+
+    pub fn to_witnesses(&self) -> Vec<Witness> {
+        vec![
+            // Public inputs as witnesses
+            Witness::Base(Value::known(self.allocation_id)),
+            Witness::Base(Value::known(pallas::Base::from(self.slashed_amount))),
+            Witness::Base(Value::known(self.slashed_to_pub_x)),
+            Witness::Base(Value::known(self.slashed_to_pub_y)),
+            Witness::Base(Value::known(pallas::Base::from(self.nonce))),
+        ]
+    }
+}
+
+/// Create a SlashCoverage ZK proof
+pub fn slash_coverage_v1_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &SlashCoverageV1CallData,
+) -> Result<(Proof, SlashCoverageV1PublicInputs)> {
+    let public_inputs = input.compute_public_inputs();
+    let witnesses = input.to_witnesses();
+
+    let circuit = ZkCircuit::new(witnesses, zkbin);
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+
+    Ok((proof, public_inputs))
+}

@@ -20,10 +20,14 @@
 //!
 //! This module provides the client-side API for building Block Height Prediction contract calls.
 
+pub mod create_market_v1;
+pub mod create_position_v1;
+
 use darkfi_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
+use darkfi_sdk::crypto::pasta_prelude::Group;
 
 use crate::model::{
     CancelMarketParamsV1, ClaimWinningsParamsV1, CreateMarketParamsV1, CreatePositionParamsV1,

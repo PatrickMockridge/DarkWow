@@ -57,6 +57,9 @@
 //!     .build()?;
 //! ```
 
+pub mod init_v1;
+pub mod pay_premium_v1;
+
 use darkfi_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
@@ -270,20 +273,22 @@ pub struct PayPremiumParams {
 /// Members propose claims against the endowment.
 pub struct ProposeClaimBuilder {
     dao_escrow_bulla: DaoEscrowBulla,
+    claim_id: ClaimId,
     value: u64,
-    token_id: pallas::Base,
     description_hash: pallas::Base,
     recipient_pubkey: PublicKey,
+    proposer_pubkey: PublicKey,
 }
 
 impl ProposeClaimBuilder {
     pub fn new() -> Self {
         Self {
             dao_escrow_bulla: pallas::Base::zero(),
+            claim_id: pallas::Base::zero(),
             value: 0,
-            token_id: pallas::Base::zero(),
             description_hash: pallas::Base::zero(),
             recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            proposer_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
         }
     }
 
@@ -292,13 +297,13 @@ impl ProposeClaimBuilder {
         self
     }
 
-    pub fn value(mut self, value: u64) -> Self {
-        self.value = value;
+    pub fn claim_id(mut self, id: ClaimId) -> Self {
+        self.claim_id = id;
         self
     }
 
-    pub fn token_id(mut self, id: pallas::Base) -> Self {
-        self.token_id = id;
+    pub fn value(mut self, value: u64) -> Self {
+        self.value = value;
         self
     }
 
@@ -307,27 +312,24 @@ impl ProposeClaimBuilder {
         self
     }
 
-    pub fn description<S: AsRef<str>>(mut self, description: S) -> Self {
-        let h = poseidon_hash([pallas::Base::from_bytes(description.as_ref().as_bytes()).unwrap_or_default()]);
-        self.description_hash = h;
+    pub fn recipient_pubkey(mut self, key: PublicKey) -> Self {
+        self.recipient_pubkey = key;
         self
     }
 
-    pub fn recipient_pubkey(mut self, key: PublicKey) -> Self {
-        self.recipient_pubkey = key;
+    pub fn proposer_pubkey(mut self, key: PublicKey) -> Self {
+        self.proposer_pubkey = key;
         self
     }
 
     pub fn build(&self) -> Result<ProposeClaimParamsV1, &'static str> {
         Ok(ProposeClaimParamsV1 {
             dao_escrow_bulla: self.dao_escrow_bulla,
+            claim_id: self.claim_id,
             value: self.value,
-            token_id: self.token_id,
             description_hash: self.description_hash,
             recipient_pubkey: self.recipient_pubkey,
-            merkle_proof: vec![],
-            merkle_root: Default::default(),
-            value_commit: pallas::Point::identity(),
+            proposer_pubkey: self.proposer_pubkey,
         })
     }
 }
@@ -336,16 +338,25 @@ impl ProposeClaimBuilder {
 ///
 /// DAO members vote on pending claims.
 pub struct VoteClaimBuilder {
+    dao_escrow_bulla: DaoEscrowBulla,
     claim_id: ClaimId,
     vote: VoteType,
+    voter_pubkey: PublicKey,
 }
 
 impl VoteClaimBuilder {
     pub fn new() -> Self {
         Self {
+            dao_escrow_bulla: pallas::Base::zero(),
             claim_id: pallas::Base::zero(),
             vote: VoteType::Yes,
+            voter_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
         }
+    }
+
+    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
+        self.dao_escrow_bulla = bulla;
+        self
     }
 
     pub fn claim_id(mut self, id: ClaimId) -> Self {
@@ -355,6 +366,11 @@ impl VoteClaimBuilder {
 
     pub fn vote(mut self, vote: VoteType) -> Self {
         self.vote = vote;
+        self
+    }
+
+    pub fn voter_pubkey(mut self, key: PublicKey) -> Self {
+        self.voter_pubkey = key;
         self
     }
 
@@ -370,11 +386,10 @@ impl VoteClaimBuilder {
 
     pub fn build(&self) -> Result<VoteClaimParamsV1, &'static str> {
         Ok(VoteClaimParamsV1 {
+            dao_escrow_bulla: self.dao_escrow_bulla,
             claim_id: self.claim_id,
             vote: self.vote,
-            vote_commit: pallas::Point::identity(),
-            vote_nullifier: pallas::Base::zero(),
-            signature_public: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            voter_pubkey: self.voter_pubkey,
         })
     }
 }

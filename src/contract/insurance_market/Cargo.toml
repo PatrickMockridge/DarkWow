@@ -16,7 +16,14 @@ thiserror = "1.0"
 rand = "0.8"
 getrandom = { version = "0.2", features = ["js"] }
 
+darkfi = { path = "../../../", features = ["zk"], optional = true }
+halo2_proofs = { version = "0.3.2", optional = true }
+
 [features]
 default = []
 no-entrypoint = []
-client = []
+client = [
+    "darkfi",
+    "darkfi-serial/async",
+    "halo2_proofs",
+]
