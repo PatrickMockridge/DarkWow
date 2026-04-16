@@ -19,6 +19,7 @@
 use std::{
     fs::{read_to_string, File},
     io::Write,
+    path::Path,
     process::ExitCode,
 };
 
@@ -46,10 +47,190 @@ Options:
   -e         Examine decoded bytecode
   --version  Print version and exit
   -h         Print this help
+
+Subcommands:
+  validate   Validate a .zk.bin file
+  rebuild    Rebuild .zk.bin files from .zk source files
+"#;
+
+const VALIDATE_USAGE: &str = r#"
+Usage: zkas validate <BINARY>
+
+Validate a ZK binary file (.zk.bin)
+
+Arguments:
+  <BINARY>   Path to the .zk.bin file to validate
+
+Example:
+  zkas validate src/contract/dao_escrow/proof/pay_premium_v1.zk.bin
+"#;
+
+const REBUILD_USAGE: &str = r#"
+Usage: zkas rebuild <DIRECTORY>
+
+Rebuild ZK binaries from source files in a directory
+
+Arguments:
+  <DIRECTORY>   Path to directory containing .zk source files
+
+Example:
+  zkas rebuild src/contract/dao_escrow/proof/
 "#;
 
 fn usage() {
     print!("{ANSI_LOGO}{ABOUT}\n{USAGE}");
+}
+
+fn validate_usage() {
+    eprint!("{VALIDATE_USAGE}");
+}
+
+fn rebuild_usage() {
+    eprint!("{REBUILD_USAGE}");
+}
+
+/// Validate a single ZK binary file
+fn validate_binary(path: &Path) -> ExitCode {
+    let bincode = match std::fs::read(path) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error: Failed reading from \"{}\". {e}", path.display());
+            return ExitCode::FAILURE
+        }
+    };
+
+    match ZkBinary::decode(&bincode, false) {
+        Ok(_) => {
+            println!("OK: {}", path.display());
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("CORRUPTED: {}: {}", path.display(), e);
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Rebuild all ZK binaries in a directory from .zk source files
+fn rebuild_directory(path: &Path) -> ExitCode {
+    if !path.is_dir() {
+        eprintln!("Error: {} is not a directory", path.display());
+        return ExitCode::FAILURE
+    }
+
+    let entries = match std::fs::read_dir(path) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error: Failed to read directory {}: {}", path.display(), e);
+            return ExitCode::FAILURE
+        }
+    };
+
+    let mut rebuilt = 0;
+    let mut failed = 0;
+
+    for entry in entries.flatten() {
+        let source_path = entry.path();
+        if source_path.extension().map_or(false, |e| e == "zk") {
+            let bin_path = source_path.with_extension("zk.bin");
+
+            // Read source
+            let source = match read_to_string(&source_path) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error: Failed reading from \"{}\". {e}", source_path.display());
+                    failed += 1;
+                    continue
+                }
+            };
+
+            // Clean up tabs, and convert CRLF to LF.
+            let source = source.replace('\t', "    ").replace("\r\n", "\n");
+
+            // Lex
+            let lexer = Lexer::new(source_path.to_str().unwrap_or(""), source.chars());
+            let tokens = match lexer.lex() {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error: Lexer failed for \"{}\": {:?}", source_path.display(), e);
+                    failed += 1;
+                    continue
+                }
+            };
+
+            // Parse
+            let parser = Parser::new(source_path.to_str().unwrap_or(""), source.chars(), tokens);
+            let (namespace, k, constants, witnesses, statements) = match parser.parse() {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error: Parser failed for \"{}\": {:?}", source_path.display(), e);
+                    failed += 1;
+                    continue
+                }
+            };
+
+            // Analyze
+            let mut analyzer =
+                Analyzer::new(source_path.to_str().unwrap_or(""), source.chars(), constants, witnesses, statements);
+            if analyzer.analyze_types().is_err() {
+                failed += 1;
+                continue
+            }
+
+            // Compute source hash
+            let source_hash = blake3::hash(source.as_bytes()).to_hex().to_string();
+
+            // Compile
+            let compiler = Compiler::new(
+                source_path.to_str().unwrap_or(""),
+                source.chars(),
+                namespace,
+                k,
+                analyzer.constants,
+                analyzer.witnesses,
+                analyzer.statements,
+                analyzer.literals,
+                true, // include debug symbols
+                Some(source_hash),
+            );
+
+            let bincode = match compiler.compile() {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error: Compiler failed for \"{}\": {:?}", source_path.display(), e);
+                    failed += 1;
+                    continue
+                }
+            };
+
+            // Write output
+            let mut file = match File::create(&bin_path) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error: Failed to create \"{}\": {}", bin_path.display(), e);
+                    failed += 1;
+                    continue
+                }
+            };
+
+            if let Err(e) = file.write_all(&bincode) {
+                eprintln!("Error: Failed to write to \"{}\": {}", bin_path.display(), e);
+                failed += 1;
+                continue
+            }
+
+            println!("Rebuilt: {}", bin_path.display());
+            rebuilt += 1;
+        }
+    }
+
+    println!("\nRebuilt {} binaries, {} failed", rebuilt, failed);
+
+    if failed > 0 {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 fn main() -> ExitCode {
@@ -59,6 +240,29 @@ fn main() -> ExitCode {
     if args_vec.len() == 2 && args_vec[1] == "--version" {
         println!("{}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS
+    }
+
+    // Check for subcommands
+    if args_vec.len() >= 2 {
+        match args_vec[1].as_str() {
+            "validate" => {
+                if args_vec.len() != 3 {
+                    validate_usage();
+                    return ExitCode::FAILURE
+                }
+                let path = Path::new(&args_vec[2]);
+                return validate_binary(path)
+            }
+            "rebuild" => {
+                if args_vec.len() != 3 {
+                    rebuild_usage();
+                    return ExitCode::FAILURE
+                }
+                let path = Path::new(&args_vec[2]);
+                return rebuild_directory(path)
+            }
+            _ => {}
+        }
     }
 
     let argv;
