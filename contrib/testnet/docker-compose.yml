@@ -7,6 +7,7 @@
 # Ports:
 #   18345 - JSON-RPC
 #   18346 - Management JSON-RPC
+#   18348 - Merge Mining JSON-RPC (p2pool)
 #   18340 - P2P (if inbound enabled)
 #
 # Example:
@@ -34,6 +35,7 @@ services:
     ports:
       - "18345:18345"   # JSON-RPC
       - "18346:18346"   # Management JSON-RPC
+      - "18348:18348"   # Merge Mining JSON-RPC (p2pool)
       # - "18340:18340" # P2P (uncomment to enable inbound connections)
     environment:
       - NETWORK=testnet

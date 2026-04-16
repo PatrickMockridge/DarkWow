@@ -176,15 +176,17 @@ drk> wallet address
 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
 
-We will also need `darkfid` running. Make sure you enable the RPC
-endpoint that will be used by `p2pool` in `darkfid` config:
+We will also need `darkfid` running with mm_rpc enabled. The default
+testnet configuration already includes mm_rpc on port 18348:
 
 ```toml
 [network_config."testnet".mm_rpc]
 rpc_listen = "http+tcp://127.0.0.1:18348"
 ```
 
-Then start `darkfid` as usual.
+If using docker-compose, mm_rpc port 18348 is already exposed.
+
+Then start `darkfid` as usual:
 
 Stop `p2pool` if it's running, and re-run it with the merge-mining
 parameters appended:
