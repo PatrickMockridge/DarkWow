@@ -1,22 +1,9 @@
 Compiling and Running a Node
 =========================
 
-**DISCLAIMER: This is a work in progress and functionalities may not be
-available on the current deployed testnet as of 22-May-2025.**
-
-Please read the whole document first before executing commands, to
-understand all the steps required and how each component operates.
-Unless instructed otherwise, each daemon runs on its own shell, so don't
-stop a running one to start another.
-
-Each command to execute will be inside a codeblock, on its first line,
-marked by the user `$` symbol, followed by the expected output. For
-longer command outputs, some lines will be emitted to keep the guide
-simple.
-
-We also strongly suggest to first execute next guide steps on a
-[local environment](#local-deployment) to become familiar with
-each command, before broadcasting transactions to the actual network.
+This guide covers setting up and running a DarkFi testnet node. For a quick
+start with simple shell scripts, see the [Quick Start](#quick-start) section.
+For detailed manual configuration, continue reading below.
 
 > **Conda Users**: If using conda environments, run `conda deactivate` before running DarkFi binaries. Conda's Python and library paths may conflict with DarkFi's native dependencies. See [Using dnet](../learn/dchat/network-tools/using-dnet.md) for venv setup.
 
@@ -53,7 +40,58 @@ mainnet, testnet and localnet. Mainnet is not active yet. Localnet can
 be setup by following the instructions [here](#local-deployment). The
 rest of this tutorial assumes we are setting up a testnet node.
 
-## Compiling
+## Quick Start
+
+For a simplified setup, use the provided shell scripts in `contrib/testnet/`:
+
+```shell
+# 1. Build darkfid and drk
+cargo build --release -p darkfid -p drk
+
+# 2. Setup testnet node (creates directories and config)
+cd contrib/testnet
+./setup.sh
+
+# 3. Start the daemon
+./start.sh
+
+# 4. Check status
+./status.sh
+
+# 5. View logs
+./logs.sh
+
+# 6. Stop the daemon
+./stop.sh
+```
+
+### Available Scripts
+
+| Script | Description |
+|--------|-------------|
+| `setup.sh` | First-time setup (creates directories and config) |
+| `start.sh` | Start darkfid daemon in background |
+| `stop.sh` | Stop the daemon gracefully |
+| `restart.sh` | Restart the daemon |
+| `status.sh` | Check sync status via RPC |
+| `logs.sh` | View daemon logs (tail -f) |
+| `wallet-init.sh` | Initialize a wallet |
+| `upgrade.sh` | Pull latest changes and rebuild |
+
+### Docker
+
+Alternatively, run testnet in Docker:
+
+```shell
+cd contrib/testnet
+docker-compose up -d
+docker-compose logs -f
+docker-compose down
+```
+
+### Manual Setup
+
+If you prefer manual configuration, continue with the sections below.
 
 Since this is still an early phase, we will not be installing any of
 the software system-wide. Instead, we'll be running all the commands

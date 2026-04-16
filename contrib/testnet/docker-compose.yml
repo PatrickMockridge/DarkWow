@@ -1,0 +1,53 @@
+# DarkFi Testnet Docker Compose
+# Usage: docker-compose up -d
+#
+# This runs a darkfid node on testnet in a container.
+# Data is persisted to ~/.local/share/darkfi on the host.
+#
+# Ports:
+#   18345 - JSON-RPC
+#   18346 - Management JSON-RPC
+#   18340 - P2P (if inbound enabled)
+#
+# Example:
+#   # Start
+#   docker-compose up -d
+#
+#   # View logs
+#   docker-compose logs -f
+#
+#   # Stop
+#   docker-compose down
+#
+#   # With custom config
+#   docker-compose -f docker-compose.yml run --rm darkfid --verbose
+
+version: '3.8'
+
+services:
+  darkfid:
+    image: darkfi/testnet:latest
+    container_name: darkfid-testnet
+    restart: unless-stopped
+    volumes:
+      - ${DARKFI_HOME:-$HOME/.local/share/darkfi}:/data
+    ports:
+      - "18345:18345"   # JSON-RPC
+      - "18346:18346"   # Management JSON-RPC
+      # - "18340:18340" # P2P (uncomment to enable inbound connections)
+    environment:
+      - NETWORK=testnet
+    # command: darkfid --network testnet --verbose  # Uncomment for verbose logging
+    command: darkfid --network testnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:18345/json_rpc"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - darkfi
+
+networks:
+  darkfi:
+    driver: bridge
