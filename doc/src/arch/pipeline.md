@@ -194,6 +194,33 @@ pipeline.build_zkas_if_needed().await?;
 pipeline.build_zk_bins().await?;
 ```
 
+## Modular Testing
+
+The `test_pipeline_impl` function supports testing any contract via the `CONTRACT_NAME` environment variable:
+
+```bash
+# Test dex (default)
+cargo test --package darkfid test_pipeline
+
+# Test money_v3
+CONTRACT_NAME=money_v3 cargo test --package darkfid test_pipeline
+
+# Test stablecoin (depends on money_v3)
+CONTRACT_NAME=stablecoin cargo test --package darkfid test_pipeline
+
+# Test dao_escrow (no dependencies)
+CONTRACT_NAME=dao_escrow cargo test --package darkfid test_pipeline
+```
+
+### Lightweight Verification
+
+Successful deployment serves as lightweight verification that:
+- WASM binary is valid and loadable
+- Contract `exec` function exists and is reachable
+- Contract ID is derivable
+
+This approach avoids complex ZK proof generation while still confirming the contract deploys correctly.
+
 ## Dependency Resolution
 
 The pipeline uses `pipeline.toml` manifests to resolve dependencies:
