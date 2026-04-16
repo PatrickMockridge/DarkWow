@@ -3,20 +3,26 @@
 > **Date**: 2026-04-16
 > **Auditor**: Claude Code
 > **Scope**: All contracts in `src/contract/` for NativeToken and MoneyV3/MoneyV2 integration
+> **Status**: Phase 1 (migration) COMPLETED | Phase 2 (audit) COMPLETED
 
 ---
 
 ## Executive Summary
 
-**CRITICAL FINDING**: Multiple contracts depend on `money_v2` which is **DEPRECATED** with known EC heap bugs.
+### Phase 1: Migration Complete ✅
 
-| Contract | money_v2 Usage | Risk |
-|----------|---------------|------|
-| **dex** | `money::OtcSwapV2` | CRITICAL |
-| **subscription** | `money::TransferV2` | CRITICAL |
-| **game_room** | `money::TransferV2` | CRITICAL |
-| **dao_escrow** | `money::TransferV2` | CRITICAL |
-| **escrow** | References money_v2 | MEDIUM |
+Successfully migrated 4 contracts from deprecated `money_v2` to `money_v3`:
+
+| Contract | Old Usage | New Usage | Status |
+|----------|-----------|-----------|--------|
+| **dao_escrow** | `money::TransferV2` | `money_v3::transfer_v1` | ✅ Migrated |
+| **game_room** | `money::TransferV2` | `money_v3::transfer_v1` | ✅ Migrated |
+| **subscription** | `money::TransferV2` | `money_v3::transfer_v1` | ✅ Migrated |
+| **dex** | `money::OtcSwapV2` | `money_v3::otc_swap_v1` | ✅ Migrated |
+
+### Phase 2: Audit Complete ✅
+
+**No contracts found using money_v2** in the remaining 18 contracts audited.
 
 ---
 
@@ -36,218 +42,138 @@
 - **Status**: DEPRECATED - contains EC heap bugs
 - **Bug Details**: 4 of 5 circuits have EC heap bugs (Fee_V2, Mint_V2, Burn_V2, AuthTokenMint_V2)
 - **Safe Circuits**: Only TokenMint_V2 is safe (Poseidon-only)
-- **Functions Used by Other Contracts**: TransferV2, OtcSwapV2 (these use v1 circuits internally)
+- **Migration**: All dependent contracts have been migrated to MoneyV3
 
 ---
 
-## Detailed Findings
+## Phase 2 Audit Results
 
-### Category 1: DeFi Contracts
+### Gaming Contracts
 
-#### stablecoin ✅ CORRECT
+| Contract | money_v2 | money_v3 | native_token | Risk | Notes |
+|----------|----------|----------|-------------|------|-------|
+| **baccarat** | ❌ | ❌ | ❌ | Medium | Generic token_id, no hard dependency |
+| **darktoshi_dice** | ❌ | ❌ | ❌ | Medium | Generic token_id, no hard dependency |
+| **roulette** | ❌ | ❌ | ❌ | **HIGH** | No token integration found, appears incomplete |
+| **lottery** | ❌ | ❌ | ❌ | Medium | Generic token_id, TokenIdMismatch error exists |
+| **slot** | ❌ | ❌ | ❌ | Medium | Generic token_id, documented Money::Burn |
+| **block_height_prediction** | ❌ | ❌ | ❌ | Low-Medium | Protocol fee in basis points |
+| **darkbet_exchange** | ❌ | ❌ | ❌ | Low | Own fee handling, no money calls |
+
+#### roulette ⚠️ INCOMPLETE
+- **Issue**: No token integration found in source code
+- **Files checked**: `src/contract/roulette/src/`
+- **Findings**: No `token_id`, no money contract references, no fee handling
+- **Verdict**: Appears incomplete - needs implementation
+
+### Labor/Insurance/Identity
+
+| Contract | money_v2 | money_v3 | native_token | Risk | Notes |
+|----------|----------|----------|-------------|------|-------|
+| **labor_market** | ❌ | ❌ | ❌ | Low | payment_token metadata only, no money calls |
+| **insurance_market** | ❌ | ❌ | ❌ | **MEDIUM** | Documents Money::TokenMint but NOT implemented |
+| **identity** | ❌ | ❌ | ❌ | Low | Credential contract, fee fields unused |
+
+#### insurance_market ⚠️ INCOMPLETE
+- **Documentation** (`lib.rs`): Mentions "Money::Burn for premium payments" and "Money::TokenMint for claim payouts"
+- **Implementation** (`withdraw_premium_v1.rs` line 97): Only a comment `// In production: trigger Money::TokenMint to transfer the premium to underwriter`
+- **Error exists but unused**: `InsuranceMarketError::TransferFailed` defined but never returned
+- **Verdict**: Token integration documented but not implemented
+
+### Other Contracts
+
+| Contract | money_v2 | money_v3 | native_token | Risk | Notes |
+|----------|----------|----------|-------------|------|-------|
+| **bridge** | ❌ | ❌ | ❌ | Low | Own fee mechanism (deposit_fee/withdrawal_fee) |
+| **oracle** | ❌ | ❌ | ❌ | Low | Data feeds only, no token handling |
+| **escrow** | ❌ | ❌ | ❌ | Low | Own HTLC model, Phase 2 planned per README |
+| **atomic_swap** | ❌ | ❌ | ❌ | Low | Own HTLC model, no money contracts |
+| **drain_protection** | ❌ | ❌ | ❌ | Low | Own TransferV1 mechanism |
+| **tender** | ❌ | ❌ | ❌ | Low | O-Cap authorization only |
+| **attestation** | ❌ | ❌ | ❌ | Low | Claims system only |
+| **auction** | ❌ | ❌ | ❌ | Low | Integrates with Escrow, not money contracts |
+
+---
+
+## Phase 1 Migrated Contracts (Completed)
+
+### stablecoin ✅ CORRECT
 - **Cargo.toml**: `darkfi_money_v3_contract` (optional, client feature)
 - **pipeline.toml**: `dependencies = ["money_v3"]`
 - **Source**: Uses `darkfi_money_v3_contract::client::token_mint_v1::TokenMintCallInput`
 - **Verdict**: CORRECT - Uses MoneyV3 as intended
 
-#### dex ❌ CRITICAL - Uses Deprecated money_v2
-- **Cargo.toml**: NO direct money_v3 dependency
-- **pipeline.toml**: `dependencies = ["money_v3"]` (deployment only, NOT code)
-- **Source**: `src/contract/dex/src/entrypoint/execute_swap_v1.rs`
-  - Line 43: `money::OtcSwapV2` child calls
-  - Line 250-251: Token swap via money_v2
-- **Issue**: Uses `money_v2::OtcSwapV2` which has EC heap bugs
-- **Verdict**: CRITICAL - Must migrate to MoneyV3
+### dao_escrow ✅ MIGRATED
+- **Cargo.toml**: Added `darkfi_money_v3_contract` dependency
+- **pipeline.toml**: `dependencies = []` (explicit empty - standalone)
+- **Source**: 3 functions updated (WithdrawV1, EndowmentWithdrawV1, TreasurySpendV1)
+- **Change**: `money::TransferV2` (0x03) → `money_v3::transfer_v1` (0x04)
+- **Verdict**: ✅ Migrated successfully
 
-#### auction ⚠️ UNKNOWN
-- **Cargo.toml**: No token dependencies
-- **pipeline.toml**: No dependencies
-- **Source**: Not reviewed
-- **Verdict**: Needs source code review
+### game_room ✅ MIGRATED
+- **Cargo.toml**: No token dependencies (game-specific)
+- **Source**: Claim function updated
+- **Change**: `money::TransferV2` (0x03) → `money_v3::transfer_v1` (0x04)
+- **Verdict**: ✅ Migrated successfully
 
-#### insurance_market ⚠️ UNKNOWN
+### subscription ✅ MIGRATED
 - **Cargo.toml**: No token dependencies
-- **pipeline.toml**: No dependencies
-- **Source**: Not reviewed
-- **Verdict**: Needs source code review
+- **Source**: DaoControlV1 endowment withdrawal updated
+- **Change**: `money::TransferV2` (0x03) → `money_v3::transfer_v1` (0x04)
+- **Verdict**: ✅ Migrated successfully
 
-#### lottery ⚠️ UNKNOWN
-- **Cargo.toml**: No token dependencies
-- **pipeline.toml**: No dependencies
-- **Source**: Not reviewed
-- **Verdict**: Needs source code review
+### dex ✅ MIGRATED
+- **Cargo.toml**: Added `darkfi_money_v3_contract` dependency
+- **pipeline.toml**: `dependencies = ["money_v3"]`
+- **Source**: execute_swap_v1 updated
+- **Change**: `money::OtcSwapV2` (0x04) → `money_v3::otc_swap_v1` (0x05)
+- **New in money_v3**: Added `OtcSwapV1` function (0x05) for atomic token swaps
+- **Verdict**: ✅ Migrated successfully
 
 ---
 
-### Category 2: Gaming Contracts
+## Issues Requiring Attention
 
-#### baccarat ⚠️ UNKNOWN
-- **Token Behavior**: Game coins (internal)
-- **README**: References money_v2 for "Value transfer integration"
-- **Verdict**: Needs source code review for actual token usage
+### HIGH Priority
+1. **roulette** - No token integration found, appears incomplete
+   - No token_id fields
+   - No fee handling
+   - No client/ directory
+   - May need complete implementation
 
-#### roulette ⚠️ UNKNOWN
-- **Token Behavior**: Game coins (internal)
-- **README**: References money_v2 for "Value transfer integration"
-- **Verdict**: Needs source code review for actual token usage
+### MEDIUM Priority
+2. **insurance_market** - Documents Money::TokenMint but code only has comments
+   - `withdraw_premium_v1.rs` line 97: `// In production: trigger Money::TokenMint...`
+   - `InsuranceMarketError::TransferFailed` exists but never used
+   - Need to implement actual token transfers
 
-#### darktoshi_dice ⚠️ UNKNOWN
-- **Token Behavior**: Game coins (internal)
-- **README**: References money_v2 for "Value transfer integration"
-- **Verdict**: Needs source code review for actual token usage
-
-#### block_height_prediction ⚠️ UNKNOWN
-- **Token Behavior**: PoW-based
-- **Source**: Not reviewed
-- **Verdict**: Needs source code review
+3. **Gaming contracts (baccarat, darktoshi_dice, lottery, slot)** - Generic token_id
+   - Use `pallas::Base` as token identifier without validating against MoneyV3
+   - May need to integrate with MoneyV3 for proper token validation
 
 ---
 
-### Category 3: Identity/Reputation
+## Verification Commands
 
-#### identity ⚠️ UNKNOWN
-- **Token Behavior**: ZK credential proofs (no tokens)
-- **Source**: Not reviewed
-- **Verdict**: Likely standalone, no token integration needed
+```bash
+# Check for any remaining money_v2 references
+grep -r "money_v2\|money::TransferV2\|money::OtcSwapV2" src/contract/*/src/
 
----
+# Check for hardcoded money dependencies
+grep -r "darkfi_money_v2_contract\|darkfi_money_v3_contract" src/contract/*/Cargo.toml
 
-### Category 4: Infrastructure
+# Build all migrated contracts
+cargo build --release -p darkfi_dao_escrow_contract
+cargo build --release -p darkfi_game_room_contract
+cargo build --release -p darkfi_subscription_contract
+cargo build --release -p darkfi_dex_contract
+cargo build --release -p darkfi_stablecoin_contract
 
-#### deployooor ⚠️ UNKNOWN
-- **Function**: Contract deployment
-- **Source**: Not reviewed
-- **Verdict**: Needs source code review
-
-#### oracle ⚠️ UNKNOWN
-- **Function**: Data feeds
-- **Source**: Not reviewed
-- **Verdict**: Needs source code review
-
-#### subscription ❌ CRITICAL - Uses Deprecated money_v2
-- **Cargo.toml**: No money_v3 dependency
-- **pipeline.toml**: No dependencies
-- **Source**: `src/contract/subscription/src/entrypoint.rs`
-  - Line 518: `money::TransferV2` child call required
-  - Line 544: Validates function code 0x03
-- **Issue**: Endowment withdrawals require `money::TransferV2`
-- **Verdict**: CRITICAL - Must migrate to MoneyV3
-
----
-
-### Category 5: Escrow/Governance
-
-#### escrow ⚠️ MEDIUM - References Deprecated money_v2
-- **Cargo.toml**: No money_v3 dependency
-- **README**: References money_v2 in documentation
-- **Source**: Not reviewed (but HTLC may use money for transfers)
-- **Verdict**: Needs source code review
-
-#### dao_escrow ❌ CRITICAL - Uses Deprecated money_v2
-- **Cargo.toml**: No money_v3 dependency
-- **pipeline.toml**: `dependencies = []` (explicit empty)
-- **Source**: `src/contract/dao_escrow/src/entrypoint.rs`
-  - Line 369: `money::TransferV2` required for WithdrawV1
-  - Line 494: `money::TransferV2` required for EndowmentWithdrawV1
-  - Line 584: `money::TransferV2` required for TreasurySpendV1
-- **Issue**: Multiple functions require money_v2::TransferV2
-- **Verdict**: CRITICAL - Must migrate to MoneyV3
-
-#### atomic_swap ⚠️ UNKNOWN
-- **Cargo.toml**: No token dependencies
-- **Source**: Not reviewed
-- **Verdict**: Needs source code review (likely uses money_v2 or money_v3)
-
-#### bridge ⚠️ UNKNOWN
-- **Cargo.toml**: No token dependencies
-- **Source**: Not reviewed
-- **Verdict**: Needs source code review
-
-#### drain_protection ⚠️ UNKNOWN
-- **Cargo.toml**: No token dependencies
-- **Source**: Not reviewed
-- **Verdict**: Needs source code review
-
-#### labor_market ⚠️ UNKNOWN
-- **Cargo.toml**: No token dependencies
-- **Source**: Not reviewed
-- **Verdict**: Needs source code review
-
-#### tender ⚠️ UNKNOWN
-- **Cargo.toml**: No token dependencies
-- **Source**: Not reviewed
-- **Verdict**: Needs source code review
-
----
-
-### game_room ❌ CRITICAL - Uses Deprecated money_v2
-- **Cargo.toml**: No money_v3 dependency
-- **Source**: `src/contract/game_room/src/entrypoint/claim.rs`
-  - Line 63: `money::TransferV2` required for claims
-  - Line 77: Validates function code 0x03
-- **Issue**: Claim function requires money_v2::TransferV2
-- **Verdict**: CRITICAL - Must migrate to MoneyV3
-
----
-
-## Contracts with Test Harnesses
-
-| Contract | Harness | Token Integration | Status |
-|----------|---------|-------------------|--------|
-| dex | ✅ DexHarness | MoneyV3 via test harness only | Needs real integration |
-| money_v3 | ✅ MoneyV3Harness | Native (MoneyV3) | ✅ CORRECT |
-| native_token | ✅ NativeTokenHarness | Native (NativeToken) | ✅ CORRECT |
-| stablecoin | ❌ No harness | MoneyV3 (direct) | ✅ CORRECT |
-| money_v2 | ❌ No harness | DEPRECATED | N/A |
-
----
-
-## Migration Path: money_v2 → MoneyV3
-
-### MoneyV3 Equivalent Functions
-
-| money_v2 Function | money_v3 Equivalent | Notes |
-|--------------------|---------------------|-------|
-| TransferV2 (0x03) | `transfer_v1` | Uses Poseidon-only circuits |
-| OtcSwapV2 (0x04) | No direct equivalent | Need to implement atomic swap in MoneyV3 or use different pattern |
-
-### Steps for Migration
-
-1. **For contracts using TransferV2**:
-   - Replace `money::TransferV2` child calls with `money_v3::transfer_v1` calls
-   - Update function IDs and parameters
-   - Test thoroughly
-
-2. **For contracts using OtcSwapV2**:
-   - MoneyV3 doesn't have OtcSwapV2 equivalent
-   - Options:
-     a. Implement `otc_swap_v1` in MoneyV3
-     b. Use a different atomic swap pattern (e.g., hashlock + two transfers)
-
----
-
-## Recommendations
-
-### Immediate Actions (CRITICAL)
-
-1. **dao_escrow**: Migrate from `money::TransferV2` to `money_v3::transfer_v1`
-2. **game_room**: Migrate from `money::TransferV2` to `money_v3::transfer_v1`
-3. **subscription**: Migrate from `money::TransferV2` to `money_v3::transfer_v1`
-4. **dex**: Implement MoneyV3 equivalent for OtcSwapV2 OR use hashlock pattern
-
-### Medium Priority
-
-5. **escrow**: Audit source for money_v2 usage
-6. **baccarat, roulette, darktoshi_dice**: Audit source for money_v2 usage
-7. **lottery, auction, insurance_market**: Audit source for token handling
-
-### Architecture Recommendation
-
-Consider adding a **token registry** pattern where:
-- Tokens are created via MoneyV3
-- All contracts reference tokens by ID (not hardcoded)
-- Fees always go to NativeToken
-- Cross-contract transfers use MoneyV3::transfer_v1
+# Run pipeline tests
+CONTRACT_NAME=dao_escrow cargo test --package darkfid --release test_pipeline
+CONTRACT_NAME=dex cargo test --package darkfid --release test_pipeline
+CONTRACT_NAME=stablecoin cargo test --package darkfid --release test_pipeline
+```
 
 ---
 
@@ -257,22 +183,4 @@ Per `money_v2/README.md`:
 
 > Money V2 contains EC heap bugs in 4 of its 5 circuits (Fee_V2, Mint_V2, Burn_V2, AuthTokenMint_V2). Only TokenMint_V2 is safe (Poseidon-only).
 
-The buggy circuits use EC operations that can be exploited via malicious inputs. The TransferV2 and OtcSwapV2 entrypoints use v1 circuits internally (not the v2 circuits), but the overall money_v2 contract is still deprecated due to the pervasive EC heap bug pattern.
-
----
-
-## Verification Commands
-
-```bash
-# Check for money_v2 references in contracts
-grep -r "money_v2\|money::TransferV2\|money::OtcSwapV2" src/contract/*/src/
-
-# Check for money_v3 usage in contracts
-grep -r "darkfi_money_v3_contract\|money_v3::" src/contract/*/src/
-
-# Build stablecoin (should work with money_v3)
-cargo build --release -p darkfi_stablecoin_contract
-
-# Verify dex pipeline (deployment works, but code uses money_v2)
-CONTRACT_NAME=dex cargo test --package darkfid test_pipeline
-```
+The buggy circuits use EC operations that can be exploited via malicious inputs.
