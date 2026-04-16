@@ -305,3 +305,19 @@ pub struct TransferUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
     pub coins: Vec<Coin>,
 }
+
+/// Parameters for OtcSwapV1 - atomic OTC token swap
+/// Swaps tokens between two parties: inputs[0] -> outputs[1], inputs[1] -> outputs[0]
+/// Uses the same burn + mint proof structure as TransferV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct OtcSwapParamsV1 {
+    pub inputs: Vec<Input>,
+    pub outputs: Vec<Output>,
+}
+
+/// State update for OtcSwapV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct OtcSwapUpdateV1 {
+    pub nullifiers: Vec<Nullifier>,
+    pub coins: Vec<Coin>,
+}

@@ -20,7 +20,7 @@
 //!
 //! ## Money Integration
 //!
-//! This function REQUIRES money::TransferV2 child calls to be bundled for
+//! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
 //! distributing the prize payout. The child call transfers the payout_amount
 //! to the winner's public key.
 //!
@@ -28,7 +28,7 @@
 //!
 //! 1. Owner calls `settle_pot` to determine winners and payouts
 //! 2. Each winner calls `claim` to receive their payout
-//! 3. The claim must bundle money::TransferV2 for actual token transfer
+//! 3. The claim must bundle money_v3::transfer_v1 for actual token transfer
 
 use darkfi_sdk::{
     dark_tree::DarkLeaf,
@@ -60,24 +60,24 @@ pub(crate) fn game_room_claim_process_instruction_v1(
         params.payout_amount
     );
 
-    // Validate children_indexes to ensure money::TransferV2 is bundled
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled
     // The child call should transfer params.payout_amount to params.winner
     let children = &calls[call_idx].children_indexes;
     if children.len() != 1 {
         msg!(
-            "[Claim] Error: Expected 1 child call (money::TransferV2), got {}",
+            "[Claim] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
             children.len()
         );
         return Err(GameRoomError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money::TransferV2
+    // Verify child call is money_v3::transfer_v1
     let child_idx = children[0];
     let child_call = &calls[child_idx].data;
-    // money::TransferV2 function code is 0x03
-    if child_call.data[0] != 0x03 {
+    // money_v3::transfer_v1 function code is 0x04
+    if child_call.data[0] != 0x04 {
         msg!(
-            "[Claim] Error: Expected money::TransferV2 (0x03), got 0x{:02x}",
+            "[Claim] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(GameRoomError::InvalidChildCall.into())

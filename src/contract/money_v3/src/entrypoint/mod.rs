@@ -37,6 +37,7 @@
 //! - MintV1: Mints tokens (requires auth)
 //! - BurnV1: Burns tokens
 //! - TransferV1: Private token transfer
+//! - OtcSwapV1: Atomic OTC token swap
 
 use darkfi_sdk::{
     crypto::{
@@ -55,7 +56,8 @@ use crate::{
     error::MoneyV3Error,
     model::{
         AuthTokenMintParamsV1, AuthTokenMintUpdateV1, BurnParamsV1, BurnUpdateV1, MintParamsV1,
-        MintUpdateV1, TokenMintParamsV1, TokenMintUpdateV1, TransferParamsV1, TransferUpdateV1,
+        MintUpdateV1, OtcSwapParamsV1, OtcSwapUpdateV1, TokenMintParamsV1, TokenMintUpdateV1,
+        TransferParamsV1, TransferUpdateV1,
     },
     MoneyV3Function, MONEY_V3_CONTRACT_COIN_MERKLE_TREE,
     MONEY_V3_CONTRACT_COIN_ROOTS_TREE, MONEY_V3_CONTRACT_COINS_TREE,
@@ -184,6 +186,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         MoneyV3Function::MintV1 => mint_get_metadata(cid, call_idx, calls),
         MoneyV3Function::BurnV1 => burn_get_metadata(cid, call_idx, calls),
         MoneyV3Function::TransferV1 => transfer_get_metadata(cid, call_idx, calls),
+        MoneyV3Function::OtcSwapV1 => otc_swap_get_metadata(cid, call_idx, calls),
     };
 
     wasm::util::set_return_data(&metadata)
@@ -346,6 +349,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         MoneyV3Function::MintV1 => mint_v1(cid, call_idx, calls),
         MoneyV3Function::BurnV1 => burn_v1(cid, call_idx, calls),
         MoneyV3Function::TransferV1 => transfer_v1(cid, call_idx, calls),
+        MoneyV3Function::OtcSwapV1 => otc_swap_v1(cid, call_idx, calls),
     }
 }
 
@@ -543,6 +547,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: TransferUpdateV1 = deserialize(&update_data[1..])?;
             apply_transfer(cid, update)
         }
+        MoneyV3Function::OtcSwapV1 => {
+            let update: OtcSwapUpdateV1 = deserialize(&update_data[1..])?;
+            apply_otc_swap(cid, update)
+        }
     }
 }
 
@@ -616,6 +624,147 @@ fn apply_burn(cid: ContractId, update: BurnUpdateV1) -> ContractResult {
 fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
     msg!(
         "[money_v3::apply_transfer] Marking {} nullifiers, adding {} coins",
+        update.nullifiers.len(),
+        update.coins.len()
+    );
+
+    let coins_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_COINS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_NULLIFIERS_TREE)?;
+    let info_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_INFO_TREE)?;
+
+    // Mark nullifiers (coins spent)
+    for nullifier in &update.nullifiers {
+        wasm::db::db_set(nullifiers_db, &serialize(&nullifier.inner()), &[])?;
+    }
+
+    // Add new coins
+    let mut new_coins = Vec::new();
+    for coin in &update.coins {
+        wasm::db::db_set(coins_db, &serialize(coin), &[])?;
+        new_coins.push(MerkleNode::from(coin.inner()));
+    }
+
+    // Update Merkle tree
+    wasm::merkle::merkle_add(
+        info_db,
+        wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_COIN_ROOTS_TREE)?,
+        MONEY_V3_CONTRACT_LATEST_COIN_ROOT,
+        MONEY_V3_CONTRACT_COIN_MERKLE_TREE,
+        &new_coins,
+    )?;
+
+    Ok(())
+}
+
+// ============================================================================
+// OTC SWAP - Atomic token swap between two parties
+// ============================================================================
+
+/// Metadata for OtcSwapV1 (atomic burn + mint for cross-token swap)
+/// Uses the same proof structure as TransferV1
+fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
+    let self_ = &calls[call_idx].data;
+    let params: OtcSwapParamsV1 = deserialize(&self_.data[1..]).unwrap();
+
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let mut signature_pubkeys: Vec<pallas::Base> = vec![];
+
+    // Burn proofs (one per input)
+    for input in &params.inputs {
+        signature_pubkeys.push(input.signature_public);
+
+        zk_public_inputs.push((
+            "Burn_V1".to_string(),
+            vec![
+                input.nullifier.inner(),
+                input.value_commit,
+                input.token_commit,
+                input.merkle_root.inner(),
+                input.user_data_enc,
+                input.signature_public,
+            ],
+        ));
+    }
+
+    // Mint proofs (one per output)
+    for output in &params.outputs {
+        zk_public_inputs.push((
+            MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
+            vec![
+                output.coin.inner(),
+                output.value_commit,
+            ],
+        ));
+    }
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata).unwrap();
+    signature_pubkeys.encode(&mut metadata).unwrap();
+    metadata
+}
+
+/// OtcSwapV1 instruction - atomic token swap between two parties
+///
+/// Swaps tokens atomically:
+/// - inputs[0] token goes to outputs[1] (Alice's token to Bob)
+/// - inputs[1] token goes to outputs[0] (Bob's token to Alice)
+///
+/// OtcSwapV1 uses the same burn + mint structure as TransferV1 but enforces:
+/// - Exactly 2 inputs and 2 outputs
+/// - Cross-token swap (inputs/outputs have different token_ids)
+fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: OtcSwapParamsV1 = deserialize(&self_.data[1..])?;
+    msg!(
+        "[money_v3::otc_swap_v1] Processing OTC swap: {} inputs, {} outputs",
+        params.inputs.len(),
+        params.outputs.len()
+    );
+
+    // OtcSwapV1 requires exactly 2 inputs and 2 outputs
+    if params.inputs.len() != 2 {
+        msg!("[otc_swap_v1] Error: OTC swap requires exactly 2 inputs, got {}", params.inputs.len());
+        return Err(MoneyV3Error::TransferMissingInputs.into())
+    }
+    if params.outputs.len() != 2 {
+        msg!("[otc_swap_v1] Error: OTC swap requires exactly 2 outputs, got {}", params.outputs.len());
+        return Err(MoneyV3Error::TransferMissingOutputs.into())
+    }
+
+    let coins_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_COINS_TREE)?;
+    let coin_roots_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_COIN_ROOTS_TREE)?;
+
+    // Verify all input nullifiers are unique and not already spent
+    let mut new_nullifiers = Vec::new();
+    for (i, input) in params.inputs.iter().enumerate() {
+        // Check Merkle root exists
+        if !wasm::db::db_contains_key(coin_roots_db, &serialize(&input.merkle_root))? {
+            msg!("[otc_swap_v1] Error: Merkle root not found for input {}", i);
+            return Err(MoneyV3Error::TransferMerkleRootNotFound.into())
+        }
+
+        new_nullifiers.push(input.nullifier);
+    }
+
+    // Verify outputs are unique
+    let mut new_coins = Vec::new();
+    for (i, output) in params.outputs.iter().enumerate() {
+        if wasm::db::db_contains_key(coins_db, &serialize(&output.coin))? {
+            msg!("[otc_swap_v1] Error: Duplicate coin in output {}", i);
+            return Err(MoneyV3Error::DuplicateCoin.into())
+        }
+        new_coins.push(output.coin);
+    }
+
+    let update = OtcSwapUpdateV1 { nullifiers: new_nullifiers, coins: new_coins };
+    msg!("[money_v3::otc_swap_v1] OTC swap valid");
+    wasm::util::set_return_data(&serialize(&(MoneyV3Function::OtcSwapV1 as u8, update)))
+}
+
+/// Apply OtcSwapV1 state update (same as apply_transfer)
+fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
+    msg!(
+        "[money_v3::apply_otc_swap] Marking {} nullifiers, adding {} coins",
         update.nullifiers.len(),
         update.coins.len()
     );

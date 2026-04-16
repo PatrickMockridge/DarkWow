@@ -366,7 +366,7 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
 
 /// WithdrawV1 instruction - endowment owner withdraws funds
 ///
-/// Money Integration: This function REQUIRES money::TransferV2 child calls to be
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
 /// bundled for the actual token transfer to the recipient.
 fn withdraw_v1(
     cid: ContractId,
@@ -376,22 +376,22 @@ fn withdraw_v1(
 ) -> ContractResult {
     msg!("[dao_escrow::withdraw_v1] Processing withdrawal");
 
-    // Validate children_indexes to ensure money::TransferV2 is bundled
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled
     let self_ = &calls[call_idx];
     if self_.children_indexes.len() != 1 {
         msg!(
-            "[WithdrawV1] Error: Expected 1 child call (money::TransferV2), got {}",
+            "[WithdrawV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
             self_.children_indexes.len()
         );
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money::TransferV2 (function code 0x03)
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
     let child_idx = self_.children_indexes[0];
     let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x03 {
+    if child_call.data[0] != 0x04 {
         msg!(
-            "[WithdrawV1] Error: Expected money::TransferV2 (0x03), got 0x{:02x}",
+            "[WithdrawV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(DaoEscrowError::InvalidChildCall.into())
@@ -491,7 +491,7 @@ fn enable_drain_protection_apply_v1(
 
 /// EndowmentWithdrawV1 instruction - executes an approved claim from endowment
 ///
-/// Money Integration: This function REQUIRES money::TransferV2 child calls to be
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
 /// bundled for the actual token transfer to the recipient.
 fn endowment_withdraw_v1(
     cid: ContractId,
@@ -501,22 +501,22 @@ fn endowment_withdraw_v1(
 ) -> ContractResult {
     msg!("[dao_escrow::endowment_withdraw_v1] Processing endowment withdrawal");
 
-    // Validate children_indexes to ensure money::TransferV2 is bundled
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled
     let self_ = &calls[call_idx];
     if self_.children_indexes.len() != 1 {
         msg!(
-            "[EndowmentWithdrawV1] Error: Expected 1 child call (money::TransferV2), got {}",
+            "[EndowmentWithdrawV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
             self_.children_indexes.len()
         );
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money::TransferV2 (function code 0x03)
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
     let child_idx = self_.children_indexes[0];
     let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x03 {
+    if child_call.data[0] != 0x04 {
         msg!(
-            "[EndowmentWithdrawV1] Error: Expected money::TransferV2 (0x03), got 0x{:02x}",
+            "[EndowmentWithdrawV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(DaoEscrowError::InvalidChildCall.into())
@@ -581,7 +581,7 @@ fn endowment_withdraw_apply_v1(
 
 /// TreasurySpendV1 instruction - executes an approved treasury spend
 ///
-/// Money Integration: This function REQUIRES money::TransferV2 child calls to be
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
 /// bundled for the actual token transfer to the recipient.
 fn treasury_spend_v1(
     cid: ContractId,
@@ -591,22 +591,22 @@ fn treasury_spend_v1(
 ) -> ContractResult {
     msg!("[dao_escrow::treasury_spend_v1] Processing treasury spend");
 
-    // Validate children_indexes to ensure money::TransferV2 is bundled
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled
     let self_ = &calls[call_idx];
     if self_.children_indexes.len() != 1 {
         msg!(
-            "[TreasurySpendV1] Error: Expected 1 child call (money::TransferV2), got {}",
+            "[TreasurySpendV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
             self_.children_indexes.len()
         );
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money::TransferV2 (function code 0x03)
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
     let child_idx = self_.children_indexes[0];
     let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x03 {
+    if child_call.data[0] != 0x04 {
         msg!(
-            "[TreasurySpendV1] Error: Expected money::TransferV2 (0x03), got 0x{:02x}",
+            "[TreasurySpendV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(DaoEscrowError::InvalidChildCall.into())

@@ -64,6 +64,7 @@
 //! | MintV1 | 0x02 | Mint tokens of existing token type |
 //! | BurnV1 | 0x03 | Burn/destroy tokens |
 //! | TransferV1 | 0x04 | Private token transfer |
+//! | OtcSwapV1 | 0x05 | Atomic OTC token swap |
 
 use darkfi_sdk::pasta::pallas;
 pub use darkfi_sdk::error::ContractError;
@@ -82,6 +83,8 @@ pub enum MoneyV3Function {
     BurnV1 = 0x03,
     /// Private token transfer
     TransferV1 = 0x04,
+    /// Atomic OTC swap (swap tokens between two parties)
+    OtcSwapV1 = 0x05,
 }
 
 impl TryFrom<u8> for MoneyV3Function {
@@ -94,6 +97,7 @@ impl TryFrom<u8> for MoneyV3Function {
             0x02 => Ok(Self::MintV1),
             0x03 => Ok(Self::BurnV1),
             0x04 => Ok(Self::TransferV1),
+            0x05 => Ok(Self::OtcSwapV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }

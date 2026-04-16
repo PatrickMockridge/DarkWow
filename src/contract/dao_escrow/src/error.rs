@@ -117,10 +117,10 @@ pub enum DaoEscrowError {
     #[error("Invalid signature")]
     InvalidSignature,
 
-    #[error("Invalid children indexes: expected money::TransferV2 call")]
+    #[error("Invalid children indexes: expected money_v3::transfer_v1 call")]
     InvalidChildrenIndexes,
 
-    #[error("Invalid child call: expected money::TransferV2")]
+    #[error("Invalid child call: expected money_v3::transfer_v1")]
     InvalidChildCall,
 }
 
