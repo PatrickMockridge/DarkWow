@@ -17,6 +17,7 @@ getrandom = { version = "0.2", features = ["js"] }
 [features]
 no-entrypoint = []
 default = []
+client = []
 
 [lints]
 workspace = true

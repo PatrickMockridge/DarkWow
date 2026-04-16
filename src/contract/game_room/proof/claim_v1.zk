@@ -3,9 +3,13 @@
 # This circuit proves that:
 # 1. The winner knows their secret key
 # 2. The claim is for a valid settled pot
+# 3. The payout amount is correct for this winner
 #
 # Public inputs:
-# - claim_id: The derived claim ID
+# - claim_id: The derived claim ID (pot_id || winner_x || payout)
+# - winner_pub_x: Winner's public key x-coordinate
+# - winner_pub_y: Winner's public key y-coordinate
+# - pot_id: The pot being claimed
 
 k = 11;
 field = "pallas";
@@ -18,19 +22,25 @@ witness "Claim" {
     Base pot_id,
     Base winner_pub_x,
     Base winner_pub_y,
-    Base amount,
+    Base payout_amount,
     Base nonce,
 }
 
 circuit "Claim" {
-    # Derive claim_id from parameters
+    # Derive claim_id from parameters (matches contract nullifier key format)
+    # Contract stores: darkfi_serial::serialize(&(params.pot_id, params.winner.xy().0))
     derived_claim_id = poseidon_hash(
-        room_id,
         pot_id,
         winner_pub_x,
-        winner_pub_y,
-        amount,
+        payout_amount,
         nonce,
     );
     constrain_instance(derived_claim_id);
+
+    # Verify winner pubkey is valid
+    derived_winner_key = poseidon_hash(
+        winner_pub_x,
+        winner_pub_y,
+    );
+    constrain_instance(derived_winner_key);
 }

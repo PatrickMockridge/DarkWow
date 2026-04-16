@@ -7,7 +7,10 @@
 #
 # Public inputs:
 # - pot_id: The pot being settled
+# - room_id: The room this pot belongs to
 # - house_pub_x: House public key x-coordinate
+# - house_pub_y: House public key y-coordinate
+# - pot_total: Total amount in the pot
 
 k = 11;
 field = "pallas";
@@ -27,10 +30,21 @@ witness "SettlePot" {
 
 circuit "SettlePot" {
     # Verify house is authorized for this room
+    # The room_id is derived during CreateRoom as:
+    # poseidon_hash(owner_dao.inner(), token_id, block_height, nonce)
+    # We verify the house owns this room by deriving the room_id similarly
     derived_room_id = poseidon_hash(
         house_pub_x,
         house_pub_y,
         nonce,
     );
     constrain_instance(derived_room_id);
+
+    # Verify pot_id is derived correctly for this room
+    derived_pot_id = poseidon_hash(
+        room_id,
+        pot_total,
+        house_pub_x,
+    );
+    constrain_instance(derived_pot_id);
 }

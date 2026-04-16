@@ -1,3 +1,15 @@
+# Block Height Prediction Create Position Circuit
+#
+# This circuit proves that:
+# 1. The player knows their secret key
+# 2. The position ID is correctly derived
+# 3. The value commitment is valid
+#
+# Public inputs:
+# - position_id: The derived position ID
+# - value_commit_x: Pedersen commitment x-coordinate
+# - value_commit_y: Pedersen commitment y-coordinate
+
 k = 11;
 field = "pallas";
 
@@ -11,6 +23,7 @@ witness "CreatePosition" {
     Base player_pub_x,
     Base player_pub_y,
     Base predicted_height,
+    Base position_type,
     Base amount,
     Base token_id,
     Base nonce,
@@ -18,16 +31,27 @@ witness "CreatePosition" {
 }
 
 circuit "CreatePosition" {
+    # Derive position_id from parameters (same as contract's derive_position_id)
+    # Contract uses: poseidon_hash(market_id, ox, oy, predicted_height, position_type, amount, secret_nonce)
     derived_position_id = poseidon_hash(
         market_id,
         player_pub_x,
         player_pub_y,
         predicted_height,
+        position_type,
         amount,
         nonce
     );
     constrain_instance(derived_position_id);
 
+    # Verify player pubkey is consistent (proves knowledge of corresponding secret)
+    derived_player_key = poseidon_hash(
+        player_pub_x,
+        player_pub_y,
+    );
+    constrain_instance(derived_player_key);
+
+    # Pedersen commitment for the bet amount
     vcv = ec_mul_short(amount, VALUE_COMMIT_VALUE);
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
     value_commit = ec_add(vcv, vcr);

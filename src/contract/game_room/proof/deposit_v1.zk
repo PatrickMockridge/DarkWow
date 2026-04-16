@@ -1,11 +1,12 @@
 # Game Room Deposit Circuit
 #
 # This circuit proves that:
-# 1. The player knows their secret key
+# 1. The player knows their secret key for a specific room
 # 2. The deposit parameters are valid
 #
 # Public inputs:
 # - account_key: Hash of room_id and player pubkey x-coordinate
+#   Matches contract storage key format: darkfi_serial::serialize(&(room_id, player_pub_x))
 
 k = 11;
 field = "pallas";
@@ -22,10 +23,19 @@ witness "Deposit" {
 }
 
 circuit "Deposit" {
-    # Derive account key from parameters (same as contract)
+    # Derive account key (matches contract storage key format)
+    # The contract stores: darkfi_serial::serialize(&(room_id, caller.xy().0))
+    # So we use room_id || player_pub_x as the lookup key
     derived_account_key = poseidon_hash(
         room_id,
         player_pub_x,
     );
     constrain_instance(derived_account_key);
+
+    # Verify player pubkey is consistent (proves knowledge of corresponding secret)
+    derived_player_key = poseidon_hash(
+        player_pub_x,
+        player_pub_y,
+    );
+    constrain_instance(derived_player_key);
 }

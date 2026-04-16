@@ -538,6 +538,8 @@ fn test_claim_params_encoding() {
         room_id: pallas::Base::from(1),
         pot_id: pallas::Base::from(2),
         winner: make_pubkey(3),
+        payout_amount: 1000,
+        proof: vec![1, 2, 3, 4, 5],
     };
 
     let encoded = serialize(&params);
@@ -546,6 +548,7 @@ fn test_claim_params_encoding() {
     assert_eq!(decoded.room_id, params.room_id);
     assert_eq!(decoded.pot_id, params.pot_id);
     assert_eq!(decoded.winner, params.winner);
+    assert_eq!(decoded.payout_amount, params.payout_amount);
 }
 
 #[test]
