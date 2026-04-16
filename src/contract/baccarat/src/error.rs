@@ -85,6 +85,12 @@ pub enum BaccaratError {
 
     #[error("Confirmation depth out of range")]
     InvalidConfirmationDepth,
+
+    #[error("Invalid children indexes: expected money_v3::transfer_v1 calls")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call: expected money_v3::transfer_v1")]
+    InvalidChildCall,
 }
 
 impl From<BaccaratError> for ContractError {
@@ -112,6 +118,8 @@ impl From<BaccaratError> for ContractError {
             BaccaratError::InvalidBlockHash => Self::Custom(20),
             BaccaratError::CommitmentMismatch => Self::Custom(21),
             BaccaratError::InvalidConfirmationDepth => Self::Custom(22),
+            BaccaratError::InvalidChildrenIndexes => Self::Custom(23),
+            BaccaratError::InvalidChildCall => Self::Custom(24),
         }
     }
 }

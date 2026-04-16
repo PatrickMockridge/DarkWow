@@ -199,6 +199,8 @@ fn roulette_initialize_process_update_v1(cid: ContractId, update: InitializeUpda
 // PLACE BET
 // =============================================================================
 
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// locking the player's bet value.
 fn roulette_place_bet_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
@@ -206,6 +208,27 @@ fn roulette_place_bet_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: PlaceBetParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for bet locking
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[PlaceBetV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(RouletteError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[PlaceBetV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(RouletteError::InvalidChildCall.into())
+    }
 
     msg!("[roulette::place_bet] Placing bet on table {:?}", params.table_id);
 
@@ -218,7 +241,7 @@ fn roulette_place_bet_process_instruction_v1(
 
     let current_block = wasm::util::get_verifying_block_height()? as u64;
 
-    // FIX: Verify table is active and accepting bets
+    // Verify table is active and accepting bets
     if table.state != RouletteTableState::Active {
         return Err(RouletteError::TableNotActive.into())
     }
@@ -330,7 +353,7 @@ fn roulette_spin_wheel_process_instruction_v1(
 
     let current_block = wasm::util::get_verifying_block_height()? as u64;
 
-    // FIX: Verify table is active
+    // Verify table is active
     if table.state != RouletteTableState::Active {
         return Err(RouletteError::TableNotActive.into())
     }
@@ -407,6 +430,8 @@ fn roulette_spin_wheel_process_update_v1(cid: ContractId, update: SpinWheelUpdat
 // SETTLE BETS
 // =============================================================================
 
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// paying out winnings to winning players.
 fn roulette_settle_bets_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
@@ -414,6 +439,27 @@ fn roulette_settle_bets_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: SettleBetsParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for payouts
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[SettleBetsV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(RouletteError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[SettleBetsV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(RouletteError::InvalidChildCall.into())
+    }
 
     msg!("[roulette::settle] Settling {} bets", params.bet_ids.len());
 
@@ -424,7 +470,7 @@ fn roulette_settle_bets_process_instruction_v1(
         None => return Err(RouletteError::TableNotFound.into()),
     };
 
-    // FIX: Verify table has been spun
+    // Verify table has been spun
     if table.state != RouletteTableState::Spun {
         return Err(RouletteError::WheelAlreadySpun.into())
     }
@@ -498,6 +544,8 @@ fn roulette_settle_bets_process_update_v1(cid: ContractId, update: SettleBetsUpd
 // HOUSE CLOSE
 // =============================================================================
 
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// collecting the house's remaining capital.
 fn roulette_house_close_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
@@ -505,6 +553,27 @@ fn roulette_house_close_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for house's capital
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[HouseCloseV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(RouletteError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[HouseCloseV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(RouletteError::InvalidChildCall.into())
+    }
 
     msg!("[roulette::house_close] Closing table {:?}", params.table_id);
 

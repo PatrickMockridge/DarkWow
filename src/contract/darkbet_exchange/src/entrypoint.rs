@@ -585,7 +585,6 @@ fn darkbet_match_orders_process_instruction_v1(
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
 
-    // FIX: Verify market is open
     if market.state != MarketState::Open {
         return Err(DarkbetError::MarketNotOpen.into())
     }
@@ -620,12 +619,10 @@ fn darkbet_match_orders_process_instruction_v1(
         return Err(DarkbetError::OrderNotFound.into())
     }
 
-    // FIX: Verify orders are for the same outcome
     if back_order.outcome_index != lay_order.outcome_index {
         return Err(DarkbetError::OddsMismatch.into())
     }
 
-    // FIX: Verify odds are compatible (lay odds >= back odds for a match)
     if lay_order.odds < back_order.odds {
         return Err(DarkbetError::OddsMismatch.into())
     }
@@ -647,7 +644,6 @@ fn darkbet_match_orders_process_instruction_v1(
         return Err(DarkbetError::InvalidSignature.into())
     }
 
-    // FIX: Derive match_id properly
     let match_id = poseidon_hash([
         params.market_id,
         params.back_order_id,
@@ -758,12 +754,10 @@ fn darkbet_buy_position_process_instruction_v1(
         return Err(DarkbetError::InvalidMarketType.into())
     }
 
-    // FIX: Verify market is open
     if market.state != MarketState::Open {
         return Err(DarkbetError::MarketNotOpen.into())
     }
 
-    // FIX: Validate outcome index is within bounds
     if params.outcome as usize >= market.outcomes.len() {
         return Err(DarkbetError::InvalidOutcome.into())
     }
@@ -800,7 +794,6 @@ fn darkbet_buy_position_process_instruction_v1(
         return Err(DarkbetError::SlippageExceeded.into())
     }
 
-    // FIX: Derive position_id properly (matches Position::new() calculation)
     let position_id = poseidon_hash([
         params.market_id,
         params.owner.x(),
@@ -888,12 +881,10 @@ fn darkbet_add_liquidity_process_instruction_v1(
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
 
-    // FIX: Verify market is AMM type
     if market.market_type != MarketType::AmmPool {
         return Err(DarkbetError::InvalidMarketType.into())
     }
 
-    // FIX: Verify market is open
     if market.state != MarketState::Open {
         return Err(DarkbetError::MarketNotOpen.into())
     }
@@ -914,12 +905,10 @@ fn darkbet_add_liquidity_process_instruction_v1(
         return Err(DarkbetError::InvalidSignature.into())
     }
 
-    // FIX: Calculate shares to mint properly
     let shares_minted = market
         .calculate_lp_shares(params.amount)
         .ok_or(DarkbetError::ArithmeticOverflow)?;
 
-    // FIX: Derive lp_share_id properly
     let lp_share_id = poseidon_hash([
         params.market_id,
         params.provider.x(),
@@ -958,7 +947,6 @@ fn darkbet_add_liquidity_process_update_v1(
 
     wasm::db::db_set(lp_shares_db, &serialize(&lp_share.lp_share_id), &serialize(&lp_share))?;
 
-    // FIX: Update market with correct amounts
     market.total_pool += update.amount;  // Add actual token amount to pool
     market.total_lp_shares += update.shares_minted;  // Add LP shares
     wasm::db::db_set(markets_db, &serialize(&market.market_id), &serialize(&market))?;
@@ -993,7 +981,6 @@ fn darkbet_remove_liquidity_process_instruction_v1(
         None => return Err(DarkbetError::LpShareNotFound.into()),
     };
 
-    // FIX: Verify LP share's market matches
     if lp_share.market_id != params.market_id {
         return Err(DarkbetError::LpShareNotFound.into())
     }
@@ -1104,7 +1091,6 @@ fn darkbet_claim_winnings_process_instruction_v1(
         None => return Err(DarkbetError::PositionNotFound.into()),
     };
 
-    // FIX: Verify position's market matches
     if position.market_id != params.market_id {
         return Err(DarkbetError::PositionNotFound.into())
     }
@@ -1244,7 +1230,6 @@ fn darkbet_resolve_market_process_update_v1(
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
 
-    // FIX: Actually store the resolved state
     market.state = MarketState::Resolved;
     market.winning_outcome = Some(update.winning_outcome);
     market.resolved_at = Some(update.resolved_at_block);
@@ -1274,25 +1259,61 @@ fn darkbet_settle_market_process_instruction_v1(
         params.market_id
     );
 
-    // FIX: Verify market exists and is resolved
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
     let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
 
-    // FIX: Market must be resolved before settling
     if market.state != MarketState::Resolved {
         return Err(DarkbetError::MarketNotResolved.into())
     }
 
-    // TODO: Calculate actual payouts based on match_ids and winning_outcome
-    // For now, settle_count is passed through for future implementation
+    // Verify winning_outcome is set
+    let winning_outcome = market.winning_outcome
+        .ok_or(DarkbetError::MarketNotResolved)?;
+
+    // Calculate actual payouts based on match_ids and winning_outcome
+    let matches_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MATCHES_TREE)?;
+    let mut total_payout: u64 = 0;
+    let mut total_commission: u64 = 0;
+
+    for &match_id in &params.match_ids {
+        let match_data = wasm::db::db_get(matches_db, &serialize(&match_id))?
+            .ok_or(DarkbetError::MatchNotFound)?;
+
+        let m: Match = deserialize(&match_data)?;
+
+        // Verify match belongs to this market
+        if m.market_id != params.market_id {
+            return Err(DarkbetError::MatchNotFound.into())
+        }
+
+        // Verify match is in Pending state
+        if m.state != MatchState::Pending {
+            return Err(DarkbetError::OrderAlreadyMatched.into())
+        }
+
+        // Calculate payout if back user won
+        if m.outcome_index == winning_outcome {
+            // Payout = back_stake * odds / 10000 (decimal odds conversion from basis points)
+            let payout = m.back_stake
+                .checked_mul(m.odds as u64)
+                .ok_or(DarkbetError::ArithmeticOverflow)?
+                / 10000;
+            total_payout = total_payout.saturating_add(payout);
+        }
+
+        // Sum up commission (already calculated at match time)
+        total_commission = total_commission.saturating_add(m.commission);
+    }
+
     let update = SettleMarketUpdateV1 {
         market_id: params.market_id,
+        match_ids: params.match_ids.clone(),
         settled_count: params.match_ids.len() as u64,
-        total_payout: 0,
-        total_commission: 0,
+        total_payout,
+        total_commission,
     };
 
     msg!("[darkbet::settle_market] Settling {} matches", params.match_ids.len());
@@ -1303,7 +1324,7 @@ fn darkbet_settle_market_process_update_v1(
     cid: ContractId,
     update: SettleMarketUpdateV1,
 ) -> ContractResult {
-    let _matches_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MATCHES_TREE)?;
+    let matches_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MATCHES_TREE)?;
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
     // Get and update market
@@ -1312,12 +1333,22 @@ fn darkbet_settle_market_process_update_v1(
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
 
-    // FIX: Actually store the settled state
+    // Update market state to Settled
     market.state = MarketState::Settled;
 
     wasm::db::db_set(markets_db, &serialize(&update.market_id), &serialize(&market))?;
 
-    // TODO: Process individual matches - for now just log
+    // Process individual matches - update their state to Settled
+    for match_id in &update.match_ids {
+        let match_data = wasm::db::db_get(matches_db, &serialize(match_id))?
+            .ok_or(DarkbetError::MatchNotFound)?;
+
+        let mut m: Match = deserialize(&match_data)?;
+        m.state = MatchState::Settled;
+
+        wasm::db::db_set(matches_db, &serialize(match_id), &serialize(&m))?;
+    }
+
     msg!(
         "[darkbet::settle_market::update] Settled {} matches, total_payout: {}, total_commission: {}",
         update.settled_count,

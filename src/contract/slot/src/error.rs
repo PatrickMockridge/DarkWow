@@ -73,6 +73,12 @@ pub enum SlotError {
 
     #[error("House not initialized")]
     HouseNotInitialized,
+
+    #[error("Invalid children indexes: expected money_v3::transfer_v1 calls")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call: expected money_v3::transfer_v1")]
+    InvalidChildCall,
 }
 
 impl From<SlotError> for ContractError {
@@ -95,6 +101,8 @@ impl From<SlotError> for ContractError {
             SlotError::CrossContractFailed => Self::Custom(15),
             SlotError::PaytableMismatch => Self::Custom(16),
             SlotError::HouseNotInitialized => Self::Custom(18),
+            SlotError::InvalidChildrenIndexes => Self::Custom(19),
+            SlotError::InvalidChildCall => Self::Custom(20),
         }
     }
 }

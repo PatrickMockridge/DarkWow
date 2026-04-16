@@ -17,8 +17,14 @@
  */
 
 //! HouseCloseV1 Implementation
+//!
+//! ## Money Integration
+//!
+//! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+//! collecting the house's share of the bet.
 
 use darkfi_sdk::{
+    crypto::schnorr::SchnorrPublic,
     error::ContractError,
     msg,
     wasm,
@@ -33,6 +39,9 @@ use crate::{
 };
 
 /// Process instruction for HouseCloseV1
+///
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
+/// bundled for collecting the house's share.
 pub fn baccarat_house_close_process_instruction_v1(
     cid: darkfi_sdk::crypto::ContractId,
     call_idx: usize,
@@ -40,6 +49,27 @@ pub fn baccarat_house_close_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for house's share
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[HouseCloseV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(BaccaratError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[HouseCloseV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(BaccaratError::InvalidChildCall.into())
+    }
 
     msg!("[baccarat::house_close] Closing bet_id: {:?}", params.bet_id);
 
@@ -71,11 +101,22 @@ pub fn baccarat_house_close_process_instruction_v1(
         wasm::db::db_get(info_db, BACCARAT_CONTRACT_HOUSE_PUBKEY)?;
 
     if let Some(bytes) = house_pubkey_bytes {
-        // House pubkey is stored - verify caller matches
-        // For now, we check via signature or explicit authorization
-        // In production, this should verify the transaction signed by house key
-        let _house_pubkey: darkfi_sdk::crypto::PublicKey = deserialize(&bytes)?;
-        // TODO: Add actual house authorization check via signature or contract call
+        // House pubkey is stored - verify caller matches via signature
+        let stored_house_pubkey: darkfi_sdk::crypto::PublicKey = deserialize(&bytes)?;
+
+        // Verify the provided house_pub matches the stored one
+        if params.house_pub != stored_house_pubkey {
+            msg!("[baccarat::house_close] Error: House pubkey does not match stored value");
+            return Err(BaccaratError::UnauthorizedCaller.into())
+        }
+
+        // Verify signature: signs (bet_id, current_block)
+        let current_block = wasm::util::get_verifying_block_height()? as u64;
+        let signature_msg = serialize(&(params.bet_id, current_block));
+        if !params.house_pub.verify(&signature_msg, &params.signature) {
+            msg!("[baccarat::house_close] Error: Invalid signature");
+            return Err(BaccaratError::InvalidSignature.into())
+        }
     }
 
     // Calculate house's take (player's bet value)

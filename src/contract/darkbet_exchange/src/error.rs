@@ -54,6 +54,9 @@ pub enum DarkbetError {
     #[error("Order not found")]
     OrderNotFound,
 
+    #[error("Match not found")]
+    MatchNotFound,
+
     #[error("Order already matched")]
     OrderAlreadyMatched,
 
@@ -134,6 +137,7 @@ impl From<DarkbetError> for ContractError {
             DarkbetError::InvalidCommission => Self::Custom(22),
             DarkbetError::InsufficientStake => Self::Custom(7),
             DarkbetError::OrderNotFound => Self::Custom(8),
+            DarkbetError::MatchNotFound => Self::Custom(33),
             DarkbetError::OrderAlreadyMatched => Self::Custom(9),
             DarkbetError::NoMatchingOrders => Self::Custom(10),
             DarkbetError::OddsMismatch => Self::Custom(11),

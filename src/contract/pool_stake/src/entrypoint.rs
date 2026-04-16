@@ -19,7 +19,7 @@
 //! Pool Stake Contract Entrypoint
 
 use darkfi_sdk::{
-    crypto::ContractId,
+    crypto::{pasta_prelude::PrimeField, ContractId},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg, ContractCall,
@@ -264,7 +264,7 @@ fn process_join_pool_instruction(
     let update = JoinPoolUpdateV1 {
         stake_id,
         pool_id: params.pool_id,
-        member_pub: pool.owner_pub, // Placeholder
+        member_pub: params.member_pub,
         relayer_id: params.relayer_id,
         amount: params.amount,
         coverage_contribution,
@@ -387,8 +387,6 @@ fn process_allocate_coverage_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
-    use darkfi_sdk::pasta::pallas;
-
     let self_ = &calls[call_idx].data;
     let params: AllocateCoverageParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -419,8 +417,12 @@ fn process_allocate_coverage_instruction(
     );
 
     // Find contributing members (simplified - proportional from all members)
-    let _members_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
-    let contributing_members = vec![pallas::Base::zero()]; // Placeholder
+    // TODO: This requires iterating over all members in POOL_STAKE_MEMBERS_TREE.
+    // The wasm::db API doesn't support iteration, so this needs either:
+    // 1. A per-pool member index (pool_id -> Vec<stake_id>)
+    // 2. Iteration support added to wasm::db
+    // For now, contributing_members is empty - implement proportional lookup when iteration is available.
+    let contributing_members = vec![];
 
     let update = AllocateCoverageUpdateV1 {
         allocation_id,
@@ -430,6 +432,7 @@ fn process_allocate_coverage_instruction(
         contributing_members,
         available_coverage: pool.available_coverage - params.amount,
         allocated_coverage: pool.allocated_coverage + params.amount,
+        timeout_height: params.timeout_height,
     };
 
     msg!("[pool_stake::allocate_coverage] Allocation {:?} created", allocation_id);
@@ -460,7 +463,7 @@ fn apply_allocate_coverage_update(cid: ContractId, update: AllocateCoverageUpdat
         amount: update.amount,
         contributing_members: update.contributing_members,
         created_at: wasm::util::get_verifying_block_height()? as u64,
-        timeout_height: 0, // Would be set from params
+        timeout_height: update.timeout_height,
         executed: false,
         slashed: false,
     };
@@ -594,7 +597,7 @@ fn process_slash_coverage_instruction(
     let update = SlashCoverageUpdateV1 {
         allocation_id: params.allocation_id,
         slashed_amount: params.slash_amount,
-        compensated_user: [0u8; 32], // Placeholder
+        compensated_user: params.user_pub.x().to_repr(),
         available_coverage: pool.available_coverage,
         allocated_coverage: pool.allocated_coverage - params.slash_amount,
     };

@@ -135,6 +135,8 @@ pub struct JoinPoolParamsV1 {
     pub amount: u64,
     /// Relayer ID this member controls
     pub relayer_id: [u8; 32],
+    /// Public key of the member joining the pool
+    pub member_pub: PublicKey,
 }
 
 /// Update returned after joining a pool
@@ -189,6 +191,7 @@ pub struct AllocateCoverageUpdateV1 {
     pub contributing_members: Vec<pallas::Base>,
     pub available_coverage: u64,
     pub allocated_coverage: u64,
+    pub timeout_height: u64,
 }
 
 /// Parameters for releasing coverage after success
@@ -214,6 +217,8 @@ pub struct SlashCoverageParamsV1 {
     pub allocation_id: pallas::Base,
     /// Slash amount (amount to give to user as compensation)
     pub slash_amount: u64,
+    /// Public key of user to receive compensation
+    pub user_pub: PublicKey,
 }
 
 /// Update returned after slashing coverage

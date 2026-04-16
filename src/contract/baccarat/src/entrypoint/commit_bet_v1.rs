@@ -17,6 +17,11 @@
  */
 
 //! CommitBetV1 Implementation
+//!
+//! ## Money Integration
+//!
+//! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+//! locking the player's bet value.
 
 use darkfi_sdk::{
     crypto::pasta_prelude::Group,
@@ -82,6 +87,9 @@ fn verify_value_commit(value_commit: pallas::Point) -> Result<(), ContractError>
 }
 
 /// Process instruction for CommitBetV1
+///
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
+/// bundled for locking the player's bet value.
 pub fn baccarat_commit_bet_process_instruction_v1(
     cid: darkfi_sdk::crypto::ContractId,
     call_idx: usize,
@@ -89,6 +97,27 @@ pub fn baccarat_commit_bet_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: CommitBetParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for bet value locking
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[CommitBetV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(BaccaratError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[CommitBetV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(BaccaratError::InvalidChildCall.into())
+    }
 
     msg!("[baccarat::commit_bet] Processing bet commitment");
     msg!("  player_pub: {:?}", params.player_pub);

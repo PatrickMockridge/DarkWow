@@ -28,9 +28,9 @@
 //! 5. House can expire the lottery to claim unclaimed prizes (ExpireLotteryV1)
 //!
 //! Money Contract Integration:
-//! - BuyTicket should be called as child of Money::Burn to lock ticket price
-//! - ClaimPrize pays out winner's share via Money::MintV2
-//! - ExpireLottery sends unclaimed to house via Money::MintV2
+//! - BuyTicket should be called as child of money_v3::transfer_v1 to lock ticket price
+//! - ClaimPrize pays out winner's share via money_v3::transfer_v1 (child call required)
+//! - ExpireLottery sends unclaimed to house via money_v3::transfer_v1 (child call required)
 
 use darkfi_sdk::error::ContractError;
 

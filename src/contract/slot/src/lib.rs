@@ -85,6 +85,9 @@ pub mod model;
 /// WASM entrypoint functions
 pub mod entrypoint;
 
+#[cfg(feature = "client")]
+pub mod client;
+
 // ============================================================================
 // DATABASE TREES
 // ============================================================================

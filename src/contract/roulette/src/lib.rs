@@ -62,6 +62,9 @@ pub mod model;
 #[cfg(not(feature = "no-entrypoint"))]
 pub mod entrypoint;
 
+#[cfg(feature = "client")]
+pub mod client;
+
 pub use model::*;
 
 // =============================================================================

@@ -25,12 +25,9 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 - [Roulette](./roulette.md) - Casino roulette with house edge
 - [Slot](./slot.md) - Slot machine with RNG-based reveals
 - [Betting Stake](./betting_stake.md) - Trustless betting stake management
-
-### Labor & Markets
-- [Labor Market](./labor_market.md) - Job board with deliverable verification
-- [Tender](./tender.md) - Sealed-bid tender system
-- [Insurance Market](./insurance_market.md) - Prediction market for insurance
-- [Block Height Prediction](./block_height_prediction.md) - On-chain random oracle
+- [Pool Stake](./pool_stake.md) - Pooled coverage for relayer withdrawals
+- [Block Height Prediction](./block_height_prediction.md) - PoW-backed random oracle
+- [Game Room](./game_room.md) - Multiplayer game coordination
 
 ### Cross-Chain
 - [Atomic Swap](./atomic_swap.md) - Trustless cross-chain swaps

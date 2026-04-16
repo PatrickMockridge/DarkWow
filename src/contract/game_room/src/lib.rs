@@ -117,6 +117,9 @@ impl TryFrom<u8> for GameRoomFunction {
 
 pub mod entrypoint;
 
+#[cfg(feature = "client")]
+pub mod client;
+
 // ============================================================================
 // CONTRACT DEFINITION
 // ============================================================================

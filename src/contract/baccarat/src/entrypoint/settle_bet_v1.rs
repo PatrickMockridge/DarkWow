@@ -17,6 +17,11 @@
  */
 
 //! SettleBetV1 Implementation
+//!
+//! ## Money Integration
+//!
+//! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+//! paying out winnings to the player.
 
 use darkfi_sdk::{
     error::ContractError,
@@ -30,6 +35,9 @@ use crate::model::{calculate_payout, Bet, BetState, SettleBetParamsV1, SettleBet
 use crate::BACCARAT_CONTRACT_BETS_TREE;
 
 /// Process instruction for SettleBetV1
+///
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
+/// bundled for paying out winnings to the player.
 pub fn baccarat_settle_bet_process_instruction_v1(
     cid: darkfi_sdk::crypto::ContractId,
     call_idx: usize,
@@ -37,6 +45,27 @@ pub fn baccarat_settle_bet_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: SettleBetParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for payout
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[SettleBetV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(BaccaratError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[SettleBetV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(BaccaratError::InvalidChildCall.into())
+    }
 
     msg!("[baccarat::settle_bet] Settling bet_id: {:?}", params.bet_id);
 

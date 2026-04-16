@@ -17,6 +17,11 @@
  */
 
 //! ExpireLotteryV1 Implementation
+//!
+//! ## Money Integration
+//!
+//! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+//! the actual token transfer to the house for unclaimed prizes.
 
 use darkfi_sdk::{error::ContractError, msg, wasm};
 use darkfi_serial::{deserialize, serialize};
@@ -26,6 +31,9 @@ use crate::model::{ExpireLotteryParamsV1, ExpireLotteryUpdateV1, LotteryState};
 use crate::LOTTERY_CONTRACT_LOTTERIES_TREE;
 
 /// Process instruction for ExpireLotteryV1
+///
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
+/// bundled for the actual token transfer to the house.
 pub fn lottery_expire_lottery_process_instruction_v1(
     cid: darkfi_sdk::crypto::ContractId,
     call_idx: usize,
@@ -33,6 +41,27 @@ pub fn lottery_expire_lottery_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: ExpireLotteryParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for house claim
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[ExpireLotteryV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(LotteryError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[ExpireLotteryV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(LotteryError::InvalidChildCall.into())
+    }
 
     msg!("[lottery::expire_lottery] Expiring lottery: {:?}", params.lottery_id);
 

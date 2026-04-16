@@ -346,6 +346,7 @@ fn test_match_creation() {
     let matched_at = 150u64;
 
     let match_obj = Match::new(
+        make_base([6u8; 32]), // match_id
         market_id,
         0,
         20000,
@@ -370,6 +371,7 @@ fn test_match_back_winnings() {
     let lay_order = Order::new_lay(make_base([5u8; 32]), 0, 20000, 1000, user2, 100);
 
     let match_obj = Match::new(
+        make_base([7u8; 32]), // match_id
         make_base([5u8; 32]),
         0,
         20000,

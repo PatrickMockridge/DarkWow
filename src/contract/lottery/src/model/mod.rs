@@ -292,7 +292,6 @@ pub struct BuyTicketUpdateV1 {
     pub commitment: pallas::Base,
     pub token_id: pallas::Base,
     pub value: u64,
-    pub ticket_merkle_root: pallas::Base,
     pub ticket_count: u64,
     pub gross_pool: u64,
     pub nullifier: TicketId,
@@ -346,6 +345,10 @@ pub struct ClaimPrizeParamsV1 {
     pub ticket_id: TicketId,
     /// ZK proof of reveal
     pub proof: Vec<u8>,
+    /// Prize tier won (extracted from ZK proof verification on client)
+    pub tier: u8,
+    /// Number of matching numbers
+    pub matches: u8,
 }
 
 /// Update produced by ClaimPrizeV1

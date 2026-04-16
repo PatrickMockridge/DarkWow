@@ -149,11 +149,10 @@ ACTIVE ──[ResolveMarket]──> RESOLVED
 |-----------|--------|-------|
 | CreateMarket | ✅ Complete | |
 | CreatePosition | ✅ Complete | |
-| ResolveMarket | ✅ Complete | Uses tx_hash |
+| ResolveMarket | ✅ Complete | Uses PoW block hashes |
 | ClaimWinnings | ✅ Complete | |
 | CancelMarket | ✅ Complete | |
-| ZK Circuits | ❌ Missing | Needed for production |
-| BlockHashGet Opcode | ❌ Missing | Would strengthen PoW |
+| ZK Circuits | ✅ Complete | create_market_v1.zk, create_position_v1.zk |
 
 ## See Also
 

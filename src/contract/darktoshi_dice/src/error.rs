@@ -82,6 +82,12 @@ pub enum DiceError {
 
     #[error("Commitment does not match bet parameters")]
     CommitmentMismatch,
+
+    #[error("Invalid children indexes: expected money_v3::transfer_v1 calls")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call: expected money_v3::transfer_v1")]
+    InvalidChildCall,
 }
 
 impl From<DiceError> for ContractError {
@@ -108,6 +114,8 @@ impl From<DiceError> for ContractError {
             DiceError::InvalidBlockHash => Self::Custom(19),
             DiceError::CommitmentMismatch => Self::Custom(20),
             DiceError::ArithmeticOverflow => Self::Custom(21),
+            DiceError::InvalidChildrenIndexes => Self::Custom(22),
+            DiceError::InvalidChildCall => Self::Custom(23),
         }
     }
 }

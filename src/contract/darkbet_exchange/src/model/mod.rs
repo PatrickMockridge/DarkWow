@@ -507,6 +507,7 @@ pub struct Match {
 impl Match {
     /// Create a new match from back and lay orders
     pub fn new(
+        match_id: pallas::Base,
         market_id: pallas::Base,
         outcome_index: u8,
         odds: u32,
@@ -515,12 +516,6 @@ impl Match {
         commission: u64,
         current_block: u64,
     ) -> Self {
-        let match_id = poseidon_hash([
-            market_id,
-            pallas::Base::from(odds as u64),
-            pallas::Base::from(current_block),
-        ]);
-
         Self {
             match_id,
             market_id,
@@ -930,6 +925,7 @@ pub struct SettleMarketParamsV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct SettleMarketUpdateV1 {
     pub market_id: pallas::Base,
+    pub match_ids: Vec<pallas::Base>,
     pub settled_count: u64,
     pub total_payout: u64,
     pub total_commission: u64,

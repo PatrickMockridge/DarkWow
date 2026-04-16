@@ -156,6 +156,8 @@ fn initialize_process_instruction_v1(
 // COMMIT SPIN
 // =============================================================================
 
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// locking the player's bet value.
 fn commit_spin_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
@@ -163,6 +165,27 @@ fn commit_spin_process_instruction_v1(
 ) -> GenericResult<Vec<u8>> {
     let self_ = &calls[call_idx].data;
     let params: CommitSpinParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for bet locking
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[CommitSpinV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(SlotError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[CommitSpinV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(SlotError::InvalidChildCall.into())
+    }
 
     msg!(
         "[slot::commit_spin] Committing spin for player {:?}, bet: {}",
@@ -346,6 +369,8 @@ fn reveal_spin_process_update_v1(
 // SETTLE SPIN (Calculate payouts)
 // =============================================================================
 
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// paying out winnings to the player.
 fn settle_spin_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
@@ -353,6 +378,27 @@ fn settle_spin_process_instruction_v1(
 ) -> GenericResult<Vec<u8>> {
     let self_ = &calls[call_idx].data;
     let params: crate::model::SettleSpinParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for payouts
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[SettleSpinV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(SlotError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[SettleSpinV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(SlotError::InvalidChildCall.into())
+    }
 
     msg!("[slot::settle_spin] Settling spin {:?}", params.spin_id);
 
@@ -424,6 +470,8 @@ fn settle_spin_process_update_v1(
 // CANCEL SPIN (Timeout/abandoned)
 // =============================================================================
 
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// collecting the house's share of the bet.
 fn cancel_spin_process_instruction_v1(
     cid: ContractId,
     call_idx: usize,
@@ -431,6 +479,27 @@ fn cancel_spin_process_instruction_v1(
 ) -> GenericResult<Vec<u8>> {
     let self_ = &calls[call_idx].data;
     let params: crate::model::CancelSpinParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for house's share
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[CancelSpinV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(SlotError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[CancelSpinV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(SlotError::InvalidChildCall.into())
+    }
 
     msg!("[slot::cancel_spin] Cancelling spin {:?}", params.spin_id);
 

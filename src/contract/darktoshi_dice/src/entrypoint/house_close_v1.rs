@@ -17,6 +17,11 @@
  */
 
 //! HouseCloseV1 Implementation
+//!
+//! ## Money Integration
+//!
+//! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+//! collecting the house's share of the bet.
 
 use darkfi_sdk::{
     error::ContractError,
@@ -33,6 +38,9 @@ use crate::DICE_CONTRACT_INFO_TREE;
 use crate::DICE_CONTRACT_ROLL_TIMEOUT;
 
 /// Process instruction for HouseCloseV1
+///
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
+/// bundled for collecting the house's share.
 pub fn dice_house_close_process_instruction_v1(
     cid: darkfi_sdk::crypto::ContractId,
     call_idx: usize,
@@ -40,6 +48,27 @@ pub fn dice_house_close_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for house's share
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[HouseCloseV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(DiceError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[HouseCloseV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(DiceError::InvalidChildCall.into())
+    }
 
     msg!("[dice::house_close] Processing house close");
 

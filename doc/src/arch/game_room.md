@@ -133,7 +133,10 @@ pub struct RoomConfig {
     pub min_stake: u64,
     pub max_stake: u64,
     pub entropy_mode: EntropyMode,
-    pub entropy_config: EntropyConfig,
+    pub confirmation_depth: u8,
+    pub required_entropy_contributions: u8,
+    pub entropy_contribution_deadline: u64,
+    pub max_players: u8,
 }
 
 pub enum EntropyMode {

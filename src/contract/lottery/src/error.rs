@@ -113,6 +113,12 @@ pub enum LotteryError {
 
     #[error("Internal error: {0}")]
     InternalError(String),
+
+    #[error("Invalid children indexes: expected money_v3::transfer_v1 calls")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call: expected money_v3::transfer_v1")]
+    InvalidChildCall,
 }
 
 impl From<LotteryError> for ContractError {
@@ -148,6 +154,8 @@ impl From<LotteryError> for ContractError {
             LotteryError::SerializationError(_) => Self::Custom(28),
             LotteryError::ZkVerificationFailed => Self::Custom(29),
             LotteryError::InternalError(_) => Self::Custom(30),
+            LotteryError::InvalidChildrenIndexes => Self::Custom(31),
+            LotteryError::InvalidChildCall => Self::Custom(32),
         }
     }
 }

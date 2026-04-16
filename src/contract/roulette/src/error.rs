@@ -92,6 +92,12 @@ pub enum RouletteError {
 
     #[error("Arithmetic overflow in calculation")]
     ArithmeticOverflow,
+
+    #[error("Invalid children indexes: expected money_v3::transfer_v1 calls")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call: expected money_v3::transfer_v1")]
+    InvalidChildCall,
 }
 
 impl From<RouletteError> for ContractError {
@@ -101,25 +107,27 @@ impl From<RouletteError> for ContractError {
             RouletteError::TableNotFound => Self::Custom(2),
             RouletteError::TableNotActive => Self::Custom(3),
             RouletteError::TableAlreadyClosed => Self::Custom(4),
-            RouletteError::InvalidTableState => Self::Custom(23),
-            RouletteError::InvalidBetAmount => Self::Custom(5),
-            RouletteError::BetExceedsMaximum => Self::Custom(6),
-            RouletteError::InsufficientCapital => Self::Custom(7),
-            RouletteError::InvalidBetType => Self::Custom(8),
-            RouletteError::InvalidNumbers => Self::Custom(9),
-            RouletteError::DuplicateBet => Self::Custom(10),
-            RouletteError::BetNotFound => Self::Custom(11),
-            RouletteError::BetAlreadySettled => Self::Custom(12),
-            RouletteError::SpinNotReady => Self::Custom(13),
-            RouletteError::WheelAlreadySpun => Self::Custom(14),
-            RouletteError::NoBetsPlaced => Self::Custom(15),
-            RouletteError::UnauthorizedCaller => Self::Custom(16),
-            RouletteError::InvalidSignature => Self::Custom(17),
-            RouletteError::ValueMismatch => Self::Custom(18),
-            RouletteError::CrossContractFailed => Self::Custom(19),
-            RouletteError::DatabaseError(_) => Self::Custom(20),
-            RouletteError::InternalError(_) => Self::Custom(21),
-            RouletteError::ArithmeticOverflow => Self::Custom(22),
+            RouletteError::InvalidTableState => Self::Custom(5),
+            RouletteError::InvalidBetAmount => Self::Custom(6),
+            RouletteError::BetExceedsMaximum => Self::Custom(7),
+            RouletteError::InsufficientCapital => Self::Custom(8),
+            RouletteError::InvalidBetType => Self::Custom(9),
+            RouletteError::InvalidNumbers => Self::Custom(10),
+            RouletteError::DuplicateBet => Self::Custom(11),
+            RouletteError::BetNotFound => Self::Custom(12),
+            RouletteError::BetAlreadySettled => Self::Custom(13),
+            RouletteError::SpinNotReady => Self::Custom(14),
+            RouletteError::WheelAlreadySpun => Self::Custom(15),
+            RouletteError::NoBetsPlaced => Self::Custom(16),
+            RouletteError::UnauthorizedCaller => Self::Custom(17),
+            RouletteError::InvalidSignature => Self::Custom(18),
+            RouletteError::ValueMismatch => Self::Custom(19),
+            RouletteError::CrossContractFailed => Self::Custom(20),
+            RouletteError::DatabaseError(_) => Self::Custom(21),
+            RouletteError::InternalError(_) => Self::Custom(22),
+            RouletteError::ArithmeticOverflow => Self::Custom(23),
+            RouletteError::InvalidChildrenIndexes => Self::Custom(24),
+            RouletteError::InvalidChildCall => Self::Custom(25),
         }
     }
 }

@@ -17,6 +17,11 @@
  */
 
 //! BuyTicketV1 Implementation
+//!
+//! ## Money Integration
+//!
+//! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+//! the actual token transfer to lock the ticket price.
 
 use darkfi_sdk::{error::ContractError, msg, pasta::pallas, wasm};
 use darkfi_serial::{deserialize, serialize};
@@ -33,6 +38,9 @@ use crate::{
 };
 
 /// Process instruction for BuyTicketV1
+///
+/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
+/// bundled for the actual token transfer to lock the ticket price.
 pub fn lottery_buy_ticket_process_instruction_v1(
     cid: darkfi_sdk::crypto::ContractId,
     call_idx: usize,
@@ -40,6 +48,27 @@ pub fn lottery_buy_ticket_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: BuyTicketParamsV1 = deserialize(&self_.data[1..])?;
+
+    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for ticket price payment
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[BuyTicketV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(LotteryError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[BuyTicketV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(LotteryError::InvalidChildCall.into())
+    }
 
     msg!("[lottery::buy_ticket] Processing ticket purchase");
     msg!("  player_pub: {:?}", params.player_pub);
@@ -98,7 +127,6 @@ pub fn lottery_buy_ticket_process_instruction_v1(
         commitment: params.commitment,
         token_id: params.token_id,
         value: params.value,
-        ticket_merkle_root: pallas::Base::zero(), // TODO: Update with actual merkle root
         ticket_count: lottery.ticket_count + 1,
         gross_pool: lottery.gross_pool + params.value,
         nullifier,

@@ -106,12 +106,9 @@ impl CommitBetV1Builder {
     /// Build the commit bet parameters
     pub fn build(&self) -> (CommitBetParamsV1, OwnBet) {
         let player_pub = self.player_pub;
-        let player_pub_x = player_pub.x();
-        let player_pub_y = player_pub.y();
 
         let bet_id = derive_bet_id(
-            player_pub_x,
-            player_pub_y,
+            &player_pub,
             self.bet_type as u8,
             self.bet_value,
             self.secret_nonce,
