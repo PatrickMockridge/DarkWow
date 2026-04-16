@@ -26,9 +26,9 @@ use darkfi_sdk::{
 };
 
 use crate::model::{
-    BetType, ClaimParamsV1, ClosePotParamsV1, ContributeEntropyParamsV1, CreateRoomParamsV1,
-    DepositParamsV1, EntropyMode, FoldParamsV1, PotId, RaiseParamsV1, RoomId, RoomState,
-    SettlePotParamsV1, WithdrawParamsV1,
+    BetType, CallParamsV1, ClaimParamsV1, ClosePotParamsV1, ContributeEntropyParamsV1,
+    CreateRoomParamsV1, DepositParamsV1, EntropyMode, FoldParamsV1, PlaceBetParamsV1, PotId,
+    RaiseParamsV1, RoomId, RoomState, SettlePotParamsV1, WithdrawParamsV1,
 };
 
 /// Client-side room note for tracking rooms
@@ -395,10 +395,10 @@ impl ClaimV1Builder {
 /// Validate bet amount is within room limits
 pub fn validate_bet_amount(amount: u64, min_stake: u64, max_stake: u64) -> Result<(), crate::error::GameRoomError> {
     if amount < min_stake {
-        return Err(crate::error::GameRoomError::InsufficientStake)
+        return Err(crate::error::GameRoomError::StakeBelowMin)
     }
     if amount > max_stake {
-        return Err(crate::error::GameRoomError::ExcessiveStake)
+        return Err(crate::error::GameRoomError::StakeAboveMax)
     }
     Ok(())
 }
@@ -406,7 +406,7 @@ pub fn validate_bet_amount(amount: u64, min_stake: u64, max_stake: u64) -> Resul
 /// Validate max players
 pub fn validate_max_players(max_players: u8) -> Result<(), crate::error::GameRoomError> {
     if max_players == 0 || max_players > 100 {
-        return Err(crate::error::GameRoomError::InvalidMaxPlayers)
+        return Err(crate::error::GameRoomError::InvalidAmount)
     }
     Ok(())
 }
