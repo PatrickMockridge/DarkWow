@@ -38,6 +38,11 @@ circuit "LiquidateV1" {
     old_position = poseidon_hash(old_collateral_commit, old_debt_commit, owner_pub);
     constrain_equal_base(old_position, old_commitment);
 
+    # Calculate new_collateral after liquidation (collateral seized)
+    # Must be computed before it's used in the hash below
+    new_collateral = base_sub(collateral_amount, liquidator_reward);
+    bool_check(new_collateral);
+
     # Verify new commitment after liquidation
     new_collateral_commit = poseidon_hash(new_collateral, collateral_blind);
     new_debt_commit = poseidon_hash(debt_amount, debt_blind);
@@ -58,11 +63,6 @@ circuit "LiquidateV1" {
     # The arithmetic above is set up for that check once the threshold parameter
     # is available in the circuit.
     bool_check(debt_amount);
-
-    # New commitment after liquidation (collateral seized)
-    # base_sub exists in zkVM (opcode 0x32)
-    new_collateral = base_sub(collateral_amount, liquidator_reward);
-    bool_check(new_collateral);
 
     # Range proofs (64-bit values)
     range_check(64, collateral_amount);
