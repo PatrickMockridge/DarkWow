@@ -23,7 +23,7 @@ use darkfi::{
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::pasta::pallas;
+use darkfi_sdk::{crypto::MerkleNode, pasta::pallas};
 use rand::rngs::OsRng;
 
 /// VerifyChainV1 circuit public inputs
@@ -57,7 +57,7 @@ pub struct VerifyChainV1CallData {
     pub current_depth: pallas::Base,
     pub max_depth: pallas::Base,
     pub pos: u64,
-    pub path: Vec<pallas::Base>,
+    pub path: Vec<MerkleNode>,
 }
 
 impl VerifyChainV1CallData {
@@ -68,7 +68,7 @@ impl VerifyChainV1CallData {
         current_depth: pallas::Base,
         max_depth: pallas::Base,
         pos: u64,
-        path: Vec<pallas::Base>,
+        path: Vec<MerkleNode>,
     ) -> Self {
         Self {
             delegation_id,
@@ -101,7 +101,7 @@ impl VerifyChainV1CallData {
             Witness::Base(Value::known(self.max_depth)),
             // Private inputs
             Witness::Uint64(Value::known(self.pos)),
-            Witness::MerklePath(self.path.iter().map(|&v| Value::known(v)).collect()),
+            Witness::MerklePath(Value::known(self.path.clone().try_into().unwrap())),
         ]
     }
 }

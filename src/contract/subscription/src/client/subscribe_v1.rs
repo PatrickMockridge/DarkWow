@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, MerkleNode, MerklePath, PublicKey, SecretKey},
+    crypto::{poseidon_hash, MerkleNode, PublicKey, SecretKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -54,7 +54,7 @@ impl SubscribePublicInputs {
             self.subscription_id,
             self.subscriber_pub_x,
             self.subscriber_pub_y,
-            pallas::Base::from(self.plan_id),
+            pallas::Base::from(self.plan_id as u64),
             self.deposit,
             self.token_id,
             pallas::Base::from(self.lock_until_block),
@@ -177,9 +177,6 @@ impl SubscribeCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let plan_proof: Vec<pallas::Base> = self.plan_merkle_proof.iter().map(|n| n.0).collect();
-        let dao_proof: Vec<pallas::Base> = self.dao_path.iter().map(|n| n.0).collect();
-
         vec![
             // Public inputs as witnesses (order matches circuit witness section)
             Witness::Base(Value::known(self.subscription_id)),
@@ -199,9 +196,9 @@ impl SubscribeCallData {
             // Private inputs
             Witness::Base(Value::known(self.subscriber_secret)),
             Witness::Base(Value::known(self.nonce)),
-            Witness::Base(Value::known(plan_proof[0])),
-            Witness::Base(Value::known(plan_proof[1])),
-            Witness::Base(Value::known(plan_proof[2])),
+            Witness::Base(Value::known(self.plan_merkle_proof[0].inner())),
+            Witness::Base(Value::known(self.plan_merkle_proof[1].inner())),
+            Witness::Base(Value::known(self.plan_merkle_proof[2].inner())),
             Witness::Base(Value::known(self.value_blind)),
             Witness::Base(Value::known(self.dao_member_pub_x)),
             Witness::Base(Value::known(self.dao_member_pub_y)),

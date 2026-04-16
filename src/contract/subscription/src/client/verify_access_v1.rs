@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, MerkleNode, MerklePath},
+    crypto::{poseidon_hash, MerkleNode},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -55,7 +55,7 @@ impl VerifyAccessPublicInputs {
             pallas::Base::from(self.current_block),
             self.subscriber_pub_x,
             self.subscriber_pub_y,
-            pallas::Base::from(self.plan_id),
+            pallas::Base::from(self.plan_id as u64),
             pallas::Base::from(self.lock_until_block),
             pallas::Base::from(self.uses_allowed),
             pallas::Base::from(self.rate_period),
@@ -177,7 +177,7 @@ impl VerifyAccessCallData {
             // Private inputs
             Witness::Base(Value::known(self.subscriber_secret)),
             Witness::Base(Value::known(self.nonce)),
-            Witness::Uint8(Value::known(self.permissions_claimed)),
+            Witness::Uint32(Value::known(self.permissions_claimed as u32)),
             Witness::Uint32(Value::known(self.subscription_leaf_pos)),
             Witness::MerklePath(Value::known(
                 self.subscription_path.clone().try_into().unwrap(),

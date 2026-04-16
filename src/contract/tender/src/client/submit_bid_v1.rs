@@ -92,7 +92,7 @@ impl SubmitBidV1CallData {
         vec![
             // Public inputs as witnesses
             Witness::Base(Value::known(self.tender_id)),
-            Witness::Base(Value::known(self.bid_id)),
+            Witness::Base(Value::known(self.compute_bid_id())),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
             // Private inputs

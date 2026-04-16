@@ -6,18 +6,26 @@ authors = ["DarkFi contributors"]
 description = "DarkFi Subscription Contract - Member subscription service with DAO treasury and endowment fund"
 license = "AGPL-3.0-only"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
 darkfi-serial = { path = "../../serial" }
-
-[features]
-default = []
-client = ["dep:darkfi", "dep:rand"]
+halo2_proofs = { version = "0.3.2", optional = true }
 
 [dependencies.darkfi]
 optional = true
-path = "../../../../darkfi"
+path = "../../../"
 
 [dependencies.rand]
 optional = true
 version = "0.8"
+
+[features]
+default = []
+no-entrypoint = []
+client = ["dep:darkfi", "dep:rand", "dep:halo2_proofs"]
+
+[lints]
+workspace = true

@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{poseidon_hash, MerkleNode, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -49,7 +49,7 @@ pub struct PushValueCommitmentV1CallData {
     pub oracle_id: pallas::Base,
     pub staker_secret: pallas::Base,
     pub pos: u64,
-    pub path: Vec<pallas::Base>,
+    pub path: Vec<MerkleNode>,
     pub value: pallas::Base,
     pub nonce: pallas::Base,
     // Public inputs
@@ -63,7 +63,7 @@ impl PushValueCommitmentV1CallData {
         oracle_id: pallas::Base,
         staker_secret: pallas::Base,
         pos: u64,
-        path: Vec<pallas::Base>,
+        path: Vec<MerkleNode>,
         value: pallas::Base,
         nonce: pallas::Base,
         staker_public: PublicKey,
@@ -108,7 +108,7 @@ impl PushValueCommitmentV1CallData {
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
             Witness::Uint64(Value::known(self.pos)),
-            Witness::MerklePath(self.path.iter().map(|&v| Value::known(v)).collect()),
+            Witness::MerklePath(Value::known(self.path.clone().try_into().unwrap())),
             Witness::Base(Value::known(self.value)),
             Witness::Base(Value::known(self.nonce)),
         ]

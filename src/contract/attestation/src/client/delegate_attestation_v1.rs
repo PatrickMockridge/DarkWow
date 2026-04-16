@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{poseidon_hash, MerkleNode, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -85,9 +85,9 @@ pub struct DelegateAttestationV1CallData {
     pub delegatee_stake: pallas::Base,
     pub nonce: pallas::Base,
     pub pos: u64,
-    pub path: Vec<pallas::Base>,
+    pub path: Vec<MerkleNode>,
     pub chain_pos: u64,
-    pub chain_path: Vec<pallas::Base>,
+    pub chain_path: Vec<MerkleNode>,
     // Public inputs
     pub delegator_public: PublicKey,
     pub delegatee_public: PublicKey,
@@ -108,9 +108,9 @@ impl DelegateAttestationV1CallData {
         delegatee_stake: pallas::Base,
         nonce: pallas::Base,
         pos: u64,
-        path: Vec<pallas::Base>,
+        path: Vec<MerkleNode>,
         chain_pos: u64,
-        chain_path: Vec<pallas::Base>,
+        chain_path: Vec<MerkleNode>,
         delegator_public: PublicKey,
         delegatee_public: PublicKey,
     ) -> Self {
@@ -179,9 +179,9 @@ impl DelegateAttestationV1CallData {
             // Private inputs
             Witness::Base(Value::known(self.nonce)),
             Witness::Uint64(Value::known(self.pos)),
-            Witness::MerklePath(Value::known(self.path.iter().map(|&v| darkfi_sdk::crypto::MerkleNode::new(v)).collect::<Vec<_>>().try_into().unwrap())),
+            Witness::MerklePath(Value::known(self.path.clone().try_into().unwrap())),
             Witness::Uint64(Value::known(self.chain_pos)),
-            Witness::MerklePath(Value::known(self.chain_path.iter().map(|&v| darkfi_sdk::crypto::MerkleNode::new(v)).collect::<Vec<_>>().try_into().unwrap())),
+            Witness::MerklePath(Value::known(self.chain_path.clone().try_into().unwrap())),
             Witness::Base(Value::known(self.delegator_secret)),
         ]
     }

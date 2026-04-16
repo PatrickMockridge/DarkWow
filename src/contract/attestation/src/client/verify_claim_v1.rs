@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::poseidon_hash,
+    crypto::MerkleNode,
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -58,7 +58,7 @@ pub struct VerifyClaimV1CallData {
     pub attestation_data: pallas::Base,
     pub nonce: pallas::Base,
     pub pos: u64,
-    pub path: Vec<pallas::Base>,
+    pub path: Vec<MerkleNode>,
 }
 
 impl VerifyClaimV1CallData {
@@ -69,7 +69,7 @@ impl VerifyClaimV1CallData {
         attestation_data: pallas::Base,
         nonce: pallas::Base,
         pos: u64,
-        path: Vec<pallas::Base>,
+        path: Vec<MerkleNode>,
     ) -> Self {
         Self {
             claim_id,
@@ -101,7 +101,7 @@ impl VerifyClaimV1CallData {
             Witness::Base(Value::known(self.evidence)),
             Witness::Base(Value::known(self.nonce)),
             Witness::Uint64(Value::known(self.pos)),
-            Witness::MerklePath(self.path.iter().map(|&v| Value::known(v)).collect()),
+            Witness::MerklePath(Value::known(self.path.clone().try_into().unwrap())),
         ]
     }
 }

@@ -77,6 +77,10 @@ pub mod model;
 #[cfg(not(feature = "no-entrypoint"))]
 pub mod entrypoint;
 
+#[cfg(feature = "client")]
+/// Client API for interaction with this smart contract
+pub mod client;
+
 // ============================================================================
 // DATABASE TREES
 // ============================================================================

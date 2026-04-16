@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::poseidon_hash,
+    crypto::{poseidon_hash, MerkleNode},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -48,11 +48,11 @@ pub struct CheckNotRevokedV1CallData {
     pub revocation_root: pallas::Base,
     pub nonce: pallas::Base,
     pub pos: u64,
-    pub path: Vec<pallas::Base>,
+    pub path: Vec<MerkleNode>,
 }
 
 impl CheckNotRevokedV1CallData {
-    pub fn new(revocation_root: pallas::Base, nonce: pallas::Base, pos: u64, path: Vec<pallas::Base>) -> Self {
+    pub fn new(revocation_root: pallas::Base, nonce: pallas::Base, pos: u64, path: Vec<MerkleNode>) -> Self {
         Self { revocation_root, nonce, pos, path }
     }
 
@@ -72,7 +72,7 @@ impl CheckNotRevokedV1CallData {
             Witness::Base(Value::known(self.nonce)),
             // Private inputs
             Witness::Uint64(Value::known(self.pos)),
-            Witness::MerklePath(self.path.iter().map(|&v| Value::known(v)).collect()),
+            Witness::MerklePath(Value::known(self.path.clone().try_into().unwrap())),
             Witness::Base(Value::known(self.compute_leaf())),
         ]
     }
