@@ -176,6 +176,54 @@ DarkFi's token contracts (MoneyV3, NativeToken) follow a **minimal infrastructur
 
 This is a process safety principle applied to DeFi: isolate complexity where it's required, not in the infrastructure that everything depends on.
 
+## Testing Infrastructure
+
+Two pipelines for contract testing at different levels:
+
+### Lightweight Pipeline (`bin/darkfid/src/tests/pipeline.rs`)
+
+For deployment verification without ZK proof generation. Fast CI/CD checks.
+
+```bash
+# Test any contract by name
+cargo test --package darkfid test_pipeline
+CONTRACT_NAME=money_v3 cargo test --package darkfid test_pipeline
+CONTRACT_NAME=stablecoin cargo test --package darkfid test_pipeline
+```
+
+### Heavyweight Pipeline (`bin/darkfid/src/tests/heavyweight_pipeline.rs`)
+
+For full contract execution testing with real ZK proofs. Uses `ContractHarness` trait for generic ZK circuit access.
+
+```bash
+# Requires release mode or increased stack size due to halo2's computational intensity
+cargo test --package darkfid --release test_dex_heavyweight
+cargo test --package darkfid --release test_money_v3_heavyweight
+
+# Alternative: increase stack size
+export RUST_MIN_STACK=16777216
+cargo test --package darkfid test_dex_heavyweight
+```
+
+**Why the stack limit?** halo2's polynomial arithmetic uses deep recursion. Building multiple proving keys (4 circuits for DEX, 4 for MoneyV3) exceeds the default ~8MB stack.
+
+See [Pipeline Documentation](../../doc/src/arch/pipeline.md) for full details.
+
+### ContractHarness Trait
+
+All test harnesses implement `ContractHarness` for generic ZK circuit access:
+
+```rust
+pub trait ContractHarness {
+    fn name(&self) -> &str;
+    fn circuits(&self) -> Vec<&'static str>;
+    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary>;
+    fn get_pk(&self, ns: &str) -> Option<&ProvingKey>;
+}
+```
+
+Implemented by: `DexHarness`, `MoneyV3Harness`, `NativeTokenHarness`
+
 ## Official Contracts
 
 - **Money**: Private token transfers and basic operations

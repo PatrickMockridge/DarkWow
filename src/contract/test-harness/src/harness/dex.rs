@@ -255,3 +255,38 @@ impl Default for DexHarness {
         Self::new()
     }
 }
+
+impl super::ContractHarness for DexHarness {
+    fn name(&self) -> &str {
+        "dex"
+    }
+
+    fn circuits(&self) -> Vec<&'static str> {
+        vec![
+            "CreateSwap_V1",
+            "AcceptSwap_V1",
+            "ExecuteSwap_V1",
+            "CancelSwap_V1",
+        ]
+    }
+
+    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
+        match ns {
+            "CreateSwap_V1" => Some(&self.create_swap_zkbin),
+            "AcceptSwap_V1" => Some(&self.accept_swap_zkbin),
+            "ExecuteSwap_V1" => Some(&self.execute_swap_zkbin),
+            "CancelSwap_V1" => Some(&self.cancel_swap_zkbin),
+            _ => None,
+        }
+    }
+
+    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
+        match ns {
+            "CreateSwap_V1" => Some(&self.create_swap_pk),
+            "AcceptSwap_V1" => Some(&self.accept_swap_pk),
+            "ExecuteSwap_V1" => Some(&self.execute_swap_pk),
+            "CancelSwap_V1" => Some(&self.cancel_swap_pk),
+            _ => None,
+        }
+    }
+}

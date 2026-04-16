@@ -51,3 +51,23 @@ pub mod native_token;
 pub use dex::DexHarness;
 pub use money_v3::{MoneyV3Harness, TokenCreationResult, MintResult};
 pub use native_token::{NativeTokenHarness, PoWRewardResult, BurnResult, BurnCallInput};
+
+use darkfi::{zk::ProvingKey, zkas::ZkBinary};
+
+/// Trait for contract test harnesses providing ZK circuit access.
+///
+/// This trait enables the HeavyweightPipeline to work generically with
+/// any contract harness by providing access to ZK binaries and proving keys.
+pub trait ContractHarness {
+    /// Returns the contract name (e.g., "dex", "money_v3", "native_token")
+    fn name(&self) -> &str;
+
+    /// Returns all circuit namespaces this contract uses
+    fn circuits(&self) -> Vec<&'static str>;
+
+    /// Get ZK binary for a circuit namespace
+    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary>;
+
+    /// Get proving key for a circuit namespace
+    fn get_pk(&self, ns: &str) -> Option<&ProvingKey>;
+}

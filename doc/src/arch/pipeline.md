@@ -221,6 +221,72 @@ Successful deployment serves as lightweight verification that:
 
 This approach avoids complex ZK proof generation while still confirming the contract deploys correctly.
 
+## Heavyweight Testing Pipeline
+
+For contracts that require actual ZK proof generation and execution, the `HeavyweightPipeline` provides full testing with real proofs.
+
+**Location:** `bin/darkfid/src/tests/heavyweight_pipeline.rs`
+
+### Architecture
+
+```
+HeavyweightPipeline<H: ContractHarness>
+    │
+    ├── harness: H  (provides ZK circuits and proof generation)
+    ├── genesis: GenesisHarness  (blockchain operations - OWNED directly)
+    └── exec()  (execute contract calls with ZK proofs)
+```
+
+### Key Difference from Lightweight
+
+| Aspect | LightweightPipeline | HeavyweightPipeline |
+|--------|--------------------|--------------------|
+| Purpose | Deployment verification | Full contract execution |
+| ZK Proofs | None | Required for calls |
+| GenesisHarness | Via pipeline | Owned directly |
+| Use Case | CI/CD fast checks | Comprehensive testing |
+
+### Usage
+
+```rust
+use darkfi_contract_test_harness::harness::{DexHarness, ContractHarness};
+
+let harness = DexHarness::new();
+let mut pipeline = HeavyweightPipeline::new(harness, "dex", config, ex).await?;
+
+// Generate genesis blocks
+pipeline.generate_genesis_blocks(3).await?;
+
+// Deploy contract
+let wasm = read_wasm("dex");
+let contract_id = pipeline.deploy(wasm).await?;
+
+// Execute contract calls with ZK proofs
+pipeline.exec(function_id, call_data, proofs).await?;
+```
+
+### Running Heavyweight Tests
+
+**Note:** Building ZK proving keys with halo2 is computationally intensive and can cause stack overflow in debug mode. Two solutions:
+
+**Option 1: Use Release Mode (Recommended)**
+```bash
+cargo test --package darkfid --release test_dex_heavyweight
+cargo test --package darkfid --release test_money_v3_heavyweight
+```
+
+**Option 2: Increase Stack Size**
+```bash
+export RUST_MIN_STACK=16777216  # 16MB
+cargo test --package darkfid test_dex_heavyweight
+```
+
+### Why Stack Overflow Occurs
+
+halo2's proof generation uses deep recursion for polynomial arithmetic. When building multiple proving keys simultaneously (4 circuits for DEX, 4 for MoneyV3), the stack usage exceeds the default ~8MB limit.
+
+This is a known limitation of halo2's computational intensity, not a bug in the code.
+
 ## Dependency Resolution
 
 The pipeline uses `pipeline.toml` manifests to resolve dependencies:
@@ -323,7 +389,8 @@ No scripts to update, no ordering to remember.
 
 | File | Purpose |
 |------|---------|
-| `bin/darkfid/src/tests/pipeline.rs` | ContractTestingPipeline |
+| `bin/darkfid/src/tests/pipeline.rs` | ContractTestingPipeline (lightweight) |
+| `bin/darkfid/src/tests/heavyweight_pipeline.rs` | HeavyweightPipeline (ZK proofs) |
 | `bin/darkfid/src/tests/genesis.rs` | GenesisHarness |
 | `src/contract/*/pipeline.toml` | Contract dependency manifests |
 | `src/contract/*/proof/*.zk` | ZK circuit source files |

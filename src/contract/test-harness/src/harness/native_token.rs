@@ -141,6 +141,34 @@ impl NativeTokenHarness {
     }
 }
 
+impl super::ContractHarness for NativeTokenHarness {
+    fn name(&self) -> &str {
+        "native_token"
+    }
+
+    fn circuits(&self) -> Vec<&'static str> {
+        vec!["Mint_V1", "Burn_V1", "Fee_V1"]
+    }
+
+    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
+        match ns {
+            "Mint_V1" => Some(&self.mint_zkbin),
+            "Burn_V1" => Some(&self.burn_zkbin),
+            "Fee_V1" => Some(&self.fee_zkbin),
+            _ => None,
+        }
+    }
+
+    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
+        match ns {
+            "Mint_V1" => Some(&self.mint_pk),
+            "Burn_V1" => Some(&self.burn_pk),
+            "Fee_V1" => Some(&self.fee_pk),
+            _ => None,
+        }
+    }
+}
+
 /// Input for burn call (re-exported from native_token contract)
 pub use darkfi_native_token_contract::client::burn_v1::BurnCallInput;
 

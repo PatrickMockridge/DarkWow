@@ -230,6 +230,41 @@ impl MoneyV3Harness {
     }
 }
 
+impl super::ContractHarness for MoneyV3Harness {
+    fn name(&self) -> &str {
+        "money_v3"
+    }
+
+    fn circuits(&self) -> Vec<&'static str> {
+        vec![
+            "TokenMint_V1",
+            "AuthTokenMint_V1",
+            "Mint_V1",
+            "Burn_V1",
+        ]
+    }
+
+    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
+        match ns {
+            "TokenMint_V1" => Some(&self.token_mint_zkbin),
+            "AuthTokenMint_V1" => Some(&self.auth_zkbin),
+            "Mint_V1" => Some(&self.mint_zkbin),
+            "Burn_V1" => Some(&self.burn_zkbin),
+            _ => None,
+        }
+    }
+
+    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
+        match ns {
+            "TokenMint_V1" => Some(&self.token_mint_pk),
+            "AuthTokenMint_V1" => Some(&self.auth_pk),
+            "Mint_V1" => Some(&self.mint_pk),
+            "Burn_V1" => Some(&self.burn_pk),
+            _ => None,
+        }
+    }
+}
+
 /// Result of token creation
 pub struct TokenCreationResult {
     pub token_id: pallas::Base,
