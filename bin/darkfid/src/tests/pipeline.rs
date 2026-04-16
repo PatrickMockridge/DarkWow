@@ -653,7 +653,7 @@ impl ContractTestingPipeline {
 // Tests
 // ============================================================================
 
-/// Test the pipeline - verify dependency resolution and genesis
+/// Test the pipeline - deploy dex contract (which auto-deploys money_v3 dependency)
 pub async fn test_pipeline_impl(ex: Arc<Executor<'static>>) -> std::result::Result<(), PipelineError> {
     let config = HarnessConfig {
         pow_target: 20,
@@ -667,24 +667,15 @@ pub async fn test_pipeline_impl(ex: Arc<Executor<'static>>) -> std::result::Resu
     info!("Creating pipeline for dex...");
     let mut pipeline = ContractTestingPipeline::new("dex", config, ex).await?;
 
-    // Check status report
-    let report = pipeline.status_report().await?;
-    info!("Pipeline status: wasm={:?}, zkbins={}, genesis={:?}",
-        report.wasm_status,
-        report.zkbin_status.len(),
-        report.genesis_status);
-
-    // Run genesis
-    info!("Ensuring genesis...");
+    info!("Running genesis...");
     let state = pipeline.ensure_genesis().await?;
-    info!("Genesis state: block_height={}", state.block_height);
+    info!("Genesis complete: block_height={}", state.block_height);
 
-    // Verify dependency resolution works
-    let manifest = ContractManifest::load("dex")?;
-    let deps = manifest.resolve_dependencies()?;
-    info!("Dex dependencies resolved: {:?}", deps);
+    info!("Deploying dex...");
+    let contract_id = pipeline.deploy().await?;
+    info!("dex deployed: {:?}", contract_id);
 
-    info!("test_pipeline PASSED - genesis and dependency resolution verified");
+    info!("test_pipeline PASSED");
     Ok(())
 }
 
