@@ -112,7 +112,7 @@ impl OpenPositionBuilder {
         let owner_secret = self.owner_secret.ok_or_else(|| StablecoinClientError::MissingField("owner_secret"))?;
         let collateral_amount = self.collateral_amount.ok_or_else(|| StablecoinClientError::MissingField("collateral_amount"))?;
         let debt_amount = self.debt_amount.ok_or_else(|| StablecoinClientError::MissingField("debt_amount"))?;
-        let collateral_type = self.collateral_type.ok_or_else(|| StablecoinClientError::MissingField("collateral_type"))?;
+        let collateral_type = self.collateral_type.clone().ok_or_else(|| StablecoinClientError::MissingField("collateral_type"))?;
 
         // Convert collateral type to pallas::Base
         let ct_base = match collateral_type {

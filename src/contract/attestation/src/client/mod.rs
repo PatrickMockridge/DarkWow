@@ -21,8 +21,6 @@
 //! This module provides builder structs for constructing attestation contract calls.
 //! Also includes ZK proof generation modules for circuit verification.
 
-pub mod builders;
-
 //! ZK proof client modules
 pub mod create_attestation_v1;
 pub mod create_claim_v1;
@@ -171,6 +169,8 @@ impl CreateClaimBuilder {
 pub struct VerifyClaimBuilder {
     claim_id: Option<ClaimId>,
     attestation_id: Option<AttestationId>,
+    evidence_commitment: Option<pallas::Base>,
+    revealed_result: Option<pallas::Base>,
 }
 
 impl VerifyClaimBuilder {
@@ -188,10 +188,22 @@ impl VerifyClaimBuilder {
         self
     }
 
+    pub fn evidence_commitment(mut self, commitment: pallas::Base) -> Self {
+        self.evidence_commitment = Some(commitment);
+        self
+    }
+
+    pub fn revealed_result(mut self, result: pallas::Base) -> Self {
+        self.revealed_result = Some(result);
+        self
+    }
+
     pub fn build(self) -> Result<VerifyClaimParamsV1, &'static str> {
         Ok(VerifyClaimParamsV1 {
             claim_id: self.claim_id.ok_or("claim_id not set")?,
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
+            evidence_commitment: self.evidence_commitment.ok_or("evidence_commitment not set")?,
+            revealed_result: self.revealed_result.ok_or("revealed_result not set")?,
         })
     }
 }
@@ -231,10 +243,12 @@ impl ConsumeClaimBuilder {
     }
 
     pub fn build(self) -> Result<ConsumeClaimParamsV1, &'static str> {
+        let (cx, cy) = self.claimant_pubkey.ok_or("claimant_pubkey not set")?.xy();
         Ok(ConsumeClaimParamsV1 {
             claim_id: self.claim_id.ok_or("claim_id not set")?,
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
-            claimant_pubkey: self.claimant_pubkey.ok_or("claimant_pubkey not set")?,
+            claimant_pub_x: cx,
+            claimant_pub_y: cy,
             nullifier: self.nullifier.ok_or("nullifier not set")?,
         })
     }
@@ -300,9 +314,11 @@ impl RevokeAttestationBuilder {
     }
 
     pub fn build(self) -> Result<RevokeAttestationParamsV1, &'static str> {
+        let (ax, ay) = self.attestor_pubkey.ok_or("attestor_pubkey not set")?.xy();
         Ok(RevokeAttestationParamsV1 {
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
-            attestor_pubkey: self.attestor_pubkey.ok_or("attestor_pubkey not set")?,
+            attestor_pub_x: ax,
+            attestor_pub_y: ay,
         })
     }
 }

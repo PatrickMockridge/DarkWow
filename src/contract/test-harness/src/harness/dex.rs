@@ -263,29 +263,29 @@ impl super::ContractHarness for DexHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "CreateSwap_V1",
-            "AcceptSwap_V1",
-            "ExecuteSwap_V1",
-            "CancelSwap_V1",
+            "CreateSwapV1",
+            "AcceptSwapV1",
+            "ExecuteSwapV1",
+            "CancelSwapV1",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateSwap_V1" => Some(&self.create_swap_zkbin),
-            "AcceptSwap_V1" => Some(&self.accept_swap_zkbin),
-            "ExecuteSwap_V1" => Some(&self.execute_swap_zkbin),
-            "CancelSwap_V1" => Some(&self.cancel_swap_zkbin),
+            "CreateSwapV1" => Some(&self.create_swap_zkbin),
+            "AcceptSwapV1" => Some(&self.accept_swap_zkbin),
+            "ExecuteSwapV1" => Some(&self.execute_swap_zkbin),
+            "CancelSwapV1" => Some(&self.cancel_swap_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateSwap_V1" => Some(&self.create_swap_pk),
-            "AcceptSwap_V1" => Some(&self.accept_swap_pk),
-            "ExecuteSwap_V1" => Some(&self.execute_swap_pk),
-            "CancelSwap_V1" => Some(&self.cancel_swap_pk),
+            "CreateSwapV1" => Some(&self.create_swap_pk),
+            "AcceptSwapV1" => Some(&self.accept_swap_pk),
+            "ExecuteSwapV1" => Some(&self.execute_swap_pk),
+            "CancelSwapV1" => Some(&self.cancel_swap_pk),
             _ => None,
         }
     }

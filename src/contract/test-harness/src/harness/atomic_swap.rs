@@ -170,23 +170,23 @@ impl super::ContractHarness for AtomicSwapHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CreateSwap_V1", "ClaimSwap_V1", "RefundSwap_V1"]
+        vec!["CreateSwapV1", "ClaimSwapV1", "RefundSwapV1"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateSwap_V1" => Some(&self.create_swap_zkbin),
-            "ClaimSwap_V1" => Some(&self.claim_swap_zkbin),
-            "RefundSwap_V1" => Some(&self.refund_swap_zkbin),
+            "CreateSwapV1" => Some(&self.create_swap_zkbin),
+            "ClaimSwapV1" => Some(&self.claim_swap_zkbin),
+            "RefundSwapV1" => Some(&self.refund_swap_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateSwap_V1" => Some(&self.create_swap_pk),
-            "ClaimSwap_V1" => Some(&self.claim_swap_pk),
-            "RefundSwap_V1" => Some(&self.refund_swap_pk),
+            "CreateSwapV1" => Some(&self.create_swap_pk),
+            "ClaimSwapV1" => Some(&self.claim_swap_pk),
+            "RefundSwapV1" => Some(&self.refund_swap_pk),
             _ => None,
         }
     }

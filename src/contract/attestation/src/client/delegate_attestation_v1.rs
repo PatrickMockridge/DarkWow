@@ -179,9 +179,9 @@ impl DelegateAttestationV1CallData {
             // Private inputs
             Witness::Base(Value::known(self.nonce)),
             Witness::Uint64(Value::known(self.pos)),
-            Witness::MerklePath(self.path.iter().map(|&v| Value::known(v)).collect()),
+            Witness::MerklePath(Value::known(self.path.iter().map(|&v| darkfi_sdk::crypto::MerkleNode::new(v)).collect::<Vec<_>>().try_into().unwrap())),
             Witness::Uint64(Value::known(self.chain_pos)),
-            Witness::MerklePath(self.chain_path.iter().map(|&v| Value::known(v)).collect()),
+            Witness::MerklePath(Value::known(self.chain_path.iter().map(|&v| darkfi_sdk::crypto::MerkleNode::new(v)).collect::<Vec<_>>().try_into().unwrap())),
             Witness::Base(Value::known(self.delegator_secret)),
         ]
     }

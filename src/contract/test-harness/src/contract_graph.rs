@@ -32,11 +32,11 @@
 //! ```rust
 //! use darkfi_contract_test_harness::contract_graph::{Contract, get_contracts};
 //!
-//! // Get only Money contract circuits
-//! let money_circuits = get_contracts(&[Contract::Money]);
+//! // Get only NativeToken contract circuits
+//! let native_circuits = get_contracts(&[Contract::NativeToken]);
 //!
-//! // Get DAO + its dependencies (Money)
-//! let dao_circuits = get_contracts(&[Contract::Dao]);
+//! // Get DAO-Escrow + its dependencies (Money)
+//! let dao_circuits = get_contracts(&[Contract::DaoEscrow]);
 //!
 //! // Get Roulette only (isolated, no dependencies)
 //! let roulette_circuits = get_contracts(&[Contract::Roulette]);
@@ -47,18 +47,14 @@ use std::collections::HashSet;
 /// Supported contracts in the DarkFi ecosystem
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Contract {
-    /// Money V1 (native) - handles DARK token
-    Money,
-    /// DAO (native) - governance contract
-    Dao,
+    /// DAO-Escrow WASM - DAO with escrow
+    DaoEscrow,
     /// Stablecoin WASM - USD-pegged token
     Stablecoin,
     /// Identity WASM - credentials and claims
     Identity,
     /// DEX WASM - decentralized exchange
     Dex,
-    /// DAO-Escrow WASM - DAO with escrow
-    DaoEscrow,
     /// Money V2 WASM - next version of Money
     MoneyV2,
     /// Money V3 WASM - privacy-first token (Poseidon-only, no EC)
@@ -119,24 +115,6 @@ impl Contract {
     /// Get all circuit namespaces for this contract
     pub fn circuits(&self) -> Vec<&'static str> {
         match self {
-            Contract::Money => vec![
-                "Fee_V1",
-                "Mint_V1",
-                "Burn_V1",
-                "TokenMint_V1",
-                "AuthTokenMint_V1",
-            ],
-            Contract::Dao => vec![
-                "Mint",
-                "ProposeInput",
-                "ProposeMain",
-                "VoteInput",
-                "VoteMain",
-                "Exec",
-                "EarlyExec",
-                "AuthTransfer",
-                "AuthTransferEnc",
-            ],
             Contract::Stablecoin => vec![
                 "OpenPositionV1",
                 "MintStableV1",
@@ -182,12 +160,12 @@ impl Contract {
                 "Fee_V1",
             ],
             Contract::Auction => vec![
-                "CreateAuction",
-                "PlaceBid",
-                "CloseAuction",
-                "ClaimWinnings",
-                "SettleAuction",
-                "RefundBid",
+                "CreateAuctionV1",
+                "PlaceBidV1",
+                "CloseAuctionV1",
+                "ClaimWinningsV1",
+                "SettleAuctionV1",
+                "RefundBidV1",
             ],
             Contract::Lottery => vec!["CommitTicket_V1", "RevealTicket_V1"],
             Contract::Slot => vec!["CommitBet_V1", "SettleBet_V1"],
@@ -195,32 +173,44 @@ impl Contract {
             Contract::DarkToshiDice => vec!["CommitBet_V1", "SettleBet_V1"],
             Contract::Roulette => vec!["PlaceBet_V1", "SettleBet_V1"],
             Contract::Deployooor => vec![],
-            // Newer contracts - many have no circuit binaries yet
-            Contract::AtomicSwap
-            | Contract::Attestation
-            | Contract::BettingStake
+            Contract::AtomicSwap => vec!["CreateSwapV1", "ClaimSwapV1", "RefundSwapV1"],
+            Contract::Attestation => vec![
+                "CreateAttestationV1",
+                "CreateClaimV1",
+                "VerifyClaimV1",
+                "ConsumeClaimV1",
+                "DelegateAttestationV1",
+            ],
+            Contract::Bridge => vec!["DepositV1"],
+            Contract::Escrow => vec!["CreateEscrowV1", "ClaimEscrowV1", "RefundEscrowV1"],
+            Contract::LaborMarket => vec![
+                "CreateJobV1",
+                "SubmitDeliverableV1",
+                "SubmitGitDeliverableV1",
+                "AcceptJobV1",
+                "ConfirmDeliveryV1",
+                "DisputeV1",
+                "RefundV1",
+            ],
+            Contract::Oracle => vec!["RegisterOracleV1"],
+            Contract::Subscription => vec!["SubscribeV1", "VerifyAccessV1", "RateLimitV1", "UpdateUsageV1"],
+            Contract::Tender => vec!["CreateTenderV1", "SubmitBidV1", "RevealBidV1", "SelectWinnerV1"],
+            // Contracts with no circuit binaries yet
+            Contract::BettingStake
             | Contract::BlockHeightPrediction
-            | Contract::Bridge
             | Contract::DarkbetExchange
             | Contract::DrainProtection
-            | Contract::Escrow
             | Contract::GameRoom
             | Contract::InsuranceMarket
-            | Contract::LaborMarket
-            | Contract::Oracle
             | Contract::PoolStake
             | Contract::RelayerEndowment
-            | Contract::SafeMath
-            | Contract::Subscription
-            | Contract::Tender => vec![],
+            | Contract::SafeMath => vec![],
         }
     }
 
     /// Human-readable name for logging
     pub fn name(&self) -> &'static str {
         match self {
-            Contract::Money => "Money",
-            Contract::Dao => "Dao",
             Contract::Stablecoin => "Stablecoin",
             Contract::Identity => "Identity",
             Contract::Dex => "Dex",
@@ -259,8 +249,6 @@ impl Contract {
     pub fn dependencies(&self) -> Vec<Contract> {
         match self {
             // Native contracts have no dependencies on other contracts
-            Contract::Money => vec![],
-            Contract::Dao => vec![Contract::Money], // DAO uses Money for governance token
             Contract::Deployooor => vec![],
             // WASM contracts depend on Deployooor being deployed first
             // but for VK purposes, they're standalone
@@ -299,10 +287,7 @@ impl Contract {
 
     /// Returns true if this is a native contract (deployed at genesis)
     pub fn is_native(&self) -> bool {
-        matches!(
-            self,
-            Contract::Money | Contract::Dao | Contract::Deployooor
-        )
+        matches!(self, Contract::Deployooor)
     }
 }
 
@@ -350,22 +335,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_resolve_dependencies_money_alone() {
-        let contracts = vec![Contract::Money];
+    fn test_resolve_dependencies_native_token_alone() {
+        let contracts = vec![Contract::NativeToken];
         let resolved = resolve_dependencies(&contracts);
-        assert_eq!(resolved, vec![Contract::Money]);
+        assert_eq!(resolved, vec![Contract::NativeToken]);
     }
 
     #[test]
-    fn test_resolve_dependencies_dao_includes_money() {
-        let contracts = vec![Contract::Dao];
+    fn test_resolve_dependencies_daoescrow_isolated() {
+        let contracts = vec![Contract::DaoEscrow];
         let resolved = resolve_dependencies(&contracts);
-        // Money should appear before DAO
-        assert!(resolved.contains(&Contract::Money));
-        assert!(resolved.contains(&Contract::Dao));
-        let money_idx = resolved.iter().position(|c| *c == Contract::Money).unwrap();
-        let dao_idx = resolved.iter().position(|c| *c == Contract::Dao).unwrap();
-        assert!(money_idx < dao_idx);
+        // DaoEscrow has no dependencies, should only contain itself
+        assert_eq!(resolved, vec![Contract::DaoEscrow]);
     }
 
     #[test]
@@ -377,10 +358,9 @@ mod tests {
 
     #[test]
     fn test_resolve_dependencies_multiple() {
-        let contracts = vec![Contract::Dao, Contract::Roulette];
+        let contracts = vec![Contract::DaoEscrow, Contract::Roulette];
         let resolved = resolve_dependencies(&contracts);
-        assert!(resolved.contains(&Contract::Money));
-        assert!(resolved.contains(&Contract::Dao));
+        assert!(resolved.contains(&Contract::DaoEscrow));
         assert!(resolved.contains(&Contract::Roulette));
     }
 }

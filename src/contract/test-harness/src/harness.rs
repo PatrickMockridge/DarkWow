@@ -44,15 +44,35 @@
 //! ```
 
 pub mod atomic_swap;
+pub mod attestation;
+pub mod auction;
+pub mod bridge;
 pub mod dex;
+pub mod escrow;
+pub mod identity;
+pub mod labor_market;
 pub mod money_v3;
 pub mod native_token;
+pub mod oracle;
+pub mod stablecoin;
+pub mod subscription;
+pub mod tender;
 
 // Re-export for convenience
 pub use atomic_swap::AtomicSwapHarness;
+pub use attestation::AttestationHarness;
+pub use auction::AuctionHarness;
+pub use bridge::BridgeHarness;
 pub use dex::DexHarness;
+pub use escrow::EscrowHarness;
+pub use identity::IdentityHarness;
+pub use labor_market::LaborMarketHarness;
 pub use money_v3::{MoneyV3Harness, TokenCreationResult, MintResult};
 pub use native_token::{NativeTokenHarness, PoWRewardResult, BurnResult, BurnCallInput};
+pub use oracle::OracleHarness;
+pub use stablecoin::StablecoinHarness;
+pub use subscription::SubscriptionHarness;
+pub use tender::TenderHarness;
 
 use darkfi::{zk::ProvingKey, zkas::ZkBinary};
 

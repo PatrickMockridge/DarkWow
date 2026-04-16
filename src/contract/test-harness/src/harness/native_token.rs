@@ -147,23 +147,23 @@ impl super::ContractHarness for NativeTokenHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["Mint_V1", "Burn_V1", "Fee_V1"]
+        vec!["MintV1", "BurnV1", "FeeV1"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "Mint_V1" => Some(&self.mint_zkbin),
-            "Burn_V1" => Some(&self.burn_zkbin),
-            "Fee_V1" => Some(&self.fee_zkbin),
+            "MintV1" => Some(&self.mint_zkbin),
+            "BurnV1" => Some(&self.burn_zkbin),
+            "FeeV1" => Some(&self.fee_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "Mint_V1" => Some(&self.mint_pk),
-            "Burn_V1" => Some(&self.burn_pk),
-            "Fee_V1" => Some(&self.fee_pk),
+            "MintV1" => Some(&self.mint_pk),
+            "BurnV1" => Some(&self.burn_pk),
+            "FeeV1" => Some(&self.fee_pk),
             _ => None,
         }
     }

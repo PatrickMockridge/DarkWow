@@ -21,8 +21,6 @@
 //! This module provides builder structs for constructing tender contract calls.
 //! Also includes ZK proof generation modules for circuit verification.
 
-pub mod builders;
-
 //! ZK proof client modules
 pub mod create_tender_v1;
 pub mod reveal_bid_v1;
@@ -31,7 +29,7 @@ pub mod submit_bid_v1;
 pub mod submit_bid_with_capability_v1;
 
 use darkfi_sdk::{
-    crypto::{PublicKey, TOKEN_ID_DARK},
+    crypto::PublicKey,
     pasta::pallas,
 };
 
@@ -121,7 +119,7 @@ impl CreateTenderBuilder {
             requester_pub_y: self.requester_pub_y.ok_or("requester_pub_y not set")?,
             title: self.title.ok_or("title not set")?,
             specification: self.specification.ok_or("specification not set")?,
-            requirement_commitment: self.requirement_commitment.ok_or("requirement_commitment not set")?,
+            attestation_id: self.requirement_commitment.ok_or("attestation_id not set")?,
             min_bid: self.min_bid.ok_or("min_bid not set")?,
             max_bid: self.max_bid.ok_or("max_bid not set")?,
             bid_deadline: self.bid_deadline.ok_or("bid_deadline not set")?,
@@ -188,7 +186,7 @@ impl SubmitBidBuilder {
             bidder_pub_x: self.bidder_pub_x.ok_or("bidder_pub_x not set")?,
             bidder_pub_y: self.bidder_pub_y.ok_or("bidder_pub_y not set")?,
             amount: self.amount.ok_or("amount not set")?,
-            competency_commitment: self.competency_commitment.ok_or("competency_commitment not set")?,
+            claim_id: self.competency_commitment.ok_or("claim_id not set")?,
             encrypted_payload: self.encrypted_payload.unwrap_or_default(),
         })
     }
@@ -255,9 +253,12 @@ impl CloseTenderBuilder {
     }
 
     pub fn build(self) -> Result<CloseTenderParamsV1, &'static str> {
+        let requester_pubkey = self.requester_pubkey.ok_or("requester_pubkey not set")?;
+        let (x, y) = requester_pubkey.xy();
         Ok(CloseTenderParamsV1 {
             tender_id: self.tender_id.ok_or("tender_id not set")?,
-            requester_pubkey: self.requester_pubkey.ok_or("requester_pubkey not set")?,
+            requester_pub_x: x,
+            requester_pub_y: y,
         })
     }
 }
@@ -297,11 +298,14 @@ impl SelectWinnerBuilder {
     }
 
     pub fn build(self) -> Result<SelectWinnerParamsV1, &'static str> {
+        let winner_pubkey = self.winner_pubkey.ok_or("winner_pubkey not set")?;
+        let (pub_x, pub_y) = winner_pubkey.xy();
         Ok(SelectWinnerParamsV1 {
             proof: vec![],
             tender_id: self.tender_id.ok_or("tender_id not set")?,
             winner_bid_id: self.winner_bid_id.ok_or("winner_bid_id not set")?,
-            winner_pubkey: self.winner_pubkey.ok_or("winner_pubkey not set")?,
+            winner_pub_x: pub_x,
+            winner_pub_y: pub_y,
             winning_amount: self.winning_amount.ok_or("winning_amount not set")?,
         })
     }
@@ -330,9 +334,12 @@ impl CancelTenderBuilder {
     }
 
     pub fn build(self) -> Result<CancelTenderParamsV1, &'static str> {
+        let requester_pubkey = self.requester_pubkey.ok_or("requester_pubkey not set")?;
+        let (x, y) = requester_pubkey.xy();
         Ok(CancelTenderParamsV1 {
             tender_id: self.tender_id.ok_or("tender_id not set")?,
-            requester_pubkey: self.requester_pubkey.ok_or("requester_pubkey not set")?,
+            requester_pub_x: x,
+            requester_pub_y: y,
         })
     }
 }
@@ -366,10 +373,13 @@ impl RejectBidBuilder {
     }
 
     pub fn build(self) -> Result<RejectBidParamsV1, &'static str> {
+        let requester_pubkey = self.requester_pubkey.ok_or("requester_pubkey not set")?;
+        let (x, y) = requester_pubkey.xy();
         Ok(RejectBidParamsV1 {
             tender_id: self.tender_id.ok_or("tender_id not set")?,
             bid_id: self.bid_id.ok_or("bid_id not set")?,
-            requester_pubkey: self.requester_pubkey.ok_or("requester_pubkey not set")?,
+            requester_pub_x: x,
+            requester_pub_y: y,
         })
     }
 }
