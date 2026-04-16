@@ -20,10 +20,14 @@
 //!
 //! This module provides the client-side API for building Slot contract calls.
 
+pub mod commit_bet_v1;
+pub mod settle_bet_v1;
+
 use darkfi_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
+use darkfi_sdk::crypto::pasta_prelude::Group;
 
 use crate::model::{
     CancelSpinParamsV1, CommitSpinParamsV1, Paytable, PaytableEntry, ReelStrip,
@@ -223,7 +227,7 @@ pub fn validate_bet_value(bet_value: u64) -> Result<(), crate::error::SlotError>
         return Err(crate::error::SlotError::InvalidBetValue)
     }
     if bet_value > 1_000_000_000 {
-        return Err(crate::error::SlotError::BetValueOverflow)
+        return Err(crate::error::SlotError::BetValueExceedsMax)
     }
     Ok(())
 }
@@ -235,12 +239,12 @@ pub fn validate_paylines(
     game_type: u8,
 ) -> Result<(), crate::error::SlotError> {
     if paylines == 0 {
-        return Err(crate::error::SlotError::InvalidPaylines)
+        return Err(crate::error::SlotError::InvalidPayline)
     }
     // Classic slots typically have 1-3 paylines
     // Video slots can have up to 100
     if paylines > max_paylines {
-        return Err(crate::error::SlotError::InvalidPaylines)
+        return Err(crate::error::SlotError::InvalidPayline)
     }
     Ok(())
 }
@@ -249,11 +253,11 @@ pub fn validate_paylines(
 pub fn validate_house_edge(house_edge: u32) -> Result<(), crate::error::SlotError> {
     if house_edge < 100 {
         // Minimum 1%
-        return Err(crate::error::SlotError::InvalidHouseEdge)
+        return Err(crate::error::SlotError::InvalidFunction)
     }
     if house_edge > 1000 {
         // Maximum 10%
-        return Err(crate::error::SlotError::InvalidHouseEdge)
+        return Err(crate::error::SlotError::InvalidFunction)
     }
     Ok(())
 }

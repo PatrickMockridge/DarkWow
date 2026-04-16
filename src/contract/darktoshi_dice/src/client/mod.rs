@@ -20,12 +20,15 @@
 //!
 //! This module provides the client-side API for building Dice contract calls.
 
+pub mod commit_bet_v1;
+
 use darkfi_sdk::{
     crypto::{pedersen_commitment_u64, poseidon_hash, PublicKey, ScalarBlind, SecretKey},
     pasta::pallas,
 };
+use darkfi_sdk::crypto::pasta_prelude::Field;
 
-use crate::model::{derive_bet_id, derive_nullifier, Bet, BetId, BetState, CommitBetParamsV1};
+use crate::model::{derive_bet_id, derive_nullifier, BetId, CommitBetParamsV1};
 use crate::{DEFAULT_HOUSE_EDGE, MAX_TARGET};
 
 /// Client-side bet note for tracking bets
@@ -56,6 +59,7 @@ pub struct CommitBetV1Builder {
     blind: pallas::Base,
     token_id: pallas::Base,
     house_edge: u32,
+    confirmation_depth: u8,
 }
 
 impl CommitBetV1Builder {
@@ -69,6 +73,7 @@ impl CommitBetV1Builder {
             blind: pallas::Base::random(&mut rand::thread_rng()),
             token_id: pallas::Base::zero(), // DARK token for now
             house_edge: DEFAULT_HOUSE_EDGE,
+            confirmation_depth: 3, // Default 3 blocks for confirmation
         }
     }
 
@@ -96,6 +101,12 @@ impl CommitBetV1Builder {
         self
     }
 
+    /// Set the confirmation depth
+    pub fn confirmation_depth(mut self, depth: u8) -> Self {
+        self.confirmation_depth = depth;
+        self
+    }
+
     /// Build the commit bet parameters
     pub fn build(&self) -> (CommitBetParamsV1, OwnBet) {
         let bet_id = derive_bet_id(
@@ -110,7 +121,7 @@ impl CommitBetV1Builder {
         let nullifier = derive_nullifier(bet_id, self.secret_nonce);
 
         // Create proper value commitment using Pedersen commitment
-        let value_commit = pedersen_commitment_u64(self.bet_value, ScalarBlind::from(self.blind));
+        let value_commit = pedersen_commitment_u64(self.bet_value, ScalarBlind::from(self.bet_value));
 
         // Create signature as poseidon hash of bet parameters
         let signature = poseidon_hash([
@@ -129,6 +140,7 @@ impl CommitBetV1Builder {
             value_commit,
             signature,
             house_edge: self.house_edge,
+            confirmation_depth: self.confirmation_depth,
         };
 
         let note = DiceNote {
@@ -141,7 +153,7 @@ impl CommitBetV1Builder {
             created_at: 0, // Filled by contract
         };
 
-        let own_bet = OwnBet { note, secret: SecretKey::from_scalar(self.secret_nonce), value_commit };
+        let own_bet = OwnBet { note, secret: SecretKey::random(&mut rand::rngs::OsRng), value_commit };
 
         (params, own_bet)
     }

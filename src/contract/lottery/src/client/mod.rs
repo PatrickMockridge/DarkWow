@@ -19,5 +19,9 @@
 //! Lottery Contract Client API
 
 pub mod buy_ticket_v1;
+pub mod commit_ticket_v1;
+pub mod reveal_ticket_v1;
 
 pub use buy_ticket_v1::*;
+pub use commit_ticket_v1::*;
+pub use reveal_ticket_v1::*;
