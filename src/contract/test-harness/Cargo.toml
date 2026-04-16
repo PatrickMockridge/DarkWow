@@ -16,6 +16,7 @@ darkfi_native_token_contract = {path = "../native_token", features = ["client", 
 darkfi_money_v3_contract = {path = "../money_v3", features = ["client", "no-entrypoint"]}
 darkfi_deployooor_contract = {path = "../deployooor", features = ["client", "no-entrypoint"]}
 darkfi_dex_contract = {path = "../dex", features = ["client", "no-entrypoint"]}
+atomic_swap_contract = {path = "../atomic_swap", features = ["client", "no-entrypoint"]}
 
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }

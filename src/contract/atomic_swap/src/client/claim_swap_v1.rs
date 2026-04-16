@@ -85,8 +85,8 @@ impl ClaimSwapCallData {
             Witness::Base(Value::known(self.swap_id)),
             Witness::Base(Value::known(self.secret)),
             Witness::Base(Value::known(self.hash)),
-            Witness::Uint64(Value::known(self.timelock)),
-            Witness::Uint8(Value::known(self.side)),
+            Witness::Base(Value::known(pallas::Base::from(self.timelock))),
+            Witness::Base(Value::known(pallas::Base::from(u64::from(self.side)))),
         ]
     }
 }

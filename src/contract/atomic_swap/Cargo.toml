@@ -6,11 +6,30 @@ authors = ["DarkFi contributors"]
 description = "DarkFi Atomic Swap Contract - Cross-chain HTLC swaps"
 license = "AGPL-3.0-only"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
 darkfi-serial = { path = "../../serial" }
 
+# Client API dependencies
+darkfi = { path = "../../../", features = ["zk"], optional = true }
+rand = { version = "0.8.5", optional = true }
+tracing = { version = "0.1.44", optional = true }
+halo2_proofs = { version = "0.3.2", optional = true }
+
 [features]
 default = []
 no-entrypoint = []
-client = []
+client = [
+    "darkfi",
+    "darkfi-serial/async",
+    "rand",
+    "tracing",
+    "halo2_proofs",
+]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2.8", features = ["custom"] }
+darkfi-sdk = { path = "../../sdk", features = ["wasm"] }

@@ -107,7 +107,7 @@ impl CreateSwapCallData {
             Witness::Base(Value::known(self.secret)),
             Witness::Base(Value::known(pallas::Base::from(self.amount))),
             Witness::Base(Value::known(self.token_id)),
-            Witness::Uint8(Value::known(self.side)),
+            Witness::Base(Value::known(pallas::Base::from(u64::from(self.side)))),
             Witness::Base(Value::known(self.blind)),
             Witness::Base(Value::known(pub_x)),
             Witness::Base(Value::known(pub_y)),

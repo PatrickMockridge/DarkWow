@@ -64,6 +64,10 @@ define_contract_function!(AtomicSwapFunction {
 /// Call parameters definitions
 pub mod model;
 
+/// Client API
+#[cfg(feature = "client")]
+pub mod client;
+
 /// WASM entrypoint functions
 #[cfg(not(feature = "no-entrypoint"))]
 pub mod entrypoint;
