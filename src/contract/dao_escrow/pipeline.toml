@@ -1,0 +1,5 @@
+# DAO Escrow Pipeline Manifest
+# DAO Escrow has no dependencies - deploy directly after genesis
+
+name = "dao_escrow"
+dependencies = []
