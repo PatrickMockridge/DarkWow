@@ -185,10 +185,10 @@ impl UpdateRiskV1Builder {
 /// Validate stake amount
 pub fn validate_stake_amount(amount: u64) -> Result<(), crate::error::BettingStakeError> {
     if amount < 100 {
-        return Err(crate::error::BettingStakeError::InsufficientStake)
+        return Err(crate::error::BettingStakeError::StakeTooSmall)
     }
     if amount > 1_000_000_000 {
-        return Err(crate::error::BettingStakeError::StakeAmountOverflow)
+        return Err(crate::error::BettingStakeError::ArithmeticOverflow)
     }
     Ok(())
 }
@@ -197,7 +197,7 @@ pub fn validate_stake_amount(amount: u64) -> Result<(), crate::error::BettingSta
 pub fn validate_house_edge_bp(house_edge_bp: u32) -> Result<(), crate::error::BettingStakeError> {
     if house_edge_bp > 1000 {
         // Max 10%
-        return Err(crate::error::BettingStakeError::InvalidHouseEdge)
+        return Err(crate::error::BettingStakeError::StakeExceedsMaxRatio)
     }
     Ok(())
 }
