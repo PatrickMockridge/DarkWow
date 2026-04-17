@@ -24,9 +24,10 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{pedersen_commitment_u64, poseidon_hash, Blind, PublicKey},
     pasta::pallas,
 };
+use darkfi_sdk::crypto::pasta_prelude::*;
 use rand::rngs::OsRng;
 
 /// CommitBetV1 circuit public inputs
@@ -48,12 +49,13 @@ impl CommitBetV1PublicInputs {
 pub struct CommitBetV1CallData {
     pub player_pub_x: pallas::Base,
     pub player_pub_y: pallas::Base,
-    pub bet_value: pallas::Base,
+    pub bet_value: u64,
     pub target: pallas::Base,
     pub secret_nonce: pallas::Base,
     pub blind: pallas::Base,
     pub token_id: pallas::Base,
     pub house_edge: pallas::Base,
+    pub value_blind: pallas::Scalar,
 }
 
 impl CommitBetV1CallData {
@@ -65,17 +67,19 @@ impl CommitBetV1CallData {
         blind: pallas::Base,
         token_id: pallas::Base,
         house_edge: u32,
+        value_blind: pallas::Scalar,
     ) -> Self {
         let (px, py) = player_pub.xy();
         Self {
             player_pub_x: px,
             player_pub_y: py,
-            bet_value: pallas::Base::from(bet_value),
+            bet_value,
             target: pallas::Base::from(target as u64),
             secret_nonce,
             blind,
             token_id,
             house_edge: pallas::Base::from(house_edge as u64),
+            value_blind,
         }
     }
 
@@ -83,27 +87,34 @@ impl CommitBetV1CallData {
         let bet_id = poseidon_hash([
             self.player_pub_x,
             self.player_pub_y,
-            self.bet_value,
+            pallas::Base::from(self.bet_value),
             self.target,
             self.secret_nonce,
             self.blind,
             self.token_id,
         ]);
-        CommitBetV1PublicInputs { bet_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero() }
+        // Compute value commitment: vcv = bet_value * G1 + value_blind * G2
+        let value_commit =
+            pedersen_commitment_u64(self.bet_value, Blind(self.value_blind));
+        let coords = value_commit.to_affine().coordinates().unwrap();
+        CommitBetV1PublicInputs {
+            bet_id,
+            value_commit_x: *coords.x(),
+            value_commit_y: *coords.y(),
+        }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
+            // Witnesses (must match circuit order)
             Witness::Base(Value::known(self.player_pub_x)),
             Witness::Base(Value::known(self.player_pub_y)),
-            Witness::Base(Value::known(self.bet_value)),
+            Witness::Base(Value::known(pallas::Base::from(self.bet_value))),
             Witness::Base(Value::known(self.target)),
-            Witness::Base(Value::known(self.token_id)),
-            // Private inputs
             Witness::Base(Value::known(self.secret_nonce)),
             Witness::Base(Value::known(self.blind)),
-            Witness::Base(Value::known(self.house_edge)),
+            Witness::Base(Value::known(self.token_id)),
+            Witness::Scalar(Value::known(self.value_blind)),
         ]
     }
 }

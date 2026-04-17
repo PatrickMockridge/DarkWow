@@ -26,10 +26,11 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{pasta_prelude::*, PublicKey},
+    crypto::{pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, Blind, PublicKey},
     pasta::pallas,
 };
 use darkfi_serial::Encodable;
+use rand::rngs::OsRng;
 
 use darkfi_darktoshi_dice_contract::client::{
     commit_bet_v1::{create_commit_bet_v1_proof, CommitBetV1CallData, CommitBetV1PublicInputs},
@@ -114,6 +115,9 @@ impl DarkToshiDiceHarness {
         token_id: pallas::Base,
         house_edge: u32,
     ) -> Result<CommitBetResult> {
+        // Generate random value blind for Pedersen commitment
+        let value_blind = pallas::Scalar::random(&mut OsRng);
+
         let input = CommitBetV1CallData::new(
             player_pub,
             bet_value,
@@ -122,14 +126,21 @@ impl DarkToshiDiceHarness {
             blind,
             token_id,
             house_edge,
+            value_blind,
         );
 
         let (proof, public_inputs) =
             create_commit_bet_v1_proof(&self.commit_bet_zkbin, &self.commit_bet_pk, &input)?;
 
-        // Build CommitBetParamsV1 for call_data
-        let value_commit = pallas::Point::identity(); // Placeholder for test
-        let signature = pallas::Base::zero(); // Placeholder for test
+        // Create proper value commitment using Pedersen commitment
+        let value_commit = pedersen_commitment_u64(bet_value, Blind(value_blind));
+
+        // Create signature as poseidon hash of bet parameters
+        let signature = poseidon_hash([
+            pallas::Base::from(bet_value),
+            secret_nonce,
+            blind,
+        ]);
 
         let params = CommitBetParamsV1 {
             player_pub,

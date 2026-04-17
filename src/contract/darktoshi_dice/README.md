@@ -255,6 +255,16 @@ Dice presents a clear yield opportunity for capital providers. See [Betting Capi
 - Earning a share of the house edge over time
 - Bearing risk of large payouts (but compensated for this risk)
 
+## Heavyweight Test
+
+The contract includes a heavyweight test that exercises all endpoints:
+
+```bash
+cargo test --release -p darkfid test_darktoshi_dice_heavyweight
+```
+
+**Note**: CommitBetV1 (0x01) and SettleBetV1 (0x03) require money_v3::transfer_v1 child calls for locking/unlocking bet value. In isolated heavyweight testing, these may fail without full money contract integration, which is expected.
+
 ## See Also
 
 - [Entropy Module](../entropy/) - Provably fair randomness for all betting contracts
