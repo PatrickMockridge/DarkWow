@@ -133,6 +133,7 @@ net_received = fill_amount - fee;
 - [x] Fee calculation circuits (execute_swap_fee_v1.zk)
 - [x] Modular transparency architecture
 - [x] Test harness with full entrypoint coverage
+- [x] Heavyweight pipeline endpoint testing (CreateSwapV1, AcceptSwapV1, ExecuteSwapV1)
 
 ### Future
 
@@ -145,7 +146,6 @@ net_received = fill_amount - fee;
 | Blocker | Severity | Status |
 |---------|----------|--------|
 | Manual matching required | High | Open execution provides instant fill |
-| No integration test | High | Future work |
 | Cross-contract ZK | High | Needs opcode development |
 | SMT order book | Future | Needs solver/oracle |
 

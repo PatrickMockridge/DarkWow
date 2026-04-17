@@ -271,6 +271,10 @@ async fn test_dex_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::DexHarness;
+    use darkfi_sdk::crypto::{SecretKey, pasta_prelude::PrimeField};
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
 
     let config = HarnessConfig {
         pow_target: 20,
@@ -281,11 +285,10 @@ async fn test_dex_heavyweight_impl(
         bob_url: "tcp+tls://127.0.0.1:18561".to_string(),
     };
 
-    let harness = DexHarness::new();
-    info!("DEX harness created with circuits: {:?}", harness.circuits());
+    info!("DEX harness created with circuits: {:?}", DexHarness::new().circuits());
 
     let mut pipeline =
-        HeavyweightPipeline::new(harness, "dex", config, ex).await?;
+        HeavyweightPipeline::new(DexHarness::new(), "dex", config, ex).await?;
 
     // Generate genesis blocks
     pipeline.generate_genesis_blocks(3).await?;
@@ -294,6 +297,69 @@ async fn test_dex_heavyweight_impl(
     let wasm = read_wasm("dex").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("DEX deployed: {:?}", contract_id);
+
+    // Create a new harness for proof generation (pipeline takes ownership of first harness)
+    let harness = DexHarness::new();
+
+    // Create a swap proposal
+    let secret = Base::random(&mut OsRng);
+    let offer_token = Base::from(1); // Token ID 1
+    let offer_amount = 1000u64;
+    let request_token = Base::from(2); // Token ID 2
+    let request_amount = 500u64;
+    let signature_secret = SecretKey::random(&mut OsRng);
+
+    let create_result = harness.create_swap(
+        secret,
+        offer_token,
+        offer_amount,
+        request_token,
+        request_amount,
+        signature_secret,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created swap: swap_id={}", hex::encode(create_result.public_inputs.swap_id.to_repr()));
+
+    // Execute CreateSwapV1 (0x01)
+    let tx = pipeline.exec(0x01, create_result.call_data, vec![create_result.proof]).await?;
+    info!("Executed dex::0x01 (tx: {:?})", tx.hash());
+
+    // Accept the swap
+    let acceptor_secret = Base::random(&mut OsRng);
+    let acceptor_signature_secret = SecretKey::random(&mut OsRng);
+    let swap_id = create_result.public_inputs.swap_id;
+    let proposer_lock_commitment = create_result.public_inputs.lock_commitment;
+
+    let accept_result = harness.accept_swap(
+        swap_id,
+        proposer_lock_commitment,
+        acceptor_secret,
+        offer_token,
+        offer_amount,
+        acceptor_signature_secret,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Accepted swap: swap_id={}", hex::encode(swap_id.to_repr()));
+
+    // Execute AcceptSwapV1 (0x02)
+    let tx = pipeline.exec(0x02, accept_result.call_data, vec![accept_result.proof]).await?;
+    info!("Executed dex::0x02 (tx: {:?})", tx.hash());
+
+    // Execute the swap
+    let execute_result = harness.execute_swap(
+        secret,
+        offer_token,
+        offer_amount,
+        create_result.public_inputs.lock_commitment,
+        acceptor_secret,
+        request_token,
+        request_amount,
+        accept_result.public_inputs.acceptor_lock_commitment,
+        offer_amount, // full fill
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Executed swap: swap_id={}", hex::encode(execute_result.public_inputs.swap_id.to_repr()));
+
+    // Execute ExecuteSwapV1 (0x03)
+    let tx = pipeline.exec(0x03, execute_result.call_data, vec![execute_result.proof]).await?;
+    info!("Executed dex::0x03 (tx: {:?})", tx.hash());
 
     info!("test_dex_heavyweight PASSED");
     Ok(())

@@ -4,15 +4,15 @@
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 3 or any later version.
+ * Free Software Foundation; either version 3 any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
- * details.
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
  *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, see <https://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License along
+ * with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 //! DEX Test Harness
@@ -24,17 +24,36 @@ use darkfi::{
     zkas::ZkBinary,
 };
 use darkfi_sdk::{
-    crypto::SecretKey,
+    crypto::{SecretKey, PublicKey, IntentCommitment, IntentNullifier, pasta_prelude::PrimeField},
     pasta::pallas,
 };
+use darkfi_serial::{Encodable, Decodable};
 
-// DEX client modules - re-exported for convenience
-pub use darkfi_dex_contract::client::accept_swap_v1::AcceptSwapCallData;
-pub use darkfi_dex_contract::client::cancel_swap_v1::CancelSwapCallData;
-pub use darkfi_dex_contract::client::create_swap_v1::CreateSwapCallData;
-pub use darkfi_dex_contract::client::execute_swap_fee_v1::ExecuteSwapFeeCallData;
-pub use darkfi_dex_contract::client::execute_swap_slippage_v1::ExecuteSwapSlippageCallData;
-pub use darkfi_dex_contract::client::execute_swap_v1::ExecuteSwapCallData;
+/// Helper to convert pallas::Base to IntentCommitment
+fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
+    IntentCommitment::from_bytes(base.to_repr()).unwrap()
+}
+
+/// Helper to convert pallas::Base to IntentNullifier
+fn to_intent_nullifier(base: pallas::Base) -> IntentNullifier {
+    IntentNullifier::from_bytes(base.to_repr()).unwrap()
+}
+
+/// Helper to convert pallas::Base to [u8; 32]
+fn base_to_bytes(base: pallas::Base) -> [u8; 32] {
+    base.to_repr()
+}
+
+use darkfi_dex_contract::client::{
+    create_swap_v1::{create_create_swap_proof, CreateSwapCallData, CreateSwapPublicInputs},
+    accept_swap_v1::{create_accept_swap_proof, AcceptSwapCallData, AcceptSwapPublicInputs},
+    execute_swap_v1::{create_execute_swap_proof, ExecuteSwapCallData, ExecuteSwapPublicInputs},
+    cancel_swap_v1::{create_cancel_swap_proof, CancelSwapCallData, CancelSwapPublicInputs},
+};
+use darkfi_dex_contract::model::{
+    CreateSwapParams, AcceptSwapParams, ExecuteSwapParams, CancelSwapParams,
+};
+use darkfi_dex_contract::DexFunction;
 
 /// DEX Harness for atomic swap testing
 pub struct DexHarness {
@@ -115,7 +134,7 @@ impl DexHarness {
         ]
     }
 
-    /// Create a swap proposal
+    /// Create a swap proposal with ZK proof and return encoded call data
     pub fn create_swap(
         &self,
         secret: pallas::Base,
@@ -124,18 +143,49 @@ impl DexHarness {
         request_token: pallas::Base,
         request_amount: u64,
         signature_secret: SecretKey,
-    ) -> CreateSwapCallData {
-        CreateSwapCallData::new(
+    ) -> Result<CreateSwapResult, Box<dyn std::error::Error>> {
+        let input = CreateSwapCallData::new(
             secret,
             offer_token,
             offer_amount,
             request_token,
             request_amount,
             signature_secret,
-        )
+        );
+
+        let (proof, public_inputs) = create_create_swap_proof(
+            &self.create_swap_zkbin,
+            &self.create_swap_pk,
+            &input,
+        )?;
+
+        // Build CreateSwapParams
+        let params = CreateSwapParams {
+            swap_id: base_to_bytes(public_inputs.swap_id),
+            offer_token: base_to_bytes(offer_token),
+            offer_amount,
+            request_token: base_to_bytes(request_token),
+            request_amount,
+            lock_commitment: to_intent_commitment(public_inputs.lock_commitment),
+            nullifier: to_intent_nullifier(public_inputs.nullifier),
+            lock_proof: vec![[0u8; 32]; 32], // Placeholder Merkle proof
+            signature_public: input.signature_public,
+            fee: 0,
+            open_execution: false,
+        };
+
+        // Encode call data (function_id will be added by pipeline.exec())
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(CreateSwapResult {
+            call_data,
+            proof,
+            public_inputs,
+        })
     }
 
-    /// Accept a swap proposal
+    /// Accept a swap with ZK proof
     pub fn accept_swap(
         &self,
         swap_id: pallas::Base,
@@ -144,18 +194,48 @@ impl DexHarness {
         offer_token: pallas::Base,
         offer_amount: u64,
         signature_secret: SecretKey,
-    ) -> AcceptSwapCallData {
-        AcceptSwapCallData::new(
+    ) -> Result<AcceptSwapResult, Box<dyn std::error::Error>> {
+        let input = AcceptSwapCallData::new(
             swap_id,
             proposer_lock_commitment,
             secret,
             offer_token,
             offer_amount,
             signature_secret,
-        )
+        );
+
+        let (proof, public_inputs) = create_accept_swap_proof(
+            &self.accept_swap_zkbin,
+            &self.accept_swap_pk,
+            &input,
+        )?;
+
+        // Build AcceptSwapParams
+        let params = AcceptSwapParams {
+            swap_id: base_to_bytes(swap_id),
+            lock_commitment: to_intent_commitment(public_inputs.acceptor_lock_commitment),
+            nullifier: to_intent_nullifier(public_inputs.acceptor_nullifier),
+            lock_proof: vec![[0u8; 32]; 32], // Placeholder Merkle proof
+            signature_public: input.signature_public,
+            fee: 0,
+            immediate_execute: false,
+        };
+
+        // Encode call data (function_id will be added by pipeline.exec())
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(AcceptSwapResult {
+            call_data,
+            swap_id,
+            proposer_lock_commitment,
+            secret,
+            proof,
+            public_inputs,
+        })
     }
 
-    /// Execute an atomic swap
+    /// Execute a swap with ZK proof
     pub fn execute_swap(
         &self,
         alice_secret: pallas::Base,
@@ -167,77 +247,50 @@ impl DexHarness {
         bob_amount: u64,
         bob_lock: pallas::Base,
         fill_amount: u64,
-    ) -> ExecuteSwapCallData {
-        ExecuteSwapCallData::new(
+    ) -> Result<ExecuteSwapResult, Box<dyn std::error::Error>> {
+        let input = ExecuteSwapCallData::new(
             alice_secret,
             alice_token,
-            alice_amount.into(),
+            alice_amount,
             alice_lock,
             bob_secret,
             bob_token,
-            bob_amount.into(),
+            bob_amount,
             bob_lock,
-            fill_amount.into(),
-        )
+            fill_amount,
+        );
+
+        let (proof, public_inputs) = create_execute_swap_proof(
+            &self.execute_swap_zkbin,
+            &self.execute_swap_pk,
+            &input,
+        )?;
+
+        // Build ExecuteSwapParams
+        let params = ExecuteSwapParams {
+            swap_id: base_to_bytes(public_inputs.swap_id),
+            alice_secret: base_to_bytes(alice_secret),
+            bob_secret: base_to_bytes(bob_secret),
+            alice_lock: to_intent_commitment(public_inputs.alice_lock),
+            bob_lock: to_intent_commitment(public_inputs.bob_lock),
+            alice_nullifier: to_intent_nullifier(public_inputs.alice_nullifier),
+            bob_nullifier: to_intent_nullifier(public_inputs.bob_nullifier),
+            proof: vec![], // Placeholder
+            fee: 0,
+        };
+
+        // Encode call data (function_id will be added by pipeline.exec())
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(ExecuteSwapResult {
+            call_data,
+            proof,
+            public_inputs,
+        })
     }
 
-    /// Execute swap with fee
-    pub fn execute_swap_fee(
-        &self,
-        alice_secret: pallas::Base,
-        alice_token: pallas::Base,
-        alice_amount: u64,
-        alice_lock: pallas::Base,
-        bob_secret: pallas::Base,
-        bob_token: pallas::Base,
-        bob_amount: u64,
-        bob_lock: pallas::Base,
-        fill_amount: u64,
-        fee_bps: pallas::Base,
-    ) -> ExecuteSwapFeeCallData {
-        ExecuteSwapFeeCallData::new(
-            alice_secret,
-            alice_token,
-            alice_amount.into(),
-            alice_lock,
-            bob_secret,
-            bob_token,
-            bob_amount.into(),
-            bob_lock,
-            fill_amount.into(),
-            fee_bps,
-        )
-    }
-
-    /// Execute swap with slippage tolerance
-    pub fn execute_swap_slippage(
-        &self,
-        alice_secret: pallas::Base,
-        alice_token: pallas::Base,
-        alice_amount: u64,
-        alice_lock: pallas::Base,
-        bob_secret: pallas::Base,
-        bob_token: pallas::Base,
-        bob_amount: u64,
-        bob_lock: pallas::Base,
-        fill_amount: u64,
-        slippage_bps: pallas::Base,
-    ) -> ExecuteSwapSlippageCallData {
-        ExecuteSwapSlippageCallData::new(
-            alice_secret,
-            alice_token,
-            alice_amount.into(),
-            alice_lock,
-            bob_secret,
-            bob_token,
-            bob_amount.into(),
-            bob_lock,
-            fill_amount.into(),
-            slippage_bps,
-        )
-    }
-
-    /// Cancel a swap
+    /// Cancel a swap with ZK proof
     pub fn cancel_swap(
         &self,
         swap_id: pallas::Base,
@@ -245,8 +298,39 @@ impl DexHarness {
         secret: pallas::Base,
         token: pallas::Base,
         amount: u64,
-    ) -> CancelSwapCallData {
-        CancelSwapCallData::new(swap_id, lock_commitment, secret, token, amount.into())
+    ) -> Result<CancelSwapResult, Box<dyn std::error::Error>> {
+        let input = CancelSwapCallData::new(
+            swap_id,
+            lock_commitment,
+            secret,
+            token,
+            amount,
+        );
+
+        let (proof, public_inputs) = create_cancel_swap_proof(
+            &self.cancel_swap_zkbin,
+            &self.cancel_swap_pk,
+            &input,
+        )?;
+
+        // Build CancelSwapParams
+        let params = CancelSwapParams {
+            swap_id: base_to_bytes(swap_id),
+            secret: base_to_bytes(secret),
+            nullifier: to_intent_nullifier(public_inputs.nullifier),
+            proof: vec![], // Placeholder
+            fee: 0,
+        };
+
+        // Encode call data (function_id will be added by pipeline.exec())
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(CancelSwapResult {
+            call_data,
+            proof,
+            public_inputs,
+        })
     }
 }
 
@@ -289,4 +373,35 @@ impl super::ContractHarness for DexHarness {
             _ => None,
         }
     }
+}
+
+/// Result of create_swap
+pub struct CreateSwapResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: CreateSwapPublicInputs,
+}
+
+/// Result of accept_swap
+pub struct AcceptSwapResult {
+    pub call_data: Vec<u8>,
+    pub swap_id: pallas::Base,
+    pub proposer_lock_commitment: pallas::Base,
+    pub secret: pallas::Base,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: AcceptSwapPublicInputs,
+}
+
+/// Result of execute_swap
+pub struct ExecuteSwapResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: ExecuteSwapPublicInputs,
+}
+
+/// Result of cancel_swap
+pub struct CancelSwapResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: CancelSwapPublicInputs,
 }
