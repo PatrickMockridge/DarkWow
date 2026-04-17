@@ -25,7 +25,7 @@ use darkfi::{
     zkas::ZkBinary,
 };
 use darkfi_sdk::{
-    crypto::{pasta_prelude::PrimeField, MerkleNode, PublicKey},
+    crypto::{pedersen_commitment_u64, pasta_prelude::PrimeField, Blind, MerkleNode, MerkleTree, PublicKey},
     pasta::pallas,
 };
 use darkfi_serial::Encodable;
@@ -58,6 +58,10 @@ pub struct EscrowHarness {
     refund_zkbin: ZkBinary,
     /// Refund_V1 ProvingKey
     refund_pk: ProvingKey,
+    /// Merkle tree for escrow commitments
+    merkle_tree: darkfi_sdk::crypto::MerkleTree,
+    /// List of created escrow commitments
+    created_commitments: Vec<pallas::Base>,
 }
 
 impl EscrowHarness {
@@ -95,6 +99,10 @@ impl EscrowHarness {
         let claim_pk = ProvingKey::build(claim_zkbin.k, &claim_circuit);
         let refund_pk = ProvingKey::build(refund_zkbin.k, &refund_circuit);
 
+        // Initialize merkle tree for escrow commitments
+        let merkle_tree = MerkleTree::new(1);
+        let created_commitments = vec![];
+
         Self {
             create_escrow_zkbin,
             create_escrow_pk,
@@ -104,6 +112,8 @@ impl EscrowHarness {
             claim_pk,
             refund_zkbin,
             refund_pk,
+            merkle_tree,
+            created_commitments,
         }
     }
 }
@@ -145,6 +155,11 @@ impl EscrowHarness {
             merkle_root: MerkleNode::new(pallas::Base::zero()),
         };
 
+        // Insert commitment into merkle tree for later fund proof
+        let mut tree = self.merkle_tree.clone();
+        tree.append(MerkleNode::new(public_inputs.commitment));
+        tree.mark();
+
         // Encode call data (function_id will be added by pipeline.exec())
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
@@ -152,25 +167,49 @@ impl EscrowHarness {
         Ok(CreateEscrowResult { call_data, proof, public_inputs })
     }
 
-    /// Fund an escrow (no ZK proof needed)
+    /// Fund an escrow with ZK proof
     pub fn fund_escrow(
-        &self,
+        &mut self,
         escrow_id: pallas::Base,
-        value_commit: pallas::Point,
+        value: u64,
+        value_blind: pallas::Scalar,
     ) -> Result<FundEscrowResult, Box<dyn std::error::Error>> {
+        // Add the escrow_id to our merkle tree for proof generation
+        self.merkle_tree.append(MerkleNode::new(escrow_id));
+        let leaf_pos = self.merkle_tree.mark().unwrap();
+        let merkle_leaf_pos: u32 = u64::from(leaf_pos).try_into().unwrap();
+        let merkle_path = self.merkle_tree.witness(leaf_pos, 0).unwrap();
+
+        let input = FundEscrowCallData::new(
+            value,
+            value_blind,
+            escrow_id,
+            merkle_leaf_pos,
+            merkle_path,
+        );
+
+        let (proof, public_inputs) = create_fund_escrow_proof(
+            &self.fund_zkbin,
+            &self.fund_pk,
+            &input,
+        )?;
+
+        // Compute value commitment using Pedersen commitment
+        let value_commit = pedersen_commitment_u64(value, Blind(value_blind));
+
         // Build FundEscrowParamsV1
         let params = FundEscrowParamsV1 {
             escrow_id,
             value_commit,
             merkle_proof: vec![],
-            merkle_root: MerkleNode::new(pallas::Base::zero()),
+            merkle_root: MerkleNode::new(public_inputs.merkle_root),
         };
 
         // Encode call data (function_id will be added by pipeline.exec())
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
 
-        Ok(FundEscrowResult { call_data, escrow_id })
+        Ok(FundEscrowResult { call_data, proof, public_inputs })
     }
 
     /// Claim an escrow with ZK proof
@@ -303,8 +342,10 @@ pub struct CreateEscrowResult {
 pub struct FundEscrowResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
-    /// Escrow ID
-    pub escrow_id: pallas::Base,
+    /// ZK proof
+    pub proof: darkfi::zk::Proof,
+    /// Public inputs from proof generation
+    pub public_inputs: FundEscrowPublicInputs,
 }
 
 /// Result of claim_escrow

@@ -32,9 +32,8 @@ witness "FundEscrow" {
     Scalar value_blind,
 
     # Merkle proof witnesses
-    Base merkle_path_length,
-    Base merkle_sibling_0,
-    Base merkle_sibling_1,
+    Uint32 merkle_leaf_pos,
+    MerklePath merkle_path,
 }
 
 circuit "FundEscrow" {
@@ -51,8 +50,10 @@ circuit "FundEscrow" {
     # Expose escrow_id as public input
     constrain_instance(escrow_id);
 
-    # TODO: Merkle proof verification
-    # This would verify escrow_id exists in the escrows Merkle tree
-    # merkle_root = compute_merkle_root(escrow_id, merkle_proof);
-    # constrain_instance(merkle_root);
+    # ==========================================================================
+    # Merkle proof verification
+    # ==========================================================================
+    # Verify escrow_id exists in the escrows Merkle tree
+    # Using merkle_root(leaf_pos, path, leaf) opcode
+    constrain_instance(merkle_root(merkle_leaf_pos, merkle_path, escrow_id));
 }

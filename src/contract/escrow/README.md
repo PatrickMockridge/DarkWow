@@ -115,10 +115,13 @@ Proves the escrow commitment is correctly formed:
 
 ### fund_v1.zk
 
-Proves the value commitment is valid:
-- **Public inputs**: `escrow_id`, `value_commit.x`, `value_commit.y`
-- **Private inputs**: `value`, `value_blind`
-- **Verification**: Pedersen commitment `C = value * G + value_blind * H`
+Proves the value commitment is valid and escrow exists:
+- **Public inputs**: `value_commit.x`, `value_commit.y`, `escrow_id`, `merkle_root`
+- **Private inputs**: `value`, `value_blind`, `merkle_leaf_pos`, `merkle_path`
+- **Verification**:
+  1. Pedersen commitment `C = value * G + value_blind * H`
+  2. Merkle proof: `merkle_root = merkle_root(merkle_leaf_pos, merkle_path, escrow_id)`
+- **Status**: ✅ Complete with Merkle proof verification
 
 ### claim_v1.zk
 
@@ -217,6 +220,7 @@ The escrow contract uses only opcodes that are well-established in the zkVM:
 | `ec_add` | Proven — EC point addition |
 | `constrain_eq` | Proven — equality constraint |
 | `less_than_strict` | Proven — constrain-only, sound by design |
+| `merkle_root` | Proven — Merkle tree verification |
 
 **No experimental opcodes required.** The escrow's simplicity is a strength — its security doesn't depend on unproven comparison opcodes.
 
@@ -412,11 +416,11 @@ cargo test --release -p darkfid test_escrow_heavyweight
 | Function | Opcode | Status |
 |----------|--------|--------|
 | CreateEscrowV1 | 0x01 | ✅ Tested with ZK proof |
-| FundV1 | 0x02 | ✅ Tested (no ZK proof) |
+| FundV1 | 0x02 | ✅ Tested with ZK proof (Pedersen + Merkle) |
 | ClaimV1 | 0x03 | ✅ Tested with ZK proof |
 | RefundV1 | 0x04 | ✅ Tested with ZK proof |
 
-**Note**: The test validates ZK proof generation for the escrow lifecycle. FundV1 does not require a ZK proof in the current implementation.
+**Note**: All ZK proofs verified via heavyweight test. FundV1 includes full Pedersen commitment verification and Merkle proof verification.
 
 ## References
 

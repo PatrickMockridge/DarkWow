@@ -1139,7 +1139,7 @@ async fn test_escrow_heavyweight_impl(
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::EscrowHarness;
     use darkfi_sdk::crypto::pasta_prelude::{Group, PrimeField};
-    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi_sdk::pasta::pallas::{Base, Scalar};
     use darkfi::zk::halo2::Field;
     use rand::rngs::OsRng;
 
@@ -1162,7 +1162,7 @@ async fn test_escrow_heavyweight_impl(
     info!("Escrow deployed: {:?}", contract_id);
 
     // Create a new harness for proof generation
-    let harness = EscrowHarness::spawn();
+    let mut harness = EscrowHarness::spawn();
 
     // Generate buyer and seller keypairs
     let buyer_secret = Base::random(&mut OsRng);
@@ -1190,12 +1190,17 @@ async fn test_escrow_heavyweight_impl(
     let tx = pipeline.exec(0x01, create_result.call_data, vec![create_result.proof]).await?;
     info!("Executed escrow::0x01 (tx: {:?})", tx.hash());
 
-    // FundV1 (0x02) - no ZK proof needed
-    let value_commit = darkfi_sdk::pasta::pallas::Point::identity(); // Placeholder - real test would use actual Pedersen commitment
-    let fund_result = harness.fund_escrow(create_result.public_inputs.commitment, value_commit)
-        .map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    // FundV1 (0x02) - with ZK proof
+    let value = 1000u64;
+    let value_blind = Scalar::random(&mut OsRng);
+    let fund_result = harness.fund_escrow(
+        create_result.public_inputs.commitment,
+        value,
+        value_blind,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created fund proof for escrow");
 
-    let tx = pipeline.exec(0x02, fund_result.call_data, vec![]).await?;
+    let tx = pipeline.exec(0x02, fund_result.call_data, vec![fund_result.proof]).await?;
     info!("Executed escrow::0x02 (tx: {:?})", tx.hash());
 
     // ClaimV1 (0x03) - seller claims the escrow

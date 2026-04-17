@@ -59,7 +59,7 @@ use crate::{
     EscrowFunction, ESCROW_CONTRACT_ESCROWS_TREE, ESCROW_CONTRACT_INFO_TREE,
     ESCROW_CONTRACT_NULLIFIERS_TREE, ESCROW_CONTRACT_SPENT_FLAGS_TREE,
     ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1, ESCROW_CONTRACT_ZKAS_CREATE_NS_V1,
-    ESCROW_CONTRACT_ZKAS_REFUND_NS_V1,
+    ESCROW_CONTRACT_ZKAS_FUND_NS_V1, ESCROW_CONTRACT_ZKAS_REFUND_NS_V1,
 };
 
 // ============================================================================
@@ -125,8 +125,8 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
             escrow_create_get_metadata_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::FundV1 => {
-            // Fund doesn't use ZK proofs currently
-            vec![]
+            let params: FundEscrowParamsV1 = deserialize(&self_.data[1..])?;
+            escrow_fund_get_metadata_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::ClaimV1 => {
             let params: ClaimEscrowParamsV1 = deserialize(&self_.data[1..])?;
@@ -174,6 +174,38 @@ fn escrow_create_get_metadata_v1(
             params.token_id,
             pallas::Base::from(params.timeout),
             params.commitment,
+        ],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+/// `get_metadata` for FundV1
+fn escrow_fund_get_metadata_v1(
+    _cid: ContractId,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
+    params: FundEscrowParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    // Public inputs for FundEscrow ZK proof
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+
+    // Get value commitment coordinates
+    let value_coords = params.value_commit.to_affine().coordinates().unwrap();
+
+    // FundEscrow circuit expects:
+    // - value_commit_x, value_commit_y (Pedersen commitment coordinates)
+    // - escrow_id
+    // - merkle_root
+    zk_public_inputs.push((
+        ESCROW_CONTRACT_ZKAS_FUND_NS_V1.to_string(),
+        vec![
+            *value_coords.x(),
+            *value_coords.y(),
+            params.escrow_id,
+            params.merkle_root.inner(),
         ],
     ));
 
