@@ -74,6 +74,27 @@ A flexible contract supporting three operating modes: **Escrow-Only**, **Treasur
 | Operational funding | ❌ | ✅ | ✅ |
 | Fee split | N/A | N/A | ✅ (configurable) |
 
+## Implementation Status
+
+### ZK Circuits ✅
+- `init_v1.zk` - ✅ Working
+- `pay_premium_v1.zk` - ✅ Working
+
+### Entrypoints
+| Function | Opcode | Status |
+|----------|--------|--------|
+| `InitializeV1` | `0x00` | ✅ Implemented |
+| `UpdateV1` | `0x01` | ✅ Implemented |
+| `PayPremiumV1` | `0x02` | ✅ Implemented |
+| `WithdrawV1` | `0x03` | ✅ Implemented |
+| `EndowmentWithdrawV1` | `0x04` | ✅ Implemented |
+| `TreasurySpendV1` | `0x05` | ✅ Implemented |
+| `EnableDrainProtectionV1` | `0x06` | ✅ Implemented |
+
+### Test Status
+- Heavyweight pipeline test: ✅ PASSING
+- Integration tests: ✅ PASSING
+
 ## Initialize
 
 Choose your mode when initializing:
