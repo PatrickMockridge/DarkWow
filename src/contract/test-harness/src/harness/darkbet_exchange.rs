@@ -26,15 +26,19 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{pasta_prelude::*, PublicKey},
+    crypto::{pasta_prelude::*, PublicKey, SecretKey, schnorr::Signature},
     pasta::pallas,
 };
+use darkfi_serial::Encodable;
 
 use darkfi_darkbet_exchange_contract::client::{
     add_liquidity_v1::{add_liquidity_v1_proof, AddLiquidityV1CallData, AddLiquidityV1PublicInputs},
     buy_position_v1::{buy_position_v1_proof, BuyPositionV1CallData, BuyPositionV1PublicInputs},
     claim_winnings_v1::{claim_winnings_v1_proof, ClaimWinningsV1CallData, ClaimWinningsV1PublicInputs},
     create_market_v1::{create_market_v1_proof, CreateMarketV1CallData, CreateMarketV1PublicInputs},
+};
+use darkfi_darkbet_exchange_contract::model::{
+    AddLiquidityParamsV1, BuyPositionParamsV1, ClaimWinningsParamsV1, CreateMarketParamsV1,
 };
 
 /// DarkbetExchange Harness for isolated testing
@@ -109,7 +113,7 @@ impl DarkbetExchangeHarness {
         }
     }
 
-    /// Create a new market
+    /// Create a new market (AMM mode)
     pub fn create_market(
         &self,
         creator_pub_x: pallas::Base,
@@ -117,7 +121,7 @@ impl DarkbetExchangeHarness {
         close_block: u64,
         block_height: u64,
         nonce: u64,
-    ) -> Result<(CreateMarketV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+    ) -> Result<CreateMarketResult> {
         let input = CreateMarketV1CallData {
             creator_pub_x,
             creator_pub_y,
@@ -126,7 +130,27 @@ impl DarkbetExchangeHarness {
             nonce,
         };
         let (proof, public_inputs) = create_market_v1_proof(&self.create_market_zkbin, &self.create_market_pk, &input)?;
-        Ok((public_inputs, vec![proof]))
+
+        // Build CreateMarketParamsV1 for call_data
+        let creator_secret = SecretKey::from(pallas::Base::from(creator_pub_x));
+        let creator_pub = PublicKey::from_secret(creator_secret);
+        let params = CreateMarketParamsV1 {
+            description: "Test Market".to_string(),
+            outcomes: vec!["YES".to_string(), "NO".to_string()],
+            oracle_id: pallas::Base::zero(),
+            commission_bp: 200,
+            market_type: 1, // AMM pool
+            protocol_fee: 0,
+            lp_fee: 0,
+            duration_blocks: 1000,
+            creator_pub,
+            signature: Signature::dummy(),
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(CreateMarketResult { call_data, public_inputs, proof })
     }
 
     /// Buy a position on a market
@@ -139,7 +163,7 @@ impl DarkbetExchangeHarness {
         amount: u64,
         block_height: u64,
         value_blind: pallas::Scalar,
-    ) -> Result<(BuyPositionV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+    ) -> Result<BuyPositionResult> {
         let input = BuyPositionV1CallData {
             market_id,
             owner_pub_x,
@@ -150,7 +174,24 @@ impl DarkbetExchangeHarness {
             value_blind,
         };
         let (proof, public_inputs) = buy_position_v1_proof(&self.buy_position_zkbin, &self.buy_position_pk, &input)?;
-        Ok((public_inputs, vec![proof]))
+
+        // Build BuyPositionParamsV1 for call_data
+        let owner_secret = SecretKey::from(pallas::Base::from(owner_pub_x));
+        let owner = PublicKey::from_secret(owner_secret);
+        let params = BuyPositionParamsV1 {
+            market_id,
+            outcome,
+            amount,
+            min_payout: amount,
+            owner,
+            value_commit: pallas::Point::identity(),
+            signature: Signature::dummy(),
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(BuyPositionResult { call_data, public_inputs, proof })
     }
 
     /// Claim winnings from a winning position
@@ -163,7 +204,7 @@ impl DarkbetExchangeHarness {
         winning_outcome: u8,
         block_height: u64,
         nonce: u64,
-    ) -> Result<(ClaimWinningsV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+    ) -> Result<ClaimWinningsResult> {
         let input = ClaimWinningsV1CallData {
             market_id,
             position_id,
@@ -174,7 +215,21 @@ impl DarkbetExchangeHarness {
             nonce,
         };
         let (proof, public_inputs) = claim_winnings_v1_proof(&self.claim_winnings_zkbin, &self.claim_winnings_pk, &input)?;
-        Ok((public_inputs, vec![proof]))
+
+        // Build ClaimWinningsParamsV1 for call_data
+        let owner_secret = SecretKey::from(pallas::Base::from(owner_pub_x));
+        let owner = PublicKey::from_secret(owner_secret);
+        let params = ClaimWinningsParamsV1 {
+            position_id,
+            market_id,
+            owner,
+            proof: vec![],
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(ClaimWinningsResult { call_data, public_inputs, proof })
     }
 
     /// Add liquidity to a market's AMM pool
@@ -186,7 +241,7 @@ impl DarkbetExchangeHarness {
         amount: u64,
         block_height: u64,
         value_blind: pallas::Scalar,
-    ) -> Result<(AddLiquidityV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+    ) -> Result<AddLiquidityResult> {
         let input = AddLiquidityV1CallData {
             market_id,
             provider_pub_x,
@@ -196,7 +251,22 @@ impl DarkbetExchangeHarness {
             value_blind,
         };
         let (proof, public_inputs) = add_liquidity_v1_proof(&self.add_liquidity_zkbin, &self.add_liquidity_pk, &input)?;
-        Ok((public_inputs, vec![proof]))
+
+        // Build AddLiquidityParamsV1 for call_data
+        let provider_secret = SecretKey::from(pallas::Base::from(provider_pub_x));
+        let provider = PublicKey::from_secret(provider_secret);
+        let params = AddLiquidityParamsV1 {
+            market_id,
+            amount,
+            provider,
+            value_commit: pallas::Point::identity(),
+            signature: Signature::dummy(),
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(AddLiquidityResult { call_data, public_inputs, proof })
     }
 }
 
@@ -228,4 +298,32 @@ impl super::ContractHarness for DarkbetExchangeHarness {
             _ => None,
         }
     }
+}
+
+/// Result of create_market
+pub struct CreateMarketResult {
+    pub call_data: Vec<u8>,
+    pub public_inputs: CreateMarketV1PublicInputs,
+    pub proof: darkfi::zk::Proof,
+}
+
+/// Result of buy_position
+pub struct BuyPositionResult {
+    pub call_data: Vec<u8>,
+    pub public_inputs: BuyPositionV1PublicInputs,
+    pub proof: darkfi::zk::Proof,
+}
+
+/// Result of claim_winnings
+pub struct ClaimWinningsResult {
+    pub call_data: Vec<u8>,
+    pub public_inputs: ClaimWinningsV1PublicInputs,
+    pub proof: darkfi::zk::Proof,
+}
+
+/// Result of add_liquidity
+pub struct AddLiquidityResult {
+    pub call_data: Vec<u8>,
+    pub public_inputs: AddLiquidityV1PublicInputs,
+    pub proof: darkfi::zk::Proof,
 }

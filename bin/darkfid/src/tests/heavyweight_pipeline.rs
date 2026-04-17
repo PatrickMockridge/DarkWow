@@ -811,6 +811,10 @@ async fn test_darkbet_exchange_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::DarkbetExchangeHarness;
+    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+    use darkfi_sdk::pasta::pallas::{Base, Scalar};
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
 
     let harness = DarkbetExchangeHarness::spawn();
     info!("DarkbetExchange harness created with circuits: {:?}", harness.circuits());
@@ -830,6 +834,71 @@ async fn test_darkbet_exchange_heavyweight_impl(
     let wasm = read_wasm("darkbet_exchange").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("DarkbetExchange deployed: {:?}", contract_id);
+
+    // Create a new harness for proof generation
+    let harness = DarkbetExchangeHarness::spawn();
+
+    // Create an AMM market
+    let creator_pub_x = Base::from(1);
+    let creator_pub_y = Base::from(2);
+    let close_block = 10000u64;
+    let block_height = 5000u64;
+    let nonce = 42u64;
+
+    let create_result = harness.create_market(
+        creator_pub_x,
+        creator_pub_y,
+        close_block,
+        block_height,
+        nonce,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created market: id={}", hex::encode(create_result.public_inputs.derived_market_id.to_repr()));
+
+    // Execute CreateMarketV1 (0x00)
+    let tx = pipeline.exec(0x00, create_result.call_data, vec![create_result.proof]).await?;
+    info!("Executed darkbet_exchange::0x00 (tx: {:?})", tx.hash());
+
+    // Add liquidity to the AMM pool
+    let provider_pub_x = Base::from(3);
+    let provider_pub_y = Base::from(4);
+    let amount = 1000u64;
+    let value_blind = Scalar::random(&mut OsRng);
+
+    let add_liq_result = harness.add_liquidity(
+        create_result.public_inputs.derived_market_id,
+        provider_pub_x,
+        provider_pub_y,
+        amount,
+        block_height,
+        value_blind,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Added liquidity to market");
+
+    // Execute AddLiquidityV1 (0x08)
+    let tx = pipeline.exec(0x08, add_liq_result.call_data, vec![add_liq_result.proof]).await?;
+    info!("Executed darkbet_exchange::0x08 (tx: {:?})", tx.hash());
+
+    // Buy a position (outcome 1 = "YES")
+    let owner_pub_x = Base::from(5);
+    let owner_pub_y = Base::from(6);
+    let outcome = 1u8;
+    let buy_amount = 500u64;
+    let buy_value_blind = Scalar::random(&mut OsRng);
+
+    let buy_result = harness.buy_position(
+        create_result.public_inputs.derived_market_id,
+        owner_pub_x,
+        owner_pub_y,
+        outcome,
+        buy_amount,
+        block_height,
+        buy_value_blind,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Bought position on market");
+
+    // Execute BuyPositionV1 (0x07)
+    let tx = pipeline.exec(0x07, buy_result.call_data, vec![buy_result.proof]).await?;
+    info!("Executed darkbet_exchange::0x07 (tx: {:?})", tx.hash());
 
     info!("test_darkbet_exchange_heavyweight PASSED");
     Ok(())
