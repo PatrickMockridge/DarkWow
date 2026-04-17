@@ -372,11 +372,26 @@ fn escrow_fund_process_instruction_v1(
 /// `process_instruction` for ClaimV1
 fn escrow_claim_process_instruction_v1(
     cid: ContractId,
-    _call_idx: usize,
-    _calls: Vec<DarkLeaf<ContractCall>>,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
     params: ClaimEscrowParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[ClaimV1] Processing instruction for escrow {:?}", params.escrow_id);
+
+    // Validate child call is money_v3::transfer_v1 (0x04)
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[ClaimV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(EscrowError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[ClaimV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(EscrowError::InvalidChildCall.into())
+    }
 
     // Access databases
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
@@ -416,11 +431,26 @@ fn escrow_claim_process_instruction_v1(
 /// `process_instruction` for RefundV1
 fn escrow_refund_process_instruction_v1(
     cid: ContractId,
-    _call_idx: usize,
-    _calls: Vec<DarkLeaf<ContractCall>>,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
     params: RefundEscrowParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[RefundV1] Processing instruction for escrow {:?}", params.escrow_id);
+
+    // Validate child call is money_v3::transfer_v1 (0x04)
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[RefundV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(EscrowError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[RefundV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(EscrowError::InvalidChildCall.into())
+    }
 
     // Access databases
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;

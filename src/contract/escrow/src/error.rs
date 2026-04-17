@@ -104,6 +104,12 @@ pub enum EscrowError {
 
     #[error("Cannot cancel: only buyer can cancel before funding")]
     CannotCancelNonBuyer,
+
+    #[error("Invalid children_indexes: expected 1 child call")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call: expected money_v3::transfer_v1")]
+    InvalidChildCall,
 }
 
 impl From<EscrowError> for ContractError {
@@ -137,6 +143,8 @@ impl From<EscrowError> for ContractError {
             EscrowError::InvalidTimeout => Self::Custom(26),
             EscrowError::CannotCancelFunded => Self::Custom(27),
             EscrowError::CannotCancelNonBuyer => Self::Custom(28),
+            EscrowError::InvalidChildrenIndexes => Self::Custom(29),
+            EscrowError::InvalidChildCall => Self::Custom(30),
         }
     }
 }
