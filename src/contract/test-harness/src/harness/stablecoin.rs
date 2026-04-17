@@ -24,11 +24,35 @@ use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::pasta::pallas;
-
+use darkfi_sdk::{
+    crypto::{pasta_prelude::PrimeField, IntentCommitment, IntentNullifier, BaseBlind, PublicKey},
+    pasta::pallas,
+};
+use darkfi_serial::{Encodable, Decodable};
 use darkfi_stablecoin_contract::client::{
     open_position_v1::{OpenPositionCallData, create_open_position_proof, OpenPositionPublicInputs},
+    mint_stable_v1::{MintStableCallData, create_mint_stable_proof, MintStablePublicInputs},
+    liquidate_v1::{LiquidateCallData, create_liquidate_proof, LiquidatePublicInputs},
+    governance_report_v1::{GovernanceReportCallData, create_governance_report_proof, GovernanceReportPublicInputs},
+    accrue_interest_v1::{AccrueInterestCallData, create_accrue_interest_proof, AccrueInterestPublicInputs},
 };
+use darkfi_stablecoin_contract::StablecoinFunction;
+use darkfi_stablecoin_contract::model::{DepositCollateralParams, MintStableParams, LiquidateParams, GovernanceReportParams, AccrueInterestParams};
+
+/// Helper to convert pallas::Base to IntentCommitment
+fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
+    IntentCommitment::from_bytes(base.to_repr()).unwrap()
+}
+
+/// Helper to convert pallas::Base to IntentNullifier
+fn to_intent_nullifier(base: pallas::Base) -> IntentNullifier {
+    IntentNullifier::from_bytes(base.to_repr()).unwrap()
+}
+
+/// Helper to convert pallas::Base to [u8; 32]
+fn base_to_bytes(base: pallas::Base) -> [u8; 32] {
+    base.to_repr()
+}
 
 /// Stablecoin Harness for isolated testing
 pub struct StablecoinHarness {
@@ -36,26 +60,81 @@ pub struct StablecoinHarness {
     open_position_zkbin: ZkBinary,
     /// OpenPosition_V1 ProvingKey
     open_position_pk: ProvingKey,
+    /// MintStable_V1 ZkBinary
+    mint_stable_zkbin: ZkBinary,
+    /// MintStable_V1 ProvingKey
+    mint_stable_pk: ProvingKey,
+    /// Liquidate_V1 ZkBinary
+    liquidate_zkbin: ZkBinary,
+    /// Liquidate_V1 ProvingKey
+    liquidate_pk: ProvingKey,
+    /// GovernanceReport_V1 ZkBinary
+    governance_report_zkbin: ZkBinary,
+    /// GovernanceReport_V1 ProvingKey
+    governance_report_pk: ProvingKey,
+    /// AccrueInterest_V1 ZkBinary
+    accrue_interest_zkbin: ZkBinary,
+    /// AccrueInterest_V1 ProvingKey
+    accrue_interest_pk: ProvingKey,
 }
 
 impl StablecoinHarness {
     /// Spawn a new Stablecoin harness with pre-loaded circuits
     pub fn spawn() -> Self {
         let open_bin = include_bytes!("../../../stablecoin/proof/open_position_v1.zk.bin");
+        let mint_bin = include_bytes!("../../../stablecoin/proof/mint_stable_v1.zk.bin");
+        let liquidate_bin = include_bytes!("../../../stablecoin/proof/liquidate_v1.zk.bin");
+        let governance_bin = include_bytes!("../../../stablecoin/proof/governance_report_v1.zk.bin");
+        let accrue_bin = include_bytes!("../../../stablecoin/proof/accrue_interest_v1.zk.bin");
+
         let open_position_zkbin = ZkBinary::decode(open_bin, false).unwrap();
+        let mint_stable_zkbin = ZkBinary::decode(mint_bin, false).unwrap();
+        let liquidate_zkbin = ZkBinary::decode(liquidate_bin, false).unwrap();
+        let governance_report_zkbin = ZkBinary::decode(governance_bin, false).unwrap();
+        let accrue_interest_zkbin = ZkBinary::decode(accrue_bin, false).unwrap();
+
         let open_circuit = ZkCircuit::new(
             darkfi::zk::empty_witnesses(&open_position_zkbin).unwrap(),
             &open_position_zkbin,
         );
+        let mint_circuit = ZkCircuit::new(
+            darkfi::zk::empty_witnesses(&mint_stable_zkbin).unwrap(),
+            &mint_stable_zkbin,
+        );
+        let liquidate_circuit = ZkCircuit::new(
+            darkfi::zk::empty_witnesses(&liquidate_zkbin).unwrap(),
+            &liquidate_zkbin,
+        );
+        let governance_circuit = ZkCircuit::new(
+            darkfi::zk::empty_witnesses(&governance_report_zkbin).unwrap(),
+            &governance_report_zkbin,
+        );
+        let accrue_circuit = ZkCircuit::new(
+            darkfi::zk::empty_witnesses(&accrue_interest_zkbin).unwrap(),
+            &accrue_interest_zkbin,
+        );
+
         let open_position_pk = ProvingKey::build(open_position_zkbin.k, &open_circuit);
+        let mint_stable_pk = ProvingKey::build(mint_stable_zkbin.k, &mint_circuit);
+        let liquidate_pk = ProvingKey::build(liquidate_zkbin.k, &liquidate_circuit);
+        let governance_report_pk = ProvingKey::build(governance_report_zkbin.k, &governance_circuit);
+        let accrue_interest_pk = ProvingKey::build(accrue_interest_zkbin.k, &accrue_circuit);
 
         Self {
             open_position_zkbin,
             open_position_pk,
+            mint_stable_zkbin,
+            mint_stable_pk,
+            liquidate_zkbin,
+            liquidate_pk,
+            governance_report_zkbin,
+            governance_report_pk,
+            accrue_interest_zkbin,
+            accrue_interest_pk,
         }
     }
 
-    /// Create an open position proof and return all data needed for execution
+    /// Create an open position proof (deposit collateral)
     pub fn open_position(
         &self,
         owner_secret: pallas::Base,
@@ -76,13 +155,229 @@ impl StablecoinHarness {
             &input,
         )?;
 
+        // Build DepositCollateralParams (OpenPositionV1 uses this internally)
+        let params = DepositCollateralParams {
+            deposit_commitment: to_intent_commitment(public_inputs.position_commitment),
+            collateral_amount,
+            collateral_type: darkfi_stablecoin_contract::model::CollateralType::Xmr,
+            proof: vec![],
+            fee: 0,
+            zk_public_inputs: public_inputs.to_vec(),
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
         Ok(OpenPositionResult {
+            call_data,
             position_commitment: public_inputs.position_commitment,
             position_nullifier: public_inputs.position_nullifier,
             owner_public_key: input.owner_public_key(),
             collateral_commitment: input.collateral_commitment(),
             debt_commitment: input.debt_commitment(),
             proof,
+        })
+    }
+
+    /// Mint stablecoin against a position
+    pub fn mint_stable(
+        &self,
+        owner_secret: pallas::Base,
+        old_collateral: u64,
+        old_debt: u64,
+        mint_amount: u64,
+        collateral_blind: BaseBlind,
+        debt_blind: BaseBlind,
+        old_commitment: pallas::Base,
+    ) -> Result<MintStableResult, Box<dyn std::error::Error>> {
+        let input = MintStableCallData::new(
+            owner_secret,
+            old_collateral,
+            old_debt,
+            mint_amount,
+            collateral_blind,
+            debt_blind,
+            old_commitment,
+        );
+
+        let (proof, public_inputs) = create_mint_stable_proof(
+            &self.mint_stable_zkbin,
+            &self.mint_stable_pk,
+            &input,
+        )?;
+
+        // Build MintStableParams
+        let params = MintStableParams {
+            mint_commitment: to_intent_commitment(public_inputs.new_commitment),
+            mint_amount,
+            total_debt: old_debt + mint_amount,
+            total_collateral: old_collateral,
+            proof: vec![],
+            fee: 0,
+            zk_public_inputs: public_inputs.to_vec(),
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(MintStableResult {
+            call_data,
+            proof,
+            public_inputs,
+        })
+    }
+
+    /// Liquidate an underwater position
+    pub fn liquidate(
+        &self,
+        owner_secret: pallas::Base,
+        collateral_amount: u64,
+        debt_amount: u64,
+        liquidation_penalty: u64,
+        current_price: u64,
+        liquidator_reward: u64,
+        collateral_blind: BaseBlind,
+        debt_blind: BaseBlind,
+        old_commitment: pallas::Base,
+    ) -> Result<LiquidateResult, Box<dyn std::error::Error>> {
+        let input = LiquidateCallData::new(
+            owner_secret,
+            collateral_amount,
+            debt_amount,
+            liquidation_penalty,
+            current_price,
+            liquidator_reward,
+            collateral_blind,
+            debt_blind,
+            old_commitment,
+        );
+
+        let (proof, public_inputs) = create_liquidate_proof(
+            &self.liquidate_zkbin,
+            &self.liquidate_pk,
+            &input,
+        )?;
+
+        // Build LiquidateParams (pooled debt model)
+        let params = LiquidateParams {
+            liquidation_commitment: to_intent_commitment(public_inputs.new_commitment),
+            total_debt: debt_amount,
+            total_collateral: collateral_amount,
+            current_price,
+            debt_to_cover: debt_amount,
+            proof: vec![],
+            liquidation_reward: liquidator_reward,
+            fee: 0,
+            zk_public_inputs: public_inputs.to_vec(),
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(LiquidateResult {
+            call_data,
+            proof,
+            public_inputs,
+        })
+    }
+
+    /// Governance report for precise collateral/debt ratio
+    pub fn governance_report(
+        &self,
+        reporter_secret: pallas::Base,
+        total_collateral: u64,
+        total_debt: u64,
+        rate_per_second: u64,
+        time_elapsed: u64,
+    ) -> Result<GovernanceReportResult, Box<dyn std::error::Error>> {
+        let report_timestamp = 0u64; // placeholder
+        let input = GovernanceReportCallData::new(
+            reporter_secret,
+            total_collateral,
+            total_debt,
+            rate_per_second,
+            time_elapsed,
+            report_timestamp,
+        );
+
+        let (proof, public_inputs) = create_governance_report_proof(
+            &self.governance_report_zkbin,
+            &self.governance_report_pk,
+            &input,
+        )?;
+
+        // Build GovernanceReportParams
+        // Use reporter public key from secret
+        let reporter_pub = PublicKey::from_secret(darkfi_sdk::crypto::SecretKey::from_bytes(reporter_secret.to_repr()).unwrap());
+        let (reporter_pub_x, reporter_pub_y) = reporter_pub.xy();
+
+        let params = GovernanceReportParams {
+            total_collateral,
+            total_debt,
+            collateral_ratio_bps: input.collateral_ratio_bps,
+            interest_accrued: input.interest_accrued,
+            report_timestamp,
+            reporter_pub_x: base_to_bytes(reporter_pub_x),
+            reporter_pub_y: base_to_bytes(reporter_pub_y),
+            proof: vec![],
+            fee: 0,
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(GovernanceReportResult {
+            call_data,
+            proof,
+            public_inputs,
+        })
+    }
+
+    /// Accrue interest on a position
+    pub fn accrue_interest(
+        &self,
+        accumulator_secret: pallas::Base,
+        old_total_debt: u64,
+        rate_per_second: u64,
+        time_elapsed: u64,
+    ) -> Result<AccrueInterestResult, Box<dyn std::error::Error>> {
+        let input = AccrueInterestCallData::new(
+            accumulator_secret,
+            old_total_debt,
+            rate_per_second,
+            time_elapsed,
+        );
+
+        let (proof, public_inputs) = create_accrue_interest_proof(
+            &self.accrue_interest_zkbin,
+            &self.accrue_interest_pk,
+            &input,
+        )?;
+
+        // Build AccrueInterestParams
+        // Use accumulator public key from secret
+        let accumulator_pub = PublicKey::from_secret(darkfi_sdk::crypto::SecretKey::from_bytes(accumulator_secret.to_repr()).unwrap());
+        let (accumulator_pub_x, accumulator_pub_y) = accumulator_pub.xy();
+
+        let params = AccrueInterestParams {
+            old_total_debt,
+            new_total_debt: input.compute_new_total_debt(),
+            interest_amount: input.compute_interest(),
+            rate_per_second,
+            time_elapsed,
+            accumulator_pub_x: base_to_bytes(accumulator_pub_x),
+            accumulator_pub_y: base_to_bytes(accumulator_pub_y),
+            proof: vec![],
+            fee: 0,
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(AccrueInterestResult {
+            call_data,
+            proof,
+            public_inputs,
         })
     }
 }
@@ -93,12 +388,22 @@ impl super::ContractHarness for StablecoinHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["OpenPositionV1"]
+        vec![
+            "OpenPositionV1",
+            "MintStableV1",
+            "LiquidateV1",
+            "GovernanceReportV1",
+            "AccrueInterestV1",
+        ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "OpenPositionV1" => Some(&self.open_position_zkbin),
+            "MintStableV1" => Some(&self.mint_stable_zkbin),
+            "LiquidateV1" => Some(&self.liquidate_zkbin),
+            "GovernanceReportV1" => Some(&self.governance_report_zkbin),
+            "AccrueInterestV1" => Some(&self.accrue_interest_zkbin),
             _ => None,
         }
     }
@@ -106,6 +411,10 @@ impl super::ContractHarness for StablecoinHarness {
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
             "OpenPositionV1" => Some(&self.open_position_pk),
+            "MintStableV1" => Some(&self.mint_stable_pk),
+            "LiquidateV1" => Some(&self.liquidate_pk),
+            "GovernanceReportV1" => Some(&self.governance_report_pk),
+            "AccrueInterestV1" => Some(&self.accrue_interest_pk),
             _ => None,
         }
     }
@@ -113,10 +422,39 @@ impl super::ContractHarness for StablecoinHarness {
 
 /// Result of open_position
 pub struct OpenPositionResult {
+    pub call_data: Vec<u8>,
     pub position_commitment: pallas::Base,
     pub position_nullifier: pallas::Base,
     pub owner_public_key: pallas::Base,
     pub collateral_commitment: pallas::Base,
     pub debt_commitment: pallas::Base,
     pub proof: darkfi::zk::Proof,
+}
+
+/// Result of mint_stable
+pub struct MintStableResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: MintStablePublicInputs,
+}
+
+/// Result of liquidate
+pub struct LiquidateResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: LiquidatePublicInputs,
+}
+
+/// Result of governance_report
+pub struct GovernanceReportResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: GovernanceReportPublicInputs,
+}
+
+/// Result of accrue_interest
+pub struct AccrueInterestResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: AccrueInterestPublicInputs,
 }

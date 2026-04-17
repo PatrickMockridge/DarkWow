@@ -1210,6 +1210,10 @@ async fn test_stablecoin_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::StablecoinHarness;
+    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, BaseBlind};
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
 
     let harness = StablecoinHarness::spawn();
     info!("Stablecoin harness created with circuits: {:?}", harness.circuits());
@@ -1223,11 +1227,87 @@ async fn test_stablecoin_heavyweight_impl(
         bob_url: "tcp+tls://127.0.0.1:18615".to_string(),
     };
 
-    let mut pipeline = HeavyweightPipeline::new(harness, "stablecoin", config, ex).await?;
+    let mut pipeline =
+        HeavyweightPipeline::new(StablecoinHarness::spawn(), "stablecoin", config, ex).await?;
     pipeline.generate_genesis_blocks(3).await?;
     let wasm = read_wasm("stablecoin").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("Stablecoin deployed: {:?}", contract_id);
+
+    // Create a fresh harness for proof generation
+    let harness = StablecoinHarness::spawn();
+
+    // OpenPositionV1 (0x01) - Create a collateral position
+    let owner_secret = Base::random(&mut OsRng);
+    let collateral_amount = 10000u64;
+    let debt_amount = 5000u64;
+    let collateral_type = Base::zero(); // XMR
+
+    let open_result = harness.open_position(
+        owner_secret,
+        collateral_amount,
+        debt_amount,
+        collateral_type,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created position: commitment={}", hex::encode(open_result.position_commitment.to_repr()));
+
+    // Execute OpenPositionV1 (0x01)
+    let tx = pipeline.exec(0x01, open_result.call_data, vec![open_result.proof]).await?;
+    info!("Executed stablecoin::0x01 (tx: {:?})", tx.hash());
+
+    // MintStableV1 (0x04) - Mint stablecoin against the position
+    let collateral_blind = BaseBlind::random(&mut OsRng);
+    let debt_blind = BaseBlind::random(&mut OsRng);
+    let mint_amount = 1000u64;
+
+    let mint_result = harness.mint_stable(
+        owner_secret,
+        collateral_amount,
+        debt_amount,
+        mint_amount,
+        collateral_blind,
+        debt_blind,
+        open_result.position_commitment,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Minted stable: amount={}", mint_amount);
+
+    // Execute MintStableV1 (0x04)
+    let tx = pipeline.exec(0x04, mint_result.call_data, vec![mint_result.proof]).await?;
+    info!("Executed stablecoin::0x04 (tx: {:?})", tx.hash());
+
+    // GovernanceReportV1 (0x08) - Report governance data
+    let reporter_secret = Base::random(&mut OsRng);
+    let rate_per_second = 100u64; // 1% per second (basis points)
+    let time_elapsed = 3600u64; // 1 hour
+
+    let gov_result = harness.governance_report(
+        reporter_secret,
+        collateral_amount,
+        debt_amount + mint_amount, // total debt after minting
+        rate_per_second,
+        time_elapsed,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Governance report: collateral={}, debt={}", collateral_amount, debt_amount + mint_amount);
+
+    // Execute GovernanceReportV1 (0x08)
+    let tx = pipeline.exec(0x08, gov_result.call_data, vec![gov_result.proof]).await?;
+    info!("Executed stablecoin::0x08 (tx: {:?})", tx.hash());
+
+    // AccrueInterestV1 (0x09) - Accrue interest on debt
+    let accumulator_secret = Base::random(&mut OsRng);
+    let new_debt = debt_amount + mint_amount;
+
+    let accrue_result = harness.accrue_interest(
+        accumulator_secret,
+        new_debt,
+        rate_per_second,
+        time_elapsed,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Interest accrued on position");
+
+    // Execute AccrueInterestV1 (0x09)
+    let tx = pipeline.exec(0x09, accrue_result.call_data, vec![accrue_result.proof]).await?;
+    info!("Executed stablecoin::0x09 (tx: {:?})", tx.hash());
 
     info!("test_stablecoin_heavyweight PASSED");
     Ok(())
