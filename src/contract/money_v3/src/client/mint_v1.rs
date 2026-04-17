@@ -27,6 +27,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
+    bridgetree::Hashable,
     crypto::{pasta_prelude::*, poseidon_hash, BaseBlind, Keypair, MerkleNode},
     pasta::pallas,
 };
@@ -36,13 +37,21 @@ use tracing::debug;
 use crate::model::{AuthProof, Coin, CoinAttributes, MintParamsV1, Nullifier};
 
 /// Public inputs revealed after mint proof creation
+/// Order must match what Mint_V1 circuit expects: token_root, auth_nullifier,
+/// auth_mint_public, coin, value_commit, token_id
 pub struct MintRevealed {
+    /// Merkle root of token registry
+    pub token_registry_root: pallas::Base,
+    /// Authorization nullifier
+    pub auth_nullifier: pallas::Base,
+    /// Authorization mint public key
+    pub auth_mint_public: pallas::Base,
     /// The coin commitment
     pub coin: Coin,
     /// The value commitment (Poseidon hash)
     pub value_commit: pallas::Base,
-    /// The token ID commitment
-    pub token_commit: pallas::Base,
+    /// The token ID
+    pub token_id: pallas::Base,
 }
 
 /// Input for building a mint call
@@ -115,21 +124,46 @@ impl MintCallBuilder {
         // Create token commitment
         let token_commit = poseidon_hash([self.input.token_id, self.input.coin_blind]);
 
+        // Calculate token_registry_root from Merkle path
+        let token_registry_root = {
+            let position: u64 = self.input.token_leaf_pos.into();
+            let mut current = MerkleNode::from(self.input.token_id);
+            for (level, sibling) in self.input.token_path.iter().enumerate() {
+                let level = level as u8;
+                current = if position & (1 << level) == 0 {
+                    MerkleNode::combine(level.into(), &current, sibling)
+                } else {
+                    MerkleNode::combine(level.into(), sibling, &current)
+                };
+            }
+            current
+        };
+
         // Create prover witnesses
         let prover_witnesses = vec![
+            // Authorization data from AuthTokenMintV1
+            Witness::Base(Value::known(self.input.auth_nullifier)),
+            Witness::Base(Value::known(self.input.auth_mint_public)),
+            Witness::Uint32(Value::known(self.input.token_leaf_pos)),
+            Witness::MerklePath(Value::known(self.input.token_path.clone().try_into().unwrap())),
+            // Coin attributes
             Witness::Base(Value::known(self.input.recipient)),
             Witness::Base(Value::known(pallas::Base::from(self.input.value))),
             Witness::Base(Value::known(self.input.token_id)),
             Witness::Base(Value::known(self.input.spend_hook)),
             Witness::Base(Value::known(self.input.user_data)),
             Witness::Base(Value::known(self.input.coin_blind)),
+            // Value commitment blind
             Witness::Base(Value::known(value_blind.inner())),
         ];
 
         let public_inputs = MintRevealed {
+            token_registry_root: token_registry_root.inner(),
+            auth_nullifier: self.input.auth_nullifier,
+            auth_mint_public: self.input.auth_mint_public,
             coin,
             value_commit,
-            token_commit,
+            token_id: self.input.token_id,
         };
 
         let circuit = ZkCircuit::new(prover_witnesses, &self.mint_zkbin);
@@ -140,9 +174,11 @@ impl MintCallBuilder {
                 auth_proof: AuthProof {
                     nullifier: Nullifier::from_base(self.input.auth_nullifier),
                     mint_public: self.input.auth_mint_public,
+                    token_registry_root,
                 },
                 coin,
                 value_commit,
+                token_id: self.input.token_id,
             },
             proofs: vec![proof],
         })
@@ -152,9 +188,12 @@ impl MintCallBuilder {
 impl MintRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
+            self.token_registry_root,
+            self.auth_nullifier,
+            self.auth_mint_public,
             self.coin.inner(),
             self.value_commit,
-            self.token_commit,
+            self.token_id,
         ]
     }
 }

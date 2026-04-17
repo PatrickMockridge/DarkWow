@@ -387,6 +387,10 @@ async fn test_money_v3_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::MoneyV3Harness;
+    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
 
     let config = HarnessConfig {
         pow_target: 20,
@@ -410,6 +414,56 @@ async fn test_money_v3_heavyweight_impl(
     let wasm = read_wasm("money_v3").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("MoneyV3 deployed: {:?}", contract_id);
+
+    // Create a new harness for proof generation (pipeline takes ownership of first harness)
+    let harness = MoneyV3Harness::spawn();
+
+    // Create a token
+    let token_auth_parent = Base::from(1);
+    let token_user_data = Base::from(2);
+    let token_blind = Base::from(3);
+    let recipient = Base::from(4);
+    let initial_value = 1000u64;
+    let spend_hook = Base::zero();
+    let user_data = Base::zero();
+    let coin_blind = Base::random(&mut OsRng);
+
+    let create_result = harness.create_token(
+        token_auth_parent,
+        token_user_data,
+        token_blind,
+        recipient,
+        initial_value,
+        spend_hook,
+        user_data,
+        coin_blind,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created token: token_id={}", hex::encode(create_result.token_id.to_repr()));
+
+    // Execute TokenMintV1 (0x00) and AuthTokenMintV1 (0x01) in one transaction
+    let tx = pipeline.exec(0x00, create_result.call_data.clone(), create_result.token_proofs).await?;
+    info!("Executed money_v3::0x00 (tx: {:?})", tx.hash());
+
+    let tx = pipeline.exec(0x01, create_result.call_data, create_result.auth_proofs).await?;
+    info!("Executed money_v3::0x01 (tx: {:?})", tx.hash());
+
+    // Now mint some tokens
+    let mint_result = harness.mint(
+        create_result.token_id,
+        recipient,
+        500u64,
+        create_result.auth_nullifier,
+        create_result.auth_mint_public,
+        create_result.token_registry_root,
+        spend_hook,
+        user_data,
+        Base::random(&mut OsRng),
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Minted tokens: coin={}", hex::encode(mint_result.coin.inner().to_repr()));
+
+    // Execute MintV1 (0x02)
+    let tx = pipeline.exec(0x02, mint_result.call_data, mint_result.proofs).await?;
+    info!("Executed money_v3::0x02 (tx: {:?})", tx.hash());
 
     info!("test_money_v3_heavyweight PASSED");
     Ok(())

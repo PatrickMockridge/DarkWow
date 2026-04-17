@@ -26,14 +26,16 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::pasta_prelude::*,
+    crypto::{pasta_prelude::*, poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
+use darkfi_serial::Encodable;
 
 use darkfi_dao_escrow_contract::client::{
     init_v1::{init_v1_proof, InitV1CallData, InitV1PublicInputs},
     pay_premium_v1::{pay_premium_v1_proof, PayPremiumV1CallData, PayPremiumV1PublicInputs},
 };
+use darkfi_dao_escrow_contract::model::{InitializeParamsV1, PayPremiumParamsV1};
 
 /// DaoEscrow Harness for isolated testing
 pub struct DaoEscrowHarness {
@@ -75,7 +77,7 @@ impl DaoEscrowHarness {
         owner_secret: pallas::Base,
         endowment_token_id: pallas::Base,
         bulla_blind: pallas::Base,
-    ) -> Result<(InitV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+    ) -> Result<InitializeResult> {
         let input = InitV1CallData::new(
             nullifier_k,
             dao_bulla,
@@ -84,7 +86,24 @@ impl DaoEscrowHarness {
             bulla_blind,
         );
         let (proof, public_inputs) = init_v1_proof(&self.init_zkbin, &self.init_pk, &input)?;
-        Ok((public_inputs, vec![proof]))
+
+        // Derive owner public key from secret
+        let owner_pub = PublicKey::from_secret(SecretKey::from_bytes(owner_secret.to_repr()).unwrap());
+        let (owner_pub_x, owner_pub_y) = owner_pub.xy();
+
+        // Build InitializeParamsV1 for call_data
+        let params = InitializeParamsV1 {
+            dao_bulla,
+            owner_pubkey: owner_pub,
+            endowment_token_id,
+            bulla_blind: darkfi_sdk::crypto::Blind(bulla_blind),
+            enable_drain_protection: false,
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(InitializeResult { call_data, public_inputs, proof })
     }
 
     /// Pay premium to join DAO-Escrow as member
@@ -105,7 +124,7 @@ impl DaoEscrowHarness {
         mpc_secret_3: pallas::Scalar,
         max_membership_blocks: u64,
         max_expiry: u64,
-    ) -> Result<(PayPremiumV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+    ) -> Result<PayPremiumResult> {
         let input = PayPremiumV1CallData::new(
             nullifier_k,
             dao_escrow_bulla,
@@ -124,7 +143,31 @@ impl DaoEscrowHarness {
         );
         let (proof, public_inputs) =
             pay_premium_v1_proof(&self.pay_premium_zkbin, &self.pay_premium_pk, &input)?;
-        Ok((public_inputs, vec![proof]))
+
+        // Derive member public key from secret
+        let member_pub =
+            PublicKey::from_secret(SecretKey::from_bytes(member_secret.to_repr()).unwrap());
+
+        // Build PayPremiumParamsV1 for call_data
+        // Note: value_commit uses zero placeholders because EC operations cannot be replicated outside circuit
+        let value_commit = pallas::Point::identity();
+
+        let params = PayPremiumParamsV1 {
+            dao_escrow_bulla,
+            membership_note: public_inputs.membership_note,
+            value_commit,
+            value,
+            token_id,
+            expiry,
+            membership_blind: darkfi_sdk::crypto::Blind(membership_blind),
+            value_blind: darkfi_sdk::crypto::Blind(value_blind),
+            member_pubkey: member_pub,
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(PayPremiumResult { call_data, public_inputs, proof })
     }
 }
 
@@ -152,4 +195,22 @@ impl super::ContractHarness for DaoEscrowHarness {
             _ => None,
         }
     }
+}
+
+// ============================================================================
+/// Result structs for DAO Escrow harness
+// ============================================================================
+
+/// Result of initializing a DAO-Escrow
+pub struct InitializeResult {
+    pub call_data: Vec<u8>,
+    pub public_inputs: InitV1PublicInputs,
+    pub proof: darkfi::zk::Proof,
+}
+
+/// Result of paying premium to join DAO-Escrow
+pub struct PayPremiumResult {
+    pub call_data: Vec<u8>,
+    pub public_inputs: PayPremiumV1PublicInputs,
+    pub proof: darkfi::zk::Proof,
 }

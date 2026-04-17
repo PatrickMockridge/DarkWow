@@ -260,6 +260,8 @@ pub struct MintParamsV1 {
     pub coin: Coin,
     /// Value commitment
     pub value_commit: pallas::Base,
+    /// The token ID being minted
+    pub token_id: pallas::Base,
 }
 
 /// Authorization proof from previous AuthTokenMintV1 call
@@ -269,6 +271,8 @@ pub struct AuthProof {
     pub nullifier: Nullifier,
     /// Public key of the authority
     pub mint_public: pallas::Base,
+    /// Merkle root of token registry (proves token_id is authorized)
+    pub token_registry_root: MerkleNode,
 }
 
 /// State update for MintV1

@@ -247,11 +247,16 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
+    // MintV1 circuit expects: token_root, auth_nullifier, auth_mint_public, coin, value_commit, token_id
     zk_public_inputs.push((
         MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
         vec![
+            params.auth_proof.token_registry_root.inner(),
+            params.auth_proof.nullifier.inner(),
+            params.auth_proof.mint_public,
             params.coin.inner(),
             params.value_commit,
+            params.token_id,
         ],
     ));
 

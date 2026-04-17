@@ -26,7 +26,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{pasta_prelude::*, poseidon_hash, BaseBlind, MerkleNode},
+    crypto::{pasta_prelude::*, poseidon_hash, BaseBlind, MerkleNode, MerkleTree},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -37,8 +37,9 @@ use darkfi_money_v3_contract::{
         mint_v1::{MintCallBuilder, MintCallInput},
         token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput},
     },
-    model::Coin,
+    model::{Coin, MintParamsV1},
 };
+use darkfi_serial::Encodable;
 
 // Re-export types for convenience
 pub use darkfi_money_v3_contract::client::mint_v1::MintCallInput as MintInput;
@@ -164,11 +165,19 @@ impl MoneyV3Harness {
         .build()?;
 
         // Now authorize minting for this token
+        // Build a proper Merkle tree with the token as the first leaf
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from(token_id));
+        let leaf_pos_mark = tree.mark().unwrap();
+
+        // Get Merkle path for the token leaf
+        let merkle_path = tree.witness(leaf_pos_mark, 0).unwrap();
+
         let auth_input = AuthTokenMintCallInput {
             mint_secret: token_auth_parent, // Reuse auth parent as mint secret
             token_id,
-            leaf_pos: 0,
-            merkle_path: vec![MerkleNode::from(token_id)], // Simplified
+            leaf_pos: leaf_pos_mark.into(),
+            merkle_path,
         };
 
         let auth_debris = AuthTokenMintCallBuilder {
@@ -178,13 +187,29 @@ impl MoneyV3Harness {
         }
         .build()?;
 
+        // Capture the token_registry_root for use in mint()
+        let token_registry_root = auth_debris.params.token_registry_root.inner();
+
+        // Encode TokenMintParamsV1 + AuthTokenMintParamsV1 for call_data
+        let auth_params = darkfi_money_v3_contract::model::AuthTokenMintParamsV1 {
+            nullifier: auth_debris.params.nullifier,
+            mint_public: auth_debris.params.mint_public,
+            token_id,
+            token_registry_root: auth_debris.params.token_registry_root,
+        };
+        let mut call_data = vec![];
+        token_debris.params.encode(&mut call_data)?;
+        auth_params.encode(&mut call_data)?;
+
         Ok(TokenCreationResult {
+            call_data,
             token_id,
             coin: token_debris.params.coin,
             value_commit: token_debris.params.value_commit,
             token_commit: token_debris.params.token_commit,
             auth_nullifier: auth_debris.params.nullifier.inner(),
             auth_mint_public: auth_debris.params.mint_public,
+            token_registry_root,
             auth_proofs: auth_debris.proofs,
             token_proofs: token_debris.proofs,
         })
@@ -198,15 +223,24 @@ impl MoneyV3Harness {
         value: u64,
         auth_nullifier: pallas::Base,
         auth_mint_public: pallas::Base,
+        token_registry_root: pallas::Base,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
         coin_blind: pallas::Base,
     ) -> Result<MintResult> {
+        // Build same Merkle tree structure as used in create_token
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from(token_id));
+        let leaf_pos_mark = tree.mark().unwrap();
+
+        // Get Merkle path for the token leaf
+        let token_path = tree.witness(leaf_pos_mark, 0).unwrap();
+
         let mint_input = MintCallInput {
             auth_nullifier,
             auth_mint_public,
-            token_leaf_pos: 0,
-            token_path: vec![MerkleNode::from(token_id)], // Simplified
+            token_leaf_pos: u64::from(leaf_pos_mark).try_into().unwrap(),
+            token_path,
             recipient,
             value,
             token_id,
@@ -222,7 +256,23 @@ impl MoneyV3Harness {
         }
         .build()?;
 
+        // Build MintParamsV1 with auth_proof including token_registry_root
+        let mint_params = MintParamsV1 {
+            auth_proof: darkfi_money_v3_contract::model::AuthProof {
+                nullifier: darkfi_money_v3_contract::model::Nullifier::from_base(auth_nullifier),
+                mint_public: auth_mint_public,
+                token_registry_root: darkfi_sdk::crypto::MerkleNode::from(token_registry_root),
+            },
+            coin: debris.params.coin,
+            value_commit: debris.params.value_commit,
+            token_id,
+        };
+
+        let mut call_data = vec![];
+        mint_params.encode(&mut call_data)?;
+
         Ok(MintResult {
+            call_data,
             coin: debris.params.coin,
             value_commit: debris.params.value_commit,
             proofs: debris.proofs,
@@ -267,18 +317,21 @@ impl super::ContractHarness for MoneyV3Harness {
 
 /// Result of token creation
 pub struct TokenCreationResult {
+    pub call_data: Vec<u8>,
     pub token_id: pallas::Base,
     pub coin: Coin,
     pub value_commit: pallas::Base,
     pub token_commit: pallas::Base,
     pub auth_nullifier: pallas::Base,
     pub auth_mint_public: pallas::Base,
+    pub token_registry_root: pallas::Base,
     pub auth_proofs: Vec<darkfi::zk::Proof>,
     pub token_proofs: Vec<darkfi::zk::Proof>,
 }
 
 /// Result of minting
 pub struct MintResult {
+    pub call_data: Vec<u8>,
     pub coin: Coin,
     pub value_commit: pallas::Base,
     pub proofs: Vec<darkfi::zk::Proof>,
