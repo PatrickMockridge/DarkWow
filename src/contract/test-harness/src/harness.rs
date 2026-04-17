@@ -78,7 +78,7 @@ pub use dao_escrow::DaoEscrowHarness;
 pub use darkbet_exchange::DarkbetExchangeHarness;
 pub use darktoshi_dice::DarkToshiDiceHarness;
 pub use dex::DexHarness;
-pub use escrow::EscrowHarness;
+pub use escrow::{EscrowHarness, CreateEscrowResult, FundEscrowResult, ClaimEscrowResult, RefundEscrowResult};
 pub use identity::IdentityHarness;
 pub use insurance_market::InsuranceMarketHarness;
 pub use labor_market::LaborMarketHarness;

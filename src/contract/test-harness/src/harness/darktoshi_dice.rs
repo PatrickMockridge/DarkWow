@@ -2,7 +2,7 @@
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
  *
- * This program is free software; you can redistribute it and/or
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by the
  * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
@@ -23,6 +23,20 @@
 use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
+    Result,
+};
+use darkfi_sdk::{
+    crypto::{pasta_prelude::*, PublicKey},
+    pasta::pallas,
+};
+use darkfi_serial::Encodable;
+
+use darkfi_darktoshi_dice_contract::client::{
+    commit_bet_v1::{create_commit_bet_v1_proof, CommitBetV1CallData, CommitBetV1PublicInputs},
+    settle_bet_v1::{create_settle_bet_v1_proof, SettleBetV1CallData, SettleBetV1PublicInputs},
+};
+use darkfi_darktoshi_dice_contract::model::{
+    CommitBetParamsV1, RevealRollParamsV1, SettleBetParamsV1,
 };
 
 /// DarkToshiDice Harness for isolated testing
@@ -86,4 +100,121 @@ impl super::ContractHarness for DarkToshiDiceHarness {
             _ => None,
         }
     }
+}
+
+impl DarkToshiDiceHarness {
+    /// Commit to a bet
+    pub fn commit_bet(
+        &self,
+        player_pub: PublicKey,
+        bet_value: u64,
+        target: u8,
+        secret_nonce: pallas::Base,
+        blind: pallas::Base,
+        token_id: pallas::Base,
+        house_edge: u32,
+    ) -> Result<CommitBetResult> {
+        let input = CommitBetV1CallData::new(
+            player_pub,
+            bet_value,
+            target,
+            secret_nonce,
+            blind,
+            token_id,
+            house_edge,
+        );
+
+        let (proof, public_inputs) =
+            create_commit_bet_v1_proof(&self.commit_bet_zkbin, &self.commit_bet_pk, &input)?;
+
+        // Build CommitBetParamsV1 for call_data
+        let value_commit = pallas::Point::identity(); // Placeholder for test
+        let signature = pallas::Base::zero(); // Placeholder for test
+
+        let params = CommitBetParamsV1 {
+            player_pub,
+            bet_value,
+            target,
+            secret_nonce,
+            blind,
+            token_id,
+            value_commit,
+            signature,
+            house_edge,
+            confirmation_depth: 3,
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(CommitBetResult { call_data, public_inputs, proof })
+    }
+
+    /// Reveal the roll for a committed bet (no ZK proof needed)
+    pub fn reveal_roll(
+        &self,
+        bet_id: pallas::Base,
+        secret_nonce: pallas::Base,
+    ) -> Result<RevealRollResult> {
+        let params = RevealRollParamsV1 { bet_id, secret_nonce };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(RevealRollResult { call_data })
+    }
+
+    /// Settle a bet (proves knowledge of secret without revealing it)
+    pub fn settle_bet(
+        &self,
+        bet_id: pallas::Base,
+        secret_nonce: pallas::Base,
+        player_pub_x: pallas::Base,
+        player_pub_y: pallas::Base,
+        bet_value: pallas::Base,
+        target: pallas::Base,
+        token_id: pallas::Base,
+        blind: pallas::Base,
+    ) -> Result<SettleBetResult> {
+        let input = SettleBetV1CallData::new(
+            bet_id,
+            secret_nonce,
+            player_pub_x,
+            player_pub_y,
+            bet_value,
+            target,
+            token_id,
+            blind,
+        );
+
+        let (proof, public_inputs) =
+            create_settle_bet_v1_proof(&self.settle_bet_zkbin, &self.settle_bet_pk, &input)?;
+
+        // Build SettleBetParamsV1 for call_data
+        let params = SettleBetParamsV1 { bet_id, proof: vec![] };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(SettleBetResult { call_data, public_inputs, proof })
+    }
+}
+
+/// Result of commit_bet
+pub struct CommitBetResult {
+    pub call_data: Vec<u8>,
+    pub public_inputs: CommitBetV1PublicInputs,
+    pub proof: darkfi::zk::Proof,
+}
+
+/// Result of reveal_roll
+pub struct RevealRollResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of settle_bet
+pub struct SettleBetResult {
+    pub call_data: Vec<u8>,
+    pub public_inputs: SettleBetV1PublicInputs,
+    pub proof: darkfi::zk::Proof,
 }

@@ -23,7 +23,15 @@
 use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
+    Result,
 };
+use darkfi_sdk::{
+    crypto::{pasta_prelude::*, PublicKey},
+    pasta::pallas,
+};
+use darkfi_serial::Encodable;
+
+use darkfi_slot_contract::model::{CommitSpinParamsV1, RevealSpinParamsV1};
 
 /// Slot Harness for isolated testing
 pub struct SlotHarness {
@@ -86,4 +94,71 @@ impl super::ContractHarness for SlotHarness {
             _ => None,
         }
     }
+}
+
+impl SlotHarness {
+    /// Initialize the slot contract
+    pub fn initialize(&self) -> Result<InitializeResult> {
+        // InitializeV1 takes no params, just empty call_data
+        let call_data = vec![];
+        Ok(InitializeResult { call_data })
+    }
+
+    /// Commit a spin
+    pub fn commit_spin(
+        &self,
+        player_pub: PublicKey,
+        bet_value: u64,
+        paylines_played: u32,
+        secret_nonce: pallas::Base,
+        blind: pallas::Base,
+        house_edge: u32,
+        confirmation_depth: u8,
+        token_id: pallas::Base,
+        value_commit: pallas::Point,
+    ) -> Result<CommitSpinResult> {
+        let params = CommitSpinParamsV1 {
+            player_pub,
+            bet_value,
+            paylines_played,
+            secret_nonce,
+            blind,
+            house_edge,
+            confirmation_depth,
+            token_id,
+            value_commit,
+        };
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(CommitSpinResult { call_data })
+    }
+
+    /// Reveal a spin
+    pub fn reveal_spin(
+        &self,
+        spin_id: pallas::Base,
+        secret_nonce: pallas::Base,
+    ) -> Result<RevealSpinResult> {
+        let params = RevealSpinParamsV1 { spin_id, secret_nonce };
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(RevealSpinResult { call_data })
+    }
+}
+
+/// Result of initialize
+pub struct InitializeResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of commit_spin
+pub struct CommitSpinResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of reveal_spin
+pub struct RevealSpinResult {
+    pub call_data: Vec<u8>,
 }

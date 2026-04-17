@@ -21,6 +21,7 @@
 //! This module provides the client-side API for building Dice contract calls.
 
 pub mod commit_bet_v1;
+pub mod settle_bet_v1;
 
 use darkfi_sdk::{
     crypto::{pedersen_commitment_u64, poseidon_hash, PublicKey, ScalarBlind, SecretKey},

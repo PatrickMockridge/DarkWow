@@ -597,8 +597,13 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 name = "atomic_swap_contract"
 version = "0.1.0"
 dependencies = [
+ "darkfi",
  "darkfi-sdk",
  "darkfi-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "rand 0.8.5",
+ "tracing",
 ]
 
 [[package]]
@@ -1958,14 +1963,31 @@ dependencies = [
 name = "darkfi-contract-test-harness"
 version = "0.5.0"
 dependencies = [
+ "atomic_swap_contract",
  "darkfi",
+ "darkfi-identity-contract",
  "darkfi-sdk",
  "darkfi-serial",
+ "darkfi_attestation_contract",
+ "darkfi_auction_contract",
+ "darkfi_baccarat_contract",
+ "darkfi_bridge_contract",
+ "darkfi_dao_escrow_contract",
+ "darkfi_darkbet_exchange_contract",
+ "darkfi_darktoshi_dice_contract",
  "darkfi_deployooor_contract",
  "darkfi_dex_contract",
+ "darkfi_escrow_contract",
+ "darkfi_labor_market_contract",
  "darkfi_money_v3_contract",
  "darkfi_native_token_contract",
+ "darkfi_oracle_contract",
+ "darkfi_pool_stake_contract",
+ "darkfi_slot_contract",
+ "darkfi_stablecoin_contract",
+ "darkfi_tender_contract",
  "rand 0.8.5",
+ "subscription_contract",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2154,9 +2176,12 @@ dependencies = [
 name = "darkfi_block_height_prediction_contract"
 version = "0.1.0"
 dependencies = [
+ "darkfi",
  "darkfi-sdk",
  "darkfi-serial",
  "getrandom 0.2.17",
+ "halo2_proofs",
+ "rand 0.8.5",
  "thiserror 2.0.17",
 ]
 
@@ -2188,6 +2213,7 @@ dependencies = [
  "darkfi",
  "darkfi-sdk",
  "darkfi-serial",
+ "darkfi_money_v3_contract",
  "getrandom 0.2.17",
  "rand 0.8.5",
  "serde",
@@ -2262,6 +2288,7 @@ dependencies = [
  "darkfi-contract-test-harness",
  "darkfi-sdk",
  "darkfi-serial",
+ "darkfi_money_v3_contract",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -2305,9 +2332,11 @@ dependencies = [
 name = "darkfi_insurance_market_contract"
 version = "0.1.0"
 dependencies = [
+ "darkfi",
  "darkfi-sdk",
  "darkfi-serial",
  "getrandom 0.2.17",
+ "halo2_proofs",
  "rand 0.8.5",
  "thiserror 1.0.69",
 ]
@@ -2342,6 +2371,7 @@ dependencies = [
  "darkfi-contract-test-harness",
  "darkfi-sdk",
  "darkfi-serial",
+ "darkfi_money_v3_contract",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -2488,10 +2518,15 @@ dependencies = [
 name = "darkfi_slot_contract"
 version = "0.1.0"
 dependencies = [
+ "chacha20poly1305",
+ "darkfi",
  "darkfi-sdk",
  "darkfi-serial",
+ "halo2_proofs",
  "pasta_curves",
+ "rand 0.8.5",
  "thiserror 2.0.17",
+ "tracing",
 ]
 
 [[package]]
@@ -3904,9 +3939,14 @@ dependencies = [
 name = "game_room_contract"
 version = "0.1.0"
 dependencies = [
+ "chacha20poly1305",
+ "darkfi",
  "darkfi-sdk",
  "darkfi-serial",
+ "halo2_proofs",
+ "rand 0.8.5",
  "serial_test",
+ "tracing",
 ]
 
 [[package]]
@@ -7678,6 +7718,7 @@ dependencies = [
  "darkfi",
  "darkfi-sdk",
  "darkfi-serial",
+ "halo2_proofs",
  "rand 0.8.5",
 ]
 

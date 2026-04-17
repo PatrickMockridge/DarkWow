@@ -21,7 +21,7 @@
 //! This module provides the client-side API for building Baccarat contract calls.
 
 pub mod commit_bet_v1;
-// pub mod settle_bet_v1; // TODO: settle_bet_v1.rs - needs circuit witness analysis
+pub mod settle_bet_v1;
 
 use darkfi_sdk::{
     crypto::{pedersen_commitment_u64, poseidon_hash, PublicKey, ScalarBlind, SecretKey},

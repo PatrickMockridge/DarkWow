@@ -2,7 +2,7 @@
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
  *
- * This program is free software; you can redistribute it and/or
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by the
  * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
@@ -23,6 +23,22 @@
 use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
+};
+use darkfi_sdk::{
+    crypto::{pasta_prelude::{Field, Group}, poseidon_hash, PublicKey, SecretKey},
+    crypto::schnorr::SchnorrSecret,
+    pasta::pallas,
+};
+use darkfi_serial::Encodable;
+use rand::rngs::OsRng;
+
+use darkfi_baccarat_contract::client::{
+    commit_bet_v1::{CommitBetV1CallData, CommitBetV1PublicInputs, create_commit_bet_v1_proof},
+    settle_bet_v1::{SettleBetV1CallData, SettleBetV1PublicInputs, create_settle_bet_v1_proof},
+};
+use darkfi_baccarat_contract::model::{
+    derive_bet_id, BetId, BetType, CommitBetParamsV1, DrawCardsParamsV1, HouseCloseParamsV1,
+    SettleBetParamsV1,
 };
 
 /// Baccarat Harness for isolated testing
@@ -62,6 +78,157 @@ impl BaccaratHarness {
     }
 }
 
+impl BaccaratHarness {
+    /// Create a bet commitment with ZK proof and return encoded call data
+    ///
+    /// # Arguments
+    /// * `player_pub` - Player's public key
+    /// * `bet_value` - Amount to bet
+    /// * `bet_type` - Type of bet (0=Player, 1=Banker, 2=Tie)
+    /// * `secret_nonce` - Secret nonce for randomness
+    /// * `blind` - Blinding factor
+    /// * `token_id` - Token ID being wagered
+    /// * `house_edge` - House edge in basis points
+    /// * `confirmation_depth` - Confirmation depth for randomness
+    pub fn commit_bet(
+        &self,
+        player_pub: PublicKey,
+        bet_value: u64,
+        bet_type: BetType,
+        secret_nonce: pallas::Base,
+        blind: pallas::Base,
+        token_id: pallas::Base,
+        house_edge: u32,
+        confirmation_depth: u8,
+    ) -> Result<CommitBetResult, Box<dyn std::error::Error>> {
+        let input = CommitBetV1CallData::new(
+            player_pub,
+            bet_value,
+            bet_type as u8,
+            secret_nonce,
+            blind,
+            token_id,
+            house_edge,
+            confirmation_depth,
+        );
+
+        let (proof, public_inputs) = create_commit_bet_v1_proof(
+            &self.commit_bet_zkbin,
+            &self.commit_bet_pk,
+            &input,
+        )?;
+
+        // Create value commitment using Pedersen
+        let value_commit = pallas::Point::identity(); // Placeholder - real impl would use actual commitment
+
+        // Derive bet_id
+        let bet_id = derive_bet_id(
+            &player_pub,
+            bet_type as u8,
+            bet_value,
+            secret_nonce,
+            blind,
+            token_id,
+        );
+
+        // Build CommitBetParamsV1
+        let params = CommitBetParamsV1 {
+            player_pub,
+            bet_type: bet_type as u8,
+            bet_value,
+            secret_nonce,
+            blind,
+            token_id,
+            house_edge,
+            confirmation_depth,
+            value_commit,
+        };
+
+        // Encode call data (function_id will be added by pipeline.exec())
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(CommitBetResult { call_data, proof, public_inputs, bet_id })
+    }
+
+    /// Create draw cards call data (no ZK proof needed)
+    pub fn draw_cards(
+        &self,
+        bet_id: BetId,
+        secret_nonce: pallas::Base,
+    ) -> Result<DrawCardsResult, Box<dyn std::error::Error>> {
+        let params = DrawCardsParamsV1 { bet_id, secret_nonce };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(DrawCardsResult { call_data, bet_id })
+    }
+
+    /// Create a settle bet proof and call data
+    pub fn settle_bet(
+        &self,
+        bet_id: BetId,
+        secret_nonce: pallas::Base,
+        player_pub: PublicKey,
+        bet_value: u64,
+        bet_type: BetType,
+        token_id: pallas::Base,
+        blind: pallas::Base,
+    ) -> Result<SettleBetResult, Box<dyn std::error::Error>> {
+        let input = SettleBetV1CallData::new(
+            bet_id,
+            secret_nonce,
+            player_pub,
+            bet_value,
+            bet_type as u8,
+            token_id,
+            blind,
+        );
+
+        let (proof, public_inputs) = create_settle_bet_v1_proof(
+            &self.settle_bet_zkbin,
+            &self.settle_bet_pk,
+            &input,
+        )?;
+
+        // Build SettleBetParamsV1
+        let params = SettleBetParamsV1 { bet_id };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(SettleBetResult { call_data, proof, public_inputs })
+    }
+
+    /// Create house close call data with signature authorization
+    pub fn house_close(
+        &self,
+        bet_id: BetId,
+        house_secret: SecretKey,
+        house_pub: PublicKey,
+    ) -> Result<HouseCloseResult, Box<dyn std::error::Error>> {
+        let current_block = 1000u64; // Placeholder - would be set from blockchain state
+
+        // Create signature over (bet_id, current_block)
+        let signature_msg = {
+            let mut msg = vec![];
+            bet_id.encode(&mut msg)?;
+            current_block.encode(&mut msg)?;
+            msg
+        };
+
+        let signature = house_secret.sign(&signature_msg);
+
+        let params = HouseCloseParamsV1 { bet_id, house_pub, signature };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(HouseCloseResult { call_data, bet_id })
+    }
+}
+
 impl super::ContractHarness for BaccaratHarness {
     fn name(&self) -> &str {
         "baccarat"
@@ -86,4 +253,46 @@ impl super::ContractHarness for BaccaratHarness {
             _ => None,
         }
     }
+}
+
+// ============================================================================
+// Result Structs
+// ============================================================================
+
+/// Result of commit_bet
+pub struct CommitBetResult {
+    /// Encoded call data for contract execution
+    pub call_data: Vec<u8>,
+    /// ZK proof
+    pub proof: darkfi::zk::Proof,
+    /// Public inputs from proof generation
+    pub public_inputs: CommitBetV1PublicInputs,
+    /// Derived bet ID
+    pub bet_id: BetId,
+}
+
+/// Result of draw_cards
+pub struct DrawCardsResult {
+    /// Encoded call data for contract execution
+    pub call_data: Vec<u8>,
+    /// Bet ID
+    pub bet_id: BetId,
+}
+
+/// Result of settle_bet
+pub struct SettleBetResult {
+    /// Encoded call data for contract execution
+    pub call_data: Vec<u8>,
+    /// ZK proof
+    pub proof: darkfi::zk::Proof,
+    /// Public inputs from proof generation
+    pub public_inputs: SettleBetV1PublicInputs,
+}
+
+/// Result of house_close
+pub struct HouseCloseResult {
+    /// Encoded call data for contract execution
+    pub call_data: Vec<u8>,
+    /// Bet ID
+    pub bet_id: BetId,
 }
