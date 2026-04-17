@@ -2578,6 +2578,7 @@ dependencies = [
  "darkfi-contract-test-harness",
  "darkfi-sdk",
  "darkfi-serial",
+ "darkfi_baccarat_contract",
  "darkfi_deployooor_contract",
  "darkfi_money_v2_contract",
  "darkfi_native_token_contract",
