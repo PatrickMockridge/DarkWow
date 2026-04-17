@@ -83,14 +83,12 @@ impl ClaimEscrowCallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (sx, sy) = self.seller_pubkey.xy();
         vec![
-            // Public inputs as witnesses
+            // Witnesses (must match circuit order: escrow_id, seller_secret, seller_x, seller_y, escrow_seller_commitment)
             Witness::Base(Value::known(self.escrow_id)),
-            Witness::Base(Value::known(self.escrow_seller_commitment)),
-            Witness::Base(Value::known(self.compute_nullifier())),
-            // Private inputs
             Witness::Base(Value::known(self.seller_secret)),
             Witness::Base(Value::known(sx)),
             Witness::Base(Value::known(sy)),
+            Witness::Base(Value::known(self.escrow_seller_commitment)),
         ]
     }
 }

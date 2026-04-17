@@ -106,17 +106,15 @@ impl RefundEscrowCallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (bx, by) = self.buyer_pubkey.xy();
         vec![
-            // Public inputs as witnesses
+            // Witnesses (must match circuit order: escrow_id, timeout, current_block, buyer_secret, input_buyer_pub_x, input_buyer_pub_y, escrow_buyer_pub_x, escrow_buyer_pub_y)
             Witness::Base(Value::known(self.escrow_id)),
             Witness::Base(Value::known(pallas::Base::from(self.timeout))),
             Witness::Base(Value::known(pallas::Base::from(self.current_block))),
-            Witness::Base(Value::known(self.escrow_buyer_pub_x)),
-            Witness::Base(Value::known(self.escrow_buyer_pub_y)),
-            Witness::Base(Value::known(self.compute_nullifier())),
-            // Private inputs
             Witness::Base(Value::known(self.buyer_secret)),
             Witness::Base(Value::known(bx)),
             Witness::Base(Value::known(by)),
+            Witness::Base(Value::known(self.escrow_buyer_pub_x)),
+            Witness::Base(Value::known(self.escrow_buyer_pub_y)),
         ]
     }
 }

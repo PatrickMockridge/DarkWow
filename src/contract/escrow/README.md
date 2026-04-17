@@ -400,6 +400,16 @@ Unlike other contracts, escrow has **no opcode blockers**. All required function
 
 **See**: [Escrow Contract MVP Analysis](../../../doc/src/arch/escrow.md) for the full technical analysis.
 
+## Heavyweight Test
+
+The contract includes a heavyweight test that exercises all endpoints:
+
+```bash
+cargo test --release -p darkfid test_escrow_heavyweight
+```
+
+**Note**: The test exercises CreateEscrowV1 (0x01), FundV1 (0x02), ClaimV1 (0x03), and RefundV1 (0x04) endpoints. The test validates ZK proof generation for the escrow lifecycle.
+
 ## References
 
 - [DarkFi Escrow MVP Analysis](../../../doc/src/arch/escrow.md)

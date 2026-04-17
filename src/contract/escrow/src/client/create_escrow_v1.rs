@@ -103,10 +103,7 @@ impl CreateEscrowCallData {
         let (bx, by) = self.buyer_pubkey.xy();
         let (sx, sy) = self.seller_pubkey.xy();
         vec![
-            // Public inputs as witnesses
-            Witness::Base(Value::known(self.compute_commitment())),
-            Witness::Base(Value::known(self.compute_seller_commitment())),
-            // Private inputs
+            // Witnesses (must match circuit order: buyer_pub_x, buyer_pub_y, seller_pub_x, seller_pub_y, value, token_id, timeout, buyer_secret)
             Witness::Base(Value::known(bx)),
             Witness::Base(Value::known(by)),
             Witness::Base(Value::known(sx)),
