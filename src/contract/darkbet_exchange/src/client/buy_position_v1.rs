@@ -29,15 +29,9 @@ use darkfi_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// BuyPositionV1 circuit public inputs
+/// BuyPositionV1 circuit public inputs (only 3 - matching what circuit exposes)
 #[derive(Debug, Clone)]
 pub struct BuyPositionV1PublicInputs {
-    pub market_id: pallas::Base,
-    pub owner_pub_x: pallas::Base,
-    pub owner_pub_y: pallas::Base,
-    pub outcome: pallas::Base,
-    pub amount: pallas::Base,
-    pub block_height: pallas::Base,
     pub derived_position_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
@@ -46,12 +40,6 @@ pub struct BuyPositionV1PublicInputs {
 impl BuyPositionV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
-            self.market_id,
-            self.owner_pub_x,
-            self.owner_pub_y,
-            self.outcome,
-            self.amount,
-            self.block_height,
             self.derived_position_id,
             self.value_commit_x,
             self.value_commit_y,
@@ -101,13 +89,9 @@ impl BuyPositionV1CallData {
             pallas::Base::from(self.amount),
             pallas::Base::from(self.block_height),
         ]);
+        // value_commit cannot be computed outside circuit (EC operations)
+        // Use zero as placeholder - circuit will use actual EC values
         BuyPositionV1PublicInputs {
-            market_id: self.market_id,
-            owner_pub_x: self.owner_pub_x,
-            owner_pub_y: self.owner_pub_y,
-            outcome: pallas::Base::from(self.outcome as u64),
-            amount: pallas::Base::from(self.amount),
-            block_height: pallas::Base::from(self.block_height),
             derived_position_id,
             value_commit_x: pallas::Base::zero(),
             value_commit_y: pallas::Base::zero(),

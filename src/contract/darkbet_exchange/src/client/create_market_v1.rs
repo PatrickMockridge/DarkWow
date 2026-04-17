@@ -29,27 +29,15 @@ use darkfi_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// CreateMarketV1 circuit public inputs
+/// CreateMarketV1 circuit public inputs (only 1 - matching what circuit exposes)
 #[derive(Debug, Clone)]
 pub struct CreateMarketV1PublicInputs {
-    pub creator_pub_x: pallas::Base,
-    pub creator_pub_y: pallas::Base,
-    pub close_block: pallas::Base,
-    pub block_height: pallas::Base,
-    pub nonce: pallas::Base,
     pub derived_market_id: pallas::Base,
 }
 
 impl CreateMarketV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.creator_pub_x,
-            self.creator_pub_y,
-            self.close_block,
-            self.block_height,
-            self.nonce,
-            self.derived_market_id,
-        ]
+        vec![self.derived_market_id]
     }
 }
 
@@ -75,21 +63,14 @@ impl CreateMarketV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> CreateMarketV1PublicInputs {
+        // NOTE: nonce is NOT included in the hash - the circuit doesn't use it
         let derived_market_id = poseidon_hash([
             self.creator_pub_x,
             self.creator_pub_y,
             pallas::Base::from(self.close_block),
             pallas::Base::from(self.block_height),
-            pallas::Base::from(self.nonce),
         ]);
-        CreateMarketV1PublicInputs {
-            creator_pub_x: self.creator_pub_x,
-            creator_pub_y: self.creator_pub_y,
-            close_block: pallas::Base::from(self.close_block),
-            block_height: pallas::Base::from(self.block_height),
-            nonce: pallas::Base::from(self.nonce),
-            derived_market_id,
-        }
+        CreateMarketV1PublicInputs { derived_market_id }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

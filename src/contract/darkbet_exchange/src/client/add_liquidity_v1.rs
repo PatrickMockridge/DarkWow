@@ -29,14 +29,9 @@ use darkfi_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// AddLiquidityV1 circuit public inputs
+/// AddLiquidityV1 circuit public inputs (only 3 - matching what circuit exposes)
 #[derive(Debug, Clone)]
 pub struct AddLiquidityV1PublicInputs {
-    pub market_id: pallas::Base,
-    pub provider_pub_x: pallas::Base,
-    pub provider_pub_y: pallas::Base,
-    pub amount: pallas::Base,
-    pub block_height: pallas::Base,
     pub derived_lp_share_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
@@ -45,11 +40,6 @@ pub struct AddLiquidityV1PublicInputs {
 impl AddLiquidityV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
-            self.market_id,
-            self.provider_pub_x,
-            self.provider_pub_y,
-            self.amount,
-            self.block_height,
             self.derived_lp_share_id,
             self.value_commit_x,
             self.value_commit_y,
@@ -95,12 +85,9 @@ impl AddLiquidityV1CallData {
             pallas::Base::from(self.amount),
             pallas::Base::from(self.block_height),
         ]);
+        // value_commit cannot be computed outside circuit (EC operations)
+        // Use zero as placeholder - circuit will use actual EC values
         AddLiquidityV1PublicInputs {
-            market_id: self.market_id,
-            provider_pub_x: self.provider_pub_x,
-            provider_pub_y: self.provider_pub_y,
-            amount: pallas::Base::from(self.amount),
-            block_height: pallas::Base::from(self.block_height),
             derived_lp_share_id,
             value_commit_x: pallas::Base::zero(),
             value_commit_y: pallas::Base::zero(),

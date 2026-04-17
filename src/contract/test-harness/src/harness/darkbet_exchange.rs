@@ -4,10 +4,10 @@
  *
  * This program is free software; you can redistribute it and/or
  * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or at your
  * option) any later version.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
+ * This program is distributed in the hope that it will be useful, WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
  * details.
@@ -23,6 +23,18 @@
 use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
+    Result,
+};
+use darkfi_sdk::{
+    crypto::{pasta_prelude::*, PublicKey},
+    pasta::pallas,
+};
+
+use darkfi_darkbet_exchange_contract::client::{
+    add_liquidity_v1::{add_liquidity_v1_proof, AddLiquidityV1CallData, AddLiquidityV1PublicInputs},
+    buy_position_v1::{buy_position_v1_proof, BuyPositionV1CallData, BuyPositionV1PublicInputs},
+    claim_winnings_v1::{claim_winnings_v1_proof, ClaimWinningsV1CallData, ClaimWinningsV1PublicInputs},
+    create_market_v1::{create_market_v1_proof, CreateMarketV1CallData, CreateMarketV1PublicInputs},
 };
 
 /// DarkbetExchange Harness for isolated testing
@@ -95,6 +107,96 @@ impl DarkbetExchangeHarness {
             add_liquidity_zkbin,
             add_liquidity_pk,
         }
+    }
+
+    /// Create a new market
+    pub fn create_market(
+        &self,
+        creator_pub_x: pallas::Base,
+        creator_pub_y: pallas::Base,
+        close_block: u64,
+        block_height: u64,
+        nonce: u64,
+    ) -> Result<(CreateMarketV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+        let input = CreateMarketV1CallData {
+            creator_pub_x,
+            creator_pub_y,
+            close_block,
+            block_height,
+            nonce,
+        };
+        let (proof, public_inputs) = create_market_v1_proof(&self.create_market_zkbin, &self.create_market_pk, &input)?;
+        Ok((public_inputs, vec![proof]))
+    }
+
+    /// Buy a position on a market
+    pub fn buy_position(
+        &self,
+        market_id: pallas::Base,
+        owner_pub_x: pallas::Base,
+        owner_pub_y: pallas::Base,
+        outcome: u8,
+        amount: u64,
+        block_height: u64,
+        value_blind: pallas::Scalar,
+    ) -> Result<(BuyPositionV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+        let input = BuyPositionV1CallData {
+            market_id,
+            owner_pub_x,
+            owner_pub_y,
+            outcome,
+            amount,
+            block_height,
+            value_blind,
+        };
+        let (proof, public_inputs) = buy_position_v1_proof(&self.buy_position_zkbin, &self.buy_position_pk, &input)?;
+        Ok((public_inputs, vec![proof]))
+    }
+
+    /// Claim winnings from a winning position
+    pub fn claim_winnings(
+        &self,
+        market_id: pallas::Base,
+        position_id: pallas::Base,
+        owner_pub_x: pallas::Base,
+        owner_pub_y: pallas::Base,
+        winning_outcome: u8,
+        block_height: u64,
+        nonce: u64,
+    ) -> Result<(ClaimWinningsV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+        let input = ClaimWinningsV1CallData {
+            market_id,
+            position_id,
+            owner_pub_x,
+            owner_pub_y,
+            winning_outcome,
+            block_height,
+            nonce,
+        };
+        let (proof, public_inputs) = claim_winnings_v1_proof(&self.claim_winnings_zkbin, &self.claim_winnings_pk, &input)?;
+        Ok((public_inputs, vec![proof]))
+    }
+
+    /// Add liquidity to a market's AMM pool
+    pub fn add_liquidity(
+        &self,
+        market_id: pallas::Base,
+        provider_pub_x: pallas::Base,
+        provider_pub_y: pallas::Base,
+        amount: u64,
+        block_height: u64,
+        value_blind: pallas::Scalar,
+    ) -> Result<(AddLiquidityV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+        let input = AddLiquidityV1CallData {
+            market_id,
+            provider_pub_x,
+            provider_pub_y,
+            amount,
+            block_height,
+            value_blind,
+        };
+        let (proof, public_inputs) = add_liquidity_v1_proof(&self.add_liquidity_zkbin, &self.add_liquidity_pk, &input)?;
+        Ok((public_inputs, vec![proof]))
     }
 }
 

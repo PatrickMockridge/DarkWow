@@ -29,31 +29,15 @@ use darkfi_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// ClaimWinningsV1 circuit public inputs
+/// ClaimWinningsV1 circuit public inputs (only 1 - matching what circuit exposes)
 #[derive(Debug, Clone)]
 pub struct ClaimWinningsV1PublicInputs {
-    pub market_id: pallas::Base,
-    pub position_id: pallas::Base,
-    pub owner_pub_x: pallas::Base,
-    pub owner_pub_y: pallas::Base,
-    pub winning_outcome: pallas::Base,
-    pub block_height: pallas::Base,
-    pub nonce: pallas::Base,
     pub derived_claim_id: pallas::Base,
 }
 
 impl ClaimWinningsV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.market_id,
-            self.position_id,
-            self.owner_pub_x,
-            self.owner_pub_y,
-            self.winning_outcome,
-            self.block_height,
-            self.nonce,
-            self.derived_claim_id,
-        ]
+        vec![self.derived_claim_id]
     }
 }
 
@@ -91,6 +75,7 @@ impl ClaimWinningsV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> ClaimWinningsV1PublicInputs {
+        // NOTE: nonce is NOT included in the hash - the circuit doesn't use it
         let derived_claim_id = poseidon_hash([
             self.market_id,
             self.position_id,
@@ -98,18 +83,8 @@ impl ClaimWinningsV1CallData {
             self.owner_pub_y,
             pallas::Base::from(self.winning_outcome as u64),
             pallas::Base::from(self.block_height),
-            pallas::Base::from(self.nonce),
         ]);
-        ClaimWinningsV1PublicInputs {
-            market_id: self.market_id,
-            position_id: self.position_id,
-            owner_pub_x: self.owner_pub_x,
-            owner_pub_y: self.owner_pub_y,
-            winning_outcome: pallas::Base::from(self.winning_outcome as u64),
-            block_height: pallas::Base::from(self.block_height),
-            nonce: pallas::Base::from(self.nonce),
-            derived_claim_id,
-        }
+        ClaimWinningsV1PublicInputs { derived_claim_id }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

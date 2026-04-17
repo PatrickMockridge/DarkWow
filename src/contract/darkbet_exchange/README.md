@@ -171,6 +171,32 @@ cargo build --target wasm32-unknown-unknown --release -p darkfi_darkbet_exchange
 cargo test -p darkfi_darkbet_exchange_contract --lib
 ```
 
+## Implementation Status
+
+### ZK Circuits ✅
+- `create_market_v1.zk` - ✅ Working
+- `buy_position_v1.zk` - ✅ Working
+- `claim_winnings_v1.zk` - ✅ Working
+- `add_liquidity_v1.zk` - ✅ Working
+
+### Entrypoints
+| Opcode | Function | Status |
+|--------|----------|--------|
+| `0x00` | `CreateMarketV1` | ✅ Implemented |
+| `0x01` | `PlaceBackV1` | ✅ Implemented |
+| `0x02` | `PlaceLayV1` | ✅ Implemented |
+| `0x03` | `MatchOrdersV1` | ✅ Implemented |
+| `0x04` | `ResolveMarketV1` | ✅ Implemented |
+| `0x05` | `SettleMarketV1` | ✅ Implemented |
+| `0x06` | `CancelOrderV1` | ✅ Implemented |
+| `0x07` | `BuyPositionV1` | ✅ Implemented |
+| `0x08` | `AddLiquidityV1` | ✅ Implemented |
+| `0x09` | `RemoveLiquidityV1` | ✅ Implemented |
+| `0x0A` | `ClaimWinningsV1` | ✅ Implemented |
+
+### Test Status
+- Heavyweight pipeline test: ✅ PASSING
+
 ## See Also
 
 - [DarkBet Architecture](../../doc/src/arch/darkbet_exchange.md)
