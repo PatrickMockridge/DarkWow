@@ -24,18 +24,15 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{poseidon_hash, PublicKey, pasta_prelude::PrimeField},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
 
-/// InitV1 circuit public inputs
+/// InitV1 circuit public inputs (only 2 - matching what circuit exposes)
 #[derive(Debug, Clone)]
 pub struct InitV1PublicInputs {
     pub dao_bulla: pallas::Base,
-    pub owner_pub_x: pallas::Base,
-    pub owner_pub_y: pallas::Base,
-    pub endowment_token_id: pallas::Base,
     pub endowment_bulla: pallas::Base,
 }
 
@@ -43,9 +40,6 @@ impl InitV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.dao_bulla,
-            self.owner_pub_x,
-            self.owner_pub_y,
-            self.endowment_token_id,
             self.endowment_bulla,
         ]
     }
@@ -60,22 +54,26 @@ pub struct InitV1CallData {
     pub owner_pub_x: pallas::Base,
     pub owner_pub_y: pallas::Base,
     pub endowment_token_id: pallas::Base,
-    pub bulla_blind: pallas::Scalar,
+    pub bulla_blind: pallas::Base,
 }
 
 impl InitV1CallData {
     pub fn new(
         nullifier_k: pallas::Scalar,
         dao_bulla: pallas::Base,
-        owner_public: PublicKey,
+        owner_secret: pallas::Base,
         endowment_token_id: pallas::Base,
-        bulla_blind: pallas::Scalar,
+        bulla_blind: pallas::Base,
     ) -> Self {
-        let (ox, oy) = owner_public.xy();
+        // Derive owner public key from secret
+        let owner_pub = PublicKey::from_secret(
+            darkfi_sdk::crypto::SecretKey::from_bytes(owner_secret.to_repr()).unwrap()
+        );
+        let (ox, oy) = owner_pub.xy();
         Self {
             nullifier_k,
             dao_bulla,
-            owner_secret: pallas::Base::zero(), // Must be provided separately if needed
+            owner_secret,
             owner_pub_x: ox,
             owner_pub_y: oy,
             endowment_token_id,
@@ -84,17 +82,16 @@ impl InitV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> InitV1PublicInputs {
+        // Compute endowment_bulla = H(dao_bulla, owner_pub_x, owner_pub_y, endowment_token_id, bulla_blind)
         let endowment_bulla = poseidon_hash([
             self.dao_bulla,
             self.owner_pub_x,
             self.owner_pub_y,
             self.endowment_token_id,
+            self.bulla_blind,
         ]);
         InitV1PublicInputs {
             dao_bulla: self.dao_bulla,
-            owner_pub_x: self.owner_pub_x,
-            owner_pub_y: self.owner_pub_y,
-            endowment_token_id: self.endowment_token_id,
             endowment_bulla,
         }
     }
@@ -108,7 +105,7 @@ impl InitV1CallData {
             Witness::Base(Value::known(self.owner_pub_x)),
             Witness::Base(Value::known(self.owner_pub_y)),
             Witness::Base(Value::known(self.endowment_token_id)),
-            Witness::Scalar(Value::known(self.bulla_blind)),
+            Witness::Base(Value::known(self.bulla_blind)),
         ]
     }
 }

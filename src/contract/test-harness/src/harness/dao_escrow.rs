@@ -4,10 +4,10 @@
  *
  * This program is free software; you can redistribute it and/or
  * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or at your
  * option) any later version.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
+ * This program is distributed in the hope that it will be useful, WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
  * details.
@@ -23,6 +23,16 @@
 use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
+    Result,
+};
+use darkfi_sdk::{
+    crypto::pasta_prelude::*,
+    pasta::pallas,
+};
+
+use darkfi_dao_escrow_contract::client::{
+    init_v1::{init_v1_proof, InitV1CallData, InitV1PublicInputs},
+    pay_premium_v1::{pay_premium_v1_proof, PayPremiumV1CallData, PayPremiumV1PublicInputs},
 };
 
 /// DaoEscrow Harness for isolated testing
@@ -55,6 +65,66 @@ impl DaoEscrowHarness {
         let pay_premium_pk = ProvingKey::build(pay_premium_zkbin.k, &pay_premium_circuit);
 
         Self { init_zkbin, init_pk, pay_premium_zkbin, pay_premium_pk }
+    }
+
+    /// Initialize a new DAO-Escrow
+    pub fn initialize(
+        &self,
+        nullifier_k: pallas::Scalar,
+        dao_bulla: pallas::Base,
+        owner_secret: pallas::Base,
+        endowment_token_id: pallas::Base,
+        bulla_blind: pallas::Base,
+    ) -> Result<(InitV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+        let input = InitV1CallData::new(
+            nullifier_k,
+            dao_bulla,
+            owner_secret,
+            endowment_token_id,
+            bulla_blind,
+        );
+        let (proof, public_inputs) = init_v1_proof(&self.init_zkbin, &self.init_pk, &input)?;
+        Ok((public_inputs, vec![proof]))
+    }
+
+    /// Pay premium to join DAO-Escrow as member
+    #[allow(clippy::too_many_arguments)]
+    pub fn pay_premium(
+        &self,
+        nullifier_k: pallas::Scalar,
+        dao_escrow_bulla: pallas::Base,
+        current_block: u64,
+        member_secret: pallas::Base,
+        value: u64,
+        token_id: pallas::Base,
+        expiry: u64,
+        membership_blind: pallas::Base,
+        value_blind: pallas::Scalar,
+        mpc_secret_1: pallas::Scalar,
+        mpc_secret_2: pallas::Scalar,
+        mpc_secret_3: pallas::Scalar,
+        max_membership_blocks: u64,
+        max_expiry: u64,
+    ) -> Result<(PayPremiumV1PublicInputs, Vec<darkfi::zk::Proof>)> {
+        let input = PayPremiumV1CallData::new(
+            nullifier_k,
+            dao_escrow_bulla,
+            current_block,
+            member_secret,
+            value,
+            token_id,
+            expiry,
+            membership_blind,
+            value_blind,
+            mpc_secret_1,
+            mpc_secret_2,
+            mpc_secret_3,
+            max_membership_blocks,
+            max_expiry,
+        );
+        let (proof, public_inputs) =
+            pay_premium_v1_proof(&self.pay_premium_zkbin, &self.pay_premium_pk, &input)?;
+        Ok((public_inputs, vec![proof]))
     }
 }
 

@@ -27,6 +27,7 @@ darkfi_attestation_contract = {path = "../attestation", features = ["client", "n
 darkfi-identity-contract = {path = "../identity", features = ["client", "no-entrypoint"]}
 darkfi_escrow_contract = {path = "../escrow", features = ["client", "no-entrypoint"]}
 darkfi_labor_market_contract = {path = "../labor_market", features = ["client", "no-entrypoint"]}
+darkfi_dao_escrow_contract = {path = "../dao_escrow", features = ["client", "no-entrypoint"]}
 
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }

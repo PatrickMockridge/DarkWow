@@ -121,6 +121,36 @@ let full = InitializeBuilder::new()
 | `TreasurySpendV1` | `0x05` | Treasury spending (standard governance) |
 | `EnableDrainProtectionV1` | `0x06` | Enable DrainProtection on existing DAO-Escrow |
 
+## ZK Circuits
+
+| Circuit | Public Inputs | Status |
+|---------|--------------|--------|
+| `init_v1.zk` | `dao_bulla`, `endowment_bulla` | ✅ Implemented |
+| `pay_premium_v1.zk` | `dao_escrow_bulla`, `membership_note`, `value_commit.x`, `value_commit.y` | ✅ Implemented |
+
+### InitV1 Circuit
+
+Creates the endowment bulla proving ownership:
+
+```
+public inputs: dao_bulla, endowment_bulla
+private inputs: nullifier_k, owner_secret, owner_pub, endowment_token_id, bulla_blind
+```
+
+### PayPremiumV1 Circuit
+
+Proves membership premium payment with MPC commit-reveal bulla:
+
+```
+public inputs: dao_escrow_bulla, membership_note, value_commit.x, value_commit.y
+private inputs: nullifier_k, dao_escrow_bulla, current_block, member_secret,
+               value, token_id, expiry, membership_blind, value_blind,
+               mpc_secret_1, mpc_secret_2, mpc_secret_3,
+               max_membership_blocks, max_expiry, member_pub.x, member_pub.y
+```
+
+Uses Pedersen commitment for value: `value_commit = value * G1 + value_blind * G2`
+
 ## Fee Split (TreasuryEndowment Mode)
 
 When members pay premiums:

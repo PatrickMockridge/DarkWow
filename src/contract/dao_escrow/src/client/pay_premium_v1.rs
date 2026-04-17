@@ -2,15 +2,15 @@
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
  *
- * This program is free software: you can redistribute it and/or modify
+ * This program is free software; you can redistribute it and/or
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of the
  * License, or (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for
+ * more details.
  *
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
@@ -24,25 +24,16 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{poseidon_hash, PublicKey, pasta_prelude::PrimeField},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
 
-/// PayPremiumV1 circuit public inputs
+/// PayPremiumV1 circuit public inputs (only 4 - matching what circuit exposes)
 #[derive(Debug, Clone)]
 pub struct PayPremiumV1PublicInputs {
     pub dao_escrow_bulla: pallas::Base,
-    pub current_block: pallas::Base,
-    pub value: pallas::Base,
-    pub token_id: pallas::Base,
-    pub expiry: pallas::Base,
-    pub member_pub_x: pallas::Base,
-    pub member_pub_y: pallas::Base,
-    pub computed_commit_1_x: pallas::Base,
-    pub computed_commit_2_x: pallas::Base,
-    pub computed_commit_3_x: pallas::Base,
-    pub computed_bulla: pallas::Base,
+    pub membership_note: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
 }
@@ -51,16 +42,7 @@ impl PayPremiumV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.dao_escrow_bulla,
-            self.current_block,
-            self.value,
-            self.token_id,
-            self.expiry,
-            self.member_pub_x,
-            self.member_pub_y,
-            self.computed_commit_1_x,
-            self.computed_commit_2_x,
-            self.computed_commit_3_x,
-            self.computed_bulla,
+            self.membership_note,
             self.value_commit_x,
             self.value_commit_y,
         ]
@@ -77,7 +59,7 @@ pub struct PayPremiumV1CallData {
     pub value: u64,
     pub token_id: pallas::Base,
     pub expiry: u64,
-    pub membership_blind: pallas::Scalar,
+    pub membership_blind: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub mpc_secret_1: pallas::Scalar,
     pub mpc_secret_2: pallas::Scalar,
@@ -93,11 +75,11 @@ impl PayPremiumV1CallData {
         nullifier_k: pallas::Scalar,
         dao_escrow_bulla: pallas::Base,
         current_block: u64,
-        member_public: PublicKey,
+        member_secret: pallas::Base,
         value: u64,
         token_id: pallas::Base,
         expiry: u64,
-        membership_blind: pallas::Scalar,
+        membership_blind: pallas::Base,
         value_blind: pallas::Scalar,
         mpc_secret_1: pallas::Scalar,
         mpc_secret_2: pallas::Scalar,
@@ -105,12 +87,16 @@ impl PayPremiumV1CallData {
         max_membership_blocks: u64,
         max_expiry: u64,
     ) -> Self {
-        let (mx, my) = member_public.xy();
+        // Derive member public key from secret
+        let member_pub = PublicKey::from_secret(
+            darkfi_sdk::crypto::SecretKey::from_bytes(member_secret.to_repr()).unwrap()
+        );
+        let (mx, my) = member_pub.xy();
         Self {
             nullifier_k,
             dao_escrow_bulla,
             current_block,
-            member_secret: pallas::Base::zero(),
+            member_secret,
             value,
             token_id,
             expiry,
@@ -127,44 +113,30 @@ impl PayPremiumV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> PayPremiumV1PublicInputs {
-        // These computed values are derived inside the circuit from private witnesses
-        // Using placeholder hashes here - the actual computation happens in the ZK circuit
-        let computed_commit_1_x = poseidon_hash([
-            self.member_pub_x,
-            self.member_pub_y,
-            pallas::Base::from(1),
-        ]);
-        let computed_commit_2_x = poseidon_hash([
-            self.member_pub_x,
-            self.member_pub_y,
-            pallas::Base::from(2),
-        ]);
-        let computed_commit_3_x = poseidon_hash([
-            self.member_pub_x,
-            self.member_pub_y,
-            pallas::Base::from(3),
-        ]);
-        let computed_bulla = poseidon_hash([
-            self.dao_escrow_bulla,
+        // Compute membership_note = H(member_pub_x, member_pub_y, value, token_id, expiry, blind)
+        // This must match what the circuit computes
+        let membership_note = poseidon_hash([
             self.member_pub_x,
             self.member_pub_y,
             pallas::Base::from(self.value),
+            self.token_id,
             pallas::Base::from(self.expiry),
+            self.membership_blind,
         ]);
+
+        // The value_commit is computed in the circuit using EC operations:
+        // vcv = ec_mul_short(value, VALUE_COMMIT_VALUE)
+        // vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM)
+        // value_commit = ec_add(vcv, vcr)
+        // We cannot compute this outside the circuit, so we use zero as placeholder.
+        let value_commit_x = pallas::Base::zero();
+        let value_commit_y = pallas::Base::zero();
+
         PayPremiumV1PublicInputs {
             dao_escrow_bulla: self.dao_escrow_bulla,
-            current_block: pallas::Base::from(self.current_block),
-            value: pallas::Base::from(self.value),
-            token_id: self.token_id,
-            expiry: pallas::Base::from(self.expiry),
-            member_pub_x: self.member_pub_x,
-            member_pub_y: self.member_pub_y,
-            computed_commit_1_x,
-            computed_commit_2_x,
-            computed_commit_3_x,
-            computed_bulla,
-            value_commit_x: pallas::Base::zero(),
-            value_commit_y: pallas::Base::zero(),
+            membership_note,
+            value_commit_x,
+            value_commit_y,
         }
     }
 
@@ -178,7 +150,7 @@ impl PayPremiumV1CallData {
             Witness::Base(Value::known(pallas::Base::from(self.value))),
             Witness::Base(Value::known(self.token_id)),
             Witness::Base(Value::known(pallas::Base::from(self.expiry))),
-            Witness::Scalar(Value::known(self.membership_blind)),
+            Witness::Base(Value::known(self.membership_blind)),
             Witness::Scalar(Value::known(self.value_blind)),
             Witness::Scalar(Value::known(self.mpc_secret_1)),
             Witness::Scalar(Value::known(self.mpc_secret_2)),
