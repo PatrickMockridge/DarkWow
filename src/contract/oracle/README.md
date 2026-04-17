@@ -242,7 +242,14 @@ The contract includes a heavyweight test that exercises the registration endpoin
 cargo test --release -p darkfid test_oracle_heavyweight
 ```
 
-**Note**: The test exercises RegisterOracleV1 (0x00) which requires ZK proof generation. This test validates that the oracle registration circuit compiles correctly and produces valid proofs.
+**Test Coverage**:
+| Function | Opcode | Status |
+|----------|--------|--------|
+| RegisterOracleV1 | 0x00 | ✅ Tested with ZK proof |
+| PushValueV1 | 0x01 | ⚠️ Not yet tested |
+| AttestValueV1 | 0x02 | ⚠️ Not yet tested |
+
+**Note**: The test validates that the oracle registration circuit compiles correctly and produces valid proofs. PushValueV1 and AttestValueV1 will be tested as those endpoints are finalized.
 
 ## See Also
 

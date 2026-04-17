@@ -408,7 +408,15 @@ The contract includes a heavyweight test that exercises all endpoints:
 cargo test --release -p darkfid test_escrow_heavyweight
 ```
 
-**Note**: The test exercises CreateEscrowV1 (0x01), FundV1 (0x02), ClaimV1 (0x03), and RefundV1 (0x04) endpoints. The test validates ZK proof generation for the escrow lifecycle.
+**Test Coverage**:
+| Function | Opcode | Status |
+|----------|--------|--------|
+| CreateEscrowV1 | 0x01 | ✅ Tested with ZK proof |
+| FundV1 | 0x02 | ✅ Tested (no ZK proof) |
+| ClaimV1 | 0x03 | ✅ Tested with ZK proof |
+| RefundV1 | 0x04 | ✅ Tested with ZK proof |
+
+**Note**: The test validates ZK proof generation for the escrow lifecycle. FundV1 does not require a ZK proof in the current implementation.
 
 ## References
 

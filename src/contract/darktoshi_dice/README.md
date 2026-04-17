@@ -257,13 +257,21 @@ Dice presents a clear yield opportunity for capital providers. See [Betting Capi
 
 ## Heavyweight Test
 
-The contract includes a heavyweight test that exercises all endpoints:
+The contract includes a heavyweight test that exercises two endpoints:
 
 ```bash
 cargo test --release -p darkfid test_darktoshi_dice_heavyweight
 ```
 
-**Note**: CommitBetV1 (0x01) and SettleBetV1 (0x03) require money_v3::transfer_v1 child calls for locking/unlocking bet value. In isolated heavyweight testing, these may fail without full money contract integration, which is expected.
+**Test Coverage**:
+| Function | Opcode | Status |
+|----------|--------|--------|
+| CommitBetV1 | 0x01 | ✅ Tested with ZK proof |
+| RevealRollV1 | 0x02 | ✅ Tested (no ZK proof) |
+| SettleBetV1 | 0x03 | ⚠️ Requires money_v3::transfer_v1 child call |
+| HouseCloseV1 | 0x04 | ⚠️ Requires money_v3::transfer_v1 child call |
+
+**Note**: SettleBetV1 and HouseCloseV1 require money_v3::transfer_v1 child calls for locking/unlocking bet value. These are exercised in isolated heavyweight testing but may fail without full money contract integration.
 
 ## See Also
 
