@@ -1017,6 +1017,10 @@ async fn test_identity_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::IdentityHarness;
+    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
 
     let harness = IdentityHarness::spawn();
     info!("Identity harness created with circuits: {:?}", harness.circuits());
@@ -1035,6 +1039,67 @@ async fn test_identity_heavyweight_impl(
     let wasm = read_wasm("identity").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("Identity deployed: {:?}", contract_id);
+
+    // Create a new harness for proof generation
+    let harness = IdentityHarness::spawn();
+
+    // Initialize the identity registry
+    let init_result = harness.initialize().map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Initialized identity registry");
+
+    // Execute InitializeV1 (0x00)
+    let tx = pipeline.exec(0x00, init_result.call_data, vec![]).await?;
+    info!("Executed identity::0x00 (tx: {:?})", tx.hash());
+
+    // Issue a credential to a holder
+    let issuer_secret = Base::from(1);
+    let credential_secret = Base::from(2);
+    let attribute_1 = Base::from(100);
+    let attribute_2 = Base::from(200);
+    let attribute_blind = Base::from(300);
+    let schema_hash = Base::from(0);
+    let issued_at = 1000u64;
+    let expires_at = 2000u64;
+
+    let issue_result = harness.issue_credential(
+        issuer_secret,
+        credential_secret,
+        attribute_1,
+        attribute_2,
+        attribute_blind,
+        schema_hash,
+        issued_at,
+        expires_at,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Issued credential");
+
+    // Execute IssueCredentialV1 (0x01)
+    let tx = pipeline.exec(0x01, issue_result.call_data, vec![issue_result.proof]).await?;
+    info!("Executed identity::0x01 (tx: {:?})", tx.hash());
+
+    // Create a claim from the credential
+    let attribute_value = Base::from(50);
+    let threshold = Base::from(75);
+    let commitment = issue_result.public_inputs.commitment;
+    let issuer_public = darkfi_sdk::crypto::PublicKey::from_secret(
+        darkfi_sdk::crypto::SecretKey::from_bytes(issuer_secret.to_repr()).unwrap()
+    );
+    let claim_type = Base::from(1);
+
+    let claim_result = harness.create_claim(
+        credential_secret,
+        attribute_value,
+        threshold,
+        commitment,
+        issuer_public,
+        schema_hash,
+        claim_type,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created claim");
+
+    // Execute CreateClaimV1 (0x03)
+    let tx = pipeline.exec(0x03, claim_result.call_data, vec![claim_result.proof]).await?;
+    info!("Executed identity::0x03 (tx: {:?})", tx.hash());
 
     info!("test_identity_heavyweight PASSED");
     Ok(())

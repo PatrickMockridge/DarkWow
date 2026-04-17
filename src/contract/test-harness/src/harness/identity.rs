@@ -23,19 +23,25 @@
 use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
+    Result,
 };
-use darkfi_sdk::pasta::pallas;
+use darkfi_sdk::{
+    crypto::{pasta_prelude::*, PublicKey, SecretKey},
+    pasta::pallas,
+};
+use darkfi_serial::Encodable;
 
 use darkfi_identity_contract::client::{
-    create_claim_v1::{CreateClaimCallData, create_claim_proof},
+    create_claim_v1::{CreateClaimCallData, create_claim_proof, CreateClaimPublicInputs},
     create_claim_v1_dag::{CreateClaimDagCallData, create_claim_dag_proof},
     create_claim_v1_l1::{CreateClaimL1CallData, create_claim_l1_proof},
     create_claim_v1_l1_v2::{CreateClaimL1V2CallData, create_claim_l1_v2_proof},
     create_claim_v1_multi::{CreateClaimMultiCallData, create_claim_multi_proof},
     create_claim_v1_ratio::{CreateClaimRatioCallData, create_claim_ratio_proof},
-    issue_credential_v1::{IssueCredentialCallData, create_issue_credential_proof},
+    issue_credential_v1::{IssueCredentialCallData, create_issue_credential_proof, IssueCredentialPublicInputs},
     verify_capability_v1::{VerifyCapabilityCallData, create_verify_capability_proof},
 };
+use darkfi_identity_contract::model::{CreateClaimParams, InitializeParams, IssueCredentialParams};
 
 /// Identity Harness for isolated testing
 pub struct IdentityHarness {
@@ -155,6 +161,117 @@ impl IdentityHarness {
             verify_capability_pk,
         }
     }
+
+    /// Initialize the identity contract
+    pub fn initialize(&self) -> Result<InitializeResult> {
+        // Build InitializeParams
+        let params = InitializeParams { version: 1 };
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(InitializeResult { call_data })
+    }
+
+    /// Issue a credential to a holder
+    pub fn issue_credential(
+        &self,
+        issuer_secret: pallas::Base,
+        credential_secret: pallas::Base,
+        attribute_1: pallas::Base,
+        attribute_2: pallas::Base,
+        attribute_blind: pallas::Base,
+        schema_hash: pallas::Base,
+        issued_at: u64,
+        expires_at: u64,
+    ) -> Result<IssueCredentialResult> {
+        // Derive public keys from secrets
+        let issuer_public = PublicKey::from_secret(SecretKey::from_bytes(issuer_secret.to_repr()).unwrap());
+        let holder_public = PublicKey::from_secret(SecretKey::from_bytes(credential_secret.to_repr()).unwrap());
+
+        let input = IssueCredentialCallData::new(
+            issuer_secret,
+            credential_secret,
+            attribute_1,
+            attribute_2,
+            attribute_blind,
+            issuer_public,
+            holder_public,
+            schema_hash,
+            issued_at,
+            expires_at,
+        );
+
+        let (proof, public_inputs) = create_issue_credential_proof(
+            &self.issue_credential_zkbin,
+            &self.issue_credential_pk,
+            &input,
+        )?;
+
+        // Build IssueCredentialParams
+        let (ix, iy) = issuer_public.xy();
+        let (hx, hy) = holder_public.xy();
+
+        let params = IssueCredentialParams {
+            issuer_pub: ix.to_repr(),
+            holder_pub: hx.to_repr(),
+            schema_hash: schema_hash.to_repr(),
+            encrypted_attributes: vec![],
+            commitment: darkfi_sdk::crypto::IntentCommitment::from_bytes(public_inputs.commitment.to_repr()).unwrap(),
+            nullifier: darkfi_sdk::crypto::IntentNullifier::from_bytes(public_inputs.commitment.to_repr()).unwrap(),
+            issued_at,
+            expires_at,
+            proof: vec![],
+            fee: 0,
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(IssueCredentialResult { call_data, public_inputs, proof })
+    }
+
+    /// Create a claim from a credential
+    pub fn create_claim(
+        &self,
+        credential_secret: pallas::Base,
+        attribute_value: pallas::Base,
+        threshold: pallas::Base,
+        commitment: pallas::Base,
+        issuer_public: PublicKey,
+        schema_hash: pallas::Base,
+        claim_type: pallas::Base,
+    ) -> Result<CreateClaimResult> {
+        let input = CreateClaimCallData::new(
+            credential_secret,
+            attribute_value,
+            threshold,
+            commitment,
+            issuer_public,
+            schema_hash,
+            claim_type,
+        );
+
+        let (proof, public_inputs) = create_claim_proof(
+            &self.create_claim_zkbin,
+            &self.create_claim_pk,
+            &input,
+        )?;
+
+        // Build CreateClaimParams
+        let params = CreateClaimParams {
+            nullifier: darkfi_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
+            claim_type: claim_type.to_repr().to_vec(),
+            predicate: vec![],
+            revealed_attributes: vec![],
+            proof: vec![],
+            fee: 0,
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(CreateClaimResult { call_data, public_inputs, proof })
+    }
 }
 
 impl super::ContractHarness for IdentityHarness {
@@ -202,4 +319,23 @@ impl super::ContractHarness for IdentityHarness {
             _ => None,
         }
     }
+}
+
+/// Result of initialize
+pub struct InitializeResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of issue_credential
+pub struct IssueCredentialResult {
+    pub call_data: Vec<u8>,
+    pub public_inputs: IssueCredentialPublicInputs,
+    pub proof: darkfi::zk::Proof,
+}
+
+/// Result of create_claim
+pub struct CreateClaimResult {
+    pub call_data: Vec<u8>,
+    pub public_inputs: CreateClaimPublicInputs,
+    pub proof: darkfi::zk::Proof,
 }
