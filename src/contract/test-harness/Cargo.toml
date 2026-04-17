@@ -29,6 +29,7 @@ darkfi_escrow_contract = {path = "../escrow", features = ["client", "no-entrypoi
 darkfi_labor_market_contract = {path = "../labor_market", features = ["client", "no-entrypoint"]}
 darkfi_dao_escrow_contract = {path = "../dao_escrow", features = ["client", "no-entrypoint"]}
 darkfi_darkbet_exchange_contract = {path = "../darkbet_exchange", features = ["client", "no-entrypoint"]}
+darkfi_pool_stake_contract = {path = "../pool_stake", features = ["client", "no-entrypoint"]}
 
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }

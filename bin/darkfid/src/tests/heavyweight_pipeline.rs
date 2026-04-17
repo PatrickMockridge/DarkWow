@@ -972,6 +972,10 @@ async fn test_escrow_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::EscrowHarness;
+    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
 
     let harness = EscrowHarness::spawn();
     info!("Escrow harness created with circuits: {:?}", harness.circuits());
@@ -990,6 +994,59 @@ async fn test_escrow_heavyweight_impl(
     let wasm = read_wasm("escrow").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("Escrow deployed: {:?}", contract_id);
+
+    // Create a new harness for proof generation
+    let harness = EscrowHarness::spawn();
+
+    // Generate buyer and seller keypairs
+    let buyer_secret = Base::random(&mut OsRng);
+    let seller_secret = Base::random(&mut OsRng);
+    let buyer_pubkey =
+        darkfi_sdk::crypto::PublicKey::from_secret(darkfi_sdk::crypto::SecretKey::from_bytes(buyer_secret.to_repr()).unwrap());
+    let seller_pubkey =
+        darkfi_sdk::crypto::PublicKey::from_secret(darkfi_sdk::crypto::SecretKey::from_bytes(seller_secret.to_repr()).unwrap());
+
+    let value = 1000u64;
+    let token_id = Base::from(1);
+    let timeout = 1000u64; // blocks
+
+    // CreateEscrowV1 (0x01)
+    let create_result = harness.create_escrow(
+        buyer_secret,
+        buyer_pubkey,
+        seller_pubkey,
+        value,
+        token_id,
+        timeout,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created escrow: commitment={}", hex::encode(create_result.public_inputs.commitment.to_repr()));
+
+    let tx = pipeline.exec(0x01, create_result.call_data, vec![create_result.proof]).await?;
+    info!("Executed escrow::0x01 (tx: {:?})", tx.hash());
+
+    // FundV1 (0x02) - no ZK proof needed
+    let value_commit = pallas::Point::identity(); // Placeholder - real test would use actual Pedersen commitment
+    let fund_result = harness.fund_escrow(create_result.public_inputs.commitment, value_commit)
+        .map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+
+    let tx = pipeline.exec(0x02, fund_result.call_data, vec![]).await?;
+    info!("Executed escrow::0x02 (tx: {:?})", tx.hash());
+
+    // ClaimV1 (0x03) - seller claims the escrow
+    // Note: In a real test, the value_commit would need to be a valid Pedersen commitment
+    // and the escrow state would need to be Funded
+    let recipient_pubkey = seller_pubkey; // Seller receives the funds
+    let claim_result = harness.claim_escrow(
+        create_result.public_inputs.commitment,
+        seller_secret,
+        seller_pubkey,
+        create_result.public_inputs.seller_commitment,
+        recipient_pubkey,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Claimed escrow");
+
+    let tx = pipeline.exec(0x03, claim_result.call_data, vec![claim_result.proof]).await?;
+    info!("Executed escrow::0x03 (tx: {:?})", tx.hash());
 
     info!("test_escrow_heavyweight PASSED");
     Ok(())

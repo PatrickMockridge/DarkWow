@@ -23,6 +23,16 @@
 use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
+    Result,
+};
+use darkfi_sdk::{
+    crypto::{pasta_prelude::*, PublicKey},
+    pasta::pallas,
+};
+use darkfi_serial::Encodable;
+
+use darkfi_pool_stake_contract::model::{
+    CreatePoolParamsV1, JoinPoolParamsV1, LeavePoolParamsV1,
 };
 
 /// PoolStake Harness for isolated testing
@@ -127,4 +137,59 @@ impl super::ContractHarness for PoolStakeHarness {
             _ => None,
         }
     }
+}
+
+impl PoolStakeHarness {
+    /// Create a new staking pool
+    pub fn create_pool(
+        &self,
+        owner_pub: PublicKey,
+        max_coverage_ratio: u32,
+        operator_fee_bp: u32,
+    ) -> Result<CreatePoolResult> {
+        let params = CreatePoolParamsV1 { owner_pub, max_coverage_ratio, operator_fee_bp };
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(CreatePoolResult { call_data })
+    }
+
+    /// Join an existing pool (stake funds)
+    pub fn join_pool(
+        &self,
+        pool_id: pallas::Base,
+        amount: u64,
+        relayer_id: [u8; 32],
+        member_pub: PublicKey,
+    ) -> Result<JoinPoolResult> {
+        let params = JoinPoolParamsV1 { pool_id, amount, relayer_id, member_pub };
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(JoinPoolResult { call_data })
+    }
+
+    /// Leave a pool (unstake)
+    pub fn leave_pool(&self, stake_id: pallas::Base) -> Result<LeavePoolResult> {
+        let params = LeavePoolParamsV1 { stake_id };
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(LeavePoolResult { call_data })
+    }
+}
+
+/// Result of create_pool
+pub struct CreatePoolResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of join_pool
+pub struct JoinPoolResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of leave_pool
+pub struct LeavePoolResult {
+    pub call_data: Vec<u8>,
 }
