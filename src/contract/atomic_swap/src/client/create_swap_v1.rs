@@ -101,10 +101,11 @@ impl CreateSwapCallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (pub_x, pub_y) = self.receiver_public.xy();
         vec![
-            // Private inputs (witnesses)
+            // Private inputs (witnesses) - must match circuit order
+            Witness::Base(Value::known(self.compute_swap_id())), // swap_id
+            Witness::Base(Value::known(self.secret)),
             Witness::Base(Value::known(self.hash)),
             Witness::Base(Value::known(pallas::Base::from(self.timelock))),
-            Witness::Base(Value::known(self.secret)),
             Witness::Base(Value::known(pallas::Base::from(self.amount))),
             Witness::Base(Value::known(self.token_id)),
             Witness::Base(Value::known(pallas::Base::from(u64::from(self.side)))),

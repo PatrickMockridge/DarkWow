@@ -28,11 +28,15 @@ use darkfi_sdk::{
     crypto::PublicKey,
     pasta::pallas,
 };
+use darkfi_serial::Encodable;
 
 use atomic_swap_contract::client::{
     claim_swap_v1::{ClaimSwapCallData, create_claim_proof as create_claim_swap_proof},
     create_swap_v1::{CreateSwapCallData, create_swap_proof},
     refund_swap_v1::{RefundSwapCallData, create_refund_proof as create_refund_swap_proof},
+};
+use atomic_swap_contract::model::{
+    CreateSwapParamsV1, ClaimParamsV1, RefundParamsV1,
 };
 
 /// AtomicSwap Harness for isolated testing
@@ -123,7 +127,25 @@ impl AtomicSwapHarness {
             &input,
         )?;
 
-        Ok(CreateSwapResult { swap_id: public_inputs.swap_id, proof })
+        // Build CreateSwapParamsV1
+        let params = CreateSwapParamsV1 {
+            hash,
+            timelock,
+            side,
+            external_chain: 0,
+            external_receiver: pallas::Base::zero(),
+            darkfi_receiver: receiver_public,
+            amount,
+            token_id,
+            blind,
+            commitment: public_inputs.swap_id,
+        };
+
+        // Encode call data (function_id will be added by pipeline.exec())
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(CreateSwapResult { call_data, swap_id: public_inputs.swap_id, proof })
     }
 
     /// Claim a swap
@@ -143,7 +165,18 @@ impl AtomicSwapHarness {
             &input,
         )?;
 
-        Ok(ClaimSwapResult { nullifier: public_inputs.nullifier, proof })
+        // Build ClaimParamsV1
+        let params = ClaimParamsV1 {
+            swap_id,
+            secret,
+            nullifier: public_inputs.nullifier,
+        };
+
+        // Encode call data (function_id will be added by pipeline.exec())
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(ClaimSwapResult { call_data, nullifier: public_inputs.nullifier, proof })
     }
 
     /// Refund a swap
@@ -151,6 +184,8 @@ impl AtomicSwapHarness {
         &self,
         swap_id: pallas::Base,
         secret: pallas::Base,
+        current_block: u64,
+        recipient: PublicKey,
     ) -> Result<RefundSwapResult, Box<dyn std::error::Error>> {
         let input = RefundSwapCallData::new(swap_id, secret);
 
@@ -160,7 +195,19 @@ impl AtomicSwapHarness {
             &input,
         )?;
 
-        Ok(RefundSwapResult { nullifier: public_inputs.nullifier, proof })
+        // Build RefundParamsV1
+        let params = RefundParamsV1 {
+            swap_id,
+            current_block,
+            nullifier: public_inputs.nullifier,
+            recipient,
+        };
+
+        // Encode call data (function_id will be added by pipeline.exec())
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
+        Ok(RefundSwapResult { call_data, nullifier: public_inputs.nullifier, proof })
     }
 }
 
@@ -194,18 +241,24 @@ impl super::ContractHarness for AtomicSwapHarness {
 
 /// Result of create_swap
 pub struct CreateSwapResult {
+    /// Encoded call data for contract execution
+    pub call_data: Vec<u8>,
     pub swap_id: pallas::Base,
     pub proof: darkfi::zk::Proof,
 }
 
 /// Result of claim_swap
 pub struct ClaimSwapResult {
+    /// Encoded call data for contract execution
+    pub call_data: Vec<u8>,
     pub nullifier: pallas::Base,
     pub proof: darkfi::zk::Proof,
 }
 
 /// Result of refund_swap
 pub struct RefundSwapResult {
+    /// Encoded call data for contract execution
+    pub call_data: Vec<u8>,
     pub nullifier: pallas::Base,
     pub proof: darkfi::zk::Proof,
 }

@@ -68,7 +68,7 @@ pub mod subscription;
 pub mod tender;
 
 // Re-export for convenience
-pub use atomic_swap::AtomicSwapHarness;
+pub use atomic_swap::{AtomicSwapHarness, CreateSwapResult, ClaimSwapResult, RefundSwapResult};
 pub use attestation::AttestationHarness;
 pub use auction::AuctionHarness;
 pub use baccarat::BaccaratHarness;

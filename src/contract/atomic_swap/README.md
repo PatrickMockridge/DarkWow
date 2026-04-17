@@ -125,6 +125,23 @@ Each chain verifies the hash function it understands. No oracle needed.
 
 4. **Asymmetric timelock**: The claim has no timelock (Bob claims immediately when secret is known). The refund has a timelock (Alice waits to refund). This is intentional - asymmetric timelocks prevent griefing and preserve atomicity. See [security-analysis.md Issue #6](../../../doc/src/arch/security-analysis.md).
 
+## Heavyweight Test
+
+The contract includes a heavyweight test that exercises all endpoints:
+
+```bash
+cargo test --release -p darkfid test_atomic_swap_heavyweight
+```
+
+**Test Coverage**:
+| Function | Opcode | Status |
+|----------|--------|--------|
+| CreateSwapV1 | 0x01 | ✅ Tested with ZK proof |
+| ClaimV1 | 0x02 | ✅ Tested with ZK proof |
+| RefundV1 | 0x03 | ⚠️ Not executed (requires timelock expiry) |
+
+**Note**: RefundV1 is not executed in the standalone test because it requires waiting for the timelock to expire. The ZK proof is still generated and verified to work correctly.
+
 ## See Also
 
 - [Atomic Swap Architecture Doc](../../doc/src/arch/atomic_swap.md)
