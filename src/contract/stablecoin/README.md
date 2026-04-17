@@ -159,12 +159,13 @@ Pooled Debt:   Pool shortfall → Simple ZK → No position data leaked
 | Function | ID | Description | Cost |
 |----------|-----|-------------|------|
 | `InitializeV1` | 0x00 | Initialize pool with model and collateral parameters | Medium |
-| `DepositCollateralV1` | 0x01 | Deposit collateral into global pool | Cheap |
-| `WithdrawCollateralV1` | 0x02 | Withdraw collateral (if ratio allows) | Cheap |
-| `MintStableV1` | 0x03 | Mint stablecoins against pool | Cheap |
-| `RepayStableV1` | 0x04 | Repay debt to reduce debt share | Cheap |
-| `LiquidateV1` | 0x05 | Liquidate undercollateralized pool | Cheap |
-| `UpdateConfigV1` | 0x06 | Update pool parameters (governance) | Cheap |
+| `OpenPositionV1` | 0x01 | Open/deposit collateral into global pool | Cheap |
+| `AddCollateralV1` | 0x02 | Add collateral to existing position | Cheap |
+| `RemoveCollateralV1` | 0x03 | Withdraw collateral (if ratio allows) | Cheap |
+| `MintStableV1` | 0x04 | Mint stablecoins against pool | Cheap |
+| `RepayStableV1` | 0x05 | Repay debt to reduce debt share | Cheap |
+| `LiquidateV1` | 0x06 | Liquidate undercollateralized pool | Cheap |
+| `UpdateConfigV1` | 0x07 | Update pool parameters (governance) | Cheap |
 
 ### Cold (Rare, Precise - uses BaseDiv)
 
@@ -285,33 +286,48 @@ The **PooledDebt model** is recommended for maximum privacy. Individual CDP is a
 
 The stablecoin contract uses ZK circuits for privacy-preserving pool operations:
 
-### deposit_v1.zk
+| Circuit | File | Description | Public Inputs |
+|---------|------|-------------|---------------|
+| `open_position_v1.zk` | ✅ Compiled | Open/deposit collateral position | position_commitment, position_nullifier |
+| `mint_stable_v1.zk` | ✅ Compiled | Mint stablecoin against pool | old_commitment, new_commitment, position_nullifier |
+| `liquidate_v1.zk` | ✅ Compiled | Liquidate undercollateralized pool | old_commitment, new_commitment, position_nullifier |
+| `governance_report_v1.zk` | ✅ Compiled | Precise collateral/debt ratio reporting | total_collateral, total_debt, collateral_ratio_bps, interest_accrued, report_timestamp |
+| `accrue_interest_v1.zk` | ✅ Compiled | Precise interest accrual calculation | old_total_debt, new_total_debt, interest_amount |
+
+### open_position_v1.zk
 
 Proves a valid collateral deposit:
-- **Public inputs**: deposit_commitment, collateral_type, total_collateral
-- **Private inputs**: collateral_amount, depositor_secret
-- **Verification**: Commitment correctly formed, amount valid
+- **Public inputs**: position_commitment, position_nullifier
+- **Private inputs**: owner_secret, collateral_amount, debt_amount, collateral_type, blinds
+- **Verification**: Commitment correctly formed, amount valid, collateralization ratio maintained
 
-### withdraw_v1.zk
-
-Proves collateral can be withdrawn:
-- **Public inputs**: withdrawal_nullifier, new_commitment, withdraw_amount, total_pool
-- **Private inputs**: withdrawer_secret, current_collateral
-- **Verification**: Nullifier valid, pool ratio maintained
-
-### mint_v1.zk
+### mint_stable_v1.zk
 
 Proves stablecoin can be minted:
-- **Public inputs**: mint_commitment, mint_amount, total_debt, total_collateral
-- **Private inputs**: minter_secret, debt_share
-- **Verification**: Pool collateralization ratio maintained
+- **Public inputs**: old_commitment, new_commitment, position_nullifier
+- **Private inputs**: owner_secret, old_collateral, old_debt, mint_amount, blinds
+- **Verification**: Pool collateralization ratio maintained after minting
 
 ### liquidate_v1.zk
 
 Proves pool is undercollateralized:
-- **Public inputs**: liquidation_commitment, total_debt, total_collateral, current_price, debt_to_cover
-- **Private inputs**: liquidator_secret, liquidation_reward
-- **Verification**: Pool is undercollateralized, liquidation penalty correct
+- **Public inputs**: old_commitment, new_commitment, position_nullifier
+- **Private inputs**: owner_secret, collateral_amount, debt_amount, liquidation_penalty, current_price, liquidator_reward, blinds
+- **Verification**: Pool is undercollateralized, liquidation penalty correct, reward calculated
+
+### governance_report_v1.zk (Cold - ~500 field muls)
+
+Proves precise collateral/debt ratio for governance:
+- **Public inputs**: total_collateral, total_debt, collateral_ratio_bps, interest_accrued, report_timestamp, reporter_pub_x/y
+- **Private inputs**: reporter_secret, rate_per_second, time_elapsed
+- **Verification**: Uses BaseDiv for exact ratio calculation
+
+### accrue_interest_v1.zk (Cold - ~500 field muls)
+
+Proves precise interest accrual calculation:
+- **Public inputs**: old_total_debt, new_total_debt, interest_amount, rate_per_second, time_elapsed, accumulator_pub_x/y
+- **Private inputs**: accumulator_secret, old_total_debt, rate_per_second, time_elapsed
+- **Verification**: Uses BaseDiv for exact interest calculation
 
 ## Base Field Arithmetic
 
@@ -442,24 +458,25 @@ The contract just provides the financial primitives. How staking integrates with
 
 ### Complete
 
-- Multi-collateral support (ETH, XMR, DRK)
-- Configurable models (PooledDebt, Liquity, Fractional, IndividualCdp)
-- Dead man switch safety feature
-- Hot/cold circuit separation
-- LessThanOrEqual verified sound
-- BaseDiv implemented
+- [x] Multi-collateral support (ETH, XMR, DRK)
+- [x] Configurable models (PooledDebt, Liquity, Fractional, IndividualCdp)
+- [x] Dead man switch safety feature
+- [x] Hot/cold circuit separation
+- [x] LessThanOrEqual verified sound
+- [x] BaseDiv implemented
+- [x] All 5 ZK circuits compiled (open_position, mint_stable, liquidate, governance_report, accrue_interest)
+- [x] Test harness with all 5 circuits loaded
+- [x] Heavyweight pipeline endpoint testing (OpenPositionV1 0x01, MintStableV1 0x04, GovernanceReportV1 0x08, AccrueInterestV1 0x09)
 
 ### In Progress
 
-- Cold circuit implementation (GovernanceReportV1, AccrueInterestV1)
 - P2P oracle integration for TWAP price feed
 - CDP Note integration with Money contract
 
 ### Needed
 
-- Integration tests
 - AMM pool for price discovery
-- Full lifecycle testing
+- Full lifecycle testing (liquidate endpoint)
 
 ## References
 
