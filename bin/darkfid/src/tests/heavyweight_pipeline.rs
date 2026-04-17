@@ -518,6 +518,10 @@ async fn test_atomic_swap_heavyweight_impl(
     let contract_id = pipeline.deploy(wasm).await?;
     info!("AtomicSwap deployed: {:?}", contract_id);
 
+    // InitializeV1 (0x00) - no params needed
+    let init_tx = pipeline.exec(0x00, vec![], vec![]).await?;
+    info!("Executed atomic_swap::0x00 (initialize, tx: {:?})", init_tx.hash());
+
     // Create a new harness for proof generation
     let harness = AtomicSwapHarness::spawn();
 
@@ -569,6 +573,40 @@ async fn test_atomic_swap_heavyweight_impl(
             info!("ClaimV1 failed (expected without money child call): {}", e);
         }
     }
+
+    // Create another swap for RefundV1 (0x03) testing with timelock=0
+    let refund_secret = Base::random(&mut OsRng);
+    let refund_hash = darkfi_sdk::crypto::poseidon_hash([refund_secret]);
+    let refund_timelock = 0u64; // Can be refunded immediately
+    let refund_side = 0u8;
+    let refund_blind = Base::random(&mut OsRng);
+
+    let refund_create_result = harness.create_swap(
+        refund_hash,
+        refund_timelock,
+        refund_secret,
+        amount,
+        token_id,
+        refund_side,
+        refund_blind,
+        receiver_public,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created refund swap: swap_id={}", hex::encode(refund_create_result.swap_id.to_repr()));
+
+    let tx = pipeline.exec(0x01, refund_create_result.call_data, vec![refund_create_result.proof]).await?;
+    info!("Executed atomic_swap::0x01 (refund swap creation, tx: {:?})", tx.hash());
+
+    // RefundV1 (0x03) - Refund after timelock (timelock=0 so can refund immediately)
+    let refund_result = harness.refund_swap(
+        refund_create_result.swap_id,
+        refund_secret,
+        0u64, // current_block = 0 since timelock is 0
+        receiver_public,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created refund proof for swap");
+
+    let tx = pipeline.exec(0x03, refund_result.call_data, vec![refund_result.proof]).await?;
+    info!("Executed atomic_swap::0x03 (refund, tx: {:?})", tx.hash());
 
     info!("test_atomic_swap_heavyweight PASSED");
     Ok(())

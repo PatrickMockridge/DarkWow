@@ -136,11 +136,10 @@ cargo test --release -p darkfid test_atomic_swap_heavyweight
 **Test Coverage**:
 | Function | Opcode | Status |
 |----------|--------|--------|
+| InitializeV1 | 0x00 | ✅ Tested |
 | CreateSwapV1 | 0x01 | ✅ Tested with ZK proof |
 | ClaimV1 | 0x02 | ✅ Tested with ZK proof |
-| RefundV1 | 0x03 | ⚠️ Not executed (requires timelock expiry) |
-
-**Note**: RefundV1 is not executed in the standalone test because it requires waiting for the timelock to expire. The ZK proof is still generated and verified to work correctly.
+| RefundV1 | 0x03 | ✅ Tested with ZK proof (timelock=0) |
 
 ## See Also
 
