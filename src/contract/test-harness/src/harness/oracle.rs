@@ -3,9 +3,9 @@
  * Copyright (C) 2020-2026 Dyne.org foundation
  *
  * This program is free software; you can redistribute it and/or
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or (at
+ * your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -25,10 +25,12 @@ use darkfi::{
     zkas::ZkBinary,
 };
 use darkfi_sdk::{crypto::PublicKey, pasta::pallas};
+use darkfi_serial::Encodable;
 
 use darkfi_oracle_contract::client::register_oracle_v1::{
     RegisterOracleV1CallData, register_oracle_v1_proof,
 };
+use darkfi_oracle_contract::model::RegisterOracleParamsV1;
 
 /// Oracle Harness for isolated testing
 pub struct OracleHarness {
@@ -63,6 +65,9 @@ impl OracleHarness {
         &self,
         oracle_secret: pallas::Base,
         oracle_public: PublicKey,
+        oracle_id: pallas::Base,
+        name: String,
+        data_type: String,
     ) -> Result<RegisterOracleResult, Box<dyn std::error::Error>> {
         let input = RegisterOracleV1CallData::new(oracle_secret, oracle_public);
 
@@ -72,7 +77,21 @@ impl OracleHarness {
             &input,
         )?;
 
+        // Build RegisterOracleParamsV1 for call_data
+        let params = RegisterOracleParamsV1 {
+            proof: vec![],
+            oracle_id,
+            oracle_pub_x: public_inputs.oracle_pub_x,
+            oracle_pub_y: public_inputs.oracle_pub_y,
+            name,
+            data_type,
+        };
+
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+
         Ok(RegisterOracleResult {
+            call_data,
             oracle_pub_x: public_inputs.oracle_pub_x,
             oracle_pub_y: public_inputs.oracle_pub_y,
             proof,
@@ -106,6 +125,7 @@ impl super::ContractHarness for OracleHarness {
 
 /// Result of register_oracle
 pub struct RegisterOracleResult {
+    pub call_data: Vec<u8>,
     pub oracle_pub_x: pallas::Base,
     pub oracle_pub_y: pallas::Base,
     pub proof: darkfi::zk::Proof,

@@ -63,11 +63,10 @@ impl RegisterOracleV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.oracle_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Witnesses (must match circuit order: oracle_secret, oracle_pub_x, oracle_pub_y)
+            Witness::Base(Value::known(self.oracle_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            // Private inputs
-            Witness::Base(Value::known(self.oracle_secret)),
         ]
     }
 }

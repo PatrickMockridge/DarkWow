@@ -1486,6 +1486,10 @@ async fn test_oracle_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::OracleHarness;
+    use darkfi_sdk::crypto::pasta_prelude::{Field, PrimeField};
+    use darkfi_sdk::crypto::SecretKey;
+    use darkfi_sdk::pasta::pallas;
+    use rand::rngs::OsRng;
 
     let harness = OracleHarness::spawn();
     info!("Oracle harness created with circuits: {:?}", harness.circuits());
@@ -1504,6 +1508,33 @@ async fn test_oracle_heavyweight_impl(
     let wasm = read_wasm("oracle").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("Oracle deployed: {:?}", contract_id);
+
+    // Create a fresh harness for proof generation
+    let harness = OracleHarness::spawn();
+
+    // Generate oracle operator keypair
+    let oracle_secret = pallas::Base::random(&mut OsRng);
+    let oracle_pub = darkfi_sdk::crypto::PublicKey::from_secret(
+        darkfi_sdk::crypto::SecretKey::from_bytes(oracle_secret.to_repr()).unwrap()
+    );
+    let oracle_id = pallas::Base::random(&mut OsRng);
+
+    // Register an oracle (0x00)
+    let register_result = harness.register_oracle(
+        oracle_secret,
+        oracle_pub,
+        oracle_id,
+        "BTC/USD Price Feed".to_string(),
+        "price".to_string(),
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created oracle registration: pub=({}, {})",
+        hex::encode(register_result.oracle_pub_x.to_repr()),
+        hex::encode(register_result.oracle_pub_y.to_repr()));
+
+    // Execute RegisterOracleV1 (0x00)
+    // Note: This creates a ZK proof that the oracle operator knows their secret key
+    let tx = pipeline.exec(0x00, register_result.call_data, vec![register_result.proof]).await?;
+    info!("Executed oracle::0x00 (register oracle, tx: {:?})", tx.hash());
 
     info!("test_oracle_heavyweight PASSED");
     Ok(())

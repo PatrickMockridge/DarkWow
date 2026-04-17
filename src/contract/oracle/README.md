@@ -234,6 +234,16 @@ Oracle Contract
 3. **Multiple oracles**: For critical data, use multiple oracle sources
 4. **Timeliness**: Consumers should check `updated_at` to ensure data freshness
 
+## Heavyweight Test
+
+The contract includes a heavyweight test that exercises the registration endpoint:
+
+```bash
+cargo test --release -p darkfid test_oracle_heavyweight
+```
+
+**Note**: The test exercises RegisterOracleV1 (0x00) which requires ZK proof generation. This test validates that the oracle registration circuit compiles correctly and produces valid proofs.
+
 ## See Also
 
 - [Attestation Contract](../attestation/README.md) - Generalized attestation and claims
