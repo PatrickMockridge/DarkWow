@@ -26,6 +26,8 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 | **roulette** | Privacy-preserving roulette casino game | ✅ Complete ZK + Test Harness |
 | **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete ZK + Test Harness |
 | **tender** | Sealed-bid tendering with competency verification | ✅ Complete ZK + Test Harness |
+| **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete ZK + Test Harness |
+| **money_v3** | Privacy-first DeFi token (Poseidon-only, no EC operations) | ✅ Complete ZK + Test Harness |
 | **stablecoin** | Monero-collateralized stablecoin | ✅ Complete ZK + Test Harness |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete ZK + Test Harness |
 
@@ -171,10 +173,32 @@ DarkFi's token contracts (MoneyV3, NativeToken) follow a **minimal infrastructur
 
 **Practical implications:**
 - NativeToken: Minimal viable circuits for consensus (fees, rewards). One job, do it well.
-- MoneyV3: Poseidon-only design for DeFi tokens. Zero EC operations = zero heap bugs.
-- Custom tokens: Permissionless deployment. Anyone can deploy token contracts with custom logic.
+- MoneyV3: Poseidon-only design for DeFi tokens. Zero EC operations in ZK = zero heap bugs.
 
-This is a process safety principle applied to DeFi: isolate complexity where it's required, not in the infrastructure that everything depends on.
+### MoneyV3 Design Principles
+
+MoneyV3 is the cornerstone of DarkFi's DeFi ecosystem:
+
+1. **Poseidon-only ZK circuits**: All cryptographic operations in ZK use Poseidon hash. No EC operations in ZK circuits.
+
+2. **EC operations pushed to smart contracts**: Pedersen commitments and other EC operations happen in the contract verification layer, not in ZK circuits. This keeps ZK circuits simple and auditable.
+
+3. **Privacy-first token model**:
+   - Coin = `poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)`
+   - Nullifier = `poseidon_hash(secret, coin)` or `poseidon_hash(secret, token_id)` for auth
+   - Value commitment = `poseidon_hash(value, blind)`
+
+4. **Token authorization via Merkle proofs**: AuthTokenMintV1 uses Merkle tree verification in ZK to prove a token_id is authorized for minting.
+
+5. **Function IDs**:
+   - `0x00` - TokenMintV1: Create a new token type
+   - `0x01` - AuthTokenMintV1: Authorize minting for existing token
+   - `0x02` - MintV1: Mint tokens of existing token type
+   - `0x03` - BurnV1: Burn tokens
+   - `0x04` - TransferV1: Private token transfer
+   - `0x05` - OtcSwapV1: Atomic OTC token swap
+
+This separation ensures ZK circuits remain minimal while complex business logic lives in audited smart contracts.
 
 ## Testing Infrastructure
 
@@ -253,7 +277,8 @@ Local READMEs exist for each contract in this folder:
 - [insurance_market/README.md](insurance_market/README.md) - Decentralized insurance
 - [labor_market/README.md](labor_market/README.md) - Job/labor market
 - [lottery/README.md](lottery/README.md) - Configurable lottery
-- [money_v2/README.md](money_v2/README.md) - Secure money contract (STANDARD)
+- [money_v3/README.md](money_v3/README.md) - Privacy-first DeFi token (STANDARD)
+- [money_v2/README.md](money_v2/README.md) - Secure money contract
 - [auction/README.md](auction/README.md) - Privacy-preserving auction
 - [oracle/README.md](oracle/README.md) - Push-model oracle
 - [roulette/README.md](roulette/README.md) - Privacy-preserving roulette

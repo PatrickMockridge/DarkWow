@@ -1,0 +1,117 @@
+# MoneyV3 - Privacy-First DeFi Token Contract
+
+**Status**: ✅ Production Ready | Standard for DeFi tokens
+
+MoneyV3 is DarkFi's privacy-first token contract designed for DeFi applications. It uses **Poseidon-only ZK circuits** with EC operations pushed to smart contract verification.
+
+## Design Principles
+
+1. **Poseidon-only ZK**: All ZK circuit operations use Poseidon hash. No EC operations in ZK.
+2. **EC in contracts**: Pedersen commitments and other EC ops happen in contract verification layer.
+3. **Minimal circuits**: ZK circuits remain simple and auditable.
+4. **Privacy-first**: Coin commitments, nullifiers, and value commitments all use Poseidon.
+
+## Token Model
+
+### Coin Commitment
+```
+coin = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)
+```
+Where `pub = poseidon_hash(secret)` (a field element, not EC point)
+
+### Nullifier
+```
+nullifier = poseidon_hash(secret, coin)           # spending
+nullifier = poseidon_hash(secret, token_id)       # authorization
+```
+
+### Value Commitment
+```
+value_commit = poseidon_hash(value, blind)
+token_commit = poseidon_hash(token_id, blind)
+```
+
+## Functions
+
+| ID | Function | Description |
+|----|----------|-------------|
+| `0x00` | TokenMintV1 | Create a new token type (stablecoin, wrapped, etc.) |
+| `0x01` | AuthTokenMintV1 | Authorize minting for existing token |
+| `0x02` | MintV1 | Mint tokens of existing authorized token |
+| `0x03` | BurnV1 | Burn/destroy tokens |
+| `0x04` | TransferV1 | Private token transfer |
+| `0x05` | OtcSwapV1 | Atomic OTC token swap |
+
+## Circuits
+
+| Circuit | Purpose | Witnesses |
+|---------|---------|-----------|
+| `token_mint_v1.zk` | Create new token type | token_auth_parent, token_user_data, token_blind, recipient, value, spend_hook, user_data, coin_blind |
+| `auth_token_mint_v1.zk` | Authorize minting | mint_secret, token_id, leaf_pos, merkle_path |
+| `mint_v1.zk` | Mint authorized tokens | auth_nullifier, auth_mint_public, token_leaf_pos, token_path, coin_public, coin_value, coin_token_id, coin_spend_hook, coin_user_data, coin_blind, value_blind |
+| `burn_v1.zk` | Burn tokens | (burn proof) |
+
+## Authorization Flow
+
+```
+1. TokenMintV1: Create token type → token_id
+   └─→ TokenMintParamsV1 { coin, value_commit, token_id, token_commit }
+
+2. AuthTokenMintV1: Authorize minting for token_id
+   └─→ Verifies nullifier not spent via SMT
+   └─→ Merkle proof confirms token_id in registry
+   └─→ AuthTokenMintParamsV1 { nullifier, mint_public, token_id, token_registry_root }
+
+3. MintV1: Mint tokens using authorization
+   └─→ Verifies token_registry_root matches
+   └─→ Verifies auth_nullifier not spent
+   └─→ Creates new coin with token_id
+   └─→ MintParamsV1 { auth_proof, coin, value_commit, token_id }
+```
+
+## Heavyweight Test Status
+
+```bash
+cargo test --release --package darkfid test_money_v3_heavyweight
+```
+
+Test calls all endpoints:
+- `TokenMintV1 (0x00)` - Create token type
+- `AuthTokenMintV1 (0x01)` - Authorize minting
+- `MintV1 (0x02)` - Mint tokens
+
+## Dependencies
+
+- `darkfi_sdk::crypto::poseidon_hash` - All hash operations
+- `darkfi_sdk::crypto::MerkleNode` - Merkle tree verification
+- `darkfi_sdk::bridgetree::Hashable` - Merkle tree combine
+
+## Files
+
+```
+src/
+├── lib.rs              # Contract definition and function enum
+├── entrypoint/mod.rs   # Function implementation and metadata
+├── model/mod.rs        # Data structures (Coin, Nullifier, Params)
+├── client/
+│   ├── token_mint_v1.rs     # Token creation client
+│   ├── auth_token_mint_v1.rs  # Authorization client
+│   └── mint_v1.rs           # Mint client
+proof/
+├── token_mint_v1.zk.bin    # Compiled circuit
+├── auth_token_mint_v1.zk.bin
+└── mint_v1.zk.bin
+```
+
+## Why Poseidon-Only?
+
+Traditional ZK circuits use EC operations (Pedersen commitments) which require heap allocation for point arithmetic. This creates potential for heap bugs and memory safety issues.
+
+MoneyV3's approach:
+- ZK circuits: Poseidon hash only → deterministic, no heap allocation
+- Smart contracts: EC operations → verifiable but outside ZK
+
+This separation means:
+- ZK circuits are auditable and formally verifiable
+- Complex EC logic is isolated in contract layer
+- Token contract is the most frequently called → minimal attack surface
