@@ -246,7 +246,28 @@ pub trait ContractHarness {
 }
 ```
 
-Implemented by: `DexHarness`, `MoneyV3Harness`, `NativeTokenHarness`
+Implemented by: `DexHarness`, `MoneyV3Harness`, `DarkbetExchangeHarness`, `DaoEscrowHarness`, `StablecoinHarness`, `NativeTokenHarness`
+
+## Heavyweight Test Status
+
+Heavyweight tests call actual contract endpoints (not just deployment). Current status:
+
+| Test | Status | Endpoints Called |
+|------|--------|------------------|
+| `test_dex_heavyweight` | ✅ Pass | CreateSwapV1, AcceptSwapV1, ExecuteSwapV1 |
+| `test_stablecoin_heavyweight` | ✅ Pass | OpenPosition, MintStable, GovernanceReport, AccrueInterest |
+| `test_money_v3_heavyweight` | ✅ Pass | TokenMintV1, AuthTokenMintV1, MintV1 |
+| `test_dao_escrow_heavyweight` | ✅ Pass | Initialize, PayPremium |
+| `test_darkbet_exchange_heavyweight` | ✅ Pass | CreateMarketV1, AddLiquidityV1, BuyPositionV1 |
+| `test_identity_heavyweight` | ✅ Pass | Deployment only (no endpoint calls) |
+| Other contracts | ⚠️ Varies | Most deploy-only, may need endpoint updates |
+
+Run tests:
+```bash
+cargo test --release --package darkfid test_dex_heavyweight
+cargo test --release --package darkfid test_money_v3_heavyweight
+cargo test --release --package darkfid test_darkbet_exchange_heavyweight
+```
 
 ## Official Contracts
 
