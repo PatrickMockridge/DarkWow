@@ -2,79 +2,79 @@
 
 Navigation index for smart contracts, consensus, and protocol documentation.
 
-## Smart Contracts
+## Core Concepts
+
+- [Overview](./overview.md) - Blockchain, WASM contracts, tokens, ZK proofs
+- [Spend Hooks](./spend_hook.md) - Cross-contract call authorization
+- [NativeToken](./native_token.md) - Consensus token (fees/rewards)
+
+## Smart Contracts (by category)
 
 ### Financial
-- [Auction](./auction.md) - English, sealed-bid, and Dutch auction types
-- [DAO](./dao.md) - Governance with voting and proposal execution
-- [DAO Escrow](./dao_escrow.md) - DAO-controlled escrow with premium payments
-- [DEX](./dex.md) - Decentralized exchange with atomic swaps
-- [Escrow](./escrow.md) - Trustless escrow with HTLC-style refunds
-- [Stablecoin](./stablecoin.md) - Collateral-backed stablecoin (CDP)
-- [Subscription](./subscription.md) - Recurring payment subscriptions via DAO escrow
+- [money_v3](./money_v3.md) - Privacy-first DeFi tokens (STANDARD)
+- [stablecoin](./stablecoin.md) - Collateral-backed stablecoin
+- [dex](./dex.md) - Atomic swap exchange
+- [auction](./auction.md) - Privacy-preserving auctions
+- [escrow](./escrow.md) - HTLC-style trustless escrow
+- [subscription](./subscription.md) - Recurring payments via DAO
 
-### Identity & Attestation
-- [Attestation](./attestation.md) - Claims system with delegation chains
-- [Identity](./identity.md) - O-Cap authorization and credential issuance
-- [Oracle](./oracle.md) - Push-model data feeds with aggregation
+### Governance
+- [dao](./dao.md) - Decentralized autonomous organization
+- [dao_escrow](./dao_escrow.md) - DAO-controlled escrow
+
+### Identity
+- [identity](./identity.md) - ZK credential system
+- [attestation](./attestation.md) - Claims and delegation
 
 ### Gambling
-- [Baccarat](./baccarat.md) - Card game with commit-reveal randomness
-- [DarkToshi Dice](./darktoshi_dice.md) - On-chain dice with weighted outcomes
-- [Lottery](./lottery.md) - Parimutuel lottery with probabilistic distribution
-- [Roulette](./roulette.md) - Casino roulette with house edge
-- [Slot](./slot.md) - Slot machine with RNG-based reveals
-- [Betting Stake](./betting_stake.md) - Trustless betting stake management
-- [Pool Stake](./pool_stake.md) - Pooled coverage for relayer withdrawals
-- [Block Height Prediction](./block_height_prediction.md) - PoW-backed random oracle
-- [Game Room](./game_room.md) - Multiplayer game coordination
+- [baccarat](./baccarat.md) - Privacy-preserving Baccarat
+- [darktoshi_dice](./darktoshi_dice.md) - On-chain dice game
+- [lottery](./lottery.md) - Configurable lottery
+- [roulette](./roulette.md) - Casino roulette
+- [slot](./slot.md) - Slot machine
+- [betting_stake](./betting_stake.md) - Trustless betting stake
+- [pool_stake](./pool_stake.md) - Pooled coverage for relayers
 
 ### Cross-Chain
-- [Atomic Swap](./atomic_swap.md) - Trustless cross-chain swaps
-- [Bridge](./bridge.md) - Multi-chain bridge with deposit/withdraw
-- [Relayer Endowment](./relayer_endowment.md) - External capital backing for relayers
-- [Monero](./monero.md) - Monero integration and privacy comparison
+- [bridge](./bridge.md) - Multi-chain asset transfers
+- [atomic_swap](./atomic_swap.md) - Trustless cross-chain swaps
+- [monero](./monero.md) - Monero integration
 
 ### Other
-- [Deployooor](./deployooor.md) - Arbitrary WASM contract deployment
-- [Game Room](./game_room.md) - Multiplayer game coordination
-- [Drain Protection](./drain_protection.md) - Smart wallet security
-- [Darkbet Exchange](./darkbet_exchange.md) - Betting exchange
+- [drain_protection](./drain_protection.md) - Smart wallet security
+- [oracle](./oracle.md) - Push-model data feeds
+- [game_room](./game_room.md) - Multiplayer game coordination
 
-## Consensus & Protocol
+## Protocol
 
-- [Consensus](./consensus.md) - PoW consensus algorithm
-- [Sync](./sync.md) - Block synchronization module
-- [Tau](./tau.md) - Token distribution and staking
-- [Slashing](./slashing.md) - Validator punishment mechanism
-- [OCap](./ocap.md) - Object-capability security model
-- [Entropy](./entropy.md) - Randomness generation
-- [Transaction Lifetime](./tx_lifetime.md) - Transaction processing lifecycle
-- [Money V3 Migration](./money_v3_migration.md) - Privacy-first DeFi tokens with Poseidon-only circuits (HARD FORK)
+- [consensus](./consensus.md) - RandomX Proof-of-Work
+- [sync](./sync.md) - Block synchronization
+- [entropy](./entropy.md) - Randomness generation
+- [tau](./tau.md) - Staking and token distribution
+- [slashing](./slashing.md) - Validator punishment
+- [ocap](./ocap.md) - Object-capability security
+
+## ZK & Circuits
+
+- [opcode_universe](./opcode_universe.md) - All ZK opcodes reference
+- [opcodes](./opcodes.md) - Opcode implementations
+- [zkvm_primitives](./zkvm_primitives.md) - Circuit primitive functions
+- [field_arithmetic](./field_arithmetic.md) - Finite field math in circuits
+- [safemath](./safemath.md) - Safe arithmetic gadgets
 
 ## Reference
 
-- [Opcode Universe](./opcode_universe.md) - ZK circuit opcodes reference
-- [Opcodes](./opcodes.md) - Opcode implementations
-- [ZKVM Primitives](./zkvm_primitives.md) - Circuit primitive functions
-- [Field Arithmetic](./field_arithmetic.md) - Finite field math in circuits
-- [Security Analysis](./security-analysis.md) - Audit findings and analysis
 - [Contract Invoke API](./contract_invoke_api.md) - Inter-contract calling convention
-- [Wallet](./wallet.md) - Wallet architecture and key management
-- [Anonymous Assets](./anonymous_assets.md) - Privacy token model
-
-## Testing & Development
-
-- [Test Harness Guide](./test_harness_guide.md) - Writing contract integration tests
-- [Genesis Harness](./genesis_harness.md) - Baseline chain setup (NativeToken + Deployooor only)
-- [Contract Testing Pipeline](./pipeline.md) - Unified binary check + genesis + deploy workflow
-- [Localnet Contract Testing](./localnet_contract_testing.md) - Local devnet testing
-- [Debugging FAQ](./debugging_faq.md) - Common issues and solutions
-- [Async Serial Lifetime Bug](./async_serial_lifetime_bug.md) - Rust 1.90+ compatibility
+- [pipeline](./pipeline.md) - Testing pipelines (lightweight + heavyweight)
+- [test_harness_guide](./test_harness_guide.md) - Writing contract integration tests
+- [genesis_harness](./genesis_harness.md) - Baseline chain setup
+- [localnet_contract_testing](./localnet_contract_testing.md) - Local devnet testing
+- [anonymous_assets](./anonymous_assets.md) - Privacy token model
+- [wallet](./wallet.md) - Wallet architecture and key management
 
 ## Legacy
 
-Historical documents moved to [./legacy/](.legacy/):
+Historical documents in [./legacy/](.legacy/):
 - [money-vulnerability-analysis.md](./legacy/money-vulnerability-analysis.md) - Fork decision rationale (2024)
 - [money-version-bridge.md](./legacy/money-version-bridge.md) - Fork vs bridge explanation (2024)
 
@@ -83,17 +83,23 @@ Historical documents moved to [./legacy/](.legacy/):
 ```
 doc/src/arch/
 ├── README.md              # This file - navigation index
+├── overview.md            # Current architecture overview
+├── spend_hook.md          # Cross-contract call pattern
+├── native_token.md        # Consensus token contract
 ├── consensus.md           # PoW consensus
 ├── dao.md                 # Governance contract
-├── identity.md            # O-Cap credentials
+├── dex.md                 # Atomic swap exchange
+├── money_v3.md            # Privacy-first DeFi tokens
+├── stablecoin.md          # Collateral stablecoin
 ├── opcode_universe.md     # ZK opcodes
-├── security-analysis.md   # Audit findings
-├── *.md                   # Individual contract docs
-├── legacy/                 # Historical documents
+├── opcodes.md             # Opcode implementations
+├── pipeline.md            # Testing pipelines
+├── test_harness_guide.md  # Contract testing guide
+├── legacy/                # Historical documents
 │   ├── money-vulnerability-analysis.md
 │   └── money-version-bridge.md
 ├── net/                   # P2P network docs
-│   └── ...
+│   └── p2p-network.md
 └── sc/                    # Smart contract docs
-    └── ...
+    └── tx-lifetime.md
 ```

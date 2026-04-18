@@ -1,57 +1,77 @@
 # Overview
 
-DarkFi is a layer one Proof-of-Work blockchain that supports anonymous
-applications. It is currently under development. This overview will
-outline a few key terms that help explain DarkFi.
+DarkFi is a layer-one Proof-of-Work blockchain supporting anonymous WASM smart contracts.
 
-**Blockchain:** The DarkFi blockchain is based off Proof of Work
-RandomX algorithm. Consensus participating nodes, called miners,
-produce and propose new blocks to the network, extending some fork
-chain, which once it reaches a confirmation security threshold, can be
-appended to canonical by all nodes in the network.
+## Consensus
 
-**Wallet:** A wallet is a portal to the DarkFi network. It provides
-the user with the ability to send and receive anonymous _darkened_
-tokens. Each wallet is a full node and stores a copy of the
-blockchain. All contract execution is done locally on the DarkFi wallet.
+DarkFi uses RandomX Proof-of-Work consensus with 1-minute block times. Miners produce blocks that extend the canonical chain, with a confirmation threshold for finality.
 
-**P2P Network:** The DarkFi ecosystem runs as a network of P2P nodes,
-where these nodes interact with each other over specific protocols (see
-[node overview](p2p-network.md)). Nodes communicate on a peer-to-peer
-network, which is also home to tools such as our P2P
-[irc](../misc/darkirc/darkirc.md) and P2P task manager [tau](../misc/tau.md).
+## WASM Contracts
 
-**ZK smart contracts:** Anonymous applications on DarkFi run on proofs
-that enforce an order of operations. We call these zero-knowledge smart
-contracts. Anonymous transactions on DarkFi are possible due to the
-interplay of two contracts, mint and burn (see the [sapling payment
-scheme](../zkas/examples/sapling.md)). Using the same method, we can
-define advanced applications.
+DarkFi uses WASM smart contracts deployed via the **Deployooor** contract. This model provides:
 
-**zkas:** zkas is the compiler used to compile zk smart contracts in
-its respective assembly-like language. The "assembly" part was chosen as
-it's the bare primitives needed for zk proofs, so later on the language
-can be expanded with higher-level syntax. Zkas enables developers to
-compile and inspect contracts.
+- **Upgradeable contracts**: Contracts can be upgraded without hard forking the network
+- **Minimal genesis**: Only Deployooor and NativeToken exist at genesis
+- **Composable applications**: Additional contracts are deployed as needed
 
-**zkVM:** DarkFi's zkVM executes the binaries produced by zkas. The
-zkVM aims to be a general-purpose zkSNARK virtual machine that empowers
-developers to quickly prototype and debug zk contracts. It uses a
-trustless zero-knowledge proof system called Halo 2 with no trusted
-setup.
+## Token Architecture
 
-**Genesis Contracts:** DarkFi starts with a minimal set of contracts at
-genesis (Satoshi-style). Only **Deployooor** (for deploying additional
-WASM contracts) and **Money** (for block rewards and token operations)
-are included. This provides a clean foundation where additional contracts
-can be composed as needed.
+DarkFi separates token concerns into two specialized contracts:
 
-**WASM Contracts:** DarkFi supports WASM smart contracts that can be
-deployed via the Deployooor contract. This allows for upgradeable contracts
-without hard forking the network. Examples include Native Token, DAO Escrow,
-and various application contracts (lottery, auction, etc.).
+| Contract | Purpose | Use Case |
+|----------|---------|----------|
+| **NativeToken (WASM)** | Consensus-layer operations | Block rewards, fee payment |
+| **money_v3** | Privacy-first DeFi tokens | User tokens, DeFi operations |
 
-**Native vs WASM Contracts:**
-- **Native contracts** (Money V1, DAO V1) are deprecated
-- **WASM contracts** are deployed on-chain and can be upgraded via Deployooor
-- This fork uses Native Token (WASM) for all token operations
+### NativeToken
+
+Minimal WASM contract handling only consensus requirements:
+- Block reward distribution
+- Fee payment
+
+Philosophy: **Tokens are pipework, not reactors.** One job, done well.
+
+### money_v3
+
+Privacy-first DeFi token contract:
+- **Poseidon-only ZK circuits**: All cryptographic operations use Poseidon hash. No EC operations in ZK.
+- **Coin model**: `poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)`
+- **Function IDs**: TokenMintV1, AuthTokenMintV1, MintV1, BurnV1, TransferV1, OtcSwapV1
+
+## Cross-Contract Calls
+
+Contracts communicate via **spend hooks**. A contract can call another by specifying:
+
+- `spend_hook`: Which function to invoke (function ID)
+- `user_data`: Arbitrary data passed to the hook
+
+Example usage:
+- **DEX ExecuteSwapV1**: Uses `otc_swap_v1` child call for bilateral token swap
+- **Stablecoin MintStableV1**: Uses `transfer_v1` child call to move minted stablecoins to user
+- **DarkbetExchange**: Uses `transfer_v1` child calls for position minting/burning
+
+## ZK Proofs
+
+All private state transitions use ZK proofs verified on-chain:
+
+- **zkVM**: DarkFi's virtual machine executes Halo2 proofs
+- **No trusted setup**: zkSNARK system uses universal reference strings
+- **Privacy**: Zero-knowledge proofs hide amounts, identities, and state changes
+
+## Testing
+
+DarkFi provides two testing pipelines:
+
+1. **Lightweight pipeline**: Deployment verification without ZK proof generation
+2. **Heavyweight pipeline**: Full ZK proof generation and contract execution testing
+
+See [Pipeline](./pipeline.md) and [Test Harness Guide](./test_harness_guide.md) for details.
+
+## Genesis Contracts
+
+Only two contracts exist at genesis (Satoshi-style minimalism):
+
+1. **Deployooor**: Deploys additional WASM contracts
+2. **NativeToken**: Handles block rewards and fees
+
+All other contracts (money_v3, DEX, stablecoin, gambling games, etc.) are composed as needed.
