@@ -35,12 +35,12 @@
 //! ```
 
 use darkfi_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId},
+    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, ContractId},
     error::ContractResult,
     msg,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize};
+use darkfi_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DaoEscrowError,
@@ -98,7 +98,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 // ============================================================================
 
 /// Fetch metadata for ZK proof verification
-fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
+fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
@@ -106,8 +106,71 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[dao_escrow::get_metadata] Processing function: {:?}", func);
 
-    // TODO: Implement metadata fetching for ZK proof verification
-    wasm::util::set_return_data(&[])
+    let metadata = match func {
+        DaoEscrowFunction::InitializeV1 => initialize_get_metadata(cid, call_idx, &calls),
+        DaoEscrowFunction::PayPremiumV1 => pay_premium_get_metadata(cid, call_idx, &calls),
+        _ => vec![],
+    };
+
+    wasm::util::set_return_data(&metadata)
+}
+
+/// Metadata for InitializeV1 (0x00)
+fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[darkfi_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Vec<u8> {
+    let self_ = &calls[call_idx].data;
+    let params: model::InitializeParamsV1 = match deserialize(&self_.data[1..]) {
+        Ok(p) => p,
+        Err(_) => return vec![],
+    };
+
+    let (owner_pub_x, owner_pub_y) = params.owner_pubkey.xy();
+
+    // Compute endowment_bulla using same formula as circuit and model
+    // endowment_bulla = poseidon_hash(dao_bulla, owner_pub_x, owner_pub_y, endowment_token_id, bulla_blind)
+    let endowment_bulla = darkfi_sdk::crypto::poseidon_hash([
+        params.dao_bulla,
+        owner_pub_x,
+        owner_pub_y,
+        params.endowment_token_id,
+        params.bulla_blind.inner(),
+    ]);
+
+    let zk_public_inputs = vec![(
+        crate::DAO_ESCROW_ZKAS_INIT_NS.to_string(),
+        vec![
+            params.dao_bulla,
+            endowment_bulla,
+        ],
+    )];
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata).unwrap();
+    metadata
+}
+
+/// Metadata for PayPremiumV1 (0x02)
+fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[darkfi_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Vec<u8> {
+    let self_ = &calls[call_idx].data;
+    let params: model::PayPremiumParamsV1 = match deserialize(&self_.data[1..]) {
+        Ok(p) => p,
+        Err(_) => return vec![],
+    };
+
+    let value_coords = params.value_commit.to_affine().coordinates().unwrap();
+
+    let zk_public_inputs = vec![(
+        crate::DAO_ESCROW_ZKAS_PREMIUM_NS.to_string(),
+        vec![
+            params.dao_escrow_bulla,
+            params.membership_note,
+            *value_coords.x(),
+            *value_coords.y(),
+        ],
+    )];
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata).unwrap();
+    metadata
 }
 
 // ============================================================================
