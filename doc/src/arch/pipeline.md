@@ -237,6 +237,33 @@ HeavyweightPipeline<H: ContractHarness>
     └── exec()  (execute contract calls with ZK proofs)
 ```
 
+### Cross-Contract FuncId Binding
+
+For contracts that make child calls (e.g., DEX calling money_v3::otc_swap_v1), the test must:
+
+1. **Deploy money_v3 FIRST** to get its `contract_id`
+2. **Compute real FuncIds** before proof generation: `FuncId = poseidon_hash([contract_id.inner(), func_code])`
+3. **Pass FuncIds to proof generation** as public inputs
+4. **Include child calls** in `exec_with_children()` along with empty proof stubs
+
+Example from DEX heavyweight test:
+
+```rust
+// Deploy money_v3 first
+let money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", config, ex).await?;
+let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+
+// Compute real FuncIds
+let alice_otc_func_id = compute_func_id(money_contract_id, 0x05);
+
+// Generate proof with real FuncIds
+let execute_result = harness.execute_swap(..., alice_otc_func_id, bob_otc_func_id)?;
+
+// Execute with child calls
+pipeline.exec_with_children(0x03, call_data, vec![proof],
+    vec![child_call_0, child_call_1], vec![vec![], vec![]]).await?;
+```
+
 ### Key Difference from Lightweight
 
 | Aspect | LightweightPipeline | HeavyweightPipeline |

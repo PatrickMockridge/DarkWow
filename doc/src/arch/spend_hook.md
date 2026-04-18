@@ -68,15 +68,18 @@ Contracts validate child calls by checking:
 2. **Call count**: Typically exactly one child call per endpoint
 3. **Authorization**: The child call's proof must be valid
 
-Example from DEX `execute_swap_v1`:
+Example from DEX `execute_swap_v1` (atomic swap requires 2 child calls):
 
 ```rust
-// Validate exactly one child call
-ensure!(call_data.children_indexes.len() == 1);
+// Validate exactly 2 child calls for atomic swap
+ensure!(call_data.children_indexes.len() == 2);
 
-// Validate it's an OtcSwap call
-let func_id = call_data.data[0];
-ensure!(func_id == DexFunction::OtcSwapV1 as u8);
+// Validate both are OtcSwap calls
+for child_idx in call_data.children_indexes {
+    let child_call = &calls[child_idx];
+    let func_id = child_call.data[0];
+    ensure!(func_id == 0x05); // OtcSwapV1
+}
 ```
 
 ## Security Considerations
@@ -84,3 +87,4 @@ ensure!(func_id == DexFunction::OtcSwapV1 as u8);
 - **Atomicity**: If child call fails, parent transaction fails (atomic rollback)
 - **Authorization**: The proof in the child call must be valid for the transfer to succeed
 - **No reentrancy**: Spend hooks cannot recursively call back to the originating contract
+- **FuncId Binding**: DEX circuits verify FuncIds as public inputs (prover-provided). The contract computes `FuncId = poseidon_hash([contract_id, func_code])` from child calls and includes it in metadata for ZK verification. Tests must deploy money_v3 FIRST to compute real FuncIds before proof generation.
