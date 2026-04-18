@@ -258,7 +258,7 @@ Heavyweight tests call actual contract endpoints (not just deployment). Current 
 | `test_stablecoin_heavyweight` | ✅ Pass | OpenPosition, MintStable (w/ money_v3 child call), GovernanceReport, AccrueInterest |
 | `test_money_v3_heavyweight` | ✅ Pass | TokenMintV1, AuthTokenMintV1, MintV1 |
 | `test_dao_escrow_heavyweight` | ✅ Pass | Initialize, PayPremium |
-| `test_darkbet_exchange_heavyweight` | ✅ Pass | CreateMarketV1, AddLiquidityV1, BuyPositionV1 |
+| `test_darkbet_exchange_heavyweight` | ✅ Pass | CreateMarketV1, AddLiquidityV1 (w/ money_v3 child call), BuyPositionV1 (w/ money_v3 child call) |
 | `test_identity_heavyweight` | ✅ Pass | InitializeV1, IssueCredentialV1, CreateClaimV1 |
 | `test_pool_stake_heavyweight` | ✅ Pass | CreatePoolV1, JoinPoolV1 |
 | Other contracts | ⚠️ Varies | Most deploy-only, may need endpoint updates |

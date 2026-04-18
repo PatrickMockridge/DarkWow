@@ -180,22 +180,22 @@ cargo test -p darkfi_darkbet_exchange_contract --lib
 - `add_liquidity_v1.zk` - ✅ Working
 
 ### Entrypoints
-| Opcode | Function | Status |
-|--------|----------|--------|
-| `0x00` | `CreateMarketV1` | ✅ Implemented |
-| `0x01` | `PlaceBackV1` | ✅ Implemented |
-| `0x02` | `PlaceLayV1` | ✅ Implemented |
-| `0x03` | `MatchOrdersV1` | ✅ Implemented |
-| `0x04` | `ResolveMarketV1` | ✅ Implemented |
-| `0x05` | `SettleMarketV1` | ✅ Implemented |
-| `0x06` | `CancelOrderV1` | ✅ Implemented |
-| `0x07` | `BuyPositionV1` | ✅ Implemented |
-| `0x08` | `AddLiquidityV1` | ✅ Implemented |
-| `0x09` | `RemoveLiquidityV1` | ✅ Implemented |
-| `0x0A` | `ClaimWinningsV1` | ✅ Implemented |
+| Opcode | Function | Status | Child Call |
+|--------|----------|--------|-----------|
+| `0x00` | `CreateMarketV1` | ✅ Implemented | - |
+| `0x01` | `PlaceBackV1` | ✅ Implemented | - |
+| `0x02` | `PlaceLayV1` | ✅ Implemented | - |
+| `0x03` | `MatchOrdersV1` | ✅ Implemented | - |
+| `0x04` | `ResolveMarketV1` | ✅ Implemented | - |
+| `0x05` | `SettleMarketV1` | ✅ Implemented | money_v3::transfer_v1 |
+| `0x06` | `CancelOrderV1` | ✅ Implemented | money_v3::transfer_v1 |
+| `0x07` | `BuyPositionV1` | ✅ Implemented | money_v3::transfer_v1 |
+| `0x08` | `AddLiquidityV1` | ✅ Implemented | money_v3::transfer_v1 |
+| `0x09` | `RemoveLiquidityV1` | ✅ Implemented | money_v3::transfer_v1 |
+| `0x0A` | `ClaimWinningsV1` | ✅ Implemented | money_v3::transfer_v1 |
 
 ### Test Status
-- Heavyweight pipeline test: ✅ PASSING
+- Heavyweight pipeline test: ✅ PASSING (with money_v3 child calls)
 
 ## See Also
 
