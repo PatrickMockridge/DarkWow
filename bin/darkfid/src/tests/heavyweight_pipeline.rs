@@ -750,13 +750,29 @@ fn test_baccarat_heavyweight() -> Result<()> {
 async fn test_baccarat_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::BaccaratHarness;
+    use darkfi_contract_test_harness::harness::{BaccaratHarness, MoneyV3Harness};
     use darkfi_sdk::crypto::pasta_prelude::{Group, PrimeField};
     use darkfi_sdk::pasta::pallas::Base;
     use darkfi_sdk::crypto::SecretKey;
     use darkfi_baccarat_contract::model::BetType;
     use darkfi::zk::halo2::Field;
     use rand::rngs::OsRng;
+
+    // Deploy money_v3 first to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18586".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18587".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
 
     let harness = BaccaratHarness::spawn();
     info!("Baccarat harness created with circuits: {:?}", harness.circuits());
@@ -766,8 +782,8 @@ async fn test_baccarat_heavyweight_impl(
         pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
-        alice_url: "tcp+tls://127.0.0.1:18586".to_string(),
-        bob_url: "tcp+tls://127.0.0.1:18587".to_string(),
+        alice_url: "tcp+tls://127.0.0.1:18590".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18591".to_string(),
     };
 
     let mut pipeline = HeavyweightPipeline::new(harness, "baccarat", config, ex).await?;
@@ -792,6 +808,12 @@ async fn test_baccarat_heavyweight_impl(
     let house_edge = 150u32; // 1.5%
     let confirmation_depth = 1u8;
 
+    // Build child call for money_v3::transfer_v1 (0x04)
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04],
+    };
+
     // Execute CommitBetV1 (0x01)
     let commit_result = harness.commit_bet(
         player_pub,
@@ -805,7 +827,7 @@ async fn test_baccarat_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Committed bet: bet_id={}", hex::encode(commit_result.bet_id.to_repr()));
 
-    let tx = pipeline.exec(0x01, commit_result.call_data, vec![commit_result.proof]).await?;
+    let tx = pipeline.exec_with_children(0x01, commit_result.call_data, vec![commit_result.proof], vec![child_call.clone()]).await?;
     info!("Executed baccarat::0x01 (tx: {:?})", tx.hash());
 
     // Execute DrawCardsV1 (0x02) - cards are drawn using block hash entropy
@@ -830,7 +852,7 @@ async fn test_baccarat_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Settle bet prepared for bet_id={}", hex::encode(settle_result.public_inputs.derived_bet_id.to_repr()));
 
-    let tx = pipeline.exec(0x03, settle_result.call_data, vec![settle_result.proof]).await?;
+    let tx = pipeline.exec_with_children(0x03, settle_result.call_data, vec![settle_result.proof], vec![child_call.clone()]).await?;
     info!("Executed baccarat::0x03 (tx: {:?})", tx.hash());
 
     // Now test a second scenario: HouseCloseV1 (0x04)
@@ -853,7 +875,7 @@ async fn test_baccarat_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Committed second bet: bet_id={}", hex::encode(commit_result2.bet_id.to_repr()));
 
-    let tx = pipeline.exec(0x01, commit_result2.call_data, vec![commit_result2.proof]).await?;
+    let tx = pipeline.exec_with_children(0x01, commit_result2.call_data, vec![commit_result2.proof], vec![child_call.clone()]).await?;
     info!("Executed baccarat::0x01 (tx: {:?})", tx.hash());
 
     // Draw cards for second bet
@@ -875,7 +897,7 @@ async fn test_baccarat_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("House close prepared for bet_id={}", hex::encode(close_result.bet_id.to_repr()));
 
-    let tx = pipeline.exec(0x04, close_result.call_data, vec![]).await?;
+    let tx = pipeline.exec_with_children(0x04, close_result.call_data, vec![], vec![child_call]).await?;
     info!("Executed baccarat::0x04 (tx: {:?})", tx.hash());
 
     info!("test_baccarat_heavyweight PASSED");
@@ -1154,11 +1176,27 @@ fn test_darktoshi_dice_heavyweight() -> Result<()> {
 async fn test_darktoshi_dice_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::DarkToshiDiceHarness;
+    use darkfi_contract_test_harness::harness::{DarkToshiDiceHarness, MoneyV3Harness};
     use darkfi_sdk::crypto::pasta_prelude::{Group, PrimeField};
     use darkfi_sdk::pasta::pallas::Base;
     use darkfi::zk::halo2::Field;
     use rand::rngs::OsRng;
+
+    // Deploy money_v3 first to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18596".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18597".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
 
     let harness = DarkToshiDiceHarness::spawn();
     info!("DarkToshiDice harness created with circuits: {:?}", harness.circuits());
@@ -1168,8 +1206,8 @@ async fn test_darktoshi_dice_heavyweight_impl(
         pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
-        alice_url: "tcp+tls://127.0.0.1:18596".to_string(),
-        bob_url: "tcp+tls://127.0.0.1:18597".to_string(),
+        alice_url: "tcp+tls://127.0.0.1:18620".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18621".to_string(),
     };
 
     let mut pipeline =
@@ -1181,6 +1219,12 @@ async fn test_darktoshi_dice_heavyweight_impl(
 
     // Create a new harness for proof generation
     let harness = DarkToshiDiceHarness::spawn();
+
+    // Build child call for money_v3::transfer_v1 (0x04)
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04],
+    };
 
     // Player commits to a bet
     let player_secret = Base::random(&mut OsRng);
@@ -1205,15 +1249,9 @@ async fn test_darktoshi_dice_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Created bet commitment: bet_id={}", hex::encode(commit_result.public_inputs.bet_id.to_repr()));
 
-    // Execute CommitBetV1 (0x01)
-    // Note: This requires money_v3::transfer_v1 as a child call - may fail in isolated test
-    match pipeline.exec(0x01, commit_result.call_data, vec![commit_result.proof]).await {
-        Ok(tx) => info!("Executed darktoshi_dice::0x01 (commit bet, tx: {:?})", tx.hash()),
-        Err(e) => {
-            info!("CommitBetV1 failed (expected without money child call): {}", e);
-            // Continue with reveal anyway to test that endpoint
-        }
-    }
+    // Execute CommitBetV1 (0x01) - requires money_v3::transfer_v1 child call
+    let tx = pipeline.exec_with_children(0x01, commit_result.call_data, vec![commit_result.proof], vec![child_call.clone()]).await?;
+    info!("Executed darktoshi_dice::0x01 (commit bet, tx: {:?})", tx.hash());
 
     // Reveal the roll (no ZK proof needed, no child call needed)
     let reveal_result = harness.reveal_roll(
@@ -1223,15 +1261,8 @@ async fn test_darktoshi_dice_heavyweight_impl(
     info!("Revealed roll for bet");
 
     // Execute RevealRollV1 (0x02)
-    match pipeline.exec(0x02, reveal_result.call_data, vec![]).await {
-        Ok(tx) => info!("Executed darktoshi_dice::0x02 (reveal roll, tx: {:?})", tx.hash()),
-        Err(e) => {
-            info!("RevealRollV1 failed: {}", e);
-        }
-    }
-
-    // SettleBetV1 (0x03) and HouseCloseV1 (0x04) require money_v3::transfer_v1 child calls
-    // These would need full integration testing with money contract
+    let tx = pipeline.exec(0x02, reveal_result.call_data, vec![]).await?;
+    info!("Executed darktoshi_dice::0x02 (reveal roll, tx: {:?})", tx.hash());
 
     info!("test_darktoshi_dice_heavyweight PASSED");
     Ok(())
@@ -1761,9 +1792,25 @@ fn test_slot_heavyweight() -> Result<()> {
 async fn test_slot_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::SlotHarness;
+    use darkfi_contract_test_harness::harness::{MoneyV3Harness, SlotHarness};
     use darkfi_sdk::crypto::pasta_prelude::Group;
     use darkfi_sdk::pasta::pallas::Base;
+
+    // Deploy money_v3 first to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18614".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18615".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
 
     let harness = SlotHarness::spawn();
     info!("Slot harness created with circuits: {:?}", harness.circuits());
@@ -1785,6 +1832,12 @@ async fn test_slot_heavyweight_impl(
 
     // Create a new harness for proof generation
     let harness = SlotHarness::spawn();
+
+    // Build child call for money_v3::transfer_v1 (0x04)
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04],
+    };
 
     // Initialize the slot contract (0x00 - no params needed)
     let init_result = harness.initialize()
@@ -1817,12 +1870,9 @@ async fn test_slot_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Created commit spin call_data");
 
-    // Note: CommitSpinV1 requires money child call - may fail here
-    let tx = pipeline.exec(0x01, commit_result.call_data, vec![]).await;
-    match tx {
-        Ok(t) => info!("Executed slot::0x01 (tx: {:?})", t.hash()),
-        Err(e) => info!("slot::0x01 failed (expected without child call): {}", e),
-    }
+    // Execute CommitSpinV1 (0x01) - requires money_v3::transfer_v1 child call
+    let tx = pipeline.exec_with_children(0x01, commit_result.call_data, vec![], vec![child_call.clone()]).await?;
+    info!("Executed slot::0x01 (tx: {:?})", tx.hash());
 
     // Reveal the spin (0x02) - no child call needed
     // Use a dummy spin_id since CommitSpin didn't actually store anything
