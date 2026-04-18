@@ -1059,7 +1059,27 @@ fn test_dao_escrow_heavyweight() -> Result<()> {
 async fn test_dao_escrow_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::DaoEscrowHarness;
+    use darkfi_contract_test_harness::harness::{MoneyV3Harness, DaoEscrowHarness};
+    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
+
+    // Deploy money_v3 first to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18592".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18593".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
 
     let harness = DaoEscrowHarness::spawn();
     info!("DaoEscrow harness created with circuits: {:?}", harness.circuits());
@@ -1078,6 +1098,103 @@ async fn test_dao_escrow_heavyweight_impl(
     let wasm = read_wasm("dao_escrow").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("DaoEscrow deployed: {:?}", contract_id);
+
+    // Create a fresh harness for call data (withdraw doesn't need proofs)
+    let harness = DaoEscrowHarness::spawn();
+
+    // Initialize a DAO Escrow (0x00)
+    let owner_secret = Base::random(&mut OsRng);
+    let endowment_token_id = Base::from(1); // Token ID 1
+    let bulla_blind = Base::random(&mut OsRng);
+
+    // Compute endowment_bulla the same way the circuit does
+    let owner_pub = darkfi_sdk::crypto::PublicKey::from_secret(
+        darkfi_sdk::crypto::SecretKey::from_bytes(owner_secret.to_repr()).unwrap()
+    );
+    let (owner_pub_x, owner_pub_y) = owner_pub.xy();
+    let dao_bulla = Base::from(1); // DAO bulla (simplified for test)
+    let endowment_bulla = poseidon_hash([
+        dao_bulla,
+        owner_pub_x,
+        owner_pub_y,
+        endowment_token_id,
+        bulla_blind,
+    ]);
+
+    // Build call data for InitializeV1 (0x00)
+    // Note: initialize_v1 doesn't verify ZK proofs (wasm::zk::verify_zk_proof is commented out)
+    let init_call_data = harness.initialize_call_data(
+        dao_bulla,
+        owner_pub,
+        endowment_token_id,
+        bulla_blind,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Initialized DAO Escrow: endowment_bulla={}", hex::encode(endowment_bulla.to_repr()));
+
+    // Execute InitializeV1 (0x00) - uses empty proof since contract doesn't verify ZK
+    let tx = pipeline.exec(0x00, init_call_data, vec![]).await?;
+    info!("Executed dao_escrow::0x00 (tx: {:?})", tx.hash());
+
+    // Build child call for money_v3::transfer_v1 (0x04)
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04],
+    };
+
+    // Test WithdrawV1 (0x03) - owner withdraws from endowment
+    let withdraw_result = harness.withdraw(
+        endowment_bulla,
+        owner_pub,
+        100u64,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created withdraw call");
+
+    let tx = pipeline.exec_with_children(
+        0x03,
+        withdraw_result.call_data,
+        vec![],
+        vec![child_call.clone()],
+        vec![vec![]],
+    ).await?;
+    info!("Executed dao_escrow::0x03 (tx: {:?})", tx.hash());
+
+    // Test EndowmentWithdrawV1 (0x04) - executes approved claim
+    let claim_id = Base::from(1);
+    let endowment_withdraw_result = harness.endowment_withdraw(
+        endowment_bulla,
+        claim_id,
+        owner_pub,
+        50u64,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created endowment withdraw call");
+
+    let tx = pipeline.exec_with_children(
+        0x04,
+        endowment_withdraw_result.call_data,
+        vec![],
+        vec![child_call.clone()],
+        vec![vec![]],
+    ).await?;
+    info!("Executed dao_escrow::0x04 (tx: {:?})", tx.hash());
+
+    // Test TreasurySpendV1 (0x05) - executes approved treasury proposal
+    let proposal_id = Base::from(1);
+    let treasury_spend_result = harness.treasury_spend(
+        endowment_bulla,
+        proposal_id,
+        owner_pub,
+        25u64,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created treasury spend call");
+
+    let tx = pipeline.exec_with_children(
+        0x05,
+        treasury_spend_result.call_data,
+        vec![],
+        vec![child_call],
+        vec![vec![]],
+    ).await?;
+    info!("Executed dao_escrow::0x05 (tx: {:?})", tx.hash());
 
     info!("test_dao_escrow_heavyweight PASSED");
     Ok(())

@@ -35,7 +35,10 @@ use darkfi_dao_escrow_contract::client::{
     init_v1::{init_v1_proof, InitV1CallData, InitV1PublicInputs},
     pay_premium_v1::{pay_premium_v1_proof, PayPremiumV1CallData, PayPremiumV1PublicInputs},
 };
-use darkfi_dao_escrow_contract::model::{InitializeParamsV1, PayPremiumParamsV1};
+use darkfi_dao_escrow_contract::model::{
+    InitializeParamsV1, PayPremiumParamsV1, WithdrawParamsV1, EndowmentWithdrawParamsV1,
+    TreasurySpendParamsV1,
+};
 
 /// DaoEscrow Harness for isolated testing
 pub struct DaoEscrowHarness {
@@ -169,6 +172,96 @@ impl DaoEscrowHarness {
 
         Ok(PayPremiumResult { call_data, public_inputs, proof })
     }
+
+    /// Build InitializeParamsV1 call data without ZK proof (for testing when proof fails)
+    pub fn initialize_call_data(
+        &self,
+        dao_bulla: pallas::Base,
+        owner_pubkey: PublicKey,
+        endowment_token_id: pallas::Base,
+        bulla_blind: pallas::Base,
+    ) -> Result<Vec<u8>> {
+        let params = InitializeParamsV1 {
+            dao_bulla,
+            owner_pubkey,
+            endowment_token_id,
+            bulla_blind: darkfi_sdk::crypto::Blind(bulla_blind),
+            enable_drain_protection: false,
+        };
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+        Ok(call_data)
+    }
+
+    /// Withdraw from endowment (WithdrawV1 - 0x03)
+    pub fn withdraw(
+        &self,
+        dao_escrow_bulla: pallas::Base,
+        recipient_pubkey: PublicKey,
+        value: u64,
+    ) -> Result<WithdrawResult> {
+        let params = WithdrawParamsV1 {
+            dao_escrow_bulla,
+            value,
+            recipient_pubkey,
+        };
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+        Ok(WithdrawResult { call_data })
+    }
+
+    /// Endowment withdraw (EndowmentWithdrawV1 - 0x04)
+    pub fn endowment_withdraw(
+        &self,
+        dao_escrow_bulla: pallas::Base,
+        claim_id: pallas::Base,
+        recipient_pubkey: PublicKey,
+        value: u64,
+    ) -> Result<EndowmentWithdrawResult> {
+        let params = EndowmentWithdrawParamsV1 {
+            dao_escrow_bulla,
+            claim_id,
+            recipient_pubkey,
+            value,
+        };
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+        Ok(EndowmentWithdrawResult { call_data })
+    }
+
+    /// Treasury spend (TreasurySpendV1 - 0x05)
+    pub fn treasury_spend(
+        &self,
+        dao_escrow_bulla: pallas::Base,
+        proposal_id: pallas::Base,
+        recipient_pubkey: PublicKey,
+        value: u64,
+    ) -> Result<TreasurySpendResult> {
+        let params = TreasurySpendParamsV1 {
+            dao_escrow_bulla,
+            proposal_id,
+            recipient_pubkey,
+            value,
+        };
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+        Ok(TreasurySpendResult { call_data })
+    }
+}
+
+/// Result of DAO-Escrow withdraw
+pub struct WithdrawResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of DAO-Escrow endowment withdraw
+pub struct EndowmentWithdrawResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of DAO-Escrow treasury spend
+pub struct TreasurySpendResult {
+    pub call_data: Vec<u8>,
 }
 
 impl super::ContractHarness for DaoEscrowHarness {
