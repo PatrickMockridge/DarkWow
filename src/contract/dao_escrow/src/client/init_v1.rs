@@ -98,12 +98,10 @@ impl InitV1CallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Private inputs
-            Witness::Scalar(Value::known(self.nullifier_k)),
+            // nullifier_k is a CONSTANT in circuit - do NOT pass as witness
+            // owner_pub_x/y are DERIVED inside circuit from owner_secret and NULLIFIER_K
             Witness::Base(Value::known(self.dao_bulla)),
             Witness::Base(Value::known(self.owner_secret)),
-            Witness::Base(Value::known(self.owner_pub_x)),
-            Witness::Base(Value::known(self.owner_pub_y)),
             Witness::Base(Value::known(self.endowment_token_id)),
             Witness::Base(Value::known(self.bulla_blind)),
         ]

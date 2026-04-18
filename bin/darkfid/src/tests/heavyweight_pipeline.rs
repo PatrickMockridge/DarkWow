@@ -1103,6 +1103,7 @@ async fn test_dao_escrow_heavyweight_impl(
     let harness = DaoEscrowHarness::spawn();
 
     // Initialize a DAO Escrow (0x00)
+    let nullifier_k = pallas::Scalar::random(&mut OsRng);
     let owner_secret = Base::random(&mut OsRng);
     let endowment_token_id = Base::from(1); // Token ID 1
     let bulla_blind = Base::random(&mut OsRng);
@@ -1121,18 +1122,18 @@ async fn test_dao_escrow_heavyweight_impl(
         bulla_blind,
     ]);
 
-    // Build call data for InitializeV1 (0x00)
-    // Note: initialize_v1 doesn't verify ZK proofs (wasm::zk::verify_zk_proof is commented out)
-    let init_call_data = harness.initialize_call_data(
+    // Build call data for InitializeV1 (0x00) with real ZK proof
+    let init_result = harness.initialize(
+        nullifier_k,
         dao_bulla,
-        owner_pub,
+        owner_secret,
         endowment_token_id,
         bulla_blind,
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Initialized DAO Escrow: endowment_bulla={}", hex::encode(endowment_bulla.to_repr()));
 
-    // Execute InitializeV1 (0x00) - uses empty proof since contract doesn't verify ZK
-    let tx = pipeline.exec(0x00, init_call_data, vec![]).await?;
+    // Execute InitializeV1 (0x00) - with ZK proof
+    let tx = pipeline.exec(0x00, init_result.call_data, vec![init_result.proof]).await?;
     info!("Executed dao_escrow::0x00 (tx: {:?})", tx.hash());
 
     // Build child call for money_v3::transfer_v1 (0x04)

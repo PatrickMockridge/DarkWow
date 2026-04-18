@@ -142,8 +142,8 @@ impl PayPremiumV1CallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Private inputs
-            Witness::Scalar(Value::known(self.nullifier_k)),
+            // nullifier_k is a CONSTANT in circuit - do NOT pass as witness
+            // member_pub_x/y are DERIVED inside circuit from member_secret and NULLIFIER_K
             Witness::Base(Value::known(self.dao_escrow_bulla)),
             Witness::Base(Value::known(pallas::Base::from(self.current_block))),
             Witness::Base(Value::known(self.member_secret)),
@@ -157,8 +157,7 @@ impl PayPremiumV1CallData {
             Witness::Scalar(Value::known(self.mpc_secret_3)),
             Witness::Base(Value::known(pallas::Base::from(self.max_membership_blocks))),
             Witness::Base(Value::known(pallas::Base::from(self.max_expiry))),
-            Witness::Base(Value::known(self.member_pub_x)),
-            Witness::Base(Value::known(self.member_pub_y)),
+            // member_pub_x/y derived inside circuit - do NOT pass as witnesses
         ]
     }
 }
