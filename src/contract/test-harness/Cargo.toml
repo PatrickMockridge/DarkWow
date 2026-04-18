@@ -31,6 +31,7 @@ darkfi_dao_escrow_contract = {path = "../dao_escrow", features = ["client", "no-
 darkfi_darkbet_exchange_contract = {path = "../darkbet_exchange", features = ["client", "no-entrypoint"]}
 darkfi_baccarat_contract = {path = "../baccarat", features = ["client", "no-entrypoint"]}
 darkfi_pool_stake_contract = {path = "../pool_stake", features = ["client", "no-entrypoint"]}
+darkfi_roulette_contract = {path = "../roulette", features = ["client", "no-entrypoint"]}
 darkfi_darktoshi_dice_contract = {path = "../darktoshi_dice", features = ["client", "no-entrypoint"]}
 darkfi_slot_contract = {path = "../slot", features = ["client", "no-entrypoint"]}
 

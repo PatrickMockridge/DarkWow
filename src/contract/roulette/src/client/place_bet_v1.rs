@@ -1,0 +1,114 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Roulette place_bet_v1 ZK proof generation
+
+use darkfi::{
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
+    zkas::ZkBinary,
+    Result,
+};
+use darkfi_sdk::{
+    crypto::{poseidon_hash, PublicKey},
+    pasta::pallas,
+};
+use rand::rngs::OsRng;
+
+/// PlaceBetV1 circuit public inputs
+#[derive(Debug, Clone)]
+pub struct PlaceBetV1PublicInputs {
+    pub bet_id: pallas::Base,
+    pub nullifier: pallas::Base,
+}
+
+impl PlaceBetV1PublicInputs {
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![self.bet_id, self.nullifier]
+    }
+}
+
+/// Input data for place_bet proof generation
+#[derive(Debug, Clone)]
+pub struct PlaceBetV1CallData {
+    pub table_id: pallas::Base,
+    pub player_pub_x: pallas::Base,
+    pub player_pub_y: pallas::Base,
+    pub bet_type: pallas::Base,
+    pub amount: u64,
+    pub nonce: pallas::Base,
+}
+
+impl PlaceBetV1CallData {
+    pub fn new(
+        table_id: pallas::Base,
+        player_pub: PublicKey,
+        bet_type: u8,
+        amount: u64,
+        nonce: pallas::Base,
+    ) -> Self {
+        let (px, py) = player_pub.xy();
+        Self {
+            table_id,
+            player_pub_x: px,
+            player_pub_y: py,
+            bet_type: pallas::Base::from(bet_type as u64),
+            amount,
+            nonce,
+        }
+    }
+
+    pub fn compute_public_inputs(&self) -> PlaceBetV1PublicInputs {
+        let bet_id = poseidon_hash([
+            self.table_id,
+            self.player_pub_x,
+            self.player_pub_y,
+            pallas::Base::from(self.amount),
+        ]);
+        let nullifier = poseidon_hash([bet_id, self.nonce]);
+        PlaceBetV1PublicInputs { bet_id, nullifier }
+    }
+
+    pub fn to_witnesses(&self) -> Vec<Witness> {
+        vec![
+            // Witnesses (must match circuit order)
+            Witness::Base(Value::known(self.table_id)),
+            Witness::Base(Value::known(self.player_pub_x)),
+            Witness::Base(Value::known(self.player_pub_y)),
+            Witness::Base(Value::known(self.bet_type)),
+            Witness::Base(Value::known(pallas::Base::from(self.amount))),
+            Witness::Base(Value::known(self.nonce)),
+            Witness::Base(Value::known(self.compute_public_inputs().bet_id)),
+            Witness::Base(Value::known(self.compute_public_inputs().nullifier)),
+        ]
+    }
+}
+
+/// Create a PlaceBet ZK proof
+pub fn create_place_bet_v1_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &PlaceBetV1CallData,
+) -> Result<(Proof, PlaceBetV1PublicInputs)> {
+    let public_inputs = input.compute_public_inputs();
+    let witnesses = input.to_witnesses();
+
+    let circuit = ZkCircuit::new(witnesses, zkbin);
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+
+    Ok((proof, public_inputs))
+}

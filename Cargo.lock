@@ -1983,6 +1983,7 @@ dependencies = [
  "darkfi_native_token_contract",
  "darkfi_oracle_contract",
  "darkfi_pool_stake_contract",
+ "darkfi_roulette_contract",
  "darkfi_slot_contract",
  "darkfi_stablecoin_contract",
  "darkfi_tender_contract",

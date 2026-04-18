@@ -1893,6 +1893,162 @@ async fn test_slot_heavyweight_impl(
     Ok(())
 }
 
+// roulette
+#[test]
+fn test_roulette_heavyweight() -> Result<()> {
+    let ex = Arc::new(Executor::new());
+    let (signal, shutdown) = smol::channel::unbounded::<()>();
+
+    easy_parallel::Parallel::new()
+        .each(0..1, |_| smol::block_on(ex.run(shutdown.recv())))
+        .finish(|| {
+            smol::block_on(async {
+                test_roulette_heavyweight_impl(ex.clone()).await.unwrap();
+                drop(signal);
+            })
+        });
+
+    Ok(())
+}
+
+async fn test_roulette_heavyweight_impl(
+    ex: Arc<Executor<'static>>,
+) -> std::result::Result<(), HeavyweightError> {
+    use darkfi_contract_test_harness::harness::{MoneyV3Harness, RouletteHarness};
+    use darkfi_sdk::crypto::pasta_prelude::{Group, PrimeField};
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
+
+    // Deploy money_v3 first to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18616".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18617".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
+
+    let harness = RouletteHarness::spawn();
+    info!("Roulette harness created with circuits: {:?}", harness.circuits());
+
+    let config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18618".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18619".to_string(),
+    };
+
+    let mut pipeline = HeavyweightPipeline::new(harness, "roulette", config, ex).await?;
+    pipeline.generate_genesis_blocks(3).await?;
+    let wasm = read_wasm("roulette").await?;
+    let contract_id = pipeline.deploy(wasm).await?;
+    info!("Roulette deployed: {:?}", contract_id);
+
+    // Create a new harness for proof generation (pipeline takes ownership of first harness)
+    let harness = RouletteHarness::spawn();
+    info!("Roulette harness created with circuits: {:?}", harness.circuits());
+
+    // Build child call for money_v3::transfer_v1 (0x04)
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04],
+    };
+
+    // Create house keypair
+    let house_secret = darkfi_sdk::crypto::SecretKey::random(&mut OsRng);
+    let house_pub = darkfi_sdk::crypto::PublicKey::from_secret(house_secret);
+
+    // Initialize roulette table (0x00) - no child call
+    let init_result = harness
+        .initialize(house_pub, false, 1000000u64, 10000u64, 10u64)
+        .map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Initialized roulette table");
+
+    let tx = pipeline.exec(0x00, init_result.call_data, vec![]).await?;
+    info!("Executed roulette::0x00 (tx: {:?})", tx.hash());
+
+    // Derive table_id (same as contract: poseidon_hash([house_pub.x, house_pub.y, created_at]))
+    let table_id = darkfi_sdk::crypto::poseidon_hash([
+        house_pub.x(),
+        house_pub.y(),
+        Base::from(1), // created_at block
+    ]);
+
+    // Create player keypair
+    let player_secret = darkfi_sdk::crypto::SecretKey::random(&mut OsRng);
+    let player_pub = darkfi_sdk::crypto::PublicKey::from_secret(player_secret);
+
+    // PlaceBetV1 (0x01) - requires money_v3::transfer_v1 child call
+    // BetType::Straight = 0
+    let nonce = Base::random(&mut OsRng);
+    let place_bet_result = harness
+        .place_bet(
+            table_id,
+            player_pub,
+            0u8, // BetType::Straight
+            vec![7], // straight bet on 7
+            100u64,
+            nonce,
+        )
+        .map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created place bet: bet_id={}", hex::encode(place_bet_result.bet_id.to_repr()));
+
+    let tx = pipeline
+        .exec_with_children(
+            0x01,
+            place_bet_result.call_data,
+            vec![place_bet_result.proof],
+            vec![child_call.clone()],
+        )
+        .await?;
+    info!("Executed roulette::0x01 (tx: {:?})", tx.hash());
+
+    // SpinWheelV1 (0x02) - no child call, uses block hash for randomness
+    let spin_nonce = Base::random(&mut OsRng);
+    let spin_result = harness
+        .spin_wheel(table_id, house_pub, spin_nonce)
+        .map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created spin wheel call");
+
+    let tx = pipeline.exec(0x02, spin_result.call_data, vec![]).await?;
+    info!("Executed roulette::0x02 (tx: {:?})", tx.hash());
+
+    // SettleBetsV1 (0x03) - requires money_v3::transfer_v1 child call
+    let settle_result = harness
+        .settle_bets(table_id, vec![place_bet_result.bet_id])
+        .map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created settle bets call");
+
+    let tx = pipeline
+        .exec_with_children(0x03, settle_result.call_data, vec![settle_result.proof], vec![child_call.clone()])
+        .await?;
+    info!("Executed roulette::0x03 (tx: {:?})", tx.hash());
+
+    // HouseCloseV1 (0x04) - requires money_v3::transfer_v1 child call
+    let close_result = harness
+        .house_close(table_id, house_pub)
+        .map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created house close call");
+
+    let tx = pipeline
+        .exec_with_children(0x04, close_result.call_data, vec![], vec![child_call])
+        .await?;
+    info!("Executed roulette::0x04 (tx: {:?})", tx.hash());
+
+    info!("test_roulette_heavyweight PASSED");
+    Ok(())
+}
+
 // stablecoin
 #[test]
 fn test_stablecoin_heavyweight() -> Result<()> {
