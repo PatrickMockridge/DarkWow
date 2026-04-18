@@ -59,6 +59,7 @@ use darkfi::{
 use darkfi_contract_test_harness::harness::ContractHarness;
 use darkfi_sdk::{
     crypto::{keypair::Keypair, ContractId},
+    dark_tree::DarkTree,
     ContractCall,
 };
 use smol::Executor;
@@ -187,6 +188,19 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         mut call_data: Vec<u8>,
         proofs: Vec<darkfi::zk::Proof>,
     ) -> std::result::Result<darkfi::tx::Transaction, HeavyweightError> {
+        self.exec_with_children(function_id, call_data, proofs, vec![]).await
+    }
+
+    /// Execute a contract call with ZK proofs and child calls
+    ///
+    /// Builds a transaction, signs it, and returns the transaction.
+    pub async fn exec_with_children(
+        &mut self,
+        function_id: u8,
+        mut call_data: Vec<u8>,
+        proofs: Vec<darkfi::zk::Proof>,
+        children: Vec<ContractCall>,
+    ) -> std::result::Result<darkfi::tx::Transaction, HeavyweightError> {
         let contract_id =
             self.contract_id.ok_or(HeavyweightError::NotDeployed)?;
 
@@ -196,10 +210,23 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
 
         let call = ContractCall { contract_id, data };
 
+        // Convert children ContractCalls to DarkTree<ContractCallLeaf>
+        let child_trees: Vec<DarkTree<ContractCallLeaf>> = children
+            .into_iter()
+            .map(|c| {
+                DarkTree::new(
+                    ContractCallLeaf { call: c, proofs: vec![] },
+                    vec![],
+                    None,
+                    None,
+                )
+            })
+            .collect();
+
         // Build transaction with proofs
         let mut tx_builder = TransactionBuilder::new(
             ContractCallLeaf { call, proofs },
-            vec![],
+            child_trees,
         )
         .map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
 
@@ -1231,12 +1258,29 @@ fn test_escrow_heavyweight() -> Result<()> {
 async fn test_escrow_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::EscrowHarness;
+    use darkfi_contract_test_harness::harness::{EscrowHarness, MoneyV3Harness};
     use darkfi_sdk::crypto::pasta_prelude::{Group, PrimeField};
     use darkfi_sdk::pasta::pallas::{Base, Scalar};
     use darkfi::zk::halo2::Field;
     use rand::rngs::OsRng;
 
+    // First, deploy money_v3 to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18598".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18599".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
+
+    // Now deploy escrow
     let harness = EscrowHarness::spawn();
     info!("Escrow harness created with circuits: {:?}", harness.circuits());
 
@@ -1245,8 +1289,8 @@ async fn test_escrow_heavyweight_impl(
         pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
-        alice_url: "tcp+tls://127.0.0.1:18598".to_string(),
-        bob_url: "tcp+tls://127.0.0.1:18599".to_string(),
+        alice_url: "tcp+tls://127.0.0.1:18600".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18601".to_string(),
     };
 
     let mut pipeline = HeavyweightPipeline::new(harness, "escrow", config, ex).await?;
@@ -1298,7 +1342,7 @@ async fn test_escrow_heavyweight_impl(
     info!("Executed escrow::0x02 (tx: {:?})", tx.hash());
 
     // ClaimV1 (0x03) - seller claims the escrow
-    // Note: Requires money_v3::transfer_v1 child call - may fail in isolated test
+    // Requires money_v3::transfer_v1 (0x04) as child call
     let recipient_pubkey = seller_pubkey; // Seller receives the funds
     let claim_result = harness.claim_escrow(
         create_result.public_inputs.commitment,
@@ -1309,14 +1353,21 @@ async fn test_escrow_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Created claim proof for escrow");
 
-    // Execute ClaimV1 (0x03)
-    // Note: This requires money_v3::transfer_v1 as a child call - may fail in isolated test
-    match pipeline.exec(0x03, claim_result.call_data, vec![claim_result.proof]).await {
-        Ok(tx) => info!("Executed escrow::0x03 (claim, tx: {:?})", tx.hash()),
-        Err(e) => {
-            info!("ClaimV1 failed (expected without money child call): {}", e);
-        }
-    }
+    // Build child call to money_v3::transfer_v1 (0x04)
+    // The escrow contract validates that child_call.data[0] == 0x04
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04], // TransferV1 function ID
+    };
+
+    // Execute ClaimV1 (0x03) with money_v3 child call
+    let tx = pipeline.exec_with_children(
+        0x03,
+        claim_result.call_data,
+        vec![claim_result.proof],
+        vec![child_call],
+    ).await?;
+    info!("Executed escrow::0x03 (claim, tx: {:?})", tx.hash());
 
     info!("test_escrow_heavyweight PASSED");
     Ok(())
