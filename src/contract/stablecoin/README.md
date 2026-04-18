@@ -467,7 +467,8 @@ The contract just provides the financial primitives. How staking integrates with
 - [x] All 5 ZK circuits compiled (open_position, mint_stable, liquidate, governance_report, accrue_interest)
 - [x] Test harness with all 5 circuits loaded
 - [x] Heavyweight pipeline endpoint testing (OpenPositionV1 0x01, MintStableV1 0x04 (w/ money_v3 child call), GovernanceReportV1 0x08, AccrueInterestV1 0x09)
-- [x] money_v3 child call integration (MintStableV1, RemoveCollateralV1, LiquidateV1)
+- [x] money_v3 child call validation (MintStableV1, RemoveCollateralV1, LiquidateV1)
+- [x] Full money_v3::transfer_v1 child call integration
 
 ### In Progress
 

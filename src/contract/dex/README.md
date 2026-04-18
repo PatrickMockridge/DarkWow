@@ -134,6 +134,9 @@ net_received = fill_amount - fee;
 - [x] Modular transparency architecture
 - [x] Test harness with full entrypoint coverage
 - [x] Heavyweight pipeline endpoint testing (CreateSwapV1, AcceptSwapV1, ExecuteSwapV1)
+- [x] money_v3 child call validation (ExecuteSwapV1, CancelSwapV1)
+- [x] Cross-contract FuncRef constraints in circuit
+- [x] Full money_v3 integration with OtcSwap proofs
 
 ### Future
 
