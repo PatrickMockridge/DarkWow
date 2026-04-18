@@ -101,6 +101,9 @@ impl BaccaratHarness {
         house_edge: u32,
         confirmation_depth: u8,
     ) -> Result<CommitBetResult, Box<dyn std::error::Error>> {
+        // Generate random value blind for Pedersen commitment
+        let value_blind = pallas::Scalar::random(&mut rand::rngs::OsRng);
+
         let input = CommitBetV1CallData::new(
             player_pub,
             bet_value,
@@ -108,8 +111,7 @@ impl BaccaratHarness {
             secret_nonce,
             blind,
             token_id,
-            house_edge,
-            confirmation_depth,
+            value_blind,
         );
 
         let (proof, public_inputs) = create_commit_bet_v1_proof(
@@ -119,7 +121,10 @@ impl BaccaratHarness {
         )?;
 
         // Create value commitment using Pedersen
-        let value_commit = pallas::Point::identity(); // Placeholder - real impl would use actual commitment
+        let value_commit = darkfi_sdk::crypto::pedersen_commitment_u64(
+            bet_value,
+            darkfi_sdk::crypto::Blind(value_blind),
+        );
 
         // Derive bet_id
         let bet_id = derive_bet_id(
