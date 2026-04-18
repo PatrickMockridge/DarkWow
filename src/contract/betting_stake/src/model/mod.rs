@@ -21,7 +21,7 @@
 //! Data structures for capital staking against betting contracts.
 
 use darkfi_sdk::{
-    crypto::PublicKey,
+    crypto::{PublicKey, schnorr::Signature},
     pasta::pallas,
 };
 use darkfi_serial::{SerialDecodable, SerialEncodable};
@@ -146,7 +146,7 @@ pub struct InitializeParamsV1 {
     /// Risk profile (0=Low, 1=Medium, 2=High)
     pub risk_profile: u8,
     /// Signature from betting contract verifying these params
-    pub signature: pallas::Base,
+    pub signature: Signature,
 }
 
 /// Update produced by InitializeV1
@@ -168,7 +168,7 @@ pub struct StakeParamsV1 {
     /// Amount to stake
     pub amount: u64,
     /// Signature from staker
-    pub signature: pallas::Base,
+    pub signature: Signature,
     /// Spend hook FuncId for money_v3::transfer_v1 callback
     pub spend_hook: pallas::Base,
     /// User data for spend hook callback
@@ -192,7 +192,7 @@ pub struct UnstakeParamsV1 {
     /// Stake ID to unstake
     pub stake_id: pallas::Base,
     /// Signature from staker
-    pub signature: pallas::Base,
+    pub signature: Signature,
     /// Spend hook FuncId for money_v3::transfer_v1 callback
     pub spend_hook: pallas::Base,
     /// User data for spend hook callback
@@ -213,7 +213,7 @@ pub struct ClaimEarningsParamsV1 {
     /// Stake ID to claim earnings for
     pub stake_id: pallas::Base,
     /// Signature from staker
-    pub signature: pallas::Base,
+    pub signature: Signature,
 }
 
 /// Update produced by ClaimEarningsV1
@@ -256,7 +256,7 @@ pub fn derive_table_id(betting_contract_id: pallas::Base, nonce: u64) -> pallas:
 }
 
 /// Derive stake ID
-pub fn derive_stake_id(table_id: pallas::Base, staker_pub: &PublicKey, nonce: u64) -> pallas::Base {
+pub fn derive_stake_id(table_id: pallas::Base, staker_pub: &PublicKey, amount: u64, nonce: u64) -> pallas::Base {
     use darkfi_sdk::crypto::poseidon_hash;
-    poseidon_hash([table_id, staker_pub.x(), staker_pub.y(), pallas::Base::from(nonce)])
+    poseidon_hash([table_id, staker_pub.x(), staker_pub.y(), pallas::Base::from(amount), pallas::Base::from(nonce)])
 }

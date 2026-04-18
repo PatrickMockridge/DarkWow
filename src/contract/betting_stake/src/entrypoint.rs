@@ -19,7 +19,7 @@
 //! Betting Stake Contract Entrypoint
 
 use darkfi_sdk::{
-    crypto::{poseidon_hash, ContractId, PublicKey},
+    crypto::{poseidon_hash, ContractId, PublicKey, schnorr::SchnorrPublic},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
@@ -217,9 +217,16 @@ fn staking_stake_process_instruction_v1(
         return Err(BettingStakeError::StakeTooSmall.into())
     }
 
+    // Verify staker signature
+    let signature_msg = serialize(&(params.table_id, params.staker_pub.x(), params.staker_pub.y(), params.amount));
+    if !params.staker_pub.verify(&signature_msg, &params.signature) {
+        msg!("[betting_stake::stake] Error: Invalid signature");
+        return Err(BettingStakeError::InvalidSignature.into())
+    }
+
     // Generate stake ID
     let stake_id =
-        derive_stake_id(params.table_id, &params.staker_pub, wasm::util::get_verifying_block_height()? as u64);
+        derive_stake_id(params.table_id, &params.staker_pub, params.amount, wasm::util::get_verifying_block_height()? as u64);
 
     // Check if stake already exists
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
@@ -324,6 +331,13 @@ fn staking_unstake_process_instruction_v1(
         return Err(BettingStakeError::StakeLocked.into())
     }
 
+    // Verify staker signature (signature is over stake_id)
+    let signature_msg = serialize(&params.stake_id);
+    if !stake.staker_pub.verify(&signature_msg, &params.signature) {
+        msg!("[betting_stake::unstake] Error: Invalid signature");
+        return Err(BettingStakeError::InvalidSignature.into())
+    }
+
     // Get table for final settlement
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
     let table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&stake.table_id))? {
@@ -389,6 +403,13 @@ fn staking_claim_earnings_process_instruction_v1(
         Some(data) => deserialize(&data)?,
         None => return Err(BettingStakeError::StakeNotFound.into()),
     };
+
+    // Verify staker signature (signature is over stake_id)
+    let signature_msg = serialize(&params.stake_id);
+    if !stake.staker_pub.verify(&signature_msg, &params.signature) {
+        msg!("[betting_stake::claim] Error: Invalid signature");
+        return Err(BettingStakeError::InvalidSignature.into())
+    }
 
     // Get table
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
@@ -510,6 +531,6 @@ fn derive_table_id(betting_contract_id: pallas::Base, nonce: u64) -> pallas::Bas
     poseidon_hash([betting_contract_id, pallas::Base::from(nonce)])
 }
 
-fn derive_stake_id(table_id: pallas::Base, staker_pub: &PublicKey, nonce: u64) -> pallas::Base {
-    poseidon_hash([table_id, staker_pub.x(), staker_pub.y(), pallas::Base::from(nonce)])
+fn derive_stake_id(table_id: pallas::Base, staker_pub: &PublicKey, amount: u64, nonce: u64) -> pallas::Base {
+    poseidon_hash([table_id, staker_pub.x(), staker_pub.y(), pallas::Base::from(amount), pallas::Base::from(nonce)])
 }

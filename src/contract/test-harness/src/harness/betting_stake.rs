@@ -26,17 +26,20 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{pasta_prelude::{Field, Group}, poseidon_hash, PublicKey, SecretKey},
+    crypto::{
+        pasta_prelude::{Field, Group},
+        poseidon_hash,
+        schnorr::SchnorrSecret,
+        PublicKey, SecretKey,
+    },
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use darkfi_serial::{Encodable, serialize};
 use rand::rngs::OsRng;
 
 use darkfi_betting_stake_contract::client::proof_gen::{
     init_v1_proof, stake_v1_proof, unstake_v1_proof, claim_v1_proof, update_risk_v1_proof,
     InitV1CallData, StakeV1CallData, UnstakeV1CallData, ClaimV1CallData, UpdateRiskV1CallData,
-    InitV1PublicInputs, StakeV1PublicInputs, UnstakeV1PublicInputs, ClaimV1PublicInputs,
-    UpdateRiskV1PublicInputs,
 };
 use darkfi_betting_stake_contract::model::{
     ClaimEarningsParamsV1, InitializeParamsV1, StakeParamsV1, UnstakeParamsV1, UpdateRiskParamsV1,
@@ -129,7 +132,7 @@ impl BettingStakeHarness {
             betting_contract_id,
             house_edge_bp,
             risk_profile,
-            signature: pallas::Base::zero(),
+            signature: darkfi_sdk::crypto::schnorr::Signature::dummy(),
         };
 
         let mut call_data = vec![];
@@ -143,6 +146,7 @@ impl BettingStakeHarness {
         &self,
         table_id: pallas::Base,
         staker_pub: PublicKey,
+        staker_secret: SecretKey,
         amount: u64,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
@@ -162,12 +166,9 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = stake_v1_proof(&self.stake_zkbin, &self.stake_pk, &input)?;
 
-        let signature = poseidon_hash([
-            table_id,
-            staker_pub.x(),
-            staker_pub.y(),
-            pallas::Base::from(amount),
-        ]);
+        // Create proper Schnorr signature
+        let signature_msg = serialize(&(table_id, staker_pub.x(), staker_pub.y(), amount));
+        let signature = staker_secret.sign(&signature_msg);
 
         let params = StakeParamsV1 {
             table_id,
@@ -189,6 +190,7 @@ impl BettingStakeHarness {
         &self,
         stake_id: pallas::Base,
         stake: &UnstakeStakeInfo,
+        staker_secret: SecretKey,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
     ) -> Result<UnstakeResult> {
@@ -207,9 +209,13 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = unstake_v1_proof(&self.unstake_zkbin, &self.unstake_pk, &input)?;
 
+        // Create proper Schnorr signature over stake_id
+        let signature_msg = serialize(&stake_id);
+        let signature = staker_secret.sign(&signature_msg);
+
         let params = UnstakeParamsV1 {
             stake_id,
-            signature: pallas::Base::zero(),
+            signature,
             spend_hook,
             user_data,
         };
@@ -225,6 +231,7 @@ impl BettingStakeHarness {
         &self,
         stake_id: pallas::Base,
         stake: &ClaimStakeInfo,
+        staker_secret: SecretKey,
     ) -> Result<ClaimEarningsResult> {
         let value_blind = pallas::Scalar::random(&mut OsRng);
 
@@ -240,9 +247,13 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
 
+        // Create proper Schnorr signature over stake_id
+        let signature_msg = serialize(&stake_id);
+        let signature = staker_secret.sign(&signature_msg);
+
         let params = ClaimEarningsParamsV1 {
             stake_id,
-            signature: pallas::Base::zero(),
+            signature,
         };
 
         let mut call_data = vec![];

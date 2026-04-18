@@ -2570,6 +2570,7 @@ async fn test_betting_stake_heavyweight_impl(
     let stake_result = harness.stake(
         table_id,
         staker_pub,
+        staker_secret,
         amount,
         spend_hook,
         user_data,
@@ -2608,6 +2609,7 @@ async fn test_betting_stake_heavyweight_impl(
         staker_pub.x(),
         staker_pub.y(),
         Base::from(amount),
+        Base::from(nonce),
     ]);
 
     let claim_stake_info = ClaimStakeInfo::new(
@@ -2622,6 +2624,7 @@ async fn test_betting_stake_heavyweight_impl(
     let claim_result = harness.claim_earnings(
         stake_id,
         &claim_stake_info,
+        staker_secret,
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Created claim earnings call");
 
@@ -2642,6 +2645,7 @@ async fn test_betting_stake_heavyweight_impl(
     let unstake_result = harness.unstake(
         stake_id,
         &unstake_stake_info,
+        staker_secret,
         spend_hook,
         user_data,
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;

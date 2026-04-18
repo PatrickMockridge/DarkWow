@@ -23,9 +23,14 @@
 pub mod proof_gen;
 
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey, SecretKey},
+    crypto::{
+        poseidon_hash,
+        schnorr::{SchnorrSecret, Signature},
+        PublicKey, SecretKey,
+    },
     pasta::pallas,
 };
+use darkfi_serial::serialize;
 
 use crate::model::{
     ClaimEarningsParamsV1, InitializeParamsV1, StakeParamsV1, UnstakeParamsV1, UpdateRiskParamsV1,
@@ -43,7 +48,7 @@ pub struct StakeNote {
     pub is_active: bool,
 }
 
-/// Own stake with secret for claiming
+/// Own stake with secret for signing
 pub struct OwnStake {
     pub note: StakeNote,
     pub secret: SecretKey,
@@ -68,7 +73,7 @@ impl InitializeV1Builder {
             betting_contract_id: self.betting_contract_id,
             house_edge_bp: self.house_edge_bp,
             risk_profile: self.risk_profile,
-            signature: pallas::Base::zero(), // Filled by house wallet
+            signature: Signature::dummy(), // Filled by house wallet
         }
     }
 }
@@ -77,6 +82,7 @@ impl InitializeV1Builder {
 pub struct StakeV1Builder {
     table_id: pallas::Base,
     staker_pub: PublicKey,
+    staker_secret: SecretKey,
     amount: u64,
     spend_hook: pallas::Base,
     user_data: pallas::Base,
@@ -87,21 +93,19 @@ impl StakeV1Builder {
     pub fn new(
         table_id: pallas::Base,
         staker_pub: PublicKey,
+        staker_secret: SecretKey,
         amount: u64,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
     ) -> Self {
-        Self { table_id, staker_pub, amount, spend_hook, user_data }
+        Self { table_id, staker_pub, staker_secret, amount, spend_hook, user_data }
     }
 
     /// Build the stake parameters and note
     pub fn build(&self) -> (StakeParamsV1, OwnStake) {
-        let signature = poseidon_hash([
-            self.table_id,
-            self.staker_pub.x(),
-            self.staker_pub.y(),
-            pallas::Base::from(self.amount),
-        ]);
+        // Create signature message
+        let signature_msg = serialize(&(self.table_id, self.staker_pub.x(), self.staker_pub.y(), self.amount));
+        let signature = self.staker_secret.sign(&signature_msg);
 
         let params = StakeParamsV1 {
             table_id: self.table_id,
@@ -112,8 +116,12 @@ impl StakeV1Builder {
             user_data: self.user_data,
         };
 
-        let stake_id =
-            poseidon_hash([self.table_id, self.staker_pub.x(), self.staker_pub.y(), pallas::Base::from(self.amount)]);
+        let stake_id = poseidon_hash([
+            self.table_id,
+            self.staker_pub.x(),
+            self.staker_pub.y(),
+            pallas::Base::from(self.amount),
+        ]);
 
         let note = StakeNote {
             stake_id,
@@ -125,7 +133,7 @@ impl StakeV1Builder {
             is_active: true,
         };
 
-        let own_stake = OwnStake { note, secret: SecretKey::random(&mut rand::rngs::OsRng) };
+        let own_stake = OwnStake { note, secret: self.staker_secret };
 
         (params, own_stake)
     }
@@ -134,21 +142,26 @@ impl StakeV1Builder {
 /// Builder for creating unstake calls
 pub struct UnstakeV1Builder {
     stake_id: pallas::Base,
+    staker_secret: SecretKey,
     spend_hook: pallas::Base,
     user_data: pallas::Base,
 }
 
 impl UnstakeV1Builder {
     /// Create a new UnstakeV1 builder
-    pub fn new(stake_id: pallas::Base, spend_hook: pallas::Base, user_data: pallas::Base) -> Self {
-        Self { stake_id, spend_hook, user_data }
+    pub fn new(stake_id: pallas::Base, staker_secret: SecretKey, spend_hook: pallas::Base, user_data: pallas::Base) -> Self {
+        Self { stake_id, staker_secret, spend_hook, user_data }
     }
 
     /// Build the unstake parameters
     pub fn build(&self) -> UnstakeParamsV1 {
+        // Create signature message (stake_id)
+        let signature_msg = serialize(&self.stake_id);
+        let signature = self.staker_secret.sign(&signature_msg);
+
         UnstakeParamsV1 {
             stake_id: self.stake_id,
-            signature: pallas::Base::zero(), // Filled by wallet
+            signature,
             spend_hook: self.spend_hook,
             user_data: self.user_data,
         }
@@ -158,19 +171,24 @@ impl UnstakeV1Builder {
 /// Builder for creating claim earnings calls
 pub struct ClaimEarningsV1Builder {
     stake_id: pallas::Base,
+    staker_secret: SecretKey,
 }
 
 impl ClaimEarningsV1Builder {
     /// Create a new ClaimEarningsV1 builder
-    pub fn new(stake_id: pallas::Base) -> Self {
-        Self { stake_id }
+    pub fn new(stake_id: pallas::Base, staker_secret: SecretKey) -> Self {
+        Self { stake_id, staker_secret }
     }
 
     /// Build the claim earnings parameters
     pub fn build(&self) -> ClaimEarningsParamsV1 {
+        // Create signature message (stake_id)
+        let signature_msg = serialize(&self.stake_id);
+        let signature = self.staker_secret.sign(&signature_msg);
+
         ClaimEarningsParamsV1 {
             stake_id: self.stake_id,
-            signature: pallas::Base::zero(), // Filled by wallet
+            signature,
         }
     }
 }
