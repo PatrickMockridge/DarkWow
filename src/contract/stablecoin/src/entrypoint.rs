@@ -504,6 +504,22 @@ fn process_remove_collateral_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token payout
+    if this_call.children_indexes.len() != 1 {
+        msg!("[stablecoin::RemoveCollateral] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(StablecoinError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[stablecoin::RemoveCollateral] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(StablecoinError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: WithdrawCollateralParams = deserialize(&self_.data[1..])?;
 
@@ -577,6 +593,22 @@ fn process_mint_stable_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token payout
+    if this_call.children_indexes.len() != 1 {
+        msg!("[stablecoin::MintStable] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(StablecoinError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[stablecoin::MintStable] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(StablecoinError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: MintStableParams = deserialize(&self_.data[1..])?;
 
@@ -694,6 +726,22 @@ fn process_liquidate_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for collateral payout to liquidator
+    if this_call.children_indexes.len() != 1 {
+        msg!("[stablecoin::Liquidate] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(StablecoinError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[stablecoin::Liquidate] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(StablecoinError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: LiquidateParams = deserialize(&self_.data[1..])?;
 

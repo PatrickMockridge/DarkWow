@@ -91,6 +91,12 @@ pub enum StablecoinError {
 
     #[error("Child call input mismatch")]
     ChildCallInputMismatch,
+
+    #[error("Invalid children_indexes: expected 1 money_v3::transfer_v1 child call")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call: expected money_v3::transfer_v1 (0x04)")]
+    InvalidChildCall,
 }
 
 impl From<StablecoinError> for ContractError {
@@ -120,6 +126,8 @@ impl From<StablecoinError> for ContractError {
             StablecoinError::ParentCallInputMismatch => Self::Custom(22),
             StablecoinError::ChildCallFunctionMismatch => Self::Custom(23),
             StablecoinError::ChildCallInputMismatch => Self::Custom(24),
+            StablecoinError::InvalidChildrenIndexes => Self::Custom(25),
+            StablecoinError::InvalidChildCall => Self::Custom(26),
         }
     }
 }

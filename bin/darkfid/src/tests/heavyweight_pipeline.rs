@@ -2070,11 +2070,27 @@ fn test_stablecoin_heavyweight() -> Result<()> {
 async fn test_stablecoin_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::StablecoinHarness;
+    use darkfi_contract_test_harness::harness::{MoneyV3Harness, StablecoinHarness};
     use darkfi_sdk::crypto::{pasta_prelude::PrimeField, BaseBlind};
     use darkfi_sdk::pasta::pallas::Base;
     use darkfi::zk::halo2::Field;
     use rand::rngs::OsRng;
+
+    // Deploy money_v3 first to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18614".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18615".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
 
     let harness = StablecoinHarness::spawn();
     info!("Stablecoin harness created with circuits: {:?}", harness.circuits());
@@ -2097,6 +2113,12 @@ async fn test_stablecoin_heavyweight_impl(
 
     // Create a fresh harness for proof generation
     let harness = StablecoinHarness::spawn();
+
+    // Build child call for money_v3::transfer_v1 (0x04)
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04],
+    };
 
     // OpenPositionV1 (0x01) - Create a collateral position
     let owner_secret = Base::random(&mut OsRng);
@@ -2132,8 +2154,8 @@ async fn test_stablecoin_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Minted stable: amount={}", mint_amount);
 
-    // Execute MintStableV1 (0x04)
-    let tx = pipeline.exec(0x04, mint_result.call_data, vec![mint_result.proof]).await?;
+    // Execute MintStableV1 (0x04) - requires money_v3 child call
+    let tx = pipeline.exec_with_children(0x04, mint_result.call_data, vec![mint_result.proof], vec![child_call.clone()]).await?;
     info!("Executed stablecoin::0x04 (tx: {:?})", tx.hash());
 
     // GovernanceReportV1 (0x08) - Report governance data
