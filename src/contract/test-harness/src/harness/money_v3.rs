@@ -36,8 +36,9 @@ use darkfi_money_v3_contract::{
         auth_token_mint_v1::{AuthTokenMintCallBuilder, AuthTokenMintCallInput},
         mint_v1::{MintCallBuilder, MintCallInput},
         token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput},
+        transfer_v1::{TransferCallBuilder, TransferCallDebris, TransferCallInput, TransferCallOutput},
     },
-    model::{Coin, MintParamsV1},
+    model::{Coin, MintParamsV1, TransferParamsV1},
 };
 use darkfi_serial::Encodable;
 
@@ -278,6 +279,31 @@ impl MoneyV3Harness {
             proofs: debris.proofs,
         })
     }
+
+    /// Create a transfer proof (burn + mint)
+    pub fn transfer(
+        &self,
+        inputs: Vec<TransferCallInput>,
+        outputs: Vec<TransferCallOutput>,
+    ) -> Result<TransferResult> {
+        let debris = TransferCallBuilder {
+            inputs,
+            outputs,
+            burn_zkbin: self.burn_zkbin.clone(),
+            burn_pk: self.burn_pk.clone(),
+            mint_zkbin: self.mint_zkbin.clone(),
+            mint_pk: self.mint_pk.clone(),
+        }
+        .build()?;
+
+        let mut call_data = vec![];
+        debris.params.encode(&mut call_data)?;
+
+        Ok(TransferResult {
+            call_data,
+            proofs: debris.proofs,
+        })
+    }
 }
 
 impl super::ContractHarness for MoneyV3Harness {
@@ -334,5 +360,11 @@ pub struct MintResult {
     pub call_data: Vec<u8>,
     pub coin: Coin,
     pub value_commit: pallas::Base,
+    pub proofs: Vec<darkfi::zk::Proof>,
+}
+
+/// Result of transfer
+pub struct TransferResult {
+    pub call_data: Vec<u8>,
     pub proofs: Vec<darkfi::zk::Proof>,
 }
