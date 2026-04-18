@@ -47,6 +47,7 @@ pub mod atomic_swap;
 pub mod attestation;
 pub mod auction;
 pub mod baccarat;
+pub mod betting_stake;
 pub mod block_height_prediction;
 pub mod bridge;
 pub mod darkbet_exchange;
@@ -73,6 +74,7 @@ pub use atomic_swap::{AtomicSwapHarness, CreateSwapResult, ClaimSwapResult, Refu
 pub use attestation::AttestationHarness;
 pub use auction::AuctionHarness;
 pub use baccarat::BaccaratHarness;
+pub use betting_stake::BettingStakeHarness;
 pub use block_height_prediction::BlockHeightPredictionHarness;
 pub use bridge::BridgeHarness;
 pub use dao_escrow::DaoEscrowHarness;

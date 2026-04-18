@@ -76,12 +76,20 @@ pub struct StakeV1Builder {
     table_id: pallas::Base,
     staker_pub: PublicKey,
     amount: u64,
+    spend_hook: pallas::Base,
+    user_data: pallas::Base,
 }
 
 impl StakeV1Builder {
     /// Create a new StakeV1 builder
-    pub fn new(table_id: pallas::Base, staker_pub: PublicKey, amount: u64) -> Self {
-        Self { table_id, staker_pub, amount }
+    pub fn new(
+        table_id: pallas::Base,
+        staker_pub: PublicKey,
+        amount: u64,
+        spend_hook: pallas::Base,
+        user_data: pallas::Base,
+    ) -> Self {
+        Self { table_id, staker_pub, amount, spend_hook, user_data }
     }
 
     /// Build the stake parameters and note
@@ -98,6 +106,8 @@ impl StakeV1Builder {
             staker_pub: self.staker_pub,
             amount: self.amount,
             signature,
+            spend_hook: self.spend_hook,
+            user_data: self.user_data,
         };
 
         let stake_id =
@@ -122,12 +132,14 @@ impl StakeV1Builder {
 /// Builder for creating unstake calls
 pub struct UnstakeV1Builder {
     stake_id: pallas::Base,
+    spend_hook: pallas::Base,
+    user_data: pallas::Base,
 }
 
 impl UnstakeV1Builder {
     /// Create a new UnstakeV1 builder
-    pub fn new(stake_id: pallas::Base) -> Self {
-        Self { stake_id }
+    pub fn new(stake_id: pallas::Base, spend_hook: pallas::Base, user_data: pallas::Base) -> Self {
+        Self { stake_id, spend_hook, user_data }
     }
 
     /// Build the unstake parameters
@@ -135,6 +147,8 @@ impl UnstakeV1Builder {
         UnstakeParamsV1 {
             stake_id: self.stake_id,
             signature: pallas::Base::zero(), // Filled by wallet
+            spend_hook: self.spend_hook,
+            user_data: self.user_data,
         }
     }
 }

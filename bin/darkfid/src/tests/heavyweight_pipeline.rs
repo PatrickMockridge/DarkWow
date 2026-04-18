@@ -2469,3 +2469,167 @@ async fn test_tender_heavyweight_impl(
     info!("test_tender_heavyweight PASSED");
     Ok(())
 }
+
+// betting_stake
+#[test]
+fn test_betting_stake_heavyweight() -> Result<()> {
+    let ex = Arc::new(Executor::new());
+    let (signal, shutdown) = smol::channel::unbounded::<()>();
+
+    easy_parallel::Parallel::new()
+        .each(0..1, |_| smol::block_on(ex.run(shutdown.recv())))
+        .finish(|| {
+            smol::block_on(async {
+                test_betting_stake_heavyweight_impl(ex.clone()).await.unwrap();
+                drop(signal);
+            })
+        });
+
+    Ok(())
+}
+
+async fn test_betting_stake_heavyweight_impl(
+    ex: Arc<Executor<'static>>,
+) -> std::result::Result<(), HeavyweightError> {
+    use darkfi_contract_test_harness::harness::{BettingStakeHarness, MoneyV3Harness};
+    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi::zk::halo2::Field;
+    use darkfi_sdk::crypto::{PublicKey, SecretKey};
+    use rand::rngs::OsRng;
+
+    // Deploy money_v3 first to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18622".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18623".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
+
+    let harness = BettingStakeHarness::spawn();
+    info!("BettingStake harness created with circuits: {:?}", harness.circuits());
+
+    let config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18622".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18623".to_string(),
+    };
+
+    let mut pipeline = HeavyweightPipeline::new(harness, "betting_stake", config, ex).await?;
+    pipeline.generate_genesis_blocks(3).await?;
+    let wasm = read_wasm("betting_stake").await?;
+    let contract_id = pipeline.deploy(wasm).await?;
+    info!("BettingStake deployed: {:?}", contract_id);
+
+    // Create a new harness for call data generation
+    let harness = BettingStakeHarness::spawn();
+
+    // Build child call for money_v3::transfer_v1 (0x04)
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04],
+    };
+
+    // Initialize staking for a betting table (0x00)
+    let betting_contract_id = Base::from(1);
+    let house_edge_bp = 100u32; // 1%
+    let risk_profile = 0u8;
+
+    let init_result = harness.initialize(
+        betting_contract_id,
+        house_edge_bp,
+        risk_profile,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Initialized betting stake table");
+
+    // Execute InitializeV1 (0x00)
+    let tx = pipeline.exec(0x00, init_result.call_data, vec![]).await?;
+    info!("Executed betting_stake::0x00 (tx: {:?})", tx.hash());
+
+    // Stake capital against the table (0x01) - requires money_v3 child call
+    let table_id = darkfi_sdk::crypto::poseidon_hash([betting_contract_id, Base::from(0u64)]);
+    let staker_secret = SecretKey::random(&mut OsRng);
+    let staker_pub = PublicKey::from_secret(staker_secret);
+    let amount = 1000u64;
+    let spend_hook = darkfi_sdk::crypto::poseidon_hash([money_contract_id.inner(), Base::from(0x04)]);
+    let user_data = Base::zero();
+
+    let stake_result = harness.stake(
+        table_id,
+        staker_pub,
+        amount,
+        spend_hook,
+        user_data,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created stake call");
+
+    let tx = pipeline.exec_with_children(
+        0x01,
+        stake_result.call_data,
+        vec![],
+        vec![child_call.clone()],
+        vec![vec![]],
+    ).await?;
+    info!("Executed betting_stake::0x01 (tx: {:?})", tx.hash());
+
+    // Update risk after a payout (0x04) - called by betting contract
+    let payout_amount = 500u64;
+    let house_share = 50u64; // House takes 10% of payout
+
+    let update_risk_result = harness.update_risk(
+        table_id,
+        payout_amount,
+        house_share,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created update risk call");
+
+    let tx = pipeline.exec(0x04, update_risk_result.call_data, vec![]).await?;
+    info!("Executed betting_stake::0x04 (tx: {:?})", tx.hash());
+
+    // Claim accumulated earnings (0x03)
+    let stake_id = darkfi_sdk::crypto::poseidon_hash([
+        table_id,
+        staker_pub.x(),
+        staker_pub.y(),
+        Base::from(amount),
+    ]);
+
+    let claim_result = harness.claim_earnings(
+        stake_id,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created claim earnings call");
+
+    let tx = pipeline.exec(0x03, claim_result.call_data, vec![]).await?;
+    info!("Executed betting_stake::0x03 (tx: {:?})", tx.hash());
+
+    // Unstake and withdraw (0x02) - requires money_v3 child call
+    let unstake_result = harness.unstake(
+        stake_id,
+        spend_hook,
+        user_data,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created unstake call");
+
+    let tx = pipeline.exec_with_children(
+        0x02,
+        unstake_result.call_data,
+        vec![],
+        vec![child_call],
+        vec![vec![]],
+    ).await?;
+    info!("Executed betting_stake::0x02 (tx: {:?})", tx.hash());
+
+    info!("test_betting_stake_heavyweight PASSED");
+    Ok(())
+}

@@ -178,6 +178,28 @@ fn staking_stake_process_instruction_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token transfer
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[betting_stake::StakeV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(BettingStakeError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[betting_stake::StakeV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(BettingStakeError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: StakeParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -264,6 +286,28 @@ fn staking_unstake_process_instruction_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token transfer
+    if this_call.children_indexes.len() != 1 {
+        msg!(
+            "[betting_stake::UnstakeV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len()
+        );
+        return Err(BettingStakeError::InvalidChildrenIndexes.into())
+    }
+
+    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[betting_stake::UnstakeV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(BettingStakeError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: UnstakeParamsV1 = deserialize(&self_.data[1..])?;
 

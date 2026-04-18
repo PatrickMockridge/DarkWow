@@ -195,9 +195,9 @@ impl Contract {
             Contract::Oracle => vec!["RegisterOracleV1"],
             Contract::Subscription => vec!["SubscribeV1", "VerifyAccessV1", "RateLimitV1", "UpdateUsageV1"],
             Contract::Tender => vec!["CreateTenderV1", "SubmitBidV1", "RevealBidV1", "SelectWinnerV1"],
+            Contract::BettingStake => vec!["Init", "Stake", "Unstake", "Claim", "UpdateRisk"],
             // Contracts with no circuit binaries yet
-            Contract::BettingStake
-            | Contract::BlockHeightPrediction
+            Contract::BlockHeightPrediction
             | Contract::DarkbetExchange
             | Contract::DrainProtection
             | Contract::GameRoom

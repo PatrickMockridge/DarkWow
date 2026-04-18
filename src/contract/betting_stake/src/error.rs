@@ -74,6 +74,12 @@ pub enum BettingStakeError {
 
     #[error("Arithmetic overflow in calculation")]
     ArithmeticOverflow,
+
+    #[error("Invalid children indexes for child call")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call")]
+    InvalidChildCall,
 }
 
 impl From<BettingStakeError> for ContractError {
@@ -96,6 +102,8 @@ impl From<BettingStakeError> for ContractError {
             BettingStakeError::DatabaseError(_) => Self::Custom(15),
             BettingStakeError::InternalError(_) => Self::Custom(16),
             BettingStakeError::ArithmeticOverflow => Self::Custom(17),
+            BettingStakeError::InvalidChildrenIndexes => Self::Custom(18),
+            BettingStakeError::InvalidChildCall => Self::Custom(19),
         }
     }
 }

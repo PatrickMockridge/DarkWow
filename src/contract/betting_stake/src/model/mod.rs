@@ -169,6 +169,10 @@ pub struct StakeParamsV1 {
     pub amount: u64,
     /// Signature from staker
     pub signature: pallas::Base,
+    /// Spend hook FuncId for money_v3::transfer_v1 callback
+    pub spend_hook: pallas::Base,
+    /// User data for spend hook callback
+    pub user_data: pallas::Base,
 }
 
 /// Update produced by StakeV1
@@ -189,6 +193,10 @@ pub struct UnstakeParamsV1 {
     pub stake_id: pallas::Base,
     /// Signature from staker
     pub signature: pallas::Base,
+    /// Spend hook FuncId for money_v3::transfer_v1 callback
+    pub spend_hook: pallas::Base,
+    /// User data for spend hook callback
+    pub user_data: pallas::Base,
 }
 
 /// Update produced by UnstakeV1
