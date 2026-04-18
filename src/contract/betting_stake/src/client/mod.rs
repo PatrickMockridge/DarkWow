@@ -20,6 +20,8 @@
 //!
 //! This module provides the client-side API for building Betting Stake contract calls.
 
+pub mod proof_gen;
+
 use darkfi_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,

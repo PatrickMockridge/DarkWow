@@ -2491,7 +2491,7 @@ fn test_betting_stake_heavyweight() -> Result<()> {
 async fn test_betting_stake_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{BettingStakeHarness, MoneyV3Harness};
+    use darkfi_contract_test_harness::harness::{BettingStakeHarness, MoneyV3Harness, ClaimStakeInfo, UnstakeStakeInfo};
     use darkfi_sdk::crypto::pasta_prelude::PrimeField;
     use darkfi_sdk::pasta::pallas::Base;
     use darkfi::zk::halo2::Field;
@@ -2554,7 +2554,7 @@ async fn test_betting_stake_heavyweight_impl(
     info!("Initialized betting stake table");
 
     // Execute InitializeV1 (0x00)
-    let tx = pipeline.exec(0x00, init_result.call_data, vec![]).await?;
+    let tx = pipeline.exec(0x00, init_result.call_data, vec![init_result.proof]).await?;
     info!("Executed betting_stake::0x00 (tx: {:?})", tx.hash());
 
     // Stake capital against the table (0x01) - requires money_v3 child call
@@ -2562,6 +2562,8 @@ async fn test_betting_stake_heavyweight_impl(
     let staker_secret = SecretKey::random(&mut OsRng);
     let staker_pub = PublicKey::from_secret(staker_secret);
     let amount = 1000u64;
+    let token_id = Base::zero();
+    let nonce = 0u64;
     let spend_hook = darkfi_sdk::crypto::poseidon_hash([money_contract_id.inner(), Base::from(0x04)]);
     let user_data = Base::zero();
 
@@ -2577,24 +2579,27 @@ async fn test_betting_stake_heavyweight_impl(
     let tx = pipeline.exec_with_children(
         0x01,
         stake_result.call_data,
-        vec![],
+        vec![stake_result.proof],
         vec![child_call.clone()],
         vec![vec![]],
     ).await?;
     info!("Executed betting_stake::0x01 (tx: {:?})", tx.hash());
 
     // Update risk after a payout (0x04) - called by betting contract
-    let payout_amount = 500u64;
-    let house_share = 50u64; // House takes 10% of payout
+    let total_stake = amount;
+    let accumulated_losses = 0u64;
 
     let update_risk_result = harness.update_risk(
         table_id,
-        payout_amount,
-        house_share,
+        betting_contract_id,
+        total_stake,
+        accumulated_losses,
+        house_edge_bp,
+        risk_profile,
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Created update risk call");
 
-    let tx = pipeline.exec(0x04, update_risk_result.call_data, vec![]).await?;
+    let tx = pipeline.exec(0x04, update_risk_result.call_data, vec![update_risk_result.proof]).await?;
     info!("Executed betting_stake::0x04 (tx: {:?})", tx.hash());
 
     // Claim accumulated earnings (0x03)
@@ -2605,17 +2610,38 @@ async fn test_betting_stake_heavyweight_impl(
         Base::from(amount),
     ]);
 
+    let claim_stake_info = ClaimStakeInfo::new(
+        table_id,
+        staker_pub,
+        amount,
+        0u64, // accumulated_earnings
+        token_id,
+        nonce,
+    );
+
     let claim_result = harness.claim_earnings(
         stake_id,
+        &claim_stake_info,
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Created claim earnings call");
 
-    let tx = pipeline.exec(0x03, claim_result.call_data, vec![]).await?;
+    let tx = pipeline.exec(0x03, claim_result.call_data, vec![claim_result.proof]).await?;
     info!("Executed betting_stake::0x03 (tx: {:?})", tx.hash());
 
     // Unstake and withdraw (0x02) - requires money_v3 child call
+    let unstake_stake_info = UnstakeStakeInfo::new(
+        table_id,
+        staker_pub,
+        amount,
+        amount,
+        0u64, // accumulated_earnings
+        token_id,
+        nonce,
+    );
+
     let unstake_result = harness.unstake(
         stake_id,
+        &unstake_stake_info,
         spend_hook,
         user_data,
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
@@ -2624,7 +2650,7 @@ async fn test_betting_stake_heavyweight_impl(
     let tx = pipeline.exec_with_children(
         0x02,
         unstake_result.call_data,
-        vec![],
+        vec![unstake_result.proof],
         vec![child_call],
         vec![vec![]],
     ).await?;

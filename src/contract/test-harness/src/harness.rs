@@ -74,7 +74,7 @@ pub use atomic_swap::{AtomicSwapHarness, CreateSwapResult, ClaimSwapResult, Refu
 pub use attestation::AttestationHarness;
 pub use auction::AuctionHarness;
 pub use baccarat::BaccaratHarness;
-pub use betting_stake::BettingStakeHarness;
+pub use betting_stake::{BettingStakeHarness, ClaimStakeInfo, UnstakeStakeInfo};
 pub use block_height_prediction::BlockHeightPredictionHarness;
 pub use bridge::BridgeHarness;
 pub use dao_escrow::DaoEscrowHarness;

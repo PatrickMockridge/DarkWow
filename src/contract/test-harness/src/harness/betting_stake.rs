@@ -21,16 +21,23 @@
 //! Provides isolated testing for BettingStake contract.
 
 use darkfi::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{ProvingKey, Proof, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey, SecretKey},
+    crypto::{pasta_prelude::{Field, Group}, poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
 use darkfi_serial::Encodable;
+use rand::rngs::OsRng;
 
+use darkfi_betting_stake_contract::client::proof_gen::{
+    init_v1_proof, stake_v1_proof, unstake_v1_proof, claim_v1_proof, update_risk_v1_proof,
+    InitV1CallData, StakeV1CallData, UnstakeV1CallData, ClaimV1CallData, UpdateRiskV1CallData,
+    InitV1PublicInputs, StakeV1PublicInputs, UnstakeV1PublicInputs, ClaimV1PublicInputs,
+    UpdateRiskV1PublicInputs,
+};
 use darkfi_betting_stake_contract::model::{
     ClaimEarningsParamsV1, InitializeParamsV1, StakeParamsV1, UnstakeParamsV1, UpdateRiskParamsV1,
 };
@@ -112,6 +119,12 @@ impl BettingStakeHarness {
         house_edge_bp: u32,
         risk_profile: u8,
     ) -> Result<InitializeResult> {
+        let nonce = 0u64;
+
+        // Generate ZK proof for Init circuit
+        let input = InitV1CallData::new(betting_contract_id, house_edge_bp, risk_profile, nonce);
+        let (proof, _public_inputs) = init_v1_proof(&self.init_zkbin, &self.init_pk, &input)?;
+
         let params = InitializeParamsV1 {
             betting_contract_id,
             house_edge_bp,
@@ -122,7 +135,7 @@ impl BettingStakeHarness {
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
 
-        Ok(InitializeResult { call_data })
+        Ok(InitializeResult { call_data, proof })
     }
 
     /// Stake capital against a table (0x01)
@@ -134,6 +147,21 @@ impl BettingStakeHarness {
         spend_hook: pallas::Base,
         user_data: pallas::Base,
     ) -> Result<StakeResult> {
+        let nonce = 0u64;
+        let token_id = pallas::Base::zero();
+        let value_blind = pallas::Scalar::random(&mut OsRng);
+
+        // Generate ZK proof for Stake circuit
+        let input = StakeV1CallData::new(
+            table_id,
+            staker_pub,
+            amount,
+            token_id,
+            nonce,
+            value_blind,
+        );
+        let (proof, _public_inputs) = stake_v1_proof(&self.stake_zkbin, &self.stake_pk, &input)?;
+
         let signature = poseidon_hash([
             table_id,
             staker_pub.x(),
@@ -153,16 +181,32 @@ impl BettingStakeHarness {
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
 
-        Ok(StakeResult { call_data })
+        Ok(StakeResult { call_data, proof })
     }
 
     /// Unstake and withdraw (0x02)
     pub fn unstake(
         &self,
         stake_id: pallas::Base,
+        stake: &UnstakeStakeInfo,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
     ) -> Result<UnstakeResult> {
+        let value_blind = pallas::Scalar::random(&mut OsRng);
+
+        // Generate ZK proof for Unstake circuit
+        let input = UnstakeV1CallData::new(
+            stake.table_id,
+            stake.staker_pub,
+            stake.original_amount,
+            stake.current_amount,
+            stake.accumulated_earnings,
+            stake.token_id,
+            stake.nonce,
+            value_blind,
+        );
+        let (proof, _public_inputs) = unstake_v1_proof(&self.unstake_zkbin, &self.unstake_pk, &input)?;
+
         let params = UnstakeParamsV1 {
             stake_id,
             signature: pallas::Base::zero(),
@@ -173,14 +217,29 @@ impl BettingStakeHarness {
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
 
-        Ok(UnstakeResult { call_data })
+        Ok(UnstakeResult { call_data, proof })
     }
 
     /// Claim accumulated earnings (0x03)
     pub fn claim_earnings(
         &self,
         stake_id: pallas::Base,
+        stake: &ClaimStakeInfo,
     ) -> Result<ClaimEarningsResult> {
+        let value_blind = pallas::Scalar::random(&mut OsRng);
+
+        // Generate ZK proof for Claim circuit
+        let input = ClaimV1CallData::new(
+            stake.table_id,
+            stake.staker_pub,
+            stake.current_amount,
+            stake.accumulated_earnings,
+            stake.token_id,
+            stake.nonce,
+            value_blind,
+        );
+        let (proof, _public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
+
         let params = ClaimEarningsParamsV1 {
             stake_id,
             signature: pallas::Base::zero(),
@@ -189,52 +248,123 @@ impl BettingStakeHarness {
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
 
-        Ok(ClaimEarningsResult { call_data })
+        Ok(ClaimEarningsResult { call_data, proof })
     }
 
     /// Update risk after payout (0x04)
     pub fn update_risk(
         &self,
         table_id: pallas::Base,
-        payout_amount: u64,
-        house_share: u64,
+        betting_contract_id: pallas::Base,
+        total_stake: u64,
+        accumulated_losses: u64,
+        house_edge_bp: u32,
+        risk_profile: u8,
     ) -> Result<UpdateRiskResult> {
+        let nonce = 0u64;
+
+        // Generate ZK proof for UpdateRisk circuit
+        let input = UpdateRiskV1CallData::new(
+            betting_contract_id,
+            total_stake,
+            accumulated_losses,
+            house_edge_bp,
+            risk_profile,
+            nonce,
+        );
+        let (proof, _public_inputs) = update_risk_v1_proof(&self.update_risk_zkbin, &self.update_risk_pk, &input)?;
+
         let params = UpdateRiskParamsV1 {
             table_id,
-            payout_amount,
-            house_share,
+            payout_amount: 0,  // Not used in circuit, just for params
+            house_share: 0,
         };
 
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
 
-        Ok(UpdateRiskResult { call_data })
+        Ok(UpdateRiskResult { call_data, proof })
+    }
+}
+
+/// Stake information needed for unstake
+#[derive(Debug, Clone)]
+pub struct UnstakeStakeInfo {
+    pub table_id: pallas::Base,
+    pub staker_pub: PublicKey,
+    pub original_amount: u64,
+    pub current_amount: u64,
+    pub accumulated_earnings: u64,
+    pub token_id: pallas::Base,
+    pub nonce: u64,
+}
+
+impl UnstakeStakeInfo {
+    pub fn new(
+        table_id: pallas::Base,
+        staker_pub: PublicKey,
+        original_amount: u64,
+        current_amount: u64,
+        accumulated_earnings: u64,
+        token_id: pallas::Base,
+        nonce: u64,
+    ) -> Self {
+        Self { table_id, staker_pub, original_amount, current_amount, accumulated_earnings, token_id, nonce }
+    }
+}
+
+/// Stake information needed for claim
+#[derive(Debug, Clone)]
+pub struct ClaimStakeInfo {
+    pub table_id: pallas::Base,
+    pub staker_pub: PublicKey,
+    pub current_amount: u64,
+    pub accumulated_earnings: u64,
+    pub token_id: pallas::Base,
+    pub nonce: u64,
+}
+
+impl ClaimStakeInfo {
+    pub fn new(
+        table_id: pallas::Base,
+        staker_pub: PublicKey,
+        current_amount: u64,
+        accumulated_earnings: u64,
+        token_id: pallas::Base,
+        nonce: u64,
+    ) -> Self {
+        Self { table_id, staker_pub, current_amount, accumulated_earnings, token_id, nonce }
     }
 }
 
 /// Result of InitializeV1
 pub struct InitializeResult {
     pub call_data: Vec<u8>,
+    pub proof: Proof,
 }
 
 /// Result of StakeV1
 pub struct StakeResult {
     pub call_data: Vec<u8>,
+    pub proof: Proof,
 }
 
 /// Result of UnstakeV1
 pub struct UnstakeResult {
     pub call_data: Vec<u8>,
+    pub proof: Proof,
 }
 
 /// Result of ClaimEarningsV1
 pub struct ClaimEarningsResult {
     pub call_data: Vec<u8>,
+    pub proof: Proof,
 }
 
 /// Result of UpdateRiskV1
 pub struct UpdateRiskResult {
     pub call_data: Vec<u8>,
+    pub proof: Proof,
 }
 
 impl super::ContractHarness for BettingStakeHarness {
