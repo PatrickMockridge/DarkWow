@@ -122,6 +122,12 @@ pub enum DarkbetError {
 
     #[error("Internal error: {0}")]
     InternalError(String),
+
+    #[error("Invalid children_indexes: expected 1 money_v3::transfer_v1 child call")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call: expected money_v3::transfer_v1 (0x04)")]
+    InvalidChildCall,
 }
 
 impl From<DarkbetError> for ContractError {
@@ -158,6 +164,8 @@ impl From<DarkbetError> for ContractError {
             DarkbetError::InvalidOracleSignature => Self::Custom(30),
             DarkbetError::MarketAlreadyExists => Self::Custom(31),
             DarkbetError::UnauthorizedCrossContract => Self::Custom(32),
+            DarkbetError::InvalidChildrenIndexes => Self::Custom(34),
+            DarkbetError::InvalidChildCall => Self::Custom(35),
             DarkbetError::DatabaseError(_) => Self::Custom(19),
             DarkbetError::InternalError(_) => Self::Custom(20),
         }

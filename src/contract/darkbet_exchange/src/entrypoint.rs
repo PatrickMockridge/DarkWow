@@ -733,6 +733,22 @@ fn darkbet_buy_position_process_instruction_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token transfer
+    if this_call.children_indexes.len() != 1 {
+        msg!("[darkbet::BuyPositionV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(DarkbetError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[darkbet::BuyPositionV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(DarkbetError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: BuyPositionParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -865,6 +881,22 @@ fn darkbet_add_liquidity_process_instruction_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token transfer
+    if this_call.children_indexes.len() != 1 {
+        msg!("[darkbet::AddLiquidityV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(DarkbetError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[darkbet::AddLiquidityV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(DarkbetError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: AddLiquidityParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -965,6 +997,22 @@ fn darkbet_remove_liquidity_process_instruction_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token transfer
+    if this_call.children_indexes.len() != 1 {
+        msg!("[darkbet::RemoveLiquidityV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(DarkbetError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[darkbet::RemoveLiquidityV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(DarkbetError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: RemoveLiquidityParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -1079,6 +1127,22 @@ fn darkbet_claim_winnings_process_instruction_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token payout
+    if this_call.children_indexes.len() != 1 {
+        msg!("[darkbet::ClaimWinningsV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(DarkbetError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[darkbet::ClaimWinningsV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(DarkbetError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -1250,6 +1314,22 @@ fn darkbet_settle_market_process_instruction_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token payouts to winners
+    if this_call.children_indexes.len() != 1 {
+        msg!("[darkbet::SettleMarketV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(DarkbetError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[darkbet::SettleMarketV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(DarkbetError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: SettleMarketParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -1368,6 +1448,22 @@ fn darkbet_cancel_order_process_instruction_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token refund
+    if this_call.children_indexes.len() != 1 {
+        msg!("[darkbet::CancelOrderV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(DarkbetError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[darkbet::CancelOrderV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(DarkbetError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: CancelOrderParamsV1 = deserialize(&self_.data[1..])?;
 

@@ -1061,11 +1061,27 @@ fn test_darkbet_exchange_heavyweight() -> Result<()> {
 async fn test_darkbet_exchange_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::DarkbetExchangeHarness;
+    use darkfi_contract_test_harness::harness::{MoneyV3Harness, DarkbetExchangeHarness};
     use darkfi_sdk::crypto::pasta_prelude::PrimeField;
     use darkfi_sdk::pasta::pallas::{Base, Scalar};
     use darkfi::zk::halo2::Field;
     use rand::rngs::OsRng;
+
+    // Deploy money_v3 first to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18594".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18595".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
 
     let harness = DarkbetExchangeHarness::spawn();
     info!("DarkbetExchange harness created with circuits: {:?}", harness.circuits());
@@ -1088,6 +1104,12 @@ async fn test_darkbet_exchange_heavyweight_impl(
 
     // Create a new harness for proof generation
     let harness = DarkbetExchangeHarness::spawn();
+
+    // Build child call for money_v3::transfer_v1 (0x04)
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04],
+    };
 
     // Create an AMM market
     let creator_pub_x = Base::from(1);
@@ -1125,8 +1147,8 @@ async fn test_darkbet_exchange_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Added liquidity to market");
 
-    // Execute AddLiquidityV1 (0x08)
-    let tx = pipeline.exec(0x08, add_liq_result.call_data, vec![add_liq_result.proof]).await?;
+    // Execute AddLiquidityV1 (0x08) - requires money_v3 child call
+    let tx = pipeline.exec_with_children(0x08, add_liq_result.call_data, vec![add_liq_result.proof], vec![child_call.clone()]).await?;
     info!("Executed darkbet_exchange::0x08 (tx: {:?})", tx.hash());
 
     // Buy a position (outcome 1 = "YES")
@@ -1147,8 +1169,8 @@ async fn test_darkbet_exchange_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Bought position on market");
 
-    // Execute BuyPositionV1 (0x07)
-    let tx = pipeline.exec(0x07, buy_result.call_data, vec![buy_result.proof]).await?;
+    // Execute BuyPositionV1 (0x07) - requires money_v3 child call
+    let tx = pipeline.exec_with_children(0x07, buy_result.call_data, vec![buy_result.proof], vec![child_call]).await?;
     info!("Executed darkbet_exchange::0x07 (tx: {:?})", tx.hash());
 
     info!("test_darkbet_exchange_heavyweight PASSED");
