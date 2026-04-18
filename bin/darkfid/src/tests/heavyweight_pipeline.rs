@@ -58,8 +58,9 @@ use darkfi::{
 };
 use darkfi_contract_test_harness::harness::ContractHarness;
 use darkfi_sdk::{
-    crypto::{keypair::Keypair, ContractId},
+    crypto::{keypair::Keypair, poseidon_hash, ContractId},
     dark_tree::DarkTree,
+    pasta::pallas,
     ContractCall,
 };
 use smol::Executor;
@@ -188,7 +189,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         mut call_data: Vec<u8>,
         proofs: Vec<darkfi::zk::Proof>,
     ) -> std::result::Result<darkfi::tx::Transaction, HeavyweightError> {
-        self.exec_with_children(function_id, call_data, proofs, vec![]).await
+        self.exec_with_children(function_id, call_data, proofs, vec![], vec![]).await
     }
 
     /// Execute a contract call with ZK proofs and child calls
@@ -200,6 +201,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         mut call_data: Vec<u8>,
         proofs: Vec<darkfi::zk::Proof>,
         children: Vec<ContractCall>,
+        child_proofs: Vec<Vec<darkfi::zk::Proof>>,
     ) -> std::result::Result<darkfi::tx::Transaction, HeavyweightError> {
         let contract_id =
             self.contract_id.ok_or(HeavyweightError::NotDeployed)?;
@@ -211,11 +213,13 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let call = ContractCall { contract_id, data };
 
         // Convert children ContractCalls to DarkTree<ContractCallLeaf>
+        // child_proofs[i] contains proofs for children[i]
         let child_trees: Vec<DarkTree<ContractCallLeaf>> = children
             .into_iter()
-            .map(|c| {
+            .zip(child_proofs.into_iter())
+            .map(|(c, proofs)| {
                 DarkTree::new(
-                    ContractCallLeaf { call: c, proofs: vec![] },
+                    ContractCallLeaf { call: c, proofs },
                     vec![],
                     None,
                     None,
@@ -253,6 +257,13 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/// Compute a FuncId from contract_id and function code
+///
+/// FuncId = poseidon_hash([contract_id.inner(), func_code as u64])
+fn compute_func_id(contract_id: ContractId, func_code: u8) -> pallas::Base {
+    poseidon_hash([contract_id.inner(), pallas::Base::from(func_code as u64)])
+}
 
 /// Get the base directory for contracts
 fn contract_base_dir() -> PathBuf {
@@ -397,9 +408,10 @@ async fn test_dex_heavyweight_impl(
     info!("Executed dex::0x02 (tx: {:?})", tx.hash());
 
     // Execute the swap
-    // Note: FuncRefs are passed but circuit doesn't constrain them (pre-recompile)
-    let alice_otc_func_id = Base::zero(); // Placeholder - circuit pre-recompile
-    let bob_otc_func_id = Base::zero();   // Placeholder - circuit pre-recompile
+    // Compute real FuncIds now that we know money_contract_id
+    // FuncId = poseidon_hash([contract_id.inner(), func_code])
+    let alice_otc_func_id = compute_func_id(money_contract_id, 0x05); // otc_swap_v1
+    let bob_otc_func_id = compute_func_id(money_contract_id, 0x05); // otc_swap_v1
     let execute_result = harness.execute_swap(
         secret,
         offer_token,
@@ -416,7 +428,7 @@ async fn test_dex_heavyweight_impl(
     info!("Executed swap: swap_id={}", hex::encode(execute_result.public_inputs.swap_id.to_repr()));
 
     // Execute ExecuteSwapV1 (0x03) - requires 2 money_v3::otc_swap_v1 child calls
-    let tx = pipeline.exec_with_children(0x03, execute_result.call_data, vec![execute_result.proof], vec![child_call_0, child_call_1]).await?;
+    let tx = pipeline.exec_with_children(0x03, execute_result.call_data, vec![execute_result.proof], vec![child_call_0, child_call_1], vec![vec![], vec![]]).await?;
     info!("Executed dex::0x03 (tx: {:?})", tx.hash());
 
     info!("test_dex_heavyweight PASSED");
@@ -858,7 +870,7 @@ async fn test_baccarat_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Committed bet: bet_id={}", hex::encode(commit_result.bet_id.to_repr()));
 
-    let tx = pipeline.exec_with_children(0x01, commit_result.call_data, vec![commit_result.proof], vec![child_call.clone()]).await?;
+    let tx = pipeline.exec_with_children(0x01, commit_result.call_data, vec![commit_result.proof], vec![child_call.clone()], vec![vec![]]).await?;
     info!("Executed baccarat::0x01 (tx: {:?})", tx.hash());
 
     // Execute DrawCardsV1 (0x02) - cards are drawn using block hash entropy
@@ -883,7 +895,7 @@ async fn test_baccarat_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Settle bet prepared for bet_id={}", hex::encode(settle_result.public_inputs.derived_bet_id.to_repr()));
 
-    let tx = pipeline.exec_with_children(0x03, settle_result.call_data, vec![settle_result.proof], vec![child_call.clone()]).await?;
+    let tx = pipeline.exec_with_children(0x03, settle_result.call_data, vec![settle_result.proof], vec![child_call.clone()], vec![vec![]]).await?;
     info!("Executed baccarat::0x03 (tx: {:?})", tx.hash());
 
     // Now test a second scenario: HouseCloseV1 (0x04)
@@ -906,7 +918,7 @@ async fn test_baccarat_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Committed second bet: bet_id={}", hex::encode(commit_result2.bet_id.to_repr()));
 
-    let tx = pipeline.exec_with_children(0x01, commit_result2.call_data, vec![commit_result2.proof], vec![child_call.clone()]).await?;
+    let tx = pipeline.exec_with_children(0x01, commit_result2.call_data, vec![commit_result2.proof], vec![child_call.clone()], vec![vec![]]).await?;
     info!("Executed baccarat::0x01 (tx: {:?})", tx.hash());
 
     // Draw cards for second bet
@@ -928,7 +940,7 @@ async fn test_baccarat_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("House close prepared for bet_id={}", hex::encode(close_result.bet_id.to_repr()));
 
-    let tx = pipeline.exec_with_children(0x04, close_result.call_data, vec![], vec![child_call]).await?;
+    let tx = pipeline.exec_with_children(0x04, close_result.call_data, vec![], vec![child_call], vec![vec![]]).await?;
     info!("Executed baccarat::0x04 (tx: {:?})", tx.hash());
 
     info!("test_baccarat_heavyweight PASSED");
@@ -1179,7 +1191,7 @@ async fn test_darkbet_exchange_heavyweight_impl(
     info!("Added liquidity to market");
 
     // Execute AddLiquidityV1 (0x08) - requires money_v3 child call
-    let tx = pipeline.exec_with_children(0x08, add_liq_result.call_data, vec![add_liq_result.proof], vec![child_call.clone()]).await?;
+    let tx = pipeline.exec_with_children(0x08, add_liq_result.call_data, vec![add_liq_result.proof], vec![child_call.clone()], vec![vec![]]).await?;
     info!("Executed darkbet_exchange::0x08 (tx: {:?})", tx.hash());
 
     // Buy a position (outcome 1 = "YES")
@@ -1201,7 +1213,7 @@ async fn test_darkbet_exchange_heavyweight_impl(
     info!("Bought position on market");
 
     // Execute BuyPositionV1 (0x07) - requires money_v3 child call
-    let tx = pipeline.exec_with_children(0x07, buy_result.call_data, vec![buy_result.proof], vec![child_call]).await?;
+    let tx = pipeline.exec_with_children(0x07, buy_result.call_data, vec![buy_result.proof], vec![child_call], vec![vec![]]).await?;
     info!("Executed darkbet_exchange::0x07 (tx: {:?})", tx.hash());
 
     info!("test_darkbet_exchange_heavyweight PASSED");
@@ -1303,7 +1315,7 @@ async fn test_darktoshi_dice_heavyweight_impl(
     info!("Created bet commitment: bet_id={}", hex::encode(commit_result.public_inputs.bet_id.to_repr()));
 
     // Execute CommitBetV1 (0x01) - requires money_v3::transfer_v1 child call
-    let tx = pipeline.exec_with_children(0x01, commit_result.call_data, vec![commit_result.proof], vec![child_call.clone()]).await?;
+    let tx = pipeline.exec_with_children(0x01, commit_result.call_data, vec![commit_result.proof], vec![child_call.clone()], vec![vec![]]).await?;
     info!("Executed darktoshi_dice::0x01 (commit bet, tx: {:?})", tx.hash());
 
     // Reveal the roll (no ZK proof needed, no child call needed)
@@ -1450,6 +1462,7 @@ async fn test_escrow_heavyweight_impl(
         claim_result.call_data,
         vec![claim_result.proof],
         vec![child_call],
+        vec![vec![]],
     ).await?;
     info!("Executed escrow::0x03 (claim, tx: {:?})", tx.hash());
 
@@ -1924,7 +1937,7 @@ async fn test_slot_heavyweight_impl(
     info!("Created commit spin call_data");
 
     // Execute CommitSpinV1 (0x01) - requires money_v3::transfer_v1 child call
-    let tx = pipeline.exec_with_children(0x01, commit_result.call_data, vec![], vec![child_call.clone()]).await?;
+    let tx = pipeline.exec_with_children(0x01, commit_result.call_data, vec![], vec![child_call.clone()], vec![vec![]]).await?;
     info!("Executed slot::0x01 (tx: {:?})", tx.hash());
 
     // Reveal the spin (0x02) - no child call needed
@@ -2062,6 +2075,7 @@ async fn test_roulette_heavyweight_impl(
             place_bet_result.call_data,
             vec![place_bet_result.proof],
             vec![child_call.clone()],
+            vec![vec![]],
         )
         .await?;
     info!("Executed roulette::0x01 (tx: {:?})", tx.hash());
@@ -2083,8 +2097,7 @@ async fn test_roulette_heavyweight_impl(
     info!("Created settle bets call");
 
     let tx = pipeline
-        .exec_with_children(0x03, settle_result.call_data, vec![settle_result.proof], vec![child_call.clone()])
-        .await?;
+        .exec_with_children(0x03, settle_result.call_data, vec![settle_result.proof], vec![child_call.clone()], vec![vec![]]).await?;
     info!("Executed roulette::0x03 (tx: {:?})", tx.hash());
 
     // HouseCloseV1 (0x04) - requires money_v3::transfer_v1 child call
@@ -2094,7 +2107,7 @@ async fn test_roulette_heavyweight_impl(
     info!("Created house close call");
 
     let tx = pipeline
-        .exec_with_children(0x04, close_result.call_data, vec![], vec![child_call])
+        .exec_with_children(0x04, close_result.call_data, vec![], vec![child_call], vec![vec![]])
         .await?;
     info!("Executed roulette::0x04 (tx: {:?})", tx.hash());
 
@@ -2208,7 +2221,7 @@ async fn test_stablecoin_heavyweight_impl(
     info!("Minted stable: amount={}", mint_amount);
 
     // Execute MintStableV1 (0x04) - requires money_v3 child call
-    let tx = pipeline.exec_with_children(0x04, mint_result.call_data, vec![mint_result.proof], vec![child_call.clone()]).await?;
+    let tx = pipeline.exec_with_children(0x04, mint_result.call_data, vec![mint_result.proof], vec![child_call.clone()], vec![vec![]]).await?;
     info!("Executed stablecoin::0x04 (tx: {:?})", tx.hash());
 
     // GovernanceReportV1 (0x08) - Report governance data
