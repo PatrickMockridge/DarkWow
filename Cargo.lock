@@ -2582,6 +2582,7 @@ dependencies = [
  "darkfi_baccarat_contract",
  "darkfi_deployooor_contract",
  "darkfi_money_v2_contract",
+ "darkfi_money_v3_contract",
  "darkfi_native_token_contract",
  "easy-parallel",
  "glob",
