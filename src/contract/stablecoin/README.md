@@ -156,16 +156,16 @@ Pooled Debt:   Pool shortfall → Simple ZK → No position data leaked
 
 ### Hot (Frequent, Cheap)
 
-| Function | ID | Description | Cost |
-|----------|-----|-------------|------|
-| `InitializeV1` | 0x00 | Initialize pool with model and collateral parameters | Medium |
-| `OpenPositionV1` | 0x01 | Open/deposit collateral into global pool | Cheap |
-| `AddCollateralV1` | 0x02 | Add collateral to existing position | Cheap |
-| `RemoveCollateralV1` | 0x03 | Withdraw collateral (if ratio allows) | Cheap |
-| `MintStableV1` | 0x04 | Mint stablecoins against pool | Cheap |
-| `RepayStableV1` | 0x05 | Repay debt to reduce debt share | Cheap |
-| `LiquidateV1` | 0x06 | Liquidate undercollateralized pool | Cheap |
-| `UpdateConfigV1` | 0x07 | Update pool parameters (governance) | Cheap |
+| Function | ID | Description | Child Call |
+|----------|-----|-------------|------------|
+| `InitializeV1` | 0x00 | Initialize pool with model and collateral parameters | - |
+| `OpenPositionV1` | 0x01 | Open/deposit collateral into global pool | - |
+| `AddCollateralV1` | 0x02 | Add collateral to existing position | - |
+| `RemoveCollateralV1` | 0x03 | Withdraw collateral (if ratio allows) | money_v3::transfer_v1 |
+| `MintStableV1` | 0x04 | Mint stablecoins against pool | money_v3::transfer_v1 |
+| `RepayStableV1` | 0x05 | Repay debt to reduce debt share | - |
+| `LiquidateV1` | 0x06 | Liquidate undercollateralized pool | money_v3::transfer_v1 |
+| `UpdateConfigV1` | 0x07 | Update pool parameters (governance) | - |
 
 ### Cold (Rare, Precise - uses BaseDiv)
 
@@ -466,7 +466,8 @@ The contract just provides the financial primitives. How staking integrates with
 - [x] BaseDiv implemented
 - [x] All 5 ZK circuits compiled (open_position, mint_stable, liquidate, governance_report, accrue_interest)
 - [x] Test harness with all 5 circuits loaded
-- [x] Heavyweight pipeline endpoint testing (OpenPositionV1 0x01, MintStableV1 0x04, GovernanceReportV1 0x08, AccrueInterestV1 0x09)
+- [x] Heavyweight pipeline endpoint testing (OpenPositionV1 0x01, MintStableV1 0x04 (w/ money_v3 child call), GovernanceReportV1 0x08, AccrueInterestV1 0x09)
+- [x] money_v3 child call integration (MintStableV1, RemoveCollateralV1, LiquidateV1)
 
 ### In Progress
 
@@ -476,7 +477,7 @@ The contract just provides the financial primitives. How staking integrates with
 ### Needed
 
 - AMM pool for price discovery
-- Full lifecycle testing (liquidate endpoint)
+- Full lifecycle testing (RemoveCollateralV1, LiquidateV1 endpoints)
 
 ## References
 
