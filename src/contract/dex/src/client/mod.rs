@@ -283,6 +283,8 @@ pub struct ExecuteSwapBuilder {
     bob_amount: Option<u64>,
     bob_lock: Option<pallas::Base>,
     fill_amount: Option<u64>,
+    alice_otc_func_id: Option<pallas::Base>,
+    bob_otc_func_id: Option<pallas::Base>,
 }
 
 impl ExecuteSwapBuilder {
@@ -297,6 +299,8 @@ impl ExecuteSwapBuilder {
             bob_amount: None,
             bob_lock: None,
             fill_amount: None,
+            alice_otc_func_id: None,
+            bob_otc_func_id: None,
         }
     }
 
@@ -345,6 +349,16 @@ impl ExecuteSwapBuilder {
         self
     }
 
+    pub fn alice_otc_func_id(&mut self, func_id: pallas::Base) -> &mut Self {
+        self.alice_otc_func_id = Some(func_id);
+        self
+    }
+
+    pub fn bob_otc_func_id(&mut self, func_id: pallas::Base) -> &mut Self {
+        self.bob_otc_func_id = Some(func_id);
+        self
+    }
+
     /// Build the execute swap call data
     pub fn build(&self) -> Result<ExecuteSwapCallData, DexClientError> {
         let alice_secret = self.alice_secret.ok_or_else(|| DexClientError::MissingField("alice_secret".into()))?;
@@ -356,6 +370,8 @@ impl ExecuteSwapBuilder {
         let bob_amount = self.bob_amount.ok_or_else(|| DexClientError::MissingField("bob_amount".into()))?;
         let bob_lock = self.bob_lock.ok_or_else(|| DexClientError::MissingField("bob_lock".into()))?;
         let fill_amount = self.fill_amount.ok_or_else(|| DexClientError::MissingField("fill_amount".into()))?;
+        let alice_otc_func_id = self.alice_otc_func_id.ok_or_else(|| DexClientError::MissingField("alice_otc_func_id".into()))?;
+        let bob_otc_func_id = self.bob_otc_func_id.ok_or_else(|| DexClientError::MissingField("bob_otc_func_id".into()))?;
 
         Ok(ExecuteSwapCallData::new(
             alice_secret,
@@ -367,6 +383,8 @@ impl ExecuteSwapBuilder {
             bob_amount,
             bob_lock,
             fill_amount,
+            alice_otc_func_id,
+            bob_otc_func_id,
         ))
     }
 }

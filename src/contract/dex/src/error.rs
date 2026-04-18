@@ -86,6 +86,9 @@ pub enum DexError {
 
     #[error("Not authorized")]
     NotAuthorized,
+
+    #[error("Invalid child call")]
+    InvalidChildCall,
 }
 
 impl From<DexError> for ContractError {
@@ -113,6 +116,7 @@ impl From<DexError> for ContractError {
             DexError::GovernanceNotSet => Self::Custom(20),
             DexError::InvalidGovernanceKey => Self::Custom(21),
             DexError::NotAuthorized => Self::Custom(22),
+            DexError::InvalidChildCall => Self::Custom(23),
         }
     }
 }

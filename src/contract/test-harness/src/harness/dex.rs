@@ -247,6 +247,8 @@ impl DexHarness {
         bob_amount: u64,
         bob_lock: pallas::Base,
         fill_amount: u64,
+        alice_otc_func_id: pallas::Base,
+        bob_otc_func_id: pallas::Base,
     ) -> Result<ExecuteSwapResult, Box<dyn std::error::Error>> {
         let input = ExecuteSwapCallData::new(
             alice_secret,
@@ -258,6 +260,8 @@ impl DexHarness {
             bob_amount,
             bob_lock,
             fill_amount,
+            alice_otc_func_id,
+            bob_otc_func_id,
         );
 
         let (proof, public_inputs) = create_execute_swap_proof(

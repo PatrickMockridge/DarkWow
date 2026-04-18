@@ -137,6 +137,24 @@ pub(crate) fn dex_cancel_swap_process_instruction_v1(
         }
     };
 
+    // Validate children_indexes for refund (money_v3::transfer_v1)
+    if self_.children_indexes.len() != 1 {
+        msg!(
+            "[CancelSwapV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            self_.children_indexes.len()
+        );
+        return Err(DexError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = self_.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!(
+            "[CancelSwapV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]
+        );
+        return Err(DexError::InvalidChildCall.into())
+    }
+
     // Verify nullifier against on-chain state (double-cancel check)
     // Now using nullifiers stored in participants_db
     let participants_db = wasm::db::db_lookup(cid, DEX_CONTRACT_PARTICIPANTS_TREE)?;

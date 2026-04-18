@@ -97,6 +97,18 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
         return Err(DexError::InvalidChildrenIndexes.into())
     }
 
+    // Validate both child calls are money_v3::otc_swap_v1 (0x05)
+    for &child_idx in self_.children_indexes.iter() {
+        let child_call = &calls[child_idx].data;
+        if child_call.data[0] != 0x05 {
+            msg!(
+                "[ExecuteSwapV1] Error: Expected money_v3::otc_swap_v1 (0x05), got 0x{:02x}",
+                child_call.data[0]
+            );
+            return Err(DexError::InvalidChildCall.into())
+        }
+    }
+
     // Extract FuncRefs from child money_v3::otc_swap_v1 calls
     let mut child_func_ids: Vec<pallas::Base> = Vec::with_capacity(2);
     for &child_idx in self_.children_indexes.iter() {

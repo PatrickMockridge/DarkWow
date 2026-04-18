@@ -304,6 +304,32 @@ impl MoneyV3Harness {
             proofs: debris.proofs,
         })
     }
+
+    /// Perform an OTC swap between two parties
+    /// Inputs are burned, outputs are minted - cross-token atomic swap
+    pub fn otc_swap(
+        &self,
+        inputs: Vec<TransferCallInput>,
+        outputs: Vec<TransferCallOutput>,
+    ) -> Result<OtcSwapResult> {
+        let debris = TransferCallBuilder {
+            inputs,
+            outputs,
+            burn_zkbin: self.burn_zkbin.clone(),
+            burn_pk: self.burn_pk.clone(),
+            mint_zkbin: self.mint_zkbin.clone(),
+            mint_pk: self.mint_pk.clone(),
+        }
+        .build()?;
+
+        let mut call_data = vec![];
+        debris.params.encode(&mut call_data)?;
+
+        Ok(OtcSwapResult {
+            call_data,
+            proofs: debris.proofs,
+        })
+    }
 }
 
 impl super::ContractHarness for MoneyV3Harness {
@@ -365,6 +391,12 @@ pub struct MintResult {
 
 /// Result of transfer
 pub struct TransferResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<darkfi::zk::Proof>,
+}
+
+/// Result of OTC swap
+pub struct OtcSwapResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<darkfi::zk::Proof>,
 }

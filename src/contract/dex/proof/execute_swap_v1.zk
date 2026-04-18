@@ -18,6 +18,8 @@ field = "pallas";
 #   - alice_nullifier: Prevents double-spending Alice's lock
 #   - bob_nullifier: Prevents double-spending Bob's lock
 #   - swap_id: The swap being executed
+#   - alice_otc_func_id: FuncRef for Alice's OtcSwapV1 child call
+#   - bob_otc_func_id: FuncRef for Bob's OtcSwapV1 child call
 #
 # witnesses:
 #   - alice_secret: Alice's secret for her lock
@@ -55,6 +57,12 @@ witness "ExecuteSwapV1" {
 
     # Partial fill support
     Base fill_amount,
+
+    # FuncRef for Alice's OtcSwapV1 child call (cross-contract atomic swap)
+    Base alice_otc_func_id,
+
+    # FuncRef for Bob's OtcSwapV1 child call (cross-contract atomic swap)
+    Base bob_otc_func_id,
 }
 
 circuit "ExecuteSwapV1" {
@@ -108,6 +116,10 @@ circuit "ExecuteSwapV1" {
 
     constrain_instance(alice_nullifier_check);
     constrain_instance(bob_nullifier_check);
+
+    # Cross-contract FuncRef validation (atomic swap binding)
+    constrain_instance(alice_otc_func_id);
+    constrain_instance(bob_otc_func_id);
 
     # ==========================================================================
     # PHASE 4: Verify swap ID consistency - PUBLIC INPUT

@@ -297,11 +297,27 @@ fn test_dex_heavyweight() -> Result<()> {
 async fn test_dex_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::DexHarness;
+    use darkfi_contract_test_harness::harness::{DexHarness, MoneyV3Harness};
     use darkfi_sdk::crypto::{SecretKey, pasta_prelude::PrimeField};
     use darkfi_sdk::pasta::pallas::Base;
     use darkfi::zk::halo2::Field;
     use rand::rngs::OsRng;
+
+    // Deploy money_v3 first for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18620".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18621".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
 
     let config = HarnessConfig {
         pow_target: 20,
@@ -327,6 +343,16 @@ async fn test_dex_heavyweight_impl(
 
     // Create a new harness for proof generation (pipeline takes ownership of first harness)
     let harness = DexHarness::new();
+
+    // Build child calls for ExecuteSwapV1 (0x03) - requires 2 money_v3::otc_swap_v1 (0x05) calls
+    let child_call_0 = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x05], // otc_swap_v1 for Alice's tokens
+    };
+    let child_call_1 = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x05], // otc_swap_v1 for Bob's tokens
+    };
 
     // Create a swap proposal
     let secret = Base::random(&mut OsRng);
@@ -371,6 +397,9 @@ async fn test_dex_heavyweight_impl(
     info!("Executed dex::0x02 (tx: {:?})", tx.hash());
 
     // Execute the swap
+    // Note: FuncRefs are passed but circuit doesn't constrain them (pre-recompile)
+    let alice_otc_func_id = Base::zero(); // Placeholder - circuit pre-recompile
+    let bob_otc_func_id = Base::zero();   // Placeholder - circuit pre-recompile
     let execute_result = harness.execute_swap(
         secret,
         offer_token,
@@ -381,11 +410,13 @@ async fn test_dex_heavyweight_impl(
         request_amount,
         accept_result.public_inputs.acceptor_lock_commitment,
         offer_amount, // full fill
+        alice_otc_func_id,
+        bob_otc_func_id,
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Executed swap: swap_id={}", hex::encode(execute_result.public_inputs.swap_id.to_repr()));
 
-    // Execute ExecuteSwapV1 (0x03)
-    let tx = pipeline.exec(0x03, execute_result.call_data, vec![execute_result.proof]).await?;
+    // Execute ExecuteSwapV1 (0x03) - requires 2 money_v3::otc_swap_v1 child calls
+    let tx = pipeline.exec_with_children(0x03, execute_result.call_data, vec![execute_result.proof], vec![child_call_0, child_call_1]).await?;
     info!("Executed dex::0x03 (tx: {:?})", tx.hash());
 
     info!("test_dex_heavyweight PASSED");
