@@ -1,0 +1,189 @@
+/* This file is part of DarkFi (https://dark.fi)
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! 5-Node Linear Local Testnet Harness
+
+use std::sync::Arc;
+
+use darkfi_linear::{Block, LinearStore, PoWConsensus, create_block};
+use darkfi_sdk::{crypto::DEPLOYOOOR_CONTRACT_ID, pasta::pallas};
+use sled_overlay::sled::Config;
+
+use crate::blockchain::LinearBlockchain;
+
+/// Linear blockchain node for local testing
+#[derive(Clone)]
+pub struct LinearNode {
+    pub blockchain: Arc<LinearBlockchain>,
+    pub store: Arc<LinearStore>,
+}
+
+/// 5-Node Linear Harness
+pub struct LinearFiveNodeHarness {
+    pub alice: LinearNode,
+    pub bob: LinearNode,
+    pub charlie: LinearNode,
+    pub david: LinearNode,
+    pub eve: LinearNode,
+}
+
+impl LinearFiveNodeHarness {
+    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let db_alice = Config::new().temporary(true).open()?;
+        let db_bob = Config::new().temporary(true).open()?;
+        let db_charlie = Config::new().temporary(true).open()?;
+        let db_david = Config::new().temporary(true).open()?;
+        let db_eve = Config::new().temporary(true).open()?;
+
+        let store_alice = Arc::new(LinearStore::new(Arc::new(db_alice))?);
+        let store_bob = Arc::new(LinearStore::new(Arc::new(db_bob))?);
+        let store_charlie = Arc::new(LinearStore::new(Arc::new(db_charlie))?);
+        let store_david = Arc::new(LinearStore::new(Arc::new(db_david))?);
+        let store_eve = Arc::new(LinearStore::new(Arc::new(db_eve))?);
+
+        let blockchain_alice = LinearBlockchain::new(store_alice.clone());
+        let blockchain_bob = LinearBlockchain::new(store_bob.clone());
+        let blockchain_charlie = LinearBlockchain::new(store_charlie.clone());
+        let blockchain_david = LinearBlockchain::new(store_david.clone());
+        let blockchain_eve = LinearBlockchain::new(store_eve.clone());
+
+        let alice = LinearNode { blockchain: Arc::new(blockchain_alice), store: store_alice };
+        let bob = LinearNode { blockchain: Arc::new(blockchain_bob), store: store_bob };
+        let charlie = LinearNode { blockchain: Arc::new(blockchain_charlie), store: store_charlie };
+        let david = LinearNode { blockchain: Arc::new(blockchain_david), store: store_david };
+        let eve = LinearNode { blockchain: Arc::new(blockchain_eve), store: store_eve };
+
+        Ok(Self { alice, bob, charlie, david, eve })
+    }
+
+    /// Deploy genesis contracts to all 5 nodes
+    pub fn deploy_genesis_contracts(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let deployooor_wasm =
+            include_bytes!("../../../../src/contract/deployooor/darkfi_deployooor_contract.wasm").to_vec();
+        let native_token_wasm =
+            include_bytes!("../../../../src/contract/native_token/darkfi_native_token_contract.wasm").to_vec();
+
+        let native_token_id = darkfi_sdk::crypto::ContractId::from(pallas::Base::from(42));
+
+        for node in self.all_nodes() {
+            node.blockchain.deploy_contract(&deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID)?;
+            node.blockchain.deploy_contract(&native_token_wasm, native_token_id)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn all_nodes(&self) -> [&LinearNode; 5] {
+        [&self.alice, &self.bob, &self.charlie, &self.david, &self.eve]
+    }
+
+    /// Alice mines genesis block
+    pub fn alice_create_genesis(&self) -> Block {
+        let difficulty_target = 0x0000_FFFF;
+        let previous = blake3::hash(&[]);
+        let mut block = create_block(previous, 0, vec![], difficulty_target);
+
+        let consensus = PoWConsensus::new(difficulty_target);
+        while !consensus.check_difficulty(&block.hash()) {
+            block.header.nonce += 1;
+        }
+        block
+    }
+
+    /// Alice mines a block on top of the given previous hash
+    pub fn alice_mine_block(&self, height: u64, previous: blake3::Hash) -> Block {
+        let difficulty_target = 0x0000_FFFF;
+        let mut block = create_block(previous, height, vec![], difficulty_target);
+
+        let consensus = PoWConsensus::new(difficulty_target);
+        while !consensus.check_difficulty(&block.hash()) {
+            block.header.nonce += 1;
+        }
+        block
+    }
+
+    /// Apply a block to all nodes (simulating P2P broadcast + sync)
+    pub fn broadcast_block(&self, block: &Block) -> Result<(), Box<dyn std::error::Error>> {
+        for node in self.all_nodes() {
+            let block_clone = block.clone();
+            let blockchain = node.blockchain.clone();
+            smol::block_on(async {
+                blockchain.apply_block(&block_clone).await
+            })?;
+        }
+        Ok(())
+    }
+
+    pub fn verify_sync(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let alice_height = self.alice.blockchain.get_height();
+        for (i, node) in self.all_nodes().iter().enumerate() {
+            let height = node.blockchain.get_height();
+            if height != alice_height {
+                return Err(format!("Node {} height {} != alice height {}", i, height, alice_height).into());
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Default for LinearFiveNodeHarness {
+    fn default() -> Self {
+        Self::new().expect("Failed to create LinearFiveNodeHarness")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_linear_five_node_consensus() -> Result<(), Box<dyn std::error::Error>> {
+        let harness = LinearFiveNodeHarness::new()?;
+
+        // Deploy genesis contracts
+        harness.deploy_genesis_contracts()?;
+
+        // Alice creates genesis block (ONE single genesis)
+        let genesis_block = harness.alice_create_genesis();
+        let genesis_hash = genesis_block.hash();
+
+        // Broadcast genesis to all nodes (including Alice)
+        harness.broadcast_block(&genesis_block)?;
+
+        // Verify all nodes have genesis at height 0
+        for node in harness.all_nodes() {
+            assert_eq!(node.blockchain.get_height(), 0);
+        }
+
+        // Alice mines blocks 1-5, each broadcast to all
+        let mut previous = genesis_hash;
+        for height in 1..=5 {
+            let block = harness.alice_mine_block(height, previous);
+            harness.broadcast_block(&block)?;
+            previous = block.hash();
+        }
+
+        // Verify all nodes agree on height 5
+        harness.verify_sync()?;
+        for node in harness.all_nodes() {
+            assert_eq!(node.blockchain.get_height(), 5);
+        }
+
+        Ok(())
+    }
+}

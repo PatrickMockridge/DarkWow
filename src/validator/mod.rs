@@ -36,6 +36,9 @@ use crate::{
 };
 
 /// DarkFi consensus module
+/// Uncle Merkle consensus data structures
+pub mod uncle;
+
 pub mod consensus;
 use consensus::{Consensus, Fork, Proposal};
 
@@ -53,8 +56,8 @@ pub mod sync;
 /// Verification functions
 pub mod verification;
 use verification::{
-    verify_block, verify_checkpoint_block, verify_genesis_block, verify_producer_transaction,
-    verify_transaction, verify_transactions,
+    apply_producer_transaction, verify_block, verify_checkpoint_block, verify_genesis_block,
+    verify_producer_transaction, verify_transaction, verify_transactions,
 };
 
 /// Fee calculation helpers
@@ -176,6 +179,7 @@ impl Validator {
             &mut MerkleTree::new(1),
             &mut vks,
             verify_fee,
+            &[],
         )
         .await?;
 
@@ -221,6 +225,7 @@ impl Validator {
                 &tx_vec,
                 &mut MerkleTree::new(1),
                 self.verify_fees,
+                &[],
             )
             .await;
 
@@ -291,6 +296,7 @@ impl Validator {
                     &tx_vec,
                     &mut MerkleTree::new(1),
                     self.verify_fees,
+                    &[],
                 )
                 .await;
 
@@ -547,6 +553,7 @@ impl Validator {
                 previous,
                 true,
                 self.verify_fees,
+                &block.zkbin_data,
             )
             .await
             {
@@ -651,6 +658,7 @@ impl Validator {
             txs,
             &mut MerkleTree::new(1),
             verify_fees,
+            &[],
         )
         .await;
 
@@ -686,27 +694,23 @@ impl Validator {
         debug!(target: "validator::add_test_producer_transaction", "Instantiating BlockchainOverlay");
         let overlay = BlockchainOverlay::new(&self.blockchain)?;
 
-        // Verify transaction
-        let mut erroneous_txs = vec![];
-        if let Err(e) = verify_producer_transaction(
+        // Apply transaction state changes (this calls WASM exec/apply internally)
+        let mut tree = MerkleTree::new(1);
+        if let Err(e) = apply_producer_transaction(
             &overlay,
             verifying_block_height,
             block_target,
             tx,
-            &mut MerkleTree::new(1),
+            &mut tree,
         )
         .await
         {
-            warn!(target: "validator::add_test_producer_transaction", "Transaction verification failed: {e}");
-            erroneous_txs.push(tx.clone());
+            warn!(target: "validator::add_test_producer_transaction", "Transaction apply failed: {e}");
+            return Err(e)
         }
 
         let lock = overlay.lock().unwrap();
         let mut overlay = lock.overlay.lock().unwrap();
-        if !erroneous_txs.is_empty() {
-            warn!(target: "validator::add_test_producer_transaction", "Erroneous transactions found in set");
-            return Err(TxVerifyFailed::ErroneousTxs(erroneous_txs).into())
-        }
 
         if !write {
             debug!(target: "validator::add_test_producer_transaction", "Skipping apply of state updates because write=false");
@@ -782,6 +786,7 @@ impl Validator {
                 &previous,
                 false,
                 self.verify_fees,
+                &block.zkbin_data,
             )
             .await
             {

@@ -113,6 +113,7 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
                     &tx_vec,
                     &mut MerkleTree::new(1),
                     false,
+                    &[],
                 )
                 .await;
 

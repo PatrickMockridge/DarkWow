@@ -34,6 +34,10 @@ use darkfi_serial::{deserialize_async, AsyncDecodable};
 
 use crate::{tx::Transaction, util::time::Timestamp, Error, Result};
 
+/// Simple deterministic key-value store
+pub mod simple_db;
+pub use simple_db::SimpleDb;
+
 /// Block related definitions and storage implementations
 pub mod block_store;
 pub use block_store::{
@@ -69,6 +73,8 @@ pub mod monero;
 pub struct Blockchain {
     /// Main pointer to the sled db connection
     pub sled_db: sled::Db,
+    /// Simple deterministic key-value store for contracts
+    pub simple_db: SimpleDb,
     /// Headers sled tree
     pub headers: HeaderStore,
     /// Blocks sled tree
@@ -86,8 +92,9 @@ impl Blockchain {
         let blocks = BlockStore::new(db)?;
         let transactions = TxStore::new(db)?;
         let contracts = ContractStore::new(db)?;
+        let simple_db = SimpleDb::new(Arc::new(db.clone()));
 
-        Ok(Self { sled_db: db.clone(), headers, blocks, transactions, contracts })
+        Ok(Self { sled_db: db.clone(), simple_db, headers, blocks, transactions, contracts })
     }
 
     /// Insert a given [`BlockInfo`] into the blockchain database.
@@ -549,6 +556,8 @@ pub struct BlockchainOverlay {
     pub transactions: TxStoreOverlay,
     /// Contract overlay
     pub contracts: ContractStoreOverlay,
+    /// Simple deterministic key-value store for contract data
+    pub simple_db: SimpleDb,
 }
 
 impl BlockchainOverlay {
@@ -578,8 +587,9 @@ impl BlockchainOverlay {
         let blocks = BlockStoreOverlay::new(&overlay)?;
         let transactions = TxStoreOverlay::new(&overlay)?;
         let contracts = ContractStoreOverlay::new(&overlay)?;
+        let simple_db = blockchain.simple_db.clone();
 
-        Ok(Arc::new(Mutex::new(Self { overlay, headers, blocks, transactions, contracts })))
+        Ok(Arc::new(Mutex::new(Self { overlay, headers, blocks, transactions, contracts, simple_db })))
     }
 
     /// Check if blockchain contains any blocks
@@ -726,8 +736,9 @@ impl BlockchainOverlay {
         let blocks = BlockStoreOverlay::new(&overlay)?;
         let transactions = TxStoreOverlay::new(&overlay)?;
         let contracts = ContractStoreOverlay::new(&overlay)?;
+        let simple_db = self.simple_db.clone();
 
-        Ok(Arc::new(Mutex::new(Self { overlay, headers, blocks, transactions, contracts })))
+        Ok(Arc::new(Mutex::new(Self { overlay, headers, blocks, transactions, contracts, simple_db })))
     }
 }
 

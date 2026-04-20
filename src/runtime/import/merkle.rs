@@ -174,11 +174,8 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
         return darkfi_sdk::error::INTERNAL_ERROR
     }
 
-    // Locking should happen for the entire duration of this fn. This is unsafe otherwise.
-    let lock = env.blockchain.lock().unwrap();
-    let mut overlay = lock.overlay.lock().unwrap();
-    // Read the current tree
-    let ret = match overlay.get(&db_info.tree, &tree_key) {
+    // Read the current tree using simple_db for deterministic access
+    let ret = match env.state_db.get(&db_info.tree, &tree_key) {
         Ok(v) => v,
         Err(e) => {
             error!(
@@ -249,11 +246,14 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
         return darkfi_sdk::error::INTERNAL_ERROR
     }
 
-    // Apply changes to overlay
-    if overlay.insert(&db_info.tree, &tree_key, &tree_data).is_err() {
+    // Apply changes to simple_db
+    if let Err(e) = env.state_db.insert(&db_info.tree, &tree_key, &tree_data) {
         error!(
             target: "runtime::merkle::merkle_add",
-            "[WASM] [{cid}] merkle_add(): Couldn't insert to db_info tree"
+            "[WASM] [{cid}] merkle_add(): insert failed tree={:?} tree_key={:?} err={:?}",
+            db_info.tree,
+            tree_key.iter().take(8).collect::<Vec<_>>(),
+            e
         );
         return darkfi_sdk::error::INTERNAL_ERROR
     }
@@ -280,7 +280,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
     env.call_idx.encode(&mut value_data).expect("Unable to serialize call_idx");
     assert_eq!(value_data.len(), 32 + 1);
 
-    if overlay.insert(&db_roots.tree, &latest_root_data, &value_data).is_err() {
+    if let Err(e) = env.state_db.insert(&db_roots.tree, &latest_root_data, &value_data) {
         error!(
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Couldn't insert to db_roots tree"
@@ -294,7 +294,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
         "[WASM] [{cid}] merkle_add(): Replacing latest Merkle root pointer"
     );
 
-    if overlay.insert(&db_info.tree, &root_key, &latest_root_data).is_err() {
+    if let Err(e) = env.state_db.insert(&db_info.tree, &root_key, &latest_root_data) {
         error!(
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Couldn't insert latest root to db_info tree"
@@ -307,8 +307,6 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
     // * The size of the Merkle tree we deserialized from the db.
     // * The size of the Merkle tree we serialized into the db.
     // * The size of the new Merkle roots we wrote into the db.
-    drop(overlay);
-    drop(lock);
     drop(db_handles);
     let spent_gas = coins_len * 32;
     env.subtract_gas(&mut store, spent_gas as u64);

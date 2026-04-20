@@ -28,6 +28,7 @@ use darkfi_sdk::{
     tx::TransactionHash,
     wasm, AsHex,
 };
+use sha2::{Digest, Sha256};
 use darkfi_serial::serialize;
 use tracing::{debug, error, info};
 use wasmer::{
@@ -42,7 +43,221 @@ use wasmer_middlewares::{
 };
 
 use super::{import, import::db::DbHandle, memory::MemoryManipulation};
-use crate::{blockchain::BlockchainOverlayPtr, Error, Result};
+use crate::{blockchain::{Blockchain, BlockchainOverlayPtr, SimpleDb}, Error, Result};
+
+/// Trait for contract storage operations used during deploy().
+/// This abstraction allows different storage backends (overlay, LinearStore, etc.)
+pub trait ContractStoreAccess: Send + Sync {
+    /// Look up a tree handle for an initialized tree.
+    fn lookup(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]>;
+    /// Initialize a new tree for a contract. Returns the tree handle.
+    fn init(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]>;
+    /// Store contract WASM bincode.
+    fn insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> Result<()>;
+    /// Get contract WASM bincode.
+    fn get_bincode(&self, cid: &ContractId) -> Result<Vec<u8>>;
+}
+
+/// Trait for simple key-value store used during exec/metadata/apply phases.
+pub trait SimpleDbAccess: Send + Sync {
+    fn insert(&self, tree: &[u8], key: &[u8], value: &[u8]) -> Result<()>;
+    fn get(&self, tree: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>>;
+    fn remove(&self, tree: &[u8], key: &[u8]) -> Result<()>;
+    fn contains_key(&self, tree: &[u8], key: &[u8]) -> Result<bool>;
+}
+
+/// Trait for blockchain state queries used during exec/metadata/apply phases.
+pub trait BlockchainAccess: Send + Sync {
+    fn last_block_timestamp(&self) -> Result<Vec<u8>>;
+    fn last_block_height(&self) -> Result<u32>;
+    fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>>;
+    fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>>;
+    fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>>;
+}
+
+// Implement ContractStoreAccess for BlockchainOverlayPtr
+impl ContractStoreAccess for BlockchainOverlayPtr {
+    fn lookup(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
+        let overlay = self.lock().unwrap();
+        overlay.contracts.lookup(cid, tree_name)
+    }
+
+    fn init(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
+        let mut overlay = self.lock().unwrap();
+        overlay.contracts.init(cid, tree_name)
+    }
+
+    fn insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> Result<()> {
+        let overlay = self.lock().unwrap();
+        overlay.contracts.insert(cid, bincode)
+    }
+
+    fn get_bincode(&self, cid: &ContractId) -> Result<Vec<u8>> {
+        let overlay = self.lock().unwrap();
+        overlay.contracts.get(*cid)
+    }
+}
+
+// Implement SimpleDbAccess for Arc<SimpleDb>
+impl SimpleDbAccess for Arc<SimpleDb> {
+    fn insert(&self, tree: &[u8], key: &[u8], value: &[u8]) -> Result<()> {
+        SimpleDb::insert(self, tree, key, value)
+    }
+
+    fn get(&self, tree: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>> {
+        SimpleDb::get(self, tree, key)
+    }
+
+    fn remove(&self, tree: &[u8], key: &[u8]) -> Result<()> {
+        SimpleDb::remove(self, tree, key)
+    }
+
+    fn contains_key(&self, tree: &[u8], key: &[u8]) -> Result<bool> {
+        SimpleDb::contains_key(self, tree, key)
+    }
+}
+
+// Implement SimpleDbAccess for SimpleDb
+impl SimpleDbAccess for SimpleDb {
+    fn insert(&self, tree: &[u8], key: &[u8], value: &[u8]) -> Result<()> {
+        SimpleDb::insert(self, tree, key, value)
+    }
+
+    fn get(&self, tree: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>> {
+        SimpleDb::get(self, tree, key)
+    }
+
+    fn remove(&self, tree: &[u8], key: &[u8]) -> Result<()> {
+        SimpleDb::remove(self, tree, key)
+    }
+
+    fn contains_key(&self, tree: &[u8], key: &[u8]) -> Result<bool> {
+        SimpleDb::contains_key(self, tree, key)
+    }
+}
+
+// Implement BlockchainAccess for BlockchainOverlayPtr
+impl BlockchainAccess for BlockchainOverlayPtr {
+    fn last_block_timestamp(&self) -> Result<Vec<u8>> {
+        let overlay = self.lock().unwrap();
+        let ts = overlay.last_block_timestamp()?;
+        Ok(serialize(&ts))
+    }
+
+    fn last_block_height(&self) -> Result<u32> {
+        let overlay = self.lock().unwrap();
+        overlay.last_block_height()
+    }
+
+    fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
+        let overlay = self.lock().unwrap();
+        overlay.transactions.get_raw(hash)
+    }
+
+    fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
+        let overlay = self.lock().unwrap();
+        overlay.transactions.get_location_raw(hash)
+    }
+
+    fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>> {
+        let overlay = self.lock().unwrap();
+        Ok(overlay.get_block_hash_by_height(height)?.map(|h| h.0.to_vec()))
+    }
+}
+
+// Implement BlockchainAccess for Arc<Blockchain>
+impl BlockchainAccess for Arc<Blockchain> {
+    fn last_block_timestamp(&self) -> Result<Vec<u8>> {
+        // Get last block info and extract timestamp
+        let blockchain = &**self;
+        let block_info = blockchain.last_block()?;
+        let ts = block_info.header.timestamp;
+        Ok(serialize(&ts))
+    }
+
+    fn last_block_height(&self) -> Result<u32> {
+        let blockchain = &**self;
+        let (height, _) = blockchain.last()?;
+        Ok(height)
+    }
+
+    fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
+        let blockchain = &**self;
+        if let Some(found) = blockchain.transactions.main.get(hash)? {
+            return Ok(Some(found.to_vec()))
+        }
+        Ok(None)
+    }
+
+    fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
+        let blockchain = &**self;
+        if let Some(found) = blockchain.transactions.location.get(hash)? {
+            return Ok(Some(found.to_vec()))
+        }
+        Ok(None)
+    }
+
+    fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>> {
+        let blockchain = &**self;
+        Ok(blockchain.get_block_hash_by_height(height)?.map(|h| h.0.to_vec()))
+    }
+}
+
+/// Adapter to use BlockchainOverlayPtr as ContractStoreAccess
+pub struct ContractStoreAccessAdapter(pub BlockchainOverlayPtr);
+
+impl ContractStoreAccess for ContractStoreAccessAdapter {
+    fn lookup(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
+        let overlay = self.0.lock().unwrap();
+        overlay.contracts.lookup(cid, tree_name)
+    }
+
+    fn init(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
+        let mut overlay = self.0.lock().unwrap();
+        overlay.contracts.init(cid, tree_name)
+    }
+
+    fn insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> Result<()> {
+        let overlay = self.0.lock().unwrap();
+        overlay.contracts.insert(cid, bincode)
+    }
+
+    fn get_bincode(&self, cid: &ContractId) -> Result<Vec<u8>> {
+        let overlay = self.0.lock().unwrap();
+        overlay.contracts.get(*cid)
+    }
+}
+
+/// Adapter to use BlockchainOverlayPtr as BlockchainAccess
+pub struct BlockchainAccessAdapter(pub BlockchainOverlayPtr);
+
+impl BlockchainAccess for BlockchainAccessAdapter {
+    fn last_block_timestamp(&self) -> Result<Vec<u8>> {
+        let overlay = self.0.lock().unwrap();
+        let ts = overlay.last_block_timestamp()?;
+        Ok(serialize(&ts))
+    }
+
+    fn last_block_height(&self) -> Result<u32> {
+        let overlay = self.0.lock().unwrap();
+        overlay.last_block_height()
+    }
+
+    fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
+        let overlay = self.0.lock().unwrap();
+        overlay.transactions.get_raw(hash)
+    }
+
+    fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
+        let overlay = self.0.lock().unwrap();
+        overlay.transactions.get_location_raw(hash)
+    }
+
+    fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>> {
+        let overlay = self.0.lock().unwrap();
+        Ok(overlay.get_block_hash_by_height(height)?.map(|h| h.0.to_vec()))
+    }
+}
 
 /// Name of the wasm linear memory in our guest module
 const MEMORY: &str = "memory";
@@ -80,8 +295,12 @@ impl ContractSection {
 
 /// The WASM VM runtime environment instantiated for every smart contract that runs.
 pub struct Env {
-    /// Blockchain overlay access
-    pub blockchain: BlockchainOverlayPtr,
+    /// Contract storage access (for deploy phase)
+    pub contract_store: Arc<dyn ContractStoreAccess>,
+    /// Simple key-value store for contract data (for exec/metadata/apply phases)
+    pub state_db: Arc<dyn SimpleDbAccess>,
+    /// Blockchain state queries (for exec/metadata/apply phases)
+    pub blockchain: Arc<dyn BlockchainAccess>,
     /// Overlay tree handles used with `db_*`
     pub db_handles: RefCell<Vec<DbHandle>>,
     /// The contract ID being executed
@@ -159,7 +378,9 @@ impl Runtime {
     /// Create a new wasm runtime instance that contains the given wasm module.
     pub fn new(
         wasm_bytes: &[u8],
-        blockchain: BlockchainOverlayPtr,
+        contract_store: Arc<dyn ContractStoreAccess>,
+        state_db: Arc<dyn SimpleDbAccess>,
+        blockchain: Arc<dyn BlockchainAccess>,
         contract_id: ContractId,
         verifying_block_height: u32,
         block_target: u32,
@@ -167,6 +388,14 @@ impl Runtime {
         call_idx: u8,
     ) -> Result<Self> {
         info!(target: "runtime::vm_runtime", "[WASM] Instantiating a new runtime");
+        // Log WASM binary identity for determinism (full SHA256 hash)
+        let wasm_hash = Sha256::digest(wasm_bytes);
+        info!(
+            target: "runtime::vm_runtime",
+            "[WASM] Binary identity: {} bytes, sha256={}",
+            wasm_bytes.len(),
+            hex::encode(wasm_hash)
+        );
         // This function will be called for each `Operator` encountered during
         // the wasm module execution. It should return the cost of the operator
         // that it received as its first argument. For now, every wasm opcode
@@ -204,6 +433,8 @@ impl Runtime {
         let ctx = FunctionEnv::new(
             &mut store,
             Env {
+                contract_store,
+                state_db,
                 blockchain,
                 db_handles,
                 contract_id,
@@ -474,21 +705,17 @@ impl Runtime {
         // Scoped for borrows
         {
             let env_mut = self.ctx.as_mut(&mut self.store);
-            // We always want to have the zkas db as index 0 in db handles and batches when
-            // deploying.
-            let contracts = &env_mut.blockchain.lock().unwrap().contracts;
 
             // Open or create the zkas db tree for this contract
-            let zkas_tree_handle =
-                match contracts.lookup(&env_mut.contract_id, SMART_CONTRACT_ZKAS_DB_NAME) {
-                    Ok(v) => v,
-                    Err(_) => contracts.init(&env_mut.contract_id, SMART_CONTRACT_ZKAS_DB_NAME)?,
-                };
+            let zkas_tree_handle = match env_mut.contract_store.lookup(&env_mut.contract_id, SMART_CONTRACT_ZKAS_DB_NAME) {
+                Ok(v) => v,
+                Err(_) => env_mut.contract_store.init(&env_mut.contract_id, SMART_CONTRACT_ZKAS_DB_NAME)?,
+            };
 
             // Create the monotree db tree for this contract,
             // if it doesn't exists.
-            if contracts.lookup(&env_mut.contract_id, SMART_CONTRACT_MONOTREE_DB_NAME).is_err() {
-                contracts.init(&env_mut.contract_id, SMART_CONTRACT_MONOTREE_DB_NAME)?;
+            if env_mut.contract_store.lookup(&env_mut.contract_id, SMART_CONTRACT_MONOTREE_DB_NAME).is_err() {
+                env_mut.contract_store.init(&env_mut.contract_id, SMART_CONTRACT_MONOTREE_DB_NAME)?;
             }
 
             let mut db_handles = env_mut.db_handles.borrow_mut();
@@ -500,12 +727,7 @@ impl Runtime {
 
         // Update the wasm bincode in the ContractStore wasm tree if the deploy exec passed successfully.
         let env_mut = self.ctx.as_mut(&mut self.store);
-        env_mut
-            .blockchain
-            .lock()
-            .unwrap()
-            .contracts
-            .insert(env_mut.contract_id, &env_mut.contract_bincode)?;
+        env_mut.contract_store.insert_bincode(env_mut.contract_id, &env_mut.contract_bincode)?;
 
         info!(target: "runtime::vm_runtime", "[WASM] Successfully deployed ContractID: {cid}");
         Ok(())

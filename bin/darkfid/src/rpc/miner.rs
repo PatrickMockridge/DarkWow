@@ -354,6 +354,7 @@ impl DarkfiNode {
             &previous,
             true,
             verify_fees,
+            &block.zkbin_data,
         )
         .await
         {

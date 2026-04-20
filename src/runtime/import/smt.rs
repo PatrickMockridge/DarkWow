@@ -33,12 +33,64 @@ use tracing::{debug, error};
 use wasmer::{FunctionEnvMut, WasmPtr};
 
 use super::acl::acl_allow;
-use crate::runtime::vm_runtime::{ContractSection, Env};
+use crate::runtime::vm_runtime::{ContractSection, Env, SimpleDbAccess};
 
 /// An SMT adapter for sled overlay storage. Compatible with the WasmDb SMT adapter
 pub struct SledStorage<'a> {
     overlay: &'a mut sled_overlay::SledDbOverlay,
     tree_key: &'a [u8],
+}
+
+/// An SMT adapter for SimpleDb storage. Deterministic, no overlay/diffs.
+pub struct SimpleDbStorage<'a> {
+    simple_db: &'a dyn SimpleDbAccess,
+    tree_key: &'a [u8],
+}
+
+impl StorageAdapter for SimpleDbStorage<'_> {
+    type Value = pallas::Base;
+
+    fn put(&mut self, key: BigUint, value: pallas::Base) -> ContractResult {
+        if let Err(e) = self.simple_db.insert(self.tree_key, &key.to_bytes_le(), &value.to_repr()) {
+            error!(
+                target: "runtime::smt::SimpleDbStorage::put",
+                "[WASM] SimpleDbStorage::put(): inserting key {key:?}, value {value:?} into DB tree: {:?}: {e}",
+                self.tree_key
+            );
+            return Err(ContractError::SmtPutFailed)
+        }
+        Ok(())
+    }
+
+    fn get(&self, key: &BigUint) -> Option<pallas::Base> {
+        let value = match self.simple_db.get(self.tree_key, &key.to_bytes_le()) {
+            Ok(v) => v,
+            Err(e) => {
+                error!(
+                    target: "runtime::smt::SimpleDbStorage::get",
+                    "[WASM] SimpleDbStorage::get(): Fetching key {key:?} from DB tree: {:?}: {e}",
+                    self.tree_key
+                );
+                return None
+            }
+        };
+        let value = value?;
+        let mut repr = [0; 32];
+        repr.copy_from_slice(&value);
+        pallas::Base::from_repr(repr).into()
+    }
+
+    fn del(&mut self, key: &BigUint) -> ContractResult {
+        if let Err(e) = self.simple_db.remove(self.tree_key, &key.to_bytes_le()) {
+            error!(
+                target: "runtime::smt::SimpleDbStorage::del",
+                "[WASM] SimpleDbStorage::del(): Removing key {key:?} from DB tree: {:?}: {e}",
+                self.tree_key
+            );
+            return Err(ContractError::SmtDelFailed)
+        }
+        Ok(())
+    }
 }
 
 impl StorageAdapter for SledStorage<'_> {
@@ -237,17 +289,15 @@ pub(crate) fn sparse_merkle_insert_batch(
         return darkfi_sdk::error::INTERNAL_ERROR
     }
 
-    // Generate the SledStorage SMT
+    // Generate the SimpleDbStorage SMT
     let hasher = PoseidonFp::new();
-    let lock = env.blockchain.lock().unwrap();
-    let mut overlay = lock.overlay.lock().unwrap();
-    let smt_store = SledStorage { overlay: &mut overlay, tree_key: &db_smt.tree };
+    let smt_store = SimpleDbStorage { simple_db: env.state_db.as_ref(), tree_key: &db_smt.tree };
     let mut smt = SparseMerkleTree::<
         SMT_FP_DEPTH,
         { SMT_FP_DEPTH + 1 },
         pallas::Base,
         PoseidonFp,
-        SledStorage,
+        SimpleDbStorage,
     >::new(smt_store, hasher, &EMPTY_NODES_FP);
 
     // Count the nullifiers for gas calculation
@@ -302,7 +352,7 @@ pub(crate) fn sparse_merkle_insert_batch(
     }
 
     // Retrieve snapshot root data set
-    let root_value_data_set = match overlay.get(&db_roots.tree, &latest_root_data) {
+    let root_value_data_set = match env.state_db.get(&db_roots.tree, &latest_root_data) {
         Ok(data) => data,
         Err(e) => {
             error!(
@@ -342,11 +392,12 @@ pub(crate) fn sparse_merkle_insert_batch(
         target: "runtime::smt::sparse_merkle_insert_batch",
         "[WASM] [{cid}] sparse_merkle_insert_batch(): Appending SMT root to db: {latest_root:?}"
     );
-    if overlay.insert(&db_roots.tree, &latest_root_data, &serialize(&root_value_data_set)).is_err()
-    {
+    if let Err(e) = env.state_db.insert(&db_roots.tree, &latest_root_data, &serialize(&root_value_data_set)) {
         error!(
             target: "runtime::smt::sparse_merkle_insert_batch",
-            "[WASM] [{cid}] sparse_merkle_insert_batch(): Couldn't insert to db_roots tree"
+            "[WASM] [{cid}] sparse_merkle_insert_batch(): insert to db_roots failed tree={:?} err={:?}",
+            db_roots.tree,
+            e
         );
         return darkfi_sdk::error::INTERNAL_ERROR
     }
@@ -356,10 +407,13 @@ pub(crate) fn sparse_merkle_insert_batch(
         target: "runtime::smt::sparse_merkle_insert_batch",
         "[WASM] [{cid}] sparse_merkle_insert_batch(): Replacing latest SMT root pointer"
     );
-    if overlay.insert(&db_info.tree, &root_key, &latest_root_data).is_err() {
+    if let Err(e) = env.state_db.insert(&db_info.tree, &root_key, &latest_root_data) {
         error!(
             target: "runtime::smt::sparse_merkle_insert_batch",
-            "[WASM] [{cid}] sparse_merkle_insert_batch(): Couldn't insert latest root to db_info tree"
+            "[WASM] [{cid}] sparse_merkle_insert_batch(): insert to db_info failed tree={:?} root_key={:?} err={:?}",
+            db_info.tree,
+            root_key.iter().take(8).collect::<Vec<_>>(),
+            e
         );
         return darkfi_sdk::error::INTERNAL_ERROR
     }
@@ -367,8 +421,6 @@ pub(crate) fn sparse_merkle_insert_batch(
     // Subtract used gas.
     // Here we count:
     // * The number of nullifiers we inserted into the DB
-    drop(overlay);
-    drop(lock);
     drop(db_handles);
     env.subtract_gas(&mut store, inserted_nullifiers as u64);
 

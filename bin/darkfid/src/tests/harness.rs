@@ -265,6 +265,7 @@ impl Harness {
             &previous,
             true,
             self.alice.validator.read().await.verify_fees,
+            &block.zkbin_data,
         )
         .await?;
         fork.append_proposal(&Proposal::new(block.clone())).await?;

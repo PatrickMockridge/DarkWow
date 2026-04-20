@@ -848,6 +848,7 @@ impl Fork {
                 &mut tree,
                 &mut vks,
                 verify_fees,
+                &[],
             )
             .await
             {

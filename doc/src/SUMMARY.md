@@ -59,6 +59,7 @@
   - [NativeToken](arch/native_token.md)
   - [Anonymous assets](arch/anonymous_assets.md)
   - [Consensus](arch/consensus.md)
+  - [Uncle Merkle Consensus](arch/uncle_merkle.md)
   - [Transactions](arch/legacy/tx_lifetime.md)
   - [Bridge](arch/bridge.md)
   - [Tooling](arch/tooling.md)

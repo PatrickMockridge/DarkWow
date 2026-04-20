@@ -63,6 +63,22 @@ use proto::{DarkfidP2pHandler, DarkfidP2pHandlerPtr};
 mod registry;
 use registry::{DarkfiMinersRegistry, DarkfiMinersRegistryPtr};
 
+/// Linear blockchain for localnet
+mod blockchain;
+pub use blockchain::LinearBlockchain;
+
+/// Runtime integration for linear blockchain
+mod runtime_integration;
+
+/// LinearSimpleDb bridge adapter
+mod linear_simple_db;
+
+/// LinearContractStore bridge adapter
+mod contract_store;
+
+/// ZK verification for linear blockchain
+mod zk;
+
 /// Atomic pointer to the DarkFi node
 pub type DarkfiNodePtr = Arc<DarkfiNode>;
 

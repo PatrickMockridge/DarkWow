@@ -16,18 +16,19 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use darkfi_sdk::{
     crypto::{DEPLOYOOOR_CONTRACT_ID, MONEY_V2_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID},
     tx::TransactionHash,
 };
 use num_bigint::BigUint;
+use sha2::{Digest, Sha256};
 use tracing::info;
 
 use crate::{
-    blockchain::{BlockInfo, BlockchainOverlayPtr, Header},
-    runtime::vm_runtime::Runtime,
+    blockchain::{BlockInfo, BlockchainOverlayPtr, Header, SimpleDb},
+    runtime::vm_runtime::{ContractStoreAccessAdapter, BlockchainAccessAdapter, Runtime},
     validator::{
         consensus::{Fork, Proposal},
         pow::PoWModule,
@@ -38,6 +39,12 @@ use crate::{
 /// Max 32 bytes integer, used in rank calculations.
 /// Cached to avoid repeated allocation.
 pub static MAX_32_BYTES: LazyLock<BigUint> = LazyLock::new(|| BigUint::from_bytes_le(&[0xFF; 32]));
+
+/// Compute SHA256 hash of bytes and return as hex string.
+fn sha256sum(bytes: &[u8]) -> String {
+    let hash = Sha256::digest(bytes);
+    hex::encode(hash)
+}
 
 /// Deploy DarkFi native wasm contracts to provided blockchain overlay.
 ///
@@ -56,6 +63,14 @@ pub async fn deploy_native_contracts(
     block_target: u32,
 ) -> Result<()> {
     info!(target: "validator::utils::deploy_native_contracts", "Deploying native WASM contracts");
+
+    // Binary hashes for determinism verification
+    let deployooor_wasm_hash = sha256sum(&include_bytes!("../contract/deployooor/darkfi_deployooor_contract.wasm")[..]);
+    let native_token_wasm_hash = sha256sum(&include_bytes!("../contract/native_token/darkfi_native_token_contract.wasm")[..]);
+    info!(target: "validator::utils::deploy_native_contracts",
+          "Deployooor WASM hash: {}", deployooor_wasm_hash);
+    info!(target: "validator::utils::deploy_native_contracts",
+          "NativeToken WASM hash: {}", native_token_wasm_hash);
 
     // The Deployooor contract uses an empty payload to deploy itself.
     let deployooor_contract_deploy_payload = vec![];
@@ -88,9 +103,12 @@ pub async fn deploy_native_contracts(
     for (call_idx, nc) in native_contracts.into_iter().enumerate() {
         info!(target: "validator::utils::deploy_native_contracts", "Deploying {} with ContractID {}", nc.0, nc.1);
 
+        let simple_db = overlay.lock().unwrap().simple_db.clone();
         let mut runtime = Runtime::new(
             &nc.2[..],
-            overlay.clone(),
+            Arc::new(ContractStoreAccessAdapter(overlay.clone())),
+            Arc::new(simple_db),
+            Arc::new(BlockchainAccessAdapter(overlay.clone())),
             nc.1,
             verifying_block_height,
             block_target,

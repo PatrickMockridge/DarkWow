@@ -312,7 +312,7 @@ pub(crate) fn get_blockchain_time(mut ctx: FunctionEnvMut<Env>) -> i64 {
     }
 
     // Grab current last block
-    let timestamp = match env.blockchain.lock().unwrap().last_block_timestamp() {
+    let timestamp = match env.blockchain.last_block_timestamp() {
         Ok(b) => b,
         Err(e) => {
             error!(
@@ -329,7 +329,7 @@ pub(crate) fn get_blockchain_time(mut ctx: FunctionEnvMut<Env>) -> i64 {
 
     // Create the return object
     let mut ret = Vec::with_capacity(8);
-    ret.extend_from_slice(&timestamp.inner().to_be_bytes());
+    ret.extend_from_slice(&timestamp);
 
     // Copy Vec<u8> to the VM
     let mut objects = env.objects.borrow_mut();
@@ -364,7 +364,7 @@ pub(crate) fn get_last_block_height(mut ctx: FunctionEnvMut<Env>) -> i64 {
     }
 
     // Grab current last block height
-    let height = match env.blockchain.lock().unwrap().last_block_height() {
+    let height = match env.blockchain.last_block_height() {
         Ok(b) => b,
         Err(e) => {
             error!(
@@ -462,7 +462,7 @@ pub(crate) fn get_tx(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) -> i64 {
     }
 
     // Retrieve transaction using the `hash`
-    let ret = match env.blockchain.lock().unwrap().transactions.get_raw(&hash) {
+    let ret = match env.blockchain.get_tx(&hash) {
         Ok(v) => v,
         Err(e) => {
             error!(
@@ -570,7 +570,7 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
     }
 
     // Retrieve transaction using the `hash`
-    let ret = match env.blockchain.lock().unwrap().transactions.get_location_raw(&hash) {
+    let ret = match env.blockchain.get_tx_location(&hash) {
         Ok(v) => v,
         Err(e) => {
             error!(
@@ -637,7 +637,7 @@ pub(crate) fn get_block_hash_(mut ctx: FunctionEnvMut<Env>, height: i64) -> i64 
 
     // Grab block hash by height
     let block_hash =
-        match env.blockchain.lock().unwrap().get_block_hash_by_height(height as u32) {
+        match env.blockchain.get_block_hash_by_height(height as u32) {
             Ok(Some(hash)) => hash,
             Ok(None) => {
                 debug!(
@@ -662,6 +662,6 @@ pub(crate) fn get_block_hash_(mut ctx: FunctionEnvMut<Env>, height: i64) -> i64 
     }
 
     // Return the index of the objects Vector where the data was pushed
-    objects.push(block_hash.inner().to_vec());
+    objects.push(block_hash);
     (objects.len() - 1) as i64
 }

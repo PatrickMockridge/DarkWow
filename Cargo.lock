@@ -846,6 +846,7 @@ dependencies = [
  "constant_time_eq",
  "cpufeatures 0.3.0",
  "rayon-core",
+ "serde",
 ]
 
 [[package]]
@@ -1945,6 +1946,7 @@ dependencies = [
  "semver",
  "serde",
  "sha2",
+ "sled",
  "sled-overlay",
  "smol",
  "socket2",
@@ -1982,6 +1984,7 @@ dependencies = [
  "darkfi_attestation_contract",
  "darkfi_auction_contract",
  "darkfi_baccarat_contract",
+ "darkfi_betting_stake_contract",
  "darkfi_bridge_contract",
  "darkfi_dao_escrow_contract",
  "darkfi_darkbet_exchange_contract",
@@ -2373,6 +2376,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkfi_linear"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "hex",
+ "merlin",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sled",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
 name = "darkfi_lottery_contract"
 version = "0.1.0"
 dependencies = [
@@ -2592,6 +2611,7 @@ dependencies = [
  "darkfi-serial",
  "darkfi_baccarat_contract",
  "darkfi_deployooor_contract",
+ "darkfi_linear",
  "darkfi_money_v2_contract",
  "darkfi_money_v3_contract",
  "darkfi_native_token_contract",

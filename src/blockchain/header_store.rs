@@ -110,6 +110,10 @@ pub struct Header {
     pub state_root: StateHash,
     /// Block Proof of Work type
     pub pow_data: PowData,
+    /// Merkle root of uncle blocks referenced by this canonical block
+    pub uncle_merkle_root: [u8; 32],
+    /// Total reward being distributed (canonical + uncle shares)
+    pub total_reward: u64,
 }
 
 impl Header {
@@ -129,6 +133,8 @@ impl Header {
             transactions_root,
             state_root,
             pow_data,
+            uncle_merkle_root: [0u8; 32],
+            total_reward: 0,
         }
     }
 

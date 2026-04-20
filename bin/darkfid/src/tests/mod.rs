@@ -32,7 +32,7 @@ use smol::Executor;
 use tracing::warn;
 use url::Url;
 
-mod harness;
+pub mod harness;
 use harness::{generate_node, Harness, HarnessConfig};
 
 mod forks;
@@ -57,6 +57,12 @@ pub mod heavyweight_pipeline;
 // mod unproposed_txs;
 
 mod metering;
+
+pub mod localnet;
+
+pub mod linear_genesis;
+
+pub mod linear_five_node;
 
 async fn sync_blocks_real(ex: Arc<Executor<'static>>) -> Result<()> {
     init_logger();
@@ -103,6 +109,7 @@ async fn sync_blocks_real(ex: Arc<Executor<'static>>) -> Result<()> {
         &block2,
         true,
         alice.verify_fees,
+        &block3.zkbin_data,
     )
     .await?;
     drop(alice);
@@ -217,19 +224,26 @@ async fn sync_blocks_real(ex: Arc<Executor<'static>>) -> Result<()> {
 
 #[test]
 fn sync_blocks() -> Result<()> {
-    let ex = Arc::new(Executor::new());
-    let (signal, shutdown) = smol::channel::unbounded::<()>();
+    // WASM execution needs larger stack
+    let handler = std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(|| -> Result<()> {
+            let ex = Arc::new(Executor::new());
+            let (signal, shutdown) = smol::channel::unbounded::<()>();
 
-    easy_parallel::Parallel::new().each(0..4, |_| smol::block_on(ex.run(shutdown.recv()))).finish(
-        || {
-            smol::block_on(async {
-                sync_blocks_real(ex.clone()).await.unwrap();
-                drop(signal);
-            })
-        },
-    );
+            easy_parallel::Parallel::new().each(0..4, |_| smol::block_on(ex.run(shutdown.recv()))).finish(
+                || {
+                    smol::block_on(async {
+                        sync_blocks_real(ex.clone()).await.unwrap();
+                        drop(signal);
+                    })
+                },
+            );
 
-    Ok(())
+            Ok(())
+        })?;
+
+    handler.join().unwrap()
 }
 
 #[test]

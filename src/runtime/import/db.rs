@@ -74,9 +74,6 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
     // TODO: There should probably be an additional fee to open a new sled tree.
     env.subtract_gas(&mut store, 1);
 
-    // This takes lock of the blockchain overlay reference in the wasm env
-    let contracts = &env.blockchain.lock().unwrap().contracts;
-
     // Create a mem slice of the wasm VM memory
     let memory_view = env.memory_view(&store);
     let Ok(mem_slice) = ptr.slice(&memory_view, ptr_len) else {
@@ -158,22 +155,9 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
         return darkfi_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    // Now try to initialize the tree. If this returns an error,
-    // it usually means that this DB was already initialized.
-    // An alternative error might happen if something in sled fails,
-    // for this we should take care to stop the node or do something to
-    // be able to gracefully recover.
-    // (src/blockchain/contract_store.rs holds this init() function)
-    let tree_handle = match contracts.init(&read_cid, &read_db_name) {
-        Ok(v) => v,
-        Err(e) => {
-            error!(
-                target: "runtime::db::db_init",
-                "[WASM] [{cid}] db_init(): Failed to init db: {e}"
-            );
-            return darkfi_sdk::error::DB_INIT_FAILED
-        }
-    };
+    // Now try to initialize the tree. The tree handle is just a hash of
+    // contract_id + tree_name. We use simple_db directly.
+    let tree_handle = read_cid.hash_state_id(&read_db_name);
 
     // Create the DbHandle
     let db_handle = DbHandle::new(read_cid, tree_handle);
@@ -241,7 +225,6 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
 
     // Read memory location that contains the ContractId and DB name
     let memory_view = env.memory_view(&store);
-    let contracts = &env.blockchain.lock().unwrap().contracts;
 
     let Ok(mem_slice) = ptr.slice(&memory_view, ptr_len) else {
         error!(
@@ -312,11 +295,8 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
         return darkfi_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    // Lookup contract state
-    let tree_handle = match contracts.lookup(&cid, &db_name) {
-        Ok(v) => v,
-        Err(_) => return darkfi_sdk::error::DB_LOOKUP_FAILED,
-    };
+    // Lookup contract state - compute tree handle directly from hash
+    let tree_handle = cid.hash_state_id(&db_name);
 
     // Create the DbHandle
     let db_handle = DbHandle::new(cid, tree_handle);
@@ -460,19 +440,15 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     }
 
     // Insert key-value pair into the database corresponding to this contract
-    if env
-        .blockchain
-        .lock()
-        .unwrap()
-        .overlay
-        .lock()
-        .unwrap()
-        .insert(&db_handle.tree, &key, &value)
-        .is_err()
-    {
+    // Use simple_db for deterministic direct sled access
+    if let Err(e) = env.state_db.insert(&db_handle.tree, &key, &value) {
         error!(
             target: "runtime::db::db_set",
-            "[WASM] [{cid}] db_set(): Couldn't insert to db_handle tree"
+            "[WASM] [{cid}] db_set(): insert failed tree={:?} key={:?} value_len={} err={:?}",
+            db_handle.tree,
+            key.iter().take(8).collect::<Vec<_>>(),
+            value.len(),
+            e
         );
         return darkfi_sdk::error::DB_SET_FAILED
     }
@@ -580,11 +556,10 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     }
 
     // Remove key-value pair from the database corresponding to this contract
-    if env.blockchain.lock().unwrap().overlay.lock().unwrap().remove(&db_handle.tree, &key).is_err()
-    {
+    if let Err(e) = env.state_db.remove(&db_handle.tree, &key) {
         error!(
             target: "runtime::db::db_del",
-            "[WASM] [{cid}] db_del(): Couldn't remove key from db_handle tree"
+            "[WASM] [{cid}] db_del(): Couldn't remove key from db_handle tree: {e}"
         );
         return darkfi_sdk::error::DB_DEL_FAILED
     }
@@ -689,8 +664,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     let db_handle = &db_handles[db_handle_index];
 
     // Retrieve data using the `key`
-    let ret =
-        match env.blockchain.lock().unwrap().overlay.lock().unwrap().get(&db_handle.tree, &key) {
+    let ret = match env.state_db.get(&db_handle.tree, &key) {
             Ok(v) => v,
             Err(e) => {
                 error!(
@@ -826,13 +800,12 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
     let db_handle = &db_handles[db_handle_index];
 
     // Lookup key parameter in the database
-    match env.blockchain.lock().unwrap().overlay.lock().unwrap().contains_key(&db_handle.tree, &key)
-    {
+    match env.state_db.contains_key(&db_handle.tree, &key) {
         Ok(v) => i64::from(v), // <- 0=false, 1=true. Convert bool to i64.
         Err(e) => {
             error!(
                 target: "runtime::db::db_contains_key",
-                "[WASM] [{cid}] db_contains_key(): sled.tree.contains_key failed: {e}"
+                "[WASM] [{cid}] db_contains_key(): simple_db.contains_key failed: {e}"
             );
             darkfi_sdk::error::DB_CONTAINS_KEY_FAILED
         }
@@ -923,15 +896,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
     // Check if there is existing bincode and compare it. Return DB_SUCCESS if
     // they're the same. The assumption should be that VerifyingKey was generated
     // already so we can skip things after this guard.
-    match env
-        .blockchain
-        .lock()
-        .unwrap()
-        .overlay
-        .lock()
-        .unwrap()
-        .get(&db_handle.tree, &serialize(&zkbin.namespace))
-    {
+    match env.state_db.get(&db_handle.tree, &serialize(&zkbin.namespace)) {
         Ok(v) => {
             if let Some(bytes) = v {
                 // We allow a panic here because this db should never be corrupted in this way.
@@ -989,19 +954,10 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
     // Insert the key-value pair into the database.
     let key = serialize(&zkbin.namespace);
     let value = serialize(&(zkbin_bytes, vk_buf));
-    if env
-        .blockchain
-        .lock()
-        .unwrap()
-        .overlay
-        .lock()
-        .unwrap()
-        .insert(&db_handle.tree, &key, &value)
-        .is_err()
-    {
+    if let Err(e) = env.state_db.insert(&db_handle.tree, &key, &value) {
         error!(
             target: "runtime::db::zkas_db_set",
-            "[WASM] [{cid}] zkas_db_set(): Couldn't insert to db_handle tree"
+            "[WASM] [{cid}] zkas_db_set(): Couldn't insert to db_handle tree: {e}"
         );
         return darkfi_sdk::error::DB_SET_FAILED
     }

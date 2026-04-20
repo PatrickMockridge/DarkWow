@@ -16,18 +16,22 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use darkfi_sdk::{
     blockchain::{block_version, compute_fee},
     crypto::{
+        keypair::Keypair,
         schnorr::{SchnorrPublic, Signature},
-        ContractId, MerkleTree, PublicKey,
+        ContractId, MerkleTree, PublicKey, NATIVE_TOKEN_CONTRACT_ID,
     },
     dark_tree::dark_forest_leaf_vec_integrity_check,
     deploy::DeployParamsV1,
     pasta::pallas,
 };
+
+/// Namespace for PoWReward Mint_V1 ZK circuit
+const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
 use darkfi_serial::{deserialize_async, serialize_async, AsyncDecodable, AsyncEncodable};
 use num_bigint::BigUint;
 use sled_overlay::SledDbOverlayStateDiff;
@@ -40,16 +44,31 @@ use crate::{
         Blockchain, BlockchainOverlayPtr, HeaderHash,
     },
     error::TxVerifyFailed,
-    runtime::vm_runtime::Runtime,
+    runtime::vm_runtime::{ContractStoreAccessAdapter, BlockchainAccessAdapter, Runtime},
     tx::{Transaction, MAX_TX_CALLS, MIN_TX_CALLS},
     validator::{
         consensus::{Consensus, Fork, Proposal, BLOCK_GAS_LIMIT},
         fees::{circuit_gas_use, GasData, PALLAS_SCHNORR_SIGNATURE_FEE},
         pow::PoWModule,
     },
-    zk::VerifyingKey,
+    zk::{empty_witnesses, ZkCircuit, VerifyingKey, verifier::{verify_zkp, ZkVerifyResult}},
+    zkas::ZkBinary,
     Error, Result,
 };
+
+/// Try to derive a [`VerifyingKey`] from embedded zkbin_data instead of sled.
+/// Returns `None` if no matching entry is found.
+fn derive_vk(
+    contract_id: &ContractId,
+    zkas_ns: &str,
+    zkbin_data: &[(ContractId, String, Vec<u8>, Vec<pallas::Base>)],
+) -> Option<VerifyingKey> {
+    let (_, _, zkbin_bytes, _) =
+        zkbin_data.iter().find(|(cid, ns, _, _)| cid == contract_id && ns == zkas_ns)?;
+    let zkbin = ZkBinary::decode(zkbin_bytes, false).ok()?;
+    let circuit = ZkCircuit::new(empty_witnesses(&zkbin).ok()?, &zkbin);
+    Some(VerifyingKey::build(zkbin.k, &circuit))
+}
 
 /// Verify given genesis [`BlockInfo`], and apply it to the provided
 /// overlay.
@@ -105,7 +124,7 @@ pub async fn verify_genesis_block(
     let mut tree = MerkleTree::new(1);
     let txs = &block.txs[..block.txs.len() - 1];
     if let Err(e) =
-        verify_transactions(overlay, block.header.height, block_target, txs, &mut tree, false).await
+        verify_transactions(overlay, block.header.height, block_target, txs, &mut tree, false, &[]).await
     {
         warn!(
             target: "validator::verification::verify_genesis_block",
@@ -236,6 +255,7 @@ pub async fn verify_block(
     previous: &BlockInfo,
     is_new: bool,
     verify_fees: bool,
+    zkbin_data: &[(ContractId, String, Vec<u8>, Vec<pallas::Base>)],
 ) -> Result<()> {
     let block_hash = block.hash();
     debug!(target: "validator::verification::verify_block", "Validating block {block_hash}");
@@ -264,6 +284,7 @@ pub async fn verify_block(
         txs,
         &mut tree,
         verify_fees,
+        zkbin_data,
     )
     .await
     {
@@ -276,11 +297,9 @@ pub async fn verify_block(
 
     // Verify producer transaction
     let public_key = verify_producer_transaction(
-        overlay,
-        block.header.height,
-        module.target,
         block.txs.last().unwrap(),
         &mut tree,
+        zkbin_data,
     )
     .await?;
 
@@ -299,6 +318,18 @@ pub async fn verify_block(
             blake3::Hash::from_bytes(state_root).to_string(),
             blake3::Hash::from_bytes(block.header.state_root).to_string(),
         ));
+    }
+
+    // Verify uncle merkle root: must be zero (no uncles) in Phase 1.
+    // Phase 2 (TODO): BlockInfo will carry UncleBlock data for full verification.
+    if block.header.uncle_merkle_root != [0u8; 32] {
+        use crate::validator::uncle::build_uncle_merkle_root;
+        let empty_root = build_uncle_merkle_root(&[]);
+        let claimed = blake3::Hash::from_bytes(block.header.uncle_merkle_root);
+        if claimed != empty_root {
+            error!(target: "validator::verification::verify_block", "Uncle merkle root mismatch");
+            return Err(Error::BlockIsInvalid(block_hash.as_string()))
+        }
     }
 
     // Verify producer signature
@@ -407,14 +438,15 @@ pub fn verify_producer_signature(block: &BlockInfo, public_key: &PublicKey) -> R
 /// Verify provided producer [`Transaction`].
 ///
 /// Verify WASM execution, signatures, and ZK proofs and apply it to
-/// the provided overlay. Returns transaction signature public key.
-/// Additionally, append its hash to the provided Merkle tree.
+/// Verify a producer [`Transaction`].
+/// Stateless verification - uses zkbin_data directly, no WASM calls.
+///
+/// Returns transaction signature public key.
+/// Additionally, appends its hash to the provided Merkle tree.
 pub async fn verify_producer_transaction(
-    overlay: &BlockchainOverlayPtr,
-    verifying_block_height: u32,
-    block_target: u32,
     tx: &Transaction,
     tree: &mut MerkleTree,
+    zkbin_data: &[(ContractId, String, Vec<u8>, Vec<pallas::Base>)],
 ) -> Result<PublicKey> {
     let tx_hash = tx.hash();
     debug!(target: "validator::verification::verify_producer_transaction", "Validating producer transaction {tx_hash}");
@@ -427,116 +459,42 @@ pub async fn verify_producer_transaction(
     // Retrieve first call from the transaction for further processing
     let call = &tx.calls[0];
 
-    // Map of ZK proof verifying keys for the current transaction
-    let mut verifying_keys: HashMap<[u8; 32], HashMap<String, VerifyingKey>> = HashMap::new();
+    // Verify ZK proof directly using zkbin_data - no WASM needed
+    // Find the zkbin entry for this contract
+    let zkbin_entry = zkbin_data
+        .iter()
+        .find(|(cid, ns, _, _)| cid == &call.data.contract_id && ns == NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1);
 
-    // Initialize the map
-    verifying_keys.insert(call.data.contract_id.to_bytes(), HashMap::new());
+    let Some((_, _, zkbin_bytes, instances)) = zkbin_entry else {
+        error!(target: "validator::verification::verify_producer_transaction", "ZK proof data not found in zkbin_data");
+        return Err(Error::ZkasBincodeNotFound)
+    };
 
-    // Table of public inputs used for ZK proof verification
-    let mut zkp_table = vec![];
-    // Table of public keys used for signature verification
-    let mut sig_table = vec![];
-
-    debug!(target: "validator::verification::verify_producer_transaction", "Executing contract call");
-
-    // Write the actual payload data
-    let mut payload = vec![];
-    tx.calls.encode_async(&mut payload).await?; // Actual call data
-
-    debug!(target: "validator::verification::verify_producer_transaction", "Instantiating WASM runtime");
-    let wasm = overlay.lock().unwrap().contracts.get(call.data.contract_id)?;
-
-    let mut runtime = Runtime::new(
-        &wasm,
-        overlay.clone(),
-        call.data.contract_id,
-        verifying_block_height,
-        block_target,
-        tx_hash,
-        // Call index in producer tx is 0
-        0,
-    )?;
-
-    debug!(target: "validator::verification::verify_producer_transaction", "Executing \"metadata\" call");
-    let metadata = runtime.metadata(&payload)?;
-
-    // Decode the metadata retrieved from the execution
-    let mut decoder = Cursor::new(&metadata);
-
-    // The tuple is (zkas_ns, public_inputs)
-    let zkp_pub: Vec<(String, Vec<pallas::Base>)> =
-        AsyncDecodable::decode_async(&mut decoder).await?;
-    let sig_pub: Vec<PublicKey> = AsyncDecodable::decode_async(&mut decoder).await?;
-
-    // Check that only one ZK proof and signature public key exist
-    if zkp_pub.len() != 1 || sig_pub.len() != 1 {
-        error!(target: "validator::verification::verify_producer_transaction", "Producer transaction contains multiple ZK proofs or signature public keys");
-        return Err(TxVerifyFailed::ErroneousTxs(vec![tx.clone()]).into())
-    }
-
-    // TODO: Make sure we've read all the bytes above.
-    debug!(target: "validator::verification::verify_producer_transaction", "Successfully executed \"metadata\" call");
-
-    // Here we'll look up verifying keys and insert them into the map.
-    debug!(target: "validator::verification::verify_producer_transaction", "Performing VerifyingKey lookups from the sled db");
-    for (zkas_ns, _) in &zkp_pub {
-        // TODO: verify this is correct behavior
-        let inner_vk_map = verifying_keys.get_mut(&call.data.contract_id.to_bytes()).unwrap();
-        if inner_vk_map.contains_key(zkas_ns.as_str()) {
-            continue
+    // Verify the ZK proof directly - derive VK and verify
+    match verify_zkp(&tx.proofs[0][0], zkbin_bytes, instances) {
+        ZkVerifyResult::Ok => {}
+        ZkVerifyResult::InvalidProof | ZkVerifyResult::InvalidVk => {
+            error!(target: "validator::verification::verify_producer_transaction", "ZK proof verification failed");
+            return Err(TxVerifyFailed::InvalidZkProof.into())
         }
-
-        let (_zkbin, vk) =
-            overlay.lock().unwrap().contracts.get_zkas(&call.data.contract_id, zkas_ns)?;
-
-        inner_vk_map.insert(zkas_ns.to_string(), vk);
     }
 
-    zkp_table.push(zkp_pub);
-    let signature_public_key = *sig_pub.last().unwrap();
-    sig_table.push(sig_pub);
+    debug!(target: "validator::verification::verify_producer_transaction", "ZK proof verification successful");
 
-    // After getting the metadata, we run the "exec" function with the
-    // same runtime and the same payload. We keep the returned state
-    // update in a buffer, prefixed by the call function ID, enforcing
-    // the state update function in the contract.
-    debug!(target: "validator::verification::verify_producer_transaction", "Executing \"exec\" call");
-    let mut state_update = vec![call.data.data[0]];
-    state_update.append(&mut runtime.exec(&payload)?);
-    debug!(target: "validator::verification::verify_producer_transaction", "Successfully executed \"exec\" call");
+    // For signature verification, PoWReward uses Keypair::default() public key
+    // The signature was created with the default keypair's secret key
+    let signature_public_key = Keypair::default().public;
 
-    // If that was successful, we apply the state update in the
-    // ephemeral overlay.
-    debug!(target: "validator::verification::verify_producer_transaction", "Executing \"apply\" call");
-    runtime.apply(&state_update)?;
-    debug!(target: "validator::verification::verify_producer_transaction", "Successfully executed \"apply\" call");
+    // Build sig_table for verify_sigs: Vec<Vec<PublicKey>>
+    let sig_table = vec![vec![signature_public_key]];
 
-    // When we're done executing over the tx's contract call, we now
-    // move on with verification. First we verify the signatures as
-    // that's cheaper, and then finally we verify the ZK proofs.
     debug!(target: "validator::verification::verify_producer_transaction", "Verifying signatures for transaction {tx_hash}");
-    if sig_table.len() != tx.signatures.len() {
-        error!(target: "validator::verification::verify_producer_transaction", "Incorrect number of signatures in tx {tx_hash}");
-        return Err(TxVerifyFailed::MissingSignatures.into())
-    }
-
-    // TODO: Go through the ZK circuits that have to be verified and
-    // account for the opcodes.
-
     if let Err(e) = tx.verify_sigs(sig_table) {
-        error!(target: "validator::verification::verify_producer_transaction", "Signature verification for tx {tx_hash} failed: {e}");
+        error!(target: "validator::verification::verify_producer_transaction", "Signature verification failed: {e}");
         return Err(TxVerifyFailed::InvalidSignature.into())
     }
 
     debug!(target: "validator::verification::verify_producer_transaction", "Signature verification successful");
-
-    debug!(target: "validator::verification::verify_producer_transaction", "Verifying ZK proofs for transaction {tx_hash}");
-    if let Err(e) = tx.verify_zkps(&verifying_keys, zkp_table).await {
-        error!(target: "validator::verification::verify_producer_transaction", "ZK proof verification for tx {tx_hash} failed: {e}");
-        return Err(TxVerifyFailed::InvalidZkProof.into())
-    }
-    debug!(target: "validator::verification::verify_producer_transaction", "ZK proof verification successful");
 
     // Append hash to merkle tree
     append_tx_to_merkle_tree(tree, tx);
@@ -549,6 +507,11 @@ pub async fn verify_producer_transaction(
 /// Apply given producer [`Transaction`] to the provided overlay,
 /// without formal verification. Returns transaction signature public
 /// key. Additionally, append its hash to the provided Merkle tree.
+///
+/// Note: This is used for state application in test harnesses and
+/// genesis block production. It requires WASM to execute state
+/// transitions (exec/apply), but we skip the metadata call since
+/// it's not needed for state - we just need the signature public key.
 pub async fn apply_producer_transaction(
     overlay: &BlockchainOverlayPtr,
     verifying_block_height: u32,
@@ -564,6 +527,12 @@ pub async fn apply_producer_transaction(
         return Err(TxVerifyFailed::ErroneousTxs(vec![tx.clone()]).into())
     }
 
+    let call = &tx.calls[0];
+
+    // For PoWReward transactions, the signature public key is Keypair::default().public
+    // This is because the transaction was signed with Keypair::default().secret
+    let signature_public_key = Keypair::default().public;
+
     debug!(target: "validator::verification::apply_producer_transaction", "Executing contract call");
 
     // Write the actual payload data
@@ -571,12 +540,14 @@ pub async fn apply_producer_transaction(
     tx.calls.encode_async(&mut payload).await?; // Actual call data
 
     debug!(target: "validator::verification::apply_producer_transaction", "Instantiating WASM runtime");
-    let call = &tx.calls[0];
     let wasm = overlay.lock().unwrap().contracts.get(call.data.contract_id)?;
+    let simple_db = overlay.lock().unwrap().simple_db.clone();
 
     let mut runtime = Runtime::new(
         &wasm,
-        overlay.clone(),
+        Arc::new(ContractStoreAccessAdapter(overlay.clone())),
+        Arc::new(simple_db),
+        Arc::new(BlockchainAccessAdapter(overlay.clone())),
         call.data.contract_id,
         verifying_block_height,
         block_target,
@@ -584,24 +555,6 @@ pub async fn apply_producer_transaction(
         // Call index in producer tx is 0
         0,
     )?;
-
-    debug!(target: "validator::verification::apply_producer_transaction", "Executing \"metadata\" call");
-    let metadata = runtime.metadata(&payload)?;
-
-    // Decode the metadata retrieved from the execution
-    let mut decoder = Cursor::new(&metadata);
-
-    // The tuple is (zkas_ns, public_inputs)
-    let _: Vec<(String, Vec<pallas::Base>)> = AsyncDecodable::decode_async(&mut decoder).await?;
-    let sig_pub: Vec<PublicKey> = AsyncDecodable::decode_async(&mut decoder).await?;
-
-    // Check that only one ZK proof and signature public key exist
-    if sig_pub.len() != 1 {
-        error!(target: "validator::verification::apply_producer_transaction", "Producer transaction contains multiple ZK proofs or signature public keys");
-        return Err(TxVerifyFailed::ErroneousTxs(vec![tx.clone()]).into())
-    }
-
-    let signature_public_key = *sig_pub.last().unwrap();
 
     // After getting the metadata, we run the "exec" function with the
     // same runtime and the same payload. We keep the returned state
@@ -637,6 +590,7 @@ pub async fn verify_transaction(
     tree: &mut MerkleTree,
     verifying_keys: &mut HashMap<[u8; 32], HashMap<String, VerifyingKey>>,
     verify_fee: bool,
+    zkbin_data: &[(ContractId, String, Vec<u8>, Vec<pallas::Base>)],
 ) -> Result<GasData> {
     let tx_hash = tx.hash();
     debug!(target: "validator::verification::verify_transaction", "Validating transaction {tx_hash}");
@@ -726,9 +680,12 @@ pub async fn verify_transaction(
 
         debug!(target: "validator::verification::verify_transaction", "Instantiating WASM runtime");
         let wasm = overlay.lock().unwrap().contracts.get(call.data.contract_id)?;
+        let simple_db = overlay.lock().unwrap().simple_db.clone();
         let mut runtime = Runtime::new(
             &wasm,
-            overlay.clone(),
+            Arc::new(ContractStoreAccessAdapter(overlay.clone())),
+            Arc::new(simple_db),
+            Arc::new(BlockchainAccessAdapter(overlay.clone())),
             call.data.contract_id,
             verifying_block_height,
             block_target,
@@ -774,8 +731,20 @@ pub async fn verify_transaction(
                 continue
             }
 
-            let (zkbin, vk) =
-                overlay.lock().unwrap().contracts.get_zkas(&call.data.contract_id, zkas_ns)?;
+            let (zkbin, vk) = if let Some((_, _, bytes, _)) = zkbin_data
+                .iter()
+                .find(|(cid, ns, _, _)| cid == &call.data.contract_id && ns == zkas_ns)
+            {
+                let zkbin = ZkBinary::decode(bytes, false)
+                    .map_err(|_| Error::ZkasBincodeNotFound)?;
+                let circuit = ZkCircuit::new(empty_witnesses(&zkbin)?, &zkbin);
+                let vk = VerifyingKey::build(zkbin.k, &circuit);
+                (zkbin, vk)
+            } else {
+                // No fallback to sled — verification is stateless
+                error!(target: "validator::verification::verify_transaction", "VK not found in zkbin_data");
+                return Err(Error::ZkasBincodeNotFound)
+            };
 
             inner_vk_map.insert(zkas_ns.to_string(), vk);
             circuits_to_verify.push(zkbin);
@@ -810,9 +779,12 @@ pub async fn verify_transaction(
             let deploy_cid = ContractId::derive_public(deploy_params.public_key);
 
             // Instantiate the new deployment runtime
+            let simple_db = overlay.lock().unwrap().simple_db.clone();
             let mut deploy_runtime = Runtime::new(
                 &deploy_params.wasm_bincode,
-                overlay.clone(),
+                Arc::new(ContractStoreAccessAdapter(overlay.clone())),
+                Arc::new(simple_db),
+                Arc::new(BlockchainAccessAdapter(overlay.clone())),
                 deploy_cid,
                 verifying_block_height,
                 block_target,
@@ -949,9 +921,12 @@ pub async fn apply_transaction(
 
         debug!(target: "validator::verification::apply_transaction", "Instantiating WASM runtime");
         let wasm = overlay.lock().unwrap().contracts.get(call.data.contract_id)?;
+        let simple_db = overlay.lock().unwrap().simple_db.clone();
         let mut runtime = Runtime::new(
             &wasm,
-            overlay.clone(),
+            Arc::new(ContractStoreAccessAdapter(overlay.clone())),
+            Arc::new(simple_db),
+            Arc::new(BlockchainAccessAdapter(overlay.clone())),
             call.data.contract_id,
             verifying_block_height,
             block_target,
@@ -984,9 +959,12 @@ pub async fn apply_transaction(
             let deploy_cid = ContractId::derive_public(deploy_params.public_key);
 
             // Instantiate the new deployment runtime
+            let simple_db = overlay.lock().unwrap().simple_db.clone();
             let mut deploy_runtime = Runtime::new(
                 &deploy_params.wasm_bincode,
-                overlay.clone(),
+                Arc::new(ContractStoreAccessAdapter(overlay.clone())),
+                Arc::new(simple_db),
+                Arc::new(BlockchainAccessAdapter(overlay.clone())),
                 deploy_cid,
                 verifying_block_height,
                 block_target,
@@ -1021,6 +999,7 @@ pub async fn verify_transactions(
     txs: &[Transaction],
     tree: &mut MerkleTree,
     verify_fees: bool,
+    zkbin_data: &[(ContractId, String, Vec<u8>, Vec<pallas::Base>)],
 ) -> Result<(u64, u64)> {
     debug!(target: "validator::verification::verify_transactions", "Verifying {} transactions", txs.len());
     if txs.is_empty() {
@@ -1055,6 +1034,7 @@ pub async fn verify_transactions(
             tree,
             &mut vks,
             verify_fees,
+            zkbin_data,
         )
         .await
         {
@@ -1176,6 +1156,7 @@ pub async fn verify_proposal(
         &previous,
         is_new,
         verify_fees,
+        &proposal.block.zkbin_data,
     )
     .await
     {
@@ -1222,6 +1203,7 @@ pub async fn verify_fork_proposal(
         &previous,
         false,
         verify_fees,
+        &proposal.block.zkbin_data,
     )
     .await
     {

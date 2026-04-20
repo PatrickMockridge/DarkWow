@@ -3,6 +3,28 @@
 This section of the book describes how nodes participating in the DarkFi
 blockchain achieve consensus.
 
+## Design Evolution
+
+DarkFi's consensus mechanism has evolved through two designs:
+
+### Original Design: Fork/Overlay
+
+The original DarkFi consensus used a complex overlay/diff system for speculative block verification. This design had several problems:
+- Non-deterministic verification (speculative state could be committed or rolled back)
+- High complexity (checkpoints, diffs, overlay apply/revert)
+- All-or-nothing mining risk (blocks on losing forks earned zero)
+- Hard to test due to speculative nature
+
+### Current Design: Uncle Merkle
+
+The current design replaces speculative verification with a merkle-tree-based system. Key properties:
+- Uncle chains are **explicitly referenced** in canonical blocks (no implicit fork competition)
+- Reward splitting is **deterministic** based on merkle depth
+- Verification is **stateless** (pure merkle proof + math)
+- Mining risk is **bounded** (uncle always gets partial reward if referenced)
+
+See [Uncle Merkle Consensus](uncle_merkle.md) for the detailed specification.
+
 ## Glossary
 
 | Name                   | Description                                                                            |
@@ -10,11 +32,11 @@ blockchain achieve consensus.
 | Consensus              | Algorithm for reaching blockchain consensus between participating nodes                |
 | Node/Validator         | DarkFi daemon participating in the network                                             |
 | Miner                  | Block producer                                                                         |
-| Unproposed Transaction | Transaction that exists in the memory pool but has not yet been included in a proposal |
+| Uncle Block            | Block that was mined but not canonical, but referenced by a canonical block            |
+| Uncle Merkle            | Merkle tree of uncle blocks referenced by a canonical block                             |
 | Block proposal         | Block that has not yet been appended onto the canonical blockchain                     |
 | P2P network            | Peer-to-peer network on which nodes communicate with each other                        |
 | Confirmation           | State achieved when a block and its contents are appended to the canonical blockchain  |
-| Fork                   | Chain of block proposals that begins with the last block of the canonical blockchain   |
 | MAX_INT                | The maximum 32 bytes (256 bits) integer 2^256 − 1                                      |
 
 ## Miner main loop
@@ -439,4 +461,38 @@ By property (2), we cannot find a $H(x) = 0$.
 Again by (2), we cannot construct an $x$ such that $H(x) + H(a) = H(b)$
 for any $a, b ∈ ℕ$. Recursive application of (2) leads us to the stated
 theorem.
+
+## Uncle Merkle Consensus
+
+The original fork/overlay design has been replaced with Uncle Merkle consensus. See [Uncle Merkle Consensus](uncle_merkle.md) for the full specification.
+
+### Key Differences
+
+| Aspect | Original (Fork/Overlay) | Uncle Merkle |
+|--------|--------------------------|--------------|
+| Fork resolution | Implicit competition | Explicit uncle reference |
+| State management | Overlay + diffs + rollback | Merkle tree, stateless |
+| Mining risk | All-or-nothing | Bounded (uncle gets partial) |
+| Verification | Heavy WASM + sled lookups | Merkle proof only |
+| Complexity | High | Low |
+| Determinism | Non-deterministic in time | Fully deterministic |
+
+### How It Works
+
+1. **Mining**: Miner produces blocks using PoW (RandomX)
+2. **Uncle creation**: When a miner finds a block but it's not canonical, they can keep it as an "uncle"
+3. **Uncle reference**: When a miner produces a canonical block, they can reference uncle blocks in a merkle tree
+4. **Reward distribution**: Canonical block's reward is split deterministically:
+   - 50% to canonical miner
+   - 50% split among uncles (25%, 12.5%, 6.25%... based on depth)
+5. **Verification**: Any node can verify a canonical block by checking:
+   - PoW is valid
+   - Uncle merkle root matches
+   - Reward distribution math is correct
+
+This design achieves:
+- **Pareto efficiency**: No wasted work (uncles always get partial reward if referenced)
+- **Determinism**: Same block = same verification result, always
+- **Simplicity**: No speculative state, no rollback, just merkle math
+- **DAG-friendly**: Opens DAG structure without breaking consensus
 
