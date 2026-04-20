@@ -88,6 +88,28 @@ This fork is for those who believe in **mining true randomness** and **ZK-based 
 
 **Development occurs on the `master` branch** (`PatrickM123/darkfi-jailbroken:master`).
 
+### Uncle Merkle Consensus (linear-master)
+
+This fork also explores an alternative consensus design on the `linear-master` branch.
+
+**The problem with upstream's overlay/diff system:**
+- State can be speculative (checkpoint), committed, or rolled back
+- `diff()` computation depends on sequence history - same code produces different results
+- Checkpoint/revert doesn't update the diff log, breaking fork rebuild assumptions
+- Non-deterministic bug reproduction
+
+**The Uncle Merkle solution:**
+- Uncle chains explicitly referenced in canonical blocks (no speculative fork competition)
+- Stateless verification - pure merkle proof + math, no overlay needed
+- Deterministic execution - same block always produces the same result
+- No overlay/diff complexity - simplifies testing significantly
+
+See [Uncle Merkle Consensus](doc/src/arch/uncle_merkle.md) for the detailed specification.
+
+**Branches:**
+- `master` - Current consensus with overlay/diff system
+- `linear-master` - Uncle Merkle consensus (experimental)
+
 ---
 
 ## The Problem: Authorization Without Privacy
