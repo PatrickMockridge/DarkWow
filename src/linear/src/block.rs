@@ -243,7 +243,8 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> ([u8; 32], Vec<UncleProof>) 
 
 /// Compute reward distribution for canonical miner and uncles
 /// Pin mechanism: Uncle chain gets pin reward ONLY if pin_accepted = true
-/// Canonical gets base_reward + pin rewards (from accepted uncles only)
+/// Canonical reward = base_reward - sum(uncle pin rewards) (no over-minting)
+/// Invariant: canonical_reward + sum(uncle_rewards) = base_reward
 /// Returns (canonical_reward, uncle_rewards)
 pub fn compute_reward(base_reward: u64, uncles: &[UncleBlock]) -> (u64, Vec<u64>) {
     if uncles.is_empty() {
@@ -251,18 +252,17 @@ pub fn compute_reward(base_reward: u64, uncles: &[UncleBlock]) -> (u64, Vec<u64>
     }
 
     let mut uncle_rewards = Vec::with_capacity(uncles.len());
-    let mut canonical_extra = 0u64;
 
     for uncle in uncles {
         // Uncle only gets pin_reward if they accepted the pin
         let pin = if uncle.pin_accepted { uncle.pin_reward } else { 0 };
         uncle_rewards.push(pin);
-        // Canonical gets all pin rewards regardless of accept/reject
-        canonical_extra += pin;
     }
 
-    // Canonical gets base_reward + all pin rewards
-    (base_reward + canonical_extra, uncle_rewards)
+    let total_pin_rewards: u64 = uncle_rewards.iter().sum();
+    // Canonical reward is base minus what it pays in pins (no over-minting)
+    let canonical_reward = base_reward - total_pin_rewards;
+    (canonical_reward, uncle_rewards)
 }
 
 /// Maximum uncle depth allowed
@@ -417,8 +417,8 @@ mod tests {
         let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: true, pin_accepted: true, pin_reward: 50_000_000 };
 
         let (canonical, uncle_rewards) = compute_reward(100_000_000, &[uncle]);
-        // base 100M + pin 50M = 150M canonical
-        assert_eq!(canonical, 150_000_000);
+        // base 100M - pin 50M = 50M canonical (no over-minting)
+        assert_eq!(canonical, 50_000_000);
         assert_eq!(uncle_rewards.len(), 1);
         assert_eq!(uncle_rewards[0], 50_000_000);
     }

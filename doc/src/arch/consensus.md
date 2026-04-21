@@ -50,12 +50,16 @@ Uncle blocks are referenced in canonical blocks via a merkle tree:
 
 ### Reward Distribution
 
-| Uncle Depth | Pin Reward | Uncle Gets | Canonical Absorbs |
-|-------------|------------|------------|-------------------|
-| 1           | 50%        | 50% of block reward | transactions + fees |
-| 2           | 25%        | 25% of block reward | transactions + fees |
-| 3           | 12.5%      | 12.5% of block reward | transactions + fees |
-| ...         | ...        | ... | ... |
+The canonical block pays pin rewards from its own block reward - **no over-minting**:
+
+| Uncle Depth | Pin Reward | Uncle Gets | Canonical Gets |
+|-------------|------------|------------|---------------|
+| None        | -          | -          | 100%          |
+| 1           | 50%        | 50% of block reward | 50% (100% - 50%) |
+| 2           | 25%        | 25% of block reward | 75% (100% - 25%) |
+| 3           | 12.5%      | 12.5% of block reward | 87.5% (100% - 12.5%) |
+
+**Invariant:** `canonical_reward + sum(uncle_rewards) = base_reward` (exactly 100%)
 
 ### Testing Benefits
 
