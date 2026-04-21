@@ -38,6 +38,7 @@ use darkfi::{
     validator::{consensus::Proposal, Validator, ValidatorPtr},
     Error, Result,
 };
+use darkfi_linear::LinearBlockchain as LinearBlockchainCore;
 use darkfi_sdk::{
     crypto::{keypair::Network, pasta_prelude::PrimeField},
     tx::TransactionHash,
@@ -62,8 +63,8 @@ pub type DarkfiMinersRegistryStatePtr = Arc<RwLock<DarkfiMinersRegistryState>>;
 
 /// DarkFi node miners registry state.
 pub struct DarkfiMinersRegistryState {
-    /// PowRewardV1 ZK data
-    pub powrewardv1_zk: PowRewardV1Zk,
+    /// PowRewardV1 ZK data (None for linear-testnet mode)
+    pub powrewardv1_zk: Option<PowRewardV1Zk>,
     /// Mining block templates of each wallet config
     pub block_templates: HashMap<String, BlockTemplate>,
     /// Active native clients mapped to their job information.
@@ -75,18 +76,37 @@ pub struct DarkfiMinersRegistryState {
     /// Active merge mining jobs mapped to the wallet template they
     /// represent. The key(job id) is the the header template hash.
     pub mm_jobs: HashMap<String, String>,
+    /// Linear blockchain state (only set in linear-testnet mode)
+    pub linear_blockchain: Option<Arc<crate::blockchain::LinearBlockchain>>,
 }
 
 impl DarkfiMinersRegistryState {
     pub async fn new(validator: &ValidatorPtr) -> Result<DarkfiMinersRegistryStatePtr> {
         // Generate the PowRewardV1 ZK data
-        let powrewardv1_zk = PowRewardV1Zk::new(validator).await?;
+        let powrewardv1_zk = Some(PowRewardV1Zk::new(validator).await?);
 
         Ok(Arc::new(RwLock::new(Self {
             powrewardv1_zk,
             block_templates: HashMap::new(),
             jobs: HashMap::new(),
             mm_jobs: HashMap::new(),
+            linear_blockchain: None,
+        })))
+    }
+
+    /// Create a new registry state for linear-testnet mode
+    pub async fn new_linear(
+        linear_blockchain: Arc<crate::blockchain::LinearBlockchain>,
+    ) -> Result<DarkfiMinersRegistryStatePtr> {
+        // For linear mode, we use simple UTXO rewards without ZK proofs
+        let powrewardv1_zk = None;
+
+        Ok(Arc::new(RwLock::new(Self {
+            powrewardv1_zk,
+            block_templates: HashMap::new(),
+            jobs: HashMap::new(),
+            mm_jobs: HashMap::new(),
+            linear_blockchain: Some(linear_blockchain),
         })))
     }
 
@@ -114,8 +134,8 @@ impl DarkfiMinersRegistryState {
         let block_template = generate_next_block_template(
             &mut extended_fork,
             config,
-            &self.powrewardv1_zk.zkbin,
-            &self.powrewardv1_zk.provingkey,
+            &self.powrewardv1_zk.as_ref().unwrap().zkbin,
+            &self.powrewardv1_zk.as_ref().unwrap().provingkey,
             validator.verify_fees,
         )
         .await?;
@@ -281,8 +301,8 @@ impl DarkfiMinersRegistryState {
             let result = generate_next_block_template(
                 &mut extended_fork,
                 &client.config,
-                &self.powrewardv1_zk.zkbin,
-                &self.powrewardv1_zk.provingkey,
+                &self.powrewardv1_zk.as_ref().unwrap().zkbin,
+                &self.powrewardv1_zk.as_ref().unwrap().provingkey,
                 validator.verify_fees,
             )
             .await;
@@ -399,6 +419,44 @@ impl DarkfiMinersRegistry {
         info!(
             target: "darkfid::registry::mod::DarkfiMinersRegistry::init",
             "DarkFi node miners registry generated successfully!"
+        );
+
+        Ok(Arc::new(Self {
+            network,
+            state,
+            stratum_rpc_task,
+            stratum_rpc_connections,
+            mm_rpc_task,
+            mm_rpc_connections,
+        }))
+    }
+
+    /// Initialize a DarkFi node miners registry for linear-testnet mode.
+    pub async fn init_linear(
+        network: Network,
+        linear_blockchain: Arc<crate::blockchain::LinearBlockchain>,
+    ) -> Result<DarkfiMinersRegistryPtr> {
+        info!(
+            target: "darkfid::registry::mod::DarkfiMinersRegistry::init_linear",
+            "Initializing a new DarkFi node miners registry for linear-testnet..."
+        );
+
+        // Generate the registry state (placeholder - needs to be adapted for linear)
+        let state = DarkfiMinersRegistryState::new_linear(linear_blockchain).await?;
+
+        // Generate the stratum JSON-RPC background task and its
+        // connections tracker.
+        let stratum_rpc_task = StoppableTask::new();
+        let stratum_rpc_connections = Mutex::new(HashSet::new());
+
+        // Generate the HTTP JSON-RPC background task and its
+        // connections tracker.
+        let mm_rpc_task = StoppableTask::new();
+        let mm_rpc_connections = Mutex::new(HashSet::new());
+
+        info!(
+            target: "darkfid::registry::mod::DarkfiMinersRegistry::init_linear",
+            "DarkFi node miners registry for linear-testnet generated successfully!"
         );
 
         Ok(Arc::new(Self {

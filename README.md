@@ -88,9 +88,9 @@ This fork is for those who believe in **mining true randomness** and **ZK-based 
 
 **Development occurs on the `master` branch** (`PatrickM123/darkfi-jailbroken:master`).
 
-### Uncle Merkle Consensus (linear-master)
+### Uncle Merkle Consensus (linear-testnet)
 
-This fork also explores an alternative consensus design on the `linear-master` branch.
+This fork implements **linear-testnet**, an alternative consensus mode using Uncle Merkle consensus.
 
 **The problem with upstream's overlay/diff system:**
 - State can be speculative (checkpoint), committed, or rolled back
@@ -106,9 +106,21 @@ This fork also explores an alternative consensus design on the `linear-master` b
 
 See [Uncle Merkle Consensus](doc/src/arch/uncle_merkle.md) for the detailed specification.
 
+**Linear-Testnet Network Mode:**
+To run darkfid in linear-testnet mode:
+
+```bash
+./target/debug/darkfid --network linear-testnet
+```
+
+The `miner.mine_linear` RPC endpoint mines PoW blocks on the linear chain:
+```json
+{"jsonrpc": "2.0", "method": "miner.mine_linear", "params": ["recipient_base58", reward_value], "id": 1}
+```
+
 **Branches:**
-- `master` - Current consensus with overlay/diff system
-- `linear-master` - Uncle Merkle consensus (experimental)
+- `master` - Current consensus with overlay/diff system (linear-testnet available as network mode)
+- `linear-master` - Uncle Merkle consensus (experimental branch)
 
 ---
 

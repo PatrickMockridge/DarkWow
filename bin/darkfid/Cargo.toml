@@ -11,7 +11,7 @@ edition = "2021"
 [dependencies]
 # Darkfi
 darkfi = {path = "../../", features = ["async-daemonize", "bs58", "validator", "net", "rpc"]}
-darkfi_linear = {path = "../../src/linear"}
+darkfi_linear = {path = "../../src/linear", features = ["async"]}
 darkfi_money_v2_contract = {path = "../../src/contract/money_v2"}
 darkfi_money_v3_contract = {path = "../../src/contract/money_v3", features = ["client", "no-entrypoint"]}
 darkfi_native_token_contract = {path = "../../src/contract/native_token", features = ["client"]}

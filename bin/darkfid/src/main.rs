@@ -48,6 +48,7 @@ const CONFIG_FILE_CONTENTS: &str = include_str!("../darkfid_config.toml");
 const GENESIS_BLOCK_LOCALNET: &str = include_str!("../genesis_block_localnet");
 const GENESIS_BLOCK_TESTNET: &str = include_str!("../genesis_block_testnet");
 const GENESIS_BLOCK_MAINNET: &str = include_str!("../genesis_block_mainnet");
+const GENESIS_BLOCK_LINEAR_TESTNET: &str = include_str!("../genesis_block_linear_testnet");
 
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]
 #[serde(default)]
@@ -167,11 +168,65 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         "mainnet" => {
             (parse_blockchain_config(args.config, "mainnet").await?, GENESIS_BLOCK_MAINNET)
         }
+        "linear-testnet" => {
+            (parse_blockchain_config(args.config, "linear-testnet").await?, GENESIS_BLOCK_LINEAR_TESTNET)
+        }
         _ => {
             error!("Unsupported chain `{}`", args.network);
             return Err(Error::UnsupportedChain)
         }
     };
+
+    // Handle linear-testnet separately since it uses LinearBlockchain instead of Validator
+    if args.network == "linear-testnet" {
+        info!(target: "darkfid", "Starting DarkFi node in linear-testnet mode...");
+
+        // Initialize or open sled database
+        let db_path = expand_path(&blockchain_config.database)?;
+        let sled_db = sled::open(&db_path)?;
+
+        // Setup P2P settings
+        let p2p_settings: darkfi::net::Settings =
+            (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
+
+        // Initialize the daemon using LinearBlockchain
+        let daemon = Darkfid::init_linear(
+            network,
+            &sled_db,
+            &p2p_settings,
+            &blockchain_config.txs_batch_size,
+            &ex,
+        )
+        .await?;
+
+        // Start the daemon with consensus config
+        let config = ConsensusInitTaskConfig {
+            skip_sync: blockchain_config.skip_sync,
+            checkpoint_height: blockchain_config.checkpoint_height,
+            checkpoint: blockchain_config.checkpoint,
+        };
+        daemon
+            .start(
+                &ex,
+                &blockchain_config.rpc.into(),
+                &blockchain_config.management_rpc.into(),
+                &blockchain_config.stratum_rpc.map(|stratum_rpc_opts| stratum_rpc_opts.into()),
+                &blockchain_config.mm_rpc.map(|mm_rpc_opts| mm_rpc_opts.into()),
+                &config,
+            )
+            .await?;
+
+        // Signal handling for graceful termination.
+        let (signals_handler, signals_task) = SignalHandler::new(ex)?;
+        signals_handler.wait_termination(signals_task).await?;
+        info!(target: "darkfid", "Caught termination signal, cleaning up and exiting...");
+
+        daemon.stop().await?;
+
+        info!(target: "darkfid", "Shut down successfully");
+
+        return Ok(());
+    }
 
     // Parse the genesis block
     let bytes = base64::decode(genesis_block.trim()).unwrap();
@@ -296,7 +351,7 @@ pub async fn parse_blockchain_config(
     // Grab network prefix
     let used_net = match network {
         "mainnet" | "localnet" => Network::Mainnet,
-        "testnet" => Network::Testnet,
+        "testnet" | "linear-testnet" => Network::Testnet,
         _ => return Err(Error::ParseFailed("Invalid blockchain network")),
     };
 

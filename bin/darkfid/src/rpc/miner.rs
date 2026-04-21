@@ -393,4 +393,142 @@ impl DarkfiNode {
         ]));
         JsonResponse::new(result, id).into()
     }
+
+    // RPCAPI:
+    // Mine a block on the linear blockchain (LINEAR-TESTNET ONLY).
+    //
+    // This is a development-only method that mines a single block
+    // with a PoW reward to the specified address.
+    //
+    // --> {"jsonrpc": "2.0", "method": "miner.mine_linear",
+    //      "params": ["recipient_base58", reward_value], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": "blockHash...", "id": 1}
+    pub async fn miner_mine_linear(&self, id: u16, params: JsonValue) -> JsonResult {
+        let params = match params.get::<Vec<JsonValue>>() {
+            Some(v) => v,
+            None => return JsonError::new(InternalError, None, id).into(),
+        };
+
+        if params.len() != 2 || !params[0].is_string() || !params[1].is_number() {
+            return JsonError::new(InternalError, Some("Expected [recipient, value]".to_string()), id).into()
+        }
+
+        let recipient = params[0].get::<String>().unwrap();
+        let reward_value = *params[1].get::<f64>().unwrap() as u64;
+
+        info!(target: "darkfid::rpc::miner", "miner.mine_linear called for recipient {} with reward {}", recipient, reward_value);
+
+        // Check that we're in linear-testnet mode (linear_blockchain is set)
+        let linear_blockchain = match &self.linear_blockchain {
+            Some(lb) => lb.clone(),
+            None => {
+                error!(target: "darkfid::rpc::miner", "miner.mine_linear is only available in linear-testnet mode");
+                return JsonError::new(
+                    InternalError,
+                    Some("miner.mine_linear is only available in linear-testnet mode".to_string()),
+                    id,
+                )
+                .into();
+            }
+        };
+
+        // Decode recipient address (bs58 encoded public key)
+        let recipient_bytes = match bs58::decode(recipient).with_check(None).into_vec() {
+            Ok(v) => v,
+            Err(_) => {
+                error!(target: "darkfid::rpc::miner", "Invalid recipient base58");
+                return JsonError::new(
+                    InternalError,
+                    Some("Invalid recipient address".to_string()),
+                    id,
+                )
+                .into()
+            }
+        };
+
+        // DarkFi address format: [prefix(1)][public_key(32)][checksum(4)] = 37 bytes
+        if recipient_bytes.len() != 37 {
+            error!(
+                target: "darkfid::rpc::miner",
+                "Invalid address length: {}",
+                recipient_bytes.len()
+            );
+            return JsonError::new(InternalError, Some("Invalid address length".to_string()), id)
+                .into()
+        }
+
+        // Extract public key from address (bytes 1-32)
+        let public_key_bytes: [u8; 32] = recipient_bytes[1..33].try_into().unwrap();
+        use darkfi_sdk::crypto::PublicKey;
+        let public_key = match PublicKey::from_bytes(public_key_bytes) {
+            Ok(pk) => pk,
+            Err(_) => {
+                error!(target: "darkfid::rpc::miner", "Invalid public key in address");
+                return JsonError::new(InternalError, Some("Invalid public key".to_string()), id)
+                    .into()
+            }
+        };
+
+        // Get latest block info
+        let latest_block = match linear_blockchain.get_latest_block() {
+            Ok(block) => block,
+            Err(e) => {
+                error!(target: "darkfid::rpc::miner", "Failed to get latest block: {}", e);
+                return JsonError::new(InternalError, Some(format!("Failed to get latest block: {}", e)), id)
+                    .into()
+            }
+        };
+
+        let height = latest_block.header.height + 1;
+        let previous = latest_block.hash();
+        let difficulty_target = latest_block.header.difficulty_target;
+
+        // Create coinbase output
+        let coinbase_output = darkfi_linear::Output {
+            value: reward_value,
+            script: public_key.to_bytes().to_vec(),
+        };
+
+        // Create coinbase transaction (no inputs for coinbase)
+        let coinbase_tx = darkfi_linear::Transaction {
+            version: 1,
+            inputs: vec![],
+            outputs: vec![coinbase_output],
+            lock_time: height,
+        };
+
+        // Create miner and mine a block
+        let consensus = darkfi_linear::PoWConsensus::default();
+        let miner = darkfi_linear::Miner::new(std::sync::Arc::new(consensus));
+
+        let mined_block = match miner.mine(previous, height, vec![coinbase_tx], difficulty_target) {
+            Ok(block) => block,
+            Err(e) => {
+                error!(target: "darkfid::rpc::miner", "Mining failed: {}", e);
+                return JsonError::new(InternalError, Some(format!("Mining failed: {}", e)), id)
+                    .into()
+            }
+        };
+
+        let block_hash = format!("{}", mined_block.hash());
+
+        // Apply the mined block to the blockchain
+        match linear_blockchain.apply_block(&mined_block).await {
+            Ok(()) => {
+                info!(target: "darkfid::rpc::miner", "Mined and applied block {} at height {}", block_hash, height);
+            }
+            Err(e) => {
+                error!(target: "darkfid::rpc::miner", "Failed to apply block: {}", e);
+                return JsonError::new(InternalError, Some(format!("Failed to apply block: {}", e)), id)
+                    .into()
+            }
+        }
+
+        // Return block hash
+        let result = JsonValue::from(HashMap::from([
+            ("block_hash".to_string(), JsonValue::String(block_hash)),
+            ("height".to_string(), JsonValue::Number(height as f64)),
+        ]));
+        JsonResponse::new(result, id).into()
+    }
 }

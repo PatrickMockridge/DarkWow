@@ -107,6 +107,7 @@ impl RequestHandler<DefaultRpcHandler> for DarkfiNode {
             // Miner methods
             // ==============
             "miner.mine" => self.miner_mine(req.id, req.params).await,
+            "miner.mine_linear" => self.miner_mine_linear(req.id, req.params).await,
 
             // ==============
             // Invalid method

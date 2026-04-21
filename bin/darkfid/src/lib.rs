@@ -35,6 +35,7 @@ use darkfi::{
     validator::{Validator, ValidatorConfig, ValidatorPtr},
     Error, Result,
 };
+use darkfi_linear::{Block as LinearBlock, LinearBlockchain as LinearBlockchainCore, LinearStore};
 use darkfi_sdk::crypto::keypair::Network;
 
 #[cfg(test)]
@@ -86,6 +87,8 @@ pub type DarkfiNodePtr = Arc<DarkfiNode>;
 pub struct DarkfiNode {
     /// Validator(node) pointer
     validator: ValidatorPtr,
+    /// Linear blockchain (only set when running in linear-testnet mode)
+    linear_blockchain: Option<Arc<LinearBlockchain>>,
     /// P2P network protocols handler
     p2p_handler: DarkfidP2pHandlerPtr,
     /// Node miners registry pointer
@@ -105,6 +108,7 @@ pub struct DarkfiNode {
 impl DarkfiNode {
     pub async fn new(
         validator: ValidatorPtr,
+        linear_blockchain: Option<Arc<LinearBlockchain>>,
         p2p_handler: DarkfidP2pHandlerPtr,
         registry: DarkfiMinersRegistryPtr,
         txs_batch_size: usize,
@@ -113,6 +117,7 @@ impl DarkfiNode {
     ) -> Result<DarkfiNodePtr> {
         Ok(Arc::new(Self {
             validator,
+            linear_blockchain,
             p2p_handler,
             registry,
             txs_batch_size,
@@ -165,7 +170,7 @@ impl Darkfid {
         let validator = Validator::new(sled_db, config).await?;
 
         // Initialize P2P network
-        let p2p_handler = DarkfidP2pHandler::init(net_settings, ex).await?;
+        let p2p_handler = DarkfidP2pHandler::init(net_settings, ex, None).await?;
 
         // Initialize the miners registry
         let registry = DarkfiMinersRegistry::init(network, &validator).await?;
@@ -191,7 +196,7 @@ impl Darkfid {
 
         // Initialize node
         let node =
-            DarkfiNode::new(validator, p2p_handler, registry, txs_batch_size, subscribers, is_localnet).await?;
+            DarkfiNode::new(validator, None, p2p_handler, registry, txs_batch_size, subscribers, is_localnet).await?;
 
         // Generate the background tasks
         let dnet_task = StoppableTask::new();
@@ -200,6 +205,75 @@ impl Darkfid {
         let consensus_task = StoppableTask::new();
 
         info!(target: "darkfid::Darkfid::init", "Darkfi daemon initialized successfully!");
+
+        Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task }))
+    }
+
+    /// Initialize a DarkFi daemon for linear-testnet mode.
+    ///
+    /// Uses LinearBlockchain instead of Validator for consensus.
+    pub async fn init_linear(
+        network: Network,
+        sled_db: &sled::Db,
+        net_settings: &Settings,
+        txs_batch_size: &Option<usize>,
+        ex: &ExecutorPtr,
+    ) -> Result<DarkfidPtr> {
+        info!(target: "darkfid::Darkfid::init_linear", "Initializing a Darkfi daemon for linear-testnet...");
+
+        // Initialize linear blockchain (darkfi_linear for P2P)
+        let linear_blockchain_p2p = Arc::new(LinearBlockchainCore::new(Arc::new(sled_db.clone())).map_err(|e| Error::Custom(e.to_string()))?);
+
+        // Initialize darkfid's blockchain wrapper (uses darkfi_linear store)
+        let store = linear_blockchain_p2p.store.clone();
+        let linear_blockchain = Arc::new(LinearBlockchain::new(store));
+
+        // Initialize P2P network (linear P2P handlers use darkfi_linear types)
+        let p2p_handler = DarkfidP2pHandler::init(net_settings, ex, Some(linear_blockchain_p2p.clone())).await?;
+
+        // Initialize the miners registry (placeholder for now)
+        let registry = DarkfiMinersRegistry::init_linear(network, linear_blockchain.clone()).await?;
+
+        // Grab blockchain network configured transactions batch size for garbage collection
+        let txs_batch_size = match txs_batch_size {
+            Some(b) => if *b > 0 { *b } else { 50 },
+            None => 50,
+        };
+
+        // Here we initialize various subscribers that can export live blockchain/consensus data.
+        let mut subscribers = HashMap::new();
+        subscribers.insert("blocks", JsonSubscriber::new("blockchain.subscribe_blocks"));
+        subscribers.insert("txs", JsonSubscriber::new("blockchain.subscribe_txs"));
+        subscribers.insert("proposals", JsonSubscriber::new("blockchain.subscribe_proposals"));
+        subscribers.insert("dnet", JsonSubscriber::new("dnet.subscribe_events"));
+
+        // Initialize node with linear blockchain
+        let validator = Validator::new(&sled_db, &ValidatorConfig {
+            confirmation_threshold: 3,
+            max_forks: 8,
+            pow_target: 120,
+            pow_fixed_difficulty: None,
+            genesis_block: Default::default(),
+            verify_fees: true,
+        }).await?;
+
+        let node = DarkfiNode::new(
+            validator,
+            Some(linear_blockchain),
+            p2p_handler,
+            registry,
+            txs_batch_size,
+            subscribers,
+            false,
+        ).await?;
+
+        // Generate the background tasks
+        let dnet_task = StoppableTask::new();
+        let rpc_task = StoppableTask::new();
+        let management_rpc_task = StoppableTask::new();
+        let consensus_task = StoppableTask::new();
+
+        info!(target: "darkfid::Darkfid::init_linear", "Darkfi daemon for linear-testnet initialized successfully!");
 
         Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task }))
     }

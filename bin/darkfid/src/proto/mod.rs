@@ -46,6 +46,14 @@ pub use protocol_sync::{
 mod protocol_tx;
 pub use protocol_tx::{ProtocolTxHandler, ProtocolTxHandlerPtr};
 
+/// Linear blockchain sync protocol
+mod linear_sync;
+pub use linear_sync::{LinearSyncHandler, LinearSyncHandlerPtr};
+
+/// Linear blockchain block broadcast protocol
+mod protocol_linear_block;
+pub use protocol_linear_block::{LinearBlockHandler, LinearBlockHandlerPtr};
+
 /// Atomic pointer to the Darkfid P2P protocols handler.
 pub type DarkfidP2pHandlerPtr = Arc<DarkfidP2pHandler>;
 
@@ -59,6 +67,10 @@ pub struct DarkfidP2pHandler {
     sync: ProtocolSyncHandlerPtr,
     /// `ProtocolTx` messages handler
     txs: ProtocolTxHandlerPtr,
+    /// `LinearSync` messages handler (for linear-testnet mode)
+    linear_sync: Option<LinearSyncHandlerPtr>,
+    /// `LinearBlock` messages handler (for linear-testnet mode)
+    linear_block: Option<LinearBlockHandlerPtr>,
 }
 
 impl DarkfidP2pHandler {
@@ -66,7 +78,11 @@ impl DarkfidP2pHandler {
     ///
     /// A new P2P instance is generated using provided settings and all
     /// corresponding protocols are registered.
-    pub async fn init(settings: &Settings, executor: &ExecutorPtr) -> Result<DarkfidP2pHandlerPtr> {
+    pub async fn init(
+        settings: &Settings,
+        executor: &ExecutorPtr,
+        linear_blockchain: Option<Arc<darkfi_linear::LinearBlockchain>>,
+    ) -> Result<DarkfidP2pHandlerPtr> {
         info!(
             target: "darkfid::proto::mod::DarkfidP2pHandler::init",
             "Initializing a new Darkfid P2P handler..."
@@ -84,12 +100,25 @@ impl DarkfidP2pHandler {
         // Generate a new `ProtocolTx` messages handler
         let txs = ProtocolTxHandler::init(&p2p).await;
 
+        // Generate linear handlers if linear blockchain is enabled
+        let linear_sync = if let Some(ref blockchain) = linear_blockchain {
+            Some(LinearSyncHandler::init(&p2p, blockchain.store.clone()).await)
+        } else {
+            None
+        };
+
+        let linear_block = if let Some(ref blockchain) = linear_blockchain {
+            Some(LinearBlockHandler::init(&p2p, blockchain.clone()).await)
+        } else {
+            None
+        };
+
         info!(
             target: "darkfid::proto::mod::DarkfidP2pHandler::init",
             "Darkfid P2P handler generated successfully!"
         );
 
-        Ok(Arc::new(Self { p2p, proposals, sync, txs }))
+        Ok(Arc::new(Self { p2p, proposals, sync, txs, linear_sync, linear_block }))
     }
 
     /// Start the Darkfid P2P protocols handler for provided node.
@@ -108,6 +137,16 @@ impl DarkfidP2pHandler {
         // Start the `ProtocolTx` messages handler
         let subscriber = node.subscribers.get("txs").unwrap().clone();
         self.txs.start(executor, &node.validator, subscriber).await?;
+
+        // Start the `LinearSync` messages handler (linear-testnet mode)
+        if let Some(ref linear_sync) = self.linear_sync {
+            linear_sync.start(executor).await?;
+        }
+
+        // Start the `LinearBlock` messages handler (linear-testnet mode)
+        if let Some(ref linear_block) = self.linear_block {
+            linear_block.start(executor).await?;
+        }
 
         // Start the P2P instance
         self.p2p.clone().start().await?;

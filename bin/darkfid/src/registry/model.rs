@@ -16,7 +16,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
+
+use darkfi_linear::LinearBlockchain as LinearBlockchainCore;
+use darkfi_linear::{Block as LinearBlock, Input, Output, Transaction as LinearTransaction};
+
+use darkfi_sdk::crypto::PublicKey;
 
 use rand::rngs::OsRng;
 use sled::IVec;
@@ -247,6 +252,97 @@ impl PowRewardV1Zk {
 
         Ok(Self { zkbin, provingkey })
     }
+
+    /// Create ZK data for linear-testnet mode
+    /// Note: Linear-testnet uses simple UTXO rewards and doesn't need ZK proofs.
+    /// This is a placeholder that returns an error to prevent accidental use.
+    pub async fn new_linear(_linear_blockchain: Arc<crate::blockchain::LinearBlockchain>) -> Result<Self> {
+        Err(Error::Custom("Linear mining uses LinearPowRewardZk instead".to_string()))
+    }
+}
+
+/// Linear blockchain miner rewards recipient configuration
+#[derive(Debug, Clone)]
+pub struct LinearMinerRewardsRecipientConfig {
+    /// Public key to receive mining rewards
+    pub recipient: PublicKey,
+    /// Reward value (in smallest unit)
+    pub value: u64,
+}
+
+impl LinearMinerRewardsRecipientConfig {
+    pub fn new(recipient: PublicKey, value: u64) -> Self {
+        Self { recipient, value }
+    }
+
+    pub async fn from_str(address: &str) -> std::result::Result<Self, RpcError> {
+        let recipient = PublicKey::from_str(address)
+            .map_err(|_| RpcError::MinerInvalidRecipientPrefix)?;
+        // Default reward value for now
+        let value = 100_000_000u64; // 1 token with 8 decimals
+        Ok(Self { recipient, value })
+    }
+}
+
+/// Linear blockchain block template for mining
+#[derive(Debug, Clone)]
+pub struct LinearBlockTemplate {
+    /// Previous block hash
+    pub previous: [u8; 32],
+    /// Block height
+    pub height: u64,
+    /// Difficulty target
+    pub difficulty_target: u32,
+    /// Coinbase output (reward to miner)
+    pub coinbase_output: Output,
+}
+
+impl LinearBlockTemplate {
+    /// Create a coinbase output for the miner
+    pub fn create_coinbase_output(recipient: &PublicKey, value: u64) -> Output {
+        Output {
+            value,
+            script: recipient.to_bytes().to_vec(),
+        }
+    }
+}
+
+/// Linear blockchain mining data (placeholder - no ZK needed)
+#[derive(Clone)]
+pub struct LinearPowRewardZk;
+
+impl LinearPowRewardZk {
+    pub async fn new(_linear_blockchain: Arc<crate::blockchain::LinearBlockchain>) -> Result<Self> {
+        info!(
+            target: "darkfid::registry::model::LinearPowRewardZk::new",
+            "Initializing linear mining data...",
+        );
+        Ok(Self)
+    }
+}
+
+/// Generate next block template for linear blockchain
+pub async fn generate_linear_block_template(
+    linear_blockchain: &crate::blockchain::LinearBlockchain,
+    recipient_config: &LinearMinerRewardsRecipientConfig,
+) -> Result<LinearBlockTemplate> {
+    let height = linear_blockchain.get_height() + 1;
+    let latest_block = linear_blockchain.get_latest_block()
+        .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
+    let previous_hash = latest_block.hash();
+    let difficulty_target = latest_block.header.difficulty_target;
+
+    let coinbase_output = LinearBlockTemplate::create_coinbase_output(
+        &recipient_config.recipient,
+        recipient_config.value,
+    );
+
+    Ok(LinearBlockTemplate {
+        previous: *previous_hash.as_bytes(),
+        height,
+        difficulty_target,
+        coinbase_output,
+    })
 }
 
 /// Auxiliary function to generate next mining block template, in an

@@ -29,7 +29,9 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
 use darkfi::{
+    impl_p2p_message,
     net::{
+        metering::MeteringConfiguration,
         protocol::protocol_generic::{
             ProtocolGenericAction, ProtocolGenericHandler, ProtocolGenericHandlerPtr,
         },
@@ -41,45 +43,44 @@ use darkfi::{
     Error, Result,
 };
 use darkfi_linear::{Block, LinearStore};
+use darkfi_serial::{serialize_async, deserialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 
 /// Constant defining max blocks we send in a single response.
 const LINEAR_SYNC_BATCH: usize = 20;
 
 /// Protocol metering configuration for linear sync
-const LINEAR_SYNC_METERING_CONFIGURATION: darkfi::net::metering::MeteringConfiguration =
-    darkfi::net::metering::MeteringConfiguration {
-        threshold: 20,
-        sleep_step: 500,
-        expiry_time: NanoTimestamp::from_secs(5),
-    };
+const LINEAR_SYNC_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfiguration {
+    threshold: 20,
+    sleep_step: 500,
+    expiry_time: NanoTimestamp::from_secs(5),
+};
+
+// ============================================================================
+// Message Types - using serde for serialization via AsyncEncodable/AsyncDecodable
+// ============================================================================
 
 /// Request blocks starting from a given height
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetBlocks {
-    /// Starting block height
     pub start_height: u64,
-    /// Number of blocks to fetch
     pub count: u64,
 }
 
 /// Response containing blocks
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Blocks {
-    /// Blocks returned
     pub blocks: Vec<Block>,
 }
 
 /// Request a single block by height
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetBlock {
-    /// Block height
     pub height: u64,
 }
 
 /// Response containing a single block
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockResponse {
-    /// Block if found
     pub block: Option<Block>,
 }
 
@@ -90,11 +91,154 @@ pub struct GetTip;
 /// Response containing chain tip info
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tip {
-    /// Current chain height
     pub height: u64,
-    /// Block hash at current tip
     pub hash: String,
 }
+
+// ============================================================================
+// Async Serialization for messages using serde_json
+// ============================================================================
+
+#[async_trait]
+impl AsyncEncodable for GetBlocks {
+    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
+        let bytes = serialize_async(self).await;
+        let mut len = 0;
+        len += varint_encode(bytes.len(), s).await?;
+        len += s.write(&bytes).await?;
+        Ok(len)
+    }
+}
+
+#[async_trait]
+impl AsyncDecodable for GetBlocks {
+    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
+        let len = varint_decode(d).await?;
+        let mut buf = vec![0u8; len];
+        d.read_exact(&mut buf).await?;
+        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+}
+
+#[async_trait]
+impl AsyncEncodable for Blocks {
+    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
+        let bytes = serialize_async(self).await;
+        let mut len = 0;
+        len += varint_encode(bytes.len(), s).await?;
+        len += s.write(&bytes).await?;
+        Ok(len)
+    }
+}
+
+#[async_trait]
+impl AsyncDecodable for Blocks {
+    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
+        let len = varint_decode(d).await?;
+        let mut buf = vec![0u8; len];
+        d.read_exact(&mut buf).await?;
+        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+}
+
+#[async_trait]
+impl AsyncEncodable for GetBlock {
+    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
+        let bytes = serialize_async(self).await;
+        let mut len = 0;
+        len += varint_encode(bytes.len(), s).await?;
+        len += s.write(&bytes).await?;
+        Ok(len)
+    }
+}
+
+#[async_trait]
+impl AsyncDecodable for GetBlock {
+    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
+        let len = varint_decode(d).await?;
+        let mut buf = vec![0u8; len];
+        d.read_exact(&mut buf).await?;
+        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+}
+
+#[async_trait]
+impl AsyncEncodable for BlockResponse {
+    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
+        let bytes = serialize_async(self).await;
+        let mut len = 0;
+        len += varint_encode(bytes.len(), s).await?;
+        len += s.write(&bytes).await?;
+        Ok(len)
+    }
+}
+
+#[async_trait]
+impl AsyncDecodable for BlockResponse {
+    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
+        let len = varint_decode(d).await?;
+        let mut buf = vec![0u8; len];
+        d.read_exact(&mut buf).await?;
+        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+}
+
+#[async_trait]
+impl AsyncEncodable for GetTip {
+    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
+        let bytes = serialize_async(self).await;
+        let mut len = 0;
+        len += varint_encode(bytes.len(), s).await?;
+        len += s.write(&bytes).await?;
+        Ok(len)
+    }
+}
+
+#[async_trait]
+impl AsyncDecodable for GetTip {
+    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
+        let len = varint_decode(d).await?;
+        let mut buf = vec![0u8; len];
+        d.read_exact(&mut buf).await?;
+        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+}
+
+#[async_trait]
+impl AsyncEncodable for Tip {
+    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
+        let bytes = serialize_async(self).await;
+        let mut len = 0;
+        len += varint_encode(bytes.len(), s).await?;
+        len += s.write(&bytes).await?;
+        Ok(len)
+    }
+}
+
+#[async_trait]
+impl AsyncDecodable for Tip {
+    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
+        let len = varint_decode(d).await?;
+        let mut buf = vec![0u8; len];
+        d.read_exact(&mut buf).await?;
+        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+}
+
+// ============================================================================
+// P2P Message trait registration
+// ============================================================================
+
+impl_p2p_message!(GetBlocks, "lineargetblocks", 16, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+impl_p2p_message!(Blocks, "linearblocks", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+impl_p2p_message!(GetBlock, "lineargetblock", 8, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+impl_p2p_message!(BlockResponse, "linearblockresponse", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+impl_p2p_message!(GetTip, "lineargettip", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+impl_p2p_message!(Tip, "lineartip", 32, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+
+// ============================================================================
+// Handler Implementation
+// ============================================================================
 
 /// Atomic pointer to the linear sync handler
 pub type LinearSyncHandlerPtr = Arc<LinearSyncHandler>;
@@ -129,7 +273,7 @@ impl LinearSyncHandler {
     }
 
     /// Start all linear sync background tasks
-    pub async fn start(&self, executor: &ExecutorPtr) {
+    pub async fn start(&self, executor: &ExecutorPtr) -> Result<()> {
         debug!(
             target: "darkfid::proto::linear_sync::start",
             "Starting linear sync protocol handlers..."
@@ -187,6 +331,7 @@ impl LinearSyncHandler {
             target: "darkfid::proto::linear_sync::start",
             "Linear sync protocol handlers started"
         );
+        Ok(())
     }
 }
 
@@ -196,36 +341,36 @@ async fn handle_get_blocks(
     store: Arc<LinearStore>,
 ) -> Result<()> {
     loop {
-        let (action, who) = handler.task.clone().recv().await?;
-        match action {
-            ProtocolGenericAction::Request(msg) => {
+        let (channel, request) = match handler.receiver.recv().await {
+            Ok(r) => r,
+            Err(e) => {
                 debug!(
-                    target: "darkfid::proto::linear_sync",
-                    "Received GetBlocks request for height {}, count {} from {}",
-                    msg.start_height, msg.count, who
+                    target: "darkfid::proto::linear_sync::handle_get_blocks",
+                    "recv fail: {e}"
                 );
-
-                let count = std::cmp::min(msg.count as usize, LINEAR_SYNC_BATCH);
-                let mut blocks = Vec::with_capacity(count);
-
-                for i in 0..count {
-                    let height = msg.start_height + i as u64;
-                    match store.get_block(height) {
-                        Ok(block) => blocks.push(block),
-                        Err(_) => break,
-                    }
-                }
-
-                let response = Blocks { blocks };
-                handler.task.clone().send(response, who).await?;
+                continue;
             }
-            ProtocolGenericAction::Response(_) => {
-                error!(
-                    target: "darkfid::proto::linear_sync",
-                    "Received unexpected response in GetBlocks handler"
-                );
+        };
+
+        debug!(
+            target: "darkfid::proto::linear_sync",
+            "Received GetBlocks request for height {}, count {} from {:?}",
+            request.start_height, request.count, channel
+        );
+
+        let count = std::cmp::min(request.count as usize, LINEAR_SYNC_BATCH);
+        let mut blocks = Vec::with_capacity(count);
+
+        for i in 0..count {
+            let height = request.start_height + i as u64;
+            match store.get_block(height) {
+                Ok(block) => blocks.push(block),
+                Err(_) => break,
             }
         }
+
+        let response = Blocks { blocks };
+        handler.send_action(channel, ProtocolGenericAction::Response(response)).await;
     }
 }
 
@@ -235,30 +380,30 @@ async fn handle_get_block(
     store: Arc<LinearStore>,
 ) -> Result<()> {
     loop {
-        let (action, who) = handler.task.clone().recv().await?;
-        match action {
-            ProtocolGenericAction::Request(msg) => {
+        let (channel, request) = match handler.receiver.recv().await {
+            Ok(r) => r,
+            Err(e) => {
                 debug!(
-                    target: "darkfid::proto::linear_sync",
-                    "Received GetBlock request for height {} from {}",
-                    msg.height, who
+                    target: "darkfid::proto::linear_sync::handle_get_block",
+                    "recv fail: {e}"
                 );
-
-                let block = match store.get_block(msg.height) {
-                    Ok(b) => Some(b),
-                    Err(_) => None,
-                };
-
-                let response = BlockResponse { block };
-                handler.task.clone().send(response, who).await?;
+                continue;
             }
-            ProtocolGenericAction::Response(_) => {
-                error!(
-                    target: "darkfid::proto::linear_sync",
-                    "Received unexpected response in GetBlock handler"
-                );
-            }
-        }
+        };
+
+        debug!(
+            target: "darkfid::proto::linear_sync",
+            "Received GetBlock request for height {} from {:?}",
+            request.height, channel
+        );
+
+        let block = match store.get_block(request.height) {
+            Ok(b) => Some(b),
+            Err(_) => None,
+        };
+
+        let response = BlockResponse { block };
+        handler.send_action(channel, ProtocolGenericAction::Response(response)).await;
     }
 }
 
@@ -268,33 +413,69 @@ async fn handle_get_tip(
     store: Arc<LinearStore>,
 ) -> Result<()> {
     loop {
-        let (action, who) = handler.task.clone().recv().await?;
-        match action {
-            ProtocolGenericAction::Request(_msg) => {
+        let (channel, _request) = match handler.receiver.recv().await {
+            Ok(r) => r,
+            Err(e) => {
                 debug!(
-                    target: "darkfid::proto::linear_sync",
-                    "Received GetTip request from {}", who
+                    target: "darkfid::proto::linear_sync::handle_get_tip",
+                    "recv fail: {e}"
                 );
-
-                let height = store.get_height().unwrap_or(0);
-                let hash = if height > 0 {
-                    match store.get_block(height) {
-                        Ok(block) => format!("{:x}", block.hash()),
-                        Err(_) => String::new(),
-                    }
-                } else {
-                    String::new()
-                };
-
-                let response = Tip { height, hash };
-                handler.task.clone().send(response, who).await?;
+                continue;
             }
-            ProtocolGenericAction::Response(_) => {
-                error!(
-                    target: "darkfid::proto::linear_sync",
-                    "Received unexpected response in GetTip handler"
-                );
+        };
+
+        debug!(
+            target: "darkfid::proto::linear_sync",
+            "Received GetTip request from {:?}", channel
+        );
+
+        let height = store.get_height().unwrap_or(0);
+        let hash = if height > 0 {
+            match store.get_block(height) {
+                Ok(block) => format!("{}", block.hash()),
+                Err(_) => String::new(),
             }
+        } else {
+            String::new()
+        };
+
+        let response = Tip { height, hash };
+        handler.send_action(channel, ProtocolGenericAction::Response(response)).await;
+    }
+}
+
+// ============================================================================
+// Variable-length integer encoding/decoding
+// ============================================================================
+
+async fn varint_encode<W: AsyncWrite + Unpin + Send>(mut value: usize, s: &mut W) -> std::io::Result<usize> {
+    let mut len = 0;
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        len += FutAsyncWriteExt::write(s, &[byte]).await?;
+        if value == 0 {
+            break;
         }
     }
+    Ok(len)
+}
+
+async fn varint_decode<R: AsyncRead + Unpin + Send>(d: &mut R) -> std::io::Result<usize> {
+    let mut result = 0;
+    let mut shift = 0;
+    loop {
+        let mut buf = [0u8; 1];
+        FutAsyncReadExt::read_exact(d, &mut buf).await?;
+        let byte = buf[0];
+        result |= ((byte & 0x7f) as usize) << shift;
+        if byte & 0x80 == 0 {
+            break;
+        }
+        shift += 7;
+    }
+    Ok(result)
 }

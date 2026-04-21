@@ -5,6 +5,10 @@ edition = "2021"
 authors = ["Dyne.org foundation <foundation@dyne.org>"]
 license = "AGPL-3.0-only"
 
+[features]
+default = []
+async = ["darkfi-serial/async"]
+
 [dependencies]
 sled = "0.34"
 thiserror = "1"
@@ -16,5 +20,6 @@ merlin = "3"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+darkfi-serial = { path = "../serial", features = ["derive", "async"] }
 
 [dev-dependencies]

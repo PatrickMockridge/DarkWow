@@ -22,16 +22,21 @@
 //! fork consensus, or overlay caching. Designed for determinism.
 
 mod block;
+mod blockchain;
 mod consensus;
 mod error;
 mod miner;
 mod store;
 mod transaction;
 
+#[cfg(feature = "async")]
+mod serial;
+
 pub use block::{
     build_uncle_merkle, compute_reward, create_block, create_block_with_uncles, create_uncle,
     verify_uncle_proof, UncleBlock, UncleProof, Block, BlockHeader, MAX_UNCLE_DEPTH,
 };
+pub use blockchain::LinearBlockchain;
 pub use consensus::PoWConsensus;
 pub use error::LinearError;
 pub use miner::Miner;
