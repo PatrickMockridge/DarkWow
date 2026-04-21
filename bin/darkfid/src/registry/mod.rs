@@ -21,7 +21,7 @@ use std::{
     sync::Arc,
 };
 
-use sled_overlay::sled::IVec;
+use sled::IVec;
 use smol::lock::{Mutex, RwLock};
 use tinyjson::JsonValue;
 use tracing::{error, info};

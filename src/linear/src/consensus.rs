@@ -20,7 +20,7 @@
 
 use blake3::Hash;
 
-use super::{Block, Result};
+use super::{Block, UncleBlock, Result};
 
 /// Simple PoW consensus
 pub struct PoWConsensus {
@@ -44,6 +44,11 @@ impl PoWConsensus {
     pub fn check_difficulty(&self, hash: &Hash) -> bool {
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
         hash_u32 <= self.difficulty_target
+    }
+
+    /// Verify an uncle block meets the difficulty target
+    pub fn verify_uncle_pow(&self, uncle: &UncleBlock) -> Result<bool> {
+        Ok(self.check_difficulty(&uncle.hash()))
     }
 }
 

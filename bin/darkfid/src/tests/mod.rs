@@ -278,7 +278,7 @@ fn darkfid_programmatic_control() -> Result<()> {
                 let mut genesis_block = darkfi::blockchain::BlockInfo::default();
                 let producer_tx = genesis_block.txs.pop().unwrap();
                 genesis_block.append_txs(vec![producer_tx]);
-                let sled_db = sled_overlay::sled::Config::new().temporary(true).open().unwrap();
+                let sled_db = sled::Config::new().temporary(true).open().unwrap();
                 let overlay = darkfi::blockchain::BlockchainOverlay::new(
                     &darkfi::blockchain::Blockchain::new(&sled_db).unwrap(),
                 )

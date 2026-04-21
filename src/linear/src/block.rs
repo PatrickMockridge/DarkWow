@@ -55,12 +55,46 @@ pub struct UncleBlock {
     pub transactions: Vec<Transaction>,
     /// Depth in the uncle tree (1 = directly referenced, 2 = referenced by depth-1, etc.)
     pub depth: u8,
+    /// Pin offered by canonical chain (obligated offer if uncle meets criteria)
+    pub pin_offered: bool,
+    /// Uncle chain accepted the pin (use it or lose it - one time decision)
+    pub pin_accepted: bool,
+    /// Pin reward amount if accepted (computed from depth: 50% at d1, 25% at d2...)
+    pub pin_reward: u64,
 }
 
 impl UncleBlock {
     /// Calculate the hash of this uncle block's header
     pub fn hash(&self) -> Hash {
         blake3::hash(&serde_json::to_vec(&self.header).unwrap())
+    }
+
+    /// Accept the pin offer from canonical chain (use it or lose it)
+    /// This is a one-time decision - once accepted, cannot be undone
+    pub fn accept_pin(&mut self) {
+        if self.pin_offered {
+            self.pin_accepted = true;
+        }
+    }
+
+    /// Reject the pin offer (uncle chain gives up reward)
+    /// Note: Rejection is strictly dominated - accepting gives pin_reward, rejecting gives 0
+    pub fn reject_pin(&mut self) {
+        self.pin_accepted = false;
+    }
+}
+
+/// Convert a rejected block into an uncle block
+pub fn create_uncle(block: Block, depth: u8, base_reward: u64) -> UncleBlock {
+    let depth = depth.min(MAX_UNCLE_DEPTH);
+    let pin_reward = base_reward / (2_u64.pow(depth as u32));
+    UncleBlock {
+        header: block.header,
+        transactions: block.transactions,
+        depth,
+        pin_offered: true,
+        pin_accepted: false,
+        pin_reward,
     }
 }
 
@@ -208,6 +242,8 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> ([u8; 32], Vec<UncleProof>) 
 }
 
 /// Compute reward distribution for canonical miner and uncles
+/// Pin mechanism: Uncle chain gets pin reward ONLY if pin_accepted = true
+/// Canonical gets base_reward + pin rewards (from accepted uncles only)
 /// Returns (canonical_reward, uncle_rewards)
 pub fn compute_reward(base_reward: u64, uncles: &[UncleBlock]) -> (u64, Vec<u64>) {
     if uncles.is_empty() {
@@ -218,12 +254,14 @@ pub fn compute_reward(base_reward: u64, uncles: &[UncleBlock]) -> (u64, Vec<u64>
     let mut canonical_extra = 0u64;
 
     for uncle in uncles {
-        let depth = uncle.depth.min(6) as u32;
-        let reward = base_reward / (2_u64.pow(depth));
-        uncle_rewards.push(reward);
-        canonical_extra += reward;
+        // Uncle only gets pin_reward if they accepted the pin
+        let pin = if uncle.pin_accepted { uncle.pin_reward } else { 0 };
+        uncle_rewards.push(pin);
+        // Canonical gets all pin rewards regardless of accept/reject
+        canonical_extra += pin;
     }
 
+    // Canonical gets base_reward + all pin rewards
     (base_reward + canonical_extra, uncle_rewards)
 }
 
@@ -318,7 +356,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: 0,
         };
-        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1 };
+        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
 
         let (root, proofs) = build_uncle_merkle(&[uncle]);
         assert_ne!(root, [0u8; 32]);
@@ -342,7 +380,7 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: 0,
             };
-            uncles.push(UncleBlock { header, transactions: vec![], depth: 1 });
+            uncles.push(UncleBlock { header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 });
         }
 
         let (root, proofs) = build_uncle_merkle(&uncles);
@@ -374,10 +412,12 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: 0,
         };
-        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1 };
+        // Pin mechanism: pin_offered=true, pin_accepted=true means uncle accepts the pin
+        // pin_reward at depth 1 = 50% = 50M
+        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: true, pin_accepted: true, pin_reward: 50_000_000 };
 
         let (canonical, uncle_rewards) = compute_reward(100_000_000, &[uncle]);
-        // base 100M + depth-1 uncle = 50M = 150M canonical
+        // base 100M + pin 50M = 150M canonical
         assert_eq!(canonical, 150_000_000);
         assert_eq!(uncle_rewards.len(), 1);
         assert_eq!(uncle_rewards[0], 50_000_000);
@@ -396,7 +436,7 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: 0,
         };
-        let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1 };
+        let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
 
         let (root, proofs) = build_uncle_merkle(&[uncle]);
         assert!(verify_uncle_proof(&proofs[0], &root));

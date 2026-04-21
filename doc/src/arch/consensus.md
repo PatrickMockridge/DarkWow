@@ -1,29 +1,116 @@
 # Consensus
 
-This section of the book describes how nodes participating in the DarkFi
-blockchain achieve consensus.
+This section describes how DarkFi nodes achieve consensus and the design evolution that led to the current implementation.
 
-## Design Evolution
+## Why a Separate Linear Blockchain?
 
-DarkFi's consensus mechanism has evolved through two designs:
+DarkFi maintains two consensus models:
 
-### Original Design: Fork/Overlay
+1. **Master branch**: The original fork/overlay consensus with RandomX PoW, full validator stack, and complex state management
+2. **Linear-master branch**: A simplified linear blockchain with Uncle Merkle consensus
 
-The original DarkFi consensus used a complex overlay/diff system for speculative block verification. This design had several problems:
-- Non-deterministic verification (speculative state could be committed or rolled back)
-- High complexity (checkpoints, diffs, overlay apply/revert)
-- All-or-nothing mining risk (blocks on losing forks earned zero)
-- Hard to test due to speculative nature
+The linear blockchain was created as a **development pathway** for several reasons:
 
-### Current Design: Uncle Merkle
+- **Testing simplicity**: The original consensus uses speculative verification with overlay/diff state that can be committed or rolled back. This non-determinism makes unit testing extremely difficult - race conditions, timing issues, and speculative state create flaky tests that are hard to reproduce.
 
-The current design replaces speculative verification with a merkle-tree-based system. Key properties:
-- Uncle chains are **explicitly referenced** in canonical blocks (no implicit fork competition)
-- Reward splitting is **deterministic** based on merkle depth
-- Verification is **stateless** (pure merkle proof + math)
-- Mining risk is **bounded** (uncle always gets partial reward if referenced)
+- **State simplification**: The original sled-overlay system provides transactional state with automatic rollback. While powerful, it adds significant complexity and overhead. The linear blockchain uses plain sled, removing the overlay layer entirely.
 
-See [Uncle Merkle Consensus](uncle_merkle.md) for the detailed specification.
+- **Deterministic verification**: Uncle Merkle consensus provides purely mathematical verification - given the same block, the same verification result occurs every time. No speculative state, no rollback, no time-dependent behavior.
+
+- **Parallel development**: Features can be developed and tested on linear without risking the master branch validator stack. Once mature, ideas can be backported or adapted.
+
+## Current Design: Uncle Merkle with Pin Mechanism
+
+### The Pin Mechanism
+
+The linear blockchain uses a **use-it-or-lose-it pin mechanism** for uncle blocks:
+
+**Rules:**
+1. Canonical chain is **obligated** to offer a pin to valid uncle chains
+2. Pin reward: 50% at depth 1, halving each depth (25%, 12.5%, 6.25%...)
+3. Uncle chain has a **one-time** option to accept or reject the pin
+4. If accepted: Uncle gets pin reward, canonical absorbs all uncle transactions
+5. If rejected: Uncle loses coinbase entirely, canonical absorbs transactions anyway
+
+**Why this is elegant:**
+- **No secret mining incentive**: By the time an uncle publishes, canonical already has the transactions
+- **No uncle-farming**: Canonical must offer, cannot refuse a valid uncle
+- **No complex multi-step distribution**: Simple one-shot accept/reject decision
+- **Fork absorption**: Uncle chain gives up reward but gains inclusion
+
+**The equilibrium:**
+Rejection is strictly dominated - accepting gives 50%+ reward, rejecting gives 0. Rational miners always accept.
+
+### Uncle Merkle Structure
+
+Uncle blocks are referenced in canonical blocks via a merkle tree:
+- Uncle merkle root stored in canonical block header
+- Merkle proof provides stateless verification
+- No uncle storage required for verification (only for archival)
+
+### Reward Distribution
+
+| Uncle Depth | Pin Reward | Uncle Gets | Canonical Absorbs |
+|-------------|------------|------------|-------------------|
+| 1           | 50%        | 50% of block reward | transactions + fees |
+| 2           | 25%        | 25% of block reward | transactions + fees |
+| 3           | 12.5%      | 12.5% of block reward | transactions + fees |
+| ...         | ...        | ... | ... |
+
+### Testing Benefits
+
+The linear blockchain's consensus model is **ideal for testing**:
+
+1. **Deterministic**: Same input → same output every time. No race conditions.
+2. **No rollback**: State changes are final. No speculative commits that could vanish.
+3. **Stateless verification**: Only block headers + merkle proofs needed. No WASM execution.
+4. **Plain storage**: Uses sled directly, not sled-overlay. Simpler, faster, predictable.
+5. **Isolated**: Can run 5-node localnet harness with full consensus without the full validator stack.
+
+Example test harness behavior:
+```rust
+// Create 5-node localnet
+let harness = LinearFiveNodeHarness::new()?;
+
+// Deploy contracts
+harness.deploy_genesis_contracts()?;
+
+// Alice mines genesis, broadcast to all
+let genesis_block = harness.alice_create_genesis();
+harness.broadcast_block(&genesis_block)?;
+
+// Alice mines blocks, each broadcast to all
+// All nodes verify sync
+harness.verify_sync()?;
+```
+
+### Comparison to Original Consensus
+
+| Aspect | Master (Fork/Overlay) | Linear (Uncle Merkle) |
+|--------|----------------------|----------------------|
+| State management | Overlay + diffs + rollback | Plain sled |
+| Fork resolution | Implicit competition | Explicit uncle reference |
+| Mining risk | All-or-nothing | Bounded partial reward |
+| Verification | Heavy WASM + sled lookups | Merkle proof only |
+| Determinism | Non-deterministic in time | Fully deterministic |
+| Testing | Flaky, timing-dependent | Deterministic, isolated |
+| Complexity | High | Low |
+
+## Glossary
+
+| Name                   | Description                                                                            |
+|------------------------|----------------------------------------------------------------------------------------|
+| Consensus              | Algorithm for reaching blockchain consensus between participating nodes                |
+| Node/Validator         | DarkFi daemon participating in the network                                             |
+| Miner                  | Block producer                                                                         |
+| Uncle Block            | Block that was mined but not canonical, but referenced by a canonical block            |
+| Pin                    | Use-it-or-lose-it reward offer from canonical to uncle chain                            |
+| Uncle Merkle           | Merkle tree of uncle blocks referenced by a canonical block                             |
+| Block proposal         | Block that has not yet been appended onto the canonical blockchain                     |
+| P2P network           | Peer-to-peer network on which nodes communicate with each other                          |
+| Confirmation           | State achieved when a block and its contents are appended to the canonical blockchain  |
+
+See [Uncle Merkle Consensus](uncle_merkle.md) for detailed specification.
 
 ## Glossary
 

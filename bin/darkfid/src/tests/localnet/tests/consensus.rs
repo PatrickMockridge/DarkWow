@@ -31,7 +31,7 @@ use darkfi::{
 };
 use darkfi_sdk::num_traits::One;
 use num_bigint::BigUint;
-use sled_overlay::sled;
+use sled;
 use smol::Executor;
 
 use crate::tests::localnet::FiveNodeHarness;

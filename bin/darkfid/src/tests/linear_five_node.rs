@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use darkfi_linear::{Block, LinearStore, PoWConsensus, create_block};
 use darkfi_sdk::{crypto::DEPLOYOOOR_CONTRACT_ID, pasta::pallas};
-use sled_overlay::sled::Config;
+use sled::Config;
 
 use crate::blockchain::LinearBlockchain;
 
@@ -150,6 +150,7 @@ impl Default for LinearFiveNodeHarness {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use darkfi_linear::{create_block_with_uncles, create_uncle, UncleBlock};
 
     #[test]
     fn test_linear_five_node_consensus() -> Result<(), Box<dyn std::error::Error>> {
@@ -183,6 +184,136 @@ mod tests {
         for node in harness.all_nodes() {
             assert_eq!(node.blockchain.get_height(), 5);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_linear_block_with_uncles() -> Result<(), Box<dyn std::error::Error>> {
+        let harness = LinearFiveNodeHarness::new()?;
+
+        // Deploy genesis contracts
+        harness.deploy_genesis_contracts()?;
+
+        // Alice creates genesis block
+        let genesis_block = harness.alice_create_genesis();
+        let genesis_hash = genesis_block.hash();
+
+        // Broadcast genesis to all nodes
+        harness.broadcast_block(&genesis_block)?;
+
+        // Apply genesis to get chain state
+        let blockchain = &harness.alice.blockchain;
+
+        // Mine canonical block at height 1 (this extends genesis)
+        let difficulty_target = 0x0000_FFFF;
+        let canonical_block = harness.alice_mine_block(1, genesis_hash);
+
+        // Apply canonical block
+        smol::block_on(async {
+            blockchain.apply_block(&canonical_block).await
+        })?;
+
+        // Verify height is 1
+        assert_eq!(blockchain.get_height(), 1);
+
+        // Now mine an uncle block at the same height
+        let base_reward = 100_000_000;
+        let uncle_block = harness.alice_mine_block(1, genesis_hash);
+        let mut uncle = create_uncle(uncle_block.clone(), 1, base_reward);
+
+        // Verify pin is offered but not yet accepted
+        assert!(uncle.pin_offered);
+        assert!(!uncle.pin_accepted);
+
+        // Uncle chain accepts the pin (use it or lose it - one time decision)
+        // Note: Rejection is strictly dominated - accepting gives 50M, rejecting gives 0
+        uncle.accept_pin();
+        assert!(uncle.pin_accepted);
+
+        // Create canonical block at height 2 that includes the uncle
+        let canonical_hash = canonical_block.hash();
+        let mut canonical_block2 =
+            create_block_with_uncles(canonical_hash, 2, vec![], difficulty_target, &[uncle.clone()]);
+
+        // Mine the canonical block so it satisfies PoW
+        let consensus = PoWConsensus::new(difficulty_target);
+        while !consensus.check_difficulty(&canonical_block2.hash()) {
+            canonical_block2.header.nonce += 1;
+        }
+
+        // Verify uncle merkle root is set
+        assert_ne!(canonical_block2.header.uncle_merkle_root, [0u8; 32]);
+
+        // Apply canonical block with uncle
+        smol::block_on(async {
+            blockchain.apply_block_with_uncles(&canonical_block2, &[uncle]).await
+        })?;
+
+        // Verify block was applied
+        assert_eq!(blockchain.get_height(), 2);
+
+        // Verify uncle was stored with pin_accepted = true
+        let stored_uncle = blockchain.store.get_uncle(uncle_block.hash().as_bytes())?;
+        assert!(stored_uncle.is_some());
+        let stored_uncle = stored_uncle.unwrap();
+        assert!(stored_uncle.pin_accepted);
+        assert_eq!(stored_uncle.pin_reward, 50_000_000);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pin_reject_flow() -> Result<(), Box<dyn std::error::Error>> {
+        let harness = LinearFiveNodeHarness::new()?;
+        harness.deploy_genesis_contracts()?;
+        let genesis_block = harness.alice_create_genesis();
+        let genesis_hash = genesis_block.hash();
+        harness.broadcast_block(&genesis_block)?;
+        let blockchain = &harness.alice.blockchain;
+
+        // Mine canonical block at height 1
+        let difficulty_target = 0x0000_FFFF;
+        let canonical_block = harness.alice_mine_block(1, genesis_hash);
+        smol::block_on(async {
+            blockchain.apply_block(&canonical_block).await
+        })?;
+
+        // Mine uncle block at same height
+        let base_reward = 100_000_000;
+        let uncle_block = harness.alice_mine_block(1, genesis_hash);
+        let mut uncle = create_uncle(uncle_block.clone(), 1, base_reward);
+
+        // Uncle chain rejects the pin (gives up reward)
+        // Note: This is irrational but we're testing the flow
+        uncle.reject_pin();
+        assert!(!uncle.pin_accepted);
+
+        // Create canonical block at height 2 that includes the uncle
+        let canonical_hash = canonical_block.hash();
+        let mut canonical_block2 =
+            create_block_with_uncles(canonical_hash, 2, vec![], difficulty_target, &[uncle.clone()]);
+
+        // Mine the canonical block so it satisfies PoW
+        let consensus = PoWConsensus::new(difficulty_target);
+        while !consensus.check_difficulty(&canonical_block2.hash()) {
+            canonical_block2.header.nonce += 1;
+        }
+
+        // Apply canonical block with uncle
+        smol::block_on(async {
+            blockchain.apply_block_with_uncles(&canonical_block2, &[uncle]).await
+        })?;
+
+        // Verify block was applied
+        assert_eq!(blockchain.get_height(), 2);
+
+        // Verify uncle was stored with pin_accepted = false (rejected)
+        let stored_uncle = blockchain.store.get_uncle(uncle_block.hash().as_bytes())?;
+        assert!(stored_uncle.is_some());
+        let stored_uncle = stored_uncle.unwrap();
+        assert!(!stored_uncle.pin_accepted);
+        // Uncle gets 0 reward when rejected, canonical absorbs everything
 
         Ok(())
     }

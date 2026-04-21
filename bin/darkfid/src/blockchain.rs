@@ -29,7 +29,7 @@ use std::sync::{
 use darkfi::runtime::vm_runtime::{BlockchainAccess, ContractStoreAccess, SimpleDbAccess};
 use darkfi::Error;
 use darkfi::Result;
-use darkfi_linear::{Block, LinearStore, PoWConsensus};
+use darkfi_linear::{build_uncle_merkle, verify_uncle_proof, UncleBlock, Block, LinearStore, PoWConsensus};
 use darkfi_sdk::crypto::ContractId;
 use tracing::{error, info};
 
@@ -105,6 +105,11 @@ impl LinearBlockchain {
     /// For smart contract execution, the linear Transaction type would need to be
     /// extended to support contract calls similar to darkfi::Transaction.
     pub async fn apply_block(&self, block: &Block) -> Result<()> {
+        self.apply_block_with_uncles(block, &[]).await
+    }
+
+    /// Verify and apply a block with uncle blocks to the chain
+    pub async fn apply_block_with_uncles(&self, block: &Block, uncles: &[UncleBlock]) -> Result<()> {
         let block_hash = block.hash();
         info!(target: "linear_blockchain", "Applying block at height {}", block.header.height);
 
@@ -127,6 +132,34 @@ impl LinearBlockchain {
             return Err(Error::Custom("MerkleRootMismatch".to_string()))
         }
 
+        // Verify uncle merkle root matches provided uncles
+        let (expected_root, proofs) = build_uncle_merkle(uncles);
+        if block.header.uncle_merkle_root != expected_root {
+            error!(target: "linear_blockchain", "Block {} uncle merkle root mismatch", block_hash);
+            return Err(Error::Custom("UncleMerkleRootMismatch".to_string()))
+        }
+
+        // Verify each uncle's PoW
+        for uncle in uncles {
+            match self.consensus.verify_uncle_pow(uncle) {
+                Ok(true) => {}
+                Ok(false) => {
+                    error!(target: "linear_blockchain", "Uncle {} failed PoW verification", uncle.hash());
+                    return Err(Error::BlockIsInvalid(uncle.hash().to_string()))
+                }
+                Err(e) => {
+                    error!(target: "linear_blockchain", "Uncle {} failed PoW: {}", uncle.hash(), e);
+                    return Err(Error::Custom(e.to_string()))
+                }
+            }
+
+            // Verify uncle proof
+            if !verify_uncle_proof(&proofs[0], &block.header.uncle_merkle_root) {
+                error!(target: "linear_blockchain", "Uncle {} failed merkle proof verification", uncle.hash());
+                return Err(Error::Custom("UncleProofVerificationFailed".to_string()))
+            }
+        }
+
         // Verify previous hash
         let current_height = self.height.load(Ordering::SeqCst);
         if current_height > 0 {
@@ -144,7 +177,12 @@ impl LinearBlockchain {
         // Insert block
         self.insert_block(block)?;
 
-        info!(target: "linear_blockchain", "Block {} applied successfully", block_hash);
+        // Store uncles
+        for uncle in uncles {
+            self.store.insert_uncle(uncle).map_err(|e| Error::Custom(e.to_string()))?;
+        }
+
+        info!(target: "linear_blockchain", "Block {} applied successfully with {} uncles", block_hash, uncles.len());
         Ok(())
     }
 

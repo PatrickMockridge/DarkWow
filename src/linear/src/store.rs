@@ -22,12 +22,13 @@ use std::sync::Arc;
 
 use sled::{Db, Tree};
 
-use super::{Block, LinearError, Transaction};
+use super::{Block, LinearError, Transaction, UncleBlock};
 
 /// Tree names for sled database
 const BLOCKS_TREE: &str = "blocks";
 const TXS_TREE: &str = "transactions";
 const CONTRACTS_TREE: &str = "contracts";
+const UNCLES_TREE: &str = "uncles";
 
 /// Linear store - simple sled-backed blockchain storage
 pub struct LinearStore {
@@ -35,6 +36,7 @@ pub struct LinearStore {
     blocks: Tree,
     transactions: Tree,
     contracts: Tree,
+    uncles: Tree,
 }
 
 impl LinearStore {
@@ -43,8 +45,9 @@ impl LinearStore {
         let blocks = db.open_tree(BLOCKS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let transactions = db.open_tree(TXS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let contracts = db.open_tree(CONTRACTS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
+        let uncles = db.open_tree(UNCLES_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
 
-        Ok(Self { db, blocks, transactions, contracts })
+        Ok(Self { db, blocks, transactions, contracts, uncles })
     }
 
     /// Insert a block at the given height
@@ -123,5 +126,25 @@ impl LinearStore {
     /// Check if contract data exists for a contract ID
     pub fn has_contract_data(&self, contract_id: &[u8]) -> Result<bool, LinearError> {
         self.contracts.contains_key(contract_id).map_err(|e| LinearError::StorageError(e.to_string()))
+    }
+
+    /// Insert an uncle block (keyed by block hash)
+    pub fn insert_uncle(&self, uncle: &UncleBlock) -> Result<(), LinearError> {
+        let hash = uncle.hash();
+        let key = hash.as_bytes();
+        let value = serde_json::to_vec(uncle).map_err(|e| LinearError::SerializationError(e.to_string()))?;
+        self.uncles.insert(key, value.as_slice()).map_err(|e| LinearError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Get an uncle block by hash
+    pub fn get_uncle(&self, hash: &[u8]) -> Result<Option<UncleBlock>, LinearError> {
+        match self.uncles.get(hash).map_err(|e| LinearError::StorageError(e.to_string()))? {
+            Some(v) => {
+                let uncle = serde_json::from_slice(&v).map_err(|e| LinearError::SerializationError(e.to_string()))?;
+                Ok(Some(uncle))
+            }
+            None => Ok(None),
+        }
     }
 }

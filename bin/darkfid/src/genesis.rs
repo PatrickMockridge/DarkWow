@@ -26,7 +26,7 @@ use darkfi::blockchain::{BlockInfo, Blockchain, BlockchainOverlay};
 use darkfi::validator::{utils::deploy_native_contracts, ValidatorConfig};
 use darkfi::Result;
 use num_bigint::BigUint;
-use sled_overlay::sled;
+use sled;
 
 /// Build a genesis ValidatorConfig with fresh state.
 /// Uses the same pattern as the testing pipeline for consistency.

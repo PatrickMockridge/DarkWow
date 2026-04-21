@@ -46,7 +46,7 @@ use darkfi_sdk::{
 };
 use darkfi_serial::Encodable;
 use num_bigint::BigUint;
-use sled_overlay::sled;
+use sled;
 use url::Url;
 
 use crate::{

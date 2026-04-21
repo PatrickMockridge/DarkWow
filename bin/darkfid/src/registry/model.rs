@@ -19,7 +19,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use rand::rngs::OsRng;
-use sled_overlay::sled::IVec;
+use sled::IVec;
 use tinyjson::JsonValue;
 use tracing::info;
 

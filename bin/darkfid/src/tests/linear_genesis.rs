@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use darkfi_linear::LinearStore;
 use darkfi_sdk::{crypto::DEPLOYOOOR_CONTRACT_ID, pasta::pallas};
-use sled_overlay::sled::Config;
+use sled::Config;
 
 use crate::blockchain::LinearBlockchain;
 

@@ -29,8 +29,8 @@ mod store;
 mod transaction;
 
 pub use block::{
-    build_uncle_merkle, compute_reward, create_block, create_block_with_uncles, verify_uncle_proof,
-    UncleBlock, UncleProof, Block, BlockHeader, MAX_UNCLE_DEPTH,
+    build_uncle_merkle, compute_reward, create_block, create_block_with_uncles, create_uncle,
+    verify_uncle_proof, UncleBlock, UncleProof, Block, BlockHeader, MAX_UNCLE_DEPTH,
 };
 pub use consensus::PoWConsensus;
 pub use error::LinearError;

@@ -153,7 +153,7 @@ impl Darkfid {
     /// along with all the corresponding background tasks.
     pub async fn init(
         network: Network,
-        sled_db: &sled_overlay::sled::Db,
+        sled_db: &sled::Db,
         config: &ValidatorConfig,
         net_settings: &Settings,
         txs_batch_size: &Option<usize>,
