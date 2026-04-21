@@ -18,8 +18,7 @@
 
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use darkfi_linear::LinearBlockchain as LinearBlockchainCore;
-use darkfi_linear::{Block as LinearBlock, Input, Output, Transaction as LinearTransaction};
+use darkfi_linear::Output;
 
 use darkfi_sdk::crypto::PublicKey;
 

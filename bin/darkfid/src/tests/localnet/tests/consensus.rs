@@ -56,7 +56,7 @@ async fn make_validator_config() -> Result<ValidatorConfig> {
         max_forks: 8,
         pow_target,
         pow_fixed_difficulty,
-        genesis_block,
+        genesis_block: Some(genesis_block),
         verify_fees: false,
     })
 }

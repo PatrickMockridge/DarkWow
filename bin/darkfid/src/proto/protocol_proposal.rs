@@ -21,7 +21,6 @@ use std::{
     sync::Arc,
 };
 
-use async_trait::async_trait;
 use smol::{channel::Sender, lock::RwLock};
 use tinyjson::JsonValue;
 use tracing::{debug, error};

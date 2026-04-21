@@ -21,7 +21,7 @@
 use darkfi_serial::{async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite};
 use std::io::Result;
 
-use super::{Block, BlockHeader, Input, Output, Transaction, UncleBlock, UncleProof};
+use super::{Block, BlockHeader, ContractCall, Input, Output, Transaction, UncleBlock, UncleProof};
 
 #[async_trait]
 impl AsyncEncodable for Input {
@@ -64,12 +64,32 @@ impl AsyncDecodable for Output {
 }
 
 #[async_trait]
+impl AsyncEncodable for ContractCall {
+    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> Result<usize> {
+        let mut len = 0;
+        len += self.contract_id.encode_async(s).await?;
+        len += self.data.encode_async(s).await?;
+        Ok(len)
+    }
+}
+
+#[async_trait]
+impl AsyncDecodable for ContractCall {
+    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self> {
+        let contract_id = AsyncDecodable::decode_async(d).await?;
+        let data = AsyncDecodable::decode_async(d).await?;
+        Ok(Self { contract_id, data })
+    }
+}
+
+#[async_trait]
 impl AsyncEncodable for Transaction {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> Result<usize> {
         let mut len = 0;
         len += self.version.encode_async(s).await?;
         len += self.inputs.encode_async(s).await?;
         len += self.outputs.encode_async(s).await?;
+        len += self.contract_calls.encode_async(s).await?;
         len += self.lock_time.encode_async(s).await?;
         Ok(len)
     }
@@ -81,8 +101,9 @@ impl AsyncDecodable for Transaction {
         let version = AsyncDecodable::decode_async(d).await?;
         let inputs = AsyncDecodable::decode_async(d).await?;
         let outputs = AsyncDecodable::decode_async(d).await?;
+        let contract_calls = AsyncDecodable::decode_async(d).await?;
         let lock_time = AsyncDecodable::decode_async(d).await?;
-        Ok(Self { version, inputs, outputs, lock_time })
+        Ok(Self { version, inputs, outputs, contract_calls, lock_time })
     }
 }
 

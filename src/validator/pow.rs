@@ -119,8 +119,11 @@ impl PoWModule {
         fixed_difficulty: Option<BigUint>,
         height: Option<u32>,
     ) -> Result<Self> {
-        // Retrieve genesis block timestamp
-        let genesis = blockchain.genesis_block()?.header.timestamp;
+        // Retrieve genesis block timestamp (use 0 if no genesis exists yet)
+        let genesis = match blockchain.genesis_block() {
+            Ok(genesis_block) => genesis_block.header.timestamp,
+            Err(_) => Timestamp::from_u64(0),
+        };
 
         // Retrieving last BUF_SIZE difficulties from blockchain to
         // build the buffers.

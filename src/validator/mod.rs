@@ -78,8 +78,8 @@ pub struct ValidatorConfig {
     pub pow_target: u32,
     /// Optional fixed difficulty, for testing purposes
     pub pow_fixed_difficulty: Option<BigUint>,
-    /// Genesis block
-    pub genesis_block: BlockInfo,
+    /// Genesis block (None to skip genesis verification, used for linear-testnet)
+    pub genesis_block: Option<BlockInfo>,
     /// Flag to enable tx fee verification
     pub verify_fees: bool,
 }
@@ -119,10 +119,22 @@ impl Validator {
         overlay.lock().unwrap().contracts.update_state_monotree(&diff)?;
 
         // Add genesis block if blockchain is empty
-        if blockchain.genesis().is_err() {
-            info!(target: "validator::new", "Appending genesis block");
-            verify_genesis_block(&overlay, &[diff], &config.genesis_block, config.pow_target)
-                .await?;
+        let synced = if blockchain.genesis().is_err() {
+            match &config.genesis_block {
+                Some(genesis_block) => {
+                    info!(target: "validator::new", "Appending genesis block");
+                    verify_genesis_block(&overlay, &[diff], genesis_block, config.pow_target)
+                        .await?;
+                    false
+                }
+                None => {
+                    info!(target: "validator::new", "Skipping genesis block verification (linear-testnet mode)");
+                    // Mark as synced since there's no genesis to verify
+                    true
+                }
+            }
+        } else {
+            false
         };
 
         // Write the changes to the actual chain db
@@ -141,7 +153,7 @@ impl Validator {
         let state = Arc::new(RwLock::new(Self {
             blockchain,
             consensus,
-            synced: false,
+            synced,
             verify_fees: config.verify_fees,
         }));
 

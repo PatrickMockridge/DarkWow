@@ -52,12 +52,3 @@ impl Default for ZkVerifier {
         Self::new()
     }
 }
-
-/// Verify a ZK proof (convenience function)
-pub fn verify_proof(
-    proof: &Proof,
-    zkbin_bytes: &[u8],
-    instances: &[pallas::Base],
-) -> bool {
-    verify_zkp(proof, zkbin_bytes, instances) == darkfi::zk::verifier::ZkVerifyResult::Ok
-}

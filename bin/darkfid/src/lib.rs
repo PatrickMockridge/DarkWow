@@ -35,8 +35,9 @@ use darkfi::{
     validator::{Validator, ValidatorConfig, ValidatorPtr},
     Error, Result,
 };
-use darkfi_linear::{Block as LinearBlock, LinearBlockchain as LinearBlockchainCore, LinearStore};
+use darkfi_linear::LinearBlockchain as LinearBlockchainCore;
 use darkfi_sdk::crypto::keypair::Network;
+use darkfi_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 
 #[cfg(test)]
 mod tests;
@@ -54,7 +55,7 @@ use rpc::{management::ManagementRpcHandler, DefaultRpcHandler};
 
 /// Validator async tasks
 pub mod task;
-use task::{consensus::ConsensusInitTaskConfig, consensus_init_task};
+use task::{consensus::ConsensusInitTaskConfig, consensus_init_task, consensus_linear_init_task};
 
 /// P2P net protocols
 mod proto;
@@ -77,6 +78,10 @@ mod linear_simple_db;
 /// LinearContractStore bridge adapter
 mod contract_store;
 
+/// Mempool for pending transactions
+mod mempool;
+pub use mempool::{create_mempool, Mempool, MempoolPtr};
+
 /// ZK verification for linear blockchain
 mod zk;
 
@@ -89,6 +94,8 @@ pub struct DarkfiNode {
     validator: ValidatorPtr,
     /// Linear blockchain (only set when running in linear-testnet mode)
     linear_blockchain: Option<Arc<LinearBlockchain>>,
+    /// Mempool for linear blockchain (only set in linear-testnet mode)
+    mempool: Option<MempoolPtr>,
     /// P2P network protocols handler
     p2p_handler: DarkfidP2pHandlerPtr,
     /// Node miners registry pointer
@@ -109,6 +116,7 @@ impl DarkfiNode {
     pub async fn new(
         validator: ValidatorPtr,
         linear_blockchain: Option<Arc<LinearBlockchain>>,
+        mempool: Option<MempoolPtr>,
         p2p_handler: DarkfidP2pHandlerPtr,
         registry: DarkfiMinersRegistryPtr,
         txs_batch_size: usize,
@@ -118,6 +126,7 @@ impl DarkfiNode {
         Ok(Arc::new(Self {
             validator,
             linear_blockchain,
+            mempool,
             p2p_handler,
             registry,
             txs_batch_size,
@@ -131,6 +140,11 @@ impl DarkfiNode {
     /// Returns whether the node is running in localnet mode
     pub fn is_localnet(&self) -> bool {
         self.is_localnet
+    }
+
+    /// Returns the mempool if running in linear-testnet mode
+    pub fn mempool(&self) -> Option<MempoolPtr> {
+        self.mempool.clone()
     }
 }
 
@@ -196,7 +210,7 @@ impl Darkfid {
 
         // Initialize node
         let node =
-            DarkfiNode::new(validator, None, p2p_handler, registry, txs_batch_size, subscribers, is_localnet).await?;
+            DarkfiNode::new(validator, None, None, p2p_handler, registry, txs_batch_size, subscribers, is_localnet).await?;
 
         // Generate the background tasks
         let dnet_task = StoppableTask::new();
@@ -228,6 +242,16 @@ impl Darkfid {
         let store = linear_blockchain_p2p.store.clone();
         let linear_blockchain = Arc::new(LinearBlockchain::new(store));
 
+        // Deploy native contracts to linear blockchain
+        info!(target: "darkfid::Darkfid::init_linear", "Deploying native contracts to linear blockchain...");
+        let deployooor_wasm = include_bytes!("../../../src/contract/deployooor/darkfi_deployooor_contract.wasm").to_vec();
+        linear_blockchain.deploy_contract(&deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID)?;
+        info!(target: "darkfid::Darkfid::init_linear", "Deployooor contract deployed");
+
+        let native_token_wasm = include_bytes!("../../../src/contract/native_token/darkfi_native_token_contract.wasm").to_vec();
+        linear_blockchain.deploy_contract(&native_token_wasm, *NATIVE_TOKEN_CONTRACT_ID)?;
+        info!(target: "darkfid::Darkfid::init_linear", "NativeToken contract deployed");
+
         // Initialize P2P network (linear P2P handlers use darkfi_linear types)
         let p2p_handler = DarkfidP2pHandler::init(net_settings, ex, Some(linear_blockchain_p2p.clone())).await?;
 
@@ -253,13 +277,14 @@ impl Darkfid {
             max_forks: 8,
             pow_target: 120,
             pow_fixed_difficulty: None,
-            genesis_block: Default::default(),
+            genesis_block: None,
             verify_fees: true,
         }).await?;
 
         let node = DarkfiNode::new(
             validator,
             Some(linear_blockchain),
+            Some(create_mempool()),
             p2p_handler,
             registry,
             txs_batch_size,
@@ -289,6 +314,7 @@ impl Darkfid {
         stratum_rpc_settings: &Option<RpcSettings>,
         mm_rpc_settings: &Option<RpcSettings>,
         config: &ConsensusInitTaskConfig,
+        is_linear: bool,
     ) -> Result<()> {
         info!(target: "darkfid::Darkfid::start", "Starting Darkfi daemon...");
 
@@ -355,21 +381,39 @@ impl Darkfid {
 
         // Start the consensus protocol
         info!(target: "darkfid::Darkfid::start", "Starting consensus protocol task");
-        self.consensus_task.clone().start(
-            consensus_init_task(
-                self.node.clone(),
-                config.clone(),
+        if is_linear {
+            self.consensus_task.clone().start(
+                consensus_linear_init_task(
+                    self.node.clone(),
+                    config.clone(),
+                    executor.clone(),
+                ),
+                |res| async move {
+                    match res {
+                        Ok(()) | Err(Error::ConsensusTaskStopped) | Err(Error::MinerTaskStopped) => { /* Do nothing */ }
+                        Err(e) => error!(target: "darkfid::Darkfid::start", "Failed starting consensus initialization task: {e}"),
+                    }
+                },
+                Error::ConsensusTaskStopped,
                 executor.clone(),
-            ),
-            |res| async move {
-                match res {
-                    Ok(()) | Err(Error::ConsensusTaskStopped) | Err(Error::MinerTaskStopped) => { /* Do nothing */ }
-                    Err(e) => error!(target: "darkfid::Darkfid::start", "Failed starting consensus initialization task: {e}"),
-                }
-            },
-            Error::ConsensusTaskStopped,
-            executor.clone(),
-        );
+            );
+        } else {
+            self.consensus_task.clone().start(
+                consensus_init_task(
+                    self.node.clone(),
+                    config.clone(),
+                    executor.clone(),
+                ),
+                |res| async move {
+                    match res {
+                        Ok(()) | Err(Error::ConsensusTaskStopped) | Err(Error::MinerTaskStopped) => { /* Do nothing */ }
+                        Err(e) => error!(target: "darkfid::Darkfid::start", "Failed starting consensus initialization task: {e}"),
+                    }
+                },
+                Error::ConsensusTaskStopped,
+                executor.clone(),
+            );
+        }
 
         info!(target: "darkfid::Darkfid::start", "Darkfi daemon started successfully!");
         Ok(())

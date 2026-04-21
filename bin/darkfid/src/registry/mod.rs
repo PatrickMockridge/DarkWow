@@ -38,7 +38,6 @@ use darkfi::{
     validator::{consensus::Proposal, Validator, ValidatorPtr},
     Error, Result,
 };
-use darkfi_linear::LinearBlockchain as LinearBlockchainCore;
 use darkfi_sdk::{
     crypto::{keypair::Network, pasta_prelude::PrimeField},
     tx::TransactionHash,

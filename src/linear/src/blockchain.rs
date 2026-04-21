@@ -100,7 +100,7 @@ impl LinearBlockchain {
         if self.height > 0 {
             let previous = self.store.get_block(self.height)?;
             if block.header.previous != previous.hash() {
-                error!(target: "linear_blockchain", "Block {} has invalid previous hash", block_hash);
+                error!(target: "linear_blockchain", "Block {} failed previous hash verification", block_hash);
                 return Err(LinearError::InvalidPreviousHash)
             }
         }

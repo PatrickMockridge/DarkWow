@@ -18,6 +18,7 @@
 
 use std::str::FromStr;
 
+use bs58;
 use darkfi_sdk::{
     crypto::contract_id::{ContractId, SMART_CONTRACT_ZKAS_DB_NAME},
     tx::TransactionHash,
@@ -170,6 +171,46 @@ impl DarkfiNode {
         let cumulative: f64 = block_diff.cumulative_difficulty.to_string().parse().unwrap();
 
         JsonResponse::new(JsonValue::Array(vec![difficulty.into(), cumulative.into()]), id).into()
+    }
+
+    // RPCAPI:
+    // Returns the current PoW difficulty target for linear-testnet.
+    //
+    // **Params:**
+    // * Empty
+    //
+    // **Returns:**
+    // * `difficulty_target`: u32 difficulty target
+    //
+    // --> {"jsonrpc": "2.0", "method": "blockchain.get_difficulty_linear", "params": [], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": {"difficulty_target": 65535}, "id": 1}
+    pub async fn blockchain_get_difficulty_linear(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+        if !params.is_empty() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        let linear_blockchain = match &self.linear_blockchain {
+            Some(lb) => lb.clone(),
+            None => {
+                return JsonError::new(
+                    InternalError,
+                    Some("linear-testnet mode only".to_string()),
+                    id,
+                )
+                .into()
+            }
+        };
+
+        let difficulty_target = linear_blockchain.consensus.difficulty_target();
+
+        let result = JsonValue::from(std::collections::HashMap::from([
+            ("difficulty_target".to_string(), JsonValue::Number(difficulty_target as f64)),
+        ]));
+
+        JsonResponse::new(result, id).into()
     }
 
     // RPCAPI:
@@ -544,6 +585,86 @@ impl DarkfiNode {
             Err(e) => {
                 error!(target: "darkfid::rpc::blockchain_get_contract_state_key", "Failed fetching contract state key value: {e}");
                 server_error(RpcError::ContractStateKeyNotFound, id, None)
+            }
+        }
+    }
+
+    // RPCAPI:
+    // Queries the linear blockchain for contract state.
+    // Returns the state data for a given contract.
+    //
+    // **Params:**
+    // * `array[0]`: base58-encoded contract ID string
+    // * `array[1]`: State key (optional, if empty returns all state)
+    //
+    // **Returns:**
+    // * Contract state data
+    //
+    // --> {"jsonrpc": "2.0", "method": "blockchain.get_contract_state_linear", "params": ["contract_id", "key"], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": {...}, "id": 1}
+    pub async fn blockchain_get_contract_state_linear(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+        if params.len() < 1 || !params[0].is_string() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        let linear_blockchain = match &self.linear_blockchain {
+            Some(lb) => lb.clone(),
+            None => {
+                error!(target: "darkfid::rpc::blockchain_get_contract_state_linear", "linear-testnet mode only");
+                return JsonError::new(
+                    InternalError,
+                    Some("blockchain.get_contract_state_linear is only available in linear-testnet mode".to_string()),
+                    id,
+                )
+                .into()
+            }
+        };
+
+        let contract_id_str = params[0].get::<String>().unwrap();
+        let contract_id_bytes = match bs58::decode(contract_id_str).with_check(None).into_vec() {
+            Ok(v) => v,
+            Err(_) => {
+                error!(target: "darkfid::rpc::blockchain_get_contract_state_linear", "Invalid contract_id base58");
+                return JsonError::new(InvalidParams, Some("Invalid contract_id".to_string()), id).into()
+            }
+        };
+
+        if contract_id_bytes.len() != 33 {
+            return JsonError::new(InvalidParams, Some("Invalid contract_id length".to_string()), id).into()
+        }
+
+        let contract_id: [u8; 32] = contract_id_bytes[1..33].try_into().unwrap();
+
+        // If key provided, return just that value
+        if params.len() >= 2 && params[1].is_string() {
+            let key_str = params[1].get::<String>().unwrap();
+            match linear_blockchain.store.get_contract_data(&contract_id) {
+                Ok(data) if !data.is_empty() => {
+                    JsonResponse::new(JsonValue::String(base64::encode(&data)), id).into()
+                }
+                _ => server_error(RpcError::ContractStateNotFound, id, None)
+            }
+        } else {
+            // Return all contract data
+            match linear_blockchain.store.get_contract_data(&contract_id) {
+                Ok(data) if !data.is_empty() => {
+                    let result = JsonValue::from(std::collections::HashMap::from([
+                        ("contract_id".to_string(), JsonValue::String(contract_id_str.clone())),
+                        ("data".to_string(), JsonValue::String(base64::encode(&data))),
+                        ("exists".to_string(), JsonValue::Boolean(true)),
+                    ]));
+                    JsonResponse::new(result, id).into()
+                }
+                _ => {
+                    let result = JsonValue::from(std::collections::HashMap::from([
+                        ("contract_id".to_string(), JsonValue::String(contract_id_str.clone())),
+                        ("exists".to_string(), JsonValue::Boolean(false)),
+                    ]));
+                    JsonResponse::new(result, id).into()
+                }
             }
         }
     }

@@ -27,7 +27,6 @@ use darkfi::{
     runtime::vm_runtime::{Runtime, ContractStoreAccess, SimpleDbAccess, BlockchainAccess},
     Error,
 };
-use darkfi_linear::LinearStore;
 use darkfi_sdk::{
     crypto::ContractId,
     tx::TransactionHash,

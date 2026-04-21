@@ -487,6 +487,11 @@ impl Blockchain {
         key_change_delay: &u32,
         height: Option<u32>,
     ) -> Result<(HeaderHash, Option<HeaderHash>)> {
+        // If blockchain is empty (linear-testnet mode), return dummy values
+        if self.is_empty() {
+            return Ok((HeaderHash([0u8; 32]), None));
+        }
+
         // Grab last known block header
         let last = match height {
             Some(h) => &self.get_headers_by_heights(&[if h != 0 { h - 1 } else { 0 }])?[0],

@@ -18,6 +18,9 @@
 
 //! Contract invocation RPC methods.
 
+use std::str::FromStr;
+
+use darkfi_sdk::crypto::ContractId;
 use tinyjson::JsonValue;
 use tracing::{error, info};
 
@@ -195,5 +198,111 @@ impl DarkfiNode {
         ]));
 
         JsonResponse::new(response_obj, id).into()
+    }
+
+    // RPCAPI:
+    // Deploy a WASM contract to the linear blockchain.
+    // This endpoint is only available in linear-testnet mode.
+    //
+    // --> {"jsonrpc": "2.0", "method": "contract.deploy",
+    //      "params": {
+    //          "wasm": "base64_encoded_wasm_bytes",
+    //          "contract_id": "base58_contract_id_string"  // required
+    //      }, "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": {"contract_id": "...", "status": "deployed"}, "id": 1}
+    pub async fn contract_deploy(&self, id: u16, params: JsonValue) -> JsonResult {
+        let params_obj = match params.get::<std::collections::HashMap<String, JsonValue>>() {
+            Some(p) => p,
+            None => {
+                error!(target: "darkfid::rpc::contract", "Params must be an object");
+                return JsonError::new(InvalidParams, Some("Params must be an object".to_string()), id).into();
+            }
+        };
+
+        // Get WASM bytes (base64 encoded)
+        let wasm_b64 = match params_obj.get("wasm") {
+            Some(v) => match v.get::<String>() {
+                Some(s) => s.clone(),
+                None => {
+                    error!(target: "darkfid::rpc::contract", "wasm must be a base64 string");
+                    return JsonError::new(InvalidParams, Some("wasm must be a string".to_string()), id).into();
+                }
+            },
+            None => {
+                error!(target: "darkfid::rpc::contract", "Missing wasm");
+                return JsonError::new(InvalidParams, Some("Missing wasm".to_string()), id).into();
+            }
+        };
+
+        // Get contract_id (base58 encoded)
+        let contract_id_str = match params_obj.get("contract_id") {
+            Some(v) => match v.get::<String>() {
+                Some(s) => s.clone(),
+                None => {
+                    error!(target: "darkfid::rpc::contract", "contract_id must be a string");
+                    return JsonError::new(InvalidParams, Some("contract_id must be a string".to_string()), id).into();
+                }
+            },
+            None => {
+                error!(target: "darkfid::rpc::contract", "Missing contract_id");
+                return JsonError::new(InvalidParams, Some("Missing contract_id".to_string()), id).into();
+            }
+        };
+
+        // Decode base64 WASM
+        let wasm_bytes = match base64::decode(&wasm_b64) {
+            Some(b) => b,
+            None => {
+                error!(target: "darkfid::rpc::contract", "Failed to decode wasm");
+                return JsonError::new(InvalidParams, Some("Invalid base64 encoding".to_string()), id).into();
+            }
+        };
+
+        // Parse contract_id from base58
+        let contract_id = match ContractId::from_str(&contract_id_str) {
+            Ok(cid) => cid,
+            Err(e) => {
+                error!(target: "darkfid::rpc::contract", "Invalid contract_id: {}", e);
+                return JsonError::new(InvalidParams, Some(format!("Invalid contract_id: {}", e)), id).into();
+            }
+        };
+
+        // Check we're in linear-testnet mode
+        let linear_blockchain = match &self.linear_blockchain {
+            Some(lb) => lb.clone(),
+            None => {
+                error!(target: "darkfid::rpc::contract", "contract.deploy is only available in linear-testnet mode");
+                return JsonError::new(
+                    InternalError,
+                    Some("contract.deploy is only available in linear-testnet mode".to_string()),
+                    id,
+                )
+                .into();
+            }
+        };
+
+        info!(
+            target: "darkfid::rpc::contract",
+            "Deploying contract {} with {} bytes",
+            contract_id,
+            wasm_bytes.len()
+        );
+
+        // Deploy to linear blockchain
+        match linear_blockchain.deploy_contract(&wasm_bytes, contract_id) {
+            Ok(()) => {
+                info!(target: "darkfid::rpc::contract", "Contract deployed successfully");
+                let result = JsonValue::from(std::collections::HashMap::from([
+                    ("contract_id".to_string(), JsonValue::String(contract_id_str)),
+                    ("wasm_size".to_string(), JsonValue::Number(wasm_bytes.len() as f64)),
+                    ("status".to_string(), JsonValue::String("deployed".to_string())),
+                ]));
+                JsonResponse::new(result, id).into()
+            }
+            Err(e) => {
+                error!(target: "darkfid::rpc::contract", "Failed to deploy contract: {}", e);
+                JsonError::new(InternalError, Some(format!("Failed to deploy: {}", e)), id).into()
+            }
+        }
     }
 }

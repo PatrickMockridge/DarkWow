@@ -78,6 +78,7 @@ impl RequestHandler<DefaultRpcHandler> for DarkfiNode {
             "blockchain.get_block" => self.blockchain_get_block(req.id, req.params).await,
             "blockchain.get_tx" => self.blockchain_get_tx(req.id, req.params).await,
             "blockchain.get_difficulty" => self.blockchain_get_difficulty(req.id, req.params).await,
+            "blockchain.get_difficulty_linear" => self.blockchain_get_difficulty_linear(req.id, req.params).await,
             "blockchain.last_confirmed_block" => self.blockchain_last_confirmed_block(req.id, req.params).await,
             "blockchain.best_fork_next_block_height" => self.blockchain_best_fork_next_block_height(req.id, req.params).await,
             "blockchain.block_target" => self.blockchain_block_target(req.id, req.params).await,
@@ -85,6 +86,7 @@ impl RequestHandler<DefaultRpcHandler> for DarkfiNode {
             "blockchain.lookup_zkas" => self.blockchain_lookup_zkas(req.id, req.params).await,
             "blockchain.get_contract_state" => self.blockchain_get_contract_state(req.id, req.params).await,
             "blockchain.get_contract_state_key" => self.blockchain_get_contract_state_key(req.id, req.params).await,
+            "blockchain.get_contract_state_linear" => self.blockchain_get_contract_state_linear(req.id, req.params).await,
             "blockchain.subscribe_blocks" => self.blockchain_subscribe_blocks(req.id, req.params).await,
             "blockchain.subscribe_txs" =>  self.blockchain_subscribe_txs(req.id, req.params).await,
             "blockchain.subscribe_proposals" => self.blockchain_subscribe_proposals(req.id, req.params).await,
@@ -97,11 +99,13 @@ impl RequestHandler<DefaultRpcHandler> for DarkfiNode {
             "tx.pending" => self.tx_pending(req.id, req.params).await,
             "tx.clean_pending" => self.tx_clean_pending(req.id, req.params).await,
             "tx.calculate_fee" => self.tx_calculate_fee(req.id, req.params).await,
+            "tx.submit_linear" => self.tx_submit_linear(req.id, req.params).await,
 
             // =======================
             // Contract methods
             // =======================
             "contract.invoke" => self.contract_invoke(req.id, req.params).await,
+            "contract.deploy" => self.contract_deploy(req.id, req.params).await,
 
             // ==============
             // Miner methods

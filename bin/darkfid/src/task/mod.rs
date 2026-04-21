@@ -19,6 +19,9 @@
 pub mod consensus;
 pub use consensus::consensus_init_task;
 
+pub mod consensus_linear;
+pub use consensus_linear::consensus_linear_init_task;
+
 pub mod sync;
 pub use sync::sync_task;
 

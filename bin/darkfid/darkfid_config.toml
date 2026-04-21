@@ -548,3 +548,56 @@ localnet = true
 # Seed nodes to connect to for peer discovery and/or adversising our
 # own external addresses
 #seeds = []
+
+## ======================
+## LINEAR-TESTNET CONFIGURATION
+## ======================
+# Linear-testnet blockchain network configuration
+[network_config."linear-testnet"]
+# Path to the blockchain database directory
+database = "~/.local/share/darkfi/darkfid/linear-testnet"
+
+# Confirmation threshold, denominated by number of blocks
+threshold = 1
+
+# Max in-memory forks to maintain
+max_forks = 8
+
+# PoW block production target, in seconds
+pow_target = 1
+
+# Optional fixed PoW difficulty, used for testing
+pow_fixed_difficulty = 1
+
+# Skip syncing process and start node right away
+skip_sync = true
+
+# Disable transaction's fee verification, used for testing
+skip_fees = true
+
+# Garbage collection task transactions batch size
+txs_batch_size = 50
+
+## Linear-testnet JSON-RPC settings
+[network_config."linear-testnet".rpc]
+# JSON-RPC listen URL
+rpc_listen = "tcp://127.0.0.1:28345"
+
+## Linear-testnet management JSON-RPC settings
+[network_config."linear-testnet".management_rpc]
+# JSON-RPC listen URL
+rpc_listen = "tcp://127.0.0.1:28346"
+
+## Linear-testnet P2P network settings
+[network_config."linear-testnet".net]
+# Magic Bytes to distinguish the p2p network
+magic_bytes = [241, 227, 197, 179]
+
+# Path to the P2P datastore
+p2p_datastore = "~/.local/share/darkfi/darkfid/linear-testnet"
+
+# Path to a configured hostlist for saving known peers
+hostlist = "~/.local/share/darkfi/darkfid/linear-testnet/p2p_hostlist.tsv"
+
+# Allow localnet hosts
+localnet = true

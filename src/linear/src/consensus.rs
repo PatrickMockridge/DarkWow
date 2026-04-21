@@ -33,6 +33,11 @@ impl PoWConsensus {
         Self { difficulty_target }
     }
 
+    /// Get the difficulty target
+    pub fn difficulty_target(&self) -> u32 {
+        self.difficulty_target
+    }
+
     /// Verify a block meets the difficulty target
     pub fn verify_proof(&self, block: &Block) -> Result<bool> {
         let hash = block.hash();

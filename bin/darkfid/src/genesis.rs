@@ -65,7 +65,7 @@ pub async fn build_genesis_config(
         max_forks,
         pow_target,
         pow_fixed_difficulty,
-        genesis_block,
+        genesis_block: Some(genesis_block),
         verify_fees,
     })
 }

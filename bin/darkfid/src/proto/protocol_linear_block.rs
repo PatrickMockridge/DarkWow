@@ -27,10 +27,7 @@ use std::sync::Arc;
 use tracing::{debug, info};
 
 use darkfi::{
-    net::{
-        session::SESSION_DEFAULT,
-        P2pPtr,
-    },
+    net::P2pPtr,
     system::ExecutorPtr,
 };
 use darkfi_linear::LinearBlockchain;
@@ -46,7 +43,7 @@ pub struct LinearBlockHandler {
 
 impl LinearBlockHandler {
     /// Initialize the linear block protocol handler
-    pub async fn init(p2p: &P2pPtr, blockchain: Arc<LinearBlockchain>) -> LinearBlockHandlerPtr {
+    pub async fn init(_p2p: &P2pPtr, blockchain: Arc<LinearBlockchain>) -> LinearBlockHandlerPtr {
         debug!(
             target: "darkfid::proto::protocol_linear_block::init",
             "Adding linear block protocol to the protocol registry"

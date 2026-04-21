@@ -27,7 +27,7 @@ use darkfi::{
     blockchain::BlockInfo,
     cli_desc,
     net::settings::SettingsOpt,
-    rpc::settings::RpcSettingsOpt,
+    rpc::settings::{RpcSettings, RpcSettingsOpt},
     util::{
         encoding::base64,
         path::{expand_path, get_config_path},
@@ -140,9 +140,9 @@ pub struct BlockchainNetwork {
     /// Main server JSON-RPC settings
     rpc: RpcSettingsOpt,
 
-    #[structopt(flatten)]
-    /// Management server JSON-RPC settings
-    management_rpc: RpcSettingsOpt,
+    #[structopt(skip)]
+    /// Management server JSON-RPC settings (not used in linear-testnet)
+    management_rpc: Option<RpcSettingsOpt>,
 
     #[structopt(skip)]
     /// Stratum server JSON-RPC settings (optional)
@@ -209,10 +209,11 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
             .start(
                 &ex,
                 &blockchain_config.rpc.into(),
-                &blockchain_config.management_rpc.into(),
+                &RpcSettings::default(),
                 &blockchain_config.stratum_rpc.map(|stratum_rpc_opts| stratum_rpc_opts.into()),
                 &blockchain_config.mm_rpc.map(|mm_rpc_opts| mm_rpc_opts.into()),
                 &config,
+                true, // is_linear: bypass overlay consensus for linear-testnet
             )
             .await?;
 
@@ -249,7 +250,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         max_forks: blockchain_config.max_forks,
         pow_target: blockchain_config.pow_target,
         pow_fixed_difficulty,
-        genesis_block,
+        genesis_block: Some(genesis_block),
         verify_fees: !blockchain_config.skip_fees,
     };
 
@@ -323,10 +324,11 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         .start(
             &ex,
             &blockchain_config.rpc.into(),
-            &blockchain_config.management_rpc.into(),
+            &RpcSettings::default(),
             &blockchain_config.stratum_rpc.map(|stratum_rpc_opts| stratum_rpc_opts.into()),
             &blockchain_config.mm_rpc.map(|mm_rpc_opts| mm_rpc_opts.into()),
             &config,
+            false, // is_linear: false for regular networks
         )
         .await?;
 

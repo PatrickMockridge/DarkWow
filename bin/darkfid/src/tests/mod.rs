@@ -292,7 +292,7 @@ fn darkfid_programmatic_control() -> Result<()> {
                     max_forks: 8,
                     pow_target: 20,
                     pow_fixed_difficulty: Some(BigUint::one()),
-                    genesis_block,
+                    genesis_block: Some(genesis_block),
                     verify_fees: false,
                 };
                 let consensus_config = crate::ConsensusInitTaskConfig {
@@ -331,6 +331,7 @@ fn darkfid_programmatic_control() -> Result<()> {
                         &None,
                         &None,
                         &consensus_config,
+                        false,
                     )
                     .await
                     .unwrap();
@@ -347,6 +348,7 @@ fn darkfid_programmatic_control() -> Result<()> {
                         &None,
                         &None,
                         &consensus_config,
+                        false,
                     )
                     .await
                     .unwrap();

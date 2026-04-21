@@ -1,0 +1,14 @@
+network = "linear-testnet"
+
+[network_config."linear-testnet"]
+database = "~/.local/share/darkfi/darkfid/linear-testnet"
+threshold = 1
+max_forks = 8
+pow_target = 1
+pow_fixed_difficulty = 1
+skip_sync = true
+skip_fees = true
+txs_batch_size = 50
+
+[network_config."linear-testnet".net]
+localnet = true

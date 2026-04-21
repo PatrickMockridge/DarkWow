@@ -42,7 +42,7 @@ use darkfi_serial::Encodable;
 use rand::rngs::OsRng;
 use tracing::{error, info};
 
-use crate::{server_error, DarkfiNode, RpcError};
+use crate::DarkfiNode;
 
 impl DarkfiNode {
     // RPCAPI:
@@ -494,14 +494,25 @@ impl DarkfiNode {
             version: 1,
             inputs: vec![],
             outputs: vec![coinbase_output],
+            contract_calls: vec![],
             lock_time: height,
         };
+
+        // Get transactions from mempool
+        let mempool_txs = match &self.mempool {
+            Some(mp) => mp.take_all().await,
+            None => vec![],
+        };
+
+        // Combine coinbase with mempool transactions
+        let mut all_txs = mempool_txs;
+        all_txs.push(coinbase_tx);
 
         // Create miner and mine a block
         let consensus = darkfi_linear::PoWConsensus::default();
         let miner = darkfi_linear::Miner::new(std::sync::Arc::new(consensus));
 
-        let mined_block = match miner.mine(previous, height, vec![coinbase_tx], difficulty_target) {
+        let mined_block = match miner.mine(previous, height, all_txs, difficulty_target) {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "darkfid::rpc::miner", "Mining failed: {}", e);

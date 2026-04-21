@@ -170,9 +170,76 @@ impl LinearBlockchain {
             }
         }
 
-        // Note: Transaction execution via Runtime would go here when
-        // darkfi_linear::Transaction is extended to support contract calls.
-        // For now, this is a UTXO chain without smart contract execution.
+        // Execute contract calls in transactions using WASM runtime
+        let mut calls_executed = 0;
+        let mut calls_failed = 0;
+        for tx in &block.transactions {
+            for (call_idx, call) in tx.contract_calls.iter().enumerate() {
+                // Get contract WASM from store
+                let contract_id = ContractId::from_bytes(call.contract_id)
+                    .map_err(|e| Error::Custom(format!("Invalid contract ID: {}", e)))?;
+                let wasm_bytes = self.store.get_contract_data(&call.contract_id)
+                    .map_err(|e| Error::Custom(e.to_string()))?;
+
+                if wasm_bytes.is_empty() {
+                    error!(target: "linear_blockchain", "Contract not found for call in tx {}", tx.hash());
+                    calls_failed += 1;
+                    continue;
+                }
+
+                // Create runtime for this contract call
+                let tx_hash = tx.hash();
+                let tx_hash_bytes = darkfi_sdk::tx::TransactionHash(*tx_hash.as_bytes());
+                let mut runtime = match darkfi::runtime::vm_runtime::Runtime::new(
+                    &wasm_bytes,
+                    self.contract_store.clone(),
+                    self.state_db.clone(),
+                    Arc::new(self.clone()),
+                    contract_id,
+                    current_height as u32,
+                    self.consensus.difficulty_target(),
+                    tx_hash_bytes,
+                    call_idx as u8,
+                ) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        error!(target: "linear_blockchain", "Failed to create runtime for contract {:?}: {}", contract_id, e);
+                        calls_failed += 1;
+                        continue
+                    }
+                };
+
+                // Execute metadata phase
+                if let Err(e) = runtime.metadata(&call.data) {
+                    error!(target: "linear_blockchain", "metadata() failed for contract {:?}: {}", contract_id, e);
+                    calls_failed += 1;
+                    continue;
+                }
+
+                // Execute exec phase (verifies ZK proofs, runs contract logic)
+                if let Err(e) = runtime.exec(&call.data) {
+                    error!(target: "linear_blockchain", "exec() failed for contract {:?}: {}", contract_id, e);
+                    calls_failed += 1;
+                    continue;
+                }
+
+                // Execute apply phase (commits state changes)
+                if let Err(e) = runtime.apply(&[]) {
+                    error!(target: "linear_blockchain", "apply() failed for contract {:?}: {}", contract_id, e);
+                    calls_failed += 1;
+                    continue;
+                }
+
+                info!(target: "linear_blockchain", "Contract call executed successfully: contract_id={:?} call_idx={}", contract_id, call_idx);
+                calls_executed += 1;
+            }
+        }
+
+        if calls_failed > 0 {
+            error!(target: "linear_blockchain", "Block {} had {} failed contract calls out of {}", block_hash, calls_failed, calls_executed + calls_failed);
+        } else if calls_executed > 0 {
+            info!(target: "linear_blockchain", "Block {} executed {} contract calls successfully", block_hash, calls_executed);
+        }
 
         // Insert block
         self.insert_block(block)?;

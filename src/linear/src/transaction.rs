@@ -41,6 +41,16 @@ pub struct Output {
     pub script: Vec<u8>,
 }
 
+/// A contract call embedded in a transaction input's script field.
+/// Format: [1 byte call_idx][32 bytes contract_id][varbytes payload]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractCall {
+    /// ID of the contract to invoke (32 bytes)
+    pub contract_id: [u8; 32],
+    /// Call data passed to the contract (function selector + params)
+    pub data: Vec<u8>,
+}
+
 /// Transaction - a transfer of value in the blockchain
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
@@ -50,6 +60,8 @@ pub struct Transaction {
     pub inputs: Vec<Input>,
     /// Outputs created by this transaction
     pub outputs: Vec<Output>,
+    /// Contract calls embedded in inputs (optional extension)
+    pub contract_calls: Vec<ContractCall>,
     /// Lock time (can be block height or timestamp)
     pub lock_time: u64,
 }

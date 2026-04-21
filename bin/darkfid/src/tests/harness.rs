@@ -104,7 +104,7 @@ impl Harness {
             max_forks: config.max_forks,
             pow_target: config.pow_target,
             pow_fixed_difficulty: config.pow_fixed_difficulty.clone(),
-            genesis_block,
+            genesis_block: Some(genesis_block),
             verify_fees,
         };
 
@@ -296,10 +296,10 @@ pub async fn generate_node(
     subscribers.insert("proposals", JsonSubscriber::new("blockchain.subscribe_proposals"));
     subscribers.insert("dnet", JsonSubscriber::new("dnet.subscribe_events"));
 
-    let p2p_handler = DarkfidP2pHandler::init(settings, ex).await?;
+    let p2p_handler = DarkfidP2pHandler::init(settings, ex, None).await?;
     let registry = DarkfiMinersRegistry::init(Network::Mainnet, &validator).await?;
     let node =
-        DarkfiNode::new(validator.clone(), p2p_handler.clone(), registry, 50, subscribers.clone(), false)
+        DarkfiNode::new(validator.clone(), None, None, p2p_handler.clone(), registry, 50, subscribers.clone(), false)
             .await?;
 
     p2p_handler.start(ex, &node).await?;
