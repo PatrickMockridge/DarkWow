@@ -39,13 +39,13 @@ use darkfi_sdk::{
         poseidon_hash, ContractId, FuncId, MerkleTree,
     },
     pasta::pallas,
-    tx::{ContractCall, TransactionHash},
+    tx::ContractCall,
 };
 use darkfi_money_v3_contract::client::MoneyV3Note;
-use darkfi_money_v3_contract::model::{Coin, TransferParamsV1, BurnParamsV1, Input as MoneyV3Input};
+use darkfi_money_v3_contract::model::TransferParamsV1;
 use crate::contract_imports::{money::TokenId, MONEY_V3_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 use crate::swap::PartialSwapData;
-use crate::walletdb::{CoinRecord, MerkleProof, TokenInfo};
+use crate::walletdb::CoinRecord;
 use darkfi_sdk::crypto::util::FieldElemAsStr;
 
 /// Error codes
@@ -831,7 +831,7 @@ impl Drk {
     }
 
     /// Remove alias
-    pub async fn remove_alias(&self, alias: String, _output: &mut Vec<String>) -> Result<()> {
+    pub async fn remove_alias(&self, _alias: String, _output: &mut Vec<String>) -> Result<()> {
         // Note: Would need a remove_alias method in walletdb to implement fully
         Err(Error::Custom("remove_alias not yet implemented".to_string()))
     }

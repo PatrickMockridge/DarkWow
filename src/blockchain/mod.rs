@@ -48,7 +48,8 @@ pub use block_store::{
 /// Header definition and storage implementation
 pub mod header_store;
 pub use header_store::{
-    Header, HeaderHash, HeaderStore, HeaderStoreOverlay, SLED_HEADER_TREE, SLED_SYNC_HEADER_TREE,
+    Header, HeaderHash, HeaderStore, HeaderStoreOverlay, PowData, SLED_HEADER_TREE,
+    SLED_SYNC_HEADER_TREE,
 };
 
 /// Transactions related storage implementations

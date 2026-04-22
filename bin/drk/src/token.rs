@@ -23,13 +23,13 @@
 use darkfi::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     util::parse::decode_base10,
-    zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses, Proof},
+    zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
     zkas::ZkBinary,
     Error, Result,
 };
 use darkfi_sdk::{
     crypto::{
-        pasta_prelude::{Curve, PrimeField},
+        pasta_prelude::PrimeField,
         poseidon_hash, BaseBlind, MerkleNode, PublicKey, SecretKey,
     },
     pasta::pallas,
@@ -99,7 +99,7 @@ impl Drk {
     /// The token ID is derived from the mint authority and token blind.
     pub async fn create_token(
         &self,
-        name: String,
+        _name: String,
         supply: u64,
         _decimals: u8,
     ) -> Result<Transaction> {
@@ -114,7 +114,7 @@ impl Drk {
         let token_user_data = pallas::Base::zero();
 
         // Derive token_id = poseidon_hash(mint_authority_public, token_user_data, token_blind)
-        let token_id = poseidon_hash([
+        let _token_id = poseidon_hash([
             mint_authority_public,
             token_user_data,
             token_blind.inner(),

@@ -21,7 +21,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bs58;
 use rusqlite::{
     params,
     types::{ToSql, Value},
@@ -676,6 +675,90 @@ impl WalletDb {
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
     }
+
+    /// Get all aliases from the database.
+    pub fn get_aliases(&self) -> WalletDbResult<Vec<AliasRecord>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT token_id, alias FROM aliases ORDER BY created_at DESC",
+        )?;
+        let mut rows = stmt.query([])?;
+        let mut aliases = vec![];
+        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
+            aliases.push(AliasRecord {
+                token_id: row.get(0)?,
+                alias: row.get(1)?,
+            });
+        }
+        Ok(aliases)
+    }
+
+    /// Insert a new alias into the database.
+    pub fn insert_alias(&self, alias: &str, token_id: &str, _is_default: i64) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO aliases (alias, token_id) VALUES (?1, ?2)",
+            params![alias, token_id],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// Get all addresses from the database.
+    pub fn get_addresses(&self) -> WalletDbResult<Vec<AddressRecord>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT id, public_key, secret, is_default, created_at, created_at_height FROM addresses ORDER BY id",
+        )?;
+        let mut rows = stmt.query([])?;
+        let mut addresses = vec![];
+        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
+            addresses.push(AddressRecord {
+                id: row.get(0)?,
+                public_key: row.get(1)?,
+                secret: row.get(2)?,
+                is_default: row.get::<_, i64>(3)? != 0,
+                created_at: row.get(4)?,
+                created_at_height: row.get::<_, i64>(5)? as u32,
+            });
+        }
+        Ok(addresses)
+    }
+
+    /// Insert a new address into the database.
+    pub fn insert_address(
+        &self,
+        public_key: &str,
+        secret: &str,
+        is_default: bool,
+        _created_at: i64,
+    ) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "INSERT INTO addresses (public_key, secret, is_default) VALUES (?1, ?2, ?3)",
+            params![public_key, secret, is_default as i64],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+}
+
+/// Alias record from the database.
+#[derive(Debug, Clone)]
+pub struct AliasRecord {
+    pub token_id: String,
+    pub alias: String,
+}
+
+/// Address record from the database.
+#[derive(Debug, Clone)]
+pub struct AddressRecord {
+    pub id: i64,
+    pub public_key: String,
+    pub secret: String,
+    pub is_default: bool,
+    pub created_at: i64,
+    pub created_at_height: u32,
 }
 
 /// Token information stored in wallet database.

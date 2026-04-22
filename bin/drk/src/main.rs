@@ -60,7 +60,7 @@ use drk::{
         parse_tx_from_stdin, parse_value_pair, print_output, tx_from_calls_mapped,
     },
     common::*,
-    contract_imports::money::{Coin, TokenId, BALANCE_BASE10_DECIMALS},
+    contract_imports::money::{TokenId, BALANCE_BASE10_DECIMALS},
     swap::PartialSwapData,
     Drk,
 };
@@ -1616,7 +1616,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     }
                 };
 
-                let spend_hook = match spend_hook {
+                let _spend_hook = match spend_hook {
                     Some(s) => match FuncId::from_str(&s) {
                         Ok(s) => Some(s),
                         Err(e) => {
@@ -1627,7 +1627,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None => None,
                 };
 
-                let user_data = match user_data {
+                let _user_data = match user_data {
                     Some(u) => {
                         let bytes: [u8; 32] = match bs58::decode(&u).into_vec()?.try_into() {
                             Ok(b) => b,
@@ -1728,7 +1728,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 .await;
 
                 if let Some(contract_id) = contract_id {
-                    let contract_id = match ContractId::from_str(&contract_id) {
+                    let _contract_id = match ContractId::from_str(&contract_id) {
                         Ok(d) => d,
                         Err(e) => {
                             eprintln!("Invalid contract id: {e}");

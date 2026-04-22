@@ -179,6 +179,23 @@ pub const MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
 pub const MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
 
 // ============================================================================
+// ZK CIRCUIT BINARIES (for client-side proof generation)
+// ============================================================================
+
+/// TokenMint_V1 zkas circuit binary
+pub const MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN: &[u8] =
+    include_bytes!("../proof/token_mint_v1.zk.bin");
+/// AuthTokenMint_V1 zkas circuit binary
+pub const MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_V1_BIN: &[u8] =
+    include_bytes!("../proof/auth_token_mint_v1.zk.bin");
+/// Mint_V1 zkas circuit binary
+pub const MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN: &[u8] =
+    include_bytes!("../proof/mint_v1.zk.bin");
+/// Burn_V1 zkas circuit binary
+pub const MONEY_V3_CONTRACT_ZKAS_BURN_V1_BIN: &[u8] =
+    include_bytes!("../proof/burn_v1.zk.bin");
+
+// ============================================================================
 // CONSTANTS
 // ============================================================================
 

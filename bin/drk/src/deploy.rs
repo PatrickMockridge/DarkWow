@@ -25,7 +25,7 @@ use darkfi::{
     Error, Result,
 };
 use darkfi_sdk::{
-    crypto::{ContractId, Keypair, PublicKey, SecretKey},
+    crypto::{ContractId, PublicKey},
     deploy::DeployParamsV1,
     tx::TransactionHash,
 };
@@ -54,7 +54,7 @@ impl Drk {
         scan_cache: &mut ScanCache,
         data: &[u8],
         tx_hash: &TransactionHash,
-        block_height: &u32,
+        _block_height: &u32,
     ) -> Result<bool> {
         if data.is_empty() {
             return Ok(false);

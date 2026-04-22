@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Darkfi
-darkfi = {path = "../../", features = ["async-daemonize", "bs58", "rpc", "randomx", "tx", "blockchain", "linear-wasm-adapter"]}
+darkfi = {path = "../../", features = ["async-daemonize", "bs58", "rpc", "randomx", "tx", "blockchain"]}
 darkfi_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
 darkfi-sdk = {path = "../../src/sdk", features = ["async"]}
 darkfi-serial = {path = "../../src/serial", features = ["async", "derive"]}

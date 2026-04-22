@@ -23,13 +23,13 @@
 use darkfi::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     util::parse::decode_base10,
-    zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses, Proof},
+    zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
     zkas::ZkBinary,
     Error, Result,
 };
 use darkfi_sdk::{
     crypto::{
-        pasta_prelude::{Curve, PrimeField},
+        pasta_prelude::PrimeField,
         poseidon_hash, BaseBlind, ContractId, MerkleNode, PublicKey, SecretKey,
     },
     dark_tree::DarkTree,

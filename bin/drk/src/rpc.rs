@@ -37,8 +37,7 @@ use darkfi::{
     system::{ExecutorPtr, Publisher, StoppableTaskPtr},
     tx::Transaction,
     util::encoding::base64,
-    zk::{empty_witnesses, proof::Proof, verifier::{verify_zkp, ZkVerifyResult}, VerifyingKey, ZkCircuit},
-    zkas::ZkBinary,
+    zk::verifier::{verify_zkp, ZkVerifyResult},
     Error, Result,
 };
 use crate::contract_imports::money::TokenId;
@@ -46,7 +45,6 @@ use darkfi_sdk::{
     bridgetree::Position,
     crypto::{
         keypair::Network,
-        note::AeadEncryptedNote,
         poseidon_hash,
         smt::{PoseidonFp, EMPTY_NODES_FP},
         ContractId, MerkleTree, SecretKey, DEPLOYOOOR_CONTRACT_ID, MerkleNode, NATIVE_TOKEN_CONTRACT_ID,
@@ -58,7 +56,7 @@ use darkfi_sdk::{
 use darkfi_money_v3_contract::client::MoneyV3Note;
 use darkfi_money_v3_contract::model::{Coin, TransferParamsV1};
 use darkfi_native_token_contract::client::NativeNote;
-use darkfi_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1, Output as NativeTokenOutput};
+use darkfi_native_token_contract::model::PoWRewardParamsV1;
 use darkfi_serial::Decodable;
 use darkfi_serial::{deserialize_async, serialize_async};
 
@@ -269,7 +267,7 @@ impl Drk {
         let notes_secrets = self.get_money_secrets().await?;
 
         // Build nullifiers map from our coins
-        let mut owncoins_nullifiers = BTreeMap::new();
+        let owncoins_nullifiers = BTreeMap::new();
         for coin in self.get_coins(false).await? {
             // TODO: Compute nullifier from coin attributes
             // For now, we can't compute nullifiers without the full note data
@@ -1147,7 +1145,7 @@ impl Drk {
         scan_cache: &mut ScanCache,
         idx: &usize,
         calls: &[DarkLeaf<ContractCall>],
-        tx_hash: &str,
+        _tx_hash: &str,
         height: &u32,
     ) -> Result<(bool, Option<SecretKey>)> {
         // Get the inner ContractCall from DarkLeaf
@@ -1173,7 +1171,7 @@ impl Drk {
                     .map_err(|e| Error::Custom(format!("Failed to decode TransferV1 params: {:?}", e)))?;
 
                 // Check outputs for our coins
-                for (output_idx, output) in params.outputs.iter().enumerate() {
+                for (_output_idx, output) in params.outputs.iter().enumerate() {
                     let note = &output.note;
                     let mut found_coin = false;
                     let mut decrypted_note_opt: Option<MoneyV3Note> = None;
@@ -1191,7 +1189,7 @@ impl Drk {
                     if let (Some(decrypted_note), Some(secret)) = (decrypted_note_opt, found_secret) {
                         found_coin = true;
                         // Calculate coin ID from the note
-                        use darkfi_sdk::crypto::MerkleNode;
+                        
                         // In Money V3, public_key = poseidon_hash(secret) as a field element
                         let public_key = poseidon_hash([secret.inner()]);
                         let coin = Coin::from_attributes(

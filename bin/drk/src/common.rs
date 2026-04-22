@@ -22,13 +22,13 @@ use darkfi::{tx::Transaction, util::parse::encode_base10, zk::halo2::Field};
 use darkfi_sdk::{
     crypto::{
         keypair::{Address, Network, PublicKey, SecretKey, StandardAddress},
-        ContractId, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
+        ContractId, DEPLOYOOOR_CONTRACT_ID,
     },
     pasta::pallas,
 };
 
 // DAO_CONTRACT_ID removed - DAO is disabled on this fork
-use crate::contract_imports::MONEY_CONTRACT_ID;
+use crate::contract_imports::MONEY_V3_CONTRACT_ID;
 use darkfi_serial::{deserialize, serialize};
 use prettytable::{format, row, Table};
 
@@ -220,7 +220,7 @@ pub fn pretty_tx(tx: &Transaction) -> String {
 
     for (i, call) in tx.calls.iter().enumerate() {
         // Money contract fee check: contract ID matches and function byte is 0x00 (FeeV2)
-        let is_money_fee = call.data.contract_id == *MONEY_CONTRACT_ID.get().unwrap()
+        let is_money_fee = call.data.contract_id == *MONEY_V3_CONTRACT_ID.get().unwrap()
             && !call.data.data.is_empty()
             && call.data.data[0] == 0x00;
 
@@ -237,7 +237,7 @@ pub fn pretty_tx(tx: &Transaction) -> String {
         }
 
         let contract_name = match call.data.contract_id {
-            id if id == *MONEY_CONTRACT_ID.get().unwrap() => "Money",
+            id if id == *MONEY_V3_CONTRACT_ID.get().unwrap() => "Money",
             // DAO disabled on this fork
             id if id == *DEPLOYOOOR_CONTRACT_ID => "Deployooor",
             _ => "Custom",
