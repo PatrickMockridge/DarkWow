@@ -44,18 +44,6 @@ use darkfi::{
     zk::halo2::Field,
     Error,
 };
-// TODO: DAO contract is broken on this fork
-// use darkfi_dao_contract::{blockwindow, model::DaoProposalBulla, DaoFunction};
-use darkfi_money_v2_contract::model::{Coin, CoinAttributes, TokenId};
-use darkfi_sdk::{
-    crypto::{
-        keypair::{Address, StandardAddress},
-        note::AeadEncryptedNote,
-        BaseBlind, ContractId, FuncId, FuncRef, Keypair, SecretKey,
-    },
-    pasta::{group::ff::PrimeField, pallas},
-    tx::TransactionHash,
-};
 use darkfi_serial::{deserialize_async, serialize_async};
 
 use crate::{
@@ -65,6 +53,8 @@ use crate::{
         parse_tx_from_input, parse_value_pair, print_output, tx_from_calls_mapped,
     },
     common::*,
+    contract_imports::{money, native_token}, // dao_escrow disabled
+    crypto::{note::AeadEncryptedNote, *},
     dao::{DaoParams, ProposalRecord},
     money::BALANCE_BASE10_DECIMALS,
     rpc::subscribe_blocks,
@@ -1144,7 +1134,7 @@ async fn handle_unspend(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) 
         }
     };
 
-    if let Err(e) = drk.read().await.unspend_coin(&Coin::from(elem)).await {
+    if let Err(e) = drk.read().await.unspend_coin(&pallas::Base::from(elem)).await {
         output.push(format!("Failed to mark coin as unspent: {e}"))
     }
 }

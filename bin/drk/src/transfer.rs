@@ -30,8 +30,9 @@ use darkfi::{
 use darkfi_sdk::{
     crypto::{
         pasta_prelude::{Curve, PrimeField},
-        poseidon_hash, BaseBlind, MerkleNode, PublicKey, SecretKey,
+        poseidon_hash, BaseBlind, ContractId, MerkleNode, PublicKey, SecretKey,
     },
+    dark_tree::DarkTree,
     pasta::pallas,
     tx::ContractCall,
 };
@@ -52,6 +53,32 @@ use crate::contract_imports::{
     MONEY_V3_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
 };
 use crate::Drk;
+
+// ============================================================================
+// SPEND HOOK HELPER
+// ============================================================================
+
+/// Create a child ContractCall for a spend_hook if spend_hook is non-zero.
+///
+/// When a transfer output coin has a spend_hook, after the transfer completes,
+/// a child call is made to that contract with the user_data as parameters.
+fn create_spend_hook_call(
+    spend_hook: pallas::Base,
+    user_data: pallas::Base,
+) -> Option<ContractCall> {
+    if spend_hook == pallas::Base::zero() {
+        return None;
+    }
+
+    let hook_contract_id = ContractId::from(spend_hook);
+
+    // Function code 0x00 is generic - the spend_hook contract interprets
+    // the params based on its own function signatures
+    let mut data = vec![0x00u8];
+    data.extend_from_slice(&user_data.to_repr());
+
+    Some(ContractCall { contract_id: hook_contract_id, data })
+}
 
 /// Default network fee in DARK
 const DEFAULT_FEE: u64 = 42_000_000;
@@ -384,10 +411,21 @@ impl Drk {
             proofs: vec![],
         };
 
+        // Create spend_hook child call if spend_hook is set
+        let child_tree = if let Some(hook_call) = create_spend_hook_call(spend_hook_out, user_data_out) {
+            let hook_leaf = ContractCallLeaf { call: hook_call, proofs: vec![] };
+            let tree = DarkTree::new(hook_leaf, vec![], None, None);
+            vec![tree]
+        } else {
+            vec![]
+        };
+
         // Build final transaction using TransactionBuilder
-        let mut tx_builder = TransactionBuilder::new(money_leaf, vec![])
+        // Pass child_tree as children of the money_leaf (the transfer call)
+        let mut tx_builder = TransactionBuilder::new(money_leaf, child_tree)
             .map_err(|e| Error::Custom(format!("Failed to create transaction builder: {:?}", e)))?;
 
+        // Fee call is a sibling, not a child (no children_indexes relationship)
         tx_builder.append(fee_leaf, vec![])
             .map_err(|e| Error::Custom(format!("Failed to append fee call: {:?}", e)))?;
 
