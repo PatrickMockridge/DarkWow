@@ -53,6 +53,9 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 - [tau](./tau.md) - Staking and token distribution
 - [slashing](./slashing.md) - Validator punishment
 - [ocap](./ocap.md) - Object-capability security
+- [linear_zkvm](./linear_zkvm.md) - ZKVM on linear blockchain (stateless verification + WASM adapters)
+- [linear_blockchain](./linear_blockchain.md) - Linear chain architecture
+- [uncle_merkle](./uncle_merkle.md) - Uncle Merkle consensus
 
 ## ZK & Circuits
 
@@ -61,6 +64,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 - [zkvm_primitives](./zkvm_primitives.md) - Circuit primitive functions
 - [field_arithmetic](./field_arithmetic.md) - Finite field math in circuits
 - [safemath](./safemath.md) - Safe arithmetic gadgets
+- [zk_verification](./zk_verification.md) - Pure stateless ZK proof verification
 
 ## Reference
 
