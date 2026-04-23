@@ -24,8 +24,6 @@ use darkfi_sdk::{
     pasta::{group::ff::FromUniformBytes, pallas},
     tx::TransactionHash,
 };
-#[cfg(feature = "async-serial")]
-use darkfi_serial::async_trait;
 use darkfi_serial::{deserialize, serialize, SerialDecodable, SerialEncodable};
 use num_bigint::BigUint;
 use sled_overlay::{sled, SledDbOverlayStateDiff};

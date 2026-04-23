@@ -280,7 +280,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
     env.call_idx.encode(&mut value_data).expect("Unable to serialize call_idx");
     assert_eq!(value_data.len(), 32 + 1);
 
-    if let Err(e) = env.state_db.insert(&db_roots.tree, &latest_root_data, &value_data) {
+    if let Err(_e) = env.state_db.insert(&db_roots.tree, &latest_root_data, &value_data) {
         error!(
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Couldn't insert to db_roots tree"
@@ -294,7 +294,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
         "[WASM] [{cid}] merkle_add(): Replacing latest Merkle root pointer"
     );
 
-    if let Err(e) = env.state_db.insert(&db_info.tree, &root_key, &latest_root_data) {
+    if let Err(_e) = env.state_db.insert(&db_info.tree, &root_key, &latest_root_data) {
         error!(
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Couldn't insert latest root to db_info tree"

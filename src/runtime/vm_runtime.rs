@@ -83,7 +83,7 @@ impl ContractStoreAccess for BlockchainOverlayPtr {
     }
 
     fn init(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
-        let mut overlay = self.lock().unwrap();
+        let overlay = self.lock().unwrap();
         overlay.contracts.init(cid, tree_name)
     }
 

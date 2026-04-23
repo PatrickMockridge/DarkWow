@@ -56,20 +56,6 @@ use crate::{
     Error, Result,
 };
 
-/// Try to derive a [`VerifyingKey`] from embedded zkbin_data instead of sled.
-/// Returns `None` if no matching entry is found.
-fn derive_vk(
-    contract_id: &ContractId,
-    zkas_ns: &str,
-    zkbin_data: &[(ContractId, String, Vec<u8>, Vec<pallas::Base>)],
-) -> Option<VerifyingKey> {
-    let (_, _, zkbin_bytes, _) =
-        zkbin_data.iter().find(|(cid, ns, _, _)| cid == contract_id && ns == zkas_ns)?;
-    let zkbin = ZkBinary::decode(zkbin_bytes, false).ok()?;
-    let circuit = ZkCircuit::new(empty_witnesses(&zkbin).ok()?, &zkbin);
-    Some(VerifyingKey::build(zkbin.k, &circuit))
-}
-
 /// Verify given genesis [`BlockInfo`], and apply it to the provided
 /// overlay.
 ///

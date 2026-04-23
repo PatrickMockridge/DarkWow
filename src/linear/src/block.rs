@@ -140,8 +140,8 @@ impl Block {
             // Simple merkle root computation
             let mut layer = tx_hashes.clone();
             while layer.len() > 1 {
-                if layer.len() % 2 != 0 {
-                    layer.push(layer.last().unwrap().clone());
+                if !layer.len().is_multiple_of(2) {
+                    layer.push(*layer.last().unwrap());
                 }
                 layer = layer
                     .chunks(2)
@@ -152,7 +152,7 @@ impl Block {
                     })
                     .collect();
             }
-            layer[0].clone()
+            layer[0]
         };
         computed_root == self.header.merkle_root
     }
@@ -192,8 +192,8 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> ([u8; 32], Vec<UncleProof>) 
 
     // Build leaves from uncle hashes, pad to even if needed
     let mut leaves: Vec<Hash> = uncles.iter().map(|u| u.hash()).collect();
-    if leaves.len() % 2 != 0 {
-        leaves.push(leaves.last().unwrap().clone());
+    if !leaves.len().is_multiple_of(2) {
+        leaves.push(*leaves.last().unwrap());
     }
 
     // Build merkle tree bottom-up, storing each layer
@@ -218,7 +218,7 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock]) -> ([u8; 32], Vec<UncleProof>) 
             let mut pos = i;
 
             // Walk up the tree from leaf to root
-            for level in 0..(layers.len() - 1) {
+            for level in 0..layers.len() - 1 {
                 let is_right = pos % 2 == 1;
                 let sibling_pos = if is_right { pos - 1 } else { pos + 1 };
                 let current_layer = &layers[level];
@@ -305,7 +305,7 @@ pub fn create_block_with_uncles(
                 })
                 .collect();
         }
-        layer[0].clone()
+        layer[0]
     };
 
     // Build uncle merkle and compute rewards

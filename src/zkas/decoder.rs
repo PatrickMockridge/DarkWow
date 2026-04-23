@@ -120,7 +120,7 @@ impl<'a> SectionReader<'a> {
         self.pos += 1;
 
         if self.pos + 4 > self.bytes.len() {
-            return Err(ZkasErr(format!("Unexpected end of binary when reading section length")));
+            return Err(ZkasErr("Unexpected end of binary when reading section length".to_string()));
         }
 
         let section_len = u32::from_le_bytes([

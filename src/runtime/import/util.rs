@@ -619,7 +619,7 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
 /// Permissions: deploy, metadata, exec
 pub(crate) fn get_block_hash_(mut ctx: FunctionEnvMut<Env>, height: i64) -> i64 {
     let (env, mut store) = ctx.data_and_store_mut();
-    let cid = env.contract_id.clone();
+    let cid = env.contract_id;
 
     if let Err(e) =
         acl_allow(env, &[ContractSection::Deploy, ContractSection::Metadata, ContractSection::Exec])

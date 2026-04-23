@@ -83,7 +83,7 @@ impl From<IntentSetFunctionV1> for u8 {
 pub fn encode_intent_set_post_v1(
     transition: &IntentPostTransitionV1,
 ) -> Result<Vec<u8>, ContractError> {
-    Ok(encode_payload(IntentSetFunctionV1::PostV1 as u8, transition)?)
+    encode_payload(IntentSetFunctionV1::PostV1 as u8, transition)
 }
 
 /// Decode an intent-set post payload.
@@ -95,7 +95,7 @@ pub fn decode_intent_set_post_v1(data: &[u8]) -> Result<IntentPostTransitionV1, 
 pub fn encode_intent_set_cancel_v1(
     transition: &IntentConsumeTransitionV1,
 ) -> Result<Vec<u8>, ContractError> {
-    Ok(encode_payload(IntentSetFunctionV1::CancelV1 as u8, transition)?)
+    encode_payload(IntentSetFunctionV1::CancelV1 as u8, transition)
 }
 
 /// Decode an intent-set cancel payload.
@@ -105,7 +105,7 @@ pub fn decode_intent_set_cancel_v1(data: &[u8]) -> Result<IntentConsumeTransitio
 
 /// Encode an intent-set fill payload (uses consume call).
 pub fn encode_intent_set_fill_v1(consume: &IntentConsumeCallV1) -> Result<Vec<u8>, ContractError> {
-    Ok(encode_payload(IntentSetFunctionV1::FillV1 as u8, consume)?)
+    encode_payload(IntentSetFunctionV1::FillV1 as u8, consume)
 }
 
 /// Decode an intent-set fill payload.
