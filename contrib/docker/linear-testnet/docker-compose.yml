@@ -1,0 +1,181 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # Node 0 (Seed peer)
+  # ============================================
+  node0:
+    build: .
+    container_name: darkfi-linear-node0
+    ports:
+      - "28345:28345"  # RPC
+      - "48347:48347"  # stratum
+      - "28340:28340"  # P2P
+    volumes:
+      - ./node0.toml:/config/darkfid.toml:ro
+      - node0_data:/root/.local/share/darkfi/darkfid
+    networks:
+      - darkfi-local
+    environment:
+      - WALLET_ADDR=${WALLET_ADDR_0:-DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf}
+    command: -c /config/darkfid.toml --network linear-testnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-X", "POST", "http://localhost:28345", "-H", "Content-Type: application/json", "-d", '{"jsonrpc":"2.0","method":"ping","params":[],"id":1}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  xmrig0:
+    image: xmrig/xmrig:latest
+    container_name: darkfi-linear-xmrig0
+    networks:
+      - darkfi-local
+    command: ["-u", "x+1", "-o", "node0:48347", "-t", "2", "-u", "${WALLET_ADDR_0:-DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf}"]
+    restart: unless-stopped
+
+  # ============================================
+  # Node 1
+  # ============================================
+  node1:
+    build: .
+    container_name: darkfi-linear-node1
+    ports:
+      - "28346:28346"  # RPC
+      - "48447:48447"  # stratum
+      - "28341:28341"  # P2P
+    volumes:
+      - ./node1.toml:/config/darkfid.toml:ro
+      - node1_data:/root/.local/share/darkfi/darkfid
+    networks:
+      - darkfi-local
+    environment:
+      - WALLET_ADDR=${WALLET_ADDR_1:-DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf}
+    command: -c /config/darkfid.toml --network linear-testnet
+    depends_on:
+      - node0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-X", "POST", "http://localhost:28346", "-H", "Content-Type: application/json", "-d", '{"jsonrpc":"2.0","method":"ping","params":[],"id":1}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  xmrig1:
+    image: xmrig/xmrig:latest
+    container_name: darkfi-linear-xmrig1
+    networks:
+      - darkfi-local
+    command: ["-u", "x+1", "-o", "node1:48447", "-t", "2", "-u", "${WALLET_ADDR_1:-DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf}"]
+    restart: unless-stopped
+
+  # ============================================
+  # Node 2
+  # ============================================
+  node2:
+    build: .
+    container_name: darkfi-linear-node2
+    ports:
+      - "28347:28347"  # RPC
+      - "48547:48547"  # stratum
+      - "28342:28342"  # P2P
+    volumes:
+      - ./node2.toml:/config/darkfid.toml:ro
+      - node2_data:/root/.local/share/darkfi/darkfid
+    networks:
+      - darkfi-local
+    environment:
+      - WALLET_ADDR=${WALLET_ADDR_2:-DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf}
+    command: -c /config/darkfid.toml --network linear-testnet
+    depends_on:
+      - node0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-X", "POST", "http://localhost:28347", "-H", "Content-Type: application/json", "-d", '{"jsonrpc":"2.0","method":"ping","params":[],"id":1}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  xmrig2:
+    image: xmrig/xmrig:latest
+    container_name: darkfi-linear-xmrig2
+    networks:
+      - darkfi-local
+    command: ["-u", "x+1", "-o", "node2:48547", "-t", "2", "-u", "${WALLET_ADDR_2:-DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf}"]
+    restart: unless-stopped
+
+  # ============================================
+  # Node 3
+  # ============================================
+  node3:
+    build: .
+    container_name: darkfi-linear-node3
+    ports:
+      - "28348:28348"  # RPC
+      - "48647:48647"  # stratum
+      - "28343:28343"  # P2P
+    volumes:
+      - ./node3.toml:/config/darkfid.toml:ro
+      - node3_data:/root/.local/share/darkfi/darkfid
+    networks:
+      - darkfi-local
+    environment:
+      - WALLET_ADDR=${WALLET_ADDR_3:-DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf}
+    command: -c /config/darkfid.toml --network linear-testnet
+    depends_on:
+      - node0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-X", "POST", "http://localhost:28348", "-H", "Content-Type: application/json", "-d", '{"jsonrpc":"2.0","method":"ping","params":[],"id":1}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  xmrig3:
+    image: xmrig/xmrig:latest
+    container_name: darkfi-linear-xmrig3
+    networks:
+      - darkfi-local
+    command: ["-u", "x+1", "-o", "node3:48647", "-t", "2", "-u", "${WALLET_ADDR_3:-DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf}"]
+    restart: unless-stopped
+
+  # ============================================
+  # Node 4
+  # ============================================
+  node4:
+    build: .
+    container_name: darkfi-linear-node4
+    ports:
+      - "28349:28349"  # RPC
+      - "48747:48747"  # stratum
+      - "28344:28344"  # P2P
+    volumes:
+      - ./node4.toml:/config/darkfid.toml:ro
+      - node4_data:/root/.local/share/darkfi/darkfid
+    networks:
+      - darkfi-local
+    environment:
+      - WALLET_ADDR=${WALLET_ADDR_4:-DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf}
+    command: -c /config/darkfid.toml --network linear-testnet
+    depends_on:
+      - node0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-X", "POST", "http://localhost:28349", "-H", "Content-Type: application/json", "-d", '{"jsonrpc":"2.0","method":"ping","params":[],"id":1}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  xmrig4:
+    image: xmrig/xmrig:latest
+    container_name: darkfi-linear-xmrig4
+    networks:
+      - darkfi-local
+    command: ["-u", "x+1", "-o", "node4:48747", "-t", "2", "-u", "${WALLET_ADDR_4:-DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf}"]
+    restart: unless-stopped
+
+networks:
+  darkfi-local:
+    driver: bridge
+
+volumes:
+  node0_data:
+  node1_data:
+  node2_data:
+  node3_data:
+  node4_data:
