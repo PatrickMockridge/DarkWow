@@ -136,6 +136,7 @@ impl AsyncDecodable for BlockHeader {
         let height = AsyncDecodable::decode_async(d).await?;
         let uncle_merkle_root = AsyncDecodable::decode_async(d).await?;
         let total_reward = AsyncDecodable::decode_async(d).await?;
+        let randomx_key = AsyncDecodable::decode_async(d).await?;
         Ok(Self {
             version,
             previous,
@@ -146,6 +147,7 @@ impl AsyncDecodable for BlockHeader {
             height,
             uncle_merkle_root,
             total_reward,
+            randomx_key,
         })
     }
 }
@@ -201,6 +203,7 @@ impl AsyncEncodable for UncleProof {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> Result<usize> {
         let mut len = 0;
         len += self.header.encode_async(s).await?;
+        len += self.pow_hash.encode_async(s).await?;
         len += self.merkle_path.encode_async(s).await?;
         len += self.position.encode_async(s).await?;
         len += self.depth.encode_async(s).await?;
@@ -212,9 +215,10 @@ impl AsyncEncodable for UncleProof {
 impl AsyncDecodable for UncleProof {
     async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self> {
         let header = AsyncDecodable::decode_async(d).await?;
+        let pow_hash = AsyncDecodable::decode_async(d).await?;
         let merkle_path = AsyncDecodable::decode_async(d).await?;
         let position = AsyncDecodable::decode_async(d).await?;
         let depth = AsyncDecodable::decode_async(d).await?;
-        Ok(Self { header, merkle_path, position, depth })
+        Ok(Self { header, pow_hash, merkle_path, position, depth })
     }
 }

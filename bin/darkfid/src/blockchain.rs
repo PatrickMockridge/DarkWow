@@ -23,9 +23,10 @@
 
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 
+use randomx::{RandomXFlags, RandomXVM};
 use darkfi::runtime::vm_runtime::{BlockchainAccess, ContractStoreAccess, SimpleDbAccess};
 use darkfi::Error;
 use darkfi::Result;
@@ -49,6 +50,10 @@ pub struct LinearBlockchain {
     pub zk_verifier: ZkVerifier,
     /// Current chain height
     height: AtomicU64,
+    /// RandomX VM for PoW (protected by mutex for interior mutability)
+    vm: Mutex<Arc<RandomXVM>>,
+    /// Current RandomX key (protected by mutex for interior mutability)
+    randomx_key: Mutex<[u8; 32]>,
 }
 
 impl LinearBlockchain {
@@ -62,6 +67,10 @@ impl LinearBlockchain {
         let contract_store = crate::contract_store::LinearContractStore::new(store.clone());
         let state_db = crate::linear_simple_db::LinearSimpleDb::new(store.clone());
 
+        // Initialize RandomX VM with default key
+        let randomx_key = [0u8; 32];
+        let vm = Self::create_vm(&randomx_key).expect("Failed to create RandomX VM");
+
         Self {
             store,
             contract_store: Arc::new(contract_store),
@@ -69,12 +78,46 @@ impl LinearBlockchain {
             consensus,
             zk_verifier,
             height,
+            vm: Mutex::new(vm),
+            randomx_key: Mutex::new(randomx_key),
         }
+    }
+
+    /// Create a new RandomX VM with the given key
+    fn create_vm(key: &[u8; 32]) -> Result<Arc<RandomXVM>> {
+        let flags = RandomXFlags::get_recommended_flags();
+        let cache = randomx::RandomXCache::new(flags, key)
+            .map_err(|e| Error::Custom(format!("RandomX cache error: {}", e)))?;
+        let vm = RandomXVM::new(flags, Some(cache), None)
+            .map_err(|e| Error::Custom(format!("RandomX VM error: {}", e)))?;
+        Ok(Arc::new(vm))
+    }
+
+    /// Get VM for the given key, creating if necessary
+    pub fn get_vm(&self, key: [u8; 32]) -> Arc<RandomXVM> {
+        let mut randomx_key = self.randomx_key.lock().unwrap();
+        let mut vm = self.vm.lock().unwrap();
+        if key != *randomx_key {
+            *randomx_key = key;
+            *vm = Self::create_vm(&key).expect("Failed to create RandomX VM");
+        }
+        vm.clone()
+    }
+
+    /// Get current RandomX VM (for blockchain access)
+    fn get_current_vm(&self) -> Arc<RandomXVM> {
+        let key = *self.randomx_key.lock().unwrap();
+        self.get_vm(key)
     }
 
     /// Get current chain height
     pub fn get_height(&self) -> u64 {
         self.height.load(Ordering::SeqCst)
+    }
+
+    /// Get current RandomX key
+    pub fn get_randomx_key(&self) -> [u8; 32] {
+        *self.randomx_key.lock().unwrap()
     }
 
     /// Get a block by height
@@ -110,11 +153,14 @@ impl LinearBlockchain {
 
     /// Verify and apply a block with uncle blocks to the chain
     pub async fn apply_block_with_uncles(&self, block: &Block, uncles: &[UncleBlock]) -> Result<()> {
-        let block_hash = block.hash();
+        // Get or create VM for this block's key
+        let vm = self.get_vm(block.header.randomx_key);
+
+        let block_hash = block.hash(&vm);
         info!(target: "linear_blockchain", "Applying block at height {}", block.header.height);
 
         // Verify PoW
-        match self.consensus.verify_proof(block) {
+        match self.consensus.verify_proof(block, &vm) {
             Ok(true) => {}
             Ok(false) => {
                 error!(target: "linear_blockchain", "Block {} failed PoW verification", block_hash);
@@ -133,7 +179,7 @@ impl LinearBlockchain {
         }
 
         // Verify uncle merkle root matches provided uncles
-        let (expected_root, proofs) = build_uncle_merkle(uncles);
+        let (expected_root, proofs) = build_uncle_merkle(uncles, &vm);
         if block.header.uncle_merkle_root != expected_root {
             error!(target: "linear_blockchain", "Block {} uncle merkle root mismatch", block_hash);
             return Err(Error::Custom("UncleMerkleRootMismatch".to_string()))
@@ -141,21 +187,21 @@ impl LinearBlockchain {
 
         // Verify each uncle's PoW
         for uncle in uncles {
-            match self.consensus.verify_uncle_pow(uncle) {
+            match self.consensus.verify_uncle_pow(uncle, &vm) {
                 Ok(true) => {}
                 Ok(false) => {
-                    error!(target: "linear_blockchain", "Uncle {} failed PoW verification", uncle.hash());
-                    return Err(Error::BlockIsInvalid(uncle.hash().to_string()))
+                    error!(target: "linear_blockchain", "Uncle {} failed PoW verification", uncle.hash(&vm));
+                    return Err(Error::BlockIsInvalid(uncle.hash(&vm).to_string()))
                 }
                 Err(e) => {
-                    error!(target: "linear_blockchain", "Uncle {} failed PoW: {}", uncle.hash(), e);
+                    error!(target: "linear_blockchain", "Uncle {} failed PoW: {}", uncle.hash(&vm), e);
                     return Err(Error::Custom(e.to_string()))
                 }
             }
 
             // Verify uncle proof
-            if !verify_uncle_proof(&proofs[0], &block.header.uncle_merkle_root) {
-                error!(target: "linear_blockchain", "Uncle {} failed merkle proof verification", uncle.hash());
+            if !verify_uncle_proof(&proofs[0], &block.header.uncle_merkle_root, &vm, block.header.difficulty_target) {
+                error!(target: "linear_blockchain", "Uncle {} failed merkle proof verification", uncle.hash(&vm));
                 return Err(Error::Custom("UncleProofVerificationFailed".to_string()))
             }
         }
@@ -164,7 +210,7 @@ impl LinearBlockchain {
         let current_height = self.height.load(Ordering::SeqCst);
         if current_height > 0 {
             let previous = self.store.get_block(current_height).map_err(|e| Error::Custom(e.to_string()))?;
-            if block.header.previous != previous.hash() {
+            if block.header.previous != previous.hash(&vm) {
                 error!(target: "linear_blockchain", "Block {} has invalid previous hash", block_hash);
                 return Err(Error::Custom("InvalidPreviousHash".to_string()))
             }
@@ -281,6 +327,8 @@ impl Clone for LinearBlockchain {
             consensus: PoWConsensus::default(), // consensus is stateless, recreate it
             zk_verifier: ZkVerifier,
             height: AtomicU64::new(self.height.load(Ordering::SeqCst)),
+            vm: Mutex::new(self.vm.lock().unwrap().clone()),
+            randomx_key: Mutex::new(*self.randomx_key.lock().unwrap()),
         }
     }
 }
@@ -336,8 +384,9 @@ impl BlockchainAccess for LinearBlockchain {
     }
 
     fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>> {
+        let vm = self.get_current_vm();
         match self.store.get_block(height as u64) {
-            Ok(block) => Ok(Some(block.hash().as_bytes().to_vec())),
+            Ok(block) => Ok(Some(block.hash(&vm).as_bytes().to_vec())),
             Err(e) => {
                 // Block not found is not an error - return None
                 if e.to_string().contains("BlockNotFound") {

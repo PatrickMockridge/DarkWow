@@ -31,6 +31,7 @@ use darkfi::{
     },
     tx::{ContractCallLeaf, TransactionBuilder},
     zk::{empty_witnesses, ZkCircuit, ProvingKey},
+    Error,
 };
 use darkfi_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction};
 use darkfi_sdk::{
@@ -480,7 +481,9 @@ impl DarkfiNode {
         };
 
         let height = latest_block.header.height + 1;
-        let previous = latest_block.hash();
+        let randomx_key = darkfi_linear::Miner::derive_key_from_height(height);
+        let vm = linear_blockchain.get_vm(randomx_key);
+        let previous = latest_block.hash(&vm);
         let difficulty_target = latest_block.header.difficulty_target;
 
         // Create coinbase output
@@ -512,7 +515,7 @@ impl DarkfiNode {
         let consensus = darkfi_linear::PoWConsensus::default();
         let miner = darkfi_linear::Miner::new(std::sync::Arc::new(consensus));
 
-        let mined_block = match miner.mine(previous, height, all_txs, difficulty_target) {
+        let mined_block = match miner.mine(&vm, previous, height, all_txs, difficulty_target) {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "darkfid::rpc::miner", "Mining failed: {}", e);
@@ -521,7 +524,7 @@ impl DarkfiNode {
             }
         };
 
-        let block_hash = format!("{}", mined_block.hash());
+        let block_hash = format!("{}", mined_block.hash(&vm));
 
         // Apply the mined block to the blockchain
         match linear_blockchain.apply_block(&mined_block).await {

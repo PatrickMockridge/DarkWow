@@ -18,7 +18,7 @@
 
 //! Simple PoW consensus for linear blockchain
 
-use blake3::Hash;
+use blake3::Hash as Blake3Hash;
 
 use super::{Block, UncleBlock, Result};
 
@@ -38,22 +38,22 @@ impl PoWConsensus {
         self.difficulty_target
     }
 
-    /// Verify a block meets the difficulty target
-    pub fn verify_proof(&self, block: &Block) -> Result<bool> {
-        let hash = block.hash();
+    /// Verify a block meets the difficulty target using RandomX VM
+    pub fn verify_proof(&self, block: &Block, vm: &randomx::RandomXVM) -> Result<bool> {
+        let hash = block.hash(vm);
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
         Ok(hash_u32 <= self.difficulty_target)
     }
 
     /// Check if the hash meets the difficulty target
-    pub fn check_difficulty(&self, hash: &Hash) -> bool {
+    pub fn check_difficulty(&self, hash: &Blake3Hash) -> bool {
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
         hash_u32 <= self.difficulty_target
     }
 
     /// Verify an uncle block meets the difficulty target
-    pub fn verify_uncle_pow(&self, uncle: &UncleBlock) -> Result<bool> {
-        Ok(self.check_difficulty(&uncle.hash()))
+    pub fn verify_uncle_pow(&self, uncle: &UncleBlock, vm: &randomx::RandomXVM) -> Result<bool> {
+        Ok(self.check_difficulty(&uncle.hash(vm)))
     }
 }
 

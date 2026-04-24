@@ -102,7 +102,7 @@ impl DarkfidP2pHandler {
 
         // Generate linear handlers if linear blockchain is enabled
         let linear_sync = if let Some(ref blockchain) = linear_blockchain {
-            Some(LinearSyncHandler::init(&p2p, blockchain.store.clone()).await)
+            Some(LinearSyncHandler::init(&p2p, blockchain.clone()).await)
         } else {
             None
         };

@@ -21,8 +21,9 @@
 //! This module provides a full linear blockchain implementation using
 //! the darkfi Runtime for WASM contract execution and ZK verification.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use randomx::{RandomXFlags, RandomXVM};
 use tracing::{debug, error, info};
 
 use super::{Block, LinearError, LinearStore, PoWConsensus, Result};
@@ -35,6 +36,10 @@ pub struct LinearBlockchain {
     pub consensus: PoWConsensus,
     /// Current chain height
     height: u64,
+    /// RandomX VM cache (for PoW verification) - protected by mutex for interior mutability
+    vm: Mutex<Option<Arc<RandomXVM>>>,
+    /// Current RandomX key - protected by mutex for interior mutability
+    randomx_key: Mutex<[u8; 32]>,
 }
 
 impl LinearBlockchain {
@@ -44,7 +49,56 @@ impl LinearBlockchain {
         let consensus = PoWConsensus::default();
         let height = store.get_height().unwrap_or(0);
 
-        Ok(Self { store: Arc::new(store), consensus, height })
+        // Initialize RandomX VM with default key
+        let randomx_key = [0u8; 32];
+        let vm = Self::create_vm(&randomx_key)?;
+
+        Ok(Self {
+            store: Arc::new(store),
+            consensus,
+            height,
+            vm: Mutex::new(Some(vm)),
+            randomx_key: Mutex::new(randomx_key),
+        })
+    }
+
+    /// Create a new RandomX VM with the given key
+    fn create_vm(key: &[u8; 32]) -> Result<Arc<RandomXVM>> {
+        let flags = RandomXFlags::get_recommended_flags();
+        let cache = randomx::RandomXCache::new(flags, key)
+            .map_err(|e| LinearError::StorageError(format!("RandomX cache error: {}", e)))?;
+        let vm = RandomXVM::new(flags, Some(cache), None)
+            .map_err(|e| LinearError::StorageError(format!("RandomX VM error: {}", e)))?;
+        Ok(Arc::new(vm))
+    }
+
+    /// Get or create VM for the given key
+    pub fn get_vm(&self, key: [u8; 32]) -> Arc<RandomXVM> {
+        let mut randomx_key = self.randomx_key.lock().unwrap();
+        let mut vm = self.vm.lock().unwrap();
+        if key != *randomx_key {
+            *randomx_key = key;
+            *vm = Some(Self::create_vm(&key).expect("Failed to create RandomX VM"));
+        }
+        vm.as_ref().unwrap().clone()
+    }
+
+    /// Get current RandomX VM for the current key
+    pub fn get_current_vm(&self) -> Option<Arc<RandomXVM>> {
+        self.vm.lock().unwrap().clone()
+    }
+
+    /// Get current RandomX key
+    pub fn get_randomx_key(&self) -> [u8; 32] {
+        *self.randomx_key.lock().unwrap()
+    }
+
+    /// Get tip block hash using current VM
+    pub fn get_tip_hash(&self) -> Result<blake3::Hash> {
+        let vm = self.vm.lock().unwrap();
+        let vm = vm.as_ref().ok_or(LinearError::StorageError("No VM available".to_string()))?;
+        let block = self.get_latest_block()?;
+        Ok(block.hash(vm))
     }
 
     /// Get current chain height
@@ -74,11 +128,14 @@ impl LinearBlockchain {
 
     /// Verify and apply a block to the chain
     pub async fn apply_block(&mut self, block: &Block) -> Result<()> {
-        let block_hash = block.hash();
+        // Get or create VM for this block's key
+        let vm = self.get_vm(block.header.randomx_key);
+
+        let block_hash = block.hash(&vm);
         info!(target: "linear_blockchain", "Applying block at height {}", block.header.height);
 
         // Verify PoW
-        match self.consensus.verify_proof(block) {
+        match self.consensus.verify_proof(block, &vm) {
             Ok(true) => {}
             Ok(false) => {
                 error!(target: "linear_blockchain", "Block {} failed PoW verification", block_hash);
@@ -99,7 +156,7 @@ impl LinearBlockchain {
         // Verify previous hash
         if self.height > 0 {
             let previous = self.store.get_block(self.height)?;
-            if block.header.previous != previous.hash() {
+            if block.header.previous != previous.hash(&vm) {
                 error!(target: "linear_blockchain", "Block {} failed previous hash verification", block_hash);
                 return Err(LinearError::InvalidPreviousHash)
             }

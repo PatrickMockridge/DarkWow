@@ -18,14 +18,16 @@
 
 //! Mining logic for linear blockchain
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
+use blake3::Hash as Blake3Hash;
+use randomx::{RandomXFlags, RandomXVM};
 use rand::Rng;
 
 use super::{create_block, Block, PoWConsensus, Transaction};
 
-/// Miner for finding valid PoW blocks
+/// Miner for finding valid PoW blocks using RandomX
 pub struct Miner {
     consensus: Arc<PoWConsensus>,
     running: AtomicBool,
@@ -37,22 +39,28 @@ impl Miner {
         Self { consensus, running: AtomicBool::new(false) }
     }
 
-    /// Start mining for a valid block
+    /// Mine a block using RandomX VM
+    /// Returns a mined block with valid PoW once found
     pub fn mine(
         &self,
-        previous: blake3::Hash,
+        vm: &Arc<RandomXVM>,
+        previous: Blake3Hash,
         height: u64,
         txs: Vec<Transaction>,
         difficulty_target: u32,
     ) -> super::Result<Block> {
         self.running.store(true, Ordering::SeqCst);
         let mut rng = rand::thread_rng();
+        let atomic_nonce = AtomicU32::new(rng.gen());
 
         while self.running.load(Ordering::SeqCst) {
-            let mut block = create_block(previous, height, txs.clone(), difficulty_target);
-            block.header.nonce = rng.gen();
+            let nonce = atomic_nonce.fetch_add(1, Ordering::SeqCst);
 
-            if self.consensus.verify_proof(&block)? {
+            let mut block = create_block(previous, height, txs.clone(), difficulty_target, vm);
+            block.header.nonce = nonce;
+            block.header.randomx_key = Self::derive_key_from_height(height);
+
+            if self.consensus.verify_proof(&block, vm)? {
                 return Ok(block)
             }
         }
@@ -60,8 +68,26 @@ impl Miner {
         Err(super::LinearError::DifficultyNotMet)
     }
 
+    /// Derive RandomX key from block height (key rotation)
+    pub fn derive_key_from_height(height: u64) -> [u8; 32] {
+        let height_bytes = height.to_le_bytes();
+        let mut key = [0u8; 32];
+        key[..8].copy_from_slice(&height_bytes);
+        key
+    }
+
     /// Stop mining
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
+    }
+
+    /// Create a RandomX VM for mining
+    pub fn create_vm(key: &[u8; 32]) -> super::Result<Arc<RandomXVM>> {
+        let flags = RandomXFlags::get_recommended_flags();
+        let cache = randomx::RandomXCache::new(flags, key)
+            .map_err(|e| super::LinearError::RandomXError(format!("Cache: {}", e)))?;
+        let vm = RandomXVM::new(flags, Some(cache), None)
+            .map_err(|e| super::LinearError::RandomXError(format!("VM: {}", e)))?;
+        Ok(Arc::new(vm))
     }
 }

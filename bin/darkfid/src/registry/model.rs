@@ -328,7 +328,12 @@ pub async fn generate_linear_block_template(
     let height = linear_blockchain.get_height() + 1;
     let latest_block = linear_blockchain.get_latest_block()
         .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
-    let previous_hash = latest_block.hash();
+
+    // Get VM for hashing - use the key derived from height
+    let randomx_key = darkfi_linear::Miner::derive_key_from_height(height);
+    let vm = linear_blockchain.get_vm(randomx_key);
+    let previous_hash = latest_block.hash(&vm);
+
     let difficulty_target = latest_block.header.difficulty_target;
 
     let coinbase_output = LinearBlockTemplate::create_coinbase_output(

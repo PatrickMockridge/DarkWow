@@ -42,7 +42,7 @@ use darkfi::{
     util::time::NanoTimestamp,
     Error, Result,
 };
-use darkfi_linear::{Block, LinearStore};
+use darkfi_linear::{Block, LinearBlockchain};
 use darkfi_serial::{serialize_async, deserialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 
 /// Constant defining max blocks we send in a single response.
@@ -251,13 +251,13 @@ pub struct LinearSyncHandler {
     block_handler: ProtocolGenericHandlerPtr<GetBlock, BlockResponse>,
     /// Handler for GetTip/Tip messages
     tip_handler: ProtocolGenericHandlerPtr<GetTip, Tip>,
-    /// Linear store for accessing blockchain data
-    store: Arc<LinearStore>,
+    /// Linear blockchain for accessing data
+    blockchain: Arc<LinearBlockchain>,
 }
 
 impl LinearSyncHandler {
     /// Initialize the linear sync protocol handlers
-    pub async fn init(p2p: &P2pPtr, store: Arc<LinearStore>) -> LinearSyncHandlerPtr {
+    pub async fn init(p2p: &P2pPtr, blockchain: Arc<LinearBlockchain>) -> LinearSyncHandlerPtr {
         debug!(
             target: "darkfid::proto::linear_sync::init",
             "Adding linear sync protocols to the protocol registry"
@@ -269,7 +269,7 @@ impl LinearSyncHandler {
             ProtocolGenericHandler::new(p2p, "LinearSyncBlock", SESSION_DEFAULT).await;
         let tip_handler = ProtocolGenericHandler::new(p2p, "LinearSyncTip", SESSION_DEFAULT).await;
 
-        Arc::new(Self { blocks_handler, block_handler, tip_handler, store })
+        Arc::new(Self { blocks_handler, block_handler, tip_handler, blockchain })
     }
 
     /// Start all linear sync background tasks
@@ -279,9 +279,9 @@ impl LinearSyncHandler {
             "Starting linear sync protocol handlers..."
         );
 
-        let store = self.store.clone();
+        let blockchain = self.blockchain.clone();
         self.blocks_handler.task.clone().start(
-            handle_get_blocks(self.blocks_handler.clone(), store.clone()),
+            handle_get_blocks(self.blocks_handler.clone(), blockchain.clone()),
             |res| async move {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
@@ -295,9 +295,9 @@ impl LinearSyncHandler {
             executor.clone(),
         );
 
-        let store = self.store.clone();
+        let blockchain = self.blockchain.clone();
         self.block_handler.task.clone().start(
-            handle_get_block(self.block_handler.clone(), store.clone()),
+            handle_get_block(self.block_handler.clone(), blockchain.clone()),
             |res| async move {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
@@ -311,9 +311,9 @@ impl LinearSyncHandler {
             executor.clone(),
         );
 
-        let store = self.store.clone();
+        let blockchain = self.blockchain.clone();
         self.tip_handler.task.clone().start(
-            handle_get_tip(self.tip_handler.clone(), store.clone()),
+            handle_get_tip(self.tip_handler.clone(), blockchain.clone()),
             |res| async move {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
@@ -338,7 +338,7 @@ impl LinearSyncHandler {
 /// Handle incoming GetBlocks requests
 async fn handle_get_blocks(
     handler: ProtocolGenericHandlerPtr<GetBlocks, Blocks>,
-    store: Arc<LinearStore>,
+    blockchain: Arc<LinearBlockchain>,
 ) -> Result<()> {
     loop {
         let (channel, request) = match handler.receiver.recv().await {
@@ -363,7 +363,7 @@ async fn handle_get_blocks(
 
         for i in 0..count {
             let height = request.start_height + i as u64;
-            match store.get_block(height) {
+            match blockchain.get_block(height) {
                 Ok(block) => blocks.push(block),
                 Err(_) => break,
             }
@@ -377,7 +377,7 @@ async fn handle_get_blocks(
 /// Handle incoming GetBlock requests
 async fn handle_get_block(
     handler: ProtocolGenericHandlerPtr<GetBlock, BlockResponse>,
-    store: Arc<LinearStore>,
+    blockchain: Arc<LinearBlockchain>,
 ) -> Result<()> {
     loop {
         let (channel, request) = match handler.receiver.recv().await {
@@ -397,7 +397,7 @@ async fn handle_get_block(
             request.height, channel
         );
 
-        let block = match store.get_block(request.height) {
+        let block = match blockchain.get_block(request.height) {
             Ok(b) => Some(b),
             Err(_) => None,
         };
@@ -410,7 +410,7 @@ async fn handle_get_block(
 /// Handle incoming GetTip requests
 async fn handle_get_tip(
     handler: ProtocolGenericHandlerPtr<GetTip, Tip>,
-    store: Arc<LinearStore>,
+    blockchain: Arc<LinearBlockchain>,
 ) -> Result<()> {
     loop {
         let (channel, _request) = match handler.receiver.recv().await {
@@ -429,10 +429,10 @@ async fn handle_get_tip(
             "Received GetTip request from {:?}", channel
         );
 
-        let height = store.get_height().unwrap_or(0);
+        let height = blockchain.get_height();
         let hash = if height > 0 {
-            match store.get_block(height) {
-                Ok(block) => format!("{}", block.hash()),
+            match blockchain.get_tip_hash() {
+                Ok(h) => format!("{}", h),
                 Err(_) => String::new(),
             }
         } else {

@@ -51,4 +51,7 @@ pub enum LinearError {
 
     #[error("Invalid genesis block")]
     InvalidGenesis,
+
+    #[error("RandomX error: {0}")]
+    RandomXError(String),
 }

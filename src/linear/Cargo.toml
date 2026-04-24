@@ -15,6 +15,7 @@ thiserror = "1"
 tracing = "0.1"
 blake3 = { version = "1", features = ["serde"] }
 rand = "0.8"
+randomx = { git = "https://codeberg.org/darkrenaissance/RandomX", rev = "0e31d5a" }
 sha2 = "0.10"
 merlin = "3"
 hex = "0.4"

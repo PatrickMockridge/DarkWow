@@ -16,7 +16,6 @@ darkfi_money_v2_contract = {path = "../../src/contract/money_v2"}
 darkfi_money_v3_contract = {path = "../../src/contract/money_v3", features = ["client", "no-entrypoint"]}
 darkfi_native_token_contract = {path = "../../src/contract/native_token", features = ["client"]}
 darkfi_deployooor_contract = {path = "../../src/contract/deployooor", features = ["client"]}
-darkfi-contract-test-harness = {path = "../../src/contract/test-harness"}  # TEMPORARILY DISABLED - needs cleanup
 darkfi_baccarat_contract = {path = "../../src/contract/baccarat", features = ["client", "no-entrypoint"]}
 darkfi-sdk = {path = "../../src/sdk"}
 darkfi-serial = {path = "../../src/serial"}
@@ -24,6 +23,7 @@ darkfi-serial = {path = "../../src/serial"}
 # Misc
 blake3 = "1.8.2"
 glob = "0.3"
+randomx = {git = "https://codeberg.org/darkrenaissance/RandomX", rev = "0e31d5a"}
 thiserror = "2.0"
 bs58 = "0.5.1"
 tracing = "0.1.44"

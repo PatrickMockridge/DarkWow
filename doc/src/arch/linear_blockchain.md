@@ -1,6 +1,6 @@
 # Linear Blockchain Architecture
 
-The linear blockchain is a simplified WASM-based blockchain designed for testing and development. It uses Uncle Merkle consensus with a pin mechanism.
+The linear blockchain is a simplified WASM-based blockchain designed for testing and development. It uses **Uncle Merkle consensus** with a **RandomX proof-of-work** and pin mechanism.
 
 ## Overview
 
@@ -14,6 +14,145 @@ The linear blockchain differs from the original DarkFi consensus in several key 
 | Verification | Heavy WASM + sled lookups | Merkle proof only |
 | Determinism | Non-deterministic in time | Fully deterministic |
 | Complexity | High | Low |
+
+## Proof-of-Work: RandomX
+
+Linear uses **RandomX** (same as main DarkFi) for block hashing. This enables external miners (like xmrig) to connect via the stratum protocol.
+
+### RandomX Key Rotation
+
+Each block's header contains a `randomx_key` derived from the block height:
+
+```rust
+pub fn derive_key_from_height(height: u64) -> [u8; 32] {
+    let height_bytes = height.to_le_bytes();
+    let mut key = [0u8; 32];
+    key[..8].copy_from_slice(&height_bytes);
+    key
+}
+```
+
+Miners use this key to create a RandomX VM for hashing blocks. The key changes every block to prevent pre-computation attacks.
+
+### Block Hashing
+
+Block hashes are computed by passing the serialized header through RandomX:
+
+```rust
+impl Block {
+    pub fn hash(&self, vm: &RandomXVM) -> blake3::Hash {
+        let mut header_bytes = Vec::new();
+        self.header.encode(&mut header_bytes).unwrap();
+        let rx_hash = vm.calculate_hash(&header_bytes).expect("RandomX hash failed");
+        // Use first 32 bytes as blake3-compatible hash
+        let mut hash_bytes = [0u8; 32];
+        hash_bytes.copy_from_slice(&rx_hash[..32]);
+        blake3::Hash::from_bytes(hash_bytes)
+    }
+}
+```
+
+## Uncle Block Architecture
+
+When a block is not accepted into the canonical chain, it can still be referenced as an **uncle block** by subsequent canonical blocks. This provides mining rewards to miners who otherwise would have wasted their work.
+
+### UncleBlock Structure
+
+```rust
+pub struct UncleBlock {
+    pub header: BlockHeader,        // Has its own PoW
+    pub transactions: Vec<Transaction>,
+    pub depth: u8,                  // 1 = directly referenced, 2 = depth-1, etc.
+    pub pin_offered: bool,          // Canonical chain offers pin
+    pub pin_accepted: bool,          // Uncle chain accepts (one-time decision)
+    pub pin_reward: u64,             // Computed from depth: 50% at d1, 25% at d2...
+}
+```
+
+### UncleProof Structure
+
+When an uncle is referenced in a canonical block, an **UncleProof** is constructed for stateless verification:
+
+```rust
+pub struct UncleProof {
+    pub header: BlockHeader,         // Uncle's header (includes PoW)
+    pub pow_hash: [u8; 32],          // RandomX PoW hash computed from header
+    pub merkle_path: Vec<[u8; 32]>,  // Merkle proof path to uncle root
+    pub position: u32,                // Uncle's position in merkle tree
+    pub depth: u8,                   // Depth for reward calculation
+}
+```
+
+## Uncle Proof Verification
+
+The critical security property: **UncleProof must bind the RandomX PoW to the proof structure**, making it impossible to submit fake uncle proofs without doing the actual RandomX work.
+
+### Verification Steps
+
+When verifying an `UncleProof`:
+
+1. **PoW Hash Verification**: Re-compute the RandomX PoW hash from the proof's header using the header's `randomx_key`. Compare against the stored `pow_hash`.
+
+2. **Difficulty Check**: Verify the PoW hash meets the difficulty target (lower values = more difficulty).
+
+3. **Merkle Proof**: Verify the header is included in the uncle merkle tree rooted at the canonical block's `uncle_merkle_root`.
+
+```rust
+pub fn verify_uncle_proof(
+    uncle: &UncleProof,
+    merkle_root: &[u8; 32],
+    _vm: &randomx::RandomXVM,
+    difficulty_target: u32,
+) -> bool {
+    // Step 1: Verify pow_hash matches re-computed hash from header
+    // We create a VM with the uncle's specific randomx_key
+    let header_bytes = serde_json::to_vec(&uncle.header).unwrap();
+    let cache = randomx::RandomXCache::new(flags, &uncle.header.randomx_key)?;
+    let verify_vm = randomx::RandomXVM::new(flags, Some(cache), None)?;
+    let rx_hash = verify_vm.calculate_hash(&header_bytes)?;
+    let computed_pow_hash: [u8; 32] = rx_hash[..32];
+
+    if computed_pow_hash != uncle.pow_hash {
+        return false;  // PoW hash mismatch
+    }
+
+    // Step 2: Verify pow_hash meets difficulty target
+    let hash_u32 = u32::from_le_bytes(computed_pow_hash[0..4].try_into().unwrap());
+    if hash_u32 > difficulty_target {
+        return false;  // Difficulty not met
+    }
+
+    // Step 3: Verify merkle proof against uncle_merkle_root
+    // ... merkle verification ...
+}
+```
+
+### Uncle Merkle Tree Construction
+
+The canonical block's `uncle_merkle_root` is built from uncle proofs:
+
+```rust
+pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &RandomXVM) -> ([u8; 32], Vec<UncleProof>) {
+    // 1. Compute pow_hash for each uncle using their randomx_key
+    // 2. Build merkle tree using blake3 for structure (not PoW)
+    // 3. Return root and proofs with position information
+}
+```
+
+The merkle tree itself uses blake3 for structure (for efficient verification), while RandomX provides the actual PoW security.
+
+## Reward Distribution
+
+Rewards are distributed between canonical miner and uncle miners:
+
+| Component | Formula |
+|-----------|---------|
+| Canonical reward | Full block reward |
+| Uncle reward at depth 1 | 50% of canonical (pin_reward = base / 2^1) |
+| Uncle reward at depth 2 | 25% of canonical (pin_reward = base / 2^2) |
+| Max depth | 6 (rewards become negligible below this) |
+
+The `total_reward` in the canonical block header accounts for all rewards (canonical + uncle shares).
 
 ## WASM Contract Model
 
@@ -106,16 +245,6 @@ ZK proof verification in the linear blockchain differs from the original:
 3. Scanner's only job is **note decryption** to detect wallet-owned coins
 
 This is a deliberate design choice that simplifies the wallet scanner significantly.
-
-## Contract ID Conversion
-
-Linear blockchain uses `blake3::Hash` for contract IDs, but wallet code expects `ContractId`:
-
-```rust
-fn hash_to_contract_id(hash: blake3::Hash) -> ContractId {
-    ContractId::from_bytes(*hash.as_bytes()).unwrap()
-}
-```
 
 ## Limitations
 
