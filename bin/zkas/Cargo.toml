@@ -11,7 +11,10 @@ edition = "2021"
 [dependencies]
 arg = {git = "https://github.com/parazyd/arg"}
 blake3 = "1.8"
-darkfi = {path = "../../", features = ["zkas"]}
+darkfi = {path = "../../", features = ["zk", "zkas"]}
+darkfi-sdk = {path = "../../src/sdk"}
+hex = "0.4"
+rand = "0.8"
 
 [lints]
 workspace = true

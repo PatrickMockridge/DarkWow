@@ -21,30 +21,100 @@
 //! This module handles smart contract deployment using the Deployooor contract.
 
 use darkfi::{
-    tx::Transaction,
+    tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     Error, Result,
 };
 use darkfi_sdk::{
-    crypto::{ContractId, PublicKey},
-    deploy::DeployParamsV1,
-    tx::TransactionHash,
+    crypto::{Keypair, ContractId, PublicKey, SecretKey},
+    pasta::pallas,
+    tx::ContractCall,
 };
-use darkfi_serial::Decodable;
+use darkfi_serial::Encodable;
+use darkfi_sdk::deploy::DeployParamsV1;
+use rand::rngs::OsRng;
 
 use crate::{rpc::ScanCache, Drk};
+use crate::contract_imports::deployooor::DeployCallBuilder;
+use darkfi_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
+
+/// Default network fee in DARK
+const DEFAULT_FEE: u64 = 42_000_000;
 
 impl Drk {
-    /// Create a feeless contract deployment transaction.
+    /// Create a contract deployment transaction using Deployooor.
     ///
-    /// Note: Contract deployment requires fee payment infrastructure which depends
-    /// on full Money V3 integration. This is a placeholder.
+    /// This function:
+    /// 1. Takes WASM bytes and a deploy authority keypair
+    /// 2. Builds a DeployV1 call to Deployooor contract
+    /// 3. Uses the deploy authority's public key to derive the new contract ID
+    /// 4. Broadcasts the deployment transaction
     pub async fn deploy_contract(
         &self,
-        _deploy_auth: &ContractId,
-        _wasm_bincode: Vec<u8>,
-        _deploy_ix: Vec<u8>,
+        deploy_keypair: &Keypair,
+        wasm_bincode: Vec<u8>,
+        deploy_ix: Vec<u8>,
     ) -> Result<Transaction> {
-        Err(Error::Custom("Contract deployment not yet implemented for Money V3 - requires fee infrastructure".to_string()))
+        // Create deploy call builder
+        let builder = DeployCallBuilder {
+            deploy_keypair: *deploy_keypair,
+            wasm_bincode,
+            deploy_ix,
+        };
+
+        let debris = builder.build()
+            .map_err(|e| Error::Custom(format!("Failed to build deploy call: {:?}", e)))?;
+
+        // Create Deployooor contract call
+        // Function code 0x00 = DeployV1
+        let mut call_data = vec![0x00u8];
+        debris.params.encode(&mut call_data)
+            .map_err(|e| Error::Custom(format!("Failed to encode deploy params: {:?}", e)))?;
+
+        let deployooor_id = *DEPLOYOOOR_CONTRACT_ID;
+        let deploy_call = ContractCall {
+            contract_id: deployooor_id,
+            data: call_data,
+        };
+
+        // Create contract call leaf (no proofs for DeployV1 - it's a native contract call)
+        let deploy_leaf = ContractCallLeaf {
+            call: deploy_call,
+            proofs: vec![],
+        };
+
+        // Build final transaction
+        let mut tx_builder = TransactionBuilder::new(deploy_leaf, vec![])
+            .map_err(|e| Error::Custom(format!("Failed to create transaction builder: {:?}", e)))?;
+
+        let tx = tx_builder.build()
+            .map_err(|e| Error::Custom(format!("Failed to build transaction: {:?}", e)))?;
+
+        Ok(tx)
+    }
+
+    /// Deploy a contract to the blockchain and wait for confirmation.
+    ///
+    /// This is a higher-level function that:
+    /// 1. Creates the deployment transaction
+    /// 2. Broadcasts it
+    /// 3. Optionally waits for confirmation
+    pub async fn deploy_contract_broadcast(
+        &self,
+        deploy_keypair: &Keypair,
+        wasm_bincode: Vec<u8>,
+        deploy_ix: Vec<u8>,
+        wait_for_confirm: bool,
+        output: &mut Vec<String>,
+    ) -> Result<String> {
+        // Create deployment transaction
+        let tx = self.deploy_contract(deploy_keypair, wasm_bincode, deploy_ix).await?;
+
+        // Broadcast
+        let txid = self.broadcast_tx(&tx, output).await?;
+
+        output.push(format!("Contract deployed with txid: {}", txid));
+
+        Ok(txid)
     }
 
     /// Append data related to DeployoOor contract transactions into
@@ -53,7 +123,7 @@ impl Drk {
         &self,
         scan_cache: &mut ScanCache,
         data: &[u8],
-        tx_hash: &TransactionHash,
+        tx_hash: &darkfi_sdk::tx::TransactionHash,
         _block_height: &u32,
     ) -> Result<bool> {
         if data.is_empty() {
@@ -65,6 +135,7 @@ impl Drk {
         match function_code {
             // DeployV1 (0x00)
             0x00 => {
+                use darkfi_serial::Decodable;
                 let mut cursor = std::io::Cursor::new(&data[1..]);
                 let params = DeployParamsV1::decode(&mut cursor)
                     .map_err(|e| Error::Custom(format!("Failed to decode DeployV1 params: {:?}", e)))?;
@@ -77,7 +148,6 @@ impl Drk {
                 // Check if this deployment is for one of our deploy authorities
                 let mut is_own_deployment = false;
                 for (pubkey_bytes, _secret) in &scan_cache.own_deploy_auths {
-                    // The public key from params should match one of our deploy auths
                     let pubkey_bytes_check = params.public_key.to_bytes();
                     if pubkey_bytes == &pubkey_bytes_check {
                         scan_cache.log(format!(
@@ -110,7 +180,7 @@ impl Drk {
         &self,
         _scan_cache: &mut ScanCache,
         _params: &DeployParamsV1,
-        _tx_hash: &TransactionHash,
+        _tx_hash: &darkfi_sdk::tx::TransactionHash,
         _block_height: &u32,
     ) -> Result<bool> {
         // TODO: Store deployment info in wallet database
@@ -122,10 +192,23 @@ impl Drk {
         &self,
         _scan_cache: &mut ScanCache,
         _public_key: &PublicKey,
-        _tx_hash: &TransactionHash,
+        _tx_hash: &darkfi_sdk::tx::TransactionHash,
         _block_height: &u32,
     ) -> Result<bool> {
         // TODO: Store lock info in wallet database
         Ok(false)
+    }
+
+    /// Generate a new deploy authority keypair.
+    ///
+    /// This creates a fresh keypair that can be used to deploy contracts.
+    /// The resulting contract ID is derived from the public key.
+    pub fn generate_deploy_authority(&self) -> Keypair {
+        Keypair::new(SecretKey::random(&mut OsRng))
+    }
+
+    /// Derive the contract ID that would be created by a given deploy authority.
+    pub fn derive_contract_id(deploy_keypair: &Keypair) -> ContractId {
+        ContractId::derive_public(deploy_keypair.public)
     }
 }

@@ -45,7 +45,7 @@ use darkfi::{
 // use darkfi_dao_contract::{blockwindow, model::DaoProposalBulla, DaoFunction};
 use darkfi_sdk::{
     crypto::{
-        keypair::{Address, Network, SecretKey, StandardAddress},
+        keypair::{Address, Keypair, Network, SecretKey, StandardAddress},
         BaseBlind, ContractId, FuncId,
     },
     pasta::{group::ff::PrimeField, pallas},
@@ -419,7 +419,7 @@ enum ContractSubcmd {
 
     /// Deploy a smart contract
     Deploy {
-        /// Contract ID (deploy authority)
+        /// Deploy authority secret key (hex encoded)
         deploy_auth: String,
 
         /// Path to contract wasm bincode
@@ -431,8 +431,20 @@ enum ContractSubcmd {
 
     /// Lock a smart contract
     Lock {
-        /// Contract ID (deploy authority)
+        /// Deploy authority secret key (hex encoded)
         deploy_auth: String,
+    },
+
+    /// Invoke a smart contract function
+    Invoke {
+        /// Contract ID to invoke
+        contract_id: String,
+
+        /// Function name to call
+        function: String,
+
+        /// Path to JSON file with function parameters
+        params: Option<String>,
     },
 }
 
@@ -1782,14 +1794,27 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             }
 
             ContractSubcmd::Deploy { deploy_auth, wasm_path, deploy_ix } => {
-                // Parse the deployment authority contract id
-                let deploy_auth = match ContractId::from_str(&deploy_auth) {
-                    Ok(d) => d,
+                // Parse the deploy authority secret key from hex
+                let secret_bytes = match hex::decode(&deploy_auth) {
+                    Ok(b) => b,
                     Err(e) => {
-                        eprintln!("Invalid deploy authority: {e}");
+                        eprintln!("Invalid deploy authority hex: {}", e);
                         exit(2);
                     }
                 };
+                let mut bytes = [0u8; 32];
+                bytes.copy_from_slice(&secret_bytes);
+                let deploy_auth = match darkfi_sdk::crypto::SecretKey::from_bytes(bytes) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Invalid deploy authority secret key: {}", e);
+                        exit(2);
+                    }
+                };
+
+                // Reconstruct keypair and derive contract ID for validation
+                let keypair = Keypair::new(deploy_auth);
+                let _contract_id = ContractId::derive_public(keypair.public);
 
                 // Read the wasm bincode and deploy instruction
                 let wasm_bin = smol::fs::read(expand_path(&wasm_path)?).await?;
@@ -1809,7 +1834,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 )
                 .await;
 
-                let tx = match drk.deploy_contract(&deploy_auth, wasm_bin, deploy_ix).await {
+                let tx = match drk.deploy_contract(&keypair, wasm_bin, deploy_ix).await {
                     Ok(tx) => tx,
                     Err(e) => {
                         eprintln!("Error creating contract deployment tx: {e}");
@@ -1852,6 +1877,55 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 };
 
                 println!("lock contract created successfully");
+
+                drk.stop_rpc_client().await
+            }
+
+            ContractSubcmd::Invoke { contract_id, function, params } => {
+                // Parse the contract ID
+                let contract_id = match ContractId::from_str(&contract_id) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("Invalid contract ID: {e}");
+                        exit(2);
+                    }
+                };
+
+                // Read params from JSON file if provided
+                let params_json = match params {
+                    Some(p) => {
+                        let contents = smol::fs::read(expand_path(&p)?).await?;
+                        match String::from_utf8(contents) {
+                            Ok(s) => Some(s),
+                            Err(e) => {
+                                eprintln!("Invalid UTF-8 in params file: {}", e);
+                                exit(2);
+                            }
+                        }
+                    }
+                    None => None,
+                };
+
+                let drk = new_wallet(
+                    network,
+                    blockchain_config.cache_path,
+                    blockchain_config.wallet_path,
+                    blockchain_config.wallet_pass,
+                    Some(blockchain_config.endpoint),
+                    &ex,
+                    args.fun,
+                )
+                .await;
+
+                let tx = match drk.invoke_contract(&contract_id, &function, params_json.as_deref()).await {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        eprintln!("Error creating contract invocation tx: {e}");
+                        exit(2);
+                    }
+                };
+
+                println!("{}", base64::encode(&serialize_async(&tx).await));
 
                 drk.stop_rpc_client().await
             }

@@ -48,5 +48,17 @@ path = "src/native_token.rs"
 name = "test_deployooor"
 path = "src/deployooor.rs"
 
+[[bin]]
+name = "prove_dao_escrow"
+path = "src/prove_dao_escrow.rs"
+
+[[bin]]
+name = "prove_stablecoin"
+path = "src/prove_stablecoin.rs"
+
+[[bin]]
+name = "prove_dex"
+path = "src/prove_dex.rs"
+
 [lints]
 workspace = true

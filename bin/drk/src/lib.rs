@@ -953,6 +953,16 @@ impl Drk {
     pub async fn sign_swap(&self, _tx: &mut Transaction) -> Result<()> {
         Err(Error::Custom("sign_swap not yet implemented for Money V3".to_string()))
     }
+
+    /// Invoke a smart contract function
+    pub async fn invoke_contract(
+        &self,
+        _contract_id: &ContractId,
+        _function: &str,
+        _params: Option<&str>,
+    ) -> Result<Transaction> {
+        Err(Error::Custom("invoke_contract not yet implemented".to_string()))
+    }
 }
 
 // =============================================================================================

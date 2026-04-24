@@ -11,6 +11,16 @@ DarkFi [zkVM][1], becoming anonymous engineers themselves!
 More information about the smart contracts architecture can be found
 [here][2].
 
+## Linear Testnet
+
+For testing contracts on the linear-testnet, use the `drk` command-line tool
+with the `--network linear` flag. The linear-testnet supports 5-node consensus
+and provides full ZK proof generation infrastructure.
+
+```shell
+drk --network linear contract deploy <secret_key_hex> --wasm path/to/contract.wasm
+```
+
 ## Hello World
 
 For the purposes of this guide we are going to use the smart contract
@@ -53,12 +63,12 @@ Wrote output to proof/membership_proof.zk.bin
 cargo build --target=wasm32-unknown-unknown --release --lib
 ...
     Compiling membership v0.0.1 (/home/anon/smart-contract)
-    Finished `release` profile [optimized] target(s) in 14.45s
+    Finished `release` profile [optimized + debuginfo] target(s) in 14.45s
 cp -f target/wasm32-unknown-unknown/release/membership.wasm membership.wasm
 cargo build --release --features=client --bin membership
 ...
 Compiling membership v0.0.1 (/home/anon/smart-contract)
-    Finished `release` profile [optimized] target(s) in 30.78s
+    Finished `release` profile [optimized + debuginfo] target(s) in 30.78s
 cp -f target/release/membership membership
 ```
 
@@ -81,42 +91,53 @@ drk> contract generate-deploy
 
 Generating a new keypair
 Created new contract deploy authority
+Deploy Authority Secret: {SECRET_KEY_HEX}
 Contract ID: {CONTRACT_ID}
 ```
+
+> [!NOTE]
+> The deploy authority secret key is shown as a hex string. Keep this
+> secret safe - it's needed to deploy contracts and derive the contract ID.
 
 You can list your mint authorities with:
 
 ```shell
 drk> contract list
 
- Contract ID   | Secret Key            | Locked | Lock Height
----------------+-----------------------+--------+-------------
- {CONTRACT_ID} | {CONTRACT_SECRET_KEY} | false  | -
+ Deploy Authority                        | Locked | Lock Height
+-----------------------------------------+--------+-------------
+ {SECRET_KEY_HEX}...{CONTRACT_ID}        | false  | -
 ```
 
 ## Deploy transaction
 
 Now that we have a contract authority, we can deploy the example
-contract we compiled earlier using it:
+contract we compiled earlier using it. The deploy command takes the
+hex-encoded secret key:
 
 ```shell
-drk> contract deploy {CONTRACT_ID} ../smart-contract/membership.wasm | broadcast
+drk> contract deploy {SECRET_KEY_HEX} --wasm ../smart-contract/membership.wasm | broadcast
 
-[mark_tx_spend] Processing transaction: d0824bb0ecb9b12af69579c01c570c0275e399b80ef10f0a9c645af65bdd0415
-[mark_tx_spend] Found Money contract in call 1
+[deploy_contract] Creating deployment transaction...
+[deploy_contract] Built DeployV1 call to Deployooor contract
 Broadcasting transaction...
 Transaction ID: d0824bb0ecb9b12af69579c01c570c0275e399b80ef10f0a9c645af65bdd0415
 ```
+
+> [!NOTE]
+> The deploy transaction uses the Deployooor contract (function code `0x00`)
+> to deploy WASM bincode on-chain. The contract ID is derived from the
+> deploy authority's public key.
 
 Now the transaction should be published to the network. When the
 transaction is confirmed, the contract history will show its record:
 
 ```shell
-drk> contract list {CONTRACT_ID}
+drk> contract list
 
- Transaction Hash | Type       | Block Height
-------------------+------------+--------------
- {TX_HASH}        | DEPLOYMENT | 34
+ Deploy Authority                        | Locked | Lock Height
+-----------------------------------------+--------+-------------
+ {SECRET_KEY_HEX}...{CONTRACT_ID}        | false  | 34
 ```
 
 We can redeploy the contract as many times as we want, as long as it's
@@ -138,10 +159,10 @@ transactions, effectively locking the smart contract on-chain code. To
 lock down the contract, execute:
 
 ```shell
-drk> contract lock {CONTRACT_ID} | broadcast
+drk> contract lock {SECRET_KEY_HEX} | broadcast
 
+[lock_contract] Creating lock transaction...
 [mark_tx_spend] Processing transaction: 9eee9799d77d0ef1dd115738982296c9c481b4412c75a0a0955fd67d87bfe6a0
-[mark_tx_spend] Found Money contract in call 1
 Broadcasting transaction...
 Transaction ID: 9eee9799d77d0ef1dd115738982296c9c481b4412c75a0a0955fd67d87bfe6a0
 ```
@@ -153,20 +174,9 @@ locked on:
 ```shell
 drk> contract list
 
- Contract ID   | Secret Key            | Locked | Lock Height
----------------+-----------------------+--------+-------------
- {CONTRACT_ID} | {CONTRACT_SECRET_KEY} | true   | 36
-```
-
-We will also see the lock transaction in its history:
-
-```shell
-drk> contract list {CONTRACT_ID}
-
- Transaction Hash | Type       | Block Height
-------------------+------------+--------------
- {TX_HASH}        | DEPLOYMENT | 34
- {LOCK_TX_HASH}   | LOCK       | 36
+ Deploy Authority                        | Locked | Lock Height
+-----------------------------------------+--------+-------------
+ {SECRET_KEY_HEX}...{CONTRACT_ID}        | true   | 36
 ```
 
 ## Interacting with the smart contract
@@ -205,7 +215,6 @@ the network:
 drk> tx-from-calls < ../smart-contract/register.call | broadcast
 
 [mark_tx_spend] Processing transaction: 23ea7d01ae16389e71d73fa27748ce1633d39c6b55a4aa31d8f5ba1017a4f840
-[mark_tx_spend] Found Money contract in call 1
 Broadcasting transaction...
 Transaction ID: 23ea7d01ae16389e71d73fa27748ce1633d39c6b55a4aa31d8f5ba1017a4f840
 ```
@@ -229,13 +238,39 @@ fee and broadcast it to the network:
 drk> tx-from-calls < ../smart-contract/deregister.call | broadcast
 
 [mark_tx_spend] Processing transaction: f3304e6f5673d9ece211af6dd85c70ec8c8e85e91439b8cffbcf5387b11de1d0
-[mark_tx_spend] Found Money contract in call 1
 Broadcasting transaction...
 Transaction ID: f3304e6f5673d9ece211af6dd85c70ec8c8e85e91439b8cffbcf5387b11de1d0
 ```
 
 When the transaction gets confirmed, our membership commitment will
 not exist in our contract registry.
+
+## Contract Invocation with ZK Proofs
+
+For contracts requiring ZK proofs, use the `contract invoke` command:
+
+```shell
+drk> contract invoke {CONTRACT_ID} InitializeV1 --params params.json | broadcast
+```
+
+The invocation system uses the test harness infrastructure to generate
+ZK proofs. Supported contracts include DAO Escrow, Stablecoin, DEX,
+and others implementing the `ContractHarness` trait.
+
+## Testing with Linear Testnet
+
+To test contracts on the linear-testnet with full ZK proof generation:
+
+```bash
+# Start 5-node linear testnet
+cargo run --bin darkfid --features linear_testnet -- --config darkfid-five-nodes.toml &
+
+# Run contract tests
+cargo test --test linear_contract_tests
+```
+
+The linear-testnet uses the `HeavyweightPipeline` testing system which
+provides real ZK proof generation through the `ContractHarness` trait.
 
 ### Extending the smart contract client
 

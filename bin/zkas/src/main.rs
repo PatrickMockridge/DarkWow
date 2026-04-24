@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+mod prove;
+
 use std::{
     fs::{read_to_string, File},
     io::Write,
@@ -29,6 +31,8 @@ use darkfi::{
     zkas::{Analyzer, Compiler, Lexer, Parser, ZkBinary},
     ANSI_LOGO,
 };
+
+use prove::run_prove;
 
 const ABOUT: &str =
     concat!("zkas ", env!("CARGO_PKG_VERSION"), '\n', env!("CARGO_PKG_DESCRIPTION"));
@@ -77,6 +81,26 @@ Example:
   zkas rebuild src/contract/dao_escrow/proof/
 "#;
 
+const PROVE_USAGE: &str = r#"
+Usage: zkas prove <CIRCUIT.zk.bin> [OPTIONS]
+
+Generate a ZK proof from a compiled circuit binary.
+
+Arguments:
+  <CIRCUIT.zk.bin>    Path to the compiled .zk.bin circuit file
+
+Options:
+  -w, --witnesses <VALUES>   Comma-separated witness values (hex)
+  -p, --public <VALUES>      Comma-separated public input values (hex)
+  -o, --output <FILE>        Output file for the proof (default: proof.bin)
+  -h, --help                 Show this help
+
+Example:
+  zkas prove src/contract/dao_escrow/proof/init_v1.zk.bin \
+    --witnesses "0x1234...,0xabcd...,0x5678..." \
+    --public "0xdead...,0xbeef..."
+"#;
+
 fn usage() {
     print!("{ANSI_LOGO}{ABOUT}\n{USAGE}");
 }
@@ -87,6 +111,10 @@ fn validate_usage() {
 
 fn rebuild_usage() {
     eprint!("{REBUILD_USAGE}");
+}
+
+fn prove_usage() {
+    eprint!("{PROVE_USAGE}");
 }
 
 /// Validate a single ZK binary file
@@ -260,6 +288,11 @@ fn main() -> ExitCode {
                 }
                 let path = Path::new(&args_vec[2]);
                 return rebuild_directory(path)
+            }
+            "prove" => {
+                // Pass remaining args after "prove" to the prove handler
+                let prove_args: Vec<String> = args_vec[2..].to_vec();
+                return run_prove(&prove_args)
             }
             _ => {}
         }
