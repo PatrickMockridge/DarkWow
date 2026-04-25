@@ -55,5 +55,8 @@ serde_json = "1.0"
 structopt = "0.3.26"
 structopt-toml = "0.5.1"
 
+[dev-dependencies]
+darkfi-contract-test-harness = {path = "../../src/contract/test-harness"}
+
 [lints]
 workspace = true

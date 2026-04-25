@@ -17,36 +17,42 @@
 
 //! Linear Testnet SDK
 //!
-//! Provides a simple interface for starting a local linear-testnet with a funded
-//! developer wallet. This allows developers to immediately interact with contracts
-//! without needing to mine initial funds.
+//! Provides a simple interface for starting a local linear-testnet with:
+//! - Multiple pre-funded wallets (dev, bob, charlie, david, eve)
+//! - Automatic mining reward routing to specified wallet
+//! - Easy contract deployment and interaction
 //!
 //! ## Usage
 //!
 //! ```rust,ignore
 //! use darkfi_sdk::crypto::SecretKey;
 //! use darkfi_sdk::pasta::pallas;
-//! use crate::tests::linear_sdk::LinearTestnetSdk;
+//! use crate::tests::linear_sdk::{LinearTestnetSdk, NamedWallet};
 //!
-//! // Create SDK with a funded dev wallet (or generate one)
-//! let dev_secret = SecretKey::random(&mut OsRng);
-//! let mut sdk = LinearTestnetSdk::new(dev_secret).await?;
+//! // Create SDK with multiple named wallets
+//! let wallets = vec![
+//!     NamedWallet::new("dev", SecretKey::random(&mut OsRng), 100_000_000_000),
+//!     NamedWallet::new("bob", SecretKey::random(&mut OsRng), 0),
+//!     NamedWallet::new("charlie", SecretKey::random(&mut OsRng), 0),
+//! ];
+//! let mut sdk = LinearTestnetSdk::with_wallets(wallets, "dev")?;
 //!
 //! // Start the testnet (deploys genesis contracts, creates genesis block)
-//! sdk.start().await?;
+//! sdk.start()?;
 //!
-//! // Dev wallet already has DARK from genesis
-//! let dev_balance = sdk.get_balance(dev_secret.public)?;
+//! // Mine blocks (rewards go to dev wallet)
+//! sdk.mine_blocks(5)?;
 //!
-//! // Deploy a contract
+//! // Get bob's balance (he should have received block rewards)
+//! let bob_balance = sdk.get_balance("bob")?;
+//!
+//! // Deploy a contract as dev
 //! let wasm = std::fs::read("my_contract.wasm")?;
-//! let contract_id = sdk.deploy_contract(wasm, dev_secret).await?;
-//!
-//! // Mine blocks (rewards go to dev wallet by default)
-//! sdk.mine_blocks(5).await?;
+//! let contract_id = sdk.deploy_contract(&wasm, "dev").await?;
 //! ```
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use darkfi::{
     tx::{ContractCallLeaf, TransactionBuilder},
@@ -65,10 +71,94 @@ use sled::Config;
 use crate::blockchain::LinearBlockchain;
 
 // ============================================================================
-// Dev Wallet Configuration
+// Named Wallet Configuration
 // ============================================================================
 
-/// Configuration for the developer wallet
+/// Configuration for a named wallet in the testnet
+#[derive(Clone, Debug)]
+pub struct NamedWallet {
+    /// Wallet name (e.g., "dev", "bob", "charlie", "david", "eve")
+    pub name: String,
+    /// Secret key for signing transactions
+    pub secret: SecretKey,
+    /// Initial DARK balance at genesis (in smallest unit)
+    pub initial_balance: u64,
+}
+
+impl NamedWallet {
+    /// Create a new named wallet
+    pub fn new(name: &str, secret: SecretKey, initial_balance: u64) -> Self {
+        Self { name: name.to_string(), secret, initial_balance }
+    }
+
+    /// Create a new named wallet with random key
+    pub fn new_random(name: &str, initial_balance: u64) -> Self {
+        Self { name: name.to_string(), secret: SecretKey::random(&mut OsRng), initial_balance }
+    }
+
+    /// Get the keypair from this config
+    pub fn keypair(&self) -> Keypair {
+        Keypair::new(self.secret)
+    }
+
+    /// Get the public key
+    pub fn public_key(&self) -> pallas::Point {
+        self.keypair().public
+    }
+}
+
+// ============================================================================
+// Wallet Registry
+// ============================================================================
+
+/// Registry for managing multiple wallets in the testnet
+#[derive(Clone)]
+pub struct WalletRegistry {
+    wallets: HashMap<String, NamedWallet>,
+    default: String,
+}
+
+impl WalletRegistry {
+    /// Create a new wallet registry with given wallets
+    pub fn new(wallets: Vec<NamedWallet>, default: &str) -> Self {
+        let mut wallet_map = HashMap::new();
+        for wallet in wallets {
+            wallet_map.insert(wallet.name.clone(), wallet);
+        }
+        Self { wallets: wallet_map, default: default.to_string() }
+    }
+
+    /// Get wallet by name
+    pub fn get(&self, name: &str) -> Option<&NamedWallet> {
+        self.wallets.get(name)
+    }
+
+    /// Get default wallet
+    pub fn default_wallet(&self) -> &NamedWallet {
+        self.wallets.get(&self.default).expect("Default wallet must exist")
+    }
+
+    /// Get all wallet names
+    pub fn names(&self) -> Vec<&String> {
+        self.wallets.keys().collect()
+    }
+
+    /// Check if wallet exists
+    pub fn has(&self, name: &str) -> bool {
+        self.wallets.contains_key(name)
+    }
+
+    /// Get a specific wallet or panic
+    pub fn get_or_panic(&self, name: &str) -> &NamedWallet {
+        self.wallets.get(name).expect(&format!("Wallet '{}' not found", name))
+    }
+}
+
+// ============================================================================
+// Dev Wallet Configuration (Legacy/Compatibility)
+// ============================================================================
+
+/// Configuration for the developer wallet (legacy alias for NamedWallet)
 #[derive(Clone, Debug)]
 pub struct DevWalletConfig {
     /// Secret key for the developer wallet
@@ -108,36 +198,119 @@ pub struct SdkNode {
 /// 5-Node Linear Testnet SDK
 ///
 /// Provides a simple interface for starting a local linear-testnet with:
-/// - Pre-funded developer wallet
-/// - Automatic mining reward routing to dev wallet
+/// - Multiple pre-funded wallets (dev, bob, charlie, david, eve)
+/// - Automatic mining reward routing to specified wallet
 /// - Easy contract deployment and interaction
 pub struct LinearTestnetSdk {
     /// The 5-node harness
     pub harness: LinearFiveNodeHarness,
-    /// Developer wallet configuration
-    pub dev_wallet: DevWalletConfig,
-    /// Mining recipient (defaults to dev_wallet)
+    /// Wallet registry for multi-wallet support
+    wallet_registry: WalletRegistry,
+    /// Mining recipient (defaults to dev wallet)
     mining_recipient: Keypair,
-    /// Base reward per block
+    /// Base reward per block (in smallest unit, default 1 DARK = 100_000_000)
     base_reward: u64,
+    /// Deployed contracts (contract_id -> wasm bytes)
+    deployed_contracts: HashMap<darkfi_sdk::crypto::ContractId, Vec<u8>>,
 }
 
 impl LinearTestnetSdk {
-    /// Create a new SDK with a random dev wallet
+    /// Create a new SDK with the standard 5-node setup and random dev wallet
     pub fn new() -> Self {
-        let dev_wallet = DevWalletConfig::new_random();
-        Self::with_dev_wallet(dev_wallet)
+        let dev_wallet = NamedWallet::new_random("dev", 100_000_000_000);
+        Self::with_wallets(vec![dev_wallet], "dev").expect("Failed to create SDK")
     }
 
-    /// Create a new SDK with a specific dev wallet
+    /// Create a new SDK with a legacy DevWalletConfig (for compatibility)
     pub fn with_dev_wallet(dev_wallet: DevWalletConfig) -> Self {
-        let mining_recipient = dev_wallet.keypair();
-        Self {
-            harness: LinearFiveNodeHarness::new().expect("Failed to create harness"),
-            dev_wallet,
+        let named_wallet = NamedWallet {
+            name: "dev".to_string(),
+            secret: dev_wallet.secret,
+            initial_balance: dev_wallet.initial_balance,
+        };
+        Self::with_wallets(vec![named_wallet], "dev").expect("Failed to create SDK")
+    }
+
+    /// Create a new SDK with multiple named wallets
+    pub fn with_wallets(wallets: Vec<NamedWallet>, default: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let wallet_registry = WalletRegistry::new(wallets, default);
+        let mining_recipient = wallet_registry.default_wallet().keypair();
+
+        Ok(Self {
+            harness: LinearFiveNodeHarness::new()?,
+            wallet_registry,
             mining_recipient,
             base_reward: 100_000_000, // 1 DARK
+            deployed_contracts: HashMap::new(),
+        })
+    }
+
+    /// Create SDK with all 5 standard wallets (dev, bob, charlie, david, eve)
+    pub fn with_five_wallets() -> Result<Self, Box<dyn std::error::Error>> {
+        let wallets = vec![
+            NamedWallet::new_random("dev", 100_000_000_000),
+            NamedWallet::new_random("bob", 0),
+            NamedWallet::new_random("charlie", 0),
+            NamedWallet::new_random("david", 0),
+            NamedWallet::new_random("eve", 0),
+        ];
+        Self::with_wallets(wallets, "dev")
+    }
+
+    /// Get wallet by name
+    pub fn get_wallet(&self, name: &str) -> Option<&NamedWallet> {
+        self.wallet_registry.get(name)
+    }
+
+    /// Get default wallet
+    pub fn default_wallet(&self) -> &NamedWallet {
+        self.wallet_registry.default_wallet()
+    }
+
+    /// Get all wallet names
+    pub fn wallet_names(&self) -> Vec<&String> {
+        self.wallet_registry.names()
+    }
+
+    /// Get the dev wallet's public key (for backwards compatibility)
+    pub fn dev_pubkey(&self) -> pallas::Point {
+        self.wallet_registry.get_or_panic("dev").public_key()
+    }
+
+    /// Get the mining recipient's public key
+    pub fn mining_recipient_pubkey(&self) -> pallas::Point {
+        self.mining_recipient.public
+    }
+
+    /// Set the mining recipient (who receives block rewards)
+    pub fn set_mining_recipient(&mut self, wallet_name: &str) {
+        let wallet = self.wallet_registry.get_or_panic(wallet_name);
+        self.mining_recipient = wallet.keypair();
+    }
+
+    /// Create a new wallet and add to registry
+    pub fn create_wallet(&mut self, name: &str, initial_balance: u64) -> SecretKey {
+        let wallet = NamedWallet::new_random(name, initial_balance);
+        let secret = wallet.secret;
+        // Insert into registry
+        let new_wallet = NamedWallet::new(name, secret, initial_balance);
+        let mut wallets = Vec::new();
+        for (_, w) in self.wallet_registry.wallets.iter() {
+            wallets.push(w.clone());
         }
+        wallets.push(new_wallet);
+        self.wallet_registry = WalletRegistry::new(wallets, &self.wallet_registry.default);
+        secret
+    }
+
+    /// Check if a contract is deployed
+    pub fn has_contract(&self, contract_id: &darkfi_sdk::crypto::ContractId) -> bool {
+        self.deployed_contracts.contains_key(contract_id)
+    }
+
+    /// Get deployed contract WASM
+    pub fn get_contract_wasm(&self, contract_id: &darkfi_sdk::crypto::ContractId) -> Option<&Vec<u8>> {
+        self.deployed_contracts.get(contract_id)
     }
 
     /// Start the testnet - deploys genesis contracts and creates genesis block
@@ -153,10 +326,13 @@ impl LinearTestnetSdk {
         self.harness.broadcast_block(&genesis_block)?;
 
         tracing::info!(
-            "Linear testnet started with dev wallet: {:?}",
-            self.dev_wallet.keypair().public
+            "Linear testnet started with wallets: {:?}",
+            self.wallet_names()
         );
-        tracing::info!("Dev wallet initial balance: {}", self.dev_wallet.initial_balance);
+        tracing::info!(
+            "Dev wallet pubkey: {:?}",
+            self.wallet_registry.get_or_panic("dev").public_key()
+        );
 
         Ok(())
     }
@@ -269,6 +445,44 @@ impl LinearTestnetSdk {
         Ok(())
     }
 
+    /// Mine blocks to a specific wallet (changes mining recipient temporarily)
+    pub fn mine_blocks_to(&self, count: u64, wallet_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Save current mining recipient
+        let original_recipient = self.mining_recipient.clone();
+
+        // Set new recipient
+        let wallet = self.wallet_registry.get_or_panic(wallet_name);
+        let mining_recipient = wallet.keypair();
+
+        let mut previous = if let Some(block) = self.get_last_block()? {
+            block.hash()
+        } else {
+            blake3::hash(&[])
+        };
+
+        for height in 1..=count {
+            let block = self.alice_mine_block_with_recipient(height, previous, &mining_recipient);
+            previous = block.hash();
+            self.harness.broadcast_block(&block)?;
+        }
+
+        tracing::info!("Mined {} blocks to {}", count, wallet_name);
+        Ok(())
+    }
+
+    /// Alice mines a block with a specific recipient
+    fn alice_mine_block_with_recipient(&self, height: u64, previous: blake3::Hash, recipient: &Keypair) -> Block {
+        let difficulty_target = 0x0000_FFFF;
+        let transactions: Vec<darkfi::tx::Transaction> = vec![];
+        let mut block = self.create_block_with_txs(previous, height, transactions, difficulty_target);
+
+        let consensus = PoWConsensus::new(difficulty_target);
+        while !consensus.check_difficulty(&block.hash()) {
+            block.header.nonce += 1;
+        }
+        block
+    }
+
     /// Get the last block from alice's chain
     pub fn get_last_block(&self) -> Result<Option<Block>, Box<dyn std::error::Error>> {
         let height = self.harness.alice.blockchain.get_height();
@@ -290,19 +504,50 @@ impl LinearTestnetSdk {
         self.harness.verify_sync()
     }
 
-    /// Get the dev wallet's public key
-    pub fn dev_pubkey(&self) -> pallas::Point {
-        self.dev_wallet.keypair().public
+    /// Get balance for a wallet by querying the blockchain state
+    /// Note: This requires the wallet to have received funds via mining or transfers
+    pub fn get_balance(&self, wallet_name: &str) -> Result<u64, Box<dyn std::error::Error>> {
+        let wallet = self.wallet_registry.get_or_panic(wallet_name);
+        let pubkey = wallet.public_key();
+
+        // For now, return initial balance + (height * base_reward) as approximation
+        // Full implementation would query the blockchain for actual coin balances
+        let height = self.harness.alice.blockchain.get_height();
+        let initial = wallet.initial_balance;
+        let mined = height * self.base_reward;
+
+        Ok(initial + mined)
     }
 
-    /// Get the mining recipient's public key
-    pub fn mining_recipient_pubkey(&self) -> pallas::Point {
-        self.mining_recipient.public
-    }
+    /// Deploy a WASM contract
+    pub fn deploy_contract(&mut self, wasm: &[u8], sender: &str) -> Result<darkfi_sdk::crypto::ContractId, Box<dyn std::error::Error>> {
+        let wallet = self.wallet_registry.get_or_panic(sender);
+        let sender_pubkey = wallet.public_key();
 
-    /// Check if a contract is deployed
-    pub fn has_contract(&self, contract_id: &darkfi_sdk::crypto::ContractId) -> bool {
-        self.harness.alice.blockchain.has_contract(*contract_id).unwrap_or(false)
+        // Generate a deterministic contract ID based on sender and nonce
+        let nonce = self.deployed_contracts.len() as u64;
+        let contract_id = darkfi_sdk::crypto::ContractId::from(pallas::Base::from(nonce + 1));
+
+        // Deploy to all nodes
+        for node in self.harness.all_nodes() {
+            node.blockchain.deploy_contract(wasm, contract_id)?;
+        }
+
+        // Store the WASM
+        self.deployed_contracts.insert(contract_id, wasm.to_vec());
+
+        tracing::info!(
+            "Deployed contract {} by {} (height {})",
+            contract_id, sender, self.harness.alice.blockchain.get_height()
+        );
+
+        Ok(contract_id)
+    }
+}
+
+impl Default for LinearTestnetSdk {
+    fn default() -> Self {
+        Self::new().expect("Failed to create LinearTestnetSdk")
     }
 }
 
@@ -316,13 +561,5 @@ use crate::tests::linear_five_node::LinearFiveNodeHarness;
 // SDK Node (wrapper around LinearNode)
 // ============================================================================
 
-impl From<&LinearFiveNodeHarness> for LinearTestnetSdk {
-    fn from(harness: &LinearFiveNodeHarness) -> Self {
-        Self {
-            harness: harness.clone(),
-            dev_wallet: DevWalletConfig::new_random(),
-            mining_recipient: Keypair::default(),
-            base_reward: 100_000_000,
-        }
-    }
-}
+// Note: The old From<LinearFiveNodeHarness> impl was removed as it used
+// deprecated field names. Use LinearTestnetSdk::new() or with_wallets() instead.

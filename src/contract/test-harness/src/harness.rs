@@ -43,7 +43,6 @@
 //! let reward = native_token.mint_pow_reward(keypair, block_height, fees)?;
 //! ```
 
-pub mod atomic_swap;
 pub mod attestation;
 pub mod auction;
 pub mod baccarat;
@@ -70,7 +69,6 @@ pub mod subscription;
 pub mod tender;
 
 // Re-export for convenience
-pub use atomic_swap::{AtomicSwapHarness, CreateSwapResult, ClaimSwapResult, RefundSwapResult};
 pub use attestation::AttestationHarness;
 pub use auction::AuctionHarness;
 pub use baccarat::BaccaratHarness;

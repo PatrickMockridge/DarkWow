@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use darkfi_linear::{Block, LinearStore, PoWConsensus, create_block};
 use darkfi_sdk::{crypto::DEPLOYOOOR_CONTRACT_ID, pasta::pallas};
+use randomx::{RandomXFlags, RandomXVM};
 use sled::Config;
 
 use crate::blockchain::LinearBlockchain;
@@ -40,6 +41,8 @@ pub struct LinearFiveNodeHarness {
     pub charlie: LinearNode,
     pub david: LinearNode,
     pub eve: LinearNode,
+    /// RandomX VM for block hashing (used in mining)
+    vm: Arc<RandomXVM>,
 }
 
 impl LinearFiveNodeHarness {
@@ -49,6 +52,11 @@ impl LinearFiveNodeHarness {
         let db_charlie = Config::new().temporary(true).open()?;
         let db_david = Config::new().temporary(true).open()?;
         let db_eve = Config::new().temporary(true).open()?;
+
+        // Create RandomX VM for block hashing/mining
+        let flags = RandomXFlags::default();
+        let cache = randomx::RandomXCache::new(flags, &[0u8; 32])?;
+        let vm = Arc::new(RandomXVM::new(flags, Some(cache), None)?);
 
         let store_alice = Arc::new(LinearStore::new(Arc::new(db_alice))?);
         let store_bob = Arc::new(LinearStore::new(Arc::new(db_bob))?);
@@ -68,7 +76,7 @@ impl LinearFiveNodeHarness {
         let david = LinearNode { blockchain: Arc::new(blockchain_david), store: store_david };
         let eve = LinearNode { blockchain: Arc::new(blockchain_eve), store: store_eve };
 
-        Ok(Self { alice, bob, charlie, david, eve })
+        Ok(Self { alice, bob, charlie, david, eve, vm })
     }
 
     /// Deploy genesis contracts to all 5 nodes
@@ -96,10 +104,10 @@ impl LinearFiveNodeHarness {
     pub fn alice_create_genesis(&self) -> Block {
         let difficulty_target = 0x0000_FFFF;
         let previous = blake3::hash(&[]);
-        let mut block = create_block(previous, 0, vec![], difficulty_target);
+        let mut block = create_block(previous, 0, vec![], difficulty_target, &*self.vm);
 
         let consensus = PoWConsensus::new(difficulty_target);
-        while !consensus.check_difficulty(&block.hash()) {
+        while !consensus.check_difficulty(&block.hash(&*self.vm)) {
             block.header.nonce += 1;
         }
         block
@@ -108,10 +116,10 @@ impl LinearFiveNodeHarness {
     /// Alice mines a block on top of the given previous hash
     pub fn alice_mine_block(&self, height: u64, previous: blake3::Hash) -> Block {
         let difficulty_target = 0x0000_FFFF;
-        let mut block = create_block(previous, height, vec![], difficulty_target);
+        let mut block = create_block(previous, height, vec![], difficulty_target, &*self.vm);
 
         let consensus = PoWConsensus::new(difficulty_target);
-        while !consensus.check_difficulty(&block.hash()) {
+        while !consensus.check_difficulty(&block.hash(&*self.vm)) {
             block.header.nonce += 1;
         }
         block
@@ -161,7 +169,7 @@ mod tests {
 
         // Alice creates genesis block (ONE single genesis)
         let genesis_block = harness.alice_create_genesis();
-        let genesis_hash = genesis_block.hash();
+        let genesis_hash = genesis_block.hash(&*harness.vm);
 
         // Broadcast genesis to all nodes (including Alice)
         harness.broadcast_block(&genesis_block)?;
@@ -176,7 +184,7 @@ mod tests {
         for height in 1..=5 {
             let block = harness.alice_mine_block(height, previous);
             harness.broadcast_block(&block)?;
-            previous = block.hash();
+            previous = block.hash(&*harness.vm);
         }
 
         // Verify all nodes agree on height 5
@@ -191,13 +199,14 @@ mod tests {
     #[test]
     fn test_linear_block_with_uncles() -> Result<(), Box<dyn std::error::Error>> {
         let harness = LinearFiveNodeHarness::new()?;
+        let vm = &*harness.vm;
 
         // Deploy genesis contracts
         harness.deploy_genesis_contracts()?;
 
         // Alice creates genesis block
         let genesis_block = harness.alice_create_genesis();
-        let genesis_hash = genesis_block.hash();
+        let genesis_hash = genesis_block.hash(vm);
 
         // Broadcast genesis to all nodes
         harness.broadcast_block(&genesis_block)?;
@@ -232,13 +241,13 @@ mod tests {
         assert!(uncle.pin_accepted);
 
         // Create canonical block at height 2 that includes the uncle
-        let canonical_hash = canonical_block.hash();
+        let canonical_hash = canonical_block.hash(vm);
         let mut canonical_block2 =
-            create_block_with_uncles(canonical_hash, 2, vec![], difficulty_target, &[uncle.clone()]);
+            create_block_with_uncles(canonical_hash, 2, vec![], difficulty_target, &[uncle.clone()], vm);
 
         // Mine the canonical block so it satisfies PoW
         let consensus = PoWConsensus::new(difficulty_target);
-        while !consensus.check_difficulty(&canonical_block2.hash()) {
+        while !consensus.check_difficulty(&canonical_block2.hash(vm)) {
             canonical_block2.header.nonce += 1;
         }
 
@@ -254,7 +263,7 @@ mod tests {
         assert_eq!(blockchain.get_height(), 2);
 
         // Verify uncle was stored with pin_accepted = true
-        let stored_uncle = blockchain.store.get_uncle(uncle_block.hash().as_bytes())?;
+        let stored_uncle = blockchain.store.get_uncle(uncle_block.hash(vm).as_bytes())?;
         assert!(stored_uncle.is_some());
         let stored_uncle = stored_uncle.unwrap();
         assert!(stored_uncle.pin_accepted);
@@ -266,9 +275,10 @@ mod tests {
     #[test]
     fn test_pin_reject_flow() -> Result<(), Box<dyn std::error::Error>> {
         let harness = LinearFiveNodeHarness::new()?;
+        let vm = &*harness.vm;
         harness.deploy_genesis_contracts()?;
         let genesis_block = harness.alice_create_genesis();
-        let genesis_hash = genesis_block.hash();
+        let genesis_hash = genesis_block.hash(vm);
         harness.broadcast_block(&genesis_block)?;
         let blockchain = &harness.alice.blockchain;
 
@@ -290,13 +300,13 @@ mod tests {
         assert!(!uncle.pin_accepted);
 
         // Create canonical block at height 2 that includes the uncle
-        let canonical_hash = canonical_block.hash();
+        let canonical_hash = canonical_block.hash(vm);
         let mut canonical_block2 =
-            create_block_with_uncles(canonical_hash, 2, vec![], difficulty_target, &[uncle.clone()]);
+            create_block_with_uncles(canonical_hash, 2, vec![], difficulty_target, &[uncle.clone()], vm);
 
         // Mine the canonical block so it satisfies PoW
         let consensus = PoWConsensus::new(difficulty_target);
-        while !consensus.check_difficulty(&canonical_block2.hash()) {
+        while !consensus.check_difficulty(&canonical_block2.hash(vm)) {
             canonical_block2.header.nonce += 1;
         }
 
@@ -309,7 +319,7 @@ mod tests {
         assert_eq!(blockchain.get_height(), 2);
 
         // Verify uncle was stored with pin_accepted = false (rejected)
-        let stored_uncle = blockchain.store.get_uncle(uncle_block.hash().as_bytes())?;
+        let stored_uncle = blockchain.store.get_uncle(uncle_block.hash(vm).as_bytes())?;
         assert!(stored_uncle.is_some());
         let stored_uncle = stored_uncle.unwrap();
         assert!(!stored_uncle.pin_accepted);

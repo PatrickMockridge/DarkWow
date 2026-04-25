@@ -2608,6 +2608,7 @@ dependencies = [
  "blake3",
  "bs58",
  "darkfi",
+ "darkfi-contract-test-harness",
  "darkfi-sdk",
  "darkfi-serial",
  "darkfi_baccarat_contract",
@@ -11046,6 +11047,9 @@ dependencies = [
  "arg",
  "blake3",
  "darkfi",
+ "darkfi-sdk",
+ "hex",
+ "rand 0.8.6",
 ]
 
 [[package]]

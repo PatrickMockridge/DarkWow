@@ -265,12 +265,21 @@ To test contracts on the linear-testnet with full ZK proof generation:
 # Start 5-node linear testnet
 cargo run --bin darkfid --features linear_testnet -- --config darkfid-five-nodes.toml &
 
-# Run contract tests
-cargo test --test linear_contract_tests
+# Run contract integration tests (8 tests)
+cargo test --release -p darkfid -- contract_integration
+
+# Run five-node harness tests (mining, uncle mechanism)
+cargo test --release -p darkfid --lib -- linear_five_node::tests
 ```
 
-The linear-testnet uses the `HeavyweightPipeline` testing system which
+The contract integration tests use the `HeavyweightPipeline` testing system which
 provides real ZK proof generation through the `ContractHarness` trait.
+Contracts tested: NativeToken, MoneyV3, DAO Escrow, Stablecoin, DEX.
+
+The five-node harness tests verify:
+- `test_linear_five_node_consensus`: 5-node mining and sync
+- `test_linear_block_with_uncles`: Uncle block creation and pin mechanism
+- `test_pin_reject_flow`: Pin acceptance/rejection rewards
 
 ### Extending the smart contract client
 
