@@ -198,3 +198,79 @@ drk -c bin/drk/drk_config.toml -n testnet token mint <token-id> <amount> <recipi
 - **Solo mining vs Merge mining**: This guide uses solo PoW mining. Merge mining (with Monero+p2pool) is for mainnet and provides additional security.
 - **Testnet DARK has no value**: Tokens earned on testnet are for testing only.
 - **Mining difficulty**: The `pow_target` setting affects how quickly blocks are found. Lower = easier mining.
+
+## Local Linear-Testnet SDK
+
+For local development, you can use the `LinearTestnetSdk` to spin up a funded testnet.
+
+### Rust SDK Usage
+
+```rust
+use darkfi_sdk::{crypto::SecretKey, pasta::pallas};
+use darkfi::tests::linear_sdk::LinearTestnetSdk;
+
+// Create SDK with a funded dev wallet
+let dev_secret = SecretKey::random(&mut OsRng);
+let mut sdk = LinearTestnetSdk::with_dev_wallet(DevWalletConfig::new(dev_secret, 100_000_000_000));
+
+// Start the testnet
+sdk.start()?;
+
+// Dev wallet already has DARK from genesis
+let dev_pubkey = sdk.dev_pubkey();
+
+// Mine blocks (rewards go to dev wallet by default)
+sdk.mine_blocks(10)?;
+
+// Deploy a contract
+let wasm = std::fs::read("my_contract.wasm")?;
+let contract_id = sdk.deploy_contract(wasm, dev_secret).await?;
+```
+
+### Docker Setup
+
+The Docker Compose stack auto-generates a dev wallet on first startup:
+
+```bash
+cd contrib/docker/linear-testnet
+
+# Start the stack (dev wallet is auto-generated)
+./scripts/start.sh
+
+# Check which wallet received initial funds
+docker logs darkfi-linear-node0 2>&1 | grep "dev_wallet"
+
+# Mine some blocks to get more DARK
+./scripts/mine.sh 0 100000000
+```
+
+### Configuration
+
+In `node*.toml`, configure the dev wallet:
+
+```toml
+# Developer wallet configuration
+dev_wallet_secret = "generate"  # "generate" = create new, or hex-encoded secret
+dev_wallet_initial_balance = 100000000000  # 100 DARK in smallest unit
+
+# Mining recipient (defaults to dev_wallet)
+# mining_recipient = "Dz..."
+```
+
+The dev wallet receives initial DARK at genesis, and mining rewards automatically go to it unless overridden.
+
+### Verifying Setup
+
+```bash
+# Check dev wallet balance via RPC
+curl -X POST http://localhost:28345 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"wallet.balance","params":[],"id":1}'
+
+# Check node sync status
+curl -X POST http://localhost:28345 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"blockchain.height","params":[],"id":1}'
+```
+
+See [Uncle Merkle Consensus](../../arch/uncle_merkle.md) for consensus specification.

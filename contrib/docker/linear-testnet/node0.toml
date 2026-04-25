@@ -13,6 +13,14 @@ max_forks = 8
 pow_target = 1
 pow_fixed_difficulty = 1
 
+# Developer wallet configuration
+# Initial DARK allocation at genesis for development
+dev_wallet_secret = "generate"  # "generate" = create new, or hex-encoded secret
+dev_wallet_initial_balance = 100000000000  # 100 DARK in smallest unit
+
+# Mining reward recipient (defaults to dev_wallet if not set)
+# mining_recipient = "Dz..."  # bs58 encoded public address
+
 # Startup behavior
 skip_sync = true
 skip_fees = true
