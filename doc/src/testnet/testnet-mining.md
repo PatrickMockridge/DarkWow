@@ -199,78 +199,155 @@ drk -c bin/drk/drk_config.toml -n testnet token mint <token-id> <amount> <recipi
 - **Testnet DARK has no value**: Tokens earned on testnet are for testing only.
 - **Mining difficulty**: The `pow_target` setting affects how quickly blocks are found. Lower = easier mining.
 
-## Local Linear-Testnet SDK
+## Local Development Setup
 
-For local development, you can use the `LinearTestnetSdk` to spin up a funded testnet.
+For contract development, use the **linear-testnet** which provides a pre-funded developer wallet and instant block mining.
 
-### Rust SDK Usage
-
-```rust
-use darkfi_sdk::{crypto::SecretKey, pasta::pallas};
-use darkfi::tests::linear_sdk::LinearTestnetSdk;
-
-// Create SDK with a funded dev wallet
-let dev_secret = SecretKey::random(&mut OsRng);
-let mut sdk = LinearTestnetSdk::with_dev_wallet(DevWalletConfig::new(dev_secret, 100_000_000_000));
-
-// Start the testnet
-sdk.start()?;
-
-// Dev wallet already has DARK from genesis
-let dev_pubkey = sdk.dev_pubkey();
-
-// Mine blocks (rewards go to dev wallet by default)
-sdk.mine_blocks(10)?;
-
-// Deploy a contract
-let wasm = std::fs::read("my_contract.wasm")?;
-let contract_id = sdk.deploy_contract(wasm, dev_secret).await?;
-```
-
-### Docker Setup
-
-The Docker Compose stack auto-generates a dev wallet on first startup:
+### Quick Start
 
 ```bash
-cd contrib/docker/linear-testnet
+# 1. Build darkfid with linear-testnet support
+cargo build -p darkfid
 
-# Start the stack (dev wallet is auto-generated)
+# 2. Start the 5-node linear-testnet Docker stack
+cd contrib/docker/linear-testnet
 ./scripts/start.sh
 
-# Check which wallet received initial funds
+# 3. Check dev wallet address (auto-generated)
 docker logs darkfi-linear-node0 2>&1 | grep "dev_wallet"
 
-# Mine some blocks to get more DARK
+# 4. Mine some blocks to get DARK for fees
 ./scripts/mine.sh 0 100000000
+
+# 5. Deploy a contract
+drk contract deploy <dev_secret_hex> --wasm path/to/contract.wasm | broadcast
 ```
 
-### Configuration
+### Docker Stack Overview
 
-In `node*.toml`, configure the dev wallet:
+The linear-testnet runs 5 darkfid nodes with xmrig miners:
+
+```
+node0 (seed) ── xmrig0
+node1         xmrig1
+node2         xmrig2  ──>  darkfi-local network
+node3         xmrig3
+node4         xmrig4
+```
+
+**RPC Endpoints:**
+- Node0: `http://localhost:28345`
+- Node1: `http://localhost:28346`
+- Node2: `http://localhost:28347`
+- Node3: `http://localhost:28348`
+- Node4: `http://localhost:28349`
+
+### Developer Wallet Configuration
+
+On first startup, a developer wallet is auto-generated with 100 DARK:
 
 ```toml
-# Developer wallet configuration
-dev_wallet_secret = "generate"  # "generate" = create new, or hex-encoded secret
-dev_wallet_initial_balance = 100000000000  # 100 DARK in smallest unit
-
-# Mining recipient (defaults to dev_wallet)
-# mining_recipient = "Dz..."
+# In node0.toml (or any node config)
+[network_config."linear-testnet"]
+dev_wallet_secret = "generate"  # or hex-encoded secret
+dev_wallet_initial_balance = 100000000000  # 100 DARK
 ```
 
-The dev wallet receives initial DARK at genesis, and mining rewards automatically go to it unless overridden.
+To use a specific wallet, replace `"generate"` with the hex secret key.
 
-### Verifying Setup
+Mining rewards automatically go to the dev wallet unless `mining_recipient` is set.
+
+### Verifying Your Setup
 
 ```bash
-# Check dev wallet balance via RPC
+# Check dev wallet balance
 curl -X POST http://localhost:28345 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"wallet.balance","params":[],"id":1}'
 
-# Check node sync status
+# Check blockchain height
 curl -X POST http://localhost:28345 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"blockchain.height","params":[],"id":1}'
+
+# Check peer connections
+curl -X POST http://localhost:28345 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"p2p.get_info","params":[],"id":1}'
+```
+
+### Deploying a Contract
+
+```bash
+# 1. Create a deploy authority
+drk --network linear contract generate-deploy
+# Output: Deploy Authority Secret: <hex>
+#         Contract ID: <contract_id>
+
+# 2. Deploy WASM (takes hex secret, not contract ID)
+drk --network linear contract deploy <secret_hex> \
+  --wasm path/to/my_contract.wasm \
+  --deploy-ix path/to/deploy_ix.bin | broadcast
+
+# 3. Check deployment
+drk --network linear contract list
+```
+
+### Using the Rust SDK
+
+For tests, use `LinearTestnetSdk`:
+
+```rust
+use darkfi_sdk::crypto::SecretKey;
+use darkfi::tests::linear_sdk::{LinearTestnetSdk, DevWalletConfig};
+
+async fn test_contract() -> Result<()> {
+    // Create SDK with funded dev wallet
+    let dev_config = DevWalletConfig::new_random();
+    let mut sdk = LinearTestnetSdk::with_dev_wallet(dev_config);
+
+    // Start network (deploys genesis contracts, creates genesis block)
+    sdk.start()?;
+
+    // Dev wallet has initial DARK
+    let dev_keypair = sdk.dev_wallet.keypair();
+
+    // Deploy contract
+    let wasm = include_bytes!("../../contract/my_contract.wasm").to_vec();
+    let contract_id = sdk.deploy_contract(wasm, dev_keypair.secret).await?;
+
+    // Mine blocks (rewards to dev wallet)
+    sdk.mine_blocks(5)?;
+
+    Ok(())
+}
+```
+
+### Stopping the Stack
+
+```bash
+cd contrib/docker/linear-testnet
+./scripts/stop.sh
+
+# Or just docker-compose down
+docker-compose down
+```
+
+## Linear-Testnet SDK
+
+For advanced testing, use the `LinearTestnetSdk` directly:
+
+```rust
+use darkfi::tests::linear_sdk::LinearTestnetSdk;
+
+let sdk = LinearTestnetSdk::new();
+sdk.start()?;
+
+// Mine blocks
+sdk.mine_blocks(10)?;
+
+// Deploy contract with ZK proofs
+let tx = sdk.deploy_contract_with_proofs(wasm, dev_secret).await?;
 ```
 
 See [Uncle Merkle Consensus](../../arch/uncle_merkle.md) for consensus specification.
