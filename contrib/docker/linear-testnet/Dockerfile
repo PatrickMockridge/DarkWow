@@ -1,49 +1,51 @@
 # DarkFi Linear-Testnet Docker Image
 #
-# This image contains the darkfid binary for linear-testnet operation.
-# It can be built in two modes:
+# This image builds darkfid from source inside Docker for Debian
 #
-# 1. Pre-built binary (default): Build darkfid on host, copy binary
-#    docker build . -t darkfi:linear-testnet
-#
-# 2. Build from source: Pass --build-arg BUILD_FROM_SOURCE=1
-#    docker build . -t darkfi:linear-testnet --build-arg BUILD_FROM_SOURCE=1
+# Usage:
+#   Build from source:
+#     docker build -t darkfi:linear-testnet . -f contrib/docker/linear-testnet/Dockerfile --build-arg BUILD_FROM_SOURCE=1
+#   (must be run from repo root, not from linear-testnet directory)
 
-ARG ALPINE_VER=3.18
+# ============================================================================
+# Stage: Builder
+# ============================================================================
+FROM debian:bookworm-slim AS builder
 
-# Stage 1: Builder (only used when BUILD_FROM_SOURCE=1)
-FROM alpine:${ALPINE_VER} as builder
-RUN apk add --no-cache cmake jq wget clang curl gcc make llvm-dev \
-  openssl-dev expat-dev freetype-dev libudev-zero-dev \
-  libgudev-dev pkgconf clang-dev fontconfig-dev bash \
-  ttf-opensans musl-dev alsa-lib-dev python3-dev perl sqlite-dev curl
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential gcc g++ make cmake curl git \
+    libssl-dev pkg-config tcl-dev clang libsqlite3-dev
 
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y --default-toolchain nightly-2025-04-10 --default-host x86_64-unknown-linux-musl
+# Install Rust with default toolchain
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y \
+    --default-toolchain nightly-2025-04-10
+
 ENV PATH="/root/.cargo/bin:${PATH}"
-RUN rustup target add wasm32-unknown-unknown
+ENV LIBCLANG_PATH="/usr/lib/x86_64-linux-gnu"
+ENV RUST_MIN_STACK=16777216
 
-WORKDIR /opt/darkfi
+WORKDIR /app
+
+# Copy entire repo (from build context at repo root)
 COPY . ./
+
+# Build darkfid
 RUN cargo build -p darkfid --release
-RUN cp target/release/darkfid .
 
-# Stage 2: Runtime
-FROM alpine:${ALPINE_VER}
-RUN apk add --no-cache openssl libgcc alsa-lib sqlite-libs ttf-opensans curl
+RUN cp target/release/darkfid /app/darkfid
 
-WORKDIR /opt/darkfi
+# ============================================================================
+# Stage: Runtime
+# ============================================================================
+FROM debian:bookworm-slim
 
-# Default: expect pre-built binary in build context
-COPY --from=builder /opt/darkfi/darkfid ./
+RUN apt-get update && apt-get install -y \
+    libssl3 libsqlite3-0 liblzma5 libstdc++6 fonts-dejavu curl
 
-# For build from source mode, use multi-stage
-ARG BUILD_FROM_SOURCE=0
-FROM builder as source-builder
-FROM alpine:${ALPINE_VER}
-RUN apk add --no-cache openssl libgcc alsa-lib sqlite-libs ttf-opensans curl
-WORKDIR /opt/darkfi
-COPY --from=source-builder /opt/darkfi/darkfid ./
+WORKDIR /app
 
-# Entry point
+COPY --from=builder /app/darkfid ./
+
 ENTRYPOINT ["./darkfid"]
 CMD ["--help"]

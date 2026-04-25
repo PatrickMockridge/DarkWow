@@ -2416,25 +2416,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darkfi_money_v2_contract"
-version = "0.6.0"
-dependencies = [
- "blake3",
- "bs58",
- "chacha20poly1305",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
 name = "darkfi_money_v3_contract"
 version = "0.1.0"
 dependencies = [
@@ -2614,7 +2595,6 @@ dependencies = [
  "darkfi_baccarat_contract",
  "darkfi_deployooor_contract",
  "darkfi_linear",
- "darkfi_money_v2_contract",
  "darkfi_money_v3_contract",
  "darkfi_native_token_contract",
  "easy-parallel",

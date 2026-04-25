@@ -43,7 +43,6 @@ members = [
 
     "src/linear",
 
-    "src/contract/money_v2",
     "src/contract/native_token",
     "src/contract/darktoshi_dice",
     "src/contract/baccarat",
