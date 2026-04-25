@@ -45,7 +45,7 @@ Arguments:
 
 Options:
   -o <FILE>  Place the output into <FILE>
-  -s         Strip debug symbols
+  -d         Include debug symbols (non-deterministic output for debugging)
   -p         Preprocess only; do not compile
   -i         Interactive semantic analysis
   -e         Examine decoded bytecode
@@ -218,7 +218,7 @@ fn rebuild_directory(path: &Path) -> ExitCode {
                 analyzer.witnesses,
                 analyzer.statements,
                 analyzer.literals,
-                true, // include debug symbols
+                false, // include debug symbols (false = deterministic output by default)
                 Some(source_hash),
             );
 
@@ -302,7 +302,7 @@ fn main() -> ExitCode {
     let mut pflag = false;
     let mut iflag = false;
     let mut eflag = false;
-    let mut sflag = false;
+    let mut dflag = false;
     let mut hflag = false;
     let mut vflag = false;
     let mut output = String::new();
@@ -312,7 +312,7 @@ fn main() -> ExitCode {
             'p' => pflag = true,
             'i' => iflag = true,
             'e' => eflag = true,
-            's' => sflag = true,
+            'd' => dflag = true,
             'v' => vflag = true,
             'o' => output = args.eargf().to_string(),
             _ => hflag = true,
@@ -394,7 +394,7 @@ fn main() -> ExitCode {
         analyzer.witnesses,
         analyzer.statements,
         analyzer.literals,
-        !sflag,
+        dflag,
         Some(source_hash),
     );
 

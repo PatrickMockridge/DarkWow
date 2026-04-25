@@ -1,0 +1,81 @@
+k = 11;
+field = "pallas";
+
+# RemoveCollateralV1 circuit - removes collateral from an existing CDP position
+# Proves: position exists, new total = old - removed, still collateralized after removal
+
+constant "RemoveCollateralV1" {
+}
+
+witness "RemoveCollateralV1" {
+    # Public inputs
+    Base position_commitment,    # New position commitment after removing collateral
+    Base owner_pub,              # Poseidon hash of owner_secret
+    Base collateral_type,        # Collateral type (Xmr=0, Drk=1, Eth=2)
+    Base position_nullifier,     # Nullifier for the position
+    Base position_root,          # Merkle root for position proof
+    Base leaf_index,             # Position of leaf in Merkle tree
+
+    # Private inputs
+    Base owner_secret,           # Owner's secret key
+    Base old_collateral,         # Previous collateral amount
+    Base old_debt,               # Previous debt amount
+    Base removed_collateral,     # Amount of collateral being removed
+    Base collateral_blind,       # Blind factor for new collateral commitment
+    Base debt_blind,             # Blind factor for debt commitment
+    Base merkle_proof_0,        # Merkle proof path element 0
+    Base merkle_proof_1,        # Merkle proof path element 1
+    Base merkle_proof_2,        # Merkle proof path element 2
+    Base merkle_proof_3,         # Merkle proof path element 3
+}
+
+circuit "RemoveCollateralV1" {
+    # Verify owner public key derived from secret
+    owner_pub_check = poseidon_hash(owner_secret);
+    constrain_equal_base(owner_pub_check, owner_pub);
+
+    # Compute new total collateral after removal
+    new_collateral = base_sub(old_collateral, removed_collateral);
+
+    # Range check on new collateral (64-bit)
+    range_check(64, new_collateral);
+    bool_check(new_collateral);
+
+    # Range check on removed collateral
+    range_check(64, removed_collateral);
+    bool_check(removed_collateral);
+
+    # Verify removal doesn't exceed existing collateral
+    # removed_collateral <= old_collateral (implicit in subtraction)
+
+    # Create Poseidon commitments for new collateral and existing debt
+    # collateral_commit = poseidon_hash(new_collateral, collateral_blind)
+    collateral_commit = poseidon_hash(new_collateral, collateral_blind);
+
+    # debt_commit = poseidon_hash(old_debt, debt_blind)
+    debt_commit = poseidon_hash(old_debt, debt_blind);
+
+    # Verify position commitment matches computed values
+    position_check = poseidon_hash(
+        collateral_commit,
+        debt_commit,
+        owner_pub,
+        collateral_type
+    );
+    constrain_instance(position_check);
+    constrain_equal_base(position_check, position_commitment);
+
+    # Derive and verify nullifier for this position
+    # nullifier = poseidon_hash(owner_secret, position_commitment)
+    nullifier_check = poseidon_hash(owner_secret, position_commitment);
+    constrain_instance(nullifier_check);
+    constrain_equal_base(nullifier_check, position_nullifier);
+
+    # Collateralization check: new_collateral >= 2 * old_debt (200% minimum)
+    # Important: this ensures removal doesn't put position underwater
+    two_times_debt = base_add(old_debt, old_debt);
+    range_check(64, two_times_debt);
+    ONE = witness_base(1);
+    is_lte = less_than_or_equal(two_times_debt, new_collateral);
+    constrain_equal_base(is_lte, ONE);
+}

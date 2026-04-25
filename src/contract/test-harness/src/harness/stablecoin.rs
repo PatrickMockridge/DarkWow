@@ -76,6 +76,18 @@ pub struct StablecoinHarness {
     accrue_interest_zkbin: ZkBinary,
     /// AccrueInterest_V1 ProvingKey
     accrue_interest_pk: ProvingKey,
+    /// AddCollateral_V1 ZkBinary
+    add_collateral_zkbin: ZkBinary,
+    /// AddCollateral_V1 ProvingKey
+    add_collateral_pk: ProvingKey,
+    /// RemoveCollateral_V1 ZkBinary
+    remove_collateral_zkbin: ZkBinary,
+    /// RemoveCollateral_V1 ProvingKey
+    remove_collateral_pk: ProvingKey,
+    /// RepayStable_V1 ZkBinary
+    repay_stable_zkbin: ZkBinary,
+    /// RepayStable_V1 ProvingKey
+    repay_stable_pk: ProvingKey,
 }
 
 impl StablecoinHarness {
@@ -86,12 +98,18 @@ impl StablecoinHarness {
         let liquidate_bin = include_bytes!("../../../stablecoin/proof/liquidate_v1.zk.bin");
         let governance_bin = include_bytes!("../../../stablecoin/proof/governance_report_v1.zk.bin");
         let accrue_bin = include_bytes!("../../../stablecoin/proof/accrue_interest_v1.zk.bin");
+        let add_collateral_bin = include_bytes!("../../../stablecoin/proof/add_collateral_v1.zk.bin");
+        let remove_collateral_bin = include_bytes!("../../../stablecoin/proof/remove_collateral_v1.zk.bin");
+        let repay_stable_bin = include_bytes!("../../../stablecoin/proof/repay_stable_v1.zk.bin");
 
         let open_position_zkbin = ZkBinary::decode(open_bin, false).unwrap();
         let mint_stable_zkbin = ZkBinary::decode(mint_bin, false).unwrap();
         let liquidate_zkbin = ZkBinary::decode(liquidate_bin, false).unwrap();
         let governance_report_zkbin = ZkBinary::decode(governance_bin, false).unwrap();
         let accrue_interest_zkbin = ZkBinary::decode(accrue_bin, false).unwrap();
+        let add_collateral_zkbin = ZkBinary::decode(add_collateral_bin, false).unwrap();
+        let remove_collateral_zkbin = ZkBinary::decode(remove_collateral_bin, false).unwrap();
+        let repay_stable_zkbin = ZkBinary::decode(repay_stable_bin, false).unwrap();
 
         let open_circuit = ZkCircuit::new(
             darkfi::zk::empty_witnesses(&open_position_zkbin).unwrap(),
@@ -113,12 +131,27 @@ impl StablecoinHarness {
             darkfi::zk::empty_witnesses(&accrue_interest_zkbin).unwrap(),
             &accrue_interest_zkbin,
         );
+        let add_collateral_circuit = ZkCircuit::new(
+            darkfi::zk::empty_witnesses(&add_collateral_zkbin).unwrap(),
+            &add_collateral_zkbin,
+        );
+        let remove_collateral_circuit = ZkCircuit::new(
+            darkfi::zk::empty_witnesses(&remove_collateral_zkbin).unwrap(),
+            &remove_collateral_zkbin,
+        );
+        let repay_stable_circuit = ZkCircuit::new(
+            darkfi::zk::empty_witnesses(&repay_stable_zkbin).unwrap(),
+            &repay_stable_zkbin,
+        );
 
         let open_position_pk = ProvingKey::build(open_position_zkbin.k, &open_circuit);
         let mint_stable_pk = ProvingKey::build(mint_stable_zkbin.k, &mint_circuit);
         let liquidate_pk = ProvingKey::build(liquidate_zkbin.k, &liquidate_circuit);
         let governance_report_pk = ProvingKey::build(governance_report_zkbin.k, &governance_circuit);
         let accrue_interest_pk = ProvingKey::build(accrue_interest_zkbin.k, &accrue_circuit);
+        let add_collateral_pk = ProvingKey::build(add_collateral_zkbin.k, &add_collateral_circuit);
+        let remove_collateral_pk = ProvingKey::build(remove_collateral_zkbin.k, &remove_collateral_circuit);
+        let repay_stable_pk = ProvingKey::build(repay_stable_zkbin.k, &repay_stable_circuit);
 
         Self {
             open_position_zkbin,
@@ -131,6 +164,12 @@ impl StablecoinHarness {
             governance_report_pk,
             accrue_interest_zkbin,
             accrue_interest_pk,
+            add_collateral_zkbin,
+            add_collateral_pk,
+            remove_collateral_zkbin,
+            remove_collateral_pk,
+            repay_stable_zkbin,
+            repay_stable_pk,
         }
     }
 
@@ -394,6 +433,9 @@ impl super::ContractHarness for StablecoinHarness {
             "LiquidateV1",
             "GovernanceReportV1",
             "AccrueInterestV1",
+            "AddCollateralV1",
+            "RemoveCollateralV1",
+            "RepayStableV1",
         ]
     }
 
@@ -404,6 +446,9 @@ impl super::ContractHarness for StablecoinHarness {
             "LiquidateV1" => Some(&self.liquidate_zkbin),
             "GovernanceReportV1" => Some(&self.governance_report_zkbin),
             "AccrueInterestV1" => Some(&self.accrue_interest_zkbin),
+            "AddCollateralV1" => Some(&self.add_collateral_zkbin),
+            "RemoveCollateralV1" => Some(&self.remove_collateral_zkbin),
+            "RepayStableV1" => Some(&self.repay_stable_zkbin),
             _ => None,
         }
     }
@@ -415,6 +460,9 @@ impl super::ContractHarness for StablecoinHarness {
             "LiquidateV1" => Some(&self.liquidate_pk),
             "GovernanceReportV1" => Some(&self.governance_report_pk),
             "AccrueInterestV1" => Some(&self.accrue_interest_pk),
+            "AddCollateralV1" => Some(&self.add_collateral_pk),
+            "RemoveCollateralV1" => Some(&self.remove_collateral_pk),
+            "RepayStableV1" => Some(&self.repay_stable_pk),
             _ => None,
         }
     }

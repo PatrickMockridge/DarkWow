@@ -53,6 +53,8 @@ pub mod pipeline;
 
 pub mod heavyweight_pipeline;
 
+pub mod contract_integration_tests;
+
 // TODO: re-enable once TestHarness/Holder types are implemented
 // mod unproposed_txs;
 
