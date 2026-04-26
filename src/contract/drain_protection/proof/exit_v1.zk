@@ -34,7 +34,7 @@ witness "ExitProof" {
     Base fund_id,
 
     # Current block height
-    Uint64 current_block,
+    Base current_block,
 
     # Member's secret key
     Base member_secret,
@@ -44,12 +44,18 @@ witness "ExitProof" {
     Base member_pub_y,
 
     # Contribution details
-    Uint64 deposited_at,
-    Uint64 contribution_amount,
+    Base deposited_at,
+    Base contribution_amount,
 
     # DAO-Escrow verification
     Base dao_escrow_bulla,
     Base dao_membership_note,
+
+    # Constant for time multiplier divisor (10000 = 10_000)
+    Base DIVISOR,
+
+    # Constant for exit multiplier (6667 = 10_000 - 3333 bps haircut)
+    Base EXIT_MULTIPLIER,
 
     # ==========================================================================
     # MERKLE PROOF FOR DAO-ESCROW MEMBERSHIP VERIFICATION
@@ -92,14 +98,14 @@ circuit "ExitProof" {
     # less_than_strict: ensures current_block >= deposited_at
     less_than_strict(deposited_at, current_block);
 
-    blocks_held = sub(current_block, deposited_at);
+    blocks_held = base_sub(current_block, deposited_at);
 
     # multiplier = 1_000 + min(blocks_held / 10_000, 2_000)
     # This gives up to 3x weight after ~20k blocks
-    time_multiplier = div(blocks_held, 10000);
+    time_multiplier = base_div(blocks_held, DIVISOR);
 
     # Effective weight
-    effective_weight = mul(contribution_amount, time_multiplier);
+    effective_weight = base_mul(contribution_amount, time_multiplier);
 
     # ==========================================================================
     # PHASE 3: Verify DAO-Escrow membership via Merkle proof
@@ -130,9 +136,7 @@ circuit "ExitProof" {
 
     # haircut_bps = 3333 (33.33%)
     # exit_multiplier = 10_000 - haircut_bps = 6667
-
-    exit_multiplier = 6667;
-    exit_value = mul(effective_weight, exit_multiplier);
+    exit_value = base_mul(effective_weight, EXIT_MULTIPLIER);
     # Note: Final division by total_weight and current_funds normalization
     # would be done in the contract or with additional constraints
 
@@ -155,7 +159,7 @@ circuit "ExitProof" {
     #   - less_than_strict: constrain-only comparison (SOUND)
     #   - ec_mul_base, ec_get_x, ec_get_y: standard EC operations
     #   - constrain_equal_base: equality constraint
-    #   - sub, mul, div: standard arithmetic
+    #   - base_add, base_sub, base_mul, base_div: field arithmetic
     #   - constrain_instance: public input exposure
     #
     # There are NO uses of:
@@ -171,3 +175,4 @@ circuit "ExitProof" {
     # 2. Add current_funds verification (from on-chain state)
     #
     # 3. Complete exit_value calculation with proper division
+}
