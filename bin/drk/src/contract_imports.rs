@@ -48,6 +48,10 @@ pub const DEPLOYOOOR_CONTRACT_ID: &str = "deployooor";
 pub static DAO_ESCROW_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
+// DrainProtection Contract ID - user deployed, no hardcoded ID
+pub static DRAIN_PROTECTION_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
 // ============================================================================
 // FUNCTION OPCODES
 // ============================================================================
@@ -211,6 +215,10 @@ pub mod dao_escrow {
     pub use darkfi_dao_escrow_contract::DAO_ESCROW_ZKAS_INIT_NS;
     pub use darkfi_dao_escrow_contract::DAO_ESCROW_ZKAS_PREMIUM_NS;
 
+    // ZK Circuit binaries
+    pub use darkfi_dao_escrow_contract::DAO_ESCROW_ZKAS_INIT_V1_BIN;
+    pub use darkfi_dao_escrow_contract::DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN;
+
     // Database tree names
     pub use darkfi_dao_escrow_contract::DAO_ESCROW_CONTRACT_INFO_TREE;
     pub use darkfi_dao_escrow_contract::DAO_ESCROW_CONTRACT_BULLAS_TREE;
@@ -312,6 +320,28 @@ pub mod stablecoin {
 }
 
 // ============================================================================
+// DRAIN PROTECTION MODULE (governance for endowment/treasury funds)
+// ============================================================================
+
+pub mod drain_protection {
+    pub use darkfi_drain_protection_contract::DrainProtectionFunction;
+
+    // Database tree names
+    pub use darkfi_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_INFO_TREE;
+    pub use darkfi_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE;
+    pub use darkfi_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_VOTES_TREE;
+    pub use darkfi_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_FUNDS_TREE;
+
+    // Model types
+    #[cfg(feature = "client")]
+    pub use darkfi_drain_protection_contract::model::*;
+
+    // Client types
+    #[cfg(feature = "client")]
+    pub use darkfi_drain_protection_contract::client::*;
+}
+
+// ============================================================================
 // CONTRACT REGISTRY INTEGRATION
 // ============================================================================
 // Contract implementations for the generic registry system.
@@ -404,5 +434,26 @@ impl Contract for StablecoinContract {
 
     fn is_initialized(&self) -> bool {
         MONEY_V3_CONTRACT_ID.get().is_some()
+    }
+}
+
+/// DrainProtection contract info for registry
+pub struct DrainProtectionContract;
+
+impl Contract for DrainProtectionContract {
+    fn contract_id(&self) -> ContractId {
+        *DRAIN_PROTECTION_CONTRACT_ID.get().unwrap()
+    }
+
+    fn name(&self) -> &'static str {
+        "DrainProtection"
+    }
+
+    fn dependencies(&self) -> Vec<ContractId> {
+        vec![]
+    }
+
+    fn is_initialized(&self) -> bool {
+        DRAIN_PROTECTION_CONTRACT_ID.get().is_some()
     }
 }

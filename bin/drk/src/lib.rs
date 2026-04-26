@@ -25,7 +25,7 @@ use url::Url;
 
 use darkfi::{
     system::ExecutorPtr,
-    tx::Transaction,
+    tx::{ContractCallLeaf, Transaction},
     util::path::expand_path,
     zk::{proof::ProvingKey, Proof},
     zkas::ZkBinary,
@@ -77,6 +77,15 @@ pub mod cli_util;
 /// Wallet functionality related to Deployooor
 pub mod deploy;
 
+/// Wallet functionality related to DAO-Escrow WASM contract
+pub mod dao_escrow;
+
+/// Wallet functionality related to DrainProtection WASM contract
+pub mod drain_protection;
+
+/// Fee builder helper for contract transactions
+pub mod fee_builder;
+
 /// Wallet functionality related to transactions history
 pub mod txs_history;
 
@@ -89,79 +98,12 @@ pub mod contract_imports;
 /// Generic contract registry for dependency resolution and transaction building
 pub mod contract_registry;
 
+/// Contract metadata registry for universal contract interaction
+pub mod contract_metadata;
+
 /// Money module (re-export from contract_imports for backwards compatibility)
 pub mod money {
     pub use crate::contract_imports::money::*;
-}
-
-/// DAO module (re-export from contract_imports for backwards compatibility)
-/// Note: DAO functionality is currently disabled due to contract bugs
-pub mod dao {
-    // pub use crate::contract_imports::dao_escrow::*;  // Disabled - needs darkfi_dao_escrow_contract
-
-    // Stub types for backwards compatibility - DAO is disabled on this fork
-    use darkfi_sdk::pasta::pallas;
-
-    /// Stub for DaoBulla - DAO is disabled
-    #[derive(Debug, Clone, Copy)]
-    pub struct DaoBulla(pallas::Base);
-
-    impl DaoBulla {
-        pub fn new(_inner: pallas::Base) -> Self {
-            Self(_inner)
-        }
-    }
-
-    /// Stub for DaoProposalBulla - DAO is disabled
-    #[derive(Debug, Clone, Copy)]
-    pub struct DaoProposalBulla(pallas::Base);
-
-    impl DaoProposalBulla {
-        pub fn new(_inner: pallas::Base) -> Self {
-            Self(_inner)
-        }
-        pub fn from_str(_s: &str) -> Result<Self, ()> {
-            Err(())
-        }
-    }
-
-    /// Stub for DaoParams - DAO is disabled
-    #[derive(Debug, Clone)]
-    pub struct DaoParams {
-        pub name: String,
-    }
-
-    impl DaoParams {
-        pub fn new(_name: &str) -> Self {
-            Self { name: _name.to_string() }
-        }
-        pub fn from_toml_str(_s: &str) -> Result<Self, ()> {
-            Err(())
-        }
-    }
-
-    /// Stub for ProposalRecord - DAO is disabled
-    #[derive(Debug, Clone)]
-    pub struct ProposalRecord {
-        pub proposal_bulla: pallas::Base,
-    }
-
-    /// Stub for DaoFunction - DAO is disabled
-    #[derive(Debug, Clone, Copy)]
-    #[repr(u8)]
-    pub enum DaoFunction {
-        CreateDao = 0x00,
-        UpdateDao = 0x01,
-        Propose = 0x02,
-        Vote = 0x03,
-        Exec = 0x04,
-        AuthMoneyTransfer = 0x05,
-    }
-
-    /// Stub for blockwindow - DAO is disabled
-    pub fn blockwindow() {
-        // DAO is disabled
-    }
 }
 
 /// Wallet database operations handler
@@ -622,134 +564,6 @@ impl Drk {
         Ok(balances)
     }
 
-    // =============================================================================================
-    // DAO STUB METHODS - DAO is disabled on this fork
-    // =============================================================================================
-
-    /// Initialize DAO (disabled)
-    pub async fn initialize_dao(&self) -> Result<()> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// Get DAO trees (disabled)
-    pub async fn get_dao_trees(&self) -> Result<(MerkleTree, MerkleTree)> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// Get DAO by bulla (disabled)
-    pub async fn get_dao_by_bulla(&self, _bulla: &pallas::Base) -> Result<Option<DaoStub>> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// Get DAO proposals (disabled)
-    pub async fn get_dao_proposals(&self, _name: &str) -> Result<Vec<ProposalStub>> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// Get DAO proposal by bulla (disabled)
-    pub async fn get_dao_proposal_by_bulla(&self, _bulla: &str) -> Result<Option<ProposalStub>> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// Get DAO proposal votes (disabled)
-    pub async fn get_dao_proposal_votes(&self, _bulla: &str) -> Result<Vec<VoteStub>> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// Import DAO (disabled)
-    pub async fn import_dao(&self, _name: &str, _params: &DaoStub, _output: &mut Vec<String>) -> Result<()> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// Remove DAO (disabled)
-    pub async fn remove_dao(&self, _name: &str, _output: &mut Vec<String>) -> Result<()> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// DAO list (disabled)
-    pub async fn dao_list(&self, _name: &str, _output: &mut Vec<String>) -> Result<()> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// DAO balance (disabled)
-    pub async fn dao_balance(&self, _name: &str) -> Result<HashMap<String, u64>> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// DAO mint (disabled)
-    pub async fn dao_mint(&self, _name: &str) -> Result<Transaction> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// DAO propose transfer (disabled)
-    pub async fn dao_propose_transfer(&self, _name: &str) -> Result<Transaction> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// DAO propose generic (disabled)
-    pub async fn dao_propose_generic(&self, _name: &str, _duration: u64, _user_data: pallas::Base) -> Result<Transaction> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// DAO vote (disabled)
-    pub async fn dao_vote(&self, _bulla: &str, _vote: u8, _weight: u64) -> Result<Transaction> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// DAO exec transfer (disabled)
-    pub async fn dao_exec_transfer(&self, _proposal: &ProposalStub, _early: bool) -> Result<Transaction> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// DAO exec generic (disabled)
-    pub async fn dao_exec_generic(&self, _proposal: &ProposalStub, _early: bool) -> Result<Transaction> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// DAO mining config (disabled)
-    pub async fn dao_mining_config(&self, _name: &str, _output: &mut Vec<String>) -> Result<()> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// DAO transfer proposal tx (disabled)
-    pub async fn dao_transfer_proposal_tx(&self, _proposal: &ProposalStub) -> Result<Transaction> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// DAO generic proposal tx (disabled)
-    pub async fn dao_generic_proposal_tx(&self, _proposal: &ProposalStub) -> Result<Transaction> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// Put DAO proposal (disabled)
-    pub async fn put_dao_proposal(&self, _proposal: &ProposalStub) -> Result<()> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    // =============================================================================================
-    // ADDITIONAL STUB METHODS
-    // =============================================================================================
-
-    /// Unconfirm DAOs after height (disabled)
-    pub async fn unconfirm_daos_after(&self, _height: u32) -> Result<()> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// Unconfirm DAO proposals after height (disabled)
-    pub async fn unconfirm_dao_proposals_after(&self, _height: u32) -> Result<()> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// Unexec DAO proposals after height (disabled)
-    pub async fn unexec_dao_proposals_after(&self, _height: u32) -> Result<()> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
-    /// Remove DAO votes after height (disabled)
-    pub async fn remove_dao_votes_after(&self, _height: u32) -> Result<()> {
-        Err(Error::Custom("DAO is disabled on this fork".to_string()))
-    }
-
     /// Set default address
     pub async fn set_default_address(&self, _key_id: usize) -> Result<()> {
         // TODO: Implement properly
@@ -866,17 +680,17 @@ impl Drk {
 
     /// Reset deploy authorities (stub)
     pub fn reset_deploy_authorities(&self, _output: &mut Vec<String>) -> WalletDbResult<()> {
-        // Stub - DAO is disabled on this fork
+        // Stub - deploy authorities not yet implemented
         Ok(())
     }
 
     /// Reset deploy history (stub)
     pub fn reset_deploy_history(&self, _output: &mut Vec<String>) -> WalletDbResult<()> {
-        // Stub - DAO is disabled on this fork
+        // Stub - deploy history not yet implemented
         Ok(())
     }
 
-    /// Initialize deployooor (stub - DAO is disabled)
+    /// Initialize deployooor (stub)
     pub async fn initialize_deployooor(&self, _output: &mut Vec<String>) -> Result<()> {
         Err(Error::Custom("Deployooor is disabled on this fork".to_string()))
     }
@@ -955,13 +769,196 @@ impl Drk {
     }
 
     /// Invoke a smart contract function
+    ///
+    /// This is a universal contract invocation method that can call any function
+    /// on any deployed contract without needing contract-specific CLI code.
+    ///
+    /// # Arguments
+    /// * `contract_id_or_name` - Contract ID (Base58 encoded) or name (e.g., "dao_escrow")
+    /// * `function` - Function name to call (e.g., "enable_drain_protection")
+    /// * `params` - JSON string with function parameters
     pub async fn invoke_contract(
         &self,
-        _contract_id: &ContractId,
-        _function: &str,
-        _params: Option<&str>,
+        contract_id_or_name: &str,
+        function: &str,
+        params: Option<&str>,
     ) -> Result<Transaction> {
-        Err(Error::Custom("invoke_contract not yet implemented".to_string()))
+        use darkfi_serial::Encodable;
+        use crate::contract_imports::dao_escrow::EnableDrainProtectionParamsV1;
+        use darkfi_drain_protection_contract::model::InitializeParamsV1 as DrainInitParamsV1;
+        use darkfi_drain_protection_contract::model::DrainConfig;
+
+        // First try to look up as contract name (e.g., "dao_escrow")
+        // If not found, try to parse as Base58 contract ID
+        let metadata = crate::contract_metadata::CONTRACT_METADATA_REGISTRY
+            .get(contract_id_or_name)
+            .or_else(|| {
+                // Try to parse as contract ID (Base58)
+                let result: Option<ContractId> = bs58::decode(contract_id_or_name)
+                    .into_vec()
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .map(|bytes: [u8; 32]| ContractId::from_bytes(bytes).ok())
+                    .flatten();
+                // For now, we can't look up by ID since registry stores by name
+                // This would need runtime registration
+                result.and_then(|_| None)
+            })
+            .ok_or_else(|| Error::Custom(format!("Unknown contract: {}", contract_id_or_name)))?;
+
+        let func_sig = metadata.get_function(function)
+            .ok_or_else(|| Error::Custom(format!("Unknown function: {} on contract {}", function, metadata.name)))?;
+
+        // Get the actual contract ID from the runtime registry
+        let contract_id = match metadata.name {
+            "dao_escrow" => *crate::contract_imports::DAO_ESCROW_CONTRACT_ID.get()
+                .ok_or_else(|| Error::Custom("DAO-Escrow contract not initialized".to_string()))?,
+            "drain_protection" => *crate::contract_imports::DRAIN_PROTECTION_CONTRACT_ID.get()
+                .ok_or_else(|| Error::Custom("DrainProtection contract not initialized".to_string()))?,
+            "money_v3" => *crate::contract_imports::MONEY_V3_CONTRACT_ID.get()
+                .ok_or_else(|| Error::Custom("MoneyV3 contract not initialized".to_string()))?,
+            _ => return Err(Error::Custom(format!("Contract {} not registered in runtime", metadata.name))),
+        };
+
+        // Build call data based on contract and function
+        let mut call_data = vec![func_sig.code];
+
+        match (metadata.name, function) {
+            // DAO-Escrow: enable_drain_protection
+            ("dao_escrow", "enable_drain_protection") => {
+                #[derive(serde::Deserialize)]
+                struct EnableDrainProtectionJson {
+                    dao_escrow_bulla: String,
+                    drain_protection_bulla: String,
+                }
+
+                let json_params = params.ok_or_else(|| Error::Custom("enable_drain_protection requires params".to_string()))?;
+                let json: EnableDrainProtectionJson = serde_json::from_str(json_params)
+                    .map_err(|e| Error::Custom(format!("Invalid JSON params: {}", e)))?;
+
+                let dao_escrow_bulla_bytes = bs58::decode(&json.dao_escrow_bulla)
+                    .into_vec()
+                    .map_err(|e| Error::Custom(format!("Invalid dao_escrow_bulla Base58: {}", e)))?;
+                let dao_escrow_bulla_bytes: [u8; 32] = dao_escrow_bulla_bytes
+                    .try_into()
+                    .map_err(|_| Error::Custom("Invalid dao_escrow_bulla length".to_string()))?;
+                let dao_escrow_bulla = pallas::Base::from_repr(dao_escrow_bulla_bytes)
+                    .into_option()
+                    .ok_or_else(|| Error::Custom("Invalid dao_escrow_bulla".to_string()))?;
+
+                let drain_protection_bulla_bytes = bs58::decode(&json.drain_protection_bulla)
+                    .into_vec()
+                    .map_err(|e| Error::Custom(format!("Invalid drain_protection_bulla Base58: {}", e)))?;
+                let drain_protection_bulla_bytes: [u8; 32] = drain_protection_bulla_bytes
+                    .try_into()
+                    .map_err(|_| Error::Custom("Invalid drain_protection_bulla length".to_string()))?;
+                let drain_protection_bulla = pallas::Base::from_repr(drain_protection_bulla_bytes)
+                    .into_option()
+                    .ok_or_else(|| Error::Custom("Invalid drain_protection_bulla".to_string()))?;
+
+                let params = EnableDrainProtectionParamsV1 {
+                    dao_escrow_bulla,
+                    drain_protection_bulla,
+                };
+                params.encode(&mut call_data)
+                    .map_err(|e| Error::Custom(format!("Failed to encode params: {}", e)))?;
+            }
+
+            // DrainProtection: initialize
+            ("drain_protection", "initialize") => {
+                #[derive(serde::Deserialize)]
+                struct DrainProtectionInitJson {
+                    fund_id: String,
+                    spend_authority: String,
+                    dao_escrow_bulla: String,
+                }
+
+                let json_params = params.ok_or_else(|| Error::Custom("initialize requires params".to_string()))?;
+                let json: DrainProtectionInitJson = serde_json::from_str(json_params)
+                    .map_err(|e| Error::Custom(format!("Invalid JSON params: {}", e)))?;
+
+                let fund_id_bytes = bs58::decode(&json.fund_id)
+                    .into_vec()
+                    .map_err(|e| Error::Custom(format!("Invalid fund_id Base58: {}", e)))?;
+                let fund_id_bytes: [u8; 32] = fund_id_bytes
+                    .try_into()
+                    .map_err(|_| Error::Custom("Invalid fund_id length".to_string()))?;
+                let fund_id = pallas::Base::from_repr(fund_id_bytes)
+                    .into_option()
+                    .ok_or_else(|| Error::Custom("Invalid fund_id".to_string()))?;
+
+                let spend_authority_bytes = bs58::decode(&json.spend_authority)
+                    .into_vec()
+                    .map_err(|e| Error::Custom(format!("Invalid spend_authority Base58: {}", e)))?;
+                let spend_authority_pubkey_bytes: [u8; 32] = spend_authority_bytes
+                    .try_into()
+                    .map_err(|_| Error::Custom("Invalid spend_authority length".to_string()))?;
+                let spend_authority = PublicKey::from_bytes(spend_authority_pubkey_bytes)
+                    .map_err(|_| Error::Custom("Invalid spend_authority".to_string()))?;
+
+                let dao_escrow_bulla_bytes = bs58::decode(&json.dao_escrow_bulla)
+                    .into_vec()
+                    .map_err(|e| Error::Custom(format!("Invalid dao_escrow_bulla Base58: {}", e)))?;
+                let dao_escrow_bulla_bytes: [u8; 32] = dao_escrow_bulla_bytes
+                    .try_into()
+                    .map_err(|_| Error::Custom("Invalid dao_escrow_bulla length".to_string()))?;
+                let dao_escrow_bulla = pallas::Base::from_repr(dao_escrow_bulla_bytes)
+                    .into_option()
+                    .ok_or_else(|| Error::Custom("Invalid dao_escrow_bulla".to_string()))?;
+
+                let params = DrainInitParamsV1 {
+                    fund_id,
+                    spend_authority,
+                    dao_escrow_bulla,
+                    drain_config: DrainConfig {
+                        graduated_tiers: None,
+                        exit_queue: None,
+                        circuit_breaker: None,
+                        guardian_pause: None,
+                        observation_period: None,
+                        split_proposals: None,
+                        no_loss_reserve: None,
+                        dead_mans_switch: None,
+                    },
+                };
+                params.encode(&mut call_data)
+                    .map_err(|e| Error::Custom(format!("Failed to encode params: {}", e)))?;
+            }
+
+            // Functions requiring ZK proofs are not yet supported in universal invoke
+            _ if func_sig.requires_proof => {
+                return Err(Error::Custom(format!(
+                    "Function {} on contract {} requires ZK proof which is not yet \
+                     supported in universal invoke. Use contract-specific commands instead.",
+                    function, metadata.name
+                )));
+            }
+
+            // Unknown function
+            _ => {
+                return Err(Error::Custom(format!(
+                    "Unsupported function: {} on contract: {}",
+                    function, metadata.name
+                )));
+            }
+        }
+
+        // Create contract call
+        let contract_call = ContractCall {
+            contract_id,
+            data: call_data,
+        };
+
+        // Create contract call leaf (proofs would be added here for ZK functions)
+        let leaf = ContractCallLeaf {
+            call: contract_call,
+            proofs: vec![],
+        };
+
+        // Build transaction with fee
+        let tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf).await?;
+
+        Ok(tx)
     }
 }
 
@@ -1051,23 +1048,4 @@ fn coin_records_to_money_notes(records: &[CoinRecord]) -> Result<Vec<MoneyV3Note
         });
     }
     Ok(notes)
-}
-
-// =============================================================================================
-// STUB TYPES for DAO
-// =============================================================================================
-
-#[derive(Debug, Clone)]
-pub struct DaoStub {
-    pub name: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct ProposalStub {
-    pub bulla: pallas::Base,
-}
-
-#[derive(Debug, Clone)]
-pub struct VoteStub {
-    pub vote: u8,
 }

@@ -367,130 +367,6 @@ pub fn generate_completions(shell: &str) -> Result<String> {
         .about("OTC atomic swap")
         .subcommands(vec![init, join, inspect, sign]);
 
-    // DAO
-    let proposer_limit = Arg::with_name("proposer-limit")
-        .help("The minimum amount of governance tokens needed to open a proposal for this DAO");
-
-    let quorum = Arg::with_name("quorum")
-        .help("Minimal threshold of participating total tokens needed for a proposal to pass");
-
-    let early_exec_quorum = Arg::with_name("early-exec-quorum")
-        .help("Minimal threshold of participating total tokens needed for a proposal to be considered strongly supported, enabling early execution. Must be greater than or equal to normal quorum.");
-
-    let approval_ratio = Arg::with_name("approval-ratio")
-        .help("The ratio of yes votes/total votes needed for a proposal to pass (2 decimals)");
-
-    let gov_token_id = Arg::with_name("gov-token-id").help("DAO's governance token ID");
-
-    let create = SubCommand::with_name("create").about("Create DAO parameters").args(&[
-        proposer_limit,
-        quorum,
-        early_exec_quorum,
-        approval_ratio,
-        gov_token_id,
-    ]);
-
-    let view = SubCommand::with_name("view").about("View DAO data from stdin");
-
-    let name = Arg::with_name("name").help("Name identifier for the DAO");
-
-    let import = SubCommand::with_name("import")
-        .about("Import DAO data from stdin")
-        .args(slice::from_ref(&name));
-
-    let remove = SubCommand::with_name("remove")
-        .about("Remove a DAO and all its data")
-        .args(slice::from_ref(&name));
-
-    let opt_name = Arg::with_name("dao-alias").help("Name identifier for the DAO (optional)");
-
-    let list = SubCommand::with_name("list")
-        .about("List imported DAOs (or info about a specific one)")
-        .args(&[opt_name]);
-
-    let balance = SubCommand::with_name("balance")
-        .about("Show the balance of a DAO")
-        .args(slice::from_ref(&name));
-
-    let mint = SubCommand::with_name("mint")
-        .about("Mint an imported DAO on-chain")
-        .args(slice::from_ref(&name));
-
-    let duration = Arg::with_name("duration").help("Duration of the proposal, in block windows");
-
-    let propose_transfer = SubCommand::with_name("propose-transfer")
-        .about("Create a transfer proposal for a DAO")
-        .args(&[
-            name.clone(),
-            duration.clone(),
-            amount,
-            token,
-            recipient,
-            spend_hook.clone(),
-            user_data.clone(),
-        ]);
-
-    let propose_generic = SubCommand::with_name("propose-generic")
-        .about("Create a generic proposal for a DAO")
-        .args(&[name.clone(), duration, user_data.clone()]);
-
-    let proposals = SubCommand::with_name("proposals").about("List DAO proposals").arg(&name);
-
-    let bulla = Arg::with_name("bulla").help("Bulla identifier for the proposal");
-
-    let export = Arg::with_name("export").help("Encrypt the proposal and encode it to base64");
-
-    let mint_proposal = Arg::with_name("mint-proposal").help("Create the proposal transaction");
-
-    let proposal = SubCommand::with_name("proposal").about("View a DAO proposal data").args(&[
-        bulla.clone(),
-        export,
-        mint_proposal,
-    ]);
-
-    let proposal_import = SubCommand::with_name("proposal-import")
-        .about("Import a base64 encoded and encrypted proposal from stdin");
-
-    let vote = Arg::with_name("vote").help("Vote (0 for NO, 1 for YES)");
-
-    let vote_weight =
-        Arg::with_name("vote-weight").help("Optional vote weight (amount of governance tokens)");
-
-    let vote = SubCommand::with_name("vote").about("Vote on a given proposal").args(&[
-        bulla.clone(),
-        vote,
-        vote_weight,
-    ]);
-
-    let early = Arg::with_name("early").long("early").help("Execute the proposal early");
-
-    let exec = SubCommand::with_name("exec").about("Execute a DAO proposal").args(&[bulla, early]);
-
-    let spend_hook_cmd = SubCommand::with_name("spend-hook")
-        .about("Print the DAO contract base64-encoded spend hook");
-
-    let mining_config =
-        SubCommand::with_name("mining-config").about("Print a DAO mining configuration").arg(name);
-
-    let dao = SubCommand::with_name("dao").about("DAO functionalities").subcommands(vec![
-        create,
-        view,
-        import,
-        remove,
-        list,
-        balance,
-        mint,
-        propose_transfer,
-        propose_generic,
-        proposals,
-        proposal,
-        proposal_import,
-        vote,
-        exec,
-        spend_hook_cmd,
-        mining_config,
-    ]);
-
     // AttachFee
     let attach_fee = SubCommand::with_name("attach-fee")
         .about("Attach the fee call to a transaction given from stdin");
@@ -667,9 +543,105 @@ pub fn generate_completions(shell: &str) -> Result<String> {
 
     let lock = SubCommand::with_name("lock").about("Lock a smart contract").args(&[deploy_auth]);
 
+    let dao_bulla = Arg::with_name("dao-bulla")
+        .help("DAO bulla (Base58 encoded, or 'zero' for standalone)")
+        .takes_value(true)
+        .required(true);
+
+    let endowment_token_id = Arg::with_name("endowment-token-id")
+        .help("Endowment token ID (Base58 encoded)")
+        .takes_value(true)
+        .required(true);
+
+    let owner_pubkey = Arg::with_name("owner-pubkey")
+        .long("owner-pubkey")
+        .help("Optional owner public key (Base58 encoded)")
+        .takes_value(true)
+        .required(false);
+
+    let bulla_blind = Arg::with_name("bulla-blind")
+        .long("bulla-blind")
+        .help("Optional bulla blind (Base58 encoded, randomly generated if not provided)")
+        .takes_value(true)
+        .required(false);
+
+    let enable_drain_protection = Arg::with_name("enable-drain-protection")
+        .long("enable-drain-protection")
+        .help("Enable drain protection")
+        .required(false);
+
+    let dao_escrow_init = SubCommand::with_name("dao-escrow-init")
+        .about("Initialize a DAO-Escrow endowment")
+        .args(&[dao_bulla, endowment_token_id, owner_pubkey, bulla_blind, enable_drain_protection]);
+
+    let fund_id = Arg::with_name("fund-id")
+        .help("Fund ID (typically same as DAO-Escrow bulla, Base58 encoded)")
+        .takes_value(true)
+        .required(true);
+
+    let spend_authority = Arg::with_name("spend-authority")
+        .help("Spend authority public key (Base58 encoded)")
+        .takes_value(true)
+        .required(true);
+
+    let dp_dao_escrow_bulla = Arg::with_name("dao-escrow-bulla")
+        .help("DAO-Escrow bulla this fund protects (Base58 encoded)")
+        .takes_value(true)
+        .required(true);
+
+    let rate_limit_bps = Arg::with_name("rate-limit-bps")
+        .long("rate-limit-bps")
+        .help("Base rate limit in basis points (e.g., 100 = 1% per 1000 blocks)")
+        .takes_value(true)
+        .required(false);
+
+    let vote_threshold_bps = Arg::with_name("vote-threshold-bps")
+        .long("vote-threshold-bps")
+        .help("Vote threshold in basis points (e.g., 667 = 66.7%)")
+        .takes_value(true)
+        .required(false);
+
+    let drain_protection_init = SubCommand::with_name("drain-protection-init")
+        .about("Initialize a DrainProtection protected fund")
+        .args(&[fund_id, spend_authority, dp_dao_escrow_bulla, rate_limit_bps, vote_threshold_bps]);
+
+    let dp_endowment_bulla = Arg::with_name("dao-escrow-bulla")
+        .help("DAO-Escrow bulla (Base58 encoded)")
+        .takes_value(true)
+        .required(true);
+
+    let dp_drain_bulla = Arg::with_name("drain-protection-bulla")
+        .help("DrainProtection bulla (Base58 encoded)")
+        .takes_value(true)
+        .required(true);
+
+    let enable_drain_protection_cmd = SubCommand::with_name("enable-drain-protection")
+        .about("Enable DrainProtection on a DAO-Escrow endowment")
+        .args(&[dp_endowment_bulla, dp_drain_bulla]);
+
+    let invoke_contract_id = Arg::with_name("contract-id")
+        .help("Contract ID to invoke (Base58 encoded)")
+        .takes_value(true)
+        .required(true);
+
+    let invoke_function = Arg::with_name("function")
+        .help("Function name to call (e.g., initialize, enable_drain_protection)")
+        .takes_value(true)
+        .required(true);
+
+    let invoke_params = Arg::with_name("params")
+        .long("params")
+        .help("Path to JSON file with function parameters")
+        .takes_value(true)
+        .required(false);
+
+    let invoke = SubCommand::with_name("invoke")
+        .about("Invoke a smart contract function")
+        .args(&[invoke_contract_id, invoke_function, invoke_params]);
+
     let contract = SubCommand::with_name("contract")
         .about("Contract functionalities")
-        .subcommands(vec![generate_deploy, list, export_data, deploy, lock]);
+        .subcommands(vec![generate_deploy, list, export_data, deploy, lock, dao_escrow_init, drain_protection_init, enable_drain_protection_cmd, invoke]);
 
     // Main arguments
     let config = Arg::with_name("config")
@@ -697,7 +669,6 @@ pub fn generate_completions(shell: &str) -> Result<String> {
         tx_from_calls,
         inspect,
         broadcast,
-        dao,
         scan,
         explorer,
         alias,

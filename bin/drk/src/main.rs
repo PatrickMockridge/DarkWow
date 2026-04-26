@@ -41,8 +41,6 @@ use darkfi::{
     },
     Error, Result,
 };
-// DAO is disabled on this fork
-// use darkfi_dao_contract::{blockwindow, model::DaoProposalBulla, DaoFunction};
 use darkfi_sdk::{
     crypto::{
         keypair::{Address, Keypair, Network, SecretKey, StandardAddress},
@@ -64,7 +62,7 @@ use drk::{
     swap::PartialSwapData,
     Drk,
 };
-use darkfi_sdk::crypto::util::FieldElemAsStr;
+use darkfi_sdk::crypto::{util::FieldElemAsStr, PublicKey};
 
 const CONFIG_FILE: &str = "drk_config.toml";
 const CONFIG_FILE_CONTENTS: &str = include_str!("../drk_config.toml");
@@ -446,6 +444,56 @@ enum ContractSubcmd {
         /// Path to JSON file with function parameters
         params: Option<String>,
     },
+
+    /// Initialize a DAO-Escrow endowment
+    DaoEscrowInit {
+        /// DAO bulla (use "zero" for standalone endowment)
+        dao_bulla: String,
+
+        /// Endowment token ID (Base58 encoded)
+        endowment_token_id: String,
+
+        /// Optional owner public key (derived from wallet if not provided)
+        #[structopt(long)]
+        owner_pubkey: Option<String>,
+
+        /// Optional bulla blind (randomly generated if not provided)
+        #[structopt(long)]
+        bulla_blind: Option<String>,
+
+        /// Enable drain protection
+        #[structopt(long)]
+        enable_drain_protection: bool,
+    },
+
+    /// Initialize a DrainProtection protected fund
+    DrainProtectionInit {
+        /// Fund ID (typically same as DAO-Escrow bulla, Base58 encoded)
+        fund_id: String,
+
+        /// Spend authority public key (Base58 encoded)
+        spend_authority: String,
+
+        /// DAO-Escrow bulla this fund protects (Base58 encoded)
+        dao_escrow_bulla: String,
+
+        /// Base rate limit in basis points (e.g., 100 = 1% per 1000 blocks)
+        #[structopt(long)]
+        rate_limit_bps: Option<u64>,
+
+        /// Vote threshold in basis points (e.g., 667 = 66.7%)
+        #[structopt(long)]
+        vote_threshold_bps: Option<u64>,
+    },
+
+    /// Enable DrainProtection on a DAO-Escrow endowment
+    EnableDrainProtection {
+        /// DAO-Escrow bulla (Base58 encoded)
+        dao_escrow_bulla: String,
+
+        /// DrainProtection bulla (Base58 encoded)
+        drain_protection_bulla: String,
+    },
 }
 
 /// Auxiliary function to create a `Drk` wallet for provided configuration.
@@ -584,10 +632,6 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                         exit(2);
                     }
                     print_output(&output);
-                    if let Err(e) = drk.initialize_dao().await {
-                        eprintln!("Failed to initialize DAO: {e}");
-                        exit(2);
-                    }
                     if let Err(e) = drk.initialize_deployooor(&mut output).await {
                         eprintln!("Failed to initialize Deployooor: {e}");
                         exit(2);
@@ -1882,15 +1926,6 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             }
 
             ContractSubcmd::Invoke { contract_id, function, params } => {
-                // Parse the contract ID
-                let contract_id = match ContractId::from_str(&contract_id) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        eprintln!("Invalid contract ID: {e}");
-                        exit(2);
-                    }
-                };
-
                 // Read params from JSON file if provided
                 let params_json = match params {
                     Some(p) => {
@@ -1921,6 +1956,220 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Ok(tx) => tx,
                     Err(e) => {
                         eprintln!("Error creating contract invocation tx: {e}");
+                        exit(2);
+                    }
+                };
+
+                println!("{}", base64::encode(&serialize_async(&tx).await));
+
+                drk.stop_rpc_client().await
+            }
+
+            ContractSubcmd::DaoEscrowInit { dao_bulla, endowment_token_id, owner_pubkey, bulla_blind, enable_drain_protection } => {
+                use darkfi_sdk::pasta::pallas;
+
+                // Parse DAO bulla (use Base::zero() for standalone)
+                let dao_bulla = if dao_bulla.to_lowercase() == "zero" {
+                    pallas::Base::zero()
+                } else {
+                    let bytes = bs58::decode(&dao_bulla)
+                        .into_vec()
+                        .map_err(|e| Error::Custom(format!("Invalid dao_bulla: {}", e)))?
+                        .try_into()
+                        .map_err(|_| Error::Custom("Invalid dao_bulla length".to_string()))?;
+                    pallas::Base::from_repr(bytes)
+                        .into_option()
+                        .ok_or_else(|| Error::Custom("Invalid dao_bulla".to_string()))?
+                };
+
+                // Parse optional owner public key
+                let owner_pubkey = match &owner_pubkey {
+                    Some(pk) if pk != "" => {
+                        let bytes = bs58::decode(pk)
+                            .into_vec()
+                            .map_err(|e| Error::Custom(format!("Invalid owner_pubkey: {}", e)))?
+                            .try_into()
+                            .map_err(|_| Error::Custom("Invalid owner_pubkey length".to_string()))?;
+                        Some(PublicKey::from_bytes(bytes)
+                            .map_err(|_| Error::Custom("Invalid owner_pubkey".to_string()))?)
+                    }
+                    _ => None,
+                };
+
+                // Parse endowment token ID
+                let endowment_token_id = {
+                    let bytes = bs58::decode(&endowment_token_id)
+                        .into_vec()
+                        .map_err(|e| Error::Custom(format!("Invalid endowment_token_id: {}", e)))?
+                        .try_into()
+                        .map_err(|_| Error::Custom("Invalid endowment_token_id length".to_string()))?;
+                    pallas::Base::from_repr(bytes)
+                        .into_option()
+                        .ok_or_else(|| Error::Custom("Invalid endowment_token_id".to_string()))?
+                };
+
+                // Parse optional bulla blind
+                let bulla_blind = match &bulla_blind {
+                    Some(bb) if bb != "" => {
+                        let bytes = bs58::decode(bb)
+                            .into_vec()
+                            .map_err(|e| Error::Custom(format!("Invalid bulla_blind: {}", e)))?
+                            .try_into()
+                            .map_err(|_| Error::Custom("Invalid bulla_blind length".to_string()))?;
+                        Some(pallas::Base::from_repr(bytes)
+                            .into_option()
+                            .ok_or_else(|| Error::Custom("Invalid bulla_blind".to_string()))?)
+                    }
+                    _ => None,
+                };
+
+                let drk = new_wallet(
+                    network,
+                    blockchain_config.cache_path,
+                    blockchain_config.wallet_path,
+                    blockchain_config.wallet_pass,
+                    Some(blockchain_config.endpoint),
+                    &ex,
+                    args.fun,
+                )
+                .await;
+
+                let tx = match drk.dao_escrow_initialize(
+                    dao_bulla,
+                    owner_pubkey,
+                    endowment_token_id,
+                    bulla_blind,
+                    enable_drain_protection,
+                ).await {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        eprintln!("Error creating dao_escrow_initialize tx: {e}");
+                        exit(2);
+                    }
+                };
+
+                println!("{}", base64::encode(&serialize_async(&tx).await));
+
+                drk.stop_rpc_client().await
+            }
+
+            ContractSubcmd::DrainProtectionInit { fund_id, spend_authority, dao_escrow_bulla, rate_limit_bps, vote_threshold_bps } => {
+                use darkfi_sdk::pasta::pallas;
+
+                // Parse fund ID
+                let fund_id = {
+                    let bytes = bs58::decode(&fund_id)
+                        .into_vec()
+                        .map_err(|e| Error::Custom(format!("Invalid fund_id: {}", e)))?
+                        .try_into()
+                        .map_err(|_| Error::Custom("Invalid fund_id length".to_string()))?;
+                    pallas::Base::from_repr(bytes)
+                        .into_option()
+                        .ok_or_else(|| Error::Custom("Invalid fund_id".to_string()))?
+                };
+
+                // Parse spend authority public key
+                let spend_authority = {
+                    let bytes = bs58::decode(&spend_authority)
+                        .into_vec()
+                        .map_err(|e| Error::Custom(format!("Invalid spend_authority: {}", e)))?
+                        .try_into()
+                        .map_err(|_| Error::Custom("Invalid spend_authority length".to_string()))?;
+                    PublicKey::from_bytes(bytes)
+                        .map_err(|_| Error::Custom("Invalid spend_authority".to_string()))?
+                };
+
+                // Parse DAO-Escrow bulla
+                let dao_escrow_bulla = {
+                    let bytes = bs58::decode(&dao_escrow_bulla)
+                        .into_vec()
+                        .map_err(|e| Error::Custom(format!("Invalid dao_escrow_bulla: {}", e)))?
+                        .try_into()
+                        .map_err(|_| Error::Custom("Invalid dao_escrow_bulla length".to_string()))?;
+                    pallas::Base::from_repr(bytes)
+                        .into_option()
+                        .ok_or_else(|| Error::Custom("Invalid dao_escrow_bulla".to_string()))?
+                };
+
+                // Default rate and vote thresholds if not provided
+                let rate_limit_bps = rate_limit_bps.unwrap_or(100); // 1% default
+                let vote_threshold_bps = vote_threshold_bps.unwrap_or(667); // 66.7% default
+
+                let drk = new_wallet(
+                    network,
+                    blockchain_config.cache_path,
+                    blockchain_config.wallet_path,
+                    blockchain_config.wallet_pass,
+                    Some(blockchain_config.endpoint),
+                    &ex,
+                    args.fun,
+                )
+                .await;
+
+                let tx = match drk.drain_protection_initialize(
+                    fund_id,
+                    spend_authority,
+                    dao_escrow_bulla,
+                    rate_limit_bps,
+                    vote_threshold_bps,
+                ).await {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        eprintln!("Error creating drain_protection_initialize tx: {e}");
+                        exit(2);
+                    }
+                };
+
+                println!("{}", base64::encode(&serialize_async(&tx).await));
+
+                drk.stop_rpc_client().await
+            }
+
+            ContractSubcmd::EnableDrainProtection { dao_escrow_bulla, drain_protection_bulla } => {
+                use darkfi_sdk::pasta::pallas;
+
+                // Parse DAO-Escrow bulla
+                let dao_escrow_bulla = {
+                    let bytes = bs58::decode(&dao_escrow_bulla)
+                        .into_vec()
+                        .map_err(|e| Error::Custom(format!("Invalid dao_escrow_bulla: {}", e)))?
+                        .try_into()
+                        .map_err(|_| Error::Custom("Invalid dao_escrow_bulla length".to_string()))?;
+                    pallas::Base::from_repr(bytes)
+                        .into_option()
+                        .ok_or_else(|| Error::Custom("Invalid dao_escrow_bulla".to_string()))?
+                };
+
+                // Parse DrainProtection bulla
+                let drain_protection_bulla = {
+                    let bytes = bs58::decode(&drain_protection_bulla)
+                        .into_vec()
+                        .map_err(|e| Error::Custom(format!("Invalid drain_protection_bulla: {}", e)))?
+                        .try_into()
+                        .map_err(|_| Error::Custom("Invalid drain_protection_bulla length".to_string()))?;
+                    pallas::Base::from_repr(bytes)
+                        .into_option()
+                        .ok_or_else(|| Error::Custom("Invalid drain_protection_bulla".to_string()))?
+                };
+
+                let drk = new_wallet(
+                    network,
+                    blockchain_config.cache_path,
+                    blockchain_config.wallet_path,
+                    blockchain_config.wallet_pass,
+                    Some(blockchain_config.endpoint),
+                    &ex,
+                    args.fun,
+                )
+                .await;
+
+                let tx = match drk.dao_escrow_enable_drain_protection(
+                    dao_escrow_bulla,
+                    drain_protection_bulla,
+                ).await {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        eprintln!("Error creating dao_escrow_enable_drain_protection tx: {e}");
                         exit(2);
                     }
                 };

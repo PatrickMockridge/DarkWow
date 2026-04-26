@@ -62,11 +62,26 @@ drk wallet tree               Print Merkle tree
 
 **Contract subcommands:**
 ```
+drk contract dao-escrow-init <dao-bulla> <token-id>    Initialize a DAO-Escrow endowment
+drk contract drain-protection-init <fund-id> <spend-auth> <dao-bulla>  Initialize DrainProtection
+drk contract enable-drain-protection <dao-bulla> <drain-bulla>          Enable drain protection
 drk contract deploy <auth> <wasm-path> [deploy-ix]    Deploy a smart contract
 drk contract export-data <tx-hash>                     Export wasm bincode + deploy ix
 drk contract generate-deploy                          Generate new deploy authority
+drk contract invoke <contract-id> <function>           Invoke a contract function
 drk contract list [contract-id]                        List deploy authorities
 drk contract lock <deploy-auth>                        Lock a smart contract
+```
+
+**Universal Contract Invocation:**
+```
+drk contract invoke <contract-name-or-id> <function> [--params <json-file>]
+
+# Example: Enable drain protection on DAO-Escrow
+drk contract invoke dao_escrow enable_drain_protection --params params.json
+
+# Where params.json contains:
+# {"dao_escrow_bulla": "...", "drain_protection_bulla": "..."}
 ```
 
 ## Mining Details

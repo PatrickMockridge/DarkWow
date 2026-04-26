@@ -24,6 +24,7 @@ darkfi_money_v3_contract = {path = "../../src/contract/money_v3", features = ["c
 darkfi_native_token_contract = {path = "../../src/contract/native_token", features = ["client"]}
 darkfi_dao_escrow_contract = {path = "../../src/contract/dao_escrow", features = ["client"]}
 darkfi_stablecoin_contract = {path = "../../src/contract/stablecoin", features = ["client"]}
+darkfi_drain_protection_contract = {path = "../../src/contract/drain_protection", features = ["client"]}
 
 # Misc
 blake3 = "1.8.2"
