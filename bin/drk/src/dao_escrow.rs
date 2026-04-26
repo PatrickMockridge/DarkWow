@@ -37,7 +37,9 @@ use darkfi_serial::Encodable;
 use rand::{rngs::OsRng, Rng};
 
 use crate::contract_imports::dao_escrow::{
-    DAO_ESCROW_ZKAS_INIT_V1_BIN, DaoEscrowFunction, EnableDrainProtectionParamsV1, InitializeParamsV1,
+    DAO_ESCROW_ZKAS_INIT_V1_BIN, DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN, DaoEscrowFunction,
+    EnableDrainProtectionParamsV1, InitializeParamsV1, PayPremiumParamsV1,
+    ProposeClaimParamsV1, VoteClaimParamsV1, VoteType,
 };
 use crate::fee_builder::build_fee_and_finalize_tx;
 use crate::Drk;
@@ -179,6 +181,241 @@ impl Drk {
         let dao_leaf = ContractCallLeaf { call: dao_call, proofs: vec![] };
 
         // Add fee payment and finalize
+        let tx = build_fee_and_finalize_tx(&self.wallet, dao_leaf).await?;
+
+        Ok(tx)
+    }
+
+    /// Pay premium to join a DAO-Escrow as a member
+    ///
+    /// This function allows a user to join a DAO-Escrow endowment by paying
+    /// a premium. The transaction includes a ZK proof for the PayPremiumV1 function.
+    ///
+    /// # Arguments
+    /// * `dao_escrow_bulla` - The DAO-Escrow endowment's bulla
+    /// * `value` - Premium amount to pay
+    /// * `token_id` - Token ID being paid (use DARK_TOKEN_ID for DARK)
+    /// * `expiry` - Membership expiry block height
+    pub async fn dao_escrow_pay_premium(
+        &self,
+        dao_escrow_bulla: pallas::Base,
+        value: u64,
+        token_id: pallas::Base,
+        expiry: u64,
+    ) -> Result<Transaction> {
+        // Get member's secret from wallet
+        let member_secret = self.default_secret().await?;
+        let member_secret_base = member_secret.inner();
+
+        // Get current block height from blockchain
+        let current_block = self.get_next_block_height().await? as u64;
+
+        // Generate random blinds
+        let mut membership_blind_bytes = [0u8; 32];
+        let mut value_blind_bytes = [0u8; 32];
+        let mut mpc1_bytes = [0u8; 32];
+        let mut mpc2_bytes = [0u8; 32];
+        let mut mpc3_bytes = [0u8; 32];
+        OsRng.fill(&mut membership_blind_bytes);
+        OsRng.fill(&mut value_blind_bytes);
+        OsRng.fill(&mut mpc1_bytes);
+        OsRng.fill(&mut mpc2_bytes);
+        OsRng.fill(&mut mpc3_bytes);
+
+        let membership_blind = pallas::Base::from_repr(membership_blind_bytes).unwrap();
+        let value_blind = pallas::Scalar::from_repr(value_blind_bytes).unwrap();
+        let mpc_secret_1 = pallas::Scalar::from_repr(mpc1_bytes).unwrap();
+        let mpc_secret_2 = pallas::Scalar::from_repr(mpc2_bytes).unwrap();
+        let mpc_secret_3 = pallas::Scalar::from_repr(mpc3_bytes).unwrap();
+
+        // Max membership blocks (roughly 1 year at 5min blocks)
+        let max_membership_blocks: u64 = 525600;
+        let max_expiry = current_block + max_membership_blocks;
+
+        // Load PayPremium ZK binary
+        let premium_zkbin =
+            darkfi::zkas::ZkBinary::decode(DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN, false)
+                .map_err(|e| Error::Custom(format!("Failed to decode PayPremium ZK binary: {:?}", e)))?;
+
+        // Create PayPremium circuit with empty witnesses
+        let premium_wits = darkfi::zk::vm_heap::empty_witnesses(&premium_zkbin)?;
+        let premium_circuit = darkfi::zk::vm::ZkCircuit::new(premium_wits, &premium_zkbin);
+        let premium_pk = darkfi::zk::proof::ProvingKey::build(premium_zkbin.k, &premium_circuit);
+
+        // Build PayPremiumV1CallData for ZK proof
+        let call_data = darkfi_dao_escrow_contract::client::pay_premium_v1::PayPremiumV1CallData::new(
+            pallas::Scalar::zero(), // nullifier_k constant - ignored, embedded in circuit
+            dao_escrow_bulla,
+            current_block,
+            member_secret_base,
+            value,
+            token_id,
+            expiry,
+            membership_blind,
+            value_blind,
+            mpc_secret_1,
+            mpc_secret_2,
+            mpc_secret_3,
+            max_membership_blocks,
+            max_expiry,
+        );
+
+        // Generate ZK proof
+        let (proof, _public_inputs) =
+            darkfi_dao_escrow_contract::client::pay_premium_v1::pay_premium_v1_proof(
+                &premium_zkbin,
+                &premium_pk,
+                &call_data,
+            )?;
+
+        // Build PayPremiumParamsV1
+        let params = PayPremiumParamsV1 {
+            dao_escrow_bulla,
+            value_commit_x: pallas::Base::zero(), // Placeholder, circuit computes real value
+            value_commit_y: pallas::Base::zero(), // Placeholder, circuit computes real value
+            value,
+            token_id,
+            expiry,
+            membership_blind: darkfi_sdk::crypto::Blind(membership_blind),
+            value_blind: darkfi_sdk::crypto::Blind(value_blind),
+            mpc_secret_1,
+            mpc_secret_2,
+            mpc_secret_3,
+        };
+
+        // Create function call data
+        let function = DaoEscrowFunction::PayPremiumV1 as u8;
+        let mut call_data_buf = vec![function];
+        params.encode(&mut call_data_buf)
+            .map_err(|e| Error::Custom(format!("Failed to encode params: {:?}", e)))?;
+
+        // Get DAO-Escrow contract ID
+        let dao_escrow_id = crate::contract_imports::DAO_ESCROW_CONTRACT_ID.get()
+            .copied()
+            .ok_or_else(|| Error::Custom("DAO-Escrow contract ID not initialized".to_string()))?;
+
+        // Create contract call
+        let dao_call = ContractCall {
+            contract_id: dao_escrow_id,
+            data: call_data_buf,
+        };
+
+        // Create contract call leaf with proof
+        let dao_leaf = ContractCallLeaf { call: dao_call, proofs: vec![proof] };
+
+        // Add fee payment
+        let tx = build_fee_and_finalize_tx(&self.wallet, dao_leaf).await?;
+
+        Ok(tx)
+    }
+
+    /// Propose a claim against the DAO-Escrow endowment
+    ///
+    /// This allows a member to propose an endowment withdrawal (claim).
+    /// The claim must be voted on by DAO members before execution.
+    ///
+    /// # Arguments
+    /// * `dao_escrow_bulla` - The DAO-Escrow endowment's bulla
+    /// * `claim_id` - Unique claim identifier
+    /// * `value` - Amount being claimed
+    /// * `description_hash` - Hash of claim description
+    /// * `recipient_pubkey` - Recipient of the claimed funds
+    pub async fn dao_escrow_propose_claim(
+        &self,
+        dao_escrow_bulla: pallas::Base,
+        claim_id: pallas::Base,
+        value: u64,
+        description_hash: pallas::Base,
+        recipient_pubkey: PublicKey,
+    ) -> Result<Transaction> {
+        // Get proposer's public key from wallet
+        let proposer_pubkey = PublicKey::from_secret(self.default_secret().await?);
+
+        // Build ProposeClaimParamsV1
+        let params = ProposeClaimParamsV1 {
+            dao_escrow_bulla,
+            claim_id,
+            value,
+            description_hash,
+            recipient_pubkey,
+            proposer_pubkey,
+        };
+
+        // Create function call data
+        let function = DaoEscrowFunction::ProposeClaimV1 as u8;
+        let mut call_data_buf = vec![function];
+        params.encode(&mut call_data_buf)
+            .map_err(|e| Error::Custom(format!("Failed to encode params: {:?}", e)))?;
+
+        // Get DAO-Escrow contract ID
+        let dao_escrow_id = crate::contract_imports::DAO_ESCROW_CONTRACT_ID.get()
+            .copied()
+            .ok_or_else(|| Error::Custom("DAO-Escrow contract ID not initialized".to_string()))?;
+
+        // Create contract call (no ZK proof needed)
+        let dao_call = ContractCall {
+            contract_id: dao_escrow_id,
+            data: call_data_buf,
+        };
+
+        // Create contract call leaf with no proofs
+        let dao_leaf = ContractCallLeaf { call: dao_call, proofs: vec![] };
+
+        // Add fee payment
+        let tx = build_fee_and_finalize_tx(&self.wallet, dao_leaf).await?;
+
+        Ok(tx)
+    }
+
+    /// Vote on a claim against the DAO-Escrow endowment
+    ///
+    /// This allows a DAO member to vote on a proposed claim.
+    ///
+    /// # Arguments
+    /// * `dao_escrow_bulla` - The DAO-Escrow endowment's bulla
+    /// * `claim_id` - Claim identifier to vote on
+    /// * `vote` - true for Yes, false for No
+    pub async fn dao_escrow_vote_claim(
+        &self,
+        dao_escrow_bulla: pallas::Base,
+        claim_id: pallas::Base,
+        vote: bool,
+    ) -> Result<Transaction> {
+        // Get voter's public key from wallet
+        let voter_pubkey = PublicKey::from_secret(self.default_secret().await?);
+
+        // Convert vote boolean to VoteType
+        let vote_type = if vote { VoteType::Yes } else { VoteType::No };
+
+        // Build VoteClaimParamsV1
+        let params = VoteClaimParamsV1 {
+            dao_escrow_bulla,
+            claim_id,
+            vote: vote_type,
+            voter_pubkey,
+        };
+
+        // Create function call data
+        let function = DaoEscrowFunction::VoteClaimV1 as u8;
+        let mut call_data_buf = vec![function];
+        params.encode(&mut call_data_buf)
+            .map_err(|e| Error::Custom(format!("Failed to encode params: {:?}", e)))?;
+
+        // Get DAO-Escrow contract ID
+        let dao_escrow_id = crate::contract_imports::DAO_ESCROW_CONTRACT_ID.get()
+            .copied()
+            .ok_or_else(|| Error::Custom("DAO-Escrow contract ID not initialized".to_string()))?;
+
+        // Create contract call (no ZK proof needed)
+        let dao_call = ContractCall {
+            contract_id: dao_escrow_id,
+            data: call_data_buf,
+        };
+
+        // Create contract call leaf with no proofs
+        let dao_leaf = ContractCallLeaf { call: dao_call, proofs: vec![] };
+
+        // Add fee payment
         let tx = build_fee_and_finalize_tx(&self.wallet, dao_leaf).await?;
 
         Ok(tx)

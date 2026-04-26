@@ -1,0 +1,8 @@
+network = "linear-testnet"
+
+[network_config."linear-testnet"]
+cache_path = "~/.local/share/darkfi/drk/linear-testnet/wallet2/cache"
+wallet_path = "~/.local/share/darkfi/drk/linear-testnet/wallet2/wallet.db"
+wallet_pass = "testpassword123"
+endpoint = "tcp://node2:28347"
+history_path = "~/.local/share/darkfi/drk/linear-testnet/wallet2/history.txt"

@@ -20,6 +20,8 @@
 //!
 //! This module handles DrainProtection contract interactions:
 //! - InitializeV1: Create a new protected fund linked to a DAO-Escrow
+//! - VoteV1: Vote on a proposal
+//! - ExecuteV1: Execute an approved proposal
 //!
 //! DrainProtection provides governance for endowment/treasury funds:
 //! - Rate limiting per block
@@ -30,7 +32,7 @@ use darkfi::{tx::{ContractCallLeaf, Transaction}, Error, Result};
 use darkfi_sdk::{crypto::PublicKey, pasta::pallas, tx::ContractCall};
 use darkfi_serial::Encodable;
 
-use darkfi_drain_protection_contract::model::InitializeParamsV1;
+use darkfi_drain_protection_contract::model::{InitializeParamsV1, VoteParamsV1, ExecuteParamsV1};
 use crate::contract_imports::drain_protection::DrainProtectionFunction;
 use crate::fee_builder::build_fee_and_finalize_tx;
 use crate::Drk;
@@ -92,6 +94,99 @@ impl Drk {
         };
 
         // Create contract call leaf with no proofs (InitializeV1 is simple state update)
+        let dp_leaf = ContractCallLeaf { call: dp_call, proofs: vec![] };
+
+        // Build fee and finalize
+        let tx = build_fee_and_finalize_tx(&self.wallet, dp_leaf).await?;
+
+        Ok(tx)
+    }
+
+    /// Vote on a DrainProtection proposal
+    ///
+    /// This allows a DAO member to vote on a withdrawal proposal.
+    ///
+    /// # Arguments
+    /// * `proposal_id` - Proposal ID to vote on
+    /// * `vote` - true for yes, false for no
+    pub async fn drain_protection_vote(
+        &self,
+        proposal_id: pallas::Base,
+        vote: bool,
+    ) -> Result<Transaction> {
+        // Get voter's public key from wallet
+        let voter_pubkey = PublicKey::from_secret(self.default_secret().await?);
+
+        // Build VoteParamsV1
+        // Note: signature field is unused in the current contract implementation
+        let params = VoteParamsV1 {
+            proposal_id,
+            voter_pubkey,
+            vote,
+            signature: pallas::Base::zero(),
+        };
+
+        // Create function call data
+        let function = DrainProtectionFunction::VoteV1 as u8;
+        let mut call_data = vec![function];
+        params.encode(&mut call_data)
+            .map_err(|e| Error::Custom(format!("Failed to encode params: {:?}", e)))?;
+
+        // Get DrainProtection contract ID
+        let drain_protection_id = crate::contract_imports::DRAIN_PROTECTION_CONTRACT_ID.get()
+            .copied()
+            .ok_or_else(|| Error::Custom("DrainProtection contract ID not initialized".to_string()))?;
+
+        // Create contract call
+        let dp_call = ContractCall {
+            contract_id: drain_protection_id,
+            data: call_data,
+        };
+
+        // Create contract call leaf with no proofs (VoteV1 is simple state update)
+        let dp_leaf = ContractCallLeaf { call: dp_call, proofs: vec![] };
+
+        // Build fee and finalize
+        let tx = build_fee_and_finalize_tx(&self.wallet, dp_leaf).await?;
+
+        Ok(tx)
+    }
+
+    /// Execute an approved DrainProtection proposal
+    ///
+    /// This executes a proposal that has passed the vote threshold.
+    ///
+    /// # Arguments
+    /// * `proposal_id` - Proposal ID to execute
+    pub async fn drain_protection_execute(
+        &self,
+        proposal_id: pallas::Base,
+    ) -> Result<Transaction> {
+        // Build ExecuteParamsV1
+        // Note: signature field is unused in the current contract implementation
+        let params = ExecuteParamsV1 {
+            proposal_id,
+            signature: pallas::Base::zero(),
+        };
+
+        // Create function call data
+        let function = DrainProtectionFunction::ExecuteV1 as u8;
+        let mut call_data = vec![function];
+        params.encode(&mut call_data)
+            .map_err(|e| Error::Custom(format!("Failed to encode params: {:?}", e)))?;
+
+        // Get DrainProtection contract ID
+        let drain_protection_id = crate::contract_imports::DRAIN_PROTECTION_CONTRACT_ID.get()
+            .copied()
+            .ok_or_else(|| Error::Custom("DrainProtection contract ID not initialized".to_string()))?;
+
+        // Create contract call
+        let dp_call = ContractCall {
+            contract_id: drain_protection_id,
+            data: call_data,
+        };
+
+        // Create contract call leaf with no proofs (ExecuteV1 is simple state update)
         let dp_leaf = ContractCallLeaf { call: dp_call, proofs: vec![] };
 
         // Build fee and finalize

@@ -64,6 +64,44 @@ services:
       - darkfi-local
     command: -c /config/darkfid.toml --network linear-testnet
 
+  # ============================================
+  # Wallet 1 (Member 1 - connects to node1)
+  # ============================================
+  wallet1:
+    build:
+      context: /home/patrick/Darkfi/darkfi
+      dockerfile: contrib/docker/linear-testnet/Dockerfile
+      args:
+        - BUILD_FROM_SOURCE=1
+    container_name: darkfi-linear-wallet1
+    volumes:
+      - ./wallets/wallet1.toml:/config/wallet1.toml:ro
+      - wallet1_data:/root/.local/share/darkfi/drk/linear-testnet/wallet1
+    networks:
+      - darkfi-local
+    depends_on:
+      - node1
+    command: drk -c /config/wallet1.toml wallet init && drk -c /config/wallet1.toml wallet keygen && tail -f /dev/null
+
+  # ============================================
+  # Wallet 2 (Member 2 - connects to node2)
+  # ============================================
+  wallet2:
+    build:
+      context: /home/patrick/Darkfi/darkfi
+      dockerfile: contrib/docker/linear-testnet/Dockerfile
+      args:
+        - BUILD_FROM_SOURCE=1
+    container_name: darkfi-linear-wallet2
+    volumes:
+      - ./wallets/wallet2.toml:/config/wallet2.toml:ro
+      - wallet2_data:/root/.local/share/darkfi/drk/linear-testnet/wallet2
+    networks:
+      - darkfi-local
+    depends_on:
+      - node2
+    command: drk -c /config/wallet2.toml wallet init && drk -c /config/wallet2.toml wallet keygen && tail -f /dev/null
+
 networks:
   darkfi-local:
     driver: bridge
@@ -72,3 +110,5 @@ volumes:
   node0_data:
   node1_data:
   node2_data:
+  wallet1_data:
+  wallet2_data:
