@@ -1,0 +1,13 @@
+[network_config."linear-testnet"]
+rpc_endpoint = "tcp://127.0.0.1:28345"
+daemon_rpc_endpoint = "tcp://127.0.0.1:28345"
+confirmations = 1
+default_fee = 42000000
+miner_fee = 100000000
+
+[wallet]
+path = "wallet0.db"
+password = ""
+
+[wallet.keys]
+default_path = "m/0'/0'"

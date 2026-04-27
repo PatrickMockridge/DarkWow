@@ -1,106 +1,53 @@
 version: '3.8'
 
 services:
-  # ============================================
-  # Node 0 (Seed peer)
-  # ============================================
   node0:
     build:
-      context: /home/patrick/Darkfi/darkfi
+      context: ../../..
       dockerfile: contrib/docker/linear-testnet/Dockerfile
-      args:
-        - BUILD_FROM_SOURCE=1
     container_name: darkfi-linear-node0
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      - NETWORK=linear-testnet
     ports:
-      - "28345:28345"  # RPC
-      - "48347:48347"  # stratum
-      - "28340:28340"  # P2P
+      - "28345:28345"
+      - "48347:48347"
+      - "28340:28340"
     volumes:
       - ./node0.toml:/config/darkfid.toml:ro
       - node0_data:/root/.local/share/darkfi/darkfid
     networks:
       - darkfi-local
-    command: -c /config/darkfid.toml --network linear-testnet
+    healthcheck:
+      test: ["CMD", "/app/darkfid", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
-  # ============================================
-  # Node 1
-  # ============================================
   node1:
     build:
-      context: /home/patrick/Darkfi/darkfi
+      context: ../../..
       dockerfile: contrib/docker/linear-testnet/Dockerfile
-      args:
-        - BUILD_FROM_SOURCE=1
     container_name: darkfi-linear-node1
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      - NETWORK=linear-testnet
     ports:
-      - "28346:28346"  # RPC
-      - "48447:48447"  # stratum
-      - "28341:28341"  # P2P
+      - "28346:28346"
+      - "48447:48447"
+      - "28341:28341"
     volumes:
       - ./node1.toml:/config/darkfid.toml:ro
       - node1_data:/root/.local/share/darkfi/darkfid
     networks:
       - darkfi-local
-    command: -c /config/darkfid.toml --network linear-testnet
-
-  # ============================================
-  # Node 2
-  # ============================================
-  node2:
-    build:
-      context: /home/patrick/Darkfi/darkfi
-      dockerfile: contrib/docker/linear-testnet/Dockerfile
-      args:
-        - BUILD_FROM_SOURCE=1
-    container_name: darkfi-linear-node2
-    ports:
-      - "28347:28347"  # RPC
-      - "48547:48547"  # stratum
-      - "28342:28342"  # P2P
-    volumes:
-      - ./node2.toml:/config/darkfid.toml:ro
-      - node2_data:/root/.local/share/darkfi/darkfid
-    networks:
-      - darkfi-local
-    command: -c /config/darkfid.toml --network linear-testnet
-
-  # ============================================
-  # Wallet 1 (Member 1 - connects to node1)
-  # ============================================
-  wallet1:
-    build:
-      context: /home/patrick/Darkfi/darkfi
-      dockerfile: contrib/docker/linear-testnet/Dockerfile
-      args:
-        - BUILD_FROM_SOURCE=1
-    container_name: darkfi-linear-wallet1
-    volumes:
-      - ./wallets/wallet1.toml:/config/wallet1.toml:ro
-      - wallet1_data:/root/.local/share/darkfi/drk/linear-testnet/wallet1
-    networks:
-      - darkfi-local
     depends_on:
-      - node1
-    command: drk -c /config/wallet1.toml wallet init && drk -c /config/wallet1.toml wallet keygen && tail -f /dev/null
-
-  # ============================================
-  # Wallet 2 (Member 2 - connects to node2)
-  # ============================================
-  wallet2:
-    build:
-      context: /home/patrick/Darkfi/darkfi
-      dockerfile: contrib/docker/linear-testnet/Dockerfile
-      args:
-        - BUILD_FROM_SOURCE=1
-    container_name: darkfi-linear-wallet2
-    volumes:
-      - ./wallets/wallet2.toml:/config/wallet2.toml:ro
-      - wallet2_data:/root/.local/share/darkfi/drk/linear-testnet/wallet2
-    networks:
-      - darkfi-local
-    depends_on:
-      - node2
-    command: drk -c /config/wallet2.toml wallet init && drk -c /config/wallet2.toml wallet keygen && tail -f /dev/null
+      - node0
+    healthcheck:
+      test: ["CMD", "/app/darkfid", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 networks:
   darkfi-local:
@@ -109,6 +56,3 @@ networks:
 volumes:
   node0_data:
   node1_data:
-  node2_data:
-  wallet1_data:
-  wallet2_data:
