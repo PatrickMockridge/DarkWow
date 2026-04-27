@@ -36,6 +36,29 @@ use tracing::{error, info};
 
 use crate::zk::ZkVerifier;
 
+/// Configuration for LinearBlockchain PoW
+pub struct LinearPoWConfig {
+    /// Target block time in seconds
+    pub target_block_time: u64,
+    /// Initial difficulty
+    pub initial_difficulty: u32,
+    /// Minimum difficulty
+    pub min_difficulty: u32,
+    /// Maximum difficulty
+    pub max_difficulty: u32,
+}
+
+impl Default for LinearPoWConfig {
+    fn default() -> Self {
+        Self {
+            target_block_time: 60,
+            initial_difficulty: 0x000000FF,
+            min_difficulty: 1,
+            max_difficulty: u32::MAX,
+        }
+    }
+}
+
 /// Linear blockchain with WASM runtime and ZK verification
 pub struct LinearBlockchain {
     /// Storage backend (darkfi_linear)
@@ -44,8 +67,8 @@ pub struct LinearBlockchain {
     contract_store: Arc<dyn ContractStoreAccess>,
     /// State db adapter for Runtime
     state_db: Arc<dyn SimpleDbAccess>,
-    /// PoW consensus
-    pub consensus: PoWConsensus,
+    /// PoW consensus (protected by mutex for difficulty updates)
+    pub consensus: Mutex<PoWConsensus>,
     /// ZK verifier
     pub zk_verifier: ZkVerifier,
     /// Current chain height
@@ -57,9 +80,19 @@ pub struct LinearBlockchain {
 }
 
 impl LinearBlockchain {
-    /// Create a new LinearBlockchain with the given sled database
+    /// Create a new LinearBlockchain with the given sled database and default PoW
     pub fn new(store: Arc<LinearStore>) -> Self {
-        let consensus = PoWConsensus::default();
+        Self::with_pow_config(store, LinearPoWConfig::default())
+    }
+
+    /// Create a new LinearBlockchain with custom PoW configuration
+    pub fn with_pow_config(store: Arc<LinearStore>, config: LinearPoWConfig) -> Self {
+        let consensus = PoWConsensus::with_config(
+            config.target_block_time,
+            config.initial_difficulty,
+            config.min_difficulty,
+            config.max_difficulty,
+        );
         let zk_verifier = ZkVerifier;
         let height = AtomicU64::new(store.get_height().unwrap_or(0));
 
@@ -75,7 +108,7 @@ impl LinearBlockchain {
             store,
             contract_store: Arc::new(contract_store),
             state_db: Arc::new(state_db),
-            consensus,
+            consensus: Mutex::new(consensus),
             zk_verifier,
             height,
             vm: Mutex::new(vm),
@@ -134,6 +167,13 @@ impl LinearBlockchain {
     /// Insert a block into the chain
     pub fn insert_block(&self, block: &Block) -> Result<()> {
         let height = block.header.height;
+
+        // Record timestamp and difficulty for dynamic adjustment
+        {
+            let mut consensus = self.consensus.lock().unwrap();
+            consensus.record_block(block.header.timestamp, block.header.difficulty_target);
+        }
+
         self.store.insert_block(height, block).map_err(|e| Error::Custom(e.to_string()))?;
         let current_height = self.height.load(Ordering::SeqCst);
         if height > current_height {
@@ -160,16 +200,13 @@ impl LinearBlockchain {
         info!(target: "linear_blockchain", "Applying block at height {}", block.header.height);
 
         // Verify PoW
-        match self.consensus.verify_proof(block, &vm) {
-            Ok(true) => {}
-            Ok(false) => {
-                error!(target: "linear_blockchain", "Block {} failed PoW verification", block_hash);
-                return Err(Error::BlockIsInvalid(block_hash.to_string()))
-            }
-            Err(e) => {
-                error!(target: "linear_blockchain", "Block {} failed PoW: {}", block_hash, e);
-                return Err(Error::Custom(e.to_string()))
-            }
+        let proof_ok = {
+            let consensus = self.consensus.lock().unwrap();
+            consensus.verify_proof(block, &vm).map_err(|e| Error::Custom(e.to_string()))?
+        };
+        if !proof_ok {
+            error!(target: "linear_blockchain", "Block {} failed PoW verification", block_hash);
+            return Err(Error::BlockIsInvalid(block_hash.to_string()))
         }
 
         // Verify merkle root
@@ -186,8 +223,9 @@ impl LinearBlockchain {
         }
 
         // Verify each uncle's PoW
+        let consensus = self.consensus.lock().unwrap();
         for uncle in uncles {
-            match self.consensus.verify_uncle_pow(uncle, &vm) {
+            match consensus.verify_uncle_pow(uncle, &vm) {
                 Ok(true) => {}
                 Ok(false) => {
                     error!(target: "linear_blockchain", "Uncle {} failed PoW verification", uncle.hash(&vm));
@@ -205,6 +243,7 @@ impl LinearBlockchain {
                 return Err(Error::Custom("UncleProofVerificationFailed".to_string()))
             }
         }
+        drop(consensus);
 
         // Verify previous hash
         let current_height = self.height.load(Ordering::SeqCst);
@@ -236,6 +275,10 @@ impl LinearBlockchain {
                 // Create runtime for this contract call
                 let tx_hash = tx.hash();
                 let tx_hash_bytes = darkfi_sdk::tx::TransactionHash(*tx_hash.as_bytes());
+                let difficulty = {
+                    let consensus = self.consensus.lock().unwrap();
+                    consensus.difficulty_target()
+                };
                 let mut runtime = match darkfi::runtime::vm_runtime::Runtime::new(
                     &wasm_bytes,
                     self.contract_store.clone(),
@@ -243,7 +286,7 @@ impl LinearBlockchain {
                     Arc::new(self.clone()),
                     contract_id,
                     current_height as u32,
-                    self.consensus.difficulty_target(),
+                    difficulty,
                     tx_hash_bytes,
                     call_idx as u8,
                 ) {
@@ -324,7 +367,7 @@ impl Clone for LinearBlockchain {
             store: self.store.clone(),
             contract_store: self.contract_store.clone(),
             state_db: self.state_db.clone(),
-            consensus: PoWConsensus::default(), // consensus is stateless, recreate it
+            consensus: Mutex::new(PoWConsensus::default()), // consensus is stateless, recreate it
             zk_verifier: ZkVerifier,
             height: AtomicU64::new(self.height.load(Ordering::SeqCst)),
             vm: Mutex::new(self.vm.lock().unwrap().clone()),

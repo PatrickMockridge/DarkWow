@@ -18,7 +18,10 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 use smol::lock::Mutex;
@@ -110,6 +113,10 @@ pub struct DarkfiNode {
     management_rpc_connections: Mutex<HashSet<StoppableTaskPtr>>,
     /// Whether node is running in localnet mode
     is_localnet: bool,
+    /// Last block timestamp for rate limiting (linear-testnet)
+    last_block_time: AtomicU64,
+    /// Minimum interval between blocks in seconds (linear-testnet)
+    min_block_interval: u64,
 }
 
 impl DarkfiNode {
@@ -122,6 +129,7 @@ impl DarkfiNode {
         txs_batch_size: usize,
         subscribers: HashMap<&'static str, JsonSubscriber>,
         is_localnet: bool,
+        min_block_interval: u64,
     ) -> Result<DarkfiNodePtr> {
         Ok(Arc::new(Self {
             validator,
@@ -134,6 +142,8 @@ impl DarkfiNode {
             rpc_connections: Mutex::new(HashSet::new()),
             management_rpc_connections: Mutex::new(HashSet::new()),
             is_localnet,
+            last_block_time: AtomicU64::new(0),
+            min_block_interval,
         }))
     }
 
@@ -209,8 +219,9 @@ impl Darkfid {
         subscribers.insert("dnet", JsonSubscriber::new("dnet.subscribe_events"));
 
         // Initialize node
+        let min_block_interval = net_settings.pow.min_block_interval.unwrap_or(10);
         let node =
-            DarkfiNode::new(validator, None, None, p2p_handler, registry, txs_batch_size, subscribers, is_localnet).await?;
+            DarkfiNode::new(validator, None, None, p2p_handler, registry, txs_batch_size, subscribers, is_localnet, min_block_interval).await?;
 
         // Generate the background tasks
         let dnet_task = StoppableTask::new();
@@ -240,7 +251,15 @@ impl Darkfid {
 
         // Initialize darkfid's blockchain wrapper (uses darkfi_linear store)
         let store = linear_blockchain_p2p.store.clone();
-        let linear_blockchain = Arc::new(LinearBlockchain::new(store));
+
+        // Create PoW config from network settings
+        let pow_config = crate::blockchain::LinearPoWConfig {
+            target_block_time: net_settings.pow.target_block_time.unwrap_or(60),
+            initial_difficulty: net_settings.pow.initial_difficulty.unwrap_or(0x000000FF) as u32,
+            min_difficulty: net_settings.pow.min_difficulty.unwrap_or(1) as u32,
+            max_difficulty: net_settings.pow.max_difficulty.unwrap_or(u32::MAX) as u32,
+        };
+        let linear_blockchain = Arc::new(LinearBlockchain::with_pow_config(store, pow_config));
 
         // Deploy native contracts to linear blockchain
         info!(target: "darkfid::Darkfid::init_linear", "Deploying native contracts to linear blockchain...");
@@ -281,6 +300,7 @@ impl Darkfid {
             verify_fees: true,
         }).await?;
 
+        let min_block_interval = net_settings.pow.min_block_interval.unwrap_or(10);
         let node = DarkfiNode::new(
             validator,
             Some(linear_blockchain),
@@ -290,6 +310,7 @@ impl Darkfid {
             txs_batch_size,
             subscribers,
             false,
+            min_block_interval,
         ).await?;
 
         // Generate the background tasks

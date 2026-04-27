@@ -275,10 +275,22 @@ impl LinearMinerRewardsRecipientConfig {
     }
 
     pub async fn from_str(address: &str) -> std::result::Result<Self, RpcError> {
-        let recipient = PublicKey::from_str(address)
+        // Decode base58: [prefix(1)][pubkey(32)][checksum(4)] = 37 bytes
+        // Use with_check(None) to strip checksum bytes (like Address::from_str does)
+        let decoded = bs58::decode(address).with_check(None).into_vec()
             .map_err(|_| RpcError::MinerInvalidRecipientPrefix)?;
-        // Default reward value for now
-        let value = 100_000_000u64; // 1 token with 8 decimals
+
+        if decoded.len() != 37 {
+            return Err(RpcError::MinerInvalidRecipientPrefix)
+        }
+
+        // Bytes 1-32 are the public key
+        let pubkey_bytes: [u8; 32] = decoded[1..33].try_into()
+            .map_err(|_| RpcError::MinerInvalidRecipientPrefix)?;
+        let recipient = PublicKey::from_bytes(pubkey_bytes)
+            .map_err(|_| RpcError::MinerInvalidRecipientPrefix)?;
+
+        let value = 100_000_000u64;
         Ok(Self { recipient, value })
     }
 }
@@ -326,15 +338,30 @@ pub async fn generate_linear_block_template(
     recipient_config: &LinearMinerRewardsRecipientConfig,
 ) -> Result<LinearBlockTemplate> {
     let height = linear_blockchain.get_height() + 1;
-    let latest_block = linear_blockchain.get_latest_block()
-        .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
 
     // Get VM for hashing - use the key derived from height
     let randomx_key = darkfi_linear::Miner::derive_key_from_height(height);
     let vm = linear_blockchain.get_vm(randomx_key);
-    let previous_hash = latest_block.hash(&vm);
 
-    let difficulty_target = latest_block.header.difficulty_target;
+    // Previous block hash - use zero hash if this is the first block
+    let previous_hash: [u8; 32] = if height == 1 {
+        [0u8; 32]
+    } else {
+        let latest_block = linear_blockchain.get_latest_block()
+            .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
+        *latest_block.hash(&vm).as_bytes()
+    };
+
+    // Difficulty target - use initial from consensus for first block, otherwise use last block's target
+    let difficulty_target = if height == 1 {
+        // Use consensus's initial difficulty
+        let consensus = linear_blockchain.consensus.lock().unwrap();
+        consensus.difficulty_target()
+    } else {
+        let latest_block = linear_blockchain.get_latest_block()
+            .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
+        latest_block.header.difficulty_target
+    };
 
     let coinbase_output = LinearBlockTemplate::create_coinbase_output(
         &recipient_config.recipient,
@@ -342,7 +369,7 @@ pub async fn generate_linear_block_template(
     );
 
     Ok(LinearBlockTemplate {
-        previous: *previous_hash.as_bytes(),
+        previous: previous_hash,
         height,
         difficulty_target,
         coinbase_output,

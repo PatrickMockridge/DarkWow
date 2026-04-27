@@ -9,9 +9,18 @@ database = "~/.local/share/darkfi/darkfid/linear-testnet"
 threshold = 1
 max_forks = 8
 
-# PoW settings (fixed difficulty = 1 for fast testing)
-pow_target = 1
-pow_fixed_difficulty = 1
+# PoW settings
+[network_config."linear-testnet".pow]
+# Target block time in seconds (60 = 1 block per minute)
+target_block_time = 60
+# Initial difficulty (first block) - 0xFF = 255, easy for testnet
+initial_difficulty = 255
+# Minimum difficulty
+min_difficulty = 1
+# Maximum difficulty
+max_difficulty = 4294967295
+# Minimum interval between valid blocks (seconds)
+min_block_interval = 10
 
 # Developer wallet configuration
 # Initial DARK allocation at genesis for development

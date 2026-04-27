@@ -131,6 +131,24 @@ pub struct Settings {
     pub ban_policy: BanPolicy,
     /// Mapping of transport/scheme to Network Profile
     pub profiles: HashMap<String, NetworkProfile>,
+    /// PoW settings for linear blockchain
+    pub pow: PowSettings,
+}
+
+/// PoW settings for linear-testnet
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct PowSettings {
+    /// Target block time in seconds
+    pub target_block_time: Option<u64>,
+    /// Initial difficulty (first block)
+    pub initial_difficulty: Option<u32>,
+    /// Minimum difficulty
+    pub min_difficulty: Option<u32>,
+    /// Maximum difficulty
+    pub max_difficulty: Option<u32>,
+    /// Minimum interval between blocks in seconds
+    pub min_block_interval: Option<u64>,
 }
 
 impl Default for Settings {
@@ -169,6 +187,7 @@ impl Default for Settings {
             blacklist: vec![],
             ban_policy: BanPolicy::Strict,
             profiles: HashMap::new(),
+            pow: PowSettings::default(),
         }
     }
 }
@@ -369,6 +388,41 @@ pub struct SettingsOpt {
     #[serde(default)]
     #[structopt(skip)]
     pub profiles: HashMap<String, NetworkProfileOpt>,
+
+    /// PoW settings for linear blockchain
+    #[serde(default)]
+    #[structopt(skip)]
+    pub pow: PowSettingsOpt,
+}
+
+/// PoW settings for linear blockchain (opt version)
+#[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
+#[structopt()]
+pub struct PowSettingsOpt {
+    /// Target block time in seconds
+    #[serde(default)]
+    #[structopt(long = "pow-target-block-time")]
+    pub target_block_time: Option<u64>,
+
+    /// Initial difficulty (first block)
+    #[serde(default)]
+    #[structopt(long = "pow-initial-difficulty")]
+    pub initial_difficulty: Option<u32>,
+
+    /// Minimum difficulty
+    #[serde(default)]
+    #[structopt(long = "pow-min-difficulty")]
+    pub min_difficulty: Option<u32>,
+
+    /// Maximum difficulty
+    #[serde(default)]
+    #[structopt(long = "pow-max-difficulty")]
+    pub max_difficulty: Option<u32>,
+
+    /// Minimum interval between blocks in seconds
+    #[serde(default)]
+    #[structopt(long = "pow-min-block-interval")]
+    pub min_block_interval: Option<u64>,
 }
 
 impl TryFrom<(&str, &str, SettingsOpt)> for Settings {
@@ -446,6 +500,13 @@ impl TryFrom<(&str, &str, SettingsOpt)> for Settings {
             blacklist: opt.blacklist,
             ban_policy: opt.ban_policy,
             profiles,
+            pow: PowSettings {
+                target_block_time: opt.pow.target_block_time,
+                initial_difficulty: opt.pow.initial_difficulty,
+                min_difficulty: opt.pow.min_difficulty,
+                max_difficulty: opt.pow.max_difficulty,
+                min_block_interval: opt.pow.min_block_interval,
+            },
         })
     }
 }

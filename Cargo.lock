@@ -3126,6 +3126,7 @@ dependencies = [
  "darkfi-serial",
  "darkfi_dao_escrow_contract",
  "darkfi_deployooor_contract",
+ "darkfi_drain_protection_contract",
  "darkfi_money_v3_contract",
  "darkfi_native_token_contract",
  "darkfi_stablecoin_contract",

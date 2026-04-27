@@ -204,7 +204,7 @@ impl DarkfiNode {
             }
         };
 
-        let difficulty_target = linear_blockchain.consensus.difficulty_target();
+        let difficulty_target = linear_blockchain.consensus.lock().unwrap().difficulty_target();
 
         let result = JsonValue::from(std::collections::HashMap::from([
             ("difficulty_target".to_string(), JsonValue::Number(difficulty_target as f64)),
@@ -475,6 +475,80 @@ impl DarkfiNode {
 
         let encoded = base64::encode(&bincode);
         JsonResponse::new(encoded.to_string().into(), id).into()
+    }
+
+    // RPCAPI:
+    // Perform a lookup of a deployed WASM contract and return its metadata.
+    // This includes the WASM binary and ZK circuit namespaces.
+    //
+    // **Params:**
+    // * `array[0]`: base58-encoded contract ID string
+    //
+    // **Returns:**
+    // * Object containing:
+    //   - `wasm`: base64-encoded WASM binary
+    //   - `zkcircuits`: array of [namespace, circuit_binary] pairs
+    //
+    // --> {"jsonrpc": "2.0", "method": "blockchain.contract_info", "params": ["BZHKGQ26bzmBithTQYTJtjo2QdCqpkR9tjSBopT4yf4o"], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": {"wasm": "ABCD...", "zkcircuits": [["Init", "EFGH..."]]}, "id": 1}
+    pub async fn blockchain_contract_info(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+        if params.len() != 1 || !params[0].is_string() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        let contract_id = params[0].get::<String>().unwrap();
+        let Ok(contract_id) = ContractId::from_str(contract_id) else {
+            return server_error(RpcError::ParseError, id, None)
+        };
+
+        let validator = self.validator.read().await;
+
+        // Get WASM binary
+        let Ok(wasm_bin) = validator.blockchain.contracts.get(contract_id) else {
+            return server_error(RpcError::ContractWasmNotFound, id, None)
+        };
+
+        // Get ZK circuits (same as lookup_zkas)
+        let Ok(zkas_db) = validator.blockchain.contracts.lookup(
+            &validator.blockchain.sled_db,
+            &contract_id,
+            SMART_CONTRACT_ZKAS_DB_NAME,
+        ) else {
+            return server_error(RpcError::ContractZkasDbNotFound, id, None)
+        };
+
+        drop(validator);
+
+        // Build ZK circuits array
+        let mut zkcircuits = vec![];
+        for i in zkas_db.iter() {
+            let Ok((zkas_ns, zkas_bytes)) = i else {
+                return JsonError::new(InternalError, None, id).into()
+            };
+            let Ok(zkas_ns) = deserialize_async(&zkas_ns).await else {
+                return JsonError::new(InternalError, None, id).into()
+            };
+            let (zkbin, _): (Vec<u8>, Vec<u8>) = match deserialize_async(&zkas_bytes).await {
+                Ok(pair) => pair,
+                Err(_) => return JsonError::new(InternalError, None, id).into(),
+            };
+            let zkas_bincode = base64::encode(&zkbin);
+            zkcircuits.push(JsonValue::Array(vec![
+                JsonValue::String(zkas_ns),
+                JsonValue::String(zkas_bincode),
+            ]));
+        }
+
+        // Build response
+        let result = JsonValue::from(std::collections::HashMap::from([
+            ("wasm".to_string(), JsonValue::String(base64::encode(&wasm_bin))),
+            ("zkcircuits".to_string(), JsonValue::Array(zkcircuits)),
+        ]));
+
+        JsonResponse::new(result, id).into()
     }
 
     // RPCAPI:
