@@ -68,4 +68,4 @@ EOF
 echo "[entrypoint] Config generated successfully"
 
 echo "[entrypoint] Starting darkfid..."
-exec /app/darkfid --network "$NETWORK" "$@"
+exec /app/darkfid -n "$NETWORK" "$@"
