@@ -34,8 +34,7 @@ RUN git clone https://codeberg.org/PatrickM123/darkfi-jailbroken.git /app && \
 RUN cargo build --release -p zkas
 
 # Rebuild .zk.bin files from .zk sources (needed by contracts' include_bytes! macro)
-RUN /app/target/release/zkas rebuild /app/src/contract/deployooor/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
+RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
     /app/target/release/zkas rebuild /app/src/contract/money_v3/proof && \
     /app/target/release/zkas rebuild /app/src/contract/baccarat/proof
 
