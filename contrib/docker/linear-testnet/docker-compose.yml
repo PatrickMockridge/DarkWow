@@ -1,11 +1,11 @@
 version: '3.8'
-
 services:
   node0:
     build:
       context: ../../..
       dockerfile: contrib/docker/linear-testnet/Dockerfile
     container_name: darkfi-linear-node0
+    hostname: node0
     entrypoint: ["/app/entrypoint.sh"]
     environment:
       - NETWORK=linear-testnet
@@ -14,7 +14,6 @@ services:
       - "48347:48347"
       - "28340:28340"
     volumes:
-      - ./node0.toml:/config/darkfid.toml:ro
       - node0_data:/root/.local/share/darkfi/darkfid
     networks:
       - darkfi-local
@@ -29,6 +28,7 @@ services:
       context: ../../..
       dockerfile: contrib/docker/linear-testnet/Dockerfile
     container_name: darkfi-linear-node1
+    hostname: node1
     entrypoint: ["/app/entrypoint.sh"]
     environment:
       - NETWORK=linear-testnet
@@ -37,7 +37,6 @@ services:
       - "48447:48447"
       - "28341:28341"
     volumes:
-      - ./node1.toml:/config/darkfid.toml:ro
       - node1_data:/root/.local/share/darkfi/darkfid
     networks:
       - darkfi-local
