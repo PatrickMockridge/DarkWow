@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use darkfi::{
     net::{P2p, P2pPtr, Settings},
@@ -51,8 +51,8 @@ mod linear_sync;
 pub use linear_sync::{LinearSyncHandler, LinearSyncHandlerPtr};
 
 /// Linear blockchain block broadcast protocol
-mod protocol_linear_block;
-pub use protocol_linear_block::{LinearBlockHandler, LinearBlockHandlerPtr};
+pub mod linear_block_message;
+pub use linear_block_message::{LinearBlockHandler, LinearBlockHandlerPtr, LinearBlockMessage};
 
 /// Atomic pointer to the Darkfid P2P protocols handler.
 pub type DarkfidP2pHandlerPtr = Arc<DarkfidP2pHandler>;
@@ -107,8 +107,8 @@ impl DarkfidP2pHandler {
             None
         };
 
-        let linear_block = if let Some(ref blockchain) = linear_blockchain {
-            Some(LinearBlockHandler::init(&p2p, blockchain.clone()).await)
+        let linear_block = if let Some(blockchain) = linear_blockchain {
+            Some(LinearBlockHandler::init(&p2p, blockchain).await)
         } else {
             None
         };

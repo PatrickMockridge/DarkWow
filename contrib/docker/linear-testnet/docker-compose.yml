@@ -1,5 +1,26 @@
 version: '3.8'
 services:
+  lilith:
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/linear-testnet/Dockerfile
+    container_name: darkfi-linear-lilith
+    hostname: lilith
+    # Override entrypoint - lilith uses inline config
+    entrypoint: ["/bin/sh", "-c", "cat > /tmp/lilith.toml << 'LILITH_EOF'\n[rpc]\nrpc_listen = \"tcp://127.0.0.1:18927\"\n\n[network.\"linear-testnet\"]\naccept_addrs = [\"tcp+tls://0.0.0.0:18345\"]\nseeds = []\npeers = []\nversion = \"0.5.0\"\napp_name = \"darkfid\"\nlocalnet = true\nhostlist =\"~/.local/share/darkfi/lilith/linear-testnet/hostlist.tsv\"\ndatastore = \"~/.local/share/darkfi/lilith/linear-testnet\"\nmagic_bytes = [163, 139, 113, 101]\nLILITH_EOF\nexec /app/lilith --config /tmp/lilith.toml"]
+    command: []
+    ports:
+      - "18345:18345"
+    volumes:
+      - lilith_data:/root/.local/share/darkfi/lilith
+    networks:
+      - darkfi-local
+    healthcheck:
+      test: ["CMD", "/app/lilith", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   node0:
     build:
       context: ../../..
@@ -17,6 +38,8 @@ services:
       - node0_data:/root/.local/share/darkfi/darkfid
     networks:
       - darkfi-local
+    depends_on:
+      - lilith
     healthcheck:
       test: ["CMD", "/app/darkfid", "--version"]
       interval: 10s
@@ -41,6 +64,7 @@ services:
     networks:
       - darkfi-local
     depends_on:
+      - lilith
       - node0
     healthcheck:
       test: ["CMD", "/app/darkfid", "--version"]
@@ -53,5 +77,6 @@ networks:
     driver: bridge
 
 volumes:
+  lilith_data:
   node0_data:
   node1_data:

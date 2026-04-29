@@ -16,20 +16,20 @@ case "$HOSTNAME" in
         RPC_PORT=28345
         STRATUM_PORT=48347
         INBOUND_PORT=28340
-        PEERS=""
+        SEEDS="seeds = [\"tcp+tls://lilith:18345\"]"
         ;;
     node1)
         RPC_PORT=28346
         STRATUM_PORT=48447
         INBOUND_PORT=28341
-        PEERS="peers = [\"tcp+tls://node0:28340\"]"
+        SEEDS="seeds = [\"tcp+tls://lilith:18345\"]"
         ;;
     *)
         echo "[entrypoint] WARNING: Unknown hostname $HOSTNAME, using node0 defaults"
         RPC_PORT=28345
         STRATUM_PORT=48347
         INBOUND_PORT=28340
-        PEERS=""
+        SEEDS="seeds = [\"tcp+tls://lilith:18345\"]"
         ;;
 esac
 
@@ -64,7 +64,8 @@ rpc_listen = "tcp://0.0.0.0:$STRATUM_PORT"
 localnet = true
 active_profiles = ["tcp+tls"]
 inbound = ["tcp+tls://0.0.0.0:$INBOUND_PORT"]
-$PEERS
+magic_bytes = [163, 139, 113, 101]
+$SEEDS
 
 [network_config."linear-testnet".net.profiles."tcp+tls"]
 inbound = ["tcp+tls://0.0.0.0:$INBOUND_PORT"]

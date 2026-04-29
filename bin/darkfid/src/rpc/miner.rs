@@ -43,7 +43,7 @@ use darkfi_serial::Encodable;
 use rand::rngs::OsRng;
 use tracing::{error, info};
 
-use crate::DarkfiNode;
+use crate::{proto::linear_block_message::{LinearBlockHandler, LinearBlockMessage}, DarkfiNode};
 
 impl DarkfiNode {
     // RPCAPI:
@@ -537,6 +537,10 @@ impl DarkfiNode {
                     .into()
             }
         }
+
+        // Broadcast the mined block to peers
+        let block_msg = crate::proto::LinearBlockMessage { block: mined_block };
+        self.p2p_handler.p2p.broadcast(&block_msg).await;
 
         // Return block hash
         let result = JsonValue::from(HashMap::from([
