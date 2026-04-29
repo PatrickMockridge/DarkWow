@@ -65,6 +65,9 @@ localnet = true
 active_profiles = ["tcp+tls"]
 inbound = ["tcp+tls://0.0.0.0:$INBOUND_PORT"]
 $PEERS
+
+[network_config."linear-testnet".net.profiles."tcp+tls"]
+inbound = ["tcp+tls://0.0.0.0:$INBOUND_PORT"]
 EOF
 echo "[entrypoint] Config generated successfully"
 
