@@ -45,6 +45,7 @@ max_forks = 8
 skip_sync = true
 skip_fees = true
 txs_batch_size = 50
+pow_target = 1
 
 [network_config."linear-testnet".pow]
 target_block_time = 60
