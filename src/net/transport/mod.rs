@@ -121,6 +121,8 @@ pub struct Dialer {
     endpoint: Url,
     /// The dialer variant (transport protocol)
     variant: DialerVariant,
+    /// Whether to skip TLS DNS name validation (localnet mode)
+    localnet: bool,
 }
 
 macro_rules! enforce_hostport {
@@ -150,6 +152,7 @@ impl Dialer {
         endpoint: Url,
         datastore: Option<String>,
         i2p_socks5_proxy: Option<Url>,
+        localnet: bool,
     ) -> io::Result<Self> {
         match endpoint.scheme().to_lowercase().as_str() {
             "tcp" => {
@@ -157,7 +160,7 @@ impl Dialer {
                 enforce_hostport!(endpoint);
                 let variant = tcp::TcpDialer::new(None).await?;
                 let variant = DialerVariant::Tcp(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             "tcp+tls" => {
@@ -165,7 +168,7 @@ impl Dialer {
                 enforce_hostport!(endpoint);
                 let variant = tcp::TcpDialer::new(None).await?;
                 let variant = DialerVariant::TcpTls(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-tor")]
@@ -174,7 +177,7 @@ impl Dialer {
                 enforce_hostport!(endpoint);
                 let variant = tor::TorDialer::new(datastore).await?;
                 let variant = DialerVariant::Tor(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-tor")]
@@ -183,7 +186,7 @@ impl Dialer {
                 enforce_hostport!(endpoint);
                 let variant = tor::TorDialer::new(datastore).await?;
                 let variant = DialerVariant::TorTls(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-nym")]
@@ -192,7 +195,7 @@ impl Dialer {
                 enforce_hostport!(endpoint);
                 let variant = nym::NymDialer::new().await?;
                 let variant = DialerVariant::Nym(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-nym")]
@@ -201,7 +204,7 @@ impl Dialer {
                 enforce_hostport!(endpoint);
                 let variant = nym::NymDialer::new().await?;
                 let variant = DialerVariant::NymTls(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-unix")]
@@ -210,7 +213,7 @@ impl Dialer {
                 enforce_abspath!(endpoint);
                 let variant = unix::UnixDialer::new().await?;
                 let variant = DialerVariant::Unix(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-socks5")]
@@ -219,7 +222,7 @@ impl Dialer {
                 enforce_hostport!(endpoint);
                 let variant = socks5::Socks5Dialer::new(&endpoint).await?;
                 let variant = DialerVariant::Socks5(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-socks5")]
@@ -228,7 +231,7 @@ impl Dialer {
                 enforce_hostport!(endpoint);
                 let variant = socks5::Socks5Dialer::new(&endpoint).await?;
                 let variant = DialerVariant::Socks5Tls(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-i2p")]
@@ -239,7 +242,7 @@ impl Dialer {
                 url.set_path(&format!("{}:{}", endpoint.host().unwrap(), endpoint.port().unwrap()));
                 let variant = socks5::Socks5Dialer::new(&url).await?;
                 let variant = DialerVariant::Socks5(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-i2p")]
@@ -251,7 +254,7 @@ impl Dialer {
                 url.set_scheme("socks5+tls").unwrap();
                 let variant = socks5::Socks5Dialer::new(&url).await?;
                 let variant = DialerVariant::Socks5Tls(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-quic")]
@@ -260,7 +263,7 @@ impl Dialer {
                 enforce_hostport!(endpoint);
                 let variant = quic::QuicDialer::new().await?;
                 let variant = DialerVariant::Quic(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             x => {
@@ -287,7 +290,7 @@ impl Dialer {
             DialerVariant::TcpTls(dialer) => {
                 let sockaddr = self.endpoint.socket_addrs(|| None)?;
                 let stream = dialer.do_dial(sockaddr[0], timeout).await?;
-                let tlsupgrade = tls::TlsUpgrade::new().await?;
+                let tlsupgrade = tls::TlsUpgrade::new(self.localnet).await?;
                 let stream = tlsupgrade.upgrade_dialer_tls(stream).await?;
                 Ok(Box::new(stream))
             }
@@ -305,7 +308,7 @@ impl Dialer {
                 let host = self.endpoint.host_str().unwrap();
                 let port = self.endpoint.port().unwrap();
                 let stream = dialer.do_dial(host, port, timeout).await?;
-                let tlsupgrade = tls::TlsUpgrade::new().await?;
+                let tlsupgrade = tls::TlsUpgrade::new(self.localnet).await?;
                 let stream = tlsupgrade.upgrade_dialer_tls(stream).await?;
                 Ok(Box::new(stream))
             }
@@ -339,7 +342,7 @@ impl Dialer {
             #[cfg(feature = "p2p-socks5")]
             DialerVariant::Socks5Tls(dialer) => {
                 let stream = dialer.do_dial().await?;
-                let tlsupgrade = tls::TlsUpgrade::new().await?;
+                let tlsupgrade = tls::TlsUpgrade::new(self.localnet).await?;
                 let stream = tlsupgrade.upgrade_dialer_tls(stream).await?;
                 Ok(Box::new(stream))
             }
@@ -365,19 +368,21 @@ pub struct Listener {
     endpoint: Url,
     /// The listener variant (transport protocol)
     variant: ListenerVariant,
+    /// Whether to skip TLS DNS name validation (localnet mode)
+    localnet: bool,
 }
 
 impl Listener {
     /// Instantiate a new [`Listener`] with the given [`Url`] and datastore path.
     /// Must contain a scheme, host string, and a port.
-    pub async fn new(endpoint: Url, datastore: Option<String>) -> io::Result<Self> {
+    pub async fn new(endpoint: Url, datastore: Option<String>, localnet: bool) -> io::Result<Self> {
         match endpoint.scheme().to_lowercase().as_str() {
             "tcp" => {
                 // Build a TCP listener
                 enforce_hostport!(endpoint);
                 let variant = tcp::TcpListener::new(1024).await?;
                 let variant = ListenerVariant::Tcp(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             "tcp+tls" => {
@@ -385,7 +390,7 @@ impl Listener {
                 enforce_hostport!(endpoint);
                 let variant = tcp::TcpListener::new(1024).await?;
                 let variant = ListenerVariant::TcpTls(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-tor")]
@@ -394,7 +399,7 @@ impl Listener {
                 enforce_hostport!(endpoint);
                 let variant = tor::TorListener::new(datastore).await?;
                 let variant = ListenerVariant::Tor(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-unix")]
@@ -402,7 +407,7 @@ impl Listener {
                 enforce_abspath!(endpoint);
                 let variant = unix::UnixListener::new().await?;
                 let variant = ListenerVariant::Unix(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             #[cfg(feature = "p2p-quic")]
@@ -410,7 +415,7 @@ impl Listener {
                 enforce_hostport!(endpoint);
                 let variant = quic::QuicListener::new().await?;
                 let variant = ListenerVariant::Quic(variant);
-                Ok(Self { endpoint, variant })
+                Ok(Self { endpoint, variant, localnet })
             }
 
             x => {
@@ -433,7 +438,7 @@ impl Listener {
             ListenerVariant::TcpTls(listener) => {
                 let sockaddr = self.endpoint.socket_addrs(|| None)?;
                 let l = listener.do_listen(sockaddr[0]).await?;
-                let tlsupgrade = tls::TlsUpgrade::new().await?;
+                let tlsupgrade = tls::TlsUpgrade::new(self.localnet).await?;
                 let l = tlsupgrade.upgrade_listener_tcp_tls(l).await?;
                 Ok(Box::new(l))
             }

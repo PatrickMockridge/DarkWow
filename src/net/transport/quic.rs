@@ -170,7 +170,7 @@ async fn create_dual_endpoint(bind_addr: SocketAddr) -> io::Result<Endpoint> {
 fn create_client_config() -> io::Result<ClientConfig> {
     let (certificate, secret_key) = generate_certificate()?;
 
-    let server_cert_verifier = Arc::new(ServerCertificateVerifier {});
+    let server_cert_verifier = Arc::new(ServerCertificateVerifier::new(false));
 
     let tls_config = rustls::ClientConfig::builder_with_protocol_versions(&[&TLS13])
         .dangerous()
@@ -197,7 +197,7 @@ fn create_client_config() -> io::Result<ClientConfig> {
 fn create_server_config() -> io::Result<ServerConfig> {
     let (certificate, secret_key) = generate_certificate()?;
 
-    let client_cert_verifier = Arc::new(ClientCertificateVerifier {});
+    let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(false));
 
     let tls_config = rustls::ServerConfig::builder_with_protocol_versions(&[&TLS13])
         .with_client_cert_verifier(client_cert_verifier)

@@ -65,25 +65,29 @@ impl Connector {
         let settings = self.settings.read().await;
         let datastore = settings.p2p_datastore.clone();
         let i2p_socks5_proxy = settings.i2p_socks5_proxy.clone();
+        let localnet = settings.localnet;
 
-        let (endpoint, mixed_transport) = if let Some(mixed_host) = HostContainer::mix_host(
-            url,
-            &settings.active_profiles,
-            &settings.mixed_profiles,
-            &settings.tor_socks5_proxy,
-            &settings.nym_socks5_proxy,
-        )
-        .first()
-        {
-            (mixed_host.clone(), true)
-        } else {
-            (url.clone(), false)
+        let (endpoint, mixed_transport) = {
+            let mixed_host = HostContainer::mix_host(
+                url,
+                &settings.active_profiles,
+                &settings.mixed_profiles,
+                &settings.tor_socks5_proxy,
+                &settings.nym_socks5_proxy,
+            )
+            .first()
+            .cloned();
+            if let Some(mixed_host) = mixed_host {
+                (mixed_host, true)
+            } else {
+                (url.clone(), false)
+            }
         };
 
         let outbound_connect_timeout = settings.outbound_connect_timeout(endpoint.scheme());
         drop(settings);
 
-        let dialer = match Dialer::new(endpoint.clone(), datastore, Some(i2p_socks5_proxy)).await {
+        let dialer = match Dialer::new(endpoint.clone(), datastore, Some(i2p_socks5_proxy), localnet).await {
             Ok(dialer) => dialer,
             Err(err) => return Err(Error::ConnectFailed(format!("[{endpoint}]: {err}"))),
         };

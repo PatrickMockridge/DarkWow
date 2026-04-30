@@ -106,7 +106,15 @@ fn verify_ed25519_signature(
 }
 
 #[derive(Debug)]
-pub(crate) struct ServerCertificateVerifier;
+pub(crate) struct ServerCertificateVerifier {
+    localnet: bool,
+}
+
+impl ServerCertificateVerifier {
+    pub fn new(localnet: bool) -> Self {
+        Self { localnet }
+    }
+}
 
 impl ServerCertVerifier for ServerCertificateVerifier {
     fn verify_server_cert(
@@ -126,8 +134,12 @@ impl ServerCertVerifier for ServerCertificateVerifier {
             return Err(rustls::CertificateError::BadEncoding.into())
         };
 
-        // Validate DNSName
-        validate_dnsname(&cert)?;
+        // Validate DNSName only when not in localnet mode
+        if !self.localnet {
+            validate_dnsname(&cert)?;
+        } else {
+            tracing::debug!(target: "net::tls", "Localnet mode: skipping DNS name validation");
+        }
 
         Ok(ServerCertVerified::assertion())
     }
@@ -156,7 +168,15 @@ impl ServerCertVerifier for ServerCertificateVerifier {
 }
 
 #[derive(Debug)]
-pub(crate) struct ClientCertificateVerifier;
+pub(crate) struct ClientCertificateVerifier {
+    localnet: bool,
+}
+
+impl ClientCertificateVerifier {
+    pub fn new(localnet: bool) -> Self {
+        Self { localnet }
+    }
+}
 
 impl ClientCertVerifier for ClientCertificateVerifier {
     fn offer_client_auth(&self) -> bool {
@@ -186,8 +206,12 @@ impl ClientCertVerifier for ClientCertificateVerifier {
             return Err(rustls::CertificateError::BadEncoding.into())
         };
 
-        // Validate DNSName
-        validate_dnsname(&cert)?;
+        // Validate DNSName only when not in localnet mode
+        if !self.localnet {
+            validate_dnsname(&cert)?;
+        } else {
+            tracing::debug!(target: "net::tls", "Localnet mode: skipping DNS name validation");
+        }
 
         Ok(ClientCertVerified::assertion())
     }
@@ -256,12 +280,12 @@ pub struct TlsUpgrade {
 }
 
 impl TlsUpgrade {
-    pub async fn new() -> io::Result<Self> {
+    pub async fn new(localnet: bool) -> io::Result<Self> {
         // On each instantiation, generate a new keypair and certificate
         let (certificate, secret_key_der) = generate_certificate()?;
 
-        // Server-side config
-        let client_cert_verifier = Arc::new(ClientCertificateVerifier {});
+        // Server-side config with localnet flag
+        let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(localnet));
         let server_config = Arc::new(
             ServerConfig::builder_with_protocol_versions(&[&TLS13])
                 .with_client_cert_verifier(client_cert_verifier)
@@ -269,8 +293,8 @@ impl TlsUpgrade {
                 .unwrap(),
         );
 
-        // Client-side config
-        let server_cert_verifier = Arc::new(ServerCertificateVerifier {});
+        // Client-side config with localnet flag
+        let server_cert_verifier = Arc::new(ServerCertificateVerifier::new(localnet));
         let client_config = Arc::new(
             ClientConfig::builder_with_protocol_versions(&[&TLS13])
                 .dangerous()

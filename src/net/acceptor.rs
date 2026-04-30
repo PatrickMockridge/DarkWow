@@ -77,11 +77,14 @@ impl Acceptor {
 
     /// Start accepting inbound socket connections
     pub async fn start(self: Arc<Self>, endpoint: Url, ex: ExecutorPtr) -> Result<()> {
-        let datastore =
-            self.session.upgrade().unwrap().p2p().settings().read().await.p2p_datastore.clone();
+        let settings_arc = self.session.upgrade().unwrap().p2p().settings();
+        let settings = settings_arc.read().await;
+
+        let datastore = settings.p2p_datastore.clone();
+        let localnet = settings.localnet;
 
         // Initialize listener
-        let listener = Listener::new(endpoint.clone(), datastore).await?;
+        let listener = Listener::new(endpoint.clone(), datastore, localnet).await?;
 
         // Open socket
         let ptlistener = listener.listen().await?;
