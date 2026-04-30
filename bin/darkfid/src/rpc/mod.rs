@@ -84,6 +84,7 @@ impl RequestHandler<DefaultRpcHandler> for DarkfiNode {
             "blockchain.block_target" => self.blockchain_block_target(req.id, req.params).await,
             "blockchain.lookup_wasm" => self.blockchain_lookup_wasm(req.id, req.params).await,
             "blockchain.lookup_zkas" => self.blockchain_lookup_zkas(req.id, req.params).await,
+            "blockchain.contract_info" => self.blockchain_contract_info(req.id, req.params).await,
             "blockchain.get_contract_state" => self.blockchain_get_contract_state(req.id, req.params).await,
             "blockchain.get_contract_state_key" => self.blockchain_get_contract_state_key(req.id, req.params).await,
             "blockchain.get_contract_state_linear" => self.blockchain_get_contract_state_linear(req.id, req.params).await,

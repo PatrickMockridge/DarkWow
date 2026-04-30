@@ -3,6 +3,23 @@
 
 PRAGMA foreign_keys = ON;
 
+-- Scanned blocks information (for rollback support)
+CREATE TABLE IF NOT EXISTS scanned_blocks (
+    height INTEGER PRIMARY KEY NOT NULL,
+    hash TEXT NOT NULL,
+    rollback_query TEXT NOT NULL
+);
+
+-- Addresses table: stores wallet addresses
+CREATE TABLE IF NOT EXISTS addresses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    public_key TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    created_at_height INTEGER NOT NULL DEFAULT 0
+);
+
 -- Transactions history
 CREATE TABLE IF NOT EXISTS transactions_history (
     transaction_hash TEXT PRIMARY KEY NOT NULL,

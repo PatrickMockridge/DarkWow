@@ -106,7 +106,6 @@ use darkfi_sdk::define_contract_function;
 
 /// DAO-Escrow operating modes
 pub mod modes {
-    use crate::model::DaoEscrowMode;
     /// Escrow-only: Pure insurance pool
     pub const MODE_ESCROW: u8 = 0x00;
     /// Treasury-only: Same as DarkFi DAO
@@ -115,17 +114,13 @@ pub mod modes {
     pub const MODE_TREASURY_ENDOWMENT: u8 = 0x02;
 }
 
-/// Functions available in the contract
 define_contract_function!(DaoEscrowFunction {
     InitializeV1 = 0x00,
     UpdateV1 = 0x01,
     PayPremiumV1 = 0x02,
-    WithdrawV1 = 0x03,  // Withdrawal from treasury (not endowment)
-    // Endowment-only withdrawal (requires DAO vote, for insurance payouts)
+    WithdrawV1 = 0x03,
     EndowmentWithdrawV1 = 0x04,
-    // Treasury spending (standard DAO governance)
     TreasurySpendV1 = 0x05,
-    // Enable DrainProtection on an existing DAO-Escrow
     EnableDrainProtectionV1 = 0x06,
 });
 
@@ -175,6 +170,15 @@ pub const DAO_ESCROW_LATEST_ROOT: &[u8] = b"last_root";
 pub const DAO_ESCROW_ZKAS_INIT_NS: &str = "Init";
 /// ZKAS namespace for premium payment
 pub const DAO_ESCROW_ZKAS_PREMIUM_NS: &str = "PayPremium";
+
+// ============================================================================
+// ZK CIRCUIT BINARIES (for client-side proof generation)
+// ============================================================================
+
+/// Init_V1 zkas circuit binary
+pub const DAO_ESCROW_ZKAS_INIT_V1_BIN: &[u8] = include_bytes!("../proof/init_v1.zk.bin");
+/// PayPremium_V1 zkas circuit binary
+pub const DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN: &[u8] = include_bytes!("../proof/pay_premium_v1.zk.bin");
 
 // ============================================================================
 // DRAIN PROTECTION INTEGRATION

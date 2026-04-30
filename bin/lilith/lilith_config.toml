@@ -15,6 +15,17 @@ rpc_listen = "tcp://127.0.0.1:18927"
 #rpc_disabled_methods = []
 
 ## Per-network settings
+[network."linear-testnet"]
+accept_addrs = ["tcp+tls://0.0.0.0:18345"]
+seeds = []
+peers = []
+version = "0.5.0"
+app_name = "darkfid"
+localnet = true
+hostlist ="~/.local/share/darkfi/lilith/linear-testnet/hostlist.tsv"
+datastore = "~/.local/share/darkfi/lilith/linear-testnet"
+magic_bytes = [163, 139, 113, 101]
+
 #[network."darkfid_testnet_v5"]
 #accept_addrs = ["tcp+tls://0.0.0.0:18345"]
 #seeds = []

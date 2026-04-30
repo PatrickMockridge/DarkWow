@@ -155,11 +155,6 @@ pub struct ScanCache {
     pub owncoins_nullifiers: BTreeMap<[u8; 32], ([u8; 32], Position)>,
     /// Our own tokens to track freezes
     pub own_tokens: Vec<TokenId>,
-    // DAO-related fields removed - DAO is disabled on this fork
-    // pub dao_daos_tree: MerkleTree,
-    // pub dao_proposals_tree: MerkleTree,
-    // pub own_daos: HashMap<DaoBulla, (Option<SecretKey>, Option<SecretKey>)>,
-    // pub own_proposals: HashMap<DaoProposalBulla, DaoBulla>,
     /// Our own deploy authorities
     pub own_deploy_auths: HashMap<[u8; 32], SecretKey>,
     /// Messages buffer for better downstream prints handling

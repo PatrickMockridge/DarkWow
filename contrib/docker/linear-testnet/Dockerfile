@@ -56,7 +56,12 @@ RUN cp target/wasm32-unknown-unknown/release/darkfi_deployooor_contract.wasm /ap
 # Build darkfid with reduced parallelism to avoid memory issues
 RUN cargo build -p darkfid --release -j 2
 
+# Build lilith seed node
+RUN cargo build -p lilith --release -j 2
+
 RUN cp target/release/darkfid /app/darkfid
+RUN cp target/release/lilith /app/lilith
+RUN cp bin/lilith/lilith_config.toml /app/lilith_config.toml
 
 # ============================================================================
 # Stage: Runtime
@@ -69,6 +74,8 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY --from=builder /app/darkfid ./
+COPY --from=builder /app/lilith ./
+COPY --from=builder /app/lilith_config.toml ./
 COPY contrib/docker/linear-testnet/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 

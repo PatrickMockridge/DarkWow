@@ -19,7 +19,7 @@
 //! Integration test for the Deployooor contract.
 //!
 //! Tests the deploy/lock lifecycle with a single holder:
-//!   1. Deploy a WASM contract (DAO)
+//!   1. Deploy a WASM contract (dao_escrow)
 //!   2. Replace the deployed contract with different WASM (Money)
 //!   3. Lock the contract to prevent further changes
 //!   4. Negative: locking an already-locked contract fails
@@ -41,13 +41,13 @@ fn deploy_integration() -> Result<()> {
         let block_height = 0;
         let mut th = TestHarness::new(&[Alice], false, &[Contract::Money, Contract::Deployooor]).await?;
 
-        let dao_wasm = include_bytes!("../../dao/darkfi_dao_contract.wasm");
-        let money_wasm = include_bytes!("../../money/darkfi_money_contract.wasm");
+        let dao_escrow_wasm = include_bytes!("../../dao_escrow/darkfi_dao_escrow_contract.wasm");
+        let money_wasm = include_bytes!("../../money_v3/darkfi_money_v3_contract.wasm");
 
         // Deploy a contract
-        info!(target: "deploy", "Deploying DAO contract");
+        info!(target: "deploy", "Deploying dao_escrow contract");
         let (tx, params, fee_params) =
-            th.deploy_contract(&Alice, dao_wasm.to_vec(), block_height).await?;
+            th.deploy_contract(&Alice, dao_escrow_wasm.to_vec(), block_height).await?;
         th.execute_deploy_tx(&Alice, tx, &params, &fee_params, block_height, true).await?;
 
         // Replace the deployed contract with different WASM

@@ -16,11 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_dao_contract::DaoFunction;
 use darkfi_deployooor_contract::DeployFunction;
 use darkfi_money_contract::MoneyFunction;
 use darkfi_sdk::{
-    crypto::{DAO_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID, MONEY_CONTRACT_ID},
+    crypto::{DEPLOYOOOR_CONTRACT_ID, MONEY_CONTRACT_ID},
     dark_tree, tx,
 };
 use pyo3::{
@@ -34,10 +33,6 @@ use pyo3::{
 /// Money contract definitions
 pub mod money;
 pub use money::decode_money_function_params;
-
-/// Dao contract definitions
-pub mod dao;
-pub use dao::decode_dao_function_params;
 
 /// Deployooor contract definitions
 pub mod deployooor;
@@ -108,8 +103,6 @@ impl ContractCall {
     pub fn contract_name(&self) -> Option<String> {
         if self.0.contract_id == *MONEY_CONTRACT_ID {
             Some("Money".to_string())
-        } else if self.0.contract_id == *DAO_CONTRACT_ID {
-            Some("Dao".to_string())
         } else if self.0.contract_id == *DEPLOYOOOR_CONTRACT_ID {
             Some("Deployooor".to_string())
         } else {
@@ -131,9 +124,6 @@ impl ContractCall {
             Some("Money") => {
                 MoneyFunction::try_from(self.function_index()).map(|f| format!("{f:?}")).ok()
             }
-            Some("Dao") => {
-                DaoFunction::try_from(self.function_index()).map(|f| format!("{f:?}")).ok()
-            }
             Some("Deployooor") => {
                 DeployFunction::try_from(self.function_index()).map(|f| format!("{f:?}")).ok()
             }
@@ -145,9 +135,6 @@ impl ContractCall {
     pub fn function_params_dict(&self, py: Python) -> PyResult<Py<PyDict>> {
         match self.contract_name().as_deref() {
             Some("Money") => decode_money_function_params(self.function_index(), &self.0.data)
-                .map_err(|e| PyValueError::new_err(e.to_string()))?
-                .to_pydict(py),
-            Some("Dao") => decode_dao_function_params(self.function_index(), &self.0.data)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?
                 .to_pydict(py),
             Some("Deployooor") => {
@@ -165,9 +152,6 @@ impl ContractCall {
         let mut output = String::new();
         match self.contract_name().as_deref() {
             Some("Money") => decode_money_function_params(self.function_index(), &self.0.data)
-                .map_err(|e| PyValueError::new_err(e.to_string()))?
-                .fmt_pretty(&mut output, depth)?,
-            Some("Dao") => decode_dao_function_params(self.function_index(), &self.0.data)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?
                 .fmt_pretty(&mut output, depth)?,
             Some("Deployooor") => {
@@ -189,13 +173,11 @@ pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
     submod.add_class::<DarkLeafContractCall>()?;
     submod.add_class::<ContractCall>()?;
 
-    // money, dao, deployooor submodules will be inside contract submodule
+    // money, deployooor submodules will be inside contract submodule
     let money_submodule = money::create_module(py)?;
-    let dao_submodule = dao::create_module(py)?;
     let deployooor_submodule = deployooor::create_module(py)?;
 
     submod.add_submodule(&money_submodule)?;
-    submod.add_submodule(&dao_submodule)?;
     submod.add_submodule(&deployooor_submodule)?;
 
     Ok(submod)

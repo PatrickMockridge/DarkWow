@@ -76,10 +76,12 @@ impl WalletDb {
         };
 
         if let Some(password) = password {
-            if let Err(e) = conn.pragma_update(None, "key", password) {
-                error!(target: "walletdb::new", "[WalletDb] Pragma update failed: {e}");
-                return Err(WalletDbError::PragmaUpdateError);
-            };
+            if !password.is_empty() {
+                if let Err(e) = conn.pragma_update(None, "key", password) {
+                    error!(target: "walletdb::new", "[WalletDb] Pragma update failed: {e}");
+                    return Err(WalletDbError::PragmaUpdateError);
+                };
+            }
         }
         if let Err(e) = conn.pragma_update(None, "foreign_keys", "ON") {
             error!(target: "walletdb::new", "[WalletDb] Pragma update failed: {e}");
@@ -734,11 +736,14 @@ impl WalletDb {
         _created_at: i64,
     ) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        conn.execute(
-            "INSERT INTO addresses (public_key, secret, is_default) VALUES (?1, ?2, ?3)",
-            params![public_key, secret, is_default as i64],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        let result = conn.execute(
+            "INSERT INTO addresses (public_key, secret, is_default, created_at, created_at_height) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![public_key, secret, is_default as i64, _created_at, 0],
+        );
+        if let Err(e) = result {
+            error!(target: "walletdb::insert_address", "[WalletDb] Insert address failed: {e}");
+            return Err(WalletDbError::QueryExecutionFailed);
+        }
         Ok(())
     }
 }

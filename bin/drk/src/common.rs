@@ -27,7 +27,6 @@ use darkfi_sdk::{
     pasta::pallas,
 };
 
-// DAO_CONTRACT_ID removed - DAO is disabled on this fork
 use crate::contract_imports::MONEY_V3_CONTRACT_ID;
 use darkfi_serial::{deserialize, serialize};
 use prettytable::{format, row, Table};

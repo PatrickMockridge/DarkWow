@@ -526,7 +526,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
     // Grab blockchain network configuration
     let (network, blockchain_config) = match args.network.as_str() {
         "localnet" => parse_blockchain_config(args.config, "localnet", CONFIG_FILE).await?,
-        "testnet" => parse_blockchain_config(args.config, "testnet", CONFIG_FILE).await?,
+        "testnet" | "linear-testnet" => parse_blockchain_config(args.config, "testnet", CONFIG_FILE).await?,
         "mainnet" => parse_blockchain_config(args.config, "mainnet", CONFIG_FILE).await?,
         _ => {
             eprintln!("Unsupported chain `{}`", args.network);
