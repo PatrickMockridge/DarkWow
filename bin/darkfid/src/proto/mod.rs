@@ -152,7 +152,7 @@ impl DarkfidP2pHandler {
         self.p2p.clone().start().await?;
 
         // Seed the P2P network to discover peers from seed nodes
-        self.p2p.clone().seed().await?;
+        self.p2p.clone().seed().await;
 
         info!(
             target: "darkfid::proto::mod::DarkfidP2pHandler::start",
