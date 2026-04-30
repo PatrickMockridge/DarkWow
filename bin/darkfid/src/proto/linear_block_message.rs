@@ -127,7 +127,7 @@ pub struct LinearBlockHandler {
 impl LinearBlockHandler {
     /// Initialize the linear block broadcast handler
     pub async fn init(p2p: &P2pPtr, blockchain: Arc<LinearBlockchain>) -> LinearBlockHandlerPtr {
-        debug!(
+        tracing::info!(
             target: "darkfid::proto::linear_block_message::init",
             "Adding linear block protocol to the protocol registry"
         );
@@ -138,7 +138,7 @@ impl LinearBlockHandler {
 
     /// Start the linear block background task
     pub async fn start(&self, executor: &ExecutorPtr) -> Result<()> {
-        debug!(
+        tracing::info!(
             target: "darkfid::proto::linear_block_message::start",
             "Starting linear block protocol handler..."
         );
