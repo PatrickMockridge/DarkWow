@@ -68,6 +68,7 @@ localnet = true
 active_profiles = ["tcp+tls"]
 inbound = ["tcp+tls://0.0.0.0:$INBOUND_PORT"]
 magic_bytes = [163, 139, 113, 101]
+hostlist = "/root/.local/share/darkfi/darkfid/linear-testnet/hostlist.tsv"
 $SEEDS
 $PEERS
 
