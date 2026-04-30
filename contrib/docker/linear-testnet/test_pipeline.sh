@@ -47,8 +47,4 @@ echo "Containers:"
 docker-compose ps
 
 echo ""
-echo "Network connectivity:"
-docker exec darkfi-linear-node1 ping -c 2 node0
-
-echo ""
 echo "=== DONE ==="
