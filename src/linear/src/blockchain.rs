@@ -21,21 +21,22 @@
 //! This module provides a full linear blockchain implementation using
 //! the darkfi Runtime for WASM contract execution and ZK verification.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use randomx::{RandomXFlags, RandomXVM};
 use tracing::{debug, error, info};
 
 use super::{Block, LinearError, LinearStore, PoWConsensus, Result};
 
-/// LinearBlockchain provides a full linear blockchain with WASM runtime support
+/// LinearBlockchain provides a full linear blockchain with WASM runtime support.
+/// Thread-safe via Arc<Mutex<>> wrapping for interior mutability.
 pub struct LinearBlockchain {
     /// Storage backend
     pub store: Arc<LinearStore>,
     /// PoW consensus
-    pub consensus: PoWConsensus,
-    /// Current chain height
-    height: u64,
+    consensus: PoWConsensus,
+    /// Current chain height - protected by mutex for interior mutability
+    height: Mutex<u64>,
     /// RandomX VM cache (for PoW verification) - protected by mutex for interior mutability
     vm: Mutex<Option<Arc<RandomXVM>>>,
     /// Current RandomX key - protected by mutex for interior mutability
@@ -56,7 +57,7 @@ impl LinearBlockchain {
         Ok(Self {
             store: Arc::new(store),
             consensus,
-            height,
+            height: Mutex::new(height),
             vm: Mutex::new(Some(vm)),
             randomx_key: Mutex::new(randomx_key),
         })
@@ -103,7 +104,7 @@ impl LinearBlockchain {
 
     /// Get current chain height
     pub fn get_height(&self) -> u64 {
-        self.height
+        *self.height.lock().unwrap()
     }
 
     /// Get a block by height
@@ -113,21 +114,24 @@ impl LinearBlockchain {
 
     /// Get the latest block
     pub fn get_latest_block(&self) -> Result<Block> {
-        self.store.get_block(self.height)
+        let height = *self.height.lock().unwrap();
+        self.store.get_block(height)
     }
 
-    /// Insert a block into the chain
-    pub fn insert_block(&mut self, block: &Block) -> Result<()> {
+    /// Insert a block into the chain.
+    /// Takes &self for thread-safe access via interior mutability.
+    pub fn insert_block(&self, block: &Block) -> Result<()> {
         let height = block.header.height;
+        let mut current_height = self.height.lock().unwrap();
         self.store.insert_block(height, block)?;
-        if height > self.height {
-            self.height = height;
+        if height > *current_height {
+            *current_height = height;
         }
         Ok(())
     }
 
     /// Verify and apply a block to the chain
-    pub async fn apply_block(&mut self, block: &Block) -> Result<()> {
+    pub async fn apply_block(&self, block: &Block) -> Result<()> {
         // Get or create VM for this block's key
         let vm = self.get_vm(block.header.randomx_key);
 
@@ -154,8 +158,9 @@ impl LinearBlockchain {
         }
 
         // Verify previous hash
-        if self.height > 0 {
-            let previous = self.store.get_block(self.height)?;
+        let current_height = *self.height.lock().unwrap();
+        if current_height > 0 {
+            let previous = self.store.get_block(current_height)?;
             if block.header.previous != previous.hash(&vm) {
                 error!(target: "linear_blockchain", "Block {} failed previous hash verification", block_hash);
                 return Err(LinearError::InvalidPreviousHash)

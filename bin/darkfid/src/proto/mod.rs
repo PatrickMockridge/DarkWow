@@ -51,8 +51,8 @@ mod linear_sync;
 pub use linear_sync::{LinearSyncHandler, LinearSyncHandlerPtr};
 
 /// Linear blockchain block broadcast protocol
-pub mod linear_block_message;
-pub use linear_block_message::{LinearBlockHandler, LinearBlockHandlerPtr, LinearBlockMessage};
+pub mod linear_broadcast;
+pub use linear_broadcast::{broadcast_block, LinearBroadcastHandler, LinearBroadcastHandlerPtr, BlockBroadcast};
 
 /// Atomic pointer to the Darkfid P2P protocols handler.
 pub type DarkfidP2pHandlerPtr = Arc<DarkfidP2pHandler>;
@@ -69,8 +69,8 @@ pub struct DarkfidP2pHandler {
     txs: ProtocolTxHandlerPtr,
     /// `LinearSync` messages handler (for linear-testnet mode)
     linear_sync: Option<LinearSyncHandlerPtr>,
-    /// `LinearBlock` messages handler (for linear-testnet mode)
-    linear_block: Option<LinearBlockHandlerPtr>,
+    /// `LinearBroadcast` messages handler (for linear-testnet mode)
+    linear_broadcast: Option<LinearBroadcastHandlerPtr>,
 }
 
 impl DarkfidP2pHandler {
@@ -107,8 +107,8 @@ impl DarkfidP2pHandler {
             None
         };
 
-        let linear_block = if let Some(blockchain) = linear_blockchain {
-            Some(LinearBlockHandler::init(&p2p, blockchain).await)
+        let linear_broadcast = if let Some(blockchain) = linear_blockchain {
+            Some(LinearBroadcastHandler::init(&p2p, blockchain).await)
         } else {
             None
         };
@@ -118,7 +118,7 @@ impl DarkfidP2pHandler {
             "Darkfid P2P handler generated successfully!"
         );
 
-        Ok(Arc::new(Self { p2p, proposals, sync, txs, linear_sync, linear_block }))
+        Ok(Arc::new(Self { p2p, proposals, sync, txs, linear_sync, linear_broadcast }))
     }
 
     /// Start the Darkfid P2P protocols handler for provided node.
@@ -143,9 +143,9 @@ impl DarkfidP2pHandler {
             linear_sync.start(executor).await?;
         }
 
-        // Start the `LinearBlock` messages handler (linear-testnet mode)
-        if let Some(ref linear_block) = self.linear_block {
-            linear_block.start(executor).await?;
+        // Start the `LinearBroadcast` messages handler (linear-testnet mode)
+        if let Some(ref linear_broadcast) = self.linear_broadcast {
+            linear_broadcast.start(executor).await?;
         }
 
         // Start the P2P instance
