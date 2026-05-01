@@ -60,6 +60,13 @@ impl ProtocolRegistry {
     ) -> Vec<ProtocolBasePtr> {
         let mut protocols = vec![];
 
+        info!(
+            target: "net::protocol_registry",
+            "[PROTOCOL_REGISTRY] Attaching protocols for channel {} with selector_id={:#b}",
+            channel.display_address(),
+            selector_id
+        );
+
         for (session_flags, construct) in self.constructors.lock().await.iter() {
             // Skip protocols that are not registered for this session
             if selector_id & session_flags == 0 {
@@ -70,10 +77,30 @@ impl ProtocolRegistry {
                 continue
             }
 
+            info!(
+                target: "net::protocol_registry",
+                "[PROTOCOL_REGISTRY] Attaching protocol with session_flags={:#b}", session_flags
+            );
             let protocol = construct(channel.clone(), p2p.clone()).await;
             debug!(target: "net::protocol_registry", "Attached {}", protocol.name());
             protocols.push(protocol);
         }
+
+        if protocols.is_empty() {
+            warn!(
+                target: "net::protocol_registry",
+                "[PROTOCOL_REGISTRY] WARNING: No protocols attached for channel {} with selector_id={:#b}",
+                channel.display_address(),
+                selector_id
+            );
+        }
+
+        info!(
+            target: "net::protocol_registry",
+            "[PROTOCOL_REGISTRY] Total protocols attached: {} for channel {}",
+            protocols.len(),
+            channel.display_address()
+        );
 
         protocols
     }

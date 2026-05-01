@@ -177,6 +177,11 @@ impl Acceptor {
             // Now we wait for a new connection.
             match listener.next().await {
                 Ok((stream, url)) => {
+                    info!(
+                        target: "net::acceptor::run_accept_loop",
+                        "[ACCEPTOR] Connection accepted from {}", url
+                    );
+
                     // Check if we reject this peer
                     if hosts.container.contains(HostColor::Black, &url) ||
                         hosts.block_all_ports(&url)
@@ -187,7 +192,16 @@ impl Acceptor {
 
                     // Create the new Channel.
                     let session = self.session.clone();
+                    info!(
+                        target: "net::acceptor::run_accept_loop",
+                        "[ACCEPTOR] Creating channel for {}", url
+                    );
                     let channel = Channel::new(stream, None, url, session, false).await;
+
+                    info!(
+                        target: "net::acceptor::run_accept_loop",
+                        "[ACCEPTOR] Channel created for {}, notifying subscribers", channel.display_address()
+                    );
 
                     // Increment the connection counter
                     self.conn_count.fetch_add(1, SeqCst);

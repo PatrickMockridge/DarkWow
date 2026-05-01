@@ -385,6 +385,10 @@ impl MessageSubsystem {
 
         // Check if dispatcher was found
         if !found {
+            warn!(
+                target: "net::message_publisher",
+                "[DISPATCHER] No dispatcher found for command: {}", command
+            );
             return Err(Error::MissingDispatcher)
         }
 

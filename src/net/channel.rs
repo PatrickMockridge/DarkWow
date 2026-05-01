@@ -176,9 +176,14 @@ impl Channel {
     /// Stops the channel.
     /// Notifies all publishers that the channel has been closed in `handle_stop()`.
     pub async fn stop(&self) {
-        debug!(target: "net::channel::stop", "START {self:?}");
+        info!(
+            target: "net::channel::stop",
+            "[CHANNEL] STOP called for channel {}, stopped={}",
+            self.display_address(),
+            self.stopped.load(SeqCst)
+        );
         self.receive_task.stop().await;
-        debug!(target: "net::channel::stop", "END {self:?}");
+        info!(target: "net::channel::stop", "[CHANNEL] STOP completed for {}", self.display_address());
     }
 
     /// Creates a subscription to a stopped signal.
@@ -397,6 +402,10 @@ impl Channel {
             Ok(()) => panic!("Channel task should never complete without error status"),
             // Send this error to all channel subscribers
             Err(e) => {
+                info!(
+                    target: "net::channel::handle_stop",
+                    "[CHANNEL] Channel {} STOPPING with error: {}", self.display_address(), e
+                );
                 self.stop_publisher.notify(Error::ChannelStopped).await;
                 self.message_subsystem.trigger_error(e).await;
             }
@@ -407,7 +416,10 @@ impl Channel {
 
     /// Run the receive loop. Start receiving messages or handle network failure.
     async fn main_receive_loop(self: Arc<Self>) -> Result<()> {
-        debug!(target: "net::channel::main_receive_loop", "[START] {self:?}");
+        info!(
+            target: "net::channel::main_receive_loop",
+            "[CHANNEL] main_receive_loop START for {}", self.display_address()
+        );
 
         // Acquire reader lock
         let reader = &mut *self.reader.lock().await;
@@ -418,9 +430,9 @@ impl Channel {
                 Ok(command) => command,
                 Err(err) => {
                     if Self::is_eof_error(&err) {
-                        verbose!(
+                        info!(
                             target: "net::channel::main_receive_loop",
-                            "[P2P] Channel {} disconnected",
+                            "[CHANNEL] Channel {} disconnected (EOF)",
                             self.display_address()
                         );
                     } else if let Error::MessageInvalid = err {
@@ -439,9 +451,11 @@ impl Channel {
                         );
                     }
 
-                    debug!(
+                    info!(
                         target: "net::channel::main_receive_loop",
-                        "Stopping channel {self:?}"
+                        "[CHANNEL] Stopping channel {} due to read error: {}",
+                        self.display_address(),
+                        err
                     );
                     return Err(Error::ChannelStopped)
                 }
