@@ -227,12 +227,15 @@ impl Slot {
                         Ok(()) => {
                             self.failed.store(false, SeqCst);
 
+                            // NOTE: Channel will stop naturally when ProtocolSeed finishes
+                            // (it exchanges addresses then returns). We don't call ch.stop() here
+                            // because that would kill the protocol before it can exchange addresses.
+
                             verbose!(
                                 target: "net::session::seedsync_session",
-                                "[P2P] Disconnecting from seed [{}]",
+                                "[P2P] Seed protocol completed for [{}]",
                                 ch.display_address()
                             );
-                            ch.stop().await;
 
                             // Seed process complete
                             if hosts.container.is_empty(HostColor::Grey) {
