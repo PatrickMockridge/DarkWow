@@ -27,7 +27,7 @@ use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use smol::lock::Mutex;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 use super::{

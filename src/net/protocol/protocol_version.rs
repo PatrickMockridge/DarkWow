@@ -25,7 +25,7 @@ use std::{
     sync::Arc,
     time::{Duration, UNIX_EPOCH},
 };
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use super::super::{
     channel::ChannelPtr,
