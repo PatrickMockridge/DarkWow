@@ -23,7 +23,7 @@ use std::{
 
 use async_trait::async_trait;
 use smol::Executor;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 use super::{
     channel::ChannelPtr,
