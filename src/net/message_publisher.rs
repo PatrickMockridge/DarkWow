@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use futures::stream::{FuturesUnordered, StreamExt};
 use rand::{rngs::OsRng, Rng};
 use smol::{io::AsyncReadExt, lock::Mutex};
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 use super::message::Message;
 use crate::{

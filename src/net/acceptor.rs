@@ -24,7 +24,7 @@ use std::{
     },
 };
 
-use tracing::warn;
+use tracing::{info, warn};
 use url::Url;
 
 #[cfg(feature = "upnp-igd")]
