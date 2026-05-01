@@ -244,7 +244,7 @@ impl ProtocolVersion {
         let app_name = settings.app_name.clone();
         drop(settings);
 
-        let verack = VerackMessage { app_version, app_name };
+        let verack = VerackMessage { app_version: app_version.clone(), app_name: app_name.clone() };
         info!(
             target: "net::protocol_version::recv_version",
             "Sending VerackMessage: app_name={}", app_name
