@@ -164,9 +164,9 @@ pub trait Session: Sync {
 
         // Perform the handshake protocol
         let protocol_version = ProtocolVersion::new(channel.clone(), p2p.settings().clone()).await;
-        debug!(
+        info!(
             target: "net::session::register_channel",
-            "Performing handshake protocols {}", channel.clone().display_address(),
+            "Performing handshake protocols for {}", channel.clone().display_address(),
         );
 
         let handshake_task =
@@ -178,12 +178,12 @@ pub trait Session: Sync {
         // Wait for handshake to finish.
         match handshake_task.await {
             Ok(()) => {
-                debug!(target: "net::session::register_channel",
-                "Handshake successful {}", channel.clone().display_address());
+                info!(target: "net::session::register_channel",
+                "Handshake SUCCESSFUL for {}", channel.clone().display_address());
             }
             Err(e) => {
-                debug!(target: "net::session::register_channel",
-                "Handshake error {e} {}", channel.clone().display_address());
+                warn!(target: "net::session::register_channel",
+                "Handshake FAILED {e} for {}", channel.clone().display_address());
 
                 return Err(e)
             }

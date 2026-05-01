@@ -170,7 +170,7 @@ impl InboundSession {
     /// Registers the channel. First performs a network handshake and starts the channel.
     /// Then starts sending keep-alive and address messages across the channel.
     async fn setup_channel(self: Arc<Self>, index: usize, channel: ChannelPtr, ex: ExecutorPtr) {
-        verbose!(
+        info!(
              target: "net::inbound_session::setup_channel",
              "[LILITH] Connected Inbound #{index} [{}] session_type={:#b}",
              channel.display_address(),

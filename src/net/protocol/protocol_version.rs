@@ -114,7 +114,7 @@ impl ProtocolVersion {
 
     /// Send and receive version information
     async fn exchange_versions(self: Arc<Self>, executor: Arc<Executor<'_>>) -> Result<()> {
-        debug!(
+        info!(
             target: "net::protocol_version::exchange_versions",
             "START => address={}", self.channel.display_address(),
         );
@@ -126,7 +126,7 @@ impl ProtocolVersion {
         if let Err(e) = &rets[0] {
             error!(
                 target: "net::protocol_version::exchange_versions",
-                "send_version() failed: {e}"
+                "send_version() FAILED: {e}"
             );
             return Err(e.clone())
         }
@@ -134,12 +134,12 @@ impl ProtocolVersion {
         if let Err(e) = &rets[1] {
             error!(
                 target: "net::protocol_version::exchange_versions",
-                "recv_version() failed: {e}"
+                "recv_version() FAILED: {e}"
             );
             return Err(e.clone())
         }
 
-        debug!(
+        info!(
             target: "net::protocol_version::exchange_versions",
             "END => address={}", self.channel.display_address(),
         );
@@ -149,7 +149,7 @@ impl ProtocolVersion {
     /// Send version info and wait for version acknowledgement.
     /// Ensures that the app version is the same.
     async fn send_version(self: Arc<Self>) -> Result<()> {
-        debug!(
+        info!(
             target: "net::protocol_version::send_version",
             "START => address={}", self.channel.display_address(),
         );
@@ -181,10 +181,10 @@ impl ProtocolVersion {
         let verack_msg = self.verack_sub.receive().await?;
 
         // Validate peer received version against our version.
-        debug!(
+        info!(
             target: "net::protocol_version::send_version",
-            "App version: {app_version}, Recv version: {}",
-            verack_msg.app_version,
+            "Received VerackMessage: app_name={} app_version={}",
+            verack_msg.app_name, verack_msg.app_version,
         );
 
         // MAJOR and MINOR should be the same, as well as the app identifier
@@ -210,9 +210,9 @@ impl ProtocolVersion {
         }
 
         // Versions are compatible
-        debug!(
+        info!(
             target: "net::protocol_version::send_version",
-            "END => address={}", self.channel.display_address(),
+            "Version handshake SUCCESSFUL for address={}", self.channel.display_address(),
         );
         Ok(())
     }
@@ -220,13 +220,18 @@ impl ProtocolVersion {
     /// Receive version info, check the message is okay and send verack
     /// with app version attached.
     async fn recv_version(self: Arc<Self>) -> Result<()> {
-        debug!(
+        info!(
             target: "net::protocol_version::recv_version",
             "START => address={}", self.channel.display_address(),
         );
 
         // Receive version message
         let version = self.version_sub.receive().await?;
+        info!(
+            target: "net::protocol_version::recv_version",
+            "Received VersionMessage: app_name={} version={}",
+            version.app_name, version.version
+        );
         if let Some(ipv6_addr) = version.get_ipv6_addr() {
             let hosts = self.channel.p2p().hosts();
             hosts.add_auto_addr(ipv6_addr);
@@ -240,9 +245,13 @@ impl ProtocolVersion {
         drop(settings);
 
         let verack = VerackMessage { app_version, app_name };
+        info!(
+            target: "net::protocol_version::recv_version",
+            "Sending VerackMessage: app_name={}", app_name
+        );
         self.channel.send(&verack).await?;
 
-        debug!(
+        info!(
             target: "net::protocol_version::recv_version",
             "END => address={}", self.channel.display_address(),
         );
