@@ -18,6 +18,7 @@ case "$HOSTNAME" in
         INBOUND_PORT=28340
         SEEDS="seeds = [\"tcp+tls://lilith:18345\"]"
         PEERS="peers = [\"tcp+tls://node1:28341\"]"
+        EXTERNAL_ADDRS="external_addrs = [\"tcp+tls://node0:28340\"]"
         ;;
     node1)
         RPC_PORT=28346
@@ -25,6 +26,7 @@ case "$HOSTNAME" in
         INBOUND_PORT=28341
         SEEDS="seeds = [\"tcp+tls://lilith:18345\"]"
         PEERS="peers = [\"tcp+tls://node0:28340\"]"
+        EXTERNAL_ADDRS="external_addrs = [\"tcp+tls://node1:28341\"]"
         ;;
     *)
         echo "[entrypoint] WARNING: Unknown hostname $HOSTNAME, using node0 defaults"
@@ -33,6 +35,7 @@ case "$HOSTNAME" in
         INBOUND_PORT=28340
         SEEDS="seeds = [\"tcp+tls://lilith:18345\"]"
         PEERS="peers = [\"tcp+tls://node1:28341\"]"
+        EXTERNAL_ADDRS="external_addrs = [\"tcp+tls://node0:28340\"]"
         ;;
 esac
 
@@ -71,6 +74,7 @@ magic_bytes = [163, 139, 113, 101]
 hostlist = "/root/.local/share/darkfi/darkfid/linear-testnet/hostlist.tsv"
 $SEEDS
 $PEERS
+$EXTERNAL_ADDRS
 
 [network_config."linear-testnet".net.profiles."tcp+tls"]
 inbound = ["tcp+tls://0.0.0.0:$INBOUND_PORT"]
