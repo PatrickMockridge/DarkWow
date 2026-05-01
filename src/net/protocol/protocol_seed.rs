@@ -103,7 +103,9 @@ impl ProtocolBase for ProtocolSeed {
     /// to the seed server.  Sends a get-address message and receives an
     /// address messsage.
     async fn start(self: Arc<Self>, _ex: Arc<Executor<'_>>) -> Result<()> {
-        debug!(target: "net::protocol_seed::start", "START => address={}", self.channel.display_address());
+        debug!(target: "net::protocol_seed::start",
+            "[SEED] START on channel={} (this can be sender or receiver side)",
+            self.channel.display_address());
 
         // Send own address to the seed server
         self.send_my_addrs().await?;
@@ -120,24 +122,29 @@ impl ProtocolBase for ProtocolSeed {
             max: getaddrs_max.unwrap_or(outbound_connections.min(u32::MAX as usize) as u32),
             transports: active_profiles,
         };
+        debug!(target: "net::protocol_seed::start",
+            "[SEED] Sending GetAddrsMessage to {}", self.channel.display_address());
         self.channel.send(&get_addr).await?;
 
         // Receive addresses
+        debug!(target: "net::protocol_seed::start",
+            "[SEED] Waiting for AddrsMessage from {}", self.channel.display_address());
         let addrs_msg = self.addr_sub.receive().await?;
         debug!(
             target: "net::protocol_seed::start",
-            "Received {} addrs from {}", addrs_msg.addrs.len(), self.channel.display_address(),
+            "[SEED] Received {} addrs from {}", addrs_msg.addrs.len(), self.channel.display_address(),
         );
 
         if !addrs_msg.addrs.is_empty() {
             debug!(
                 target: "net::protocol_seed::start",
-                "Appending to greylist...",
+                "[SEED] Appending {} addrs to greylist...", addrs_msg.addrs.len()
             );
             self.hosts.insert(HostColor::Grey, &addrs_msg.addrs).await;
         }
 
-        debug!(target: "net::protocol_seed::start", "END => address={}", self.channel.display_address());
+        debug!(target: "net::protocol_seed::start",
+            "[SEED] END for channel={}", self.channel.display_address());
         Ok(())
     }
 

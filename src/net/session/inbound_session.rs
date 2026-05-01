@@ -172,7 +172,9 @@ impl InboundSession {
     async fn setup_channel(self: Arc<Self>, index: usize, channel: ChannelPtr, ex: ExecutorPtr) {
         verbose!(
              target: "net::inbound_session::setup_channel",
-             "[P2P] Connected Inbound #{index} [{}]", channel.display_address()
+             "[LILITH] Connected Inbound #{index} [{}] session_type={:#b}",
+             channel.display_address(),
+             channel.session_type_id()
         );
 
         dnetev!(self, InboundConnected, {
