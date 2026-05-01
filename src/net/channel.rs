@@ -35,7 +35,7 @@ use smol::{
     lock::{Mutex as AsyncMutex, OnceCell},
     Executor,
 };
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use url::Url;
 
 use super::{

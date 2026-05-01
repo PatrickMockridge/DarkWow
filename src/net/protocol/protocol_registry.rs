@@ -20,7 +20,7 @@ use smol::{
     future::{Boxed, Future},
     lock::Mutex,
 };
-use tracing::debug;
+use tracing::{debug, info, warn};
 
 use super::{
     super::{channel::ChannelPtr, p2p::P2pPtr, session::SessionBitFlag},
