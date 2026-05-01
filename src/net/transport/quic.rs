@@ -55,11 +55,12 @@ use super::{
 struct EndpointKey {
     is_ipv6: bool,
     port: u16,
+    localnet: bool,
 }
 
 impl EndpointKey {
-    fn from_addr(addr: SocketAddr) -> Self {
-        Self { is_ipv6: addr.is_ipv6(), port: addr.port() }
+    fn from_addr(addr: SocketAddr, localnet: bool) -> Self {
+        Self { is_ipv6: addr.is_ipv6(), port: addr.port(), localnet }
     }
 }
 
@@ -77,9 +78,9 @@ impl EndpointRegistry {
     }
 
     /// Find an endpoint suitable for dialing the given target address.
-    fn find_for_target(&self, target: SocketAddr) -> Option<Endpoint> {
+    fn find_for_target(&self, target: SocketAddr, localnet: bool) -> Option<Endpoint> {
         let is_ipv6 = target.is_ipv6();
-        self.endpoints.iter().find(|(k, _)| k.is_ipv6 == is_ipv6).map(|(_, ep)| ep.clone())
+        self.endpoints.iter().find(|(k, _)| k.is_ipv6 == is_ipv6 && k.localnet == localnet).map(|(_, ep)| ep.clone())
     }
 }
 
@@ -89,35 +90,37 @@ fn registry() -> &'static Mutex<EndpointRegistry> {
 
 /// Register an endpoint for the given bind address.
 /// Returns the endpoint (may be existing if already registered).
-async fn register_endpoint(bind_addr: SocketAddr) -> io::Result<Endpoint> {
+async fn register_endpoint(bind_addr: SocketAddr, localnet: bool) -> io::Result<Endpoint> {
     let mut reg = registry().lock().await;
 
-    let key = EndpointKey::from_addr(bind_addr);
+    let key = EndpointKey::from_addr(bind_addr, localnet);
 
-    // Check if we already have an endpoint for this (family, port)
+    // Check if we already have an endpoint for this (family, port, localnet)
     if bind_addr.port() != 0 {
         if let Some(endpoint) = reg.endpoints.get(&key) {
             debug!(
                 target: "net::quic::registry",
-                "[QUIC] Reusing existing {} endpoint on port {}",
+                "[QUIC] Reusing existing {} endpoint on port {} (localnet={})",
                 if key.is_ipv6 { "IPv6" } else { "IPv4" },
                 key.port,
+                localnet,
             );
             return Ok(endpoint.clone())
         }
     }
 
     // Create new dual-mode endpoint
-    let endpoint = create_dual_endpoint(bind_addr).await?;
+    let endpoint = create_dual_endpoint(bind_addr, localnet).await?;
     let actual_port = endpoint.local_addr()?.port();
 
-    let actual_key = EndpointKey { is_ipv6: key.is_ipv6, port: actual_port };
+    let actual_key = EndpointKey { is_ipv6: key.is_ipv6, port: actual_port, localnet };
 
     debug!(
         target: "net::quic::registry",
-        "[QUIC] Created new {} QUIC endpoint on port {}",
+        "[QUIC] Created new {} QUIC endpoint on port {} (localnet={})",
         if actual_key.is_ipv6 { "IPv6" } else { "IPv4" },
         actual_port,
+        localnet,
     );
 
     reg.endpoints.insert(actual_key, endpoint.clone());
@@ -127,14 +130,15 @@ async fn register_endpoint(bind_addr: SocketAddr) -> io::Result<Endpoint> {
 
 /// Get an endpoint suitable for dialing the given target address.
 /// If no matching endpoint exist, creates a new one.
-async fn get_endpoint_for_target(target: SocketAddr) -> io::Result<Endpoint> {
+async fn get_endpoint_for_target(target: SocketAddr, localnet: bool) -> io::Result<Endpoint> {
     let reg = registry().lock().await;
-    if let Some(endpoint) = reg.find_for_target(target) {
+    if let Some(endpoint) = reg.find_for_target(target, localnet) {
         debug!(
             target: "net::quic::registry",
-            "[QUIC] Dialer using existing {} endpoint on port {}",
+            "[QUIC] Dialer using existing {} endpoint on port {} (localnet={})",
             if target.is_ipv6() { "IPv6" } else { "IPv4" },
             endpoint.local_addr().map(|a| a.port()).unwrap_or(0),
+            localnet,
         );
         return Ok(endpoint)
     }
@@ -146,17 +150,18 @@ async fn get_endpoint_for_target(target: SocketAddr) -> io::Result<Endpoint> {
 
     debug!(
         target: "net::quic::registry",
-        "[QUIC] Creating new {} endpoint for dialing",
+        "[QUIC] Creating new {} endpoint for dialing (localnet={})",
         if target.is_ipv6() { "IPv6" } else { "IPv4" },
+        localnet,
     );
 
-    register_endpoint(bind_addr).await
+    register_endpoint(bind_addr, localnet).await
 }
 
 /// Create an endpoint configured for both client and server roles
-async fn create_dual_endpoint(bind_addr: SocketAddr) -> io::Result<Endpoint> {
-    let server_config = create_server_config()?;
-    let client_config = create_client_config()?;
+async fn create_dual_endpoint(bind_addr: SocketAddr, localnet: bool) -> io::Result<Endpoint> {
+    let server_config = create_server_config(localnet)?;
+    let client_config = create_client_config(localnet)?;
 
     let endpoint = Endpoint::server(server_config, bind_addr)
         .map_err(|e| io::Error::other(format!("Failed to create QUIC endpoint: {e}")))?;
@@ -167,10 +172,10 @@ async fn create_dual_endpoint(bind_addr: SocketAddr) -> io::Result<Endpoint> {
 }
 
 /// Create QUIC client configuration with our TLS config
-fn create_client_config() -> io::Result<ClientConfig> {
+fn create_client_config(localnet: bool) -> io::Result<ClientConfig> {
     let (certificate, secret_key) = generate_certificate()?;
 
-    let server_cert_verifier = Arc::new(ServerCertificateVerifier::new(false));
+    let server_cert_verifier = Arc::new(ServerCertificateVerifier::new(localnet));
 
     let tls_config = rustls::ClientConfig::builder_with_protocol_versions(&[&TLS13])
         .dangerous()
@@ -194,10 +199,10 @@ fn create_client_config() -> io::Result<ClientConfig> {
 }
 
 /// Create QUIC server configuration with our TLS config
-fn create_server_config() -> io::Result<ServerConfig> {
+fn create_server_config(localnet: bool) -> io::Result<ServerConfig> {
     let (certificate, secret_key) = generate_certificate()?;
 
-    let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(false));
+    let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(localnet));
 
     let tls_config = rustls::ServerConfig::builder_with_protocol_versions(&[&TLS13])
         .with_client_cert_verifier(client_cert_verifier)
@@ -287,9 +292,10 @@ impl QuicDialer {
         &self,
         socket_addr: SocketAddr,
         timeout: Option<Duration>,
+        localnet: bool,
     ) -> io::Result<QuicStream> {
         // Get appropriate endpoint for target address family
-        let endpoint = get_endpoint_for_target(socket_addr).await?;
+        let endpoint = get_endpoint_for_target(socket_addr, localnet).await?;
 
         debug!(
             target: "net::quic::do_dial",
@@ -354,8 +360,9 @@ impl QuicListener {
     pub(crate) async fn do_listen(
         &self,
         socket_addr: SocketAddr,
+        localnet: bool,
     ) -> io::Result<QuicListenerIntern> {
-        let endpoint = register_endpoint(socket_addr).await?;
+        let endpoint = register_endpoint(socket_addr, localnet).await?;
 
         let local_addr = endpoint.local_addr()?;
 

@@ -350,7 +350,7 @@ impl Dialer {
             #[cfg(feature = "p2p-quic")]
             DialerVariant::Quic(dialer) => {
                 let sockaddr = self.endpoint.socket_addrs(|| None)?;
-                let stream = dialer.do_dial(sockaddr[0], timeout).await?;
+                let stream = dialer.do_dial(sockaddr[0], timeout, self.localnet).await?;
                 Ok(Box::new(stream))
             }
         }
@@ -463,7 +463,7 @@ impl Listener {
             #[cfg(feature = "p2p-quic")]
             ListenerVariant::Quic(listener) => {
                 let sockaddr = self.endpoint.socket_addrs(|| None)?;
-                let l = listener.do_listen(sockaddr[0]).await?;
+                let l = listener.do_listen(sockaddr[0], self.localnet).await?;
                 Ok(Box::new(l))
             }
         }
