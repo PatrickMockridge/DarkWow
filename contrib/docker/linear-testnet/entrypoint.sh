@@ -118,8 +118,7 @@ if [ "$HOSTNAME" = "node0" ] || [ "$HOSTNAME" = "node1" ]; then
         xmrig \
             -o "stratum+tcp://127.0.0.1:${STRATUM_PORT}" \
             -u "$WALLET_ADDRESS" \
-            -a rx/0 \
-            --daemon &
+            -a rx/0 &
     else
         echo "[entrypoint] WARNING: No mining address available, xmrig not started"
     fi
