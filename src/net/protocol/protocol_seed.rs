@@ -19,7 +19,7 @@
 use async_trait::async_trait;
 use smol::{lock::RwLock as AsyncRwLock, Executor};
 use std::{sync::Arc, time::UNIX_EPOCH};
-use tracing::debug;
+use tracing::{debug, verbose};
 
 use super::{
     super::{
@@ -98,53 +98,59 @@ impl ProtocolSeed {
 
 #[async_trait]
 impl ProtocolBase for ProtocolSeed {
-    /// Starts the seed protocol. Creates a subscription to the address
-    /// message.  If our external address is enabled, then send our address
-    /// to the seed server.  Sends a get-address message and receives an
-    /// address messsage.
+    /// Seed protocol: simple sequential address exchange
+    /// 1. Send our addresses to seed
+    /// 2. Request addresses from seed
+    /// 3. Receive addresses and add to greylist
+    /// 4. Return - channel closes naturally
     async fn start(self: Arc<Self>, _ex: Arc<Executor<'_>>) -> Result<()> {
-        debug!(target: "net::protocol_seed::start",
-            "[SEED] START on channel={} (this can be sender or receiver side)",
-            self.channel.display_address());
+        verbose!(
+            target: "net::protocol_seed",
+            "[SEED] START address={}", self.channel.display_address()
+        );
 
-        // Send own address to the seed server
+        // Step 1: Send our address to the seed
         self.send_my_addrs().await?;
 
+        // Step 2: Build GetAddrsMessage
         let settings = self.settings.read().await;
         let outbound_connections = settings.outbound_connections;
         let getaddrs_max = settings.getaddrs_max;
         let active_profiles = settings.active_profiles.clone();
         drop(settings);
 
-        // Send get address message
-        // We ask for a maximum of u8::MAX addresses from a single node
         let get_addr = GetAddrsMessage {
             max: getaddrs_max.unwrap_or(outbound_connections.min(u32::MAX as usize) as u32),
             transports: active_profiles,
         };
-        debug!(target: "net::protocol_seed::start",
-            "[SEED] Sending GetAddrsMessage to {}", self.channel.display_address());
+
+        verbose!(
+            target: "net::protocol_seed",
+            "[SEED] Sending GetAddrsMessage to {}", self.channel.display_address()
+        );
         self.channel.send(&get_addr).await?;
 
-        // Receive addresses
-        debug!(target: "net::protocol_seed::start",
-            "[SEED] Waiting for AddrsMessage from {}", self.channel.display_address());
-        let addrs_msg = self.addr_sub.receive().await?;
-        debug!(
-            target: "net::protocol_seed::start",
-            "[SEED] Received {} addrs from {}", addrs_msg.addrs.len(), self.channel.display_address(),
+        // Step 3: Wait for and receive addresses
+        verbose!(
+            target: "net::protocol_seed",
+            "[SEED] Waiting for AddrsMessage from {}", self.channel.display_address()
         );
+        let addrs_msg = self.addr_sub.receive().await?;
 
+        // Step 4: Add received addresses to greylist
         if !addrs_msg.addrs.is_empty() {
-            debug!(
-                target: "net::protocol_seed::start",
-                "[SEED] Appending {} addrs to greylist...", addrs_msg.addrs.len()
+            verbose!(
+                target: "net::protocol_seed",
+                "[SEED] Received {} addrs from {}, adding to greylist",
+                addrs_msg.addrs.len(), self.channel.display_address()
             );
             self.hosts.insert(HostColor::Grey, &addrs_msg.addrs).await;
         }
 
-        debug!(target: "net::protocol_seed::start",
-            "[SEED] END for channel={}", self.channel.display_address());
+        verbose!(
+            target: "net::protocol_seed",
+            "[SEED] END address={}", self.channel.display_address()
+        );
         Ok(())
     }
 
