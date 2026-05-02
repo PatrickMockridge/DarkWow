@@ -69,7 +69,14 @@ RUN cp bin/lilith/lilith_config.toml /app/lilith_config.toml
 FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y \
-    libssl3 libsqlite3-0 liblzma5 libstdc++6 curl bash xmrig
+    libssl3 libsqlite3-0 liblzma5 libstdc++6 curl bash wget
+
+# Use official xmrig binary (statically linked) to avoid glibc fortify buffer overflow
+# in Ubuntu's packaged xmrig 6.21.1 during RandomX dataset init
+RUN wget -q https://github.com/xmrig/xmrig/releases/download/v6.22.2/xmrig-6.22.2-linux-static-x64.tar.gz && \
+    tar xf xmrig-6.22.2-linux-static-x64.tar.gz && \
+    cp xmrig-6.22.2/xmrig /usr/local/bin/xmrig && \
+    rm -rf xmrig-6.22.2*
 
 WORKDIR /app
 
