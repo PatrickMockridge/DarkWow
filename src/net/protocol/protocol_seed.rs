@@ -19,7 +19,7 @@
 use async_trait::async_trait;
 use smol::{lock::RwLock as AsyncRwLock, Executor};
 use std::{sync::Arc, time::UNIX_EPOCH};
-use tracing::{debug, verbose};
+use tracing::debug;
 
 use super::{
     super::{
@@ -32,7 +32,7 @@ use super::{
     },
     protocol_base::{ProtocolBase, ProtocolBasePtr},
 };
-use crate::Result;
+use crate::{util::logger::verbose, Result};
 
 /// Implements the seed protocol
 pub struct ProtocolSeed {
