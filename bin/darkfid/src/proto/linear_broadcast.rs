@@ -216,14 +216,47 @@ async fn handle_receive_block(
             msg.block.header.height
         );
 
+        // Verify PoW before inserting the block
+        let block_height = msg.block.header.height;
+        let randomx_key = msg.block.header.randomx_key;
+        let vm = blockchain.get_vm(randomx_key);
+        let block_hash = msg.block.hash(&vm);
+
+        let pow_valid = {
+            let consensus = &blockchain.consensus;
+            match consensus.verify_proof(&msg.block, &vm) {
+                Ok(true) => true,
+                Ok(false) => {
+                    tracing::warn!(
+                        target: "darkfid::proto::linear_broadcast",
+                        "Block at height {} failed PoW verification",
+                        block_height
+                    );
+                    false
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "darkfid::proto::linear_broadcast",
+                        "Block at height {} PoW error: {e}",
+                        block_height
+                    );
+                    false
+                }
+            }
+        };
+
+        if !pow_valid {
+            handler.send_action(channel, ProtocolGenericAction::Skip).await;
+            continue;
+        }
+
         // Insert block into blockchain
-        // LinearBlockchain::insert_block takes &self (not &mut self) due to interior mutability
         match blockchain.insert_block(&msg.block) {
             Ok(()) => {
                 tracing::info!(
                     target: "darkfid::proto::linear_broadcast",
-                    "Block at height {} inserted from P2P",
-                    msg.block.header.height
+                    "Block {} at height {} inserted from P2P",
+                    block_hash, block_height
                 );
             }
             Err(e) => {

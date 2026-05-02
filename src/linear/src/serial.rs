@@ -103,7 +103,7 @@ impl AsyncDecodable for Transaction {
         let outputs = AsyncDecodable::decode_async(d).await?;
         let contract_calls = AsyncDecodable::decode_async(d).await?;
         let lock_time = AsyncDecodable::decode_async(d).await?;
-        Ok(Self { version, inputs, outputs, contract_calls, lock_time })
+        Ok(Self { version, inputs, outputs, contract_calls, lock_time, coinbase: None })
     }
 }
 
@@ -120,6 +120,9 @@ impl AsyncEncodable for BlockHeader {
         len += self.height.encode_async(s).await?;
         len += self.uncle_merkle_root.encode_async(s).await?;
         len += self.total_reward.encode_async(s).await?;
+        len += self.randomx_key.encode_async(s).await?;
+        len += self.coin_merkle_root.encode_async(s).await?;
+        len += self.nullifier_root.encode_async(s).await?;
         Ok(len)
     }
 }
@@ -137,6 +140,8 @@ impl AsyncDecodable for BlockHeader {
         let uncle_merkle_root = AsyncDecodable::decode_async(d).await?;
         let total_reward = AsyncDecodable::decode_async(d).await?;
         let randomx_key = AsyncDecodable::decode_async(d).await?;
+        let coin_merkle_root = AsyncDecodable::decode_async(d).await?;
+        let nullifier_root = AsyncDecodable::decode_async(d).await?;
         Ok(Self {
             version,
             previous,
@@ -148,6 +153,8 @@ impl AsyncDecodable for BlockHeader {
             uncle_merkle_root,
             total_reward,
             randomx_key,
+            coin_merkle_root,
+            nullifier_root,
         })
     }
 }

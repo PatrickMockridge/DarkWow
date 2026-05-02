@@ -499,6 +499,7 @@ impl DarkfiNode {
             outputs: vec![coinbase_output],
             contract_calls: vec![],
             lock_time: height,
+            coinbase: None,
         };
 
         // Get transactions from mempool

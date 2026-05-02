@@ -21,6 +21,7 @@
 //! This module provides a LinearBlockchain that combines darkfi_linear's
 //! LinearStore with darkfi's Runtime and ZK verification for contract execution.
 
+use std::collections::HashSet;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, Mutex,
@@ -77,6 +78,10 @@ pub struct LinearBlockchain {
     vm: Mutex<Arc<RandomXVM>>,
     /// Current RandomX key (protected by mutex for interior mutability)
     randomx_key: Mutex<[u8; 32]>,
+    /// Set of coin commitments for double-mint prevention
+    coin_set: Mutex<HashSet<[u8; 32]>>,
+    /// Set of nullifiers for double-spend prevention
+    nullifier_set: Mutex<HashSet<[u8; 32]>>,
 }
 
 impl LinearBlockchain {
@@ -113,6 +118,8 @@ impl LinearBlockchain {
             height,
             vm: Mutex::new(vm),
             randomx_key: Mutex::new(randomx_key),
+            coin_set: Mutex::new(HashSet::new()),
+            nullifier_set: Mutex::new(HashSet::new()),
         }
     }
 
@@ -164,7 +171,7 @@ impl LinearBlockchain {
         self.store.get_block(height).map_err(|e| Error::Custom(e.to_string()))
     }
 
-    /// Insert a block into the chain
+    /// Insert a block into the chain, tracking coins and nullifiers from transactions.
     pub fn insert_block(&self, block: &Block) -> Result<()> {
         let height = block.header.height;
 
@@ -174,12 +181,90 @@ impl LinearBlockchain {
             consensus.record_block(block.header.timestamp, block.header.difficulty_target);
         }
 
+        // Track coins and nullifiers from coinbase transactions
+        for tx in &block.transactions {
+            if let Some(ref coinbase) = tx.coinbase {
+                let mut coin_set = self.coin_set.lock().unwrap();
+                let mut nullifier_set = self.nullifier_set.lock().unwrap();
+                coin_set.insert(coinbase.coin);
+                // Mint transactions don't create nullifiers, but check for future use
+                // Spends would add nullifiers here
+            }
+        }
+
         self.store.insert_block(height, block).map_err(|e| Error::Custom(e.to_string()))?;
         let current_height = self.height.load(Ordering::SeqCst);
         if height > current_height {
             self.height.store(height, Ordering::SeqCst);
         }
         Ok(())
+    }
+
+    /// Check if a coin commitment already exists (double-mint prevention)
+    pub fn has_coin(&self, coin: &[u8; 32]) -> bool {
+        self.coin_set.lock().unwrap().contains(coin)
+    }
+
+    /// Add a coin commitment to the tracked set
+    pub fn add_coin(&self, coin: [u8; 32]) {
+        self.coin_set.lock().unwrap().insert(coin);
+    }
+
+    /// Check if a nullifier has already been used (double-spend prevention)
+    pub fn has_nullifier(&self, nullifier: &[u8; 32]) -> bool {
+        self.nullifier_set.lock().unwrap().contains(nullifier)
+    }
+
+    /// Add a nullifier to the tracked set
+    pub fn add_nullifier(&self, nullifier: [u8; 32]) {
+        self.nullifier_set.lock().unwrap().insert(nullifier);
+    }
+
+    /// Compute the current coin Merkle root from all tracked coins.
+    /// Uses a simple incremental hash for now — can be upgraded to a
+    /// proper incremental Merkle tree (depth 32, poseidon hash).
+    pub fn compute_coin_merkle_root(&self) -> [u8; 32] {
+        let coins = self.coin_set.lock().unwrap();
+        if coins.is_empty() {
+            return [0u8; 32]
+        }
+        // Simple root: blake3 hash of all sorted coins
+        let mut sorted: Vec<&[u8; 32]> = coins.iter().collect();
+        sorted.sort();
+        let mut hasher = blake3::Hasher::new();
+        for coin in sorted {
+            hasher.update(coin);
+        }
+        *hasher.finalize().as_bytes()
+    }
+
+    /// Compute coin Merkle root including a new coin (without adding it permanently).
+    /// Used during block construction to compute the header before the block is finalized.
+    pub fn compute_root_including_coin(&self, new_coin: &[u8; 32]) -> [u8; 32] {
+        let coins = self.coin_set.lock().unwrap();
+        let mut sorted: Vec<&[u8; 32]> = coins.iter().collect();
+        sorted.push(new_coin);
+        sorted.sort();
+        let mut hasher = blake3::Hasher::new();
+        for coin in sorted {
+            hasher.update(coin);
+        }
+        *hasher.finalize().as_bytes()
+    }
+
+    /// Compute the current nullifier root from all tracked nullifiers.
+    pub fn compute_nullifier_root(&self) -> [u8; 32] {
+        let nullifiers = self.nullifier_set.lock().unwrap();
+        if nullifiers.is_empty() {
+            return [0u8; 32]
+        }
+        let mut sorted: Vec<&[u8; 32]> = nullifiers.iter().collect();
+        sorted.sort();
+        let mut hasher = blake3::Hasher::new();
+        for n in sorted {
+            hasher.update(n);
+        }
+        *hasher.finalize().as_bytes()
     }
 
     /// Verify and apply a block to the chain
@@ -372,6 +457,8 @@ impl Clone for LinearBlockchain {
             height: AtomicU64::new(self.height.load(Ordering::SeqCst)),
             vm: Mutex::new(self.vm.lock().unwrap().clone()),
             randomx_key: Mutex::new(*self.randomx_key.lock().unwrap()),
+            coin_set: Mutex::new(self.coin_set.lock().unwrap().clone()),
+            nullifier_set: Mutex::new(self.nullifier_set.lock().unwrap().clone()),
         }
     }
 }

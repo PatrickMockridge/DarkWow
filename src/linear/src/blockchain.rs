@@ -34,7 +34,7 @@ pub struct LinearBlockchain {
     /// Storage backend
     pub store: Arc<LinearStore>,
     /// PoW consensus
-    consensus: PoWConsensus,
+    pub consensus: PoWConsensus,
     /// Current chain height - protected by mutex for interior mutability
     height: Mutex<u64>,
     /// RandomX VM cache (for PoW verification) - protected by mutex for interior mutability

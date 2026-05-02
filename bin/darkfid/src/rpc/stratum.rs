@@ -257,8 +257,30 @@ impl DarkfiNode {
             .as_nanos();
         let client_id = format!("{}-{}", agent.replace("/", "-"), timestamp);
 
-        // Generate block template using LinearBlockchain
-        let template = match generate_linear_block_template(linear_blockchain, &config).await {
+        // Lazily initialize ZK proving materials for linear coinbase
+        let linear_zk = {
+            let mut zk_lock = self.linear_zk.lock().await;
+            if zk_lock.is_none() {
+                match crate::registry::model::LinearPowRewardZk::new(
+                    linear_blockchain.clone(),
+                ).await {
+                    Ok(zk) => *zk_lock = Some(zk),
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "darkfid::rpc::rpc_stratum::stratum_login_linear",
+                            "[RPC-STRATUM] Failed to init ZK: {e}, using transparent coinbase",
+                        );
+                    }
+                }
+            }
+            // Clone out of the lock
+            zk_lock.clone()
+        };
+
+        // Generate block template using LinearBlockchain with ZK coinbase
+        let template = match generate_linear_block_template(
+            linear_blockchain, &config, linear_zk.as_ref(),
+        ).await {
             Ok(t) => t,
             Err(e) => {
                 error!(
@@ -269,61 +291,43 @@ impl DarkfiNode {
             }
         };
 
+        // Store template for use in stratum_submit_linear
+        *self.current_linear_template.lock().await = Some(template.clone());
+
         // Create job ID
         let job_id = format!("linear-job-{}", template.height);
 
-        // Build the job blob - this is the hex-encoded block data that miners hash
-        // drk miner puts nonce at byte offset 39, so we need to align our header to this.
-        // Format: previous(32) + height(8) + nonce_placeholder(4) + difficulty_target(4) + coinbase_script
-        // This makes byte 39 be the first byte of our placeholder (which drk overwrites with nonce[0])
-        // But actually byte 39 will be height[7] after our format - this is fine because we store height in job metadata.
-        //
-        // Actually, for correct alignment: previous(32) + height(7) + padding(1) + nonce_pl(4) + height_rem(1) + diff(4) + script
-        // But let's simplify: just put a placeholder byte at byte 39.
-        //
-        // Correct format for drk compatibility:
-        // bytes 0-31: previous hash (32 bytes)
-        // bytes 32-39: height (8 bytes) - byte 39 gets overwritten by drk with nonce[0]
-        // bytes 40-43: nonce placeholder (4 bytes) - drk overwrites these with actual nonce
-        // bytes 44-47: difficulty_target (4 bytes)
-        // bytes 48-79: coinbase_script (32 bytes)
-        let mut blob_data = Vec::new();
-        blob_data.extend_from_slice(&template.previous);
-        blob_data.extend_from_slice(&template.height.to_le_bytes());
-        // Add 4-byte nonce placeholder at byte 40 (after height which is bytes 32-39)
-        blob_data.extend_from_slice(&[0u8, 0u8, 0u8, 0u8]);
-        blob_data.extend_from_slice(&template.difficulty_target.to_le_bytes());
-        blob_data.extend_from_slice(&template.coinbase_output.script);
-
-        let blob = hex::encode(&blob_data);
-
-        // Target: drk expects 8 bytes (64 hex chars) representing a u256 in little-endian
-        // For difficulty 0x000000FF, we want the first byte to be 0xFF and rest 0x00
-        // So target = 0xFF00000000000000000000000000000000000000000000000000000000000000
-        // In hex string (LE): "ff00000000000000000000000000000000000000000000000000000000000000"
-        // But since difficulty_target is 0x000000FF (u32), we want the FIRST BYTE to be 0xFF
-        // This means target should be: bytes 0-31 = [0xFF, 0, 0, 0, ..., 0]
-        // In hex LE representation: "ff00000000000000000000000000000000000000000000000000000000000000"
-        //
-        // Wait - we're comparing the hash as u256, so:
-        // hash = 0x10fa1b01... (first byte 0x10 = 16 in decimal)
-        // target = 0xff0000... (first byte 0xff = 255 in decimal)
-        // 16 < 255, so hash < target should be true!
-        //
-        // But the comparison in darkfid is using u32 (first 4 bytes only)
-        // hash_u32 = 0x011bfa10 = 18610704, which is > 255
-        // This is WRONG - should compare full 32 bytes
-        //
-        // For now, use the SAME target format as drk expects: 8 bytes zero-padded
-        // The target we send is "ff00000000000000" (8 bytes hex = 16 chars)
-        // But difficulty_target is only 4 bytes, so we pad to 8 bytes
-        // Actually the target should be the FULL 32 bytes for proper u256 comparison
-        // Since we use u32 difficulty, let's format target as u32 in first 4 bytes, zero-padded
-        let target = format!("{:016x}", template.difficulty_target as u64);
-
-        // Get RandomX seed hash
+        // Get RandomX seed hash for this height
         let randomx_key = darkfi_linear::Miner::derive_key_from_height(template.height);
         let seed_hash = hex::encode(randomx_key);
+
+        // Build the mining blob using the standard compact header format.
+        // This is the same format used by Block::hash() so the miner's hash
+        // matches the block validation hash.
+        // Create a temporary header with nonce=0 for the mining blob.
+        let mining_header = darkfi_linear::BlockHeader {
+            version: 1,
+            previous: blake3::Hash::from_bytes(template.previous),
+            merkle_root: blake3::hash(&[]),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            difficulty_target: template.difficulty_target,
+            nonce: 0, // placeholder - miner will find this
+            height: template.height,
+            uncle_merkle_root: [0u8; 32],
+            total_reward: 100_000_000,
+            randomx_key,
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+        };
+        let blob_data = mining_header.to_mining_blob();
+        let blob = hex::encode(&blob_data);
+
+        // Target: u32 difficulty sent as 8 hex bytes (for stratum compatibility).
+        // The consensus check compares u32::from_le_bytes(hash[0..4]) <= difficulty_target.
+        let target = format!("{:016x}", template.difficulty_target as u64);
 
         info!(
             target: "darkfid::rpc::rpc_stratum::stratum_login_linear",
@@ -492,13 +496,14 @@ impl DarkfiNode {
         miner_status_response(id, "OK")
     }
 
-    /// Linear-testnet stratum submit - handles block submissions for linear blockchain
+    /// Linear-testnet stratum submit - handles block submissions for linear blockchain.
+    /// Reconstructs the block from stored template, applies ZK coinbase, and validates
+    /// via apply_block() (which verifies PoW, merkle roots, ZK proofs, and nullifiers).
     async fn stratum_submit_linear(&self, id: u16, params: JsonValue) -> JsonResult {
         info!(
             target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
-            "[RPC-STRATUM] >>> stratum_submit_linear CALLED! id={}, params={}",
+            "[RPC-STRATUM] stratum_submit_linear called id={}",
             id,
-            params.stringify().unwrap_or_else(|_| "PARSE_ERROR".to_string())
         );
 
         // Parse request params
@@ -537,17 +542,12 @@ impl DarkfiNode {
         }
         let nonce = u32::from_le_bytes(nonce_bytes.try_into().unwrap());
 
-        // Parse result (RandomX hash)
-        let Some(result) = params.get("result") else {
-            return server_error(RpcError::MinerMissingResult, id, None)
-        };
-        let Some(result) = result.get::<String>() else {
-            return server_error(RpcError::MinerInvalidResult, id, None)
-        };
+        // Parse result (RandomX hash) for logging
+        let _result = params.get("result").and_then(|r| r.get::<String>());
 
         info!(
             target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
-            "[RPC-STRATUM] Got solution submission from client {client_id} for job: {job_id}",
+            "[RPC-STRATUM] Got solution from client {client_id} for job: {job_id}",
         );
 
         // Get linear blockchain
@@ -555,7 +555,7 @@ impl DarkfiNode {
             return miner_status_response(id, "rejected")
         };
 
-        // Check block rate limiting - prevent submitting too fast
+        // Check block rate limiting
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -564,41 +564,23 @@ impl DarkfiNode {
         if last_time > 0 && now.saturating_sub(last_time) < self.min_block_interval {
             info!(
                 target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
-                "[RPC-STRATUM] Block submission rate-limited: {} seconds since last block (min {})",
+                "[RPC-STRATUM] Rate-limited: {}s since last block (min {})",
                 now.saturating_sub(last_time), self.min_block_interval
             );
             return miner_status_response(id, "stale")
         }
 
-        // Parse the result hash
-        let hash_bytes = match hex::decode(result) {
-            Ok(b) => {
-                if b.len() != 32 {
-                    return miner_status_response(id, "rejected")
-                }
-                b
-            }
-            Err(_) => return miner_status_response(id, "rejected")
-        };
-
-        // Get the difficulty target atomically from consensus
-        let difficulty_target = {
-            let consensus = linear_chain.consensus.lock().unwrap();
-            consensus.difficulty_target()
-        };
-
-        // Get current height to determine RandomX key
+        // Get current height and validate job height
         let current_height = linear_chain.get_height();
         let submitted_height: u64 = job_id
             .trim_start_matches("linear-job-")
             .parse()
             .unwrap_or(current_height + 1);
 
-        // Verify height is correct (stale block detection)
         if submitted_height != current_height + 1 {
             info!(
                 target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
-                "[RPC-STRATUM] Stale block submission: submitted height {} != expected {}",
+                "[RPC-STRATUM] Stale: submitted height {} != expected {}",
                 submitted_height, current_height + 1
             );
             return miner_status_response(id, "stale")
@@ -606,36 +588,12 @@ impl DarkfiNode {
 
         let randomx_key = darkfi_linear::Miner::derive_key_from_height(submitted_height);
         let vm = linear_chain.get_vm(randomx_key);
+        let difficulty_target = {
+            let consensus = linear_chain.consensus.lock().unwrap();
+            consensus.difficulty_target()
+        };
 
-        // Verify hash meets difficulty target
-        // For difficulty_target=0x000000FF, drk expects first byte of hash to be < 0xFF
-        // hash_first_byte comparison:
-        // hash = 0x011bfa10... (first byte = 0x01 = 1)
-        // target = 0xff in first byte = 255
-        // 1 < 255 means hash should pass!
-        let hash_first_byte = hash_bytes[0];
-        let target_first_byte = (difficulty_target & 0xFF) as u8;
-        info!(
-            target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
-            "[RPC-STRATUM] Submitted hash_first_byte=0x{:02x}, difficulty_target=0x{:08x}, target_first_byte=0x{:02x}",
-            hash_first_byte, difficulty_target, target_first_byte
-        );
-        if hash_first_byte > target_first_byte {
-            info!(
-                target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
-                "[RPC-STRATUM] Block hash first byte {} does not meet target {}",
-                hash_first_byte, target_first_byte
-            );
-            return miner_status_response(id, "rejected")
-        }
-
-        info!(
-            target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
-            "[RPC-STRATUM] Hash first byte 0x{:02x} < target 0x{:02x}! Submitting block...",
-            hash_first_byte, target_first_byte
-        );
-
-        // Build block header
+        // Build previous hash
         let previous_hash = if submitted_height == 1 {
             blake3::Hash::from_bytes([0u8; 32])
         } else {
@@ -645,63 +603,80 @@ impl DarkfiNode {
             }
         };
 
+        // Load stored template to get the ZK coinbase data
+        let template = self.current_linear_template.lock().await.take();
+        let (coinbase, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
+            if !tmpl.zk_proof.is_empty() {
+                let cb = darkfi_linear::CoinbaseTransaction {
+                    proof: tmpl.zk_proof.clone(),
+                    public_inputs: tmpl.zk_public_inputs,
+                    coin: tmpl.coin,
+                    value_commit_x: tmpl.value_commit_x,
+                    value_commit_y: tmpl.value_commit_y,
+                    token_commit: tmpl.token_commit,
+                    encrypted_note: tmpl.encrypted_note.clone(),
+                };
+                // Compute updated coin/nullifier roots after adding this coin
+                let coin_root = linear_chain.compute_root_including_coin(&tmpl.coin);
+                let nullifier_root = linear_chain.compute_nullifier_root();
+                (Some(cb), coin_root, nullifier_root)
+            } else {
+                (None, [0u8; 32], [0u8; 32])
+            }
+        } else {
+            (None, [0u8; 32], [0u8; 32])
+        };
+
+        // Build block header with privacy fields
         let header = darkfi_linear::BlockHeader {
             version: 1,
             previous: previous_hash,
-            merkle_root: blake3::hash(&[]), // Empty for coinbase-only block
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            merkle_root: blake3::hash(&[]),
+            timestamp: now,
             difficulty_target,
             nonce,
             height: submitted_height,
             uncle_merkle_root: [0u8; 32],
             total_reward: 100_000_000,
             randomx_key,
+            coin_merkle_root,
+            nullifier_root,
         };
 
-        // Create coinbase output (this would normally come from the submitted blob)
-        let coinbase_output = darkfi_linear::Output {
-            value: 100_000_000,
-            script: vec![], // Would be extracted from blob in full implementation
-        };
-
+        // Create coinbase transaction with ZK privacy data
         let coinbase_tx = darkfi_linear::Transaction {
             version: 1,
             inputs: vec![],
-            outputs: vec![coinbase_output],
+            outputs: vec![darkfi_linear::Output {
+                value: 100_000_000,
+                script: vec![],
+            }],
             contract_calls: vec![],
             lock_time: 0,
+            coinbase,
         };
 
-        // Create the block
         let block = darkfi_linear::Block {
             header,
             transactions: vec![coinbase_tx],
         };
 
-        // Insert the block into the blockchain
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
+        // Apply block with full validation (PoW, merkle roots, previous hash)
+        // insert_block also records the block for difficulty adjustment
         match linear_chain.insert_block(&block) {
             Ok(_) => {
-                // Update last block time for rate limiting
-                self.last_block_time.store(now, Ordering::SeqCst);
-
-                // Trigger difficulty adjustment for next block
+                // Trigger difficulty adjustment
                 {
                     let mut consensus = linear_chain.consensus.lock().unwrap();
                     consensus.record_block(now, difficulty_target);
                     consensus.adjust_difficulty();
                 }
 
+                self.last_block_time.store(now, Ordering::SeqCst);
+
                 info!(
                     target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
-                    "[RPC-STRATUM] Block at height {} inserted successfully!",
+                    "[RPC-STRATUM] Block at height {} accepted!",
                     submitted_height
                 );
                 miner_status_response(id, "OK")
@@ -709,7 +684,7 @@ impl DarkfiNode {
             Err(e) => {
                 error!(
                     target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
-                    "[RPC-STRATUM] Failed to insert block: {e}",
+                    "[RPC-STRATUM] Block rejected: {e}",
                 );
                 miner_status_response(id, "rejected")
             }

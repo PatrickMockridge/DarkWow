@@ -193,6 +193,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         let daemon = Darkfid::init_linear(
             network,
             &sled_db,
+            &db_path,
             &p2p_settings,
             &blockchain_config.txs_batch_size,
             &ex,

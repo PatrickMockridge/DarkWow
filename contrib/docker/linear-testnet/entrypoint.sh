@@ -82,4 +82,47 @@ EOF
 echo "[entrypoint] Config generated successfully"
 
 echo "[entrypoint] Starting darkfid..."
-exec /app/darkfid "$@"
+exec /app/darkfid "$@" &
+
+DARKFID_PID=$!
+
+# Start xmrig on mining nodes
+if [ "$HOSTNAME" = "node0" ] || [ "$HOSTNAME" = "node1" ]; then
+    STRATUM_PORT=$(if [ "$HOSTNAME" = "node0" ]; then echo "48347"; else echo "48447"; fi)
+    DATADIR="/root/.local/share/darkfi/darkfid/linear-testnet"
+    MINER_ADDRESS_FILE="$DATADIR/mining_address"
+
+    # Three-tier address resolution:
+    # 1. Explicit WALLET_ADDRESS env var (operator-provided)
+    # 2. Persisted file from prior darkfid run
+    # 3. Wait for darkfid to auto-generate a keypair on first run
+    if [ -n "$WALLET_ADDRESS" ]; then
+        echo "[entrypoint] Using provided WALLET_ADDRESS: $WALLET_ADDRESS"
+    elif [ -f "$MINER_ADDRESS_FILE" ]; then
+        WALLET_ADDRESS=$(cat "$MINER_ADDRESS_FILE")
+        echo "[entrypoint] Using persisted mining address: $WALLET_ADDRESS"
+    else
+        echo "[entrypoint] Waiting for darkfid to generate mining address..."
+        for i in $(seq 1 30); do
+            if [ -f "$MINER_ADDRESS_FILE" ]; then
+                WALLET_ADDRESS=$(cat "$MINER_ADDRESS_FILE")
+                echo "[entrypoint] Generated mining address: $WALLET_ADDRESS"
+                break
+            fi
+            sleep 1
+        done
+    fi
+
+    if [ -n "$WALLET_ADDRESS" ]; then
+        echo "[entrypoint] Starting xmrig on $HOSTNAME (stratum port $STRATUM_PORT)..."
+        xmrig \
+            -o "stratum+tcp://127.0.0.1:${STRATUM_PORT}" \
+            -u "$WALLET_ADDRESS" \
+            -a rx/0 \
+            --daemon &
+    else
+        echo "[entrypoint] WARNING: No mining address available, xmrig not started"
+    fi
+fi
+
+wait $DARKFID_PID

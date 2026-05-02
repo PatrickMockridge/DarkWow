@@ -45,6 +45,10 @@ pub struct BlockHeader {
     pub total_reward: u64,
     /// RandomX key for PoW mining (key used to create VM for this block)
     pub randomx_key: [u8; 32],
+    /// Root of the coin commitment Merkle tree after this block
+    pub coin_merkle_root: [u8; 32],
+    /// Root of the nullifier Sparse Merkle Tree after this block
+    pub nullifier_root: [u8; 32],
 }
 
 /// Uncle block - a block that was mined but not canonical
@@ -119,6 +123,37 @@ pub struct UncleProof {
     pub depth: u8,
 }
 
+impl BlockHeader {
+    /// Serialize the header to a compact binary blob for mining and hashing.
+    /// Format (225 bytes total):
+    ///   [previous(32)][height(8)][nonce(4)][difficulty_target(4)][version(1)]
+    ///   [merkle_root(32)][timestamp(8)][uncle_merkle_root(32)][total_reward(8)]
+    ///   [randomx_key(32)][coin_merkle_root(32)][nullifier_root(32)]
+    /// Nonce is at byte offset 40 (compatible with drk miner and xmrig).
+    pub fn to_mining_blob(&self) -> Vec<u8> {
+        let mut blob = Vec::with_capacity(225);
+        blob.extend_from_slice(self.previous.as_bytes());       // 0..32
+        blob.extend_from_slice(&self.height.to_le_bytes());     // 32..40
+        blob.extend_from_slice(&self.nonce.to_le_bytes());       // 40..44 (nonce)
+        blob.extend_from_slice(&self.difficulty_target.to_le_bytes()); // 44..48
+        blob.push(self.version);                                  // 48
+        blob.extend_from_slice(self.merkle_root.as_bytes());      // 49..81
+        blob.extend_from_slice(&self.timestamp.to_le_bytes());    // 81..89
+        blob.extend_from_slice(&self.uncle_merkle_root);          // 89..121
+        blob.extend_from_slice(&self.total_reward.to_le_bytes()); // 121..129
+        blob.extend_from_slice(&self.randomx_key);                // 129..161
+        blob.extend_from_slice(&self.coin_merkle_root);           // 161..193
+        blob.extend_from_slice(&self.nullifier_root);             // 193..225
+        blob
+    }
+
+    /// The byte offset of the nonce within the mining blob (bytes 40..43).
+    pub const NONCE_OFFSET: usize = 40;
+
+    /// The expected length of the mining blob.
+    pub const MINING_BLOB_LEN: usize = 225;
+}
+
 /// Block - a single block in the linear chain
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
@@ -129,11 +164,12 @@ pub struct Block {
 }
 
 impl Block {
-    /// Calculate the hash of this block's header using RandomX VM
+    /// Calculate the hash of this block's header using RandomX VM.
+    /// Uses the compact mining blob format so the hash matches what
+    /// external miners (xmrig) compute.
     pub fn hash(&self, vm: &randomx::RandomXVM) -> blake3::Hash {
-        let header_bytes = serde_json::to_vec(&self.header).unwrap();
-        // Use first 32 bytes of RandomX output as the hash
-        let rx_hash = vm.calculate_hash(&header_bytes).expect("RandomX hash failed");
+        let blob = self.header.to_mining_blob();
+        let rx_hash = vm.calculate_hash(&blob).expect("RandomX hash failed");
         let mut hash_bytes = [0u8; 32];
         hash_bytes.copy_from_slice(&rx_hash[..32]);
         blake3::Hash::from_bytes(hash_bytes)
@@ -408,6 +444,8 @@ pub fn create_block_with_uncles(
             uncle_merkle_root,
             total_reward,
             randomx_key: [0u8; 32], // Placeholder - miner sets actual key
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
         },
         transactions,
     }
@@ -446,6 +484,8 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: 0,
             randomx_key: [0u8; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
         };
         let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
 
@@ -474,6 +514,8 @@ mod tests {
                 uncle_merkle_root: [0u8; 32],
                 total_reward: 0,
                 randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
             };
             uncles.push(UncleBlock { header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 });
         }
@@ -509,6 +551,8 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: 0,
             randomx_key: [0u8; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
         };
         // Pin mechanism: pin_offered=true, pin_accepted=true means uncle accepts the pin
         // pin_reward at depth 1 = 50% = 50M
@@ -535,6 +579,8 @@ mod tests {
             uncle_merkle_root: [0u8; 32],
             total_reward: 0,
             randomx_key: [0u8; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
         };
         let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
 

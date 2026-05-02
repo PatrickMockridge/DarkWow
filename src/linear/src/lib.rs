@@ -41,7 +41,7 @@ pub use consensus::PoWConsensus;
 pub use error::LinearError;
 pub use miner::Miner;
 pub use store::LinearStore;
-pub use transaction::{Input, Output, Transaction, ContractCall};
+pub use transaction::{CoinbaseTransaction, Input, Output, Transaction, ContractCall};
 
 /// Result type for linear blockchain operations
 pub type Result<T> = std::result::Result<T, LinearError>;

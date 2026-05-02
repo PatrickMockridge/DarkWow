@@ -21,6 +21,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use darkfi_linear::Output;
 
 use darkfi_sdk::crypto::PublicKey;
+use darkfi_sdk::crypto::keypair::{Address, Network};
 
 use rand::rngs::OsRng;
 use sled::IVec;
@@ -45,10 +46,10 @@ use darkfi::{
     zkas::ZkBinary,
     Error, Result,
 };
-use darkfi_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1};
+use darkfi_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN};
 use darkfi_sdk::{
     crypto::{
-        keypair::{Address, Keypair, Network, SecretKey},
+        keypair::{Keypair, SecretKey},
         pasta_prelude::PrimeField,
         FuncId, MerkleTree, NATIVE_TOKEN_CONTRACT_ID,
     },
@@ -275,21 +276,20 @@ impl LinearMinerRewardsRecipientConfig {
     }
 
     pub async fn from_str(address: &str) -> std::result::Result<Self, RpcError> {
-        // Decode base58: [prefix(1)][pubkey(32)][checksum(4)] = 37 bytes
-        // Use with_check(None) to strip checksum bytes (like Address::from_str does)
-        let decoded = bs58::decode(address).with_check(None).into_vec()
+        // Use DarkFi's Address parser which validates:
+        // - base58 decode with checksum
+        // - network prefix (0x39 mainnet, 0xaf testnet)
+        // - 37-byte length
+        // - blake3 checksum over [prefix][pubkey]
+        let addr = Address::from_str(address)
             .map_err(|_| RpcError::MinerInvalidRecipientPrefix)?;
 
-        if decoded.len() != 37 {
+        // linear-testnet maps to Network::Testnet (prefix 0xaf)
+        if addr.network() != Network::Testnet {
             return Err(RpcError::MinerInvalidRecipientPrefix)
         }
 
-        // Bytes 1-32 are the public key
-        let pubkey_bytes: [u8; 32] = decoded[1..33].try_into()
-            .map_err(|_| RpcError::MinerInvalidRecipientPrefix)?;
-        let recipient = PublicKey::from_bytes(pubkey_bytes)
-            .map_err(|_| RpcError::MinerInvalidRecipientPrefix)?;
-
+        let recipient = *addr.public_key();
         let value = 100_000_000u64;
         Ok(Self { recipient, value })
     }
@@ -304,12 +304,26 @@ pub struct LinearBlockTemplate {
     pub height: u64,
     /// Difficulty target
     pub difficulty_target: u32,
-    /// Coinbase output (reward to miner)
-    pub coinbase_output: Output,
+    /// Coinbase reward value
+    pub value: u64,
+    /// ZK proof for the coinbase transaction
+    pub zk_proof: Vec<u8>,
+    /// ZK public inputs: [coin, value_commit.x, value_commit.y, token_commit]
+    pub zk_public_inputs: [[u8; 32]; 4],
+    /// Coin commitment (poseidon hash of coin attributes)
+    pub coin: [u8; 32],
+    /// Pedersen value commitment x-coordinate (32 bytes)
+    pub value_commit_x: [u8; 32],
+    /// Pedersen value commitment y-coordinate (32 bytes)
+    pub value_commit_y: [u8; 32],
+    /// Poseidon token commitment
+    pub token_commit: [u8; 32],
+    /// AEAD encrypted note (contains coin blinds, value, token_id for recipient)
+    pub encrypted_note: Vec<u8>,
 }
 
 impl LinearBlockTemplate {
-    /// Create a coinbase output for the miner
+    /// Create a coinbase output for the miner (transparent fallback)
     pub fn create_coinbase_output(recipient: &PublicKey, value: u64) -> Output {
         Output {
             value,
@@ -318,24 +332,132 @@ impl LinearBlockTemplate {
     }
 }
 
-/// Linear blockchain mining data (placeholder - no ZK needed)
+/// Build a privacy-preserving coinbase transaction for the linear blockchain.
+///
+/// Uses the Mint_V1 ZK circuit to create:
+/// 1. A ZK proof that the coin was correctly minted
+/// 2. Pedersen value commitment (hidden value)
+/// 3. Poseidon token commitment (hidden token)
+/// 4. Poseidon coin commitment (hash of all attributes)
+/// 5. AEAD encrypted note containing coin blinds and block signing secret
+///
+/// The recipient can decrypt the note with their secret key to recover
+/// the coin's blinding factors, enabling them to spend the coin later.
+pub async fn build_linear_coinbase(
+    recipient: PublicKey,
+    value: u64,
+    linear_zk: &LinearPowRewardZk,
+) -> Result<(
+    darkfi_linear::CoinbaseTransaction,
+    [[u8; 32]; 4],
+)> {
+    use darkfi_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
+    use darkfi_sdk::crypto::Keypair;
+    use darkfi_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
+    use darkfi_serial::Encodable;
+    use rand::rngs::OsRng;
+
+    // Generate an ephemeral keypair for the block signer
+    // Its secret is embedded in the encrypted note's memo field
+    let block_signing_keypair = Keypair::random(&mut OsRng);
+
+    // Build the PoW reward using the same PoWRewardCallBuilder as overlay
+    let debris = PoWRewardCallBuilder {
+        signature_keypair: block_signing_keypair,
+        block_height: 0, // linear chain uses u64 heights; 0 is fine for mint
+        fees: 0,
+        recipient: Some(recipient),
+        spend_hook: None,
+        user_data: None,
+        mint_zkbin: linear_zk.zkbin.clone(),
+        mint_pk: linear_zk.provingkey.clone(),
+    }
+    .build_with_custom_reward(value)?;
+
+    let params = &debris.params;
+    let output = &params.output;
+
+    // Extract public inputs from ZK proof
+    let coin_bytes: [u8; 32] = output.coin.inner().to_repr();
+
+    let valcom_coords = output.value_commit.to_affine().coordinates().unwrap();
+    let mut value_commit_x = [0u8; 32];
+    let mut value_commit_y = [0u8; 32];
+    value_commit_x.copy_from_slice(&valcom_coords.x().to_repr());
+    value_commit_y.copy_from_slice(&valcom_coords.y().to_repr());
+
+    let token_commit_bytes: [u8; 32] = output.token_commit.to_repr();
+
+    let public_inputs: [[u8; 32]; 4] = [
+        coin_bytes,
+        value_commit_x,
+        value_commit_y,
+        token_commit_bytes,
+    ];
+
+    // Serialize the ZK proofs using darkfi_serial Encodable
+    let mut proof_bytes = vec![];
+    for proof in &debris.proofs {
+        proof.encode(&mut proof_bytes)
+            .map_err(|e| Error::Custom(format!("Failed to encode ZK proof: {}", e)))?;
+    }
+
+    // Serialize the encrypted note using darkfi_serial Encodable
+    let mut note_bytes = vec![];
+    output.note.encode(&mut note_bytes)
+        .map_err(|e| Error::Custom(format!("Failed to encode encrypted note: {}", e)))?;
+
+    let coinbase = darkfi_linear::CoinbaseTransaction {
+        proof: proof_bytes,
+        public_inputs,
+        coin: coin_bytes,
+        value_commit_x,
+        value_commit_y,
+        token_commit: token_commit_bytes,
+        encrypted_note: note_bytes,
+    };
+
+    Ok((coinbase, public_inputs))
+}
+
+/// Linear blockchain ZK mining data.
+/// Loads the Mint_V1 ZK circuit and proving key for creating privacy-preserving
+/// coinbase transactions. Uses the same ZK infrastructure as the overlay DAG.
 #[derive(Clone)]
-pub struct LinearPowRewardZk;
+pub struct LinearPowRewardZk {
+    pub zkbin: ZkBinary,
+    pub provingkey: ProvingKey,
+}
 
 impl LinearPowRewardZk {
     pub async fn new(_linear_blockchain: Arc<crate::blockchain::LinearBlockchain>) -> Result<Self> {
         info!(
             target: "darkfid::registry::model::LinearPowRewardZk::new",
-            "Initializing linear mining data...",
+            "Initializing linear ZK mining data...",
         );
-        Ok(Self)
+
+        let zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN, false)
+            .map_err(|e| Error::Custom(format!("Failed to decode Mint_V1 ZK binary: {}", e)))?;
+
+        let circuit = ZkCircuit::new(empty_witnesses(&zkbin)?, &zkbin);
+        let provingkey = ProvingKey::build(zkbin.k, &circuit);
+
+        info!(
+            target: "darkfid::registry::model::LinearPowRewardZk::new",
+            "Mint_V1 ZK circuit loaded (k={})", zkbin.k,
+        );
+
+        Ok(Self { zkbin, provingkey })
     }
 }
 
-/// Generate next block template for linear blockchain
+/// Generate next block template for linear blockchain.
+/// When `linear_zk` is provided, creates a privacy-preserving ZK coinbase.
+/// Otherwise falls back to a transparent coinbase (for development/testing).
 pub async fn generate_linear_block_template(
     linear_blockchain: &crate::blockchain::LinearBlockchain,
     recipient_config: &LinearMinerRewardsRecipientConfig,
+    linear_zk: Option<&LinearPowRewardZk>,
 ) -> Result<LinearBlockTemplate> {
     let height = linear_blockchain.get_height() + 1;
 
@@ -354,7 +476,6 @@ pub async fn generate_linear_block_template(
 
     // Difficulty target - use initial from consensus for first block, otherwise use last block's target
     let difficulty_target = if height == 1 {
-        // Use consensus's initial difficulty
         let consensus = linear_blockchain.consensus.lock().unwrap();
         consensus.difficulty_target()
     } else {
@@ -363,16 +484,42 @@ pub async fn generate_linear_block_template(
         latest_block.header.difficulty_target
     };
 
-    let coinbase_output = LinearBlockTemplate::create_coinbase_output(
-        &recipient_config.recipient,
-        recipient_config.value,
-    );
+    // Build ZK coinbase if ZK materials are available
+    if let Some(zk) = linear_zk {
+        let (coinbase, public_inputs) = build_linear_coinbase(
+            recipient_config.recipient,
+            recipient_config.value,
+            zk,
+        ).await?;
 
+        return Ok(LinearBlockTemplate {
+            previous: previous_hash,
+            height,
+            difficulty_target,
+            value: recipient_config.value,
+            zk_proof: coinbase.proof,
+            zk_public_inputs: public_inputs,
+            coin: coinbase.coin,
+            value_commit_x: coinbase.value_commit_x,
+            value_commit_y: coinbase.value_commit_y,
+            token_commit: coinbase.token_commit,
+            encrypted_note: coinbase.encrypted_note,
+        });
+    }
+
+    // Fallback: transparent coinbase (no ZK proof)
     Ok(LinearBlockTemplate {
         previous: previous_hash,
         height,
         difficulty_target,
-        coinbase_output,
+        value: recipient_config.value,
+        zk_proof: vec![],
+        zk_public_inputs: [[0u8; 32]; 4],
+        coin: [0u8; 32],
+        value_commit_x: [0u8; 32],
+        value_commit_y: [0u8; 32],
+        token_commit: [0u8; 32],
+        encrypted_note: vec![],
     })
 }
 

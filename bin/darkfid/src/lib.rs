@@ -117,6 +117,10 @@ pub struct DarkfiNode {
     last_block_time: AtomicU64,
     /// Minimum interval between blocks in seconds (linear-testnet)
     min_block_interval: u64,
+    /// ZK proving materials for linear-testnet coinbase (lazy initialized)
+    linear_zk: Mutex<Option<crate::registry::model::LinearPowRewardZk>>,
+    /// Stored block template for the current mining round (linear-testnet)
+    current_linear_template: Mutex<Option<crate::registry::model::LinearBlockTemplate>>,
 }
 
 impl DarkfiNode {
@@ -144,6 +148,8 @@ impl DarkfiNode {
             is_localnet,
             last_block_time: AtomicU64::new(0),
             min_block_interval,
+            linear_zk: Mutex::new(None),
+            current_linear_template: Mutex::new(None),
         }))
     }
 
@@ -240,6 +246,7 @@ impl Darkfid {
     pub async fn init_linear(
         network: Network,
         sled_db: &sled::Db,
+        db_path: &std::path::Path,
         net_settings: &Settings,
         txs_batch_size: &Option<usize>,
         ex: &ExecutorPtr,
@@ -276,6 +283,46 @@ impl Darkfid {
 
         // Initialize the miners registry (placeholder for now)
         let registry = DarkfiMinersRegistry::init_linear(network, linear_blockchain.clone()).await?;
+
+        // Auto-generate mining keypair if one does not exist.
+        // The address is persisted for the Docker entrypoint/xmrig to consume.
+        {
+            use darkfi_sdk::crypto::keypair::{Address, Keypair, StandardAddress};
+            use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+            use rand::rngs::OsRng;
+            use std::fs;
+
+            let miner_address_path = db_path.join("mining_address");
+            let miner_secret_path = db_path.join("mining_secret");
+
+            if miner_address_path.exists() {
+                let addr_str = fs::read_to_string(&miner_address_path)
+                    .map_err(|e| Error::Custom(format!("Failed to read mining address: {}", e)))?;
+                info!(
+                    target: "darkfid::Darkfid::init_linear",
+                    "Loaded persisted mining address: {}",
+                    addr_str.trim(),
+                );
+            } else {
+                let kp = Keypair::random(&mut OsRng);
+                let std_addr = StandardAddress::from_public(Network::Testnet, kp.public);
+                let addr: Address = std_addr.into();
+                let addr_str = addr.to_string();
+
+                fs::write(&miner_address_path, &addr_str)
+                    .map_err(|e| Error::Custom(format!("Failed to persist mining address: {}", e)))?;
+
+                let secret_hex = hex::encode(kp.secret.inner().to_repr());
+                fs::write(&miner_secret_path, &secret_hex)
+                    .map_err(|e| Error::Custom(format!("Failed to persist mining secret: {}", e)))?;
+
+                info!(
+                    target: "darkfid::Darkfid::init_linear",
+                    "Generated new mining keypair. Address: {}",
+                    addr_str,
+                );
+            }
+        }
 
         // Grab blockchain network configured transactions batch size for garbage collection
         let txs_batch_size = match txs_batch_size {

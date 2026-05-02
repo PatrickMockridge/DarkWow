@@ -169,7 +169,11 @@ impl PoWConsensus {
         self.difficulty_target
     }
 
-    /// Verify a block meets the difficulty target using RandomX VM
+    /// Verify a block meets the difficulty target using RandomX VM.
+    /// For a u32 difficulty target, compares the first 4 bytes of the
+    /// RandomX hash (interpreted as little-endian u32) against the target.
+    /// Lower hash = more work. The u32 target is adequate for testnet
+    /// since RandomX output is uniformly random — 32 bits of work per attempt.
     pub fn verify_proof(&self, block: &Block, vm: &randomx::RandomXVM) -> Result<bool> {
         let hash = block.hash(vm);
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());

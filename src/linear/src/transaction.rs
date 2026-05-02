@@ -51,6 +51,27 @@ pub struct ContractCall {
     pub data: Vec<u8>,
 }
 
+/// Privacy-preserving coinbase output.
+/// Contains ZK proof data, coin commitment, and encrypted note.
+/// All fields are raw bytes — ZK verification is handled at a higher layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoinbaseTransaction {
+    /// ZK proof bytes (Mint_V1 circuit)
+    pub proof: Vec<u8>,
+    /// ZK public inputs: [coin, value_commit.x, value_commit.y, token_commit]
+    pub public_inputs: [[u8; 32]; 4],
+    /// Poseidon hash of coin attributes (Coin::inner())
+    pub coin: [u8; 32],
+    /// Pedersen value commitment x-coordinate (32 bytes)
+    pub value_commit_x: [u8; 32],
+    /// Pedersen value commitment y-coordinate (32 bytes)
+    pub value_commit_y: [u8; 32],
+    /// Poseidon token commitment
+    pub token_commit: [u8; 32],
+    /// AEAD encrypted note (AeadEncryptedNote serialized)
+    pub encrypted_note: Vec<u8>,
+}
+
 /// Transaction - a transfer of value in the blockchain
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
@@ -64,6 +85,8 @@ pub struct Transaction {
     pub contract_calls: Vec<ContractCall>,
     /// Lock time (can be block height or timestamp)
     pub lock_time: u64,
+    /// Optional privacy-preserving coinbase (for block reward transactions)
+    pub coinbase: Option<CoinbaseTransaction>,
 }
 
 impl Transaction {
