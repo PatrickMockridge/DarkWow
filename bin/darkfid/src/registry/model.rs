@@ -461,17 +461,16 @@ pub async fn generate_linear_block_template(
 ) -> Result<LinearBlockTemplate> {
     let height = linear_blockchain.get_height() + 1;
 
-    // Get VM for hashing - use the key derived from height
-    let randomx_key = darkfi_linear::Miner::derive_key_from_height(height);
-    let vm = linear_blockchain.get_vm(randomx_key);
-
-    // Previous block hash - use zero hash if this is the first block
+    // Previous block hash - use zero hash if this is the first block.
+    // Must hash with the previous block's own RandomX key, not the new block's key.
     let previous_hash: [u8; 32] = if height == 1 {
         [0u8; 32]
     } else {
         let latest_block = linear_blockchain.get_latest_block()
             .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
-        *latest_block.hash(&vm).as_bytes()
+        let prev_key = latest_block.header.randomx_key;
+        let prev_vm = linear_blockchain.get_vm(prev_key);
+        *latest_block.hash(&prev_vm).as_bytes()
     };
 
     // Difficulty target - always use consensus, even for blocks after genesis.
