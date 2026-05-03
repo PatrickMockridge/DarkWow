@@ -616,12 +616,17 @@ impl DarkfiNode {
             consensus.difficulty_target()
         };
 
-        // Build previous hash
+        // Build previous hash using the previous block's own RandomX key,
+        // not the current block's key.
         let previous_hash = if submitted_height == 1 {
             blake3::Hash::from_bytes([0u8; 32])
         } else {
             match linear_chain.get_latest_block() {
-                Ok(block) => block.hash(&vm),
+                Ok(block) => {
+                    let prev_key = block.header.randomx_key;
+                    let prev_vm = linear_chain.get_vm(prev_key);
+                    block.hash(&prev_vm)
+                }
                 Err(_) => blake3::Hash::from_bytes([0u8; 32]),
             }
         };

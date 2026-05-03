@@ -474,14 +474,12 @@ pub async fn generate_linear_block_template(
         *latest_block.hash(&vm).as_bytes()
     };
 
-    // Difficulty target - use initial from consensus for first block, otherwise use last block's target
-    let difficulty_target = if height == 1 {
+    // Difficulty target - always use consensus, even for blocks after genesis.
+    // Reading from the previous block would propagate the genesis block's
+    // u32::MAX difficulty to subsequent blocks, breaking PoW.
+    let difficulty_target = {
         let consensus = linear_blockchain.consensus.lock().unwrap();
         consensus.difficulty_target()
-    } else {
-        let latest_block = linear_blockchain.get_latest_block()
-            .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
-        latest_block.header.difficulty_target
     };
 
     // Build ZK coinbase if ZK materials are available

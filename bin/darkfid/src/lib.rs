@@ -285,6 +285,63 @@ impl Darkfid {
         linear_blockchain.deploy_contract(&native_token_wasm, *NATIVE_TOKEN_CONTRACT_ID)?;
         info!(target: "darkfid::Darkfid::init_linear", "NativeToken contract deployed");
 
+        // Create genesis block at height 1 with a valid RandomX hash.
+        // Uses max difficulty so any nonce passes (instant genesis).
+        // This exercises the RandomX VM early and ensures proper chain state
+        // before miners connect. If RandomX is compiled with incompatible CPU
+        // flags, this fails immediately with a clear error instead of crashing
+        // during stratum submission.
+        {
+            use darkfi_linear::{Block, BlockHeader, Miner, Transaction, Output};
+            use std::time::SystemTime;
+
+            let genesis_height = 1u64;
+            let randomx_key = Miner::derive_key_from_height(genesis_height);
+            let vm = linear_blockchain.get_vm(randomx_key);
+
+            let difficulty_target = u32::MAX;
+            let timestamp = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+
+            let genesis_tx = Transaction {
+                version: 1,
+                inputs: vec![],
+                outputs: vec![Output { value: 100_000_000, script: vec![] }],
+                contract_calls: vec![],
+                lock_time: 0,
+                coinbase: None,
+            };
+
+            let header = BlockHeader {
+                version: 1,
+                previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::hash(&[]),
+                timestamp,
+                difficulty_target,
+                nonce: 0,
+                height: genesis_height,
+                uncle_merkle_root: [0u8; 32],
+                total_reward: 100_000_000,
+                randomx_key,
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+            };
+
+            let genesis_block = Block { header, transactions: vec![genesis_tx] };
+            let genesis_hash = genesis_block.hash(&vm);
+
+            linear_blockchain.insert_block(&genesis_block)
+                .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
+
+            info!(
+                target: "darkfid::Darkfid::init_linear",
+                "Genesis block created at height 1: {}",
+                genesis_hash,
+            );
+        }
+
         // Initialize P2P network (linear P2P handlers use darkfi_linear types)
         let p2p_handler = DarkfidP2pHandler::init(net_settings, ex, Some(linear_blockchain_p2p.clone())).await?;
 
