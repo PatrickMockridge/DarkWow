@@ -610,7 +610,6 @@ impl DarkfiNode {
         }
 
         let randomx_key = darkfi_linear::Miner::derive_key_from_height(submitted_height);
-        let vm = linear_chain.get_vm(randomx_key);
         let difficulty_target = {
             let consensus = linear_chain.consensus.lock().unwrap();
             consensus.difficulty_target()
