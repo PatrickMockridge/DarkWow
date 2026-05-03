@@ -125,9 +125,10 @@ impl LinearBlockchain {
 
     /// Create a new RandomX VM with the given key
     fn create_vm(key: &[u8; 32]) -> Result<Arc<RandomXVM>> {
-        // Use DEFAULT flags (no JIT) to avoid potential SIGILL from JIT-generated
-        // code on CPUs where -DARCH=native in build.rs misdetects features.
-        let flags = RandomXFlags::default();
+        // Use recommended flags but disable JIT to avoid SIGILL from
+        // -DARCH=native misdetecting CPU features in the JIT compiler.
+        // HARD_AES, ARGON2_AVX2 etc. are safe — they use CPU intrinsics.
+        let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
         let cache = randomx::RandomXCache::new(flags, key)
             .map_err(|e| Error::Custom(format!("RandomX cache error: {}", e)))?;
         let vm = RandomXVM::new(flags, Some(cache), None)

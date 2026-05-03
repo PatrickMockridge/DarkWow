@@ -460,26 +460,17 @@ pub async fn generate_linear_block_template(
     linear_zk: Option<&LinearPowRewardZk>,
 ) -> Result<LinearBlockTemplate> {
     let height = linear_blockchain.get_height() + 1;
-    eprintln!("[DEBUG] generate_linear_block_template: height={height}");
 
     // Previous block hash - use zero hash if this is the first block.
     // Must hash with the previous block's own RandomX key, not the new block's key.
     let previous_hash: [u8; 32] = if height == 1 {
-        eprintln!("[DEBUG] height==1, using zero previous_hash");
         [0u8; 32]
     } else {
-        eprintln!("[DEBUG] calling get_latest_block...");
         let latest_block = linear_blockchain.get_latest_block()
             .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
-        eprintln!("[DEBUG] got latest_block height={}", latest_block.header.height);
         let prev_key = latest_block.header.randomx_key;
-        eprintln!("[DEBUG] prev_key={}", hex::encode(prev_key));
-        eprintln!("[DEBUG] calling get_vm(prev_key)...");
         let prev_vm = linear_blockchain.get_vm(prev_key);
-        eprintln!("[DEBUG] got prev_vm, calling hash...");
-        let hash = *latest_block.hash(&prev_vm).as_bytes();
-        eprintln!("[DEBUG] hash done: {}", hex::encode(hash));
-        hash
+        *latest_block.hash(&prev_vm).as_bytes()
     };
 
     // Difficulty target - always use consensus, even for blocks after genesis.

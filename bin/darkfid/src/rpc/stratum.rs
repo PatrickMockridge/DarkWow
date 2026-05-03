@@ -578,15 +578,12 @@ impl DarkfiNode {
             return miner_status_response(id, "rejected")
         };
 
-        eprintln!("[DEBUG] stratum_submit: got linear_chain");
-
         // Check block rate limiting
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
         let last_time = self.last_block_time.load(Ordering::SeqCst);
-        eprintln!("[DEBUG] stratum_submit: now={now}, last_time={last_time}, min_interval={}", self.min_block_interval);
         if last_time > 0 && now.saturating_sub(last_time) < self.min_block_interval {
             info!(
                 target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
@@ -596,16 +593,12 @@ impl DarkfiNode {
             return miner_status_response(id, "stale")
         }
 
-        eprintln!("[DEBUG] stratum_submit: rate limit passed");
-
         // Get current height and validate job height
         let current_height = linear_chain.get_height();
         let submitted_height: u64 = job_id
             .trim_start_matches("linear-job-")
             .parse()
             .unwrap_or(current_height + 1);
-
-        eprintln!("[DEBUG] stratum_submit: current_height={current_height}, submitted_height={submitted_height}");
 
         if submitted_height != current_height + 1 {
             info!(
@@ -616,43 +609,29 @@ impl DarkfiNode {
             return miner_status_response(id, "stale")
         }
 
-        eprintln!("[DEBUG] stratum_submit: height matches");
-
         let randomx_key = darkfi_linear::Miner::derive_key_from_height(submitted_height);
         let difficulty_target = {
             let consensus = linear_chain.consensus.lock().unwrap();
             consensus.difficulty_target()
         };
 
-        eprintln!("[DEBUG] stratum_submit: difficulty_target={difficulty_target:08x}");
-
         // Build previous hash using the previous block's own RandomX key,
         // not the current block's key.
-        eprintln!("[DEBUG] stratum_submit: computing previous_hash...");
         let previous_hash = if submitted_height == 1 {
             blake3::Hash::from_bytes([0u8; 32])
         } else {
             match linear_chain.get_latest_block() {
                 Ok(block) => {
-                    eprintln!("[DEBUG] stratum_submit: got latest block height={}", block.header.height);
                     let prev_key = block.header.randomx_key;
-                    eprintln!("[DEBUG] stratum_submit: prev_key={}", hex::encode(prev_key));
                     let prev_vm = linear_chain.get_vm(prev_key);
-                    eprintln!("[DEBUG] stratum_submit: got prev_vm, hashing...");
-                    let h = block.hash(&prev_vm);
-                    eprintln!("[DEBUG] stratum_submit: hash done");
-                    h
+                    block.hash(&prev_vm)
                 }
                 Err(_) => blake3::Hash::from_bytes([0u8; 32]),
             }
         };
 
-        eprintln!("[DEBUG] stratum_submit: loading template...");
-
         // Load stored template to get the ZK coinbase data
         let template = self.current_linear_template.lock().await.take();
-
-        eprintln!("[DEBUG] stratum_submit: template loaded, has_zk={}", template.as_ref().map_or(false, |t| !t.zk_proof.is_empty()));
         let (coinbase, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
             if !tmpl.zk_proof.is_empty() {
                 let cb = darkfi_linear::CoinbaseTransaction {
@@ -711,10 +690,8 @@ impl DarkfiNode {
 
         // Apply block with full validation (PoW, merkle roots, previous hash)
         // insert_block also records the block for difficulty adjustment
-        eprintln!("[DEBUG] stratum_submit: calling insert_block height={submitted_height}...");
         match linear_chain.insert_block(&block) {
             Ok(_) => {
-                eprintln!("[DEBUG] stratum_submit: insert_block OK");
                 // Trigger difficulty adjustment
                 {
                     let mut consensus = linear_chain.consensus.lock().unwrap();
