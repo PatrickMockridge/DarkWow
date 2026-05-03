@@ -30,11 +30,11 @@ use tracing::{debug, error, info};
 use darkfi::{
     net::settings::Settings,
     rpc::{
-        jsonrpc::JsonSubscriber,
+        jsonrpc::{JsonNotification, JsonSubscriber},
         server::{listen_and_serve, RequestHandler},
         settings::RpcSettings,
     },
-    system::{ExecutorPtr, StoppableTask, StoppableTaskPtr},
+    system::{ExecutorPtr, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr},
     validator::{Validator, ValidatorConfig, ValidatorPtr},
     Error, Result,
 };
@@ -67,6 +67,7 @@ use proto::{DarkfidP2pHandler, DarkfidP2pHandlerPtr};
 /// Miners registry
 mod registry;
 use registry::{DarkfiMinersRegistry, DarkfiMinersRegistryPtr};
+use crate::registry::model::LinearMinerRewardsRecipientConfig;
 
 /// Linear blockchain for localnet
 mod blockchain;
@@ -121,6 +122,10 @@ pub struct DarkfiNode {
     linear_zk: Mutex<Option<crate::registry::model::LinearPowRewardZk>>,
     /// Stored block template for the current mining round (linear-testnet)
     current_linear_template: Mutex<Option<crate::registry::model::LinearBlockTemplate>>,
+    /// Publisher for pushing stratum job notifications to miners (linear-testnet)
+    linear_stratum_publisher: Mutex<Option<PublisherPtr<JsonNotification>>>,
+    /// Stored recipient config for generating new block templates on submit (linear-testnet)
+    linear_recipient_config: Mutex<Option<LinearMinerRewardsRecipientConfig>>,
 }
 
 impl DarkfiNode {
@@ -150,6 +155,8 @@ impl DarkfiNode {
             min_block_interval,
             linear_zk: Mutex::new(None),
             current_linear_template: Mutex::new(None),
+            linear_stratum_publisher: Mutex::new(None),
+            linear_recipient_config: Mutex::new(None),
         }))
     }
 

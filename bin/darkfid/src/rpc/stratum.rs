@@ -33,10 +33,11 @@ use darkfi::{
     rpc::{
         jsonrpc::{
             ErrorCode, ErrorCode::InvalidParams, JsonError, JsonRequest, JsonResponse, JsonResult,
+            JsonSubscriber,
         },
         server::RequestHandler,
     },
-    system::StoppableTaskPtr,
+    system::{Publisher, StoppableTaskPtr},
 };
 
 use crate::{
@@ -294,6 +295,19 @@ impl DarkfiNode {
         // Store template for use in stratum_submit_linear
         *self.current_linear_template.lock().await = Some(template.clone());
 
+        // Create or reuse a shared publisher for push notifications.
+        // All stratum connections share one publisher so that when a block
+        // is accepted, every connected miner gets the new job.
+        let publisher = {
+            let mut lock = self.linear_stratum_publisher.lock().await;
+            if lock.is_none() {
+                *lock = Some(Publisher::new());
+            }
+            lock.as_ref().unwrap().clone()
+        };
+        // Store recipient config for generating new block templates on submit
+        *self.linear_recipient_config.lock().await = Some(config);
+
         // Create job ID
         let job_id = format!("linear-job-{}", template.height);
 
@@ -347,7 +361,14 @@ impl DarkfiNode {
             ]))),
             ("status".to_string(), JsonValue::from(String::from("OK"))),
         ]));
-        JsonResponse::new(response, id).into()
+
+        // Return SubscriberWithReply so the RPC server spawns a background task
+        // that pushes JsonNotification messages to this client via the publisher.
+        let subscriber = JsonSubscriber {
+            method: "job",
+            publisher,
+        };
+        (subscriber, JsonResponse::new(response, id)).into()
     }
 
     // RPCAPI:
@@ -500,6 +521,8 @@ impl DarkfiNode {
     /// Reconstructs the block from stored template, applies ZK coinbase, and validates
     /// via apply_block() (which verifies PoW, merkle roots, ZK proofs, and nullifiers).
     async fn stratum_submit_linear(&self, id: u16, params: JsonValue) -> JsonResult {
+        use crate::registry::model::generate_linear_block_template;
+
         info!(
             target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
             "[RPC-STRATUM] stratum_submit_linear called id={}",
@@ -679,6 +702,111 @@ impl DarkfiNode {
                     "[RPC-STRATUM] Block at height {} accepted!",
                     submitted_height
                 );
+
+                // Generate and push new mining job to all connected miners
+                // so they can start mining the next block immediately.
+                if let Some(ref publisher) = *self.linear_stratum_publisher.lock().await {
+                    if let Some(ref recipient_config) = *self.linear_recipient_config.lock().await {
+                        let linear_zk = {
+                            let zk_lock = self.linear_zk.lock().await;
+                            zk_lock.clone()
+                        };
+
+                        match generate_linear_block_template(
+                            linear_chain,
+                            recipient_config,
+                            linear_zk.as_ref(),
+                        )
+                        .await
+                        {
+                            Ok(new_template) => {
+                                let new_height = new_template.height;
+                                let new_job_id =
+                                    format!("linear-job-{}", new_height);
+                                let new_randomx_key =
+                                    darkfi_linear::Miner::derive_key_from_height(
+                                        new_height,
+                                    );
+                                let new_seed_hash = hex::encode(new_randomx_key);
+
+                                let new_mining_header = darkfi_linear::BlockHeader {
+                                    version: 1,
+                                    previous: blake3::Hash::from_bytes(
+                                        new_template.previous,
+                                    ),
+                                    merkle_root: blake3::hash(&[]),
+                                    timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_secs(),
+                                    difficulty_target: new_template.difficulty_target,
+                                    nonce: 0,
+                                    height: new_height,
+                                    uncle_merkle_root: [0u8; 32],
+                                    total_reward: 100_000_000,
+                                    randomx_key: new_randomx_key,
+                                    coin_merkle_root: [0u8; 32],
+                                    nullifier_root: [0u8; 32],
+                                };
+                                let new_blob_data = new_mining_header.to_mining_blob();
+                                let new_blob = hex::encode(&new_blob_data);
+                                let new_target = format!(
+                                    "{:016x}",
+                                    new_template.difficulty_target as u64
+                                );
+
+                                let job_params =
+                                    JsonValue::from(HashMap::from([
+                                        (
+                                            "blob".to_string(),
+                                            JsonValue::from(new_blob),
+                                        ),
+                                        (
+                                            "job_id".to_string(),
+                                            JsonValue::from(new_job_id),
+                                        ),
+                                        (
+                                            "height".to_string(),
+                                            JsonValue::from(new_height as f64),
+                                        ),
+                                        (
+                                            "target".to_string(),
+                                            JsonValue::from(new_target),
+                                        ),
+                                        (
+                                            "algo".to_string(),
+                                            JsonValue::from(String::from("rx/0")),
+                                        ),
+                                        (
+                                            "seed_hash".to_string(),
+                                            JsonValue::from(new_seed_hash),
+                                        ),
+                                    ]));
+
+                                // Store template for the next submit call
+                                *self.current_linear_template.lock().await =
+                                    Some(new_template);
+
+                                // Push notification to all subscribed miners
+                                let notification = darkfi::rpc::jsonrpc::JsonNotification::new("job", job_params);
+                                publisher.notify(notification).await;
+
+                                info!(
+                                    target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                                    "[RPC-STRATUM] Pushed new mining job to miners: height={}",
+                                    new_height,
+                                );
+                            }
+                            Err(e) => {
+                                error!(
+                                    target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                                    "[RPC-STRATUM] Failed to generate new block template: {e}",
+                                );
+                            }
+                        }
+                    }
+                }
+
                 miner_status_response(id, "OK")
             }
             Err(e) => {
