@@ -128,12 +128,6 @@ impl DarkfiNode {
     //       "id": 1
     //     }
     pub async fn stratum_login(&self, id: u16, params: JsonValue) -> JsonResult {
-        // Check if node is synced before responding
-        let validator = self.validator.read().await;
-        if !validator.synced {
-            return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
-        }
-
         // Parse request params
         let Some(params) = params.get::<HashMap<String, JsonValue>>() else {
             return JsonError::new(InvalidParams, None, id).into()
@@ -193,13 +187,19 @@ impl DarkfiNode {
             "[RPC-STRATUM] Got login from {wallet} ({agent})",
         );
 
-        // Check if we're in linear-testnet mode and use linear-specific mining
+        // Linear-testnet path: uses LinearBlockchain, no DAG validator needed
         if let Some(linear_chain) = self.linear_blockchain.as_ref() {
             let linear_config = match LinearMinerRewardsRecipientConfig::from_str(wallet).await {
                 Ok(c) => c,
                 Err(e) => return server_error(e, id, None),
             };
             return self.stratum_login_linear(id, linear_chain, linear_config, agent.to_string()).await;
+        }
+
+        // DAG path: check if node is synced before responding
+        let validator = self.validator.read().await;
+        if !validator.synced {
+            return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
         }
 
         let config =

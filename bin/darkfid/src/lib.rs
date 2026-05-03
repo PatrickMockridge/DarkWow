@@ -345,6 +345,10 @@ impl Darkfid {
         subscribers.insert("dnet", JsonSubscriber::new("dnet.subscribe_events"));
 
         // Initialize node with linear blockchain
+        // NOTE: A minimal Validator is still created because DarkfiNode requires it.
+        // The validator is unused for consensus in linear mode (stratum delegates to
+        // linear_blockchain before touching the validator), but its sled_db is the
+        // same database used by the linear blockchain, so flush works correctly.
         let validator = Validator::new(&sled_db, &ValidatorConfig {
             confirmation_threshold: 3,
             max_forks: 8,
