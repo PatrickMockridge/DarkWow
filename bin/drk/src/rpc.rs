@@ -47,7 +47,7 @@ use darkfi_sdk::{
         keypair::Network,
         poseidon_hash,
         smt::{PoseidonFp, EMPTY_NODES_FP},
-        ContractId, MerkleTree, SecretKey, DEPLOYOOOR_CONTRACT_ID, MerkleNode, NATIVE_TOKEN_CONTRACT_ID,
+        ContractId, MerkleTree, PublicKey, SecretKey, DEPLOYOOOR_CONTRACT_ID, MerkleNode, NATIVE_TOKEN_CONTRACT_ID,
     },
     pasta::{pallas, group::ff::PrimeField},
     dark_tree::DarkLeaf,
@@ -56,7 +56,8 @@ use darkfi_sdk::{
 use darkfi_money_v3_contract::client::MoneyV3Note;
 use darkfi_money_v3_contract::model::{Coin, TransferParamsV1};
 use darkfi_native_token_contract::client::NativeNote;
-use darkfi_native_token_contract::model::PoWRewardParamsV1;
+use darkfi_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
+use darkfi_sdk::crypto::note::AeadEncryptedNote;
 use darkfi_serial::Decodable;
 use darkfi_serial::{deserialize_async, serialize_async};
 
@@ -70,49 +71,8 @@ use crate::{
     Drk, DrkPtr,
 };
 
-// =============================================================================
-// Linear blockchain wallet adapter types
-// =============================================================================
-
-/// Linear header adapter for wallet scanning
-#[derive(Clone, Debug, darkfi_serial::SerialEncodable, darkfi_serial::SerialDecodable)]
-struct LinearHeaderAdapter {
-    version: u8,
-    previous: [u8; 32],
-    height: u32,
-    nonce: u32,
-    timestamp: u64,
-    transactions_root: MerkleNode,
-    state_root: [u8; 32],
-    pow_data: PowData,  // PoW data (DarkFi variant for linear blocks)
-    uncle_merkle_root: [u8; 32],
-    total_reward: u64,
-}
-
-/// Linear transaction adapter for wallet scanning
-#[derive(Clone, Debug, darkfi_serial::SerialEncodable, darkfi_serial::SerialDecodable)]
-struct LinearTransactionAdapter {
-    calls: Vec<DarkLeaf<ContractCallAdapter>>,
-    proofs: Vec<Vec<u8>>,
-    signatures: Vec<Vec<u8>>,
-}
-
-/// Contract call adapter for wallet scanning
-#[derive(Clone, Debug, darkfi_serial::SerialEncodable, darkfi_serial::SerialDecodable)]
-struct ContractCallAdapter {
-    contract_id: ContractId,
-    data: Vec<u8>,
-    parent_index: Option<usize>,
-}
-
-/// Linear block adapter for wallet scanning
-#[derive(Clone, Debug, darkfi_serial::SerialEncodable, darkfi_serial::SerialDecodable)]
-struct LinearBlockAdapter {
-    header: LinearHeaderAdapter,
-    txs: Vec<LinearTransactionAdapter>,
-    signature: darkfi_sdk::crypto::schnorr::Signature,
-    zkbin_data: Vec<(ContractId, String, Vec<u8>, Vec<pallas::Base>)>,
-}
+// The wallet uses darkfi_linear::Block directly — no adapter types.
+// Blocks are fetched from darkfid via blockchain.get_block_linear (JSON).
 
 /// Structure to hold a JSON-RPC client and its config,
 /// so we can recreate it in case of an error.
@@ -566,25 +526,23 @@ impl Drk {
         }
     }
 
-    /// Linear-testnet version of scan_blocks using LinearBlockAdapter
+    /// Linear-testnet version of scan_blocks using darkfi_linear::Block directly
     async fn scan_blocks_linear(
         &self,
         output: &mut Vec<String>,
         sender: Option<&Sender<Vec<String>>>,
         print: &bool,
     ) -> WalletDbResult<()> {
-        // Grab last scanned block height
-        let (mut height, _) = self.get_last_scanned_block()?;
-
-        // If last scanned block is genesis(0) we reset,
-        // otherwise continue with the next block height.
-        if height == 0 {
+        // Grab last scanned block height (stored as u32 in wallet db, convert to u64)
+        let (last_scanned_u32, _) = self.get_last_scanned_block()?;
+        let mut height: u64 = if last_scanned_u32 == 0 {
             let mut buf = vec![];
             self.reset(&mut buf)?;
             append_or_print(output, sender, print, buf).await;
+            1 // Start scanning from genesis block (height 1)
         } else {
-            height += 1;
-        }
+            (last_scanned_u32 + 1) as u64
+        };
 
         // Generate a new scan cache
         let mut scan_cache = match self.scan_cache().await {
@@ -604,7 +562,7 @@ impl Drk {
         loop {
             // Grab last confirmed block
             let mut buf = vec![format!("Requested to scan from block number: {height}")];
-            let (last_height, last_hash) = match self.get_last_confirmed_block().await {
+            let (last_height_u32, last_hash) = match self.get_last_confirmed_block().await {
                 Ok(last) => last,
                 Err(e) => {
                     buf.push(format!("[scan_blocks_linear] RPC client request failed: {e}"));
@@ -612,6 +570,7 @@ impl Drk {
                     return Err(WalletDbError::GenericError)
                 }
             };
+            let last_height = last_height_u32 as u64;
             buf.push(format!(
                 "Last confirmed block reported by darkfid: {last_height} - {last_hash}"
             ));
@@ -647,15 +606,19 @@ impl Drk {
         }
     }
 
-    /// `scan_block_linear` will go over over transactions in a LinearBlock and handle their calls
-    /// based on the called contract.
+    /// `scan_block_linear` processes a linear block directly from darkfi_linear::Block.
+    /// Handles contract calls AND coinbase transactions (mining rewards).
     async fn scan_block_linear(
         &self,
         scan_cache: &mut ScanCache,
-        block: &LinearBlockAdapter,
+        block: &darkfi_linear::Block,
     ) -> Result<()> {
+        use darkfi_sdk::pasta::{pallas, group::ff::PrimeField};
+
         // Keep track of our wallet transactions.
         let mut wallet_txs = vec![];
+
+        let height_u32 = block.header.height as u32;
 
         // Checkpoint the merkle trees
         scan_cache.money_tree.checkpoint(block.header.height as usize);
@@ -664,20 +627,27 @@ impl Drk {
         scan_cache.log(String::from("======================================="));
         scan_cache.log(format!("[linear] Block height: {}", block.header.height));
         scan_cache.log(String::from("======================================="));
-        scan_cache.log(format!("[scan_block_linear] Iterating over {} transactions", block.txs.len()));
-        for tx in block.txs.iter() {
+        scan_cache.log(format!("[scan_block_linear] Iterating over {} transactions", block.transactions.len()));
+        for tx in block.transactions.iter() {
             let mut wallet_tx = false;
-            scan_cache.log(format!("[scan_block_linear] Processing transaction with {} calls", tx.calls.len()));
-            for (i, call) in tx.calls.iter().enumerate() {
+
+            // Process contract calls (transfers, etc.)
+            scan_cache.log(format!("[scan_block_linear] Processing transaction with {} calls", tx.contract_calls.len()));
+            for (i, call) in tx.contract_calls.iter().enumerate() {
+                // Convert linear [u8; 32] contract_id to ContractId for comparison
+                let cid = ContractId::from(
+                    pallas::Base::from_repr(call.contract_id).unwrap_or(pallas::Base::zero()),
+                );
+
                 // Check MoneyV3 contract
                 if let Some(money_v3_cid) = MONEY_V3_CONTRACT_ID.get() {
-                    if call.data.contract_id == *money_v3_cid {
+                    if cid == *money_v3_cid {
                         scan_cache.log(format!("[scan_block_linear] Found MoneyV3 contract in call {i}"));
                         if self
                             .apply_tx_money_data_linear(
                                 scan_cache,
-                                &call.data.data,
-                                &block.header.height,
+                                &call.data,
+                                &height_u32,
                             )
                             .await?
                         {
@@ -688,23 +658,21 @@ impl Drk {
                 }
 
                 // Check DAO-Escrow by function code (0x00-0x08)
-                let function_code = call.data.data.first().copied().unwrap_or(0xFF);
+                let function_code = call.data.first().copied().unwrap_or(0xFF);
                 if function_code <= 0x08 {
                     scan_cache.log(format!(
                         "[scan_block_linear] Found DAO-Escrow op code {:02x} in call {i}",
                         function_code
                     ));
-                    // DAO operations log info, actual token transfers come from bundled MoneyV3 child calls
-                    // Note: Linear ContractCall lacks children_indexes, so child call detection is not possible
                 }
 
-                if call.data.contract_id == *NATIVE_TOKEN_CONTRACT_ID {
+                if cid == *NATIVE_TOKEN_CONTRACT_ID {
                     scan_cache.log(format!("[scan_block_linear] Found Native Token contract in call {i}"));
                     if self
                         .apply_tx_native_token_data_linear(
                             scan_cache,
-                            &call.data.data,
-                            &block.header.height,
+                            &call.data,
+                            &height_u32,
                         )
                         .await?
                     {
@@ -719,17 +687,78 @@ impl Drk {
                 ));
             }
 
-            // If this is our wallet tx we mark it for update
+            // Process coinbase transaction (mining reward with ZK privacy)
+            if let Some(ref coinbase) = tx.coinbase {
+                scan_cache.log(format!("[scan_block_linear] Found coinbase tx, attempting note decryption..."));
+                // Deserialize the encrypted note and try to decrypt with wallet secrets
+                if let Ok(aes_note) = AeadEncryptedNote::decode(
+                    &mut std::io::Cursor::new(&coinbase.encrypted_note),
+                ) {
+                    for secret in &scan_cache.notes_secrets {
+                        if let Ok(decrypted_note) = aes_note.decrypt::<NativeNote>(secret) {
+                            let public_key = PublicKey::from_secret(*secret);
+                            let coin_attrs = CoinAttributes {
+                                public_key,
+                                value: decrypted_note.value,
+                                token_id: decrypted_note.token_id,
+                                spend_hook: decrypted_note.spend_hook,
+                                user_data: decrypted_note.user_data,
+                                blind: decrypted_note.coin_blind,
+                            };
+                            let coin = coin_attrs.to_coin();
+                            let coin_id_bytes = coin.to_bytes();
+                            let coin_id = bs58::encode(coin_id_bytes).into_string();
+
+                            let merkle_root = scan_cache.money_tree.root(0)
+                                .map(|n| n.inner().to_repr())
+                                .unwrap();
+                            let merkle_proof = MerkleProof {
+                                siblings: vec![],
+                                root: bs58::encode(merkle_root).into_string(),
+                            };
+
+                            let token_id_str = bs58::encode(
+                                decrypted_note.token_id.to_repr()
+                            ).into_string();
+                            let coin_record = CoinRecord {
+                                coin_id: coin_id.clone(),
+                                value: decrypted_note.value,
+                                token_id: token_id_str,
+                                spend_hook: None,
+                                user_data: None,
+                                leaf_position: 0,
+                                secret: bs58::encode(secret.inner().to_repr()).into_string(),
+                                coin_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
+                                value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),
+                                token_blind: bs58::encode(decrypted_note.token_blind.to_repr()).into_string(),
+                                spent: false,
+                                spent_at_height: None,
+                                created_at_height: height_u32,
+                            };
+
+                            if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok() {
+                                scan_cache.log(format!(
+                                    "[scan_block_linear] Inserted coinbase coin {} at height {}",
+                                    &coin_id[..8], block.header.height
+                                ));
+                            }
+                            wallet_tx = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Mark wallet tx for update
             if wallet_tx {
-                // For linear, we don't track full transactions, just mark as wallet tx
                 wallet_txs.push(());
             }
         }
 
         // Insert the block record
         scan_cache.money_smt.store.overlay.insert_scanned_block(
-            &block.header.height,
-            &HeaderHash::new(block.header.previous),
+            &height_u32,
+            &HeaderHash::new(*block.header.previous.as_bytes()),
             &None,
         )?;
 
@@ -740,7 +769,7 @@ impl Drk {
         scan_cache.money_smt.store.overlay.0.apply_diff(&diff)?;
 
         // Insert the state inverse diff record
-        self.cache.insert_state_inverse_diff(&block.header.height, &diff.inverse())?;
+        self.cache.insert_state_inverse_diff(&height_u32, &diff.inverse())?;
 
         // Update the merkle trees
         self.cache.insert_merkle_trees(&[
@@ -781,16 +810,16 @@ impl Drk {
 
     // Queries darkfid for a linear blockchain block with given height.
     // Returns LinearBlockAdapter (wallet-compatible format for linear-testnet)
-    async fn get_block_by_height_linear(&self, height: u32) -> Result<LinearBlockAdapter> {
+    async fn get_block_by_height_linear(&self, height: u64) -> Result<darkfi_linear::Block> {
         let params = self
             .darkfid_daemon_request(
                 "blockchain.get_block_linear",
                 &JsonValue::Array(vec![JsonValue::Number(height as f64)]),
             )
             .await?;
-        let param = params.get::<String>().unwrap();
-        let bytes = base64::decode(param).unwrap();
-        let block = deserialize_async(&bytes).await?;
+        let json_str = params.get::<String>().unwrap();
+        let block: darkfi_linear::Block = serde_json::from_str(json_str)
+            .map_err(|e| Error::Custom(format!("Failed to parse linear block: {}", e)))?;
         Ok(block)
     }
 

@@ -146,6 +146,7 @@ fn completion(buffer: &str, lc: &mut Vec<String>) {
         lc.push(prefix.clone() + "wallet default-address");
         lc.push(prefix.clone() + "wallet secrets");
         lc.push(prefix.clone() + "wallet import-secrets");
+        lc.push(prefix.clone() + "wallet import-secret-hex");
         lc.push(prefix.clone() + "wallet tree");
         lc.push(prefix.clone() + "wallet coins");
         lc.push(prefix + "wallet mining-config");
@@ -343,7 +344,7 @@ fn hints(buffer: &str) -> Option<(String, i32, bool)> {
     let bold = false;
     match last {
         "completions " => Some(("<shell>".to_string(), color, bold)),
-        "wallet " => Some(("(initialize|keygen|balance|address|addresses|default-address|secrets|import-secrets|tree|coins|mining-config)".to_string(), color, bold)),
+        "wallet " => Some(("(initialize|keygen|balance|address|addresses|default-address|secrets|import-secrets|import-secret-hex|tree|coins|mining-config)".to_string(), color, bold)),
         "wallet default-address " => Some(("<index>".to_string(), color, bold)),
         "wallet mining-config " => Some(("<index> [spend_hook] [user_data]".to_string(), color, bold)),
         "unspend " => Some(("<coin>".to_string(), color, bold)),
@@ -789,7 +790,7 @@ async fn handle_wallet(drk: &DrkPtr, parts: &[&str], input: &[String], output: &
     // Check correct command structure
     if parts.len() < 2 {
         output.push(String::from("Malformed `wallet` command"));
-        output.push(String::from("Usage: wallet (initialize|keygen|balance|address|addresses|default-address|secrets|import-secrets|tree|coins|mining-config)"));
+        output.push(String::from("Usage: wallet (initialize|keygen|balance|address|addresses|default-address|secrets|import-secrets|import-secret-hex|tree|coins|mining-config)"));
         return
     }
 
@@ -803,12 +804,13 @@ async fn handle_wallet(drk: &DrkPtr, parts: &[&str], input: &[String], output: &
         "default-address" => handle_wallet_default_address(drk, parts, output).await,
         "secrets" => handle_wallet_secrets(drk, output).await,
         "import-secrets" => handle_wallet_import_secrets(drk, input, output).await,
+        "import-secret-hex" => handle_wallet_import_secret_hex(drk, parts, output).await,
         "tree" => handle_wallet_tree(drk, output).await,
         "coins" => handle_wallet_coins(drk, output).await,
         "mining-config" => handle_wallet_mining_config(drk, parts, output).await,
         _ => {
             output.push(format!("Unrecognized wallet subcommand: {}", parts[1]));
-            output.push(String::from("Usage: wallet (initialize|keygen|balance|address|addresses|default-address|secrets|import-secrets|tree|coins|mining-config)"));
+            output.push(String::from("Usage: wallet (initialize|keygen|balance|address|addresses|default-address|secrets|import-secrets|import-secret-hex|tree|coins|mining-config)"));
         }
     }
 }
@@ -978,6 +980,44 @@ async fn handle_wallet_import_secrets(drk: &DrkPtr, input: &[String], output: &m
             }
         }
         Err(e) => output.push(format!("Failed to import secrets: {e}")),
+    }
+}
+
+/// Auxiliary function to define the wallet import secret hex subcommand handling.
+async fn handle_wallet_import_secret_hex(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+    if parts.len() != 3 {
+        output.push(String::from("Malformed `wallet import-secret-hex` subcommand"));
+        output.push(String::from("Usage: wallet import-secret-hex <hex_secret>"));
+        return
+    }
+
+    let bytes = match hex::decode(parts[2]) {
+        Ok(b) => {
+            if b.len() != 32 {
+                output.push(format!("Invalid secret length: {} bytes, expected 32", b.len()));
+                return
+            }
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&b);
+            arr
+        }
+        Err(e) => {
+            output.push(format!("Failed to decode hex secret: {e}"));
+            return
+        }
+    };
+
+    let secret = match SecretKey::from_bytes(bytes) {
+        Ok(s) => s,
+        Err(_) => {
+            output.push(String::from("Failed to create SecretKey from bytes"));
+            return
+        }
+    };
+
+    match drk.read().await.import_money_secrets(vec![secret], output).await {
+        Ok(_) => output.push(String::from("Secret imported successfully")),
+        Err(e) => output.push(format!("Failed to import secret: {e}")),
     }
 }
 

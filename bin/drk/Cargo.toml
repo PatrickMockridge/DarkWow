@@ -18,6 +18,7 @@ darkfi = {path = "../../", features = ["async-daemonize", "bs58", "rpc", "random
 darkfi_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
 darkfi-sdk = {path = "../../src/sdk", features = ["async"]}
 darkfi-serial = {path = "../../src/serial", features = ["async", "derive"]}
+darkfi_linear = {path = "../../src/linear"}
 
 # Contract crates for drk wallet
 darkfi_money_v3_contract = {path = "../../src/contract/money_v3", features = ["client"]}

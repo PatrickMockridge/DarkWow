@@ -214,6 +214,67 @@ impl DarkfiNode {
     }
 
     // RPCAPI:
+    // Queries the linear blockchain for a block at the given height.
+    // Returns the block serialized as JSON.
+    //
+    // **Params:**
+    // * `array[0]`: `u64` block height
+    //
+    // **Returns:**
+    // * `String`: JSON-encoded block
+    //
+    // --> {"jsonrpc": "2.0", "method": "blockchain.get_block_linear", "params": [2], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": "{\"header\":{...},\"transactions\":[...]}", "id": 1}
+    pub async fn blockchain_get_block_linear(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+        if params.len() != 1 || !params[0].is_number() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        let height = *params[0].get::<f64>().unwrap() as u64;
+
+        let linear_blockchain = match &self.linear_blockchain {
+            Some(lb) => lb.clone(),
+            None => {
+                return JsonError::new(
+                    InternalError,
+                    Some("linear-testnet mode only".to_string()),
+                    id,
+                )
+                .into()
+            }
+        };
+
+        let block = match linear_blockchain.get_block(height) {
+            Ok(b) => b,
+            Err(e) => {
+                return JsonError::new(
+                    InternalError,
+                    Some(format!("Block not found at height {}: {}", height, e)),
+                    id,
+                )
+                .into()
+            }
+        };
+
+        let json = match serde_json::to_string(&block) {
+            Ok(j) => j,
+            Err(e) => {
+                return JsonError::new(
+                    InternalError,
+                    Some(format!("Failed to serialize block: {}", e)),
+                    id,
+                )
+                .into()
+            }
+        };
+
+        JsonResponse::new(JsonValue::String(json), id).into()
+    }
+
+    // RPCAPI:
     // Queries the blockchain database to find the last confirmed block.
     //
     // **Params:**
