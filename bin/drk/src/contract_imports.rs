@@ -52,6 +52,26 @@ pub static DAO_ESCROW_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::Contr
 pub static DRAIN_PROTECTION_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
+/// Register a contract ID at runtime. Called after deploying a contract
+/// so that subsequent operations (transfer, invoke) can find it.
+pub fn register_contract_id(name: &str, cid: darkfi_sdk::crypto::ContractId) -> Result<(), String> {
+    match name {
+        "money_v3" => {
+            MONEY_V3_CONTRACT_ID.set(cid)
+                .map_err(|_| "money_v3 contract ID already registered".to_string())
+        }
+        "dao_escrow" => {
+            DAO_ESCROW_CONTRACT_ID.set(cid)
+                .map_err(|_| "dao_escrow contract ID already registered".to_string())
+        }
+        "drain_protection" => {
+            DRAIN_PROTECTION_CONTRACT_ID.set(cid)
+                .map_err(|_| "drain_protection contract ID already registered".to_string())
+        }
+        _ => Err(format!("Unknown contract name: {}", name)),
+    }
+}
+
 // ============================================================================
 // FUNCTION OPCODES
 // ============================================================================

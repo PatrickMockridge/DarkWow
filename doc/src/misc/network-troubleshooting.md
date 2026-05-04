@@ -19,14 +19,13 @@ would become `~/.config/darkfi/taud_config.toml`).
 The most common problem in connecting to `darkirc` is the following:
 
 ```
-[ERROR] [EVENTGRAPH] Sync: Could not find any DAG tips
-[ERROR] Failed syncing DAG. Exiting.
-Error: DagSyncFailed
+[ERROR] Failed syncing message history. Exiting.
+Error: SyncFailed
 ```
 
 This generally indicates that we were *unable to establish any P2P
 connections*, and thus couldn't retrieve the message history required to
-sync our messages locally within the time limit (DAG sync failed).
+sync our messages locally within the time limit (sync failed).
 
 There are two main reasons why we would fail to establish a P2P connection:
 
@@ -162,18 +161,18 @@ That means you are connected. You can verify that by writing `test` in
 
 If you do not get a `test back` message, that can mean either:
 
-1. You need to wait for your DAG to sync (this can take several minutes,
+1. You need to wait for your message history to sync (this can take several minutes,
 especially over Tor or on days with high network activity).
 
-2. You need to update your system clock. To sync the event graph,
+2. You need to update your system clock. To sync message history,
 darkirc requires that your system clock is correct. You can check your
 system time by running `date`.  The best way to ensure your clock does
 not drift is to run some timekeeping daemon like `chrony` or `ntpd`. If
 your clock is wrong, set this up and try to reconnect again.
 
-### DagSync spam
+### Sync spam
 
-If you see a many rapid `EventReq` messages in the log, it is possible that there is
+If you see many rapid sync-related messages in the log, it is possible that there is
 an incompatibility with your local `darkirc` database and the state of the network.
 
 This can be resolved by deleting `~/.local/share/darkfi/darkirc_db/`
@@ -292,7 +291,7 @@ $ python node_get-info.py
 
 ### Hostlist issues
 
-If you receive DAG sync issues, verify:
+If you receive message sync issues, verify:
 
 1. A hostlist is set in the config file of the respective app.
 2. There are hosts in the hostlists (you should get hostlists from the 

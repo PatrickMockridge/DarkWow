@@ -48,7 +48,7 @@ propagate directly to the network and verification is done by "accounts" on-chai
 DarkFi is a proof-of-work layer 1 blockchain, using 
 [RandomX](https://github.com/tevador/RandomX). RandomX is optimized for 
 general-purpose CPUs, and is also used by Monero. You can find more information
-about the DarkFi consensus process [here](../arch/consensus.md).
+about the DarkFi consensus process [here](../arch/consensus/consensus.md).
 
 ## How can I chat with DarkFi devs?
 Join [DarkIRC](darkirc/darkirc.md), our peer-to-peer anonymous implementation of 

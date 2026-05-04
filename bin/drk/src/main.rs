@@ -494,6 +494,15 @@ enum ContractSubcmd {
         /// DrainProtection bulla (Base58 encoded)
         drain_protection_bulla: String,
     },
+
+    /// Register a deployed contract ID for runtime use
+    Register {
+        /// Contract name (e.g., "money_v3", "dao_escrow", "drain_protection")
+        contract_name: String,
+
+        /// Contract ID to register (Base58 encoded)
+        contract_id: String,
+    },
 }
 
 /// Auxiliary function to create a `Drk` wallet for provided configuration.
@@ -526,7 +535,8 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
     // Grab blockchain network configuration
     let (network, blockchain_config) = match args.network.as_str() {
         "localnet" => parse_blockchain_config(args.config, "localnet", CONFIG_FILE).await?,
-        "testnet" | "linear-testnet" => parse_blockchain_config(args.config, "testnet", CONFIG_FILE).await?,
+        "testnet" => parse_blockchain_config(args.config, "testnet", CONFIG_FILE).await?,
+        "linear-testnet" => parse_blockchain_config(args.config, "linear-testnet", CONFIG_FILE).await?,
         "mainnet" => parse_blockchain_config(args.config, "mainnet", CONFIG_FILE).await?,
         _ => {
             eprintln!("Unsupported chain `{}`", args.network);
@@ -2177,6 +2187,34 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 println!("{}", base64::encode(&serialize_async(&tx).await));
 
                 drk.stop_rpc_client().await
+            }
+
+            ContractSubcmd::Register { contract_name, contract_id } => {
+                let cid = match ContractId::from_str(&contract_id) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("Invalid contract ID: {}", e);
+                        exit(2);
+                    }
+                };
+
+                let drk = new_wallet(
+                    network,
+                    blockchain_config.cache_path,
+                    blockchain_config.wallet_path,
+                    blockchain_config.wallet_pass,
+                    None,
+                    &ex,
+                    args.fun,
+                )
+                .await;
+
+                if let Err(e) = drk.register_contract_id(&contract_name, cid) {
+                    eprintln!("Failed to register contract ID: {}", e);
+                    exit(2);
+                }
+                println!("Registered {} = {}", contract_name, contract_id);
+                Ok(())
             }
         },
 

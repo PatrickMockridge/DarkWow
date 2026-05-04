@@ -23,7 +23,7 @@ DarkFi's Monero integration spans three key areas: **merge mining** for security
 |-----------|---------|----------|-----|
 | Merge Mining | Secure DarkFi via RandomX PoW | `src/blockchain/monero/` | [Merge Mining](../testnet/merge-mining.md) |
 | Bridge Contract | Cross-chain asset transfer | `src/contract/bridge/` | [Bridge Contract](../dev/contracts/bridge.md) |
-| Stablecoin | Collateralized debt positions | `src/contract/stablecoin/` | [Stablecoin](./stablecoin.md) |
+| Stablecoin | Collateralized debt positions | `src/contract/stablecoin/` | [Stablecoin](../contract/stablecoin.md) |
 
 ## 1. Merge Mining
 
@@ -124,11 +124,11 @@ bin/xmr_relayer/
 └── xmr_relayer_config.toml
 ```
 
-**Reference:** [Bridge Contract](./bridge.md), [Bridge Contract (Dev)](../dev/contracts/bridge.md)
+**Reference:** [Bridge Contract](../contract/bridge.md), [Bridge Contract (Dev)](../dev/contracts/bridge.md)
 
 ## 3. Stable Collateralization
 
-wXMR can be used as collateral in DarkFi's [stablecoin contract](./stablecoin.md) to mint privacy-preserving stablecoins.
+wXMR can be used as collateral in DarkFi's [stablecoin contract](../contract/stablecoin.md) to mint privacy-preserving stablecoins.
 
 ### Pooled Debt Model
 
@@ -185,7 +185,7 @@ XMR/USD price is used for collateral valuation:
 - **Fallback**: ~$150/USD per XMR (until pool exists)
 - **PI Controller**: Algorithmic redemption rate adjustment for stability
 
-**Reference:** [Stablecoin Contract](./stablecoin.md), [Stablecoin Contract (Dev)](../dev/contracts/stablecoin.md)
+**Reference:** [Stablecoin Contract](../contract/stablecoin.md), [Stablecoin Contract (Dev)](../dev/contracts/stablecoin.md)
 
 ## Technical Reference
 
@@ -225,8 +225,8 @@ XMR/USD price is used for collateral valuation:
 ## See Also
 
 - [Merge Mining (User Guide)](../testnet/merge-mining.md)
-- [Bridge Architecture](./bridge.md)
+- [Bridge Architecture](../contract/bridge.md)
 - [Bridge Contract (Dev)](../dev/contracts/bridge.md)
-- [Stablecoin](./stablecoin.md)
+- [Stablecoin](../contract/stablecoin.md)
 - [Stablecoin Contract (Dev)](../dev/contracts/stablecoin.md)
-- [Atomic Swap](./atomic_swap.md)
+- [Atomic Swap](../contract/atomic_swap.md)

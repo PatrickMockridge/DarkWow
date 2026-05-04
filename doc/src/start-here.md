@@ -49,7 +49,7 @@ If you're not a dev but wish to learn then take a look at the
 [agorism hackers study guide](philosophy/learn.md).
 
 Lastly familiarize yourself with the
-[project architecture](arch/arch.md). The book also contains a
+[project architecture](arch/README.md). The book also contains a
 cryptography section with a helpful
 [ZK explainer](crypto/zk_explainer.md).
 
@@ -65,15 +65,16 @@ Source code is under `src/` subdirectory. Main interesting modules are:
   channels depending on the session. The p2p network is also
   multi-transport with support for TCP (+TLS), Tor and i2p. So you can
   access the p2p fully anonymously (network level privacy).
-* `event_graph/` which is a DAG sync protocol used for ensuring
-  eventual consistency of data, such as with chat systems (you don't
-  drop any messages).
+* `blockchain/` and `validator/` implement the linear blockchain with
+  Uncle Merkle consensus. The linear chain provides deterministic
+  block production via RandomX Proof of Work.
 * `runtime/` is the WASM smart contract engine. We separate computation
   into several stages which is checks-effects-interactions paradigm in
   solidity but enforced in the smart contract explicitly. For example
   in the `exec()` phase, you can only read, whereas writes must occur
   in the `apply(update)` phase.
-* `blockchain/` and `validator/` is the blockchain and consensus algos.
+* `event_graph/` (legacy): the original DAG sync protocol. This has been
+  superseded by the linear blockchain consensus. See [arch/legacy/](arch/legacy/).
 * `zk/` is the ZK VM, which simply loads bytecode which is used to
   build the circuits. It's a very simple model rather than the TinyRAM
   computation models. We opted for this because we prefer simplicity in
@@ -112,9 +113,8 @@ Source code is under `src/` subdirectory. Main interesting modules are:
 Inside `bin/` contains utilities and applications:
 
 * `darkfid/` is the main daemon and `drk/` is the wallet.
-* `dnet/` is a viewer to see the p2p traffic of nodes, and `deg/` is a
-  viewer for the event graph data. We use these as debugging and
-  monitoring tools.
+* `dnet/` is a viewer to see the p2p traffic of nodes. Used for debugging
+  and monitoring the p2p network.
 * `dhtd/` is a distributed hash table, like IPFS, for transferring
   static data and large files around. Currently just a prototype but
   we'll use this later for images in the chat or other static content
@@ -125,7 +125,7 @@ Inside `bin/` contains utilities and applications:
 * `darkirc/` is our main community chat. It uses [RLN](crypto/rln.md);
   you stake money and if you post twice in an epoch then you get
   slashed which prevents spam. There is a free tier. It uses the
-  `event_graph` for synchronizing the history. You can attach any IRC
+  the p2p network for synchronizing message history. You can attach any IRC
   frontend to use it.
 * `zkas/` is our ZK compiler.
 * `zkrunner/` contains our ZK debugger (run `zkrunner` with `--trace`),

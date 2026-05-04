@@ -49,7 +49,7 @@ database = "~/.local/share/darkfi/darkfid/linear-testnet"
 threshold = 1
 max_forks = 8
 skip_sync = true
-skip_fees = true
+skip_fees = false
 txs_batch_size = 50
 pow_target = 1
 

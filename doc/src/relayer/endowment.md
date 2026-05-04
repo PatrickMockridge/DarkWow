@@ -113,5 +113,5 @@ This contract composes with:
 ## See Also
 
 - [Pool Stake Contract](pool_stake.md) - Pooled coverage for withdrawals
-- [DAO-Escrow Contract](../arch/dao_escrow.md) - Similar endowment fund patterns
+- [DAO-Escrow Contract](../contract/dao_escrow.md) - Similar endowment fund patterns
 - [Relayer Economics](relayer_economics.md) - Economic layer overview

@@ -1,3 +1,5 @@
+> **ARCHIVED**: This documents the original overlay-DAG architecture. The current consensus mechanism is [Uncle Merkle](../uncle_merkle.md).
+
 # DarkFi Money: Fork vs Bridge
 
 > **Historical: Explains bridge vs fork decision from 2024, money_v2 is now deployed**

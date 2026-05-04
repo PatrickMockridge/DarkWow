@@ -350,4 +350,4 @@ sdk.mine_blocks(10)?;
 let tx = sdk.deploy_contract_with_proofs(wasm, dev_secret).await?;
 ```
 
-See [Uncle Merkle Consensus](../../arch/uncle_merkle.md) for consensus specification.
+See [Uncle Merkle Consensus](../../arch/consensus/uncle_merkle.md) for consensus specification.

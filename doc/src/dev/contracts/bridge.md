@@ -352,5 +352,5 @@ cargo test  # Run tests
 
 ## References
 
-- [Bridge Architecture](../../arch/bridge.md)
+- [Bridge Architecture](../../contract/bridge.md)
 - [Object Capability Security](https://en.wikipedia.org/wiki/Object-capability_model)

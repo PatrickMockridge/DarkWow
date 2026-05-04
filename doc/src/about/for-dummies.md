@@ -36,18 +36,20 @@ network observers.
 
 DarkFi's privacy stems from combining several primitives:
 
-### Pedersen Commitments
+### Poseidon Hash-Based Commitments
 
 A **commitment** hides a value while binding the committer to it.
 
 ```
-C = g^value * h^nonce
+C = PoseidonHash(value, nonce)
 ```
 
 You can reveal `value` later and prove `C` was computed with it, but
 observing `C` reveals nothing about `value`.
 
-**In DarkFi**: Commitments hide token amounts in transactions.
+**In DarkFi**: Poseidon-based commitments hide token amounts in transactions.
+DarkFi uses the Poseidon hash function throughout — no Pedersen commitments,
+no elliptic curve arithmetic in circuits.
 
 ### Merkle Trees
 
@@ -130,18 +132,16 @@ DarkFi includes several pre-built contracts:
 
 | Contract | Function |
 |----------|----------|
-| **Money** | Anonymous multi-asset transfers, token minting |
-| **DAO** | Anonymous voting, hidden treasuries |
-| **Deploy** | Deploy custom WASM contracts |
+| **NativeToken** | Consensus-first native token for block rewards and fees |
+| **MoneyV3** | DeFi token contract with hidden token IDs |
+| **DAO Escrow** | Anonymous voting, hidden treasuries |
+| **Deployooor** | Deploy custom WASM contracts |
 
-### Event Graph
+### P2P Messaging
 
-For applications requiring message persistence (chat, feeds), the **event graph**
-provides:
-
-- **DAG structure**: Messages form a directed acyclic graph by causality
-- ** eventual consistency**: Messages propagate to all nodes
-- **Causality tracking**: Replies reference parent messages
+For applications requiring message persistence (chat, feeds), DarkFi uses its
+**P2P network** with multi-transport support (TCP/TLS, Tor, I2P). Messages
+propagate through the peer-to-peer network with eventual consistency.
 
 DarkIRC uses this for censorship-resistant messaging.
 
@@ -179,7 +179,7 @@ RLN balances spam prevention with free-tier access.
 | **Witness** | Private inputs to a ZK proof |
 | **Prover** | Party generating a ZK proof |
 | **Verifier** | Party checking a ZK proof |
-| **Event Graph** | DAG-based message synchronization |
+| **P2P Network** | Multi-transport peer-to-peer communication |
 | **RLN** | Rate-limiting via nullifier slashing |
 
 ## Further Reading

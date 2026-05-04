@@ -476,5 +476,5 @@ mod tests {
 
 - [Contract Architecture](../arch/sc/sc.md)
 - [Transaction Lifetime](../arch/tx_lifetime.md)
-- [ZK VM Primitives](../arch/zkvm_primitives.md)
+- [ZK VM Primitives](../arch/zk/zkvm_primitives.md)
 - Example domain-driven SDK: `crates/drk-desktop-wallet-domain/` in chatty-watty-tinker-token-box

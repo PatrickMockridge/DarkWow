@@ -752,4 +752,4 @@ pub async fn native_token_transfer(&mut self, ...) -> Result<...>
 - [Contract Architecture](./sc/sc.md)
 - [Genesis Harness](./genesis_harness.md) - NativeToken + Deployooor baseline only
 - [Contract Testing Pipeline](./pipeline.md) - Unified binary check + genesis + deploy workflow
-- [Baccarat Contract](./baccarat.md) (example)
+- [Baccarat Contract](../contract/baccarat.md) (example)

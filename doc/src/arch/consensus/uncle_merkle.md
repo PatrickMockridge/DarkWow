@@ -1,25 +1,22 @@
 # Uncle Merkle Consensus
 
-This document describes the Uncle Merkle consensus mechanism, a simplification of DarkFi's original fork/overlay design that achieves Pareto efficiency and deterministic execution.
+Uncle Merkle consensus replaces DarkFi upstream's complex fork/overlay design with a Pareto efficient mechanism: the canonical chain is **obligated** to offer competing uncle chains a one-time option to form a side chain and share the PoW reward. The uncle chain has a short time window (minutes) to accept or reject. This achieves the significant benefit of upstream's fork-handling — miners aren't punished for producing blocks that don't become canonical — without the complex rewind and sled overlay logic that upstream requires.
 
 ## Motivation
 
-The original DarkFi consensus used a complex overlay/diff system for speculative block verification:
-- Blocks were verified against an in-memory overlay
-- Diffs tracked state changes for potential rollback
-- Fork competition was implicit - losing forks meant wasted work
+The upstream DarkFi consensus uses a complex overlay/diff system for speculative block verification. This complexity exists to support the DAO governance model: a mechanism must adjudicate between competing forks to prevent chain splits from undermining token-holder voting. This creates a cascade of engineering problems:
 
-This had several problems:
-1. **Non-deterministic in time**: State could be speculative, committed, or rolled back
-2. **Complex state management**: Overlays, checkpoints, diffs all needed careful coordination
-3. **Mining risk**: Blocks on losing forks earned zero reward, making mining risky
-4. **Hard to test**: The speculative nature made testing difficult
+1. **Non-deterministic in time**: State can be speculative, committed, or rolled back — same code, different results depending on timing
+2. **Complex state management**: Overlays, checkpoints, and diffs all need careful coordination across the validator stack
+3. **Mining risk**: Losing forks earn zero reward, making mining an all-or-nothing gamble
+4. **Testing fragility**: Speculative state makes deterministic unit testing effectively impossible
 
-The Uncle Merkle design replaces this with a simple merkle-tree-based system that is:
-- Statelessly verifiable
-- Pareto efficient (no wasted work)
-- Deterministic (same block = same result)
-- DAG-friendly without breaking consensus
+On this fork, there is no DAO governance that needs to keep everything under one tent. Chain splits are handled the Bitcoin way: miners follow the most-work chain. If a contentious hard fork occurs, both sides coexist. This makes the engineering drastically simpler — and the Uncle Merkle mechanism ensures that even competing miners aren't wasting their work.
+
+The Uncle Merkle design replaces the overlay/diff system with a simple merkle-tree-based mechanism that is:
+- Statelessly verifiable (pure math, no overlay state)
+- Pareto efficient (no wasted mining work)
+- Deterministic (same block = same result every time)
 
 ## Core Concept
 

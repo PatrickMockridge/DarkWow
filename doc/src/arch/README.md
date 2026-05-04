@@ -5,66 +5,66 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 ## Core Concepts
 
 - [Overview](./overview.md) - Blockchain, WASM contracts, tokens, ZK proofs
-- [Spend Hooks](./spend_hook.md) - Cross-contract call authorization
-- [NativeToken](./native_token.md) - Consensus token (fees/rewards)
+- [Spend Hooks](./zk/spend_hook.md) - Cross-contract call authorization
+- [NativeToken](../contract/native_token.md) - Consensus token (fees/rewards)
 
 ## Smart Contracts (by category)
 
 ### Financial
-- [money_v3](./money_v3.md) - Privacy-first DeFi tokens (STANDARD)
-- [stablecoin](./stablecoin.md) - Collateral-backed stablecoin
-- [dex](./dex.md) - Atomic swap exchange
-- [auction](./auction.md) - Privacy-preserving auctions
-- [escrow](./escrow.md) - HTLC-style trustless escrow
-- [subscription](./subscription.md) - Recurring payments via DAO
+- [money_v3](../contract/money_v3_migration.md) - Privacy-first DeFi tokens (STANDARD)
+- [stablecoin](../contract/stablecoin.md) - Collateral-backed stablecoin
+- [dex](../contract/dex.md) - Atomic swap exchange
+- [auction](../contract/auction.md) - Privacy-preserving auctions
+- [escrow](../contract/escrow.md) - HTLC-style trustless escrow
+- [subscription](../contract/subscription.md) - Recurring payments via DAO
 
 ### Governance
-- [dao](./dao.md) - Decentralized autonomous organization
-- [dao_escrow](./dao_escrow.md) - DAO-controlled escrow
+- [dao](../contract/dao.md) - Decentralized autonomous organization
+- [dao_escrow](../contract/dao_escrow.md) - DAO-controlled escrow
 
 ### Identity
 - [identity](./identity.md) - ZK credential system
-- [attestation](./attestation.md) - Claims and delegation
+- [attestation](../contract/attestation.md) - Claims and delegation
 
 ### Gambling
-- [baccarat](./baccarat.md) - Privacy-preserving Baccarat
-- [darktoshi_dice](./darktoshi_dice.md) - On-chain dice game
-- [lottery](./lottery.md) - Configurable lottery
-- [roulette](./roulette.md) - Casino roulette
-- [slot](./slot.md) - Slot machine
-- [betting_stake](./betting_stake.md) - Trustless betting stake
-- [pool_stake](./pool_stake.md) - Pooled coverage for relayers
+- [baccarat](../contract/baccarat.md) - Privacy-preserving Baccarat
+- [darktoshi_dice](../contract/darktoshi_dice.md) - On-chain dice game
+- [lottery](../contract/lottery.md) - Configurable lottery
+- [roulette](../contract/roulette.md) - Casino roulette
+- [slot](../contract/slot.md) - Slot machine
+- [betting_stake](../contract/betting_stake.md) - Trustless betting stake
+- [pool_stake](../contract/pool_stake.md) - Pooled coverage for relayers
 
 ### Cross-Chain
-- [bridge](./bridge.md) - Multi-chain asset transfers
-- [atomic_swap](./atomic_swap.md) - Trustless cross-chain swaps
+- [bridge](../contract/bridge.md) - Multi-chain asset transfers
+- [atomic_swap](../contract/atomic_swap.md) - Trustless cross-chain swaps
 - [monero](./monero.md) - Monero integration
 
 ### Other
-- [drain_protection](./drain_protection.md) - Smart wallet security
-- [oracle](./oracle.md) - Push-model data feeds
-- [game_room](./game_room.md) - Multiplayer game coordination
+- [drain_protection](../contract/drain_protection.md) - Smart wallet security
+- [oracle](../contract/oracle.md) - Push-model data feeds
+- [game_room](../contract/game_room.md) - Multiplayer game coordination
 
 ## Protocol
 
-- [consensus](./consensus.md) - RandomX Proof-of-Work
+- [consensus](./consensus/consensus.md) - Uncle Merkle consensus with RandomX PoW (replaces upstream overlay/diff)
 - [sync](./sync.md) - Block synchronization
-- [entropy](./entropy.md) - Randomness generation
-- [tau](./tau.md) - Staking and token distribution
+- [entropy](../contract/entropy.md) - Randomness generation
+- [tau](../contract/tau.md) - Staking and token distribution
 - [slashing](./slashing.md) - Validator punishment
 - [ocap](./ocap.md) - Object-capability security
-- [linear_zkvm](./linear_zkvm.md) - ZKVM on linear blockchain (stateless verification + WASM adapters)
-- [linear_blockchain](./linear_blockchain.md) - Linear chain architecture
-- [uncle_merkle](./uncle_merkle.md) - Uncle Merkle consensus
+- [linear_zkvm](./consensus/linear_zkvm.md) - ZKVM on linear blockchain (stateless verification + WASM adapters)
+- [linear_blockchain](./consensus/linear_blockchain.md) - Linear chain architecture
+- [uncle_merkle](./consensus/uncle_merkle.md) - Uncle Merkle consensus — Pareto efficient fork handling without upstream's overlay complexity
 
 ## ZK & Circuits
 
-- [opcode_universe](./opcode_universe.md) - All ZK opcodes reference
-- [opcodes](./opcodes.md) - Opcode implementations
-- [zkvm_primitives](./zkvm_primitives.md) - Circuit primitive functions
-- [field_arithmetic](./field_arithmetic.md) - Finite field math in circuits
-- [safemath](./safemath.md) - Safe arithmetic gadgets
-- [zk_verification](./zk_verification.md) - Pure stateless ZK proof verification
+- [opcode_universe](./zk/opcode_universe.md) - All ZK opcodes reference
+- [opcodes](./zk/opcodes.md) - Opcode implementations
+- [zkvm_primitives](./zk/zkvm_primitives.md) - Circuit primitive functions
+- [field_arithmetic](./zk/field_arithmetic.md) - Finite field math in circuits
+- [safemath](./zk/safemath.md) - Safe arithmetic gadgets
+- [zk_verification](./zk/zk_verification.md) - Pure stateless ZK proof verification
 
 ## Reference
 
@@ -74,7 +74,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 - [genesis_harness](./genesis_harness.md) - Baseline chain setup
 - [localnet_contract_testing](./localnet_contract_testing.md) - Local devnet testing
 - [anonymous_assets](./anonymous_assets.md) - Privacy token model
-- [wallet](./wallet.md) - Wallet architecture and key management
+- [wallet](./legacy/wallet.md) - Wallet architecture and key management
 
 ## Legacy
 
@@ -86,24 +86,50 @@ Historical documents in [./legacy/](.legacy/):
 
 ```
 doc/src/arch/
-├── README.md              # This file - navigation index
-├── overview.md            # Current architecture overview
-├── spend_hook.md          # Cross-contract call pattern
-├── native_token.md        # Consensus token contract
-├── consensus.md           # PoW consensus
-├── dao.md                 # Governance contract
-├── dex.md                 # Atomic swap exchange
-├── money_v3.md            # Privacy-first DeFi tokens
-├── stablecoin.md          # Collateral stablecoin
-├── opcode_universe.md     # ZK opcodes
-├── opcodes.md             # Opcode implementations
-├── pipeline.md            # Testing pipelines
-├── test_harness_guide.md  # Contract testing guide
-├── legacy/                # Historical documents
+├── README.md                    # This file - navigation index
+├── overview.md                  # Current architecture overview
+├── identity.md                  # ZK credential system
+├── monero.md                    # Monero integration
+├── ocap.md                      # Object-capability security
+├── slashing.md                  # Validator slashing
+├── anonymous_assets.md          # Privacy token model
+├── contract_invoke_api.md       # Inter-contract calling convention
+├── pipeline.md                  # Testing pipelines
+├── test_harness_guide.md        # Contract testing guide
+├── genesis_harness.md           # Baseline chain setup
+├── localnet_contract_testing.md # Local devnet testing
+├── consensus/                   # Consensus documents
+│   ├── consensus.md
+│   ├── linear_blockchain.md
+│   ├── linear_zkvm.md
+│   └── uncle_merkle.md
+├── zk/                          # ZK & circuit documents
+│   ├── spend_hook.md
+│   ├── field_arithmetic.md
+│   ├── zkvm_primitives.md
+│   ├── zk_verification.md
+│   ├── opcodes.md
+│   ├── opcodes-status.md
+│   ├── opcode_universe.md
+│   ├── safemath.md
+│   └── merkle_depth.md
+├── legacy/                      # Historical documents
 │   ├── money-vulnerability-analysis.md
 │   └── money-version-bridge.md
-├── net/                   # P2P network docs
+├── net/                         # P2P network docs
 │   └── p2p-network.md
-└── sc/                    # Smart contract docs
+└── sc/                          # Smart contract docs
+    ├── sc.md
     └── tx-lifetime.md
+
+doc/src/contract/                # Smart contract design docs
+├── native_token.md
+├── money_v3_migration.md
+├── dao.md
+├── dao_escrow.md
+├── dex.md
+├── stablecoin.md
+├── bridge.md
+├── atomic_swap.md
+└── ... (33 contract files total)
 ```

@@ -170,7 +170,7 @@ This contract establishes useful primitives for other games:
 
 - [Provable Randomness](provable_randomness.md) - Deep dive into randomness sources and security
 - [Money Contract](money.md) - Value transfer integration
-- [Atomic Swap](../arch/atomic_swap.md) - Commit-reveal pattern reference
+- [Atomic Swap](../contract/atomic_swap.md) - Commit-reveal pattern reference
 - [Tender Contract](tender.md) - Sealed bid pattern reference
 
 ## Localnet Testing (2026-04-07)

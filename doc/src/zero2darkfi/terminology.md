@@ -88,7 +88,7 @@ Precise terminology for DarkFi smart contract development.
 
 ## See Also
 
-- [ZKVM Primitive Layer](../arch/zkvm_primitives.md) - Circuit primitive functions
-- [Opcodes](../arch/opcodes.md) - Available ZKVM operations
-- [Opcode Universe](../arch/opcode_universe.md) - Formal opcode specifications
+- [ZKVM Primitive Layer](../arch/zk/zkvm_primitives.md) - Circuit primitive functions
+- [Opcodes](../arch/zk/opcodes.md) - Available ZKVM operations
+- [Opcode Universe](../arch/zk/opcode_universe.md) - Formal opcode specifications
 - [Identity Contract](../arch/identity.md) - O-Cap implementation example

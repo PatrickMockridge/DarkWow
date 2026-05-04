@@ -1,3 +1,7 @@
+> **Note**: This document references the original `ContractSection` enum and
+> Wasmer runtime internals that may have changed. Verify against current
+> `src/runtime/` and contract source code.
+
 ## DarkFi-Wasm Runtime Interface
 
 The execution of smart contracts is performed within a Wasm VM, specifically

@@ -252,7 +252,7 @@ module.
 
 Several opcodes have been reasoned about through contract development and are
 needed to deliver promised functionality. These are documented in full in
-[zkVM Primitive Layer](../arch/zkvm_primitives.md), which covers:
+[zkVM Primitive Layer](../arch/zk/zkvm_primitives.md), which covers:
 
 - Why the opcode layer is foundational to contract expressiveness
 - The core gap: opcodes that return values vs. opcodes that constrain
@@ -263,7 +263,7 @@ needed to deliver promised functionality. These are documented in full in
 - `BaseModExp(base, exp, mod)` — modular exponentiation
 - Opcode interaction graphs showing how primitives compose
 
-See [zkVM Primitive Layer](../arch/zkvm_primitives.md) for the full reasoning
+See [zkVM Primitive Layer](../arch/zk/zkvm_primitives.md) for the full reasoning
 including what each opcode unlocks and how to implement them.
 
 ## Adding Custom Opcodes
@@ -289,5 +289,5 @@ To add a new opcode to the zkVM:
    ```
 
 The opcode system is designed to be extensible — new opcodes can be added
-without modifying existing ones. See [zkVM Primitive Layer](../arch/zkvm_primitives.md)
+without modifying existing ones. See [zkVM Primitive Layer](../arch/zk/zkvm_primitives.md)
 for implementation guidance on specific opcodes.

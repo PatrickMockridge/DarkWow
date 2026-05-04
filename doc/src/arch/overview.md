@@ -4,7 +4,15 @@ DarkFi is a layer-one Proof-of-Work blockchain supporting anonymous WASM smart c
 
 ## Consensus
 
-DarkFi uses RandomX Proof-of-Work consensus with 1-minute block times. Miners produce blocks that extend the canonical chain, with a confirmation threshold for finality.
+DarkFi uses **Uncle Merkle consensus** with RandomX Proof-of-Work. This replaces upstream's complex overlay/diff architecture — which exists to support DAO-based fork adjudication — with a simple, deterministic design:
+
+- **Pure PoW**: The canonical chain is the one with the most accumulated work. No governance DAO decides between forks.
+- **Uncle Merkle pin mechanism**: The canonical chain is **obligated** to offer competing uncle chains a one-time option (within minutes) to form a side chain and share the PoW reward. Uncle chains can accept or reject.
+- **Pareto efficient**: Miners who produce non-canonical blocks still earn partial reward (50% at depth 1, halving each depth). No wasted work.
+- **Deterministic**: No overlay, no speculative state, no rollback. Same block = same result every time.
+- **Hard forks are natural**: Without a DAO motivated to keep everything under one tent, chain splits follow the Bitcoin model — both sides coexist (like BTC/BCH). No complex mechanism needed.
+
+See [Consensus](consensus/consensus.md) and [Uncle Merkle](consensus/uncle_merkle.md) for the full specification.
 
 ## WASM Contracts
 

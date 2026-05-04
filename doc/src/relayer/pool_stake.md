@@ -143,5 +143,5 @@ This contract composes with:
 ## See Also
 
 - [Relayer Endowment Contract](endowment.md) - External capital backing for relayers
-- [Bridge Architecture](../arch/bridge.md) - Guaranteed withdrawal execution
+- [Bridge Architecture](../contract/bridge.md) - Guaranteed withdrawal execution
 - [Relayer Economics](relayer_economics.md) - Economic layer overview

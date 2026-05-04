@@ -129,11 +129,9 @@ connect to the network and start participating in the P2P protocol:
 % ./darkirc
 ```
 
-The daemon will start conncting to peers and sync its database, you'll 
-know it's finished syncing when you see this log message:
-```shell
-% [EVENTGRAPH] DAG synced successfully!
-```
+The daemon will start connecting to peers and sync its database. You'll
+know it's finished syncing when the sync-related log messages stop and
+your IRC client begins receiving messages.
 
 Now connect your favorite IRC client and it should replay missed 
 messages that have been sent by people.

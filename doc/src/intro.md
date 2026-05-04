@@ -1,8 +1,8 @@
-# DarkFi Development Fork
+# DarkFi
 
 **WARNING: This branch contains experimental, unaudited smart contracts. Do NOT deploy or use these contracts with real funds. They are for research and educational purposes only.**
 
-This is a development fork of the official DarkFi repository. **Development occurs on the `master` branch** (`PatrickM123/darkfi:master`).
+**Development occurs on the `linear-master` branch** — the main development branch featuring Uncle Merkle consensus and a linear blockchain architecture. The old upstream overlay-DAG code is preserved on the `master-upstream` branch.
 
 ## What is DarkFi?
 
@@ -52,9 +52,9 @@ The [`native_token`](dev/contracts/native_token.md) contract handles consensus a
 Key architectural documents:
 
 - [Architecture Overview](arch/overview.md) — System design and components
-- [Native Contracts](dev/native_contracts.md) — Built-in contracts (native_token, deployooor)
-- [Consensus](arch/consensus.md) — PoW mining and block reward distribution
-- [Transactions](arch/tx_lifetime.md) — Transaction lifecycle and ZK verification
+- [NativeToken Contract](dev/contracts/native_token.md) — Consensus-first native token
+- [Consensus](arch/consensus/consensus.md) — PoW mining and block reward distribution
+- [Transactions](arch/sc/tx-lifetime.md) — Transaction lifecycle and ZK verification
 - [ZK Circuits](zkas/index.md) — Zero-knowledge proof system
 
 ## Security Status
@@ -104,14 +104,29 @@ Upstream distributed DARK tokens at genesis to:
 
 This concentrates governance in the hands of the wealthiest token holders.
 
+#### 4. Overlay/Diff Consensus Exists to Serve the Anti-Fork DAO
+
+Upstream's consensus uses a complex overlay/diff architecture with sled-overlay for transactional state management. This isn't gratuitous complexity — it exists because the DAO governance model requires a mechanism to adjudicate between competing forks:
+
+- **Speculative verification**: Blocks are verified against an in-memory overlay that can be committed or rolled back
+- **Diff logging**: Every state change is tracked for potential rollback, creating non-deterministic behavior where the same code produces different results depending on timing
+- **Implicit fork competition**: The overlay system decides which fork wins, rather than letting the chain with the most accumulated work naturally dominate
+
+This makes deterministic testing effectively impossible. Race conditions, timing-dependent state, and speculative commits create flaky tests that erode confidence in the entire contract system. All of this complexity exists for one reason: the DAO must keep everything under one tent to preserve token-holder voting power across a unified chain.
+
+This fork replaces the entire overlay/diff stack with **Uncle Merkle consensus**: the canonical chain with the most accumulated work **obligates** offering uncle chains a one-time option (within a short time window, minutes) to form a side chain and share the PoW reward. The uncle chain can accept or reject. This achieves the Pareto efficient benefit of upstream's fork-handling — miners aren't punished for producing non-canonical blocks — without the complex rewind and sled overlay logic.
+
+With pure PoW and no governance DAO, hard forks are handled the Bitcoin way: if nodes want to fork, they can (like BCash). Both chains coexist. No complex mechanism needed to keep everything under one tent.
+
 ### This Fork's Solutions
 
-| Problem | Upstream | This Fork (darkfi-jailbroken) |
-|---------|----------|-------------------------------|
+| Problem | Upstream | This Fork |
+|---------|----------|-----------|
 | Native token freeze | DAO can control it | **No governance, no freeze** |
 | Identity leakage | ACL voting reveals balance | **ZK predicates reveal boolean only** |
 | Token distribution | SAFT/pre-mine at genesis | **Pure PoW mining only** |
 | Governance | Token-holder ACL voting | **DAO Escrow (ZK predicate, voluntary)** |
+| Consensus complexity | Overlay/diff for anti-fork DAO | **Uncle Merkle — simple, deterministic, Pareto efficient** |
 
 For the full analysis, see [Contract Standards](dev/contracts/standards.md).
 
@@ -179,8 +194,7 @@ doc/src/
 ├── intro.md              # This file
 ├── start-here.md         # Detailed project overview
 ├── dev/                  # Developer documentation
-│   ├── dev.md           # Development guide
-│   ├── contracts/       # Contract specifications
+│   ├── contracts/       # Contract implementation guides
 │   │   └── native_token.md
 │   └── zk-circuit-troubleshooting.md
 ├── arch/                 # Architecture documentation
@@ -203,7 +217,7 @@ Opcodes for ZK circuits are being formally verified. Current status:
 | `BaseDiv` | ✅ Implemented |
 | `IsEqualBase` | ⚠️ Use `ConstrainEqualBase` instead |
 
-See [Opcodes and Formal Verification](arch/opcodes.md) for full analysis.
+See [Opcodes and Formal Verification](arch/zk/opcodes.md) for full analysis.
 
 ### Contract Status
 

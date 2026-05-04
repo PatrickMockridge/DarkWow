@@ -425,7 +425,7 @@ pub async fn deploy_money_v2(&mut self, holder: &Holder, wasm_bincode: Vec<u8>, 
 
 ## Related Documentation
 
-- [Money V3 Migration](./money_v3_migration.md) - Privacy-first DeFi tokens with Poseidon-only circuits (HARD FORK)
+- [Money V3 Migration](../contract/money_v3_migration.md) - Privacy-first DeFi tokens with Poseidon-only circuits (HARD FORK)
 - [Test Harness Guide](./test_harness_guide.md) - Detailed test harness architecture
 - [Genesis Harness](./genesis_harness.md) - Baseline chain setup for WASM contract tests
 - [Localnet Contract Testing](./localnet_contract_testing.md) - Testing workflows

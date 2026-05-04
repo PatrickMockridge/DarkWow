@@ -48,3 +48,4 @@ witness.json
 *.rusty-tags.emacs
 /tags
 .claude/
+doc/book/

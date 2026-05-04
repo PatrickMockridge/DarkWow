@@ -16,7 +16,7 @@ MoneyV3 is DarkFi's DeFi token contract designed for ERC-20 style functionality 
 > - **Bugs in tokens cascade** - A bug in a token affects every operation
 > - **Bugs in smart contracts are isolated** - A bug in DEX only affects DEX operations
 >
-> See [MoneyV3 Architecture](../arch/money_v3_migration.md) for migration details.
+> See [MoneyV3 Architecture](../contract/money_v3_migration.md) for migration details.
 
 ## Why MoneyV3?
 

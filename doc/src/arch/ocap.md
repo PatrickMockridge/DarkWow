@@ -668,7 +668,7 @@ The [Identity Contract](../../src/contract/identity/) implements the canonical O
 
 ## The Attestation Primitive
 
-The [Attestation Contract](./attestation.md) provides a **generalized claims and attestation system** that enables cross-contract composition through a common pattern:
+The [Attestation Contract](../contract/attestation.md) provides a **generalized claims and attestation system** that enables cross-contract composition through a common pattern:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1513,9 +1513,9 @@ cargo update typed-index-collections@3.4.0 --precise 3.3.0
 ## See Also
 
 - [Identity Contract](../../src/contract/identity/) - O-Cap implementation
-- [Attestation Contract](./attestation.md) - Generalized attestation and claims
-- [Oracle Contract](./oracle.md) - Push-model oracle with attestation
-- [DAO-Escrow Contract](./dao_escrow.md) - DAO-governed endowment with voting
-- [zkVM Primitive Layer](./zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
+- [Attestation Contract](../contract/attestation.md) - Generalized attestation and claims
+- [Oracle Contract](../contract/oracle.md) - Push-model oracle with attestation
+- [DAO-Escrow Contract](../contract/dao_escrow.md) - DAO-governed endowment with voting
+- [zkVM Primitive Layer](./zk/zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
 - [DarkFi Development Uncensored](https://technologytruth.substack.com/p/darkfi-development-uncensored-part-c9b) - Original analysis of structural bias
 - [Zero-Knowledge Authorization (Authorization Inversion)](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) - Mathematical foundation for O-Cap authorization

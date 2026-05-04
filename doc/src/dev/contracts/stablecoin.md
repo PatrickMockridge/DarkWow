@@ -317,6 +317,6 @@ let burn_debris = CollateralBurnBuilder {
 
 - [MoneyV3 Integration](money_v3.md) - Token contract used by stablecoin
 - [Contract Standards](standards.md) - Poseidon-only, spend_hook design
-- [Stablecoin Architecture](../../arch/stablecoin.md)
+- [Stablecoin Architecture](../../contract/stablecoin.md)
 - [Nethermind P2P Oracle](https://github.com/NethermindEth/p2p-oracle)
 - [MakerDAO DSR](https://docs.makerdao.com/)

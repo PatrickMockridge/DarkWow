@@ -19,6 +19,7 @@
 use std::{collections::HashMap, fs::create_dir_all, sync::Arc};
 
 use bs58;
+use hex;
 
 use smol::lock::RwLock;
 use url::Url;
@@ -158,6 +159,24 @@ impl Drk {
         let Ok(wallet) = WalletDb::new(Some(wallet_path), Some(&wallet_pass)) else {
             return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
         };
+
+        // Auto-load persisted contract registry into OnceLock values
+        if let Ok(registry) = wallet.get_contract_registry() {
+            for (name, cid_str) in registry {
+                let cid_bytes: [u8; 32] = match bs58::decode(&cid_str).into_vec() {
+                    Ok(v) => match v.try_into() {
+                        Ok(b) => b,
+                        Err(_) => continue,
+                    },
+                    Err(_) => continue,
+                };
+                let cid = match ContractId::from_bytes(cid_bytes) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+                let _ = crate::contract_imports::register_contract_id(&name, cid);
+            }
+        }
 
         // Initialize rpc client
         let rpc_client = if let Some(endpoint) = endpoint {
@@ -678,10 +697,9 @@ impl Drk {
         Err(WalletDbError::GenericError)
     }
 
-    /// Reset deploy authorities (stub)
+    /// Reset deploy authorities
     pub fn reset_deploy_authorities(&self, _output: &mut Vec<String>) -> WalletDbResult<()> {
-        // Stub - deploy authorities not yet implemented
-        Ok(())
+        self.wallet.remove_deploy_authorities()
     }
 
     /// Reset deploy history (stub)
@@ -710,14 +728,65 @@ impl Drk {
         Err(Error::Custom("freeze_token not yet implemented for Money V3".to_string()))
     }
 
-    /// Deploy auth keygen (stub)
-    pub async fn deploy_auth_keygen(&self, _output: &mut Vec<String>) -> Result<SecretKey> {
-        Err(Error::Custom("deploy_auth_keygen not yet implemented".to_string()))
+    /// Deploy auth keygen — generates a new deploy authority keypair
+    /// and persists it to the wallet database.
+    pub async fn deploy_auth_keygen(&self, output: &mut Vec<String>) -> Result<SecretKey> {
+        let keypair = self.generate_deploy_authority();
+        let contract_id = Drk::derive_contract_id(&keypair);
+        let secret = keypair.secret;
+        let secret_hex = hex::encode(secret.inner().to_repr());
+        let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();
+        let secret_str = bs58::encode(secret.inner().to_repr()).into_string();
+
+        self.wallet.insert_deploy_auth(&contract_id_str, &secret_str)
+            .map_err(|e| Error::Custom(format!("Failed to persist deploy authority: {:?}", e)))?;
+
+        output.push(format!("Contract ID: {}", contract_id_str));
+        output.push(format!("Secret (hex): {}", secret_hex));
+        output.push(format!("Public Key: {}", bs58::encode(keypair.public.to_bytes()).into_string()));
+
+        Ok(secret)
     }
 
-    /// List deploy auth (stub)
+    /// List deploy authorities stored in the wallet database.
     pub async fn list_deploy_auth(&self) -> Result<Vec<(ContractId, SecretKey, bool, Option<u32>)>> {
-        Err(Error::Custom("list_deploy_auth not yet implemented".to_string()))
+        let rows = self.wallet.get_deploy_authorities()
+            .map_err(|e| Error::Custom(format!("Failed to get deploy authorities: {:?}", e)))?;
+
+        let mut result = vec![];
+        for (cid_str, secret_str, is_locked, created_at_height) in rows {
+            let cid_bytes: [u8; 32] = bs58::decode(&cid_str)
+                .into_vec()
+                .map_err(|e| Error::Custom(format!("Invalid contract_id: {}", e)))?
+                .try_into()
+                .map_err(|_| Error::Custom("Invalid contract_id length".to_string()))?;
+            let contract_id = ContractId::from_bytes(cid_bytes)
+                .map_err(|_| Error::Custom("Invalid contract_id bytes".to_string()))?;
+
+            let secret_bytes: [u8; 32] = bs58::decode(&secret_str)
+                .into_vec()
+                .map_err(|e| Error::Custom(format!("Invalid secret: {}", e)))?
+                .try_into()
+                .map_err(|_| Error::Custom("Invalid secret length".to_string()))?;
+            let secret = SecretKey::from_bytes(secret_bytes)
+                .map_err(|_| Error::Custom("Invalid secret bytes".to_string()))?;
+
+            result.push((contract_id, secret, is_locked, created_at_height));
+        }
+
+        Ok(result)
+    }
+
+    /// Register a contract ID for runtime use. Persists to wallet DB so
+    /// subsequent `drk` invocations automatically load it.
+    pub fn register_contract_id(&self, name: &str, cid: ContractId) -> Result<()> {
+        let cid_str = bs58::encode(cid.to_bytes()).into_string();
+        // Persist to wallet DB
+        self.wallet.register_contract(name, &cid_str)
+            .map_err(|e| Error::Custom(format!("Failed to persist contract registry: {:?}", e)))?;
+        // Also set the in-process OnceLock immediately
+        crate::contract_imports::register_contract_id(name, cid)
+            .map_err(|e| Error::Custom(e))
     }
 
     /// Lock contract (stub)

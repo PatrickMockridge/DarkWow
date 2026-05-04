@@ -287,12 +287,12 @@ async fn test_stablecoin() -> Result<()> {
 ## Related Documentation
 
 - [Sync Module](./sync.md) - Stateless block verification
-- [ZK Verification](./zk_verification.md) - Pure ZK proof verification
+- [ZK Verification](./zk/zk_verification.md) - Pure ZK proof verification
 - [Deployooor Contract](../spec/contract/deploy/deploy.md) - WASM deployment
-- [NativeToken Contract](./money_v3_migration.md) - Consensus-first token
+- [NativeToken Contract](../contract/money_v3_migration.md) - Consensus-first token
 
 ## See Also
 
 - [Test Harness Guide](./test_harness_guide.md) - Full testing overview
 - [DarkFi Contract Pipeline](./darkfid_contract_pipeline.md) - How contracts are deployed
-- [DEX Documentation](./dex.md) - Example WASM contract
+- [DEX Documentation](../contract/dex.md) - Example WASM contract

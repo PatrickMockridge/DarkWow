@@ -105,7 +105,7 @@ The DEX design is constrained by missing opcodes:
 | Cross-contract ZK | Not implemented | Requires trusted setup for Money contract |
 | `schnorr_verify` | Not implemented | Signature verification split between host and circuit |
 
-See [DEX Architecture](../../arch/dex.md) for detailed analysis of opcode limitations.
+See [DEX Architecture](../../contract/dex.md) for detailed analysis of opcode limitations.
 
 ## Roadmap
 
@@ -148,5 +148,5 @@ cargo test
 
 ## References
 
-- [DEX Architecture](../../arch/dex.md)
+- [DEX Architecture](../../contract/dex.md)
 - [SPV Privacy Problem](https://en.bitcoin.it/wiki/Thin_Client_Security)

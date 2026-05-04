@@ -204,6 +204,6 @@ wallet::contract_invoke(mode, "dao_escrow".into(), "InitializeV1".into(), params
 
 ## See Also
 
-- [DAO-Escrow Contract](dao_escrow.md)
-- [DrainProtection](drain_protection.md)
-- [Insurance Market](../contract/insurance_market/README.md)
+- [DAO-Escrow Contract](../contract/dao_escrow.md)
+- [DrainProtection](../contract/drain_protection.md)
+- [Insurance Market](../contract/insurance_market.md)

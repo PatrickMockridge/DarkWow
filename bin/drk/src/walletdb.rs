@@ -604,6 +604,76 @@ impl WalletDb {
         Ok(())
     }
 
+    /// Insert a deploy authority.
+    pub fn insert_deploy_auth(&self, contract_id: &str, secret: &str) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        conn.execute(
+            "INSERT INTO deploy_authorities (contract_id, secret, is_locked, created_at)
+             VALUES (?1, ?2, 0, ?3)",
+            params![contract_id, secret, now],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// Get all deploy authorities.
+    pub fn get_deploy_authorities(&self) -> WalletDbResult<Vec<(String, String, bool, Option<u32>)>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT contract_id, secret, is_locked, created_at_height
+             FROM deploy_authorities ORDER BY id",
+        )?;
+        let mut rows = stmt.query([])?;
+        let mut result = vec![];
+        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
+            let contract_id: String = row.get(0)?;
+            let secret: String = row.get(1)?;
+            let is_locked: i64 = row.get(2)?;
+            let created_at_height: Option<i64> = row.get(3)?;
+            result.push((contract_id, secret, is_locked != 0, created_at_height.map(|h| h as u32)));
+        }
+        Ok(result)
+    }
+
+    /// Remove all deploy authorities (for reset).
+    pub fn remove_deploy_authorities(&self) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute("DELETE FROM deploy_authorities", [])
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// Register a contract ID in the persistent registry.
+    pub fn register_contract(&self, name: &str, contract_id: &str) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO contract_registry (contract_name, contract_id) VALUES (?1, ?2)",
+            params![name, contract_id],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// Load all registered contract IDs from the persistent registry.
+    pub fn get_contract_registry(&self) -> WalletDbResult<Vec<(String, String)>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT contract_name, contract_id FROM contract_registry",
+        )?;
+        let mut rows = stmt.query([])?;
+        let mut result = vec![];
+        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
+            let name: String = row.get(0)?;
+            let cid: String = row.get(1)?;
+            result.push((name, cid));
+        }
+        Ok(result)
+    }
+
     /// Get a token by its token_id or name/alias.
     pub fn get_token(&self, identifier: &str) -> WalletDbResult<Option<TokenInfo>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;

@@ -210,9 +210,9 @@ Swarming means more efficient downloading of data specific to a certain
 subset. A new p2p instance is spawned with a clean hosts table. This
 subnetwork is self contained.
 
-An application is for example DarkIRC where everyday a new event graph
-is spawned. With swarming, you would connect to nodes maintaining this
-particular day's event graph.
+An application is for example DarkIRC where everyday a new message sync
+group is spawned. With swarming, you would connect to nodes maintaining this
+particular day's message history.
 
 The feature allows overlaying multiple different features in a single
 network such as tau, darkirc and so on. New networks require nodes to
@@ -421,7 +421,7 @@ how high this score is, we will:
 The same mechanism can also be used by protocols, however mostly we can
 probably just use the channel scoring for most usecases as a good
 enough approximation. However there might be tight edge situations like
-the current dag sync which require more fine grained control.
+the current message sync which require more fine grained control.
 
 In which case the protocol will instantiate its own `ScoringMetric` and
 keep track itself including calling ban on the channel.

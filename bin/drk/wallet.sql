@@ -86,3 +86,19 @@ CREATE TABLE IF NOT EXISTS coin_secrets (
 );
 
 CREATE INDEX IF NOT EXISTS idx_coin_secrets_token_id ON coin_secrets(token_id);
+
+-- Deploy authorities table: stores deploy authority keypairs
+CREATE TABLE IF NOT EXISTS deploy_authorities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contract_id TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    is_locked INTEGER NOT NULL DEFAULT 0,
+    created_at_height INTEGER,
+    created_at INTEGER NOT NULL
+);
+
+-- Contract registry table: maps contract names to their deployed ContractIds
+CREATE TABLE IF NOT EXISTS contract_registry (
+    contract_name TEXT PRIMARY KEY NOT NULL,
+    contract_id TEXT NOT NULL
+);

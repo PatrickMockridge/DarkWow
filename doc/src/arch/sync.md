@@ -323,7 +323,7 @@ bin/darkfid/src/tests/
 
 ## Related Documentation
 
-- [ZK Verification](./zk_verification.md) - Detailed ZK verifier design
+- [ZK Verification](./zk/zk_verification.md) - Detailed ZK verifier design
 - [Genesis Harness](./genesis_harness.md) - Baseline chain setup for WASM contract tests
-- [Consensus](./consensus.md) - PoW consensus algorithm
+- [Consensus](./consensus/consensus.md) - PoW consensus algorithm
 - [Transaction Lifetime](./tx_lifetime.md) - Transaction processing lifecycle

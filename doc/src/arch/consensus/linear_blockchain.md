@@ -1,6 +1,6 @@
 # Linear Blockchain Architecture
 
-The linear blockchain is a simplified WASM-based blockchain designed for testing and development. It uses **Uncle Merkle consensus** with a **RandomX proof-of-work** and pin mechanism.
+The linear blockchain is DarkFi's consensus architecture using **Uncle Merkle consensus** with **RandomX proof-of-work**. It replaces upstream's complex overlay/diff system with a simple, deterministic design where the canonical chain with the most accumulated work obligates offering uncle chains a one-time option to form a side chain and share the PoW reward.
 
 ## Overview
 

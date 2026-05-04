@@ -147,7 +147,7 @@ The current version leaks tier level. The implementation using `base_div` would 
 **Status**: FIXED (Tiered approach) - tiered access prevents unauthorized access but leaks tier level. Proper version requires `base_div` opcode (now implemented).
 
 **See Also**:
-- [Opcodes Reference: BaseDiv analysis](opcodes.md)
+- [Opcodes Reference: BaseDiv analysis](zk/opcodes.md)
 
 ---
 
@@ -498,7 +498,7 @@ The "missing" timelock check on claim is **not a bug - it's a feature**:
 
 #### Issue 7: External Hash Function Trust (MAJOR) — MITIGATED BY DESIGN
 
-**Location**: [claim_v1.zk](file://../../src/contract/atomic_swap/proof/claim_v1.zk), [atomic_swap.md](../../doc/src/arch/atomic_swap.md)
+**Location**: [claim_v1.zk](file://../../src/contract/atomic_swap/proof/claim_v1.zk), [atomic_swap.md](../../doc/src/contract/atomic_swap.md)
 
 **Problem (Original)**: DarkFi cannot verify SHA256 used by Ethereum, and Ethereum cannot verify poseidon_hash used by DarkFi.
 

@@ -526,7 +526,7 @@ External Chain          DarkFi                Relayer
      │                    │                     │
 ```
 
-See [Bridge Documentation](../arch/bridge.md) for detailed architecture.
+See [Bridge Documentation](../contract/bridge.md) for detailed architecture.
 
 ## Troubleshooting
 
@@ -584,7 +584,7 @@ Error: Ethereum: insufficient funds for gas
 
 ## References
 
-- [Bridge Architecture](../arch/bridge.md) - Detailed bridge documentation
+- [Bridge Architecture](../contract/bridge.md) - Detailed bridge documentation
 - [Atomic Swaps](../testnet/atomic-swap.md) - How atomic swaps work in DarkFi
 - [Object Capability Security](https://en.wikipedia.org/wiki/Object-capability_model) - Security model explanation
 - [Monero Documentation](https://www.getmonero.org/get-started/accepting/) - Monero setup
