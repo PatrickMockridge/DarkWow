@@ -529,6 +529,11 @@ impl DarkfiNode {
             id,
         );
 
+        // Serialize submissions to prevent concurrent access to the
+        // RandomX VM (which is not thread-safe) from multiple XMRig
+        // solutions arriving in rapid succession.
+        let _submit_guard = self.linear_submit_lock.lock().await;
+
         // Parse request params
         let Some(params) = params.get::<HashMap<String, JsonValue>>() else {
             return JsonError::new(InvalidParams, None, id).into()

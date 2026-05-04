@@ -126,6 +126,8 @@ pub struct DarkfiNode {
     linear_stratum_publisher: Mutex<Option<PublisherPtr<JsonNotification>>>,
     /// Stored recipient config for generating new block templates on submit (linear-testnet)
     linear_recipient_config: Mutex<Option<LinearMinerRewardsRecipientConfig>>,
+    /// Serializes block submission to prevent concurrent RandomX VM access
+    linear_submit_lock: Mutex<()>,
 }
 
 impl DarkfiNode {
@@ -157,6 +159,7 @@ impl DarkfiNode {
             current_linear_template: Mutex::new(None),
             linear_stratum_publisher: Mutex::new(None),
             linear_recipient_config: Mutex::new(None),
+            linear_submit_lock: Mutex::new(()),
         }))
     }
 
