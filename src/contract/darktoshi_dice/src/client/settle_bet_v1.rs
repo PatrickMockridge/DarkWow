@@ -30,39 +30,49 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct SettleBetV1PublicInputs {
     pub derived_bet_id: pallas::Base,
+    pub roll_hash: pallas::Base,
 }
 
 impl SettleBetV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_bet_id]
+        vec![self.derived_bet_id, self.roll_hash]
     }
 }
 
 /// Input data for settle_bet proof generation
 #[derive(Debug, Clone)]
 pub struct SettleBetV1CallData {
-    pub bet_id: pallas::Base,
-    pub secret_nonce: pallas::Base,
     pub player_pub_x: pallas::Base,
     pub player_pub_y: pallas::Base,
     pub bet_value: pallas::Base,
     pub target: pallas::Base,
-    pub token_id: pallas::Base,
+    pub secret_nonce: pallas::Base,
     pub blind: pallas::Base,
+    pub token_id: pallas::Base,
+    pub block_hash: pallas::Base,
 }
 
 impl SettleBetV1CallData {
     pub fn new(
-        bet_id: pallas::Base,
-        secret_nonce: pallas::Base,
         player_pub_x: pallas::Base,
         player_pub_y: pallas::Base,
         bet_value: pallas::Base,
         target: pallas::Base,
-        token_id: pallas::Base,
+        secret_nonce: pallas::Base,
         blind: pallas::Base,
+        token_id: pallas::Base,
+        block_hash: pallas::Base,
     ) -> Self {
-        Self { bet_id, secret_nonce, player_pub_x, player_pub_y, bet_value, target, token_id, blind }
+        Self {
+            player_pub_x,
+            player_pub_y,
+            bet_value,
+            target,
+            secret_nonce,
+            blind,
+            token_id,
+            block_hash,
+        }
     }
 
     pub fn compute_public_inputs(&self) -> SettleBetV1PublicInputs {
@@ -75,21 +85,27 @@ impl SettleBetV1CallData {
             self.blind,
             self.token_id,
         ]);
-        SettleBetV1PublicInputs { derived_bet_id }
+        let roll_hash = poseidon_hash([
+            self.block_hash,
+            derived_bet_id,
+            self.secret_nonce,
+        ]);
+        SettleBetV1PublicInputs { derived_bet_id, roll_hash }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
-            Witness::Base(Value::known(self.bet_id)),
+            // Must match circuit witness declaration order:
+            // player_pub_x, player_pub_y, bet_value, target,
+            // secret_nonce, blind, token_id, block_hash
             Witness::Base(Value::known(self.player_pub_x)),
             Witness::Base(Value::known(self.player_pub_y)),
             Witness::Base(Value::known(self.bet_value)),
             Witness::Base(Value::known(self.target)),
-            Witness::Base(Value::known(self.token_id)),
-            // Private inputs
             Witness::Base(Value::known(self.secret_nonce)),
             Witness::Base(Value::known(self.blind)),
+            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.block_hash)),
         ]
     }
 }

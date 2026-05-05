@@ -41,6 +41,9 @@ witness "PlaceBid" {
     # Time verification
     Base auction_deadline,
     Base current_block,
+
+    # Current highest bid (to prove bid is higher)
+    Base current_high_bid,
 }
 
 circuit "PlaceBid" {
@@ -79,7 +82,7 @@ circuit "PlaceBid" {
     # the comparison as integers, we use the cross-multiplication pattern:
     # To prove amount > current_high_bid (strictly greater)
     # We check: current_high_bid < amount
-    less_than_strict(current_block, auction_deadline);
+    less_than_strict(current_high_bid, amount);
 
     # ==========================================================================
     # PHASE 4: Compute bid ID commitment

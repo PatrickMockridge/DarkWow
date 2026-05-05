@@ -36,6 +36,7 @@
 
 use darkfi_sdk::{
     crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, ContractId},
+    dark_tree::DarkLeaf,
     error::ContractResult,
     msg,
     wasm, ContractCall,
@@ -197,7 +198,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DaoEscrowFunction::PayPremiumV1 => {
             let params: model::PayPremiumParamsV1 = deserialize(&self_.data[1..])?;
-            pay_premium_v1(cid, params)
+            pay_premium_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::WithdrawV1 => {
             let params: model::WithdrawParamsV1 = deserialize(&self_.data[1..])?;
@@ -357,8 +358,23 @@ fn update_apply_v1(_cid: ContractId, update: model::UpdateUpdateV1) -> ContractR
 }
 
 /// PayPremiumV1 instruction - member pays premium, receives membership
-fn pay_premium_v1(cid: ContractId, params: model::PayPremiumParamsV1) -> ContractResult {
+fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: model::PayPremiumParamsV1) -> ContractResult {
     msg!("[dao_escrow::pay_premium_v1] Processing premium payment");
+
+    // Validate child call is money_v3::transfer_v1 (0x04) for premium payment
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[pay_premium_v1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[pay_premium_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(DaoEscrowError::InvalidChildCall.into())
+    }
 
     // Verify DAO-Escrow endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;

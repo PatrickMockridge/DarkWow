@@ -73,6 +73,12 @@ pub enum PoolStakeError {
 
     #[error("Update failed: {0}")]
     UpdateFailed(String),
+
+    #[error("Invalid children: expected 1 money_v3::transfer_v1 child call")]
+    InvalidChildrenIndexes,
+
+    #[error("Child call is not money_v3::transfer_v1 (0x04)")]
+    InvalidChildCall,
 }
 
 impl From<PoolStakeError> for darkfi_sdk::error::ContractError {
@@ -95,6 +101,8 @@ impl From<PoolStakeError> for darkfi_sdk::error::ContractError {
             PoolStakeError::CooldownNotElapsed => Self::Custom(15),
             PoolStakeError::NoEarnings => Self::Custom(16),
             PoolStakeError::UpdateFailed(_) => Self::Custom(17),
+            PoolStakeError::InvalidChildrenIndexes => Self::Custom(18),
+            PoolStakeError::InvalidChildCall => Self::Custom(19),
         }
     }
 }

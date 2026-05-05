@@ -115,6 +115,12 @@ pub enum LaborMarketError {
 
     #[error("Capability revoked")]
     CapabilityRevoked,
+
+    #[error("Invalid children indexes")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call")]
+    InvalidChildCall,
 }
 
 impl From<LaborMarketError> for ContractError {
@@ -150,6 +156,8 @@ impl From<LaborMarketError> for ContractError {
             LaborMarketError::CapabilityNotMet => Self::Custom(28),
             LaborMarketError::InvalidCapability => Self::Custom(29),
             LaborMarketError::CapabilityRevoked => Self::Custom(30),
+            LaborMarketError::InvalidChildrenIndexes => Self::Custom(31),
+            LaborMarketError::InvalidChildCall => Self::Custom(32),
         }
     }
 }

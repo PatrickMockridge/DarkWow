@@ -224,6 +224,20 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 /// Process deposit instruction
 fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token mint
+    if this_call.children_indexes.len() != 1 {
+        msg!("[bridge::DepositV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}", this_call.children_indexes.len());
+        return Err(BridgeError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[bridge::DepositV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+        return Err(BridgeError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: DepositParams = deserialize(&self_.data[1..])?;
 
@@ -611,6 +625,20 @@ fn verify_litecoin_deposit(_cid: ContractId, proof: &LitecoinDepositProof) -> Co
 
 /// Process withdrawal instruction
 fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token burn
+    if this_call.children_indexes.len() != 1 {
+        msg!("[bridge::WithdrawV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}", this_call.children_indexes.len());
+        return Err(BridgeError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[bridge::WithdrawV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+        return Err(BridgeError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: WithdrawParams = deserialize(&self_.data[1..])?;
 
@@ -661,6 +689,20 @@ fn process_cancel_withdraw_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token refund
+    if this_call.children_indexes.len() != 1 {
+        msg!("[bridge::CancelWithdrawV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}", this_call.children_indexes.len());
+        return Err(BridgeError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[bridge::CancelWithdrawV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+        return Err(BridgeError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let _params: CancelWithdrawParams = deserialize(&self_.data[1..])?;
 
@@ -692,6 +734,20 @@ fn process_execute_guaranteed_withdraw_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token transfer
+    if this_call.children_indexes.len() != 1 {
+        msg!("[bridge::ExecuteGuaranteedWithdrawV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}", this_call.children_indexes.len());
+        return Err(BridgeError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[bridge::ExecuteGuaranteedWithdrawV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+        return Err(BridgeError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: ExecuteGuaranteedWithdrawParams = deserialize(&self_.data[1..])?;
 

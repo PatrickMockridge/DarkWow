@@ -486,20 +486,58 @@ impl DarkfiNode {
         let previous = latest_block.hash(&vm);
         let difficulty_target = latest_block.header.difficulty_target;
 
-        // Create coinbase output
-        let coinbase_output = darkfi_linear::Output {
-            value: reward_value,
-            script: public_key.to_bytes().to_vec(),
+        // Lazily initialize ZK proving materials for coinbase privacy
+        let linear_zk = {
+            let mut zk_lock = self.linear_zk.lock().await;
+            if zk_lock.is_none() {
+                match crate::registry::model::LinearPowRewardZk::new(
+                    linear_blockchain.clone(),
+                )
+                .await
+                {
+                    Ok(zk) => *zk_lock = Some(zk),
+                    Err(e) => {
+                        error!(target: "darkfid::rpc::miner", "Failed to init linear ZK: {}", e);
+                        return JsonError::new(
+                            InternalError,
+                            Some(format!("Failed to init linear ZK: {}", e)),
+                            id,
+                        )
+                        .into()
+                    }
+                }
+            }
+            zk_lock.clone()
         };
 
-        // Create coinbase transaction (no inputs for coinbase)
+        // Build ZK coinbase transaction with AEAD-encrypted note
+        let (coinbase, _public_inputs) = match crate::registry::model::build_linear_coinbase(
+            public_key,
+            reward_value,
+            linear_zk.as_ref().unwrap(),
+        )
+        .await
+        {
+            Ok(cb) => cb,
+            Err(e) => {
+                error!(target: "darkfid::rpc::miner", "Failed to build ZK coinbase: {}", e);
+                return JsonError::new(
+                    InternalError,
+                    Some(format!("Failed to build ZK coinbase: {}", e)),
+                    id,
+                )
+                .into()
+            }
+        };
+
+        // Create coinbase transaction with ZK privacy data
         let coinbase_tx = darkfi_linear::Transaction {
             version: 1,
             inputs: vec![],
-            outputs: vec![coinbase_output],
+            outputs: vec![],
             contract_calls: vec![],
             lock_time: height,
-            coinbase: None,
+            coinbase: Some(coinbase),
         };
 
         // Get transactions from mempool

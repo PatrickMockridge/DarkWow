@@ -308,6 +308,8 @@ pub struct ExecuteUpdateV1 {
 /// Parameters for `DrainProtection::ExitV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ExitParamsV1 {
+    /// Fund to exit from
+    pub fund_id: FundId,
     /// Member public key
     pub member_pubkey: PublicKey,
     /// Member's contribution proof

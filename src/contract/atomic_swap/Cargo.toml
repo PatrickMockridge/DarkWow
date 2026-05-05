@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
 darkfi-serial = { path = "../../serial" }
+thiserror = "2.0.17"
 
 # Client API dependencies
 darkfi = { path = "../../../", features = ["zk"], optional = true }

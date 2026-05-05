@@ -79,6 +79,21 @@ pub(crate) fn dex_execute_swap_slippage_process_instruction_v1(
 
     msg!("[ExecuteSwapSlippageV1] Executing swap with slippage: id={:?}", &params.swap_id);
 
+    // Validate children_indexes for money_v3::otc_swap_v1 calls
+    if self_.children_indexes.len() != 2 {
+        msg!("[ExecuteSwapSlippageV1] Error: Expected 2 child calls (money_v3::otc_swap_v1), got {}",
+             self_.children_indexes.len());
+        return Err(DexError::InvalidChildrenIndexes.into())
+    }
+    for &child_idx in self_.children_indexes.iter() {
+        let child_call = &calls[child_idx].data;
+        if child_call.data[0] != 0x05 {
+            msg!("[ExecuteSwapSlippageV1] Error: Expected money_v3::otc_swap_v1 (0x05), got 0x{:02x}",
+                 child_call.data[0]);
+            return Err(DexError::InvalidChildCall.into())
+        }
+    }
+
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;
     let swap_data = wasm::db::db_get(swaps_db, &params.swap_id)?;
     let swap: Swap = match swap_data {

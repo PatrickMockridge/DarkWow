@@ -654,12 +654,13 @@ impl ContractTestingPipeline {
 // ============================================================================
 
 /// All deployable contracts (those with test harnesses)
-const ALL_CONTRACTS: [&str; 24] = [
-    "atomic_swap", "attestation", "auction", "baccarat", "block_height_prediction",
+const ALL_CONTRACTS: [&str; 25] = [
+    "atomic_swap", "attestation", "auction", "baccarat",
     "bridge", "dao_escrow", "darkbet_exchange", "darktoshi_dice", "dex",
-    "escrow", "identity", "insurance_market", "labor_market", "lottery",
-    "money_v3", "oracle", "pool_stake", "relayer_endowment", "slot",
-    "stablecoin", "subscription", "tender", "native_token",
+    "drain_protection", "escrow", "game_room", "identity", "insurance_market",
+    "labor_market", "lottery", "money_v3", "oracle", "pool_stake",
+    "relayer_endowment", "slot", "stablecoin", "subscription", "tender",
+    "native_token",
 ];
 
 /// Test the pipeline - deploy any contract by CONTRACT_NAME env var

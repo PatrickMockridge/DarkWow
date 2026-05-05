@@ -44,16 +44,19 @@
 //! ```
 
 pub mod attestation;
+pub mod atomic_swap;
 pub mod auction;
 pub mod baccarat;
 pub mod betting_stake;
-pub mod block_height_prediction;
 pub mod bridge;
 pub mod darkbet_exchange;
 pub mod darktoshi_dice;
 pub mod dao_escrow;
+pub mod deployooor;
 pub mod dex;
+pub mod drain_protection;
 pub mod escrow;
+pub mod game_room;
 pub mod identity;
 pub mod insurance_market;
 pub mod labor_market;
@@ -62,6 +65,7 @@ pub mod money_v3;
 pub mod native_token;
 pub mod oracle;
 pub mod pool_stake;
+pub mod relayer_endowment;
 pub mod roulette;
 pub mod slot;
 pub mod stablecoin;
@@ -70,16 +74,19 @@ pub mod tender;
 
 // Re-export for convenience
 pub use attestation::AttestationHarness;
+pub use atomic_swap::AtomicSwapHarness;
 pub use auction::AuctionHarness;
 pub use baccarat::BaccaratHarness;
 pub use betting_stake::{BettingStakeHarness, ClaimStakeInfo, UnstakeStakeInfo};
-pub use block_height_prediction::BlockHeightPredictionHarness;
 pub use bridge::BridgeHarness;
 pub use dao_escrow::DaoEscrowHarness;
 pub use darkbet_exchange::DarkbetExchangeHarness;
 pub use darktoshi_dice::DarkToshiDiceHarness;
+pub use deployooor::DeployooorHarness;
 pub use dex::DexHarness;
+pub use drain_protection::DrainProtectionHarness;
 pub use escrow::{EscrowHarness, CreateEscrowResult, FundEscrowResult, ClaimEscrowResult, RefundEscrowResult};
+pub use game_room::GameRoomHarness;
 pub use identity::IdentityHarness;
 pub use insurance_market::InsuranceMarketHarness;
 pub use labor_market::LaborMarketHarness;
@@ -88,6 +95,7 @@ pub use money_v3::{MoneyV3Harness, TokenCreationResult, MintResult, TransferResu
 pub use native_token::{NativeTokenHarness, PoWRewardResult, BurnResult, BurnCallInput};
 pub use oracle::OracleHarness;
 pub use pool_stake::PoolStakeHarness;
+pub use relayer_endowment::RelayerEndowmentHarness;
 pub use roulette::RouletteHarness;
 pub use slot::SlotHarness;
 pub use stablecoin::StablecoinHarness;

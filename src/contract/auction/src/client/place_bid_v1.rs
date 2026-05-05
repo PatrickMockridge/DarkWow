@@ -52,6 +52,7 @@ pub struct PlaceBidV1CallData {
     pub bid_nonce: pallas::Base,
     pub auction_deadline: pallas::Base,
     pub current_block: pallas::Base,
+    pub current_high_bid: pallas::Base,
     // Public inputs
     pub bidder_public: PublicKey,
 }
@@ -64,6 +65,7 @@ impl PlaceBidV1CallData {
         bid_nonce: pallas::Base,
         auction_deadline: pallas::Base,
         current_block: pallas::Base,
+        current_high_bid: pallas::Base,
         bidder_public: PublicKey,
     ) -> Self {
         Self {
@@ -73,6 +75,7 @@ impl PlaceBidV1CallData {
             bid_nonce,
             auction_deadline,
             current_block,
+            current_high_bid,
             bidder_public,
         }
     }
@@ -99,16 +102,16 @@ impl PlaceBidV1CallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness declaration order:
+            // auction_id, bidder_secret, amount, bid_nonce, auction_deadline,
+            // current_block, current_high_bid
             Witness::Base(Value::known(self.auction_id)),
-            Witness::Base(Value::known(self.compute_bid_id())),
-            Witness::Base(Value::known(self.amount)),
-            // Private inputs
             Witness::Base(Value::known(self.bidder_secret)),
             Witness::Base(Value::known(self.amount)),
             Witness::Base(Value::known(self.bid_nonce)),
             Witness::Base(Value::known(self.auction_deadline)),
             Witness::Base(Value::known(self.current_block)),
+            Witness::Base(Value::known(self.current_high_bid)),
         ]
     }
 }

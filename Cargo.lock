@@ -603,6 +603,7 @@ dependencies = [
  "getrandom 0.2.17",
  "halo2_proofs",
  "rand 0.8.6",
+ "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -2185,19 +2186,6 @@ dependencies = [
  "smol",
  "thiserror 2.0.18",
  "tracing",
-]
-
-[[package]]
-name = "darkfi_block_height_prediction_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "rand 0.8.6",
- "thiserror 2.0.18",
 ]
 
 [[package]]

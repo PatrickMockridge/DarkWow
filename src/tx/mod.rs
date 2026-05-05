@@ -18,12 +18,13 @@
 
 use std::collections::HashMap;
 
+pub use darkfi_sdk::dark_tree::DarkLeaf;
 use darkfi_sdk::{
     crypto::{
         schnorr::{SchnorrPublic, SchnorrSecret, Signature},
         PublicKey, SecretKey,
     },
-    dark_tree::{dark_forest_leaf_vec_integrity_check, DarkForest, DarkLeaf, DarkTree},
+    dark_tree::{dark_forest_leaf_vec_integrity_check, DarkForest, DarkTree},
     error::DarkTreeResult,
     pasta::pallas,
     tx::{ContractCall, TransactionHash},

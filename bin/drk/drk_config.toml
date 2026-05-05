@@ -7,7 +7,7 @@
 ## uncommenting, or by using the command-line.
 
 # Blockchain network to use
-network = "testnet"
+network = "linear-testnet"
 
 # Flag indicating whether you want some fun in your life
 fun = true

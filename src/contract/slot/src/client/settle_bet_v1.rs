@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::PublicKey,
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -50,8 +50,7 @@ pub struct SettleBetV1CallData {
     pub paylines: pallas::Base,
     pub secret_nonce: pallas::Base,
     pub blind: pallas::Base,
-    pub nonce: pallas::Base,
-    pub random: pallas::Base,
+    pub token_id: pallas::Base,
 }
 
 impl SettleBetV1CallData {
@@ -61,8 +60,7 @@ impl SettleBetV1CallData {
         paylines: u32,
         secret_nonce: pallas::Base,
         blind: pallas::Base,
-        nonce: pallas::Base,
-        random: pallas::Base,
+        token_id: pallas::Base,
     ) -> Self {
         let (px, py) = player_pub.xy();
         Self {
@@ -72,27 +70,36 @@ impl SettleBetV1CallData {
             paylines: pallas::Base::from(paylines as u64),
             secret_nonce,
             blind,
-            nonce,
-            random,
+            token_id,
         }
     }
 
     pub fn compute_public_inputs(&self) -> SettleBetV1PublicInputs {
-        SettleBetV1PublicInputs { spin_id: pallas::Base::zero() }
+        let spin_id = poseidon_hash([
+            self.player_pub_x,
+            self.player_pub_y,
+            self.bet_value,
+            self.paylines,
+            self.secret_nonce,
+            self.blind,
+            self.token_id,
+        ]);
+        SettleBetV1PublicInputs { spin_id }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness declaration order:
+            // player_pub_x, player_pub_y, bet_value, paylines,
+            // secret_nonce, blind, token_id, position_0, position_1,
+            // position_2, match_count, payout
             Witness::Base(Value::known(self.player_pub_x)),
             Witness::Base(Value::known(self.player_pub_y)),
             Witness::Base(Value::known(self.bet_value)),
             Witness::Base(Value::known(self.paylines)),
-            // Private inputs
             Witness::Base(Value::known(self.secret_nonce)),
             Witness::Base(Value::known(self.blind)),
-            Witness::Base(Value::known(self.nonce)),
-            Witness::Base(Value::known(self.random)),
+            Witness::Base(Value::known(self.token_id)),
         ]
     }
 }

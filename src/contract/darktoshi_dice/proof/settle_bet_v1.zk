@@ -1,30 +1,29 @@
 # DarkToshi Dice Settle Bet Circuit
 #
-# This circuit proves that:
-# 1. The player knows the secret nonce that derives the bet_id
-# 2. The roll has been correctly calculated
-# 3. The player won (roll < target)
+# Proves:
+# 1. Player knows the secret nonce that derives the bet_id
+# 2. Roll hash is correctly computed from block_hash + bet_id + secret_nonce
 #
-# This allows the player to claim their winnings without
-# revealing the secret nonce until after settlement.
+# The contract computes roll_result = roll_hash.to_repr()[0] % 100 off-circuit
+# (cheap integer arithmetic, no expensive ZK ops needed).
 
 k = 11;
 field = "pallas";
 
 constant "SettleBet_V1" {
-    # Block hash from the chain (used for randomness)
 }
 
 witness "SettleBet_V1" {
-    # Known bet parameters (revealed during settle)
-    Base bet_id,
-    Base secret_nonce,
     Base player_pub_x,
     Base player_pub_y,
     Base bet_value,
     Base target,
-    Base token_id,
+    Base secret_nonce,
     Base blind,
+    Base token_id,
+
+    # Block hash from entropy module (tx_hash_to_base)
+    Base block_hash,
 }
 
 circuit "SettleBet_V1" {
@@ -40,6 +39,12 @@ circuit "SettleBet_V1" {
     );
     constrain_instance(derived_bet_id);
 
-    # Calculate roll: hash(block_hash, bet_id, secret_nonce) % 100
-    # The roll_result is constrained as public input
+    # Compute roll hash: poseidon_hash([block_hash, bet_id, secret_nonce])
+    # Contract layer does roll_hash.to_repr()[0] % 100 off-circuit.
+    roll_hash = poseidon_hash(
+        block_hash,
+        derived_bet_id,
+        secret_nonce,
+    );
+    constrain_instance(roll_hash);
 }

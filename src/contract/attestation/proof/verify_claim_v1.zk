@@ -42,6 +42,9 @@ witness "VerifyClaim" {
     Base nonce,
     Base pos,
     SparseMerklePath path,
+
+    # Merkle root of the revocation tree
+    Base revocation_root,
 }
 
 circuit "VerifyClaim" {

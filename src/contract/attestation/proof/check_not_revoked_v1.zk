@@ -17,6 +17,28 @@ field = "pallas";
 #   - pos: Position of the nonce leaf in the Merkle tree (if present)
 #   - path: Sparse Merkle path for membership proof
 #   - leaf: The leaf value (poseidon_hash(nonce))
+#   - revocation_root: The Merkle root of the revocation tree
+#   - nonce: The nonce being checked
+
+constant "CheckNotRevoked" {
+}
+
+witness "CheckNotRevoked" {
+    # Position in the revocation Merkle tree
+    Base pos,
+
+    # Sparse Merkle path for membership proof
+    SparseMerklePath path,
+
+    # The leaf value (poseidon_hash(nonce))
+    Base leaf,
+
+    # Merkle root of the revocation tree
+    Base revocation_root,
+
+    # The nonce being checked
+    Base nonce,
+}
 
 circuit "CheckNotRevoked" {
     # ==========================================================================

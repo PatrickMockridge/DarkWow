@@ -64,6 +64,9 @@ define_contract_function!(AtomicSwapFunction {
 /// Call parameters definitions
 pub mod model;
 
+/// Error types
+pub mod error;
+
 /// Client API
 #[cfg(feature = "client")]
 pub mod client;

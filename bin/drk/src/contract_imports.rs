@@ -52,6 +52,18 @@ pub static DAO_ESCROW_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::Contr
 pub static DRAIN_PROTECTION_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
+// DEX Contract ID - user deployed, no hardcoded ID
+pub static DEX_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Auction Contract ID - user deployed, no hardcoded ID
+pub static AUCTION_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Stablecoin Contract ID - user deployed, no hardcoded ID
+pub static STABLECOIN_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
 /// Register a contract ID at runtime. Called after deploying a contract
 /// so that subsequent operations (transfer, invoke) can find it.
 pub fn register_contract_id(name: &str, cid: darkfi_sdk::crypto::ContractId) -> Result<(), String> {
@@ -67,6 +79,18 @@ pub fn register_contract_id(name: &str, cid: darkfi_sdk::crypto::ContractId) -> 
         "drain_protection" => {
             DRAIN_PROTECTION_CONTRACT_ID.set(cid)
                 .map_err(|_| "drain_protection contract ID already registered".to_string())
+        }
+        "dex" => {
+            DEX_CONTRACT_ID.set(cid)
+                .map_err(|_| "dex contract ID already registered".to_string())
+        }
+        "auction" => {
+            AUCTION_CONTRACT_ID.set(cid)
+                .map_err(|_| "auction contract ID already registered".to_string())
+        }
+        "stablecoin" => {
+            STABLECOIN_CONTRACT_ID.set(cid)
+                .map_err(|_| "stablecoin contract ID already registered".to_string())
         }
         _ => Err(format!("Unknown contract name: {}", name)),
     }
@@ -438,9 +462,7 @@ pub struct StablecoinContract;
 
 impl Contract for StablecoinContract {
     fn contract_id(&self) -> ContractId {
-        // Stablecoin contract ID is runtime-determined
-        // This will be set when the contract is deployed
-        *MONEY_V3_CONTRACT_ID.get().unwrap() // Placeholder
+        *STABLECOIN_CONTRACT_ID.get().unwrap()
     }
 
     fn name(&self) -> &'static str {
@@ -453,7 +475,50 @@ impl Contract for StablecoinContract {
     }
 
     fn is_initialized(&self) -> bool {
-        MONEY_V3_CONTRACT_ID.get().is_some()
+        STABLECOIN_CONTRACT_ID.get().is_some()
+    }
+}
+
+/// DEX contract info for registry
+pub struct DexContract;
+
+impl Contract for DexContract {
+    fn contract_id(&self) -> ContractId {
+        *DEX_CONTRACT_ID.get().unwrap()
+    }
+
+    fn name(&self) -> &'static str {
+        "DEX"
+    }
+
+    fn dependencies(&self) -> Vec<ContractId> {
+        // DEX uses money_v3::transfer_v1 for token swaps
+        vec![*MONEY_V3_CONTRACT_ID.get().unwrap()]
+    }
+
+    fn is_initialized(&self) -> bool {
+        DEX_CONTRACT_ID.get().is_some()
+    }
+}
+
+/// Auction contract info for registry
+pub struct AuctionContract;
+
+impl Contract for AuctionContract {
+    fn contract_id(&self) -> ContractId {
+        *AUCTION_CONTRACT_ID.get().unwrap()
+    }
+
+    fn name(&self) -> &'static str {
+        "Auction"
+    }
+
+    fn dependencies(&self) -> Vec<ContractId> {
+        vec![*MONEY_V3_CONTRACT_ID.get().unwrap()]
+    }
+
+    fn is_initialized(&self) -> bool {
+        AUCTION_CONTRACT_ID.get().is_some()
     }
 }
 

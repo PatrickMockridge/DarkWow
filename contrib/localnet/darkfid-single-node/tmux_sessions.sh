@@ -1,15 +1,8 @@
 #!/bin/sh
 set -e
 
-# Start a tmux session with an xmrig daemon and a darkfid node
-
-# xmrig configuration
-XMRIG_BINARY_PATH="xmrig"
-XMRIG_STRATUM_ENDPOINT="127.0.0.1:48347"
-XMRIG_THREADS="4"
-XMRIG_USER="DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf"
-XMRIG_PARAMS="-u x+1 -r 1000 -R 20 -o $XMRIG_STRATUM_ENDPOINT -t $XMRIG_THREADS -u $XMRIG_USER"
-XMRIG="$XMRIG_BINARY_PATH $XMRIG_PARAMS"
+# Start a tmux session with a darkfid node in linear-testnet mode
+# Mining is done via RPC: miner.mine_linear
 
 # Path to darkfid binary
 DARKFID="LOG_TARGETS='!net,!runtime,!sled' ../../../darkfid -c darkfid.toml"
@@ -24,7 +17,5 @@ else
 fi
 
 tmux new-session -d -s $session -n $session
-tmux send-keys -t $session "$XMRIG" Enter
-tmux split-window -t $session -v -l 80%
 tmux send-keys -t $session "$DARKFID $verbose" Enter
 tmux attach -t $session

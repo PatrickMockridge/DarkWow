@@ -90,7 +90,7 @@ pub async fn parse_blockchain_config(
     // Grab network
     let used_net = match network {
         "mainnet" | "localnet" => Network::Mainnet,
-        "testnet" => Network::Testnet,
+        "testnet" | "linear-testnet" => Network::Testnet,
         _ => return Err(Error::ParseFailed("Invalid blockchain network")),
     };
 

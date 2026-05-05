@@ -195,6 +195,20 @@ fn process_deploy_capital_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token transfer
+    if this_call.children_indexes.len() != 1 {
+        msg!("[relayer_endowment::DeployCapitalV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}", this_call.children_indexes.len());
+        return Err(RelayerEndowmentError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[relayer_endowment::DeployCapitalV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+        return Err(RelayerEndowmentError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: DeployCapitalParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -292,6 +306,20 @@ fn process_withdraw_deployment_instruction(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
+    let this_call = &calls[call_idx];
+
+    // Validate children_indexes for token withdrawal
+    if this_call.children_indexes.len() != 1 {
+        msg!("[relayer_endowment::WithdrawDeploymentV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}", this_call.children_indexes.len());
+        return Err(RelayerEndowmentError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[relayer_endowment::WithdrawDeploymentV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+        return Err(RelayerEndowmentError::InvalidChildCall.into())
+    }
+
     let self_ = &calls[call_idx].data;
     let params: WithdrawDeploymentParamsV1 = deserialize(&self_.data[1..])?;
 

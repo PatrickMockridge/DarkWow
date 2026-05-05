@@ -7,7 +7,7 @@ set -e
 BIN="./target/debug/darkfid"
 RPC_PORT="${RPC_PORT:-28345}"
 NETWORK="linear-testnet"
-CONFIG="linear_testnet.toml"
+CONFIG="bin/darkfid/darkfid_config.toml"
 
 echo "=== Linear-Testnet Test Script ==="
 
@@ -69,7 +69,7 @@ echo "Mine result: $RESULT"
 echo ""
 echo "=== Step 5: Get block info ==="
 curl -s -X POST http://localhost:$RPC_PORT -H "Content-Type: application/json" \
-    -d '{"jsonrpc": "2.0", "method": "blockchain.best_fork_next_block_height", "params": [], "id": 1}'
+    -d '{"jsonrpc": "2.0", "method": "blockchain.get_difficulty_linear", "params": [], "id": 1}'
 
 echo ""
 echo "=== Test complete ==="

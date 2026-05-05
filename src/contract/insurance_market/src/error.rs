@@ -118,6 +118,12 @@ pub enum InsuranceMarketError {
 
     #[error("DAG requirement not met")]
     DAGRequirementNotMet,
+
+    #[error("Invalid children indexes for child call")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call")]
+    InvalidChildCall,
 }
 
 impl From<InsuranceMarketError> for ContractError {
@@ -155,6 +161,8 @@ impl From<InsuranceMarketError> for ContractError {
             InsuranceMarketError::InvalidCapability => Self::Custom(30),
             InsuranceMarketError::CapabilityRevoked => Self::Custom(31),
             InsuranceMarketError::DAGRequirementNotMet => Self::Custom(32),
+            InsuranceMarketError::InvalidChildrenIndexes => Self::Custom(33),
+            InsuranceMarketError::InvalidChildCall => Self::Custom(34),
         }
     }
 }

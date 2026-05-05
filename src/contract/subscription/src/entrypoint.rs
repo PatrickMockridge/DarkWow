@@ -145,7 +145,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     match func {
         SubscriptionFunction::SubscribeV1 => {
             let params: SubscribeParamsV1 = deserialize(&self_.data[1..])?;
-            subscribe_v1(cid, params)
+            subscribe_v1(cid, call_idx, calls, params)
         }
         SubscriptionFunction::CancelV1 => {
             let params: CancelParamsV1 = deserialize(&self_.data[1..])?;
@@ -153,7 +153,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         SubscriptionFunction::RenewV1 => {
             let params: RenewParamsV1 = deserialize(&self_.data[1..])?;
-            renew_v1(cid, params)
+            renew_v1(cid, call_idx, calls, params)
         }
         SubscriptionFunction::VerifyAccessV1 => {
             // No state update needed - just verification
@@ -221,8 +221,23 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 // ============================================================================
 
 /// SubscribeV1 instruction - create a new subscription
-fn subscribe_v1(cid: ContractId, params: SubscribeParamsV1) -> ContractResult {
+fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>, params: SubscribeParamsV1) -> ContractResult {
     msg!("[subscription::subscribe_v1] Creating subscription for plan {}", params.plan_id);
+
+    // Validate children_indexes for payment
+    let self_ = &calls[call_idx];
+    if self_.children_indexes.len() != 1 {
+        msg!("[subscribe_v1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             self_.children_indexes.len());
+        return Err(ContractError::Custom(30).into())
+    }
+    let child_idx = self_.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[subscribe_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(ContractError::Custom(31).into())
+    }
 
     // Look up the plan to get duration and settings
     let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
@@ -349,8 +364,23 @@ fn cancel_apply_v1(cid: ContractId, update: CancelUpdateV1) -> ContractResult {
 }
 
 /// RenewV1 instruction - renew an existing subscription
-fn renew_v1(cid: ContractId, params: RenewParamsV1) -> ContractResult {
+fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>, params: RenewParamsV1) -> ContractResult {
     msg!("[subscription::renew_v1] Renewing subscription {:?}", params.subscription_id);
+
+    // Validate children_indexes for payment
+    let self_ = &calls[call_idx];
+    if self_.children_indexes.len() != 1 {
+        msg!("[renew_v1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             self_.children_indexes.len());
+        return Err(ContractError::Custom(30).into())
+    }
+    let child_idx = self_.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[renew_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(ContractError::Custom(31).into())
+    }
 
     // Look up the existing subscription
     let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;

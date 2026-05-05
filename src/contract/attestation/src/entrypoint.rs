@@ -56,7 +56,8 @@ use crate::{
         UpdateDelegationUpdateV1,
     },
     AttestationFunction, ATTESTATION_CONTRACT_ATTESTATIONS_TREE,
-    ATTESTATION_CONTRACT_CLAIMS_TREE, ATTESTATION_CONTRACT_INDEX_TREE,
+    ATTESTATION_CONTRACT_CLAIMS_TREE, ATTESTATION_CONTRACT_DELEGATIONS_TREE,
+    ATTESTATION_CONTRACT_INDEX_TREE,
     ATTESTATION_CONTRACT_NULLIFIERS_TREE, ATTESTATION_CONTRACT_RATE_LIMIT_TREE,
 };
 
@@ -90,6 +91,9 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     // Initialize rate limit tree
     wasm::db::db_init(cid, ATTESTATION_CONTRACT_RATE_LIMIT_TREE)?;
+
+    // Initialize delegations tree
+    wasm::db::db_init(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
 
     msg!("[attestation::init_contract] Attestation contract initialized successfully");
     Ok(())
@@ -704,91 +708,126 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Contract
 }
 
 fn check_not_revoked_v1(
-    _cid: ContractId,
+    cid: ContractId,
     params: CheckNotRevokedParamsV1,
 ) -> ContractResult {
     msg!("[attestation::check_not_revoked_v1] Checking nonce not revoked");
 
-    // The actual revocation check is done via ZK circuit (set_membership).
-    // This function is a placeholder that logs the check.
-    // The ZK proof verification ensures:
+    // The ZK proof (verified at host level via get_metadata) proves:
     // 1. The prover knows a valid Merkle path for the nonce
     // 2. The revocation_root is a public input (cannot be manipulated)
     // 3. The set_membership check proves nonce is NOT in the revocation tree
 
-    msg!(
-        "[attestation::check_not_revoked_v1] Revocation check for nonce: {:?}",
-        params.nonce
-    );
+    if params.proof.is_empty() {
+        msg!("[attestation::check_not_revoked_v1] Error: Missing ZK proof");
+        return Err(ContractError::InvalidFunction.into())
+    }
 
+    // Record the check to prevent replay of the same proof
+    let nullifiers_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_NULLIFIERS_TREE)?;
+    let proof_hash = poseidon_hash([params.nonce, params.revocation_root]);
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&proof_hash))? {
+        msg!("[attestation::check_not_revoked_v1] Error: Proof already used");
+        return Err(ContractError::InvalidFunction.into())
+    }
+    wasm::db::db_set(nullifiers_db, &serialize(&proof_hash), &[])?;
+
+    msg!("[attestation::check_not_revoked_v1] Nonce {:?} is not revoked", params.nonce);
     Ok(())
 }
 
 fn delegate_attestation_v1(
-    _cid: ContractId,
+    cid: ContractId,
     params: DelegateAttestationParamsV1,
 ) -> ContractResult {
     msg!("[attestation::delegate_attestation_v1] Delegating attestation: {:?}", params.delegation_id);
 
-    // The actual delegation verification is done via ZK circuit:
+    // The ZK proof (verified at host level) ensures:
     // 1. base_div verifies: delegator_stake / delegatee_stake < max_ratio
     // 2. set_membership verifies delegatee is NOT revoked
     // 3. set_membership verifies delegation is in the chain
     // 4. less_than_or_equal verifies chain_depth <= max_depth
-    //
-    // This function is a placeholder that logs the delegation.
-    // The ZK proof verification ensures all constraints are satisfied.
 
-    msg!(
-        "[attestation::delegate_attestation_v1] Delegation: {:?} -> {:?} (ratio: {:?}, depth: {:?}/{:?})",
-        params.delegator_pub_x,
-        params.delegatee_pub_x,
-        params.max_ratio,
-        params.chain_depth,
-        params.max_depth
-    );
+    if params.proof.is_empty() {
+        msg!("[attestation::delegate_attestation_v1] Error: Missing ZK proof");
+        return Err(ContractError::InvalidFunction.into())
+    }
 
+    // Check that delegator and delegatee are different
+    if params.delegator_pub_x == params.delegatee_pub_x &&
+       params.delegator_pub_y == params.delegatee_pub_y {
+        msg!("[attestation::delegate_attestation_v1] Error: Cannot delegate to self");
+        return Err(ContractError::InvalidFunction.into())
+    }
+
+    // Store the delegation record
+    let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
+    if wasm::db::db_contains_key(delegations_db, &serialize(&params.delegation_id))? {
+        msg!("[attestation::delegate_attestation_v1] Error: Delegation already exists");
+        return Err(ContractError::InvalidFunction.into())
+    }
+
+    wasm::db::db_set(delegations_db, &serialize(&params.delegation_id), &serialize(&params))?;
+
+    msg!("[attestation::delegate_attestation_v1] Delegation stored successfully");
     Ok(())
 }
 
-fn verify_chain_v1(_cid: ContractId, params: VerifyChainParamsV1) -> ContractResult {
+fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> ContractResult {
     msg!("[attestation::verify_chain_v1] Verifying delegation chain: {:?}", params.delegation_id);
 
-    // The actual chain verification is done via ZK circuit:
+    // The ZK proof (verified at host level) ensures:
     // 1. set_membership verifies delegation_id is in the chain tree
     // 2. less_than_or_equal verifies current_depth <= max_depth
-    //
-    // This function is a placeholder that logs the verification.
-    // The ZK proof verification ensures all constraints are satisfied.
 
-    msg!(
-        "[attestation::verify_chain_v1] Chain verification: delegation_id={:?}, parent_id={:?}, depth={:?}/{:?}",
-        params.delegation_id,
-        params.parent_id,
-        params.current_depth,
-        params.max_depth
-    );
+    if params.proof.is_empty() {
+        msg!("[attestation::verify_chain_v1] Error: Missing ZK proof");
+        return Err(ContractError::InvalidFunction.into())
+    }
 
+    // Look up the delegation in the chain
+    let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
+    if !wasm::db::db_contains_key(delegations_db, &serialize(&params.delegation_id))? {
+        msg!("[attestation::verify_chain_v1] Error: Delegation not found");
+        return Err(ContractError::InvalidFunction.into())
+    }
+
+    // If parent_id is provided, verify it also exists in the chain
+    if params.parent_id != pallas::Base::zero() {
+        if !wasm::db::db_contains_key(delegations_db, &serialize(&params.parent_id))? {
+            msg!("[attestation::verify_chain_v1] Error: Parent delegation not found");
+            return Err(ContractError::InvalidFunction.into())
+        }
+    }
+
+    msg!("[attestation::verify_chain_v1] Chain verification passed");
     Ok(())
 }
 
-fn update_delegation_v1(_cid: ContractId, params: UpdateDelegationParamsV1) -> ContractResult {
+fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> ContractResult {
     msg!("[attestation::update_delegation_v1] Updating delegation: {:?}", params.original_attestation_id);
 
-    // The actual delegation update verification is done via ZK circuit:
+    // The ZK proof (verified at host level) ensures:
     // 1. If Restricted type: base_div verifies ratio <= max_ratio
     // 2. less_than_or_equal verifies current_depth <= max_depth
-    //
-    // This function is a placeholder that logs the update.
-    // The ZK proof verification ensures all constraints are satisfied.
 
-    msg!(
-        "[attestation::update_delegation_v1] Delegation update: type={:?}, depth={:?}/{:?}",
-        params.delegation_type,
-        params.current_depth,
-        params.max_depth
-    );
+    if params.proof.is_empty() {
+        msg!("[attestation::update_delegation_v1] Error: Missing ZK proof");
+        return Err(ContractError::InvalidFunction.into())
+    }
 
+    // Verify the original attestation exists
+    let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
+    if !wasm::db::db_contains_key(attestations_db, &serialize(&params.original_attestation_id))? {
+        msg!("[attestation::update_delegation_v1] Error: Original attestation not found");
+        return Err(ContractError::InvalidFunction.into())
+    }
+
+    // Store the updated delegation record
+    let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
+    wasm::db::db_set(delegations_db, &serialize(&params.original_attestation_id), &serialize(&params))?;
+
+    msg!("[attestation::update_delegation_v1] Delegation updated successfully");
     Ok(())
 }
 

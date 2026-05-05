@@ -61,7 +61,6 @@
 - [Insurance Market](contract/insurance_market.md)
   - [Risk Market Ecosystem](contract/risk_market_ecosystem.md)
   - [Pool Stake](contract/pool_stake.md)
-- [Block Height Prediction](contract/block_height_prediction.md)
 - [Labor Market](contract/labor_market.md)
 - [Tender](contract/tender.md)
 - [DarkBet Exchange](contract/darkbet_exchange.md)

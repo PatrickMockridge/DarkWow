@@ -339,6 +339,21 @@ fn process_open_position_instruction(
         &params.deposit_commitment
     );
 
+    // Validate child call is money_v3::transfer_v1 (0x04) for collateral deposit
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[OpenPositionV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(StablecoinError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[OpenPositionV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(StablecoinError::InvalidChildCall.into())
+    }
+
     // Verify commitment doesn't already exist
     let positions_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITIONS_TREE)?;
     if wasm::db::db_contains_key(positions_db, &params.deposit_commitment.to_bytes())? {
@@ -451,6 +466,21 @@ fn process_add_collateral_instruction(
         params.deposit_commitment,
         params.collateral_amount
     );
+
+    // Validate child call is money_v3::transfer_v1 (0x04) for collateral deposit
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[AddCollateralV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(StablecoinError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[AddCollateralV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(StablecoinError::InvalidChildCall.into())
+    }
 
     // Verify commitment doesn't already exist
     let positions_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITIONS_TREE)?;
@@ -671,6 +701,21 @@ fn process_repay_stable_instruction(
         "[stablecoin::process_instruction] RepayStable: amount={}",
         params.repay_amount
     );
+
+    // Validate child call is money_v3::transfer_v1 (0x04) for stablecoin repayment
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[RepayStableV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(StablecoinError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[RepayStableV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(StablecoinError::InvalidChildCall.into())
+    }
 
     // Get current total debt
     let config_db = wasm::db::db_lookup(cid, "config")?;

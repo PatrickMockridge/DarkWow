@@ -133,3 +133,9 @@ pub const POOL_STAKE_MAX_COVERAGE_RATIO: u32 = 10000;
 pub const POOL_STAKE_LEAVE_COOLDOWN_BLOCKS: u64 = 100;
 /// Basis points precision for fee calculations
 pub const POOL_STAKE_BP_PRECISION: u32 = 10000;
+
+// zkas circuit namespaces
+pub const POOL_STAKE_ZKAS_CREATE_POOL_NS_V1: &str = "CreatePool_V1";
+pub const POOL_STAKE_ZKAS_JOIN_POOL_NS_V1: &str = "JoinPool_V1";
+pub const POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V1: &str = "AllocateCoverage_V1";
+pub const POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V1: &str = "SlashCoverage_V1";

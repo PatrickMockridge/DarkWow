@@ -27,6 +27,7 @@ use darkfi_sdk::{
 use darkfi_serial::{deserialize, serialize, Decodable, Encodable};
 
 use crate::{
+    error::AtomicSwapError,
     model::{ClaimParamsV1, ClaimUpdateV1, Swap, SwapState},
     ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE,
     ATOMIC_SWAP_CONTRACT_SECRETS_TREE,
@@ -78,6 +79,19 @@ pub(crate) fn atomic_swap_claim_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx];
+
+    // Validate children_indexes for token claim
+    if self_.children_indexes.len() != 1 {
+        msg!("[AtomicSwap::ClaimV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}", self_.children_indexes.len());
+        return Err(AtomicSwapError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = self_.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[AtomicSwap::ClaimV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+        return Err(AtomicSwapError::InvalidChildCall.into())
+    }
+
     let params: ClaimParamsV1 = deserialize(&self_.data.data[1..])?;
 
     // Load the swap

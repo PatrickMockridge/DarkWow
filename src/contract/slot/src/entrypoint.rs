@@ -329,13 +329,11 @@ fn reveal_spin_process_instruction_v1(
         None => return Err(SlotError::HouseNotInitialized.into()),
     };
 
-    // Get block hashes for entropy (simplified - would use actual block hashes in production)
-    // OPCODE PLACEHOLDER: When block hash access is available, use actual hashes
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    // Get block hash for entropy (unpredictable RandomX PoW output)
+    let block_hash = wasm::util::get_block_hash(wasm::util::get_verifying_block_height()?)?.0;
 
-    // For now, derive positions from block hash + spin ID + nonce
     let positions = derive_positions_from_entropy(
-        current_block,
+        block_hash,
         spin.id,
         spin.secret_nonce,
         config.reel_count,
@@ -567,30 +565,35 @@ fn create_3x5_paylines() -> Vec<crate::model::Payline> {
     ]
 }
 
-/// Derive reel positions from entropy
-/// Simplified version - uses block height as entropy source
+/// Derive reel positions from block hash entropy
+/// Uses full 32-byte block hash for unpredictability
 fn derive_positions_from_entropy(
-    block_height: u64,
+    block_hash: [u8; 32],
     spin_id: SpinId,
     secret_nonce: Base,
     num_reels: usize,
 ) -> Vec<u64> {
+    let a = u64::from_le_bytes(block_hash[0..8].try_into().unwrap());
+    let b = u64::from_le_bytes(block_hash[8..16].try_into().unwrap());
+    let c = u64::from_le_bytes(block_hash[16..24].try_into().unwrap());
+    let d = u64::from_le_bytes(block_hash[24..32].try_into().unwrap());
+
     let mut positions = Vec::with_capacity(num_reels);
 
     for i in 0..num_reels {
-        // Create entropy for this reel
+        // Create entropy for this reel using all 32 bytes of block hash
         let entropy = poseidon_hash([
             spin_id,
             secret_nonce,
-            Base::from(block_height),
+            Base::from(a),
+            Base::from(b),
+            Base::from(c),
+            Base::from(d),
             Base::from(i as u64),
         ]);
 
-        // Derive position from entropy
         let bytes = entropy.to_repr();
         let seed = u64::from_le_bytes(bytes[0..8].try_into().unwrap_or_default());
-
-        // Use seed to generate position (mod 100 for classic slot strip length)
         let position = seed % 100;
         positions.push(position);
     }

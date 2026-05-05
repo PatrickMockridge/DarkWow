@@ -58,7 +58,7 @@ struct Args {
     /// Configuration file to use
     config: Option<String>,
 
-    #[structopt(short, long, default_value = "testnet")]
+    #[structopt(short, long, default_value = "linear-testnet")]
     /// Blockchain network to use
     network: String,
 

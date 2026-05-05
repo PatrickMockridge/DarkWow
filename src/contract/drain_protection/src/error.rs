@@ -83,6 +83,12 @@ pub enum DrainProtectionError {
 
     #[error("Configuration error: {0}")]
     ConfigurationError(String),
+
+    #[error("Invalid children indexes for child call")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call")]
+    InvalidChildCall,
 }
 
 impl From<DrainProtectionError> for ContractError {
@@ -109,6 +115,8 @@ impl From<DrainProtectionError> for ContractError {
             DrainProtectionError::Unauthorized => Self::Custom(19),
             DrainProtectionError::InvalidSignature => Self::Custom(20),
             DrainProtectionError::ConfigurationError(_) => Self::Custom(21),
+            DrainProtectionError::InvalidChildrenIndexes => Self::Custom(22),
+            DrainProtectionError::InvalidChildCall => Self::Custom(23),
         }
     }
 }

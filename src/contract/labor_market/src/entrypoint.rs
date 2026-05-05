@@ -191,7 +191,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     match func {
         LaborMarketFunction::CreateJobV1 => {
             let params: CreateJobParamsV1 = deserialize(&self_.data[1..])?;
-            create_job_v1(cid, params)
+            create_job_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::AcceptJobV1 => {
             let params: AcceptJobParamsV1 = deserialize(&self_.data[1..])?;
@@ -207,7 +207,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::ConfirmDeliveryV1 => {
             let params: ConfirmDeliveryParamsV1 = deserialize(&self_.data[1..])?;
-            confirm_delivery_v1(cid, params)
+            confirm_delivery_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::DisputeV1 => {
             let params: DisputeParamsV1 = deserialize(&self_.data[1..])?;
@@ -215,11 +215,11 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::RefundV1 => {
             let params: RefundParamsV1 = deserialize(&self_.data[1..])?;
-            refund_v1(cid, params)
+            refund_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::CancelV1 => {
             let params: CancelJobParamsV1 = deserialize(&self_.data[1..])?;
-            cancel_job_v1(cid, params)
+            cancel_job_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::CreateJobWithMilestonesV1 => {
             let params: CreateJobWithMilestonesParamsV1 = deserialize(&self_.data[1..])?;
@@ -231,7 +231,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::ConfirmMilestoneV1 => {
             let params: ConfirmMilestoneParamsV1 = deserialize(&self_.data[1..])?;
-            confirm_milestone_v1(cid, params)
+            confirm_milestone_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::InitiateDisputeV1 => {
             let params: InitiateDisputeParamsV1 = deserialize(&self_.data[1..])?;
@@ -256,8 +256,23 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 /// CreateJobV1 instruction
-fn create_job_v1(cid: ContractId, params: CreateJobParamsV1) -> ContractResult {
+fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_v1] Creating job: {:?}", params.job_id);
+
+    // Validate child call is money_v3::transfer_v1 (0x04) for escrow deposit
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[create_job_v1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[create_job_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1)?;
@@ -301,8 +316,23 @@ fn submit_git_deliverable_v1(cid: ContractId, params: SubmitGitDeliverableParams
 }
 
 /// ConfirmDeliveryV1 instruction
-fn confirm_delivery_v1(cid: ContractId, params: ConfirmDeliveryParamsV1) -> ContractResult {
+fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmDeliveryParamsV1) -> ContractResult {
     msg!("[labor_market::confirm_delivery_v1] Confirming delivery for job: {:?}", params.job_id);
+
+    // Validate child call is money_v3::transfer_v1 (0x04) for worker payout
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[confirm_delivery_v1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[confirm_delivery_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1)?;
@@ -323,8 +353,23 @@ fn dispute_v1(cid: ContractId, params: DisputeParamsV1) -> ContractResult {
 }
 
 /// RefundV1 instruction
-fn refund_v1(cid: ContractId, params: RefundParamsV1) -> ContractResult {
+fn refund_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: RefundParamsV1) -> ContractResult {
     msg!("[labor_market::refund_v1] Processing refund for job: {:?}", params.job_id);
+
+    // Validate child call is money_v3::transfer_v1 (0x04) for refund to employer
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[refund_v1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[refund_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_REFUND_NS_V1)?;
@@ -334,8 +379,24 @@ fn refund_v1(cid: ContractId, params: RefundParamsV1) -> ContractResult {
 }
 
 /// CancelV1 instruction
-fn cancel_job_v1(cid: ContractId, params: CancelJobParamsV1) -> ContractResult {
+fn cancel_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CancelJobParamsV1) -> ContractResult {
     msg!("[labor_market::cancel_job_v1] Cancelling job: {:?}", params.job_id);
+
+    // Validate child call is money_v3::transfer_v1 (0x04) for refund
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[cancel_job_v1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[cancel_job_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
     Ok(())
 }
 
@@ -775,8 +836,23 @@ fn submit_milestone_v1(cid: ContractId, params: SubmitMilestoneDeliverableParams
 }
 
 /// ConfirmMilestoneV1 instruction
-fn confirm_milestone_v1(cid: ContractId, params: ConfirmMilestoneParamsV1) -> ContractResult {
+fn confirm_milestone_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmMilestoneParamsV1) -> ContractResult {
     msg!("[labor_market::confirm_milestone_v1] Confirming milestone for job: {:?}", params.job_id);
+
+    // Validate child call is money_v3::transfer_v1 (0x04) for milestone payment
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[confirm_milestone_v1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[confirm_milestone_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1)?;

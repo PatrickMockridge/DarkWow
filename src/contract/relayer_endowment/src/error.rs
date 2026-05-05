@@ -49,6 +49,12 @@ pub enum RelayerEndowmentError {
 
     #[error("Update failed: {0}")]
     UpdateFailed(String),
+
+    #[error("Invalid children indexes for child call")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call")]
+    InvalidChildCall,
 }
 
 impl From<RelayerEndowmentError> for darkfi_sdk::error::ContractError {
@@ -63,6 +69,8 @@ impl From<RelayerEndowmentError> for darkfi_sdk::error::ContractError {
             RelayerEndowmentError::InvalidParams(_) => Self::Custom(7),
             RelayerEndowmentError::ArithmeticOverflow => Self::Custom(8),
             RelayerEndowmentError::UpdateFailed(_) => Self::Custom(9),
+            RelayerEndowmentError::InvalidChildrenIndexes => Self::Custom(10),
+            RelayerEndowmentError::InvalidChildCall => Self::Custom(11),
         }
     }
 }

@@ -218,6 +218,18 @@ fn process_join_pool_instruction(
 
     msg!("[pool_stake::join_pool] Joining pool {:?} with amount {}", params.pool_id, params.amount);
 
+    // Validate money_v3::transfer_v1 child call for stake deposit
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[JoinPoolV1] Expected 1 child call (money_v3::transfer_v1)");
+        return Err(PoolStakeError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    if calls[child_idx].data.data[0] != 0x04 {
+        msg!("[JoinPoolV1] Child call is not money_v3::transfer_v1 (0x04)");
+        return Err(PoolStakeError::InvalidChildCall.into())
+    }
+
     // Validate stake amount
     if params.amount < POOL_STAKE_MIN_STAKE {
         return Err(PoolStakeError::InsufficientStake(POOL_STAKE_MIN_STAKE).into());
@@ -328,6 +340,18 @@ fn process_leave_pool_instruction(
     let params: LeavePoolParamsV1 = deserialize(&self_.data[1..])?;
 
     msg!("[pool_stake::leave_pool] Leave request for stake {:?}", params.stake_id);
+
+    // Validate money_v3::transfer_v1 child call for stake withdrawal
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[LeavePoolV1] Expected 1 child call (money_v3::transfer_v1)");
+        return Err(PoolStakeError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    if calls[child_idx].data.data[0] != 0x04 {
+        msg!("[LeavePoolV1] Child call is not money_v3::transfer_v1 (0x04)");
+        return Err(PoolStakeError::InvalidChildCall.into())
+    }
 
     // Get stake
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
@@ -525,11 +549,17 @@ fn apply_release_coverage_update(cid: ContractId, update: ReleaseCoverageUpdateV
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let allocations_db = wasm::db::db_lookup(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
 
-    // Update pool
-    let mut pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&update.allocation_id))? {
+    // Look up allocation to get pool_id
+    let mut allocation: CoverageAllocation =
+        match wasm::db::db_get(allocations_db, &serialize(&update.allocation_id))? {
             Some(data) => deserialize(&data)?,
-            // Use pool_id from allocation instead
+            None => return Err(PoolStakeError::AllocationNotFound.into()),
+        };
+
+    // Look up pool by pool_id from the allocation
+    let mut pool: PoolStakeRegistry =
+        match wasm::db::db_get(registry_db, &serialize(&allocation.pool_id))? {
+            Some(data) => deserialize(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
@@ -538,13 +568,7 @@ fn apply_release_coverage_update(cid: ContractId, update: ReleaseCoverageUpdateV
 
     wasm::db::db_set(registry_db, &serialize(&pool.pool_id), &serialize(&pool))?;
 
-    // Update allocation
-    let mut allocation: CoverageAllocation =
-        match wasm::db::db_get(allocations_db, &serialize(&update.allocation_id))? {
-            Some(data) => deserialize(&data)?,
-            None => return Err(PoolStakeError::AllocationNotFound.into()),
-        };
-
+    // Mark allocation as executed
     allocation.executed = true;
 
     wasm::db::db_set(
@@ -640,6 +664,18 @@ fn process_claim_fees_instruction(
     let params: ClaimFeesParamsV1 = deserialize(&self_.data[1..])?;
 
     msg!("[pool_stake::claim_fees] Claiming fees for stake {:?}", params.stake_id);
+
+    // Validate money_v3::transfer_v1 child call for fee payout
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[ClaimFeesV1] Expected 1 child call (money_v3::transfer_v1)");
+        return Err(PoolStakeError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    if calls[child_idx].data.data[0] != 0x04 {
+        msg!("[ClaimFeesV1] Child call is not money_v3::transfer_v1 (0x04)");
+        return Err(PoolStakeError::InvalidChildCall.into())
+    }
 
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
     let stake: PoolMemberStake =

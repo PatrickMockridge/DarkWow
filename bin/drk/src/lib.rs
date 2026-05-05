@@ -386,12 +386,126 @@ impl Drk {
 
     /// Attach fee to transaction
     ///
-    /// Note: This is a stub. Full implementation requires NativeToken::FeeV1.
-    pub async fn attach_fee(&self, _tx: &mut Transaction, _fee: u64) -> Result<()> {
-        Err(Error::Custom(
-            "attach_fee not yet implemented for Money V3. \
-             Fee payment requires NativeToken::FeeV1 integration.".to_string(),
-        ))
+    /// Builds a NativeToken::FeeV1 call using the wallet's first DARK coin
+    /// and appends it as a root-level call in the transaction.
+    pub async fn attach_fee(&self, tx: &mut Transaction, _fee: u64) -> Result<()> {
+        use crate::contract_imports::native_token::{
+            DARK_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
+            NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
+        };
+        use darkfi::zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
+        use darkfi_sdk::crypto::{BaseBlind, MerkleNode};
+        use darkfi_serial::Encodable;
+        use rand::rngs::OsRng;
+
+        const DEFAULT_FEE: u64 = 42_000_000;
+
+        // Get DARK coin for fee
+        let dark_token_id_str = format!("{:?}", DARK_TOKEN_ID);
+        let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
+            .map_err(|e| Error::Custom(format!("Failed to get DARK coins: {:?}", e)))?;
+
+        if dark_coin_records.is_empty() {
+            return Err(Error::Custom(
+                "No DARK coins available for fee payment.".to_string(),
+            ));
+        }
+
+        let dark_coin = &dark_coin_records[0];
+        let dark_secret_bytes = bs58::decode(&dark_coin.secret)
+            .into_vec()
+            .map_err(|e| Error::Custom(e.to_string()))?
+            .try_into()
+            .map_err(|_| Error::Custom("Invalid DARK secret key length".to_string()))?;
+        let dark_secret = SecretKey::from_bytes(dark_secret_bytes)
+            .map_err(|_| Error::Custom("Failed to parse DARK secret key".to_string()))?;
+
+        let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.coin_id)
+            .map_err(|e| Error::Custom(format!("Failed to get DARK Merkle proof: {:?}", e)))?;
+
+        let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
+            .siblings
+            .iter()
+            .map(|s| {
+                let bytes: [u8; 32] = bs58::decode(s)
+                    .into_vec()
+                    .map_err(|e| Error::Custom(e.to_string()))?
+                    .try_into()
+                    .map_err(|_| Error::Custom("Invalid Merkle node length".to_string()))?;
+                Ok(MerkleNode::from_bytes(bytes)
+                    .ok_or_else(|| Error::Custom("Invalid Merkle node".to_string()))?)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let dark_coin_blind_bytes = bs58::decode(&dark_coin.coin_blind)
+            .into_vec()
+            .map_err(|e| Error::Custom(e.to_string()))?
+            .try_into()
+            .map_err(|_| Error::Custom("Invalid coin blind length".to_string()))?;
+        let dark_coin_blind = pallas::Base::from_repr(dark_coin_blind_bytes)
+            .into_option()
+            .ok_or_else(|| Error::Custom("Invalid coin blind".to_string()))?;
+
+        // Load fee ZK binary and build fee proof
+        let fee_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN, false)
+            .map_err(|e| Error::Custom(format!("Failed to decode fee ZK binary: {:?}", e)))?;
+
+        let fee_empty_wits = empty_witnesses(&fee_zkbin)?;
+        let fee_circuit = ZkCircuit::new(fee_empty_wits, &fee_zkbin);
+        let fee_pk = ProvingKey::build(0, &fee_circuit);
+
+        let fee_input = FeeCallInput {
+            value: dark_coin.value,
+            token_id: DARK_TOKEN_ID,
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: dark_coin_blind,
+            leaf_position: dark_coin.leaf_position,
+            merkle_path: dark_merkle_path,
+            secret: dark_secret,
+            signature_secret: dark_secret,
+        };
+
+        let dark_public_key = PublicKey::from_secret(dark_secret);
+        let change_blind = BaseBlind::random(&mut OsRng);
+        let fee_output = FeeCallOutput {
+            recipient: dark_public_key,
+            value: dark_coin.value.saturating_sub(DEFAULT_FEE),
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: change_blind.inner(),
+        };
+
+        let fee_builder = FeeCallBuilder {
+            input: fee_input,
+            output: fee_output,
+            fee_zkbin,
+            fee_pk,
+            fee: DEFAULT_FEE,
+        };
+
+        let fee_debris = fee_builder.build()
+            .map_err(|e| Error::Custom(format!("Failed to build fee: {:?}", e)))?;
+
+        // Encode fee params into call data (FeeV1 = 0x00)
+        let mut fee_call_data = vec![0x00u8];
+        fee_debris.params.encode(&mut fee_call_data)
+            .map_err(|e| Error::Custom(format!("Failed to encode fee params: {:?}", e)))?;
+
+        let fee_call = ContractCall {
+            contract_id: *NATIVE_TOKEN_CONTRACT_ID,
+            data: fee_call_data,
+        };
+
+        // Append fee as root-level call (no parent, no children)
+        tx.calls.push(darkfi::tx::DarkLeaf {
+            data: fee_call,
+            parent_index: None,
+            children_indexes: vec![],
+        });
+        tx.proofs.push(vec![]);
+
+        Ok(())
     }
 
     /// Mark coins from a transaction as spent in the wallet database.

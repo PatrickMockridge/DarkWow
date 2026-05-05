@@ -336,6 +336,7 @@ pub struct ExecuteParams {
 ///
 /// Exit the fund with a haircut (any member, any time).
 pub struct ExitBuilder {
+    fund_id: pallas::Base,
     member_pubkey: PublicKey,
     contribution_weight: u64,
     current_block: u64,
@@ -345,11 +346,17 @@ pub struct ExitBuilder {
 impl ExitBuilder {
     pub fn new() -> Self {
         Self {
+            fund_id: pallas::Base::zero(),
             member_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
             contribution_weight: 0,
             current_block: 0,
             proof: vec![],
         }
+    }
+
+    pub fn fund_id(mut self, id: pallas::Base) -> Self {
+        self.fund_id = id;
+        self
     }
 
     pub fn member_pubkey(mut self, key: PublicKey) -> Self {
@@ -374,6 +381,7 @@ impl ExitBuilder {
 
     pub fn build(&self) -> Result<ExitParamsV1, &'static str> {
         Ok(ExitParamsV1 {
+            fund_id: self.fund_id,
             member_pubkey: self.member_pubkey,
             contribution_weight: self.contribution_weight,
             current_block: self.current_block,

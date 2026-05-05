@@ -12,7 +12,11 @@ constant "SettleBet_V1" {
 witness "SettleBet_V1" {
     Base player_pub_x,
     Base player_pub_y,
+    Base bet_value,
+    Base paylines,
     Base secret_nonce,
+    Base blind,
+    Base token_id,
     Base position_0,
     Base position_1,
     Base position_2,
@@ -21,11 +25,18 @@ witness "SettleBet_V1" {
 }
 
 circuit "SettleBet_V1" {
-    # Verify the spin_id matches our known parameters
+    # Verify the spin_id matches our known parameters.
+    # Must match the on-chain derivation in commit_bet_v1.rs:
+    # spin_id = poseidon_hash([player_pub_x, player_pub_y, bet_value,
+    #                         paylines, secret_nonce, blind, token_id])
     derived_spin_id = poseidon_hash(
         player_pub_x,
         player_pub_y,
+        bet_value,
+        paylines,
         secret_nonce,
+        blind,
+        token_id,
     );
     constrain_instance(derived_spin_id);
 

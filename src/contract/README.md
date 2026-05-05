@@ -9,7 +9,6 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 | **attestation** | Generalized attestation and claims system | ✅ Complete ZK + Test Harness |
 | **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete ZK + Test Harness |
 | **baccarat** | Privacy-preserving Baccarat (Punto Banco) casino game | ✅ Complete ZK + Test Harness |
-| **block_height_prediction** | PoW-backed block height betting | ✅ Complete ZK + Test Harness |
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete ZK + Test Harness |
 | **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete ZK + Test Harness |
 | **darkbet_exchange** | Unified betting exchange (order-book + AMM) | ✅ Complete ZK + Test Harness |
@@ -286,7 +285,6 @@ Local READMEs exist for each contract in this folder:
 - [attestation/README.md](attestation/README.md) - Generalized attestation and claims
 - [atomic_swap/README.md](atomic_swap/README.md) - Cross-chain atomic swaps
 - [baccarat/README.md](baccarat/README.md) - Privacy-preserving Baccarat casino game
-- [block_height_prediction/README.md](block_height_prediction/README.md) - PoW-backed block height betting
 - [bridge/README.md](bridge/README.md) - Cross-chain asset transfers
 - [dao_escrow/README.md](dao_escrow/README.md) - Three-mode DAO
 - [darkbet_exchange/README.md](darkbet_exchange/README.md) - Unified betting exchange (order-book + AMM)

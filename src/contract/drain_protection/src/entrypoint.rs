@@ -204,11 +204,33 @@ fn process_instruction(cid: darkfi_sdk::crypto::ContractId, ix: &[u8]) -> Contra
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::ExitV1 => {
+            // Validate children_indexes for token payout
+            if self_.children_indexes.len() != 1 {
+                msg!("[drain_protection::ExitV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}", self_.children_indexes.len());
+                return Err(DrainProtectionError::InvalidChildrenIndexes.into())
+            }
+            let child_idx = self_.children_indexes[0];
+            if calls[child_idx].data.data[0] != 0x04 {
+                msg!("[drain_protection::ExitV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", calls[child_idx].data.data[0]);
+                return Err(DrainProtectionError::InvalidChildCall.into())
+            }
+
             let params: ExitParamsV1 = deserialize(&self_.data.data[1..])?;
             let update = exit_process_instruction_v1(cid, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::TransferV1 => {
+            // Validate children_indexes for token transfer
+            if self_.children_indexes.len() != 1 {
+                msg!("[drain_protection::TransferV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}", self_.children_indexes.len());
+                return Err(DrainProtectionError::InvalidChildrenIndexes.into())
+            }
+            let child_idx = self_.children_indexes[0];
+            if calls[child_idx].data.data[0] != 0x04 {
+                msg!("[drain_protection::TransferV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", calls[child_idx].data.data[0]);
+                return Err(DrainProtectionError::InvalidChildCall.into())
+            }
+
             let params: crate::model::TransferParamsV1 =
                 deserialize(&self_.data.data[1..])?;
             let update = transfer_process_instruction_v1(cid, params)?;
@@ -438,8 +460,8 @@ fn exit_process_instruction_v1(
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
     let exits_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_EXITS_TREE)?;
 
-    // Find the member's fund
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.member_pubkey))?
+    // Find the fund by its ID
+    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.fund_id))?
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let fund: ProtectedFund = deserialize(&fund_data)?;
 

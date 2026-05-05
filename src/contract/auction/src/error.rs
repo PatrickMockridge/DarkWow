@@ -79,4 +79,38 @@ pub enum AuctionError {
 
     #[error("Invalid signature")]
     InvalidSignature,
+
+    #[error("Invalid children: expected 1 money_v3::transfer_v1 child call")]
+    InvalidChildrenIndexes,
+
+    #[error("Child call is not money_v3::transfer_v1 (0x04)")]
+    InvalidChildCall,
+}
+
+impl From<AuctionError> for darkfi_sdk::error::ContractError {
+    fn from(e: AuctionError) -> Self {
+        match e {
+            AuctionError::AuctionNotFound => Self::Custom(1),
+            AuctionError::BidNotFound => Self::Custom(2),
+            AuctionError::InvalidAuctionState { .. } => Self::Custom(3),
+            AuctionError::InvalidBidState { .. } => Self::Custom(4),
+            AuctionError::AuctionNotActive => Self::Custom(5),
+            AuctionError::AuctionNotEnded => Self::Custom(6),
+            AuctionError::BidTooLow => Self::Custom(7),
+            AuctionError::BelowReservePrice => Self::Custom(8),
+            AuctionError::NotSeller => Self::Custom(9),
+            AuctionError::NotWinner => Self::Custom(10),
+            AuctionError::NotBidder => Self::Custom(11),
+            AuctionError::SellerCommitmentMismatch => Self::Custom(12),
+            AuctionError::WinnerPubkeyMismatch => Self::Custom(13),
+            AuctionError::BidderPubkeyMismatch => Self::Custom(14),
+            AuctionError::SettlementNullifierMismatch => Self::Custom(15),
+            AuctionError::RefundNullifierMismatch => Self::Custom(16),
+            AuctionError::NullifierSpent => Self::Custom(17),
+            AuctionError::InvalidProof => Self::Custom(18),
+            AuctionError::InvalidSignature => Self::Custom(19),
+            AuctionError::InvalidChildrenIndexes => Self::Custom(20),
+            AuctionError::InvalidChildCall => Self::Custom(21),
+        }
+    }
 }

@@ -321,8 +321,8 @@ async fn test_dex_heavyweight_impl(
         pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
-        alice_url: "tcp+tls://127.0.0.1:18620".to_string(),
-        bob_url: "tcp+tls://127.0.0.1:18621".to_string(),
+        alice_url: "tcp+tls://127.0.0.1:18646".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18647".to_string(),
     };
     let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
     money_pipeline.generate_genesis_blocks(3).await?;
@@ -808,52 +808,6 @@ async fn test_baccarat_heavyweight_impl(
     Ok(())
 }
 
-// block_height_prediction
-#[test]
-fn test_block_height_prediction_heavyweight() -> Result<()> {
-    let ex = Arc::new(Executor::new());
-    let (signal, shutdown) = smol::channel::unbounded::<()>();
-
-    easy_parallel::Parallel::new()
-        .each(0..1, |_| smol::block_on(ex.run(shutdown.recv())))
-        .finish(|| {
-            smol::block_on(async {
-                test_block_height_prediction_heavyweight_impl(ex.clone()).await.unwrap();
-                drop(signal);
-            })
-        });
-
-    Ok(())
-}
-
-async fn test_block_height_prediction_heavyweight_impl(
-    ex: Arc<Executor<'static>>,
-) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::BlockHeightPredictionHarness;
-
-    let harness = BlockHeightPredictionHarness::spawn();
-    info!("BlockHeightPrediction harness created with circuits: {:?}", harness.circuits());
-
-    let config = HarnessConfig {
-        pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
-        confirmation_threshold: 1,
-        max_forks: 8,
-        alice_url: "tcp+tls://127.0.0.1:18588".to_string(),
-        bob_url: "tcp+tls://127.0.0.1:18589".to_string(),
-    };
-
-    let mut pipeline =
-        HeavyweightPipeline::new(harness, "block_height_prediction", config, ex).await?;
-    pipeline.generate_genesis_blocks(3).await?;
-    let wasm = read_wasm("block_height_prediction").await?;
-    let contract_id = pipeline.deploy(wasm).await?;
-    info!("BlockHeightPrediction deployed: {:?}", contract_id);
-
-    info!("test_block_height_prediction_heavyweight PASSED");
-    Ok(())
-}
-
 // bridge
 #[test]
 fn test_bridge_heavyweight() -> Result<()> {
@@ -885,8 +839,8 @@ async fn test_bridge_heavyweight_impl(
         pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
-        alice_url: "tcp+tls://127.0.0.1:18590".to_string(),
-        bob_url: "tcp+tls://127.0.0.1:18591".to_string(),
+        alice_url: "tcp+tls://127.0.0.1:18634".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18635".to_string(),
     };
 
     let mut pipeline = HeavyweightPipeline::new(harness, "bridge", config, ex).await?;
@@ -1364,8 +1318,8 @@ async fn test_escrow_heavyweight_impl(
         pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
-        alice_url: "tcp+tls://127.0.0.1:18600".to_string(),
-        bob_url: "tcp+tls://127.0.0.1:18601".to_string(),
+        alice_url: "tcp+tls://127.0.0.1:18640".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18641".to_string(),
     };
 
     let mut pipeline = HeavyweightPipeline::new(harness, "escrow", config, ex).await?;
@@ -2272,8 +2226,8 @@ async fn test_subscription_heavyweight_impl(
         pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
-        alice_url: "tcp+tls://127.0.0.1:18616".to_string(),
-        bob_url: "tcp+tls://127.0.0.1:18617".to_string(),
+        alice_url: "tcp+tls://127.0.0.1:18636".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18637".to_string(),
     };
 
     let mut pipeline = HeavyweightPipeline::new(harness, "subscription", config, ex).await?;
@@ -2317,8 +2271,8 @@ async fn test_tender_heavyweight_impl(
         pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
-        alice_url: "tcp+tls://127.0.0.1:18618".to_string(),
-        bob_url: "tcp+tls://127.0.0.1:18619".to_string(),
+        alice_url: "tcp+tls://127.0.0.1:18638".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18639".to_string(),
     };
 
     let mut pipeline = HeavyweightPipeline::new(harness, "tender", config, ex).await?;
@@ -2522,5 +2476,230 @@ async fn test_betting_stake_heavyweight_impl(
     info!("Executed betting_stake::0x02 (tx: {:?})", tx.hash());
 
     info!("test_betting_stake_heavyweight PASSED");
+    Ok(())
+}
+
+// native_token
+#[test]
+fn test_native_token_heavyweight() -> Result<()> {
+    let ex = Arc::new(Executor::new());
+    let (signal, shutdown) = smol::channel::unbounded::<()>();
+
+    easy_parallel::Parallel::new()
+        .each(0..1, |_| smol::block_on(ex.run(shutdown.recv())))
+        .finish(|| {
+            smol::block_on(async {
+                test_native_token_heavyweight_impl(ex.clone()).await.unwrap();
+                drop(signal);
+            })
+        });
+
+    Ok(())
+}
+
+async fn test_native_token_heavyweight_impl(
+    ex: Arc<Executor<'static>>,
+) -> std::result::Result<(), HeavyweightError> {
+    use darkfi_contract_test_harness::harness::NativeTokenHarness;
+
+    let harness = NativeTokenHarness::spawn();
+    info!("NativeToken harness created with circuits: {:?}", harness.circuits());
+
+    let config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18624".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18625".to_string(),
+    };
+
+    let mut pipeline = HeavyweightPipeline::new(harness, "native_token", config, ex).await?;
+    pipeline.generate_genesis_blocks(3).await?;
+    let wasm = read_wasm("native_token").await?;
+    let contract_id = pipeline.deploy(wasm).await?;
+    info!("NativeToken deployed: {:?}", contract_id);
+
+    info!("test_native_token_heavyweight PASSED");
+    Ok(())
+}
+
+// relayer_endowment
+#[test]
+fn test_relayer_endowment_heavyweight() -> Result<()> {
+    let ex = Arc::new(Executor::new());
+    let (signal, shutdown) = smol::channel::unbounded::<()>();
+
+    easy_parallel::Parallel::new()
+        .each(0..1, |_| smol::block_on(ex.run(shutdown.recv())))
+        .finish(|| {
+            smol::block_on(async {
+                test_relayer_endowment_heavyweight_impl(ex.clone()).await.unwrap();
+                drop(signal);
+            })
+        });
+
+    Ok(())
+}
+
+async fn test_relayer_endowment_heavyweight_impl(
+    ex: Arc<Executor<'static>>,
+) -> std::result::Result<(), HeavyweightError> {
+    use darkfi_contract_test_harness::harness::RelayerEndowmentHarness;
+
+    let harness = RelayerEndowmentHarness::spawn();
+    info!("RelayerEndowment harness created with circuits: {:?}", harness.circuits());
+
+    let config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18626".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18627".to_string(),
+    };
+
+    let mut pipeline = HeavyweightPipeline::new(harness, "relayer_endowment", config, ex).await?;
+    pipeline.generate_genesis_blocks(3).await?;
+    let wasm = read_wasm("relayer_endowment").await?;
+    let contract_id = pipeline.deploy(wasm).await?;
+    info!("RelayerEndowment deployed: {:?}", contract_id);
+
+    info!("test_relayer_endowment_heavyweight PASSED");
+    Ok(())
+}
+
+// atomic_swap
+#[test]
+fn test_atomic_swap_heavyweight() -> Result<()> {
+    let ex = Arc::new(Executor::new());
+    let (signal, shutdown) = smol::channel::unbounded::<()>();
+
+    easy_parallel::Parallel::new()
+        .each(0..1, |_| smol::block_on(ex.run(shutdown.recv())))
+        .finish(|| {
+            smol::block_on(async {
+                test_atomic_swap_heavyweight_impl(ex.clone()).await.unwrap();
+                drop(signal);
+            })
+        });
+
+    Ok(())
+}
+
+async fn test_atomic_swap_heavyweight_impl(
+    ex: Arc<Executor<'static>>,
+) -> std::result::Result<(), HeavyweightError> {
+    use darkfi_contract_test_harness::harness::AtomicSwapHarness;
+
+    let harness = AtomicSwapHarness::spawn();
+    info!("AtomicSwap harness created with circuits: {:?}", harness.circuits());
+
+    let config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18628".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18629".to_string(),
+    };
+
+    let mut pipeline = HeavyweightPipeline::new(harness, "atomic_swap", config, ex).await?;
+    pipeline.generate_genesis_blocks(3).await?;
+    let wasm = read_wasm("atomic_swap").await?;
+    let contract_id = pipeline.deploy(wasm).await?;
+    info!("AtomicSwap deployed: {:?}", contract_id);
+
+    info!("test_atomic_swap_heavyweight PASSED");
+    Ok(())
+}
+
+// game_room
+#[test]
+fn test_game_room_heavyweight() -> Result<()> {
+    let ex = Arc::new(Executor::new());
+    let (signal, shutdown) = smol::channel::unbounded::<()>();
+
+    easy_parallel::Parallel::new()
+        .each(0..1, |_| smol::block_on(ex.run(shutdown.recv())))
+        .finish(|| {
+            smol::block_on(async {
+                test_game_room_heavyweight_impl(ex.clone()).await.unwrap();
+                drop(signal);
+            })
+        });
+
+    Ok(())
+}
+
+async fn test_game_room_heavyweight_impl(
+    ex: Arc<Executor<'static>>,
+) -> std::result::Result<(), HeavyweightError> {
+    use darkfi_contract_test_harness::harness::GameRoomHarness;
+
+    let harness = GameRoomHarness::spawn();
+    info!("GameRoom harness created with circuits: {:?}", harness.circuits());
+
+    let config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18630".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18631".to_string(),
+    };
+
+    let mut pipeline = HeavyweightPipeline::new(harness, "game_room", config, ex).await?;
+    pipeline.generate_genesis_blocks(3).await?;
+    let wasm = read_wasm("game_room").await?;
+    let contract_id = pipeline.deploy(wasm).await?;
+    info!("GameRoom deployed: {:?}", contract_id);
+
+    info!("test_game_room_heavyweight PASSED");
+    Ok(())
+}
+
+// drain_protection
+#[test]
+fn test_drain_protection_heavyweight() -> Result<()> {
+    let ex = Arc::new(Executor::new());
+    let (signal, shutdown) = smol::channel::unbounded::<()>();
+
+    easy_parallel::Parallel::new()
+        .each(0..1, |_| smol::block_on(ex.run(shutdown.recv())))
+        .finish(|| {
+            smol::block_on(async {
+                test_drain_protection_heavyweight_impl(ex.clone()).await.unwrap();
+                drop(signal);
+            })
+        });
+
+    Ok(())
+}
+
+async fn test_drain_protection_heavyweight_impl(
+    ex: Arc<Executor<'static>>,
+) -> std::result::Result<(), HeavyweightError> {
+    use darkfi_contract_test_harness::harness::DrainProtectionHarness;
+
+    let harness = DrainProtectionHarness::spawn();
+    info!("DrainProtection harness created with circuits: {:?}", harness.circuits());
+
+    let config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18632".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18633".to_string(),
+    };
+
+    let mut pipeline = HeavyweightPipeline::new(harness, "drain_protection", config, ex).await?;
+    pipeline.generate_genesis_blocks(3).await?;
+    let wasm = read_wasm("drain_protection").await?;
+    let contract_id = pipeline.deploy(wasm).await?;
+    info!("DrainProtection deployed: {:?}", contract_id);
+
+    info!("test_drain_protection_heavyweight PASSED");
     Ok(())
 }

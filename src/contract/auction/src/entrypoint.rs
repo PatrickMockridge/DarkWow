@@ -49,6 +49,7 @@ use darkfi_sdk::{
 use darkfi_serial::{deserialize, serialize};
 
 use crate::{
+    error::AuctionError,
     model::{
         Auction, AuctionState, Bid, BidState, ClaimWinningsParamsV1,
         ClaimWinningsUpdateV1, CloseAuctionParamsV1, CloseAuctionUpdateV1,
@@ -263,14 +264,47 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             close_auction_v1(cid, params)
         }
         AuctionFunction::ClaimWinningsV1 => {
+            // Validate money_v3::transfer_v1 child call for payout
+            let this_call = &calls[call_idx];
+            if this_call.children_indexes.len() != 1 {
+                msg!("[ClaimWinningsV1] Expected 1 child call (money_v3::transfer_v1)");
+                return Err(AuctionError::InvalidChildrenIndexes.into())
+            }
+            let child_idx = this_call.children_indexes[0];
+            if calls[child_idx].data.data[0] != 0x04 {
+                msg!("[ClaimWinningsV1] Child call is not money_v3::transfer_v1 (0x04)");
+                return Err(AuctionError::InvalidChildCall.into())
+            }
             let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
             claim_winnings_v1(cid, params)
         }
         AuctionFunction::SettleAuctionV1 => {
+            // Validate money_v3::transfer_v1 child call for seller payout
+            let this_call = &calls[call_idx];
+            if this_call.children_indexes.len() != 1 {
+                msg!("[SettleAuctionV1] Expected 1 child call (money_v3::transfer_v1)");
+                return Err(AuctionError::InvalidChildrenIndexes.into())
+            }
+            let child_idx = this_call.children_indexes[0];
+            if calls[child_idx].data.data[0] != 0x04 {
+                msg!("[SettleAuctionV1] Child call is not money_v3::transfer_v1 (0x04)");
+                return Err(AuctionError::InvalidChildCall.into())
+            }
             let params: SettleAuctionParamsV1 = deserialize(&self_.data[1..])?;
             settle_auction_v1(cid, params)
         }
         AuctionFunction::RefundBidV1 => {
+            // Validate money_v3::transfer_v1 child call for bid refund
+            let this_call = &calls[call_idx];
+            if this_call.children_indexes.len() != 1 {
+                msg!("[RefundBidV1] Expected 1 child call (money_v3::transfer_v1)");
+                return Err(AuctionError::InvalidChildrenIndexes.into())
+            }
+            let child_idx = this_call.children_indexes[0];
+            if calls[child_idx].data.data[0] != 0x04 {
+                msg!("[RefundBidV1] Child call is not money_v3::transfer_v1 (0x04)");
+                return Err(AuctionError::InvalidChildCall.into())
+            }
             let params: RefundBidParamsV1 = deserialize(&self_.data[1..])?;
             refund_bid_v1(cid, params)
         }

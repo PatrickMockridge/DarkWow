@@ -343,6 +343,21 @@ fn darkbet_place_back_process_instruction_v1(
 
     msg!("[darkbet::place_back] Placing back order on market {:?}", params.market_id);
 
+    // Validate child call is money_v3::transfer_v1 (0x04) for stake
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[place_back] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(DarkbetError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[place_back] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(DarkbetError::InvalidChildCall.into())
+    }
+
     // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
     let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
@@ -455,6 +470,21 @@ fn darkbet_place_lay_process_instruction_v1(
     let params: PlaceLayParamsV1 = deserialize(&self_.data[1..])?;
 
     msg!("[darkbet::place_lay] Placing lay order on market {:?}", params.market_id);
+
+    // Validate child call is money_v3::transfer_v1 (0x04) for stake
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[place_lay] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(DarkbetError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[place_lay] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(DarkbetError::InvalidChildCall.into())
+    }
 
     // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;

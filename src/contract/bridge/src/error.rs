@@ -74,6 +74,12 @@ pub enum BridgeError {
 
     #[error("Invalid function or parameters")]
     InvalidFunction,
+
+    #[error("Invalid children indexes for child call")]
+    InvalidChildrenIndexes,
+
+    #[error("Invalid child call")]
+    InvalidChildCall,
 }
 
 impl From<BridgeError> for ContractError {
@@ -97,6 +103,8 @@ impl From<BridgeError> for ContractError {
             BridgeError::InvalidZkProof => Self::Custom(16),
             BridgeError::UnauthorizedConfigUpdate => Self::Custom(17),
             BridgeError::InvalidFunction => Self::Custom(18),
+            BridgeError::InvalidChildrenIndexes => Self::Custom(19),
+            BridgeError::InvalidChildCall => Self::Custom(20),
         }
     }
 }

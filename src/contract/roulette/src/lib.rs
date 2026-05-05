@@ -121,3 +121,7 @@ pub const ROULETTE_CONTRACT_TABLES_TREE: &str = "roulette_tables";
 pub const ROULETTE_CONTRACT_BETS_TREE: &str = "roulette_bets";
 pub const ROULETTE_CONTRACT_NULLIFIERS_TREE: &str = "roulette_nullifiers";
 pub const ROULETTE_CONTRACT_BETS_HISTORY_TREE: &str = "roulette_history";
+
+// zkas circuit namespaces
+pub const ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V1: &str = "PlaceBet_V1";
+pub const ROULETTE_CONTRACT_ZKAS_SETTLE_BET_NS_V1: &str = "SettleBet_V1";

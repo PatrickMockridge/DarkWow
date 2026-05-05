@@ -133,3 +133,9 @@ pub const MIN_BOND_RATE: u32 = 1000;
 pub const DEFAULT_COVERAGE_LEVERAGE: u32 = 10;
 /// Maximum coverage leverage (50x)
 pub const MAX_COVERAGE_LEVERAGE: u32 = 50;
+
+// zkas circuit namespaces
+pub const INSURANCE_MARKET_ZKAS_UNDERWRITE_WITH_CAPABILITY_NS_V1: &str =
+    "UnderwriteWithCapability_V1";
+pub const INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_CAPABILITY_NS_V1: &str =
+    "PurchaseCoverageWithCapability_V1";
