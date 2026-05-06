@@ -41,13 +41,8 @@ pub struct CreatePoolV1PublicInputs {
 
 impl CreatePoolV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.creator_pub_x,
-            self.creator_pub_y,
-            self.pool_config_hash,
-            self.nonce,
-            self.derived_pool_id,
-        ]
+        // Only constrain_instance values (derived_pool_id is the sole public instance)
+        vec![self.derived_pool_id]
     }
 }
 

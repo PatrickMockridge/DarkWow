@@ -24,12 +24,25 @@ use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::pasta::pallas;
+use darkfi_sdk::{
+    crypto::{pasta_prelude::*, MerkleNode, PublicKey},
+    pasta::pallas,
+};
+use darkfi_serial::Encodable;
 
-use subscription_contract::client::{
-    rate_limit_v1::{RateLimitCallData, create_rate_limit_proof},
-    subscribe_v1::{SubscribeCallData, create_subscribe_proof},
-    verify_access_v1::{VerifyAccessCallData, create_verify_access_proof},
+use darkfi_subscription_contract::client::{
+    rate_limit_v1::{
+        RateLimitCallData, RateLimitPublicInputs, create_rate_limit_proof,
+    },
+    subscribe_v1::{
+        SubscribeCallData, SubscribePublicInputs, create_subscribe_proof,
+    },
+    verify_access_v1::{
+        VerifyAccessCallData, VerifyAccessPublicInputs, create_verify_access_proof,
+    },
+};
+use darkfi_subscription_contract::model::{
+    SubscribeParamsV1, VerifyAccessParamsV1,
 };
 
 /// Subscription Harness for isolated testing
@@ -98,6 +111,218 @@ impl SubscriptionHarness {
             update_usage_pk,
         }
     }
+
+    /// Subscribe to a plan (function code 0x01)
+    #[allow(clippy::too_many_arguments)]
+    pub fn subscribe(
+        &self,
+        subscriber_secret: pallas::Base,
+        nonce: pallas::Base,
+        plan_merkle_proof: Vec<MerkleNode>,
+        value_blind: pallas::Scalar,
+        dao_member_pub_x: pallas::Base,
+        dao_member_pub_y: pallas::Base,
+        dao_membership_expiry: u64,
+        dao_membership_value: pallas::Base,
+        dao_leaf_pos: u32,
+        dao_path: Vec<MerkleNode>,
+        plan_leaf_pos: u32,
+        plan_path: Vec<MerkleNode>,
+        subscription_id: pallas::Base,
+        subscriber_public: PublicKey,
+        plan_id: u32,
+        deposit: u64,
+        token_id: pallas::Base,
+        lock_until_block: u64,
+        plan_merkle_root: pallas::Base,
+        current_block: u64,
+        value_commit_x: pallas::Base,
+        value_commit_y: pallas::Base,
+        dao_escrow_bulla: pallas::Base,
+        dao_membership_note: pallas::Base,
+        dao_escrow_merkle_root: pallas::Base,
+    ) -> Result<SubscribeResult, Box<dyn std::error::Error>> {
+        let merkle_proof_values: Vec<pallas::Base> =
+            plan_merkle_proof.iter().map(|n| n.inner()).collect();
+        let dao_proof_values: Vec<pallas::Base> =
+            dao_path.iter().map(|n| n.inner()).collect();
+
+        let input = SubscribeCallData::new(
+            subscriber_secret,
+            nonce,
+            plan_merkle_proof,
+            value_blind,
+            dao_member_pub_x,
+            dao_member_pub_y,
+            dao_membership_expiry,
+            dao_membership_value,
+            dao_leaf_pos,
+            dao_path,
+            plan_leaf_pos,
+            plan_path,
+            subscription_id,
+            subscriber_public,
+            plan_id,
+            deposit,
+            token_id,
+            lock_until_block,
+            plan_merkle_root,
+            current_block,
+            value_commit_x,
+            value_commit_y,
+            dao_escrow_bulla,
+            dao_membership_note,
+            dao_escrow_merkle_root,
+        );
+
+        let (proof, public_inputs) = create_subscribe_proof(
+            &self.subscribe_zkbin,
+            &self.subscribe_pk,
+            &input,
+        )?;
+
+        let params = SubscribeParamsV1 {
+            plan_id: public_inputs.plan_id,
+            subscriber_pubkey: subscriber_public,
+            commitment: public_inputs.subscription_id,
+            value_commit: pallas::Point::identity(),
+            merkle_proof: merkle_proof_values,
+            merkle_root: public_inputs.plan_merkle_root,
+            dao_escrow_bulla: Some(public_inputs.dao_escrow_bulla),
+            dao_membership_note: Some(public_inputs.dao_membership_note),
+            dao_escrow_merkle_root: Some(public_inputs.dao_escrow_merkle_root),
+            dao_merkle_proof: Some(dao_proof_values),
+            dao_leaf_pos: Some(dao_leaf_pos),
+        };
+
+        let mut call_data = vec![0x01];
+        params.encode(&mut call_data)?;
+
+        Ok(SubscribeResult { call_data, proof, public_inputs })
+    }
+
+    /// Verify access to a subscription (function code 0x04)
+    #[allow(clippy::too_many_arguments)]
+    pub fn verify_access(
+        &self,
+        subscriber_secret: pallas::Base,
+        nonce: pallas::Base,
+        permissions_claimed: u8,
+        subscription_leaf_pos: u32,
+        subscription_path: Vec<MerkleNode>,
+        subscription_state: pallas::Base,
+        subscription_spent_nullifier: pallas::Base,
+        expected_capability: pallas::Base,
+        subscription_id: pallas::Base,
+        current_block: u64,
+        subscriber_pub_x: pallas::Base,
+        subscriber_pub_y: pallas::Base,
+        plan_id: u32,
+        lock_until_block: u64,
+        uses_allowed: u64,
+        rate_period: u64,
+        period_uses: u64,
+        last_access_block: u64,
+        uses_remaining: u64,
+        subscription_state_root: pallas::Base,
+    ) -> Result<VerifyAccessResult, Box<dyn std::error::Error>> {
+        let input = VerifyAccessCallData::new(
+            subscriber_secret,
+            nonce,
+            permissions_claimed,
+            subscription_leaf_pos,
+            subscription_path,
+            subscription_state,
+            subscription_spent_nullifier,
+            expected_capability,
+            subscription_id,
+            current_block,
+            subscriber_pub_x,
+            subscriber_pub_y,
+            plan_id,
+            lock_until_block,
+            uses_allowed,
+            rate_period,
+            period_uses,
+            last_access_block,
+            uses_remaining,
+            subscription_state_root,
+        );
+
+        let (proof, public_inputs) = create_verify_access_proof(
+            &self.verify_access_zkbin,
+            &self.verify_access_pk,
+            &input,
+        )?;
+
+        let params = VerifyAccessParamsV1 {
+            subscription_id: public_inputs.subscription_id,
+            capability: public_inputs.expected_capability,
+            nonce,
+        };
+
+        let mut call_data = vec![0x04];
+        params.encode(&mut call_data)?;
+
+        Ok(VerifyAccessResult { call_data, proof, public_inputs })
+    }
+
+    /// Generate a rate limit proof (no contract call — used by service providers)
+    #[allow(clippy::too_many_arguments)]
+    pub fn rate_limit(
+        &self,
+        subscriber_secret: pallas::Base,
+        nonce: pallas::Base,
+        permissions_claimed: u8,
+        subscription_leaf_pos: u32,
+        subscription_path: Vec<MerkleNode>,
+        subscription_state: pallas::Base,
+        subscription_spent_nullifier: pallas::Base,
+        uses_remaining: u64,
+        expected_capability: pallas::Base,
+        subscription_id: pallas::Base,
+        current_block: u64,
+        subscriber_pub_x: pallas::Base,
+        subscriber_pub_y: pallas::Base,
+        plan_id: u32,
+        lock_until_block: u64,
+        uses_allowed: u64,
+        rate_period: u64,
+        period_uses: u64,
+        last_access_block: u64,
+        subscription_state_root: pallas::Base,
+    ) -> Result<RateLimitResult, Box<dyn std::error::Error>> {
+        let input = RateLimitCallData::new(
+            subscriber_secret,
+            nonce,
+            permissions_claimed,
+            subscription_leaf_pos,
+            subscription_path,
+            subscription_state,
+            subscription_spent_nullifier,
+            uses_remaining,
+            expected_capability,
+            subscription_id,
+            current_block,
+            subscriber_pub_x,
+            subscriber_pub_y,
+            plan_id,
+            lock_until_block,
+            uses_allowed,
+            rate_period,
+            period_uses,
+            last_access_block,
+            subscription_state_root,
+        );
+
+        let (proof, public_inputs) = create_rate_limit_proof(
+            &self.rate_limit_zkbin,
+            &self.rate_limit_pk,
+            &input,
+        )?;
+
+        Ok(RateLimitResult { proof, public_inputs })
+    }
 }
 
 impl super::ContractHarness for SubscriptionHarness {
@@ -128,4 +353,24 @@ impl super::ContractHarness for SubscriptionHarness {
             _ => None,
         }
     }
+}
+
+/// Result of subscribe
+pub struct SubscribeResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: SubscribePublicInputs,
+}
+
+/// Result of verify_access
+pub struct VerifyAccessResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: VerifyAccessPublicInputs,
+}
+
+/// Result of rate_limit
+pub struct RateLimitResult {
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: RateLimitPublicInputs,
 }

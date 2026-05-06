@@ -24,13 +24,20 @@ use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::crypto::PublicKey;
+use darkfi_sdk::{
+    crypto::PublicKey,
+    pasta::pallas,
+};
+use darkfi_serial::Encodable;
 
 use darkfi_tender_contract::client::{
-    create_tender_v1::{CreateTenderV1CallData, create_tender_v1_proof},
-    reveal_bid_v1::{RevealBidV1CallData, reveal_bid_v1_proof},
-    select_winner_v1::{SelectWinnerV1CallData, select_winner_v1_proof},
-    submit_bid_v1::{SubmitBidV1CallData, submit_bid_v1_proof},
+    create_tender_v1::{CreateTenderV1CallData, create_tender_v1_proof, CreateTenderV1PublicInputs},
+    reveal_bid_v1::{RevealBidV1CallData, reveal_bid_v1_proof, RevealBidV1PublicInputs},
+    select_winner_v1::{SelectWinnerV1CallData, select_winner_v1_proof, SelectWinnerV1PublicInputs},
+    submit_bid_v1::{SubmitBidV1CallData, submit_bid_v1_proof, SubmitBidV1PublicInputs},
+};
+use darkfi_tender_contract::model::{
+    CreateTenderParamsV1, SubmitBidParamsV1, RevealBidParamsV1, SelectWinnerParamsV1,
 };
 
 /// Tender Harness for isolated testing
@@ -99,6 +106,158 @@ impl TenderHarness {
             select_winner_pk,
         }
     }
+
+    /// Create a tender (function code 0x00)
+    pub fn create_tender(
+        &self,
+        requester_public: PublicKey,
+        requester_secret: pallas::Base,
+        title: String,
+        specification: pallas::Base,
+        attestation_id: pallas::Base,
+        min_bid: u64,
+        max_bid: u64,
+        bid_deadline: u64,
+        reveal_deadline: u64,
+        delivery_deadline: u64,
+    ) -> Result<CreateTenderResult, Box<dyn std::error::Error>> {
+        let call_data_input =
+            CreateTenderV1CallData::new(requester_secret, requester_public);
+        let (proof, public_inputs) = create_tender_v1_proof(
+            &self.create_tender_zkbin,
+            &self.create_tender_pk,
+            &call_data_input,
+        )?;
+        let (ix, iy) = requester_public.xy();
+        let tender_id = darkfi_tender_contract::model::Tender::derive_id(
+            ix, iy, &title, specification, attestation_id,
+            min_bid, max_bid, bid_deadline, reveal_deadline,
+            delivery_deadline, requester_secret,
+        );
+        let params = CreateTenderParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            tender_id,
+            requester_pub_x: ix,
+            requester_pub_y: iy,
+            title,
+            specification,
+            attestation_id,
+            min_bid,
+            max_bid,
+            bid_deadline,
+            reveal_deadline,
+            delivery_deadline,
+        };
+        let mut call_data = vec![0x00];
+        params.encode(&mut call_data)?;
+        Ok(CreateTenderResult { call_data, proof, public_inputs, tender_id })
+    }
+
+    /// Submit a bid (function code 0x01)
+    pub fn submit_bid(
+        &self,
+        tender_id: pallas::Base,
+        bidder_public: PublicKey,
+        bidder_secret: pallas::Base,
+        amount: u64,
+        bid_nonce: pallas::Base,
+        claim_id: pallas::Base,
+        encrypted_payload: Vec<u8>,
+    ) -> Result<SubmitBidResult, Box<dyn std::error::Error>> {
+        let call_data_input = SubmitBidV1CallData::new(
+            tender_id,
+            bidder_secret,
+            pallas::Base::from(amount),
+            bid_nonce,
+            bidder_public,
+        );
+        let (proof, public_inputs) = submit_bid_v1_proof(
+            &self.submit_bid_zkbin,
+            &self.submit_bid_pk,
+            &call_data_input,
+        )?;
+        let (ix, iy) = bidder_public.xy();
+        let params = SubmitBidParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            tender_id,
+            bid_id: public_inputs.bid_id,
+            bidder_pub_x: ix,
+            bidder_pub_y: iy,
+            amount,
+            claim_id,
+            encrypted_payload,
+        };
+        let mut call_data = vec![0x01];
+        params.encode(&mut call_data)?;
+        Ok(SubmitBidResult { call_data, proof, public_inputs })
+    }
+
+    /// Reveal a bid (function code 0x02)
+    pub fn reveal_bid(
+        &self,
+        tender_id: pallas::Base,
+        bid_id: pallas::Base,
+        bidder_public: PublicKey,
+        bidder_secret: pallas::Base,
+        revealed_amount: u64,
+    ) -> Result<RevealBidResult, Box<dyn std::error::Error>> {
+        let call_data_input = RevealBidV1CallData::new(
+            tender_id,
+            bid_id,
+            bidder_secret,
+            pallas::Base::from(revealed_amount),
+            bidder_public,
+        );
+        let (proof, public_inputs) = reveal_bid_v1_proof(
+            &self.reveal_bid_zkbin,
+            &self.reveal_bid_pk,
+            &call_data_input,
+        )?;
+        let params = RevealBidParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            tender_id,
+            bid_id,
+            revealed_amount,
+        };
+        let mut call_data = vec![0x02];
+        params.encode(&mut call_data)?;
+        Ok(RevealBidResult { call_data, proof, public_inputs })
+    }
+
+    /// Select a winner (function code 0x04)
+    pub fn select_winner(
+        &self,
+        tender_id: pallas::Base,
+        winner_bid_id: pallas::Base,
+        requester_public: PublicKey,
+        requester_secret: pallas::Base,
+        winner_public: PublicKey,
+        winning_amount: u64,
+    ) -> Result<SelectWinnerResult, Box<dyn std::error::Error>> {
+        let call_data_input = SelectWinnerV1CallData::new(
+            tender_id,
+            winner_bid_id,
+            requester_secret,
+            requester_public,
+        );
+        let (proof, public_inputs) = select_winner_v1_proof(
+            &self.select_winner_zkbin,
+            &self.select_winner_pk,
+            &call_data_input,
+        )?;
+        let (wx, wy) = winner_public.xy();
+        let params = SelectWinnerParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            tender_id,
+            winner_bid_id,
+            winner_pub_x: wx,
+            winner_pub_y: wy,
+            winning_amount,
+        };
+        let mut call_data = vec![0x04];
+        params.encode(&mut call_data)?;
+        Ok(SelectWinnerResult { call_data, proof, public_inputs })
+    }
 }
 
 impl super::ContractHarness for TenderHarness {
@@ -134,4 +293,33 @@ impl super::ContractHarness for TenderHarness {
             _ => None,
         }
     }
+}
+
+/// Result of create_tender
+pub struct CreateTenderResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: CreateTenderV1PublicInputs,
+    pub tender_id: pallas::Base,
+}
+
+/// Result of submit_bid
+pub struct SubmitBidResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: SubmitBidV1PublicInputs,
+}
+
+/// Result of reveal_bid
+pub struct RevealBidResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: RevealBidV1PublicInputs,
+}
+
+/// Result of select_winner
+pub struct SelectWinnerResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: SelectWinnerV1PublicInputs,
 }

@@ -98,15 +98,16 @@ impl DisputeV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.disputer_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // job_id, disputer_secret, dispute_reason_hash, dao_escrow_bulla,
+            // disputer_pub_x, disputer_pub_y
+            // (spent_nullifier is computed by the circuit, not provided as witness)
             Witness::Base(Value::known(self.job_id)),
-            Witness::Base(Value::known(ix)),
-            Witness::Base(Value::known(iy)),
-            Witness::Base(Value::known(self.dao_escrow_bulla)),
-            Witness::Base(Value::known(self.compute_nullifier())),
-            // Private inputs
             Witness::Base(Value::known(self.disputer_secret)),
             Witness::Base(Value::known(self.dispute_reason_hash)),
+            Witness::Base(Value::known(self.dao_escrow_bulla)),
+            Witness::Base(Value::known(ix)),
+            Witness::Base(Value::known(iy)),
         ]
     }
 }

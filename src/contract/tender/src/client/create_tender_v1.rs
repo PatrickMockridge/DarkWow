@@ -63,11 +63,11 @@ impl CreateTenderV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.requester_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // requester_secret, requester_pub_x, requester_pub_y
+            Witness::Base(Value::known(self.requester_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            // Private inputs
-            Witness::Base(Value::known(self.requester_secret)),
         ]
     }
 }

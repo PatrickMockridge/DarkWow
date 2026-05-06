@@ -48,6 +48,8 @@ use darkfi_sdk::{
 };
 use darkfi_serial::{deserialize, serialize};
 
+use darkfi_serial::Encodable;
+
 use crate::{
     error::AuctionError,
     model::{
@@ -58,6 +60,9 @@ use crate::{
     },
     AuctionFunction, AUCTION_CONTRACT_AUCTIONS_TREE, AUCTION_CONTRACT_BIDS_TREE,
     AUCTION_CONTRACT_INFO_TREE, AUCTION_CONTRACT_NULLIFIERS_TREE,
+    AUCTION_CONTRACT_ZKAS_CREATE_NS_V1, AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V1,
+    AUCTION_CONTRACT_ZKAS_CLOSE_NS_V1, AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V1,
+    AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1, AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1,
 };
 
 darkfi_sdk::define_contract!(
@@ -111,7 +116,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[auction::get_metadata] Processing function: {:?}", func);
 
-    match func {
+    let metadata = match func {
         AuctionFunction::CreateAuctionV1 => {
             let params: CreateAuctionParamsV1 = deserialize(&self_.data[1..])?;
             create_auction_get_metadata_v1(params)?
@@ -138,103 +143,105 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
     };
 
-    Ok(())
+    wasm::util::set_return_data(&metadata)
 }
 
 /// `get_metadata` for CreateAuctionV1
-fn create_auction_get_metadata_v1(params: CreateAuctionParamsV1) -> ContractResult {
+fn create_auction_get_metadata_v1(params: CreateAuctionParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::create_auction_get_metadata_v1] Creating auction: {:?}", params.auction_id);
 
-    // TODO: ZK proof verification would go here
-    // For now, we just return the public inputs
-    let public_inputs = vec![
-        params.auction_id,
-        params.seller_commitment,
-    ];
+    let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        AUCTION_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
+        vec![params.auction_id, params.seller_commitment],
+    ));
 
-    let encoded = serialize(&public_inputs);
-    wasm::util::set_return_data(&encoded)?;
-    msg!("[auction::create_auction_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(())
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// `get_metadata` for PlaceBidV1
-fn place_bid_get_metadata_v1(params: PlaceBidParamsV1) -> ContractResult {
+fn place_bid_get_metadata_v1(params: PlaceBidParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::place_bid_get_metadata_v1] Placing bid: {:?}", params.bid_id);
 
-    // TODO: ZK proof verification would go here
-    let public_inputs = vec![
-        params.auction_id,
-        params.bid_id,
-        pasta::pallas::Base::from(params.amount),
-    ];
+    let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V1.to_string(),
+        vec![
+            params.auction_id,
+            params.bid_id,
+            pasta::pallas::Base::from(params.amount),
+        ],
+    ));
 
-    let encoded = serialize(&public_inputs);
-    wasm::util::set_return_data(&encoded)?;
-    msg!("[auction::place_bid_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(())
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// `get_metadata` for CloseAuctionV1
-fn close_auction_get_metadata_v1(params: CloseAuctionParamsV1) -> ContractResult {
+fn close_auction_get_metadata_v1(params: CloseAuctionParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::close_auction_get_metadata_v1] Closing auction: {:?}", params.auction_id);
 
-    // TODO: ZK proof verification would go here
-    let public_inputs = vec![
-        params.auction_id,
-        params.winner_bid_id,
-    ];
+    let (sx, sy) = params.seller_pubkey.xy();
+    let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        AUCTION_CONTRACT_ZKAS_CLOSE_NS_V1.to_string(),
+        vec![params.auction_id, params.winner_bid_id, sx, sy],
+    ));
 
-    let encoded = serialize(&public_inputs);
-    wasm::util::set_return_data(&encoded)?;
-    msg!("[auction::close_auction_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(())
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// `get_metadata` for ClaimWinningsV1
-fn claim_winnings_get_metadata_v1(params: ClaimWinningsParamsV1) -> ContractResult {
+fn claim_winnings_get_metadata_v1(params: ClaimWinningsParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::claim_winnings_get_metadata_v1] Claiming winnings: {:?}", params.auction_id);
 
-    // TODO: ZK proof verification would go here
-    let public_inputs = vec![
-        params.auction_id,
-        params.winner_bid_id,
-    ];
+    let (wx, wy) = params.winner_pubkey.xy();
+    let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V1.to_string(),
+        vec![params.auction_id, params.winner_bid_id, wx, wy],
+    ));
 
-    let encoded = serialize(&public_inputs);
-    wasm::util::set_return_data(&encoded)?;
-    msg!("[auction::claim_winnings_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(())
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// `get_metadata` for SettleAuctionV1
-fn settle_auction_get_metadata_v1(params: SettleAuctionParamsV1) -> ContractResult {
+fn settle_auction_get_metadata_v1(params: SettleAuctionParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::settle_auction_get_metadata_v1] Settling auction: {:?}", params.auction_id);
 
-    // TODO: ZK proof verification would go here
-    let public_inputs = vec![
-        params.auction_id,
-    ];
+    let (sx, sy) = params.seller_pubkey.xy();
+    let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1.to_string(),
+        vec![params.auction_id, sx, sy, params.settlement_nullifier],
+    ));
 
-    let encoded = serialize(&public_inputs);
-    wasm::util::set_return_data(&encoded)?;
-    msg!("[auction::settle_auction_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(())
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// `get_metadata` for RefundBidV1
-fn refund_bid_get_metadata_v1(params: RefundBidParamsV1) -> ContractResult {
+fn refund_bid_get_metadata_v1(params: RefundBidParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::refund_bid_get_metadata_v1] Refunding bid: {:?}", params.bid_id);
 
-    // TODO: ZK proof verification would go here
-    let public_inputs = vec![
-        params.bid_id,
-    ];
+    let (bx, by) = params.bidder_pubkey.xy();
+    let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1.to_string(),
+        vec![params.bid_id, bx, by, params.refund_nullifier],
+    ));
 
-    let encoded = serialize(&public_inputs);
-    wasm::util::set_return_data(&encoded)?;
-    msg!("[auction::refund_bid_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(())
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================

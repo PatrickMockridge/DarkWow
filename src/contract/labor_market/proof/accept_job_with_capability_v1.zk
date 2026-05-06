@@ -1,4 +1,4 @@
-k = 11;
+k = 14;
 field = "pallas";
 
 # Labor Market Accept Job With Capability Circuit (Version 1)
@@ -87,3 +87,4 @@ circuit "AcceptJobWithCapability" {
     # - Worker identity is hidden, only capability is proven
     #
     # Soundness: Uses proven opcodes (ec_mul_base, ec_get_x, ec_get_y)
+}

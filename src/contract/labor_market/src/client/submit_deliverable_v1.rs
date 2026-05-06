@@ -101,14 +101,15 @@ impl SubmitDeliverableV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.worker_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // job_id, claim_id, worker_secret, worker_pub_x, worker_pub_y,
+            // deadline_block, current_block
+            // (spent_nullifier is computed by the circuit, not provided as witness)
             Witness::Base(Value::known(self.job_id)),
             Witness::Base(Value::known(self.claim_id)),
+            Witness::Base(Value::known(self.worker_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            Witness::Base(Value::known(self.compute_nullifier())),
-            // Private inputs
-            Witness::Base(Value::known(self.worker_secret)),
             Witness::Base(Value::known(self.deadline_block)),
             Witness::Base(Value::known(self.current_block)),
         ]

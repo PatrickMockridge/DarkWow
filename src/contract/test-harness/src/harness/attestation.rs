@@ -24,48 +24,59 @@ use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::pasta::pallas;
+use darkfi_sdk::{crypto::PublicKey, pasta::pallas};
+use darkfi_serial::Encodable;
 
 use darkfi_attestation_contract::client::{
-    consume_claim_v1::{ConsumeClaimV1CallData, consume_claim_v1_proof},
-    create_attestation_v1::{CreateAttestationV1CallData, create_attestation_v1_proof},
-    create_claim_v1::{CreateClaimV1CallData, create_claim_v1_proof},
-    delegate_attestation_v1::{DelegateAttestationV1CallData, delegate_attestation_v1_proof},
-    verify_claim_v1::{VerifyClaimV1CallData, verify_claim_v1_proof},
+    consume_claim_v1::{
+        ConsumeClaimV1CallData, consume_claim_v1_proof, ConsumeClaimV1PublicInputs,
+    },
+    create_attestation_v1::{
+        CreateAttestationV1CallData, create_attestation_v1_proof, CreateAttestationV1PublicInputs,
+    },
+    create_claim_v1::{
+        CreateClaimV1CallData, create_claim_v1_proof, CreateClaimV1PublicInputs,
+    },
+    delegate_attestation_v1::{
+        DelegateAttestationV1CallData, delegate_attestation_v1_proof,
+        DelegateAttestationV1PublicInputs,
+    },
+    verify_claim_v1::{
+        VerifyClaimV1CallData, verify_claim_v1_proof, VerifyClaimV1PublicInputs,
+    },
+};
+use darkfi_attestation_contract::model::{
+    ConsumeClaimParamsV1, CreateAttestationParamsV1, CreateClaimParamsV1,
+    DelegateAttestationParamsV1, VerifyClaimParamsV1, Predicate,
 };
 
 /// Attestation Harness for isolated testing
 pub struct AttestationHarness {
-    /// CreateAttestation_V1 ZkBinary
     create_attestation_zkbin: ZkBinary,
-    /// CreateAttestation_V1 ProvingKey
     create_attestation_pk: ProvingKey,
-    /// CreateClaim_V1 ZkBinary
     create_claim_zkbin: ZkBinary,
-    /// CreateClaim_V1 ProvingKey
     create_claim_pk: ProvingKey,
-    /// VerifyClaim_V1 ZkBinary
     verify_claim_zkbin: ZkBinary,
-    /// VerifyClaim_V1 ProvingKey
     verify_claim_pk: ProvingKey,
-    /// ConsumeClaim_V1 ZkBinary
     consume_claim_zkbin: ZkBinary,
-    /// ConsumeClaim_V1 ProvingKey
     consume_claim_pk: ProvingKey,
-    /// DelegateAttestation_V1 ZkBinary
     delegate_attestation_zkbin: ZkBinary,
-    /// DelegateAttestation_V1 ProvingKey
     delegate_attestation_pk: ProvingKey,
 }
 
 impl AttestationHarness {
-    /// Spawn a new Attestation harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let create_att_bin = include_bytes!("../../../attestation/proof/create_attestation_v1.zk.bin");
-        let create_claim_bin = include_bytes!("../../../attestation/proof/create_claim_v1.zk.bin");
-        let verify_claim_bin = include_bytes!("../../../attestation/proof/verify_claim_v1.zk.bin");
-        let consume_claim_bin = include_bytes!("../../../attestation/proof/consume_claim_v1.zk.bin");
-        let delegate_bin = include_bytes!("../../../attestation/proof/delegate_attestation_v1.zk.bin");
+        let create_att_bin =
+            include_bytes!("../../../attestation/proof/create_attestation_v1.zk.bin");
+        let create_claim_bin =
+            include_bytes!("../../../attestation/proof/create_claim_v1.zk.bin");
+        let verify_claim_bin =
+            include_bytes!("../../../attestation/proof/verify_claim_v1.zk.bin");
+        eprintln!("DEBUG: raw verify_claim_bin len={} first_10_bytes={:02x?}", verify_claim_bin.len(), &verify_claim_bin[..10]);
+        let consume_claim_bin =
+            include_bytes!("../../../attestation/proof/consume_claim_v1.zk.bin");
+        let delegate_bin =
+            include_bytes!("../../../attestation/proof/delegate_attestation_v1.zk.bin");
 
         let create_attestation_zkbin = ZkBinary::decode(create_att_bin, false).unwrap();
         let create_claim_zkbin = ZkBinary::decode(create_claim_bin, false).unwrap();
@@ -94,11 +105,32 @@ impl AttestationHarness {
             &delegate_attestation_zkbin,
         );
 
-        let create_attestation_pk = ProvingKey::build(create_attestation_zkbin.k, &create_att_circuit);
-        let create_claim_pk = ProvingKey::build(create_claim_zkbin.k, &create_claim_circuit);
+        // Build verify_claim first to isolate which circuit fails
+        eprintln!("DEBUG: verify_claim k={}", verify_claim_zkbin.k);
+        eprintln!("DEBUG: verify_claim namespace={}", verify_claim_zkbin.namespace);
+        eprintln!("DEBUG: verify_claim constants={:?}", verify_claim_zkbin.constants);
+        eprintln!("DEBUG: verify_claim witnesses={:?}", verify_claim_zkbin.witnesses);
+        eprintln!("DEBUG: verify_claim num_opcodes={}", verify_claim_zkbin.opcodes.len());
+        for (i, (op, args)) in verify_claim_zkbin.opcodes.iter().enumerate() {
+            eprintln!("DEBUG:   opcode[{}]: {:?} args={:?}", i, op, args);
+        }
+        eprintln!("DEBUG: Building verify_claim ProvingKey with k={}", verify_claim_zkbin.k);
         let verify_claim_pk = ProvingKey::build(verify_claim_zkbin.k, &verify_claim_circuit);
+        eprintln!("DEBUG: verify_claim PK built successfully!");
+        eprintln!("DEBUG: Building create_attestation PK with k={}", create_attestation_zkbin.k);
+        let create_attestation_pk =
+            ProvingKey::build(create_attestation_zkbin.k, &create_att_circuit);
+        eprintln!("DEBUG: create_attestation PK built successfully!");
+        eprintln!("DEBUG: Building create_claim PK with k={}", create_claim_zkbin.k);
+        let create_claim_pk = ProvingKey::build(create_claim_zkbin.k, &create_claim_circuit);
+        eprintln!("DEBUG: create_claim PK built successfully!");
+        eprintln!("DEBUG: Building consume_claim PK with k={}", consume_claim_zkbin.k);
         let consume_claim_pk = ProvingKey::build(consume_claim_zkbin.k, &consume_claim_circuit);
-        let delegate_attestation_pk = ProvingKey::build(delegate_attestation_zkbin.k, &delegate_attestation_circuit);
+        eprintln!("DEBUG: consume_claim PK built successfully!");
+        eprintln!("DEBUG: Building delegate_attestation PK with k={}", delegate_attestation_zkbin.k);
+        let delegate_attestation_pk =
+            ProvingKey::build(delegate_attestation_zkbin.k, &delegate_attestation_circuit);
+        eprintln!("DEBUG: delegate_attestation PK built successfully!");
 
         Self {
             create_attestation_zkbin,
@@ -112,6 +144,218 @@ impl AttestationHarness {
             delegate_attestation_zkbin,
             delegate_attestation_pk,
         }
+    }
+
+    /// Create an attestation (function code 0x00)
+    pub fn create_attestation(
+        &self,
+        attestor_secret: pallas::Base,
+        attestor_public: PublicKey,
+        claim_type: Predicate,
+        claim_data: Vec<pallas::Base>,
+        metadata: Vec<u8>,
+        expires_at: Option<u64>,
+        attestation_id: pallas::Base,
+    ) -> Result<CreateAttestationResult, Box<dyn std::error::Error>> {
+        let input = CreateAttestationV1CallData::new(attestor_secret, attestor_public);
+        let (proof, public_inputs) = create_attestation_v1_proof(
+            &self.create_attestation_zkbin,
+            &self.create_attestation_pk,
+            &input,
+        )?;
+
+        let params = CreateAttestationParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            attestation_id,
+            attestor_pub_x: public_inputs.attestor_pub_x,
+            attestor_pub_y: public_inputs.attestor_pub_y,
+            claim_type,
+            claim_data,
+            metadata,
+            expires_at,
+        };
+
+        let mut call_data = vec![0x00];
+        params.encode(&mut call_data)?;
+
+        Ok(CreateAttestationResult { call_data, attestation_id, proof, public_inputs })
+    }
+
+    /// Create a claim (function code 0x02)
+    pub fn create_claim(
+        &self,
+        attestation_id: pallas::Base,
+        claimant_secret: pallas::Base,
+        claimant_public: PublicKey,
+        predicate: Predicate,
+        evidence_commitment: Vec<u8>,
+        revealed_result: Vec<u8>,
+        claim_id: pallas::Base,
+    ) -> Result<CreateClaimResult, Box<dyn std::error::Error>> {
+        let input = CreateClaimV1CallData::new(attestation_id, claimant_secret, claimant_public);
+        let (proof, public_inputs) = create_claim_v1_proof(
+            &self.create_claim_zkbin,
+            &self.create_claim_pk,
+            &input,
+        )?;
+
+        let params = CreateClaimParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            claim_id,
+            attestation_id,
+            claimant_pub_x: public_inputs.claimant_pub_x,
+            claimant_pub_y: public_inputs.claimant_pub_y,
+            predicate,
+            evidence_commitment,
+            revealed_result,
+        };
+
+        let mut call_data = vec![0x02];
+        params.encode(&mut call_data)?;
+
+        Ok(CreateClaimResult { call_data, claim_id, proof, public_inputs })
+    }
+
+    /// Verify a claim (function code 0x03)
+    pub fn verify_claim(
+        &self,
+        claim_id: pallas::Base,
+        attestation_id: pallas::Base,
+        revealed_result: pallas::Base,
+        evidence: pallas::Base,
+        attestation_data: pallas::Base,
+        nonce: pallas::Base,
+        pos: pallas::Base,
+        path: [pallas::Base; 255],
+        revocation_root: pallas::Base,
+    ) -> Result<VerifyClaimResult, Box<dyn std::error::Error>> {
+        let input = VerifyClaimV1CallData::new(
+            claim_id,
+            revealed_result,
+            evidence,
+            attestation_data,
+            nonce,
+            pos,
+            path,
+            revocation_root,
+        );
+        let (proof, public_inputs) = verify_claim_v1_proof(
+            &self.verify_claim_zkbin,
+            &self.verify_claim_pk,
+            &input,
+        )?;
+
+        let params = VerifyClaimParamsV1 {
+            claim_id,
+            attestation_id,
+            evidence_commitment: evidence,
+            revealed_result: public_inputs.revealed_result,
+        };
+
+        let mut call_data = vec![0x03];
+        params.encode(&mut call_data)?;
+
+        Ok(VerifyClaimResult { call_data, proof, public_inputs })
+    }
+
+    /// Consume a claim (function code 0x04)
+    pub fn consume_claim(
+        &self,
+        claim_id: pallas::Base,
+        attestation_id: pallas::Base,
+        nullifier: pallas::Base,
+        claimant_secret: pallas::Base,
+        claimant_public: PublicKey,
+    ) -> Result<ConsumeClaimResult, Box<dyn std::error::Error>> {
+        let input = ConsumeClaimV1CallData::new(claim_id, nullifier, claimant_secret, claimant_public);
+        let (proof, public_inputs) = consume_claim_v1_proof(
+            &self.consume_claim_zkbin,
+            &self.consume_claim_pk,
+            &input,
+        )?;
+
+        let params = ConsumeClaimParamsV1 {
+            claim_id,
+            attestation_id,
+            claimant_pub_x: public_inputs.claimant_pub_x,
+            claimant_pub_y: public_inputs.claimant_pub_y,
+            nullifier: public_inputs.nullifier,
+        };
+
+        let mut call_data = vec![0x04];
+        params.encode(&mut call_data)?;
+
+        Ok(ConsumeClaimResult { call_data, proof, public_inputs })
+    }
+
+    /// Delegate an attestation (function code 0x06)
+    #[allow(clippy::too_many_arguments)]
+    pub fn delegate_attestation(
+        &self,
+        delegation_id: pallas::Base,
+        parent_id: pallas::Base,
+        delegator_secret: pallas::Base,
+        delegation_type: pallas::Base,
+        max_ratio: pallas::Base,
+        revocation_root: pallas::Base,
+        chain_root: pallas::Base,
+        current_depth: pallas::Base,
+        max_depth: pallas::Base,
+        delegator_stake: pallas::Base,
+        delegatee_stake: pallas::Base,
+        nonce: pallas::Base,
+        pos: pallas::Base,
+        path: [pallas::Base; 255],
+        chain_pos: pallas::Base,
+        chain_path: [pallas::Base; 255],
+        delegator_public: PublicKey,
+        delegatee_public: PublicKey,
+    ) -> Result<DelegateAttestationResult, Box<dyn std::error::Error>> {
+        let input = DelegateAttestationV1CallData::new(
+            delegation_id,
+            parent_id,
+            delegator_secret,
+            delegation_type,
+            max_ratio,
+            revocation_root,
+            chain_root,
+            current_depth,
+            max_depth,
+            delegator_stake,
+            delegatee_stake,
+            nonce,
+            pos,
+            path,
+            chain_pos,
+            chain_path,
+            delegator_public,
+            delegatee_public,
+        );
+        let (proof, public_inputs) = delegate_attestation_v1_proof(
+            &self.delegate_attestation_zkbin,
+            &self.delegate_attestation_pk,
+            &input,
+        )?;
+
+        let params = DelegateAttestationParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            delegation_id: public_inputs.delegation_id,
+            delegator_pub_x: public_inputs.delegator_pub_x,
+            delegator_pub_y: public_inputs.delegator_pub_y,
+            delegatee_pub_x: public_inputs.delegatee_pub_x,
+            delegatee_pub_y: public_inputs.delegatee_pub_y,
+            max_ratio: public_inputs.max_ratio,
+            revocation_root: public_inputs.revocation_root,
+            chain_depth: public_inputs.current_depth,
+            max_depth: public_inputs.max_depth,
+            delegator_stake: public_inputs.delegator_stake,
+            delegatee_stake: public_inputs.delegatee_stake,
+        };
+
+        let mut call_data = vec![0x06];
+        params.encode(&mut call_data)?;
+
+        Ok(DelegateAttestationResult { call_data, proof, public_inputs })
     }
 }
 
@@ -151,4 +395,36 @@ impl super::ContractHarness for AttestationHarness {
             _ => None,
         }
     }
+}
+
+pub struct CreateAttestationResult {
+    pub call_data: Vec<u8>,
+    pub attestation_id: pallas::Base,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: CreateAttestationV1PublicInputs,
+}
+
+pub struct CreateClaimResult {
+    pub call_data: Vec<u8>,
+    pub claim_id: pallas::Base,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: CreateClaimV1PublicInputs,
+}
+
+pub struct VerifyClaimResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: VerifyClaimV1PublicInputs,
+}
+
+pub struct ConsumeClaimResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: ConsumeClaimV1PublicInputs,
+}
+
+pub struct DelegateAttestationResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: DelegateAttestationV1PublicInputs,
 }

@@ -24,6 +24,17 @@ use darkfi::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
+use darkfi_sdk::{
+    crypto::{PublicKey, poseidon_hash},
+    pasta::pallas,
+};
+use darkfi_serial::Encodable;
+
+use darkfi_lottery_contract::client::{
+    commit_ticket_v1::{CommitTicketV1CallData, create_commit_ticket_v1_proof, CommitTicketV1PublicInputs},
+    reveal_ticket_v1::{RevealTicketV1CallData, create_reveal_ticket_v1_proof, RevealTicketV1PublicInputs},
+};
+use darkfi_lottery_contract::model::{BuyTicketParamsV1, RevealTicketParamsV1};
 
 /// Lottery Harness for isolated testing
 pub struct LotteryHarness {
@@ -60,6 +71,105 @@ impl LotteryHarness {
 
         Self { commit_ticket_zkbin, commit_ticket_pk, reveal_ticket_zkbin, reveal_ticket_pk }
     }
+
+    /// Commit a ticket (for BuyTicketV1, 0x01)
+    ///
+    /// Returns call_data encoding `BuyTicketParamsV1` and the ZK proof.
+    /// The entrypoint expects money_v3::transfer_v1 as a child call.
+    ///
+    /// The `commitment` field in `BuyTicketParamsV1` is computed as:
+    ///   Hash(...Hash(lottery_id, n1), n2..., nonce)
+    /// This is the contract-level commitment verified by RevealTicketV1.
+    /// It is independent of the ZK proof's ticket_id.
+    pub fn commit_ticket(
+        &self,
+        player_pub: PublicKey,
+        lottery_id: pallas::Base,
+        numbers: Vec<u8>,
+        nonce: pallas::Base, // secret nonce for the commitment
+        ticket_price: u64,
+        blind: pallas::Base,
+        token_id: pallas::Base,
+        secret_key: pallas::Base,
+    ) -> Result<CommitTicketResult, Box<dyn std::error::Error>> {
+        // Generate ZK proof for commit_ticket circuit
+        let call_data_input = CommitTicketV1CallData::new(
+            player_pub,
+            ticket_price,
+            nonce, // secret_nonce
+            blind,
+            token_id,
+        );
+
+        let (proof, public_inputs) = create_commit_ticket_v1_proof(
+            &self.commit_ticket_zkbin,
+            &self.commit_ticket_pk,
+            &call_data_input,
+        )?;
+
+        // Compute contract-level commitment: iterative hash of lottery_id + numbers + nonce
+        let mut sorted_numbers = numbers.clone();
+        sorted_numbers.sort_unstable();
+        let mut state = lottery_id;
+        for &n in &sorted_numbers {
+            state = poseidon_hash([state, pallas::Base::from(n as u64)]);
+        }
+        let commitment = poseidon_hash([state, nonce]);
+        // Signature: H(commitment, secret_key)
+        let signature = poseidon_hash([commitment, secret_key]);
+
+        let params = BuyTicketParamsV1 {
+            player_pub,
+            commitment,
+            token_id,
+            value: ticket_price,
+            signature,
+        };
+
+        let mut call_data = vec![0x01]; // BuyTicketV1
+        params.encode(&mut call_data)?;
+
+        Ok(CommitTicketResult { call_data, proof, public_inputs })
+    }
+
+    /// Reveal a ticket (for RevealTicketV1, 0x03)
+    pub fn reveal_ticket(
+        &self,
+        player_pub: PublicKey,
+        ticket_price: u64,
+        secret_nonce: pallas::Base,
+        blind: pallas::Base,
+        nonce: pallas::Base,
+        random: pallas::Base,
+        ticket_id: pallas::Base,
+        numbers: Vec<u8>,
+    ) -> Result<RevealTicketResult, Box<dyn std::error::Error>> {
+        let call_data_input = RevealTicketV1CallData::new(
+            player_pub,
+            ticket_price,
+            secret_nonce,
+            blind,
+            nonce,
+            random,
+        );
+
+        let (proof, public_inputs) = create_reveal_ticket_v1_proof(
+            &self.reveal_ticket_zkbin,
+            &self.reveal_ticket_pk,
+            &call_data_input,
+        )?;
+
+        let params = RevealTicketParamsV1 {
+            ticket_id,
+            numbers,
+            nonce: secret_nonce, // secret_nonce is the commitment nonce
+        };
+
+        let mut call_data = vec![0x03]; // RevealTicketV1
+        params.encode(&mut call_data)?;
+
+        Ok(RevealTicketResult { call_data, proof, public_inputs })
+    }
 }
 
 impl super::ContractHarness for LotteryHarness {
@@ -86,4 +196,24 @@ impl super::ContractHarness for LotteryHarness {
             _ => None,
         }
     }
+}
+
+/// Result of commit_ticket
+pub struct CommitTicketResult {
+    /// Encoded call data for BuyTicketV1 (0x01)
+    pub call_data: Vec<u8>,
+    /// ZK proof
+    pub proof: darkfi::zk::Proof,
+    /// Public inputs from proof generation
+    pub public_inputs: CommitTicketV1PublicInputs,
+}
+
+/// Result of reveal_ticket
+pub struct RevealTicketResult {
+    /// Encoded call data for RevealTicketV1 (0x03)
+    pub call_data: Vec<u8>,
+    /// ZK proof
+    pub proof: darkfi::zk::Proof,
+    /// Public inputs from proof generation
+    pub public_inputs: RevealTicketV1PublicInputs,
 }

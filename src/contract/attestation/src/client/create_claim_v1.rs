@@ -65,12 +65,12 @@ impl CreateClaimV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.claimant_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // attestation_id, claimant_secret, claimant_pub_x, claimant_pub_y
             Witness::Base(Value::known(self.attestation_id)),
+            Witness::Base(Value::known(self.claimant_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            // Private inputs
-            Witness::Base(Value::known(self.claimant_secret)),
         ]
     }
 }

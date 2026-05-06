@@ -16,15 +16,15 @@ darkfi_native_token_contract = {path = "../native_token", features = ["client", 
 darkfi_money_v3_contract = {path = "../money_v3", features = ["client", "no-entrypoint"]}
 darkfi_deployooor_contract = {path = "../deployooor", features = ["client", "no-entrypoint"]}
 darkfi_dex_contract = {path = "../dex", features = ["client", "no-entrypoint"]}
-atomic_swap_contract = {path = "../atomic_swap", features = ["client", "no-entrypoint"]}
+darkfi_atomic_swap_contract = {path = "../atomic_swap", features = ["client", "no-entrypoint"]}
 darkfi_oracle_contract = {path = "../oracle", features = ["client", "no-entrypoint"]}
 darkfi_stablecoin_contract = {path = "../stablecoin", features = ["client", "no-entrypoint"]}
 darkfi_auction_contract = {path = "../auction", features = ["client", "no-entrypoint"]}
-subscription_contract = {path = "../subscription", features = ["client"]}
+darkfi_subscription_contract = {path = "../subscription", features = ["client", "no-entrypoint"]}
 darkfi_tender_contract = {path = "../tender", features = ["client", "no-entrypoint"]}
 darkfi_bridge_contract = {path = "../bridge", features = ["client", "no-entrypoint"]}
 darkfi_attestation_contract = {path = "../attestation", features = ["client", "no-entrypoint"]}
-darkfi-identity-contract = {path = "../identity", features = ["client", "no-entrypoint"]}
+darkfi_identity_contract = {path = "../identity", features = ["client", "no-entrypoint"]}
 darkfi_escrow_contract = {path = "../escrow", features = ["client", "no-entrypoint"]}
 darkfi_labor_market_contract = {path = "../labor_market", features = ["client", "no-entrypoint"]}
 darkfi_dao_escrow_contract = {path = "../dao_escrow", features = ["client", "no-entrypoint"]}
@@ -35,6 +35,11 @@ darkfi_roulette_contract = {path = "../roulette", features = ["client", "no-entr
 darkfi_darktoshi_dice_contract = {path = "../darktoshi_dice", features = ["client", "no-entrypoint"]}
 darkfi_slot_contract = {path = "../slot", features = ["client", "no-entrypoint"]}
 darkfi_betting_stake_contract = {path = "../betting_stake", features = ["client", "no-entrypoint"]}
+darkfi_relayer_endowment_contract = {path = "../relayer_endowment", features = ["client", "no-entrypoint"]}
+darkfi_lottery_contract = {path = "../lottery", features = ["client", "no-entrypoint"]}
+darkfi_drain_protection_contract = {path = "../drain_protection", features = ["client", "no-entrypoint"]}
+darkfi_insurance_market_contract = {path = "../insurance_market", features = ["client", "no-entrypoint"]}
+darkfi_game_room_contract = {path = "../game_room", features = ["client", "no-entrypoint"]}
 
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }

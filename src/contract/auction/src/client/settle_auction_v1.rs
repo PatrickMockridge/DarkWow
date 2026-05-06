@@ -87,14 +87,14 @@ impl SettleAuctionV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.seller_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // auction_id, seller_secret, highest_bid_amount, seller_pub_x, seller_pub_y
+            // (settlement_nullifier is computed by the circuit)
             Witness::Base(Value::known(self.auction_id)),
-            Witness::Base(Value::known(ix)),
-            Witness::Base(Value::known(iy)),
-            Witness::Base(Value::known(self.compute_settlement_nullifier())),
-            // Private inputs
             Witness::Base(Value::known(self.seller_secret)),
             Witness::Base(Value::known(self.highest_bid_amount)),
+            Witness::Base(Value::known(ix)),
+            Witness::Base(Value::known(iy)),
         ]
     }
 }

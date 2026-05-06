@@ -114,6 +114,12 @@ pub struct CreatePoolParamsV1 {
     pub max_coverage_ratio: u32,
     /// Fee percentage for pool operator (in basis points)
     pub operator_fee_bp: u32,
+    /// Pool configuration hash (poseidon hash of config params) — ZK public input
+    pub pool_config_hash: pallas::Base,
+    /// Nonce for uniqueness — ZK public input
+    pub nonce: u64,
+    /// Derived pool ID from ZK proof — ZK public input
+    pub derived_pool_id: pallas::Base,
 }
 
 /// Update returned after creating a pool
@@ -137,6 +143,16 @@ pub struct JoinPoolParamsV1 {
     pub relayer_id: [u8; 32],
     /// Public key of the member joining the pool
     pub member_pub: PublicKey,
+    /// Token ID for staking — ZK public input
+    pub token_id: pallas::Base,
+    /// Nonce for uniqueness — ZK public input
+    pub nonce: u64,
+    /// Derived member/stake ID from ZK proof — ZK public input
+    pub derived_member_id: pallas::Base,
+    /// Value commitment X coordinate from ZK proof — ZK public input
+    pub value_commit_x: pallas::Base,
+    /// Value commitment Y coordinate from ZK proof — ZK public input
+    pub value_commit_y: pallas::Base,
 }
 
 /// Update returned after joining a pool
@@ -179,6 +195,14 @@ pub struct AllocateCoverageParamsV1 {
     pub amount: u64,
     /// Timeout height for the withdrawal
     pub timeout_height: u64,
+    /// Member public key requesting coverage — ZK public input
+    pub member_pub: PublicKey,
+    /// Withdrawal ID being covered — ZK public input
+    pub withdrawal_id: pallas::Base,
+    /// Nonce for uniqueness — ZK public input
+    pub nonce: u64,
+    /// Derived allocation ID from ZK proof — ZK public input
+    pub derived_allocation_id: pallas::Base,
 }
 
 /// Update returned after allocating coverage
@@ -219,6 +243,10 @@ pub struct SlashCoverageParamsV1 {
     pub slash_amount: u64,
     /// Public key of user to receive compensation
     pub user_pub: PublicKey,
+    /// Nonce for uniqueness — ZK public input
+    pub nonce: u64,
+    /// Derived slash ID from ZK proof — ZK public input
+    pub derived_slash_id: pallas::Base,
 }
 
 /// Update returned after slashing coverage

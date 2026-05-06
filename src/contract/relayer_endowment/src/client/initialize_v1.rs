@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::PublicKey,
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -32,14 +32,12 @@ use rand::rngs::OsRng;
 /// InitializeV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct InitializeV1PublicInputs {
-    pub relayer_pub_x: pallas::Base,
-    pub relayer_pub_y: pallas::Base,
     pub endowment_id: pallas::Base,
 }
 
 impl InitializeV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.relayer_pub_x, self.relayer_pub_y, self.endowment_id]
+        vec![self.endowment_id]
     }
 }
 
@@ -48,32 +46,33 @@ impl InitializeV1PublicInputs {
 pub struct InitializeV1CallData {
     pub relayer_pub_x: pallas::Base,
     pub relayer_pub_y: pallas::Base,
-    pub endowment_id: pallas::Base,
-    pub secret: pallas::Base,
+    pub config_hash: pallas::Base,
+    pub nonce: pallas::Base,
 }
 
 impl InitializeV1CallData {
-    pub fn new(relayer_public: PublicKey, endowment_id: pallas::Base, secret: pallas::Base) -> Self {
+    pub fn new(relayer_public: PublicKey, default_backer_cut_bp: u32, nonce: u64) -> Self {
         let (px, py) = relayer_public.xy();
-        Self { relayer_pub_x: px, relayer_pub_y: py, endowment_id, secret }
+        let config_hash = poseidon_hash([pallas::Base::from(default_backer_cut_bp as u64)]);
+        Self { relayer_pub_x: px, relayer_pub_y: py, config_hash, nonce: pallas::Base::from(nonce) }
     }
 
     pub fn compute_public_inputs(&self) -> InitializeV1PublicInputs {
-        InitializeV1PublicInputs {
-            relayer_pub_x: self.relayer_pub_x,
-            relayer_pub_y: self.relayer_pub_y,
-            endowment_id: self.endowment_id,
-        }
+        let endowment_id = poseidon_hash([
+            self.relayer_pub_x,
+            self.relayer_pub_y,
+            self.config_hash,
+            self.nonce,
+        ]);
+        InitializeV1PublicInputs { endowment_id }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
             Witness::Base(Value::known(self.relayer_pub_x)),
             Witness::Base(Value::known(self.relayer_pub_y)),
-            Witness::Base(Value::known(self.endowment_id)),
-            // Private inputs
-            Witness::Base(Value::known(self.secret)),
+            Witness::Base(Value::known(self.config_hash)),
+            Witness::Base(Value::known(self.nonce)),
         ]
     }
 }

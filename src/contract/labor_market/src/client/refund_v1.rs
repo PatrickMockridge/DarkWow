@@ -116,16 +116,18 @@ impl RefundV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.employer_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // job_id, employer_secret, employer_pub_x, employer_pub_y,
+            // milestone_count, completed_payment, refund_amount,
+            // deadline_block, current_block, total_payment
+            // (spent_nullifier is computed by the circuit via poseidon_hash)
             Witness::Base(Value::known(self.job_id)),
+            Witness::Base(Value::known(self.employer_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.milestone_count)),
             Witness::Base(Value::known(self.completed_payment)),
             Witness::Base(Value::known(self.refund_amount)),
-            Witness::Base(Value::known(self.compute_nullifier())),
-            // Private inputs
-            Witness::Base(Value::known(self.employer_secret)),
             Witness::Base(Value::known(self.deadline_block)),
             Witness::Base(Value::known(self.current_block)),
             Witness::Base(Value::known(self.total_payment)),

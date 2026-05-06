@@ -1,5 +1,5 @@
 # The k parameter defining the number of rows used in our circuit (2^k)
-k = 11;
+k = 14;
 field = "pallas";
 
 # Labor Market Create Job Circuit (Version 1)
@@ -31,6 +31,9 @@ witness "CreateJob" {
     # Employer's public key coordinates (public input - must match derived)
     Base employer_pub_x,
     Base employer_pub_y,
+
+    # Attestation ID for deliverable verification
+    Base attestation_id,
 }
 
 circuit "CreateJob" {

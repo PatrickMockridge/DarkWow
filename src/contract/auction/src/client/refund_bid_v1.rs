@@ -81,13 +81,13 @@ impl RefundBidV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.bidder_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // bid_id, bidder_secret, bidder_pub_x, bidder_pub_y
+            // (refund_nullifier is computed by the circuit)
             Witness::Base(Value::known(self.bid_id)),
+            Witness::Base(Value::known(self.bidder_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            Witness::Base(Value::known(self.compute_refund_nullifier())),
-            // Private inputs
-            Witness::Base(Value::known(self.bidder_secret)),
         ]
     }
 }

@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{pedersen_commitment_u64, pasta_prelude::{Curve, CurveAffine}, poseidon_hash, Blind, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -50,8 +50,9 @@ pub struct DeployCapitalV1CallData {
     pub backer_pub_x: pallas::Base,
     pub backer_pub_y: pallas::Base,
     pub deploy_amount: pallas::Base,
+    pub deploy_amount_u64: u64,
     pub token_id: pallas::Base,
-    pub nonce: u64,
+    pub nonce: pallas::Base,
     pub value_blind: pallas::Scalar,
 }
 
@@ -70,8 +71,9 @@ impl DeployCapitalV1CallData {
             backer_pub_x: bx,
             backer_pub_y: by,
             deploy_amount: pallas::Base::from(deploy_amount),
+            deploy_amount_u64: deploy_amount,
             token_id,
-            nonce,
+            nonce: pallas::Base::from(nonce),
             value_blind,
         }
     }
@@ -82,25 +84,27 @@ impl DeployCapitalV1CallData {
             self.backer_pub_x,
             self.backer_pub_y,
             self.deploy_amount,
-            pallas::Base::from(self.nonce),
+            self.nonce,
         ]);
+
+        let value_commit = pedersen_commitment_u64(self.deploy_amount_u64, Blind(self.value_blind));
+        let value_coords = value_commit.to_affine().coordinates().unwrap();
+
         DeployCapitalV1PublicInputs {
             derived_deployment_id,
-            value_commit_x: pallas::Base::zero(),
-            value_commit_y: pallas::Base::zero(),
+            value_commit_x: *value_coords.x(),
+            value_commit_y: *value_coords.y(),
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
             Witness::Base(Value::known(self.endowment_id)),
             Witness::Base(Value::known(self.backer_pub_x)),
             Witness::Base(Value::known(self.backer_pub_y)),
             Witness::Base(Value::known(self.deploy_amount)),
             Witness::Base(Value::known(self.token_id)),
-            // Private inputs
-            Witness::Uint64(Value::known(self.nonce)),
+            Witness::Base(Value::known(self.nonce)),
             Witness::Scalar(Value::known(self.value_blind)),
         ]
     }

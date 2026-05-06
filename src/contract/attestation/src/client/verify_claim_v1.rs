@@ -23,10 +23,7 @@ use darkfi::{
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
-    crypto::MerkleNode,
-    pasta::pallas,
-};
+use darkfi_sdk::pasta::pallas;
 use rand::rngs::OsRng;
 
 /// VerifyClaimV1 circuit public inputs
@@ -40,7 +37,14 @@ pub struct VerifyClaimV1PublicInputs {
 
 impl VerifyClaimV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
+        // Must match constrain_instance execution order:
+        // 1. revocation_root (from SetMembership opcode)
+        // 2. claim_id (explicit)
+        // 3. revealed_result (explicit)
+        // 4. revocation_root (explicit, duplicate)
+        // 5. attestation_data (explicit)
         vec![
+            self.revocation_root,
             self.claim_id,
             self.revealed_result,
             self.revocation_root,
@@ -57,8 +61,9 @@ pub struct VerifyClaimV1CallData {
     pub evidence: pallas::Base,
     pub attestation_data: pallas::Base,
     pub nonce: pallas::Base,
-    pub pos: u64,
-    pub path: Vec<MerkleNode>,
+    pub pos: pallas::Base,
+    pub path: [pallas::Base; 255],
+    pub revocation_root: pallas::Base,
 }
 
 impl VerifyClaimV1CallData {
@@ -68,8 +73,9 @@ impl VerifyClaimV1CallData {
         evidence: pallas::Base,
         attestation_data: pallas::Base,
         nonce: pallas::Base,
-        pos: u64,
-        path: Vec<MerkleNode>,
+        pos: pallas::Base,
+        path: [pallas::Base; 255],
+        revocation_root: pallas::Base,
     ) -> Self {
         Self {
             claim_id,
@@ -79,6 +85,7 @@ impl VerifyClaimV1CallData {
             nonce,
             pos,
             path,
+            revocation_root,
         }
     }
 
@@ -86,22 +93,21 @@ impl VerifyClaimV1CallData {
         VerifyClaimV1PublicInputs {
             claim_id: self.claim_id,
             revealed_result: self.revealed_result,
-            revocation_root: pallas::Base::zero(), // Set by caller
+            revocation_root: self.revocation_root,
             attestation_data: self.attestation_data,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
             Witness::Base(Value::known(self.claim_id)),
             Witness::Base(Value::known(self.revealed_result)),
-            Witness::Base(Value::known(self.attestation_data)),
-            // Private inputs
             Witness::Base(Value::known(self.evidence)),
+            Witness::Base(Value::known(self.attestation_data)),
             Witness::Base(Value::known(self.nonce)),
-            Witness::Uint64(Value::known(self.pos)),
-            Witness::MerklePath(Value::known(self.path.clone().try_into().unwrap())),
+            Witness::Base(Value::known(self.pos)),
+            Witness::SparseMerklePath(Value::known(self.path)),
+            Witness::Base(Value::known(self.revocation_root)),
         ]
     }
 }

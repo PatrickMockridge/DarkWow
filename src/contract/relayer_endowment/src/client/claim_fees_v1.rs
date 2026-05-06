@@ -48,7 +48,7 @@ pub struct ClaimFeesV1CallData {
     pub backer_pub_x: pallas::Base,
     pub backer_pub_y: pallas::Base,
     pub fee_share: pallas::Base,
-    pub nonce: u64,
+    pub nonce: pallas::Base,
 }
 
 impl ClaimFeesV1CallData {
@@ -64,7 +64,7 @@ impl ClaimFeesV1CallData {
             backer_pub_x: bx,
             backer_pub_y: by,
             fee_share: pallas::Base::from(fee_share),
-            nonce,
+            nonce: pallas::Base::from(nonce),
         }
     }
 
@@ -74,20 +74,18 @@ impl ClaimFeesV1CallData {
             self.backer_pub_x,
             self.backer_pub_y,
             self.fee_share,
-            pallas::Base::from(self.nonce),
+            self.nonce,
         ]);
         ClaimFeesV1PublicInputs { derived_claim_id }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
             Witness::Base(Value::known(self.deployment_id)),
             Witness::Base(Value::known(self.backer_pub_x)),
             Witness::Base(Value::known(self.backer_pub_y)),
             Witness::Base(Value::known(self.fee_share)),
-            // Private inputs
-            Witness::Uint64(Value::known(self.nonce)),
+            Witness::Base(Value::known(self.nonce)),
         ]
     }
 }

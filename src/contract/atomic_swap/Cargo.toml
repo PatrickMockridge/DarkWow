@@ -1,5 +1,5 @@
 [package]
-name = "atomic_swap_contract"
+name = "darkfi_atomic_swap_contract"
 version = "0.1.0"
 edition = "2021"
 authors = ["DarkFi contributors"]

@@ -1,5 +1,5 @@
 # The k parameter defining the number of rows used in our circuit (2^k)
-k = 11;
+k = 14;
 field = "pallas";
 
 # Labor Market Submit Git Deliverable Circuit (Version 1)

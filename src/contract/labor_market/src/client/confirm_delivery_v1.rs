@@ -85,13 +85,13 @@ impl ConfirmDeliveryV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.employer_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // job_id, employer_secret, employer_pub_x, employer_pub_y
+            // (spent_nullifier is computed by the circuit, not provided as witness)
             Witness::Base(Value::known(self.job_id)),
+            Witness::Base(Value::known(self.employer_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            Witness::Base(Value::known(self.compute_nullifier())),
-            // Private inputs
-            Witness::Base(Value::known(self.employer_secret)),
         ]
     }
 }

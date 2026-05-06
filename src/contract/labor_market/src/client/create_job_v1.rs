@@ -77,12 +77,12 @@ impl CreateJobV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.employer_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // employer_secret, employer_pub_x, employer_pub_y, attestation_id
+            Witness::Base(Value::known(self.employer_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.attestation_id)),
-            // Private inputs
-            Witness::Base(Value::known(self.employer_secret)),
         ]
     }
 }

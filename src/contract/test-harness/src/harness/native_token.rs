@@ -25,13 +25,18 @@ use darkfi::{
     zkas::ZkBinary,
 };
 use darkfi_sdk::{
-    crypto::{pasta_prelude::*, Keypair},
+    crypto::{pasta_prelude::*, Keypair, MerkleNode, PublicKey, SecretKey},
     pasta::pallas,
 };
+use darkfi_serial::Encodable;
 
 use darkfi_native_token_contract::{
-    client::{pow_reward_v1::PoWRewardCallBuilder, burn_v1::BurnCallBuilder},
-    model::Output,
+    client::{
+        pow_reward_v1::PoWRewardCallBuilder,
+        burn_v1::BurnCallBuilder,
+        fee_v1::{FeeCallBuilder, FeeCallInput, FeeCallOutput},
+    },
+    model::{FeeParamsV1, Input, Output},
 };
 
 /// NativeToken Harness for isolated testing
@@ -95,7 +100,7 @@ impl NativeTokenHarness {
         signature_keypair: Keypair,
         block_height: u32,
         fees: u64,
-        recipient: Option<pallas::Base>,
+        recipient: Option<PublicKey>,
     ) -> Result<PoWRewardResult, Box<dyn std::error::Error>> {
         let mint_zkbin = self.mint_zkbin.clone();
         let mint_pk = self.mint_pk.clone();
@@ -104,13 +109,7 @@ impl NativeTokenHarness {
             signature_keypair,
             block_height,
             fees,
-            recipient: recipient.map(|r| {
-                // Convert pallas::Base to PublicKey - use x coordinate
-                use darkfi_sdk::crypto::PublicKey;
-                // Create a public key from the base field (as x coordinate)
-                // This is a simplification - in real usage, the recipient would be a proper PublicKey
-                PublicKey::from_bytes(r.to_repr()).unwrap()
-            }),
+            recipient,
             spend_hook: None,
             user_data: None,
             mint_zkbin,
@@ -138,6 +137,55 @@ impl NativeTokenHarness {
             inputs: debris.params.inputs,
             proofs: debris.proofs,
         })
+    }
+
+    /// Build a fee call (pay network fees)
+    pub fn fee(
+        &self,
+        input_value: u64,
+        token_id: pallas::Base,
+        spend_hook: pallas::Base,
+        user_data: pallas::Base,
+        coin_blind: pallas::Base,
+        leaf_position: u64,
+        merkle_path: Vec<MerkleNode>,
+        secret: SecretKey,
+        signature_secret: SecretKey,
+        recipient: PublicKey,
+        output_spend_hook: pallas::Base,
+        output_user_data: pallas::Base,
+        fee_amount: u64,
+    ) -> Result<FeeResult, Box<dyn std::error::Error>> {
+        let builder = FeeCallBuilder {
+            input: FeeCallInput {
+                value: input_value,
+                token_id,
+                spend_hook,
+                user_data,
+                coin_blind,
+                leaf_position,
+                merkle_path,
+                secret,
+                signature_secret,
+            },
+            output: FeeCallOutput {
+                recipient,
+                value: input_value - fee_amount,
+                spend_hook: output_spend_hook,
+                user_data: output_user_data,
+                coin_blind,
+            },
+            fee_zkbin: self.fee_zkbin.clone(),
+            fee_pk: self.fee_pk.clone(),
+            fee: fee_amount,
+        };
+
+        let debris = builder.build()?;
+
+        let mut call_data = vec![0x00];
+        debris.params.encode(&mut call_data)?;
+
+        Ok(FeeResult { call_data, params: debris.params, proofs: debris.proofs })
     }
 }
 
@@ -181,5 +229,12 @@ pub struct PoWRewardResult {
 /// Result of burn
 pub struct BurnResult {
     pub inputs: Vec<darkfi_native_token_contract::model::Input>,
+    pub proofs: Vec<darkfi::zk::Proof>,
+}
+
+/// Result of fee
+pub struct FeeResult {
+    pub call_data: Vec<u8>,
+    pub params: FeeParamsV1,
     pub proofs: Vec<darkfi::zk::Proof>,
 }

@@ -565,6 +565,11 @@ async fn test_attestation_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::AttestationHarness;
+    use darkfi::zk::halo2::Field;
+    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi_attestation_contract::model::Predicate;
+    use rand::rngs::OsRng;
 
     let harness = AttestationHarness::spawn();
     info!("Attestation harness created with circuits: {:?}", harness.circuits());
@@ -583,6 +588,95 @@ async fn test_attestation_heavyweight_impl(
     let wasm = read_wasm("attestation").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("Attestation deployed: {:?}", contract_id);
+
+    // Fresh harness for proof generation
+    let harness = AttestationHarness::spawn();
+
+    // Generate attestor and claimant keypairs
+    let attestor_secret = Base::random(&mut OsRng);
+    let attestor_pub = PublicKey::from_secret(
+        SecretKey::from_bytes(attestor_secret.to_repr()).unwrap()
+    );
+    let claimant_secret = Base::random(&mut OsRng);
+    let claimant_pub = PublicKey::from_secret(
+        SecretKey::from_bytes(claimant_secret.to_repr()).unwrap()
+    );
+
+    let attestation_id = Base::from(1u64);
+    let claim_id = Base::from(2u64);
+    let claim_type = Predicate::Matches;
+    let claim_data = vec![Base::from(42u64)];
+
+    // Step 1: Create attestation (0x00)
+    let create_result = harness.create_attestation(
+        attestor_secret,
+        attestor_pub,
+        claim_type,
+        claim_data.clone(),
+        vec![],       // metadata
+        None,         // expires_at
+        attestation_id,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created attestation: id={}", hex::encode(create_result.attestation_id.to_repr()));
+
+    let tx = pipeline.exec(0x00, create_result.call_data, vec![create_result.proof]).await?;
+    info!("Executed attestation::0x00 CreateAttestationV1 (tx: {:?})", tx.hash());
+
+    // Step 2: Create claim (0x02)
+    let evidence_commitment = vec![0u8; 32];
+    let revealed_result = vec![0u8; 32];
+    let create_claim_result = harness.create_claim(
+        attestation_id,
+        claimant_secret,
+        claimant_pub,
+        claim_type,
+        evidence_commitment,
+        revealed_result,
+        claim_id,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created claim: id={}", hex::encode(create_claim_result.claim_id.to_repr()));
+
+    let tx = pipeline.exec(0x02, create_claim_result.call_data, vec![create_claim_result.proof]).await?;
+    info!("Executed attestation::0x02 CreateClaimV1 (tx: {:?})", tx.hash());
+
+    // Step 3: Verify claim (0x03)
+    let revealed_result = Base::from(42u64);
+    let evidence = Base::from(42u64);
+    let attestation_data = Base::from(42u64);
+    let nonce = Base::random(&mut OsRng);
+    let pos = Base::from(0u64);
+    let path = [Base::zero(); 255];
+    let revocation_root = Base::zero();
+
+    let verify_result = harness.verify_claim(
+        claim_id,
+        attestation_id,
+        revealed_result,
+        evidence,
+        attestation_data,
+        nonce,
+        pos,
+        path,
+        revocation_root,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Verified claim");
+
+    let tx = pipeline.exec(0x03, verify_result.call_data, vec![verify_result.proof]).await?;
+    info!("Executed attestation::0x03 VerifyClaimV1 (tx: {:?})", tx.hash());
+
+    // Step 4: Consume claim (0x04)
+    let nullifier = Base::from(100u64);
+    let consume_result = harness.consume_claim(
+        claim_id,
+        attestation_id,
+        nullifier,
+        claimant_secret,
+        claimant_pub,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Consumed claim");
+
+    let tx = pipeline.exec(0x04, consume_result.call_data, vec![consume_result.proof]).await?;
+    info!("Executed attestation::0x04 ConsumeClaimV1 (tx: {:?})", tx.hash());
 
     info!("test_attestation_heavyweight PASSED");
     Ok(())
@@ -610,6 +704,10 @@ async fn test_auction_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::AuctionHarness;
+    use darkfi::zk::halo2::Field;
+    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
+    use darkfi_sdk::pasta::pallas::Base;
+    use rand::rngs::OsRng;
 
     let harness = AuctionHarness::spawn();
     info!("Auction harness created with circuits: {:?}", harness.circuits());
@@ -628,6 +726,96 @@ async fn test_auction_heavyweight_impl(
     let wasm = read_wasm("auction").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("Auction deployed: {:?}", contract_id);
+
+    // Fresh harness for proof generation
+    let harness = AuctionHarness::spawn();
+
+    // Create seller and bidder keypairs
+    let seller_secret = Base::random(&mut OsRng);
+    let seller_pub = PublicKey::from_secret(
+        SecretKey::from_bytes(seller_secret.to_repr()).unwrap()
+    );
+    let bidder_secret = Base::random(&mut OsRng);
+    let bidder_pub = PublicKey::from_secret(
+        SecretKey::from_bytes(bidder_secret.to_repr()).unwrap()
+    );
+
+    let item_commitment = Base::from(42u64);
+    let reserve_price = 100u64;
+    let token_id = Base::from(1u64);
+    let deadline_block = 6u64;
+
+    // Step 1: Create auction (0x00)
+    // current_block=3 < deadline=6: auction is active
+    let create_result = harness.create_auction(
+        seller_secret,
+        item_commitment,
+        reserve_price,
+        token_id,
+        deadline_block,
+        3, // current_block
+        seller_pub,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created auction: auction_id={}", hex::encode(create_result.auction_id.to_repr()));
+
+    let tx = pipeline.exec(0x00, create_result.call_data, vec![create_result.proof]).await?;
+    info!("Executed auction::0x00 CreateAuctionV1 (tx: {:?})", tx.hash());
+
+    // Step 2: Place bid (0x01)
+    // current_block=4 < deadline=6: bid is accepted
+    let bid_amount = 500u64;
+    let bid_nonce = Base::random(&mut OsRng);
+
+    let place_result = harness.place_bid(
+        create_result.auction_id,
+        bidder_secret,
+        bid_amount,
+        bid_nonce,
+        deadline_block,
+        4, // current_block
+        0, // current_high_bid (no bids yet)
+        bidder_pub,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Placed bid: bid_id={}", hex::encode(place_result.bid_id.to_repr()));
+
+    let tx = pipeline.exec(0x01, place_result.call_data, vec![place_result.proof]).await?;
+    info!("Executed auction::0x01 PlaceBidV1 (tx: {:?})", tx.hash());
+
+    // Step 3: Close auction (0x02)
+    // current_block=7 > deadline=6: deadline has passed, can close
+    let close_result = harness.close_auction(
+        create_result.auction_id,
+        place_result.bid_id,
+        seller_secret,
+        deadline_block,
+        7, // current_block (must be > deadline)
+        seller_pub,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+
+    let tx = pipeline.exec(0x02, close_result.call_data, vec![close_result.proof]).await?;
+    info!("Executed auction::0x02 CloseAuctionV1 (tx: {:?})", tx.hash());
+
+    // Step 4: Claim winnings (0x03)
+    let claim_result = harness.claim_winnings(
+        create_result.auction_id,
+        place_result.bid_id,
+        bidder_secret,
+        bidder_pub,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+
+    let tx = pipeline.exec(0x03, claim_result.call_data, vec![claim_result.proof]).await?;
+    info!("Executed auction::0x03 ClaimWinningsV1 (tx: {:?})", tx.hash());
+
+    // Step 5: Settle auction (0x04)
+    let settle_result = harness.settle_auction(
+        create_result.auction_id,
+        seller_secret,
+        bid_amount,
+        seller_pub,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+
+    let tx = pipeline.exec(0x04, settle_result.call_data, vec![settle_result.proof]).await?;
+    info!("Executed auction::0x04 SettleAuctionV1 (tx: {:?})", tx.hash());
 
     info!("test_auction_heavyweight PASSED");
     Ok(())
@@ -829,7 +1017,28 @@ fn test_bridge_heavyweight() -> Result<()> {
 async fn test_bridge_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::BridgeHarness;
+    use darkfi_contract_test_harness::harness::{MoneyV3Harness, BridgeHarness};
+    use darkfi::zk::halo2::Field;
+    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, MerkleNode, MerkleTree, poseidon_hash};
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi_bridge_contract::model::ExternalChain;
+    use rand::rngs::OsRng;
+
+    // Deploy money_v3 first to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18634".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18635".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
 
     let harness = BridgeHarness::spawn();
     info!("Bridge harness created with circuits: {:?}", harness.circuits());
@@ -839,8 +1048,8 @@ async fn test_bridge_heavyweight_impl(
         pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
-        alice_url: "tcp+tls://127.0.0.1:18634".to_string(),
-        bob_url: "tcp+tls://127.0.0.1:18635".to_string(),
+        alice_url: "tcp+tls://127.0.0.1:18636".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18637".to_string(),
     };
 
     let mut pipeline = HeavyweightPipeline::new(harness, "bridge", config, ex).await?;
@@ -848,6 +1057,61 @@ async fn test_bridge_heavyweight_impl(
     let wasm = read_wasm("bridge").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("Bridge deployed: {:?}", contract_id);
+
+    // Fresh harness for proof generation
+    let harness = BridgeHarness::spawn();
+
+    // Build child call for money_v3::transfer_v1 (0x04)
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04],
+    };
+
+    // Build a Merkle tree with a single deposit leaf
+    let secret = Base::random(&mut OsRng);
+    let amount: u64 = 1_000_000;
+    let deposit_leaf = poseidon_hash([secret, Base::from(amount)]);
+
+    let mut merkle_tree = MerkleTree::new(1);
+    merkle_tree.append(MerkleNode::new(deposit_leaf));
+    let position = merkle_tree.mark().unwrap(); // Mark the leaf for witnessing
+    let root = merkle_tree.root(0).unwrap().inner(); // pallas::Base
+    let merkle_path = merkle_tree.witness(position, 0).unwrap();
+
+    // Recipient keypair
+    let recipient_secret = Base::random(&mut OsRng);
+    let recipient_public = darkfi_sdk::crypto::PublicKey::from_secret(
+        darkfi_sdk::crypto::SecretKey::from_bytes(recipient_secret.to_repr()).unwrap()
+    );
+
+    // External block hash (accepted as-is by circuit — not verified against light client)
+    let external_block_hash = Base::random(&mut OsRng);
+    let merkle_root_input = root;
+
+    // Deposit with ZK proof
+    let deposit_result = harness.deposit(
+        secret,
+        amount,
+        recipient_public,
+        1,          // bridge_nonce
+        external_block_hash,
+        merkle_root_input,
+        0,          // leaf_pos (first element in tree)
+        merkle_path,
+        ExternalChain::Ethereum,
+        0,          // fee
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Generated deposit ZK proof: commitment={}", hex::encode(deposit_result.public_inputs.commitment.to_repr()));
+
+    // Execute deposit with money_v3::transfer_v1 child call
+    let tx = pipeline.exec_with_children(
+        0x01, // DepositV1
+        deposit_result.call_data,
+        vec![deposit_result.proof],
+        vec![child_call],
+        vec![vec![]],
+    ).await?;
+    info!("Executed bridge::0x01 DepositV1 (tx: {:?})", tx.hash());
 
     info!("test_bridge_heavyweight PASSED");
     Ok(())
@@ -1581,6 +1845,10 @@ async fn test_labor_market_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::LaborMarketHarness;
+    use darkfi_sdk::crypto::{PublicKey, SecretKey, pasta_prelude::PrimeField};
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
 
     let harness = LaborMarketHarness::spawn();
     info!("LaborMarket harness created with circuits: {:?}", harness.circuits());
@@ -1599,6 +1867,75 @@ async fn test_labor_market_heavyweight_impl(
     let wasm = read_wasm("labor_market").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("LaborMarket deployed: {:?}", contract_id);
+
+    let harness = LaborMarketHarness::spawn();
+
+    // Generate keys
+    let employer_secret = Base::random(&mut OsRng);
+    let employer_public = PublicKey::from_secret(
+        SecretKey::from_bytes(employer_secret.to_repr()).unwrap()
+    );
+    let worker_secret = Base::random(&mut OsRng);
+    let worker_public = PublicKey::from_secret(
+        SecretKey::from_bytes(worker_secret.to_repr()).unwrap()
+    );
+
+    let attestation_id = Base::from(100u64);
+    let job_id = Base::from(200u64);
+    let claim_id = Base::from(300u64);
+
+    // Step 1: Create job (0x00)
+    let create_result = harness.create_job(
+        employer_secret,
+        employer_public,
+        attestation_id,
+        job_id,
+        1u8,            // delivery_type
+        1000u64,        // payment_amount
+        Base::from(1u64), // payment_token
+        Base::zero(),   // payment_commit_x (dummy pedersen)
+        Base::zero(),   // payment_commit_y
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created job: job_id={}", hex::encode(job_id.to_repr()));
+
+    let tx = pipeline.exec(0x00, create_result.call_data, vec![create_result.proof]).await?;
+    info!("Executed labor_market::0x00 CreateJobV1 (tx: {:?})", tx.hash());
+
+    // Step 2: Accept job (0x01)
+    let accept_result = harness.accept_job(
+        worker_secret,
+        worker_public,
+        job_id,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Accepted job: job_id={}", hex::encode(job_id.to_repr()));
+
+    let tx = pipeline.exec(0x01, accept_result.call_data, vec![accept_result.proof]).await?;
+    info!("Executed labor_market::0x01 AcceptJobV1 (tx: {:?})", tx.hash());
+
+    // Step 3: Submit deliverable (0x02)
+    let submit_result = harness.submit_deliverable(
+        worker_secret,
+        worker_public,
+        job_id,
+        claim_id,
+        999999u64,  // deadline_block (far future)
+        1u64,       // current_block
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Submitted deliverable for job_id={}", hex::encode(job_id.to_repr()));
+
+    let tx = pipeline.exec(0x02, submit_result.call_data, vec![submit_result.proof]).await?;
+    info!("Executed labor_market::0x02 SubmitDeliverableV1 (tx: {:?})", tx.hash());
+
+    // Step 4: Confirm delivery (0x04)
+    let confirm_result = harness.confirm_delivery(
+        employer_secret,
+        employer_public,
+        job_id,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Confirmed delivery for job_id={}", hex::encode(job_id.to_repr()));
+
+    let tx = pipeline.exec(0x04, confirm_result.call_data, vec![confirm_result.proof]).await?;
+    info!("Executed labor_market::0x04 ConfirmDeliveryV1 (tx: {:?})", tx.hash());
 
     info!("test_labor_market_heavyweight PASSED");
     Ok(())
@@ -1625,7 +1962,29 @@ fn test_lottery_heavyweight() -> Result<()> {
 async fn test_lottery_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::LotteryHarness;
+    use darkfi_contract_test_harness::harness::{MoneyV3Harness, LotteryHarness};
+    use darkfi::zk::halo2::Field;
+    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey, poseidon_hash};
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi_lottery_contract::model::{InitializeParamsV1, LotteryConfig, PrizeTierConfig};
+    use darkfi_serial::Encodable;
+    use rand::rngs::OsRng;
+
+    // Deploy money_v3 first to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18606".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18607".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
 
     let harness = LotteryHarness::spawn();
     info!("Lottery harness created with circuits: {:?}", harness.circuits());
@@ -1635,8 +1994,8 @@ async fn test_lottery_heavyweight_impl(
         pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
-        alice_url: "tcp+tls://127.0.0.1:18606".to_string(),
-        bob_url: "tcp+tls://127.0.0.1:18607".to_string(),
+        alice_url: "tcp+tls://127.0.0.1:18608".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18609".to_string(),
     };
 
     let mut pipeline = HeavyweightPipeline::new(harness, "lottery", config, ex).await?;
@@ -1644,6 +2003,98 @@ async fn test_lottery_heavyweight_impl(
     let wasm = read_wasm("lottery").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("Lottery deployed: {:?}", contract_id);
+
+    // Fresh harness for proof generation
+    let harness = LotteryHarness::spawn();
+
+    // Create house keypair
+    let house_secret = Base::random(&mut OsRng);
+    let house_pub = PublicKey::from_secret(
+        SecretKey::from_bytes(house_secret.to_repr()).unwrap()
+    );
+
+    // Initialize lottery round (0x00)
+    let lottery_config = LotteryConfig {
+        num_picks: 3,
+        number_range: 10,
+        house_edge_bp: 500, // 5%
+        ticket_price: 1_000_000,
+        prize_tiers: vec![
+            PrizeTierConfig { matches_needed: 3, payout_percent: 7000, roll_to_next: false },
+            PrizeTierConfig { matches_needed: 2, payout_percent: 2500, roll_to_next: false },
+        ],
+    };
+    let init_params = InitializeParamsV1 {
+        house_pub,
+        config: lottery_config,
+        duration: 100,
+        claim_duration: 50,
+        rolled_over: 0,
+    };
+    let mut init_call_data = vec![0x00]; // InitializeV1
+    init_params.encode(&mut init_call_data).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    let tx = pipeline.exec(0x00, init_call_data, vec![]).await?;
+    info!("Initialized lottery (tx: {:?})", tx.hash());
+
+    // Derive lottery_id: same as the contract does
+    // lottery_id = derive_lottery_id(&house_pub, current_block)
+    // The current_block during initialization was the verifying block height.
+    // Since we don't know it exactly, we derive heuristically.
+    // We'll use a known block height (genesis blocks give us 0-indexed heights).
+    let lottery_id = darkfi_lottery_contract::model::derive_lottery_id(&house_pub, 2);
+    info!("Derived lottery_id: {}", hex::encode(lottery_id.to_repr()));
+
+    // Create player keypair
+    let player_secret = Base::random(&mut OsRng);
+    let player_pub = PublicKey::from_secret(
+        SecretKey::from_bytes(player_secret.to_repr()).unwrap()
+    );
+
+    // Buy ticket (0x01) with commit_ticket ZK proof + money_v3 child call
+    let numbers: Vec<u8> = vec![3, 7, 9];
+    let secret_nonce = Base::random(&mut OsRng);
+    let blind = Base::random(&mut OsRng);
+    let token_id = Base::from(1);
+    let ticket_price: u64 = 1_000_000;
+
+    let commit_result = harness.commit_ticket(
+        player_pub,
+        lottery_id,
+        numbers.clone(),
+        secret_nonce,
+        ticket_price,
+        blind,
+        token_id,
+        player_secret,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Generated commit_ticket ZK proof: ticket_id={}", hex::encode(commit_result.public_inputs.ticket_id.to_repr()));
+
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04], // money_v3::transfer_v1
+    };
+    let tx = pipeline.exec_with_children(
+        0x01, // BuyTicketV1
+        commit_result.call_data,
+        vec![commit_result.proof],
+        vec![child_call],
+        vec![vec![]],
+    ).await?;
+    info!("Executed lottery::0x01 BuyTicketV1 (tx: {:?})", tx.hash());
+
+    // Generate reveal_ticket ZK proof (0x03) — proof generation only,
+    // execution requires lottery to be in WinnersDrawn state.
+    let reveal_result = harness.reveal_ticket(
+        player_pub,
+        ticket_price,
+        secret_nonce,
+        blind,
+        Base::random(&mut OsRng), // nonce
+        Base::random(&mut OsRng), // random
+        commit_result.public_inputs.ticket_id,
+        numbers,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Generated reveal_ticket ZK proof");
 
     info!("test_lottery_heavyweight PASSED");
     Ok(())
@@ -1747,6 +2198,10 @@ async fn test_pool_stake_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::PoolStakeHarness;
+    use darkfi::zk::halo2::Field;
+    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
+    use darkfi_sdk::pasta::pallas::Base;
+    use rand::rngs::OsRng;
 
     let harness = PoolStakeHarness::spawn();
     info!("PoolStake harness created with circuits: {:?}", harness.circuits());
@@ -1765,6 +2220,79 @@ async fn test_pool_stake_heavyweight_impl(
     let wasm = read_wasm("pool_stake").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("PoolStake deployed: {:?}", contract_id);
+
+    // Fresh harness for proof generation
+    let harness = PoolStakeHarness::spawn();
+
+    // Generate owner and member keypairs
+    let owner_secret = Base::random(&mut OsRng);
+    let owner_pub = PublicKey::from_secret(
+        SecretKey::from_bytes(owner_secret.to_repr()).unwrap()
+    );
+    let member_secret = Base::random(&mut OsRng);
+    let member_pub = PublicKey::from_secret(
+        SecretKey::from_bytes(member_secret.to_repr()).unwrap()
+    );
+
+    // Step 1: Create pool (0x00)
+    let create_result = harness.create_pool(
+        owner_pub,
+        10000,  // max_coverage_ratio (1:1)
+        100,    // operator_fee_bp (1%)
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created pool: pool_id={}", hex::encode(create_result.pool_id.to_repr()));
+
+    let tx = pipeline.exec(0x00, create_result.call_data, vec![create_result.proof]).await?;
+    info!("Executed pool_stake::0x00 CreatePoolV1 (tx: {:?})", tx.hash());
+
+    // Step 2: Join pool (0x01) - stake tokens
+    let stake_amount = 1_000_000u64; // minimum stake
+    let relayer_id = [0u8; 32];
+    let join_result = harness.join_pool(
+        create_result.pool_id,
+        stake_amount,
+        relayer_id,
+        member_pub,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Joined pool: stake_id={}", hex::encode(join_result.stake_id.to_repr()));
+
+    let tx = pipeline.exec(0x01, join_result.call_data, vec![join_result.proof]).await?;
+    info!("Executed pool_stake::0x01 JoinPoolV1 (tx: {:?})", tx.hash());
+
+    // Step 3: Allocate coverage (0x03) - cover a withdrawal
+    let withdrawal_nullifier = {
+        let mut nf = [0u8; 32];
+        nf[..8].copy_from_slice(&42u64.to_le_bytes());
+        nf
+    };
+    let coverage_amount = 1000u64;
+    let withdrawal_id = Base::from(42u64);
+    let timeout_height = 1000u64;
+
+    let allocate_result = harness.allocate_coverage(
+        create_result.pool_id,
+        member_pub,
+        coverage_amount,
+        withdrawal_id,
+        withdrawal_nullifier,
+        timeout_height,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Allocated coverage: allocation_id={}", hex::encode(allocate_result.allocation_id.to_repr()));
+
+    let tx = pipeline.exec(0x03, allocate_result.call_data, vec![allocate_result.proof]).await?;
+    info!("Executed pool_stake::0x03 AllocateCoverageV1 (tx: {:?})", tx.hash());
+
+    // Step 4: Slash coverage (0x05) - penalty for failure
+    let slash_amount = 500u64;
+    let slash_result = harness.slash_coverage(
+        allocate_result.allocation_id,
+        slash_amount,
+        member_pub, // user receiving compensation
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Slashed coverage: slash_id={}", hex::encode(slash_result.slash_id.to_repr()));
+
+    let tx = pipeline.exec(0x05, slash_result.call_data, vec![slash_result.proof]).await?;
+    info!("Executed pool_stake::0x05 SlashCoverageV1 (tx: {:?})", tx.hash());
 
     info!("test_pool_stake_heavyweight PASSED");
     Ok(())
@@ -2217,6 +2745,10 @@ async fn test_subscription_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::SubscriptionHarness;
+    use darkfi::zk::halo2::Field;
+    use darkfi_sdk::crypto::{MerkleNode, PublicKey, SecretKey, pasta_prelude::PrimeField, poseidon_hash};
+    use darkfi_sdk::pasta::pallas::{Base, Scalar};
+    use rand::rngs::OsRng;
 
     let harness = SubscriptionHarness::spawn();
     info!("Subscription harness created with circuits: {:?}", harness.circuits());
@@ -2235,6 +2767,100 @@ async fn test_subscription_heavyweight_impl(
     let wasm = read_wasm("subscription").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("Subscription deployed: {:?}", contract_id);
+
+    // Fresh harness for proof generation
+    let harness = SubscriptionHarness::spawn();
+
+    // Generate subscriber keypair
+    let subscriber_secret = Base::random(&mut OsRng);
+    let subscriber_pub = PublicKey::from_secret(
+        SecretKey::from_bytes(subscriber_secret.to_repr()).unwrap()
+    );
+
+    let subscription_id = Base::from(100u64);
+    let plan_id = 1u32;
+    let deposit = 500u64;
+    let token_id = Base::from(0u64);
+    let lock_until_block = 1000u64;
+    let nonce = Base::random(&mut OsRng);
+    let value_blind = Scalar::random(&mut OsRng);
+    let value_commit_x = Base::from(200u64);
+    let value_commit_y = Base::from(300u64);
+    let plan_merkle_root = Base::from(400u64);
+    let current_block = 1u64;
+    let dao_escrow_bulla = Base::zero();
+    let dao_membership_note = Base::zero();
+    let dao_escrow_merkle_root = Base::zero();
+
+    // Step 1: Subscribe (0x01)
+    let subscribe_result = harness.subscribe(
+        subscriber_secret,
+        nonce,
+        vec![MerkleNode::new(Base::zero()); 3],  // plan_merkle_proof (3-element SMT proof)
+        value_blind,
+        Base::zero(),  // dao_member_pub_x
+        Base::zero(),  // dao_member_pub_y
+        0u64,          // dao_membership_expiry
+        Base::zero(),  // dao_membership_value
+        0u32,          // dao_leaf_pos
+        vec![MerkleNode::new(Base::zero()); 3],  // dao_path
+        0u32,          // plan_leaf_pos
+        vec![MerkleNode::new(Base::zero()); 3],  // plan_path
+        subscription_id,
+        subscriber_pub,
+        plan_id,
+        deposit,
+        token_id,
+        lock_until_block,
+        plan_merkle_root,
+        current_block,
+        value_commit_x,
+        value_commit_y,
+        dao_escrow_bulla,
+        dao_membership_note,
+        dao_escrow_merkle_root,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created subscription: id={}", hex::encode(subscription_id.to_repr()));
+
+    let tx = pipeline.exec(0x01, subscribe_result.call_data, vec![subscribe_result.proof]).await?;
+    info!("Executed subscription::0x01 SubscribeV1 (tx: {:?})", tx.hash());
+
+    // Step 2: Verify access (0x04)
+    let expected_capability = poseidon_hash([
+        subscriber_pub.x(),
+        subscriber_pub.y(),
+        Base::from(plan_id as u64),
+        subscription_id,
+        Base::from(lock_until_block),
+        nonce,
+    ]);
+
+    let verify_result = harness.verify_access(
+        subscriber_secret,
+        nonce,
+        1u8,           // permissions_claimed
+        0u32,          // subscription_leaf_pos
+        vec![MerkleNode::new(Base::zero()); 3],  // subscription_path
+        Base::zero(),  // subscription_state
+        Base::zero(),  // subscription_spent_nullifier
+        expected_capability,
+        subscription_id,
+        current_block,
+        subscriber_pub.x(),
+        subscriber_pub.y(),
+        plan_id,
+        lock_until_block,
+        100u64,        // uses_allowed
+        3600u64,       // rate_period
+        0u64,          // period_uses
+        0u64,          // last_access_block
+        100u64,        // uses_remaining
+        Base::zero(),  // subscription_state_root
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Verified access for subscription");
+
+    let tx = pipeline.exec(0x04, verify_result.call_data, vec![verify_result.proof]).await?;
+    info!("Executed subscription::0x04 VerifyAccessV1 (tx: {:?})", tx.hash());
 
     info!("test_subscription_heavyweight PASSED");
     Ok(())
@@ -2262,6 +2888,12 @@ async fn test_tender_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::TenderHarness;
+    use darkfi::zk::halo2::Field;
+    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi_tender_contract::model::CloseTenderParamsV1;
+    use darkfi_serial::Encodable;
+    use rand::rngs::OsRng;
 
     let harness = TenderHarness::spawn();
     info!("Tender harness created with circuits: {:?}", harness.circuits());
@@ -2280,6 +2912,96 @@ async fn test_tender_heavyweight_impl(
     let wasm = read_wasm("tender").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("Tender deployed: {:?}", contract_id);
+
+    // Fresh harness for proof generation
+    let harness = TenderHarness::spawn();
+
+    // Create requester and bidder keypairs
+    let requester_secret = Base::random(&mut OsRng);
+    let requester_pub = PublicKey::from_secret(
+        SecretKey::from_bytes(requester_secret.to_repr()).unwrap()
+    );
+    let bidder_secret = Base::random(&mut OsRng);
+    let bidder_pub = PublicKey::from_secret(
+        SecretKey::from_bytes(bidder_secret.to_repr()).unwrap()
+    );
+
+    // Step 1: Create tender (0x00)
+    // bid_deadline=6 so submit_bid at block ~5 passes and close_tender at block ~6 passes
+    let create_result = harness.create_tender(
+        requester_pub,
+        requester_secret,
+        "Test Tender".to_string(),
+        Base::from(12345u64),
+        Base::from(100u64),
+        100,   // min_bid
+        10000, // max_bid
+        6,     // bid_deadline
+        20,    // reveal_deadline
+        30,    // delivery_deadline
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created tender: tender_id={}", hex::encode(create_result.tender_id.to_repr()));
+
+    let tx = pipeline.exec(0x00, create_result.call_data, vec![create_result.proof]).await?;
+    info!("Executed tender::0x00 CreateTenderV1 (tx: {:?})", tx.hash());
+
+    // Step 2: Submit bid (0x01)
+    let bid_nonce = Base::random(&mut OsRng);
+    let claim_id = Base::from(999u64);
+    let bid_amount = 500u64;
+
+    let submit_result = harness.submit_bid(
+        create_result.tender_id,
+        bidder_pub,
+        bidder_secret,
+        bid_amount,
+        bid_nonce,
+        claim_id,
+        vec![1, 2, 3],
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Submitted bid: bid_id={}", hex::encode(submit_result.public_inputs.bid_id.to_repr()));
+
+    let tx = pipeline.exec(0x01, submit_result.call_data, vec![submit_result.proof]).await?;
+    info!("Executed tender::0x01 SubmitBidV1 (tx: {:?})", tx.hash());
+
+    // Step 3: Close tender (0x03) - no ZK proof required
+    let (rx, ry) = requester_pub.xy();
+    let close_params = CloseTenderParamsV1 {
+        tender_id: create_result.tender_id,
+        requester_pub_x: rx,
+        requester_pub_y: ry,
+    };
+    let mut close_call_data = vec![0x03];
+    close_params.encode(&mut close_call_data)
+        .map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+
+    let tx = pipeline.exec(0x03, close_call_data, vec![]).await?;
+    info!("Executed tender::0x03 CloseTenderV1 (tx: {:?})", tx.hash());
+
+    // Step 4: Reveal bid (0x02)
+    let reveal_result = harness.reveal_bid(
+        create_result.tender_id,
+        submit_result.public_inputs.bid_id,
+        bidder_pub,
+        bidder_secret,
+        bid_amount,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+
+    let tx = pipeline.exec(0x02, reveal_result.call_data, vec![reveal_result.proof]).await?;
+    info!("Executed tender::0x02 RevealBidV1 (tx: {:?})", tx.hash());
+
+    // Step 5: Select winner (0x04)
+    let select_result = harness.select_winner(
+        create_result.tender_id,
+        submit_result.public_inputs.bid_id,
+        requester_pub,
+        requester_secret,
+        bidder_pub,
+        bid_amount,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+
+    let tx = pipeline.exec(0x04, select_result.call_data, vec![select_result.proof]).await?;
+    info!("Executed tender::0x04 SelectWinnerV1 (tx: {:?})", tx.hash());
 
     info!("test_tender_heavyweight PASSED");
     Ok(())
@@ -2501,6 +3223,10 @@ async fn test_native_token_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::NativeTokenHarness;
+    use darkfi_sdk::crypto::{Keypair, PublicKey, SecretKey};
+    use darkfi_sdk::pasta::pallas::Base;
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
 
     let harness = NativeTokenHarness::spawn();
     info!("NativeToken harness created with circuits: {:?}", harness.circuits());
@@ -2519,6 +3245,49 @@ async fn test_native_token_heavyweight_impl(
     let wasm = read_wasm("native_token").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("NativeToken deployed: {:?}", contract_id);
+
+    let harness = NativeTokenHarness::spawn();
+
+    // Step 1: Mint PoW reward (0x05) - block reward for miner
+    let miner_keypair = Keypair::random(&mut OsRng);
+    let _mint_result = harness.mint_pow_reward(
+        miner_keypair,
+        1u32,           // block_height
+        500u64,         // fees
+        None,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Minted PoW reward for miner");
+
+    // Step 2: Fee payment (0x00)
+    let input_value = 1000u64;
+    let token_id = Base::from(0u64);
+    let spend_hook = Base::zero();
+    let user_data = Base::zero();
+    let coin_blind = Base::random(&mut OsRng);
+    let secret = SecretKey::random(&mut OsRng);
+    let signature_secret = SecretKey::random(&mut OsRng);
+    let recipient = PublicKey::from_secret(SecretKey::random(&mut OsRng));
+    let fee_amount = 10u64;
+
+    let fee_result = harness.fee(
+        input_value,
+        token_id,
+        spend_hook,
+        user_data,
+        coin_blind,
+        0u64,           // leaf_position
+        vec![],         // merkle_path
+        secret,
+        signature_secret,
+        recipient,
+        spend_hook,
+        user_data,
+        fee_amount,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Built fee call: value={} fee={}", input_value, fee_amount);
+
+    let tx = pipeline.exec(0x00, fee_result.call_data, fee_result.proofs).await?;
+    info!("Executed native_token::0x00 FeeV1 (tx: {:?})", tx.hash());
 
     info!("test_native_token_heavyweight PASSED");
     Ok(())
@@ -2545,7 +3314,27 @@ fn test_relayer_endowment_heavyweight() -> Result<()> {
 async fn test_relayer_endowment_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::RelayerEndowmentHarness;
+    use darkfi_contract_test_harness::harness::{MoneyV3Harness, RelayerEndowmentHarness};
+    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+    use darkfi_sdk::pasta::pallas::{Base, Scalar};
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
+
+    // Deploy money_v3 first to get its contract_id for child calls
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18624".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18625".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed: {:?}", money_contract_id);
 
     let harness = RelayerEndowmentHarness::spawn();
     info!("RelayerEndowment harness created with circuits: {:?}", harness.circuits());
@@ -2564,6 +3353,71 @@ async fn test_relayer_endowment_heavyweight_impl(
     let wasm = read_wasm("relayer_endowment").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("RelayerEndowment deployed: {:?}", contract_id);
+
+    // Fresh harness for proof generation
+    let harness = RelayerEndowmentHarness::spawn();
+
+    // Build child call for money_v3::transfer_v1 (0x04)
+    let child_call = ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04],
+    };
+
+    // Derive keypair for relayer
+    let relayer_secret = Base::random(&mut OsRng);
+    let relayer_public = darkfi_sdk::crypto::PublicKey::from_secret(
+        darkfi_sdk::crypto::SecretKey::from_bytes(relayer_secret.to_repr()).unwrap()
+    );
+
+    // Derive keypair for backer
+    let backer_secret = Base::random(&mut OsRng);
+    let backer_public = darkfi_sdk::crypto::PublicKey::from_secret(
+        darkfi_sdk::crypto::SecretKey::from_bytes(backer_secret.to_repr()).unwrap()
+    );
+
+    // 1. Initialize relayer endowment account (0x00)
+    let init_result = harness.initialize(
+        relayer_public,
+        1000, // default_backer_cut_bp = 10%
+        1,    // nonce
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Initialized endowment: id={}", hex::encode(init_result.public_inputs.endowment_id.to_repr()));
+
+    let tx = pipeline.exec(0x00, init_result.call_data, vec![init_result.proof]).await?;
+    info!("Executed relayer_endowment::0x00 InitializeV1 (tx: {:?})", tx.hash());
+
+    // 2. Deploy capital (0x01) - with money_v3::transfer_v1 child call
+    let deploy_result = harness.deploy_capital(
+        init_result.public_inputs.endowment_id,
+        backer_public,
+        2_000_000,     // deploy_amount (above MIN_DEPLOY of 1_000_000)
+        Base::from(1), // token_id
+        1,             // nonce
+        Scalar::random(&mut OsRng), // value_blind
+        relayer_public,
+        500,           // backer_cut_bp = 5%
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Deployed capital: deployment_id={}", hex::encode(deploy_result.public_inputs.derived_deployment_id.to_repr()));
+
+    let tx = pipeline.exec_with_children(
+        0x01,
+        deploy_result.call_data,
+        vec![deploy_result.proof],
+        vec![child_call],
+        vec![vec![]],
+    ).await?;
+    info!("Executed relayer_endowment::0x01 DeployCapitalV1 (tx: {:?})", tx.hash());
+
+    // 3. ClaimFees proof generation verification (0x03)
+    // The ZK proof generates correctly; contract execution would require
+    // SettleFees to distribute to individual deployments (not yet implemented).
+    let claim_result = harness.claim_fees(
+        deploy_result.public_inputs.derived_deployment_id,
+        backer_public,
+        500, // fee_share
+        2,   // nonce
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Generated claim_fees ZK proof (claim_id={})", hex::encode(claim_result.public_inputs.derived_claim_id.to_repr()));
 
     info!("test_relayer_endowment_heavyweight PASSED");
     Ok(())

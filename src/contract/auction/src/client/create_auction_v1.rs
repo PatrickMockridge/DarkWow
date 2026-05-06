@@ -103,12 +103,10 @@ impl CreateAuctionV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.seller_public.xy();
         vec![
-            // Public inputs as witnesses
-            Witness::Base(Value::known(self.compute_auction_id())),
-            Witness::Base(Value::known(self.compute_seller_commitment())),
-            // Private inputs
+            // Must match circuit witness order:
+            // seller_secret, item_commitment, reserve_price, token_id, deadline_block, current_block
+            // (auction_id and seller_commitment are computed by the circuit)
             Witness::Base(Value::known(self.seller_secret)),
             Witness::Base(Value::known(self.item_commitment)),
             Witness::Base(Value::known(self.reserve_price)),

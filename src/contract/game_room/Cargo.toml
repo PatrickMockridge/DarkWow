@@ -1,5 +1,5 @@
 [package]
-name = "game_room_contract"
+name = "darkfi_game_room_contract"
 version = "0.1.0"
 edition = "2021"
 authors = ["DarkFi contributors"]

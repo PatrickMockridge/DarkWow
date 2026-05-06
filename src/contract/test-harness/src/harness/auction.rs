@@ -25,46 +25,38 @@ use darkfi::{
     zkas::ZkBinary,
 };
 use darkfi_sdk::{crypto::PublicKey, pasta::pallas};
+use darkfi_serial::Encodable;
 
 use darkfi_auction_contract::client::{
-    claim_winnings_v1::{ClaimWinningsV1CallData, claim_winnings_v1_proof},
-    close_auction_v1::{CloseAuctionV1CallData, close_auction_v1_proof},
-    create_auction_v1::{CreateAuctionV1CallData, create_auction_v1_proof},
-    place_bid_v1::{PlaceBidV1CallData, place_bid_v1_proof},
-    refund_bid_v1::{RefundBidV1CallData, refund_bid_v1_proof},
-    settle_auction_v1::{SettleAuctionV1CallData, settle_auction_v1_proof},
+    claim_winnings_v1::{ClaimWinningsV1CallData, claim_winnings_v1_proof, ClaimWinningsV1PublicInputs},
+    close_auction_v1::{CloseAuctionV1CallData, close_auction_v1_proof, CloseAuctionV1PublicInputs},
+    create_auction_v1::{CreateAuctionV1CallData, create_auction_v1_proof, CreateAuctionV1PublicInputs},
+    place_bid_v1::{PlaceBidV1CallData, place_bid_v1_proof, PlaceBidV1PublicInputs},
+    refund_bid_v1::{RefundBidV1CallData, refund_bid_v1_proof, RefundBidV1PublicInputs},
+    settle_auction_v1::{SettleAuctionV1CallData, settle_auction_v1_proof, SettleAuctionV1PublicInputs},
+};
+use darkfi_auction_contract::model::{
+    CreateAuctionParamsV1, PlaceBidParamsV1, CloseAuctionParamsV1,
+    ClaimWinningsParamsV1, SettleAuctionParamsV1, RefundBidParamsV1,
 };
 
 /// Auction Harness for isolated testing
 pub struct AuctionHarness {
-    /// CreateAuction_V1 ZkBinary
     create_auction_zkbin: ZkBinary,
-    /// CreateAuction_V1 ProvingKey
     create_auction_pk: ProvingKey,
-    /// PlaceBid_V1 ZkBinary
     place_bid_zkbin: ZkBinary,
-    /// PlaceBid_V1 ProvingKey
     place_bid_pk: ProvingKey,
-    /// CloseAuction_V1 ZkBinary
     close_auction_zkbin: ZkBinary,
-    /// CloseAuction_V1 ProvingKey
     close_auction_pk: ProvingKey,
-    /// ClaimWinnings_V1 ZkBinary
     claim_winnings_zkbin: ZkBinary,
-    /// ClaimWinnings_V1 ProvingKey
     claim_winnings_pk: ProvingKey,
-    /// SettleAuction_V1 ZkBinary
     settle_auction_zkbin: ZkBinary,
-    /// SettleAuction_V1 ProvingKey
     settle_auction_pk: ProvingKey,
-    /// RefundBid_V1 ZkBinary
     refund_bid_zkbin: ZkBinary,
-    /// RefundBid_V1 ProvingKey
     refund_bid_pk: ProvingKey,
 }
 
 impl AuctionHarness {
-    /// Spawn a new Auction harness with pre-loaded circuits
     pub fn spawn() -> Self {
         let create_bin = include_bytes!("../../../auction/proof/create_auction_v1.zk.bin");
         let bid_bin = include_bytes!("../../../auction/proof/place_bid_v1.zk.bin");
@@ -128,24 +120,24 @@ impl AuctionHarness {
         }
     }
 
-    /// Create an auction
+    /// Create an auction (function code 0x00)
     pub fn create_auction(
         &self,
         seller_secret: pallas::Base,
         item_commitment: pallas::Base,
-        reserve_price: pallas::Base,
+        reserve_price: u64,
         token_id: pallas::Base,
-        deadline_block: pallas::Base,
-        current_block: pallas::Base,
+        deadline_block: u64,
+        current_block: u64,
         seller_public: PublicKey,
     ) -> Result<CreateAuctionResult, Box<dyn std::error::Error>> {
         let input = CreateAuctionV1CallData::new(
             seller_secret,
             item_commitment,
-            reserve_price,
+            pallas::Base::from(reserve_price),
             token_id,
-            deadline_block,
-            current_block,
+            pallas::Base::from(deadline_block),
+            pallas::Base::from(current_block),
             seller_public,
         );
 
@@ -155,31 +147,44 @@ impl AuctionHarness {
             &input,
         )?;
 
-        Ok(CreateAuctionResult {
+        let params = CreateAuctionParamsV1 {
+            seller_pubkey: seller_public,
+            item_commitment,
+            reserve_price,
+            token_id,
+            deadline_block,
             auction_id: public_inputs.auction_id,
             seller_commitment: public_inputs.seller_commitment,
-            proof,
-        })
+            merkle_proof: vec![],
+            merkle_root: pallas::Base::zero(),
+        };
+
+        let mut call_data = vec![0x00];
+        params.encode(&mut call_data)?;
+
+        Ok(CreateAuctionResult { call_data, auction_id: public_inputs.auction_id, proof, public_inputs })
     }
 
-    /// Place a bid
+    /// Place a bid (function code 0x01)
     pub fn place_bid(
         &self,
         auction_id: pallas::Base,
         bidder_secret: pallas::Base,
-        amount: pallas::Base,
+        amount: u64,
         bid_nonce: pallas::Base,
-        auction_deadline: pallas::Base,
-        current_block: pallas::Base,
+        deadline_block: u64,
+        current_block: u64,
+        current_high_bid: u64,
         bidder_public: PublicKey,
     ) -> Result<PlaceBidResult, Box<dyn std::error::Error>> {
         let input = PlaceBidV1CallData::new(
             auction_id,
             bidder_secret,
-            amount,
+            pallas::Base::from(amount),
             bid_nonce,
-            auction_deadline,
-            current_block,
+            pallas::Base::from(deadline_block),
+            pallas::Base::from(current_block),
+            pallas::Base::from(current_high_bid),
             bidder_public,
         );
 
@@ -189,10 +194,159 @@ impl AuctionHarness {
             &input,
         )?;
 
-        Ok(PlaceBidResult {
+        let params = PlaceBidParamsV1 {
+            auction_id,
+            bidder_pubkey: bidder_public,
+            amount,
+            bid_nonce,
             bid_id: public_inputs.bid_id,
-            proof,
-        })
+            escrow_id: pallas::Base::zero(),
+            current_high_bid,
+        };
+
+        let mut call_data = vec![0x01];
+        params.encode(&mut call_data)?;
+
+        Ok(PlaceBidResult { call_data, bid_id: public_inputs.bid_id, proof, public_inputs })
+    }
+
+    /// Close an auction (function code 0x02)
+    pub fn close_auction(
+        &self,
+        auction_id: pallas::Base,
+        winner_bid_id: pallas::Base,
+        seller_secret: pallas::Base,
+        deadline_block: u64,
+        current_block: u64,
+        seller_public: PublicKey,
+    ) -> Result<CloseAuctionResult, Box<dyn std::error::Error>> {
+        let input = CloseAuctionV1CallData::new(
+            auction_id,
+            winner_bid_id,
+            seller_secret,
+            pallas::Base::from(deadline_block),
+            pallas::Base::from(current_block),
+            seller_public,
+        );
+
+        let (proof, public_inputs) = close_auction_v1_proof(
+            &self.close_auction_zkbin,
+            &self.close_auction_pk,
+            &input,
+        )?;
+
+        let params = CloseAuctionParamsV1 {
+            auction_id,
+            winner_bid_id,
+            seller_pubkey: seller_public,
+            current_block,
+        };
+
+        let mut call_data = vec![0x02];
+        params.encode(&mut call_data)?;
+
+        Ok(CloseAuctionResult { call_data, proof, public_inputs })
+    }
+
+    /// Claim winnings (function code 0x03)
+    pub fn claim_winnings(
+        &self,
+        auction_id: pallas::Base,
+        winner_bid_id: pallas::Base,
+        winner_secret: pallas::Base,
+        winner_public: PublicKey,
+    ) -> Result<ClaimWinningsResult, Box<dyn std::error::Error>> {
+        let input = ClaimWinningsV1CallData::new(
+            auction_id,
+            winner_bid_id,
+            winner_secret,
+            winner_public,
+        );
+
+        let (proof, public_inputs) = claim_winnings_v1_proof(
+            &self.claim_winnings_zkbin,
+            &self.claim_winnings_pk,
+            &input,
+        )?;
+
+        let params = ClaimWinningsParamsV1 {
+            auction_id,
+            winner_bid_id,
+            winner_pubkey: winner_public,
+            winner_secret,
+        };
+
+        let mut call_data = vec![0x03];
+        params.encode(&mut call_data)?;
+
+        Ok(ClaimWinningsResult { call_data, proof, public_inputs })
+    }
+
+    /// Settle an auction (function code 0x04)
+    pub fn settle_auction(
+        &self,
+        auction_id: pallas::Base,
+        seller_secret: pallas::Base,
+        highest_bid_amount: u64,
+        seller_public: PublicKey,
+    ) -> Result<SettleAuctionResult, Box<dyn std::error::Error>> {
+        let input = SettleAuctionV1CallData::new(
+            auction_id,
+            seller_secret,
+            pallas::Base::from(highest_bid_amount),
+            seller_public,
+        );
+
+        let (proof, public_inputs) = settle_auction_v1_proof(
+            &self.settle_auction_zkbin,
+            &self.settle_auction_pk,
+            &input,
+        )?;
+
+        let params = SettleAuctionParamsV1 {
+            auction_id,
+            seller_pubkey: seller_public,
+            highest_bid_amount,
+            settlement_nullifier: public_inputs.settlement_nullifier,
+            seller_secret,
+        };
+
+        let mut call_data = vec![0x04];
+        params.encode(&mut call_data)?;
+
+        Ok(SettleAuctionResult { call_data, proof, public_inputs })
+    }
+
+    /// Refund a bid (function code 0x05)
+    pub fn refund_bid(
+        &self,
+        bid_id: pallas::Base,
+        bidder_secret: pallas::Base,
+        bidder_public: PublicKey,
+    ) -> Result<RefundBidResult, Box<dyn std::error::Error>> {
+        let input = RefundBidV1CallData::new(
+            bid_id,
+            bidder_secret,
+            bidder_public,
+        );
+
+        let (proof, public_inputs) = refund_bid_v1_proof(
+            &self.refund_bid_zkbin,
+            &self.refund_bid_pk,
+            &input,
+        )?;
+
+        let params = RefundBidParamsV1 {
+            bid_id,
+            bidder_pubkey: bidder_public,
+            refund_nullifier: public_inputs.refund_nullifier,
+            bidder_secret,
+        };
+
+        let mut call_data = vec![0x05];
+        params.encode(&mut call_data)?;
+
+        Ok(RefundBidResult { call_data, proof, public_inputs })
     }
 }
 
@@ -239,13 +393,44 @@ impl super::ContractHarness for AuctionHarness {
 
 /// Result of create_auction
 pub struct CreateAuctionResult {
+    pub call_data: Vec<u8>,
     pub auction_id: pallas::Base,
-    pub seller_commitment: pallas::Base,
     pub proof: darkfi::zk::Proof,
+    pub public_inputs: CreateAuctionV1PublicInputs,
 }
 
 /// Result of place_bid
 pub struct PlaceBidResult {
+    pub call_data: Vec<u8>,
     pub bid_id: pallas::Base,
     pub proof: darkfi::zk::Proof,
+    pub public_inputs: PlaceBidV1PublicInputs,
+}
+
+/// Result of close_auction
+pub struct CloseAuctionResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: CloseAuctionV1PublicInputs,
+}
+
+/// Result of claim_winnings
+pub struct ClaimWinningsResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: ClaimWinningsV1PublicInputs,
+}
+
+/// Result of settle_auction
+pub struct SettleAuctionResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: SettleAuctionV1PublicInputs,
+}
+
+/// Result of refund_bid
+pub struct RefundBidResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: RefundBidV1PublicInputs,
 }

@@ -45,17 +45,9 @@ pub struct JoinPoolV1PublicInputs {
 
 impl JoinPoolV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.pool_id,
-            self.member_pub_x,
-            self.member_pub_y,
-            self.stake_amount,
-            self.token_id,
-            self.nonce,
-            self.derived_member_id,
-            self.value_commit_x,
-            self.value_commit_y,
-        ]
+        // Only constrain_instance values:
+        // derived_member_id, value_commit_x, value_commit_y
+        vec![self.derived_member_id, self.value_commit_x, self.value_commit_y]
     }
 }
 

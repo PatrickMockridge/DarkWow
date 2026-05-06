@@ -42,14 +42,8 @@ pub struct SlashCoverageV1PublicInputs {
 
 impl SlashCoverageV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.allocation_id,
-            self.slashed_amount,
-            self.slashed_to_pub_x,
-            self.slashed_to_pub_y,
-            self.nonce,
-            self.derived_slash_id,
-        ]
+        // Only constrain_instance values (derived_slash_id is the sole public instance)
+        vec![self.derived_slash_id]
     }
 }
 

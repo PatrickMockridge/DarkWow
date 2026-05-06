@@ -45,6 +45,12 @@ use darkfi_sdk::{
 use darkfi_serial::{deserialize, serialize, Encodable};
 
 use crate::{
+    TENDER_CONTRACT_ZKAS_CREATE_NS_V1, TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1,
+    TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V1, TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1,
+    TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V1,
+};
+
+use crate::{
     error::TenderError,
     model::{
         Bid, BidId, BidState, CancelTenderParamsV1, CancelTenderUpdateV1, CloseTenderParamsV1,
@@ -124,23 +130,16 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: SelectWinnerParamsV1 = deserialize(&self_.data[1..])?;
             select_winner_get_metadata_v1(cid, call_idx, calls, params)?
         }
-        TenderFunction::CancelTenderV1 => {
-            wasm::util::set_return_data(&vec![])?;
-        }
-        TenderFunction::RejectBidV1 => {
-            wasm::util::set_return_data(&vec![])?;
-        }
-        // O-Cap enabled functions
-        TenderFunction::CreateTenderWithCapabilityV1 => {
-            wasm::util::set_return_data(&vec![])?;
-        }
+        TenderFunction::CancelTenderV1 => vec![],
+        TenderFunction::RejectBidV1 => vec![],
+        TenderFunction::CreateTenderWithCapabilityV1 => vec![],
         TenderFunction::SubmitBidWithCapabilityV1 => {
             let params: SubmitBidWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
             submit_bid_with_capability_get_metadata_v1(cid, call_idx, calls, params)?
         }
     };
 
-    Ok(())
+    wasm::util::set_return_data(&metadata)
 }
 
 fn create_tender_get_metadata_v1(
@@ -148,27 +147,25 @@ fn create_tender_get_metadata_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
     params: CreateTenderParamsV1,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::create_tender_get_metadata_v1] Creating tender: {:?}", params.tender_id);
 
     // Verify tender doesn't already exist
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
-    let existing_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
-    if existing_data.is_some() {
+    if wasm::db::db_contains_key(tenders_db, &serialize(&params.tender_id))? {
         msg!("[tender::create_tender_get_metadata_v1] ERROR: Tender already exists");
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Public inputs: requester public key coordinates
-    let public_inputs = vec![
-        params.requester_pub_x,
-        params.requester_pub_y,
-    ];
+    let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        TENDER_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
+        vec![params.requester_pub_x, params.requester_pub_y],
+    ));
 
-    let encoded = serialize(&public_inputs);
-    wasm::util::set_return_data(&encoded)?;
-    msg!("[tender::create_tender_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(())
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 fn submit_bid_get_metadata_v1(
@@ -176,7 +173,7 @@ fn submit_bid_get_metadata_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
     params: SubmitBidParamsV1,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::submit_bid_get_metadata_v1] Submitting bid: {:?}", params.bid_id);
 
     // Verify tender exists and is accepting bids
@@ -190,40 +187,36 @@ fn submit_bid_get_metadata_v1(
         }
     };
 
-    // Verify tender is in Created or Bidding state
     if tender.state != TenderState::Created && tender.state != TenderState::Bidding {
         msg!("[tender::submit_bid_get_metadata_v1] ERROR: Tender not accepting bids");
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Verify bid is within range
     if params.amount < tender.min_bid || params.amount > tender.max_bid {
         msg!("[tender::submit_bid_get_metadata_v1] ERROR: Bid out of range");
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Get current block
     let current_block = wasm::util::get_verifying_block_height()? as u64;
-
-    // Verify bidding deadline not passed
     if current_block >= tender.bid_deadline {
         msg!("[tender::submit_bid_get_metadata_v1] ERROR: Bidding period ended");
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Public inputs include bidder_pub_x and bidder_pub_y so the apply function
-    // can store the actual bidder public key (derived from ZK witness)
-    let public_inputs = vec![
-        params.tender_id,
-        params.bid_id,
-        params.bidder_pub_x,
-        params.bidder_pub_y,
-    ];
+    let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1.to_string(),
+        vec![
+            params.tender_id,
+            params.bid_id,
+            params.bidder_pub_x,
+            params.bidder_pub_y,
+        ],
+    ));
 
-    let encoded = serialize(&public_inputs);
-    wasm::util::set_return_data(&encoded)?;
-    msg!("[tender::submit_bid_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(())
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 fn submit_bid_with_capability_get_metadata_v1(
@@ -231,10 +224,9 @@ fn submit_bid_with_capability_get_metadata_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
     params: SubmitBidWithCapabilityParamsV1,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::submit_bid_with_capability_get_metadata_v1] Submitting bid with capability: {:?}", params.bid_id);
 
-    // Verify tender exists and is accepting bids
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
     let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
     let tender: Tender = match tender_data {
@@ -245,50 +237,44 @@ fn submit_bid_with_capability_get_metadata_v1(
         }
     };
 
-    // Verify tender is in Created or Bidding state
     if tender.state != TenderState::Created && tender.state != TenderState::Bidding {
         msg!("[tender::submit_bid_with_capability_get_metadata_v1] ERROR: Tender not accepting bids");
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Verify bid is within range
     if params.amount < tender.min_bid || params.amount > tender.max_bid {
         msg!("[tender::submit_bid_with_capability_get_metadata_v1] ERROR: Bid out of range");
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Get current block
     let _current_block = wasm::util::get_verifying_block_height()? as u64;
-
-    // Verify bidding deadline not passed
     if _current_block >= tender.bid_deadline {
         msg!("[tender::submit_bid_with_capability_get_metadata_v1] ERROR: Bidding period ended");
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Public inputs include bidder_pub_x, bidder_pub_y, and required_capability_id
-    // Convert [u8; 32] to Fp by hashing
-    let cap_id_felts = [
-        pasta::pallas::Base::from_raw([
-            u64::from_le_bytes(params.required_capability_id[0..8].try_into().unwrap()),
-            u64::from_le_bytes(params.required_capability_id[8..16].try_into().unwrap()),
-            u64::from_le_bytes(params.required_capability_id[16..24].try_into().unwrap()),
-            u64::from_le_bytes(params.required_capability_id[24..32].try_into().unwrap()),
-        ]),
-    ];
-    let cap_id_fp = poseidon_hash(cap_id_felts);
-    let public_inputs = vec![
-        params.tender_id,
-        params.bid_id,
-        params.bidder_pub_x,
-        params.bidder_pub_y,
-        cap_id_fp,
-    ];
+    let cap_id_fp = poseidon_hash([pasta::pallas::Base::from_raw([
+        u64::from_le_bytes(params.required_capability_id[0..8].try_into().unwrap()),
+        u64::from_le_bytes(params.required_capability_id[8..16].try_into().unwrap()),
+        u64::from_le_bytes(params.required_capability_id[16..24].try_into().unwrap()),
+        u64::from_le_bytes(params.required_capability_id[24..32].try_into().unwrap()),
+    ])]);
 
-    let encoded = serialize(&public_inputs);
-    wasm::util::set_return_data(&encoded)?;
-    msg!("[tender::submit_bid_with_capability_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(())
+    let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V1.to_string(),
+        vec![
+            params.tender_id,
+            params.bid_id,
+            params.bidder_pub_x,
+            params.bidder_pub_y,
+            cap_id_fp,
+        ],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 fn reveal_bid_get_metadata_v1(
@@ -296,10 +282,9 @@ fn reveal_bid_get_metadata_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
     params: RevealBidParamsV1,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::reveal_bid_get_metadata_v1] Revealing bid: {:?}", params.bid_id);
 
-    // Verify tender is in Revealed state
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
     let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
     let tender: Tender = match tender_data {
@@ -315,16 +300,32 @@ fn reveal_bid_get_metadata_v1(
         return Err(ContractError::InvalidFunction.into())
     }
 
-    let public_inputs = vec![
-        params.tender_id,
-        params.bid_id,
-        pasta::pallas::Base::from(params.revealed_amount),
-    ];
+    // Look up bid to get bidder_pub coordinates for ZK proof public inputs
+    let bids_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_BIDS_TREE)?;
+    let bid_data = wasm::db::db_get(bids_db, &serialize(&params.bid_id))?;
+    let bid: Bid = match bid_data {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[tender::reveal_bid_get_metadata_v1] ERROR: Bid not found");
+            return Err(ContractError::InvalidFunction.into())
+        }
+    };
 
-    let encoded = serialize(&public_inputs);
-    wasm::util::set_return_data(&encoded)?;
-    msg!("[tender::reveal_bid_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(())
+    let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1.to_string(),
+        vec![
+            params.tender_id,
+            params.bid_id,
+            pasta::pallas::Base::from(params.revealed_amount),
+            bid.bidder_pub_x,
+            bid.bidder_pub_y,
+        ],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 fn close_tender_get_metadata_v1(
@@ -332,10 +333,9 @@ fn close_tender_get_metadata_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
     params: CloseTenderParamsV1,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::close_tender_get_metadata_v1] Closing tender: {:?}", params.tender_id);
 
-    // Verify tender exists and is in Bidding state
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
     let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
     let tender: Tender = match tender_data {
@@ -346,20 +346,18 @@ fn close_tender_get_metadata_v1(
         }
     };
 
-    // Verify caller is requester
     if tender.requester_pub_x != params.requester_pub_x || tender.requester_pub_y != params.requester_pub_y {
         msg!("[tender::close_tender_get_metadata_v1] ERROR: Not requester");
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Verify tender is in Bidding state
     if tender.state != TenderState::Bidding {
         msg!("[tender::close_tender_get_metadata_v1] ERROR: Tender not in bidding state");
         return Err(ContractError::InvalidFunction.into())
     }
 
-    wasm::util::set_return_data(&vec![])?;
-    Ok(())
+    // No ZK proof for close_tender — empty metadata
+    Ok(vec![])
 }
 
 fn select_winner_get_metadata_v1(
@@ -367,7 +365,7 @@ fn select_winner_get_metadata_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
     params: SelectWinnerParamsV1,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::select_winner_get_metadata_v1] Selecting winner: {:?}", params.winner_bid_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
@@ -380,21 +378,25 @@ fn select_winner_get_metadata_v1(
         }
     };
 
-    // Verify tender is in Revealed state
     if tender.state != TenderState::Revealed {
         msg!("[tender::select_winner_get_metadata_v1] ERROR: Tender not in revealed state");
         return Err(ContractError::InvalidFunction.into())
     }
 
-    let public_inputs = vec![
-        params.tender_id,
-        params.winner_bid_id,
-    ];
+    let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V1.to_string(),
+        vec![
+            params.tender_id,
+            params.winner_bid_id,
+            tender.requester_pub_x,
+            tender.requester_pub_y,
+        ],
+    ));
 
-    let encoded = serialize(&public_inputs);
-    wasm::util::set_return_data(&encoded)?;
-    msg!("[tender::select_winner_get_metadata_v1] Returning metadata: {:?}", public_inputs);
-    Ok(())
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================

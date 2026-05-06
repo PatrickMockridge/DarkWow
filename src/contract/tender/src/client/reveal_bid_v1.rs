@@ -93,14 +93,14 @@ impl RevealBidV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.bidder_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // tender_id, bid_id, bidder_secret, bidder_pub_x, bidder_pub_y, revealed_amount
             Witness::Base(Value::known(self.tender_id)),
             Witness::Base(Value::known(self.bid_id)),
-            Witness::Base(Value::known(self.revealed_amount)),
+            Witness::Base(Value::known(self.bidder_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            // Private inputs
-            Witness::Base(Value::known(self.bidder_secret)),
+            Witness::Base(Value::known(self.revealed_amount)),
         ]
     }
 }

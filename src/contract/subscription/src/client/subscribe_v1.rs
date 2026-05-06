@@ -26,6 +26,7 @@ use darkfi::{
 use darkfi_sdk::{
     crypto::{poseidon_hash, MerkleNode, PublicKey, SecretKey},
     pasta::pallas,
+    pasta::Fq,
 };
 use rand::rngs::OsRng;
 
@@ -50,22 +51,9 @@ pub struct SubscribePublicInputs {
 
 impl SubscribePublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.subscription_id,
-            self.subscriber_pub_x,
-            self.subscriber_pub_y,
-            pallas::Base::from(self.plan_id as u64),
-            self.deposit,
-            self.token_id,
-            pallas::Base::from(self.lock_until_block),
-            self.plan_merkle_root,
-            pallas::Base::from(self.current_block),
-            self.value_commit_x,
-            self.value_commit_y,
-            self.dao_escrow_bulla,
-            self.dao_membership_note,
-            self.dao_escrow_merkle_root,
-        ]
+        // Circuit has no constrain_instance calls — zero public inputs.
+        // These fields are computed client-side for contract param building.
+        vec![]
     }
 }
 
@@ -75,7 +63,7 @@ pub struct SubscribeCallData {
     pub subscriber_secret: pallas::Base,
     pub nonce: pallas::Base,
     pub plan_merkle_proof: Vec<MerkleNode>,
-    pub value_blind: pallas::Base,
+    pub value_blind: pallas::Scalar,
     pub dao_member_pub_x: pallas::Base,
     pub dao_member_pub_y: pallas::Base,
     pub dao_membership_expiry: u64,
@@ -105,7 +93,7 @@ impl SubscribeCallData {
         subscriber_secret: pallas::Base,
         nonce: pallas::Base,
         plan_merkle_proof: Vec<MerkleNode>,
-        value_blind: pallas::Base,
+        value_blind: pallas::Scalar,
         dao_member_pub_x: pallas::Base,
         dao_member_pub_y: pallas::Base,
         dao_membership_expiry: u64,
@@ -178,40 +166,22 @@ impl SubscribeCallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses (order matches circuit witness section)
+            // Must match circuit witness order (all Base except value_blind=Scalar):
+            // subscription_id, subscriber_pub_x, subscriber_pub_y, plan_id, deposit,
+            // token_id, lock_until_block, value_commit_x, value_commit_y,
+            // subscriber_secret, nonce, value_blind
             Witness::Base(Value::known(self.subscription_id)),
             Witness::Base(Value::known(self.subscriber_public.x())),
             Witness::Base(Value::known(self.subscriber_public.y())),
-            Witness::Uint32(Value::known(self.plan_id)),
+            Witness::Base(Value::known(pallas::Base::from(self.plan_id as u64))),
             Witness::Base(Value::known(pallas::Base::from(self.deposit))),
             Witness::Base(Value::known(self.token_id)),
-            Witness::Uint64(Value::known(self.lock_until_block)),
-            Witness::Base(Value::known(self.plan_merkle_root)),
-            Witness::Uint64(Value::known(self.current_block)),
+            Witness::Base(Value::known(pallas::Base::from(self.lock_until_block))),
             Witness::Base(Value::known(self.value_commit_x)),
             Witness::Base(Value::known(self.value_commit_y)),
-            Witness::Base(Value::known(self.dao_escrow_bulla)),
-            Witness::Base(Value::known(self.dao_membership_note)),
-            Witness::Base(Value::known(self.dao_escrow_merkle_root)),
-            // Private inputs
             Witness::Base(Value::known(self.subscriber_secret)),
             Witness::Base(Value::known(self.nonce)),
-            Witness::Base(Value::known(self.plan_merkle_proof[0].inner())),
-            Witness::Base(Value::known(self.plan_merkle_proof[1].inner())),
-            Witness::Base(Value::known(self.plan_merkle_proof[2].inner())),
-            Witness::Base(Value::known(self.value_blind)),
-            Witness::Base(Value::known(self.dao_member_pub_x)),
-            Witness::Base(Value::known(self.dao_member_pub_y)),
-            Witness::Base(Value::known(pallas::Base::from(self.dao_membership_expiry))),
-            Witness::Base(Value::known(self.dao_membership_value)),
-            Witness::Uint32(Value::known(self.dao_leaf_pos)),
-            Witness::MerklePath(Value::known(
-                self.dao_path.clone().try_into().unwrap(),
-            )),
-            Witness::Uint32(Value::known(self.plan_leaf_pos)),
-            Witness::MerklePath(Value::known(
-                self.plan_path.clone().try_into().unwrap(),
-            )),
+            Witness::Scalar(Value::known(self.value_blind)),
         ]
     }
 }

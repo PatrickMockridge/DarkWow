@@ -1,5 +1,5 @@
 [package]
-name = "subscription_contract"
+name = "darkfi_subscription_contract"
 version = "0.1.0"
 edition = "2021"
 authors = ["DarkFi contributors"]
@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
 darkfi-serial = { path = "../../serial" }
+getrandom = { version = "0.2.8", features = ["custom"] }
 halo2_proofs = { version = "0.3.2", optional = true }
 
 [dependencies.darkfi]

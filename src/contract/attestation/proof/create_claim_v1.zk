@@ -1,5 +1,5 @@
 # The k parameter defining the number of rows used in our circuit (2^k)
-k = 11;
+k = 14;
 field = "pallas";
 
 # Attestation Create Claim Circuit (Version 1)
@@ -27,6 +27,10 @@ witness "CreateClaim" {
 
     # Claimant's secret (for key derivation and nullifier)
     Base claimant_secret,
+
+    # Claimant's public key coordinates (bound to derived values)
+    Base claimant_pub_x,
+    Base claimant_pub_y,
 }
 
 circuit "CreateClaim" {
@@ -35,8 +39,12 @@ circuit "CreateClaim" {
     # ==========================================================================
 
     claimant_pub = ec_mul_base(claimant_secret, NULLIFIER_K);
-    claimant_pub_x = ec_get_x(claimant_pub);
-    claimant_pub_y = ec_get_y(claimant_pub);
+    derived_x = ec_get_x(claimant_pub);
+    derived_y = ec_get_y(claimant_pub);
+
+    # Bind derived public key to witness values
+    constrain_equal_base(derived_x, claimant_pub_x);
+    constrain_equal_base(derived_y, claimant_pub_y);
 
     # ==========================================================================
     # PHASE 2: Expose public inputs

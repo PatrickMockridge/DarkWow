@@ -43,15 +43,8 @@ pub struct AllocateCoverageV1PublicInputs {
 
 impl AllocateCoverageV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.pool_id,
-            self.member_pub_x,
-            self.member_pub_y,
-            self.coverage_amount,
-            self.withdrawal_id,
-            self.nonce,
-            self.derived_allocation_id,
-        ]
+        // Only constrain_instance values (derived_allocation_id is the sole public instance)
+        vec![self.derived_allocation_id]
     }
 }
 

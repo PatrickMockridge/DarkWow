@@ -1,5 +1,5 @@
 [package]
-name = "darkfi-identity-contract"
+name = "darkfi_identity_contract"
 version = "0.1.0"
 edition = "2021"
 authors = ["DarkFi <research@dark.fi>"]

@@ -23,7 +23,7 @@ use darkfi_sdk::{
     crypto::pasta_prelude::Group,
     pasta::pallas,
 };
-use game_room_contract::{
+use darkfi_game_room_contract::{
     model::{
         Bet, BetId, BetType, ClosePotParamsV1, ClosePotUpdateV1, ContributeEntropyParamsV1,
         ContributeEntropyUpdateV1, ClaimParamsV1, ClaimUpdateV1, CreateRoomParamsV1,

@@ -110,6 +110,9 @@ impl CreatePoolV1Builder {
             owner_pub: self.owner_pub,
             max_coverage_ratio: self.max_coverage_ratio,
             operator_fee_bp: self.operator_fee_bp,
+            pool_config_hash: pallas::Base::zero(),
+            nonce: 0,
+            derived_pool_id: pallas::Base::zero(),
         }
     }
 }
@@ -141,6 +144,11 @@ impl JoinPoolV1Builder {
             amount: self.amount,
             relayer_id: self.relayer_id,
             member_pub: self.member_pub,
+            token_id: pallas::Base::zero(),
+            nonce: 0,
+            derived_member_id: pallas::Base::zero(),
+            value_commit_x: pallas::Base::zero(),
+            value_commit_y: pallas::Base::zero(),
         }
     }
 
@@ -193,12 +201,23 @@ pub struct AllocateCoverageV1Builder {
     withdrawal_nullifier: [u8; 32],
     amount: u64,
     timeout_height: u64,
+    member_pub: PublicKey,
 }
 
 impl AllocateCoverageV1Builder {
     /// Create a new AllocateCoverageV1 builder
     pub fn new(pool_id: pallas::Base, withdrawal_nullifier: [u8; 32], amount: u64) -> Self {
-        Self { pool_id, withdrawal_nullifier, amount, timeout_height: 0 }
+        // Default to a dummy public key (replaced by actual proof generation)
+        let dummy_pub = PublicKey::from_secret(
+            SecretKey::from_bytes([1u8; 32]).unwrap()
+        );
+        Self { pool_id, withdrawal_nullifier, amount, timeout_height: 0, member_pub: dummy_pub }
+    }
+
+    /// Set the member public key
+    pub fn member_pub(mut self, pub_key: PublicKey) -> Self {
+        self.member_pub = pub_key;
+        self
     }
 
     /// Set timeout height for the coverage
@@ -214,6 +233,10 @@ impl AllocateCoverageV1Builder {
             withdrawal_nullifier: self.withdrawal_nullifier,
             amount: self.amount,
             timeout_height: self.timeout_height,
+            member_pub: self.member_pub,
+            withdrawal_id: pallas::Base::zero(),
+            nonce: 0,
+            derived_allocation_id: pallas::Base::zero(),
         }
     }
 }
@@ -254,6 +277,8 @@ impl SlashCoverageV1Builder {
             allocation_id: self.allocation_id,
             slash_amount: self.slash_amount,
             user_pub: self.user_pub,
+            nonce: 0,
+            derived_slash_id: pallas::Base::zero(),
         }
     }
 }

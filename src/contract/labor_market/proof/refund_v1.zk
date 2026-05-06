@@ -1,5 +1,5 @@
 # The k parameter defining the number of rows used in our circuit (2^k)
-k = 11;
+k = 14;
 field = "pallas";
 
 # Labor Market Refund Circuit (Version 1)
@@ -59,6 +59,9 @@ witness "Refund" {
 }
 
 circuit "Refund" {
+    ZERO = witness_base(0);
+    ONE = witness_base(1);
+
     # ==========================================================================
     # PHASE 1: Derive employer public key from secret
     # ==========================================================================
@@ -93,7 +96,7 @@ circuit "Refund" {
     #   refund = total_payment
 
     # Check if this is a milestone job
-    is_milestone = is_equal_base(milestone_count, 0);
+    is_milestone = is_equal_base(milestone_count, ZERO);
     is_not_milestone = not_base(is_milestone);
 
     # Calculate: total_payment - completed_payment
@@ -112,7 +115,7 @@ circuit "Refund" {
 
     # The refund check should pass for milestone jobs
     refund_check_ok = is_equal_base(milestone_refund_valid, is_not_milestone);
-    constrain_equal_base(refund_check_ok, 1);
+    constrain_equal_base(refund_check_ok, ONE);
 
     # ==========================================================================
     # PHASE 4: Compute refund nullifier
@@ -160,3 +163,4 @@ circuit "Refund" {
     # This is the HTLC-style timeout refund - if the worker doesn't deliver
     # by the deadline, the employer gets their funds back (minus completed
     # milestone payments for milestone jobs).
+}

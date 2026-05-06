@@ -82,13 +82,13 @@ impl ClaimWinningsV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.winner_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // auction_id, winner_secret, winner_bid_id, winner_pub_x, winner_pub_y
             Witness::Base(Value::known(self.auction_id)),
+            Witness::Base(Value::known(self.winner_secret)),
             Witness::Base(Value::known(self.winner_bid_id)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            // Private inputs
-            Witness::Base(Value::known(self.winner_secret)),
         ]
     }
 }

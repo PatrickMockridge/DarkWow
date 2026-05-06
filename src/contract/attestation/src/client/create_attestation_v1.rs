@@ -63,11 +63,11 @@ impl CreateAttestationV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.attestor_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order:
+            // attestor_secret, attestor_pub_x, attestor_pub_y
+            Witness::Base(Value::known(self.attestor_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            // Private inputs
-            Witness::Base(Value::known(self.attestor_secret)),
         ]
     }
 }

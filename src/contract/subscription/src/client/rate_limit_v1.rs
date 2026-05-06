@@ -48,20 +48,8 @@ pub struct RateLimitPublicInputs {
 
 impl RateLimitPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.expected_capability,
-            self.subscription_id,
-            pallas::Base::from(self.current_block),
-            self.subscriber_pub_x,
-            self.subscriber_pub_y,
-            pallas::Base::from(self.plan_id as u64),
-            pallas::Base::from(self.lock_until_block),
-            pallas::Base::from(self.uses_allowed),
-            pallas::Base::from(self.rate_period),
-            pallas::Base::from(self.period_uses),
-            pallas::Base::from(self.last_access_block),
-            self.subscription_state_root,
-        ]
+        // Circuit has no constrain_instance calls — zero public inputs.
+        vec![]
     }
 }
 
@@ -157,30 +145,17 @@ impl RateLimitCallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
+            // Must match circuit witness order (all Base):
+            // expected_capability, subscription_id, subscriber_pub_x,
+            // subscriber_pub_y, plan_id, subscriber_secret, nonce
+            // (no lock_until_block in rate_limit circuit)
             Witness::Base(Value::known(self.expected_capability)),
             Witness::Base(Value::known(self.subscription_id)),
-            Witness::Uint64(Value::known(self.current_block)),
             Witness::Base(Value::known(self.subscriber_pub_x)),
             Witness::Base(Value::known(self.subscriber_pub_y)),
-            Witness::Uint32(Value::known(self.plan_id)),
-            Witness::Uint64(Value::known(self.lock_until_block)),
-            Witness::Uint64(Value::known(self.uses_allowed)),
-            Witness::Uint64(Value::known(self.rate_period)),
-            Witness::Uint64(Value::known(self.period_uses)),
-            Witness::Uint64(Value::known(self.last_access_block)),
-            Witness::Base(Value::known(self.subscription_state_root)),
-            // Private inputs
+            Witness::Base(Value::known(pallas::Base::from(self.plan_id as u64))),
             Witness::Base(Value::known(self.subscriber_secret)),
             Witness::Base(Value::known(self.nonce)),
-            Witness::Uint32(Value::known(self.permissions_claimed as u32)),
-            Witness::Uint32(Value::known(self.subscription_leaf_pos)),
-            Witness::MerklePath(Value::known(
-                self.subscription_path.clone().try_into().unwrap(),
-            )),
-            Witness::Base(Value::known(self.subscription_state)),
-            Witness::Base(Value::known(self.subscription_spent_nullifier)),
-            Witness::Uint64(Value::known(self.uses_remaining)),
         ]
     }
 }

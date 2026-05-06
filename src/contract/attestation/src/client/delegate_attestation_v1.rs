@@ -24,7 +24,7 @@ use darkfi::{
     Result,
 };
 use darkfi_sdk::{
-    crypto::{poseidon_hash, MerkleNode, PublicKey},
+    crypto::PublicKey,
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -50,7 +50,15 @@ pub struct DelegateAttestationV1PublicInputs {
 
 impl DelegateAttestationV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
+        // Public input order must match constrain_instance execution order:
+        // Phase 3: set_membership internally calls constrain_instance(chain_root)   [0]
+        // Phase 5: set_membership internally calls constrain_instance(revocation_root) [1]
+        // Phase 6: explicit constrain_instance calls:
         vec![
+            // Implicit from set_membership ops
+            self.chain_root,
+            self.revocation_root,
+            // Explicit
             self.delegation_id,
             self.parent_id,
             self.delegator_pub_x,
@@ -84,16 +92,17 @@ pub struct DelegateAttestationV1CallData {
     pub delegator_stake: pallas::Base,
     pub delegatee_stake: pallas::Base,
     pub nonce: pallas::Base,
-    pub pos: u64,
-    pub path: Vec<MerkleNode>,
-    pub chain_pos: u64,
-    pub chain_path: Vec<MerkleNode>,
+    pub pos: pallas::Base,
+    pub path: [pallas::Base; 255],
+    pub chain_pos: pallas::Base,
+    pub chain_path: [pallas::Base; 255],
     // Public inputs
     pub delegator_public: PublicKey,
     pub delegatee_public: PublicKey,
 }
 
 impl DelegateAttestationV1CallData {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         delegation_id: pallas::Base,
         parent_id: pallas::Base,
@@ -107,10 +116,10 @@ impl DelegateAttestationV1CallData {
         delegator_stake: pallas::Base,
         delegatee_stake: pallas::Base,
         nonce: pallas::Base,
-        pos: u64,
-        path: Vec<MerkleNode>,
-        chain_pos: u64,
-        chain_path: Vec<MerkleNode>,
+        pos: pallas::Base,
+        path: [pallas::Base; 255],
+        chain_pos: pallas::Base,
+        chain_path: [pallas::Base; 255],
         delegator_public: PublicKey,
         delegatee_public: PublicKey,
     ) -> Self {
@@ -161,7 +170,7 @@ impl DelegateAttestationV1CallData {
         let (dx, dy) = self.delegator_public.xy();
         let (ex, ey) = self.delegatee_public.xy();
         vec![
-            // Public inputs as witnesses
+            // Public inputs (indices 0-13)
             Witness::Base(Value::known(self.delegation_id)),
             Witness::Base(Value::known(self.parent_id)),
             Witness::Base(Value::known(dx)),
@@ -176,13 +185,17 @@ impl DelegateAttestationV1CallData {
             Witness::Base(Value::known(self.max_depth)),
             Witness::Base(Value::known(self.delegator_stake)),
             Witness::Base(Value::known(self.delegatee_stake)),
-            // Private inputs
+            // Private witnesses (indices 14-19)
             Witness::Base(Value::known(self.nonce)),
-            Witness::Uint64(Value::known(self.pos)),
-            Witness::MerklePath(Value::known(self.path.clone().try_into().unwrap())),
-            Witness::Uint64(Value::known(self.chain_pos)),
-            Witness::MerklePath(Value::known(self.chain_path.clone().try_into().unwrap())),
+            Witness::Base(Value::known(self.pos)),
+            Witness::SparseMerklePath(Value::known(self.path)),
+            Witness::Base(Value::known(self.chain_pos)),
+            Witness::SparseMerklePath(Value::known(self.chain_path)),
             Witness::Base(Value::known(self.delegator_secret)),
+            // Delegation type constants (indices 20-22)
+            Witness::Base(Value::known(pallas::Base::from(0u64))),
+            Witness::Base(Value::known(pallas::Base::from(1u64))),
+            Witness::Base(Value::known(pallas::Base::from(2u64))),
         ]
     }
 }

@@ -26,7 +26,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize};
+use darkfi_serial::{deserialize, serialize, Encodable};
 
 use crate::error::PoolStakeError;
 use crate::model::*;
@@ -34,6 +34,8 @@ use crate::PoolStakeFunction;
 use crate::{
     POOL_STAKE_ALLOCATIONS_TREE, POOL_STAKE_MEMBERS_TREE, POOL_STAKE_REGISTRY_TREE,
     POOL_STAKE_MIN_STAKE, POOL_STAKE_INFO_TREE,
+    POOL_STAKE_ZKAS_CREATE_POOL_NS_V1, POOL_STAKE_ZKAS_JOIN_POOL_NS_V1,
+    POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V1, POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V1,
 };
 
 darkfi_sdk::define_contract!(
@@ -67,8 +69,93 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
-fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
-    Ok(())
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = PoolStakeFunction::try_from(self_.data[0])?;
+
+    let metadata = match func {
+        PoolStakeFunction::CreatePoolV1 => {
+            let params: CreatePoolParamsV1 = deserialize(&self_.data[1..])?;
+            create_pool_get_metadata_v1(params)?
+        }
+        PoolStakeFunction::JoinPoolV1 => {
+            let params: JoinPoolParamsV1 = deserialize(&self_.data[1..])?;
+            join_pool_get_metadata_v1(params)?
+        }
+        PoolStakeFunction::AllocateCoverageV1 => {
+            let params: AllocateCoverageParamsV1 = deserialize(&self_.data[1..])?;
+            allocate_coverage_get_metadata_v1(params)?
+        }
+        PoolStakeFunction::SlashCoverageV1 => {
+            let params: SlashCoverageParamsV1 = deserialize(&self_.data[1..])?;
+            slash_coverage_get_metadata_v1(params)?
+        }
+        // Functions without ZK proofs: empty metadata
+        PoolStakeFunction::LeavePoolV1
+        | PoolStakeFunction::ReleaseCoverageV1
+        | PoolStakeFunction::ClaimFeesV1
+        | PoolStakeFunction::UpdatePoolConfigV1 => vec![],
+    };
+
+    wasm::util::set_return_data(&metadata)
+}
+
+fn create_pool_get_metadata_v1(
+    params: CreatePoolParamsV1,
+) -> Result<Vec<u8>, darkfi_sdk::error::ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    // Only constrain_instance value: derived_pool_id
+    zk_public_inputs.push((
+        POOL_STAKE_ZKAS_CREATE_POOL_NS_V1.to_string(),
+        vec![params.derived_pool_id],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+fn join_pool_get_metadata_v1(
+    params: JoinPoolParamsV1,
+) -> Result<Vec<u8>, darkfi_sdk::error::ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    // Only constrain_instance values: derived_member_id, value_commit_x, value_commit_y
+    zk_public_inputs.push((
+        POOL_STAKE_ZKAS_JOIN_POOL_NS_V1.to_string(),
+        vec![params.derived_member_id, params.value_commit_x, params.value_commit_y],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+fn allocate_coverage_get_metadata_v1(
+    params: AllocateCoverageParamsV1,
+) -> Result<Vec<u8>, darkfi_sdk::error::ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    // Only constrain_instance value: derived_allocation_id
+    zk_public_inputs.push((
+        POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V1.to_string(),
+        vec![params.derived_allocation_id],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+fn slash_coverage_get_metadata_v1(
+    params: SlashCoverageParamsV1,
+) -> Result<Vec<u8>, darkfi_sdk::error::ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    // Only constrain_instance value: derived_slash_id
+    zk_public_inputs.push((
+        POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V1.to_string(),
+        vec![params.derived_slash_id],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================
