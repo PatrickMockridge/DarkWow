@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -18,8 +23,8 @@
 
 //! XMR Withdrawal handling for the relayer
 //!
-//! This module handles the DarkFi → XMR withdrawal direction:
-//! 1. Relayer monitors DarkFi for withdrawal events
+//! This module handles the DarkWow → XMR withdrawal direction:
+//! 1. Relayer monitors DarkWow for withdrawal events
 //! 2. Relayer picks up pending withdrawals and executes on Monero
 //! 3. If relayer fails to execute within timeout, it gets slashed
 //!
@@ -32,7 +37,7 @@ use anyhow::Result;
 
 use tracing::info;
 
-/// Pending withdrawal from DarkFi
+/// Pending withdrawal from DarkWow
 #[derive(Debug, Clone)]
 pub struct PendingWithdrawal {
     /// Nullifier of the withdrawal
@@ -67,15 +72,15 @@ pub struct RelayerSlash {
     pub slash_amount: u64,
 }
 
-/// Monitor DarkFi for pending withdrawals
+/// Monitor DarkWow for pending withdrawals
 ///
-/// This function polls the DarkFi bridge contract for pending withdrawals
+/// This function polls the DarkWow bridge contract for pending withdrawals
 /// that the relayer can pick up and execute.
 pub async fn monitor_withdrawals(
     _last_checked_height: u64,
 ) -> Result<Vec<PendingWithdrawal>> {
     // In production, this would:
-    // 1. Call DarkFi RPC to get pending withdrawals
+    // 1. Call DarkWow RPC to get pending withdrawals
     // 2. Filter for XMR withdrawals
     // 3. Return list of pending withdrawals
     //

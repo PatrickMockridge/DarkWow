@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sync upstream DarkFi changes into the upstream-sync branch
+# Sync upstream DarkFi changes into the upstream-sync branch (our upstream is DarkFi)
 # Usage: ./scripts/sync-upstream.sh [commit-message]
 
 set -e

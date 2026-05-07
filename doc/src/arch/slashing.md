@@ -1,16 +1,16 @@
 # Slashing & Economic Security
 
-*The design space for economic incentives, slashing, and endowment models in DarkFi*
+*The design space for economic incentives, slashing, and endowment models in DarkWow*
 
 ## Overview
 
-As DarkFi's contract system grows in complexity—from simple atomic swaps to the bridge, DEX, and beyond—the question of **economic security** becomes central. How do we incentivize correct behavior? What happens when participants misbehave? And where do slashed funds go?
+As DarkWow's contract system grows in complexity—from simple atomic swaps to the bridge, DEX, and beyond—the question of **economic security** becomes central. How do we incentivize correct behavior? What happens when participants misbehave? And where do slashed funds go?
 
 This page explores the **design space** for slashing and economic security, presenting the tradeoffs and open questions rather than prescribing single solutions.
 
 ## The Trust Spectrum
 
-DarkFi operates across a trust spectrum:
+DarkWow operates across a trust spectrum:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -42,9 +42,9 @@ DarkFi operates across a trust spectrum:
 
 | Operation | Trust Model | Why |
 |-----------|-------------|-----|
-| Deposit to DarkFi | **Trustless** | ZK proof verifies without trusted party |
+| Deposit to DarkWow | **Trustless** | ZK proof verifies without trusted party |
 | Internal transfers | **Trustless** | Nullifiers prevent double-spend |
-| Withdraw from DarkFi | **Trustless*** | User proves secret, but relayer must execute externally |
+| Withdraw from DarkWow | **Trustless*** | User proves secret, but relayer must execute externally |
 | External chain delivery | **Economic** | We cannot force Bitcoin to send somewhere |
 
 *Withdrawals are trustless in the sense that if the relayer fails, the user can cancel and reclaim. But the relayer must still execute on the external chain.
@@ -185,7 +185,7 @@ Understanding what participants can do wrong is the first step to designing slas
 
 ### Option 3: Stake = Coverage Limit (Recommended for Relayers)
 
-This is the recommended model for DarkFi relayers. It is simple, elegant, and avoids the complexity of pool governance:
+This is the recommended model for DarkWow relayers. It is simple, elegant, and avoids the complexity of pool governance:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -309,11 +309,11 @@ The stake should be in **stable, liquid assets** to avoid volatility issues:
 │  • Liquid (easy to acquire/exit)                                   │
 │  • Widely available                                                │
 │                                                                     │
-│  RECOMMENDED FOR DARKFI RELAYERS:                                  │
+│  RECOMMENDED FOR DarkWow RELAYERS:                                 │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │ DAI (External)           │ NETHER (DarkFi Native)          │   │
-│  │ • USD pegged             │ • DarkFi's stablecoin           │   │
+│  │ DAI (External)           │ NETHER (DarkWow Native)          │   │
+│  │ • USD pegged             │ • DarkWow's stablecoin           │   │
 │  │ • Deep liquidity        │ • Native to ecosystem           │   │
 │  │ • Battle-tested         │ • Aligns relayer with protocol  │   │
 │  └─────────────────────────────────────────────────────────────┘   │
@@ -445,7 +445,7 @@ This model is gaining adoption in DeFi for good reason, but several design decis
 │  • Lower payout when pool stressed                                  │
 │                                                                     │
 │  Cap on Payouts:                                                  │
-│  • Per-incident cap (e.g., max 1000 DARK per claim)               │
+│  • Per-incident cap (e.g., max 1000 DRKW per claim)               │
 │  • Total pool cap (prevents catastrophic drain)                     │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
@@ -458,12 +458,12 @@ This model is gaining adoption in DeFi for good reason, but several design decis
 │                    Entry Threshold Considerations                     │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  Low Threshold (100-1000 DARK):                                    │
+│  Low Threshold (100-1000 DRKW):                                    │
 │  • More relayers = more competition                                 │
 │  • Lower barrier = more inclusion                                   │
 │  • Risk: Sybil attacks                                             │
 │                                                                     │
-│  High Threshold (10000+ DARK):                                     │
+│  High Threshold (10000+ DRKW):                                     │
 │  • Serious participants only                                        │
 │  • More economic security                                           │
 │  • Risk: Centralization                                            │

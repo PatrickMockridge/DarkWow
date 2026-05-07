@@ -1,23 +1,23 @@
 Compiling and Running a Node
 =========================
 
-This guide covers setting up and running a DarkFi testnet node. For a quick
+This guide covers setting up and running a DarkWow testnet node. For a quick
 start with simple shell scripts, see the [Quick Start](#quick-start) section.
 For detailed manual configuration, continue reading below.
 
-> **Conda Users**: If using conda environments, run `conda deactivate` before running DarkFi binaries. Conda's Python and library paths may conflict with DarkFi's native dependencies. See [Using dnet](../learn/dchat/network-tools/using-dnet.md) for venv setup.
+> **Conda Users**: If using conda environments, run `conda deactivate` before running DarkWow binaries. Conda's Python and library paths may conflict with DarkWow's native dependencies. See [Using dnet](../learn/dchat/network-tools/using-dnet.md) for venv setup.
 
 ## Overview
 
-This tutorial will cover the three DarkFi blockchain components and
+This tutorial will cover the three DarkWow blockchain components and
 their current features. The components covered are:
 
-* `darkfid` is the DarkFi fullnode. It validates blockchain
+* `darkfid` is the DarkWow fullnode. It validates blockchain
 transactions and stays connected to the p2p network.
 * `drk` is a CLI wallet. It provides an interface to smart contracts
 such as Money and DAO, manages our keys and coins, and scans the
 blockchain to update our balances.
-* `xmrig` is the mining daemon used in DarkFi. Connects to `darkfid`
+* `xmrig` is the mining daemon used in DarkWow. Connects to `darkfid`
 over its `Stratum` RPC, and requests new block headers to mine.
 
 The config files for `darkfid` and `drk` are sectioned into three
@@ -98,7 +98,7 @@ the software system-wide. Instead, we'll be running all the commands
 from the git repository, so we're able to easily pull any necessary
 updates.
 
-Refer to the main [DarkFi](../index.html#build) page for instructions
+Refer to the main [DarkWow](../index.html#build) page for instructions
 on how to install Rust and necessary deps. Skip last step of the build
 process, as you don't need to compile all binaries of the project.
 
@@ -160,7 +160,7 @@ Config file created in "~/.config/darkfi/drk_config.toml". Please review it and 
 
 ### Using Tor
 
-DarkFi supports Tor for network-level anonymity. To use the testnet over
+DarkWow supports Tor for network-level anonymity. To use the testnet over
 Tor, you'll need to make some modifications to the `darkfid` config
 file.
 
@@ -193,7 +193,7 @@ $ ./drk -c bin/drk/drk_config.toml -n localnet wallet initialize
 
 Initializing Money Merkle tree
 Successfully initialized Merkle tree for the Money contract
-Generating alias DRK for Token: 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb
+Generating alias DRKW for Token: 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb
 Initializing DAO Merkle trees
 Successfully initialized Merkle trees for the DAO contract
 ```
@@ -210,7 +210,7 @@ New address:
 $ ./drk -c bin/drk/drk_config.toml -n localnet wallet default-address 1
 ```
 
-The second command will print out your new DarkFi address where you
+The second command will print out your new DarkWow address where you
 can receive payments. Take note of it. Alternatively, you can always
 retrieve your default address using:
 
@@ -229,15 +229,15 @@ and transactions, and begin syncing the blockchain.
 ```shell
 $ ./darkfid
 
-[INFO] Initializing DarkFi node...
+[INFO] Initializing DarkWow node...
 [INFO] Node is configured to run with fixed PoW difficulty: 1
 [INFO] Initializing a Darkfi daemon...
 [INFO] Initializing Validator
 [INFO] Initializing Blockchain
 [INFO] Deploying native WASM contracts
-[INFO] Deploying Money Contract with ContractID BZHKGQ26bzmBithTQYTJtjo2QdCqpkR9tjSBopT4yf4o
-[INFO] Successfully deployed Money Contract
-[INFO] Deploying DAO Contract with ContractID Fd8kfCuqU8BoFFp6GcXv5pC8XXRkBK7gUPQX5XDz7iXj
+[INFO] Deploying NativeToken Contract with ContractID DgmXpuU1EcM54E8GuNTAkBUThcCoYzGN5kRCNXA4cPtw
+[INFO] Successfully deployed NativeToken Contract
+[INFO] Deploying MoneyV2 Contract with ContractID 21LYoifepcySKhyDA1vzxRDWGHyDizPQ8f11zSqhep7t
 ...
 ```
 
@@ -259,7 +259,7 @@ rest of the tutorial (`darkfid` and `drk` handle this), but if you want
 to help secure the network, you can participate in the mining process
 by running an `xmrig` mining daemon. In this example we will build
 `xmrig` from its respective source code repository. Make sure you are
-not in the DarkFi repository folder as we are going to retrieve
+not in the DarkWow repository folder as we are going to retrieve
 external repos.
 
 First, install its [dependencies][1], retrieve its repo and checkout
@@ -302,7 +302,7 @@ rpc_listen = "tcp://127.0.0.1:18347"
 > endpoints, so your traffic is not plaintext, as it contains your
 > wallet address used for the block rewards.
 
-To mine on DarkFi we need to add a recipient to `xmrig` that specifies
+To mine on DarkWow we need to add a recipient to `xmrig` that specifies
 where the mining rewards will be minted to. You now have to configure
 `xmrig` to use your wallet address as the rewards recipient, when it
 retrieves blocks from `darkfid` to mine. Make sure you have
@@ -325,7 +325,7 @@ $ ./xmrig -u x+1 -r 1000 -R 20 -o 127.0.0.1:18347 -t {XMRIG_THREADS} -u {YOUR_DA
 ```
 
 > Note: All miners should use the lowest possible resources so other
-> people can mine blocks to retrieve `DRK` for testing.
+> people can mine blocks to retrieve `DRKW` for testing.
 
 In `darkfid`, you should see a notification like this:
 
@@ -435,7 +435,7 @@ $ ./tmux_sessions.sh
 ```
 
 After some blocks have been generated we
-will see some `DRK` in our test wallet.
+will see some `DRKW` in our test wallet.
 On a different shell (or tmux pane in the session),
 navigate to `contrib/localnet/darkfid-single-node`
 folder again and check wallet balance
@@ -445,7 +445,7 @@ $ ./wallet-balance.sh
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+---------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRK     | 20
+ 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 20
 ```
 
 Alternatively, use the drk CLI directly:
@@ -455,7 +455,7 @@ $ ./drk -c drk.toml wallet balance
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+---------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRK     | 20
+ 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 20
 ```
 
 Don't forget that when using this local node, all operations

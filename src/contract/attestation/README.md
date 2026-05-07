@@ -1,6 +1,6 @@
 # Attestation Contract
 
-A generalized attestation and claims system that provides a reusable module for implementing claim verification patterns across DarkFi contracts.
+A generalized attestation and claims system that provides a reusable module for implementing claim verification patterns across DarkWow contracts.
 
 ## Overview
 

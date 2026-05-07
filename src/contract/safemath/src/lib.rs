@@ -1,12 +1,12 @@
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
-/// Whether a template is executable on stock official DarkFi today.
+/// Whether a template is executable on stock official DarkWow today.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TemplateTrack {
-    /// Uses only the stock official DarkFi `range_check(64, ...)` profile.
+    /// Uses only the stock official DarkWow `range_check(64, ...)` profile.
     Stock,
-    /// Requires widened DarkFi-side range profiles beyond current stock support.
+    /// Requires widened DarkWow-side range profiles beyond current stock support.
     Experimental,
 }
 
@@ -38,9 +38,9 @@ pub struct Template {
 pub mod safemath {
     use super::{Template, TemplateSurface, TemplateTrack};
 
-    /// Stock-compatible templates that compile on official DarkFi without widened range profiles.
+    /// Stock-compatible templates that compile on official DarkWow without widened range profiles.
     ///
-    /// Most downstream users targeting stock official DarkFi today should start
+    /// Most downstream users targeting stock official DarkWow today should start
     /// with this module's public `CATALOG` and `template(...)` lookup.
     pub mod stock {
         use super::{Template, TemplateSurface, TemplateTrack};
@@ -196,7 +196,7 @@ pub mod safemath {
         }
     }
 
-    /// Wider templates retained for future DarkFi cores that support 126/128/252-bit range profiles.
+    /// Wider templates retained for future DarkWow cores that support 126/128/252-bit range profiles.
     ///
     /// This module is intentionally non-stock and should not be the default
     /// downstream dependency surface today.
@@ -264,7 +264,7 @@ pub mod safemath {
     /// Complete public template catalog across stock and experimental tracks.
     ///
     /// This is intentionally broader than the stock v0 downstream surface.
-    /// Downstream code that targets stock official DarkFi today should usually
+    /// Downstream code that targets stock official DarkWow today should usually
     /// prefer `safemath::stock::CATALOG` instead.
     pub const CATALOG: &[Template] = &[
         Template {

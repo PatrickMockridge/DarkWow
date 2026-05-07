@@ -2,15 +2,15 @@
 
 ## Executive Summary
 
-This document describes the architecture of DarkFi on this fork:
+This document describes the architecture of DarkWow on this fork:
 
 - **Money V1/V2 are DEPRECATED and REMOVED** - Only Money V3 exists
 - **DAO v1 is DEPRECATED and REMOVED** - Use `dao_escrow` contract instead
-- **NativeToken is the native DARK token contract** - Handles fees and consensus
+- **NativeToken is the native DRKW token contract** - Handles fees and consensus
 - **Money V3 is a WASM contract** - DeFi tokens (ERC-20 style) with full privacy
 - **Money V3 uses Poseidon-only design** - Zero EC operations, no heap bugs
 
-This change constitutes a **hard fork** of the DarkFi protocol. Nodes running the old software will reject the new genesis block because:
+This change constitutes a **hard fork** of the DarkWow protocol. Nodes running the old software will reject the new genesis block because:
 
 1. Money V1/V2 were not removed in the original protocol
 2. DAO v1 was not removed in the original protocol
@@ -23,7 +23,7 @@ This change constitutes a **hard fork** of the DarkFi protocol. Nodes running th
 
 | Contract | Type | Status | Purpose |
 |----------|------|--------|---------|
-| NativeToken | Native | **ACTIVE** | DARK token, fees, PoW rewards |
+| NativeToken | Native | **ACTIVE** | DRKW token, fees, PoW rewards |
 | Money V3 | WASM | **ACTIVE** | DeFi tokens (stablecoins, wrapped assets) |
 | DAO Escrow | WASM | **ACTIVE** | Governance with endowment/treasury modes |
 | Deployooor | Native | **ACTIVE** | Deploy WASM contracts |
@@ -36,8 +36,8 @@ Genesis Block
     ├── NativeToken Contract (NATIVE_TOKEN_CONTRACT_ID)
     │       ├── PoWRewardV1 ← block rewards use this
     │       ├── FeeV1 ← network fee payment
-    │       ├── MintV1 ← DARK token minting
-    │       └── BurnV1 ← DARK token burning
+    │       ├── MintV1 ← DRKW token minting
+    │       └── BurnV1 ← DRKW token burning
     │
     └── Deployooor (DEPLOYOOOR_CONTRACT_ID)
             └── Deploy WASM contracts (Money V3, DAO Escrow, etc.)
@@ -45,7 +45,7 @@ Genesis Block
 
 Note: Money V3 is a **WASM contract** deployed via Deployooor, not a native contract.
 
-### Before (Original DarkFi)
+### Before (Original DarkWow)
 
 ```
 Genesis Block
@@ -171,15 +171,15 @@ DAO Escrow Authorization (ZK Predicate Model):
 | 2. Network Fees | **FeeV1** - Deterministic fee payment | N/A |
 | 3. Privacy | **MintV1/BurnV1** - Basic token operations | **Full privacy** |
 
-### NativeToken (DARK - Native Token)
+### NativeToken (DRKW - Native Token)
 
 Purpose: Consensus and fees
 - Block rewards (PoWRewardV1)
 - Network fee payment (FeeV1)
-- Basic DARK token operations (MintV1, BurnV1)
+- Basic DRKW token operations (MintV1, BurnV1)
 
 **Key Properties:**
-- Token ID = 0 (DARK is the native token)
+- Token ID = 0 (DRKW is the native token)
 - No token registry needed
 - Simple, hardened circuits
 
@@ -245,7 +245,7 @@ pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 2] = [
 
 1. **Miner RPC** (`miner.mine`): Called to mine a block locally
 
-2. **PoWRewardV1 Transaction**: Creates a transaction that mints new DARK tokens as block reward
+2. **PoWRewardV1 Transaction**: Creates a transaction that mints new DRKW tokens as block reward
 
 3. **ZK Proof**: Generated using `Mint_V1` circuit with `PoWRewardCallBuilder`
 
@@ -303,7 +303,7 @@ The `drk` command-line wallet supports Money V3 with full functionality:
    - Input: coin data + Merkle proof
    - Output: recipient + change
 5. Generate ZK proofs (Burn_V1 + Mint_V1)
-6. Select DARK coin for fee payment
+6. Select DRKW coin for fee payment
 7. Build NativeToken::FeeV1 for fee attachment
 8. Combine into final transaction using TransactionBuilder
 ```
@@ -320,7 +320,7 @@ The `drk` command-line wallet supports Money V3 with full functionality:
    - They don't recognize `NATIVE_TOKEN_CONTRACT_ID`
    - They don't have `Mint_V1` circuit VKs
 
-4. **Circuit Design**: Original DarkFi used EC-based circuits (Pedersen commitments). We use Poseidon-only circuits.
+4. **Circuit Design**: Original DarkWow used EC-based circuits (Pedersen commitments). We use Poseidon-only circuits.
 
 ### Consensus Rules Changed
 
@@ -367,7 +367,7 @@ This fork is **incompatible with upstream DarkFi** because:
 
 - **2026-04-13**: Money V3 migration complete
   - Money V1/V2 removed, Money V3 added (WASM)
-  - NativeToken contract added (native, for DARK)
+  - NativeToken contract added (native, for DRKW)
   - All ZK circuits converted to Poseidon-only
   - Token IDs now hidden commitments (100% fungibility)
   - drk wallet updated with full Money V3 support

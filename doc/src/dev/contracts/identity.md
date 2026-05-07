@@ -9,7 +9,7 @@ The identity contract enables **Minimal Viable Information (MVI)** - proving you
 **Key Innovation**: Instead of revealing everything (traditional KYC), prove only "I meet criteria" with ZK proofs.
 
 ```
-Traditional KYC:              DarkFi Identity (MVI):
+Traditional KYC:              DarkWow Identity (MVI):
 ┌─────────────────────┐      ┌─────────────────────────┐
 │ Name: Alice          │      │ Age: ✓ (over 18)         │
 │ DOB: 1990-01-01      │ →    │ Residency: ✓            │

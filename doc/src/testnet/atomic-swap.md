@@ -25,12 +25,12 @@ drk> wallet coins
 
  Coin            | Spent | Token ID        | Aliases | Value                    | Spend Hook | User Data | Spent TX
 -----------------+-------+-----------------+---------+--------------------------+------------+-----------+-----------------
- EGV6rS...pmmm6H | true  | 241vAN...KcLssb | DRK     | 2000000000 (20)          | -          | -         | fbbd7a...5f2b19
+ EGV6rS...pmmm6H | true  | 241vAN...KcLssb | DRKW     | 2000000000 (20)          | -          | -         | fbbd7a...5f2b19
 ...
  H6Bc49...Zb6k8h | false | {TOKEN2}        | DAWN    | 2000000000 (20)          | -          | -         | -
  47QnyR...1T7igm | true  | {TOKEN1}        | ANON    | 4269000000 (42.69)       | -          | -         | 47b481...b07395
  5UUJbH...trdQHY | false | {TOKEN1}        | ANON    | 4000000000 (40)          | -          | -         | -
- EEneNB...m6mxTC | false | 241vAN...KcLssb | DRK     | 1999442971 (19.97253683) | -          | -         | -
+ EEneNB...m6mxTC | false | 241vAN...KcLssb | DRKW     | 1999442971 (19.97253683) | -          | -         | -
 ```
 
 You'll have to initiate the swap and build your half of the swap tx:
@@ -103,7 +103,7 @@ drk> wallet balance
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+-------------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRK     | 19.96835727
+ 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 19.96835727
  {TOKEN1}                                     | ANON    | 40
  {TOKEN2}                                     | DAWN    | 20
 ```
@@ -117,14 +117,14 @@ drk> wallet coins
 
  Coin            | Spent | Token ID        | Aliases | Value                    | Spend Hook | User Data | Spent TX
 -----------------+-------+-----------------+---------+--------------------------+------------+-----------+-----------------
- EGV6rS...pmmm6H | true  | 241vAN...KcLssb | DRK     | 2000000000 (20)          | -          | -         | fbbd7a...5f2b19
+ EGV6rS...pmmm6H | true  | 241vAN...KcLssb | DRKW     | 2000000000 (20)          | -          | -         | fbbd7a...5f2b19
 ...
- EEneNB...m6mxTC | true  | 241vAN...KcLssb | DRK     | 1999442971 (19.97253683) | -          | -         | d2a5e2...2dfc69
+ EEneNB...m6mxTC | true  | 241vAN...KcLssb | DRKW     | 1999442971 (19.97253683) | -          | -         | d2a5e2...2dfc69
  H6Bc49...Zb6k8h | true  | {TOKEN2}        | DAWN    | 2000000000 (20)          | -          | -         | d2a5e2...2dfc69
  5UUJbH...trdQHY | true  | {TOKEN1}        | ANON    | 4000000000 (40)          | -          | -         | d2a5e2...2dfc69
  4zwzZf...uMbVir | false | {TOKEN2}        | DAWN    | 2000000000 (20)          | -          | -         | -
  BrqQuk...FcwW6d | false | {TOKEN1}        | ANON    | 4000000000 (40)          | -          | -         | -
- EEneNB...m6mxTC | false | 241vAN...KcLssb | DRK     | 1999442971 (19.96834924) | -          | -         | -
+ EEneNB...m6mxTC | false | 241vAN...KcLssb | DRKW     | 1999442971 (19.96834924) | -          | -         | -
 ```
 
 Here you can see there are two entries for the tokens we used in the

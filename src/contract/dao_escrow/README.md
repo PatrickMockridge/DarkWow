@@ -1,4 +1,4 @@
-# DarkFi DAO-Escrow Contract
+# DarkWow DAO-Escrow Contract
 
 A flexible contract supporting three operating modes: **Escrow-Only**, **Treasury-Only**, and **Treasury+Endowment**.
 
@@ -24,7 +24,7 @@ A flexible contract supporting three operating modes: **Escrow-Only**, **Treasur
 │                                                                              │
 │  MODE_TREASURY (0x01) ───────────────────────────────────────────────────── │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  Treasury-Only (Same as DarkFi DAO)                                  │    │
+│  │  Treasury-Only (Same as DarkWow DAO)                                  │    │
 │  │                                                                       │    │
 │  │  Members ──pay fees──► Treasury Pool                                  │    │
 │  │                                  │                                    │    │
@@ -109,7 +109,7 @@ let escrow = InitializeBuilder::new()
     .max_members(1000)
     .build()?;
 
-// MODE_TREASURY: Same as DarkFi DAO
+// MODE_TREASURY: Same as DarkWow DAO
 let treasury = InitializeBuilder::new()
     .mode(DaoEscrowMode::Treasury)  // 0x01
     .owner_secret(owner_secret)
@@ -276,7 +276,7 @@ See [security-analysis.md Issue #4](../../doc/src/arch/security-analysis.md) for
 - Claims voted by members
 
 ### MODE_TREASURY: Protocol Treasury
-- Same as existing DarkFi DAO
+- Same as existing DarkWow DAO
 - For grants, development, operations
 
 ### MODE_TREASURY_ENDOWMENT: Full-Featured DAO
@@ -424,4 +424,4 @@ let proof = SubscribeBuilder::new()
 
 - [DAO-Escrow Architecture Doc](../../doc/src/arch/dao_escrow.md)
 - [Subscription Contract](../subscription/README.md)
-- [DarkFi DAO Contract](../../doc/src/arch/dao.md)
+- [DarkWow DAO Contract](../../doc/src/arch/dao.md)

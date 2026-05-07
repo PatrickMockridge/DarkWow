@@ -1,7 +1,7 @@
 Transaction lifetime
 ====================
 
-Let $T$ be a transaction on the DarkFi network. Each transaction
+Let $T$ be a transaction on the DarkWow network. Each transaction
 consists of multiple ordered contract calls:
 
 $$ T = [C_1, …, C_n] $$
@@ -26,7 +26,7 @@ a single transaction.
 
 ## `Money::Transfer`
 
-Denote the call data here simply by $C$. Since payments on DarkFi use
+Denote the call data here simply by $C$. Since payments on DarkWow use
 the Sapling UTXO model, there are $n$ inputs $I_i$ and $m$ outputs
 $O_j$ in $C$. There are also $\pi_n$ input _burn_ zero-knowledge
 proofs, and $\mu_m$ output _mint_ zero-knowledge proofs.

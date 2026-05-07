@@ -10,7 +10,7 @@ The stablecoin contract enables minting a privacy-preserving stablecoin (e.g., a
 
 ## Architecture
 
-Based on the Nethermind P2P Oracle design with DarkFi privacy. Uses **Pooled Debt Model** (Synthetix-style) where all collateral backs all debt.
+Based on the Nethermind P2P Oracle design with DarkWow privacy. Uses **Pooled Debt Model** (Synthetix-style) where all collateral backs all debt.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐

@@ -4,9 +4,9 @@ Anonymous bridge contract for cross-chain asset transfers using **Object Capabil
 
 ## Overview
 
-The bridge contract enables privacy-preserving transfers between DarkFi and external blockchains (initially Ethereum).
+The bridge contract enables privacy-preserving transfers between DarkWow and external blockchains (initially Ethereum).
 
-**Key Innovation**: DarkFi replaces traditional VSS (Verifiable Secret Sharing) with **deterministic address derivation** - users hold their own secrets, bridge nodes cannot steal funds.
+**Key Innovation**: DarkWow replaces traditional VSS (Verifiable Secret Sharing) with **deterministic address derivation** - users hold their own secrets, bridge nodes cannot steal funds.
 
 ## The VSS Problem
 
@@ -22,7 +22,7 @@ User deposits → VSS nodes hold secret shards → Withdrawal requires n-of-m th
 
 ## The Object Capability Solution
 
-DarkFi bridge uses deterministic address derivation:
+DarkWow bridge uses deterministic address derivation:
 ```
 User knows secret → Derive bridge_address = H(recipient_identity, nonce) → Deposit
 User knows secret → Compute nullifier = H(secret) → Withdraw (self-signed)
@@ -35,7 +35,7 @@ User knows secret → Compute nullifier = H(secret) → Withdraw (self-signed)
 
 ## Security Comparison
 
-| Aspect | VSS-Based Bridge | DarkFi OCap Bridge |
+| Aspect | VSS-Based Bridge | DarkWow OCap Bridge |
 |--------|------------------|--------------------|
 | Key custody | Distributed shards | User-held secrets |
 | Withdrawal speed | Slow (round) | Fast (self-signed) |
@@ -104,7 +104,7 @@ Monero uses Cryptonote protocol, fundamentally different from Ethereum's UTXO mo
 
 **XMR Withdrawal Flow:**
 ```
-1. User burns wXMR on DarkFi
+1. User burns wXMR on DarkWow
 2. User specifies recipient hash (Monero address)
 3. Relayer picks up pending withdrawal
 4. Relayer broadcasts TX to Monero network
@@ -130,19 +130,19 @@ Zcash Sapling provides fully shielded transactions with zero-knowledge proofs:
 
 **The Pitch: "Shield your Zcash once and forever more"**
 
-Once your ZEC is deposited to the DarkFi bridge:
+Once your ZEC is deposited to the DarkWow bridge:
 - Your ZEC remains in a Sapling shielding on the Zcash chain
-- You receive wZEC on DarkFi for private DeFi
-- All subsequent DarkFi transactions are completely private
+- You receive wZEC on DarkWow for private DeFi
+- All subsequent DarkWow transactions are completely private
 - When you unwrap, wZEC burns and ZEC returns to your Zcash address
 - Your Zcash transaction history stays private **forever**
 
-Unlike other bridges that require you to re-shield on every transaction, DarkFi's bridge means you only shield **once**.
+Unlike other bridges that require you to re-shield on every transaction, DarkWow's bridge means you only shield **once**.
 
 **ZEC Deposit Flow:**
 ```
 1. User creates Sapling shielded address (zaddr)
-2. User sends ZEC to DarkFi bridge shielded address
+2. User sends ZEC to DarkWow bridge shielded address
 3. Relayer observes deposit via light walletd RPC (view key only)
 4. Relayer constructs proof showing note exists in Sapling tree
 5. User submits DepositV1 with ZcashDepositProof
@@ -161,7 +161,7 @@ Unlike other bridges that require you to re-shield on every transaction, DarkFi'
 
 **ZEC Withdrawal Flow:**
 ```
-1. User burns wZEC on DarkFi
+1. User burns wZEC on DarkWow
 2. User specifies recipient hash (zaddr or taddr)
 3. Relayer picks up pending withdrawal
 4. Relayer broadcasts TX to Zcash network
@@ -186,10 +186,10 @@ Unlike transparent Ethereum transactions, Aztec keeps your:
 - Counterparties private
 - Full DeFi history private
 
-Once your DAI/ETH is deposited to the DarkFi bridge via Aztec:
+Once your DAI/ETH is deposited to the DarkWow bridge via Aztec:
 - Your funds remain private in Aztec's rollup on Ethereum
-- You receive wDAI/wETH on DarkFi for private DeFi
-- All subsequent DarkFi transactions are completely private
+- You receive wDAI/wETH on DarkWow for private DeFi
+- All subsequent DarkWow transactions are completely private
 - When you unwrap, tokens return to your Aztec private account
 - Your DeFi history stays private **forever**
 
@@ -216,7 +216,7 @@ Once your DAI/ETH is deposited to the DarkFi bridge via Aztec:
 
 **AZT Withdrawal Flow:**
 ```
-1. User burns wETH/wDAI on DarkFi
+1. User burns wETH/wDAI on DarkWow
 2. User specifies recipient Aztec address hash
 3. Relayer picks up pending withdrawal
 4. Relayer broadcasts private TX to Aztec rollup
@@ -245,7 +245,7 @@ Litecoin is the natural segueway to the Bitcoin ecosystem:
 
 **LTC Deposit Flow:**
 ```
-1. User deposits LTC to DarkFi bridge address on Litecoin
+1. User deposits LTC to DarkWow bridge address on Litecoin
 2. Relayer observes deposit via Litecoin RPC (transparent or MWEB)
 3. Relayer constructs proof showing:
    - Deposit exists in Litecoin blockchain
@@ -267,7 +267,7 @@ Litecoin is the natural segueway to the Bitcoin ecosystem:
 
 **LTC Withdrawal Flow:**
 ```
-1. User burns wLTC on DarkFi
+1. User burns wLTC on DarkWow
 2. User specifies recipient Litecoin address (LTC or MWEB)
 3. Relayer picks up pending withdrawal
 4. Relayer broadcasts TX to Litecoin network
@@ -280,10 +280,10 @@ wXMR can be used as collateral in the [stablecoin contract](../stablecoin.md):
 
 **Full Flow: XMR → wXMR → Stablecoin Collateral → Mint Stablecoin**
 ```
-1. XMR → DarkFi (Deposit):
+1. XMR → DarkWow (Deposit):
    - User deposits XMR to bridge one-time address
    - Relayer observes + verifies via DLEq proof
-   - DarkFi mints wXMR to user
+   - DarkWow mints wXMR to user
 
 2. wXMR → Collateral (DepositCollateral):
    - User deposits wXMR to stablecoin pool
@@ -307,7 +307,7 @@ wXMR can be used as collateral in the [stablecoin contract](../stablecoin.md):
 **Price Feed:**
 - XMR/USD price used for collateral valuation
 - Fallback price: 150 USD per XMR (until DEX pool exists)
-- In production, TWAP from XMR/DRK or XMR/USD AMM pool
+- In production, TWAP from XMR/DRKW or XMR/USD AMM pool
 
 ## Structure
 

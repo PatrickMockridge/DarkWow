@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,7 +24,7 @@
 //! ZK Proof construction for XMR deposits
 //!
 //! This module handles constructing the cryptographic proofs required
-//! for XMR deposits to the DarkFi bridge.
+//! for XMR deposits to the DarkWow bridge.
 
 use tracing::info;
 
@@ -106,7 +111,7 @@ pub struct MoneroDepositParams {
     pub xmr_proof: Option<XmrDepositProof>,
 }
 
-/// Submit a deposit proof to the DarkFi bridge contract
+/// Submit a deposit proof to the DarkWow bridge contract
 pub async fn submit_deposit(transfer: &Transfer, _config: &Config) -> Result<()> {
     info!(target: "xmr_relayer::proof", "Constructing deposit proof for tx: {}", transfer.txid);
 
@@ -114,7 +119,7 @@ pub async fn submit_deposit(transfer: &Transfer, _config: &Config) -> Result<()>
     // 1. Get the Merkle proof from the Monero node
     // 2. Construct the DLEq proof
     // 3. Generate the ZK proof using the xmr_deposit_v1.zk circuit
-    // 4. Submit to DarkFi via RPC
+    // 4. Submit to DarkWow via RPC
 
     // For MVP, we just log the deposit
     info!(

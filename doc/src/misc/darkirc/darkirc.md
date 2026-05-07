@@ -1,10 +1,10 @@
 # DarkIRC: Strong Anonymity P2P Chat
 
-In DarkFi, we organize our communication using resilient and
+In DarkWow, we organize our communication using resilient and
 censorship-resistant infrastructure. For chatting, `darkirc` is a
 peer-to-peer implementation of an IRC server in which any user can
 participate anonymously using any IRC frontend and by running the
-IRC daemon. `darkirc` uses the DarkFi P2P engine to synchronize chats
+IRC daemon. `darkirc` uses the DarkWow P2P engine to synchronize chats
 between hosts.
 
 ## Benefits
@@ -90,7 +90,7 @@ Nodes have knowledge of their peers, including the IP addresses of
 connected hosts. We suggest configuring your instance to use a different
 transport so it is not connected via clearnet.
 
-DarkFi supports the use of pluggable transports, including [Tor](../nodes/tor-guide.md#configure-network-settings)
+DarkWow supports the use of pluggable transports, including [Tor](../nodes/tor-guide.md#configure-network-settings)
 and Nym, to provide network-level privacy. As long as there are live seed
 nodes configured to support a Tor or Nym connection, users can connect to
 `darkirc` and benefit from the protections offered by these protocols.
@@ -98,17 +98,17 @@ nodes configured to support a Tor or Nym connection, users can connect to
 Other approaches include connecting via a cloud server or VPN. Research
 the risks involved in these methods before connecting.
 
-## Usage (DarkFi Network)
+## Usage (DarkWow Network)
 
 Upon compiling `darkirc` as described above, the preconfigured defaults
 will allow you to connect to the network and start chatting with the
-rest of the DarkFi community.
+rest of the DarkWow community.
 
 First, try to start `darkirc` from your command-line so it can spawn its
 configuration file in place. The preconfigured defaults will autojoin
 you to several default channels one of which is `#dev` where we have 
 weekly meetings, and where the community is most active and talks 
-about DarkFi development.
+about DarkWow development.
 
 ```shell
 % ./darkirc

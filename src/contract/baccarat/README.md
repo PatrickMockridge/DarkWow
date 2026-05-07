@@ -1,6 +1,6 @@
 # Baccarat Contract
 
-A privacy-preserving Baccarat (Punto Banco) contract for DarkFi. Famous from James Bond films, Baccarat is a casino classic that offers three possible outcomes: Player wins, Banker wins, or Tie.
+A privacy-preserving Baccarat (Punto Banco) contract for DarkWow. Famous from James Bond films, Baccarat is a casino classic that offers three possible outcomes: Player wins, Banker wins, or Tie.
 
 ## Overview
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-A local development network (devnet) for DarkFi testing, funded via block mining rather than a broken faucet. Uses RandomX PoW mining against the local darkfid node's stratum server to generate DARK tokens for testing.
+A local development network (devnet) for DarkWow testing, funded via block mining rather than a broken faucet. Uses RandomX PoW mining against the local darkfid node's stratum server to generate DRKW tokens for testing.
 
 ## Quick Start
 
@@ -24,7 +24,7 @@ A local development network (devnet) for DarkFi testing, funded via block mining
 3. darkfid sends mining jobs (RandomX blob + target)
 4. drk mines RandomX hashes in a background thread
 5. Shares found are submitted back to stratum server
-6. Accepted shares = mined blocks = PoW rewards (20 DARK per block)
+6. Accepted shares = mined blocks = PoW rewards (20 DRKW per block)
 7. Wallet scanning discovers the coins
 
 ## Key Components
@@ -88,7 +88,7 @@ drk contract invoke dao_escrow enable_drain_protection --params params.json
 
 - **Algorithm:** RandomX (rx/0)
 - **Difficulty:** 1 (very low, shares found frequently)
-- **Block reward:** 20 DARK per mined block
+- **Block reward:** 20 DRKW per mined block
 - **Blob structure:** 43 bytes = [2 byte padding][40 byte header with nonce at offset 39]
 - **Target:** 8 bytes MSB of 32-byte target, padded with zeros to 32 bytes for comparison
 - **Nonce:** 4 bytes at blob byte offset 39 (little-endian u32)
@@ -109,7 +109,7 @@ drk contract invoke dao_escrow enable_drain_protection --params params.json
 ### 3. Mine blocks
 ```bash
 ./target/release/drk -c bin/drk/drk_config.toml -n localnet mine
-# Press Ctrl+C when sufficient DARK accumulated
+# Press Ctrl+C when sufficient DRKW accumulated
 ```
 
 ### 4. Check balance
@@ -202,7 +202,7 @@ drk contract deploy <auth> <wasm> | drk broadcast  # Pipe output to broadcast
 
 ### coin values are in raw units
 
-Coin values in `drk wallet coins` output are shown as raw values (e.g., `2000000000`) with a formatted version in parentheses (e.g., `(20)`). The DARK token has 8 decimal places.
+Coin values in `drk wallet coins` output are shown as raw values (e.g., `2000000000`) with a formatted version in parentheses (e.g., `(20)`). The DRKW token has 8 decimal places.
 
 ### contract list without args lists all authorities
 
@@ -657,7 +657,7 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
 
 **Money V1 is deprecated. Money V2 is deprecated. Native Token is the current standard.**
 
-- **`money` (v1)**: DEPRECATED - Original DarkFi money contract
+- **`money` (v1)**: DEPRECATED - Original DarkWow money contract
 - **`money_v2`**: DEPRECATED - Replaced by Native Token
 - **`native_token`**: CURRENT - Consensus-first native token contract
 
@@ -762,9 +762,9 @@ sleep 3
 
 ### Symptom: "Failed to calculate transaction's gas"
 
-**Cause**: Wallet had DARK but not enough confirmed balance for gas estimation.
+**Cause**: Wallet had DRKW but not enough confirmed balance for gas estimation.
 
-**Resolution**: Mine more blocks to accumulate confirmed DARK.
+**Resolution**: Mine more blocks to accumulate confirmed DRKW.
 
 ### Deployment vs Code Bugs
 

@@ -36,15 +36,15 @@ If the seed node is down, you will see this message in the debug output:
 
 ```
 ERROR] [P2P] Network reseed failed!
-[WARN] [P2P] Unable to connect to seed [tcp+tls://lilith1.dark.fi:9600/]: IO error: connection refused
+[WARN] [P2P] Unable to connect to seed [tcp+tls://lilith1.darkwow.org:9600/]: IO error: connection refused
 ```
 
 If it's a problem related to nodes, you will typically see a successful
 seed connection like so:
 
 ```
-[INFO] [P2P] Connected seed [tcp+tls://lilith1.dark.fi:9600/]
-[INFO] [P2P] Disconnecting from seed [tcp+tls://lilith1.dark.fi:9600/]
+[INFO] [P2P] Connected seed [tcp+tls://lilith1.darkwow.org:9600/]
+[INFO] [P2P] Disconnecting from seed [tcp+tls://lilith1.darkwow.org:9600/]
 ```
 
 Followed by multiple connection failed messages, like so:
@@ -59,7 +59,7 @@ Followed by multiple connection failed messages, like so:
 If you get an error like this:
 
 ```
-[WARN] [P2P] Unable to connect to seed [tcp+tls://lilith1.dark.fi:9600/]: IO error: connection refused
+[WARN] [P2P] Unable to connect to seed [tcp+tls://lilith1.darkwow.org:9600/]: IO error: connection refused
 ```
 
 This means you are failing to establish a connection to the seed node.

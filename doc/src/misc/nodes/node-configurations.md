@@ -1,6 +1,6 @@
 # Node configurations
 
-This section provides configuration examples for hosting DarkFi P2P nodes.
+This section provides configuration examples for hosting DarkWow P2P nodes.
 
 ## Default Ports
 

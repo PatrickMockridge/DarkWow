@@ -1,6 +1,6 @@
-# DarkFi Stablecoin Contract
+# DarkWow Stablecoin Contract
 
-A privacy-preserving collateralized stablecoin for DarkFi with configurable models and multi-collateral support.
+A privacy-preserving collateralized stablecoin for DarkWow with configurable models and multi-collateral support.
 
 ## Overview
 
@@ -27,7 +27,7 @@ The stablecoin contract supports **four deployment models** selected at initiali
 
 Collateral types supported:
 - **XMR** (Monero) - Privacy-native collateral
-- **DRK** (DarkFi) - Native token collateral
+- **DRK** (DarkWow) - Native token collateral
 - **ETH** (Ethereum) - Large cap, DAI-backed collateral
 
 Each collateral type has its own risk parameters:
@@ -385,7 +385,7 @@ constrain_equal_base(is_lte, ONE);
 
 ## Comparison
 
-| Aspect | MakerDAO DAI | DarkFi Stablecoin (Pooled) |
+| Aspect | MakerDAO DAI | DarkWow Stablecoin (Pooled) |
 |--------|--------------|---------------------------|
 | Price oracle | Chainlink | AMM TWAP (decentralized) |
 | Debt model | Individual CDP | Pooled debt |
@@ -484,6 +484,6 @@ The contract just provides the financial primitives. How staking integrates with
 
 - [P2P Oracle Design](https://technologytruth.substack.com/p/nether-say-nether-again)
 - [Synthetix Pooled Debt](https://synthetix.io/)
-- [DarkFi Money Contract](../money/)
-- [DarkFi SDK](../../../src/sdk/)
+- [DarkWow Money Contract](../money/)
+- [DarkWow SDK](../../../src/sdk/)
 - [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md)

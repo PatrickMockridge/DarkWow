@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -89,10 +94,10 @@ pub use mempool::{create_mempool, Mempool, MempoolPtr};
 /// ZK verification for linear blockchain
 mod zk;
 
-/// Atomic pointer to the DarkFi node
+/// Atomic pointer to the DarkWow node
 pub type DarkfiNodePtr = Arc<DarkfiNode>;
 
-/// Structure representing a DarkFi node
+/// Structure representing a DarkWow node
 pub struct DarkfiNode {
     /// Validator(node) pointer
     validator: ValidatorPtr,
@@ -174,10 +179,10 @@ impl DarkfiNode {
     }
 }
 
-/// Atomic pointer to the DarkFi daemon
+/// Atomic pointer to the DarkWow daemon
 pub type DarkfidPtr = Arc<Darkfid>;
 
-/// Structure representing a DarkFi daemon
+/// Structure representing a DarkWow daemon
 pub struct Darkfid {
     /// Darkfi node instance
     node: DarkfiNodePtr,
@@ -192,7 +197,7 @@ pub struct Darkfid {
 }
 
 impl Darkfid {
-    /// Initialize a DarkFi daemon.
+    /// Initialize a DarkWow daemon.
     ///
     /// Generates a new `DarkfiNode` for provided configuration,
     /// along with all the corresponding background tasks.
@@ -250,7 +255,7 @@ impl Darkfid {
         Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task }))
     }
 
-    /// Initialize a DarkFi daemon for linear-testnet mode.
+    /// Initialize a DarkWow daemon for linear-testnet mode.
     ///
     /// Uses LinearBlockchain instead of Validator for consensus.
     pub async fn init_linear(
@@ -442,7 +447,7 @@ impl Darkfid {
         Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task }))
     }
 
-    /// Start the DarkFi daemon in the given executor, using the
+    /// Start the DarkWow daemon in the given executor, using the
     /// provided JSON-RPC settings and consensus initialization
     /// configuration.
     pub async fn start(
@@ -558,7 +563,7 @@ impl Darkfid {
         Ok(())
     }
 
-    /// Stop the DarkFi daemon.
+    /// Stop the DarkWow daemon.
     pub async fn stop(&self) -> Result<()> {
         info!(target: "darkfid::Darkfid::stop", "Terminating Darkfi daemon...");
 

@@ -1,10 +1,10 @@
-# Building SDKs and Applications for DarkFi
+# Building SDKs and Applications for DarkWow
 
-This guide covers the optimal patterns for building SDKs and applications that interact with DarkFi smart contracts.
+This guide covers the optimal patterns for building SDKs and applications that interact with DarkWow smart contracts.
 
 ## Architecture Overview
 
-DarkFi applications typically follow a layered architecture:
+DarkWow applications typically follow a layered architecture:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -243,7 +243,7 @@ fn unexpected<T>(expected: &str, actual: ApiResponse) -> ServiceError {
 
 ## Contract SDK Pattern (for Smart Contracts)
 
-Each DarkFi contract provides a client library in `src/contract/<name>/src/client/mod.rs`:
+Each DarkWow contract provides a client library in `src/contract/<name>/src/client/mod.rs`:
 
 ### Builder Pattern
 
@@ -306,7 +306,7 @@ let call_data = CreateSwapBuilder::new()
 
 ## Contract Entrypoint Pattern
 
-DarkFi contracts use `define_contract!` with four functions:
+DarkWow contracts use `define_contract!` with four functions:
 
 ```rust
 darkfi_sdk::define_contract!(
@@ -428,7 +428,7 @@ pub struct CreateSwapParams {
 
 ## File Structure
 
-For a complete DarkFi application:
+For a complete DarkWow application:
 
 ```
 drk-desktop-wallet/           # Workspace

@@ -1,6 +1,6 @@
 # Proof Harness
 
-This crate holds the optional DarkFi-backed proof harness for
+This crate holds the optional DarkWow-backed proof harness for
 `darkfi-safemath-zk`.
 
 It is intentionally separate from the root crate so the published library stays
@@ -15,8 +15,8 @@ cargo test --manifest-path proof-harness/Cargo.toml
 ```
 
 That command proves the stock-compatible AMM-kernel track against the pinned
-official DarkFi revision and keeps the default path green on stock upstream
-DarkFi.
+official DarkWow revision and keeps the default path green on stock upstream
+DarkWow.
 
 It runs:
 
@@ -29,13 +29,13 @@ Opt-in experimental widened proof run:
 cargo test --manifest-path proof-harness/Cargo.toml -- --ignored
 ```
 
-The harness pins the official DarkFi repository on Codeberg to:
+The harness pins the official DarkWow repository on Codeberg to:
 
 - `bbcfa2f33bba31c92e72a70ba3992ef1147723d2`
 
 ## Current Status
 
-At that upstream revision, stock official DarkFi supports the stock-compatible
+At that upstream revision, stock official DarkWow supports the stock-compatible
 track in this repo, which uses only:
 
 - `range_check(64, ...)`
@@ -46,7 +46,7 @@ That means:
 - `cargo test --manifest-path proof-harness/Cargo.toml` should pass and prove
   the stock-compatible AMM-kernel templates
 - `cargo test --manifest-path proof-harness/Cargo.toml -- --ignored` still
-  requires DarkFi support for the widened experimental safemath profiles
+  requires DarkWow support for the widened experimental safemath profiles
 
 Those widened profiles are:
 

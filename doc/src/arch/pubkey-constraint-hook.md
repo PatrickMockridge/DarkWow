@@ -6,7 +6,7 @@
 
 ## Overview
 
-DarkFi uses a git pre-commit hook to prevent the introduction of circuits with missing public key binding constraints. This vulnerability occurs when a circuit derives a public key from a secret using `ec_mul_base` but fails to bind the derived coordinates to public inputs before exposing them.
+DarkWow uses a git pre-commit hook to prevent the introduction of circuits with missing public key binding constraints. This vulnerability occurs when a circuit derives a public key from a secret using `ec_mul_base` but fails to bind the derived coordinates to public inputs before exposing them.
 
 ## The Vulnerability
 

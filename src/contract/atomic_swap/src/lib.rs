@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,14 +21,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! DarkFi Atomic Swap Contract
+//! DarkWow Atomic Swap Contract
 //!
 //! Cross-chain atomic swaps via Hashed Timelock Contract (HTLC) pattern.
 //!
 //! ## How It Works
 //!
 //! ```
-//! Chain A (e.g., Ethereum)              Chain B (DarkFi)
+//! Chain A (e.g., Ethereum)              Chain B (DarkWow)
 //! ─────────────────────────────────   ─────────────────────────────────
 //! 1. Alice locks funds in HTLC         1. Bob locks funds in HTLC
 //!     hash = SHA256(secret)                 hash = SHA256(secret)
@@ -31,14 +36,14 @@
 //!                                            (wait for Alice)
 //! 2. Alice reveals secret           ──────────────────────────────►
 //!     (on-chain)                         2. Bob sees secret
-//!                                            3. Bob claims on DarkFi
+//!                                            3. Bob claims on DarkWow
 //!                                            4. Secret revealed
 //! 5. Alice claims on Ethereum      ◄────────────────────────────────
 //! ```
 //!
 //! If timelock expires:
 //! - Alice can refund on Chain A
-//! - Bob can refund on DarkFi
+//! - Bob can refund on DarkWow
 //!
 //! ## Security Properties
 //!
@@ -49,7 +54,7 @@
 //!
 //! ## Cross-Chain Integration
 //!
-//! This contract handles the DarkFi side of the swap. The external chain
+//! This contract handles the DarkWow side of the swap. The external chain
 //! (Ethereum, Bitcoin, etc.) implements its own HTLC with the same hash.
 
 use darkfi_sdk::define_contract_function;

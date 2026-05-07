@@ -5,7 +5,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Dyne.org foundation <foundation@dyne.org>"]
 license = "AGPL-3.0-only"
-homepage = "https://dark.fi"
+homepage = "https://darkwow.org"
 repository = "https://codeberg.org/darkrenaissance/darkfi"
 
 [dependencies]
@@ -112,7 +112,7 @@ workspace = true
 
 [package.metadata.android]
 package_name = "darkfi.darkfi-app"
-label = "DarkFi"
+label = "DarkWow"
 res = "data/res"
 icon = "@mipmap/ic_launcher"
 assets = "assets"

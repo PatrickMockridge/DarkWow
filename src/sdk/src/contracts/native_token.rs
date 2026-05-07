@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
- * Copyright (C) 0-2026 Dyne.org foundation
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -25,7 +30,7 @@
 //!
 //! CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD
 //!
-//! The native token contract serves as the native token for DarkFi with:
+//! The native token contract serves as the native token for DarkWow with:
 //! 1. **Consensus Reward** - Block rewards for PoW mining must be reliable
 //! 2. **Network Fees** - Transaction fee payment must be deterministic
 //! 3. **Privacy Layer** - Privacy on top, never compromising consensus

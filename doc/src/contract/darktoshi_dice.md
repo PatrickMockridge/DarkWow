@@ -108,7 +108,7 @@ let roll = poseidon_hash([block_hash, bet_id, secret_nonce]);
 
 **Security Note**: The current implementation uses `wasm::util::get_tx_hash()` which
 provides tx-level randomness. For higher-stakes applications, see [Provable Randomness](provable_randomness.md)
-for analysis of leveraging DarkFi's PoW mechanism (RandomX) directly.
+for analysis of leveraging DarkWow's PoW mechanism (RandomX) directly.
 
 ### Adjustable Confirmation Depth
 
@@ -151,7 +151,7 @@ The dice contract demonstrates several randomness patterns:
 **Weakness**: Current implementation relies on tx_hash which could be influenced by transaction ordering. For production gambling use, leverage PoW block hash directly.
 
 See [Provable Randomness](provable_randomness.md) for full analysis including:
-- Leveraging DarkFi's RandomX PoW for randomness
+- Leveraging DarkWow's RandomX PoW for randomness
 - ECVRF-based verifiable randomness
 - Hybrid approaches (PoW + VRF + Commit-Reveal)
 - **Case study: Block Height Prediction Market** with detailed implementation design
@@ -181,7 +181,7 @@ The DarkToshi Dice contract was successfully deployed and tested on localnet.
 
 - **Network**: localnet with `pow_fixed_difficulty=1`
 - **Mining**: `drk mine` against darkfid stratum server (port 48347)
-- **Block reward**: 20 DARK per block
+- **Block reward**: 20 DRKW per block
 - **Wallet**: Initialized and funded via mining
 
 ### Deployment Details
@@ -198,7 +198,7 @@ drk contract deploy BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
 
 ### Verified Workflow
 
-1. `drk wallet balance` - Check DARK tokens
+1. `drk wallet balance` - Check DRKW tokens
 2. `drk wallet coins` - View unspent coins
 3. `drk contract list` - List deploy authorities
 4. `drk scan` - Discover blockchain updates

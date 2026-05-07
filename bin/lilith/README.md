@@ -1,7 +1,7 @@
 lilith
 ======
 
-A tool to deploy multiple P2P network seed nodes for DarkFi
+A tool to deploy multiple P2P network seed nodes for DarkWow
 applications with a single daemon.
 
 ## Usage

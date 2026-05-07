@@ -1,7 +1,7 @@
 [package]
 name = "ping"
 version = "0.1.0"
-homepage = "https://dark.fi"
+homepage = "https://darkwow.org"
 description = "Ping tool for servers"
 authors = ["Dyne.org foundation <foundation@dyne.org>"]
 repository = "https://codeberg.org/darkrenaissance/darkfi"

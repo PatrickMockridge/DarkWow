@@ -1,7 +1,7 @@
 [package]
 name = "p2pdebug"
 version = "0.4.1"
-homepage = "https://dark.fi"
+homepage = "https://darkwow.org"
 authors = ["Dyne.org foundation <foundation@dyne.org>"]
 repository = "https://codeberg.org/darkrenaissance/darkfi"
 license = "AGPL-3.0-only"

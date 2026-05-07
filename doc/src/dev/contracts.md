@@ -1,6 +1,6 @@
 # Smart Contracts
 
-DarkFi implements several privacy-preserving smart contracts. Each contract follows the same architecture: WASM execution, ZK proof verification, and object-capability security.
+DarkWow implements several privacy-preserving smart contracts. Each contract follows the same architecture: WASM execution, ZK proof verification, and object-capability security.
 
 ## Contract Overview
 
@@ -8,11 +8,11 @@ DarkFi implements several privacy-preserving smart contracts. Each contract foll
 |---------|---------|--------------|
 | [Money](../spec/contract/money/money.md) | Token transfers | Nullifiers, Pedersen commitments |
 | [DAO](../spec/contract/dao/dao.md) | Governance |提案投票,  treasury management |
-| [Oracle](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/oracle/README.md) | External data feeds | Stake-based attestations |
-| [Auction](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/auction/README.md) | Sealed-bid auctions | Escrow integration |
-| [Attestation](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/attestation/README.md) | Credential verification | Predicate-based claims |
-| [Tender](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/tender/README.md) | Request for proposals | O-Cap capability gating |
-| [Labor Market](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/labor_market/README.md) | Service marketplaces | Milestone-based payments |
+| [Oracle](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/contract/oracle/README.md) | External data feeds | Stake-based attestations |
+| [Auction](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/contract/auction/README.md) | Sealed-bid auctions | Escrow integration |
+| [Attestation](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/contract/attestation/README.md) | Credential verification | Predicate-based claims |
+| [Tender](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/contract/tender/README.md) | Request for proposals | O-Cap capability gating |
+| [Labor Market](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/contract/labor_market/README.md) | Service marketplaces | Milestone-based payments |
 | [Bridge](dev/contracts/bridge.md) | Cross-chain transfers | Object Capability Security |
 | [DEX](dev/contracts/dex.md) | Atomic swap DAO | Minimal viable information |
 | [Identity](dev/contracts/identity.md) | Credential proofs | Selective disclosure |

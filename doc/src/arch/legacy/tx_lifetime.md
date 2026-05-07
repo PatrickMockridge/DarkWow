@@ -123,18 +123,18 @@ pub struct Transaction {
 }
 ```
 
-A generic DarkFi transaction object is simply an array of smart
+A generic DarkWow transaction object is simply an array of smart
 contract calls, along with attached ZK proofs and signatures needed
 to properly verify the contracts' execution. A transaction can have
 any number of calls, and proofs, provided it does not exhaust a set
 gas limit.
 
-In DarkFi, every operation is a smart contract. This includes payments,
+In DarkWow, every operation is a smart contract. This includes payments,
 which we'll explain in the following section.
 
 ## Payments
 
-For A -> B payments in DarkFi we use the Sapling scheme that originates
+For A -> B payments in DarkWow we use the Sapling scheme that originates
 from zcash. A payment transaction has a number of _inputs_ (which are
 coins being burned/spent), and a number of _outputs_ (which are coins
 being minted/created). An explanation for the ZK proofs for this scheme
@@ -216,7 +216,7 @@ let token_commit = pedersen_commitment(token_id, token_blind);
 
 The values above, except `coin` become the public inputs for the `Burn`
 ZK proof. If everything is correct, this allows Alice to spend her coin.
-In DarkFi, the changes have to be atomic, so any payment transaction
+In DarkWow, the changes have to be atomic, so any payment transaction
 that is burning some coins, has to mint new coins at the same time, and
 no value must be lost, nor can the token ID change. We enforce this by
 using Pedersen commitments.

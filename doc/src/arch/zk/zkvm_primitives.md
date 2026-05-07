@@ -1,11 +1,13 @@
 # zkVM Primitive Layer: Opcode Reasoning
 
+> **Note:** The core zkVM opcode layer (constraint system, bincode format, WASM execution model) is inherited from upstream DarkFi and tracks upstream. The opcode roadmap, contract integration patterns, and DarkWow-specific opcodes (LessThanOrEqual, BaseDiv) described here are DarkWow divergences.
+
 > **Prerequisite reading**: Before this document, read [Field Arithmetic Constraints](field_arithmetic.md). It explains why every operation in a ZK circuit must be re-expressed in finite field arithmetic — and why that re-expression is the primary difficulty in ZK circuit design. The examples in this document assume you understand field vs. integer ordering and modular arithmetic.
 
 The opcode layer is not an implementation detail — it is the **primitive layer** that
-determines the entire expressiveness surface of DarkFi's smart contract system.
+determines the entire expressiveness surface of DarkWow's smart contract system.
 
-DarkFi's zkVM executes ZK circuits compiled from `.zk` source files. Every contract
+DarkWow's zkVM executes ZK circuits compiled from `.zk` source files. Every contract
 — identity credentials, DEX atomic swaps, bridge deposits, stablecoin positions —
 ultimately reduces to a sequence of opcodes. The available opcodes define the
 mathematical and logical operations that contract authors can assume exist.
@@ -15,12 +17,12 @@ need it must either work around it with complex compositions, leave the proof
 incomplete, or simply not exist.
 
 This is why reasoning about the opcode layer is a **core architectural discussion**,
-not a peripheral one. The roadmap of what DarkFi's contracts can express is
+not a peripheral one. The roadmap of what DarkWow's contracts can express is
 fundamentally constrained by — and derivable from — the opcode set.
 
 ## Why Opcode Reasoning Belongs on the Roadmap
 
-DarkFi's core team is correctly focused on core consensus, protocol security, and
+DarkWow's core team is correctly focused on core consensus, protocol security, and
 mainnet stability. The opcode primitives discussed here represent the **contract
 expressiveness layer** that builds on that foundation.
 
@@ -34,7 +36,7 @@ implementation in Halo2, testable in isolation, and additive (no existing opcode
 is changed or removed). The reasoning here makes visible the dependency between
 promised features and the primitive layer that enables them.
 
-Consider features explicitly discussed in DarkFi's public communications:
+Consider features explicitly discussed in DarkWow's public communications:
 
 | Promised Feature | Required Primitives | Notes |
 |-----------------|---------------------|-------|
@@ -53,7 +55,7 @@ This section provides a technical deep-dive into how the comparison opcodes work
 
 ### The Fundamental Problem: Field Elements Are Not Integers
 
-DarkFi's zkVM operates in the Pallas field — the scalar field of bn254, with prime order:
+DarkWow's zkVM operates in the Pallas field — the scalar field of bn254, with prime order:
 
 ```
 p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1

@@ -4,9 +4,9 @@
 
 ## Overview
 
-A generalized RPC API for invoking any DarkFi smart contract without requiring a new API endpoint per contract function.
+A generalized RPC API for invoking any DarkWow smart contract without requiring a new API endpoint per contract function.
 
-A generalized RPC API for invoking any DarkFi smart contract function without requiring a new API endpoint per contract.
+A generalized RPC API for invoking any DarkWow smart contract function without requiring a new API endpoint per contract.
 
 ## Motivation
 

@@ -2,7 +2,7 @@
 
 **Status**: ✅ Production Ready | Standard for DeFi tokens
 
-MoneyV3 is DarkFi's privacy-first token contract designed for DeFi applications. It uses **Poseidon-only ZK circuits** with EC operations pushed to smart contract verification.
+MoneyV3 is DarkWow's privacy-first token contract designed for DeFi applications. It uses **Poseidon-only ZK circuits** with EC operations pushed to smart contract verification.
 
 ## Design Principles
 

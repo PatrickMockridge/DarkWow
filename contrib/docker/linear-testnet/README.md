@@ -1,4 +1,4 @@
-# DarkFi Linear-Testnet Docker Setup
+# DarkWow Linear-Testnet Docker Setup
 
 A 5-node Docker-based linear-testnet with xmrig for external RandomX mining.
 
@@ -255,4 +255,4 @@ These are deployed via `Darkfid::init_linear()` in `bin/darkfid/src/lib.rs`.
 
 - [Linear Blockchain Architecture](../../arch/linear_blockchain.md)
 - [Uncle Merkle Consensus](../../arch/uncle_merkle.md)
-- [DarkFi Testnet Mining](../testnet/merge-mining.md)
+- [DarkWow Testnet Mining](../testnet/merge-mining.md)

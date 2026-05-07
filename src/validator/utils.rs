@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -46,7 +51,7 @@ fn sha256sum(bytes: &[u8]) -> String {
     hex::encode(hash)
 }
 
-/// Deploy DarkFi native wasm contracts to provided blockchain overlay.
+/// Deploy DarkWow native wasm contracts to provided blockchain overlay.
 ///
 /// If overlay already contains the contracts, it will just open the
 /// necessary db and trees, and give back what it has. This means that

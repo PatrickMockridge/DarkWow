@@ -1,5 +1,7 @@
 # Cryptographic Schemes
 
+> **Note:** The cryptographic schemes documented here — Poseidon hash, Bulla commitments, Pallas/Vesta curves, Pedersen commitments, Merkle trees, BLAKE2b, key agreement, and symmetric encryption — are inherited from upstream DarkFi. They are shared between DarkFi and DarkWow and track upstream changes. They are not DarkWow-specific innovations.
+
 ## `PoseidonHash` Function
 
 Poseidon is a circuit friendly permutation hash function described in
@@ -32,7 +34,7 @@ with ZK proofs to construct statements on $\textrm{Params}$.
 
 ## Pallas and Vesta
 
-DarkFi uses the elliptic curves Pallas and Vesta that form a 2-cycle.
+This project inherits Pallas and Vesta elliptic curves from upstream DarkFi (they form a 2-cycle used by the Halo2 proving system).
 We denote Pallas by $ₚ$ and Vesta by $ᵥ$. Set the following values:
 
 $$ p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001 $$

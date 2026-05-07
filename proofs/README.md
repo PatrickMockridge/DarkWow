@@ -1,10 +1,10 @@
-# DarkFi Formal Proofs
+# DarkWow Formal Proofs
 
-Formal verification of DarkFi zkVM opcode soundness using **Lean 4** (version 4.12.0).
+Formal verification of DarkWow zkVM opcode soundness using **Lean 4** (version 4.12.0).
 
 ## Overview
 
-This directory contains the Lean 4 project used to formally verify DarkFi's experimental opcodes. The verification combines:
+This directory contains the Lean 4 project used to formally verify DarkWow's experimental opcodes. The verification combines:
 
 1. **Exhaustive testing** — Searching for counterexamples in bounded input ranges
 2. **Theorem proving** — Mathematical proofs of key properties (e.g., Fermat's little theorem)
@@ -32,7 +32,7 @@ proofs/lean/
 └── src/
     ├── Main.lean          # Executable verification tests
     │                        Run with: lean --run src/Main.lean
-    └── DarkFi/
+    └── DarkWow/
         ├── Field.lean     # Field arithmetic formalization
         │                    - PALLAS_PRIME definition
         │                    - Field operations (add, sub, mul, inv, div)
@@ -162,7 +162,7 @@ def search_lt_strict_bugs : IO Unit := do
 
 **Specification**: `a / b = a * b^{p-2} mod p`
 
-**Key Theorem** (`DarkFi/Field.lean`):
+**Key Theorem** (`DarkWow/Field.lean`):
 ```lean
 -- Fermat's little theorem-based division
 theorem div_mul_cancel (a b : ℤ) (hb : b ≠ 0) :
@@ -245,7 +245,7 @@ def is_equal_bug (a b delta_inv : Int) : Bool :=
 
 ## Field Arithmetic: The Wraparound Problem
 
-DarkFi uses the **Pallas curve** with field $\mathbb{F}_p$ where:
+DarkWow uses the **Pallas curve** with field $\mathbb{F}_p$ where:
 ```
 p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
 ```
@@ -258,7 +258,7 @@ As field:     0 ≡ p < 1 < 2 < ... < p-2 < p-1 ≡ -1 (mod p)
 
 **Impact on Comparisons**: Values in `[p - 2^32, p)$ have different ordering in field vs integer arithmetic.
 
-**The wraparound_safe theorem** (`DarkFi/Field.lean`):
+**The wraparound_safe theorem** (`DarkWow/Field.lean`):
 ```lean
 -- For inputs bounded by 2^222, field and integer ordering are identical
 theorem wraparound_safe (a b : ℤ) (ha : 0 ≤ a) (hb : 0 ≤ b) (hk : k ≤ 222) :
@@ -323,6 +323,6 @@ lean --run src/Main.lean
 ## References
 
 - [Lean 4](https://leanprover.github.io/) - Theorem prover
-- [halo2](https://github.com/zcash/halo2) - ZK proving system DarkFi uses
-- [DarkFi zkVM](../../src/zk/vm.rs) - Opcode implementation
-- [DarkFi Opcodes Documentation](../../doc/src/arch/opcodes.md) - Opcode reference
+- [halo2](https://github.com/zcash/halo2) - ZK proving system DarkWow uses
+- [DarkWow zkVM](../../src/zk/vm.rs) - Opcode implementation
+- [DarkWow Opcodes Documentation](../../doc/src/arch/opcodes.md) - Opcode reference

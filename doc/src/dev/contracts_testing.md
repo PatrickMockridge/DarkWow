@@ -1,10 +1,10 @@
 # Smart Contract Testing and Debugging
 
-This guide covers testing strategies and common debugging techniques for DarkFi smart contracts.
+This guide covers testing strategies and common debugging techniques for DarkWow smart contracts.
 
 ## Testing Overview
 
-DarkFi contracts use integration tests to verify:
+DarkWow contracts use integration tests to verify:
 - Data structure encoding/decoding
 - Function enum validity
 - State transitions

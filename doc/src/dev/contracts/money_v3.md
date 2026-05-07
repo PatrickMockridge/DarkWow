@@ -2,7 +2,7 @@
 
 ## Overview
 
-MoneyV3 is DarkFi's DeFi token contract designed for ERC-20 style functionality (wrapped tokens, stablecoins, multi-token support). It implements a **complete Poseidon-only design** with zero EC operations, eliminating heap bugs entirely.
+MoneyV3 is DarkWow's DeFi token contract designed for ERC-20 style functionality (wrapped tokens, stablecoins, multi-token support). It implements a **complete Poseidon-only design** with zero EC operations, eliminating heap bugs entirely.
 
 **Key Principle**: Privacy-first with 100% fungibility. Token IDs are hidden commitments, not traceable identifiers.
 
@@ -218,7 +218,7 @@ MoneyV3 uses 4 Poseidon-only circuits:
 
 ### Schnorr Signature in Circuits
 
-DarkFi uses a Schnorr variant where the public key is a Poseidon hash:
+DarkWow uses a Schnorr variant where the public key is a Poseidon hash:
 
 ```zk
 # Derive public key
@@ -409,7 +409,7 @@ The `drk transfer` command flow:
    - Input: coin data + Merkle proof
    - Output: recipient + change
 5. Generate ZK proofs (Burn_V1 + Mint_V1)
-6. Select DARK coin for fee payment
+6. Select DRKW coin for fee payment
 7. Build NativeToken::FeeV1 for fee attachment
 8. Combine into final transaction using TransactionBuilder
 ```
@@ -423,7 +423,7 @@ The `drk create_token` command flow:
 2. Derive token_id = poseidon_hash(mint_authority_public, token_user_data, token_blind)
 3. Load TokenMint ZK binary and create proving key
 4. Build TokenMintV1 transaction with initial supply
-5. Select DARK coin for fee payment
+5. Select DRKW coin for fee payment
 6. Attach FeeV1 for network fee
 7. Build and return transaction
 ```

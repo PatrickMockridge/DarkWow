@@ -1,10 +1,10 @@
-# DarkFi Bridge Contract
+# DarkWow Bridge Contract
 
 Anonymous bridge contract for cross-chain asset transfers.
 
 ## Overview
 
-The bridge contract enables privacy-preserving transfers between DarkFi and
+The bridge contract enables privacy-preserving transfers between DarkWow and
 external blockchains (initially Ethereum). Key features:
 
 - **Anonymous deposits**: External chain deposits are mixed, breaking on-chain links
@@ -30,7 +30,7 @@ User deposits → VSS nodes hold secret shards → Withdrawal requires n-of-m th
 
 ### The Object Capability Solution
 
-DarkFi bridge uses **deterministic address derivation** instead of VSS:
+DarkWow bridge uses **deterministic address derivation** instead of VSS:
 
 ```
 User knows secret → Derive bridge_address = H(recipient_identity, nonce) → Deposit
@@ -45,7 +45,7 @@ User knows secret → Compute nullifier = H(secret) → Withdraw (self-signed)
 
 ### Security Comparison
 
-| Aspect | VSS-Based Bridge | DarkFi OCap Bridge |
+| Aspect | VSS-Based Bridge | DarkWow OCap Bridge |
 |--------|-----------------|---------------------|
 | Key custody | Distributed shards | User-held secrets |
 | Withdrawal speed | Slow (round) | Fast (self-signed) |
@@ -114,7 +114,7 @@ let deposit = DepositBuilder::new()
     .external_block_hash(block_hash)
     .build()?;
 
-// 5. Submit to DarkFi bridge contract
+// 5. Submit to DarkWow bridge contract
 client.submit(deposit).await?;
 ```
 
@@ -137,7 +137,7 @@ let withdrawal = WithdrawBuilder::new()
     .amount(withdraw_amount)
     .build()?;
 
-// 5. Submit to DarkFi bridge contract
+// 5. Submit to DarkWow bridge contract
 client.submit(withdrawal).await?;
 
 // 6. Relayer sees event, broadcasts ETH tx to Ethereum
@@ -438,20 +438,20 @@ ZK proof in `deposit_v1` verifies:
 
 Without valid proof, no deposit is registered.
 
-### 3. Operation Ordering: Deposit Direction (External Chain → DarkFi)
+### 3. Operation Ordering: Deposit Direction (External Chain → DarkWow)
 
 ```
 Step 1: User computes bridge_address
         bridge_address = H(secret * G) using user's identity
 
 Step 2: User deposits to bridge_address on external chain
-        (This happens outside DarkFi, on Ethereum)
+        (This happens outside DarkWow, on Ethereum)
 
 Step 3: Oracle/light client detects deposit
         - Verifies Merkle proof of inclusion
         - Verifies block has sufficient confirmations
 
-Step 4: User submits DepositV1 to DarkFi bridge contract
+Step 4: User submits DepositV1 to DarkWow bridge contract
         - Submits commitment = H(secret, amount, bridge_address)
         - Submits ZK proof proving:
           a) Deposit exists on external chain
@@ -468,7 +468,7 @@ Correctness:
 - Deposit order matches external chain order (block hash + height)
 ```
 
-### 4. Operation Ordering: Withdrawal Direction (DarkFi → External Chain)
+### 4. Operation Ordering: Withdrawal Direction (DarkWow → External Chain)
 
 ```
 Step 1: User computes nullifier
@@ -481,7 +481,7 @@ Step 2: User generates withdrawal ZK proof proving:
         d) Amount is valid (<= deposited amount)
         e) Recipient hash matches
 
-Step 3: User submits WithdrawV1 to DarkFi bridge contract
+Step 3: User submits WithdrawV1 to DarkWow bridge contract
 
 Step 4: Contract verifies:
         a) ZK proof is valid
@@ -522,12 +522,12 @@ Correctness:
 
 For deposit:
 - User proves deposit exists in external chain state
-- Proof is verified by DarkFi contract (no oracle needed)
+- Proof is verified by DarkWow contract (no oracle needed)
 - Merkle root from block header commits to state
 
 For withdrawal:
 - No external verification needed
-- DarkFi contract handles everything
+- DarkWow contract handles everything
 - Relayer only broadcasts pre-authorized transaction
 
 ### 7. Consistency Guarantees
@@ -541,8 +541,8 @@ If a deposit's block is reorged out:
 
 **What if withdrawal tx fails on external chain?**
 
-Withdrawal is already recorded on DarkFi (nullifier spent).
-User's funds are "gone" from DarkFi perspective.
+Withdrawal is already recorded on DarkWow (nullifier spent).
+User's funds are "gone" from DarkWow perspective.
 Relayer can retry or user can submit direct tx.
 (Trust model: relayer is trustless - withdrawal was pre-authorized)
 
@@ -556,10 +556,10 @@ No threshold needed to release funds.
 
 | Term | Definition |
 |------|------------|
-| **Pool** (UTXO) | In DarkFi's UTXO model, a "pool" refers to the collection of unspent transaction outputs (notes) held by the bridge contract. Unlike account-based systems where balances are stored at addresses, in UTXO systems, the pool tracks unspent outputs. When bridging assets, the bridge contract maintains a pool of notes representing deposited value. |
-| **Note** | A UTXO representing a specific amount of value. In DarkFi, notes are encrypted commitments that can be spent by their owner using a zero-knowledge proof of knowledge of the secret. |
-| **Asset Bridging** | The process of transferring value (tokens, coins) between chains. Requires liquidity on the destination chain and involves wrapping/unwrapping assets. Example: Wrapping ETH to create WETH on DarkFi. |
-| **Data Bridging** | The process of passing arbitrary data (oracle data, state proofs, computations) between chains without value transfer. No liquidity required. Example: Passing a price feed from Ethereum to DarkFi. |
+| **Pool** (UTXO) | In DarkWow's UTXO model, a "pool" refers to the collection of unspent transaction outputs (notes) held by the bridge contract. Unlike account-based systems where balances are stored at addresses, in UTXO systems, the pool tracks unspent outputs. When bridging assets, the bridge contract maintains a pool of notes representing deposited value. |
+| **Note** | A UTXO representing a specific amount of value. In DarkWow, notes are encrypted commitments that can be spent by their owner using a zero-knowledge proof of knowledge of the secret. |
+| **Asset Bridging** | The process of transferring value (tokens, coins) between chains. Requires liquidity on the destination chain and involves wrapping/unwrapping assets. Example: Wrapping ETH to create WETH on DarkWow. |
+| **Data Bridging** | The process of passing arbitrary data (oracle data, state proofs, computations) between chains without value transfer. No liquidity required. Example: Passing a price feed from Ethereum to DarkWow. |
 | **Merkle Inclusion Proof** | A cryptographic proof demonstrating that a specific element exists within a Merkle tree, without revealing all other elements. Used in the bridge to verify deposits exist on the external chain. |
 | **OCap (Object Capability)** | A security model where access to objects is determined by capabilities (unforgeable references). In this bridge design, the "capability" is knowledge of the secret - no threshold signing needed. |
 | **VSS (Verifiable Secret Sharing)** | A cryptographic scheme where a secret is split into shards distributed among participants. Withdrawal requires threshold signatures. Used in traditional bridges but avoided in this design due to centralization and key extraction risks. |
@@ -576,14 +576,14 @@ The bridge is designed to work with **light clients**, not full nodes infrastruc
 | Operation | Required Node | Why |
 |-----------|--------------|-----|
 | **Deposit** | Light client or indexer | Only need Merkle proof of deposit, not full chain |
-| **Withdraw** | DarkFi full node | ZK proof verification happens on DarkFi contract |
+| **Withdraw** | DarkWow full node | ZK proof verification happens on DarkWow contract |
 | **Monitor deposits** | Light wallet (view key) or indexer | For Monero/Zcash: can use view-key light clients |
 | **Execute withdrawals** | Relayer service | External chain tx broadcast |
 
 ### Full Node vs Light Client
 
-**Full nodes** (DarkFi validator, Ethereum geth) are needed for:
-- Validating ZK proofs on DarkFi side
+**Full nodes** (DarkWow validator, Ethereum geth) are needed for:
+- Validating ZK proofs on DarkWow side
 - Broadcasting withdrawal transactions to external chains (relayers)
 - Tracking nullifier state to prevent double-spends
 
@@ -610,7 +610,7 @@ Deposit Flow (User Side):
 Withdraw Flow (User Side):
 ┌──────────────────────────────────────────────────────────────┐
 │ User needs:                                                   │
-│   - DarkFi full node access (to submit proofs)              │
+│   - DarkWow full node access (to submit proofs)              │
 │   - NOT required to run own node (can use RPC)               │
 └──────────────────────────────────────────────────────────────┘
 
@@ -618,7 +618,7 @@ Relayer (Separate Service):
 ┌──────────────────────────────────────────────────────────────┐
 │ Relayer needs:                                               │
 │   - Full node on external chain (to broadcast withdrawals)   │
-│   - DarkFi full node access (to observe withdrawal events)   │
+│   - DarkWow full node access (to observe withdrawal events)   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -643,7 +643,7 @@ Current implementation relies on an **external indexer** to provide:
 
 **Bottom line**: Users do **NOT** need to run full nodes for bridge deposits. They need:
 1. Light client or RPC access to external chain (for Merkle proofs)
-2. Access to DarkFi full node (for submitting proofs)
+2. Access to DarkWow full node (for submitting proofs)
 
 Relayers run the actual full nodes on external chains to execute withdrawals.
 
@@ -704,7 +704,7 @@ See [Opcodes Reference](../../../doc/src/arch/opcodes.md) for opcode soundness v
 ## References
 
 - [Bridge Architecture Document](../../../doc/src/arch/bridge.md)
-- [DarkFi SDK](../../../src/sdk/)
+- [DarkWow SDK](../../../src/sdk/)
 - [Halo 2 Documentation](https://halo2.dev/)
 - [Object Capability Model](https://en.wikipedia.org/wiki/Object-capability_model)
 - [Poseidon Hash](https://www.poseidon-hash.info/)

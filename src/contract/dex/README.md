@@ -1,4 +1,4 @@
-# DarkFi DEX Contract
+# DarkWow DEX Contract
 
 Anonymous decentralized exchange for privacy-preserving token swaps with **configurable transparency levels**.
 
@@ -154,6 +154,6 @@ net_received = fill_amount - fee;
 
 ## References
 
-- [DarkFi DEX Architecture Document](../../../doc/src/arch/dex.md)
-- [DarkFi Money Contract](../money/)
-- [DarkFi Bridge Contract](../bridge/)
+- [DarkWow DEX Architecture Document](../../../doc/src/arch/dex.md)
+- [DarkWow Money Contract](../money/)
+- [DarkWow Bridge Contract](../bridge/)

@@ -1,6 +1,6 @@
 > **ARCHIVED**: This documents the original overlay-DAG architecture. The current consensus mechanism is [Uncle Merkle](../uncle_merkle.md).
 
-# DarkFi Money: Fork vs Bridge
+# DarkWow Money: Fork vs Bridge
 
 > **Historical: Explains bridge vs fork decision from 2024, money_v2 is now deployed**
 
@@ -17,7 +17,7 @@ This is a hard fork of the money contract, not a bridge between versions.
 
 ```
 src/contract/
-├── money/           # Original DarkFi money contract (v1)
+├── money/           # Original DarkWow money contract (v1)
 ├── money_v2/        # Our secure version with fixes (v2) - STANDARD GOING FORWARD
 ├── dao/
 ├── dao_escrow/
@@ -26,7 +26,7 @@ src/contract/
 
 ### Why Two Versions?
 
-- **`money` (v1)**: Original DarkFi contract, maintained for network compatibility
+- **`money` (v1)**: Original DarkWow contract, maintained for network compatibility
 - **`money_v2`**: Our secure version with self-contained circuit design, **our standard for this fork**
 
 ---

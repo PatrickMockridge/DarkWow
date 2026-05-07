@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -28,9 +33,9 @@ use anyhow::Result;
 
 use crate::{aztec_rpc::AztecNote, Config};
 
-/// Submit an Aztec deposit to the DarkFi bridge
+/// Submit an Aztec deposit to the DarkWow bridge
 ///
-/// Constructs the AztecDepositProof and submits it via the DarkFi RPC.
+/// Constructs the AztecDepositProof and submits it via the DarkWow RPC.
 pub async fn submit_deposit(note: &AztecNote, config: &Config) -> Result<()> {
     // TODO: Implement actual proof construction and submission
     //
@@ -59,7 +64,7 @@ pub async fn submit_deposit(note: &AztecNote, config: &Config) -> Result<()> {
     println!("  anchor: {:?}", hex::encode(&note.anchor));
     println!("  confirmations: {}", note.confirmations);
 
-    // TODO: Actually submit to DarkFi via JSON-RPC
+    // TODO: Actually submit to DarkWow via JSON-RPC
     // POST to config.darkfid_url
     // Method: bridge_deposit
     // Params: AztecDepositProof structure
@@ -116,7 +121,7 @@ pub fn derive_commitment(
 /// Verify the merkle proof for an Aztec note
 ///
 /// The Aztec note tree uses a Merkle tree with Pedersen hashing.
-/// For DarkFi bridge compatibility, we use blake3 for verification.
+/// For DarkWow bridge compatibility, we use blake3 for verification.
 pub fn verify_merkle_path(
     commitment: &[u8; 32],
     position: u32,

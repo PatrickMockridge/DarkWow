@@ -2,7 +2,7 @@
 > Wasmer runtime internals that may have changed. Verify against current
 > `src/runtime/` and contract source code.
 
-## DarkFi-Wasm Runtime Interface
+## DarkWow-Wasm Runtime Interface
 
 The execution of smart contracts is performed within a Wasm VM, specifically
 [`Wasmer`](https://docs.rs/wasmer/latest/wasmer/index.html). This environment
@@ -35,13 +35,13 @@ function in the runtime. It is this function that acts as the interface between
 lower-level Wasm functionality and the APIs that are provided to contract
 developers.
 
-### DarkFi SDK
+### DarkWow SDK
 
-Wasm operations are also possible via APIs defined in the DarkFi SDK.
+Wasm operations are also possible via APIs defined in the DarkWow SDK.
 These work as foreign functions, making use of Rust's `unsafe` and `extern`
 features to interface with Wasm from Rust.
 
-Smart contracts in DarkFi use these lower-level Wasm functions work with state.
+Smart contracts in DarkWow use these lower-level Wasm functions work with state.
 Therfore, smart contracts must also verify these return values to ensure that
 errors are properly handled.
 

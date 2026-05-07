@@ -1,8 +1,8 @@
-# Local DarkFi Smart Contract Testing
+# Local DarkWow Smart Contract Testing
 
 ## Overview
 
-This guide covers local testing of DarkFi WASM contracts using the unified `ContractTestingPipeline`.
+This guide covers local testing of DarkWow WASM contracts using the unified `ContractTestingPipeline`.
 
 ## Architecture
 

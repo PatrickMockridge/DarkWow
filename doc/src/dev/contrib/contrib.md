@@ -59,7 +59,7 @@ or need to be maintained:
 Fuzz testing is a method to find important bugs in software. It becomes more 
 powerful as more computing power is allocated to it. 
 
-You can help to test DarkFi by running our fuzz tests on your machine. No
+You can help to test DarkWow by running our fuzz tests on your machine. No
 specialized hardware is required. 
 
 As fuzz testing benefits from additional CPU power, a good method for running
@@ -67,14 +67,14 @@ the fuzzer is to let it run overnight or when you are otherwise not using
 your device.
 
 ### Set-up
-After running the normal commands to set-up DarkFi as described in the README, run the following commands.
+After running the normal commands to set-up DarkWow as described in the README, run the following commands.
 
 ```
 # Install cargo fuzz
 $ cargo install cargo-fuzz
 ```
 
-Run the following from the DarkFi repo folder:
+Run the following from the DarkWow repo folder:
 
 ```
 $ cd fuzz/
@@ -92,9 +92,9 @@ $ cargo +nightly fuzz run --all-features -s none --jobs $(nproc) serial
 
 This process will run infinitely until a crash occurs or until it is cancelled by the user.
 
-If you are able to trigger a crash, get in touch with the DarkFi team via irc.
+If you are able to trigger a crash, get in touch with the DarkWow team via irc.
 
-Further information on fuzzing in DarkFi is available in the `fuzz/` directory.
+Further information on fuzzing in DarkWow is available in the `fuzz/` directory.
 
 ## Troubleshooting
 
@@ -196,7 +196,7 @@ Inside the container:
 # rustup-init --default-toolchain stable -y
 # source ~/.cargo/env
 # rustup target add wasm32-unknown-unknown --toolchain stable
-# git clone https://codeberg.org/darkrenaissance/darkfi -b master --depth 1
+# git clone https://codeberg.org/PatrickM123/darkfi-jailbroken -b master --depth 1
 # cd darkfi
 # make darkirc
 ```
@@ -216,7 +216,7 @@ Usually the best time would be our weekly Monday meetings at 14:00 UTC
 (DST) or 15.00 UTC (ST).
 
 If it's sensitive and time critical, then we will get in touch over DM,
-and we will post a message on dark.fi to confirm our identity once we're in
+and we will post a message on darkwow.org to confirm our identity once we're in
 contact over DM.
 
 We haven't yet clarified our bug bounty program (stay tuned), but for legit bug

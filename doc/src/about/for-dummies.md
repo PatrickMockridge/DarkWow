@@ -1,40 +1,40 @@
-# DarkFi for Dummies
+# DarkWow for Dummies
 
-*This document provides an accessible introduction to DarkFi's architecture
+*This document provides an accessible introduction to DarkWow's architecture
  and cryptographic primitives. For a deeper technical dive, see
  [Start Here](../start-here.md) and the [Architecture Overview](../arch/overview.md).*
 
-## What is DarkFi?
+## What is DarkWow?
 
-DarkFi is a **Layer 1 blockchain** designed around **anonymous by default**
+DarkWow is a **Layer 1 blockchain** designed around **anonymous by default**
 operation. All transactions, smart contract executions, and application state
 are private. Unlike pseudonymous chains (Bitcoin, Ethereum), where addresses
-and amounts are publicly visible, DarkFi uses zero-knowledge proofs to
+and amounts are publicly visible, DarkWow uses zero-knowledge proofs to
 verify correctness without revealing any information.
 
 ## Core Architecture
 
 ### Blockchain
 
-DarkFi operates as a **Proof of Work** chain using the **RandomX** algorithm.
+DarkWow operates as a **Proof of Work** chain using the **RandomX** algorithm.
 Miners compete to find valid blocks through computational lottery. The chain
 extends through consensus: nodes agree on canonical blocks, forming an
 immutable, ordered transaction ledger.
 
 ### P2P Network
 
-DarkFi nodes communicate over a **peer-to-peer network** with support for:
+DarkWow nodes communicate over a **peer-to-peer network** with support for:
 
 - **TCP/TLS**: Standard internet transport
 - **Tor**: Network-layer anonymity (onion routing)
 - **I2P**: Network-level anonymity (garlic routing)
 
-This means DarkFi can operate as a fully anonymous network, invisible to
+This means DarkWow can operate as a fully anonymous network, invisible to
 network observers.
 
 ## Cryptographic Primitives
 
-DarkFi's privacy stems from combining several primitives:
+DarkWow's privacy stems from combining several primitives:
 
 ### Poseidon Hash-Based Commitments
 
@@ -47,8 +47,8 @@ C = PoseidonHash(value, nonce)
 You can reveal `value` later and prove `C` was computed with it, but
 observing `C` reveals nothing about `value`.
 
-**In DarkFi**: Poseidon-based commitments hide token amounts in transactions.
-DarkFi uses the Poseidon hash function throughout — no Pedersen commitments,
+**In DarkWow**: Poseidon-based commitments hide token amounts in transactions.
+DarkWow uses the Poseidon hash function throughout — no Pedersen commitments,
 no elliptic curve arithmetic in circuits.
 
 ### Merkle Trees
@@ -56,7 +56,7 @@ no elliptic curve arithmetic in circuits.
 A **Merkle tree** efficiently proves set membership without revealing
 other set elements.
 
-**In DarkFi**: Coins are leaves in a Merkle tree. You prove a coin exists
+**In DarkWow**: Coins are leaves in a Merkle tree. You prove a coin exists
 without revealing which coin, breaking the link between old and new tokens.
 
 ### Nullifiers
@@ -65,7 +65,7 @@ A **nullifier** is a unique hash derived from a secret. When you spend a
 coin, you reveal its nullifier. The network checks if it's been used before,
 preventing double-spend - without revealing which coin was spent.
 
-**In DarkFi**: Every coin has a nullifier. Spending reveals the nullifier,
+**In DarkWow**: Every coin has a nullifier. Spending reveals the nullifier,
 not the coin's identity.
 
 ### Mint-Burn Scheme
@@ -84,7 +84,7 @@ This breaks the transaction graph - coins cannot be traced.
 Zero-knowledge proofs (ZKPs) allow **verifying computation correctness without
 revealing inputs**.
 
-DarkFi uses **Halo 2**, a recursive proof system with:
+DarkWow uses **Halo 2**, a recursive proof system with:
 
 - **No trusted setup**: Unlike Groth16, no toxic waste parameters
 - **Trustless verification**: Anyone can verify proofs with just public data
@@ -92,7 +92,7 @@ DarkFi uses **Halo 2**, a recursive proof system with:
 
 ### zkVM
 
-DarkFi's **zero-knowledge virtual machine** executes smart contracts and
+DarkWow's **zero-knowledge virtual machine** executes smart contracts and
 produces ZK proofs. The zkVM:
 
 - Loads bytecode compiled by **zkas**
@@ -101,7 +101,7 @@ produces ZK proofs. The zkVM:
 
 ### zkas
 
-**zkas** is DarkFi's assembly language for ZK circuits. It provides:
+**zkas** is DarkWow's assembly language for ZK circuits. It provides:
 
 ```
 circuit deposit(prover: Witness) {
@@ -118,7 +118,7 @@ needing to understand field arithmetic or elliptic curves.
 
 ### Smart Contracts
 
-DarkFi contracts execute on the zkVM. Contract execution:
+DarkWow contracts execute on the zkVM. Contract execution:
 
 1. **exec()**: Read-only phase - compute state changes
 2. **apply()**: Write phase - apply state changes
@@ -128,7 +128,7 @@ Ethereum contracts.
 
 ### Native Contracts
 
-DarkFi includes several pre-built contracts:
+DarkWow includes several pre-built contracts:
 
 | Contract | Function |
 |----------|----------|
@@ -139,7 +139,7 @@ DarkFi includes several pre-built contracts:
 
 ### P2P Messaging
 
-For applications requiring message persistence (chat, feeds), DarkFi uses its
+For applications requiring message persistence (chat, feeds), DarkWow uses its
 **P2P network** with multi-transport support (TCP/TLS, Tor, I2P). Messages
 propagate through the peer-to-peer network with eventual consistency.
 

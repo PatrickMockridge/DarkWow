@@ -1,12 +1,12 @@
 # O-Cap & Composable Privacy
 
-*This document describes O-Cap (Object Capability) authorization as the central paradigm for privacy-preserving authorization in DarkFi smart contracts, enabling composable privacy for social reproduction.*
+*This document describes O-Cap (Object Capability) authorization as the central paradigm for privacy-preserving authorization in DarkWow smart contracts, enabling composable privacy for social reproduction.*
 
 ---
 
 ## O-Cap: The Central Paradigm
 
-O-Cap is **not a feature** or an extension - it is the **central paradigm** for authorization in DarkFi.
+O-Cap is **not a feature** or an extension - it is the **central paradigm** for authorization in DarkWow.
 
 **The fundamental question:**
 - ACL: "WHO has access to X?"
@@ -98,7 +98,7 @@ O-Caps make authority **EXPLICIT** and **BOUNDED**. The proof IS the authority -
 
 ## The Pattern: How O-Caps Work
 
-Every privacy-preserving DarkFi contract needs to solve the same fundamental problem:
+Every privacy-preserving DarkWow contract needs to solve the same fundamental problem:
 
 **How do you authorize an action without revealing who you are or what you're doing?**
 
@@ -170,7 +170,7 @@ O-Caps achieve **authorization without revelation**:
 
 ## Authorization Inversion: The Mathematical Foundation
 
-*The authorization model in DarkFi is not merely a design choice—it is a mathematical necessity. What follows is the formal reasoning behind why O-Cap authorization is the only sound approach to privacy-preserving authorization.*
+*The authorization model in DarkWow is not merely a design choice—it is a mathematical necessity. What follows is the formal reasoning behind why O-Cap authorization is the only sound approach to privacy-preserving authorization.*
 
 ### The ACL Privacy Gap Theorem
 
@@ -580,7 +580,7 @@ The `contract_plain/` directory has been **deleted**. ZK contracts now have full
 
 ## State Primitives
 
-All DarkFi contracts must represent state. The common patterns are:
+All DarkWow contracts must represent state. The common patterns are:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -625,7 +625,7 @@ All DarkFi contracts must represent state. The common patterns are:
 
 ## Authorization Primitives
 
-O-Cap authorization is the **central paradigm** that all DarkFi contracts use for authorization:
+O-Cap authorization is the **central paradigm** that all DarkWow contracts use for authorization:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -646,7 +646,7 @@ O-Cap authorization is the **central paradigm** that all DarkFi contracts use fo
 │  └─────────────────────────────────────────────────────┘         │
 │                                                                   │
 │  KEY INSIGHT: O-Cap makes authority EXPLICIT and BOUNDED.         │
-│               Every DarkFi contract uses this pattern.            │
+│               Every DarkWow contract uses this pattern.            │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -1044,7 +1044,7 @@ DAG claims compose with O-Cap capabilities:
 
 ### Case Study: Tender + Labor Market + Attestation
 
-The Tender and Labor Market contracts demonstrate DarkFi's integration of sealed-bid procurement with attestation-based competency verification and O-Cap capability authorization.
+The Tender and Labor Market contracts demonstrate DarkWow's integration of sealed-bid procurement with attestation-based competency verification and O-Cap capability authorization.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1150,7 +1150,7 @@ O-Cap capabilities provide privacy for workers by hiding identity during job app
 
 ### Case Study: The Complete O-Cap Pipeline - Workers to Executives
 
-This case study demonstrates how O-Cap capabilities flow through the entire DarkFi ecosystem, from supply chain workers proving qualifications via Identity, to executives securing contracts via Tender, to underwriters providing coverage via Insurance Market.
+This case study demonstrates how O-Cap capabilities flow through the entire DarkWow ecosystem, from supply chain workers proving qualifications via Identity, to executives securing contracts via Tender, to underwriters providing coverage via Insurance Market.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1331,7 +1331,7 @@ This case study demonstrates how O-Cap capabilities flow through the entire Dark
 
 ### Case Study: Subscription + DAO-Escrow + Atomic Swap
 
-The Subscription contract demonstrates DarkFi's full composability stack: DAO-Escrow membership verification via Merkle proofs, block-based time locks, and cross-chain atomic swap payments.
+The Subscription contract demonstrates DarkWow's full composability stack: DAO-Escrow membership verification via Merkle proofs, block-based time locks, and cross-chain atomic swap payments.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -1431,7 +1431,7 @@ index.apply_consume(&consume)?;
 
 ## Designing New Contracts: General Primitive Checklist
 
-When designing a new DarkFi contract:
+When designing a new DarkWow contract:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1471,7 +1471,7 @@ When designing a new DarkFi contract:
 
 ## Current Development Limitations
 
-Several issues affect the ability to develop, test, and deploy smart contracts on DarkFi. These are documented here for awareness when designing or modifying contracts.
+Several issues affect the ability to develop, test, and deploy smart contracts on DarkWow. These are documented here for awareness when designing or modifying contracts.
 
 ### Issue 1: async-trait Lifetime Bug (Rust 1.90+)
 
@@ -1495,7 +1495,7 @@ rustup override set 1.89.0
 cargo update typed-index-collections@3.4.0 --precise 3.3.0
 ```
 
-**Status**: Pre-built DarkFiMain binaries (v0.5.0) work around this issue.
+**Status**: Pre-built DarkWowMain binaries (v0.5.0) work around this issue.
 
 ### Issue 2: Missing `drk wallet` Commands in v0.5.0 Binaries
 
@@ -1506,7 +1506,7 @@ cargo update typed-index-collections@3.4.0 --precise 3.3.0
 - `drk contract` - Contract deployment
 - `drk token` - Token operations (mint, freeze, import)
 
-**Workaround**: Use pre-built DarkFiMain binaries which include wallet functionality, or wait for v0.6.0 tooling.
+**Workaround**: Use pre-built DarkWowMain binaries which include wallet functionality, or wait for v0.6.0 tooling.
 
 ---
 
@@ -1517,5 +1517,5 @@ cargo update typed-index-collections@3.4.0 --precise 3.3.0
 - [Oracle Contract](../contract/oracle.md) - Push-model oracle with attestation
 - [DAO-Escrow Contract](../contract/dao_escrow.md) - DAO-governed endowment with voting
 - [zkVM Primitive Layer](./zk/zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
-- [DarkFi Development Uncensored](https://technologytruth.substack.com/p/darkfi-development-uncensored-part-c9b) - Original analysis of structural bias
+- [DarkWow Development Uncensored](https://technologytruth.substack.com/p/darkfi-development-uncensored-part-c9b) - Original analysis of structural bias
 - [Zero-Knowledge Authorization (Authorization Inversion)](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) - Mathematical foundation for O-Cap authorization

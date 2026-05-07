@@ -19,7 +19,7 @@ We've already encountered this pattern when we discussed `p2p.stop`, which
 triggers `StoppableTask` to cleanly shutdown any inbound, outbound or
 manual sessions which are running.
 
-**Further reading**: [Async Rust in Practice: The DarkFi Experience (Part 4)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-d66)
+**Further reading**: [Async Rust in Practice: The DarkWow Experience (Part 4)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-d66)
 
 This is the basic usage of `StoppableTask`:
 
@@ -111,8 +111,8 @@ and calls `stop` on them, safely closing each `JSON-RPC` connection.
 
 Notice that when we start the `StoppableTask` using
 `rpc.task.clone().start`, we also pass a method called `listen_and_serve`.
-`listen_and_serve` is a method defined in DarkFi's [rpc
-module](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/rpc/server.rs).
+`listen_and_serve` is a method defined in DarkWow's [rpc
+module](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/rpc/server.rs).
 It starts a JSON-RPC server that is bound to the provided rpc settings
 and uses our previously implemented `RequestHandler` to handle incoming
 requests.

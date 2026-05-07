@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document tracks the formal verification status of ZK circuit opcodes used in DarkFi contracts. Most comparison opcodes are now formally verified or implemented.
+This document tracks the formal verification status of ZK circuit opcodes used in DarkWow contracts. Most comparison opcodes are now formally verified or implemented.
 
 ## Opcode Status Table
 

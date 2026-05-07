@@ -3,8 +3,8 @@
 # About
 
 - [Development Fork Info](intro.md)
-- [DarkFi](README.md)
-- [DarkFi for Dummies](about/for-dummies.md)
+- [DarkWow](README.md)
+- [DarkWow for Dummies](about/for-dummies.md)
 - [Start Here](start-here.md)
 - [Philosophy](philosophy/philosophy.md)
   - [Ideology](philosophy/ideology.md)
@@ -79,7 +79,7 @@
   - [Contract Testing & Debugging](dev/contracts_testing.md)
   - [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md)
 - [Architecture](arch/README.md)
-  - [DarkFi Daemon](darkfid.md)
+  - [DarkWow Daemon](darkfid.md)
   - [Overview](arch/overview.md)
 
 ## Consensus

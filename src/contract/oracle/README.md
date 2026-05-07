@@ -1,6 +1,6 @@
 # Oracle Contract
 
-Demonstrates the "push model" for oracles in DarkFi. Oracles push data values (prices, scores, weather, etc.) that can be attested for consumption by other contracts.
+Demonstrates the "push model" for oracles in DarkWow. Oracles push data values (prices, scores, weather, etc.) that can be attested for consumption by other contracts.
 
 ## Overview
 

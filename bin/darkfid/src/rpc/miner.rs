@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -94,7 +99,7 @@ impl DarkfiNode {
             }
         };
 
-        // DarkFi address format: [prefix(1)][public_key(32)][checksum(4)] = 37 bytes
+        // DarkWow address format: [prefix(1)][public_key(32)][checksum(4)] = 37 bytes
         if recipient_bytes.len() != 37 {
             error!(
                 target: "darkfid::rpc::miner",
@@ -447,7 +452,7 @@ impl DarkfiNode {
             }
         };
 
-        // DarkFi address format: [prefix(1)][public_key(32)][checksum(4)] = 37 bytes
+        // DarkWow address format: [prefix(1)][public_key(32)][checksum(4)] = 37 bytes
         if recipient_bytes.len() != 37 {
             error!(
                 target: "darkfid::rpc::miner",

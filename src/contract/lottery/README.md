@@ -1,6 +1,6 @@
 # Lottery Contract
 
-A provably fair, privacy-preserving lottery contract for DarkFi. Supports both standard lottery types (UK National Lottery, Powerball, etc.) and custom configurations with tiered prize structures.
+A provably fair, privacy-preserving lottery contract for DarkWow. Supports both standard lottery types (UK National Lottery, Powerball, etc.) and custom configurations with tiered prize structures.
 
 ## Overview
 
@@ -140,7 +140,7 @@ The Lottery contract integrates with Money for value transfers:
 
 ## The Lottery Problem Space
 
-Lottery sits **between** BettingStake and Insurance in the DarkFi problem space:
+Lottery sits **between** BettingStake and Insurance in the DarkWow problem space:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐

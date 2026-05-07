@@ -1,4 +1,4 @@
-# DarkFi Opcodes and Formal Verification
+# DarkWow Opcodes and Formal Verification
 
 > **Summary**: All comparison opcodes are **verified sound**. `IsEqualBase` has a confirmed bug. `BaseDiv` is **implemented** using binary exponentiation. Use `less_than_strict` or cross-multiplication for ratio checks when Boolean return is not needed.
 
@@ -26,7 +26,7 @@
 
 ## Field Arithmetic Fundamentals
 
-DarkFi operates in the **Pallas field** $\mathbb{F}_p$:
+DarkWow operates in the **Pallas field** $\mathbb{F}_p$:
 ```
 p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
 ```
@@ -43,7 +43,7 @@ Values in `[p - 2^{32}, p)$ have different ordering in field vs integer arithmet
 
 ## How Formal Verification Works
 
-DarkFi uses **Lean 4** for formal verification of zkVM opcodes. The verification process involves:
+DarkWow uses **Lean 4** for formal verification of zkVM opcodes. The verification process involves:
 
 ### 1. Mathematical Specification
 
@@ -243,7 +243,7 @@ a / b = a * b^{p-2} mod p
 
 **Cost**: ~500 field multiplications (253 squarings + up to 249 multiplications)
 
-**Verified properties** (Lean 4 in `proofs/lean/src/DarkFi/Field.lean`):
+**Verified properties** (Lean 4 in `proofs/lean/src/DarkWow/Field.lean`):
 
 ```lean
 -- Key theorem: div_mul_cancel
@@ -323,7 +323,7 @@ proofs/lean/
 └── src/
     ├── Main.lean          # Executable verification tests
     │                        Run with: lean --run src/Main.lean
-    └── DarkFi/
+    └── DarkWow/
         ├── Field.lean     # Field arithmetic formalization
         │                    - PALLAS_PRIME definition
         │                    - Field operations (add, sub, mul, inv)

@@ -2,7 +2,7 @@
 
 ## Directory Structure
 
-DarkFi loosely follows the standardized Unix directory structure.
+DarkWow loosely follows the standardized Unix directory structure.
 
 * All bundled applications are contained in `bin/` subdirectory.
 * Random scripts and helpers such as build artifacts, node deployment
@@ -19,9 +19,9 @@ DarkFi loosely follows the standardized Unix directory structure.
     * `src/serial/` is a crate containing the binary serialization code.
     * `src/contract/` contains our native bundled contracts. It's worth
       looking at these to familiarize yourself with what contracts on
-      DarkFi are like.
+      DarkWow are like.
 
-## Using DarkFi
+## Using DarkWow
 
 Refer to the main [README](../index.html) file for instructions on how
 to install Rust and necessary dependencies.
@@ -53,8 +53,8 @@ Lastly familiarize yourself with the
 cryptography section with a helpful
 [ZK explainer](crypto/zk_explainer.md).
 
-DarkFi also has a [project spec](spec/crypto-schemes.md) and
-a [DEP](dep/0001.md) (DarkFi Enhancement Proposals) system.
+DarkWow also has a [project spec](spec/crypto-schemes.md) and
+a [DEP](dep/0001.md) (DarkWow Enhancement Proposals) system.
 
 ## Detailed Overview
 
@@ -88,10 +88,10 @@ Source code is under `src/` subdirectory. Main interesting modules are:
 * `tx/` is the tx we use. Note signatures are not in the calldata as
   having this outside it allows more efficient verification (since you
   can do it in parallel and so on).
-    * All DarkFi calls are precomputed ahead of time which is needed
+    * All DarkWow calls are precomputed ahead of time which is needed
       for ZK. Normally in ETH or other smart contract chains, the
       calldata is calculated where the function is invoked. Whereas in
-      DarkFi the entire callgraph and calldata is bundled since ZK
+      DarkWow the entire callgraph and calldata is bundled since ZK
       proofs must be computed ahead of time. This also improves things
       like static analysis and security (limiting call depth is easy
       to check before verification).
@@ -143,7 +143,7 @@ Our design philosophy and simplicity oriented approach to systemd dev:
 * [Suckless Philosophy: software that sucks less](https://suckless.org/philosophy/)
 * [How to Design Perfect (Software) Products  by Pieter Hintjens](http://hintjens.com/blog:19/noredirect/true)
 
-Recent crypto code audit: [ZK Security DarkFi Code Audit](https://dark.fi/zksecurity-audit-q124.pdf)
+Recent crypto code audit: [ZK Security DarkWow Code Audit](https://darkwow.org/zksecurity-audit-q124.pdf)
 
 Useful link on [our ZK toolchain](zkas/writing-zk-proofs.md)
 

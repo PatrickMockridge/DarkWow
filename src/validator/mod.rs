@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -35,14 +40,14 @@ use crate::{
     Error, Result,
 };
 
-/// DarkFi consensus module
+/// DarkWow consensus module
 /// Uncle Merkle consensus data structures
 pub mod uncle;
 
 pub mod consensus;
 use consensus::{Consensus, Fork, Proposal};
 
-/// DarkFi PoW module
+/// DarkWow PoW module
 pub mod pow;
 use pow::PoWModule;
 
@@ -87,7 +92,7 @@ pub struct ValidatorConfig {
 /// Atomic pointer to validator.
 pub type ValidatorPtr = Arc<RwLock<Validator>>;
 
-/// This struct represents a DarkFi validator node.
+/// This struct represents a DarkWow validator node.
 pub struct Validator {
     /// Canonical (confirmed) blockchain
     pub blockchain: Blockchain,

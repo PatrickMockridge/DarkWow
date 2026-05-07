@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -449,7 +454,7 @@ impl DarkfiNode {
             return miner_status_response(id, "rejected")
         }
 
-        // Append MoneroPowData to the DarkFi block and sign it
+        // Append MoneroPowData to the DarkWow block and sign it
         let mut block = block_template.block.clone();
         block.header.pow_data = PowData::Monero(monero_pow_data);
         block.sign(&block_template.secret);

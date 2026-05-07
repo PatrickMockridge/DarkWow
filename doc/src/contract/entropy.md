@@ -1,6 +1,6 @@
 # Entropy Module
 
-A composable module providing provably fair randomness generation using block hash entropy. Used by all DarkFi betting/gambling contracts for drawing outcomes.
+A composable module providing provably fair randomness generation using block hash entropy. Used by all DarkWow betting/gambling contracts for drawing outcomes.
 
 ## Overview
 

@@ -69,7 +69,7 @@ Privacy-preserving member subscription service with block-based time locks, DAO 
 
 ### Block-Based Time Locks (No Oracle)
 
-DarkFi has deterministic block heights. Subscriptions use block numbers instead of timestamps:
+DarkWow has deterministic block heights. Subscriptions use block numbers instead of timestamps:
 
 ```rust
 lock_until_block = current_block + plan.duration_blocks
@@ -120,7 +120,7 @@ If the service fails or is malicious, the DAO can authorize refunds from the end
 
 ## Composability: Subscription + DAO-Escrow
 
-This contract demonstrates DarkFi's **composable contract pattern** through integration with DAO-Escrow.
+This contract demonstrates DarkWow's **composable contract pattern** through integration with DAO-Escrow.
 
 ### The Pattern
 
@@ -194,7 +194,7 @@ constrain_equal_base(dao_member_pub_x, subscriber_pub_x);
 
 ### Composability Principles
 
-DarkFi's contract composability follows three rules:
+DarkWow's contract composability follows three rules:
 
 1. **Merkle State**: Contract state is Merklized for privacy
 2. **ZK Verification**: Other contracts verify via Merkle proofs
@@ -300,10 +300,10 @@ With `base_div` now implemented (0x58), true bitmask checking is achievable:
 ### Atomic Swap Flow
 
 ```
-Ethereum                          DarkFi
+Ethereum                          DarkWow
     │                                 │
     │  1. Lock ETH in HTLC            │
-    │     (hash of DarkFi secret)     │
+    │     (hash of DarkWow secret)     │
     │ ───────────────────────────────►│
     │                                 │  2. Reveal secret
     │                                 │     Atomic swap executes
@@ -313,7 +313,7 @@ Ethereum                          DarkFi
     │◄────────────────────────────────│
 ```
 
-DarkFi's `atomic_swap` contract handles the cross-chain payment. The subscription contract integrates at step 3 - verifying the atomic swap completed before activating the subscription.
+DarkWow's `atomic_swap` contract handles the cross-chain payment. The subscription contract integrates at step 3 - verifying the atomic swap completed before activating the subscription.
 
 See [Atomic Swap Contract](atomic_swap.md) for full HTLC details.
 
@@ -345,7 +345,7 @@ See [Atomic Swap Contract](atomic_swap.md) for full HTLC details.
 
 ## Security Considerations
 
-1. **Block finality**: Subscription locks depend on DarkFi's consensus. If chain reorganizes, the block number could change.
+1. **Block finality**: Subscription locks depend on DarkWow's consensus. If chain reorganizes, the block number could change.
 
 2. **DAO trust**: The endowment fund requires trustworthy DAO governance. A malicious DAO could drain the fund.
 

@@ -1,4 +1,4 @@
-# DarkFi Safemath: Safe ZK Arithmetic Templates
+# DarkWow Safemath: Safe ZK Arithmetic Templates
 
 > **DEPRECATED**: `LessThanOrEqual` (0x55) is now **verified sound** and `BaseDiv` (0x58) is **implemented**.
 > Safemath workarounds are no longer necessary for sound ZK operations.
@@ -8,7 +8,7 @@
 
 ---
 
-[darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) provides audited ZK template circuits for bounded integer relations in DarkFi circuits.
+[darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) provides audited ZK template circuits for bounded integer relations in DarkWow circuits.
 
 ## Why Safemath? (Legacy)
 
@@ -16,7 +16,7 @@
 > - Assertion-only patterns (no Boolean return needed)
 > - Bounded comparisons where you don't need the return value
 
-DarkFi's zkVM operates in the Pallas field where field arithmetic wraps at `p`. Direct comparisons and divisions don't work the same as integer arithmetic. Safemath provides:
+DarkWow's zkVM operates in the Pallas field where field arithmetic wraps at `p`. Direct comparisons and divisions don't work the same as integer arithmetic. Safemath provides:
 
 1. **Bounded range checks** — prevent field wraparound attacks
 2. **Safe comparison gadgets** — useful for assertion-only comparisons
@@ -145,7 +145,7 @@ base_mul_small((1 - predicate_result), 2^64);  # Large constant
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    DarkFi Contracts                     │
+│                    DarkWow Contracts                     │
 │  (stablecoin, dao, escrow, money, bridge, etc.)           │
 └─────────────────────┬───────────────────────────────────┘
                       │ Uses

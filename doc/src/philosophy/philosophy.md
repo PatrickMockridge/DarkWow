@@ -1,4 +1,4 @@
-# DarkFi Philosophy
+# DarkWow Philosophy
 
 ## State Civilization and the Democratic Nation
 

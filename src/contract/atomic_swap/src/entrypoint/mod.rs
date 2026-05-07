@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -25,10 +30,10 @@
 //! ## HTLC Flow
 //!
 //! ```
-//! DarkFi                          External Chain (e.g., Ethereum)
+//! DarkWow                          External Chain (e.g., Ethereum)
 //! ──────────────────────────────────────────────────────────────────
 //!
-//!  1. Alice (initiator) creates swap on DarkFi
+//!  1. Alice (initiator) creates swap on DarkWow
 //!     - Locks X tokens
 //!     - hash = poseidon_hash(secret)
 //!     - timelock = current_block + N
@@ -40,14 +45,14 @@
 //!     - Same hash
 //!     - timelock = current_block + N + δ (δ = verification delay)
 //!
-//!  4. Bob claims on DarkFi with secret
+//!  4. Bob claims on DarkWow with secret
 //!     - funds released to Bob
 //!
 //!  5. Alice claims on external chain with secret
 //!     - funds released to Alice
 //!
 //!  If timelock expires:
-//!  - Alice refunds on DarkFi (after timelock)
+//!  - Alice refunds on DarkWow (after timelock)
 //!  - Bob refunds on external chain (after external timelock)
 //! ```
 

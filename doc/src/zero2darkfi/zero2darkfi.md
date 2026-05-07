@@ -6,4 +6,4 @@ In this series, you will learn
 	* How to test? → See [Test Harness Guide](../arch/test_harness_guide.md) and [Localnet Contract Testing](../arch/localnet_contract_testing.md)
 * Rationale for some design decisions and further reading material
 	* Good example: `src/contract/money`
-* Precise terminology → See [DarkFi Terminology](./terminology.md)
+* Precise terminology → See [DarkWow Terminology](./terminology.md)

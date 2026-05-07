@@ -1,6 +1,6 @@
 # Attaching dnet
 
-`dnet` is DarkFi's network topology visualization tool. To use it with your
+`dnet` is DarkWow's network topology visualization tool. To use it with your
 application, you need to attach the dnet subscription to your P2P stack.
 
 ## Overview

@@ -1,6 +1,6 @@
 # Dchat: Writing a p2p app
 
-This tutorial will teach you how to deploy an app on DarkFi's p2p network.
+This tutorial will teach you how to deploy an app on DarkWow's p2p network.
 
 We will create a terminal-based p2p chat app called dchat. The chat app
 has two parts: a p2p daemon called `dchatd` and a python command-line
@@ -21,4 +21,4 @@ programming. If you need a refresher, read the
 [Async Rust Fundamentals](async-rust-fundamentals.md) preamble.
 
 The source code for this tutorial can be found at
-[example/dchat](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/example/dchat).
+[example/dchat](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/example/dchat).

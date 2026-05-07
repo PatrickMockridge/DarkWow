@@ -7,7 +7,7 @@ use darkfi_safemath_zk::safemath::experimental::{
 };
 use halo2_proofs::{dev::MockProver, pasta::pallas};
 
-// These are real proof-validation tests, but stock official DarkFi at the pinned
+// These are real proof-validation tests, but stock official DarkWow at the pinned
 // revision still rejects the widened range profiles used by this safemath set.
 // Keep them opt-in so the default portable harness path stays green.
 

@@ -1,17 +1,17 @@
 # Monero Integration
 
-DarkFi's Monero integration spans three key areas: **merge mining** for security, **bridging** for asset transfer, and **stable collateralization** for price stability. These components work together to enable XMR as a foundational primitive for DarkFi's privacy-preserving financial system.
+DarkWow's Monero integration spans three key areas: **merge mining** for security, **bridging** for asset transfer, and **stable collateralization** for price stability. These components work together to enable XMR as a foundational primitive for DarkWow's privacy-preserving financial system.
 
 ## Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        DarkFi ↔ Monero                               │
+│                        DarkWow ↔ Monero                               │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │   Merge Mining          Bridging & Wrapping      Stable Collateral    │
 │   ───────────          ─────────────────         ────────────────    │
-│   • DarkFi security    • XMR → wXMR             • wXMR → collateral │
+│   • DarkWow security    • XMR → wXMR             • wXMR → collateral │
 │   • RandomX PoW       • wXMR → XMR             • Mint stablecoins  │
 │   • Aux chain merge   • Trustless deposits     • Pooled debt model │
 │   • Shared security   • Relayer execution      • PI controller      │
@@ -21,13 +21,13 @@ DarkFi's Monero integration spans three key areas: **merge mining** for security
 
 | Component | Purpose | Location | Doc |
 |-----------|---------|----------|-----|
-| Merge Mining | Secure DarkFi via RandomX PoW | `src/blockchain/monero/` | [Merge Mining](../testnet/merge-mining.md) |
+| Merge Mining | Secure DarkWow via RandomX PoW | `src/blockchain/monero/` | [Merge Mining](../testnet/merge-mining.md) |
 | Bridge Contract | Cross-chain asset transfer | `src/contract/bridge/` | [Bridge Contract](../dev/contracts/bridge.md) |
 | Stablecoin | Collateralized debt positions | `src/contract/stablecoin/` | [Stablecoin](../contract/stablecoin.md) |
 
 ## 1. Merge Mining
 
-DarkFi uses Monero's CryptoNight-RandomX proof-of-work algorithm for merge mining. This allows Monero miners to also secure DarkFi without additional energy cost.
+DarkWow uses Monero's CryptoNight-RandomX proof-of-work algorithm for merge mining. This allows Monero miners to also secure DarkWow without additional energy cost.
 
 **Key Components:**
 
@@ -40,20 +40,20 @@ DarkFi uses Monero's CryptoNight-RandomX proof-of-work algorithm for merge minin
 
 **How Merge Mining Works:**
 
-1. Monero miner constructs a block with DarkFi aux chain data in the coinbase
-2. DarkFi reads the `MoneroPowData` from the block template
-3. DarkFi computes the aux chain Merkle root and verifies the PoW
+1. Monero miner constructs a block with DarkWow aux chain data in the coinbase
+2. DarkWow reads the `MoneroPowData` from the block template
+3. DarkWow computes the aux chain Merkle root and verifies the PoW
 4. Both chains share security — attacking one requires attacking both
 
 **Reference:** [Merge Mining (User Guide)](../testnet/merge-mining.md)
 
 ## 2. Bridging & Wrapping
 
-The bridge contract enables moving XMR between Monero and DarkFi using an **Object Capability Security** model instead of VSS-based approaches.
+The bridge contract enables moving XMR between Monero and DarkWow using an **Object Capability Security** model instead of VSS-based approaches.
 
 ### Object Capability vs VSS
 
-| Aspect | VSS-Based Bridge | DarkFi OCap Bridge |
+| Aspect | VSS-Based Bridge | DarkWow OCap Bridge |
 |--------|------------------|---------------------|
 | Key custody | Distributed shards | User-held secrets |
 | Withdrawal speed | Slow (threshold round) | Fast (self-signed ZK) |
@@ -61,7 +61,7 @@ The bridge contract enables moving XMR between Monero and DarkFi using an **Obje
 | Censorship | Threshold can block | Cannot block |
 | Complexity | High (DKG) | Low (hashing) |
 
-### XMR → DarkFi (Deposit)
+### XMR → DarkWow (Deposit)
 
 ```
 User → One-Time Address on Monero
@@ -76,15 +76,15 @@ Bridge Contract: verify + mint wXMR
 ```
 
 **Deposit Security:**
-- **One-time addresses**: Each deposit uses a fresh address derived from user's DarkFi identity + nonce
+- **One-time addresses**: Each deposit uses a fresh address derived from user's DarkWow identity + nonce
 - **DLEq proofs**: Prove ownership of the one-time address private key without revealing it
 - **Merkle proofs**: Prove the transaction exists in a Monero block
 - **Confirmations**: 10 blocks required before deposit is recognized
 
-### DarkFi → XMR (Withdrawal)
+### DarkWow → XMR (Withdrawal)
 
 ```
-User burns wXMR on DarkFi
+User burns wXMR on DarkWow
       ↓
 Pending withdrawal created (100 block timeout)
       ↓
@@ -128,11 +128,11 @@ bin/xmr_relayer/
 
 ## 3. Stable Collateralization
 
-wXMR can be used as collateral in DarkFi's [stablecoin contract](../contract/stablecoin.md) to mint privacy-preserving stablecoins.
+wXMR can be used as collateral in DarkWow's [stablecoin contract](../contract/stablecoin.md) to mint privacy-preserving stablecoins.
 
 ### Pooled Debt Model
 
-DarkFi uses a **Pooled Debt** (Synthetix-style) model rather than individual CDPs:
+DarkWow uses a **Pooled Debt** (Synthetix-style) model rather than individual CDPs:
 
 **Advantages for Privacy:**
 - No individual position tracking — no position IDs that leak information
@@ -145,7 +145,7 @@ DarkFi uses a **Pooled Debt** (Synthetix-style) model rather than individual CDP
 1. XMR → wXMR (Bridge Deposit):
    User deposits XMR to bridge one-time address
    Relayer observes + verifies via DLEq proof
-   DarkFi mints wXMR to user
+   DarkWow mints wXMR to user
 
 2. wXMR → Collateral (Stablecoin DepositCollateral):
    User deposits wXMR into stablecoin CollateralPool
@@ -162,7 +162,7 @@ DarkFi uses a **Pooled Debt** (Synthetix-style) model rather than individual CDP
    Withdraws wXMR collateral proportionally
 
 5. wXMR → XMR (Bridge Withdraw):
-   User burns wXMR on DarkFi bridge
+   User burns wXMR on DarkWow bridge
    Relayer executes withdrawal on Monero within timeout
 ```
 
@@ -173,7 +173,7 @@ The stablecoin supports multiple collateral types:
 ```rust
 pub enum CollateralType {
     Xmr,  // wXMR
-    Drk,  // Native DRK
+    Drkw, // Native DRKW
 }
 ```
 
@@ -181,7 +181,7 @@ pub enum CollateralType {
 
 XMR/USD price is used for collateral valuation:
 
-- **TWAP from AMM**: When an XMR/DRK or XMR/USD pool exists, TWAP is used
+- **TWAP from AMM**: When an XMR/DRKW or XMR/USD pool exists, TWAP is used
 - **Fallback**: ~$150/USD per XMR (until pool exists)
 - **PI Controller**: Algorithmic redemption rate adjustment for stability
 

@@ -291,7 +291,7 @@ ahead of time.
 Another downside of this model is that state changes at the site of
 invocation are not immediate.
 
-Currently in DarkFi, we separate contract calls into 2-phases:
+Currently in DarkWow, we separate contract calls into 2-phases:
 `process()` which verifies the calldata, and `update()` which takes a
 state update from `process()` and writes the changes.
 
@@ -402,7 +402,7 @@ This allows smart contracts to
 [return values to the UI](https://ethereum.stackexchange.com/questions/56879/can-anyone-explain-what-is-the-main-purpose-of-events-in-solidity-and-when-to-us).
 Events are indexed in the database.
 
-An equivalent mechanism in DarkFi, may be the ability to emit events
+An equivalent mechanism in DarkWow, may be the ability to emit events
 which wallets can subscribe to. As for storing them an indexed DB, we
 already offer that functionality with `db_set()` during the update
 phase.

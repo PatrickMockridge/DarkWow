@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! DarkFi DAO-Escrow Contract
+//! DarkWow DAO-Escrow Contract
 //!
 //! ## Three Operating Modes
 //!
@@ -29,7 +34,7 @@
 //! - Endowment pays out claims
 //!
 //! ### MODE_TREASURY (0x01) - Treasury-Only
-//! - Same as DarkFi DAO
+//! - Same as DarkWow DAO
 //! - Members pay fees → treasury grows
 //! - DAO votes on treasury spending
 //! - No endowment/insurance
@@ -99,7 +104,7 @@
 //! ## Use Cases
 //!
 //! - **Community Insurance**: Escrow mode - pure insurance pool
-//! - **Protocol Treasury**: Treasury mode - same as DarkFi DAO
+//! - **Protocol Treasury**: Treasury mode - same as DarkWow DAO
 //! - **Full-Featured DAO**: TreasuryEndowment mode - treasury + insurance
 
 use darkfi_sdk::define_contract_function;
@@ -108,7 +113,7 @@ use darkfi_sdk::define_contract_function;
 pub mod modes {
     /// Escrow-only: Pure insurance pool
     pub const MODE_ESCROW: u8 = 0x00;
-    /// Treasury-only: Same as DarkFi DAO
+    /// Treasury-only: Same as DarkWow DAO
     pub const MODE_TREASURY: u8 = 0x01;
     /// Treasury + Endowment: Full-featured
     pub const MODE_TREASURY_ENDOWMENT: u8 = 0x02;

@@ -1,7 +1,7 @@
 vanityaddr
 ==========
 
-A tool for Vanity address generation for DarkFi keypairs, contract IDs,
+A tool for Vanity address generation for DarkWow keypairs, contract IDs,
 and token IDs. Given some prefix, the tool will bruteforce secret keys
 to find one which, when derived, starts with a given prefix.
 
@@ -9,7 +9,7 @@ to find one which, when derived, starts with a given prefix.
 
 ```
 vanityaddr 0.4.1
-Vanity address generation tool for DarkFi keypairs, contract IDs, and token IDs
+Vanity address generation tool for DarkWow keypairs, contract IDs, and token IDs
 
 Usage: vanityaddr [OPTIONS] <PREFIX> <PREFIX> ...
 

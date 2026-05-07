@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -34,9 +39,9 @@ use rand::rngs::OsRng;
 pub struct DepositPublicInputs {
     /// Commitment the user claims this deposit creates
     pub commitment: pallas::Base,
-    /// Recipient's DarkFi public key X coordinate
+    /// Recipient's DarkWow public key X coordinate
     pub recipient_pub_x: pallas::Base,
-    /// Recipient's DarkFi public key Y coordinate
+    /// Recipient's DarkWow public key Y coordinate
     pub recipient_pub_y: pallas::Base,
     /// Fresh nonce for this deposit (unlinkability)
     pub bridge_nonce: pallas::Base,
@@ -67,7 +72,7 @@ pub struct DepositCallData {
     pub secret: pallas::Base,
     /// Deposit amount in external chain unit
     pub amount: u64,
-    /// Recipient's public key on DarkFi
+    /// Recipient's public key on DarkWow
     pub recipient_public: PublicKey,
     /// Fresh nonce for temporal privacy
     pub bridge_nonce: u64,

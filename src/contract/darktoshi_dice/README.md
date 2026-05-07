@@ -1,6 +1,6 @@
 # DarkToshi Dice Contract
 
-A privacy-preserving Satoshi Dice clone for DarkFi. This contract implements provably fair gambling with privacy features.
+A privacy-preserving Satoshi Dice clone for DarkWow. This contract implements provably fair gambling with privacy features.
 
 ## Overview
 

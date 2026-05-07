@@ -1,10 +1,10 @@
 # Overview
 
-DarkFi is a layer-one Proof-of-Work blockchain supporting anonymous WASM smart contracts.
+DarkWow is a layer-one Proof-of-Work blockchain supporting anonymous WASM smart contracts.
 
 ## Consensus
 
-DarkFi uses **Uncle Merkle consensus** with RandomX Proof-of-Work. This replaces upstream's complex overlay/diff architecture — which exists to support DAO-based fork adjudication — with a simple, deterministic design:
+DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work. This replaces upstream's complex overlay/diff architecture — which exists to support DAO-based fork adjudication — with a simple, deterministic design:
 
 - **Pure PoW**: The canonical chain is the one with the most accumulated work. No governance DAO decides between forks.
 - **Uncle Merkle pin mechanism**: The canonical chain is **obligated** to offer competing uncle chains a one-time option (within minutes) to form a side chain and share the PoW reward. Uncle chains can accept or reject.
@@ -16,7 +16,7 @@ See [Consensus](consensus/consensus.md) and [Uncle Merkle](consensus/uncle_merkl
 
 ## WASM Contracts
 
-DarkFi uses WASM smart contracts deployed via the **Deployooor** contract. This model provides:
+DarkWow uses WASM smart contracts deployed via the **Deployooor** contract. This model provides:
 
 - **Upgradeable contracts**: Contracts can be upgraded without hard forking the network
 - **Minimal genesis**: Only Deployooor and NativeToken exist at genesis
@@ -24,7 +24,7 @@ DarkFi uses WASM smart contracts deployed via the **Deployooor** contract. This 
 
 ## Token Architecture
 
-DarkFi separates token concerns into two specialized contracts:
+DarkWow separates token concerns into two specialized contracts:
 
 | Contract | Purpose | Use Case |
 |----------|---------|----------|
@@ -62,13 +62,13 @@ Example usage:
 
 All private state transitions use ZK proofs verified on-chain:
 
-- **zkVM**: DarkFi's virtual machine executes Halo2 proofs
+- **zkVM**: DarkWow's virtual machine executes Halo2 proofs
 - **No trusted setup**: zkSNARK system uses universal reference strings
 - **Privacy**: Zero-knowledge proofs hide amounts, identities, and state changes
 
 ## Testing
 
-DarkFi provides two testing pipelines:
+DarkWow provides two testing pipelines:
 
 1. **Lightweight pipeline**: Deployment verification without ZK proof generation
 2. **Heavyweight pipeline**: Full ZK proof generation and contract execution testing

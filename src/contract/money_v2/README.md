@@ -1,4 +1,4 @@
-# DarkFi Money V2 Contract
+# DarkWow Money V2 Contract
 
 > [!WARNING]
 > **DEPRECATED**: Money V2 is deprecated and should not be used for new development.
@@ -80,7 +80,7 @@ make test-integration
 
 ```
 src/contract/
-├── money/           # Original DarkFi money (v1) - upstream legacy
+├── money/           # Original DarkWow money (v1) - upstream legacy
 ├── money_v2/        # DEPRECATED - EC heap bugs, use MoneyV3 instead
 ├── native_token/    # Consensus contract (PoW rewards, fees)
 └── money_v3/        # DeFi contract (tokens, stablecoins, ERC-20)
@@ -102,4 +102,4 @@ Money V2 is replaced by:
 - **NativeToken**: Consensus (PoW rewards, network fees)
 - **MoneyV3**: DeFi (tokens, stablecoins, wrapped assets)
 
-The original `money/` contract is maintained for network compatibility with upstream DarkFi.
+The original `money/` contract is maintained for network compatibility with upstream DarkWow.

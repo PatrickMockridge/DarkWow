@@ -155,7 +155,7 @@ Profile (which tools and data to install)? (minimal/default/complete) [default]
 
 Then proceed with the installation (option 1).
 
-## Building the DarkFi App
+## Building the DarkWow App
 
 Go to the [codeberg repo] and select "⋯", then Download ZIP. Unzip the folder
 in an accessible place.
@@ -170,7 +170,7 @@ C:\darkfi\bin\app> cargo build --release --features=enable-plugins
 ## Create Installer
 
 * Use Advanced Installer to create an MSI installer.
-    * Application Folder should have `DarkFi App.exe` and `assets/`.
+    * Application Folder should have `DarkWow App.exe` and `assets/`.
 * Add shortcuts. Use the provided darkfi.ico icon.
     * Application Shortcut Folder
     * Desktop

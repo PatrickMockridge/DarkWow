@@ -1,4 +1,4 @@
-# DarkFi Escrow Contract
+# DarkWow Escrow Contract
 
 Privacy-preserving conditional payment contract. Funds are locked in a commitment and released to the seller upon proof of knowledge of a secret, or returned to the buyer after a timeout.
 
@@ -44,7 +44,7 @@ Traditional escrow requires a trusted third party:
 
 ## Trust Model: Hashed Timelock (Variant 3)
 
-Three variants exist in the wild. DarkFi uses Variant 3:
+Three variants exist in the wild. DarkWow uses Variant 3:
 
 | Variant | Claim Mechanism | Refund Mechanism | Trust Model |
 |---------|-----------------|------------------|-------------|
@@ -373,7 +373,7 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 
 ## Comparison
 
-| Feature | Traditional Escrow | Smart Contract (Public) | DarkFi Escrow |
+| Feature | Traditional Escrow | Smart Contract (Public) | DarkWow Escrow |
 |---------|-------------------|------------------------|---------------|
 | Privacy | Full privacy | Zero (terms visible) | Full (commitment only) |
 | Trust | Third party | Trustless, public | Trustless, private |
@@ -424,8 +424,8 @@ cargo test --release -p darkfid test_escrow_heavyweight
 
 ## References
 
-- [DarkFi Escrow MVP Analysis](../../../doc/src/arch/escrow.md)
-- [DarkFi Money Contract](../money_v2/)
+- [DarkWow Escrow MVP Analysis](../../../doc/src/arch/escrow.md)
+- [DarkWow Money Contract](../money_v2/)
 - [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md)
 - [Contract MVP Status](../../../doc/src/arch/mvp_status.md)
 - [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md)

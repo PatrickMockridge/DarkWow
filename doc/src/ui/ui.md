@@ -28,7 +28,7 @@ Why do people use the product?
 
 The product itself is propaganda. It needs to look so cool that when people make
 desktop screenshots, they post the app itself. We can even put visualizers for
-network traffic or price charts. We can have 3D objects like rotating DarkFi
+network traffic or price charts. We can have 3D objects like rotating DarkWow
 logo, a splash screen while loading or an app to explore the dark forest.
 Whenever we make vids we need cool sound effects.
 

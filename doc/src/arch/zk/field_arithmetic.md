@@ -1,6 +1,8 @@
 # Base Field Arithmetic: The Invisible Wall
 
-This document is about the fundamental constraint that shapes everything DarkFi's smart contracts can and cannot do: **the base field arithmetic wall**.
+> **Note:** Pallas base field arithmetic constraints are a property of the Halo2 proving system inherited from upstream DarkFi — they apply identically to both DarkFi and DarkWow. The opcode workarounds and contract-specific examples in this document are DarkWow-specific.
+
+This document is about the fundamental constraint that shapes everything DarkWow's smart contracts can and cannot do: **the base field arithmetic wall**.
 
 Read this before writing any ZK circuit. If you have spent any time writing ZK circuits, this will feel obvious. If you have not, it will feel like being told the floor is made of lava.
 
@@ -19,7 +21,7 @@ assert x + y == 15    # True
 assert x * y == 50    # True
 ```
 
-In a ZK circuit, you are not working with integers. You are working with **field elements** — members of a finite cyclic group defined by a large prime `p`. For DarkFi's Pallas field:
+In a ZK circuit, you are not working with integers. You are working with **field elements** — members of a finite cyclic group defined by a large prime `p`. For DarkWow's Pallas field:
 
 ```
 p = 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
@@ -59,7 +61,7 @@ None of these are impossible. All of them require careful circuit design, and ge
 
 ## The Comparison Example: Why It Matters
 
-This is the single most important example because it appears everywhere in DarkFi contracts.
+This is the single most important example because it appears everywhere in DarkWow contracts.
 
 **What you want to enforce**: "the liquidator reward must not exceed the collateral"
 
@@ -71,7 +73,7 @@ result = less_than_strict(reward, collateral);  # ERROR: returns ()
 constrain_equal_base(result, 1);                  # Can't use the result
 ```
 
-`LessThanStrict` in DarkFi's zkVM returns nothing — it only **constrains** the circuit to fail if `reward >= collateral`. It is unusable as a value in subsequent logic.
+`LessThanStrict` in DarkWow's zkVM returns nothing — it only **constrains** the circuit to fail if `reward >= collateral`. It is unusable as a value in subsequent logic.
 
 **Why this limitation exists**: Making comparison return a value (`0` or `1`) in a ZK circuit requires:
 
@@ -112,7 +114,7 @@ When you catch yourself thinking "I need to compute X" in a ZK circuit, ask inst
 
 ## The Theoretical Universe vs. The Practical Wall
 
-There is a sense in which ZK circuits can express **arbitrary computation** — given enough gates and enough prover time, any function can be approximated. This is the "complete mathematical universe" of what DarkFi's contracts could theoretically do.
+There is a sense in which ZK circuits can express **arbitrary computation** — given enough gates and enough prover time, any function can be approximated. This is the "complete mathematical universe" of what DarkWow's contracts could theoretically do.
 
 But that universe is separated from practice by the **field arithmetic wall**:
 
@@ -127,7 +129,7 @@ This is why even humans and AI together are still exploring the boundary. The ma
 
 ## Why You Need to Understand This
 
-If you are contributing to DarkFi's contract layer, this matters to you directly:
+If you are contributing to DarkWow's contract layer, this matters to you directly:
 
 **If you are writing circuit code**: Every time you reach for a comparison, a division, a modulus, or a conditional, you are crossing the field arithmetic wall. You need to know whether the opcode you need exists, whether it is experimental, and whether a cross-multiplication workaround exists instead.
 
@@ -137,9 +139,9 @@ If you are contributing to DarkFi's contract layer, this matters to you directly
 
 ---
 
-## What This Means for DarkFi's Roadmap
+## What This Means for DarkWow's Roadmap
 
-DarkFi's theoretical contract capability is enormous. In practice, the roadmap is constrained by:
+DarkWow's theoretical contract capability is enormous. In practice, the roadmap is constrained by:
 
 - **Which field arithmetic gadgets are implemented** — and correctly implemented, with proven soundness
 - **Which gadgets are audited** — an implementation is not production-ready just because it compiles
@@ -161,7 +163,7 @@ The `LessThanOrEqual` opcode took an experimental fork to prototype, multiple it
 
 **The ideal path forward**: Native opcodes as foundation (now properly verified), safemath for assertion-only patterns. See [Safemath](safemath.md) and [Opcodes Reference](opcodes.md) for the full analysis.
 
-This is why the opcode primitives documentation is on the roadmap. It is not academic — it determines what contracts can actually exist on DarkFi.
+This is why the opcode primitives documentation is on the roadmap. It is not academic — it determines what contracts can actually exist on DarkWow.
 
 ---
 
@@ -206,4 +208,4 @@ The current comparison gadgets handle this by **constraining all inputs to `[0, 
 2. Values near the boundary (e.g., a token amount of 10^18 when expressed in field elements) need validation
 3. Any gadget that does not enforce this range is unsound for large inputs
 
-This is why input validation is not just good practice in DarkFi circuits — it is a security requirement.
+This is why input validation is not just good practice in DarkWow circuits — it is a security requirement.

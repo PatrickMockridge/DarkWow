@@ -21,7 +21,7 @@ In the TOML configuration file, the channel is set as such:
 ```toml
 [channel."#dev"]
 secret = "GvH4kno3kUu6dqPrZ8zjMhqxTUDZ2ev16EdprZiZJgj1"
-topic = "DarkFi Development Channel"
+topic = "DarkWow Development Channel"
 ```
 
 | Description  | Data Type     | Comments                                                      |

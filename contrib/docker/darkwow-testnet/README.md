@@ -1,13 +1,6 @@
 # DarkWow Testnet
 
-DarkWow is a fork of DarkFi. Provisional name and ticker:
-
-- Network: DarkWow
-- Token: DRKW (DarkWow)
-
-Magic bytes `[68, 82, 75, 87]` encode "DRKW" in ASCII.
-
-These names are placeholders and may change before mainnet launch.
+DarkWow is a fork of DarkFi. Magic bytes `[68, 82, 75, 87]` encode "DRKW" in ASCII, uniquely identifying DarkWow nodes on the P2P network.
 
 ## Deployment
 

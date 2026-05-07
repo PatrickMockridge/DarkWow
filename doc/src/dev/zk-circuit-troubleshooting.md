@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document covers common issues that occur during the test lifecycle when working with DarkFi's ZK circuits (`.zk.bin` files).
+This document covers common issues that occur during the test lifecycle when working with DarkWow's ZK circuits (`.zk.bin` files).
 
 ## What are `.zk.bin` Files?
 

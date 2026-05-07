@@ -1,7 +1,7 @@
 [package]
 name = "zkas"
 version = "0.5.0"
-homepage = "https://dark.fi"
+homepage = "https://darkwow.org"
 description = "Compiler for the Halo2 zkVM language used in DarkFi."
 authors = ["Dyne.org foundation <foundation@dyne.org>"]
 repository = "https://codeberg.org/darkrenaissance/darkfi"

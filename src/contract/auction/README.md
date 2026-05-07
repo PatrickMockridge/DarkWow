@@ -1,4 +1,4 @@
-# DarkFi Auction Contract
+# DarkWow Auction Contract
 
 A privacy-preserving auction contract that uses the escrow contract for bid deposits. Enables sealed-bid or English-style auctions.
 
@@ -283,5 +283,5 @@ For auction, what-you-prove (bid amount, winner status) already works with ZK pr
 
 ## References
 
-- [DarkFi Escrow Contract](../escrow/)
-- [DarkFi zkVM](../zkas/)
+- [DarkWow Escrow Contract](../escrow/)
+- [DarkWow zkVM](../zkas/)

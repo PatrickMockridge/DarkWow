@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,7 +24,7 @@
 //! Linear blockchain P2P sync protocol
 //!
 //! This module provides a simple linear synchronization protocol
-//! for the linear blockchain. Unlike the main DarkFi sync protocol,
+//! for the linear blockchain. Unlike the main DarkWow sync protocol,
 //! linear sync requests blocks by height N, N+1, etc. with no forks.
 
 use std::sync::Arc;

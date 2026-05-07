@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -35,7 +40,7 @@
 //! │  │  - For: Pure insurance, no overhead                        │     │
 //! │  └─────────────────────────────────────────────────────────────┘     │
 //! │                                                                       │
-//! │  MODE_TREASURY: Treasury-Only (Same as DarkFi DAO)                  │
+//! │  MODE_TREASURY: Treasury-Only (Same as DarkWow DAO)                  │
 //! │  ┌─────────────────────────────────────────────────────────────┐     │
 //! │  │  - Members pay fees → treasury grows                        │     │
 //! │  │  - DAO votes on treasury spending                           │     │
@@ -88,7 +93,7 @@ pub type MembershipNote = pallas::Base;
 pub enum DaoEscrowMode {
     /// Escrow-only: Pure insurance pool, no treasury
     Escrow = 0,
-    /// Treasury-only: Same as DarkFi DAO, no endowment
+    /// Treasury-only: Same as DarkWow DAO, no endowment
     Treasury = 1,
     /// Treasury + Endowment: Full-featured with insurance backing
     TreasuryEndowment = 2,

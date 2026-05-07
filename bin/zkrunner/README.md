@@ -1,7 +1,7 @@
 zkrunner
 ========
 
-`zkrunner` is a simple Python script using the DarkFi SDK Python
+`zkrunner` is a simple Python script using the DarkWow SDK Python
 bindings providing a CLI for prototyping zkas proofs.
 
 ## Usage

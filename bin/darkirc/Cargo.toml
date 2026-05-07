@@ -5,7 +5,7 @@ version = "0.5.1"
 edition = "2021"
 authors = ["Dyne.org foundation <foundation@dyne.org>"]
 license = "AGPL-3.0-only"
-homepage = "https://dark.fi"
+homepage = "https://darkwow.org"
 repository = "https://codeberg.org/darkrenaissance/darkfi"
 
 [lib]

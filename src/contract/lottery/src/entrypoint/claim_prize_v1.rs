@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -107,7 +112,7 @@ pub fn lottery_claim_prize_process_instruction_v1(
     // For a proper implementation, we would verify the ZK proof here:
     // wasm::zkas_verify(params.proof, ...)?
     //
-    // NOTE: ZK proof verification is off-chain in DarkFi architecture.
+    // NOTE: ZK proof verification is off-chain in DarkWow architecture.
     // The client verifies the ZK proof locally before submitting.
     // The WASM SDK does not expose zk_verify to contracts.
 

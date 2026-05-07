@@ -1,7 +1,7 @@
 # Async Rust Fundamentals
 
 This preamble covers the async Rust concepts essential for building P2P
-applications on DarkFi. Familiarity with these patterns is assumed for
+applications on DarkWow. Familiarity with these patterns is assumed for
 the rest of the tutorial.
 
 ## Why Async?
@@ -16,7 +16,7 @@ control when waiting on I/O.
 
 ## Runtime Choice: smol over Tokio
 
-DarkFi uses the **smol** runtime (~3,000 lines) rather than Tokio. This
+DarkWow uses the **smol** runtime (~3,000 lines) rather than Tokio. This
 minimalist approach prioritizes:
 
 - **Auditability**: A small, readable codebase is crucial for security-critical blockchain software
@@ -29,8 +29,8 @@ rigorously follows the rules of ownership, borrowing, lifetimes, generics,
 and traits.
 
 **Further reading**:
-- [Async Rust in Practice: The DarkFi Experience (Part 1)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi)
-- [Async Rust in Practice: The DarkFi Experience (Part 2)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-3f9)
+- [Async Rust in Practice: The DarkWow Experience (Part 1)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi)
+- [Async Rust in Practice: The DarkWow Experience (Part 2)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-3f9)
 
 ## async/await
 
@@ -49,7 +49,7 @@ async fn fetch_data() {
 
 ## async_daemonize! Macro
 
-DarkFi provides the `async_daemonize!` macro which encapsulates complex
+DarkWow provides the `async_daemonize!` macro which encapsulates complex
 daemon initialization:
 
 ```rust
@@ -70,7 +70,7 @@ Under the hood it uses:
 - `Arc<smol::Executor<'static>>` for shared task spawning
 
 **Further reading**:
-- [Async Rust in Practice: The DarkFi Experience (Part 6)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-a6a)
+- [Async Rust in Practice: The DarkWow Experience (Part 6)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-a6a)
 
 ## Pinning
 
@@ -135,7 +135,7 @@ let p2p: P2pPtr = Arc::new_cyclic(|weak_self| {
 ## Mutex: Synchronization
 
 A `Mutex` (mutual exclusion) protects shared data by ensuring only one
-task can access it at a time. DarkFi uses `smol::lock::Mutex` (a
+task can access it at a time. DarkWow uses `smol::lock::Mutex` (a
 futures-aware mutex) rather than `std::sync::Mutex` to avoid blocking
 the thread during async operations:
 
@@ -184,9 +184,9 @@ impl net::ProtocolBase for ProtocolDchat {
 
 **Reference**: [RfR - Async Traits](https://rustforrustaceans.com/rocking/async)
 
-### DarkFi Async Serialization
+### DarkWow Async Serialization
 
-DarkFi provides `SerialEncodable` and `SerialDecodable` derive macros that
+DarkWow provides `SerialEncodable` and `SerialDecodable` derive macros that
 generate async serialization code. When `darkfi-serial/async` is enabled:
 
 ```rust
@@ -204,7 +204,7 @@ traits using `#[#cratename::async_trait]` internally (fully qualified via
 
 ## Executors
 
-An executor runs async code. DarkFi uses `smol::Executor` to run async
+An executor runs async code. DarkWow uses `smol::Executor` to run async
 tasks on a thread pool. When you call `.await` on a future, you're
 yielding control to the executor:
 
@@ -228,7 +228,7 @@ self.jobsman.clone().spawn(
 ```
 
 **Further reading**:
-- [Async Rust in Practice: The DarkFi Experience (Part 3)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-e16)
+- [Async Rust in Practice: The DarkWow Experience (Part 3)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-e16)
 
 ## Streams
 
@@ -250,7 +250,7 @@ while let Ok(msg) = self.msg_sub.receive().await {
 
 ## StoppableTask: Cooperative Shutdown
 
-DarkFi's `StoppableTask` manages long-running async tasks with graceful
+DarkWow's `StoppableTask` manages long-running async tasks with graceful
 shutdown. It uses a `watch` channel to signal tasks cooperatively,
 avoiding the risks of forceful cancellation:
 
@@ -279,11 +279,11 @@ gracefully on signal.
 - Watch channels transfer ownership of the stop signal
 
 **Further reading**:
-- [Async Rust in Practice: The DarkFi Experience (Part 4)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-d66)
+- [Async Rust in Practice: The DarkWow Experience (Part 4)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-d66)
 
 ## Protocol and Message Traits
 
-DarkFi's P2P networking is built on two core traits:
+DarkWow's P2P networking is built on two core traits:
 
 ### Message Trait
 
@@ -314,7 +314,7 @@ Protocols typically:
 3. Use `Arc<Mutex<T>>` for shared state
 
 **Further reading**:
-- [Async Rust in Practice: The DarkFi Experience (Part 5)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-e16)
+- [Async Rust in Practice: The DarkWow Experience (Part 5)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-e16)
 
 ## Ownership: The Foundation
 
@@ -360,7 +360,7 @@ let msg_sub = channel.subscribe_msg::<DchatMsg>().await.expect("Missing dispatch
 
 ### Error handling
 
-DarkFi uses a custom `Error` type. Protocol methods return `Result<()>`
+DarkWow uses a custom `Error` type. Protocol methods return `Result<()>`
 which is a type alias for `Result<(), Error>`. Use the `?` operator
 or `match` for error handling:
 
@@ -378,4 +378,4 @@ async fn handle_receive_msg(self: Arc<Self>) -> Result<()> {
 * [The Rust Programming Language](https://doc.rust-lang.org/book/) - Chapters 15-17
 * [Rust for Rustaceans](https://rustforrustaceans.com/) - "Rocking" section on async
 * [Asynchronous Programming in Rust](https://rust-lang.github.io/async-book/) - Official async book
-* [Async Rust in Practice: The DarkFi Experience (substack series)](https://technologytruth.substack.com)
+* [Async Rust in Practice: The DarkWow Experience (substack series)](https://technologytruth.substack.com)

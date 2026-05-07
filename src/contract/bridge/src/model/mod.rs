@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -349,7 +354,7 @@ pub struct ZcashDepositProof {
 
 /// Zcash withdrawal parameters
 ///
-/// For withdrawal, the user burns wZEC on DarkFi and specifies
+/// For withdrawal, the user burns wZEC on DarkWow and specifies
 /// a Zcash shielded destination via a hashed recipient address.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ZcashWithdrawParams {
@@ -450,7 +455,7 @@ pub struct AztecDepositProof {
 
 /// Aztec withdrawal parameters
 ///
-/// For withdrawal, the user burns wETH/wDAI on DarkFi and specifies
+/// For withdrawal, the user burns wETH/wDAI on DarkWow and specifies
 /// an Aztec destination via a hashed recipient address.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct AztecWithdrawParams {
@@ -491,7 +496,7 @@ pub struct AztecWithdrawParams {
 //
 // LTC Deposit Flow:
 //
-// 1. User deposits LTC to DarkFi bridge address on Litecoin
+// 1. User deposits LTC to DarkWow bridge address on Litecoin
 // 2. Relayer observes deposit via Litecoin RPC/MWEB
 // 3. Relayer constructs proof showing:
 //    - Deposit exists in Litecoin blockchain
@@ -546,7 +551,7 @@ pub struct LitecoinDepositProof {
 
 /// Litecoin withdrawal parameters
 ///
-/// For withdrawal, the user burns wLTC on DarkFi and specifies
+/// For withdrawal, the user burns wLTC on DarkWow and specifies
 /// a Litecoin destination via a hashed recipient address.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct LitecoinWithdrawParams {
@@ -575,7 +580,7 @@ pub struct LitecoinWithdrawParams {
 
 /// XMR withdrawal parameters
 ///
-/// For withdrawal, the user burns wXMR on DarkFi and specifies
+/// For withdrawal, the user burns wXMR on DarkWow and specifies
 /// a Monero destination via a hashed recipient address.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct XmrWithdrawParams {

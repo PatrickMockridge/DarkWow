@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -38,7 +43,7 @@ use crate::{
 /// `get_metadata` function for `AtomicSwap::ClaimV1`
 ///
 /// **Note**: This prepares public inputs for ZK proof verification when the
-/// DarkFi runtime's `wasm::zk::verify_zk_proof()` is integrated. Currently,
+/// DarkWow runtime's `wasm::zk::verify_zk_proof()` is integrated. Currently,
 /// the actual verification is done manually in `process_instruction` via
 /// `poseidon_hash(secret) == swap.hash`.
 pub(crate) fn atomic_swap_claim_get_metadata_v1(
@@ -68,7 +73,7 @@ pub(crate) fn atomic_swap_claim_get_metadata_v1(
 /// `process_instruction` function for `AtomicSwap::ClaimV1`
 ///
 /// **ZK Verification Status**: This contract expects `wasm::zk::verify_zk_proof()`
-/// from the DarkFi runtime, but the SDK does not expose this function.
+/// from the DarkWow runtime, but the SDK does not expose this function.
 /// Instead, we manually verify `poseidon_hash(secret) == swap.hash` which provides
 /// equivalent cryptographic proof of secret knowledge. The ZK circuit (`claim_v1.zk`)
 /// exists and could provide privacy-preserving verification if the runtime

@@ -6,7 +6,7 @@ See Arti's [roadmap](https://gitlab.torproject.org/tpo/core/arti#roadmap)
 for more  information._
 
 <u><b>Note</b></u>: This page is a general guide for `tor` nodes in the
-DarkFi ecosystem and is applicable to other apps such as `taud` and
+DarkWow ecosystem and is applicable to other apps such as `taud` and
 `darkfid`. We use `darkirc` as our main example throughout this guide.
 If you're using another app, the network configurations remain the same
 except for the seed nodes (ports) you connect to.

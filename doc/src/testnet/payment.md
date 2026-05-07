@@ -31,11 +31,11 @@ drk> wallet coins
 
  Coin            | Spent | Token ID        | Aliases | Value                    | Spend Hook | User Data | Spent TX
 -----------------+-------+-----------------+---------+--------------------------+------------+-----------+-----------------
- EGV6rS...pmmm6H | true  | 241vAN...KcLssb | DRK     | 2000000000 (20)          | -          | -         | fbbd7a...5f2b19
+ EGV6rS...pmmm6H | true  | 241vAN...KcLssb | DRKW     | 2000000000 (20)          | -          | -         | fbbd7a...5f2b19
 ...
  47QnyR...1T7igm | true  | {TOKEN1}        | ANON    | 4269000000 (42.69)       | -          | -         | 47b481...b07395
  5UUJbH...trdQHY | false | {TOKEN1}        | ANON    | 4000000000 (40)          | -          | -         | -
- EEneNB...m6mxTC | false | 241vAN...KcLssb | DRK     | 1999442971 (19.97253683) | -          | -         | -
+ EEneNB...m6mxTC | false | 241vAN...KcLssb | DRKW     | 1999442971 (19.97253683) | -          | -         | -
 ```
 
 We have to wait until the next block to see our change reappear in
@@ -46,7 +46,7 @@ drk> wallet balance
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+-------------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRK     | 19.97253683
+ 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 19.97253683
  {TOKEN1}                                     | ANON    | 40
  {TOKEN2}                                     | DAWN    | 20
 ```

@@ -1,6 +1,8 @@
 # Relayer Economics
 
-*On-chain coordination, feed markets, staking pools, and capital deployment for DarkFi relayers*
+> **Note:** The economic layer described here builds on relayer infrastructure that is still under development. The feed market, staking pools, and capital deployment mechanisms are aspirational designs.
+
+*On-chain coordination, feed markets, staking pools, and capital deployment for DarkWow relayers*
 
 ## Overview
 
@@ -509,7 +511,7 @@ The betting stake creates an additional economic layer:
 │                    On-Chain vs Off-Chain                               │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  ON-CHAIN (DarkFi Contract):                                       │
+│  ON-CHAIN (DarkWow Contract):                                       │
 │  ├── Relayer registry (stake, status, reputation)                   │
 │  ├── Stake locking/unlocking                                       │
 │  ├── Withdrawal state machine                                      │
@@ -524,7 +526,7 @@ The betting stake creates an additional economic layer:
 │  └── Operational decisions                                        │
 │                                                                     │
 │  BETTING CAN BE:                                                  │
-│  ├── On DarkFi (native betting stake contract)                    │
+│  ├── On DarkWow (native betting stake contract)                    │
 │  └── Or external prediction market                                │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘

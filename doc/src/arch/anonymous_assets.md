@@ -1,13 +1,13 @@
 # Anonymous assets
 
-DarkFi network allows for the issuance and transfer of anonymous assets
+DarkWow network allows for the issuance and transfer of anonymous assets
 with an arbitrary number of parameters. These tokens are anonymous,
 relying on zero-knowledge proofs to ensure validity without revealing
 any other information. **All transactions over the network are managed
 by smart contracts.**
 
 New tokens are created and destroyed every time you send an anonymous
-transaction. To send a transaction on DarkFi, you must first issue a
+transaction. To send a transaction on DarkWow, you must first issue a
 credential that commits to some value you have in your wallet. This is
 called the **Mint** phase. Once the credential is spent, it destroys
 itself: what is called the **Burn.**
@@ -21,7 +21,7 @@ Through this process, the link between inputs and outputs is broken.
 During the **Mint** phase we create a new coin commitment $C$, which is
 bound to the public key $P$. The coin commitment $C$ is publicly
 revealed on the blockchain and added to the Merkle tree, which is
-stored locally on the DarkFi wallet.
+stored locally on the DarkWow wallet.
 
 We do this using the following process:
 
@@ -80,7 +80,7 @@ to $C$. Once the nullifier is produced the coin becomes unspendable.
 
 ## Adding values
 
-Assets on DarkFi can have any number of values or attributes. This
+Assets on DarkWow can have any number of values or attributes. This
 is achieved by creating a credential $C$ and hashing any number of
 values and checking that they are valid in zero-knowledge.
 

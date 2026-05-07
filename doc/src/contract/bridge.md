@@ -1,11 +1,13 @@
 Anonymous Bridge
 ================
 
-*DarkFi's universal bridge enables private asset transfers between DarkFi and external blockchains using Object Capability Security.*
+> **Note:** This document describes the full bridge design and architecture. The bridge contract, DLEq proofs, and multi-chain relayer infrastructure are aspirational — the implementation is in progress. The design is correct, but not all features described here are deployed yet.
+
+*DarkWow's universal bridge enables private asset transfers between DarkWow and external blockchains using Object Capability Security.*
 
 ## Overview
 
-The DarkFi bridge connects multiple external chains to DarkFi's privacy-preserving ecosystem:
+The DarkWow bridge connects multiple external chains to DarkWow's privacy-preserving ecosystem:
 
 | Chain | Token | Privacy Model | Sell Pitch |
 |-------|-------|---------------|------------|
@@ -17,10 +19,10 @@ The DarkFi bridge connects multiple external chains to DarkFi's privacy-preservi
 
 ## Object Capability Security Model
 
-Unlike traditional VSS-based bridges that require threshold signing, DarkFi uses **Object Capability Security**:
+Unlike traditional VSS-based bridges that require threshold signing, DarkWow uses **Object Capability Security**:
 
 ```
-VSS-Based Bridge:                          DarkFi OCap Bridge:
+VSS-Based Bridge:                          DarkWow OCap Bridge:
 ─────────────────                          ──────────────────
 User deposits → VSS nodes hold shards      User knows secret → Derive bridge_address
 User withdraws → n-of-m threshold           User withdraws → Self-signed ZK proof
@@ -49,12 +51,12 @@ Native Ethereum support for ETH transfers via Merkle proof verification.
 - Simple ETH transfers where Aztec adds too much complexity
 - Assets that don't have Aztec support
 
-**Best Practice: ETH → Aztec → DarkFi**
+**Best Practice: ETH → Aztec → DarkWow**
 
 For privacy-preserving ETH transfers, the recommended path is:
 
 ```
-ETH → Aztec (private rollup) → DarkFi
+ETH → Aztec (private rollup) → DarkWow
 ```
 
 This provides:
@@ -69,7 +71,7 @@ See [Aztec section](#aztec-private-rollup) for the preferred privacy path.
 
 ### Monero
 
-Private money with ring signatures. The natural pairing with DarkFi's privacy model.
+Private money with ring signatures. The natural pairing with DarkWow's privacy model.
 
 **Architecture:**
 - Uses DLEq proofs for one-time address ownership
@@ -78,21 +80,21 @@ Private money with ring signatures. The natural pairing with DarkFi's privacy mo
 
 **The Sell: "The Private Money"**
 - XMR is already private by default
-- Bridge to DarkFi maintains privacy
-- All subsequent DarkFi transactions are private
+- Bridge to DarkWow maintains privacy
+- All subsequent DarkWow transactions are private
 - When you unwrap, XMR returns to your Monero address
 
 **Flow:**
 ```
-User → One-time address on Monero (derived from DarkFi identity)
+User → One-time address on Monero (derived from DarkWow identity)
      ↓
 Monero TX (10 confirmations, ring signatures hide sender)
      ↓
 Relayer observes via view key, constructs DLEq proof
      ↓
-ZK proof submitted to DarkFi
+ZK proof submitted to DarkWow
      ↓
-DarkFi mints wXMR to user
+DarkWow mints wXMR to user
 ```
 
 **Constants:**
@@ -111,14 +113,14 @@ Sapling shielded transactions with Groth16 zk-SNARKs. Maximum privacy for Zcash 
 
 **The Sell: "Shield Your Zcash Once and Forever More"**
 
-Unlike other bridges that require you to re-shield on every transaction, DarkFi's bridge means you **only shield once**:
+Unlike other bridges that require you to re-shield on every transaction, DarkWow's bridge means you **only shield once**:
 
 ```
-Other bridges:                              DarkFi bridge:
+Other bridges:                              DarkWow bridge:
 ──────────────                             ─────────────
 ZEC → Shield on deposit                     ZEC → Shield once
      → Unshield to use                          ↓
-     → Re-shield for privacy              DarkFi DeFi (fully private)
+     → Re-shield for privacy              DarkWow DeFi (fully private)
      → Unshield to send                       ↓
      → Re-shield... (infinite loop)      wZEC burns → ZEC returns
                                            → Same Zcash address
@@ -128,7 +130,7 @@ ZEC → Shield on deposit                     ZEC → Shield once
 **Why this matters:**
 - Re-shielding exposes your Zcash transaction history
 - Each re-shield creates a linkable chain
-- DarkFi keeps you in the privacy ecosystem permanently
+- DarkWow keeps you in the privacy ecosystem permanently
 - Your Zcash shielded history stays private **forever**
 
 **Flow:**
@@ -139,9 +141,9 @@ Zcash TX (10 confirmations, fully private)
      ↓
 Relayer observes via lightwalletd, constructs Sapling proof
      ↓
-ZK proof submitted to DarkFi (anchor + merkle proof verified)
+ZK proof submitted to DarkWow (anchor + merkle proof verified)
      ↓
-DarkFi mints wZEC to user
+DarkWow mints wZEC to user
 ```
 
 **Constants:**
@@ -172,7 +174,7 @@ Your DAI on Aztec:
 ┌─────────────────────────────────────────────────┐
 │  Deposit DAI → Aztec private rollup              │
 │       ↓                                          │
-│  Private DeFi on DarkFi (wDAI)                  │
+│  Private DeFi on DarkWow (wDAI)                  │
 │       ↓                                          │
 │  Withdraw DAI → Aztec (same address)             │
 │       ↓                                          │
@@ -192,9 +194,9 @@ Aztec rollup processes (private TX)
      ↓
 Relayer observes rollup, fetches note data
      ↓
-ZK proof submitted to DarkFi
+ZK proof submitted to DarkWow
      ↓
-DarkFi mints wETH/wDAI to user
+DarkWow mints wETH/wDAI to user
 ```
 
 **Constants:**
@@ -223,9 +225,9 @@ Litecoin is the natural segueway to Monero:
 ```
 Monero traders already use LTC as a bridge:
 XMR → Sell for LTC (lower fees than BTC)
-LTC → Bridge to DarkFi (privacy)
+LTC → Bridge to DarkWow (privacy)
      ↓
-DarkFi DeFi (fully private)
+DarkWow DeFi (fully private)
      ↓
 Bridge to LTC → Buy XMR
 ```
@@ -245,9 +247,9 @@ Litecoin TX confirmed (6 blocks)
      ↓
 Relayer observes via Litecoin RPC
      ↓
-ZK proof submitted to DarkFi (merkle proof + optional MWEB verification)
+ZK proof submitted to DarkWow (merkle proof + optional MWEB verification)
      ↓
-DarkFi mints wLTC to user
+DarkWow mints wLTC to user
 ```
 
 **Constants:**
@@ -258,7 +260,7 @@ DarkFi mints wLTC to user
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        DarkFi Bridge                                  │
+│                        DarkWow Bridge                                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐             │
@@ -279,7 +281,7 @@ DarkFi mints wLTC to user
 │                                 │                                    │
 │                                 ▼                                    │
 │                    ┌────────────────────┐                           │
-│                    │  DarkFi Contract  │                           │
+│                    │  DarkWow Contract  │                           │
 │                    │  • Deposit verify │                           │
 │                    │  • Mint wAsset    │                           │
 │                    │  • Withdraw burn  │                           │
@@ -377,7 +379,7 @@ enum ExternalChain {
 
 ### Stablecoin Collateral
 
-All bridged assets can serve as collateral for DarkFi's stablecoin:
+All bridged assets can serve as collateral for DarkWow's stablecoin:
 
 ```
 Bridge Asset → Collateral → Mint Stablecoin (NETHER)
@@ -396,7 +398,7 @@ Bridge Asset → Collateral → Mint Stablecoin (NETHER)
 ```
 External DAI/USD ≈ $1.00
          ↓
-Aztec private pool → DarkFi
+Aztec private pool → DarkWow
          ↓
 NETHER redemption rate adjusted by PI Controller
          ↓
@@ -404,15 +406,15 @@ Keeps NETHER/USD stable
 ```
 
 The DAI peg creates natural price signals:
-- **Into DarkFi**: External DAI price informs redemption rate
-- **Out of DarkFi**: NETHER can be redeemed for DAI
+- **Into DarkWow**: External DAI price informs redemption rate
+- **Out of DarkWow**: NETHER can be redeemed for DAI
 
 ### DEX Multi-Chain Support
 
 The DEX **theoretically supports all bridged tokens**:
 
 ```
-DEX on DarkFi:
+DEX on DarkWow:
 ┌─────────────────────────────────────────────────────────────┐
 │  XMR/ETH swaps    │  ZEC/LTC swaps    │  DAI/ETH swaps     │
 │  (via atomic      │  (shielded to     │  (via Aztec       │
@@ -421,7 +423,7 @@ DEX on DarkFi:
          ↓                    ↓                    ↓
     wXMR pool             wZEC pool            wDAI pool
          ↓                    ↓                    ↓
-    All tradable in DarkFi's privacy layer
+    All tradable in DarkWow's privacy layer
 ```
 
 ## Security Model
@@ -443,7 +445,7 @@ Each chain has specific verification:
 1. **Bridge nodes cannot steal**: They never hold user secrets
 2. **Self-signed withdrawals**: User proves secret knowledge to authorize (secret revealed to relayer for external chain execution)
 3. **Fresh addresses**: Nonce ensures temporal privacy
-4. **Double-spend prevention**: Nullifiers tracked on DarkFi
+4. **Double-spend prevention**: Nullifiers tracked on DarkWow
 
 ### Relayer Security
 
@@ -467,7 +469,7 @@ Each chain has a dedicated relayer service:
 All relayers follow the same pattern:
 1. Observe external chain for deposits
 2. Construct ZK proof data
-3. Submit to DarkFi bridge contract
+3. Submit to DarkWow bridge contract
 4. Execute withdrawals on external chain
 5. Handle timeouts and slashing
 
@@ -584,14 +586,14 @@ The bridge is designed to work with **light clients**, not full nodes:
 | Operation | Required Node | Why |
 |-----------|--------------|-----|
 | **Deposit** | Light client or indexer | Only need Merkle proof of deposit inclusion |
-| **Withdraw** | DarkFi full node | ZK proof verification happens on DarkFi contract |
+| **Withdraw** | DarkWow full node | ZK proof verification happens on DarkWow contract |
 | **Monitor deposits** | Light wallet (view key) or indexer | Monero/Zcash: view-key light clients work |
 | **Execute withdrawals** | Relayer service | External chain tx broadcast (full nodes) |
 
 ### Full Node vs Light Client
 
-**Full nodes** (DarkFi validator, Ethereum geth) are needed for:
-- Validating ZK proofs on DarkFi side
+**Full nodes** (DarkWow validator, Ethereum geth) are needed for:
+- Validating ZK proofs on DarkWow side
 - Broadcasting withdrawal transactions to external chains (relayers)
 - Tracking nullifier state to prevent double-spends
 
@@ -618,7 +620,7 @@ Deposit Flow (User Side):
 Withdraw Flow (User Side):
 ┌──────────────────────────────────────────────────────────────┐
 │ User needs:                                                   │
-│   - DarkFi full node access (to submit proofs)               │
+│   - DarkWow full node access (to submit proofs)               │
 │   - NOT required to run own node (can use RPC)               │
 └──────────────────────────────────────────────────────────────┘
 
@@ -626,7 +628,7 @@ Relayer (Separate Service):
 ┌──────────────────────────────────────────────────────────────┐
 │ Relayer needs:                                               │
 │   - Full node on external chain (to broadcast withdrawals)   │
-│   - DarkFi full node access (to observe withdrawal events)   │
+│   - DarkWow full node access (to observe withdrawal events)   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -642,7 +644,7 @@ Relayer (Separate Service):
 
 **Bottom line**: Users do **NOT** need to run full nodes for bridge deposits. They need:
 1. Light client or RPC access to external chain (for Merkle proofs)
-2. Access to DarkFi full node (for submitting proofs)
+2. Access to DarkWow full node (for submitting proofs)
 
 Relayers run the actual full nodes on external chains to execute withdrawals.
 

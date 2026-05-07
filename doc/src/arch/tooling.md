@@ -1,6 +1,6 @@
 # Tooling
 
-## DarkFi Fullnode Daemon
+## DarkWow Fullnode Daemon
 
 `darkfid` is the darkfi fullnode. It manages the blockchain, validates
 transactions and remains connected to the p2p network.

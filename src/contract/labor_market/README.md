@@ -1,4 +1,4 @@
-# DarkFi Labor Market Contract
+# DarkWow Labor Market Contract
 
 A job/labor market contract using escrow, DAO governance, and the attestation contract for deliverable verification.
 

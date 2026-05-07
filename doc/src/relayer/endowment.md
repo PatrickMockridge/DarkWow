@@ -1,5 +1,7 @@
 # Relayer Endowment Contract
 
+> **Note:** The endowment model described here is aspirational. It depends on the multi-chain bridge and relayer infrastructure which are still under development.
+
 A composable contract that enables external capital providers ("backers") to deploy capital to relayers in exchange for a share of the relayer's bridge fees.
 
 ## Purpose

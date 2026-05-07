@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -248,7 +253,7 @@ impl TryFrom<u8> for AddressPrefix {
     }
 }
 
-/// Defines a standard DarkFi pasta curve address containing prefix and pubkey.
+/// Defines a standard DarkWow pasta curve address containing prefix and pubkey.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct StandardAddress {
     network: Network,
@@ -284,7 +289,7 @@ const ADDR_CHECKSUM_LEN: usize = 4;
 /// Standard address consist of `[prefix][public_key][checksum]`.
 const STANDARD_ADDR_LEN: usize = 1 + 32 + ADDR_CHECKSUM_LEN;
 
-/// Addresses defined on DarkFi. Catch-all enum.
+/// Addresses defined on DarkWow. Catch-all enum.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Address {
     Standard(StandardAddress),

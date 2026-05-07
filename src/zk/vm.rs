@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -1155,7 +1160,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     // - The root provides CONTEXT for interpretation (e.g., revocation list,
                     //   permission set, role hierarchy) - business logic outside the ZKVM
                     //   determines what membership means.
-                    // - This is acceptable for DarkFi's use cases: OCap permissions,
+                    // - This is acceptable for DarkWow's use cases: OCap permissions,
                     //   DAO governance contexts, and attestation all provide external
                     //   interpretation frameworks.
                     // =========================================================================

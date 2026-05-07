@@ -1,29 +1,29 @@
 # Frequently Asked Questions
 
-## What is DarkFi?
-DarkFi is an ecosystem of anonymous applications. It consists of a layer 1 
+## What is DarkWow?
+DarkWow is an ecosystem of anonymous applications. It consists of a layer 1 
 blockchain, a communications service, and a task management service. The
 communications service `darkirc` is an anonymous IRC server. `tau` is a task 
 management app that gives users the ability to collaborate with others including 
-assigning and syncing tasks across different workspaces. DarkFi is built 
+assigning and syncing tasks across different workspaces. DarkWow is built 
 with strong privacy, censorship-resistance, and free (as in freedom) and open 
 source software philosophy as its guiding design principles.
 
-## How is the DarkFi blockchain different than other privacy claiming projects?
+## How is the DarkWow blockchain different than other privacy claiming projects?
 <u><b>Note</b></u>: Each network's design choices and architecture widely varies. 
-This is only to point out general design differences between DarkFi and others.
+This is only to point out general design differences between DarkWow and others.
 
-DarkFi is a proof-of-work layer 1 blockchain and ecosystem. DarkFi ZK circuits 
+DarkWow is a proof-of-work layer 1 blockchain and ecosystem. DarkWow ZK circuits 
 are programmed in ZKAS (ZK Assembly) and then executed in the zkVM to generate 
-proofs on-chain. DarkFi uses Halo 2 for its proving system, which requires no 
-trusted setup. Since DarkFi is an L1, all transactions are executed directly by 
+proofs on-chain. DarkWow uses Halo 2 for its proving system, which requires no 
+trusted setup. Since DarkWow is an L1, all transactions are executed directly by 
 the network. 
 
 Bitcoin is a transparent blockchain where people execute coin transfers between 
 participants. Similarly, Monero is also a blockchain where people transfer coins
 between participants, but they do can do it in a private manner. Ethereum is a
 transparent blockchain, where people can execute custom smart contracts, as well
-as transfer coins. DarkFi aims to achieve a similar concept, but instead of 
+as transfer coins. DarkWow aims to achieve a similar concept, but instead of 
 transparency, everything is built in a privacy first manner. Let's look at a few 
 other similar projects within the ecosystem.
 
@@ -44,28 +44,28 @@ transactions. Namada used a trusted setup to generate the random parameters for
 the MASP circuit (which is an extension of the sapling circuit). Transactions 
 propagate directly to the network and verification is done by "accounts" on-chain.
 
-## What type of consensus does DarkFi use?
-DarkFi is a proof-of-work layer 1 blockchain, using 
+## What type of consensus does DarkWow use?
+DarkWow is a proof-of-work layer 1 blockchain, using 
 [RandomX](https://github.com/tevador/RandomX). RandomX is optimized for 
 general-purpose CPUs, and is also used by Monero. You can find more information
-about the DarkFi consensus process [here](../arch/consensus/consensus.md).
+about the DarkWow consensus process [here](../arch/consensus/consensus.md).
 
-## How can I chat with DarkFi devs?
+## How can I chat with DarkWow devs?
 Join [DarkIRC](darkirc/darkirc.md), our peer-to-peer anonymous implementation of 
 an IRC server. There are weekly `#dev` meetings on Mondays.
 
-## How can I contribute to the project or build something on top of DarkFi?
+## How can I contribute to the project or build something on top of DarkWow?
 You can visit [here](../dev/contrib/contrib.md)
 and ask any questions related to development in the `#dev` `darkirc` channel. You 
 can also familiarize yourself with our docs by 
 [starting here](../start-here.md).
 
-## Where should I go if I'm having network connectivity issues with DarkFi?
-If you are having trouble connecting DarkFi applications, please refer to 
+## Where should I go if I'm having network connectivity issues with DarkWow?
+If you are having trouble connecting DarkWow applications, please refer to 
 [network troubleshooting](network-troubleshooting.md).
 
 ## How can I run the testnet?
 Follow the [testnet guide](../testnet/node.md).
 
-## How can I run my DarkFi nodes over Tor?
+## How can I run my DarkWow nodes over Tor?
 You can setup a Tor enabled node [here](nodes/tor-guide.html).

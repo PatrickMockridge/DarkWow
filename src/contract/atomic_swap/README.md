@@ -1,11 +1,11 @@
-# DarkFi Atomic Swap Contract
+# DarkWow Atomic Swap Contract
 
 Cross-chain atomic swaps via Hashed Timelock Contract (HTLC) pattern.
 
 ## How It Works
 
 ```
-Ethereum                          DarkFi
+Ethereum                          DarkWow
     │                                 │
     │  1. Alice locks ETH in HTLC     │
     │     hash = SHA256(secret)       │
@@ -61,7 +61,7 @@ Created ──[Claim]──> Claimed ──[External claim]──> Completed
 Atomic swap enables cross-chain subscription payments:
 
 ```
-Ethereum                          DarkFi
+Ethereum                          DarkWow
     │                                 │
     │  1. Lock ETH in HTLC            │
     │     hash = SHA256(subscription_  │
@@ -110,7 +110,7 @@ Proves:
 
 | Chain | Hash Used | Verification |
 |-------|-----------|-------------|
-| DarkFi | `poseidon_hash(secret)` | ZK circuit verifies in-circuit |
+| DarkWow | `poseidon_hash(secret)` | ZK circuit verifies in-circuit |
 | Ethereum | `SHA256(secret)` | EVM verifies natively |
 
 Each chain verifies the hash function it understands. No oracle needed.
@@ -121,7 +121,7 @@ Each chain verifies the hash function it understands. No oracle needed.
 
 2. **No Bitcoin**: Bitcoin uses RIPEMD160(SHA256) which requires different circuit.
 
-3. **Timelock delta**: External chain timelock must be later than DarkFi's to ensure fairness.
+3. **Timelock delta**: External chain timelock must be later than DarkWow's to ensure fairness.
 
 4. **Asymmetric timelock**: The claim has no timelock (Bob claims immediately when secret is known). The refund has a timelock (Alice waits to refund). This is intentional - asymmetric timelocks prevent griefing and preserve atomicity. See [security-analysis.md Issue #6](../../../doc/src/arch/security-analysis.md).
 

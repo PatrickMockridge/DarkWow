@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -104,7 +109,7 @@ pub struct Swap {
     pub external_chain: u8,
     /// External chain address (receiver on external chain)
     pub external_receiver: pallas::Base,
-    /// DarkFi receiver public key
+    /// DarkWow receiver public key
     pub darkfi_receiver: PublicKey,
     /// Swap amount
     pub amount: u64,
@@ -178,7 +183,7 @@ pub struct CreateSwapParamsV1 {
     pub external_chain: u8,
     /// External chain receiver address
     pub external_receiver: pallas::Base,
-    /// DarkFi receiver public key
+    /// DarkWow receiver public key
     pub darkfi_receiver: PublicKey,
     /// Swap amount
     pub amount: u64,
@@ -205,7 +210,7 @@ pub struct CreateSwapUpdateV1 {
     pub external_chain: u8,
     /// External chain receiver address
     pub external_receiver: pallas::Base,
-    /// DarkFi receiver public key
+    /// DarkWow receiver public key
     pub darkfi_receiver: PublicKey,
     /// Swap amount
     pub amount: u64,

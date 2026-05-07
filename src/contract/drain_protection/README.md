@@ -1,4 +1,4 @@
-# DarkFi DrainProtection Contract
+# DarkWow DrainProtection Contract
 
 *⚠️ EXPERIMENTAL - This contract has NOT been audited. The protections described here are provisionally specified and require full implementation and security review.*
 

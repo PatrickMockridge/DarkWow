@@ -1,6 +1,6 @@
 # Consensus
 
-DarkFi uses **Uncle Merkle consensus** with RandomX Proof-of-Work — a deliberately simple, deterministic design chosen over upstream's complex fork/overlay architecture.
+DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work — a deliberately simple, deterministic design chosen over upstream's complex fork/overlay architecture.
 
 ## Why Uncle Merkle Replaces the Overlay/Diff Architecture
 
@@ -112,7 +112,7 @@ harness.verify_sync()?;
 | Name                   | Description                                                                            |
 |------------------------|----------------------------------------------------------------------------------------|
 | Consensus              | Algorithm for reaching blockchain consensus between participating nodes                |
-| Node/Validator         | DarkFi daemon participating in the network                                             |
+| Node/Validator         | DarkWow daemon participating in the network                                             |
 | Miner                  | Block producer                                                                         |
 | Uncle Block            | Block that was mined but not canonical, but referenced by a canonical block            |
 | Pin                    | Use-it-or-lose-it reward offer from canonical to uncle chain                            |

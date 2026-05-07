@@ -4,7 +4,7 @@
 
 **Note**: Tau exists in two variants:
 - **taud** (`bin/tau/taud/`) - Off-chain task management using NaCl/X25519
-- **tau_pallas** (`bin/tau/tau_pallas/`) - Pallas-native variant with on-chain DarkFi integration
+- **tau_pallas** (`bin/tau/tau_pallas/`) - Pallas-native variant with on-chain DarkWow integration
 
 ## Overview
 
@@ -308,7 +308,7 @@ fn verify_onchain(
 
 ### Tau_Pallas: Pallas-Native Variant
 
-Created as a separate binary alongside `taud` for direct DarkFi integration:
+Created as a separate binary alongside `taud` for direct DarkWow integration:
 
 | Component | taud | tau_pallas |
 |-----------|------|------------|
@@ -388,7 +388,7 @@ When a worker claims a task with `verification_mode: OnChain`:
 | Use Case | Binary | Why |
 |----------|--------|-----|
 | Pure task management, no blockchain | taud | Lightweight, no dependencies |
-| On-chain capability verification | tau_pallas | Full Pallas/DarkFi integration |
+| On-chain capability verification | tau_pallas | Full Pallas/DarkWow integration |
 | Testing off-chain claims | taud | Fast local verification |
 | Production on-chain verification | tau_pallas | ZK proofs verified on-chain |
 | Low-value tasks, trusted workers | taud (OffChain mode) | Fast, cheap |

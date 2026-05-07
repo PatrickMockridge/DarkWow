@@ -1,8 +1,8 @@
 # Native token
 
-Now that you have your wallet set up, you will need some native `DRK`
-in order to be able to perform transactions, since `DRK` is used to pay
-the transaction fees. You can obtain `DRK` either by successfully
+Now that you have your wallet set up, you will need some native `DRKW`
+in order to be able to perform transactions, since `DRKW` is used to pay
+the transaction fees. You can obtain `DRKW` either by successfully
 mining a block that gets confirmed or by asking for some from the
 community on `darkirc`.
 
@@ -24,12 +24,12 @@ drk> wallet balance
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+---------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRK     | 20
+ 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 20
 ```
 
 # Creating tokens
 
-On the DarkFi network, we can mint custom tokens with a given supply.
+On the DarkWow network, we can mint custom tokens with a given supply.
 To do this, we first need to generate a mint authority keypair, and
 derive a token ID from it.
 
@@ -88,8 +88,8 @@ To make our life easier, we can create token ID aliases, which we can
 use instead of the token ID when performing transactions. Multiple
 aliases per token ID are supported.
 
-The native token alias `DRK` should already exist, and we can use that
-to refer to `DRK` when executing transactions using it.
+The native token alias `DRKW` should already exist, and we can use that
+to refer to `DRKW` when executing transactions using it.
 
 We can also list all our aliases using:
 
@@ -98,7 +98,7 @@ drk> alias show
 
  Alias | Token ID
 -------+----------------------------------------------
- DRK   | 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb
+ DRKW   | 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb
 ```
 
 > Note: these aliases are local to your machine. When exchanging with
@@ -125,7 +125,7 @@ drk> alias show
 -------+---------------------------------------------
  ANON  | {TOKEN1}
  DAWN  | {TOKEN2}
- DRK   | 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLss
+ DRKW   | 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLss
 ```
 
 ## Mint transaction
@@ -182,7 +182,7 @@ drk> wallet balance
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+-------------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRK     | 19.98451279
+ 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 19.98451279
  {TOKEN1}                                     | ANON    | 42.69
  {TOKEN2}                                     | DAWN    | 20
 ```

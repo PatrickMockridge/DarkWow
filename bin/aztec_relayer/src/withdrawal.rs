@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,7 +24,7 @@
 //! Aztec Withdrawal Handling
 //!
 //! Executes ETH/DAI withdrawals on the Aztec rollup when users burn
-//! wETH/wDAI on DarkFi. Implements the timeout and slashing mechanism.
+//! wETH/wDAI on DarkWow. Implements the timeout and slashing mechanism.
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -43,13 +48,13 @@ pub struct PendingWithdrawal {
     pub submitted_at: u64,
 }
 
-/// Monitor DarkFi for pending Aztec withdrawals
+/// Monitor DarkWow for pending Aztec withdrawals
 ///
-/// Polls the DarkFi bridge contract for pending withdrawals
+/// Polls the DarkWow bridge contract for pending withdrawals
 /// and executes them on the Aztec rollup.
 pub async fn monitor_withdrawals() -> Result<()> {
     // TODO: Implement actual monitoring
-    // 1. Poll DarkFi RPC for bridge.pending_withdrawals
+    // 1. Poll DarkWow RPC for bridge.pending_withdrawals
     // 2. Filter for Aztec (ETH/DAI) withdrawals
     // 3. Pick up withdrawals and execute on Aztec
     Ok(())
@@ -57,7 +62,7 @@ pub async fn monitor_withdrawals() -> Result<()> {
 
 /// Execute an ETH/DAI withdrawal on the Aztec rollup
 ///
-/// Burns wETH/wDAI on DarkFi and sends tokens to the Aztec recipient.
+/// Burns wETH/wDAI on DarkWow and sends tokens to the Aztec recipient.
 /// Uses the Aztec bridge contract on Ethereum to process the withdrawal.
 pub async fn execute_withdrawal(withdrawal: &PendingWithdrawal) -> Result<()> {
     // TODO: Implement actual withdrawal execution
@@ -92,7 +97,7 @@ pub async fn execute_withdrawal(withdrawal: &PendingWithdrawal) -> Result<()> {
 /// The relayer who failed can be slashed.
 pub async fn check_timeouts() -> Result<()> {
     // TODO: Implement timeout checking
-    // 1. Query DarkFi for pending withdrawals past timeout
+    // 1. Query DarkWow for pending withdrawals past timeout
     // 2. Slash the relayer who failed to execute
     // 3. Mark withdrawal as cancelled so user can reclaim
     Ok(())
@@ -104,7 +109,7 @@ pub async fn check_timeouts() -> Result<()> {
 /// they can be slashed as punishment.
 pub async fn slash_relayer(relayer: [u8; 32], withdrawal_nullifier: [u8; 32]) -> Result<()> {
     // TODO: Implement actual slashing
-    // Submit slash transaction to DarkFi bridge contract
+    // Submit slash transaction to DarkWow bridge contract
     // BRIDGE_CONTRACT_SLASH_AMOUNT is slashed from relayer
     Ok(())
 }

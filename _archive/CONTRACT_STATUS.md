@@ -1,10 +1,10 @@
-# DarkFi Contract Status
+# DarkWow Contract Status
 
 **Last Updated**: 2026-04-15
 
 ## Contract Architecture
 
-DarkFi has two types of contracts:
+DarkWow has two types of contracts:
 
 ### Native Contracts (Mandatory - Deployed at Genesis)
 

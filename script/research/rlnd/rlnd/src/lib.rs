@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -33,7 +38,7 @@ use darkfi::{
 
 pub mod error;
 
-/// DarkFi RLN state management database
+/// DarkWow RLN state management database
 pub mod database;
 use database::RlndDatabase;
 
@@ -41,10 +46,10 @@ use database::RlndDatabase;
 pub mod rpc;
 use rpc::{DarkircRpcClient, PrivateRpcHandler, PublicRpcHandler};
 
-/// Atomic pointer to the DarkFi RLN state management node
+/// Atomic pointer to the DarkWow RLN state management node
 pub type RlnNodePtr = Arc<RlnNode>;
 
-/// Structure representing a DarkFi RLN state management node
+/// Structure representing a DarkWow RLN state management node
 pub struct RlnNode {
     /// Main pointer to the sled db connection
     database: RlndDatabase,
@@ -67,10 +72,10 @@ impl RlnNode {
     }
 }
 
-/// Atomic pointer to the DarkFi RLN state management daemon
+/// Atomic pointer to the DarkWow RLN state management daemon
 pub type RlndPtr = Arc<Rlnd>;
 
-/// Structure representing a DarkFi RLN state management daemon
+/// Structure representing a DarkWow RLN state management daemon
 pub struct Rlnd {
     /// Darkfi RLN state management node instance
     node: RlnNodePtr,
@@ -81,7 +86,7 @@ pub struct Rlnd {
 }
 
 impl Rlnd {
-    /// Initialize a DarkFi RLN state management daemon.
+    /// Initialize a DarkWow RLN state management daemon.
     ///
     /// Generates a new `RlnNode` for provided configuration,
     /// along with all the corresponding background tasks.
@@ -110,7 +115,7 @@ impl Rlnd {
         Ok(Arc::new(Self { node, private_rpc_task, public_rpc_task }))
     }
 
-    /// Start the DarkFi RLN state management daemon in the given executor, using the provided
+    /// Start the DarkWow RLN state management daemon in the given executor, using the provided
     /// JSON-RPC configurations.
     pub async fn start(
         &self,
@@ -160,7 +165,7 @@ impl Rlnd {
         Ok(())
     }
 
-    /// Stop the DarkFi RLN state management daemon.
+    /// Stop the DarkWow RLN state management daemon.
     pub async fn stop(&self) -> Result<()> {
         info!(target: "rlnd::Rlnd::stop", "Terminating Darkfi RLN state management daemon...");
 

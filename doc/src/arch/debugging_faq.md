@@ -1,6 +1,6 @@
 # Debugging FAQ and Common Issues
 
-This document covers common issues and debugging strategies for DarkFi development, with a focus on DarkFi's unique implementation of Rust async patterns.
+This document covers common issues and debugging strategies for DarkWow development, with a focus on DarkWow's unique implementation of Rust async patterns.
 
 ## Table of Contents
 
@@ -13,7 +13,7 @@ This document covers common issues and debugging strategies for DarkFi developme
 
 ## Async Serialization Issues
 
-DarkFi uses a custom async serialization system that can cause confusing compilation errors when not properly configured.
+DarkWow uses a custom async serialization system that can cause confusing compilation errors when not properly configured.
 
 ### The `async_trait` Import Error
 
@@ -427,7 +427,7 @@ When a ZK gadget fails, check:
 
 ### Generalized Contract Invocation
 
-DarkFi provides a generalized `contract.invoke` RPC endpoint for invoking any smart contract without requiring new API methods per function. See [Generalized Contract Invocation API](contract_invoke_api.md) for details.
+DarkWow provides a generalized `contract.invoke` RPC endpoint for invoking any smart contract without requiring new API methods per function. See [Generalized Contract Invocation API](contract_invoke_api.md) for details.
 
 **RPC Endpoint:** `contract.invoke`
 

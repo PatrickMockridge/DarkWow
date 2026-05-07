@@ -1,7 +1,11 @@
 zkVM
 ====
 
-The DarkFi zkVM is a single zkSNARK circuit based on
+> **Note:** The zkVM design (Halo2-based, executes compiled zkas bincode) is
+> inherited from upstream DarkFi. This document describes the canonical zkVM
+> architecture shared between DarkFi and DarkWow.
+
+The DarkWow zkVM is a single zkSNARK circuit based on
 [Halo2](https://github.com/zcash/halo2) which requires no trusted
 setup and is able to execute and prove compiled _zkas_ bincode.
 
@@ -18,7 +22,7 @@ access to values (variables) that are constructed within
 the ZK circuit.  Upon initialization, the VM instantiates
 two heaps, of which one holds literals (currently `u64` is
 supported), and the other holds arbitrary types defined in
-[`HeapVar`](https://dark.fi/book/development/darkfi/zk/vm_heap/enum.HeapVar.html)
+[`HeapVar`](https://darkwow.org/book/development/darkfi/zk/vm_heap/enum.HeapVar.html)
 
 Once the heaps are instantiated, the circuit initializes all the
 available halo2 gadgets so they're ready for use, and also to create

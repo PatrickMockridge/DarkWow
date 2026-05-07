@@ -1,11 +1,11 @@
 # Writing a daemon
 
-DarkFi consists of many seperate daemons communicating with each other. To
+DarkWow consists of many seperate daemons communicating with each other. To
 run the p2p network, we'll need to implement our own daemon.  So we'll
 start building `dchat` by creating a daemon that we call `dchatd`.
 
-To do this, we'll make use of a DarkFi macro called
-[async_daemonize](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/util/cli.rs).
+To do this, we'll make use of a DarkWow macro called
+[async_daemonize](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/util/cli.rs).
 
 `async_daemonize`is the standard way of daemonizing darkfi binaries. It
 implements TOML config file configuration, argument parsing and a
@@ -55,11 +55,11 @@ to properly terminate the daemon on receipt of a stop signal.
 > `async_channel::bounded(1)` for shutdown signal communication, and calls
 > `smol::block_on()` to bridge synchronous and asynchronous code.
 >
-> See [Async Rust in Practice: The DarkFi Experience (Part 6)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-a6a) for a detailed macro expansion walkthrough.
+> See [Async Rust in Practice: The DarkWow Experience (Part 6)](https://technologytruth.substack.com/p/async-rust-in-practice-the-darkfi-a6a) for a detailed macro expansion walkthrough.
 
 `async_daemonize` allow us to spawn the config data we specify at
 `CONFIG_FILE_CONTENTS` into a directory either specified using the
-command-line flag `--config`, or in the default darkfi config directory.
+command-line flag `--config`, or in the default DarkWow config directory.
 
 `async_daemonize` also implements logging that will output
 different levels of debug info to the terminal, or to both the terminal

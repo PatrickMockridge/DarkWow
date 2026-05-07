@@ -1,12 +1,14 @@
 # Universal Relayer
 
-*Running a relayer service for DarkFi's cross-chain atomic swaps*
+> **Note:** This document describes the full relayer architecture. The multi-chain relayer service, on-chain coordination, and staking pool contracts are aspirational — the implementation is in progress.
+
+*Running a relayer service for DarkWow's cross-chain atomic swaps*
 
 ## Overview
 
-The **Universal Relayer** is a service that executes withdrawals from the DarkFi bridge to external blockchains. It monitors the DarkFi bridge contract for pending withdrawals and executes the corresponding transactions on Ethereum, Monero, Zcash, Aztec, and Litecoin.
+The **Universal Relayer** is a service that executes withdrawals from the DarkWow bridge to external blockchains. It monitors the DarkWow bridge contract for pending withdrawals and executes the corresponding transactions on Ethereum, Monero, Zcash, Aztec, and Litecoin.
 
-Unlike traditional bridges that require threshold multi-signature schemes, DarkFi uses an **Object Capability Security** model where:
+Unlike traditional bridges that require threshold multi-signature schemes, DarkWow uses an **Object Capability Security** model where:
 
 - Users prove knowledge of a secret to authorize withdrawals
 - Relayers execute transactions on external chains using the revealed secret
@@ -34,19 +36,19 @@ Unlike traditional bridges that require threshold multi-signature schemes, DarkF
 └──────────────────────────────────────────────┼───────────────────┘
                                                │
                                     ┌──────────┴──────────┐
-                                    │   DarkFi Bridge     │
+                                    │   DarkWow Bridge     │
                                     │   (Deposit/Withdraw) │
                                     └─────────────────────┘
 ```
 
 ## Why Run a Relayer?
 
-Relayers provide an essential service to the DarkFi ecosystem:
+Relayers provide an essential service to the DarkWow ecosystem:
 
 | Benefit | Description |
 |---------|-------------|
-| **Cross-Chain Liquidity** | Enables movement of assets between DarkFi and external chains |
-| **Privacy Preservation** | Users can move assets in and out of DarkFi's privacy layer |
+| **Cross-Chain Liquidity** | Enables movement of assets between DarkWow and external chains |
+| **Privacy Preservation** | Users can move assets in and out of DarkWow's privacy layer |
 | **Fee Income** | Relayers earn fees (configurable percentage) on each withdrawal |
 | **Network Security** | Economic incentives ensure withdrawals are executed promptly |
 | **Atomic Swap Enablement** | Powers the trustless exchange of assets across chains |
@@ -84,13 +86,13 @@ See [Relayer Economics](relayer_economics.md) for the full economic model.
 ## Withdrawal Flow
 
 ```
-1. User submits withdrawal on DarkFi:
+1. User submits withdrawal on DarkWow:
    ├── Secret is revealed to authorize withdrawal
    ├── Pending withdrawal created with timeout (100 blocks)
    └── User's funds locked in bridge contract
 
 2. Relayer observes pending withdrawal:
-   ├── Polls DarkFi for new withdrawals
+   ├── Polls DarkWow for new withdrawals
    ├── Selects appropriate executor by chain type
    └── Verifies withdrawal is not timed out
 
@@ -107,7 +109,7 @@ See [Relayer Economics](relayer_economics.md) for the full economic model.
 5. Timeout handling (if relayer fails):
    ├── User waits for timeout (100 blocks)
    ├── User calls CancelWithdrawV1
-   └── Funds returned to user's DarkFi wallet
+   └── Funds returned to user's DarkWow wallet
 ```
 
 ## Hardware Requirements
@@ -207,7 +209,7 @@ Running a relayer requires maintaining full nodes for the chains you're servicin
 
 ```bash
 # Clone the repository
-git clone https://codeberg.org/darkrenaissance/darkfi.git
+git clone https://codeberg.org/PatrickM123/darkfi-jailbroken.git
 cd darkfi
 
 # Build the universal relayer
@@ -280,11 +282,11 @@ fee_percentage = 1
 
 ### Configuration Fields Explained
 
-#### DarkFi Connection
+#### DarkWow Connection
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `darkfid_url` | `http://127.0.0.1:8543` | DarkFi node JSON-RPC endpoint |
+| `darkfid_url` | `http://127.0.0.1:8543` | DarkWow node JSON-RPC endpoint |
 | `poll_interval_secs` | 10 | How often to check for new withdrawals |
 | `max_concurrent_withdrawals` | 10 | Max simultaneous withdrawal executions |
 
@@ -388,7 +390,7 @@ ENTRYPOINT ["universal_relayer"]
 ```
 1. Load and validate configuration
 2. Initialize executor registry for enabled chains
-3. Connect to DarkFi via JSON-RPC
+3. Connect to DarkWow via JSON-RPC
 4. Begin polling for pending withdrawals
 5. Main loop: poll → process → sleep
 ```
@@ -493,12 +495,12 @@ curl -X POST http://127.0.0.1:8543 -d '{
 6. Use hardware wallets for large reserves
 ```
 
-## Integration with DarkFi Bridge
+## Integration with DarkWow Bridge
 
-The relayer is part of DarkFi's bridge architecture:
+The relayer is part of DarkWow's bridge architecture:
 
 ```
-External Chain          DarkFi                Relayer
+External Chain          DarkWow                Relayer
      │                    │                     │
      │  User deposits     │                     │
      │───────────────────>│                     │
@@ -532,7 +534,7 @@ See [Bridge Documentation](../contract/bridge.md) for detailed architecture.
 
 ### Common Issues
 
-#### Connection Refused to DarkFi
+#### Connection Refused to DarkWow
 
 ```bash
 Error: Failed to connect to darkfid: Connection refused
@@ -585,7 +587,7 @@ Error: Ethereum: insufficient funds for gas
 ## References
 
 - [Bridge Architecture](../contract/bridge.md) - Detailed bridge documentation
-- [Atomic Swaps](../testnet/atomic-swap.md) - How atomic swaps work in DarkFi
+- [Atomic Swaps](../testnet/atomic-swap.md) - How atomic swaps work in DarkWow
 - [Object Capability Security](https://en.wikipedia.org/wiki/Object-capability_model) - Security model explanation
 - [Monero Documentation](https://www.getmonero.org/get-started/accepting/) - Monero setup
 - [Zcash Documentation](https://zcash.readthedocs.io/) - Zcash setup

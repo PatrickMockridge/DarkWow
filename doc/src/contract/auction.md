@@ -173,7 +173,7 @@ let tx = Transaction::new()
 
 ## Comparison
 
-| Feature | Traditional Auction | On-Chain Auction | DarkFi Auction |
+| Feature | Traditional Auction | On-Chain Auction | DarkWow Auction |
 |---------|--------------------|--------------------|----------------|----------------|
 | Privacy | None | Pseudonymous | Full privacy |
 | Bid hiding | Sealed envelope | Commitment only | Hidden in escrow |

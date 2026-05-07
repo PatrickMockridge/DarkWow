@@ -1,4 +1,4 @@
-# DarkFi Identity Contract
+# DarkWow Identity Contract
 
 **O-Cap (Object Capability) Authorization**: Prove you have access without revealing who you are.
 
@@ -220,7 +220,7 @@ Requester learns only: ✓ These bidders are qualified
 
 ## ACL vs O-Cap Comparison
 
-| Aspect | ACL (Traditional) | O-Cap (DarkFi) |
+| Aspect | ACL (Traditional) | O-Cap (DarkWow) |
 |--------|------------------|----------------|
 | **Core Question** | "Who has access?" | "Can you prove access?" |
 | **Identity** | Always revealed | Never revealed |
@@ -291,7 +291,7 @@ Requester learns only: ✓ These bidders are qualified
 
 ## O-Cap Composability
 
-O-Cap authorization is a **cross-contract primitive** that integrates with other DarkFi contracts:
+O-Cap authorization is a **cross-contract primitive** that integrates with other DarkWow contracts:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -420,7 +420,7 @@ O-Cap is NOT a privacy level - it's a paradigm that works at all privacy levels:
 
 ## Comparison
 
-| Feature | Traditional KYC | ZK-Based Verifier | DarkFi O-Cap |
+| Feature | Traditional KYC | ZK-Based Verifier | DarkWow O-Cap |
 |---------|-----------------|-------------------|--------------|
 | Identity revealed | Everything | Depends on verifier | Nothing (MVI) |
 | Data minimization | None | Partial | Full |
@@ -456,10 +456,10 @@ less_than_strict(threshold, attribute_plus_one);
 
 ## References
 
-- [DarkFi Identity Contract](./)
-- [DarkFi DEX Contract](../dex/)
-- [DarkFi Money Contract](../money/)
-- [DarkFi Bridge Contract](../bridge/)
+- [DarkWow Identity Contract](./)
+- [DarkWow DEX Contract](../dex/)
+- [DarkWow Money Contract](../money/)
+- [DarkWow Bridge Contract](../bridge/)
 - [Contract Architecture](../../../doc/src/arch/identity.md)
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)
 - [Anonymous Credentials](https://en.wikipedia.org/wiki/Anonymous_credentials)

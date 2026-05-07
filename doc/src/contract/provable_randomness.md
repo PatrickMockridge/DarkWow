@@ -1,11 +1,11 @@
-# Provable Randomness in DarkFi Contracts
+# Provable Randomness in DarkWow Contracts
 
-This document analyzes randomness generation and usage in DarkFi smart contracts, focusing on the DarkToshi Dice contract as a case study, and explores how DarkFi's proof-of-work mechanism can be leveraged for trustworthy randomness.
+This document analyzes randomness generation and usage in DarkWow smart contracts, focusing on the DarkToshi Dice contract as a case study, and explores how DarkWow's proof-of-work mechanism can be leveraged for trustworthy randomness.
 
 ## Table of Contents
 
 1. [The Randomness Problem](#the-randomness-problem)
-2. [DarkFi's Randomness Sources](#darkfis-randomness-sources)
+2. [DarkWow's Randomness Sources](#darkfis-randomness-sources)
 3. [Current DarkToshi Dice Implementation](#current-darktoshi-dice-implementation)
 4. [Leveraging Proof-of-Work for Randomness](#leveraging-proof-of-work-for-randomness)
 5. [VRF-Based Randomness](#vrf-based-randomness)
@@ -32,9 +32,9 @@ In cryptographic systems, randomness is essential but problematic:
 
 ---
 
-## DarkFi's Randomness Sources
+## DarkWow's Randomness Sources
 
-DarkFi provides multiple sources of randomness, each with different properties:
+DarkWow provides multiple sources of randomness, each with different properties:
 
 ### 1. Transaction Hash (`wasm::util::get_tx_hash()`)
 
@@ -162,9 +162,9 @@ See [Entropy Module](entropy.md) for the composable randomness API.
 
 ## Leveraging Proof-of-Work for Randomness
 
-### DarkFi's PoW Mechanism
+### DarkWow's PoW Mechanism
 
-DarkFi uses **RandomX**, a CPU-intensive and memory-hard PoW algorithm:
+DarkWow uses **RandomX**, a CPU-intensive and memory-hard PoW algorithm:
 
 ```
 block_hash = RandomX(header_blob)
@@ -359,9 +359,9 @@ fn compute_cumulative_roll(
 
 ## VRF-Based Randomness
 
-### ECVRF in DarkFi
+### ECVRF in DarkWow
 
-DarkFi implements ECVRF (Elliptic Curve Verifiable Random Function) based on [draft-irtf-cfrg-vrf-04](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-vrf-04):
+DarkWow implements ECVRF (Elliptic Curve Verifiable Random Function) based on [draft-irtf-cfrg-vrf-04](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-vrf-04):
 
 ```rust
 // From src/sdk/src/crypto/ecvrf.rs
@@ -491,7 +491,7 @@ If miner controls 33% of hash rate:
 
 ### Concept
 
-A prediction market where participants bet on the **next canonical DarkFi block height** at a specific time. Unlike traditional prediction markets that resolve on subjective events, this market leverages DarkFi's PoW blockchain as a **trustless, verifiable randomness source**.
+A prediction market where participants bet on the **next canonical DarkWow block height** at a specific time. Unlike traditional prediction markets that resolve on subjective events, this market leverages DarkWow's PoW blockchain as a **trustless, verifiable randomness source**.
 
 **Core Question**: "What will be the canonical block height at timestamp T?"
 
@@ -505,13 +505,13 @@ A prediction market where participants bet on the **next canonical DarkFi block 
 | **Predictable Variance** | Block time follows an exponential distribution - predictable in aggregate but random individually |
 | **Practical Use Cases** | Scheduled lotteries, time-locked reveals, smart contract randomness |
 
-### DarkFi Consensus Deep Dive
+### DarkWow Consensus Deep Dive
 
-Before designing the prediction market, we must understand how DarkFi determines the **canonical block**:
+Before designing the prediction market, we must understand how DarkWow determines the **canonical block**:
 
 #### Fork Resolution Algorithm
 
-DarkFi does **NOT** use simple longest-chain rule. Instead it uses a **rank-based system** (`src/validator/utils.rs`):
+DarkWow does **NOT** use simple longest-chain rule. Instead it uses a **rank-based system** (`src/validator/utils.rs`):
 
 ```rust
 // Each block has a "rank" computed from two components:
@@ -544,7 +544,7 @@ Winner = argmax(sum(R1+R2+R3), sum(R1+R2+R3'))
 
 #### RandomX PoW
 
-DarkFi uses **RandomX** for PoW - an ASIC-resistant, CPU-friendly algorithm:
+DarkWow uses **RandomX** for PoW - an ASIC-resistant, CPU-friendly algorithm:
 - Block hash = `RandomX_VM(hashing_blob)`
 - Hashing blob = serialized block header (prev_hash, height, timestamp, txs_merkle_root, nonce)
 - The VM execution is opaque - even knowing all inputs, predicting output is infeasible
@@ -608,7 +608,7 @@ struct BlockHeightPosition {
 
 #### Option 2: PoW-Backed Resolution (Recommended)
 
-Uses DarkFi's PoW with adjustable confirmation depth. The key insight is that **block hashes are unpredictable** due to RandomX, making them suitable for randomness generation:
+Uses DarkWow's PoW with adjustable confirmation depth. The key insight is that **block hashes are unpredictable** due to RandomX, making them suitable for randomness generation:
 
 ```rust
 /// Resolve using cumulative PoW hash
@@ -681,7 +681,7 @@ fn derive_height_from_hash(
 3. ZK proof verifies PoW computation in circuit
 ```
 
-**Note**: Given DarkFi's fork resolution, during a **rank tie** the oracle's attestation determines which fork wins. This is the ONLY scenario where oracle trust is critical.
+**Note**: Given DarkWow's fork resolution, during a **rank tie** the oracle's attestation determines which fork wins. This is the ONLY scenario where oracle trust is critical.
 
 ### Integration with Existing Prediction Market
 
@@ -771,7 +771,7 @@ fn calculate_height_payout(
 
 #### What Can and Cannot Be Predicted
 
-Given DarkFi's consensus mechanism, here's what market participants should understand:
+Given DarkWow's consensus mechanism, here's what market participants should understand:
 
 | Aspect | Predictable? | Why |
 |--------|-------------|-----|
@@ -795,7 +795,7 @@ Given DarkFi's consensus mechanism, here's what market participants should under
 | Fork race during resolution | Rank-based | Wait for confirmation depth |
 | **Rank tie scenario** | **Unpredictable** | Oracle tiebreaker or K-more blocks |
 
-#### DarkFi Fork Resolution Details
+#### DarkWow Fork Resolution Details
 
 ```
 Normal fork resolution (ranks unequal):

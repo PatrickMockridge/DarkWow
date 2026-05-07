@@ -1,6 +1,6 @@
 # Oracle Contract
 
-A demonstration of the "push model" for oracles in DarkFi, enabling trustless external data integration with on-chain contracts.
+A demonstration of the "push model" for oracles in DarkWow, enabling trustless external data integration with on-chain contracts.
 
 ## Overview
 

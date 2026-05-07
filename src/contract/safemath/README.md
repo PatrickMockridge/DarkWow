@@ -1,13 +1,13 @@
 # darkfi-safemath-zk
 
-External `zkas` safemath catalog for DarkFi-style bounded integer relations.
+External `zkas` safemath catalog for DarkWow-style bounded integer relations.
 
-This folder is the first concrete move out of the DarkFi fork era:
+This folder is the first concrete move out of the DarkWow fork era:
 
-- reusable arithmetic relations live outside the main DarkFi tree
+- reusable arithmetic relations live outside the main DarkWow tree
 - AMM and intent repos can target one shared safemath package instead of carrying
   local arithmetic semantics
-- the remaining DarkFi-core delta becomes easier to isolate and upstream
+- the remaining DarkWow-core delta becomes easier to isolate and upstream
 
 ## Release Shape
 
@@ -15,8 +15,8 @@ This crate is intended to publish cleanly as a standalone library crate.
 
 - the published crate ships embedded `.zk` template strings and small host-side
   arithmetic helpers only
-- it has no normal runtime dependency on DarkFi or Halo2
-- DarkFi compiler / VM proof checks remain local development-time tests in this
+- it has no normal runtime dependency on DarkWow or Halo2
+- DarkWow compiler / VM proof checks remain local development-time tests in this
   source tree and are not part of the published crate tarball
 
 That boundary keeps `darkfi-safemath-zk` usable as the first released crate in
@@ -27,8 +27,8 @@ the de-forked AMM stack.
 - reusable `.zk` templates under `templates/safemath/`
 - a small Rust catalog crate that exposes those templates as string constants
 - boundary docs that separate:
-  - what can live outside DarkFi
-  - what still requires DarkFi core support
+  - what can live outside DarkWow
+  - what still requires DarkWow core support
 
 ## Current Template Tracks
 
@@ -76,8 +76,8 @@ assert_eq!(split_u128(1_u128 << 64).hi, 1);
 ```
 
 Consumers that want to compile or prove these templates should do so with their
-own DarkFi-compatible `zkas` toolchain. This crate deliberately does not bundle
-DarkFi integration helpers in its runtime API.
+own DarkWow-compatible `zkas` toolchain. This crate deliberately does not bundle
+DarkWow integration helpers in its runtime API.
 
 This is not yet a general bigint or full-spectrum "safemath" system. The stock
 track is intentionally a bounded AMM arithmetic kernel:
@@ -91,7 +91,7 @@ track is intentionally a bounded AMM arithmetic kernel:
 
 ## Downstream Use Today
 
-If you are integrating this crate into downstream stock-official-DarkFi code
+If you are integrating this crate into downstream stock-official-DarkWow code
 today, prefer:
 
 - `darkfi_safemath_zk::safemath::stock::CATALOG`
@@ -111,7 +111,7 @@ Avoid treating these as the default downstream surface today:
 - `darkfi_safemath_zk::safemath::CATALOG`
   Because it mixes stock-public templates with experimental widened templates.
 - `darkfi_safemath_zk::safemath::experimental::*`
-  Unless you are deliberately targeting a non-stock DarkFi with widened
+  Unless you are deliberately targeting a non-stock DarkWow with widened
   `range_check(126|128|252)` support.
 
 ## Semantic Examples
@@ -131,11 +131,11 @@ Avoid treating these as the default downstream surface today:
   Use this for the dual threshold direction `lhs_num / lhs_den >= rhs_num /
   rhs_den` when the same bounded-`u64` assumptions hold.
 
-## DarkFi Core Boundary
+## DarkWow Core Boundary
 
-This package does **not** ship the DarkFi VM or `zkas` compiler.
+This package does **not** ship the DarkWow VM or `zkas` compiler.
 
-The stock template track is designed to work on official DarkFi using only:
+The stock template track is designed to work on official DarkWow using only:
 
 - `range_check(64, ...)`
 - existing field comparison / equality gadgets
@@ -148,14 +148,14 @@ That stock track is deliberately narrow:
 - no claim of arbitrary-width integer support
 - no claim that branchy helpers like `min` are part of the flagship stock API
 
-The experimental widened track still relies on DarkFi-side support for:
+The experimental widened track still relies on DarkWow-side support for:
 
 - `range_check(126, ...)`
 - `range_check(128, ...)`
 - `range_check(252, ...)`
 
 So the package is external, but only the experimental track still expects a
-DarkFi build that understands those wider audited range profiles.
+DarkWow build that understands those wider audited range profiles.
 
 See [docs/darkfi_core_boundary.md](docs/darkfi_core_boundary.md).
 
@@ -186,7 +186,7 @@ cargo publish --dry-run --allow-dirty
 ```
 
 These validate the published crate surface only: embedded template exports, host
-helpers, doctests, packaging, and publishability. They do not require DarkFi.
+helpers, doctests, packaging, and publishability. They do not require DarkWow.
 
 2. Stock proof-harness check
 
@@ -195,7 +195,7 @@ cargo test --manifest-path proof-harness/Cargo.toml
 ```
 
 This validates the stock-compatible AMM kernel against the pinned official
-DarkFi revision on Codeberg. It is a real proof path, not just a build check.
+DarkWow revision on Codeberg. It is a real proof path, not just a build check.
 The stock harness may also exercise helper-only stock templates where a full AMM
 vector needs them, but those helpers are not part of the flagship public stock
 v0 surface.
@@ -207,9 +207,9 @@ cargo test --manifest-path proof-harness/Cargo.toml -- --ignored
 ```
 
 These exercise the older widened template family. They remain opt-in because
-stock official DarkFi still rejects the widened `range_check(126|128|252)`
+stock official DarkWow still rejects the widened `range_check(126|128|252)`
 profiles used by that experimental track.
 
-The DarkFi proof harness lives in the separate `proof-harness/` crate so the
+The DarkWow proof harness lives in the separate `proof-harness/` crate so the
 main crate stays standalone and publishable while still keeping both the stock
 proof vectors and the experimental widened vectors available.

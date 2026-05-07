@@ -4,7 +4,7 @@
 
 ## O-Cap: The Central Paradigm
 
-O-Cap is **not a feature** or an extension - it is the **central paradigm** for authorization in DarkFi.
+O-Cap is **not a feature** or an extension - it is the **central paradigm** for authorization in DarkWow.
 
 **The fundamental question:**
 - ACL: "WHO has access to X?"
@@ -19,7 +19,7 @@ O-Cap shifts authorization from identity-based to capability-based:
 │                    O-Cap Authorization Model                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  ACL (Traditional):           O-Cap (DarkFi):                   │
+│  ACL (Traditional):           O-Cap (DarkWow):                   │
 │  ┌──────────────────┐         ┌──────────────────┐               │
 │  │ Identity-based   │         │ Capability-based  │               │
 │  │ Access Control   │         │ Authorization     │               │
@@ -822,7 +822,7 @@ Level 3 (Future)
 
 ## Comparison
 
-| Feature | Traditional KYC | ZK Email | DarkFi O-Cap |
+| Feature | Traditional KYC | ZK Email | DarkWow O-Cap |
 |---------|-----------------|----------|--------------|
 | Identity revealed | Everything | Email exists | Nothing (MVI) |
 | Data minimization | None | Email only | Full |
@@ -835,8 +835,8 @@ Level 3 (Future)
 
 ## References
 
-- [DarkFi Identity Contract](../../src/contract/identity/)
-- [DarkFi Identity README](../../src/contract/identity/README.md)
+- [DarkWow Identity Contract](../../src/contract/identity/)
+- [DarkWow Identity README](../../src/contract/identity/README.md)
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)
 - [Anonymous Credentials](https://en.wikipedia.org/wiki/Anonymous_credentials)
 - [Differential Privacy](https://en.wikipedia.org/wiki/differential_privacy)

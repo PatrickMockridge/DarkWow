@@ -8,7 +8,7 @@ and all users will have synced tasks.
 ## Install 
 
 ```shell
-% git clone https://codeberg.org/darkrenaissance/darkfi
+% git clone https://codeberg.org/PatrickM123/darkfi-jailbroken
 % cd darkfi
 % make taud
 ```

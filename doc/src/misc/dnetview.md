@@ -11,7 +11,7 @@ dnetview displays:
 ## Install 
 
 ```shell
-% git clone https://codeberg.org/darkrenaissance/darkfi
+% git clone https://codeberg.org/PatrickM123/darkfi-jailbroken
 % cd darkfi
 % make BINS=dnetview
 ```

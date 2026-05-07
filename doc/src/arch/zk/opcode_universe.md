@@ -1,16 +1,16 @@
-# The Complete Mathematical Universe of DarkFi Opcodes
+# The Complete Mathematical Universe of DarkWow Opcodes
 
-> **Abstract**: DarkFi's zkVM provides a Turing-complete zero-knowledge computation framework built on elliptic curve cryptography and finite field arithmetic. This document analyzes the complete opcode space required to express all possible DeFi applications, identifies critical gaps in the current implementation, and provides mathematical reasoning for field arithmetic challenges that determine what smart contracts can and cannot securely express.
+> **Abstract**: DarkWow's zkVM provides a Turing-complete zero-knowledge computation framework built on elliptic curve cryptography and finite field arithmetic. This document analyzes the complete opcode space required to express all possible DeFi applications, identifies critical gaps in the current implementation, and provides mathematical reasoning for field arithmetic challenges that determine what smart contracts can and cannot securely express.
 
 ---
 
 ## 1. The Mathematical Foundation
 
-DarkFi operates in the **Pallas field** $\mathbb{F}_p$ where:
+DarkWow operates in the **Pallas field** $\mathbb{F}_p$ where:
 
 $$p = 2^{254} - 2^{32} - 2^7 - 2^4 - 2 - 1$$
 
-This is a 254-bit prime, approximately $1.19 \times 10^{76}$. Every value in DarkFi circuits is an element of this field.
+This is a 254-bit prime, approximately $1.19 \times 10^{76}$. Every value in DarkWow circuits is an element of this field.
 
 ### 1.1 Field Elements vs Mathematical Integers
 
@@ -29,7 +29,7 @@ This is not merely theoretical. Consider:
 
 ### 1.2 The Object Capability Model
 
-DarkFi supports **object capability (OCap) security** patterns through its permission system. In OCap:
+DarkWow supports **object capability (OCap) security** patterns through its permission system. In OCap:
 
 - **Capability**: An unforgeable token that grants specific access rights
 - **Object**: An entity that can perform actions or hold state
@@ -309,7 +309,7 @@ $$\text{AggregatedRangeProof}(v_1, ..., v_n, r_1, ..., r_n) \ll n \cdot \text{In
 
 ### 4.1 Capability as Computational Object
 
-In DarkFi's OCap model, a **capability** is a first-class cryptographic object:
+In DarkWow's OCap model, a **capability** is a first-class cryptographic object:
 
 ```rust
 struct Capability {
@@ -376,7 +376,7 @@ This creates a **delegation chain** that can be verified by traversing back to t
 3. Updates price oracle
 4. Revokes the liquidation capability
 
-All 4 must succeed or fail together. Currently, DarkFi's transaction model doesn't support multi-contract atomicity — this requires a **transactional execution layer** on top of individual circuits.
+All 4 must succeed or fail together. Currently, DarkWow's transaction model doesn't support multi-contract atomicity — this requires a **transactional execution layer** on top of individual circuits.
 
 ---
 
@@ -518,7 +518,7 @@ return t;
 
 ## 7. Mathematical Universe Summary
 
-**What DarkFi CAN Express** (with current opcodes):
+**What DarkWow CAN Express** (with current opcodes):
 
 - ✅ Public key derivation (ECDSA on Jubjub)
 - ✅ Poseidon-based Merkle trees (fixed depth 32)
@@ -529,7 +529,7 @@ return t;
 - ✅ Single-asset confidential transfers (via ec_mul/ec_add workaround)
 - ✅ DAO governance with voting
 
-**What DarkFi CANNOT Express** (missing opcodes):
+**What DarkWow CANNOT Express** (missing opcodes):
 
 - ❌ Cross-chain signature verification (ETH, BTC, Solana)
 - ❌ Standard hash functions (SHA-256, Keccak)
@@ -537,7 +537,7 @@ return t;
 - ❌ Variable-time exponentiation
 - ❌ Confidential multi-asset transactions
 
-**Theoretical Maximum**: With all Tier 1-3 opcodes implemented, DarkFi could express:
+**Theoretical Maximum**: With all Tier 1-3 opcodes implemented, DarkWow could express:
 
 1. **Uniswap-style AMM** with constant product formula
 2. **Liquity-style lending** with排骨 redemption

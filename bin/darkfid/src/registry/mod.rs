@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -57,10 +62,10 @@ use model::{
     PowRewardV1Zk,
 };
 
-/// Atomic pointer to the DarkFi node miners registry state.
+/// Atomic pointer to the DarkWow node miners registry state.
 pub type DarkfiMinersRegistryStatePtr = Arc<RwLock<DarkfiMinersRegistryState>>;
 
-/// DarkFi node miners registry state.
+/// DarkWow node miners registry state.
 pub struct DarkfiMinersRegistryState {
     /// PowRewardV1 ZK data (None for linear-testnet mode)
     pub powrewardv1_zk: Option<PowRewardV1Zk>,
@@ -372,10 +377,10 @@ impl DarkfiMinersRegistryState {
     }
 }
 
-/// Atomic pointer to the DarkFi node miners registry.
+/// Atomic pointer to the DarkWow node miners registry.
 pub type DarkfiMinersRegistryPtr = Arc<DarkfiMinersRegistry>;
 
-/// DarkFi node miners registry.
+/// DarkWow node miners registry.
 pub struct DarkfiMinersRegistry {
     /// Blockchain network
     pub network: Network,
@@ -392,7 +397,7 @@ pub struct DarkfiMinersRegistry {
 }
 
 impl DarkfiMinersRegistry {
-    /// Initialize a DarkFi node miners registry.
+    /// Initialize a DarkWow node miners registry.
     pub async fn init(
         network: Network,
         validator: &ValidatorPtr,
@@ -430,7 +435,7 @@ impl DarkfiMinersRegistry {
         }))
     }
 
-    /// Initialize a DarkFi node miners registry for linear-testnet mode.
+    /// Initialize a DarkWow node miners registry for linear-testnet mode.
     pub async fn init_linear(
         network: Network,
         linear_blockchain: Arc<crate::blockchain::LinearBlockchain>,
@@ -468,7 +473,7 @@ impl DarkfiMinersRegistry {
         }))
     }
 
-    /// Start the DarkFi node miners registry for provided DarkFi node
+    /// Start the DarkWow node miners registry for provided DarkWow node
     /// instance.
     pub fn start(
         &self,
@@ -540,7 +545,7 @@ impl DarkfiMinersRegistry {
         Ok(())
     }
 
-    /// Stop the DarkFi node miners registry.
+    /// Stop the DarkWow node miners registry.
     pub async fn stop(&self) {
         info!(target: "darkfid::registry::mod::DarkfiMinersRegistry::stop", "Terminating DarkFi node miners registry...");
 

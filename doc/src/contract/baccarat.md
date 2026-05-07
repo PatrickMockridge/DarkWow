@@ -191,7 +191,7 @@ The cumulative approach (using K consecutive blocks) is more resistant to manipu
 **Key advantage over DarkToshi Dice**: Baccarat uses block hash entropy directly (not tx hash), leveraging PoW more directly. The `get_block_hash()` function provides access to canonical block hashes that miners have already committed to via RandomX.
 
 See [Provable Randomness](provable_randomness.md) for full analysis including:
-- Leveraging DarkFi's RandomX PoW for randomness
+- Leveraging DarkWow's RandomX PoW for randomness
 - ECVRF-based verifiable randomness
 - Hybrid approaches (PoW + VRF + Commit-Reveal)
 - **Case study: Baccarat** with detailed card dealing entropy analysis

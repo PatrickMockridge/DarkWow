@@ -1,6 +1,6 @@
 # Wallet Scanning
 
-The DarkFi wallet scanner (`bin/drk/src/rpc.rs`) scans blocks to detect coins belonging to the wallet.
+The DarkWow wallet scanner (`bin/drk/src/rpc.rs`) scans blocks to detect coins belonging to the wallet.
 
 ## Overview
 
@@ -51,7 +51,7 @@ Uses `scan_blocks_linear()` which processes `LinearBlockAdapter`:
 Handles mining rewards (PoWRewardV1, opcode 0x05):
 - Decrypts `NativeNote` using wallet secrets
 - Creates `CoinRecord` for the reward coin
-- Uses DARK token (`pallas::Base::zero()`)
+- Uses DRKW token (`pallas::Base::zero()`)
 
 ### MONEY_V3_CONTRACT_ID
 

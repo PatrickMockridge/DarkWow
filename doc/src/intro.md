@@ -1,12 +1,12 @@
-# DarkFi
+# DarkWow
 
 **WARNING: This branch contains experimental, unaudited smart contracts. Do NOT deploy or use these contracts with real funds. They are for research and educational purposes only.**
 
 **Development occurs on the `linear-master` branch** — the main development branch featuring Uncle Merkle consensus and a linear blockchain architecture. The old upstream overlay-DAG code is preserved on the `master-upstream` branch.
 
-## What is DarkFi?
+## What is DarkWow?
 
-DarkFi is a privacy-first blockchain with a focus on ZK-powered smart contracts. Key differentiators:
+DarkWow is a privacy-first blockchain with a focus on ZK-powered smart contracts. Key differentiators:
 
 - **ZK-Native Contracts**: All contracts use zero-knowledge proofs for privacy
 - **Consensus-First Token**: Native token (`native_token`) handles block rewards and fees as top priority
@@ -15,7 +15,7 @@ DarkFi is a privacy-first blockchain with a focus on ZK-powered smart contracts.
 
 ## Smart Contracts
 
-DarkFi implements privacy-preserving smart contracts across multiple domains:
+DarkWow implements privacy-preserving smart contracts across multiple domains:
 
 | Category | Contracts |
 |----------|-----------|
@@ -39,7 +39,7 @@ The [`native_token`](dev/contracts/native_token.md) contract handles consensus a
 
 > **Design Philosophy: Tokens are Infrastructure**
 >
-> DarkFi's tokens (NativeToken, MoneyV3) follow a minimal design: they move value, nothing more. Business logic lives in smart contracts (DEX, stablecoin, etc.). This is intentional:
+> DarkWow's tokens (NativeToken, MoneyV3) follow a minimal design: they move value, nothing more. Business logic lives in smart contracts (DEX, stablecoin, etc.). This is intentional:
 >
 > - **Simplicity** = fewer bugs in frequently-called code
 > - **Isolation** = bugs in DEX don't cascade to all token transfers
@@ -97,7 +97,7 @@ This leaks identity from poor to rich. If you're poor, your vote matters less. I
 
 #### 3. SAFT Pre-mine Creates Whale Dominance
 
-Upstream distributed DARK tokens at genesis to:
+Upstream distributed DRKW tokens at genesis to:
 - Early investors
 - Team members
 - SAFT participants
@@ -132,7 +132,7 @@ For the full analysis, see [Contract Standards](dev/contracts/standards.md).
 
 ### Privacy Architecture
 
-DarkFi uses **ZK predicates** instead of ACL:
+DarkWow uses **ZK predicates** instead of ACL:
 
 ```
 ZK Predicate (GOOD):
@@ -162,8 +162,8 @@ See [Running a Node](testnet/node.md) for setup instructions.
 
 ```bash
 # Clone this fork
-git clone https://codeberg.org/PatrickM123/darkfi
-cd darkfi
+git clone https://codeberg.org/PatrickM123/darkfi-jailbroken
+cd darkfi-jailbroken
 
 # Build the project
 cargo build --release

@@ -37,7 +37,7 @@ command from IRC client (or `/quote rehash`)
 <u><b>Note</b></u>: If you use the `darkirc`'s public channel, your 
 message will be publically visible on the IRC chat.
 
-See the [example darkirc_config.toml](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/bin/darkirc/darkirc_config.toml) for more details
+See the [example darkirc_config.toml](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/bin/darkirc/darkirc_config.toml) for more details
 
 ## Example
 Lets start by configuring our contacts list in the generated 

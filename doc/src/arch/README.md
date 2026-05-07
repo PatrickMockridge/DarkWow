@@ -1,4 +1,4 @@
-# DarkFi Architecture Documentation
+# DarkWow Architecture Documentation
 
 Navigation index for smart contracts, consensus, and protocol documentation.
 

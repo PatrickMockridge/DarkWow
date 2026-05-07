@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -28,9 +33,9 @@ use anyhow::Result;
 
 use crate::{zcash_rpc::SaplingNote, Config};
 
-/// Submit a Zcash deposit to the DarkFi bridge
+/// Submit a Zcash deposit to the DarkWow bridge
 ///
-/// Constructs the ZcashDepositProof and submits it via the DarkFi RPC.
+/// Constructs the ZcashDepositProof and submits it via the DarkWow RPC.
 pub async fn submit_deposit(note: &SaplingNote, config: &Config) -> Result<()> {
     // TODO: Implement actual proof construction and submission
     //
@@ -62,7 +67,7 @@ pub async fn submit_deposit(note: &SaplingNote, config: &Config) -> Result<()> {
     println!("  anchor: {:?}", hex::encode(&note.anchor));
     println!("  confirmations: {}", note.confirmations);
 
-    // TODO: Actually submit to DarkFi via JSON-RPC
+    // TODO: Actually submit to DarkWow via JSON-RPC
     // POST to config.darkfid_url
     // Method: "bridge.deposit"
     // Params: ZcashDepositProof structure
@@ -107,7 +112,7 @@ pub fn derive_nullifier(
 ///   cm = PedersenHash(commitment_randomness, value * G_v + randomness * G_r)
 /// where G_v and G_r are fixed generator points.
 ///
-/// For DarkFi bridge compatibility, we use a simplified commitment:
+/// For DarkWow bridge compatibility, we use a simplified commitment:
 ///   cm = poseidon_hash(value, randomness, pub_key)
 pub fn derive_commitment(
     value: u64,
@@ -137,7 +142,7 @@ pub fn derive_commitment(
 ///   - PedersenHash instead of Keccak256
 ///   - Fixed tree depth of 32
 ///
-/// For DarkFi bridge compatibility, we verify using poseidon_hash.
+/// For DarkWow bridge compatibility, we verify using poseidon_hash.
 pub fn verify_merkle_path(
     commitment: &[u8; 32],
     position: u32,

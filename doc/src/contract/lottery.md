@@ -160,7 +160,7 @@ This allows:
 
 ## The Lottery Problem Space
 
-Lottery sits **between** BettingStake and Insurance in the DarkFi risk capital spectrum:
+Lottery sits **between** BettingStake and Insurance in the DarkWow risk capital spectrum:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐

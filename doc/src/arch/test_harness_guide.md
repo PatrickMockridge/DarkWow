@@ -1,12 +1,12 @@
-# DarkFi Smart Contract Test Harness Guide
+# DarkWow Smart Contract Test Harness Guide
 
 ## Overview
 
-This document describes the standards and best practices for writing and running test harnesses for DarkFi smart contracts, given the current technical limitations in the codebase.
+This document describes the standards and best practices for writing and running test harnesses for DarkWow smart contracts, given the current technical limitations in the codebase.
 
 ## Types of Tests
 
-DarkFi has two distinct levels of contract testing:
+DarkWow has two distinct levels of contract testing:
 
 ### 1. ZK Circuit Tests (`.zk` compilation)
 
@@ -167,7 +167,7 @@ Integration tests (`integration.rs`) catch type errors and serialization bugs qu
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## DarkFi Test Harness Architecture
+## DarkWow Test Harness Architecture
 
 ### Core Components
 
@@ -230,7 +230,7 @@ pub struct Wallet {
 
 ### Native vs WASM Contracts
 
-DarkFi contracts come in two types:
+DarkWow contracts come in two types:
 
 #### Native Contracts
 

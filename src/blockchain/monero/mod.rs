@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -503,7 +508,7 @@ mod tests {
     use super::*;
     use std::str::FromStr;
 
-    // Blob from Monero testnet, height 2912484, mergemined DarkFi.
+    // Blob from Monero testnet, height 2912484, mergemined DarkWow.
     const XMR_BLOCK: &str = "1010f881efca0644a1185eeccb2629b316ec0d41659111299ad1b736a3b0d8eac8bbc6384dc5c84bb6010002a0e2b10101ffe4e1b1010180e0a596bb1103f1d23951bd28ce2bfad791f2350e2ac348e4620e19af3418653a1839cc5c8f2be14a010b204d874ed5087b649c711dd4479434a85dbf7e9bdfae26f5bc785964d4b45c0204751b43e10321082d5f403be836d45d026fbaa2a8e4b4a9d0d821f29d709321f8d764f32d446fa80000";
     const SEED_HASH: &str = "f1d23951bd28ce2bfad791f2350e2ac348e4620e19af3418653a1839cc5c8f2b";
 

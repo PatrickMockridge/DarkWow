@@ -1,18 +1,18 @@
-The DarkFi book
+The DarkWow book
 ===============
 
 This directory contains the sources for the book that can be read on
-https://dark.fi/book/
+https://darkwow.org/book/
 
 When adding or removing a section of the book, make sure to update the
 [SUMMARY.md](src/SUMMARY.md) file to actually list the contents.
 
 ## Reference Materials
 
-**Uncensorable ZK and DarkFi Reference Material (Arweave)**
+**Uncensorable ZK and DarkWow Reference Material (Arweave)**
 
-DarkFi Reference Material stored permanently on Arweave:
-- [DarkFi Reference Material](https://app.ardrive.io/#/drives/f79597cd-8a4e-426e-840e-25c1453e418d=name=DarkFi+Reference+Material) - Textbooks, papers, and materials on ZK circuits, cryptography, and DarkFi
+DarkWow Reference Material stored permanently on Arweave:
+- [DarkWow Reference Material](https://app.ardrive.io/#/drives/f79597cd-8a4e-426e-840e-25c1453e418d=name=DarkWow+Reference+Material) - Textbooks, papers, and materials on ZK circuits, cryptography, and DarkWow
 
 Use a python virtual environment to install its requirements:
 ```shell

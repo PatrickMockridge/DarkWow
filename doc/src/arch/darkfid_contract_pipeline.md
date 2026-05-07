@@ -1,12 +1,12 @@
-# DarkFi Contract Deployment Pipeline
+# DarkWow Contract Deployment Pipeline
 
 ## Overview
 
 This document explains how darkfid initializes, deploys contracts, and how the test harness integrates with the system. Understanding this pipeline is critical for debugging contract testing issues.
 
-## DarkFi Node Architecture
+## DarkWow Node Architecture
 
-darkfid is the DarkFi blockchain node software. It handles:
+darkfid is the DarkWow blockchain node software. It handles:
 - Consensus (Proof-of-Work)
 - Transaction validation
 - Smart contract execution (ZK proofs + state transitions)
@@ -14,7 +14,7 @@ darkfid is the DarkFi blockchain node software. It handles:
 
 ## Contract Types
 
-DarkFi has two distinct contract types with fundamentally different deployment models:
+DarkWow has two distinct contract types with fundamentally different deployment models:
 
 ### Native Contracts
 

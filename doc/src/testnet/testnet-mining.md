@@ -1,14 +1,14 @@
-# Mining and Transacting on DarkFi Testnet
+# Mining and Transacting on DarkWow Testnet
 
-This guide covers setting up solo Proof-of-Work mining on DarkFi testnet using pre-built binaries. This is different from **merge mining** (which is for mainnet with Monero+p2pool).
+This guide covers setting up solo Proof-of-Work mining on DarkWow testnet using pre-built binaries. This is different from **merge mining** (which is for mainnet with Monero+p2pool).
 
 ## Prerequisites
 
-- Pre-built DarkFi binaries from [DarkFiMain](https://github.com/darkrenaissance/darkfi)
+- Pre-built DarkWow binaries from [DarkWowMain](https://codeberg.org/PatrickM123/darkfi-jailbroken)
 - Wallet address (generate one first)
 - ~2GB RAM per mining thread
 
-> **Conda Users**: If using conda environments, deactivate conda before running DarkFi binaries with `conda deactivate`. Conda's Python may conflict with DarkFi's native dependencies. Alternatively, use a separate venv as described in [Using dnet](../learn/dchat/network-tools/using-dnet.md).
+> **Conda Users**: If using conda environments, deactivate conda before running DarkWow binaries with `conda deactivate`. Conda's Python may conflict with DarkWow's native dependencies. Alternatively, use a separate venv as described in [Using dnet](../learn/dchat/network-tools/using-dnet.md).
 
 ## Step 1: Generate a Wallet
 
@@ -30,7 +30,7 @@ Save the address - you'll need it for mining rewards.
 Create `/home/patrick/darkfi-testnet/devnet_darkfid.config.toml`:
 
 ```toml
-# DarkFi testnet configuration for mining
+# DarkWow testnet configuration for mining
 network = "testnet"
 
 [network_config."testnet"]
@@ -53,7 +53,7 @@ hostlist = "~/.local/share/darkfi/darkfid/testnet/p2p_hostlist.tsv"
 inbound = ["tcp+tls://0.0.0.0:8342"]
 external_addrs = []
 peers = []
-seeds = ["tcp+tls://lilith0.dark.fi:8342", "tcp+tls://lilith1.dark.fi:8342"]
+seeds = ["tcp+tls://lilith0.darkwow.org:8342", "tcp+tls://lilith1.darkwow.org:8342"]
 allowed_transports = ["tcp+tls"]
 localnet = false
 outbound_connections = 8
@@ -66,7 +66,7 @@ Replace `recipient` with your wallet address from Step 1.
 Create `/home/patrick/darkfi-testnet/devnet_drk.config.toml`:
 
 ```toml
-# DarkFi CLI wallet configuration for testnet
+# DarkWow CLI wallet configuration for testnet
 network = "testnet"
 fun = true
 
@@ -86,7 +86,7 @@ darkfid -c /home/patrick/darkfi-testnet/devnet_darkfid.config.toml
 
 Expected output:
 ```
-[INFO] Initializing DarkFi node...
+[INFO] Initializing DarkWow node...
 [INFO] Node is configured to run with fixed PoW difficulty: 1
 [INFO] Initializing a Darkfi daemon...
 [INFO] Initializing Validator
@@ -107,7 +107,7 @@ minerd
 
 Expected output:
 ```
-14:20:06 [INFO] Starting DarkFi Mining Daemon...
+14:20:06 [INFO] Starting DarkWow Mining Daemon...
 14:20:06 [INFO] Initializing a new mining daemon...
 14:20:06 [INFO] Mining daemon initialized successfully!
 14:20:06 [INFO] Starting mining daemon...
@@ -134,7 +134,7 @@ If you see this error, it's normal (happens when a new block arrives):
 
 ## Step 7: Sync Wallet
 
-After blocks are mined, sync your wallet to see the DARK tokens:
+After blocks are mined, sync your wallet to see the DRKW tokens:
 
 ```bash
 drk -c /home/patrick/darkfi-testnet/devnet_drk.config.toml scan
@@ -153,7 +153,7 @@ If minerd can't connect to darkfid:
 
 If darkfid won't sync:
 1. Check peer connections: darkfid logs show `[INFO] Blocks received: X/XXXX`
-2. Verify seeds are reachable: `tcp+tls://lilith0.dark.fi:8342`
+2. Verify seeds are reachable: `tcp+tls://lilith0.darkwow.org:8342`
 
 ### Mining Not Starting
 
@@ -165,9 +165,9 @@ If darkfid won't sync:
 
 | Component | Path |
 |-----------|------|
-| darkfid binary | `/path/to/DarkFiMain/darkfi/bin/darkfid/darkfid` |
-| drk binary | `/path/to/DarkFiMain/darkfi/bin/drk/drk` |
-| minerd binary | `/path/to/DarkFiMain/darkfi/bin/minerd/minerd` |
+| darkfid binary | `/path/to/DarkWowMain/darkfi/bin/darkfid/darkfid` |
+| drk binary | `/path/to/DarkWowMain/darkfi/bin/drk/drk` |
+| minerd binary | `/path/to/DarkWowMain/darkfi/bin/minerd/minerd` |
 | darkfid config | `~/.config/darkfi/darkfid_config.toml` or custom |
 | drk config | `~/.config/darkfi/drk_config.toml` or custom |
 | darkfid data | `~/.local/share/darkfi/darkfid/testnet/` |
@@ -196,7 +196,7 @@ drk -c bin/drk/drk_config.toml -n testnet token mint <token-id> <amount> <recipi
 ## Notes
 
 - **Solo mining vs Merge mining**: This guide uses solo PoW mining. Merge mining (with Monero+p2pool) is for mainnet and provides additional security.
-- **Testnet DARK has no value**: Tokens earned on testnet are for testing only.
+- **Testnet DRKW has no value**: Tokens earned on testnet are for testing only.
 - **Mining difficulty**: The `pow_target` setting affects how quickly blocks are found. Lower = easier mining.
 
 ## Local Development Setup
@@ -216,7 +216,7 @@ cd contrib/docker/linear-testnet
 # 3. Check dev wallet address (auto-generated)
 docker logs darkfi-linear-node0 2>&1 | grep "dev_wallet"
 
-# 4. Mine some blocks to get DARK for fees
+# 4. Mine some blocks to get DRKW for fees
 ./scripts/mine.sh 0 100000000
 
 # 5. Deploy a contract
@@ -244,13 +244,13 @@ node4         xmrig4
 
 ### Developer Wallet Configuration
 
-On first startup, a developer wallet is auto-generated with 100 DARK:
+On first startup, a developer wallet is auto-generated with 100 DRKW:
 
 ```toml
 # In node0.toml (or any node config)
 [network_config."linear-testnet"]
 dev_wallet_secret = "generate"  # or hex-encoded secret
-dev_wallet_initial_balance = 100000000000  # 100 DARK
+dev_wallet_initial_balance = 100000000000  # 100 DRKW
 ```
 
 To use a specific wallet, replace `"generate"` with the hex secret key.
@@ -309,7 +309,7 @@ async fn test_contract() -> Result<()> {
     // Start network (deploys genesis contracts, creates genesis block)
     sdk.start()?;
 
-    // Dev wallet has initial DARK
+    // Dev wallet has initial DRKW
     let dev_keypair = sdk.dev_wallet.keypair();
 
     // Deploy contract

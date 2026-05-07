@@ -1,14 +1,14 @@
-# DarkFi Smart Contract Standards
+# DarkWow Smart Contract Standards
 
 ## Overview
 
-This document defines the standards for building smart contracts on DarkFi. These standards emerged from analyzing the existing contract ecosystem and addressing critical security concerns.
+This document defines the standards for building smart contracts on DarkWow. These standards emerged from analyzing the existing contract ecosystem and addressing critical security concerns.
 
 ## Part 1: ZK Circuit Primitives - EC vs Poseidon
 
 ### The Problem with EC Operations
 
-Elliptic curve (EC) operations in ZK circuits have caused critical heap bugs in DarkFi:
+Elliptic curve (EC) operations in ZK circuits have caused critical heap bugs in DarkWow:
 
 | Circuit | EC Operations | Status |
 |---------|-------------|--------|
@@ -18,7 +18,7 @@ Elliptic curve (EC) operations in ZK circuits have caused critical heap bugs in 
 | AuthTokenMint_V2 | ec_mul_base | **BUGGY** |
 | TokenMint_V2 | None (Poseidon only) | **SAFE** |
 
-### EC Operations Used in DarkFi Circuits
+### EC Operations Used in DarkWow Circuits
 
 ```zk
 ec_mul_base(secret, generator)     // Derive public key from secret
@@ -36,12 +36,12 @@ ec_get_y(point)                    // Extract Y coordinate
 | **Heap bugs** | CRITICAL - Memory corruption in zkVM | **NONE** - Pure arithmetic |
 | **Implementation complexity** | HIGH - 4x more code paths | **LOW** - Simple hash |
 | **Homomorphic commitments** | YES - Can add C1 + C2 | **NO** - Not needed |
-| **DarkFi usage** | Unnecessary | **Sufficient** |
+| **DarkWow usage** | Unnecessary | **Sufficient** |
 | **Audit surface** | Large | **Minimal** |
 
-### Why DarkFi Doesn't Need Homomorphic Commitments
+### Why DarkWow Doesn't Need Homomorphic Commitments
 
-DarkFi uses **burn-mint**, not **transfer-with-change**:
+DarkWow uses **burn-mint**, not **transfer-with-change**:
 
 ```
 TRADITIONAL (Pedersen):
@@ -58,7 +58,7 @@ DARKFI (burn-mint):
 
 ### Standard: Poseidon-Only
 
-**All internal DarkFi ZK circuits MUST use Poseidon-only design.**
+**All internal DarkWow ZK circuits MUST use Poseidon-only design.**
 
 ```zk
 // CORRECT: Poseidon-only circuit
@@ -80,7 +80,7 @@ circuit "ExampleV1" {
 }
 ```
 
-**Exception**: External chain verification (Bitcoin, Ethereum signatures) MAY use EC, but internal DarkFi circuits must remain Poseidon-only.
+**Exception**: External chain verification (Bitcoin, Ethereum signatures) MAY use EC, but internal DarkWow circuits must remain Poseidon-only.
 
 ---
 
@@ -143,7 +143,7 @@ The combination of **AuthTokenMint** + **Weighted Governance DAO** creates a cat
 The native token serves **consensus-critical functions**:
 
 ```
-Native Token (DARK):
+Native Token (DRKW):
 ├── Block rewards → Pays miners for PoW
 ├── Transaction fees → Incentivizes validators
 └── Store of value → Network security budget
@@ -209,7 +209,7 @@ Access Control List (ACL) DAOs have fundamental privacy problems:
 
 ### Cross-Contract Calls via spend_hook
 
-DarkFi uses **spend_hook** for atomic cross-contract composition:
+DarkWow uses **spend_hook** for atomic cross-contract composition:
 
 ```rust
 // Burning tokens triggers cross-contract call

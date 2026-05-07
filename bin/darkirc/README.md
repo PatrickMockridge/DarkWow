@@ -1,7 +1,7 @@
 darkirc
 =======
 
-Check the [Installation Guide](https://dark.fi/book/misc/darkirc/darkirc.html) 
+Check the [Installation Guide](https://darkwow.org/book/misc/darkirc/darkirc.html) 
 for more detailed information about the ins and outs of darkirc.
 
 ## Android build

@@ -1,10 +1,10 @@
-DarkFi x Monero Merge Mining using p2pool and xmrig
+DarkWow x Monero Merge Mining using p2pool and xmrig
 ===================================================
 
 This document provides a way to set up a Monero testnet that is
-able to merge-mine DarkFi using `p2pool` and `xmrig`.
+able to merge-mine DarkWow using `p2pool` and `xmrig`.
 
-> **Conda Users**: If using conda environments, run `conda deactivate` before running DarkFi binaries. Conda's Python and library paths may conflict with DarkFi's native dependencies. Consider using a venv as described in [Using dnet](../learn/dchat/network-tools/using-dnet.md).
+> **Conda Users**: If using conda environments, run `conda deactivate` before running DarkWow binaries. Conda's Python and library paths may conflict with DarkWow's native dependencies. Consider using a venv as described in [Using dnet](../learn/dchat/network-tools/using-dnet.md).
 
 Please read the whole document first before executing commands, to
 understand all the steps required and how each component operates.
@@ -19,7 +19,7 @@ simple.
 ## Build binaries from source
 
 We can build Monero and `p2pool` from their respective source code
-repositories. Make sure you are not in the DarkFi repository folder as
+repositories. Make sure you are not in the DarkWow repository folder as
 we are going to retrieve external repos. Refer to
 [miner](node.md#miner) section of the guide to build `xmrig` as its
 required.
@@ -145,7 +145,7 @@ blocks.
 `xmrig` is pretty simple. Just start it with a chosen number of threads
 and point it to `p2pool` Stratum port. `-t 1` is the number of CPU
 threads to use for mining. All miners should use the lowest possible
-resources so other people can mine blocks to retrieve `DRK` for
+resources so other people can mine blocks to retrieve `DRKW` for
 testing.
 
 ```shell
@@ -165,8 +165,8 @@ or press `p` to pause mining.
 > rewards.
 
 Now that everything is in order, we can use `p2pool` with merge-mining
-enabled in order to merge mine DarkFi. For receiving mining rewards
-on DarkFi, we'll need a DarkFi wallet address so make sure you have
+enabled in order to merge mine DarkWow. For receiving mining rewards
+on DarkWow, we'll need a DarkWow wallet address so make sure you have
 [initialized](node.md#wallet-initialization) your wallet and grab your
 default address:
 
@@ -196,8 +196,8 @@ $ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_MON
 ```
 
 Now `p2pool` should communicate with both `monerod` and `darkfid` in
-order to pick up Monero blocktemplates and inject them with DarkFi data
-necessary for merge-mining verification on the DarkFi side. Re-run
+order to pick up Monero blocktemplates and inject them with DarkWow data
+necessary for merge-mining verification on the DarkWow side. Re-run
 `xmrig` and now we should be mining blocks again. Once blocks are
 found, they will be submitted to both `monerod` and `darkfid` and
 `darkfid` should verify them and release block rewards to the address
@@ -212,7 +212,7 @@ To retrieve a DAO merge mining configuration, execute:
 ```shell
 drk> dao mining-config {YOUR_DAO}
 
-DarkFi DAO mining configuration address:
+DarkWow DAO mining configuration address:
 {YOUR_DAO_WALLET_ADDRESS_MINING_CONFIGURATION}
 ```
 
@@ -224,14 +224,14 @@ $ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_DAO
 ```
 
 After your miners have successfully mined confirmed blocks, you will
-see the DAO `DRK` balance increasing:
+see the DAO `DRKW` balance increasing:
 
 ```shell
 drk> dao balance {YOUR_DAO}
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+---------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRK     | 80
+ 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 80
 ```
 
 ## Offline merge-mining
@@ -257,7 +257,7 @@ $ ./xmrig -u x+1 20000 -o 127.0.0.1:3333 -t 1
 
 ## Localnet merge mining testing
 
-DarkFi's localnet configuration includes `mm_rpc` settings enabled by default,
+DarkWow's localnet configuration includes `mm_rpc` settings enabled by default,
 allowing you to test merge mining without external Monero infrastructure.
 The configuration files are located in `contrib/localnet/`:
 

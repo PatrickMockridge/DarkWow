@@ -28,7 +28,7 @@ Level 3: Full transparency (opt-in)
 │                    Atomic Swap DAO                                │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  1. Alice creates swap: lock(DRK, 100), request(ETH, 1)        │
+│  1. Alice creates swap: lock(DRKW, 100), request(ETH, 1)        │
 │     → lock_commitment = H(secret, token, amount)                 │
 │     → swap_id = H(lock_commitment, request_token, request_amount) │
 │                                                                   │
@@ -36,7 +36,7 @@ Level 3: Full transparency (opt-in)
 │     → Contract verifies Bob's lock matches Alice's request      │
 │                                                                   │
 │  3. Execute: ZK proof verifies both secrets known               │
-│     → Atomic: Alice gets ETH, Bob gets DRK                         │
+│     → Atomic: Alice gets ETH, Bob gets DRKW                         │
 │                                                                   │
 │  4. OR Cancel after timeout: refund both                         │
 │                                                                   │

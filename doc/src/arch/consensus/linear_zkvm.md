@@ -201,7 +201,7 @@ impl LinearBlockchain {
 - **Pros**: Fast sync, no WASM overhead, simple trust model
 - **Cons**: Cannot extract ZK public inputs from WASM (must embed at block creation)
 
-### Original DarkFi (Stateful WASM)
+### Original DarkWow (Stateful WASM)
 - **Pros**: Can extract public inputs at verification time
 - **Cons**: Requires WASM runtime at every verification node
 

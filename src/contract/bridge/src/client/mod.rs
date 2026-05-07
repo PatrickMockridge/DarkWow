@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -30,19 +35,19 @@
 //!    - Deposit exists on external chain (Merkle proof)
 //!    - User knows secret
 //!    - Commitment is correctly formed
-//! 5. User submits DepositV1 to DarkFi
-//! 6. DarkFi verifies proof, provides note from pool
+//! 5. User submits DepositV1 to DarkWow
+//! 6. DarkWow verifies proof, provides note from pool
 //!
 //! ## How Withdrawals Work
 //!
 //! 1. User computes nullifier = H(secret)
-//! 2. User burns tokens on DarkFi
+//! 2. User burns tokens on DarkWow
 //! 3. User constructs ZK proof demonstrating:
 //!    - User knows secret for a deposited commitment
 //!    - Commitment is in bridge's Merkle tree
 //!    - Amount is valid
-//! 4. User submits WithdrawV1 to DarkFi
-//! 5. DarkFi verifies proof, marks nullifier spent
+//! 4. User submits WithdrawV1 to DarkWow
+//! 5. DarkWow verifies proof, marks nullifier spent
 //! 6. Relayer broadcasts withdrawal to external chain
 
 use darkfi_sdk::error::ContractError;
@@ -92,7 +97,7 @@ impl From<ContractError> for BridgeClientError {
 
 /// DepositBuilder constructs a bridge deposit transaction
 ///
-/// # Example: How to Bridge ETH to DarkFi
+/// # Example: How to Bridge ETH to DarkWow
 ///
 /// ```ignore
 /// // 1. Derive bridge address for recipient
@@ -116,7 +121,7 @@ impl From<ContractError> for BridgeClientError {
 ///     .external_block_hash(block_hash)
 ///     .build()?;
 ///
-/// // 5. Submit to DarkFi bridge contract
+/// // 5. Submit to DarkWow bridge contract
 /// client.submit(deposit).await?;
 /// ```
 pub struct DepositBuilder {
@@ -124,7 +129,7 @@ pub struct DepositBuilder {
     secret: Option<[u8; 32]>,
     /// Amount being deposited
     amount: Option<u64>,
-    /// Recipient's public key on DarkFi
+    /// Recipient's public key on DarkWow
     recipient_pub_x: Option<[u8; 32]>,
     recipient_pub_y: Option<[u8; 32]>,
     /// Nonce for temporal privacy (fresh address per deposit)
@@ -170,7 +175,7 @@ impl DepositBuilder {
         self
     }
 
-    /// Set the recipient public key on DarkFi
+    /// Set the recipient public key on DarkWow
     pub fn recipient_pub(&mut self, pub_x: [u8; 32], pub_y: [u8; 32]) -> &mut Self {
         self.recipient_pub_x = Some(pub_x);
         self.recipient_pub_y = Some(pub_y);
@@ -312,7 +317,7 @@ fn compute_commitment(secret: [u8; 32], amount: u64, bridge_address: [u8; 32]) -
 
 /// WithdrawBuilder constructs a bridge withdrawal transaction
 ///
-/// # Example: How to Withdraw from DarkFi to Ethereum
+/// # Example: How to Withdraw from DarkWow to Ethereum
 ///
 /// ```ignore
 /// // 1. User has a note from a previous deposit
@@ -331,7 +336,7 @@ fn compute_commitment(secret: [u8; 32], amount: u64, bridge_address: [u8; 32]) -
 ///     .amount(withdraw_amount)
 ///     .build()?;
 ///
-/// // 5. Submit to DarkFi bridge contract
+/// // 5. Submit to DarkWow bridge contract
 /// client.submit(withdrawal).await?;
 ///
 /// // 6. Relayer sees event, broadcasts ETH tx to Ethereum
@@ -439,8 +444,8 @@ pub fn compute_nullifier(secret: [u8; 32]) -> [u8; 32] {
 /// Derive a bridge address for receiving bridged funds
 ///
 /// # Arguments
-/// * `user_pub_x` - User's DarkFi public key X coordinate
-/// * `user_pub_y` - User's DarkFi public key Y coordinate
+/// * `user_pub_x` - User's DarkWow public key X coordinate
+/// * `user_pub_y` - User's DarkWow public key Y coordinate
 /// * `nonce` - Fresh nonce for this deposit (ensures unlinkability)
 ///
 /// # Returns

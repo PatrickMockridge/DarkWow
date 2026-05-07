@@ -6,13 +6,13 @@ The drk wallet implements a general pattern for tracking smart contract state du
 
 ## Native Contract Architecture
 
-DarkFi uses a multi-contract model where different contracts handle different aspects of the financial system:
+DarkWow uses a multi-contract model where different contracts handle different aspects of the financial system:
 
 ### Contract Hierarchy
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Native Token (DARK)                       │
+│                    Native Token (DRKW)                       │
 │  - Genesis PoW token                                         │
 │  - Used for fees and network security                        │
 │  - Functions: FeeV1, MintV1, BurnV1, TransferV1, PoWRewardV1 │
@@ -59,10 +59,10 @@ struct ContractCall {
 | Opcode | Function | Description |
 |--------|----------|-------------|
 | 0x00 | FeeV1 | Attach network fee to transaction |
-| 0x01 | MintV1 | Mint new DARK tokens |
-| 0x02 | BurnV1 | Burn DARK tokens |
-| 0x03 | TransferV1 | Transfer DARK tokens |
-| 0x04 | SpendV1 | Spend a DARK coin |
+| 0x01 | MintV1 | Mint new DRKW tokens |
+| 0x02 | BurnV1 | Burn DRKW tokens |
+| 0x03 | TransferV1 | Transfer DRKW tokens |
+| 0x04 | SpendV1 | Spend a DRKW coin |
 | 0x05 | PoWRewardV1 | Block reward for miners |
 
 **Money V3 (user-deployed, runtime-registered):**

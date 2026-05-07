@@ -1,6 +1,6 @@
 # Labor Market Contract Architecture
 
-A job/labor market built on DarkFi primitives: escrow for payments, DAO for dispute resolution, and attestation for deliverable verification.
+A job/labor market built on DarkWow primitives: escrow for payments, DAO for dispute resolution, and attestation for deliverable verification.
 
 ## Design Goals
 

@@ -1,14 +1,14 @@
-# DarkFi public node guide
+# DarkWow public node guide
 
 Public nodes are nodes that reveal themselves to the network. They are publicly
 accessible so they can accept inbound connections from other nodes.
-Public nodes are important for the health of the DarkFi P2P network. This guide 
-explains how to run the optimal DarkFi public node configurations.
+Public nodes are important for the health of the DarkWow P2P network. This guide 
+explains how to run the optimal DarkWow public node configurations.
 
 <u><b>Note</b></u>: If you do not want your IP address to be public you can run 
 a node using Tor.
 
-<u><b>Note</b></u>: This page is a general guide for public nodes in the DarkFi
+<u><b>Note</b></u>: This page is a general guide for public nodes in the DarkWow
 ecosystem and is applicable to other apps such as `taud` and `darkfid`. We use
 `darkirc` as our main example throughout this guide. Commands such as `./darkirc`
 and configuration filenames need to be adjusted if using different apps.
@@ -76,7 +76,7 @@ mixed_profiles = []
 
 [net.profiles."tcp+tls"]
 ## Seed nodes to connect to
-seeds = ["tcp+tls://lilith1.dark.fi:9600"]
+seeds = ["tcp+tls://lilith1.darkwow.org:9600"]
 
 ## Addresses we want to advertise to peers
 external_addrs = ["tcp+tls://MY_IP_V4:9600", "tcp+tls://MY_IP_V6:9600", "tcp+tls://my.resolveable.address:9600"]
@@ -215,7 +215,7 @@ mixed_profiles = []
 
 [net.profiles."tcp+tls"]
 ## Seed nodes to connect to
-seeds = ["tcp+tls://lilith0.dark.fi:9600", "tcp+tls://lilith1.dark.fi:9600"]
+seeds = ["tcp+tls://lilith0.darkwow.org:9600", "tcp+tls://lilith1.darkwow.org:9600"]
 
 ## P2P accept addresses
 inbound = ["tcp+tls://0.0.0.0:9600", "tcp+tls://[::]:9600"]
@@ -270,7 +270,7 @@ inbound = ["tcp+tls://[::]:9600"]
 external_addrs = ["tcp+tls://[::]:9600"]
 
 ## Seed nodes to connect to
-seeds = ["tcp+tls://lilith0.dark.fi:9600", "tcp+tls://lilith1.dark.fi:9600"]
+seeds = ["tcp+tls://lilith0.darkwow.org:9600", "tcp+tls://lilith1.darkwow.org:9600"]
 ```
 
 #### Tor
@@ -322,10 +322,10 @@ UPnP IGD will also auto-discover your external address.
 inbound = ["tcp+tls://0.0.0.0:9600?upnp_igd=true"]
 
 ## Seed nodes to connect to
-seeds = ["tcp+tls://lilith1.dark.fi:9600"]
+seeds = ["tcp+tls://lilith1.darkwow.org:9600"]
 ```
 
-DarkFi's UPnP implementation supports these optional configuration parameters:
+DarkWow's UPnP implementation supports these optional configuration parameters:
 
 - `upnp_igd_lease_duration` - Port mapping lease duration in seconds
 - `upnp_igd_timeout` - Gateway discovery timeout in seconds
@@ -335,7 +335,7 @@ DarkFi's UPnP implementation supports these optional configuration parameters:
 Example with custom options:
 
 ```toml
-inbound = ["tcp+tls://0.0.0.0:9600?upnp_igd=true&upnp_igd_lease_duration=600&upnp_igd_description=MyDarkFiNode"]
+inbound = ["tcp+tls://0.0.0.0:9600?upnp_igd=true&upnp_igd_lease_duration=600&upnp_igd_description=MyDarkWowNode"]
 ```
 
 > Tip:

@@ -11,7 +11,7 @@ On the testnet, we can also create anonymous DAOs. Using the `drk`
 CLI tool, we have a `dao` subcommand that can perform the necessary
 operations.
 
-DarkFi DAOs have several configurable parameters, including:
+DarkWow DAOs have several configurable parameters, including:
 
 - **Proposer_limit**: the minimum amount of governance tokens needed to
 open a proposal.
@@ -307,7 +307,7 @@ Creation block window: 28
 Duration: 1 (Block windows)
 
 Invoked contracts:
-        Contract: Fd8kfCuqU8BoFFp6GcXv5pC8XXRkBK7gUPQX5XDz7iXj
+        Contract: EJs7oEjKkvCeEVCmpRsd6fEoTGCFJ7WKUBfmAjwaegN
         Function: 4
         Data:
                 Recipient: {YOUR_ADDRESS}
@@ -317,7 +317,7 @@ Invoked contracts:
                 User data: -
                 Blind: 8e9ne7...bVGsbH
 
-        Contract: BZHKGQ26bzmBithTQYTJtjo2QdCqpkR9tjSBopT4yf4o
+        Contract: 21LYoifepcySKhyDA1vzxRDWGHyDizPQ8f11zSqhep7t
         Function: 3
         Data: -
 
@@ -368,7 +368,7 @@ Creation block window: 28
 Duration: 1 (Block windows)
 
 Invoked contracts:
-        Contract: Fd8kfCuqU8BoFFp6GcXv5pC8XXRkBK7gUPQX5XDz7iXj
+        Contract: EJs7oEjKkvCeEVCmpRsd6fEoTGCFJ7WKUBfmAjwaegN
         Function: 4
         Data:
                 Recipient: {YOUR_ADDRESS}
@@ -378,7 +378,7 @@ Invoked contracts:
                 User data: -
                 Blind: 8e9ne7...bVGsbH
 
-        Contract: BZHKGQ26bzmBithTQYTJtjo2QdCqpkR9tjSBopT4yf4o
+        Contract: 21LYoifepcySKhyDA1vzxRDWGHyDizPQ8f11zSqhep7t
         Function: 3
         Data: -
 
@@ -440,7 +440,7 @@ Creation block window: 28
 Duration: 1 (Block windows)
 
 Invoked contracts:
-        Contract: Fd8kfCuqU8BoFFp6GcXv5pC8XXRkBK7gUPQX5XDz7iXj
+        Contract: EJs7oEjKkvCeEVCmpRsd6fEoTGCFJ7WKUBfmAjwaegN
         Function: 4
         Data:
                 Recipient: {YOUR_ADDRESS}
@@ -450,7 +450,7 @@ Invoked contracts:
                 User data: -
                 Blind: 8e9ne7...bVGsbH
 
-        Contract: BZHKGQ26bzmBithTQYTJtjo2QdCqpkR9tjSBopT4yf4o
+        Contract: 21LYoifepcySKhyDA1vzxRDWGHyDizPQ8f11zSqhep7t
         Function: 3
         Data: -
 
@@ -514,7 +514,7 @@ drk> wallet balance
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+-------------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRK     | 19.93153568
+ 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 19.93153568
  {TOKEN1}                                     | ANON    | 40
  {TOKEN2}                                     | DAWN    | 15
 ```
@@ -739,7 +739,7 @@ To retrieve a DAO's mining configuration, execute:
 ```shell
 drk> dao mining-config {YOUR_DAO}
 
-DarkFi DAO mining configuration address:
+DarkWow DAO mining configuration address:
 {YOUR_DAO_WALLET_ADDRESS_MINING_CONFIGURATION}
 ```
 
@@ -750,12 +750,12 @@ $ ./xmrig -u x+1 -r 1000 -R 20 -o 127.0.0.1:18347 -t {XMRIG_THREADS} -u {YOUR_DA
 ```
 
 After your miners have successfully mined confirmed blocks, you will
-see the DAO `DRK` balance increasing:
+see the DAO `DRKW` balance increasing:
 
 ```shell
 drk> dao balance {YOUR_DAO}
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+---------
- 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRK     | 40
+ 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 40
 ```

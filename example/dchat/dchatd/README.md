@@ -1,8 +1,8 @@
 # Dchat
 
-A simple chat program to document DarkFi net
-code. Tutorial can be found in the [DarkFi
-book](https://dark.fi/book/learn/writing-a-p2p-app.html).
+A simple chat program to document DarkWow net
+code. Tutorial can be found in the [DarkWow
+book](https://darkwow.org/book/learn/writing-a-p2p-app.html).
 
 ## Step 1: Spin a seed node
 

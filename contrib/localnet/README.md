@@ -1,4 +1,4 @@
-DarkFi localnet tools
+DarkWow localnet tools
 =====================
 
 Helpful scripts for local network deployment and testing.

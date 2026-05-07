@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -20,7 +25,7 @@
 //!
 //! This module provides the client-side interface to darkfid's JSON-RPC API,
 //! enabling tau_pallas to broadcast transactions and interact with the
-//! DarkFi blockchain.
+//! DarkWow blockchain.
 
 use std::sync::Arc;
 
@@ -56,7 +61,7 @@ impl DarkfidClient {
         Ok(Self { rpc: Arc::new(rpc) })
     }
 
-    /// Broadcast a transaction to the DarkFi network via darkfid
+    /// Broadcast a transaction to the DarkWow network via darkfid
     ///
     /// This serializes the transaction to base64 and sends it to darkfid's
     /// `tx.broadcast` endpoint, which validates, adds to mempool, and

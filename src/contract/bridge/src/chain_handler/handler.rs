@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -205,7 +210,7 @@ impl TryFrom<u8> for HtlcState {
 /// HTLC swap data for cross-chain atomic swap coordination
 ///
 /// This struct tracks the state of an HTLC that coordinates with
-/// the DarkFi atomic swap contract. The bridge executes claims/refunds
+/// the DarkWow atomic swap contract. The bridge executes claims/refunds
 /// on external chains when the atomic swap state changes.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct HtlcSwap {

@@ -1,12 +1,12 @@
-# DarkFi Stablecoin Architecture
+# DarkWow Stablecoin Architecture
 
 *Privacy-preserving collateralized stablecoin with configurable models and multi-collateral support.*
 
 ## Overview
 
-The DarkFi stablecoin is a privacy-preserving collateralized stablecoin that supports:
+The DarkWow stablecoin is a privacy-preserving collateralized stablecoin that supports:
 
-- **Multi-collateral**: XMR, DRK, and ETH (via bridge) as collateral
+- **Multi-collateral**: XMR, DRKW, and ETH (via bridge) as collateral
 - **Configurable models**: PooledDebt, Liquity, Fractional, or IndividualCDP
 - **Hot/Cold separation**: Cheap user operations, precise governance
 - **Dead man switch**: Emergency shutdown if executive authority unresponsive
@@ -24,7 +24,7 @@ The DarkFi stablecoin is a privacy-preserving collateralized stablecoin that sup
 │  │    Pools    │◄──▶│  (global)   │◄──▶│  Controller │       │
 │  └──────────────┘    └──────────────┘    └──────────────┘       │
 │                                                                   │
-│  Collateral Types: XMR, DRK, ETH                                  │
+│  Collateral Types: XMR, DRKW, ETH                                  │
 │  Models: PooledDebt | Liquity | Fractional | IndividualCDP        │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
@@ -49,7 +49,7 @@ Collateral types and risk parameters:
 |-------|---------|---------------------|----------------|
 | ETH | 2% | 125% | 50% |
 | XMR | 1% | 130% | 30% |
-| DRK | 0% | 150% | 100% |
+| DRKW | 0% | 150% | 100% |
 
 **Haircut**: Value discount applied before collateral calculation
 **Max debt share**: Maximum % of total debt this collateral can back

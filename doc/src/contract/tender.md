@@ -308,7 +308,7 @@ less_than_strict(current_block, reveal_deadline);
 
 ## Comparison
 
-| Feature | Traditional Tender | DarkFi Tender |
+| Feature | Traditional Tender | DarkWow Tender |
 |---------|-------------------|---------------|
 | Bid privacy | Sealed envelope | Cryptographically sealed |
 | Competency check | KYC documents | Attestation claims |

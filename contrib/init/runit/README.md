@@ -1,6 +1,6 @@
 Startup services for runit.
 
-# Make DarkFi Binaries Available
+# Make DarkWow Binaries Available
 
 Compile `taud` and `darkirc`. Make sure they are findable in your path.
 You can copy the binaries to `~/.local/bin/`.

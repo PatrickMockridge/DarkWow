@@ -1,10 +1,10 @@
 # Linear Blockchain Architecture
 
-The linear blockchain is DarkFi's consensus architecture using **Uncle Merkle consensus** with **RandomX proof-of-work**. It replaces upstream's complex overlay/diff system with a simple, deterministic design where the canonical chain with the most accumulated work obligates offering uncle chains a one-time option to form a side chain and share the PoW reward.
+The linear blockchain is DarkWow's consensus architecture using **Uncle Merkle consensus** with **RandomX proof-of-work**. It replaces upstream's complex overlay/diff system with a simple, deterministic design where the canonical chain with the most accumulated work obligates offering uncle chains a one-time option to form a side chain and share the PoW reward.
 
 ## Overview
 
-The linear blockchain differs from the original DarkFi consensus in several key ways:
+The linear blockchain differs from the original DarkWow consensus in several key ways:
 
 | Aspect | Original (Fork/Overlay) | Linear (Uncle Merkle) |
 |--------|------------------------|----------------------|
@@ -17,7 +17,7 @@ The linear blockchain differs from the original DarkFi consensus in several key 
 
 ## Proof-of-Work: RandomX
 
-Linear uses **RandomX** (same as main DarkFi) for block hashing. This enables external miners (like xmrig) to connect via the stratum protocol.
+Linear uses **RandomX** (same as main DarkWow) for block hashing. This enables external miners (like xmrig) to connect via the stratum protocol.
 
 ### RandomX Key Rotation
 
@@ -221,7 +221,7 @@ struct LinearHeaderAdapter {
     timestamp: u64,
     transactions_root: MerkleNode,
     state_root: [u8; 32],
-    pow_data: PowData,                 // Always PowData::DarkFi
+    pow_data: PowData,                 // Always PowData::DarkWow
     uncle_merkle_root: [u8; 32],
     total_reward: u64,
 }

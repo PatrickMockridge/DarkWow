@@ -2,7 +2,7 @@
 
 ## Overview
 
-NativeToken is DarkFi's native token contract for consensus (block rewards, fees), implementing a **Z-cash style burn-mint privacy model**. Unlike MoneyV2 (which has token freezing), NativeToken has **no token freezing** capability, eliminating freeze-key attack vectors while providing full privacy for transfers.
+NativeToken is DarkWow's native token contract for consensus (block rewards, fees), implementing a **Z-cash style burn-mint privacy model**. Unlike MoneyV2 (which has token freezing), NativeToken has **no token freezing** capability, eliminating freeze-key attack vectors while providing full privacy for transfers.
 
 **Key Principle**: The native token must be reliable for consensus before anything else. Privacy is layered on top, never compromising block rewards or fee payment.
 
@@ -19,7 +19,7 @@ NativeToken is DarkFi's native token contract for consensus (block rewards, fees
 > This is a process safety principle: isolate complexity where it's required, not in the most frequently-called code.
 
 > [!IMPORTANT]
-> **For custom token logic**: NativeToken provides the consensus layer. For custom token contracts with different business logic, deployment is permissionless - deploy your own token contract. DarkFi's architecture encourages innovation at the smart contract layer while keeping the base token layer stable and minimal.
+> **For custom token logic**: NativeToken provides the consensus layer. For custom token contracts with different business logic, deployment is permissionless - deploy your own token contract. DarkWow's architecture encourages innovation at the smart contract layer while keeping the base token layer stable and minimal.
 
 ## Why NativeToken?
 
@@ -272,7 +272,7 @@ MoneyV3 (see `src/contract/money_v3/`) implements a **complete Poseidon-only** d
 - **Public key**: `poseidon_hash(secret)` instead of `ec_mul_base`
 - **100% fungible** - Token ID is a hidden commitment
 
-The trade-off is losing the homomorphic property of Pedersen commitments, but DarkFi's transaction validation doesn't actually use homomorphic addition of commitments, so this is acceptable.
+The trade-off is losing the homomorphic property of Pedersen commitments, but DarkWow's transaction validation doesn't actually use homomorphic addition of commitments, so this is acceptable.
 
 ### Security Comparison
 

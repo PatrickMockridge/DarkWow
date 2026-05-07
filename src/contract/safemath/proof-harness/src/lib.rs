@@ -1,1 +1,1 @@
-//! Optional DarkFi-backed proof harness for `darkfi-safemath-zk`.
+//! Optional DarkWow-backed proof harness for `darkfi-safemath-zk`.

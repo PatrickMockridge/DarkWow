@@ -349,16 +349,16 @@ This includes:
 * AccessControl
 * Clock management, whether to use block index or timestamps.
 
-The Governor (which in DarkFi is the DAO params) has these params:
+The Governor (which in DarkWow is the DAO params) has these params:
 
 * Voting delay. How long after a proposal is created should voting
   power be fixed. A large voting delay gives users time to unstake
   tokens if needed.
-    * In DarkFi users will just pre-announce proposals.
+    * In DarkWow users will just pre-announce proposals.
 * Voting period, typically 1 week
 
 These params are specified in the unit defined in the token's clock.
-This is the blockwindow in DarkFi. So the 'unit' should be a public DAO
+This is the blockwindow in DarkWow. So the 'unit' should be a public DAO
 param too.
 
 AccessControl has several roles:
@@ -384,7 +384,7 @@ https://aragon.org/how-to/governance-ii-setting-dao-governance-thresholds
 * Minimum participation, sometimes called quorum.
   With large whales, you want a higher threshold.
   Usual value is 5%.
-* Support threshold, sometimes called pass rate. In DarkFi this is
+* Support threshold, sometimes called pass rate. In DarkWow this is
   called the approval ratio. The most typical value is 50%.
 * Voting period. Most common is 7 days.
     * Speed. You want a short period if DAO needs to make fast decisions.
@@ -396,7 +396,7 @@ Params can also be set then changed later to adjust.
 Delegation is a good feature to increase participation.
 
 Early execution means that if the proposal meets the requirements then
-it can be executed early. We should add this option to DarkFi DAO params.
+it can be executed early. We should add this option to DarkWow DAO params.
 
 ## Suggested Changes
 
@@ -451,7 +451,7 @@ it can be executed early. We should add this option to DarkFi DAO params.
 Optional: many DAOs these days implement Abstain, which increases the
 quorum without voting yes. This is for when you want to weak support
 a measure, allowing it to reach quorum faster. This could be
-implemented in DarkFi, by allowing the vote yes to optionally be 0.
+implemented in DarkWow, by allowing the vote yes to optionally be 0.
 
 # Security: Public Key Constraints
 

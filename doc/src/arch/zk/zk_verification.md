@@ -1,6 +1,8 @@
 # ZK Verification
 
-Pure, stateless ZK proof verification for DarkFi.
+> **Note:** The core ZK verification infrastructure (`verify_zkp`, ZkBinary format, ZKCircuit structure) is inherited from upstream DarkFi and tracks upstream. The PoW reward verification integration and linear blockchain sync flow are DarkWow-specific.
+
+Pure, stateless ZK proof verification for DarkWow.
 
 ## Overview
 

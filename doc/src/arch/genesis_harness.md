@@ -1,8 +1,8 @@
-# Genesis Harness - DarkFi Contract Testing Foundation
+# Genesis Harness - DarkWow Contract Testing Foundation
 
 ## Overview
 
-The `GenesisHarness` provides a reusable baseline chain setup for DarkFi contract testing. It initializes **NativeToken** (consensus-first token) and **Deployooor** (WASM contract deployer) - the two mandatory consensus contracts.
+The `GenesisHarness` provides a reusable baseline chain setup for DarkWow contract testing. It initializes **NativeToken** (consensus-first token) and **Deployooor** (WASM contract deployer) - the two mandatory consensus contracts.
 
 **GenesisHarness is for NativeToken + Deployooor ONLY.** It does NOT deploy WASM contracts. Use `ContractTestingPipeline` for full WASM contract testing.
 
@@ -294,5 +294,5 @@ async fn test_stablecoin() -> Result<()> {
 ## See Also
 
 - [Test Harness Guide](./test_harness_guide.md) - Full testing overview
-- [DarkFi Contract Pipeline](./darkfid_contract_pipeline.md) - How contracts are deployed
+- [DarkWow Contract Pipeline](./darkfid_contract_pipeline.md) - How contracts are deployed
 - [DEX Documentation](../contract/dex.md) - Example WASM contract

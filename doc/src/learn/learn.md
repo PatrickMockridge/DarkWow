@@ -1,3 +1,3 @@
 # Learn
 
-This section contains learning resources related to DarkFi.
+This section contains learning resources related to DarkWow.

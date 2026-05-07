@@ -4,7 +4,7 @@ _To connect to through `nym` network we use the `socks5` proxy provided
 by [Nym](https://github.com/nymtech/nym)_
 
 <u><b>Note</b></u>: This page is a general guide for `nym` nodes in the
-DarkFi ecosystem and is applicable to other apps such as `taud` and
+DarkWow ecosystem and is applicable to other apps such as `taud` and
 `darkfid`. We use `darkirc` as our main example throughout this guide.
 Commands such as `./darkirc` and configuration filenames need to be
 adjusted if using different apps. If you're using another app, the
@@ -72,7 +72,7 @@ nym_socks5_proxy = "socks5://127.0.0.1:1080"
 [net.profiles."socks5+tls"]
 ## Seed nodes to connect to
 seeds = [
-    "socks5+tls://127.0.0.1:1080/lilith1.dark.fi:9603"
+    "socks5+tls://127.0.0.1:1080/lilith1.darkwow.org:9603"
 ]
 ```
 

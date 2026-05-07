@@ -1,4 +1,4 @@
-# DarkFi Fuzzing
+# DarkWow Fuzzing
 
 This directory contains our fuzz tests. It is a WIP and likely to be
 re-organized as we expand the complexity of the tests.
@@ -48,7 +48,7 @@ The Address Sanitizer can be disabled for any Rust code that does not use `unsaf
 The flags `--release`, `--debug-assertions` also improve throughput and are enabled
 by default.
 
-In the case of DarkFi, we also want to supply `--all-features`.
+In the case of DarkWow, we also want to supply `--all-features`.
 
 #### Using dictionaries
 
@@ -112,7 +112,7 @@ Periodically you may encounter a crash with text like the following:
 AddressSanitizer: requested allocation size 0xFOO (0xBAR after adjustments for alignment, red zones etc.) exceeds maximum supported size of 0x10000000000
 ```
 This indicates that Rust is trying to allocate a large amount of memory in a way that crashes libFuzzer. 
-It likely indicates a memory-intensive part of the codebase but does not indicate a crash in DarkFi code,
+It likely indicates a memory-intensive part of the codebase but does not indicate a crash in DarkWow code,
 per se. Instead, libFuzzer itself is crashing. 
 
 In this case, **do not add the crash artifact to the corpora**. Try to
@@ -138,11 +138,11 @@ To disable memory limits entirely, pass the argument:
 ```
 
 However, this is unlikely to resolve the issue due to differences in
-the fuzzing architecure vs. DarkFi's intended build targets.
+the fuzzing architecure vs. DarkWow's intended build targets.
 
 ## Architecure incompatibilities: wasm32-unknown-unknown
 
-DarkFi is developed to focus on the `wasm32-unknown-unknown` architecture.
+DarkWow is developed to focus on the `wasm32-unknown-unknown` architecture.
 Unfortunately, this is not supported by most (any?) fuzzing tools in the Rust
 ecosystem; instead our fuzz targets will be built for 64-bit Linux systems. 
 This might introduce subtle issues in the fuzzing process especially since

@@ -4,7 +4,7 @@
 
 ## Miner main loop
 
-DarkFi uses RandomX Proof of Work algorithm.
+DarkWow uses RandomX Proof of Work algorithm.
 Therefore, block production involves the following steps:
 
 * First, a miner grabs its current best ranking fork and extends it
@@ -286,7 +286,7 @@ comparison the tx in Bitcoin with the most outputs has 2501.
 
 ## Contracts states Monotree(SMT)
 
-DarkFi is using an optimized Sparse Merkle Tree implementation, called
+DarkWow is using an optimized Sparse Merkle Tree implementation, called
 `Monotree`. Each contract has its own monotree, containing all its
 database trees hashed records, along with its hashed `wasm` bincode
 record. Native contracts exclude their `wasm` bincode from their

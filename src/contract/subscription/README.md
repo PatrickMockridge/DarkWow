@@ -1,4 +1,4 @@
-# DarkFi Subscription Contract
+# DarkWow Subscription Contract
 
 Privacy-preserving member subscription service with block-based time locks, DAO treasury, and endowment fund insurance.
 
@@ -33,7 +33,7 @@ Privacy-preserving member subscription service with block-based time locks, DAO 
 
 ## Composability Case Study: Subscription + DAO-Escrow
 
-This contract demonstrates DarkFi's **composable contract pattern** through integration with DAO-Escrow.
+This contract demonstrates DarkWow's **composable contract pattern** through integration with DAO-Escrow.
 
 ### The Composability Pattern
 
@@ -148,7 +148,7 @@ constrain_equal_base(dao_member_pub_x, subscriber_pub_x);
 
 ### Block-Based Time Locks (No Oracle)
 
-DarkFi has deterministic block heights. Subscriptions use block numbers instead of timestamps:
+DarkWow has deterministic block heights. Subscriptions use block numbers instead of timestamps:
 
 ```rust
 lock_until_block = current_block + plan.duration_blocks

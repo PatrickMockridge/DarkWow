@@ -6,7 +6,7 @@
 > replacing the deprecated Money V1 and Money V2.
 
 Users can deploy their own zero-knowledge contracts, written for the
-DarkFi [zkVM][1], becoming anonymous engineers themselves!
+DarkWow [zkVM][1], becoming anonymous engineers themselves!
 
 More information about the smart contracts architecture can be found
 [here][2].
@@ -38,11 +38,11 @@ $ cd smart-contract
 ```
 
 We will use the provided Makefile to generate the contract WASM bincode
-and its client. The Makefile uses [zkas][5], DarkFi's zero-knowledge
+and its client. The Makefile uses [zkas][5], DarkWow's zero-knowledge
 proof circuit compiler, to do this.
 
 Running `make` will compile the ZK proof circuits that protect the
-contract's privacy, build the WASM module that runs on the DarkFi
+contract's privacy, build the WASM module that runs on the DarkWow
 network, and build a command-line client for interacting with the
 contract.
 

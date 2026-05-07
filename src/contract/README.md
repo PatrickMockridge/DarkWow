@@ -1,8 +1,8 @@
-This directory contains native WASM contracts on DarkFi.
+This directory contains native WASM contracts on DarkWow.
 
 ## Unofficial/Experimental Contracts on Dev Branch
 
-The `dev` branch contains additional contracts not yet in official DarkFi master. These are **EXPERIMENTAL** and **NOT AUDITED**.
+The `dev` branch contains additional contracts not yet in official DarkWow master. These are **EXPERIMENTAL** and **NOT AUDITED**.
 
 | Contract | Description | Status |
 |----------|-------------|--------|
@@ -40,7 +40,7 @@ The `dev` branch contains additional contracts not yet in official DarkFi master
 
 | Contract | Description | Standard |
 |----------|-------------|----------|
-| **money** | Original DarkFi money (v1) - upstream legacy | No |
+| **money** | Original DarkWow money (v1) - upstream legacy | No |
 | **money_v2** | Our secure version with constrain_equal_base | **Yes** |
 
 See [money_v2/README.md](money_v2/README.md) for full details.
@@ -161,7 +161,7 @@ less_than_strict(lhs, rhs_1);
 
 ## Token Design Philosophy
 
-DarkFi's token contracts (MoneyV3, NativeToken) follow a **minimal infrastructure** philosophy:
+DarkWow's token contracts (MoneyV3, NativeToken) follow a **minimal infrastructure** philosophy:
 
 > **Tokens are pipework, not reactors.**
 >
@@ -176,7 +176,7 @@ DarkFi's token contracts (MoneyV3, NativeToken) follow a **minimal infrastructur
 
 ### MoneyV3 Design Principles
 
-MoneyV3 is the cornerstone of DarkFi's DeFi ecosystem:
+MoneyV3 is the cornerstone of DarkWow's DeFi ecosystem:
 
 1. **Poseidon-only ZK circuits**: All cryptographic operations in ZK use Poseidon hash. No EC operations in ZK circuits.
 
@@ -272,11 +272,11 @@ cargo test --release --package darkfid test_darkbet_exchange_heavyweight
 ## Official Contracts
 
 - **Money**: Private token transfers and basic operations
-  - [Documentation](https://dark.fi/book/dev/darkfi_money_contract/)
+  - [Documentation](https://darkwow.org/book/dev/darkfi_money_contract/)
 - **DAO**: Decentralized autonomous organization with governance
-  - [Documentation](https://dark.fi/book/dev/darkfi_dao_contract/)
+  - [Documentation](https://darkwow.org/book/dev/darkfi_dao_contract/)
 - **Deployooor**: Contract deployment and management
-  - [Documentation](https://dark.fi/book/dev/darkfi_deployooor_contract/)
+  - [Documentation](https://darkwow.org/book/dev/darkfi_deployooor_contract/)
 
 ## Unofficial Contract Documentation
 

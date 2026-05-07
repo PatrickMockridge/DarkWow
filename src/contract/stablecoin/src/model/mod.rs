@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -55,7 +60,7 @@ pub const STABLECOIN_NAMESPACE: u64 = 0x0005;
 pub enum CollateralType {
     /// XMR (Monero) collateral
     Xmr,
-    /// DRK (DarkFi) collateral
+    /// DRK (DarkWow) collateral
     Drk,
     /// ETH (Ethereum) collateral - large cap, DAI-backed
     Eth,
@@ -630,7 +635,7 @@ pub struct LiquidationRecord {
 // DESIGN NOTES: Why Pooled Debt vs Individual CDP
 // ============================================================================
 //
-// INDIVIDUAL CDP MODEL (original DarkFi approach, possible but complex):
+// INDIVIDUAL CDP MODEL (original DarkWow approach, possible but complex):
 //
 // Pros:
 // - Users have individual positions with specific collateral/debt

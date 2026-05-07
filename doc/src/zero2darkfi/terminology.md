@@ -1,6 +1,6 @@
-# DarkFi Terminology
+# DarkWow Terminology
 
-Precise terminology for DarkFi smart contract development.
+Precise terminology for DarkWow smart contract development.
 
 ## ZK Circuit Terms
 
@@ -33,7 +33,7 @@ Precise terminology for DarkFi smart contract development.
 | **Update** | State change returned by contract execution |
 | **State Tree** | Merkle tree storing contract state (keys/values) |
 | **Nullifier Tree** | Merkle tree storing spent nullifiers (prevents double-spending) |
-| **Bulla** | Unique identifier for a coin/UTXO in DarkFi (from "burn" + "leaf") |
+| **Bulla** | Unique identifier for a coin/UTXO in DarkWow (from "burn" + "leaf") |
 
 ## Transaction Terms
 
@@ -51,12 +51,12 @@ Precise terminology for DarkFi smart contract development.
 | Term | Definition |
 |------|------------|
 | **Pedersen Commitment** | Hiding + binding commitment: `C = g^a * h^b` |
-| **Poseidon Hash** | ZK-friendly hash function used in DarkFi |
+| **Poseidon Hash** | ZK-friendly hash function used in DarkWow |
 | **Merkle Tree** | Cryptographic accumulator for efficient membership proofs |
 | **Bulletproofs** | Short non-interactive zero-knowledge proofs |
 | **Range Proof** | Proof that a value lies within [0, 2^n) |
 
-## DarkFi-Specific Terms
+## DarkWow-Specific Terms
 
 | Term | Definition |
 |------|------------|

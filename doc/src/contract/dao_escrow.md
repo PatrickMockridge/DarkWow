@@ -24,7 +24,7 @@ A flexible contract supporting three operating modes: **Escrow-Only**, **Treasur
 │                                                                              │
 │  MODE_TREASURY (0x01) ───────────────────────────────────────────────────── │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  Treasury-Only (Same as DarkFi DAO)                                  │    │
+│  │  Treasury-Only (Same as DarkWow DAO)                                  │    │
 │  │                                                                       │    │
 │  │  Members ──pay fees──► Treasury Pool                                 │    │
 │  │                                  │                                   │    │
@@ -88,7 +88,7 @@ let escrow = InitializeBuilder::new()
     .max_members(1000)
     .build()?;
 
-// MODE_TREASURY: Same as DarkFi DAO
+// MODE_TREASURY: Same as DarkWow DAO
 let treasury = InitializeBuilder::new()
     .mode(DaoEscrowMode::Treasury)  // 0x01
     .owner_secret(owner_secret)
@@ -283,6 +283,6 @@ DAO-Escrow membership integrates with Subscription for tiered pricing:
 
 - [DAO-Escrow Contract README](../../src/contract/dao_escrow/README.md)
 - [Subscription Contract](subscription.md)
-- [DarkFi DAO Contract](dao.md)
+- [DarkWow DAO Contract](dao.md)
 - [Opcodes Reference](opcodes.md)
 - [Opcode Universe](opcode_universe.md)

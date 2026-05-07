@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -44,7 +49,7 @@
 
 use std::collections::HashSet;
 
-/// Supported contracts in the DarkFi ecosystem
+/// Supported contracts in the DarkWow ecosystem
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Contract {
     /// DAO-Escrow WASM - DAO with escrow

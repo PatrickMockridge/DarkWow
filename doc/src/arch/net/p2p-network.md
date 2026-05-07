@@ -143,7 +143,7 @@ investment it is a viable attack and should be mitigated."
   for details of this algorithm. This aids with network connectivity,
   avoiding netsplits which could make the network more susceptible to
   eclipse/sybil attacks (large scale MiTM).
-    * See: [Refine Session](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/net/session/refine_session.rs)
+    * See: [Refine Session](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/net/session/refine_session.rs)
 * **Protocol-level reputation system**. You have a keypair, which
   accrues more trust from the network. Nodes gossip trust metrics.
     * See [AnonRep: Towards Tracking-Resistant Anonymous Reputation](https://www.usenix.org/system/files/conference/nsdi16/nsdi16-paper-zhai.pdf)
@@ -313,7 +313,7 @@ Limits have a default setting that can be configured. It's also
 possible to scale limits with a particular config that allows for
 scaling to different machines.
 
-### DarkFi p2p resource manager
+### DarkWow p2p resource manager
 
 The goal is to make something simple that we can extend later if
 necessary given how it behaves in the wild. We have simplified the

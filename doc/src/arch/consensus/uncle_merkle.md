@@ -1,6 +1,6 @@
 # Uncle Merkle Consensus
 
-Uncle Merkle consensus replaces DarkFi upstream's complex fork/overlay design with a Pareto efficient mechanism: the canonical chain is **obligated** to offer competing uncle chains a one-time option to form a side chain and share the PoW reward. The uncle chain has a short time window (minutes) to accept or reject. This achieves the significant benefit of upstream's fork-handling — miners aren't punished for producing blocks that don't become canonical — without the complex rewind and sled overlay logic that upstream requires.
+Uncle Merkle consensus replaces DarkWow upstream's complex fork/overlay design with a Pareto efficient mechanism: the canonical chain is **obligated** to offer competing uncle chains a one-time option to form a side chain and share the PoW reward. The uncle chain has a short time window (minutes) to accept or reject. This achieves the significant benefit of upstream's fork-handling — miners aren't punished for producing blocks that don't become canonical — without the complex rewind and sled overlay logic that upstream requires.
 
 ## Motivation
 

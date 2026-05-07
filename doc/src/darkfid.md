@@ -1,8 +1,8 @@
-# DarkFi Daemon (darkfid)
+# DarkWow Daemon (darkfid)
 
 ## Overview
 
-darkfid is the DarkFi blockchain node software - the daemon that runs the full DarkFi network. It handles consensus, transaction validation, smart contract execution, and P2P networking.
+darkfid is the DarkWow blockchain node software - the daemon that runs the full DarkWow network. It handles consensus, transaction validation, smart contract execution, and P2P networking.
 
 ## Key Responsibilities
 
@@ -42,7 +42,7 @@ Native contracts are deployed at startup via `deploy_native_contracts()` and hav
 
 ## Startup Sequence
 
-See [DarkFi Contract Deployment Pipeline](./arch/darkfid_contract_pipeline.md) for detailed startup flow.
+See [DarkWow Contract Deployment Pipeline](./arch/darkfid_contract_pipeline.md) for detailed startup flow.
 
 ```
 darkfid startup

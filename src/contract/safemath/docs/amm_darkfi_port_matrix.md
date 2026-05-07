@@ -4,8 +4,8 @@ This note captures the first concrete fork-exit target: `amm-darkfi`.
 
 ## Goal
 
-Make `amm-darkfi` target official DarkFi plus external shared packages, rather than a
-fork-era DarkFi line.
+Make `amm-darkfi` target official DarkWow plus external shared packages, rather than a
+fork-era DarkWow line.
 
 ## Current State
 
@@ -31,7 +31,7 @@ host helpers plus two-`u64`-limb templates.
 
 ## Imported Fork-Era Surface
 
-The main direct-pool core imports these DarkFi-side exchange modules:
+The main direct-pool core imports these DarkWow-side exchange modules:
 
 - `AmmExternalInterfaceContractV1`
 - `AmmPoolAddLiquidityTransitionV1`
@@ -52,7 +52,7 @@ Contract and tool paths also consume:
 
 ## Official Master Gap
 
-The clean official DarkFi master worktree from March 27, 2026 does not currently expose:
+The clean official DarkWow master worktree from March 27, 2026 does not currently expose:
 
 - `intent`
 - `intent_set`
@@ -80,7 +80,7 @@ That crate currently provides:
 - `encode_amm_pool_*` / `decode_amm_pool_*` payload helpers
 
 It builds against official `darkfi-sdk`, so the direct AMM path no longer needs those
-types to live inside a DarkFi fork.
+types to live inside a DarkWow fork.
 
 ## Port Actions
 
@@ -91,7 +91,7 @@ types to live inside a DarkFi fork.
    For the direct path, that answer now exists:
    - `darkfi-amm-types` is the external replacement
    For the intent-settlement path, the remaining options are:
-   - upstream intent / intent-set modules into DarkFi proper
+   - upstream intent / intent-set modules into DarkWow proper
    - extract them into a second external exchange-types package
 
 3. Replace implicit arithmetic conventions with explicit shared semantics.
@@ -111,7 +111,7 @@ types to live inside a DarkFi fork.
    The quickest confidence path is to bind `amm-darkfi` transition vectors to the
    shared safemath templates and fixture logic first.
 
-5. Only then switch the AMM workspace off the fork-era DarkFi line.
+5. Only then switch the AMM workspace off the fork-era DarkWow line.
    For the direct path, the target dependency set is now:
    - official `darkfi-sdk`
    - `darkfi-amm-types`
@@ -122,16 +122,16 @@ types to live inside a DarkFi fork.
 An attempted direct proof harness that pulled:
 
 - the current `amm-darkfi` workspace
-- and a clean official DarkFi worktree
+- and a clean official DarkWow worktree
 
-into one Cargo graph hit package-collision failures on shared DarkFi path crates like:
+into one Cargo graph hit package-collision failures on shared DarkWow path crates like:
 
 - `darkfi`
 - `darkfi-derive`
 
 That is itself useful evidence for the exit plan:
 
-- the current AMM workspace still inherits the fork-era local DarkFi tree deeply enough
+- the current AMM workspace still inherits the fork-era local DarkWow tree deeply enough
   that side-by-side verification against official-master cannot be done inside one Cargo
   lockfile yet
 - so the first executable compatibility harness lives outside `amm-darkfi`, in this repo,

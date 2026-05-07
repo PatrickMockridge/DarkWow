@@ -1,6 +1,6 @@
 # Sync Module
 
-A clean, minimal blockchain synchronization module for DarkFi validator.
+A clean, minimal blockchain synchronization module for DarkWow validator.
 
 ## Overview
 

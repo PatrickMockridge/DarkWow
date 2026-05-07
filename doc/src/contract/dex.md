@@ -32,10 +32,10 @@ Instead of building a transparent system and trying to add privacy, we start com
 The MVP is a **DAO that coordinates bilateral atomic swaps** - not a full order book:
 
 ```
-Alice wants: 100 DRK ↔ 1 ETH (Bob's offer)
-Bob wants: 1 ETH ↔ 100 DRK (Alice's offer)
+Alice wants: 100 DRKW ↔ 1 ETH (Bob's offer)
+Bob wants: 1 ETH ↔ 100 DRKW (Alice's offer)
 
-1. Proposal: Alice locks 100 DRK, creates swap proposal
+1. Proposal: Alice locks 100 DRKW, creates swap proposal
 2. Acceptance: Bob locks 1 ETH, accepts swap
 3. Execution: Atomic swap executes
 4. Timeout: Auto-refund if no acceptance
@@ -160,7 +160,7 @@ is_match = less_than_or_equal(my_price, market_price);
 
 The key is **not revealing what you're looking for**:
 
-| SPV Problem | DarkFi Solution |
+| SPV Problem | DarkWow Solution |
 |-------------|-----------------|
 | Bloom filters reveal addresses | Order commitments hidden until match |
 | Address clustering | Different key per order |
@@ -191,7 +191,7 @@ When solver queries for matching orders, the SMT query reveals what they're look
 Naive: Query SMT for "orders where price >= X"
       → Reveals you're looking for price X
 
-DarkFi: Solver computes in encrypted domain
+DarkWow: Solver computes in encrypted domain
         → Only submits ZK proof of valid match
         → No one learns what orders were queried
 ```
@@ -210,7 +210,7 @@ The DEX supports bridged tokens from the universal bridge:
 
 ## Comparison
 
-| Feature | UniSwap | Curve | DarkFi DEX |
+| Feature | UniSwap | Curve | DarkWow DEX |
 |---------|---------|-------|------------|
 | Order visibility | Full | Full | Level-dependent |
 | Amount privacy | None | None | ZK commitments |
@@ -221,8 +221,8 @@ The DEX supports bridged tokens from the universal bridge:
 
 ## References
 
-- [DarkFi DEX Contract](../../src/contract/dex/)
-- [DarkFi Money Contract](./money.md)
-- [DarkFi Bridge Contract](./bridge.md)
+- [DarkWow DEX Contract](../../src/contract/dex/)
+- [DarkWow Money Contract](./money.md)
+- [DarkWow Bridge Contract](./bridge.md)
 - [SPV Privacy Problem](https://en.bitcoin.it/wiki/Thin_Client_Security)
 - [Differential Privacy](https://en.wikipedia.org/wiki/differential_privacy)

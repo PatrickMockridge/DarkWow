@@ -1,9 +1,9 @@
 [book]
-authors = ["DarkFi"]
+authors = ["DarkWow"]
 language = "en"
 src = "src"
-title = "The DarkFi Book"
-description = "DarkFi mdbook"
+title = "The DarkWow Book"
+description = "DarkWow mdbook"
 text-direction = "ltr"
 
 [output.html]

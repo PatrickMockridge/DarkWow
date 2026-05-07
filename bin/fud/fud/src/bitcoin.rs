@@ -1,6 +1,11 @@
-/* This file is part of DarkFi (https://dark.fi)
+/* This file is part of DarkWow
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -45,7 +50,7 @@ pub type BitcoinBlockHash = [u8; 32];
 /// This is only used to evaluate and verify fud's Equi-X PoW.
 /// Bitcoin block hashes are used in the challenge, to make Equi-X solution
 /// expirable and unpredictable.
-/// It's meant to be swapped with DarkFi block hashes once it is stable enough.
+/// It's meant to be swapped with DarkWow block hashes once it is stable enough.
 /// TODO: It should ask for new Electrum nodes, and build a local database of them
 /// instead of relying only on the list defined in the settings.
 pub struct BitcoinHashCache {

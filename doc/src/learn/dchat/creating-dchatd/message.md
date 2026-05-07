@@ -4,7 +4,7 @@ We'll start by creating a custom `Message` type called `DchatMsg`. This is the
 data structure that we'll use to send messages between `dchat` instances.
 
 Messages on the p2p network must implement the `Message` trait. `Message` is a
-generic type that standardizes all messages on DarkFi's p2p network.
+generic type that standardizes all messages on DarkWow's p2p network.
 
 We define a custom type called `DchatMsg` that implements the
 `Message` trait. We also add `darkfi::util::SerialEncodable` and

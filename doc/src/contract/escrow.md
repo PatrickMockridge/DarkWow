@@ -44,7 +44,7 @@ Traditional escrow requires a trusted third party:
 
 ## Trust Model: Hashed Timelock (Variant 3)
 
-Three variants exist in the wild. DarkFi uses Variant 3:
+Three variants exist in the wild. DarkWow uses Variant 3:
 
 | Variant | Claim Mechanism | Refund Mechanism | Trust Model |
 |---------|-----------------|------------------|-------------|
@@ -167,7 +167,7 @@ The refund circuit only needs to verify `current_block > timeout`. It doesn't ne
 
 ### Trustless OTC Trade
 ```rust
-// Alice wants to sell 1000 DARK for 1 ETH to Bob
+// Alice wants to sell 1000 DRKW for 1 ETH to Bob
 // Neither trusts the other
 
 // Step 1: Alice creates escrow
@@ -179,13 +179,13 @@ let escrow = CreateEscrowBuilder::new()
     .timeout(current_block + 1000)  // ~1 week
     .build()?;
 
-// Step 2: Alice funds escrow (locks 1000 DARK)
+// Step 2: Alice funds escrow (locks 1000 DRKW)
 
 // Step 3a: Alice claims — proves she knows seller_secret
-//           Gets the 1000 DARK
+//           Gets the 1000 DRKW
 
 // OR Step 3b: After timeout, Bob refunds — proves timeout passed
-//             Gets the 1000 DARK back
+//             Gets the 1000 DRKW back
 ```
 
 ### Conditional Payment
@@ -288,7 +288,7 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 
 ## Comparison
 
-| Feature | Traditional Escrow | Smart Contract (Public) | DarkFi Escrow |
+| Feature | Traditional Escrow | Smart Contract (Public) | DarkWow Escrow |
 |---------|-------------------|------------------------|---------------|
 | Privacy | Full privacy | Zero (terms visible) | Full (commitment only) |
 | Trust | Third party | Trustless, public | Trustless, private |
@@ -320,8 +320,8 @@ Unlike other contracts, escrow has **no opcode blockers**. All required function
 
 ## References
 
-- [DarkFi Escrow README](../../src/contract/escrow/README.md)
-- [DarkFi DAO Contract](./dao.md)
-- [DarkFi Money Contract](../spec/contract/money/money.md)
+- [DarkWow Escrow README](../../src/contract/escrow/README.md)
+- [DarkWow DAO Contract](./dao.md)
+- [DarkWow Money Contract](../spec/contract/money/money.md)
 - [zkVM Primitive Layer](./zkvm_primitives.md)
 - [Field Arithmetic Constraints](./field_arithmetic.md)

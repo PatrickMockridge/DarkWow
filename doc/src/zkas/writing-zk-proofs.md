@@ -1,9 +1,11 @@
 # Writing ZK Proofs
 
-ZK proofs in DarkFi are written in a simple low level
+> **Note:** The zkas compiler and zkVM described here are inherited from upstream DarkFi. The toolchain, language syntax, and proof format are shared with upstream and track upstream changes.
+
+ZK proofs in DarkWow are written in a simple low level
 [DSL](https://en.wikipedia.org/w/index.php?title=Domain-specific_language).
 The zkas compiler then converts this human readable code into bytecode
-that is run on the DarkFi ZKVM.
+that is run on the DarkWow ZKVM.
 
 ## Zkas Usage
 

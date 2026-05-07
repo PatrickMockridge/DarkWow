@@ -6,7 +6,7 @@
 
 ## Summary
 
-Extensive local devnet smart contract testing was performed on DarkFi contracts. Results show that the localnet infrastructure is functional but deployment confirmations are slow/blocked.
+Extensive local devnet smart contract testing was performed on DarkWow contracts. Results show that the localnet infrastructure is functional but deployment confirmations are slow/blocked.
 
 ## ZK Proof Client Module Implementation (2026-04-08 Update)
 

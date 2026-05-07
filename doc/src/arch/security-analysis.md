@@ -1,6 +1,6 @@
-# Security Analysis: Unofficial DarkFi Smart Contracts
+# Security Analysis: Unofficial DarkWow Smart Contracts
 
-*This document analyzes security issues in the non-standard smart contracts added to the DarkFi dev branch. These contracts are NOT part of the official DarkFi master and should be considered experimental.*
+*This document analyzes security issues in the non-standard smart contracts added to the DarkWow dev branch. These contracts are NOT part of the official DarkWow master and should be considered experimental.*
 
 ---
 
@@ -321,7 +321,7 @@ wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier), &[])?;
 
 **Location**: [atomic_swap/src/entrypoint.rs:131-201](file://../../src/contract/atomic_swap/src/entrypoint.rs#L131-L201)
 
-**Problem**: The contract expects `wasm::zk::verify_zk_proof()` from the DarkFi runtime, but this function is not implemented in the SDK. The WASM SDK (`src/sdk/src/wasm/`) does not expose a `zk` module — ZK verification is provided by the DarkFi validator runtime, not the SDK.
+**Problem**: The contract expects `wasm::zk::verify_zk_proof()` from the DarkWow runtime, but this function is not implemented in the SDK. The WASM SDK (`src/sdk/src/wasm/`) does not expose a `zk` module — ZK verification is provided by the DarkWow validator runtime, not the SDK.
 
 **Root Cause**: The SDK's `wasm` module only exposes:
 - `wasm::db::*` — Database operations
@@ -349,7 +349,7 @@ This proves the claimer knows the secret — equivalent security guarantee to th
 **Why Secret Revelation is NOT a Privacy Regression**:
 
 The secret MUST be revealed for atomic swap completion:
-1. Bob claims on DarkFi → secret revealed → Bob gets funds
+1. Bob claims on DarkWow → secret revealed → Bob gets funds
 2. Alice sees secret → claims on external chain → Alice gets funds
 
 This is fundamental to HTLC — the counterparty needs the secret to complete. Unlike Monero's ring signatures (where reveal is fake), HTLC requires actual secret revelation.
@@ -366,7 +366,7 @@ This is fundamental to HTLC — the counterparty needs the secret to complete. U
 
 **Resolution Options**:
 1. **Accept current design** — Secret revelation is inherent to HTLC, not a regression
-2. **Integrate runtime** — Requires DarkFi validator's `wasm::zk` imports (major refactor)
+2. **Integrate runtime** — Requires DarkWow validator's `wasm::zk` imports (major refactor)
 3. **Privacy-preserving option** — For non-atomic-swap use cases, integrate full ZK proof
 
 **Conclusion**: The "privacy loss" framing was incorrect. The current implementation is cryptographically sound and privacy-appropriate for HTLC semantics. ZK proof integration would not eliminate secret revelation — it would only hide it from third parties before the swap completes, which is incompatible with atomic swap design.
@@ -379,7 +379,7 @@ This is fundamental to HTLC — the counterparty needs the secret to complete. U
 
 **Problem**: The `timelock` is passed as a witness but never checked in the circuit. The value has no effect on claim eligibility.
 
-**Analysis**: This is **intentional by design** — asymmetric timelocks are superior to symmetric ones for cross-chain atomic swaps. Alice has refund protection via Ethereum timelock, Bob has immediate claim on DarkFi. See Issue #6 below for full analysis.
+**Analysis**: This is **intentional by design** — asymmetric timelocks are superior to symmetric ones for cross-chain atomic swaps. Alice has refund protection via Ethereum timelock, Bob has immediate claim on DarkWow. See Issue #6 below for full analysis.
 
 **Status**: INTENTIONAL — not a bug, a feature.
 
@@ -393,11 +393,11 @@ This is fundamental to HTLC — the counterparty needs the secret to complete. U
 
 **Fix Applied**: Both CreateSwap and Claim circuits now verify `poseidon_hash(secret)` matches the stored hash. The hash is no longer a free variable.
 
-**Remaining Issue**: For cross-chain swaps with Ethereum (SHA256), the poseidon_hash on DarkFi is not cryptographically bound to the external chain's SHA256 hash. A bridge or oracle is needed to verify the cross-chain binding.
+**Remaining Issue**: For cross-chain swaps with Ethereum (SHA256), the poseidon_hash on DarkWow is not cryptographically bound to the external chain's SHA256 hash. A bridge or oracle is needed to verify the cross-chain binding.
 
 **Impact** (mitigated): The poseidon_hash verification prevents arbitrary (hash, secret) pairs from being used. The claimer must have created the swap via CreateSwap, establishing the swap_id binding.
 
-**Recommendation**: External chain integration requires a commit-reveal or bridge scheme where an oracle verifies SHA256(hash) on Ethereum and creates a corresponding DarkFi swap.
+**Recommendation**: External chain integration requires a commit-reveal or bridge scheme where an oracle verifies SHA256(hash) on Ethereum and creates a corresponding DarkWow swap.
 
 ---
 
@@ -419,7 +419,7 @@ This is fundamental to HTLC — the counterparty needs the secret to complete. U
 
 If we added `require(timelock <= current_block)` to claim:
 ```
-1. Bob locks funds on DarkFi
+1. Bob locks funds on DarkWow
 2. Alice creates swap
 3. Alice decides not to cooperate
 4. Bob cannot claim (timelock hasn't passed)
@@ -430,28 +430,28 @@ The timelock becomes a **griefing vector**! Alice can block Bob's claim forever.
 
 **The Correct Design: Asymmetric Timelock Protection**
 
-DarkFi's atomic swap uses asymmetric timelocks by design:
+DarkWow's atomic swap uses asymmetric timelocks by design:
 
 | Party | Protection | How |
 |-------|------------|-----|
 | **Alice** (initiator) | Timelock on Ethereum | Can refund after T if Bob doesn't claim |
-| **Bob** (responder) | Immediate claim on DarkFi | Can claim anytime when secret known |
+| **Bob** (responder) | Immediate claim on DarkWow | Can claim anytime when secret known |
 
 **The Cross-Chain Flow:**
 
 ```
-1. Alice creates DarkFi swap: H' = poseidon_hash(secret)
+1. Alice creates DarkWow swap: H' = poseidon_hash(secret)
 2. Alice creates Ethereum HTLC: H = SHA256(secret), timelock = T
 3. Alice reveals secret on Ethereum → claims her ETH
-4. Bob monitors DarkFi, sees secret revealed → claims on DarkFi immediately
-5. Alice monitors DarkFi → sees Bob claimed → done
+4. Bob monitors DarkWow, sees secret revealed → claims on DarkWow immediately
+5. Alice monitors DarkWow → sees Bob claimed → done
 ```
 
 **Key Insights:**
 
 1. **Alice has leverage**: She can refuse to reveal secret. But she loses nothing - her ETH is locked on Ethereum with a timelock.
 
-2. **Bob has urgency**: Bob locked his funds on DarkFi. If Alice reveals the secret, Bob should claim **immediately**. No timelock should block him.
+2. **Bob has urgency**: Bob locked his funds on DarkWow. If Alice reveals the secret, Bob should claim **immediately**. No timelock should block him.
 
 3. **Atomicity comes from hash binding, not timelocks**:
    - Alice reveals → Bob claims → both execute atomically
@@ -459,12 +459,12 @@ DarkFi's atomic swap uses asymmetric timelocks by design:
 
 4. **If Alice tries to grief Bob**:
    - Alice doesn't reveal secret on Ethereum
-   - Bob can't claim on DarkFi (no secret)
+   - Bob can't claim on DarkWow (no secret)
    - Bob waits... but Alice's ETH is locked too
    - Eventually Alice's timelock expires → Alice refunds → Bob gets funds back
 
 5. **If Bob tries to grief Alice**:
-   - Bob doesn't claim on DarkFi after secret revealed
+   - Bob doesn't claim on DarkWow after secret revealed
    - Alice already claimed on Ethereum
    - Alice doesn't care - she got her funds
    - Bob loses his opportunity
@@ -477,7 +477,7 @@ Symmetric (traditional HTLC):
 - Timelock protects both but also blocks both
 - Cooperative path requires waiting
 
-Asymmetric (DarkFi):
+Asymmetric (DarkWow):
 - Alice has refund timelock (protection)
 - Bob has immediate claim (no blocking)
 - Cooperative path is fast
@@ -500,24 +500,24 @@ The "missing" timelock check on claim is **not a bug - it's a feature**:
 
 **Location**: [claim_v1.zk](file://../../src/contract/atomic_swap/proof/claim_v1.zk), [atomic_swap.md](../../doc/src/contract/atomic_swap.md)
 
-**Problem (Original)**: DarkFi cannot verify SHA256 used by Ethereum, and Ethereum cannot verify poseidon_hash used by DarkFi.
+**Problem (Original)**: DarkWow cannot verify SHA256 used by Ethereum, and Ethereum cannot verify poseidon_hash used by DarkWow.
 
 **Analysis (Current)**: This is **not actually a vulnerability** because each chain only needs to verify its own hash function:
 
 | Chain | Hash Used | Verification |
 |-------|-----------|-------------|
-| DarkFi | `poseidon_hash(secret)` | ZK circuit verifies in-circuit |
+| DarkWow | `poseidon_hash(secret)` | ZK circuit verifies in-circuit |
 | Ethereum | `SHA256(secret)` | EVM verifies natively |
 
 **How the cross-chain swap works without oracles**:
 
-1. Alice creates DarkFi swap with `H' = poseidon_hash(secret)`
+1. Alice creates DarkWow swap with `H' = poseidon_hash(secret)`
 2. Alice creates Ethereum HTLC with `H = SHA256(secret)`
 3. Alice reveals secret on Ethereum voluntarily (to claim her ETH)
-4. Bob monitors DarkFi, sees secret revealed, claims on DarkFi
-5. Alice monitors DarkFi for Bob's claim, then claims on Ethereum
+4. Bob monitors DarkWow, sees secret revealed, claims on DarkWow
+5. Alice monitors DarkWow for Bob's claim, then claims on Ethereum
 
-**Key insight**: Each chain verifies the hash it understands. No cross-chain verification is needed. Alice reveals voluntarily when she wants to claim, and Bob has financial incentive to claim on DarkFi when he sees the reveal.
+**Key insight**: Each chain verifies the hash it understands. No cross-chain verification is needed. Alice reveals voluntarily when she wants to claim, and Bob has financial incentive to claim on DarkWow when he sees the reveal.
 
 **Impact** (mitigated): The design is sound for cooperative cross-chain swaps. A malicious actor cannot steal funds by exploiting hash function differences.
 
@@ -685,7 +685,7 @@ proposer_pub_x: [0u8; 32],
 proposer_pub_y: [0u8; 32],
 ```
 
-**Analysis**: This is an architectural limitation of the simplified bridge pattern. The signature field is available in params but cannot be verified without the full DarkFi transaction verification framework.
+**Analysis**: This is an architectural limitation of the simplified bridge pattern. The signature field is available in params but cannot be verified without the full DarkWow transaction verification framework.
 
 **What was added**: Documentation explaining the limitation and TODO comment.
 
@@ -694,7 +694,7 @@ proposer_pub_y: [0u8; 32],
 - Any party can claim to be any other party
 - No accountability for swap participants
 
-**Recommendation**: Refactor DEX to use the full DarkFi contract framework with proper signature verification.
+**Recommendation**: Refactor DEX to use the full DarkWow contract framework with proper signature verification.
 
 ---
 
@@ -729,13 +729,13 @@ if params.lock_proof.is_empty() {
 
 **Location**: DEX's `get_metadata()` (inherited from contract framework)
 
-**Problem**: The DEX uses a simplified bridge architecture that doesn't integrate with the full DarkFi zkVM for proof verification. The ZK circuits exist but the contract framework doesn't call the verifier.
+**Problem**: The DEX uses a simplified bridge architecture that doesn't integrate with the full DarkWow zkVM for proof verification. The ZK circuits exist but the contract framework doesn't call the verifier.
 
 **Impact**: All ZK circuit constraints (secret knowledge, lock proofs, etc.) are not enforced on-chain.
 
 **Analysis**: The DEX ZK circuits are properly defined and would verify correctly if integrated with the zkVM. However, the current simplified bridge pattern doesn't support on-chain ZK verification.
 
-**Recommendation**: Refactor DEX to use the full DarkFi contract framework for ZK proof verification.
+**Recommendation**: Refactor DEX to use the full DarkWow contract framework for ZK proof verification.
 
 ---
 
@@ -1147,7 +1147,7 @@ The LessThanOrEqual implementation **fails property 1** because the output is no
 
 The vulnerability class is **injection**: the prover can inject arbitrary values into underconstrained parts of the circuit, altering the output. These are not "minor soundness issues" but fundamental gaps that must be fixed for production use.
 
-The `less_than_strict` opcode used throughout DarkFi's contracts avoids these issues because it is **constrain-only** — it does not produce a usable output value, only a boolean constraint. This eliminates the underdetermined variable problem entirely.
+The `less_than_strict` opcode used throughout DarkWow's contracts avoids these issues because it is **constrain-only** — it does not produce a usable output value, only a boolean constraint. This eliminates the underdetermined variable problem entirely.
 
 ---
 
@@ -1201,7 +1201,7 @@ The `less_than_strict` opcode used throughout DarkFi's contracts avoids these is
 
 ### Intentional Design Decisions (Not Bugs)
 
-- **Issue 6 (MAJOR)**: No timelock on claim is INTENTIONAL - asymmetric timelock is better than symmetric. Alice has refund protection via Ethereum timelock. Bob has immediate claim on DarkFi. See Issue #6 above for full analysis.
+- **Issue 6 (MAJOR)**: No timelock on claim is INTENTIONAL - asymmetric timelock is better than symmetric. Alice has refund protection via Ethereum timelock. Bob has immediate claim on DarkWow. See Issue #6 above for full analysis.
 
 ### Outstanding for DrainProtection Integration
 
@@ -1228,10 +1228,10 @@ Several security issues have been addressed in this session:
 - DEX lock_proof basic validation added
 
 **Architectural Limitations (Require Refactoring):**
-- DEX public keys zeroed — requires refactor to full DarkFi contract framework with signature verification
+- DEX public keys zeroed — requires refactor to full DarkWow contract framework with signature verification
 - DEX ZK proof verification — requires zkVM integration
 - atomic_swap ZK proof verification — requires zkVM integration
 
-The design philosophy of avoiding experimental opcodes with known soundness issues is sound, and several contracts (Subscription, Escrow, DAO-Escrow, Bridge) have addressed their issues appropriately. The atomic_swap and DEX contracts have had their state machine issues fixed, but ZK proof verification requires deeper integration with the DarkFi blockchain framework.
+The design philosophy of avoiding experimental opcodes with known soundness issues is sound, and several contracts (Subscription, Escrow, DAO-Escrow, Bridge) have addressed their issues appropriately. The atomic_swap and DEX contracts have had their state machine issues fixed, but ZK proof verification requires deeper integration with the DarkWow blockchain framework.
 
-*This analysis reflects the state of the dev branch and these contracts are NOT part of official DarkFi master.*
+*This analysis reflects the state of the dev branch and these contracts are NOT part of official DarkWow master.*

@@ -173,11 +173,11 @@ and participating in crypto communities.
 1. Download and install a simple Linux operating system to get started. Options can be Ubuntu or Manjaro Linux.
 2. Watch [Finematics videos](https://www.youtube.com/c/Finematics/videos).
 3. Begin the initial stage listed above.
-4. Follow the instructions on the Darkfi Book and run [darkirc](https://dark.fi/book/misc/darkirc/darkirc.html) to connect with the team.
+4. Follow the instructions on the Darkfi Book and run [darkirc](https://darkwow.org/book/misc/darkirc/darkirc.html) to connect with the team.
 
 ## Further Reading
 
-* [DarkFi Insights](https://dark.fi/insights/)
+* [DarkWow Insights](https://darkwow.org/insights/)
 
 ### Current Situation and Macro Overview
 

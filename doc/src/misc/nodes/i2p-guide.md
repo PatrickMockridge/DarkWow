@@ -2,7 +2,7 @@
 
 _To connect to I2p network we use the socks5 proxy provided by [I2pd](https://i2pd.website/)_
 
-<u><b>Note</b></u>: This page is a general guide for `i2p` nodes in the DarkFi 
+<u><b>Note</b></u>: This page is a general guide for `i2p` nodes in the DarkWow 
 ecosystem and is applicable to other apps such as `taud` and `darkfid`. We use 
 `darkirc` as our main example throughout this guide. Commands such as `./darkirc`
 and configuration filenames need to be adjusted if using different apps.
