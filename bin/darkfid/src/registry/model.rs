@@ -266,18 +266,18 @@ impl PowRewardV1Zk {
     }
 }
 
-/// Linear blockchain miner rewards recipient configuration
+/// Linear blockchain miner rewards recipient configuration.
+/// Reward value is computed from `darkfi_sdk::blockchain::expected_reward(height)`,
+/// not configured statically.
 #[derive(Debug, Clone)]
 pub struct LinearMinerRewardsRecipientConfig {
     /// Public key to receive mining rewards
     pub recipient: PublicKey,
-    /// Reward value (in smallest unit)
-    pub value: u64,
 }
 
 impl LinearMinerRewardsRecipientConfig {
-    pub fn new(recipient: PublicKey, value: u64) -> Self {
-        Self { recipient, value }
+    pub fn new(recipient: PublicKey) -> Self {
+        Self { recipient }
     }
 
     pub async fn from_str(address: &str) -> std::result::Result<Self, RpcError> {
@@ -295,8 +295,7 @@ impl LinearMinerRewardsRecipientConfig {
         }
 
         let recipient = *addr.public_key();
-        let value = 100_000_000u64;
-        Ok(Self { recipient, value })
+        Ok(Self { recipient })
     }
 }
 
@@ -486,11 +485,15 @@ pub async fn generate_linear_block_template(
         consensus.difficulty_target()
     };
 
+    // Compute block reward from the exponential-decay emission schedule.
+    use darkfi_sdk::blockchain::expected_reward;
+    let reward = expected_reward(height as u32);
+
     // Build ZK coinbase if ZK materials are available
     if let Some(zk) = linear_zk {
         let (coinbase, public_inputs) = build_linear_coinbase(
             recipient_config.recipient,
-            recipient_config.value,
+            reward,
             zk,
         ).await?;
 
@@ -498,7 +501,7 @@ pub async fn generate_linear_block_template(
             previous: previous_hash,
             height,
             difficulty_target,
-            value: recipient_config.value,
+            value: reward,
             zk_proof: coinbase.proof,
             zk_public_inputs: public_inputs,
             coin: coinbase.coin,
@@ -514,7 +517,7 @@ pub async fn generate_linear_block_template(
         previous: previous_hash,
         height,
         difficulty_target,
-        value: recipient_config.value,
+        value: reward,
         zk_proof: vec![],
         zk_public_inputs: [[0u8; 32]; 4],
         coin: [0u8; 32],

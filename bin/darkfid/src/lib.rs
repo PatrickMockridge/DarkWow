@@ -313,10 +313,12 @@ impl Darkfid {
                 .unwrap()
                 .as_secs();
 
+            let genesis_reward = darkfi_sdk::blockchain::expected_reward(genesis_height as u32);
+
             let genesis_tx = Transaction {
                 version: 1,
                 inputs: vec![],
-                outputs: vec![Output { value: 100_000_000, script: vec![] }],
+                outputs: vec![Output { value: genesis_reward, script: vec![] }],
                 contract_calls: vec![],
                 lock_time: 0,
                 coinbase: None,
@@ -331,7 +333,7 @@ impl Darkfid {
                 nonce: 0,
                 height: genesis_height,
                 uncle_merkle_root: [0u8; 32],
-                total_reward: 100_000_000,
+                total_reward: genesis_reward,
                 randomx_key,
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],

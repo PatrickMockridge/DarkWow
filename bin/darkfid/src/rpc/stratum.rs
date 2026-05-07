@@ -336,7 +336,7 @@ impl DarkfiNode {
             nonce: 0, // placeholder - miner will find this
             height: template.height,
             uncle_merkle_root: [0u8; 32],
-            total_reward: 100_000_000,
+            total_reward: template.value,
             randomx_key,
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
@@ -664,6 +664,9 @@ impl DarkfiNode {
             (None, [0u8; 32], [0u8; 32])
         };
 
+        // Compute block reward from the exponential-decay emission schedule
+        let reward = darkfi_sdk::blockchain::expected_reward(submitted_height as u32);
+
         // Build block header with privacy fields
         let header = darkfi_linear::BlockHeader {
             version: 1,
@@ -674,7 +677,7 @@ impl DarkfiNode {
             nonce,
             height: submitted_height,
             uncle_merkle_root: [0u8; 32],
-            total_reward: 100_000_000,
+            total_reward: reward,
             randomx_key,
             coin_merkle_root,
             nullifier_root,
@@ -685,7 +688,7 @@ impl DarkfiNode {
             version: 1,
             inputs: vec![],
             outputs: vec![darkfi_linear::Output {
-                value: 100_000_000,
+                value: reward,
                 script: vec![],
             }],
             contract_calls: vec![],
@@ -757,7 +760,7 @@ impl DarkfiNode {
                                     nonce: 0,
                                     height: new_height,
                                     uncle_merkle_root: [0u8; 32],
-                                    total_reward: 100_000_000,
+                                    total_reward: new_template.value,
                                     randomx_key: new_randomx_key,
                                     coin_merkle_root: [0u8; 32],
                                     nullifier_root: [0u8; 32],

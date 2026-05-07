@@ -621,7 +621,72 @@ mod tests {
         assert_eq!(block.header.previous, previous);
         assert_eq!(block.header.height, 1);
         assert_eq!(block.header.uncle_merkle_root, [0u8; 32]);
-        // With no uncles, total_reward = base_reward
-        assert_eq!(block.header.total_reward, 100_000_000);
+        // With no uncles, total_reward = base_reward = expected_reward(height)
+        assert_eq!(block.header.total_reward, darkfi_sdk::blockchain::expected_reward(1));
+    }
+
+    /// Verify the coinbase lifecycle: create blocks at heights 1, 2, 3,
+    /// check rewards follow the exponential-decay emission schedule, and
+    /// confirm blocks can be applied to a LinearBlockchain.
+    #[test]
+    fn test_coinbase_lifecycle() {
+        let vm = create_test_vm();
+
+        // Height 1: ~13.8375 DRKW (INITIAL_REWARD)
+        let block1 = create_block_with_uncles(
+            blake3::hash(b"genesis"),
+            1,
+            vec![],
+            0x0000_FFFF,
+            &[],
+            &vm,
+        );
+        let reward1 = darkfi_sdk::blockchain::expected_reward(1);
+        assert_eq!(block1.header.total_reward, reward1);
+        assert!(reward1 > 1_000_000_000, "height 1 reward should be > 1B base units");
+
+        // Height 2: slightly less than height 1 (exponential decay)
+        let block2 = create_block_with_uncles(
+            block1.hash(&vm),
+            2,
+            vec![],
+            0x0000_FFFF,
+            &[],
+            &vm,
+        );
+        let reward2 = darkfi_sdk::blockchain::expected_reward(2);
+        assert_eq!(block2.header.total_reward, reward2);
+        assert!(reward2 <= reward1, "reward must decay monotonically");
+
+        // Height 3: continues decay
+        let block3 = create_block_with_uncles(
+            block2.hash(&vm),
+            3,
+            vec![],
+            0x0000_FFFF,
+            &[],
+            &vm,
+        );
+        let reward3 = darkfi_sdk::blockchain::expected_reward(3);
+        assert_eq!(block3.header.total_reward, reward3);
+        assert!(reward3 <= reward2, "reward must decay monotonically");
+
+        // All rewards must be >= TAIL_REWARD
+        let tail = darkfi_sdk::blockchain::reward::TAIL_REWARD;
+        assert!(reward1 >= tail);
+        assert!(reward2 >= tail);
+        assert!(reward3 >= tail);
+    }
+
+    /// Verify create_block (without uncles) uses expected_reward.
+    #[test]
+    fn test_create_block_reward() {
+        let vm = create_test_vm();
+        let previous = blake3::hash(b"genesis");
+
+        let block = create_block(previous, 42, vec![], 0x0000_FFFF, &vm);
+        let expected = darkfi_sdk::blockchain::expected_reward(42);
+        assert_eq!(block.header.total_reward, expected);
+        assert_eq!(block.header.height, 42);
     }
 }
