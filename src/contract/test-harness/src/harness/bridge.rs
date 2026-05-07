@@ -25,13 +25,16 @@ use darkfi::{
     zkas::ZkBinary,
 };
 use darkfi_sdk::{
-    crypto::{IntentCommitment, MerkleNode, PublicKey, pasta_prelude::PrimeField},
+    crypto::{IntentCommitment, IntentNullifier, MerkleNode, PublicKey, pasta_prelude::PrimeField},
     pasta::pallas,
 };
 use darkfi_serial::Encodable;
 
-use darkfi_bridge_contract::client::deposit_v1::{create_deposit_proof, DepositCallData, DepositPublicInputs};
-use darkfi_bridge_contract::model::{DepositParams, ExternalChain};
+use darkfi_bridge_contract::client::{
+    deposit_v1::{DepositCallData, DepositPublicInputs, create_deposit_proof},
+    withdraw_v1::{WithdrawCallData, WithdrawPublicInputs, create_withdraw_proof},
+};
+use darkfi_bridge_contract::model::{DepositParams, ExternalChain, WithdrawParams};
 
 /// Bridge Harness for isolated testing
 pub struct BridgeHarness {
@@ -39,23 +42,31 @@ pub struct BridgeHarness {
     deposit_zkbin: ZkBinary,
     /// Deposit_V1 ProvingKey
     deposit_pk: ProvingKey,
+    /// Withdraw_V1 ZkBinary
+    withdraw_zkbin: ZkBinary,
+    /// Withdraw_V1 ProvingKey
+    withdraw_pk: ProvingKey,
 }
 
 impl BridgeHarness {
     /// Spawn a new Bridge harness with pre-loaded circuits
     pub fn spawn() -> Self {
         let deposit_bin = include_bytes!("../../../bridge/proof/deposit_v1.zk.bin");
+        let withdraw_bin = include_bytes!("../../../bridge/proof/withdraw_v1.zk.bin");
 
         let deposit_zkbin = ZkBinary::decode(deposit_bin, false).unwrap();
+        let withdraw_zkbin = ZkBinary::decode(withdraw_bin, false).unwrap();
 
-        let deposit_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&deposit_zkbin).unwrap(),
-            &deposit_zkbin,
+        let deposit_pk = ProvingKey::build(
+            deposit_zkbin.k,
+            &ZkCircuit::new(darkfi::zk::empty_witnesses(&deposit_zkbin).unwrap(), &deposit_zkbin),
+        );
+        let withdraw_pk = ProvingKey::build(
+            withdraw_zkbin.k,
+            &ZkCircuit::new(darkfi::zk::empty_witnesses(&withdraw_zkbin).unwrap(), &withdraw_zkbin),
         );
 
-        let deposit_pk = ProvingKey::build(deposit_zkbin.k, &deposit_circuit);
-
-        Self { deposit_zkbin, deposit_pk }
+        Self { deposit_zkbin, deposit_pk, withdraw_zkbin, withdraw_pk }
     }
 
     /// Create a deposit with ZK proof
@@ -107,10 +118,55 @@ impl BridgeHarness {
             ltc_proof: None,
         };
 
-        let mut call_data = vec![0x01]; // DepositV1 function code
+        let mut call_data = vec![0x01];
         params.encode(&mut call_data)?;
 
         Ok(DepositResult { call_data, proof, public_inputs })
+    }
+
+    /// Create a withdrawal with ZK proof (function code 0x02)
+    pub fn withdraw(
+        &self,
+        secret: pallas::Base,
+        amount: u64,
+        recipient_hash: pallas::Base,
+        bridge_address: pallas::Base,
+        merkle_root: pallas::Base,
+        merkle_proof: [pallas::Base; 4],
+        leaf_index: u64,
+        fee: u64,
+    ) -> Result<WithdrawResult, Box<dyn std::error::Error>> {
+        let input = WithdrawCallData::new(
+            secret,
+            amount,
+            recipient_hash,
+            bridge_address,
+            merkle_root,
+            merkle_proof,
+            leaf_index,
+        );
+
+        let (proof, public_inputs) = create_withdraw_proof(
+            &self.withdraw_zkbin,
+            &self.withdraw_pk,
+            &input,
+        )?;
+
+        let nullifier = IntentNullifier::from_bytes(public_inputs.nullifier.to_repr())
+            .map_err(|e| format!("Invalid nullifier: {e}"))?;
+
+        let params = WithdrawParams {
+            nullifier,
+            recipient_hash: public_inputs.recipient_hash.to_repr(),
+            amount,
+            proof: proof.as_ref().to_vec(),
+            fee,
+        };
+
+        let mut call_data = vec![0x02];
+        params.encode(&mut call_data)?;
+
+        Ok(WithdrawResult { call_data, proof, public_inputs })
     }
 }
 
@@ -120,12 +176,13 @@ impl super::ContractHarness for BridgeHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["DepositV1"]
+        vec!["DepositV1", "WithdrawV1"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "DepositV1" => Some(&self.deposit_zkbin),
+            "WithdrawV1" => Some(&self.withdraw_zkbin),
             _ => None,
         }
     }
@@ -133,6 +190,7 @@ impl super::ContractHarness for BridgeHarness {
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
             "DepositV1" => Some(&self.deposit_pk),
+            "WithdrawV1" => Some(&self.withdraw_pk),
             _ => None,
         }
     }
@@ -140,10 +198,14 @@ impl super::ContractHarness for BridgeHarness {
 
 /// Result of deposit
 pub struct DepositResult {
-    /// Encoded call data for contract execution (function code 0x01 + DepositParams)
     pub call_data: Vec<u8>,
-    /// ZK proof
     pub proof: darkfi::zk::Proof,
-    /// Public inputs from proof generation
     pub public_inputs: DepositPublicInputs,
+}
+
+/// Result of withdraw
+pub struct WithdrawResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: WithdrawPublicInputs,
 }

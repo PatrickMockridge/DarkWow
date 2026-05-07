@@ -26,12 +26,16 @@ use darkfi::{
 use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
 use rand::rngs::OsRng;
 
-/// WithdrawV1 circuit public inputs (in order of constrain_instance)
+/// WithdrawV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct WithdrawPublicInputs {
-    /// Nullifier derived from secret
+    /// Nullifier (constrained instance 0)
     pub nullifier: pallas::Base,
-    /// Hash of recipient address on external chain
+    /// Deposit leaf = poseidon_hash(secret, amount) (constrained instance 1)
+    pub deposit_leaf: pallas::Base,
+    /// Derived recipient hash (constrained instance 2)
+    pub derived_recipient: pallas::Base,
+    /// Recipient address hash on external chain (for contract params)
     pub recipient_hash: pallas::Base,
     /// Amount being withdrawn
     pub amount: pallas::Base,
@@ -45,16 +49,10 @@ pub struct WithdrawPublicInputs {
 
 impl WithdrawPublicInputs {
     /// Convert to vector for ZK proof creation
-    /// Order must match constrain_instance calls in withdraw_v1.zk
+    /// Order must match constrain_instance calls in withdraw_v1.zk:
+    /// constrain_instance(computed_nullifier), constrain_instance(deposit_leaf), constrain_instance(derived_recipient)
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.nullifier,
-            self.recipient_hash,
-            self.amount,
-            self.bridge_address,
-            self.merkle_root,
-            self.commitment,
-        ]
+        vec![self.nullifier, self.deposit_leaf, self.derived_recipient]
     }
 }
 
@@ -118,6 +116,8 @@ impl WithdrawCallData {
     pub fn compute_public_inputs(&self) -> WithdrawPublicInputs {
         WithdrawPublicInputs {
             nullifier: self.compute_nullifier(),
+            deposit_leaf: self.compute_deposit_leaf(),
+            derived_recipient: poseidon_hash([self.recipient_hash]),
             recipient_hash: self.recipient_hash,
             amount: pallas::Base::from(self.amount),
             bridge_address: self.bridge_address,
@@ -129,24 +129,23 @@ impl WithdrawCallData {
     /// Generate prover witnesses for the circuit
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let public_inputs = self.compute_public_inputs();
-        let _deposit_leaf = self.compute_deposit_leaf();
-        let _derived_recipient = poseidon_hash([self.recipient_hash]);
 
         vec![
-            // Public inputs
+            // Must match circuit witness order:
+            // nullifier, recipient_hash, amount, bridge_address, merkle_root, commitment,
+            // secret, merkle_proof_0..3, leaf_index
             Witness::Base(Value::known(public_inputs.nullifier)),
             Witness::Base(Value::known(public_inputs.recipient_hash)),
             Witness::Base(Value::known(public_inputs.amount)),
             Witness::Base(Value::known(public_inputs.bridge_address)),
             Witness::Base(Value::known(public_inputs.merkle_root)),
             Witness::Base(Value::known(public_inputs.commitment)),
-            // Private inputs
             Witness::Base(Value::known(self.secret)),
             Witness::Base(Value::known(self.merkle_proof[0])),
             Witness::Base(Value::known(self.merkle_proof[1])),
             Witness::Base(Value::known(self.merkle_proof[2])),
             Witness::Base(Value::known(self.merkle_proof[3])),
-            Witness::Uint32(Value::known(self.leaf_index as u32)),
+            Witness::Base(Value::known(pallas::Base::from(self.leaf_index))),
         ]
     }
 }

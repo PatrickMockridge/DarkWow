@@ -3444,7 +3444,29 @@ fn test_atomic_swap_heavyweight() -> Result<()> {
 async fn test_atomic_swap_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::AtomicSwapHarness;
+    use darkfi_contract_test_harness::harness::{AtomicSwapHarness, MoneyV3Harness};
+    use darkfi_sdk::{
+        crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey, SecretKey},
+        pasta::pallas::Base,
+    };
+    use darkfi::zk::halo2::Field;
+    use rand::rngs::OsRng;
+
+    // Deploy money_v3 first for child calls (CreateSwapV1 requires money_v3::transfer_v1)
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18626".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18627".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("MoneyV3 deployed for atomic_swap test: {:?}", money_contract_id);
 
     let harness = AtomicSwapHarness::spawn();
     info!("AtomicSwap harness created with circuits: {:?}", harness.circuits());
@@ -3463,6 +3485,55 @@ async fn test_atomic_swap_heavyweight_impl(
     let wasm = read_wasm("atomic_swap").await?;
     let contract_id = pipeline.deploy(wasm).await?;
     info!("AtomicSwap deployed: {:?}", contract_id);
+
+    // Fresh harness for proof generation
+    let harness = AtomicSwapHarness::spawn();
+
+    // Generate keypair
+    let secret = Base::random(&mut OsRng);
+    let keypair_secret = SecretKey::random(&mut OsRng);
+    let receiver_public = PublicKey::from_secret(keypair_secret);
+
+    // Swap parameters
+    let hash = poseidon_hash([secret]);
+    let timelock = 100u64;
+    let amount = 1000u64;
+    let token_id = Base::zero();
+    let side = 0u8;
+    let blind = Base::random(&mut OsRng);
+    let external_chain = 1u8;
+    let external_receiver = Base::random(&mut OsRng);
+
+    // Step 1: Create swap (0x01)
+    let create_result = harness.create_swap(
+        hash, timelock, secret, amount, token_id, side, blind,
+        receiver_public, external_chain, external_receiver,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Created swap: swap_id={}", hex::encode(create_result.public_inputs.swap_id.to_repr()));
+
+    let child_call = darkfi_sdk::ContractCall {
+        contract_id: money_contract_id,
+        data: vec![0x04], // money_v3::transfer_v1
+    };
+
+    let tx = pipeline.exec_with_children(
+        0x01, create_result.call_data, vec![create_result.proof],
+        vec![child_call], vec![vec![]],
+    ).await?;
+    info!("Executed atomic_swap::0x01 CreateSwapV1 (tx: {:?})", tx.hash());
+
+    // Step 2: Claim swap (0x02) — the secret holder claims the swap
+    let claim_result = harness.claim_swap(
+        create_result.public_inputs.swap_id,
+        secret,
+        hash,
+        timelock,
+        side,
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("Claim prepared: nullifier={}", hex::encode(claim_result.public_inputs.nullifier.to_repr()));
+
+    let tx = pipeline.exec(0x02, claim_result.call_data, vec![claim_result.proof]).await?;
+    info!("Executed atomic_swap::0x02 ClaimV1 (tx: {:?})", tx.hash());
 
     info!("test_atomic_swap_heavyweight PASSED");
     Ok(())

@@ -37,12 +37,15 @@ use darkfi_subscription_contract::client::{
     subscribe_v1::{
         SubscribeCallData, SubscribePublicInputs, create_subscribe_proof,
     },
+    update_usage_v1::{
+        UpdateUsageCallData, UpdateUsagePublicInputs, create_update_usage_proof,
+    },
     verify_access_v1::{
         VerifyAccessCallData, VerifyAccessPublicInputs, create_verify_access_proof,
     },
 };
 use darkfi_subscription_contract::model::{
-    SubscribeParamsV1, VerifyAccessParamsV1,
+    SubscribeParamsV1, UpdateUsageParamsV1, VerifyAccessParamsV1,
 };
 
 /// Subscription Harness for isolated testing
@@ -323,6 +326,47 @@ impl SubscriptionHarness {
 
         Ok(RateLimitResult { proof, public_inputs })
     }
+
+    /// Update usage tracking for a subscription (function code 0x06)
+    pub fn update_usage(
+        &self,
+        subscription_id: pallas::Base,
+        subscriber_pub_x: pallas::Base,
+        subscriber_pub_y: pallas::Base,
+        usage_timestamp: pallas::Base,
+        nonce: pallas::Base,
+        subscriber_secret: pallas::Base,
+        current_block: u64,
+        spent_nullifier: pallas::Base,
+        merkle_proof: Vec<pallas::Base>,
+    ) -> Result<UpdateUsageResult, Box<dyn std::error::Error>> {
+        let input = UpdateUsageCallData::new(
+            subscription_id,
+            subscriber_pub_x,
+            subscriber_pub_y,
+            usage_timestamp,
+            nonce,
+        );
+
+        let (proof, public_inputs) = create_update_usage_proof(
+            &self.update_usage_zkbin,
+            &self.update_usage_pk,
+            &input,
+        )?;
+
+        let params = UpdateUsageParamsV1 {
+            subscription_id,
+            subscriber_secret,
+            current_block,
+            spent_nullifier,
+            merkle_proof,
+        };
+
+        let mut call_data = vec![0x06];
+        params.encode(&mut call_data)?;
+
+        Ok(UpdateUsageResult { call_data, proof, public_inputs })
+    }
 }
 
 impl super::ContractHarness for SubscriptionHarness {
@@ -373,4 +417,11 @@ pub struct VerifyAccessResult {
 pub struct RateLimitResult {
     pub proof: darkfi::zk::Proof,
     pub public_inputs: RateLimitPublicInputs,
+}
+
+/// Result of update_usage
+pub struct UpdateUsageResult {
+    pub call_data: Vec<u8>,
+    pub proof: darkfi::zk::Proof,
+    pub public_inputs: UpdateUsagePublicInputs,
 }
