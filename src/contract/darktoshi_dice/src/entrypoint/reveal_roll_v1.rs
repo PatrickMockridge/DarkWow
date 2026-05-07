@@ -23,13 +23,13 @@
 
 //! RevealRollV1 Implementation
 
-use darkfi_sdk::{
+use dwow_sdk::{
     error::ContractError,
     msg,
     wasm,
 };
-use darkfi_sdk::pasta::pallas;
-use darkfi_serial::{deserialize, serialize};
+use dwow_sdk::pasta::pallas;
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::DiceError;
 use crate::model::{calculate_roll_with_depth, Bet, BetState, RevealRollParamsV1, RevealRollUpdateV1};
@@ -38,9 +38,9 @@ use crate::ROLL_RANGE;
 
 /// Process instruction for RevealRollV1
 pub fn dice_reveal_roll_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: RevealRollParamsV1 = deserialize(&self_.data[1..])?;
@@ -115,7 +115,7 @@ pub fn dice_reveal_roll_process_instruction_v1(
 
 /// Process update for RevealRollV1
 pub fn dice_reveal_roll_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: RevealRollUpdateV1,
 ) -> Result<(), ContractError> {
     let bets_db = wasm::db::db_lookup(cid, DICE_CONTRACT_BETS_TREE)?;

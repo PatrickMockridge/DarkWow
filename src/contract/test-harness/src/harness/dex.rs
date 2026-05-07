@@ -25,15 +25,15 @@
 //!
 //! Provides isolated testing for DEX atomic swap contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{SecretKey, PublicKey, IntentCommitment, IntentNullifier, pasta_prelude::PrimeField},
     pasta::pallas,
 };
-use darkfi_serial::{Encodable, Decodable};
+use dwow_serial::{Encodable, Decodable};
 
 /// Helper to convert pallas::Base to IntentCommitment
 fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
@@ -97,19 +97,19 @@ impl DexHarness {
 
         // Build proving keys
         let create_swap_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_swap_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_swap_zkbin).unwrap(),
             &create_swap_zkbin,
         );
         let accept_swap_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&accept_swap_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&accept_swap_zkbin).unwrap(),
             &accept_swap_zkbin,
         );
         let execute_swap_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&execute_swap_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&execute_swap_zkbin).unwrap(),
             &execute_swap_zkbin,
         );
         let cancel_swap_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&cancel_swap_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&cancel_swap_zkbin).unwrap(),
             &cancel_swap_zkbin,
         );
 
@@ -388,7 +388,7 @@ impl super::ContractHarness for DexHarness {
 /// Result of create_swap
 pub struct CreateSwapResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: CreateSwapPublicInputs,
 }
 
@@ -398,20 +398,20 @@ pub struct AcceptSwapResult {
     pub swap_id: pallas::Base,
     pub proposer_lock_commitment: pallas::Base,
     pub secret: pallas::Base,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: AcceptSwapPublicInputs,
 }
 
 /// Result of execute_swap
 pub struct ExecuteSwapResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: ExecuteSwapPublicInputs,
 }
 
 /// Result of cancel_swap
 pub struct CancelSwapResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: CancelSwapPublicInputs,
 }

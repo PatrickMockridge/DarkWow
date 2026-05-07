@@ -2,7 +2,7 @@
 
 ## Overview
 
-The drk wallet implements a general pattern for tracking smart contract state during blockchain scanning. This document describes the architecture used for contract interaction, which can serve as a template for understanding how the wallet matches and processes different contracts.
+The dww wallet implements a general pattern for tracking smart contract state during blockchain scanning. This document describes the architecture used for contract interaction, which can serve as a template for understanding how the wallet matches and processes different contracts.
 
 ## Native Contract Architecture
 

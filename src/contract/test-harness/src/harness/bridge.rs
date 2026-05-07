@@ -25,15 +25,15 @@
 //!
 //! Provides isolated testing for Bridge contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{IntentCommitment, IntentNullifier, MerkleNode, PublicKey, pasta_prelude::PrimeField},
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use darkfi_bridge_contract::client::{
     deposit_v1::{DepositCallData, DepositPublicInputs, create_deposit_proof},
@@ -64,11 +64,11 @@ impl BridgeHarness {
 
         let deposit_pk = ProvingKey::build(
             deposit_zkbin.k,
-            &ZkCircuit::new(darkfi::zk::empty_witnesses(&deposit_zkbin).unwrap(), &deposit_zkbin),
+            &ZkCircuit::new(dwow::zk::empty_witnesses(&deposit_zkbin).unwrap(), &deposit_zkbin),
         );
         let withdraw_pk = ProvingKey::build(
             withdraw_zkbin.k,
-            &ZkCircuit::new(darkfi::zk::empty_witnesses(&withdraw_zkbin).unwrap(), &withdraw_zkbin),
+            &ZkCircuit::new(dwow::zk::empty_witnesses(&withdraw_zkbin).unwrap(), &withdraw_zkbin),
         );
 
         Self { deposit_zkbin, deposit_pk, withdraw_zkbin, withdraw_pk }
@@ -204,13 +204,13 @@ impl super::ContractHarness for BridgeHarness {
 /// Result of deposit
 pub struct DepositResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: DepositPublicInputs,
 }
 
 /// Result of withdraw
 pub struct WithdrawResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: WithdrawPublicInputs,
 }

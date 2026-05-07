@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{net::transport::Dialer, Result};
-use darkfi_serial::{
+use dwow::{net::transport::Dialer, Result};
+use dwow_serial::{
     async_trait, serialize_async, AsyncDecodable, AsyncEncodable, SerialDecodable, SerialEncodable,
 };
 use std::time::UNIX_EPOCH;

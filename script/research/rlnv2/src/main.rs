@@ -26,11 +26,11 @@ use std::{
     time::{Instant, UNIX_EPOCH},
 };
 
-use darkfi::{
+use dwow::{
     zk::{empty_witnesses, halo2::Value, Proof, ProvingKey, VerifyingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Position,
     crypto::{pasta_prelude::Field, poseidon_hash, MerkleNode, MerkleTree},
     pasta::{group::ff::FromUniformBytes, pallas},

@@ -29,7 +29,7 @@ use std::{
     sync::Arc,
 };
 
-use darkfi::{
+use dwow::{
     event_graph::Event,
     system::{StoppableTask, StoppableTaskPtr, Subscription},
     util::path::expand_path,
@@ -37,8 +37,8 @@ use darkfi::{
     zkas::ZkBinary,
     Error, Result,
 };
-use darkfi_sdk::crypto::MerkleTree;
-use darkfi_serial::serialize_async;
+use dwow_sdk::crypto::MerkleTree;
+use dwow_serial::serialize_async;
 use futures_rustls::{
     rustls::{self, pki_types::PrivateKeyDer},
     TlsAcceptor,

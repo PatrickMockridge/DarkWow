@@ -10,7 +10,7 @@ This setup runs 5 darkfid nodes in `--network linear-testnet` mode, each with an
 
 ```
                     +-------------------+
-                    |  darkfi-local     |
+                    |  dwow-local     |
                     |     network       |
                     +-------------------+
                             |
@@ -128,12 +128,12 @@ This creates:
 ```bash
 # Initialize each wallet (creates keys)
 for i in 0 1 2 3 4; do
-    ../../target/debug/drk -c wallets/wallet$i/drk$i.toml wallet init
+    ../../target/debug/dww -c wallets/wallet$i/drk$i.toml wallet init
 done
 
 # Get addresses
 for i in 0 1 2 3 4; do
-    echo "Wallet $i: $(../../target/debug/drk -c wallets/wallet$i/drk$i.toml wallet address)"
+    echo "Wallet $i: $(../../target/debug/dww -c wallets/wallet$i/drk$i.toml wallet address)"
 done
 ```
 
@@ -169,14 +169,14 @@ curl -X POST http://localhost:28346 \
 
 ## Contract Deployment
 
-Use `drk` to deploy and test smart contracts:
+Use `dww` to deploy and test smart contracts:
 
 ```bash
 # Deploy a contract using wallet 0
-./target/debug/drk -c wallets/wallet0/drk0.toml contract deploy <wasm_file>
+./target/debug/dww -c wallets/wallet0/drk0.toml contract deploy <wasm_file>
 
 # Invoke a contract
-./target/debug/drk -c wallets/wallet0/drk0.toml contract invoke <contract_id> <function> <args>
+./target/debug/dww -c wallets/wallet0/drk0.toml contract invoke <contract_id> <function> <args>
 ```
 
 ## Verification

@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::zk::assign_free_advice;
-use darkfi_sdk::{
+use dwow::zk::assign_free_advice;
+use dwow_sdk::{
     crypto::{
         constants::{
             sinsemilla::{OrchardCommitDomains, OrchardHashDomains},
@@ -173,7 +173,7 @@ impl Circuit<pallas::Base> for EcipCircuit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use darkfi_sdk::crypto::{pasta_prelude::Group, util::fp_mod_fv};
+    use dwow_sdk::crypto::{pasta_prelude::Group, util::fp_mod_fv};
     use halo2_proofs::{
         arithmetic::{CurveAffine, Field},
         dev::MockProver,

@@ -31,19 +31,19 @@ use std::{
     },
 };
 
-use darkfi::{
+use dwow::{
     event_graph::{proto::EventPut, Event, NULL_ID},
     system::Subscription,
     zk::{empty_witnesses, Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Error, Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Position,
     crypto::{pasta_prelude::PrimeField, poseidon_hash, MerkleTree},
     pasta::pallas,
 };
-use darkfi_serial::{deserialize_async, serialize_async};
+use dwow_serial::{deserialize_async, serialize_async};
 use futures::FutureExt;
 use sled_overlay::sled;
 use smol::{

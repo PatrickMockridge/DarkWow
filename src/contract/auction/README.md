@@ -161,7 +161,7 @@ auction/
 cargo build -p darkfi_auction_contract
 
 # Compile ZK circuits (requires zkas binary)
-for f in proof/*.zk; do ~/Darkfi/darkfi/target/release/zkas "$f"; done
+for f in proof/*.zk; do ~/Darkfi/dwow/target/release/zkas "$f"; done
 
 # Run tests
 cargo test -p darkfi_auction_contract

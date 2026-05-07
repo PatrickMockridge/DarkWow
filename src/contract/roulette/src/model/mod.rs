@@ -25,11 +25,11 @@
 //!
 //! Data structures for the roulette game.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{draw_single, poseidon_hash, PublicKey, schnorr::Signature},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::{EUROPEAN_HOUSE_EDGE_BP, EUROPEAN_WHEEL_SIZE, AMERICAN_HOUSE_EDGE_BP, AMERICAN_WHEEL_SIZE};
 

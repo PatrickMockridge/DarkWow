@@ -8,29 +8,29 @@
 #   4. money_v3 token mint + transfer
 #   5. attach-fee command
 #
-# Prerequisites: Docker, drk + darkfid binaries built
+# Prerequisites: Docker, dww + dwowd binaries built
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-DRK_BIN="${REPO_ROOT}/target/release/drk"
-DRK_DEBUG="${REPO_ROOT}/target/debug/drk"
+DWW_BIN="${REPO_ROOT}/target/release/dww"
+DWW_DEBUG="${REPO_ROOT}/target/debug/dww"
 
 # Use debug build if release doesn't exist
-if [ -x "$DRK_BIN" ]; then
-    DRK="$DRK_BIN"
-elif [ -x "$DRK_DEBUG" ]; then
-    DRK="$DRK_DEBUG"
+if [ -x "$DWW_BIN" ]; then
+    DWW="$DWW_BIN"
+elif [ -x "$DWW_DEBUG" ]; then
+    DWW="$DWW_DEBUG"
 else
-    echo "Building drk..."
-    (cd "$REPO_ROOT" && cargo build -p drk 2>&1)
-    [ -x "$DRK_DEBUG" ] && DRK="$DRK_DEBUG" || DRK="$DRK_BIN"
-    [ -x "$DRK" ] || { echo "ERROR: drk binary not found after build"; exit 1; }
+    echo "Building dww..."
+    (cd "$REPO_ROOT" && cargo build -p dww 2>&1)
+    [ -x "$DWW_DEBUG" ] && DWW="$DWW_DEBUG" || DWW="$DWW_BIN"
+    [ -x "$DWW" ] || { echo "ERROR: dww binary not found" after build"; exit 1; }
 fi
 
 NETWORK="linear-testnet"
-NODE0="darkfi-linear-node0"
+NODE0="dwow-linear-node0"
 WASM_MONEY_V3="${REPO_ROOT}/src/contract/money_v3/darkfi_money_v3_contract.wasm"
 WASM_DEX="${REPO_ROOT}/src/contract/dex/darkfi_dex_contract.wasm"
 WASM_DAO_ESCROW="${REPO_ROOT}/src/contract/dao_escrow/darkfi_dao_escrow_contract.wasm"
@@ -96,23 +96,23 @@ done
 echo ""
 info "=== Phase 1: Funding wallet from mining ==="
 
-SECRET_HEX=$(docker exec "$NODE0" cat /root/.local/share/darkfi/darkfid/linear-testnet/mining_secret 2>/dev/null)
+SECRET_HEX=$(docker exec "$NODE0" cat /root/.local/share/dwow/darkfid/linear-testnet/mining_secret 2>/dev/null)
 [ -n "$SECRET_HEX" ] || { error "Failed to extract mining secret"; exit 1; }
 info "Mining secret: ${SECRET_HEX:0:16}..."
 
 info "Initializing wallet..."
-"$DRK" -n "$NETWORK" wallet initialize 2>&1 || warn "Wallet already initialized"
+"$DWW" -n "$NETWORK" wallet initialize 2>&1 || warn "Wallet already initialized"
 
 info "Importing mining secret..."
-"$DRK" -n "$NETWORK" wallet import-secret-hex "$SECRET_HEX" 2>&1
+"$DWW" -n "$NETWORK" wallet import-secret-hex "$SECRET_HEX" 2>&1
 check $? "import mining secret"
 
 info "Scanning blockchain for coins..."
-"$DRK" -n "$NETWORK" scan 2>&1 | tail -5
+"$DWW" -n "$NETWORK" scan 2>&1 | tail -5
 check $? "scan blockchain"
 
 info "Wallet balance:"
-BALANCE=$("$DRK" -n "$NETWORK" wallet balance 2>&1)
+BALANCE=$("$DWW" -n "$NETWORK" wallet balance 2>&1)
 echo "$BALANCE"
 echo "$BALANCE" | grep -q "DARK\|dark" && pass "wallet has DARK coins" || fail "wallet has DARK coins"
 
@@ -124,20 +124,20 @@ info "=== Phase 2: Deploy money_v3 ==="
 
 [ -f "$WASM_MONEY_V3" ] || { error "money_v3 WASM not found at $WASM_MONEY_V3"; exit 1; }
 
-DEPLOY_OUTPUT=$("$DRK" -n "$NETWORK" contract generate-deploy 2>&1)
+DEPLOY_OUTPUT=$("$DWW" -n "$NETWORK" contract generate-deploy 2>&1)
 echo "$DEPLOY_OUTPUT"
 MONEY_V3_SECRET=$(echo "$DEPLOY_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
 MONEY_V3_CID=$(echo "$DEPLOY_OUTPUT" | grep "Contract ID:" | awk '{print $3}')
 [ -n "$MONEY_V3_SECRET" ] && [ -n "$MONEY_V3_CID" ]
 check $? "generate deploy authority for money_v3"
 
-DEPLOY_TX=$("$DRK" -n "$NETWORK" contract deploy "$MONEY_V3_SECRET" "$WASM_MONEY_V3" 2>&1)
-echo "$DEPLOY_TX" | "$DRK" -n "$NETWORK" broadcast 2>&1
+DEPLOY_TX=$("$DWW" -n "$NETWORK" contract deploy "$MONEY_V3_SECRET" "$WASM_MONEY_V3" 2>&1)
+echo "$DEPLOY_TX" | "$DWW" -n "$NETWORK" broadcast 2>&1
 check $? "deploy money_v3"
 
 sleep 3
 
-"$DRK" -n "$NETWORK" contract register money_v3 "$MONEY_V3_CID" 2>&1
+"$DWW" -n "$NETWORK" contract register money_v3 "$MONEY_V3_CID" 2>&1
 check $? "register money_v3 contract ID"
 
 # ==============================================================================
@@ -147,19 +147,19 @@ echo ""
 info "=== Phase 3: Deploy DEX ==="
 
 if [ -f "$WASM_DEX" ]; then
-    DEPLOY_OUTPUT=$("$DRK" -n "$NETWORK" contract generate-deploy 2>&1)
+    DEPLOY_OUTPUT=$("$DWW" -n "$NETWORK" contract generate-deploy 2>&1)
     DEX_SECRET=$(echo "$DEPLOY_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
     DEX_CID=$(echo "$DEPLOY_OUTPUT" | grep "Contract ID:" | awk '{print $3}')
     [ -n "$DEX_SECRET" ] && [ -n "$DEX_CID" ]
     check $? "generate deploy authority for DEX"
 
-    DEPLOY_TX=$("$DRK" -n "$NETWORK" contract deploy "$DEX_SECRET" "$WASM_DEX" 2>&1)
-    echo "$DEPLOY_TX" | "$DRK" -n "$NETWORK" broadcast 2>&1
+    DEPLOY_TX=$("$DWW" -n "$NETWORK" contract deploy "$DEX_SECRET" "$WASM_DEX" 2>&1)
+    echo "$DEPLOY_TX" | "$DWW" -n "$NETWORK" broadcast 2>&1
     check $? "deploy DEX"
 
     sleep 3
 
-    "$DRK" -n "$NETWORK" contract register dex "$DEX_CID" 2>&1
+    "$DWW" -n "$NETWORK" contract register dex "$DEX_CID" 2>&1
     check $? "register DEX contract ID"
 else
     warn "DEX WASM not found at $WASM_DEX — skipping"
@@ -172,19 +172,19 @@ echo ""
 info "=== Phase 4: Deploy dao_escrow ==="
 
 if [ -f "$WASM_DAO_ESCROW" ]; then
-    DEPLOY_OUTPUT=$("$DRK" -n "$NETWORK" contract generate-deploy 2>&1)
+    DEPLOY_OUTPUT=$("$DWW" -n "$NETWORK" contract generate-deploy 2>&1)
     DAO_SECRET=$(echo "$DEPLOY_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
     DAO_CID=$(echo "$DEPLOY_OUTPUT" | grep "Contract ID:" | awk '{print $3}')
     [ -n "$DAO_SECRET" ] && [ -n "$DAO_CID" ]
     check $? "generate deploy authority for dao_escrow"
 
-    DEPLOY_TX=$("$DRK" -n "$NETWORK" contract deploy "$DAO_SECRET" "$WASM_DAO_ESCROW" 2>&1)
-    echo "$DEPLOY_TX" | "$DRK" -n "$NETWORK" broadcast 2>&1
+    DEPLOY_TX=$("$DWW" -n "$NETWORK" contract deploy "$DAO_SECRET" "$WASM_DAO_ESCROW" 2>&1)
+    echo "$DEPLOY_TX" | "$DWW" -n "$NETWORK" broadcast 2>&1
     check $? "deploy dao_escrow"
 
     sleep 3
 
-    "$DRK" -n "$NETWORK" contract register dao_escrow "$DAO_CID" 2>&1
+    "$DWW" -n "$NETWORK" contract register dao_escrow "$DAO_CID" 2>&1
     check $? "register dao_escrow contract ID"
 else
     warn "dao_escrow WASM not found at $WASM_DAO_ESCROW — skipping"
@@ -197,11 +197,11 @@ echo ""
 info "=== Phase 5: DARK transfer with fee ==="
 
 # Get a recipient address (use our own)
-RECIPIENT=$("$DRK" -n "$NETWORK" wallet address 2>&1)
+RECIPIENT=$("$DWW" -n "$NETWORK" wallet address 2>&1)
 info "Recipient: $RECIPIENT"
 
-TRANSFER_TX=$("$DRK" -n "$NETWORK" transfer "100000000" DARK "$RECIPIENT" 2>&1)
-echo "$TRANSFER_TX" | "$DRK" -n "$NETWORK" broadcast 2>&1
+TRANSFER_TX=$("$DWW" -n "$NETWORK" transfer "100000000" DARK "$RECIPIENT" 2>&1)
+echo "$TRANSFER_TX" | "$DWW" -n "$NETWORK" broadcast 2>&1
 check $? "DARK transfer broadcast"
 
 sleep 3
@@ -215,8 +215,8 @@ info "=== Phase 6: attach-fee command ==="
 # Create a simple call-only transaction and attach fee to it
 info "Building transaction with attach-fee..."
 # Generate a transfer tx, then pipe through attach-fee
-TRANSFER_TX=$("$DRK" -n "$NETWORK" transfer "50000000" DARK "$RECIPIENT" 2>&1)
-ATTACHED_TX=$(echo "$TRANSFER_TX" | "$DRK" -n "$NETWORK" attach-fee 2>&1)
+TRANSFER_TX=$("$DWW" -n "$NETWORK" transfer "50000000" DARK "$RECIPIENT" 2>&1)
+ATTACHED_TX=$(echo "$TRANSFER_TX" | "$DWW" -n "$NETWORK" attach-fee 2>&1)
 check $? "attach-fee command"
 
 [ -n "$ATTACHED_TX" ] && pass "attach-fee produced output" || fail "attach-fee produced output"
@@ -228,16 +228,16 @@ echo ""
 info "=== Phase 7: Verification ==="
 
 sleep 5
-"$DRK" -n "$NETWORK" scan 2>&1 | tail -5
+"$DWW" -n "$NETWORK" scan 2>&1 | tail -5
 
 info "Final wallet balance:"
-"$DRK" -n "$NETWORK" wallet balance 2>&1
+"$DWW" -n "$NETWORK" wallet balance 2>&1
 
 info "Wallet coins:"
-"$DRK" -n "$NETWORK" wallet coins 2>&1 | head -10
+"$DWW" -n "$NETWORK" wallet coins 2>&1 | head -10
 
 info "Registered contracts:"
-"$DRK" -n "$NETWORK" contract list 2>&1 || warn "contract list may not be implemented"
+"$DWW" -n "$NETWORK" contract list 2>&1 || warn "contract list may not be implemented"
 
 # ==============================================================================
 # Results

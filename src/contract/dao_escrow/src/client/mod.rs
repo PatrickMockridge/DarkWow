@@ -31,7 +31,7 @@
 //! // 1. Initialize a DAO-Escrow
 //! let init = InitializeBuilder::new()
 //!     .owner_pubkey(owner_key)
-//!     .gov_token_id(DARK_TOKEN_ID)
+//!     .gov_token_id(DRKW_TOKEN_ID)
 //!     .proposer_limit(1000)
 //!     .quorum(5000)
 //!     .build()?;
@@ -65,13 +65,13 @@
 pub mod init_v1;
 pub mod pay_premium_v1;
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
 #[cfg(feature = "async")]
-use darkfi_serial::async_trait;
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::async_trait;
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{
     ClaimId, DaoEscrowBulla, ProposeClaimParamsV1, VoteClaimParamsV1, VoteType,

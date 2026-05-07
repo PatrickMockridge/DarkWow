@@ -29,13 +29,13 @@
 //!
 //! Please update the test to reflect any changes to the block transactions gas limit value.
 
-use darkfi::Result;
+use dwow::Result;
 use std::sync::Arc;
 
 use crate::tests::{Harness, HarnessConfig};
-use darkfi::validator::{consensus::BLOCK_GAS_LIMIT, utils::best_fork_index};
+use dwow::validator::{consensus::BLOCK_GAS_LIMIT, utils::best_fork_index};
 use darkfi_contract_test_harness::{contract_graph::Contract, init_logger, Holder, TestHarness};
-use darkfi_sdk::{crypto::BaseBlind, num_traits::One};
+use dwow_sdk::{crypto::BaseBlind, num_traits::One};
 use num_bigint::BigUint;
 use rand::rngs::OsRng;
 use smol::Executor;

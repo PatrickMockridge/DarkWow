@@ -48,7 +48,7 @@
 //!
 //! **Key**: Bridge nodes cannot steal because they never see `secret`.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -56,7 +56,7 @@ use darkfi_sdk::{
     wasm,
     pasta::group::GroupEncoding,
 };
-use darkfi_serial::{deserialize, serialize, Decodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{deserialize, serialize, Decodable, SerialDecodable, SerialEncodable};
 
 use crate::{
     error::BridgeError,
@@ -89,7 +89,7 @@ const BRIDGE_WITHDRAW_FEE_KEY: &[u8] = b"withdraw_fee";
 // CONTRACT DEFINITION
 // ============================================================================
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -318,7 +318,7 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
 /// - Block confirmations would be verified against stored state
 /// - The relayer's observation would be cryptographically authenticated
 fn verify_xmr_deposit(_cid: ContractId, proof: &XmrDepositProof) -> ContractResult {
-    use darkfi_sdk::pasta::pallas;
+    use dwow_sdk::pasta::pallas;
 
     msg!("[bridge::verify_xmr_deposit] Verifying XMR deposit proof");
     msg!("[bridge::verify_xmr_deposit] tx_hash={:?}, amount={}, confirmations={}",
@@ -383,7 +383,7 @@ fn verify_xmr_deposit(_cid: ContractId, proof: &XmrDepositProof) -> ContractResu
 /// - Merkle path would be verified against the Sapling note commitment tree
 /// - Anchor would be checked against stored block headers
 fn verify_zcash_deposit(_cid: ContractId, proof: &ZcashDepositProof) -> ContractResult {
-    use darkfi_sdk::pasta::pallas;
+    use dwow_sdk::pasta::pallas;
 
     msg!("[bridge::verify_zcash_deposit] Verifying Zcash Sapling deposit proof");
     msg!("[bridge::verify_zcash_deposit] nullifier={:?}, amount={}, confirmations={}",
@@ -461,7 +461,7 @@ fn verify_zcash_deposit(_cid: ContractId, proof: &ZcashDepositProof) -> Contract
 /// Aztec is a private rollup on Ethereum, so rollup "blocks" are committed
 /// to Ethereum. We require N Ethereum block confirmations after the rollup.
 fn verify_aztec_deposit(_cid: ContractId, proof: &AztecDepositProof) -> ContractResult {
-    use darkfi_sdk::pasta::pallas;
+    use dwow_sdk::pasta::pallas;
 
     msg!("[bridge::verify_aztec_deposit] Verifying Aztec rollup deposit proof");
     msg!("[bridge::verify_aztec_deposit] nullifier={:?}, value={}, asset_id={}, confirmations={}",
@@ -553,7 +553,7 @@ fn verify_aztec_deposit(_cid: ContractId, proof: &AztecDepositProof) -> Contract
 /// - MimbleWimble extension blocks (MWEB) for privacy
 /// - Scrypt PoW (same family as SHA256)
 fn verify_litecoin_deposit(_cid: ContractId, proof: &LitecoinDepositProof) -> ContractResult {
-    use darkfi_sdk::pasta::pallas;
+    use dwow_sdk::pasta::pallas;
 
     msg!("[bridge::verify_litecoin_deposit] Verifying Litecoin deposit proof");
     msg!("[bridge::verify_litecoin_deposit] tx_hash={:?}, amount={}, confirmations={}",
@@ -891,7 +891,7 @@ fn apply_config_update(cid: ContractId, params: UpdateConfigParams) -> ContractR
 /// Update data for deposit
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DepositUpdateV1 {
-    pub commitment: darkfi_sdk::crypto::IntentCommitment,
+    pub commitment: dwow_sdk::crypto::IntentCommitment,
     pub recipient_pub_x: [u8; 32],
     pub recipient_pub_y: [u8; 32],
     pub bridge_nonce: u64,
@@ -903,7 +903,7 @@ pub struct DepositUpdateV1 {
 /// Update data for withdrawal
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct WithdrawUpdateV1 {
-    pub nullifier: darkfi_sdk::crypto::IntentNullifier,
+    pub nullifier: dwow_sdk::crypto::IntentNullifier,
     pub recipient_hash: [u8; 32],
     pub amount: u64,
 }
@@ -971,8 +971,8 @@ fn get_min_confirmations(cid: ContractId) -> Result<u32, ContractError> {
 /// Note: This is a simplified implementation. In production,
 /// this would use actual Merkle tree append operations.
 fn compute_deposit_root(commitment: &[u8; 32]) -> Result<[u8; 32], ContractError> {
-    use darkfi_sdk::crypto::poseidon_hash;
-    use darkfi_sdk::pasta::pallas;
+    use dwow_sdk::crypto::poseidon_hash;
+    use dwow_sdk::pasta::pallas;
 
     // Convert commitment to pallas::Base
     let leaf = match pallas::Base::from_repr(*commitment).into_option() {
@@ -1056,7 +1056,7 @@ fn process_claim_htlc_instruction(
     }
 
     // Verify hash matches
-    use darkfi_sdk::crypto::poseidon_hash;
+    use dwow_sdk::crypto::poseidon_hash;
     let computed_hash = poseidon_hash([params.secret]);
     if computed_hash != htlc.hash {
         msg!("[bridge::process_instruction] ERROR: Secret hash mismatch");

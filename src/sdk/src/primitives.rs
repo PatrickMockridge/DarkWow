@@ -80,7 +80,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use darkfi_sdk::primitives::{
+//! use dwow_sdk::primitives::{
 //!     define_contract_function, define_contract_error,
 //!     compute_commitment, compute_nullifier,
 //! };
@@ -111,7 +111,7 @@ use super::crypto::poseidon_hash;
 /// # Example
 ///
 /// ```rust,ignore
-/// use darkfi_sdk::primitives::define_contract_function;
+/// use dwow_sdk::primitives::define_contract_function;
 ///
 /// define_contract_function!(MyContract {
 ///     InitializeV1 = 0x00,
@@ -174,7 +174,7 @@ macro_rules! define_contract_function {
 /// # Example
 ///
 /// ```rust,ignore
-/// use darkfi_sdk::primitives::define_contract_error;
+/// use dwow_sdk::primitives::define_contract_error;
 ///
 /// define_contract_error!(MyError {
 ///     NotInitialized,
@@ -334,7 +334,7 @@ pub fn compute_revocation_nullifier(
 /// # Example
 ///
 /// ```rust,ignore
-/// use darkfi_sdk::primitives::tree_name;
+/// use dwow_sdk::primitives::tree_name;
 ///
 /// pub const MY_STATE_TREE: &str = tree_name!("mycontract", "state");
 /// // Results in: "mycontract_state"

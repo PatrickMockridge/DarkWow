@@ -46,14 +46,14 @@
 //! - **Endowment insurance**: DAO can authorize refunds from endowment fund
 //! - **Atomic swap**: Cross-chain payments via HTLC pattern
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, ContractId},
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::{
     model::{
@@ -72,7 +72,7 @@ use crate::{
 
 const SUBSCRIPTION_DB_VERSION_KEY: &[u8] = b"db_version";
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -121,7 +121,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 /// Fetch metadata for ZK proof verification
 fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = SubscriptionFunction::try_from(self_.data[0])?;
 
@@ -141,7 +141,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 /// Verify state transition and produce update if valid
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = SubscriptionFunction::try_from(self_.data[0])?;
 
@@ -226,7 +226,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 // ============================================================================
 
 /// SubscribeV1 instruction - create a new subscription
-fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>, params: SubscribeParamsV1) -> ContractResult {
+fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>, params: SubscribeParamsV1) -> ContractResult {
     msg!("[subscription::subscribe_v1] Creating subscription for plan {}", params.plan_id);
 
     // Validate children_indexes for payment
@@ -369,7 +369,7 @@ fn cancel_apply_v1(cid: ContractId, update: CancelUpdateV1) -> ContractResult {
 }
 
 /// RenewV1 instruction - renew an existing subscription
-fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>, params: RenewParamsV1) -> ContractResult {
+fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>, params: RenewParamsV1) -> ContractResult {
     msg!("[subscription::renew_v1] Renewing subscription {:?}", params.subscription_id);
 
     // Validate children_indexes for payment
@@ -554,7 +554,7 @@ fn update_usage_apply_v1(cid: ContractId, update: UpdateUsageUpdateV1) -> Contra
 fn dao_control_v1(
     _cid: ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: DaoControlParamsV1,
 ) -> ContractResult {
     msg!("[subscription::dao_control_v1] Executing DAO control action");

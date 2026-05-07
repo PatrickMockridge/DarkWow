@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use parking_lot::Mutex as SyncMutex;
 use std::{fs::File, sync::OnceLock};
 use tracing::debug;

@@ -37,14 +37,14 @@
 //! 3. **ExecuteSwap**: Both get each other's funds atomically
 //! 4. **CancelSwap**: Either party can cancel (triggers refund)
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::ContractId,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
     wasm, ContractCall,
 };
-use darkfi_serial::deserialize;
+use dwow_serial::deserialize;
 
 use crate::{
     model::{
@@ -140,7 +140,7 @@ use execute_swap_slippage_v1::{
 // CONTRACT DEFINITION
 // ============================================================================
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -161,14 +161,14 @@ darkfi_sdk::define_contract!(
 ///
 /// See module-level documentation for full security considerations.
 pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
-    use darkfi_serial::Decodable;
+    use dwow_serial::Decodable;
     use crate::model::InitializeParams;
 
     msg!("[dex::init_contract] Initializing DEX contract");
 
     // Parse initialization parameters
     let params = InitializeParams::decode(&mut std::io::Cursor::new(ix))
-        .map_err(|_| darkfi_sdk::error::ContractError::IoError("Decode error".to_string()))?;
+        .map_err(|_| dwow_sdk::error::ContractError::IoError("Decode error".to_string()))?;
 
     msg!(
         "[dex::init_contract] Trusted money Merkle root: {:?}",

@@ -26,7 +26,7 @@ use std::sync::Arc;
 use tinyjson::JsonValue;
 use tracing::{debug, error};
 
-use darkfi::{
+use dwow::{
     net::{
         protocol::protocol_generic::{
             ProtocolGenericAction, ProtocolGenericHandler, ProtocolGenericHandlerPtr,
@@ -41,7 +41,7 @@ use darkfi::{
     validator::ValidatorPtr,
     Error, Result,
 };
-use darkfi_serial::serialize_async;
+use dwow_serial::serialize_async;
 
 /// Atomic pointer to the `ProtocolTx` handler.
 pub type ProtocolTxHandlerPtr = Arc<ProtocolTxHandler>;

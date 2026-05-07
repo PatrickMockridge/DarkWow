@@ -11,8 +11,8 @@ elif [ "$1" = "-v" ]; then
     VERBOSE="-v"
 fi
 
-DARKFI_HOME="${DARKFI_HOME:-$HOME/.local/share/darkfi}"
-DARKFID_HOME="$DARKFI_HOME/darkfid"
+DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/darkfi}"
+DARKFID_HOME="$DWOW_HOME/darkfid"
 CONFIG_FILE="$DARKFID_HOME/darkfid_config.toml"
 PID_FILE="$DARKFID_HOME/testnet.pid"
 LOG_FILE="$DARKFID_HOME/testnet.log"
@@ -26,7 +26,7 @@ NC='\033[0m'
 if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")
     if kill -0 "$PID" 2>/dev/null; then
-        echo -e "${RED}Error: darkfid is already running (PID: $PID)${NC}"
+        echo -e "${RED}Error: dwowd is already running (PID: $PID)${NC}"
         echo "Use './restart.sh' to restart or './stop.sh' to stop first."
         exit 1
     else
@@ -35,9 +35,9 @@ if [ -f "$PID_FILE" ]; then
     fi
 fi
 
-# Check if darkfid is running without PID file ( orphaned)
+# Check if dwowd is running without PID file ( orphaned)
 if pgrep -f "darkfid.*testnet" > /dev/null 2>&1; then
-    echo -e "${RED}Error: darkfid appears to be running (found via pgrep)${NC}"
+    echo -e "${RED}Error: dwowd appears to be running (found via pgrep)${NC}"
     echo "Use './restart.sh' to restart or './stop.sh' to stop first."
     exit 1
 fi
@@ -48,12 +48,12 @@ if [ ! -f "$CONFIG_FILE" ]; then
     ./setup.sh
 fi
 
-echo "Starting darkfid on testnet..."
+echo "Starting dwowd on testnet..."
 echo "Log file: $LOG_FILE"
 echo "PID file: $PID_FILE"
 
-# Start darkfid in background
-nohup darkfid --config "$CONFIG_FILE" --network testnet $VERBOSE >> "$LOG_FILE" 2>&1 &
+# Start dwowd in background
+nohup dwowd --config "$CONFIG_FILE" --network testnet $VERBOSE >> "$LOG_FILE" 2>&1 &
 PID=$!
 
 # Save PID
@@ -71,7 +71,7 @@ if kill -0 "$PID" 2>/dev/null; then
     echo "  ./status.sh   - Check sync status"
     echo "  ./stop.sh     - Stop the daemon"
 else
-    echo -e "${RED}Error: darkfid failed to start${NC}"
+    echo -e "${RED}Error: dwowd failed to start${NC}"
     echo "Check log file for errors: $LOG_FILE"
     rm -f "$PID_FILE"
     exit 1

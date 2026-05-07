@@ -33,7 +33,7 @@ pub use fud::FudPluginPtr as FudPtr;
 #[cfg(feature = "enable-plugins")]
 pub use {darkirc::DarkIrc, fud::FudPlugin};
 
-use darkfi::net::Settings as NetSettings;
+use dwow::net::Settings as NetSettings;
 
 use crate::{
     prop::{Property, PropertyAtomicGuard, PropertySubType, PropertyType, PropertyValue, Role},

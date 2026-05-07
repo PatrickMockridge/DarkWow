@@ -2,7 +2,7 @@
 irc_listen = "tcp://127.0.0.1:11066"
 
 ## Sets Datastore Path
-datastore = "~/.config/darkfi/darkirc-outbound"
+datastore = "~/.config/dwow/darkirc-outbound"
 
 ## JSON-RPC settings
 [rpc]

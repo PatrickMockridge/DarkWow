@@ -31,7 +31,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use darkfi_serial::{
+use dwow_serial::{
     async_trait, AsyncDecodable, AsyncEncodable, SerialDecodable, SerialEncodable, VarInt,
 };
 use rand::{rngs::OsRng, Rng};

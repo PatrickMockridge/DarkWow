@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::system::msleep;
+use dwow::system::msleep;
 use indoc::indoc;
 use sled_overlay::sled;
 use std::fs::File;

@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{
+use dwow::{
     net::{
         session::{SESSION_DIRECT, SESSION_INBOUND},
         settings::{MagicBytes, NetworkProfile, Settings as NetSettings},
@@ -29,7 +29,7 @@ use darkfi::{
     },
     system::{sleep, Publisher, PublisherPtr},
 };
-use darkfi_serial::{Decodable, Encodable};
+use dwow_serial::{Decodable, Encodable};
 use fud::{
     event::FudEvent,
     proto::ProtocolFud,

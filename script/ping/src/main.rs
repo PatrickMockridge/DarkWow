@@ -20,8 +20,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-use darkfi::net;
-use darkfi_serial::{AsyncDecodable, VarInt};
+use dwow::net;
+use dwow_serial::{AsyncDecodable, VarInt};
 use smol::io::AsyncReadExt;
 use std::sync::Arc;
 use url::Url;

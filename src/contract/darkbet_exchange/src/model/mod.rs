@@ -26,11 +26,11 @@
 //! Data structures for the decentralized betting exchange supporting both
 //! order-book matching (back/lay) and AMM pool modes.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, schnorr::Signature, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // ============================================================================
 // ENUMS

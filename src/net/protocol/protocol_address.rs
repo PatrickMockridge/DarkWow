@@ -330,7 +330,7 @@ impl ProtocolBase for ProtocolAddress {
 
 #[cfg(test)]
 mod tests {
-    use darkfi_serial::serialize;
+    use dwow_serial::serialize;
 
     use crate::net::message::GET_ADDRS_MAX_BYTES;
 

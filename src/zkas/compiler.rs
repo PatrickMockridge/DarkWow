@@ -23,7 +23,7 @@
 
 use std::{io::Result, str::Chars};
 
-use darkfi_serial::{serialize, VarInt};
+use dwow_serial::{serialize, VarInt};
 
 use super::{
     ast::{Arg, Constant, Literal, Statement, StatementType, Witness},

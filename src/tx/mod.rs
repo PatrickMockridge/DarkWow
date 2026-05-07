@@ -23,8 +23,8 @@
 
 use std::collections::HashMap;
 
-pub use darkfi_sdk::dark_tree::DarkLeaf;
-use darkfi_sdk::{
+pub use dwow_sdk::dark_tree::DarkLeaf;
+use dwow_sdk::{
     crypto::{
         schnorr::{SchnorrPublic, SchnorrSecret, Signature},
         PublicKey, SecretKey,
@@ -36,9 +36,9 @@ use darkfi_sdk::{
 };
 
 #[cfg(feature = "async-serial")]
-use darkfi_serial::async_trait;
+use dwow_serial::async_trait;
 
-use darkfi_serial::{Encodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{Encodable, SerialDecodable, SerialEncodable};
 use tracing::{debug, error};
 
 use crate::{

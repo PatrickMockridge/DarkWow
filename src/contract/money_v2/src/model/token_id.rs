@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         constants::DRK_TOKEN_ID_PERSONALIZATION, pasta_prelude::PrimeField, poseidon_hash,
         util::hash_to_base,
@@ -29,12 +29,12 @@ use darkfi_sdk::{
     error::ContractError,
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use lazy_static::lazy_static;
 
 // async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
-use darkfi_serial::async_trait;
+use dwow_serial::async_trait;
 
 /// TokenId represents an on-chain identifier for a certain token.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
@@ -82,10 +82,10 @@ lazy_static! {
     /// Native DARK token ID.
     /// It does not correspond to any real commitment since we only rely on this value as
     /// a constant.
-    pub static ref DARK_TOKEN_ID: TokenId = TokenId(hash_to_base(&[0x69], &[DRK_TOKEN_ID_PERSONALIZATION]));
+    pub static ref DRKW_TOKEN_ID: TokenId = TokenId(hash_to_base(&[0x69], &[DRK_TOKEN_ID_PERSONALIZATION]));
 }
 
 use core::str::FromStr;
-darkfi_sdk::fp_from_bs58!(TokenId);
-darkfi_sdk::fp_to_bs58!(TokenId);
-darkfi_sdk::ty_from_fp!(TokenId);
+dwow_sdk::fp_from_bs58!(TokenId);
+dwow_sdk::fp_to_bs58!(TokenId);
+dwow_sdk::ty_from_fp!(TokenId);

@@ -22,7 +22,7 @@
  */
 
 use async_trait::async_trait;
-use darkfi_serial::{SerialEncodable, SerialDecodable, serialize, Encodable, Decodable, deserialize};
+use dwow_serial::{SerialEncodable, SerialDecodable, serialize, Encodable, Decodable, deserialize};
 use std::{
     fs::{OpenOptions, File},
     collections::HashMap,

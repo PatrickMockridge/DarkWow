@@ -31,15 +31,15 @@
 //!
 //! DAO-Escrow is a WASM contract that requires client-side ZK proof generation.
 
-use darkfi::{tx::{ContractCallLeaf, Transaction}, Error, Result};
-use darkfi_sdk::{
+use dwow::{tx::{ContractCallLeaf, Transaction}, Error, Result};
+use dwow_sdk::{
     crypto::pasta_prelude::PrimeField,
     crypto::poseidon_hash,
     crypto::PublicKey,
     pasta::{pallas, group::Group},
     tx::ContractCall,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use rand::{rngs::OsRng, Rng};
 
 use crate::contract_imports::dao_escrow::{
@@ -84,13 +84,13 @@ impl Drk {
         });
 
         // Load DAO-Escrow Init ZK binary
-        let init_zkbin = darkfi::zkas::ZkBinary::decode(DAO_ESCROW_ZKAS_INIT_V1_BIN, false)
+        let init_zkbin = dwow::zkas::ZkBinary::decode(DAO_ESCROW_ZKAS_INIT_V1_BIN, false)
             .map_err(|e| Error::Custom(format!("Failed to decode Init ZK binary: {:?}", e)))?;
 
         // Create Init circuit with empty witnesses (they'll be set during proof generation)
-        let init_wits = darkfi::zk::vm_heap::empty_witnesses(&init_zkbin)?;
-        let init_circuit = darkfi::zk::vm::ZkCircuit::new(init_wits, &init_zkbin);
-        let init_pk = darkfi::zk::proof::ProvingKey::build(init_zkbin.k, &init_circuit);
+        let init_wits = dwow::zk::vm_heap::empty_witnesses(&init_zkbin)?;
+        let init_circuit = dwow::zk::vm::ZkCircuit::new(init_wits, &init_zkbin);
+        let init_pk = dwow::zk::proof::ProvingKey::build(init_zkbin.k, &init_circuit);
 
         // Build InitV1CallData for ZK proof
         // Note: nullifier_k is a CONSTANT in the circuit - it's baked into the .zk.bin
@@ -116,7 +116,7 @@ impl Drk {
             dao_bulla,
             owner_pubkey: owner_pub,
             endowment_token_id,
-            bulla_blind: darkfi_sdk::crypto::Blind(bulla_blind),
+            bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
             enable_drain_protection,
         };
 
@@ -199,7 +199,7 @@ impl Drk {
     /// # Arguments
     /// * `dao_escrow_bulla` - The DAO-Escrow endowment's bulla
     /// * `value` - Premium amount to pay
-    /// * `token_id` - Token ID being paid (use DARK_TOKEN_ID for DARK)
+    /// * `token_id` - Token ID being paid (use DRKW_TOKEN_ID for DARK)
     /// * `expiry` - Membership expiry block height
     pub async fn dao_escrow_pay_premium(
         &self,
@@ -239,13 +239,13 @@ impl Drk {
 
         // Load PayPremium ZK binary
         let premium_zkbin =
-            darkfi::zkas::ZkBinary::decode(DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN, false)
+            dwow::zkas::ZkBinary::decode(DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN, false)
                 .map_err(|e| Error::Custom(format!("Failed to decode PayPremium ZK binary: {:?}", e)))?;
 
         // Create PayPremium circuit with empty witnesses
-        let premium_wits = darkfi::zk::vm_heap::empty_witnesses(&premium_zkbin)?;
-        let premium_circuit = darkfi::zk::vm::ZkCircuit::new(premium_wits, &premium_zkbin);
-        let premium_pk = darkfi::zk::proof::ProvingKey::build(premium_zkbin.k, &premium_circuit);
+        let premium_wits = dwow::zk::vm_heap::empty_witnesses(&premium_zkbin)?;
+        let premium_circuit = dwow::zk::vm::ZkCircuit::new(premium_wits, &premium_zkbin);
+        let premium_pk = dwow::zk::proof::ProvingKey::build(premium_zkbin.k, &premium_circuit);
 
         // Build PayPremiumV1CallData for ZK proof
         let call_data = darkfi_dao_escrow_contract::client::pay_premium_v1::PayPremiumV1CallData::new(
@@ -296,8 +296,8 @@ impl Drk {
             value,
             token_id,
             expiry,
-            membership_blind: darkfi_sdk::crypto::Blind(membership_blind),
-            value_blind: darkfi_sdk::crypto::Blind(value_blind),
+            membership_blind: dwow_sdk::crypto::Blind(membership_blind),
+            value_blind: dwow_sdk::crypto::Blind(value_blind),
             member_pubkey,
         };
 

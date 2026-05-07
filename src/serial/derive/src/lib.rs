@@ -29,9 +29,9 @@ use quote::quote;
 use syn::{Ident, ItemEnum, ItemStruct, ItemUnion};
 
 #[cfg(feature = "async")]
-use darkfi_derive_internal::{async_enum_de, async_enum_ser, async_struct_de, async_struct_ser};
+use dwow_derive_internal::{async_enum_de, async_enum_ser, async_struct_de, async_struct_ser};
 
-use darkfi_derive_internal::{enum_de, enum_ser, struct_de, struct_ser};
+use dwow_derive_internal::{enum_de, enum_ser, struct_de, struct_ser};
 
 #[proc_macro_derive(SerialEncodable, attributes(skip_serialize))]
 pub fn darkfi_serialize(input: TokenStream) -> TokenStream {

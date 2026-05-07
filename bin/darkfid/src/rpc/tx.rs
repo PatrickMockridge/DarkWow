@@ -21,11 +21,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_serial::deserialize_async;
+use dwow_serial::deserialize_async;
 use tinyjson::JsonValue;
 use tracing::{error, info, warn};
 
-use darkfi::{
+use dwow::{
     rpc::jsonrpc::{
         ErrorCode::{InternalError, InvalidParams},
         JsonError, JsonResponse, JsonResult,
@@ -303,7 +303,7 @@ impl DarkfiNode {
             }
         };
 
-        let tx: darkfi_linear::Transaction = match serde_json::from_slice(&tx_bytes) {
+        let tx: dwow_linear::Transaction = match serde_json::from_slice(&tx_bytes) {
             Ok(v) => v,
             Err(e) => {
                 error!(target: "darkfid::rpc::tx_submit_linear", "Failed deserializing bytes into Transaction: {}", e);

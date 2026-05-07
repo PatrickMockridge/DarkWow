@@ -39,12 +39,12 @@ use std::{
     process::ExitCode,
 };
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::{VarType, ZkBinary},
 };
-use darkfi_sdk::pasta::pallas;
-use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+use dwow_sdk::pasta::pallas;
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use rand::rngs::OsRng;
 
 /// Parse a hex string into pallas::Base

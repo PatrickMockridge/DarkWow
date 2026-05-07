@@ -98,7 +98,7 @@ pub fn spawn_config(path: &Path, contents: &[u8]) -> Result<()> {
 ///
 /// Example usage:
 /// ```
-/// use darkfi::{async_daemonize, cli_desc, Result};
+/// use dwow::{async_daemonize, cli_desc, Result};
 /// use smol::stream::StreamExt;
 /// use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 ///
@@ -141,7 +141,7 @@ macro_rules! async_daemonize {
                 }
             };
             let cfg_path =
-                match darkfi::util::path::get_config_path(args.config.clone(), CONFIG_FILE) {
+                match dwow::util::path::get_config_path(args.config.clone(), CONFIG_FILE) {
                     Ok(v) => v,
                     Err(e) => {
                         eprintln!("Unable to get config path `{:?}`: {e}", args.config);
@@ -149,7 +149,7 @@ macro_rules! async_daemonize {
                     }
                 };
             if let Err(e) =
-                darkfi::util::cli::spawn_config(&cfg_path, CONFIG_FILE_CONTENTS.as_bytes())
+                dwow::util::cli::spawn_config(&cfg_path, CONFIG_FILE_CONTENTS.as_bytes())
             {
                 eprintln!("Spawn config failed `{cfg_path:?}`: {e}");
                 return Err(e)
@@ -173,7 +173,7 @@ macro_rules! async_daemonize {
             // Otherwise, output to terminal logger only.
             let (non_blocking, file_guard) = match args.log {
                 Some(ref log_path) => {
-                    let log_path = match darkfi::util::path::expand_path(log_path) {
+                    let log_path = match dwow::util::path::expand_path(log_path) {
                         Ok(v) => v,
                         Err(e) => {
                             eprintln!("Expanding log path failed `{log_path:?}`: {e}");
@@ -194,7 +194,7 @@ macro_rules! async_daemonize {
                 }
                 None => (None, None),
             };
-            if let Err(e) = darkfi::util::logger::setup_logging(args.verbose, non_blocking) {
+            if let Err(e) = dwow::util::logger::setup_logging(args.verbose, non_blocking) {
                 if args.log.is_some() {
                     eprintln!("Unable to init logger with term + logfile combo: {e}");
                 } else {
@@ -215,7 +215,7 @@ macro_rules! async_daemonize {
                     smol::future::block_on(async {
                         $realmain(args, ex.clone()).await?;
                         drop(signal);
-                        Ok::<(), darkfi::Error>(())
+                        Ok::<(), dwow::Error>(())
                     })
                 });
 
@@ -229,7 +229,7 @@ macro_rules! async_daemonize {
             /// Signals handle
             handle: signal_hook_async_std::Handle,
             /// SIGHUP publisher to retrieve new configuration,
-            sighup_pub: darkfi::system::PublisherPtr<Args>,
+            sighup_pub: dwow::system::PublisherPtr<Args>,
         }
 
         impl SignalHandler {
@@ -244,7 +244,7 @@ macro_rules! async_daemonize {
                     signal_hook::consts::SIGQUIT,
                 ])?;
                 let handle = signals.handle();
-                let sighup_pub = darkfi::system::Publisher::new();
+                let sighup_pub = dwow::system::Publisher::new();
                 let signals_task =
                     ex.spawn(handle_signals(signals, term_tx, sighup_pub.clone(), ex.clone()));
 
@@ -279,7 +279,7 @@ macro_rules! async_daemonize {
         async fn handle_signals(
             mut signals: signal_hook_async_std::Signals,
             term_tx: smol::channel::Sender<()>,
-            publisher: darkfi::system::PublisherPtr<Args>,
+            publisher: dwow::system::PublisherPtr<Args>,
             ex: std::sync::Arc<smol::Executor<'static>>,
         ) -> Result<()> {
             while let Some(signal) = signals.next().await {
@@ -287,8 +287,8 @@ macro_rules! async_daemonize {
                     signal_hook::consts::SIGHUP => {
                         let args = Args::from_args_with_toml("").unwrap();
                         let cfg_path =
-                            darkfi::util::path::get_config_path(args.config, CONFIG_FILE)?;
-                        darkfi::util::cli::spawn_config(
+                            dwow::util::path::get_config_path(args.config, CONFIG_FILE)?;
+                        dwow::util::cli::spawn_config(
                             &cfg_path,
                             CONFIG_FILE_CONTENTS.as_bytes(),
                         )?;

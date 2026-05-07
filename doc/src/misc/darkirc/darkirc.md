@@ -115,7 +115,7 @@ about DarkWow development.
 ```
 
 `darkirc` will create a configuration file `darkirc_config.toml` by 
-default in `~/.config/darkfi/` you can review and potentially edit. It 
+default in `~/.config/dwow/` you can review and potentially edit. It 
 might be useful if you want to add other channels you want to autojoin 
 (like `#philosophy` and `#memes`), or if you want to set a shared 
 secret for some channel in order for it to be encrypted between its 
@@ -199,7 +199,7 @@ straight after receiving them.
 
 The first time you run the program, a config file will be created in
 `~/.config/darkfi` if you are using Linux or in 
-`~/Library/Application Support/darkfi/` on MacOS. 
+`~/Library/Application Support/dwow/` on MacOS. 
 You must specify an inbound accept address in your config file to configure a seed node:
 
 ```toml
@@ -384,10 +384,10 @@ completely over Tor.
 First make sure the storages are separate in `mynet_config.toml`:
 
 ```
-datastore = "~/.local/darkfi/mynet_db"
+datastore = "~/.local/dwow/mynet_db"
 
 [net]
-hostlist = "~/.local/darkfi/mynet/hostlist.tsv"
+hostlist = "~/.local/dwow/mynet/hostlist.tsv"
 ```
 
 To setup a manual connection:

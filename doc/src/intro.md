@@ -6,12 +6,26 @@
 
 ## What is DarkWow?
 
-DarkWow is a privacy-first blockchain with a focus on ZK-powered smart contracts. Key differentiators:
+DarkWow is a privacy-first blockchain built on a plain vanilla chassis with a
+novel zero-knowledge execution engine.
 
-- **ZK-Native Contracts**: All contracts use zero-knowledge proofs for privacy
-- **Consensus-First Token**: Native token (`native_token`) handles block rewards and fees as top priority
-- **Privacy by Default**: Shielded transactions, anonymous voting, encrypted state
-- **Multi-Chain Support**: Atomic swaps, bridges, and cross-chain interoperability
+The chassis is assembled from proven, multi-decade components:
+
+- **Satoshi's supply model**: 21M DRKW hard cap, fair launch with zero premine
+- **Monero's mining model**: RandomX CPU-friendly PoW, permanent tail emission for long-term security
+- **Continuous exponential decay**: Same 4-year half-life as Bitcoin, smoothed so rewards don't drop 50% overnight
+- **Uncle Merkle pin rewards**: Non-canonical blocks earn partial rewards — no wasted miner work
+
+The only fundamentally new piece is the **zkVM**: a zero-knowledge virtual
+machine that proves WASM contract execution. Every smart contract runs inside
+ZK proofs — shielded transactions, anonymous voting, and encrypted state are
+the defaults, not opt-in layers.
+
+This is the paradigm shift. Everything else is the same chassis the ecosystem
+has relied on for decades. Nothing overly complex, nothing exotic except the
+star of the show.
+
+> See [Mining Tokenomics](arch/mining-tokenomics.md) for the full reward schedule, emission curve, and design rationale.
 
 ## Smart Contracts
 
@@ -61,9 +75,9 @@ Key architectural documents:
 
 All contracts are **EXPERIMENTAL** and **UNAUDITED**.
 
-This fork addresses **critical governance and identity leakage vulnerabilities** in upstream DarkFi.
+This fork addresses **critical governance and identity leakage vulnerabilities** in upstream DarkWow.
 
-### Why This Fork Exists: Upstream DarkFi's Critical Flaws
+### Why This Fork Exists: Upstream DarkWow's Critical Flaws
 
 #### 1. Governance Can Freeze Native Token (Catastrophic for PoW)
 
@@ -85,7 +99,7 @@ Attack Scenario:
 
 #### 2. ACL Identity Leakage: Poor to Rich Deanonymization
 
-Upstream DarkFi uses **ACL-based governance** where voters must reveal:
+Upstream DarkWow uses **ACL-based governance** where voters must reveal:
 
 | What is revealed | Impact |
 |-----------------|--------|
@@ -177,12 +191,12 @@ mdbook build
 
 ```bash
 # Start localnet
-./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
+./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
 
 # Mine tokens for testing
-./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet initialize
-./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet keygen
-./target/release/drk -c bin/drk/drk_config.toml -n localnet mine
+./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet initialize
+./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet keygen
+./target/release/dww -c bin/drk/drk_config.toml -n localnet mine
 ```
 
 See [Localnet Development](localnet-dev.md) for detailed setup.
@@ -209,7 +223,7 @@ doc/src/
 
 ### Opcode Status
 
-`LessThanOrEqual` (0x55) and `BaseDiv` (0x58) are **DarkWow additions** to the zkVM — they do not exist in upstream DarkFi. Both were formally verified in Lean4 on this fork (`proofs/lean/`). `LessThanOrEqual` enables conditional logic and O-Cap predicate evaluation in circuits; `BaseDiv` enables precise field division for cold-circuit governance operations.
+`LessThanOrEqual` (0x55) and `BaseDiv` (0x58) are **DarkWow additions** to the zkVM — they do not exist in upstream DarkWow. Both were formally verified in Lean4 on this fork (`proofs/lean/`). `LessThanOrEqual` enables conditional logic and O-Cap predicate evaluation in circuits; `BaseDiv` enables precise field division for cold-circuit governance operations.
 
 | Opcode | Status |
 |--------|--------|

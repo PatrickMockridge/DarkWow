@@ -29,7 +29,7 @@ use tinyjson::JsonValue;
 use tracing::{debug, warn};
 use url::Url;
 
-use darkfi::{
+use dwow::{
     dht::{
         event::DhtEvent, impl_dht_node_defaults, Dht, DhtHandler, DhtLookupReply, DhtNode,
         HostCacheItem,
@@ -44,8 +44,8 @@ use darkfi::{
     util::time::Timestamp,
     Error, Result,
 };
-use darkfi_sdk::crypto::schnorr::{SchnorrPublic, Signature};
-use darkfi_serial::{serialize_async, SerialDecodable, SerialEncodable};
+use dwow_sdk::crypto::schnorr::{SchnorrPublic, Signature};
+use dwow_serial::{serialize_async, SerialDecodable, SerialEncodable};
 
 use crate::{
     pow::VerifiableNodeData,

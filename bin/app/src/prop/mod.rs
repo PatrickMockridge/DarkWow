@@ -22,7 +22,7 @@
  */
 
 use crate::error::{Error, Result};
-use darkfi_serial::{async_trait, Encodable, FutAsyncWriteExt, SerialDecodable, SerialEncodable};
+use dwow_serial::{async_trait, Encodable, FutAsyncWriteExt, SerialDecodable, SerialEncodable};
 use std::{
     io::Write,
     sync::{Arc, Mutex as SyncMutex, Weak},

@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::rpc::jsonrpc::{ErrorCode::ServerError, JsonError, JsonResult};
+use dwow::rpc::jsonrpc::{ErrorCode::ServerError, JsonError, JsonResult};
 
 /// Custom RPC errors available for rlnd.
 /// Please sort them sensefully.

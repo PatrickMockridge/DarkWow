@@ -23,14 +23,14 @@
 
 use std::{collections::BTreeMap, io::Cursor};
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::contract_id::{
         ContractId, NATIVE_CONTRACT_IDS_BYTES, SMART_CONTRACT_MONOTREE_DB_NAME,
         SMART_CONTRACT_ZKAS_DB_NAME,
     },
     monotree::{Hash as StateHash, Monotree, SledOverlayDb, SledTreeDb, EMPTY_HASH},
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 use sled_overlay::{sled, SledDbOverlayStateDiff};
 use tracing::{debug, error};
 

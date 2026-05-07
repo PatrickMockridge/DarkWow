@@ -175,7 +175,7 @@ let escrow = CreateEscrowBuilder::new()
     .buyer_pubkey(bob_pubkey)
     .seller_pubkey(alice_pubkey)
     .value(1000)
-    .token_id(DARK_TOKEN_ID)
+    .token_id(DRKW_TOKEN_ID)
     .timeout(current_block + 1000)  // ~1 week
     .build()?;
 

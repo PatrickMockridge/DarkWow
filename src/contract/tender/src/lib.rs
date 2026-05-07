@@ -37,7 +37,7 @@
 //! - **Job created** via Labor Market for execution
 //! - **Task tracked** via Tau
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 define_contract_function!(TenderFunction {
     CreateTenderV1 = 0x00,

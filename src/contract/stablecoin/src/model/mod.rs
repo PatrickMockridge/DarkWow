@@ -46,8 +46,8 @@
 //! - Simpler ZK circuits
 //! - No position IDs that could leak information
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
-use darkfi_sdk::{
+use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::{
     crypto::{IntentCommitment, IntentNullifier},
     pasta::pallas,
 };

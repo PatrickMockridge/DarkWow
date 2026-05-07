@@ -479,7 +479,7 @@ pub async fn make(app: &App, window: SceneNodePtr, i18n_fish: &I18nBabelFish) {
 
     // android: show on screen keyboard
     let focus_task = app.ex.spawn(async move {
-        darkfi::system::sleep(1).await;
+        dwow::system::sleep(1).await;
         node.call_method("focus", vec![]).await.unwrap();
     });
     app.tasks.lock().unwrap().push(focus_task);

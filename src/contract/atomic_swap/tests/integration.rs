@@ -33,8 +33,8 @@ use darkfi_atomic_swap_contract::{
     ATOMIC_SWAP_CONTRACT_INFO_TREE, ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE,
     ATOMIC_SWAP_CONTRACT_SECRETS_TREE, ATOMIC_SWAP_CONTRACT_SWAPS_TREE,
 };
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::{
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{
     crypto::{PublicKey, SecretKey},
     pasta::pallas,
 };

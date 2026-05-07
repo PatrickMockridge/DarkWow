@@ -28,11 +28,11 @@ use std::{
 };
 
 use anyhow::Result;
-use darkfi::{
+use dwow::{
     consensus::lead_coin::LeadCoin,
     validator::consensus::float_10::{fbig2base, Float10},
 };
-use darkfi_sdk::{crypto::pasta_prelude::PrimeField, pasta::pallas};
+use dwow_sdk::{crypto::pasta_prelude::PrimeField, pasta::pallas};
 
 /// Generate a string represenation of a `pallas::Base` constant
 fn to_constant(name: &str, x: pallas::Base, public: bool) -> String {
@@ -92,8 +92,8 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use darkfi::consensus::lead_coin::LeadCoin;
-    use darkfi_sdk::pasta::pallas;
+    use dwow::consensus::lead_coin::LeadCoin;
+    use dwow_sdk::pasta::pallas;
 
     #[test]
     fn consistency() {

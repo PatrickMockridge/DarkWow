@@ -28,12 +28,12 @@
 //! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
 //! paying out winnings to the player.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     error::ContractError,
     msg,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::BaccaratError;
 use crate::model::{calculate_payout, Bet, BetState, SettleBetParamsV1, SettleBetUpdateV1};
@@ -44,9 +44,9 @@ use crate::BACCARAT_CONTRACT_BETS_TREE;
 /// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
 /// bundled for paying out winnings to the player.
 pub fn baccarat_settle_bet_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: SettleBetParamsV1 = deserialize(&self_.data[1..])?;
@@ -107,7 +107,7 @@ pub fn baccarat_settle_bet_process_instruction_v1(
 
 /// Process update for SettleBetV1
 pub fn baccarat_settle_bet_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: SettleBetUpdateV1,
 ) -> Result<(), ContractError> {
     let bets_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_BETS_TREE)?;

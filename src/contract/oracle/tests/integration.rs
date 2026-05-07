@@ -23,8 +23,8 @@
 
 //! Oracle contract integration tests
 
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::pasta::pallas;
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::pasta::pallas;
 use darkfi_oracle_contract::{
     model::{AttestValueParamsV1, Oracle, PushValueParamsV1, RegisterOracleParamsV1},
     OracleFunction,
@@ -49,12 +49,12 @@ fn test_oracle_function_enum_invalid() {
 #[test]
 fn test_oracle_encoding() {
     let oracle = Oracle {
-        id: darkfi_sdk::pasta::pallas::Base::from(1),
-        oracle_pub_x: darkfi_sdk::pasta::pallas::Base::from(2),
-        oracle_pub_y: darkfi_sdk::pasta::pallas::Base::from(3),
+        id: dwow_sdk::pasta::pallas::Base::from(1),
+        oracle_pub_x: dwow_sdk::pasta::pallas::Base::from(2),
+        oracle_pub_y: dwow_sdk::pasta::pallas::Base::from(3),
         name: "BTC/USD Price Feed".to_string(),
         data_type: "price".to_string(),
-        value: darkfi_sdk::pasta::pallas::Base::from(50000),
+        value: dwow_sdk::pasta::pallas::Base::from(50000),
         updated_at: 50000,
         is_active: true,
     };

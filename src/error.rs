@@ -453,11 +453,11 @@ pub enum Error {
 
     #[cfg(feature = "darkfi-sdk")]
     #[error("Contract execution failed: {0}")]
-    ContractError(darkfi_sdk::error::ContractError),
+    ContractError(dwow_sdk::error::ContractError),
 
     #[cfg(feature = "darkfi-sdk")]
     #[error("Invalid DarkTree: {0}")]
-    DarkTreeError(darkfi_sdk::error::DarkTreeError),
+    DarkTreeError(dwow_sdk::error::DarkTreeError),
 
     #[cfg(feature = "blockchain")]
     #[error("contract wasm bincode not found")]
@@ -820,15 +820,15 @@ impl From<wasmer::MemoryError> for Error {
 }
 
 #[cfg(feature = "darkfi-sdk")]
-impl From<darkfi_sdk::error::ContractError> for Error {
-    fn from(err: darkfi_sdk::error::ContractError) -> Self {
+impl From<dwow_sdk::error::ContractError> for Error {
+    fn from(err: dwow_sdk::error::ContractError) -> Self {
         Self::ContractError(err)
     }
 }
 
 #[cfg(feature = "darkfi-sdk")]
-impl From<darkfi_sdk::error::DarkTreeError> for Error {
-    fn from(err: darkfi_sdk::error::DarkTreeError) -> Self {
+impl From<dwow_sdk::error::DarkTreeError> for Error {
+    fn from(err: dwow_sdk::error::DarkTreeError) -> Self {
         Self::DarkTreeError(err)
     }
 }

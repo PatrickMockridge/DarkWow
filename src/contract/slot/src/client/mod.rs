@@ -28,11 +28,11 @@
 pub mod commit_bet_v1;
 pub mod settle_bet_v1;
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
-use darkfi_sdk::crypto::pasta_prelude::Group;
+use dwow_sdk::crypto::pasta_prelude::Group;
 
 use crate::model::{
     CancelSpinParamsV1, CommitSpinParamsV1, Paytable, PaytableEntry, ReelStrip,

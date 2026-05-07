@@ -30,7 +30,7 @@ use smol::{channel::Sender, lock::RwLock};
 use tinyjson::JsonValue;
 use tracing::{debug, error};
 
-use darkfi::{
+use dwow::{
     error::Error,
     impl_p2p_message,
     net::{
@@ -49,9 +49,9 @@ use darkfi::{
     },
     validator::{consensus::Proposal, sync, ValidatorPtr},
 };
-use darkfi::Result;
-use darkfi_sdk::pasta::pallas;
-use darkfi_serial::{serialize_async, SerialDecodable, SerialEncodable};
+use dwow::Result;
+use dwow_sdk::pasta::pallas;
+use dwow_serial::{serialize_async, SerialDecodable, SerialEncodable};
 
 use crate::{task::handle_unknown_proposals, DarkfiNodePtr};
 
@@ -88,7 +88,7 @@ pub struct ExtendedProposalMessage {
     /// - zkas_ns: namespace of the ZK circuit
     /// - zkbin_bytes: compiled circuit binary
     /// - instances: public inputs for proof verification
-    pub zkbin_data: Vec<(darkfi_sdk::crypto::ContractId, String, Vec<u8>, Vec<pallas::Base>)>,
+    pub zkbin_data: Vec<(dwow_sdk::crypto::ContractId, String, Vec<u8>, Vec<pallas::Base>)>,
 }
 
 impl_p2p_message!(

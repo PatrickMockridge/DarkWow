@@ -32,9 +32,9 @@ use structopt::StructOpt;
 use tracing::info;
 use url::Url;
 
-use darkfi::{system::ExecutorPtr, Error, Result};
-use darkfi_sdk::crypto::{Keypair, PublicKey, SecretKey};
-use darkfi_serial::{
+use dwow::{system::ExecutorPtr, Error, Result};
+use dwow_sdk::crypto::{Keypair, PublicKey, SecretKey};
+use dwow_serial::{
     async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, Decodable, Encodable,
 };
 

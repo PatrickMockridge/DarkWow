@@ -207,7 +207,7 @@ impl<F: WithSmallOrderMulGroup<3> + Ord> ArithInstruction<F> for ArithChip<F> {
 mod tests {
     use super::*;
     use crate::zk::assign_free_advice;
-    use darkfi_sdk::pasta::pallas;
+    use dwow_sdk::pasta::pallas;
     use halo2_proofs::{
         arithmetic::Field,
         circuit::{floor_planner, Value},

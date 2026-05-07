@@ -12,7 +12,7 @@ network = "linear-testnet"
 # Linear-testnet blockchain network configuration
 [network_config."linear-testnet"]
 # Path to the blockchain database directory
-database = "/home/patrick/Darkfi/darkfi/contrib/localnet/darkfid-single-node/data/darkfid"
+database = "/home/patrick/Darkfi/dwow/contrib/localnet/darkfid-single-node/data/darkfid"
 
 # Confirmation threshold, denominated by number of blocks
 threshold = 1

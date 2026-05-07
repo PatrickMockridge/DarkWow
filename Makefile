@@ -23,8 +23,8 @@ PROOFS_BIN = $(PROOFS_SRC:=.bin)
 # List of all binaries built
 BINS = \
 	zkas \
-	darkfid \
-	drk \
+	dwowd \
+	dww \
 	darkirc \
 	genev \
 	genevd \
@@ -52,15 +52,15 @@ contracts: zkas
 	$(MAKE) -C src/contract/dao
 	$(MAKE) -C src/contract/deployooor
 
-darkfid: contracts
+dwowd: contracts
 	$(MAKE) -C bin/$@ \
 		PREFIX="$(PREFIX)" \
 		CARGO="$(CARGO)" \
 		RUST_TARGET="$(RUST_TARGET)" \
 		RUSTFLAGS="$(RUSTFLAGS)"
 
-drk: contracts
-	$(MAKE) -C bin/$@ \
+dww: contracts
+	$(MAKE) -C bin/drk \
 		PREFIX="$(PREFIX)" \
 		CARGO="$(CARGO)" \
 		RUST_TARGET="$(RUST_TARGET)" \

@@ -63,7 +63,7 @@ pub use execute_swap_fee_v1::{create_execute_swap_fee_proof, ExecuteSwapFeeCallD
 pub use execute_swap_slippage_v1::{create_execute_swap_slippage_proof, ExecuteSwapSlippageCallData};
 pub use execute_swap_v1::{create_execute_swap_proof, ExecuteSwapCallData};
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, SecretKey},
     pasta::pallas,
 };

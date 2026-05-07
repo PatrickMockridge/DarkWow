@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use sled_overlay::sled;
 use std::{sync::Arc, time::UNIX_EPOCH};
 

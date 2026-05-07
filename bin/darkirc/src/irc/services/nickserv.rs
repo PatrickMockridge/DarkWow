@@ -26,9 +26,9 @@ use std::{
     sync::Arc,
 };
 
-use darkfi::Result;
-use darkfi_sdk::crypto::SecretKey;
-use darkfi_serial::serialize_async;
+use dwow::Result;
+use dwow_sdk::crypto::SecretKey;
+use dwow_serial::serialize_async;
 use smol::lock::RwLock;
 
 use super::{

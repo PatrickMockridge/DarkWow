@@ -25,15 +25,15 @@
 //!
 //! Provides isolated testing for Escrow contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pedersen_commitment_u64, pasta_prelude::PrimeField, Blind, MerkleNode, MerkleTree, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use darkfi_escrow_contract::client::{
     claim_v1::{ClaimEscrowCallData, create_claim_escrow_proof, ClaimEscrowPublicInputs},
@@ -64,7 +64,7 @@ pub struct EscrowHarness {
     /// Refund_V1 ProvingKey
     refund_pk: ProvingKey,
     /// Merkle tree for escrow commitments
-    merkle_tree: darkfi_sdk::crypto::MerkleTree,
+    merkle_tree: dwow_sdk::crypto::MerkleTree,
     /// List of created escrow commitments
     created_commitments: Vec<pallas::Base>,
 }
@@ -83,19 +83,19 @@ impl EscrowHarness {
         let refund_zkbin = ZkBinary::decode(refund_bin, false).unwrap();
 
         let create_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_escrow_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_escrow_zkbin).unwrap(),
             &create_escrow_zkbin,
         );
         let fund_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&fund_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&fund_zkbin).unwrap(),
             &fund_zkbin,
         );
         let claim_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&claim_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&claim_zkbin).unwrap(),
             &claim_zkbin,
         );
         let refund_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&refund_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&refund_zkbin).unwrap(),
             &refund_zkbin,
         );
 
@@ -338,7 +338,7 @@ pub struct CreateEscrowResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: CreateEscrowPublicInputs,
 }
@@ -348,7 +348,7 @@ pub struct FundEscrowResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: FundEscrowPublicInputs,
 }
@@ -358,7 +358,7 @@ pub struct ClaimEscrowResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: ClaimEscrowPublicInputs,
 }
@@ -368,7 +368,7 @@ pub struct RefundEscrowResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: RefundEscrowPublicInputs,
 }

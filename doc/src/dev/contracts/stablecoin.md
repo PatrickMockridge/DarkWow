@@ -170,7 +170,7 @@ This avoids the heap bug issues that affected MoneyV2 circuits. See [standards.m
 
 ### Cold Circuits (BaseDiv)
 
-Circuits `governance_report_v1.zk` and `accrue_interest_v1.zk` use `BaseDiv` (0x58) — a **DarkWow addition** not present in upstream DarkFi's zkVM — for precision interest calculations. These are executed rarely (monthly) so the attack surface is minimal.
+Circuits `governance_report_v1.zk` and `accrue_interest_v1.zk` use `BaseDiv` (0x58) — a **DarkWow addition** not present in upstream DarkWow's zkVM — for precision interest calculations. These are executed rarely (monthly) so the attack surface is minimal.
 
 ## Function Reference
 

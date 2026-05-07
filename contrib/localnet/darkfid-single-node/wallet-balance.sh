@@ -1,14 +1,14 @@
 #!/bin/sh
 
-# Path to `drk` binary
-DRK="../../../drk -c drk.toml"
+# Path to `dww` binary
+DWW="../../../dww -c dww.toml"
 
 while true; do
-    if $DRK ping 2> /dev/null; then
+    if $DWW ping 2> /dev/null; then
         break
     fi
     sleep 1
 done
 
-$DRK scan
-$DRK wallet balance
+$DWW scan
+$DWW wallet balance

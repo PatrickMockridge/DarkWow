@@ -28,15 +28,15 @@
 //! Key design: All commitments use Poseidon hash, no EC operations.
 //! This eliminates heap bugs and simplifies the circuit complexity.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::pasta_prelude::PrimeField,
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
-use darkfi_serial::async_trait;
+use dwow_serial::async_trait;
 
 /// `MoneyV3::TokenMintV1` API - create new token type
 pub mod token_mint_v1;

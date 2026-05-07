@@ -35,10 +35,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use darkfi::runtime::vm_runtime::ContractStoreAccess;
-use darkfi::Result;
-use darkfi_sdk::crypto::ContractId;
-use darkfi_linear::LinearStore;
+use dwow::runtime::vm_runtime::ContractStoreAccess;
+use dwow::Result;
+use dwow_sdk::crypto::ContractId;
+use dwow_linear::LinearStore;
 
 /// Handle type used to identify contract trees
 pub type TreeHandle = [u8; 32];
@@ -65,7 +65,7 @@ impl LinearContractStore {
         let handle = cid.hash_state_id(tree_name);
         let handle_str = format!("{:?}", handle);
         self.store.set_contract_data(handle_str.as_bytes(), tree_name.as_bytes())
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         self.tree_names.lock().unwrap().insert(handle, tree_name.to_string());
         Ok(handle)
     }
@@ -75,9 +75,9 @@ impl LinearContractStore {
         let handle = cid.hash_state_id(tree_name);
         let handle_str = format!("{:?}", handle);
         let data = self.store.get_contract_data(handle_str.as_bytes())
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         if data.is_empty() {
-            return Err(darkfi::Error::ContractStateNotFound)
+            return Err(dwow::Error::ContractStateNotFound)
         }
         Ok(handle)
     }
@@ -85,16 +85,16 @@ impl LinearContractStore {
     /// Insert contract WASM bincode
     pub fn insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> Result<()> {
         self.store.set_contract_data(&cid.to_bytes(), bincode)
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(())
     }
 
     /// Get contract WASM bincode
     pub fn get_bincode(&self, cid: &ContractId) -> Result<Vec<u8>> {
         let data = self.store.get_contract_data(&cid.to_bytes())
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         if data.is_empty() {
-            return Err(darkfi::Error::ContractStateNotFound)
+            return Err(dwow::Error::ContractStateNotFound)
         }
         Ok(data)
     }
@@ -116,37 +116,37 @@ impl Clone for LinearContractStore {
 
 // Implement ContractStoreAccess trait for LinearContractStore
 impl ContractStoreAccess for LinearContractStore {
-    fn lookup(&self, cid: &ContractId, tree_name: &str) -> darkfi::Result<[u8; 32]> {
+    fn lookup(&self, cid: &ContractId, tree_name: &str) -> dwow::Result<[u8; 32]> {
         let handle = cid.hash_state_id(tree_name);
         let handle_str = format!("{:?}", handle);
         let data = self.store.get_contract_data(handle_str.as_bytes())
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         if data.is_empty() {
-            return Err(darkfi::Error::ContractStateNotFound)
+            return Err(dwow::Error::ContractStateNotFound)
         }
         Ok(handle)
     }
 
-    fn init(&self, cid: &ContractId, tree_name: &str) -> darkfi::Result<[u8; 32]> {
+    fn init(&self, cid: &ContractId, tree_name: &str) -> dwow::Result<[u8; 32]> {
         let handle = cid.hash_state_id(tree_name);
         let handle_str = format!("{:?}", handle);
         self.store.set_contract_data(handle_str.as_bytes(), tree_name.as_bytes())
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         self.tree_names.lock().unwrap().insert(handle, tree_name.to_string());
         Ok(handle)
     }
 
-    fn insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> darkfi::Result<()> {
+    fn insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> dwow::Result<()> {
         self.store.set_contract_data(&cid.to_bytes(), bincode)
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(())
     }
 
-    fn get_bincode(&self, cid: &ContractId) -> darkfi::Result<Vec<u8>> {
+    fn get_bincode(&self, cid: &ContractId) -> dwow::Result<Vec<u8>> {
         let data = self.store.get_contract_data(&cid.to_bytes())
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         if data.is_empty() {
-            return Err(darkfi::Error::ContractStateNotFound)
+            return Err(dwow::Error::ContractStateNotFound)
         }
         Ok(data)
     }

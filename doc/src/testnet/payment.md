@@ -9,7 +9,7 @@ Let's try to send some `ANON` tokens to
 `DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf`:
 
 ```shell
-drk> transfer 2.69 ANON DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf | broadcast
+dww> transfer 2.69 ANON DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf | broadcast
 
 [mark_tx_spend] Processing transaction: 47b4818caec22470427922f506d72788233001a79113907fd1a93b7756b07395
 [mark_tx_spend] Found Money contract in call 0
@@ -27,7 +27,7 @@ the tokens you've sent.
 We can now see the spent coin in our wallet.
 
 ```shell
-drk> wallet coins
+dww> wallet coins
 
  Coin            | Spent | Token ID        | Aliases | Value                    | Spend Hook | User Data | Spent TX
 -----------------+-------+-----------------+---------+--------------------------+------------+-----------+-----------------
@@ -42,7 +42,7 @@ We have to wait until the next block to see our change reappear in
 our wallet.
 
 ```shell
-drk> wallet balance
+dww> wallet balance
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+-------------

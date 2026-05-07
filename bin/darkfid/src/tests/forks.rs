@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{
+use dwow::{
     blockchain::{BlockInfo, Blockchain, HeaderHash},
     validator::{consensus::Fork, pow::PoWModule},
     Result,

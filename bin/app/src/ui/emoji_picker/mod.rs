@@ -22,7 +22,7 @@
  */
 
 use async_trait::async_trait;
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use miniquad::{MouseButton, TouchPhase};
 use parking_lot::Mutex as SyncMutex;
 use rand::{rngs::OsRng, Rng};

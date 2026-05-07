@@ -7,7 +7,7 @@ for more  information._
 
 <u><b>Note</b></u>: This page is a general guide for `tor` nodes in the
 DarkWow ecosystem and is applicable to other apps such as `taud` and
-`darkfid`. We use `darkirc` as our main example throughout this guide.
+`dwowd`. We use `darkirc` as our main example throughout this guide.
 If you're using another app, the network configurations remain the same
 except for the seed nodes (ports) you connect to.
 

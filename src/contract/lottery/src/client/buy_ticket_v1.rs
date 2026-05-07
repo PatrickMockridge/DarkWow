@@ -23,7 +23,7 @@
 
 //! BuyTicketV1 Client API
 
-use darkfi_sdk::{crypto::PublicKey, pasta::pallas};
+use dwow_sdk::{crypto::PublicKey, pasta::pallas};
 
 use crate::model::{derive_ticket_id, BuyTicketParamsV1};
 
@@ -44,9 +44,9 @@ pub fn create_buy_ticket_tx(
     // Create commitment using iterative hashing: PoseidonHash(...PoseidonHash(lottery_id, n1), n2..., nonce)
     let mut state = lottery_id;
     for &n in &sorted_numbers {
-        state = darkfi_sdk::crypto::poseidon_hash([state, pallas::Base::from(n as u64)]);
+        state = dwow_sdk::crypto::poseidon_hash([state, pallas::Base::from(n as u64)]);
     }
-    let commitment = darkfi_sdk::crypto::poseidon_hash([state, nonce]);
+    let commitment = dwow_sdk::crypto::poseidon_hash([state, nonce]);
 
     // Sign the commitment
     let signature = sign_commitment(&commitment, secret_key)?;
@@ -70,7 +70,7 @@ fn sign_commitment(
 ) -> Result<pallas::Base, Box<dyn std::error::Error>> {
     // For now, simple signature using Poseidon
     // In production, use proper Schnorr signature
-    Ok(darkfi_sdk::crypto::poseidon_hash([*commitment, *secret_key]))
+    Ok(dwow_sdk::crypto::poseidon_hash([*commitment, *secret_key]))
 }
 
 /// Derive ticket ID from parameters

@@ -52,7 +52,7 @@
 
 use std::sync::Arc;
 
-use darkfi::{
+use dwow::{
     blockchain::{BlockInfo, Header},
     tx::{ContractCallLeaf, TransactionBuilder},
     validator::{
@@ -63,12 +63,12 @@ use darkfi::{
     Result,
 };
 use darkfi_deployooor_contract::DeployFunction;
-use darkfi_sdk::deploy::DeployParamsV1;
+use dwow_sdk::deploy::DeployParamsV1;
 use darkfi_native_token_contract::{
     client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         keypair::Keypair,
         pasta_prelude::{Curve, CurveAffine},
@@ -77,17 +77,17 @@ use darkfi_sdk::{
     num_traits::One,
     ContractCall,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use num_bigint::BigUint;
 use smol::Executor;
 
 use crate::tests::{Harness, HarnessConfig};
 
 /// ZK Binary loaded directly from include_bytes
-fn get_mint_zkbin() -> Result<darkfi::zkas::ZkBinary> {
+fn get_mint_zkbin() -> Result<dwow::zkas::ZkBinary> {
     let zkbin_bytes =
         include_bytes!("../../../../src/contract/native_token/proof/mint_v1.zk.bin").to_vec();
-    Ok(darkfi::zkas::ZkBinary::decode(&zkbin_bytes, false)?)
+    Ok(dwow::zkas::ZkBinary::decode(&zkbin_bytes, false)?)
 }
 
 /// Generate a NativeToken PoW reward block
@@ -157,7 +157,7 @@ pub async fn generate_native_block(
 pub fn generate_deploy_tx(
     deploy_keypair: &Keypair,
     wasm_bincode: Vec<u8>,
-) -> Result<darkfi::tx::Transaction> {
+) -> Result<dwow::tx::Transaction> {
     let params = DeployParamsV1 {
         wasm_bincode,
         public_key: deploy_keypair.public,
@@ -209,7 +209,7 @@ pub struct GenesisHarness {
     pub harness: Harness,
     pub fork: Fork,
     pub keypair: Keypair,
-    pub deployed_contracts: Vec<darkfi_sdk::crypto::ContractId>,
+    pub deployed_contracts: Vec<dwow_sdk::crypto::ContractId>,
 }
 
 impl GenesisHarness {
@@ -240,7 +240,7 @@ impl GenesisHarness {
         &mut self,
         wasm_bincode: Vec<u8>,
         name: &str,
-    ) -> Result<darkfi_sdk::crypto::ContractId> {
+    ) -> Result<dwow_sdk::crypto::ContractId> {
         let block = generate_deploy_block(&mut self.fork, &self.keypair, wasm_bincode).await?;
         let previous = self.fork.overlay.lock().unwrap().last_block()?;
         verify_block(&block, &previous, &block.zkbin_data).await?;
@@ -248,7 +248,7 @@ impl GenesisHarness {
         self.fork.append_proposal(&Proposal::new(block.clone())).await?;
 
         // Derive the contract ID from deploy public key
-        let contract_id = darkfi_sdk::crypto::ContractId::derive_public(self.keypair.public);
+        let contract_id = dwow_sdk::crypto::ContractId::derive_public(self.keypair.public);
         self.deployed_contracts.push(contract_id);
 
         tracing::info!("Deployed {} contract: {:?}", name, contract_id);

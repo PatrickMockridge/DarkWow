@@ -78,7 +78,7 @@ macro_rules! cli_desc {
             env!("CARGO_PKG_VERSION").to_string(),
             commitish,
             env!("CARGO_PKG_DESCRIPTION").to_string(),
-            darkfi::ANSI_LOGO,
+            dwow::ANSI_LOGO,
         );
 
         Box::leak(desc.into_boxed_str()) as &'static str

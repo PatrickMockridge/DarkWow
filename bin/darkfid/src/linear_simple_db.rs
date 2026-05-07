@@ -32,9 +32,9 @@
 
 use std::sync::Arc;
 
-use darkfi::runtime::vm_runtime::SimpleDbAccess;
-use darkfi::Result;
-use darkfi_linear::LinearStore;
+use dwow::runtime::vm_runtime::SimpleDbAccess;
+use dwow::Result;
+use dwow_linear::LinearStore;
 
 /// Wraps LinearStore to implement SimpleDb-compatible interface for Runtime
 #[derive(Clone)]
@@ -55,7 +55,7 @@ impl LinearSimpleDb {
         composite_key.extend(tree_name);
         composite_key.extend(key);
         self.store.set_contract_data(&composite_key, value)
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(())
     }
 
@@ -66,7 +66,7 @@ impl LinearSimpleDb {
         composite_key.extend(tree_name);
         composite_key.extend(key);
         let data = self.store.get_contract_data(&composite_key)
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         if data.is_empty() {
             Ok(None)
         } else {
@@ -80,7 +80,7 @@ impl LinearSimpleDb {
         composite_key.extend(tree_name);
         composite_key.extend(key);
         self.store.set_contract_data(&composite_key, &[])
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(())
     }
 
@@ -90,7 +90,7 @@ impl LinearSimpleDb {
         composite_key.extend(tree_name);
         composite_key.extend(key);
         let data = self.store.get_contract_data(&composite_key)
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(!data.is_empty())
     }
 }
@@ -103,21 +103,21 @@ impl From<Arc<LinearStore>> for LinearSimpleDb {
 
 // Implement SimpleDbAccess trait for LinearSimpleDb
 impl SimpleDbAccess for LinearSimpleDb {
-    fn insert(&self, tree_name: &[u8], key: &[u8], value: &[u8]) -> darkfi::Result<()> {
+    fn insert(&self, tree_name: &[u8], key: &[u8], value: &[u8]) -> dwow::Result<()> {
         let mut composite_key = Vec::with_capacity(tree_name.len() + key.len());
         composite_key.extend(tree_name);
         composite_key.extend(key);
         self.store.set_contract_data(&composite_key, value)
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(())
     }
 
-    fn get(&self, tree_name: &[u8], key: &[u8]) -> darkfi::Result<Option<Vec<u8>>> {
+    fn get(&self, tree_name: &[u8], key: &[u8]) -> dwow::Result<Option<Vec<u8>>> {
         let mut composite_key = Vec::with_capacity(tree_name.len() + key.len());
         composite_key.extend(tree_name);
         composite_key.extend(key);
         let data = self.store.get_contract_data(&composite_key)
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         if data.is_empty() {
             Ok(None)
         } else {
@@ -125,21 +125,21 @@ impl SimpleDbAccess for LinearSimpleDb {
         }
     }
 
-    fn remove(&self, tree_name: &[u8], key: &[u8]) -> darkfi::Result<()> {
+    fn remove(&self, tree_name: &[u8], key: &[u8]) -> dwow::Result<()> {
         let mut composite_key = Vec::with_capacity(tree_name.len() + key.len());
         composite_key.extend(tree_name);
         composite_key.extend(key);
         self.store.set_contract_data(&composite_key, &[])
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(())
     }
 
-    fn contains_key(&self, tree_name: &[u8], key: &[u8]) -> darkfi::Result<bool> {
+    fn contains_key(&self, tree_name: &[u8], key: &[u8]) -> dwow::Result<bool> {
         let mut composite_key = Vec::with_capacity(tree_name.len() + key.len());
         composite_key.extend(tree_name);
         composite_key.extend(key);
         let data = self.store.get_contract_data(&composite_key)
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(!data.is_empty())
     }
 }

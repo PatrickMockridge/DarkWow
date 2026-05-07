@@ -23,12 +23,12 @@
 
 //! Attestation verify_chain_v1 ZK proof generation
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{crypto::MerkleNode, pasta::pallas};
+use dwow_sdk::{crypto::MerkleNode, pasta::pallas};
 use rand::rngs::OsRng;
 
 /// VerifyChainV1 circuit public inputs

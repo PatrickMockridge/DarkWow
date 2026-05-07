@@ -38,7 +38,7 @@ use darkfi_bridge_contract::chain_handler::{
     ChainHandler as BridgeChainHandlerTrait, ChainId, ExternalDeposit, HtlcDeposit,
     TxHash as BridgeTxHash, VerifiedWithdrawal, WithdrawalRequest,
 };
-use darkfi_sdk::{error::ContractResult, pasta::pallas};
+use dwow_sdk::{error::ContractResult, pasta::pallas};
 use super::chain::{ChainExecutor, ExternalChain, DisabledExecutor};
 use super::config::Config;
 use super::error::{PendingWithdrawal, Result, TxHash};
@@ -80,12 +80,12 @@ impl BridgeChainHandlerTrait for HandlerAdapter {
 
     async fn verify_deposit(&self, _deposit: &ExternalDeposit) -> ContractResult {
         // Relayer doesn't verify deposits - that's done by the bridge contract
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn verify_withdrawal(&self, _withdrawal: &WithdrawalRequest) -> ContractResult {
         // Relayer doesn't verify withdrawals - that's done by the bridge contract
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute(&self, verified: &VerifiedWithdrawal) -> ContractResult {
@@ -101,7 +101,7 @@ impl BridgeChainHandlerTrait for HandlerAdapter {
             guarantee_premium: 0,
         };
 
-        self.inner.execute(&pending).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        self.inner.execute(&pending).await.map_err(|_| dwow_sdk::error::ContractError::Custom(3))?;
         Ok(())
     }
 
@@ -118,13 +118,13 @@ impl BridgeChainHandlerTrait for HandlerAdapter {
             guarantee_premium: 0,
         };
 
-        let _fee = self.inner.estimate_fee(&pending).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        let _fee = self.inner.estimate_fee(&pending).await.map_err(|_| dwow_sdk::error::ContractError::Custom(3))?;
         Ok(())
     }
 
     async fn verify_confirmation(&self, tx_hash: &BridgeTxHash) -> ContractResult {
         let tx = TxHash { chain: tx_hash.chain.as_u8(), hash: tx_hash.hash };
-        self.inner.verify_confirmation(&tx).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        self.inner.verify_confirmation(&tx).await.map_err(|_| dwow_sdk::error::ContractError::Custom(3))?;
         Ok(())
     }
 
@@ -134,7 +134,7 @@ impl BridgeChainHandlerTrait for HandlerAdapter {
             hex::encode(htlc_deposit.swap_id)
         );
         // HTLC deposit verification is chain-specific, delegate to the executor
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute_htlc_claim(
@@ -149,7 +149,7 @@ impl BridgeChainHandlerTrait for HandlerAdapter {
             secret
         );
         // HTLC claim execution is chain-specific, delegate to the executor
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute_htlc_refund(&self, swap_id: &[u8; 32], sender: &[u8]) -> ContractResult {
@@ -159,7 +159,7 @@ impl BridgeChainHandlerTrait for HandlerAdapter {
             hex::encode(sender)
         );
         // HTLC refund execution is chain-specific, delegate to the executor
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn get_htlc_status(&self, swap_id: &[u8; 32]) -> ContractResult {
@@ -167,7 +167,7 @@ impl BridgeChainHandlerTrait for HandlerAdapter {
             "HandlerAdapter getting HTLC status for swap_id: {}",
             hex::encode(swap_id)
         );
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 }
 

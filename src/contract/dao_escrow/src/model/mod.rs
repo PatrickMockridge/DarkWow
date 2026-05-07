@@ -70,13 +70,13 @@
 //! The split is enforced in the circuit. In other modes, all funds go
 //! to the single pool.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, BaseBlind, PublicKey, ScalarBlind},
     pasta::pallas,
 };
 #[cfg(feature = "async")]
-use darkfi_serial::async_trait;
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::async_trait;
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// DAO-Escrow unique identifier (hash of parameters)
 pub type DaoEscrowBulla = pallas::Base;
@@ -100,14 +100,14 @@ pub enum DaoEscrowMode {
 }
 
 impl TryFrom<u8> for DaoEscrowMode {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
             0 => Ok(Self::Escrow),
             1 => Ok(Self::Treasury),
             2 => Ok(Self::TreasuryEndowment),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }
@@ -384,13 +384,13 @@ pub enum VoteType {
 }
 
 impl TryFrom<u8> for VoteType {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
             0 => Ok(Self::Yes),
             1 => Ok(Self::No),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }

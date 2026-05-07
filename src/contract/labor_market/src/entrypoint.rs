@@ -42,14 +42,14 @@
 //! - **Generic**: Worker submits `hash(zip_file)` as proof of work
 //! - **Git**: Worker submits `commit_hash` as proof of work
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::LaborMarketError,
@@ -64,7 +64,7 @@ use crate::{
     LABOR_CONTRACT_NULLIFIERS_TREE, LABOR_CONTRACT_SPENT_FLAGS_TREE,
 };
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

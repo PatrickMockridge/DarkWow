@@ -23,7 +23,7 @@
 
 use std::time::Instant;
 
-use darkfi::{
+use dwow::{
     rpc::{
         client::RpcClient,
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResult},

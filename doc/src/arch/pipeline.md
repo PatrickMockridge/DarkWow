@@ -4,7 +4,7 @@
 
 The `ContractTestingPipeline` provides a unified, modular workflow for testing WASM contracts. It handles the full build chain: ZK binary compilation, WASM building, genesis setup, and contract deployment.
 
-**Location:** `bin/darkfid/src/tests/pipeline.rs`
+**Location:** `bin/dwowd/src/tests/pipeline.rs`
 
 ## Architecture
 
@@ -200,16 +200,16 @@ The `test_pipeline_impl` function supports testing any contract via the `CONTRAC
 
 ```bash
 # Test dex (default)
-cargo test --package darkfid test_pipeline
+cargo test --package dwowd test_pipeline
 
 # Test money_v3
-CONTRACT_NAME=money_v3 cargo test --package darkfid test_pipeline
+CONTRACT_NAME=money_v3 cargo test --package dwowd test_pipeline
 
 # Test stablecoin (depends on money_v3)
-CONTRACT_NAME=stablecoin cargo test --package darkfid test_pipeline
+CONTRACT_NAME=stablecoin cargo test --package dwowd test_pipeline
 
 # Test dao_escrow (no dependencies)
-CONTRACT_NAME=dao_escrow cargo test --package darkfid test_pipeline
+CONTRACT_NAME=dao_escrow cargo test --package dwowd test_pipeline
 ```
 
 ### Lightweight Verification
@@ -225,7 +225,7 @@ This approach avoids complex ZK proof generation while still confirming the cont
 
 For contracts that require actual ZK proof generation and execution, the `HeavyweightPipeline` provides full testing with real proofs.
 
-**Location:** `bin/darkfid/src/tests/heavyweight_pipeline.rs`
+**Location:** `bin/dwowd/src/tests/heavyweight_pipeline.rs`
 
 ### Architecture
 
@@ -298,14 +298,14 @@ pipeline.exec(function_id, call_data, proofs).await?;
 
 **Option 1: Use Release Mode (Recommended)**
 ```bash
-cargo test --package darkfid --release test_dex_heavyweight
-cargo test --package darkfid --release test_money_v3_heavyweight
+cargo test --package dwowd --release test_dex_heavyweight
+cargo test --package dwowd --release test_money_v3_heavyweight
 ```
 
 **Option 2: Increase Stack Size**
 ```bash
 export RUST_MIN_STACK=16777216  # 16MB
-cargo test --package darkfid test_dex_heavyweight
+cargo test --package dwowd test_dex_heavyweight
 ```
 
 ### Why Stack Overflow Occurs
@@ -416,9 +416,9 @@ No scripts to update, no ordering to remember.
 
 | File | Purpose |
 |------|---------|
-| `bin/darkfid/src/tests/pipeline.rs` | ContractTestingPipeline (lightweight) |
-| `bin/darkfid/src/tests/heavyweight_pipeline.rs` | HeavyweightPipeline (ZK proofs) |
-| `bin/darkfid/src/tests/genesis.rs` | GenesisHarness |
+| `bin/dwowd/src/tests/pipeline.rs` | ContractTestingPipeline (lightweight) |
+| `bin/dwowd/src/tests/heavyweight_pipeline.rs` | HeavyweightPipeline (ZK proofs) |
+| `bin/dwowd/src/tests/genesis.rs` | GenesisHarness |
 | `src/contract/*/pipeline.toml` | Contract dependency manifests |
 | `src/contract/*/proof/*.zk` | ZK circuit source files |
 | `src/contract/*/proof/*.zk.bin` | Compiled ZK binaries |

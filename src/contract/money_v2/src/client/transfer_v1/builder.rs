@@ -21,12 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{
+use dwow::{
     zk::{Proof, ProvingKey},
     zkas::ZkBinary,
     ClientFailed, Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         note::AeadEncryptedNote, pasta_prelude::*, BaseBlind, Blind, MerkleNode, ScalarBlind,
         SecretKey,

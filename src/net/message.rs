@@ -23,7 +23,7 @@
 
 use std::net::Ipv6Addr;
 
-use darkfi_serial::{
+use dwow_serial::{
     async_trait, serialize_async, AsyncDecodable, AsyncEncodable, SerialDecodable, SerialEncodable,
 };
 use url::{Host, Url};

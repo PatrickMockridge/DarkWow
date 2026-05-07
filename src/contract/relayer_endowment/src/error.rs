@@ -62,7 +62,7 @@ pub enum RelayerEndowmentError {
     InvalidChildCall,
 }
 
-impl From<RelayerEndowmentError> for darkfi_sdk::error::ContractError {
+impl From<RelayerEndowmentError> for dwow_sdk::error::ContractError {
     fn from(e: RelayerEndowmentError) -> Self {
         match e {
             RelayerEndowmentError::EndowmentNotFound => Self::Custom(1),

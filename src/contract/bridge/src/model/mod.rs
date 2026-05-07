@@ -30,8 +30,8 @@
 //! - No secret sharing between bridge nodes
 //! - User alone controls withdrawal via their secret
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
-use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier};
+use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::crypto::{IntentCommitment, IntentNullifier};
 
 /// Namespace for bridge intents (used with generic intent primitives)
 pub const BRIDGE_NAMESPACE: u64 = 0x0002;
@@ -686,7 +686,7 @@ pub struct CreateHtlcParams {
     /// Swap ID (matches atomic_swap SwapId)
     pub swap_id: [u8; 32],
     /// Hash that locks the HTLC (poseidon_hash(secret))
-    pub hash: darkfi_sdk::pasta::pallas::Base,
+    pub hash: dwow_sdk::pasta::pallas::Base,
     /// Timelock block height (after which refund is allowed)
     pub timelock: u64,
     /// Amount locked in HTLC
@@ -705,7 +705,7 @@ pub struct ClaimHtlcParams {
     /// Swap ID of the HTLC
     pub swap_id: [u8; 32],
     /// The secret that unlocks the HTLC
-    pub secret: darkfi_sdk::pasta::pallas::Base,
+    pub secret: dwow_sdk::pasta::pallas::Base,
 }
 
 /// Parameters for refunding an HTLC (after timelock)
@@ -721,7 +721,7 @@ pub struct RefundHtlcParams {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CreateHtlcUpdateV1 {
     pub swap_id: [u8; 32],
-    pub hash: darkfi_sdk::pasta::pallas::Base,
+    pub hash: dwow_sdk::pasta::pallas::Base,
     pub timelock: u64,
     pub amount: u64,
     pub external_sender: Vec<u8>,
@@ -733,7 +733,7 @@ pub struct CreateHtlcUpdateV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ClaimHtlcUpdateV1 {
     pub swap_id: [u8; 32],
-    pub secret: darkfi_sdk::pasta::pallas::Base,
+    pub secret: dwow_sdk::pasta::pallas::Base,
 }
 
 /// Update data for HTLC refund
@@ -755,7 +755,7 @@ pub enum HtlcSwapState {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct HtlcSwapInfo {
     pub swap_id: [u8; 32],
-    pub hash: darkfi_sdk::pasta::pallas::Base,
+    pub hash: dwow_sdk::pasta::pallas::Base,
     pub timelock: u64,
     pub amount: u64,
     pub external_sender: Vec<u8>,

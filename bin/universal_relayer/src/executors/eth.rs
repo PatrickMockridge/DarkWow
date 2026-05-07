@@ -30,7 +30,7 @@ use darkfi_bridge_contract::chain_handler::{
     ChainHandler as BridgeChainHandler, ChainId, ExternalDeposit, HtlcDeposit, TxHash as BridgeTxHash,
     VerifiedWithdrawal, WithdrawalRequest,
 };
-use darkfi_sdk::{error::ContractResult, pasta::pallas};
+use dwow_sdk::{error::ContractResult, pasta::pallas};
 use super::super::chain::{ChainExecutor, ExternalChain};
 use super::super::config::EthereumConfig;
 use super::super::error::{PendingWithdrawal, Result, TxHash};
@@ -146,12 +146,12 @@ impl BridgeChainHandler for EthereumExecutor {
 
     async fn verify_deposit(&self, _deposit: &ExternalDeposit) -> ContractResult {
         // Relayer doesn't verify deposits - that's done by the bridge contract
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn verify_withdrawal(&self, _withdrawal: &WithdrawalRequest) -> ContractResult {
         // Relayer doesn't verify withdrawals - that's done by the bridge contract
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute(&self, verified: &VerifiedWithdrawal) -> ContractResult {
@@ -168,7 +168,7 @@ impl BridgeChainHandler for EthereumExecutor {
             guarantee_premium: 0,
         };
 
-        <Self as ChainExecutor>::execute(self, &pending).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        <Self as ChainExecutor>::execute(self, &pending).await.map_err(|_| dwow_sdk::error::ContractError::Custom(3))?;
         Ok(())
     }
 
@@ -185,7 +185,7 @@ impl BridgeChainHandler for EthereumExecutor {
             guarantee_premium: 0,
         };
 
-        let _fee = <Self as ChainExecutor>::estimate_fee(self, &pending).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        let _fee = <Self as ChainExecutor>::estimate_fee(self, &pending).await.map_err(|_| dwow_sdk::error::ContractError::Custom(3))?;
         Ok(())
     }
 
@@ -195,7 +195,7 @@ impl BridgeChainHandler for EthereumExecutor {
             hash: tx_hash.hash,
         };
 
-        <Self as ChainExecutor>::verify_confirmation(self, &tx).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        <Self as ChainExecutor>::verify_confirmation(self, &tx).await.map_err(|_| dwow_sdk::error::ContractError::Custom(3))?;
         Ok(())
     }
 
@@ -208,7 +208,7 @@ impl BridgeChainHandler for EthereumExecutor {
         // 1. Query ETH HTLC contract events for the swap_id
         // 2. Verify the deposit matches expected hash and timelock
         // 3. Verify sufficient confirmations
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute_htlc_claim(
@@ -226,7 +226,7 @@ impl BridgeChainHandler for EthereumExecutor {
         // 1. Build transaction calling claim(secret) on HTLC contract
         // 2. Sign with relayer's private key
         // 3. Broadcast via eth_sendRawTransaction
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute_htlc_refund(&self, swap_id: &[u8; 32], sender: &[u8]) -> ContractResult {
@@ -239,13 +239,13 @@ impl BridgeChainHandler for EthereumExecutor {
         // 1. Build transaction calling refund() on HTLC contract
         // 2. Sign with relayer's private key
         // 3. Broadcast via eth_sendRawTransaction
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn get_htlc_status(&self, swap_id: &[u8; 32]) -> ContractResult {
         tracing::debug!("Getting ETH HTLC status for swap_id: {}", hex::encode(swap_id));
         // In production: query HTLC contract for current state
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 }
 

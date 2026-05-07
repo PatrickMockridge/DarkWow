@@ -23,13 +23,13 @@
 
 use std::io::Cursor;
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::contract_id::{
         ContractId, SMART_CONTRACT_MONOTREE_DB_NAME, SMART_CONTRACT_ZKAS_DB_NAME,
     },
     wasm,
 };
-use darkfi_serial::{deserialize, serialize, Decodable};
+use dwow_serial::{deserialize, serialize, Decodable};
 use tracing::{debug, error, info};
 use wasmer::{FunctionEnvMut, WasmPtr};
 
@@ -72,7 +72,7 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
             target: "runtime::db::db_init",
             "[WASM] [{cid}] db_init(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas.
@@ -86,7 +86,7 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
             target: "runtime::db::db_init",
             "[WASM] [{cid}] db_init(): Failed to make slice from ptr"
         );
-        return darkfi_sdk::error::DB_INIT_FAILED
+        return dwow_sdk::error::DB_INIT_FAILED
     };
 
     // Allocate a buffer and copy all the data from the pointer into the buffer
@@ -96,7 +96,7 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
             target: "runtime::db::db_init",
             "[WASM] [{cid}] db_init(): Failed to read memory slice: {e}"
         );
-        return darkfi_sdk::error::DB_INIT_FAILED
+        return dwow_sdk::error::DB_INIT_FAILED
     };
 
     // Once the data is copied, we'll attempt to deserialize it into the objects
@@ -109,7 +109,7 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
                 target: "runtime::db::db_init",
                 "[WASM] [{cid}] db_init(): Failed decoding ContractId: {e}"
             );
-            return darkfi_sdk::error::DB_INIT_FAILED
+            return dwow_sdk::error::DB_INIT_FAILED
         }
     };
 
@@ -120,7 +120,7 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
                 target: "runtime::db::db_init",
                 "[WASM] [{cid}] db_init(): Failed decoding db_name: {e}"
             );
-            return darkfi_sdk::error::DB_INIT_FAILED
+            return dwow_sdk::error::DB_INIT_FAILED
         }
     };
 
@@ -130,7 +130,7 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
             target: "runtime::db::db_init",
             "[WASM] [{cid}] db_init(): Trailing bytes in argument stream"
         );
-        return darkfi_sdk::error::DB_INIT_FAILED
+        return dwow_sdk::error::DB_INIT_FAILED
     }
 
     // We cannot allow initializing the special zkas db:
@@ -139,7 +139,7 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
             target: "runtime::db::db_init",
             "[WASM] [{cid}] db_init(): Attempted to init zkas db"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Nor can we allow initializing the special monotree db:
@@ -148,7 +148,7 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
             target: "runtime::db::db_init",
             "[WASM] [{cid}] db_init(): Attempted to init monotree db"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Nor can we allow another contract to initialize a db for someone else:
@@ -157,7 +157,7 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
             target: "runtime::db::db_init",
             "[WASM] [{cid}] db_init(): Unauthorized ContractId"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Now try to initialize the tree. The tree handle is just a hash of
@@ -175,7 +175,7 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
             target: "runtime::db::db_init",
             "[WASM] [{cid}] db_init(): DbHandle initialized twice during execution"
         );
-        return darkfi_sdk::error::DB_INIT_FAILED
+        return dwow_sdk::error::DB_INIT_FAILED
     }
 
     // This tries to cast into u32
@@ -190,7 +190,7 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
                 target: "runtime::db::db_init",
                 "[WASM] [{cid}] db_init(): Too many open DbHandles"
             );
-            darkfi_sdk::error::DB_INIT_FAILED
+            dwow_sdk::error::DB_INIT_FAILED
         }
     }
 }
@@ -222,7 +222,7 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
             target: "runtime::db::db_lookup",
             "[WASM] [{cid}] db_lookup() called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Opening an existing db should be free (i.e. 1 gas unit).
@@ -236,7 +236,7 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
             target: "runtime::db::db_lookup",
             "[WASM] [{cid}] db_lookup(): Failed to make slice from ptr."
         );
-        return darkfi_sdk::error::DB_LOOKUP_FAILED
+        return dwow_sdk::error::DB_LOOKUP_FAILED
     };
 
     let mut buf = vec![0_u8; ptr_len as usize];
@@ -245,7 +245,7 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
             target: "runtime::db::db_lookup",
             "[WASM] [{cid}] db_lookup(): Failed to read from memory slice: {e}"
         );
-        return darkfi_sdk::error::DB_LOOKUP_FAILED
+        return dwow_sdk::error::DB_LOOKUP_FAILED
     };
 
     // Wrap the buffer into a Cursor for stream reading
@@ -259,7 +259,7 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
                 target: "runtime::db::db_lookup",
                 "[WASM] [{cid}] db_lookup(): Failed to decode ContractId: {e}"
             );
-            return darkfi_sdk::error::DB_LOOKUP_FAILED
+            return dwow_sdk::error::DB_LOOKUP_FAILED
         }
     };
 
@@ -271,7 +271,7 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
                 target: "runtime::db::db_lookup",
                 "[WASM] [{cid}] db_lookup(): Failed to decode db_name: {e}"
             );
-            return darkfi_sdk::error::DB_LOOKUP_FAILED
+            return dwow_sdk::error::DB_LOOKUP_FAILED
         }
     };
 
@@ -281,7 +281,7 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
             target: "runtime::db::db_lookup",
             "[WASM] [{cid}] db_lookup(), Trailing bytes in argument stream"
         );
-        return darkfi_sdk::error::DB_LOOKUP_FAILED
+        return dwow_sdk::error::DB_LOOKUP_FAILED
     }
 
     if db_name == SMART_CONTRACT_ZKAS_DB_NAME {
@@ -289,7 +289,7 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
             target: "runtime::db::db_lookup",
             "[WASM] [{cid}] db_lookup(): Attempted to lookup zkas db"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     if db_name == SMART_CONTRACT_MONOTREE_DB_NAME {
@@ -297,7 +297,7 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
             target: "runtime::db::db_lookup",
             "[WASM] [{cid}] db_lookup(): Attempted to lookup monotree db"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Lookup contract state - compute tree handle directly from hash
@@ -323,7 +323,7 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
                 target: "runtime::db::db_lookup",
                 "[WASM] [{cid}] db_lookup(): Too many open DbHandles"
             );
-            darkfi_sdk::error::DB_LOOKUP_FAILED
+            dwow_sdk::error::DB_LOOKUP_FAILED
         }
     }
 }
@@ -346,7 +346,7 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_set",
             "[WASM] [{cid}] db_set(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Here we count the bytes written into the database.
@@ -361,7 +361,7 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_set",
             "[WASM] [{cid}] db_set(): Failed to make slice from ptr"
         );
-        return darkfi_sdk::error::DB_SET_FAILED
+        return dwow_sdk::error::DB_SET_FAILED
     };
 
     let mut buf = vec![0_u8; ptr_len as usize];
@@ -370,7 +370,7 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_set",
             "[WASM] [{cid}] db_set(): Failed to read from memory slice: {e}"
         );
-        return darkfi_sdk::error::DB_SET_FAILED
+        return dwow_sdk::error::DB_SET_FAILED
     };
 
     let mut buf_reader = Cursor::new(buf);
@@ -383,7 +383,7 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
                 target: "runtime::db::db_set",
                 "[WASM] [{cid}] db_set(): Failed to decode DbHandle: {e}"
             );
-            return darkfi_sdk::error::DB_SET_FAILED
+            return dwow_sdk::error::DB_SET_FAILED
         }
     };
 
@@ -397,7 +397,7 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
                 target: "runtime::db::db_set",
                 "[WASM] [{cid}] db_set(): Failed to decode key vec: {e}"
             );
-            return darkfi_sdk::error::DB_SET_FAILED
+            return dwow_sdk::error::DB_SET_FAILED
         }
     };
 
@@ -408,7 +408,7 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
                 target: "runtime::db::db_set",
                 "[WASM] [{cid}] db_set(): Failed to decode value vec: {e}"
             );
-            return darkfi_sdk::error::DB_SET_FAILED
+            return dwow_sdk::error::DB_SET_FAILED
         }
     };
 
@@ -418,7 +418,7 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_set",
             "[WASM] [{cid}] db_set(): Trailing bytes in argument stream"
         );
-        return darkfi_sdk::error::DB_SET_FAILED
+        return dwow_sdk::error::DB_SET_FAILED
     }
 
     let db_handles = env.db_handles.borrow();
@@ -429,7 +429,7 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_set",
             "[WASM] [{cid}] db_set(): Requested DbHandle that is out of bounds"
         );
-        return darkfi_sdk::error::DB_SET_FAILED
+        return dwow_sdk::error::DB_SET_FAILED
     }
 
     // Retrive DbHandle using the index
@@ -441,7 +441,7 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_set",
             "[WASM] [{cid}] db_set(): Unauthorized to write to DbHandle"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Insert key-value pair into the database corresponding to this contract
@@ -455,7 +455,7 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             value.len(),
             e
         );
-        return darkfi_sdk::error::DB_SET_FAILED
+        return dwow_sdk::error::DB_SET_FAILED
     }
 
     wasm::entrypoint::SUCCESS
@@ -476,7 +476,7 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_del",
             "[WASM] [{cid}] db_del(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. We make deletion free.
@@ -490,7 +490,7 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_del",
             "[WASM] [{cid}] db_del(): Failed to make slice from ptr"
         );
-        return darkfi_sdk::error::DB_DEL_FAILED
+        return dwow_sdk::error::DB_DEL_FAILED
     };
 
     let mut buf = vec![0_u8; ptr_len as usize];
@@ -499,7 +499,7 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_del",
             "[WASM] [{cid}] db_del(): Failed to read from memory slice: {e}"
         );
-        return darkfi_sdk::error::DB_DEL_FAILED
+        return dwow_sdk::error::DB_DEL_FAILED
     };
 
     let mut buf_reader = Cursor::new(buf);
@@ -512,7 +512,7 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
                 target: "runtime::db::db_del",
                 "[WASM] [{cid}] db_del(): Failed to decode DbHandle: {e}"
             );
-            return darkfi_sdk::error::DB_DEL_FAILED
+            return dwow_sdk::error::DB_DEL_FAILED
         }
     };
     let db_handle_index = db_handle_index as usize;
@@ -525,7 +525,7 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
                 target: "runtime::db::db_del",
                 "[WASM] [{cid}] db_del(): Failed to decode key vec: {e}"
             );
-            return darkfi_sdk::error::DB_DEL_FAILED
+            return dwow_sdk::error::DB_DEL_FAILED
         }
     };
 
@@ -535,7 +535,7 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_del",
             "[WASM] [{cid}] db_del(): Trailing bytes in argument stream"
         );
-        return darkfi_sdk::error::DB_DEL_FAILED
+        return dwow_sdk::error::DB_DEL_FAILED
     }
 
     let db_handles = env.db_handles.borrow();
@@ -545,7 +545,7 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_del",
             "[WASM] [{cid}] db_del(): Requested DbHandle that is out of bounds"
         );
-        return darkfi_sdk::error::DB_DEL_FAILED
+        return dwow_sdk::error::DB_DEL_FAILED
     }
 
     // Retrive DbHandle using the index
@@ -557,7 +557,7 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_del",
             "[WASM] [{cid}] db_del(): Unauthorized to write to DbHandle"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Remove key-value pair from the database corresponding to this contract
@@ -566,7 +566,7 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_del",
             "[WASM] [{cid}] db_del(): Couldn't remove key from db_handle tree: {e}"
         );
-        return darkfi_sdk::error::DB_DEL_FAILED
+        return dwow_sdk::error::DB_DEL_FAILED
     }
 
     wasm::entrypoint::SUCCESS
@@ -591,7 +591,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_get",
             "[WASM] [{cid}] db_get(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Reading is free.
@@ -604,7 +604,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_get",
             "[WASM] [{cid}] db_get(): Failed to make slice from ptr"
         );
-        return darkfi_sdk::error::DB_GET_FAILED
+        return dwow_sdk::error::DB_GET_FAILED
     };
 
     let mut buf = vec![0_u8; ptr_len as usize];
@@ -613,7 +613,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_get",
             "[WASM] [{cid}] db_get(): Failed to read from memory slice: {e}"
         );
-        return darkfi_sdk::error::DB_GET_FAILED
+        return dwow_sdk::error::DB_GET_FAILED
     };
 
     let mut buf_reader = Cursor::new(buf);
@@ -626,7 +626,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
                 target: "runtime::db::db_get",
                 "[WASM] [{cid}] db_get(): Failed to decode DbHandle: {e}"
             );
-            return darkfi_sdk::error::DB_GET_FAILED
+            return dwow_sdk::error::DB_GET_FAILED
         }
     };
 
@@ -640,7 +640,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
                 target: "runtime::db::db_get",
                 "[WASM] [{cid}] db_get(): Failed to decode key from vec: {e}"
             );
-            return darkfi_sdk::error::DB_GET_FAILED
+            return dwow_sdk::error::DB_GET_FAILED
         }
     };
 
@@ -651,7 +651,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_get",
             "[WASM] [{cid}] db_get(): Trailing bytes in argument stream"
         );
-        return darkfi_sdk::error::DB_GET_FAILED
+        return dwow_sdk::error::DB_GET_FAILED
     }
 
     let db_handles = env.db_handles.borrow();
@@ -662,7 +662,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_get",
             "[WASM] [{cid}] db_get(): Requested DbHandle that is out of bounds"
         );
-        return darkfi_sdk::error::DB_GET_FAILED
+        return dwow_sdk::error::DB_GET_FAILED
     }
 
     // Get DbHandle using db_handle_index
@@ -676,7 +676,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
                     target: "runtime::db::db_get",
                     "[WASM] [{cid}] db_get(): Internal error getting from tree: {e}"
                 );
-                return darkfi_sdk::error::DB_GET_FAILED
+                return dwow_sdk::error::DB_GET_FAILED
             }
         };
     drop(db_handles);
@@ -687,11 +687,11 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
             target: "runtime::db::db_get",
             "[WASM] [{cid}] db_get(): Return data is empty"
         );
-        return darkfi_sdk::error::DB_GET_EMPTY
+        return dwow_sdk::error::DB_GET_EMPTY
     };
 
     if return_data.len() > u32::MAX as usize {
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     // Subtract used gas. Here we count the length of the data read from db.
@@ -700,7 +700,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     // Copy the data (Vec<u8>) to the VM by pushing it to the objects Vector.
     let mut objects = env.objects.borrow_mut();
     if objects.len() == u32::MAX as usize {
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     // Return the length of the objects Vector.
@@ -727,7 +727,7 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
             target: "runtime::db::db_contains_key",
             "[WASM] [{cid}] db_contains_key(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Reading is free.
@@ -740,7 +740,7 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
             target: "runtime::db::db_contains_key",
             "[WASM] [{cid}] db_contains_key(): Failed to make slice from ptr"
         );
-        return darkfi_sdk::error::DB_CONTAINS_KEY_FAILED
+        return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
     };
 
     let mut buf = vec![0_u8; ptr_len as usize];
@@ -749,7 +749,7 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
             target: "runtime::db::db_contains_key",
             "[WASM] [{cid}] db_contains_key(): Failed to read from memory slice: {e}"
         );
-        return darkfi_sdk::error::DB_CONTAINS_KEY_FAILED
+        return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
     };
 
     let mut buf_reader = Cursor::new(buf);
@@ -762,7 +762,7 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
                 target: "runtime::db::db_contains_key",
                 "[WASM] [{cid}] db_contains_key(): Failed to decode DbHandle: {e}"
             );
-            return darkfi_sdk::error::DB_CONTAINS_KEY_FAILED
+            return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
         }
     };
 
@@ -776,7 +776,7 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
                 target: "runtime::db::db_contains_key",
                 "[WASM] [{cid}] db_contains_key(): Failed to decode key vec: {e}"
             );
-            return darkfi_sdk::error::DB_CONTAINS_KEY_FAILED
+            return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
         }
     };
 
@@ -787,7 +787,7 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
             target: "runtime::db::db_contains_key",
             "[WASM] [{cid}] db_contains_key(): Trailing bytes in argument stream"
         );
-        return darkfi_sdk::error::DB_CONTAINS_KEY_FAILED
+        return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
     }
 
     let db_handles = env.db_handles.borrow();
@@ -798,7 +798,7 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
             target: "runtime::db::db_contains_key",
             "[WASM] [{cid}] db_contains_key(): Requested DbHandle that is out of bounds"
         );
-        return darkfi_sdk::error::DB_CONTAINS_KEY_FAILED
+        return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
     }
 
     // Retrieve DbHandle using the index
@@ -812,7 +812,7 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
                 target: "runtime::db::db_contains_key",
                 "[WASM] [{cid}] db_contains_key(): simple_db.contains_key failed: {e}"
             );
-            darkfi_sdk::error::DB_CONTAINS_KEY_FAILED
+            dwow_sdk::error::DB_CONTAINS_KEY_FAILED
         }
     }
 }
@@ -832,7 +832,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
             target: "runtime::db::zkas_db_set",
             "[WASM] [{cid}] zkas_db_set(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     let memory_view = env.memory_view(&store);
@@ -843,7 +843,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
             target: "runtime::db::zkas_db_set",
             "[WASM] [{cid}] zkas_db_set(): Failed to make slice from ptr"
         );
-        return darkfi_sdk::error::DB_SET_FAILED
+        return dwow_sdk::error::DB_SET_FAILED
     };
 
     let mut buf = vec![0u8; ptr_len as usize];
@@ -852,7 +852,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
             target: "runtime::db::zkas_db_set",
             "[WASM] [{cid}] zkas_db_set(): Failed to read from memory slice: {e}"
         );
-        return darkfi_sdk::error::DB_SET_FAILED
+        return dwow_sdk::error::DB_SET_FAILED
     };
 
     // Deserialize the ZkBinary bytes from the buffer
@@ -863,7 +863,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
                 target: "runtime::db::zkas_db_set",
                 "[WASM] [{cid}] zkas_db_set(): Could not deserialize bytes from buffer: {e}"
             );
-            return darkfi_sdk::error::DB_SET_FAILED
+            return dwow_sdk::error::DB_SET_FAILED
         }
     };
 
@@ -875,7 +875,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
                 target: "runtime::db::zkas_db_set",
                 "[WASM] [{cid}] zkas_db_set(): Invalid zkas bincode passed to function: {e}"
             );
-            return darkfi_sdk::error::DB_SET_FAILED
+            return dwow_sdk::error::DB_SET_FAILED
         }
     };
 
@@ -895,7 +895,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
             target: "runtime::db::zkas_db_set",
             "[WASM] [{cid}] zkas_db_set(): Internal error, zkas db at index 0 incorrect"
         );
-        return darkfi_sdk::error::DB_SET_FAILED
+        return dwow_sdk::error::DB_SET_FAILED
     }
 
     // Check if there is existing bincode and compare it. Return DB_SUCCESS if
@@ -922,7 +922,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
                 target: "runtime::db::zkas_db_set",
                 "[WASM] [{cid}] zkas_db_set(): Internal error getting from tree: {e}"
             );
-            return darkfi_sdk::error::DB_SET_FAILED
+            return dwow_sdk::error::DB_SET_FAILED
         }
     };
 
@@ -940,7 +940,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
                 target: "runtime::db::zkas_db_set",
                 "[WASM] [{cid}] zkas_db_set(): Failed to create empty witnesses: {e}"
             );
-            return darkfi_sdk::error::DB_SET_FAILED
+            return dwow_sdk::error::DB_SET_FAILED
         }
     };
 
@@ -953,7 +953,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
             target: "runtime::db::zkas_db_set",
             "[WASM] [{cid}] zkas_db_set(): Failed to serialize VerifyingKey: {e}"
         );
-        return darkfi_sdk::error::DB_SET_FAILED
+        return dwow_sdk::error::DB_SET_FAILED
     }
 
     // Insert the key-value pair into the database.
@@ -964,7 +964,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
             target: "runtime::db::zkas_db_set",
             "[WASM] [{cid}] zkas_db_set(): Couldn't insert to db_handle tree: {e}"
         );
-        return darkfi_sdk::error::DB_SET_FAILED
+        return dwow_sdk::error::DB_SET_FAILED
     }
     drop(db_handles);
 

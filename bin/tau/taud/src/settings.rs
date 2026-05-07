@@ -24,7 +24,7 @@
 use structopt::StructOpt;
 use structopt_toml::{serde::Deserialize, StructOptToml};
 
-use darkfi::{net::settings::SettingsOpt, rpc::settings::RpcSettingsOpt};
+use dwow::{net::settings::SettingsOpt, rpc::settings::RpcSettingsOpt};
 
 pub const CONFIG_FILE: &str = "taud_config.toml";
 pub const CONFIG_FILE_CONTENTS: &str = include_str!("../taud_config.toml");
@@ -38,11 +38,11 @@ pub struct Args {
     /// Sets a custom config file
     pub config: Option<String>,
 
-    #[structopt(long, default_value = "~/.local/share/darkfi/taud_db")]
+    #[structopt(long, default_value = "~/.local/share/dwow/taud_db")]
     /// Sets Datastore Path
     pub datastore: String,
 
-    #[structopt(long, default_value = "~/.local/share/darkfi/replayed_taud_db")]
+    #[structopt(long, default_value = "~/.local/share/dwow/replayed_taud_db")]
     /// Replay logs (DB) path
     pub replay_datastore: String,
 

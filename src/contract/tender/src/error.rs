@@ -24,7 +24,7 @@
 //! Tender contract errors
 
 use thiserror::Error;
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 
 /// Tender contract errors
 #[derive(Error, Debug)]

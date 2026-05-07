@@ -13,7 +13,7 @@ More information about the smart contracts architecture can be found
 
 ## Linear Testnet
 
-For testing contracts on the linear-testnet, use the `drk` command-line tool
+For testing contracts on the linear-testnet, use the `dww` command-line tool
 with the `--network linear` flag. The linear-testnet supports 5-node consensus
 and provides full ZK proof generation infrastructure.
 
@@ -52,13 +52,13 @@ below.
 
 ```makefile
 # Path to the zkas compiler (or just `zkas` if it's in your $PATH)
-ZKAS = ../darkfi/zkas
+ZKAS = ../dwow/zkas
 ```
 
 ```shell
 $ make
 
-../darkfi/zkas proof/membership_proof.zk -o proof/membership_proof.zk.bin
+../dwow/zkas proof/membership_proof.zk -o proof/membership_proof.zk.bin
 Wrote output to proof/membership_proof.zk.bin
 cargo build --target=wasm32-unknown-unknown --release --lib
 ...
@@ -74,7 +74,7 @@ cp -f target/release/membership membership
 
 Now both the contract and its client are ready to use. Leave this
 terminal open, as we will come back to it later in the guide, and
-return back to your `drk` interactive shell.
+return back to your `dww` interactive shell.
 
 ## Creating contracts
 
@@ -87,7 +87,7 @@ placeholder. We can create our own contract authority by executing the
 following command:
 
 ```shell
-drk> contract generate-deploy
+dww> contract generate-deploy
 
 Generating a new keypair
 Created new contract deploy authority
@@ -102,7 +102,7 @@ Contract ID: {CONTRACT_ID}
 You can list your mint authorities with:
 
 ```shell
-drk> contract list
+dww> contract list
 
  Deploy Authority                        | Locked | Lock Height
 -----------------------------------------+--------+-------------
@@ -116,7 +116,7 @@ contract we compiled earlier using it. The deploy command takes the
 hex-encoded secret key:
 
 ```shell
-drk> contract deploy {SECRET_KEY_HEX} --wasm ../smart-contract/membership.wasm | broadcast
+dww> contract deploy {SECRET_KEY_HEX} --wasm ../smart-contract/membership.wasm | broadcast
 
 [deploy_contract] Creating deployment transaction...
 [deploy_contract] Built DeployV1 call to Deployooor contract
@@ -133,7 +133,7 @@ Now the transaction should be published to the network. When the
 transaction is confirmed, the contract history will show its record:
 
 ```shell
-drk> contract list
+dww> contract list
 
  Deploy Authority                        | Locked | Lock Height
 -----------------------------------------+--------+-------------
@@ -145,7 +145,7 @@ not locked. Each redeployment will show a new record in the contract
 history. We can also export the deployed data by executing:
 
 ```shell
-drk> contract export-data {TX_HASH} > membership.dat
+dww> contract export-data {TX_HASH} > membership.dat
 ```
 
 The exported file contains the WASM bincode and instruction data
@@ -159,7 +159,7 @@ transactions, effectively locking the smart contract on-chain code. To
 lock down the contract, execute:
 
 ```shell
-drk> contract lock {SECRET_KEY_HEX} | broadcast
+dww> contract lock {SECRET_KEY_HEX} | broadcast
 
 [lock_contract] Creating lock transaction...
 [mark_tx_spend] Processing transaction: 9eee9799d77d0ef1dd115738982296c9c481b4412c75a0a0955fd67d87bfe6a0
@@ -172,7 +172,7 @@ After the transaction has been confirmed, we will see our contract
 locked on:
 
 ```shell
-drk> contract list
+dww> contract list
 
  Deploy Authority                        | Locked | Lock Height
 -----------------------------------------+--------+-------------
@@ -207,12 +207,12 @@ key:
 $ ./membership register {CONTRACT_ID} {IDENTITY_SECRET_KEY} > register.call
 ```
 
-Now we need to go back to our `drk` interactive shell, to generate the
+Now we need to go back to our `dww` interactive shell, to generate the
 actual registration transaction, attach a fee to it and broadcast it to
 the network:
 
 ```shell
-drk> tx-from-calls < ../smart-contract/register.call | broadcast
+dww> tx-from-calls < ../smart-contract/register.call | broadcast
 
 [mark_tx_spend] Processing transaction: 23ea7d01ae16389e71d73fa27748ce1633d39c6b55a4aa31d8f5ba1017a4f840
 Broadcasting transaction...
@@ -235,7 +235,7 @@ Then, we build the actual deregistration transaction again, attach its
 fee and broadcast it to the network:
 
 ```shell
-drk> tx-from-calls < ../smart-contract/deregister.call | broadcast
+dww> tx-from-calls < ../smart-contract/deregister.call | broadcast
 
 [mark_tx_spend] Processing transaction: f3304e6f5673d9ece211af6dd85c70ec8c8e85e91439b8cffbcf5387b11de1d0
 Broadcasting transaction...
@@ -250,7 +250,7 @@ not exist in our contract registry.
 For contracts requiring ZK proofs, use the `contract invoke` command:
 
 ```shell
-drk> contract invoke {CONTRACT_ID} InitializeV1 --params params.json | broadcast
+dww> contract invoke {CONTRACT_ID} InitializeV1 --params params.json | broadcast
 ```
 
 The invocation system uses the test harness infrastructure to generate
@@ -263,13 +263,13 @@ To test contracts on the linear-testnet with full ZK proof generation:
 
 ```bash
 # Start 5-node linear testnet
-cargo run --bin darkfid --features linear_testnet -- --config darkfid-five-nodes.toml &
+cargo run --bin dwowd --features linear_testnet -- --config dwowd-five-nodes.toml &
 
 # Run contract integration tests (8 tests)
-cargo test --release -p darkfid -- contract_integration
+cargo test --release -p dwowd -- contract_integration
 
 # Run five-node harness tests (mining, uncle mechanism)
-cargo test --release -p darkfid --lib -- linear_five_node::tests
+cargo test --release -p dwowd --lib -- linear_five_node::tests
 ```
 
 The contract integration tests use the `HeavyweightPipeline` testing system which
@@ -288,7 +288,7 @@ view the on chain records of our registry. For that purpose we can
 create a new small program, or extend the client to support this
 functionality. Following you will find example code for retrieving
 a smart contract's on-chain records from the [JSON-RPC][6] server in
-`darkfid` which we can use to list our registry records:
+`dwowd` which we can use to list our registry records:
 
 {{#tabs }}
 {{#tab name="Rust" }}
@@ -360,4 +360,4 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 [3]: https://codeberg.org/darkrenaissance/smart-contract
 [4]: ../spec/crypto-schemes.md#poseidonhash-function
 [5]: ../zkas/zkas.md
-[6]: ../clients/darkfid_jsonrpc.md
+[6]: ../clients/dwowd_jsonrpc.md

@@ -23,8 +23,8 @@
 
 //! Tender contract integration tests
 
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::pasta::pallas;
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::pasta::pallas;
 use darkfi_tender_contract::{
     model::{
         Bid, BidState, CancelTenderParamsV1, CancelTenderUpdateV1, CloseTenderParamsV1,

@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{zk::ProvingKey, zkas::ZkBinary, ClientFailed, Result};
-use darkfi_sdk::{
+use dwow::{zk::ProvingKey, zkas::ZkBinary, ClientFailed, Result};
+use dwow_sdk::{
     crypto::{pasta_prelude::*, Blind, FuncId, Keypair, MerkleTree, PublicKey},
     pasta::pallas,
 };

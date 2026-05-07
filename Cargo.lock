@@ -627,10 +627,10 @@ version = "0.5.0"
 dependencies = [
  "anyhow",
  "blake3",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_bridge_contract",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_bridge_contract",
  "ethers-core",
  "hex",
  "serde",
@@ -1895,759 +1895,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darkfi"
-version = "0.5.0"
-dependencies = [
- "arti-client",
- "async-trait",
- "blake3",
- "bs58",
- "clap 4.6.1",
- "criterion 0.8.2",
- "crypto_api_chachapoly",
- "darkfi-sdk",
- "darkfi-serial",
- "easy-parallel",
- "ed25519-compact",
- "futures",
- "futures-rustls",
- "halo2_gadgets",
- "halo2_proofs",
- "hex",
- "httparse",
- "lazy_static",
- "libc",
- "monero",
- "nu-ansi-term",
- "num-bigint",
- "oxy-upnp-igd",
- "parking_lot 0.12.5",
- "pin-project-lite",
- "plotters",
- "prettytable-rs",
- "primitive-types 0.14.0",
- "quinn-smol",
- "rand 0.8.6",
- "randomx",
- "rcgen",
- "semver",
- "serde",
- "sha2",
- "sled",
- "sled-overlay",
- "smol",
- "socket2",
- "structopt",
- "structopt-toml",
- "thiserror 2.0.18",
- "tiny-keccak",
- "tinyjson",
- "toml 0.9.12+spec-1.1.0",
- "tor-cell",
- "tor-error",
- "tor-hscrypto",
- "tor-hsservice",
- "tor-proto",
- "tor-rtcompat",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "url",
- "wasmer",
- "wasmer-compiler-singlepass",
- "wasmer-middlewares",
- "x509-parser",
-]
-
-[[package]]
-name = "darkfi-contract-test-harness"
-version = "0.5.0"
-dependencies = [
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_atomic_swap_contract",
- "darkfi_attestation_contract",
- "darkfi_auction_contract",
- "darkfi_baccarat_contract",
- "darkfi_betting_stake_contract",
- "darkfi_bridge_contract",
- "darkfi_dao_escrow_contract",
- "darkfi_darkbet_exchange_contract",
- "darkfi_darktoshi_dice_contract",
- "darkfi_deployooor_contract",
- "darkfi_dex_contract",
- "darkfi_drain_protection_contract",
- "darkfi_escrow_contract",
- "darkfi_game_room_contract",
- "darkfi_identity_contract",
- "darkfi_insurance_market_contract",
- "darkfi_labor_market_contract",
- "darkfi_lottery_contract",
- "darkfi_money_v3_contract",
- "darkfi_native_token_contract",
- "darkfi_oracle_contract",
- "darkfi_pool_stake_contract",
- "darkfi_relayer_endowment_contract",
- "darkfi_roulette_contract",
- "darkfi_slot_contract",
- "darkfi_stablecoin_contract",
- "darkfi_subscription_contract",
- "darkfi_tender_contract",
- "rand 0.8.6",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "darkfi-derive"
-version = "0.5.1"
-dependencies = [
- "darkfi-derive-internal",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
-name = "darkfi-derive-internal"
-version = "0.5.1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
-name = "darkfi-safemath-zk"
-version = "0.1.0"
-
-[[package]]
-name = "darkfi-sdk"
-version = "0.5.0"
-dependencies = [
- "blake2b_simd",
- "blake3",
- "bridgetree",
- "bs58",
- "chacha20poly1305",
- "darkfi-serial",
- "halo2_gadgets",
- "halo2_proofs",
- "hashbrown 0.16.1",
- "lazy_static",
- "num",
- "num-bigint",
- "num-traits",
- "pasta_curves",
- "rand 0.8.6",
- "rand_core 0.6.4",
- "sha2",
- "sled-overlay",
- "subtle",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "darkfi-sdk-py"
-version = "0.5.0"
-dependencies = [
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_deployooor_contract",
- "halo2_gadgets",
- "halo2_proofs",
- "plotters",
- "pyo3",
- "rand 0.8.6",
-]
-
-[[package]]
-name = "darkfi-serial"
-version = "0.5.1"
-dependencies = [
- "async-trait",
- "blake3",
- "bridgetree",
- "darkfi-derive",
- "futures-lite",
- "num-bigint",
- "pasta_curves",
- "semver",
- "sled-overlay",
- "url",
-]
-
-[[package]]
-name = "darkfi_atomic_swap_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "rand 0.8.6",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_attestation_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_auction_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_baccarat_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "bs58",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_betting_stake_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "bs58",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "once_cell",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_bridge_contract"
-version = "0.5.0"
-dependencies = [
- "async-trait",
- "blake3",
- "bs58",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_dao_escrow_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_money_v3_contract",
- "getrandom 0.2.17",
- "rand 0.8.6",
- "serde",
- "sled",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_darkbet_exchange_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "bs58",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_darktoshi_dice_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "bs58",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_deployooor_contract"
-version = "0.5.0"
-dependencies = [
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
- "wasmparser 0.243.0",
-]
-
-[[package]]
-name = "darkfi_dex_contract"
-version = "0.5.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_money_v3_contract",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_drain_protection_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "rand 0.8.6",
- "serde",
- "sled",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_escrow_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "rand 0.8.6",
- "serde",
- "sled",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_game_room_contract"
-version = "0.1.0"
-dependencies = [
- "chacha20poly1305",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "halo2_proofs",
- "rand 0.8.6",
- "serial_test",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_identity_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "once_cell",
- "rand 0.8.6",
- "smol",
- "thiserror 1.0.69",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_insurance_market_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "rand 0.8.6",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "darkfi_labor_market_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_linear"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "darkfi-sdk",
- "darkfi-serial",
- "hex",
- "merlin",
- "rand 0.8.6",
- "randomx",
- "serde",
- "serde_json",
- "sha2",
- "sled",
- "thiserror 1.0.69",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_lottery_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "bs58",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_money_v3_contract",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "once_cell",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_money_v3_contract"
-version = "0.1.0"
-dependencies = [
- "chacha20poly1305",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "pasta_curves",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_native_token_contract"
-version = "0.1.0"
-dependencies = [
- "chacha20poly1305",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "pasta_curves",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_oracle_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_pool_stake_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "once_cell",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_relayer_endowment_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "once_cell",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_roulette_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "bs58",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_slot_contract"
-version = "0.1.0"
-dependencies = [
- "chacha20poly1305",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "halo2_proofs",
- "pasta_curves",
- "rand 0.8.6",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_stablecoin_contract"
-version = "0.5.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_money_v3_contract",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfi_subscription_contract"
-version = "0.1.0"
-dependencies = [
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "rand 0.8.6",
-]
-
-[[package]]
-name = "darkfi_tender_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "darkfid"
-version = "0.5.0"
-dependencies = [
- "async-trait",
- "blake3",
- "bs58",
- "darkfi",
- "darkfi-contract-test-harness",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_attestation_contract",
- "darkfi_auction_contract",
- "darkfi_baccarat_contract",
- "darkfi_bridge_contract",
- "darkfi_deployooor_contract",
- "darkfi_linear",
- "darkfi_lottery_contract",
- "darkfi_money_v3_contract",
- "darkfi_native_token_contract",
- "darkfi_pool_stake_contract",
- "darkfi_tender_contract",
- "easy-parallel",
- "glob",
- "hex",
- "monero",
- "num-bigint",
- "rand 0.8.6",
- "randomx",
- "serde",
- "serde_json",
- "signal-hook",
- "signal-hook-async-std",
- "sled",
- "smol",
- "structopt",
- "structopt-toml",
- "thiserror 2.0.18",
- "tinyjson",
- "toml 0.9.12+spec-1.1.0",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
 name = "darkirc"
 version = "0.5.1"
 dependencies = [
@@ -2656,9 +1903,9 @@ dependencies = [
  "blake3",
  "bs58",
  "crypto_box",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
  "easy-parallel",
  "futures",
  "futures-rustls",
@@ -2851,8 +2098,8 @@ name = "dchatd"
 version = "0.4.1"
 dependencies = [
  "async-trait",
- "darkfi",
- "darkfi-serial",
+ "dwow",
+ "dwow-serial",
  "easy-parallel",
  "serde",
  "signal-hook",
@@ -3142,21 +2389,786 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
 
 [[package]]
-name = "drk"
+name = "dwow"
+version = "0.5.0"
+dependencies = [
+ "arti-client",
+ "async-trait",
+ "blake3",
+ "bs58",
+ "clap 4.6.1",
+ "criterion 0.8.2",
+ "crypto_api_chachapoly",
+ "dwow-sdk",
+ "dwow-serial",
+ "easy-parallel",
+ "ed25519-compact",
+ "futures",
+ "futures-rustls",
+ "halo2_gadgets",
+ "halo2_proofs",
+ "hex",
+ "httparse",
+ "lazy_static",
+ "libc",
+ "monero",
+ "nu-ansi-term",
+ "num-bigint",
+ "oxy-upnp-igd",
+ "parking_lot 0.12.5",
+ "pin-project-lite",
+ "plotters",
+ "prettytable-rs",
+ "primitive-types 0.14.0",
+ "quinn-smol",
+ "rand 0.8.6",
+ "randomx",
+ "rcgen",
+ "semver",
+ "serde",
+ "sha2",
+ "sled",
+ "sled-overlay",
+ "smol",
+ "socket2",
+ "structopt",
+ "structopt-toml",
+ "thiserror 2.0.18",
+ "tiny-keccak",
+ "tinyjson",
+ "toml 0.9.12+spec-1.1.0",
+ "tor-cell",
+ "tor-error",
+ "tor-hscrypto",
+ "tor-hsservice",
+ "tor-proto",
+ "tor-rtcompat",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "url",
+ "wasmer",
+ "wasmer-compiler-singlepass",
+ "wasmer-middlewares",
+ "x509-parser",
+]
+
+[[package]]
+name = "dwow-contract-test-harness"
+version = "0.5.0"
+dependencies = [
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_atomic_swap_contract",
+ "dwow_attestation_contract",
+ "dwow_auction_contract",
+ "dwow_baccarat_contract",
+ "dwow_betting_stake_contract",
+ "dwow_bridge_contract",
+ "dwow_dao_escrow_contract",
+ "dwow_darkbet_exchange_contract",
+ "dwow_darktoshi_dice_contract",
+ "dwow_deployooor_contract",
+ "dwow_dex_contract",
+ "dwow_drain_protection_contract",
+ "dwow_escrow_contract",
+ "dwow_game_room_contract",
+ "dwow_identity_contract",
+ "dwow_insurance_market_contract",
+ "dwow_labor_market_contract",
+ "dwow_lottery_contract",
+ "dwow_money_v3_contract",
+ "dwow_native_token_contract",
+ "dwow_oracle_contract",
+ "dwow_pool_stake_contract",
+ "dwow_relayer_endowment_contract",
+ "dwow_roulette_contract",
+ "dwow_slot_contract",
+ "dwow_stablecoin_contract",
+ "dwow_subscription_contract",
+ "dwow_tender_contract",
+ "rand 0.8.6",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "dwow-derive"
+version = "0.5.1"
+dependencies = [
+ "dwow-derive-internal",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "dwow-derive-internal"
+version = "0.5.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "dwow-safemath-zk"
+version = "0.1.0"
+
+[[package]]
+name = "dwow-sdk"
+version = "0.5.0"
+dependencies = [
+ "blake2b_simd",
+ "blake3",
+ "bridgetree",
+ "bs58",
+ "chacha20poly1305",
+ "dwow-serial",
+ "halo2_gadgets",
+ "halo2_proofs",
+ "hashbrown 0.16.1",
+ "lazy_static",
+ "num",
+ "num-bigint",
+ "num-traits",
+ "pasta_curves",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
+ "sha2",
+ "sled-overlay",
+ "subtle",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "dwow-sdk-py"
+version = "0.5.0"
+dependencies = [
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_deployooor_contract",
+ "halo2_gadgets",
+ "halo2_proofs",
+ "plotters",
+ "pyo3",
+ "rand 0.8.6",
+]
+
+[[package]]
+name = "dwow-serial"
+version = "0.5.1"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "bridgetree",
+ "dwow-derive",
+ "futures-lite",
+ "num-bigint",
+ "pasta_curves",
+ "semver",
+ "sled-overlay",
+ "url",
+]
+
+[[package]]
+name = "dwow_atomic_swap_contract"
+version = "0.1.0"
+dependencies = [
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "rand 0.8.6",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_attestation_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_auction_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_baccarat_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_betting_stake_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "once_cell",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_bridge_contract"
+version = "0.5.0"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_dao_escrow_contract"
+version = "0.1.0"
+dependencies = [
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_money_v3_contract",
+ "getrandom 0.2.17",
+ "rand 0.8.6",
+ "serde",
+ "sled",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_darkbet_exchange_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_darktoshi_dice_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_deployooor_contract"
+version = "0.5.0"
+dependencies = [
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+ "wasmparser 0.243.0",
+]
+
+[[package]]
+name = "dwow_dex_contract"
+version = "0.5.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_money_v3_contract",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_drain_protection_contract"
+version = "0.1.0"
+dependencies = [
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "rand 0.8.6",
+ "serde",
+ "sled",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_escrow_contract"
+version = "0.1.0"
+dependencies = [
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "rand 0.8.6",
+ "serde",
+ "sled",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_game_room_contract"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "halo2_proofs",
+ "rand 0.8.6",
+ "serial_test",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_identity_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "once_cell",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_insurance_market_contract"
+version = "0.1.0"
+dependencies = [
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "rand 0.8.6",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "dwow_labor_market_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_linear"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "dwow-sdk",
+ "dwow-serial",
+ "hex",
+ "merlin",
+ "rand 0.8.6",
+ "randomx",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sled",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_lottery_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_money_v3_contract",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "once_cell",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_money_v3_contract"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "pasta_curves",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_native_token_contract"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "pasta_curves",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_oracle_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_pool_stake_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "once_cell",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_relayer_endowment_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "once_cell",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_roulette_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_slot_contract"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "halo2_proofs",
+ "pasta_curves",
+ "rand 0.8.6",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_stablecoin_contract"
+version = "0.5.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_money_v3_contract",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_subscription_contract"
+version = "0.1.0"
+dependencies = [
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "rand 0.8.6",
+]
+
+[[package]]
+name = "dwow_tender_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwowd"
+version = "0.5.0"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "bs58",
+ "dwow",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_attestation_contract",
+ "dwow_auction_contract",
+ "dwow_baccarat_contract",
+ "dwow_bridge_contract",
+ "dwow_deployooor_contract",
+ "dwow_linear",
+ "dwow_lottery_contract",
+ "dwow_money_v3_contract",
+ "dwow_native_token_contract",
+ "dwow_pool_stake_contract",
+ "dwow_tender_contract",
+ "easy-parallel",
+ "glob",
+ "hex",
+ "monero",
+ "num-bigint",
+ "rand 0.8.6",
+ "randomx",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "signal-hook-async-std",
+ "sled",
+ "smol",
+ "structopt",
+ "structopt-toml",
+ "thiserror 2.0.18",
+ "tinyjson",
+ "toml 0.9.12+spec-1.1.0",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "dwrote"
+version = "0.11.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e1b35532432acc8b19ceed096e35dfa088d3ea037fe4f3c085f1f97f33b4d02"
+dependencies = [
+ "lazy_static",
+ "libc",
+ "winapi",
+ "wio",
+]
+
+[[package]]
+name = "dww"
 version = "0.5.0"
 dependencies = [
  "blake3",
  "bs58",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_dao_escrow_contract",
- "darkfi_deployooor_contract",
- "darkfi_drain_protection_contract",
- "darkfi_linear",
- "darkfi_money_v3_contract",
- "darkfi_native_token_contract",
- "darkfi_stablecoin_contract",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_dao_escrow_contract",
+ "dwow_deployooor_contract",
+ "dwow_drain_protection_contract",
+ "dwow_linear",
+ "dwow_money_v3_contract",
+ "dwow_native_token_contract",
+ "dwow_stablecoin_contract",
  "easy-parallel",
  "futures",
  "hex",
@@ -3182,18 +3194,6 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "url",
-]
-
-[[package]]
-name = "dwrote"
-version = "0.11.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e1b35532432acc8b19ceed096e35dfa088d3ea037fe4f3c085f1f97f33b4d02"
-dependencies = [
- "lazy_static",
- "libc",
- "winapi",
- "wio",
 ]
 
 [[package]]
@@ -3551,10 +3551,10 @@ dependencies = [
  "async-channel 2.5.0",
  "async-trait",
  "bytemuck",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_deployooor_contract",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_deployooor_contract",
  "easy-parallel",
  "hex",
  "monero",
@@ -3846,7 +3846,7 @@ name = "fu"
 version = "0.5.0"
 dependencies = [
  "clap 4.6.1",
- "darkfi",
+ "dwow",
  "fud",
  "smol",
  "termcolor",
@@ -3863,9 +3863,9 @@ dependencies = [
  "blake2",
  "blake3",
  "bs58",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
  "easy-parallel",
  "equix",
  "futures",
@@ -4029,8 +4029,8 @@ name = "genev"
 version = "0.5.0"
 dependencies = [
  "clap 4.6.1",
- "darkfi",
- "darkfi-serial",
+ "dwow",
+ "dwow-serial",
  "genevd",
  "smol",
  "tinyjson",
@@ -4045,8 +4045,8 @@ version = "0.5.0"
 dependencies = [
  "async-trait",
  "blake3",
- "darkfi",
- "darkfi-serial",
+ "dwow",
+ "dwow-serial",
  "easy-parallel",
  "serde",
  "signal-hook",
@@ -5025,7 +5025,7 @@ name = "lilith"
 version = "0.5.0"
 dependencies = [
  "async-trait",
- "darkfi",
+ "dwow",
  "easy-parallel",
  "futures",
  "semver",
@@ -5095,10 +5095,10 @@ version = "0.5.0"
 dependencies = [
  "anyhow",
  "blake3",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_bridge_contract",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_bridge_contract",
  "hex",
  "serde",
  "shellexpand",
@@ -8031,9 +8031,9 @@ dependencies = [
  "blake3",
  "bs58",
  "chrono",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
  "easy-parallel",
  "futures",
  "libc",
@@ -8063,9 +8063,9 @@ dependencies = [
  "bs58",
  "chrono",
  "crypto_box",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
  "easy-parallel",
  "futures",
  "libc",
@@ -9642,10 +9642,10 @@ dependencies = [
  "async-trait",
  "blake3",
  "bs58",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_bridge_contract",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_bridge_contract",
  "hex",
  "monero",
  "serde",
@@ -9743,8 +9743,8 @@ dependencies = [
  "arg",
  "bs58",
  "ctrlc",
- "darkfi",
- "darkfi-sdk",
+ "dwow",
+ "dwow-sdk",
  "rand 0.8.6",
  "rayon",
 ]
@@ -10837,10 +10837,10 @@ dependencies = [
  "anyhow",
  "blake3",
  "bs58",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_bridge_contract",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_bridge_contract",
  "hex",
  "monero",
  "serde",
@@ -10911,10 +10911,10 @@ dependencies = [
  "anyhow",
  "blake2s_simd",
  "blake3",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
- "darkfi_bridge_contract",
+ "dwow",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_bridge_contract",
  "hex",
  "serde",
  "shellexpand",
@@ -11029,8 +11029,8 @@ version = "0.5.0"
 dependencies = [
  "arg",
  "blake3",
- "darkfi",
- "darkfi-sdk",
+ "dwow",
+ "dwow-sdk",
  "hex",
  "rand 0.8.6",
 ]

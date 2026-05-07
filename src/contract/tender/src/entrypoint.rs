@@ -40,14 +40,14 @@
 //! 6. Job created in Labor Market for execution
 //! 7. Task tracked via Tau
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     TENDER_CONTRACT_ZKAS_CREATE_NS_V1, TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1,
@@ -70,7 +70,7 @@ use crate::{
     TENDER_CONTRACT_NULLIFIERS_TREE, TENDER_CONTRACT_TENDERS_TREE,
 };
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

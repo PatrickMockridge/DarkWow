@@ -32,7 +32,7 @@ use smol::channel::Sender;
 use smol::net::TcpStream;
 use url::Url;
 
-use darkfi::{
+use dwow::{
     blockchain::{BlockInfo, HeaderHash, PowData},
     rpc::{
         client::RpcClient,
@@ -46,7 +46,7 @@ use darkfi::{
     Error, Result,
 };
 use crate::contract_imports::money::TokenId;
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Position,
     crypto::{
         keypair::Network,
@@ -62,9 +62,9 @@ use darkfi_money_v3_contract::client::MoneyV3Note;
 use darkfi_money_v3_contract::model::{Coin, TransferParamsV1};
 use darkfi_native_token_contract::client::NativeNote;
 use darkfi_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
-use darkfi_sdk::crypto::note::AeadEncryptedNote;
-use darkfi_serial::Decodable;
-use darkfi_serial::{deserialize_async, serialize_async};
+use dwow_sdk::crypto::note::AeadEncryptedNote;
+use dwow_serial::Decodable;
+use dwow_serial::{deserialize_async, serialize_async};
 
 use crate::{
     cache::{CacheOverlay, CacheSmt, CacheSmtStorage, SLED_MONEY_SMT_TREE},
@@ -76,7 +76,7 @@ use crate::{
     Drk, DrkPtr,
 };
 
-// The wallet uses darkfi_linear::Block directly — no adapter types.
+// The wallet uses dwow_linear::Block directly — no adapter types.
 // Blocks are fetched from darkfid via blockchain.get_block_linear (JSON).
 
 /// Structure to hold a JSON-RPC client and its config,
@@ -531,7 +531,7 @@ impl Drk {
         }
     }
 
-    /// Linear-testnet version of scan_blocks using darkfi_linear::Block directly
+    /// Linear-testnet version of scan_blocks using dwow_linear::Block directly
     async fn scan_blocks_linear(
         &self,
         output: &mut Vec<String>,
@@ -611,14 +611,14 @@ impl Drk {
         }
     }
 
-    /// `scan_block_linear` processes a linear block directly from darkfi_linear::Block.
+    /// `scan_block_linear` processes a linear block directly from dwow_linear::Block.
     /// Handles contract calls AND coinbase transactions (mining rewards).
     async fn scan_block_linear(
         &self,
         scan_cache: &mut ScanCache,
-        block: &darkfi_linear::Block,
+        block: &dwow_linear::Block,
     ) -> Result<()> {
-        use darkfi_sdk::pasta::{pallas, group::ff::PrimeField};
+        use dwow_sdk::pasta::{pallas, group::ff::PrimeField};
 
         // Keep track of our wallet transactions.
         let mut wallet_txs = vec![];
@@ -815,7 +815,7 @@ impl Drk {
 
     // Queries darkfid for a linear blockchain block with given height.
     // Returns LinearBlockAdapter (wallet-compatible format for linear-testnet)
-    async fn get_block_by_height_linear(&self, height: u64) -> Result<darkfi_linear::Block> {
+    async fn get_block_by_height_linear(&self, height: u64) -> Result<dwow_linear::Block> {
         let params = self
             .darkfid_daemon_request(
                 "blockchain.get_block_linear",
@@ -823,7 +823,7 @@ impl Drk {
             )
             .await?;
         let json_str = params.get::<String>().unwrap();
-        let block: darkfi_linear::Block = serde_json::from_str(json_str)
+        let block: dwow_linear::Block = serde_json::from_str(json_str)
             .map_err(|e| Error::Custom(format!("Failed to parse linear block: {}", e)))?;
         Ok(block)
     }
@@ -1133,7 +1133,7 @@ impl Drk {
 
                     // Read submit response with timeout
                     let mut submit_response = String::new();
-                    match darkfi::system::io_timeout(
+                    match dwow::system::io_timeout(
                         std::time::Duration::from_secs(5),
                         smol::io::AsyncBufReadExt::read_line(&mut buf_reader, &mut submit_response)
                     ).await
@@ -1323,7 +1323,7 @@ impl Drk {
                         // The coin hash is derived from the note attributes
                         // In native token, Coin(pallas::Base) is poseidon_hash of attributes
                         // public_key in native token uses EC: (pub_x, pub_y) = secret * G
-                        use darkfi_sdk::crypto::PublicKey;
+                        use dwow_sdk::crypto::PublicKey;
                         use darkfi_native_token_contract::model::CoinAttributes;
                         let public_key = PublicKey::from_secret(*secret);
                         let coin_attrs = CoinAttributes {
@@ -1411,7 +1411,7 @@ impl Drk {
                 // Try to decrypt the note with our secrets
                 for secret in &scan_cache.notes_secrets {
                     if let Ok(decrypted_note) = output.note.decrypt::<NativeNote>(secret) {
-                        use darkfi_sdk::crypto::PublicKey;
+                        use dwow_sdk::crypto::PublicKey;
                         use darkfi_native_token_contract::model::CoinAttributes;
                         let public_key = PublicKey::from_secret(*secret);
                         let coin_attrs = CoinAttributes {

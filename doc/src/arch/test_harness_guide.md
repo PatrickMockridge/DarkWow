@@ -125,7 +125,7 @@ This is the **full integration test harness** that tests:
 - ✅ Fee handling with append_fee_call()
 
 **What it requires:**
-- Running darkfid instance or embedded validator
+- Running dwowd instance or embedded validator
 - Compiled ZK proof binaries (`.zk.bin`)
 - Contract WASM binaries (for WASM contracts)
 - Full darkfi SDK with validator feature
@@ -139,7 +139,7 @@ Integration tests (`integration.rs`) catch type errors and serialization bugs qu
 │                    Test Pyramid                                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│                        darkfid                                   │
+│                        dwowd                                   │
 │                    (Full Node/Test Harness)                      │
 │         - ZK proof generation/verification                       │
 │         - Contract execution                                      │
@@ -234,7 +234,7 @@ DarkWow contracts come in two types:
 
 #### Native Contracts
 
-Native contracts are compiled into darkfid and have **static ContractIds** defined in the SDK:
+Native contracts are compiled into dwowd and have **static ContractIds** defined in the SDK:
 
 ```rust
 // In darkfi_sdk::crypto::contract_id

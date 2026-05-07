@@ -35,16 +35,16 @@ use darkfi_identity_contract::{
     model::{Attribute, AttributeType, Claim, CreateClaimParams, CreateClaimParamsL1, Credential, CredentialSchema, InitializeParams, IssueCredentialParams, Issuer},
     IdentityFunction,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 /// Helper to create IntentNullifier from bytes
-fn make_nullifier(bytes: [u8; 32]) -> darkfi_sdk::crypto::IntentNullifier {
-    darkfi_sdk::crypto::IntentNullifier::from_bytes(bytes).unwrap()
+fn make_nullifier(bytes: [u8; 32]) -> dwow_sdk::crypto::IntentNullifier {
+    dwow_sdk::crypto::IntentNullifier::from_bytes(bytes).unwrap()
 }
 
 /// Helper to create IntentCommitment from bytes
-fn make_commitment(bytes: [u8; 32]) -> darkfi_sdk::crypto::IntentCommitment {
-    darkfi_sdk::crypto::IntentCommitment::from_bytes(bytes).unwrap()
+fn make_commitment(bytes: [u8; 32]) -> dwow_sdk::crypto::IntentCommitment {
+    dwow_sdk::crypto::IntentCommitment::from_bytes(bytes).unwrap()
 }
 
 #[test]

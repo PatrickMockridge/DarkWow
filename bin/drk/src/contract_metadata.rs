@@ -33,7 +33,7 @@
 //!   into the native type, then serialize to binary for the contract call
 //! - **ZK proof generation**: Contract-specific, handled per-function in `invoke_contract`
 
-use darkfi_sdk::crypto::ContractId;
+use dwow_sdk::crypto::ContractId;
 use std::collections::HashMap;
 
 /// Represents a single contract function signature

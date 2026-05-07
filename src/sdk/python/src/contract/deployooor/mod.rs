@@ -21,10 +21,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::error::Result;
+use dwow::error::Result;
 use darkfi_deployooor_contract::{model as deployooor_model, DeployFunction};
-use darkfi_sdk::deploy;
-use darkfi_serial::deserialize;
+use dwow_sdk::deploy;
+use dwow_serial::deserialize;
 use pyo3::{
     prelude::{PyAnyMethods, PyModule, PyModuleMethods},
     Bound, PyResult, Python,

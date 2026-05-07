@@ -21,7 +21,7 @@ FLAGS:
 
 OPTIONS:
     -c, --config <config>                   Configuration file to use
-        --folder <folder>                   Path to the contents directory [default: ~/.config/darkfi/fud]
+        --folder <folder>                   Path to the contents directory [default: ~/.config/dwow/fud]
         --p2p-accept <p2p-accept>...        P2P accept addresses (repeatable flag)
         --p2p-external <p2p-external>...    P2P external addresses (repeatable flag)
         --peers <peers>...                  Connect to peer (repeatable flag)
@@ -31,9 +31,9 @@ OPTIONS:
         --transports <transports>...        Prefered transports for outbound connections (repeatable flag)
 ```
 
-On first execution, daemon will create default config file ~/.config/darkfi/fud/fud_config.toml.
+On first execution, daemon will create default config file ~/.config/dwow/fud/fud_config.toml.
 Configuration must be verified and application should be configured accordingly.
-Additionaly, default content folder will be created at ~/.local/share/darkfi/fud.
+Additionaly, default content folder will be created at ~/.local/share/dwow/fud.
 
 Run fud as follows:
 
@@ -42,7 +42,7 @@ Run fud as follows:
 13:23:04 [INFO] Starting JSON-RPC server
 13:23:04 [INFO] Starting sync P2P network
 13:23:04 [WARN] Skipping seed sync process since no seeds are configured.
-13:23:04 [INFO] Initializing fud dht state for folder: "/home/x/.local/share/darkfi/fud"
+13:23:04 [INFO] Initializing fud dht state for folder: "/home/x/.local/share/dwow/fud"
 13:23:04 [INFO] Not configured for accepting incoming connections.
 13:23:04 [INFO] JSON-RPC listener bound to tcp://127.0.0.1:13337
 13:23:04 [INFO] Entry: seedd_config.toml
@@ -97,7 +97,7 @@ Execution examples:
 13:25:46 [INFO] Daemon synced successfully!
 
 % fu get -f lt.py
-13:26:23 [INFO] File waits you at: /home/x/.config/darkfi/fud/lt.py
+13:26:23 [INFO] File waits you at: /home/x/.config/dwow/fud/lt.py
 
 % fu get -f sdsd
 Error: JsonRpcError("\"Did not find key\"")

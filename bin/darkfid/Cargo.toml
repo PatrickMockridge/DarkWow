@@ -1,8 +1,8 @@
 [package]
-name = "darkfid"
+name = "dwowd"
 version = "0.5.0"
 homepage = "https://darkwow.org"
-description = "DarkFi node daemon"
+description = "DarkWow node daemon"
 authors = ["Dyne.org foundation <foundation@dyne.org>"]
 repository = "https://codeberg.org/darkrenaissance/darkfi"
 license = "AGPL-3.0-only"
@@ -10,14 +10,14 @@ edition = "2021"
 
 [dependencies]
 # Darkfi
-darkfi = {path = "../../", features = ["async-daemonize", "bs58", "validator", "net", "rpc"]}
-darkfi_linear = {path = "../../src/linear", features = ["async"]}
-darkfi_money_v3_contract = {path = "../../src/contract/money_v3", features = ["client", "no-entrypoint"]}
-darkfi_native_token_contract = {path = "../../src/contract/native_token", features = ["client"]}
-darkfi_deployooor_contract = {path = "../../src/contract/deployooor", features = ["client"]}
-darkfi_baccarat_contract = {path = "../../src/contract/baccarat", features = ["client", "no-entrypoint"]}
-darkfi-sdk = {path = "../../src/sdk"}
-darkfi-serial = {path = "../../src/serial"}
+dwow = {path = "../../", features = ["async-daemonize", "bs58", "validator", "net", "rpc"]}
+dwow_linear = {path = "../../src/linear", features = ["async"]}
+dwow_money_v3_contract = {path = "../../src/contract/money_v3", features = ["client", "no-entrypoint"]}
+dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["client"]}
+dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = ["client"]}
+dwow_baccarat_contract = {path = "../../src/contract/baccarat", features = ["client", "no-entrypoint"]}
+dwow-sdk = {path = "../../src/sdk"}
+dwow-serial = {path = "../../src/serial"}
 
 # Misc
 blake3 = "1.8.2"
@@ -55,13 +55,13 @@ structopt = "0.3.26"
 structopt-toml = "0.5.1"
 
 [dev-dependencies]
-darkfi-contract-test-harness = {path = "../../src/contract/test-harness"}
-darkfi_attestation_contract = {path = "../../src/contract/attestation", features = ["client", "no-entrypoint"]}
-darkfi_bridge_contract = {path = "../../src/contract/bridge", features = ["client", "no-entrypoint"]}
-darkfi_lottery_contract = {path = "../../src/contract/lottery", features = ["client", "no-entrypoint"]}
-darkfi_tender_contract = {path = "../../src/contract/tender", features = ["client", "no-entrypoint"]}
-darkfi_auction_contract = {path = "../../src/contract/auction", features = ["client", "no-entrypoint"]}
-darkfi_pool_stake_contract = {path = "../../src/contract/pool_stake", features = ["client", "no-entrypoint"]}
+dwow-contract-test-harness = {path = "../../src/contract/test-harness"}
+dwow_attestation_contract = {path = "../../src/contract/attestation", features = ["client", "no-entrypoint"]}
+dwow_bridge_contract = {path = "../../src/contract/bridge", features = ["client", "no-entrypoint"]}
+dwow_lottery_contract = {path = "../../src/contract/lottery", features = ["client", "no-entrypoint"]}
+dwow_tender_contract = {path = "../../src/contract/tender", features = ["client", "no-entrypoint"]}
+dwow_auction_contract = {path = "../../src/contract/auction", features = ["client", "no-entrypoint"]}
+dwow_pool_stake_contract = {path = "../../src/contract/pool_stake", features = ["client", "no-entrypoint"]}
 
 [lints]
 workspace = true

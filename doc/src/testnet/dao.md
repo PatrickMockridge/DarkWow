@@ -7,7 +7,7 @@
 >
 > See [DAO Escrow Contract](../../contract/dao_escrow/README.md) for the recommended governance solution.
 
-On the testnet, we can also create anonymous DAOs. Using the `drk`
+On the testnet, we can also create anonymous DAOs. Using the `dww`
 CLI tool, we have a `dao` subcommand that can perform the necessary
 operations.
 
@@ -39,13 +39,13 @@ different terminal (not supported in interactive mode right now) like
 this:
 
 ```shell
-$ ./drk help dao create
+$ ./dww help dao create
 
-drk-dao-create 0.4.1
+dww-dao-create 0.4.1
 Create DAO parameters
 
 USAGE:
-    drk dao create <proposer-limit> <quorum> <early-exec-quorum> <approval-ratio> <gov-token-id>
+    dww dao create <proposer-limit> <quorum> <early-exec-quorum> <approval-ratio> <gov-token-id>
 
 FLAGS:
     -h, --help       Prints help information
@@ -63,13 +63,13 @@ ARGS:
 Now let's create our DAO:
 
 ```shell
-drk> dao create 20 10 10 0.67 ANON > anon_dao.toml
+dww> dao create 20 10 10 0.67 ANON > anon_dao.toml
 ```
 
 And view it:
 
 ```shell
-drk> dao view < anon_dao.toml
+dww> dao view < anon_dao.toml
 
 DAO Parameters
 ==============
@@ -113,19 +113,19 @@ view command will show us the parameters. If everything looks fine,
 we can now import it into our wallet:
 
 ```shell
-drk> dao import AnonDAO < anon_dao.toml
+dww> dao import AnonDAO < anon_dao.toml
 
 Importing "AnonDAO" DAO into the wallet
 ```
 
 ```shell
-drk> dao list
+dww> dao list
 
 0. AnonDAO
 ```
 
 ```shell
-drk> dao list AnonDAO
+dww> dao list AnonDAO
 
 DAO Parameters
 ==============
@@ -162,7 +162,7 @@ the DAO name to reference it. Now we can create and broadcast a
 transaction to mint the DAO on-chain (requires holding all its keys):
 
 ```shell
-drk> dao mint AnonDAO | broadcast
+dww> dao mint AnonDAO | broadcast
 
 [mark_tx_spend] Processing transaction: 2e7931f200c1485ea7752076e199708b011a504d71e69d60ed606817c5ff4bd5
 [mark_tx_spend] Found Money contract in call 1
@@ -175,7 +175,7 @@ confirmation you should see a leaf position, a mint height and a
 transaction hash when running:
 
 ```shell
-drk> dao list AnonDAO
+dww> dao list AnonDAO
 
 DAO Parameters
 ==============
@@ -215,13 +215,13 @@ the DAO bulla and the DAO contract spend hook.
 Then create a transfer transaction as follows:
 
 ```shell
-drk> dao spend-hook
+dww> dao spend-hook
 
 6iW9nywZYvyhcM7P1iLwYkh92rvYtREDsC8hgqf2GLuT
 ```
 
 ```shell
-drk> dao list AnonDAO
+dww> dao list AnonDAO
 
 DAO Parameters
 ==============
@@ -253,7 +253,7 @@ Wallet Address: DX7N6v...5Lz8Pp
 ```
 
 ```shell
-drk> transfer 10 DAWN {DAO_WALLET_ADDRESS} {DAO_CONTRACT_SPEND_HOOK} {DAO_BULLA} | broadcast
+dww> transfer 10 DAWN {DAO_WALLET_ADDRESS} {DAO_CONTRACT_SPEND_HOOK} {DAO_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: a4db439f75de88457cadd849131394ae37723c943ea5c088b218d6dc0f7982f1
 [mark_tx_spend] Found Money contract in call 0
@@ -266,7 +266,7 @@ Wait for it to confirm. If you hold the DAO notes key, you can view the
 balance like so:
 
 ```shell
-drk> dao balance AnonDAO
+dww> dao balance AnonDAO
 
  Token ID | Aliases | Balance
 ----------+---------+---------
@@ -284,7 +284,7 @@ with `wallet address`):
 [blockwindow]: ../spec/contract/dao/model.md#blockwindow
 
 ```shell
-drk> dao propose-transfer AnonDAO 1 5 DAWN {YOUR_ADDRESS}
+dww> dao propose-transfer AnonDAO 1 5 DAWN {YOUR_ADDRESS}
 
 Generated proposal: {PROPOSAL_BULLA}
 ```
@@ -293,7 +293,7 @@ The command outputs the proposal bulla, which we can use to view the
 proposal's full details:
 
 ```shell
-drk> dao proposal {PROPOSAL_BULLA}
+dww> dao proposal {PROPOSAL_BULLA}
 
 Proposal parameters
 ===================
@@ -331,16 +331,16 @@ The exported file will be encrypted using the DAO proposals view key,
 so only its members can decrypt and import it.
 
 ```shell
-drk> dao proposal --export {PROPOSAL_BULLA} > anon_dao_transfer_proposal.dat
+dww> dao proposal --export {PROPOSAL_BULLA} > anon_dao_transfer_proposal.dat
 ```
 
 ```shell
-drk> dao proposal-import < anon_dao_transfer_proposal.dat
+dww> dao proposal-import < anon_dao_transfer_proposal.dat
 ```
 
 Now we can create the proposal mint transaction:
 ```shell
-drk> dao proposal --mint-proposal {PROPOSAL_BULLA} | broadcast
+dww> dao proposal --mint-proposal {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: 2149d7e3a60be12c96b6c6fc7ba009717d8b229b815dd4006bbe120c31681f38
 [mark_tx_spend] Found Money contract in call 1
@@ -354,7 +354,7 @@ they should ask the DAO for it.  Once confirmed, you should see a leaf
 position, a mint height and a transaction hash when running:
 
 ```shell
-drk> dao proposal {PROPOSAL_BULLA}
+dww> dao proposal {PROPOSAL_BULLA}
 
 Proposal parameters
 ===================
@@ -393,13 +393,13 @@ Now the DAO members are ready to cast their votes.
 First, let's check the `dao vote` subcommand usage.
 
 ```shell
-$ ./drk help dao vote
+$ ./dww help dao vote
 
-drk-dao-vote 0.5.0
+dww-dao-vote 0.5.0
 Vote on a given proposal
 
 USAGE:
-    drk dao vote <bulla> <vote> [vote-weight]
+    dww dao vote <bulla> <vote> [vote-weight]
 
 FLAGS:
     -h, --help       Prints help information
@@ -414,7 +414,7 @@ ARGS:
 Lets use our `ANON` governance tokens to vote yes to the proposal.
 
 ```shell
-drk> dao vote {PROPOSAL_BULLA} 1 | broadcast
+dww> dao vote {PROPOSAL_BULLA} 1 | broadcast
 
 [mark_tx_spend] Processing transaction: 060468c5676a52a8b59b464dc959906b762a2108fa6f9d0db0b88c9d200eb612
 [mark_tx_spend] Found Money contract in call 1
@@ -426,7 +426,7 @@ Once confirmed and scanned, you should see votes information and
 current status, assuming you hold the votes view key, by running:
 
 ```shell
-drk> dao proposal {PROPOSAL_BULLA}
+dww> dao proposal {PROPOSAL_BULLA}
 
 Proposal parameters
 ===================
@@ -474,7 +474,7 @@ ratio, the proposal is ready to execute. Only DAO members with the
 executor key can perform this action.
 
 ```shell
-drk> dao exec {PROPOSAL_BULLA} | broadcast
+dww> dao exec {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: 808b75685d91c766574dd5a3d46206b8e145b29f3647736161d2e2b2db051444
 [mark_tx_spend] Found Money contract in call 1
@@ -488,7 +488,7 @@ proposal immediately (requires both the executor and early executor
 keys):
 
 ```shell
-drk> dao exec --early {PROPOSAL_BULLA} | broadcast
+dww> dao exec --early {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: 808b75685d91c766574dd5a3d46206b8e145b29f3647736161d2e2b2db051444
 [mark_tx_spend] Found Money contract in call 1
@@ -502,7 +502,7 @@ balance reduced by 5 `DAWN`, and our own balance increased by the same
 amount (if we hold the DAO notes key):
 
 ```shell
-drk> dao balance AnonDAO
+dww> dao balance AnonDAO
 
  Token ID | Aliases | Balance
 ----------+---------+---------
@@ -510,7 +510,7 @@ drk> dao balance AnonDAO
 ```
 
 ```shell
-drk> wallet balance
+dww> wallet balance
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+-------------
@@ -525,13 +525,13 @@ DAOs can vote on off-chain actions by creating generic proposals,
 which have no on-chain execution tied to them:
 
 ```shell
-drk> dao propose-generic AnonDAO 1
+dww> dao propose-generic AnonDAO 1
 
 Generated proposal: {PROPOSAL_BULLA}
 ```
 
 ```shell
-drk> dao proposal --mint-proposal {PROPOSAL_BULLA} | broadcast
+dww> dao proposal --mint-proposal {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: d90f4863445e2b45b4c710e668eed6cfee18b4b513f923fbfe327022f01d4f15
 [mark_tx_spend] Found Money contract in call 1
@@ -542,7 +542,7 @@ Transaction ID: d90f4863445e2b45b4c710e668eed6cfee18b4b513f923fbfe327022f01d4f15
 Vote on the proposal:
 
 ```shell
-drk> dao vote {PROPOSAL_BULLA} 1 | broadcast
+dww> dao vote {PROPOSAL_BULLA} 1 | broadcast
 
 [mark_tx_spend] Processing transaction: 47240cd8ae28eb4d1768029b488d93fe6df6c2c6847cc987ce79f75dfcd56cdc
 [mark_tx_spend] Found Money contract in call 1
@@ -553,7 +553,7 @@ Transaction ID: 47240cd8ae28eb4d1768029b488d93fe6df6c2c6847cc987ce79f75dfcd56cdc
 Execute it after the voting period (1 block period) ends:
 
 ```shell
-drk> dao exec {PROPOSAL_BULLA} | broadcast
+dww> dao exec {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: a9d77e2d6a64372cb1cf33ed062e0439e617b88ca6374917c83cd284d788d1ce
 [mark_tx_spend] Found Money contract in call 1
@@ -564,7 +564,7 @@ Transaction ID: a9d77e2d6a64372cb1cf33ed062e0439e617b88ca6374917c83cd284d788d1ce
 Or immediately, since the early execution quorum was reached:
 
 ```shell
-drk> dao exec --early {PROPOSAL_BULLA} | broadcast
+dww> dao exec --early {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: a9d77e2d6a64372cb1cf33ed062e0439e617b88ca6374917c83cd284d788d1ce
 [mark_tx_spend] Found Money contract in call 1
@@ -584,7 +584,7 @@ instead of transferring tokens to the DAO, we mint them
 directly into it:
 
 ```shell
-drk> token mint ANON 20 {DAO_WALLET_ADDRESS} {DAO_CONTRACT_SPEND_HOOK} {DAO_BULLA} | broadcast
+dww> token mint ANON 20 {DAO_WALLET_ADDRESS} {DAO_CONTRACT_SPEND_HOOK} {DAO_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: 781632eb1d0e4566582c1bb34f4a99516d62357761659d4e5e965ac9d199b581
 [mark_tx_spend] Found Money contract in call 0
@@ -598,7 +598,7 @@ After confirmation we will see the dao holding its own
 governance tokens in its treasury:
 
 ```shell
-drk> dao balance AnonDAO
+dww> dao balance AnonDAO
 
  Token ID | Aliases | Balance
 ----------+---------+---------
@@ -609,7 +609,7 @@ drk> dao balance AnonDAO
 Now we'll create a second DAO:
 
 ```shell
-drk> dao create 20 10 10 0.67 DAWN | dao import DawnDAO
+dww> dao create 20 10 10 0.67 DAWN | dao import DawnDAO
 
 Importing "DawnDAO" DAO into the wallet
 ```
@@ -617,7 +617,7 @@ Importing "DawnDAO" DAO into the wallet
 Mint it on-chain:
 
 ```shell
-drk> dao mint DawnDAO | broadcast
+dww> dao mint DawnDAO | broadcast
 
 [mark_tx_spend] Processing transaction: cfc31bee7d198d7d59e9f40f76a98e93230320ec6dd8c606af32d9bee28fcf0e
 [mark_tx_spend] Found Money contract in call 1
@@ -629,7 +629,7 @@ We propose a transfer of some of the `ANON` governance token
 from the DAO treasury to the new DAO we created:
 
 ```shell
-drk> dao list DawnDAO
+dww> dao list DawnDAO
 
 DAO Parameters
 ==============
@@ -661,13 +661,13 @@ Wallet Address: Ui5C2e...1IO4Aa
 ```
 
 ```shell
-drk> dao propose-transfer AnonDAO 1 6.9 ANON {DAWN_DAO_WALLET_ADDRESS} {DAO_CONTRACT_SPEND_HOOK} {DAWN_DAO_BULLA}
+dww> dao propose-transfer AnonDAO 1 6.9 ANON {DAWN_DAO_WALLET_ADDRESS} {DAO_CONTRACT_SPEND_HOOK} {DAWN_DAO_BULLA}
 
 Generated proposal: {PROPOSAL_BULLA}
 ```
 
 ```shell
-drk> dao proposal --mint-proposal {PROPOSAL_BULLA} | broadcast
+dww> dao proposal --mint-proposal {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: ed1b365d35abb632521a68146b6678efce9cd000de0ed1dbf4b07818686a7283
 [mark_tx_spend] Found Money contract in call 1
@@ -678,7 +678,7 @@ Transaction ID: ed1b365d35abb632521a68146b6678efce9cd000de0ed1dbf4b07818686a7283
 Vote on the proposal:
 
 ```shell
-drk> dao vote {PROPOSAL_BULLA} 1 | broadcast
+dww> dao vote {PROPOSAL_BULLA} 1 | broadcast
 
 [mark_tx_spend] Processing transaction: 9dd81f166115563e88262ef9ed83b15112dd72247bf48ce7b161779405830a63
 [mark_tx_spend] Found Money contract in call 1
@@ -689,7 +689,7 @@ Transaction ID: 9dd81f166115563e88262ef9ed83b15112dd72247bf48ce7b161779405830a63
 Execute it after the voting period (1 block period) ends:
 
 ```shell
-drk> dao exec {PROPOSAL_BULLA} | broadcast
+dww> dao exec {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: b78824d5d6c6e6fdb6a002848353dc60279e1c8800e2741062f8944c44796582
 [mark_tx_spend] Found Money contract in call 1
@@ -701,7 +701,7 @@ Transaction ID: b78824d5d6c6e6fdb6a002848353dc60279e1c8800e2741062f8944c44796582
 Or immediately, since the early execution quorum was reached:
 
 ```shell
-drk> dao exec --early {PROPOSAL_BULLA} | broadcast
+dww> dao exec --early {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: b78824d5d6c6e6fdb6a002848353dc60279e1c8800e2741062f8944c44796582
 [mark_tx_spend] Found Money contract in call 1
@@ -715,7 +715,7 @@ the DAO governance token balance has been reduced by 6.9 `ANON`,
 while the new DAO balance has been increased by the same amount:
 
 ```shell
-drk> dao balance AnonDAO
+dww> dao balance AnonDAO
 
  Token ID | Aliases | Balance
 ----------+---------+---------
@@ -724,7 +724,7 @@ drk> dao balance AnonDAO
 ```
 
 ```shell
-drk> dao balance DawnDAO
+dww> dao balance DawnDAO
 
  Token ID | Aliases | Balance
 ----------+---------+---------
@@ -737,7 +737,7 @@ A DAO can deploy mining nodes, or miners can direct rewards to a DAO.
 To retrieve a DAO's mining configuration, execute:
 
 ```shell
-drk> dao mining-config {YOUR_DAO}
+dww> dao mining-config {YOUR_DAO}
 
 DarkWow DAO mining configuration address:
 {YOUR_DAO_WALLET_ADDRESS_MINING_CONFIGURATION}
@@ -753,7 +753,7 @@ After your miners have successfully mined confirmed blocks, you will
 see the DAO `DRKW` balance increasing:
 
 ```shell
-drk> dao balance {YOUR_DAO}
+dww> dao balance {YOUR_DAO}
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+---------

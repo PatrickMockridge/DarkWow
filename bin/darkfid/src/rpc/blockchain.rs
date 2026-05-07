@@ -24,15 +24,15 @@
 use std::str::FromStr;
 
 use bs58;
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::contract_id::{ContractId, SMART_CONTRACT_ZKAS_DB_NAME},
     tx::TransactionHash,
 };
-use darkfi_serial::{deserialize_async, serialize_async};
+use dwow_serial::{deserialize_async, serialize_async};
 use tinyjson::JsonValue;
 use tracing::{debug, error};
 
-use darkfi::{
+use dwow::{
     rpc::jsonrpc::{
         ErrorCode::{InternalError, InvalidParams, ParseError},
         JsonError, JsonResponse, JsonResult,

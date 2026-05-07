@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_serial::{deserialize_limited_partial, deserialize_partial, VarInt};
+use dwow_serial::{deserialize_limited_partial, deserialize_partial, VarInt};
 
 use super::{
     compiler::MAGIC_BYTES,

@@ -1,5 +1,5 @@
 [package]
-name = "darkfi_atomic_swap_contract"
+name = "dwow_atomic_swap_contract"
 version = "0.1.0"
 edition = "2021"
 authors = ["DarkFi contributors"]
@@ -10,12 +10,12 @@ license = "AGPL-3.0-only"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
-darkfi-serial = { path = "../../serial" }
+dwow-sdk = { path = "../../sdk", features = ["wasm"] }
+dwow-serial = { path = "../../serial" }
 thiserror = "2.0.17"
 
 # Client API dependencies
-darkfi = { path = "../../../", features = ["zk"], optional = true }
+dwow = { path = "../../../", features = ["zk"], optional = true }
 rand = { version = "0.8.5", optional = true }
 tracing = { version = "0.1.44", optional = true }
 halo2_proofs = { version = "0.3.2", optional = true }
@@ -24,8 +24,8 @@ halo2_proofs = { version = "0.3.2", optional = true }
 default = []
 no-entrypoint = []
 client = [
-    "darkfi",
-    "darkfi-serial/async",
+    "dwow",
+    "dwow-serial/async",
     "rand",
     "tracing",
     "halo2_proofs",
@@ -33,4 +33,4 @@ client = [
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.8", features = ["custom"] }
-darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
+dwow-sdk = { path = "../../sdk", features = ["wasm"] }

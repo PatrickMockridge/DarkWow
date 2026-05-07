@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     blockchain::expected_reward,
     crypto::{pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, ContractId, MerkleNode},
     dark_tree::DarkLeaf,
@@ -30,11 +30,11 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::MoneyError,
-    model::{MoneyPoWRewardParamsV1, MoneyPoWRewardUpdateV1, DARK_TOKEN_ID},
+    model::{MoneyPoWRewardParamsV1, MoneyPoWRewardUpdateV1, DRKW_TOKEN_ID},
     MONEY_CONTRACT_COINS_TREE, MONEY_CONTRACT_COIN_MERKLE_TREE, MONEY_CONTRACT_COIN_ROOTS_TREE,
     MONEY_CONTRACT_FEES_TREE, MONEY_CONTRACT_INFO_TREE, MONEY_CONTRACT_LATEST_COIN_ROOT,
     MONEY_CONTRACT_LATEST_NULLIFIER_ROOT, MONEY_CONTRACT_NULLIFIERS_TREE,
@@ -107,8 +107,8 @@ pub(crate) fn money_pow_reward_process_instruction_v1(
         return Err(MoneyError::PoWRewardCallNotOnNextBlockHeight.into())
     }
 
-    // Only DARK_TOKEN_ID can be minted as PoW reward.
-    if params.input.token_id != *DARK_TOKEN_ID {
+    // Only DRKW_TOKEN_ID can be minted as PoW reward.
+    if params.input.token_id != *DRKW_TOKEN_ID {
         msg!("[PoWRewardV1] Error: Clear input used non-native token");
         return Err(MoneyError::TransferClearInputNonNativeToken.into())
     }

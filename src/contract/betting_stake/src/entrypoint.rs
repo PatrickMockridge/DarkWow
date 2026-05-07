@@ -23,13 +23,13 @@
 
 //! Betting Stake Contract Entrypoint
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, ContractId, PublicKey, schnorr::SchnorrPublic},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::BettingStakeError;
 use crate::model::{
@@ -40,7 +40,7 @@ use crate::model::{
 use crate::BettingStakeFunction;
 use crate::{BETTING_STAKE_EARNINGS_TREE, BETTING_STAKE_REGISTRY_TREE, BETTING_STAKE_STAKES_TREE};
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

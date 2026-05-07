@@ -1,6 +1,6 @@
 [net]
-datastore = "~/.local/share/darkfi/evgrd"
-hostlist = "~/.local/share/darkfi/evgrd/p2p_hostlist.tsv"
+datastore = "~/.local/share/dwow/evgrd"
+hostlist = "~/.local/share/dwow/evgrd/p2p_hostlist.tsv"
 
 [rpc]
 rpc_listen = "tcp://127.0.0.1:26690"

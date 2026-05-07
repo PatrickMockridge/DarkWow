@@ -37,7 +37,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use rand::{rngs::OsRng, Rng};
 use smol::{lock::Mutex as AsyncMutex, Executor};
 use tracing::{debug, info, warn};

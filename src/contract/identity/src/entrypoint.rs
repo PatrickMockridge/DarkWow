@@ -28,14 +28,14 @@
 //! a ZK proof that certain conditions are met without revealing identity
 //! or additional details.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::ContractId,
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg, ContractCall,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::IdentityError;
 use crate::model::*;
@@ -47,7 +47,7 @@ use crate::{
     IDENTITY_CONTRACT_INFO_TREE,
 };
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -860,9 +860,9 @@ fn apply_create_claim_dag_update(_cid: ContractId, _update: CreateClaimDAGUpdate
 
 /// Compute capability ID from name and requirements
 fn compute_capability_id(name: &[u8], requirement: &CredentialRequirement) -> [u8; 32] {
-    use darkfi_sdk::crypto::poseidon_hash;
-    use darkfi_serial::serialize;
-    use darkfi_sdk::pasta::group::ff::PrimeFieldBits;
+    use dwow_sdk::crypto::poseidon_hash;
+    use dwow_serial::serialize;
+    use dwow_sdk::pasta::group::ff::PrimeFieldBits;
     // Serialize the inputs to get deterministic bytes
     let mut data = serialize(requirement);
     data.extend_from_slice(name);
@@ -870,7 +870,7 @@ fn compute_capability_id(name: &[u8], requirement: &CredentialRequirement) -> [u
     let mut u64_bytes = [0u8; 8];
     u64_bytes.copy_from_slice(&data[..8.min(data.len())]);
     let value = u64::from_le_bytes(u64_bytes);
-    let hash = poseidon_hash([darkfi_sdk::pasta::pallas::Base::from(value)]);
+    let hash = poseidon_hash([dwow_sdk::pasta::pallas::Base::from(value)]);
     // Convert hash to bytes using to_le_bits
     let bits = hash.to_le_bits();
     let mut result = [0u8; 32];
@@ -884,8 +884,8 @@ fn compute_capability_id(name: &[u8], requirement: &CredentialRequirement) -> [u
 
 /// Derive capability secret from holder key and capability ID
 fn derive_capability_secret(holder_pub: [u8; 32], capability_id: [u8; 32]) -> [u8; 32] {
-    use darkfi_sdk::crypto::poseidon_hash;
-    use darkfi_sdk::pasta::group::ff::PrimeFieldBits;
+    use dwow_sdk::crypto::poseidon_hash;
+    use dwow_sdk::pasta::group::ff::PrimeFieldBits;
     // Use first 8 bytes of holder_pub as u64
     let mut u64_bytes = [0u8; 8];
     u64_bytes.copy_from_slice(&holder_pub[..8]);
@@ -895,8 +895,8 @@ fn derive_capability_secret(holder_pub: [u8; 32], capability_id: [u8; 32]) -> [u
     cap_bytes.copy_from_slice(&capability_id[..8]);
     let cap_value = u64::from_le_bytes(cap_bytes);
     let hash = poseidon_hash([
-        darkfi_sdk::pasta::pallas::Base::from(holder_value),
-        darkfi_sdk::pasta::pallas::Base::from(cap_value),
+        dwow_sdk::pasta::pallas::Base::from(holder_value),
+        dwow_sdk::pasta::pallas::Base::from(cap_value),
     ]);
     // Convert hash to bytes using to_le_bits
     let bits = hash.to_le_bits();

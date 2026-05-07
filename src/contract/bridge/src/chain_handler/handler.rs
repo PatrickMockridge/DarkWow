@@ -37,8 +37,8 @@
 //! 3. NO changes to bridge core contract needed
 
 use async_trait::async_trait;
-use darkfi_sdk::{error::ContractResult, pasta::pallas};
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::{error::ContractResult, pasta::pallas};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::light_client::{MerkleProof, FinalityProof};
 
@@ -194,7 +194,7 @@ pub enum HtlcState {
 }
 
 impl TryFrom<u8> for HtlcState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -202,7 +202,7 @@ impl TryFrom<u8> for HtlcState {
             1 => Ok(Self::Claimable),
             2 => Ok(Self::Claimed),
             3 => Ok(Self::Refunded),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }

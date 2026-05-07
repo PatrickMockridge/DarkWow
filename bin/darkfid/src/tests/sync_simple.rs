@@ -25,14 +25,14 @@
 
 use std::sync::Arc;
 
-use darkfi::{
+use dwow::{
     blockchain::{BlockInfo, Header},
     tx::Transaction,
     util::time::Timestamp,
     validator::sync::{apply_block, verify_block},
     Result,
 };
-use darkfi_sdk::crypto::SecretKey;
+use dwow_sdk::crypto::SecretKey;
 use smol::Executor;
 
 async fn test_sync_verify_block_impl(_ex: Arc<Executor<'static>>) -> Result<()> {

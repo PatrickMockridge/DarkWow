@@ -32,12 +32,12 @@
 //! The collateral receipt token is minted with spend_hook = stablecoin contract ID,
 //! enabling atomic operations like MintStableV1 (burn collateral, mint stablecoin).
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, BaseBlind, ContractId},
     pasta::pallas,
 };

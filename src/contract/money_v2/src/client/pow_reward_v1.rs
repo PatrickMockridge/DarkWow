@@ -21,17 +21,17 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{
+use dwow::{
     zk::{Proof, ProvingKey},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     blockchain::expected_reward,
     crypto::{note::AeadEncryptedNote, pasta_prelude::*, Blind, FuncId, Keypair, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::serialize;
+use dwow_serial::serialize;
 use rand::rngs::OsRng;
 use tracing::debug;
 
@@ -40,7 +40,7 @@ use crate::{
         transfer_v1::{proof::create_transfer_mint_proof, TransferCallOutput},
         MoneyNote,
     },
-    model::{ClearInput, Coin, MoneyPoWRewardParamsV1, Output, DARK_TOKEN_ID},
+    model::{ClearInput, Coin, MoneyPoWRewardParamsV1, Output, DRKW_TOKEN_ID},
 };
 
 pub struct PoWRewardCallDebris {
@@ -89,8 +89,8 @@ impl PoWRewardCallBuilder {
         debug!(target: "contract::money::client::pow_reward", "Building Money::PoWRewardV1 contract call");
 
         // In this call, we will build one clear input and one anonymous output.
-        // Only DARK_TOKEN_ID can be minted as PoW reward.
-        let token_id = *DARK_TOKEN_ID;
+        // Only DRKW_TOKEN_ID can be minted as PoW reward.
+        let token_id = *DRKW_TOKEN_ID;
 
         // Building the clear input using random blinds
         let value_blind = Blind::random(&mut OsRng);

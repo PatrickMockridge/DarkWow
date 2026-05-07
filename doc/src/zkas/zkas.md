@@ -1,7 +1,7 @@
 zkas
 ====
 
-> **Note:** The zkas compiler and toolchain are inherited from upstream DarkFi.
+> **Note:** The zkas compiler and toolchain are inherited from upstream DarkWow.
 > The core compiler infrastructure, language syntax, and binary format are shared
 > with upstream and track upstream changes.
 

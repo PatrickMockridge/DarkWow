@@ -56,13 +56,13 @@
 //!  - Bob refunds on external chain (after external timelock)
 //! ```
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::ContractId,
     error::ContractResult,
     msg,
     wasm,
 };
-use darkfi_serial::deserialize;
+use dwow_serial::deserialize;
 
 use crate::{
     model::{
@@ -109,7 +109,7 @@ use refund_swap::{
 // CONTRACT DEFINITION
 // ============================================================================
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -158,7 +158,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 /// Fetch metadata for ZK proof verification
 fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>> = deserialize(ix)?;
+    let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = AtomicSwapFunction::try_from(self_.data[0])?;
 
@@ -179,7 +179,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 /// Verify state transition and produce update if valid
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>> = deserialize(ix)?;
+    let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = AtomicSwapFunction::try_from(self_.data[0])?;
 

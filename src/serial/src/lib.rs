@@ -27,7 +27,7 @@ use std::{
 };
 
 #[cfg(feature = "derive")]
-pub use darkfi_derive::{SerialDecodable, SerialEncodable};
+pub use dwow_derive::{SerialDecodable, SerialEncodable};
 
 #[cfg(feature = "async")]
 mod async_lib;

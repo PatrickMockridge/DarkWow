@@ -2,40 +2,40 @@
 
 ## Overview
 
-A local development network (devnet) for DarkWow testing, funded via block mining rather than a broken faucet. Uses RandomX PoW mining against the local darkfid node's stratum server to generate DRKW tokens for testing.
+A local development network (devnet) for DarkWow testing, funded via block mining rather than a broken faucet. Uses RandomX PoW mining against the local dwowd node's stratum server to generate DRKW tokens for testing.
 
 ## Quick Start
 
 ```bash
-# Terminal 1: Start darkfid with localnet config
-./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
+# Terminal 1: Start dwowd with localnet config
+./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
 
 # Terminal 2: Mine blocks to your wallet
-./target/release/drk -c bin/drk/drk_config.toml -n localnet mine
+./target/release/dww -c bin/drk/drk_config.toml -n localnet mine
 
 # Terminal 3: Check balance
-./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet balance
+./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet balance
 ```
 
 ## How It Works
 
-1. **darkfid** runs a stratum mining server on port 48347 (configured in localnet toml)
+1. **dwowd** runs a stratum mining server on port 48347 (configured in localnet toml)
 2. **drk mine** connects via TCP, logs in with your wallet address as recipient
-3. darkfid sends mining jobs (RandomX blob + target)
-4. drk mines RandomX hashes in a background thread
+3. dwowd sends mining jobs (RandomX blob + target)
+4. dww mines RandomX hashes in a background thread
 5. Shares found are submitted back to stratum server
 6. Accepted shares = mined blocks = PoW rewards (20 DRKW per block)
 7. Wallet scanning discovers the coins
 
 ## Key Components
 
-### darkfid (daemon)
+### dwowd (daemon)
 - Stratum server: `127.0.0.1:48347`
 - RPC endpoint: `127.0.0.1:48345`
-- Config: `contrib/localnet/darkfid-single-node/darkfid.toml`
+- Config: `contrib/localnet/dwowd-single-node/dwowd.toml`
 - `pow_fixed_difficulty=1` makes mining fast for testing
 
-### drk (CLI wallet)
+### dww (CLI wallet)
 
 **Global flags:**
 ```
@@ -97,68 +97,68 @@ drk contract invoke dao_escrow enable_drain_protection --params params.json
 
 ### 1. Initialize wallet (first time only)
 ```bash
-./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet initialize
-./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet keygen
+./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet initialize
+./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet keygen
 ```
 
 ### 2. Start localnet
 ```bash
-./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
+./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
 ```
 
 ### 3. Mine blocks
 ```bash
-./target/release/drk -c bin/drk/drk_config.toml -n localnet mine
+./target/release/dww -c bin/drk/drk_config.toml -n localnet mine
 # Press Ctrl+C when sufficient DRKW accumulated
 ```
 
 ### 4. Check balance
 ```bash
-./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet balance
+./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet balance
 ```
 
 ### 5. Scan blockchain
 ```bash
-./target/release/drk -c bin/drk/drk_config.toml -n localnet scan
+./target/release/dww -c bin/drk/drk_config.toml -n localnet scan
 # Or reset and rescan from block 0:
-./target/release/drk -c bin/drk/drk_config.toml -n localnet scan --reset 0
+./target/release/dww -c bin/drk/drk_config.toml -n localnet scan --reset 0
 ```
 
 ### 6. List known coins
 ```bash
-./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet coins
+./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet coins
 ```
 
 ### 7. Deploy a contract
 ```bash
 # Generate deploy authority if needed
-./target/release/drk -c bin/drk/drk_config.toml -n localnet contract generate-deploy
+./target/release/dww -c bin/drk/drk_config.toml -n localnet contract generate-deploy
 
 # Deploy contract (pipe output to broadcast)
-./target/release/drk -c bin/drk/drk_config.toml -n localnet contract deploy <contract-id> <wasm-path> | ./target/release/drk -c bin/drk/drk_config.toml -n localnet broadcast
+./target/release/dww -c bin/drk/drk_config.toml -n localnet contract deploy <contract-id> <wasm-path> | ./target/release/dww -c bin/drk/drk_config.toml -n localnet broadcast
 ```
 
 ### 8. Verify deployment
 ```bash
-./target/release/drk -c bin/drk/drk_config.toml -n localnet contract list
+./target/release/dww -c bin/drk/drk_config.toml -n localnet contract list
 ```
 
 ## Network Ports
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| darkfid RPC | 48345 | JSON-RPC for wallet commands |
-| darkfid stratum | 48347 | Stratum server for block mining |
+| dwowd RPC | 48345 | JSON-RPC for wallet commands |
+| dwowd stratum | 48347 | Stratum server for block mining |
 
 ## Troubleshooting
 
 ```bash
 # If "Resource temporarily unavailable" error on wallet db:
-# Kill any running drk processes
+# Kill any running dww processes
 pkill -f "drk.*mine"
 
 # Then retry wallet commands
-./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet balance
+./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet balance
 ```
 
 ## CLI Quirks
@@ -193,7 +193,7 @@ drk scan --reset=0    # Wrong - equals sign doesn't work
 
 The `broadcast` command reads a base64-encoded transaction from stdin:
 ```bash
-drk contract deploy <auth> <wasm> | drk broadcast  # Pipe output to broadcast
+drk contract deploy <auth> <wasm> | dww broadcast  # Pipe output to broadcast
 ```
 
 ### balance shows unspent only
@@ -413,7 +413,7 @@ drk -c bin/drk/drk_config.toml -n localnet contract generate-deploy
 
 # Deploy (pipe to broadcast)
 drk -c bin/drk/drk_config.toml -n localnet contract deploy <auth> <wasm> | \
-  drk -c bin/drk/drk_config.toml -n localnet broadcast
+ dww -c bin/drk/drk_config.toml -n localnet broadcast
 ```
 
 All three previously-failed contracts (roulette, betting_stake, drain_protection) are now deployed with proper WASM sizes (171KB-239KB).
@@ -547,7 +547,7 @@ AUTH=$(drk -c bin/drk/drk_config.toml -n localnet contract generate-deploy)
 # bridge
 drk -c bin/drk/drk_config.toml -n localnet contract deploy $AUTH \
   target/wasm32-unknown-unknown/release/darkfi_bridge_contract.wasm bridge_deploy_ix.bin | \
-  drk -c bin/drk/drk_config.toml -n localnet broadcast
+ dww -c bin/drk/drk_config.toml -n localnet broadcast
 ```
 
 **Group 2** (underscore contracts, fixed with db_lookup guards):
@@ -555,14 +555,14 @@ drk -c bin/drk/drk_config.toml -n localnet contract deploy $AUTH \
 # darkbet_exchange
 drk -c bin/drk/drk_config.toml -n localnet contract deploy $AUTH \
   target/wasm32-unknown-unknown/release/darkfi_darkbet_exchange_contract.wasm | \
-  drk -c bin/drk/drk_config.toml -n localnet broadcast
+ dww -c bin/drk/drk_config.toml -n localnet broadcast
 ```
 
 ### Current Status (2026-04-07)
 
 **Completed**: Code fixes applied to all 6 contracts. WASM verified at proper sizes (84KB-314KB). Deployments broadcast successfully.
 
-**Root Cause (Refined)**: The `PositionNotMarked` error was a wallet Merkle tree sync issue, NOT a Money v1/v2 composition issue. After restarting darkfid and rescanning, deployments proceeded successfully.
+**Root Cause (Refined)**: The `PositionNotMarked` error was a wallet Merkle tree sync issue, NOT a Money v1/v2 composition issue. After restarting dwowd and rescanning, deployments proceeded successfully.
 
 **Actual Issue**: Mining instability caused shares to be rejected when block template changed. This prevented timely block confirmation of deployment transactions.
 
@@ -736,12 +736,12 @@ Share rejected: {"id":1,"result":{"status":"rejected"},"jsonrpc":"2.0"}
 
 **Likely Causes**:
 1. Wallet database lock held by another process
-2. darkfid/stratum server in bad state
+2. dwowd/stratum server in bad state
 3. Block template became stale
 
 **Resolution Steps**:
 ```bash
-# Kill all drk mining processes
+# Kill all dww mining processes
 pkill -f "drk.*mine"
 
 # Kill darkfid
@@ -751,13 +751,13 @@ pkill darkfid
 sleep 2
 
 # Restart darkfid
-./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml &
+./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml &
 
 # Wait for startup
 sleep 3
 
 # Check wallet (may need to reset)
-./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet balance
+./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet balance
 ```
 
 ### Symptom: "Failed to calculate transaction's gas"
@@ -781,10 +781,10 @@ Not all `ParseFailed: Requires deploy instruction` errors are the same:
 
 ## File References
 
-- `bin/darkfid/src/rpc/miner.rs` - darkfid stratum server implementation
-- `bin/darkfid/src/lib.rs` - `DarkfiNode::is_localnet()` guard
+- `bin/dwowd/src/rpc/miner.rs` - dwowd stratum server implementation
+- `bin/dwowd/src/lib.rs` - `DarkfiNode::is_localnet()` guard
 - `bin/drk/src/main.rs` - Subcommand definitions and handlers
 - `bin/drk/src/rpc.rs` - `miner_mine()` stratum client
 - `bin/drk/drk_config.toml` - Network configuration
-- `contrib/localnet/darkfid-single-node/darkfid.toml` - Localnet config
+- `contrib/localnet/dwowd-single-node/dwowd.toml` - Localnet config
 - `src/contract/dao_escrow/src/` - DAO Escrow contract (deployed 2026-04-08)

@@ -35,7 +35,7 @@
 //! 2. Each winner calls `claim` to receive their payout
 //! 3. The claim must bundle money_v3::transfer_v1 for actual token transfer
 
-use darkfi_sdk::{
+use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -50,12 +50,12 @@ use crate::{
 };
 
 pub(crate) fn game_room_claim_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: ClaimParamsV1 = darkfi_serial::deserialize(&self_.data[1..])?;
+    let params: ClaimParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
 
     msg!(
         "[Claim] Claiming pot {:?} in room {:?} for winner {:?}, amount: {}",
@@ -91,7 +91,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     let Some(_room_data) =
-        wasm::db::db_get(rooms_db, &darkfi_serial::serialize(&params.room_id))?
+        wasm::db::db_get(rooms_db, &dwow_serial::serialize(&params.room_id))?
     else {
         msg!("[Claim] Error: Room not found");
         return Err(GameRoomError::RoomNotFound.into())
@@ -99,13 +99,13 @@ pub(crate) fn game_room_claim_process_instruction_v1(
 
     // Get pot
     let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
-    let Some(pot_data) = wasm::db::db_get(pots_db, &darkfi_serial::serialize(&params.pot_id))?
+    let Some(pot_data) = wasm::db::db_get(pots_db, &dwow_serial::serialize(&params.pot_id))?
     else {
         msg!("[Claim] Error: Pot not found");
         return Err(GameRoomError::PotNotFound.into())
     };
     let pot: Pot =
-        darkfi_serial::deserialize(&pot_data)?;
+        dwow_serial::deserialize(&pot_data)?;
 
     // Validate pot state - must be settled
     if pot.state != PotState::Settled {
@@ -115,7 +115,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
 
     // Check nullifier to prevent double-claim
     let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
-    let claim_key = darkfi_serial::serialize(&(params.pot_id, params.winner.xy().0));
+    let claim_key = dwow_serial::serialize(&(params.pot_id, params.winner.xy().0));
     if wasm::db::db_contains_key(nullifiers_db, &claim_key)? {
         msg!("[Claim] Error: Already claimed");
         return Err(GameRoomError::AlreadyClaimed.into())
@@ -134,13 +134,13 @@ pub(crate) fn game_room_claim_process_instruction_v1(
 
     // Get winner's account
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = darkfi_serial::serialize(&(params.room_id, params.winner.xy().0));
+    let account_key = dwow_serial::serialize(&(params.room_id, params.winner.xy().0));
     let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
         msg!("[Claim] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())
     };
     let mut account: PlayerAccount =
-        darkfi_serial::deserialize(&account_data)?;
+        dwow_serial::deserialize(&account_data)?;
 
     // Calculate new balance - add winnings to balance
     // Note: In a full implementation with locked funds tracking, we would unlock
@@ -151,7 +151,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
     let new_balance = account.balance;
 
     // Store updated account
-    wasm::db::db_set(accounts_db, &account_key, &darkfi_serial::serialize(&account))?;
+    wasm::db::db_set(accounts_db, &account_key, &dwow_serial::serialize(&account))?;
 
     // Record nullifier to prevent double-claim
     wasm::db::db_set(nullifiers_db, &claim_key, &[])?;
@@ -170,11 +170,11 @@ pub(crate) fn game_room_claim_process_instruction_v1(
         amount: winnings,
         new_balance,
     };
-    Ok(darkfi_serial::serialize(&update))
+    Ok(dwow_serial::serialize(&update))
 }
 
 pub(crate) fn game_room_claim_process_update_v1(
-    _cid: darkfi_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     update: ClaimUpdateV1,
 ) -> ContractResult {
     msg!(

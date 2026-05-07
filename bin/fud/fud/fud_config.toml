@@ -7,7 +7,7 @@
 ## uncommenting, or by using the command-line.
 
 # Path to the contents directory
-base_dir = "~/.local/share/darkfi/fud"
+base_dir = "~/.local/share/dwow/fud"
 
 ## Chunk transfer timeout in seconds
 #chunk_timeout = 60
@@ -79,10 +79,10 @@ rpc_listen = "tcp://127.0.0.1:9706"
 magic_bytes = [73, 59, 41, 23]
 
 # Path to the P2P datastore
-p2p_datastore = "~/.local/share/darkfi/fud"
+p2p_datastore = "~/.local/share/dwow/fud"
 
 # Path to a configured hostlist for saving known peers
-hostlist = "~/.local/share/darkfi/fud/p2p_hostlist.tsv"
+hostlist = "~/.local/share/dwow/fud/p2p_hostlist.tsv"
 
 ## Outbound connection slots
 # outbound_connections = 16

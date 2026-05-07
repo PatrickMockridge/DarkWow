@@ -31,7 +31,7 @@ use smol::{channel::Receiver, lock::RwLock};
 use tinyjson::JsonValue;
 use tracing::{debug, error, info};
 
-use darkfi::{
+use dwow::{
     blockchain::{BlockDifficulty, BlockchainOverlay, HeaderHash},
     net::ChannelPtr,
     util::{encoding::base64, time::Timestamp},
@@ -45,7 +45,7 @@ use darkfi::{
     Error::{Custom, DatabaseError, PoWInvalidOutHash, ProposalAlreadyExists},
     Result,
 };
-use darkfi_serial::serialize_async;
+use dwow_serial::serialize_async;
 
 use crate::{
     proto::{

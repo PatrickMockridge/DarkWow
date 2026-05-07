@@ -1,8 +1,8 @@
 [package]
-name = "drk"
+name = "dww"
 version = "0.5.0"
 homepage = "https://darkwow.org"
-description = "Command-line client for darkfid"
+description = "Command-line client for darkwow daemon"
 authors = ["Dyne.org foundation <foundation@dyne.org>"]
 repository = "https://codeberg.org/darkrenaissance/darkfi"
 license = "AGPL-3.0-only"
@@ -14,18 +14,18 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Darkfi
-darkfi = {path = "../../", features = ["async-daemonize", "bs58", "rpc", "randomx", "tx", "blockchain"]}
-darkfi_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
-darkfi-sdk = {path = "../../src/sdk", features = ["async"]}
-darkfi-serial = {path = "../../src/serial", features = ["async", "derive"]}
-darkfi_linear = {path = "../../src/linear"}
+dwow = {path = "../../", features = ["async-daemonize", "bs58", "rpc", "randomx", "tx", "blockchain"]}
+dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
+dwow-sdk = {path = "../../src/sdk", features = ["async"]}
+dwow-serial = {path = "../../src/serial", features = ["async", "derive"]}
+dwow_linear = {path = "../../src/linear"}
 
 # Contract crates for drk wallet
-darkfi_money_v3_contract = {path = "../../src/contract/money_v3", features = ["client"]}
-darkfi_native_token_contract = {path = "../../src/contract/native_token", features = ["client", "no-entrypoint"]}
-darkfi_dao_escrow_contract = {path = "../../src/contract/dao_escrow", features = ["client", "no-entrypoint"]}
-darkfi_stablecoin_contract = {path = "../../src/contract/stablecoin", features = ["client", "no-entrypoint"]}
-darkfi_drain_protection_contract = {path = "../../src/contract/drain_protection", features = ["client"]}
+dwow_money_v3_contract = {path = "../../src/contract/money_v3", features = ["client"]}
+dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["client", "no-entrypoint"]}
+dwow_dao_escrow_contract = {path = "../../src/contract/dao_escrow", features = ["client", "no-entrypoint"]}
+dwow_stablecoin_contract = {path = "../../src/contract/stablecoin", features = ["client", "no-entrypoint"]}
+dwow_drain_protection_contract = {path = "../../src/contract/drain_protection", features = ["client"]}
 
 # Misc
 blake3 = "1.8.2"

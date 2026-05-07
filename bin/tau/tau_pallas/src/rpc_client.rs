@@ -29,14 +29,14 @@
 
 use std::sync::Arc;
 
-use darkfi::{
+use dwow::{
     rpc::client::RpcClient,
     rpc::jsonrpc::JsonRequest,
     tx::Transaction,
 };
 use tinyjson::JsonValue;
-use darkfi_serial::Encodable;
-use darkfi_sdk::tx::TransactionHash;
+use dwow_serial::Encodable;
+use dwow_sdk::tx::TransactionHash;
 use smol::Executor;
 use url::Url;
 

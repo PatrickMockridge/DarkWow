@@ -25,11 +25,11 @@
 //!
 //! Data structures for configurable lottery games.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{draw_unique_range, poseidon_hash, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::error::LotteryError;
 use crate::{MAX_NUM_PICKS, MAX_NUMBER_RANGE, MAX_PRIZE_TIERS};

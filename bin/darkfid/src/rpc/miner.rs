@@ -28,7 +28,7 @@
 
 use std::collections::HashMap;
 
-use darkfi::{
+use dwow::{
     blockchain::BlockInfo,
     rpc::jsonrpc::{
         ErrorCode::InternalError,
@@ -39,12 +39,12 @@ use darkfi::{
     Error,
 };
 use darkfi_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction};
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{keypair::Keypair, pasta_prelude::PrimeField, MerkleTree, NATIVE_TOKEN_CONTRACT_ID},
     tx::ContractCall,
 };
 use tinyjson::JsonValue;
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 use tracing::{error, info};
 
@@ -273,7 +273,7 @@ impl DarkfiNode {
 
         // Generate header
         let header =
-            darkfi::blockchain::Header::new(previous.hash(), block_height, 0, timestamp);
+            dwow::blockchain::Header::new(previous.hash(), block_height, 0, timestamp);
 
         // Create block
         let mut block = BlockInfo::new_empty(header);
@@ -293,7 +293,7 @@ impl DarkfiNode {
             }
         };
 
-        let _ = match darkfi::validator::verification::apply_producer_transaction(
+        let _ = match dwow::validator::verification::apply_producer_transaction(
             &overlay,
             block.header.height,
             fork.module.target,
@@ -349,10 +349,10 @@ impl DarkfiNode {
         block.sign(&block_signing_keypair.secret);
 
         // Verify and append the block
-        let proposal = darkfi::validator::consensus::Proposal::new(block.clone());
+        let proposal = dwow::validator::consensus::Proposal::new(block.clone());
 
         // First verify the block
-        if let Err(e) = darkfi::validator::verification::verify_block(
+        if let Err(e) = dwow::validator::verification::verify_block(
             &fork.overlay,
             &fork.diffs,
             &mut fork.module,
@@ -465,7 +465,7 @@ impl DarkfiNode {
 
         // Extract public key from address (bytes 1-32)
         let public_key_bytes: [u8; 32] = recipient_bytes[1..33].try_into().unwrap();
-        use darkfi_sdk::crypto::PublicKey;
+        use dwow_sdk::crypto::PublicKey;
         let public_key = match PublicKey::from_bytes(public_key_bytes) {
             Ok(pk) => pk,
             Err(_) => {
@@ -486,7 +486,7 @@ impl DarkfiNode {
         };
 
         let height = latest_block.header.height + 1;
-        let randomx_key = darkfi_linear::Miner::derive_key_from_height(height);
+        let randomx_key = dwow_linear::Miner::derive_key_from_height(height);
         let vm = linear_blockchain.get_vm(randomx_key);
         let previous = latest_block.hash(&vm);
         let difficulty_target = latest_block.header.difficulty_target;
@@ -536,7 +536,7 @@ impl DarkfiNode {
         };
 
         // Create coinbase transaction with ZK privacy data
-        let coinbase_tx = darkfi_linear::Transaction {
+        let coinbase_tx = dwow_linear::Transaction {
             version: 1,
             inputs: vec![],
             outputs: vec![],
@@ -556,8 +556,8 @@ impl DarkfiNode {
         all_txs.push(coinbase_tx);
 
         // Create miner and mine a block
-        let consensus = darkfi_linear::PoWConsensus::default();
-        let miner = darkfi_linear::Miner::new(std::sync::Arc::new(consensus));
+        let consensus = dwow_linear::PoWConsensus::default();
+        let miner = dwow_linear::Miner::new(std::sync::Arc::new(consensus));
 
         let mined_block = match miner.mine(&vm, previous, height, all_txs, difficulty_target) {
             Ok(block) => block,

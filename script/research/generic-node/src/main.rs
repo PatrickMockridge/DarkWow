@@ -28,7 +28,7 @@ use smol::{stream::StreamExt, Executor};
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::{error, info};
 
-use darkfi::{
+use dwow::{
     async_daemonize, cli_desc, impl_p2p_message,
     net::{
         metering::{MeteringConfiguration, DEFAULT_METERING_CONFIGURATION},
@@ -42,7 +42,7 @@ use darkfi::{
     system::{sleep, StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
-use darkfi_serial::{async_trait, SerialDecodable, SerialEncodable};
+use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};
 
 const CONFIG_FILE: &str = "generic_node_config.toml";
 const CONFIG_FILE_CONTENTS: &str = include_str!("../generic_node_config.toml");

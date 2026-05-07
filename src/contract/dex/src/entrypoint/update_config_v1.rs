@@ -25,8 +25,8 @@
 //!
 //! Allows governance to update DEX configuration parameters.
 
-use darkfi_sdk::{crypto::PublicKey, crypto::schnorr::SchnorrPublic, error::ContractError, msg, wasm};
-use darkfi_serial::{deserialize, serialize};
+use dwow_sdk::{crypto::PublicKey, crypto::schnorr::SchnorrPublic, error::ContractError, msg, wasm};
+use dwow_serial::{deserialize, serialize};
 
 use crate::{
     error::DexError,
@@ -39,9 +39,9 @@ use crate::{
 ///
 /// Verifies the caller is authorized (governance) and updates configuration.
 pub(crate) fn dex_update_config_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: UpdateConfigParams = deserialize(&self_.data[1..])?;

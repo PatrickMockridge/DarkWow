@@ -25,8 +25,8 @@
 
 use std::sync::Arc;
 
-use darkfi_linear::{Block, LinearStore, PoWConsensus, create_block};
-use darkfi_sdk::{crypto::DEPLOYOOOR_CONTRACT_ID, pasta::pallas};
+use dwow_linear::{Block, LinearStore, PoWConsensus, create_block};
+use dwow_sdk::{crypto::DEPLOYOOOR_CONTRACT_ID, pasta::pallas};
 use randomx::{RandomXFlags, RandomXVM};
 use sled::Config;
 
@@ -87,11 +87,11 @@ impl LinearFiveNodeHarness {
     /// Deploy genesis contracts to all 5 nodes
     pub fn deploy_genesis_contracts(&self) -> Result<(), Box<dyn std::error::Error>> {
         let deployooor_wasm =
-            include_bytes!("../../../../src/contract/deployooor/darkfi_deployooor_contract.wasm").to_vec();
+            include_bytes!("../../../../src/contract/deployooor/dwow_deployooor_contract.wasm").to_vec();
         let native_token_wasm =
-            include_bytes!("../../../../src/contract/native_token/darkfi_native_token_contract.wasm").to_vec();
+            include_bytes!("../../../../src/contract/native_token/dwow_native_token_contract.wasm").to_vec();
 
-        let native_token_id = darkfi_sdk::crypto::ContractId::from(pallas::Base::from(42));
+        let native_token_id = dwow_sdk::crypto::ContractId::from(pallas::Base::from(42));
 
         for node in self.all_nodes() {
             node.blockchain.deploy_contract(&deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID)?;
@@ -163,7 +163,7 @@ impl Default for LinearFiveNodeHarness {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use darkfi_linear::{create_block_with_uncles, create_uncle, UncleBlock};
+    use dwow_linear::{create_block_with_uncles, create_uncle, UncleBlock};
 
     #[test]
     fn test_linear_five_node_consensus() -> Result<(), Box<dyn std::error::Error>> {

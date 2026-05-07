@@ -31,8 +31,8 @@ use darkfi_dex_contract::{
     DexFunction, DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE,
     DEX_CONTRACT_SWAPS_TREE,
 };
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::{
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{
     crypto::{schnorr::Signature, PublicKey, SecretKey},
     pasta::pallas,
 };

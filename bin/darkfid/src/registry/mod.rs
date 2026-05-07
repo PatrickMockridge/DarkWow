@@ -31,7 +31,7 @@ use smol::lock::{Mutex, RwLock};
 use tinyjson::JsonValue;
 use tracing::{error, info};
 
-use darkfi::{
+use dwow::{
     blockchain::BlockInfo,
     rpc::{
         jsonrpc::JsonSubscriber,
@@ -43,11 +43,11 @@ use darkfi::{
     validator::{consensus::Proposal, Validator, ValidatorPtr},
     Error, Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{keypair::Network, pasta_prelude::PrimeField},
     tx::TransactionHash,
 };
-use darkfi_serial::serialize_async;
+use dwow_serial::serialize_async;
 
 use crate::{
     proto::{DarkfidP2pHandlerPtr, ExtendedProposalMessage},

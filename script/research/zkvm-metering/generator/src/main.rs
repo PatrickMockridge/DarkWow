@@ -27,12 +27,12 @@ use std::{
     path::Path,
 };
 
-use darkfi::{
+use dwow::{
     zk::{empty_witnesses, Proof, ProvingKey, VerifyingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::pasta::{pallas::Base, Eq, Fp};
-use darkfi_serial::serialize;
+use dwow_sdk::pasta::{pallas::Base, Eq, Fp};
+use dwow_serial::serialize;
 use halo2_proofs::dev::CircuitCost;
 use rand::rngs::OsRng;
 

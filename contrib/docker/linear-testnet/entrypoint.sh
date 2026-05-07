@@ -1,6 +1,6 @@
 #!/bin/bash
 # DarkFi Entry Point Script
-# Handles config generation and invokes darkfid
+# Handles config generation and invokes dwowd
 
 set -e
 
@@ -41,11 +41,11 @@ esac
 
 echo "[entrypoint] Generating config for $HOSTNAME (rpc=$RPC_PORT, stratum=$STRATUM_PORT, inbound=$INBOUND_PORT)..."
 mkdir -p /root/.config/darkfi
-cat > /root/.config/darkfi/darkfid_config.toml << EOF
+cat > /root/.config/dwow/darkfid_config.toml << EOF
 network = "linear-testnet"
 
 [network_config."linear-testnet"]
-database = "~/.local/share/darkfi/darkfid/linear-testnet"
+database = "~/.local/share/dwow/darkfid/linear-testnet"
 threshold = 1
 max_forks = 8
 skip_sync = true
@@ -71,7 +71,7 @@ localnet = true
 active_profiles = ["tcp+tls"]
 inbound = ["tcp+tls://0.0.0.0:$INBOUND_PORT"]
 magic_bytes = [163, 139, 113, 101]
-hostlist = "/root/.local/share/darkfi/darkfid/linear-testnet/hostlist.tsv"
+hostlist = "/root/.local/share/dwow/darkfid/linear-testnet/hostlist.tsv"
 $SEEDS
 $PEERS
 $EXTERNAL_ADDRS
@@ -81,28 +81,28 @@ inbound = ["tcp+tls://0.0.0.0:$INBOUND_PORT"]
 EOF
 echo "[entrypoint] Config generated successfully"
 
-echo "[entrypoint] Starting darkfid..."
-exec /app/darkfid "$@" &
+echo "[entrypoint] Starting dwowd..."
+/app/dwowd "$@" &
 
 DARKFID_PID=$!
 
 # Start xmrig on mining nodes
 if [ "$HOSTNAME" = "node0" ] || [ "$HOSTNAME" = "node1" ]; then
     STRATUM_PORT=$(if [ "$HOSTNAME" = "node0" ]; then echo "48347"; else echo "48447"; fi)
-    DATADIR="/root/.local/share/darkfi/darkfid/linear-testnet"
+    DATADIR="/root/.local/share/dwow/darkfid/linear-testnet"
     MINER_ADDRESS_FILE="$DATADIR/mining_address"
 
     # Three-tier address resolution:
     # 1. Explicit WALLET_ADDRESS env var (operator-provided)
-    # 2. Persisted file from prior darkfid run
-    # 3. Wait for darkfid to auto-generate a keypair on first run
+    # 2. Persisted file from prior dwowd run
+    # 3. Wait for dwowd to auto-generate a keypair on first run
     if [ -n "$WALLET_ADDRESS" ]; then
         echo "[entrypoint] Using provided WALLET_ADDRESS: $WALLET_ADDRESS"
     elif [ -f "$MINER_ADDRESS_FILE" ]; then
         WALLET_ADDRESS=$(cat "$MINER_ADDRESS_FILE")
         echo "[entrypoint] Using persisted mining address: $WALLET_ADDRESS"
     else
-        echo "[entrypoint] Waiting for darkfid to generate mining address..."
+        echo "[entrypoint] Waiting for dwowd to generate mining address..."
         for i in $(seq 1 30); do
             if [ -f "$MINER_ADDRESS_FILE" ]; then
                 WALLET_ADDRESS=$(cat "$MINER_ADDRESS_FILE")

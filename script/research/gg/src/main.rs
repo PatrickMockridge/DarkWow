@@ -30,7 +30,7 @@ use std::{
 };
 
 use clap::{Parser, Subcommand};
-use darkfi::{
+use dwow::{
     blockchain::{block_store::append_tx_to_merkle_tree, BlockInfo, Blockchain, BlockchainOverlay},
     cli_desc,
     tx::{ContractCallLeaf, TransactionBuilder},
@@ -47,7 +47,7 @@ use darkfi_contract_test_harness::vks;
 use darkfi_money_contract::{
     client::genesis_mint_v1::GenesisMintCallBuilder, MoneyFunction, MONEY_CONTRACT_ZKAS_MINT_NS_V1,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         contract_id::MONEY_CONTRACT_ID,
         keypair::{Address, PublicKey, SecretKey},
@@ -56,7 +56,7 @@ use darkfi_sdk::{
     pasta::{group::ff::PrimeField, pallas},
     ContractCall,
 };
-use darkfi_serial::{deserialize_async, serialize_async, AsyncEncodable};
+use dwow_serial::{deserialize_async, serialize_async, AsyncEncodable};
 use sled_overlay::sled;
 use smol::Executor;
 

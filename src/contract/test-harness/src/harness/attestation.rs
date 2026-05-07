@@ -25,12 +25,12 @@
 //!
 //! Provides isolated testing for Attestation contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{crypto::PublicKey, pasta::pallas};
-use darkfi_serial::Encodable;
+use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+use dwow_serial::Encodable;
 
 use darkfi_attestation_contract::client::{
     consume_claim_v1::{
@@ -90,23 +90,23 @@ impl AttestationHarness {
         let delegate_attestation_zkbin = ZkBinary::decode(delegate_bin, false).unwrap();
 
         let create_att_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_attestation_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_attestation_zkbin).unwrap(),
             &create_attestation_zkbin,
         );
         let create_claim_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_claim_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_claim_zkbin).unwrap(),
             &create_claim_zkbin,
         );
         let verify_claim_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&verify_claim_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&verify_claim_zkbin).unwrap(),
             &verify_claim_zkbin,
         );
         let consume_claim_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&consume_claim_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&consume_claim_zkbin).unwrap(),
             &consume_claim_zkbin,
         );
         let delegate_attestation_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&delegate_attestation_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&delegate_attestation_zkbin).unwrap(),
             &delegate_attestation_zkbin,
         );
 
@@ -405,31 +405,31 @@ impl super::ContractHarness for AttestationHarness {
 pub struct CreateAttestationResult {
     pub call_data: Vec<u8>,
     pub attestation_id: pallas::Base,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: CreateAttestationV1PublicInputs,
 }
 
 pub struct CreateClaimResult {
     pub call_data: Vec<u8>,
     pub claim_id: pallas::Base,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: CreateClaimV1PublicInputs,
 }
 
 pub struct VerifyClaimResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: VerifyClaimV1PublicInputs,
 }
 
 pub struct ConsumeClaimResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: ConsumeClaimV1PublicInputs,
 }
 
 pub struct DelegateAttestationResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: DelegateAttestationV1PublicInputs,
 }

@@ -25,7 +25,7 @@
 
 use std::sync::Arc;
 
-use darkfi::{
+use dwow::{
     blockchain::{BlockInfo, Header},
     tx::{ContractCallLeaf, TransactionBuilder},
     validator::{
@@ -40,7 +40,7 @@ use darkfi_native_token_contract::{
     client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         keypair::Keypair,
         pasta_prelude::{Curve, CurveAffine},
@@ -49,17 +49,17 @@ use darkfi_sdk::{
     num_traits::One,
     ContractCall,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use num_bigint::BigUint;
 use smol::Executor;
 
 use crate::tests::HarnessConfig;
 
 /// ZK Binary loaded directly from include_bytes - no sled lookup needed
-fn get_mint_zkbin() -> Result<darkfi::zkas::ZkBinary> {
+fn get_mint_zkbin() -> Result<dwow::zkas::ZkBinary> {
     let zkbin_bytes =
         include_bytes!("../../../../src/contract/native_token/proof/mint_v1.zk.bin").to_vec();
-    Ok(darkfi::zkas::ZkBinary::decode(&zkbin_bytes, false)?)
+    Ok(dwow::zkas::ZkBinary::decode(&zkbin_bytes, false)?)
 }
 
 /// Generate a native token block
@@ -148,9 +148,9 @@ fn generate_deploy_tx(
     deploy_keypair: &Keypair,
     wasm_bincode: Vec<u8>,
     _call_idx: usize,
-) -> Result<darkfi::tx::Transaction> {
+) -> Result<dwow::tx::Transaction> {
     let deploy_ix = vec![];
-    let params = darkfi_sdk::deploy::DeployParamsV1 {
+    let params = dwow_sdk::deploy::DeployParamsV1 {
         wasm_bincode,
         public_key: deploy_keypair.public,
         ix: deploy_ix,

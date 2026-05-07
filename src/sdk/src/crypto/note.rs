@@ -24,7 +24,7 @@
 use std::io::Cursor;
 
 use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit};
-use darkfi_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
 use pasta_curves::{group::ff::Field, pallas};
 use rand_core::{CryptoRng, RngCore};
 

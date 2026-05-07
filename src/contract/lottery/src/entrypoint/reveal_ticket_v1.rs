@@ -23,8 +23,8 @@
 
 //! RevealTicketV1 Implementation
 
-use darkfi_sdk::{error::ContractError, msg, pasta::pallas, wasm};
-use darkfi_serial::{deserialize, serialize};
+use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::LotteryError;
 use crate::model::{
@@ -35,9 +35,9 @@ use crate::LOTTERY_CONTRACT_TICKETS_TREE;
 
 /// Process instruction for RevealTicketV1
 pub fn lottery_reveal_ticket_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: RevealTicketParamsV1 = deserialize(&self_.data[1..])?;
@@ -79,9 +79,9 @@ pub fn lottery_reveal_ticket_process_instruction_v1(
     // Verify commitment matches using iterative hashing
     let mut state = ticket.lottery_id;
     for &n in &params.numbers {
-        state = darkfi_sdk::crypto::poseidon_hash([state, pallas::Base::from(n as u64)]);
+        state = dwow_sdk::crypto::poseidon_hash([state, pallas::Base::from(n as u64)]);
     }
-    let computed_commitment = darkfi_sdk::crypto::poseidon_hash([state, params.nonce]);
+    let computed_commitment = dwow_sdk::crypto::poseidon_hash([state, params.nonce]);
 
     if computed_commitment != ticket.commitment {
         return Err(LotteryError::InvalidCommitment.into())
@@ -104,7 +104,7 @@ pub fn lottery_reveal_ticket_process_instruction_v1(
 
 /// Process update for RevealTicketV1
 pub fn lottery_reveal_ticket_process_update_v1(
-    _cid: darkfi_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     update: RevealTicketUpdateV1,
 ) -> Result<(), ContractError> {
     // The reveal just verifies the ticket and calculates matches.

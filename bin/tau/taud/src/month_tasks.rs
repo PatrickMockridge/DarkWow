@@ -31,7 +31,7 @@ use chrono::{TimeZone, Utc};
 use tinyjson::JsonValue;
 use tracing::debug;
 
-use darkfi::util::{
+use dwow::util::{
     file::{load_json_file, save_json_file},
     time::Timestamp,
 };
@@ -246,7 +246,7 @@ mod tests {
     use std::fs::{create_dir_all, remove_dir_all};
 
     use super::*;
-    use darkfi::Result;
+    use dwow::Result;
 
     const TEST_DATA_PATH: &str = "/tmp/test_tau_data";
 

@@ -3,7 +3,7 @@
 # Provisional name: "DarkWow" (token ticker: DRKW)
 # Magic bytes [68, 82, 75, 87] = ASCII "DRKW"
 #
-# Multi-stage build: clones from origin, builds darkfid inside Docker
+# Multi-stage build: clones from origin, builds dwowd inside Docker
 # Build from repo root:
 #   docker build -t darkfi:darkwow-testnet . -f contrib/docker/darkwow-testnet/Dockerfile
 
@@ -44,25 +44,25 @@ RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
 # Install wasm32 target for WASM contract compilation
 RUN rustup target add wasm32-unknown-unknown
 
-# Build WASM contracts first (needed for darkfid binary)
-RUN cargo build --target wasm32-unknown-unknown --release -p darkfi_deployooor_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p darkfi_native_token_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p darkfi_money_v3_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p darkfi_baccarat_contract
+# Build WASM contracts first (needed for dwowd binary)
+RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_money_v3_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_baccarat_contract
 
 # Copy WASM files to contract directories for include_bytes! macro
-RUN cp target/wasm32-unknown-unknown/release/darkfi_deployooor_contract.wasm /app/src/contract/deployooor/ && \
-    cp target/wasm32-unknown-unknown/release/darkfi_native_token_contract.wasm /app/src/contract/native_token/ && \
-    cp target/wasm32-unknown-unknown/release/darkfi_money_v3_contract.wasm /app/src/contract/money_v3/ && \
-    cp target/wasm32-unknown-unknown/release/darkfi_baccarat_contract.wasm /app/src/contract/baccarat/
+RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/src/contract/deployooor/ && \
+    cp target/wasm32-unknown-unknown/release/dwow_native_token_contract.wasm /app/src/contract/native_token/ && \
+    cp target/wasm32-unknown-unknown/release/dwow_money_v3_contract.wasm /app/src/contract/money_v3/ && \
+    cp target/wasm32-unknown-unknown/release/dwow_baccarat_contract.wasm /app/src/contract/baccarat/
 
-# Build darkfid with reduced parallelism to avoid memory issues
-RUN cargo build -p darkfid --release -j 2
+# Build dwowd with reduced parallelism to avoid memory issues
+RUN cargo build -p dwowd --release -j 2
 
 # Build lilith seed node
 RUN cargo build -p lilith --release -j 2
 
-RUN cp target/release/darkfid /app/darkfid
+RUN cp target/release/dwowd /app/dwowd
 RUN cp target/release/lilith /app/lilith
 RUN cp bin/lilith/lilith_config.toml /app/lilith_config.toml
 
@@ -83,7 +83,7 @@ RUN wget -q https://github.com/xmrig/xmrig/releases/download/v6.22.2/xmrig-6.22.
 
 WORKDIR /app
 
-COPY --from=builder /app/darkfid ./
+COPY --from=builder /app/dwowd ./
 COPY --from=builder /app/lilith ./
 COPY --from=builder /app/lilith_config.toml ./
 COPY contrib/docker/darkwow-testnet/entrypoint.sh /app/entrypoint.sh
@@ -91,4 +91,4 @@ RUN chmod +x /app/entrypoint.sh
 
 # Entrypoint handles config generation, CMD provides default binary args
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["/app/darkfid"]
+CMD ["/app/dwowd"]

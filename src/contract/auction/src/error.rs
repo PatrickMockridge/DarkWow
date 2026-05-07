@@ -92,7 +92,7 @@ pub enum AuctionError {
     InvalidChildCall,
 }
 
-impl From<AuctionError> for darkfi_sdk::error::ContractError {
+impl From<AuctionError> for dwow_sdk::error::ContractError {
     fn from(e: AuctionError) -> Self {
         match e {
             AuctionError::AuctionNotFound => Self::Custom(1),

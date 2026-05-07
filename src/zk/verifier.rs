@@ -28,7 +28,7 @@
 //! - Deterministic: same inputs always produce same output
 //! - Separated: independent from sync, consensus, and block production
 
-use darkfi_sdk::pasta::pallas;
+use dwow_sdk::pasta::pallas;
 
 use crate::{zk::ZkCircuit, zk::empty_witnesses, zk::Proof, zk::VerifyingKey, zkas::ZkBinary};
 

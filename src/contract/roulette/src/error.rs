@@ -23,7 +23,7 @@
 
 //! Roulette Contract Errors
 
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 use thiserror::Error;
 
 /// Errors occurring in the Roulette contract

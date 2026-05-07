@@ -54,7 +54,7 @@
 //! | Slashing risk | Full loss | Share of loss |
 //! | Fees | All bridge fees | Proportional share |
 
-use darkfi_sdk::{
+use dwow_sdk::{
     error::ContractError,
 };
 

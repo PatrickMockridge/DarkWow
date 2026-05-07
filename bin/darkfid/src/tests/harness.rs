@@ -23,7 +23,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use darkfi::{
+use dwow::{
     blockchain::{BlockInfo, Blockchain, BlockchainOverlay, Header, HeaderHash},
     net::Settings,
     rpc::jsonrpc::JsonSubscriber,
@@ -42,14 +42,14 @@ use darkfi_native_token_contract::{
     client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         keypair::{Keypair, Network},
         MerkleTree, NATIVE_TOKEN_CONTRACT_ID,
     },
     ContractCall,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use num_bigint::BigUint;
 use sled;
 use url::Url;

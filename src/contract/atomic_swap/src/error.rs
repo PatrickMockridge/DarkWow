@@ -23,7 +23,7 @@
 
 //! Atomic Swap Contract Errors
 
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum AtomicSwapError {

@@ -2,7 +2,7 @@
 
 ## DarkWow Fullnode Daemon
 
-`darkfid` is the darkfi fullnode. It manages the blockchain, validates
+`dwowd` is the darkfi fullnode. It manages the blockchain, validates
 transactions and remains connected to the p2p network.
 
 Clients can connect over localhost RPC or secure socket and perform
@@ -13,12 +13,12 @@ these functions:
 * Broadcast txs to the p2p network.
 * Get tx status, query the mempool and interact with components.
 
-`darkfid` does not have any concept of keys or wallet functionality.
+`dwowd` does not have any concept of keys or wallet functionality.
 It does not manage keys.
 
 ## Low Level Client
 
-Clients manage keys and objects. They make queries to `darkfid`, and
+Clients manage keys and objects. They make queries to `dwowd`, and
 receive notes encrypted to their public keys.
 
 Their design is usually specific to their application but modular.

@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{bridgetree, crypto::SecretKey};
-use darkfi_serial::{async_trait, SerialDecodable, SerialEncodable};
+use dwow_sdk::{bridgetree, crypto::SecretKey};
+use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};
 
 /// Rate-Limit Nullifier account data
 #[derive(Debug, Copy, Clone, SerialEncodable, SerialDecodable)]

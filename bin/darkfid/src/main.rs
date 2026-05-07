@@ -27,7 +27,7 @@ use smol::{fs::read_to_string, stream::StreamExt};
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::{debug, error, info};
 
-use darkfi::{
+use dwow::{
     async_daemonize,
     blockchain::BlockInfo,
     cli_desc,
@@ -40,13 +40,13 @@ use darkfi::{
     validator::{Validator, ValidatorConfig},
     Error, Result,
 };
-use darkfi_sdk::crypto::keypair::Network;
-use darkfi_serial::deserialize_async;
+use dwow_sdk::crypto::keypair::Network;
+use dwow_serial::deserialize_async;
 
-use darkfid::{task::consensus::ConsensusInitTaskConfig, Darkfid};
+use dwowd::{task::consensus::ConsensusInitTaskConfig, Darkfid};
 
-const CONFIG_FILE: &str = "darkfid_config.toml";
-const CONFIG_FILE_CONTENTS: &str = include_str!("../darkfid_config.toml");
+const CONFIG_FILE: &str = "dwowd_config.toml";
+const CONFIG_FILE_CONTENTS: &str = include_str!("../dwowd_config.toml");
 /// Note:
 /// If you change these don't forget to remove their corresponding database folder,
 /// since if it already has a genesis block, provided one is ignored.
@@ -57,7 +57,7 @@ const GENESIS_BLOCK_LINEAR_TESTNET: &str = include_str!("../genesis_block_linear
 
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]
 #[serde(default)]
-#[structopt(name = "darkfid", about = cli_desc!())]
+#[structopt(name = "dwowd", about = cli_desc!())]
 struct Args {
     #[structopt(short, long)]
     /// Configuration file to use
@@ -97,7 +97,7 @@ struct Args {
 /// Defines a blockchain network configuration.
 /// Default values correspond to a local network.
 pub struct BlockchainNetwork {
-    #[structopt(long, default_value = "~/.local/share/darkfi/darkfid/localnet")]
+    #[structopt(long, default_value = "~/.local/share/dwow/darkfid/localnet")]
     /// Path to blockchain database
     database: String,
 
@@ -160,7 +160,7 @@ pub struct BlockchainNetwork {
 
 async_daemonize!(realmain);
 async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
-    info!(target: "darkfid", "Initializing DarkFi node...");
+    info!(target: "dwowd", "Initializing DarkWow node...");
 
     // Grab blockchain network configuration
     let ((network, blockchain_config), genesis_block) = match args.network.as_str() {
@@ -187,14 +187,14 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
 
     // Handle linear-testnet separately since it uses LinearBlockchain instead of Validator
     if args.network == "linear-testnet" || args.network == "darkwow-testnet" {
-        info!(target: "darkfid", "Starting DarkFi node in linear-testnet mode...");
+        info!(target: "dwowd", "Starting DarkWow node in linear-testnet mode...");
 
         // Initialize or open sled database
         let db_path = expand_path(&blockchain_config.database)?;
         let sled_db = sled::open(&db_path)?;
 
         // Setup P2P settings
-        let p2p_settings: darkfi::net::Settings =
+        let p2p_settings: dwow::net::Settings =
             (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
 
         // Initialize the daemon using LinearBlockchain
@@ -229,11 +229,11 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         // Signal handling for graceful termination.
         let (signals_handler, signals_task) = SignalHandler::new(ex)?;
         signals_handler.wait_termination(signals_task).await?;
-        info!(target: "darkfid", "Caught termination signal, cleaning up and exiting...");
+        info!(target: "dwowd", "Caught termination signal, cleaning up and exiting...");
 
         daemon.stop().await?;
 
-        info!(target: "darkfid", "Shut down successfully");
+        info!(target: "dwowd", "Shut down successfully");
 
         return Ok(());
     }
@@ -248,7 +248,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
 
     // Initialize validator configuration
     let pow_fixed_difficulty = if let Some(diff) = blockchain_config.pow_fixed_difficulty {
-        info!(target: "darkfid", "Node is configured to run with fixed PoW difficulty: {diff}");
+        info!(target: "dwowd", "Node is configured to run with fixed PoW difficulty: {diff}");
         Some(diff.into())
     } else {
         None
@@ -265,49 +265,49 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
 
     // Check if reset was requested
     if let Some(height) = args.reset {
-        info!(target: "darkfid", "Node will reset validator state to height: {height}");
+        info!(target: "dwowd", "Node will reset validator state to height: {height}");
         let validator = Validator::new(&sled_db, &config).await?;
         validator.write().await.reset_to_height(height).await?;
-        info!(target: "darkfid", "Validator state reset successfully!");
+        info!(target: "dwowd", "Validator state reset successfully!");
         return Ok(())
     }
 
     // Check if sync headers purge was requested
     if args.purge_sync {
-        info!(target: "darkfid", "Node will purge all pending sync headers.");
+        info!(target: "dwowd", "Node will purge all pending sync headers.");
         let validator = Validator::new(&sled_db, &config).await?;
         validator.read().await.blockchain.headers.remove_all_sync()?;
-        info!(target: "darkfid", "Validator pending sync headers purged successfully!");
+        info!(target: "dwowd", "Validator pending sync headers purged successfully!");
         return Ok(())
     }
 
     // Check if validate was requested
     if args.validate {
-        info!(target: "darkfid", "Node will validate existing blockchain state.");
+        info!(target: "dwowd", "Node will validate existing blockchain state.");
         let validator = Validator::new(&sled_db, &config).await?;
         validator
             .read()
             .await
             .validate_blockchain(config.pow_target, config.pow_fixed_difficulty)
             .await?;
-        info!(target: "darkfid", "Validator blockchain state validated successfully!");
+        info!(target: "dwowd", "Validator blockchain state validated successfully!");
         return Ok(())
     }
 
     // Check if rebuild difficulties was requested
     if args.rebuild_difficulties {
-        info!(target: "darkfid", "Node will rebuild difficulties of existing blockchain state.");
+        info!(target: "dwowd", "Node will rebuild difficulties of existing blockchain state.");
         let validator = Validator::new(&sled_db, &config).await?;
         validator
             .read()
             .await
             .rebuild_block_difficulties(config.pow_target, config.pow_fixed_difficulty)
             .await?;
-        info!(target: "darkfid", "Validator difficulties rebuilt successfully!");
+        info!(target: "dwowd", "Validator difficulties rebuilt successfully!");
         return Ok(())
     }
 
-    let p2p_settings: darkfi::net::Settings =
+    let p2p_settings: dwow::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
 
     // Generate the daemon
@@ -344,11 +344,11 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     // Signal handling for graceful termination.
     let (signals_handler, signals_task) = SignalHandler::new(ex)?;
     signals_handler.wait_termination(signals_task).await?;
-    info!(target: "darkfid", "Caught termination signal, cleaning up and exiting...");
+    info!(target: "dwowd", "Caught termination signal, cleaning up and exiting...");
 
     daemon.stop().await?;
 
-    info!(target: "darkfid", "Shut down successfully");
+    info!(target: "dwowd", "Shut down successfully");
 
     Ok(())
 }
@@ -368,14 +368,14 @@ pub async fn parse_blockchain_config(
 
     // Grab config path
     let config_path = get_config_path(config, CONFIG_FILE)?;
-    debug!(target: "darkfid", "Parsing configuration file: {config_path:?}");
+    debug!(target: "dwowd", "Parsing configuration file: {config_path:?}");
 
     // Parse TOML file contents
     let contents = read_to_string(&config_path).await?;
     let contents: toml::Value = match toml::from_str(&contents) {
         Ok(v) => v,
         Err(e) => {
-            error!(target: "darkfid", "Failed parsing TOML config: {e}");
+            error!(target: "dwowd", "Failed parsing TOML config: {e}");
             return Err(Error::ParseFailed("Failed parsing TOML config"))
         }
     };
@@ -396,11 +396,11 @@ pub async fn parse_blockchain_config(
         match BlockchainNetwork::from_iter_with_toml::<Vec<String>>(&network_config, vec![]) {
             Ok(v) => v,
             Err(e) => {
-                error!(target: "darkfid", "Failed parsing requested network configuration: {e}");
+                error!(target: "dwowd", "Failed parsing requested network configuration: {e}");
                 return Err(Error::ParseFailed("Failed parsing requested network configuration"))
             }
         };
-    debug!(target: "darkfid", "Parsed network configuration: {network_config:?}");
+    debug!(target: "dwowd", "Parsed network configuration: {network_config:?}");
 
     Ok((used_net, network_config))
 }

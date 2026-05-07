@@ -36,7 +36,7 @@
 //! - SettleBet updates state; player-winning bets require separate Money::TokenMint call
 //! - HouseClose collects house's share when bets timeout or are cancelled
 
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 
 /// Functions available in the contract
 #[repr(u8)]

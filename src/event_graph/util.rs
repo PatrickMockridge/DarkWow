@@ -43,7 +43,7 @@ use {
         },
         util::file::load_file,
     },
-    darkfi_serial::{deserialize, deserialize_async, serialize},
+    dwow_serial::{deserialize, deserialize_async, serialize},
     sled_overlay::sled,
     std::collections::HashMap,
     tinyjson::JsonValue,

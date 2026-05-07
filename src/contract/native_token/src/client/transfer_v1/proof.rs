@@ -25,12 +25,12 @@
 //!
 //! This module provides ZK proof creation for mint and burn operations.
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode,

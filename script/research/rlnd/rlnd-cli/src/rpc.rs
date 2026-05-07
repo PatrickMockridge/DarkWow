@@ -23,15 +23,15 @@
 
 use std::time::Instant;
 
-use darkfi::{
+use dwow::{
     rpc::{jsonrpc::JsonRequest, util::JsonValue},
     Error, Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::pasta_prelude::{Field, PrimeField},
     pasta::pallas,
 };
-use darkfi_serial::deserialize;
+use dwow_serial::deserialize;
 use rand::rngs::OsRng;
 use rlnd::database::Membership;
 

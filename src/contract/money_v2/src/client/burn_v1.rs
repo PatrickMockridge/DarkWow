@@ -21,12 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{
+use dwow::{
     zk::{Proof, ProvingKey},
     zkas::ZkBinary,
     ClientFailed, Result,
 };
-use darkfi_sdk::crypto::{BaseBlind, Blind, MerkleTree, ScalarBlind, SecretKey};
+use dwow_sdk::crypto::{BaseBlind, Blind, MerkleTree, ScalarBlind, SecretKey};
 use rand::rngs::OsRng;
 use tracing::debug;
 

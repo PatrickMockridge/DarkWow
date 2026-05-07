@@ -23,7 +23,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use darkfi_sdk::{blockchain::compute_fee, crypto::MerkleTree};
+use dwow_sdk::{blockchain::compute_fee, crypto::MerkleTree};
 use num_bigint::BigUint;
 use sled_overlay::sled;
 use smol::lock::RwLock;

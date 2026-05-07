@@ -28,7 +28,7 @@ use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::info;
 use url::Url;
 
-use darkfi::{
+use dwow::{
     async_daemonize,
     blockchain::BlockInfo,
     cli_desc,
@@ -36,7 +36,7 @@ use darkfi::{
     util::encoding::base64,
     Result,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 const CONFIG_FILE: &str = "blockchain_storage_metrics_config.toml";
 const CONFIG_FILE_CONTENTS: &str = include_str!("../blockchain_storage_metrics_config.toml");

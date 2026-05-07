@@ -25,11 +25,11 @@ extern crate darkfi_serial;
 extern crate bitcoin;
 
 use honggfuzz::fuzz;
-use darkfi_serial::VarInt;
+use dwow_serial::VarInt;
 use bitcoin::VarInt as BTCVarInt;
 // use bitcoin::consensus::serialize;
 // use bitcoin::psbt::serialize;
-// use darkfi_serial::{serialize, deserialize};
+// use dwow_serial::{serialize, deserialize};
 
 fn main() {
     loop {
@@ -41,11 +41,11 @@ fn main() {
                 btc_vi.len(),
             );
 
-            let dark_ser = darkfi_serial::serialize(&dark_vi);
+            let dark_ser = dwow_serial::serialize(&dark_vi);
             let btc_ser = bitcoin::consensus::serialize(&btc_vi);
             assert_eq!(dark_ser, btc_ser);
 
-            let dark_des: VarInt = darkfi_serial::deserialize(&dark_ser).unwrap();
+            let dark_des: VarInt = dwow_serial::deserialize(&dark_ser).unwrap();
             let btc_des: BTCVarInt = bitcoin::consensus::deserialize(&btc_ser).unwrap();
             assert_eq!(
                 dark_des.length(),
@@ -53,7 +53,7 @@ fn main() {
             );
 
             // assert_eq!(
-            //     darkfi_serial::decode(&dark_ser).unwrap(),
+            //     dwow_serial::decode(&dark_ser).unwrap(),
             //     bitcoin::consensus::decode(&btc_ser).unwrap(),
             // );
         });

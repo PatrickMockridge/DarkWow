@@ -21,11 +21,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{keypair::Keypair, pasta_prelude::Field},
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 use tracing::info;
 
@@ -80,9 +80,9 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get the ZK binary from the compiled contract
     let mint_v1_bincode = include_bytes!("../../native_token/proof/mint_v1.zk.bin");
-    let zkbin = darkfi::zkas::ZkBinary::decode(mint_v1_bincode, false)?;
-    let circuit = darkfi::zk::ZkCircuit::new(darkfi::zk::empty_witnesses(&zkbin)?, &zkbin);
-    let pk = darkfi::zk::ProvingKey::build(zkbin.k, &circuit);
+    let zkbin = dwow::zkas::ZkBinary::decode(mint_v1_bincode, false)?;
+    let circuit = dwow::zk::ZkCircuit::new(dwow::zk::empty_witnesses(&zkbin)?, &zkbin);
+    let pk = dwow::zk::ProvingKey::build(zkbin.k, &circuit);
 
     // Generate a keypair for the reward recipient
     let keypair = Keypair::default();
@@ -120,9 +120,9 @@ fn test_burn_call_builder() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get the ZK binary from the compiled contract
     let burn_v1_bincode = include_bytes!("../../native_token/proof/burn_v1.zk.bin");
-    let zkbin = darkfi::zkas::ZkBinary::decode(burn_v1_bincode, false)?;
-    let circuit = darkfi::zk::ZkCircuit::new(darkfi::zk::empty_witnesses(&zkbin)?, &zkbin);
-    let pk = darkfi::zk::ProvingKey::build(zkbin.k, &circuit);
+    let zkbin = dwow::zkas::ZkBinary::decode(burn_v1_bincode, false)?;
+    let circuit = dwow::zk::ZkCircuit::new(dwow::zk::empty_witnesses(&zkbin)?, &zkbin);
+    let pk = dwow::zk::ProvingKey::build(zkbin.k, &circuit);
 
     // Create a keypair for the sender
     let keypair = Keypair::default();

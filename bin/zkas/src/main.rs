@@ -32,7 +32,7 @@ use std::{
 
 use arg::Args;
 
-use darkfi::{
+use dwow::{
     zkas::{Analyzer, Compiler, Lexer, Parser, ZkBinary},
     ANSI_LOGO,
 };

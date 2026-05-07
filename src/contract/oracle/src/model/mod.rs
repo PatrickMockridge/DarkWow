@@ -27,8 +27,8 @@
 //! Oracles create attestations for external data that other contracts
 //! can then verify and consume.
 
-use darkfi_sdk::{crypto::PublicKey, pasta::pallas};
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Oracle unique identifier
 pub type OracleId = pallas::Base;

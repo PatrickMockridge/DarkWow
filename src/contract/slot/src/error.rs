@@ -23,7 +23,7 @@
 
 //! Slot Contract Errors
 
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

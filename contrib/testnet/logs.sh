@@ -2,8 +2,8 @@
 # DarkFi Testnet Logs Script
 # Usage: ./logs.sh [lines]
 
-DARKFI_HOME="${DARKFI_HOME:-$HOME/.local/share/darkfi}"
-DARKFID_HOME="$DARKFI_HOME/darkfid"
+DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/darkfi}"
+DARKFID_HOME="$DWOW_HOME/darkfid"
 LOG_FILE="$DARKFID_HOME/testnet.log"
 
 LINES="${1:-50}"

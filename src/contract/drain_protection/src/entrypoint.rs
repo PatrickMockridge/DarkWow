@@ -44,13 +44,13 @@
 //! This contract is EXPERIMENTAL. The protections are provisionally specified
 //! and require full implementation and security audit.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::{
     error::DrainProtectionError,
@@ -66,7 +66,7 @@ use crate::{
     DRAIN_PROTECTION_CONTRACT_VOTES_TREE,
 };
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -87,7 +87,7 @@ darkfi_sdk::define_contract!(
 /// - Transfer history tree (rate limiting)
 /// - Exits tree (processed exits)
 /// - Vote history tree (prevent double-voting)
-pub fn init_contract(cid: darkfi_sdk::crypto::ContractId, _ix: &[u8]) -> ContractResult {
+pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[drain_protection::init_contract] Initializing DrainProtection contract");
 
     // Initialize info tree
@@ -121,9 +121,9 @@ pub fn init_contract(cid: darkfi_sdk::crypto::ContractId, _ix: &[u8]) -> Contrac
 // ============================================================================
 
 /// Fetch metadata for ZK proof verification
-fn get_metadata(cid: darkfi_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult {
+fn get_metadata(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = DrainProtectionFunction::try_from(self_.data[0])?;
 
@@ -177,9 +177,9 @@ fn get_metadata(cid: darkfi_sdk::crypto::ContractId, ix: &[u8]) -> ContractResul
 // ============================================================================
 
 /// Verify state transition and produce update if valid
-fn process_instruction(cid: darkfi_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult {
+fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx];
     let func = DrainProtectionFunction::try_from(self_.data.data[0])?;
 
@@ -264,7 +264,7 @@ fn process_instruction(cid: darkfi_sdk::crypto::ContractId, ix: &[u8]) -> Contra
 
 /// `process_instruction` for InitializeV1
 fn init_fund_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     params: crate::model::InitializeParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[InitializeV1] Initializing protected fund");
@@ -308,7 +308,7 @@ fn init_fund_process_instruction_v1(
 
 /// `process_instruction` for ProposeV1
 fn propose_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     params: ProposeParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[ProposeV1] Creating vote proposal");
@@ -329,7 +329,7 @@ fn propose_process_instruction_v1(
 
     // Create proposal
     let proposal_id =
-        darkfi_sdk::crypto::poseidon_hash([fund.id, pallas::Base::from(wasm::util::get_verifying_block_height()? as u64)]);
+        dwow_sdk::crypto::poseidon_hash([fund.id, pallas::Base::from(wasm::util::get_verifying_block_height()? as u64)]);
 
     let proposal = VoteProposal {
         id: proposal_id,
@@ -349,7 +349,7 @@ fn propose_process_instruction_v1(
 
 /// `process_instruction` for VoteV1
 fn vote_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     params: VoteParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[VoteV1] Casting vote on proposal");
@@ -390,7 +390,7 @@ fn vote_process_instruction_v1(
 
 /// `process_instruction` for ExecuteV1
 fn execute_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     params: crate::model::ExecuteParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[ExecuteV1] Executing proposal");
@@ -457,7 +457,7 @@ fn execute_process_instruction_v1(
 
 /// `process_instruction` for ExitV1
 fn exit_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     params: ExitParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[ExitV1] Processing member exit");
@@ -482,7 +482,7 @@ fn exit_process_instruction_v1(
     let haircut_bps = 3333; // 33.33%
     let exit_value = (member_weight * fund.total_funds / total_weight.max(1)) * (10_000 - haircut_bps) / 10_000;
 
-    let exit_id = darkfi_sdk::crypto::poseidon_hash([
+    let exit_id = dwow_sdk::crypto::poseidon_hash([
         fund.id,
         pallas::Base::from(params.current_block),
     ]);
@@ -500,7 +500,7 @@ fn exit_process_instruction_v1(
 
 /// `process_instruction` for TransferV1
 fn transfer_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     params: crate::model::TransferParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[TransferV1] Processing transfer");
@@ -546,7 +546,7 @@ fn transfer_process_instruction_v1(
 
     // Record transfer for rate limiting
     let record = crate::model::TransferRecord { block: current_block, amount: params.amount };
-    let transfer_key = darkfi_sdk::crypto::poseidon_hash([current_block.into()]);
+    let transfer_key = dwow_sdk::crypto::poseidon_hash([current_block.into()]);
     wasm::db::db_set(transfers_db, &serialize(&transfer_key), &serialize(&record))?;
 
     let update = crate::model::TransferUpdateV1 {
@@ -559,7 +559,7 @@ fn transfer_process_instruction_v1(
 
 /// `process_instruction` for LockV1
 fn lock_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     params: LockParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[LockV1] Locking funds");
@@ -590,7 +590,7 @@ fn lock_process_instruction_v1(
 
 /// `process_instruction` for UnlockV1
 fn unlock_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     params: UnlockParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[UnlockV1] Unlocking funds");
@@ -623,7 +623,7 @@ fn unlock_process_instruction_v1(
 
 /// `process_instruction` for UpdateConfigV1
 fn update_config_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     params: crate::model::UpdateConfigParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[UpdateConfigV1] Updating configuration");
@@ -673,7 +673,7 @@ fn update_config_process_instruction_v1(
 // ============================================================================
 
 /// Write state update after successful verification
-fn process_update(cid: darkfi_sdk::crypto::ContractId, update_data: &[u8]) -> ContractResult {
+fn process_update(cid: dwow_sdk::crypto::ContractId, update_data: &[u8]) -> ContractResult {
     // TODO: Implement actual state updates after instruction processing
     // For now, state is written directly in process_instruction for simplicity
     msg!("[drain_protection::process_update] Update applied");

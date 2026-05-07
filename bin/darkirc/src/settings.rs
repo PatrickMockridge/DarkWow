@@ -28,8 +28,8 @@ use std::{
 };
 
 use crypto_box::PublicKey;
-use darkfi::{Error::ParseFailed, Result};
-use darkfi_sdk::{crypto::pasta_prelude::PrimeField, pasta::pallas};
+use dwow::{Error::ParseFailed, Result};
+use dwow_sdk::{crypto::pasta_prelude::PrimeField, pasta::pallas};
 use tracing::info;
 
 use crate::{

@@ -23,7 +23,7 @@
 
 use std::fmt::Write;
 
-use darkfi_sdk::{deploy, hex::AsHex};
+use dwow_sdk::{deploy, hex::AsHex};
 use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python};
 
 use super::{impl_py_methods, FunctionParams};

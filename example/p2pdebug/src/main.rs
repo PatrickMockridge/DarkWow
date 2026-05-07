@@ -30,7 +30,7 @@ use rand::{rngs::OsRng, Rng, RngCore};
 use simplelog::{ColorChoice, TermLogger, TerminalMode};
 use url::Url;
 
-use darkfi::{
+use dwow::{
     cli_desc, net,
     rpc::server::listen_and_serve,
     util::cli::{get_log_config, get_log_level},
@@ -207,7 +207,7 @@ impl MockP2p {
             executor_clone
                 .spawn(async move {
                     loop {
-                        darkfi::util::sleep(sleep_time).await;
+                        dwow::util::sleep(sleep_time).await;
 
                         println!(
                             "broadcast sleep for {} {:?} node #{} address {:?}",
@@ -289,7 +289,7 @@ fn main() -> Result<()> {
             smol::future::block_on(async move {
                 start(ex_clone.clone(), args).await?;
                 drop(signal);
-                Ok::<(), darkfi::Error>(())
+                Ok::<(), dwow::Error>(())
             })
         });
 

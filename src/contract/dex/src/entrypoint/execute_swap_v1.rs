@@ -57,7 +57,7 @@
 //! - The contract trusts that if get_metadata returns successfully, the proof was valid
 //! - The contract verifies nullifiers against on-chain state to prevent double-execution
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, FuncRef},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -65,7 +65,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DexError,
@@ -84,7 +84,7 @@ use crate::{
 ///
 /// The host uses these to verify the ZK proof.
 pub(crate) fn dex_execute_swap_get_metadata_v1(
-    _cid: darkfi_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -172,7 +172,7 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
 /// 2. Nullifiers haven't been spent (double-execution check)
 /// 3. Returns update to be applied if verification passes
 pub(crate) fn dex_execute_swap_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -242,7 +242,7 @@ pub(crate) fn dex_execute_swap_process_instruction_v1(
 
 /// `process_update` function for `Dex::ExecuteSwapV1`
 pub(crate) fn dex_execute_swap_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: ExecuteSwapUpdateV1,
 ) -> ContractResult {
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;

@@ -23,7 +23,7 @@
 
 use std::{collections::HashSet, convert::TryInto, path::PathBuf, sync::Arc};
 
-use darkfi::{
+use dwow::{
     async_daemonize, cli_desc,
     event_graph::{
         proto::{EventPut, ProtocolEventGraph},
@@ -44,7 +44,7 @@ use darkfi::{
     util::path::expand_path,
     Error, Result,
 };
-use darkfi_serial::{AsyncDecodable, AsyncEncodable};
+use dwow_serial::{AsyncDecodable, AsyncEncodable};
 use futures::{AsyncWriteExt, FutureExt};
 use sled_overlay::sled;
 use smol::{fs, lock::Mutex, stream::StreamExt, Executor};
@@ -79,11 +79,11 @@ struct Args {
     /// RPC server listen address
     daemon_listen: Vec<Url>,
 
-    #[structopt(short, long, default_value = "~/.local/share/darkfi/evgrd_db")]
+    #[structopt(short, long, default_value = "~/.local/share/dwow/evgrd_db")]
     /// Datastore (DB) path
     datastore: String,
 
-    #[structopt(short, long, default_value = "~/.local/share/darkfi/replayed_evgrd_db")]
+    #[structopt(short, long, default_value = "~/.local/share/dwow/replayed_evgrd_db")]
     /// Replay logs (DB) path
     replay_datastore: String,
 
@@ -280,7 +280,7 @@ async fn realmain(args: Args, ex: Arc<Executor<'static>>) -> Result<()> {
 
     info!(target: "evgrd", "Instantiating event DAG");
     let sled_db = sled::open(datastore)?;
-    let mut p2p_settings: darkfi::net::Settings =
+    let mut p2p_settings: dwow::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), args.net).try_into()?;
     p2p_settings.seeds.push(url::Url::parse("tcp+tls://lilith1.dark.fi:5262").unwrap());
     let p2p = P2p::new(p2p_settings, ex.clone()).await?;

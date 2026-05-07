@@ -32,8 +32,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use darkfi::Result;
-use darkfi_sdk::{crypto::ContractId, num_traits::One};
+use dwow::Result;
+use dwow_sdk::{crypto::ContractId, num_traits::One};
 use num_bigint::BigUint;
 use smol::Executor;
 use tracing::info;

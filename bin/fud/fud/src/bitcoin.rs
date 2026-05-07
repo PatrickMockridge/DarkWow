@@ -35,12 +35,12 @@ use tinyjson::JsonValue;
 use tracing::{error, info, warn};
 use url::Url;
 
-use darkfi::{
+use dwow::{
     rpc::{client::RpcClient, jsonrpc::JsonRequest},
     system::{timeout::timeout, ExecutorPtr},
     Error, Result,
 };
-use darkfi_sdk::{hex::decode_hex, GenericResult};
+use dwow_sdk::{hex::decode_hex, GenericResult};
 
 use crate::pow::PowSettings;
 

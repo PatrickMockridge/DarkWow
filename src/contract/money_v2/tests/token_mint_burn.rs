@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::Result;
+use dwow::Result;
 use darkfi_contract_test_harness::{
     contract_graph::Contract, init_logger, Holder, TestHarness,
 };

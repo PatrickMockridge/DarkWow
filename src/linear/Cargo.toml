@@ -1,5 +1,5 @@
 [package]
-name = "darkfi_linear"
+name = "dwow_linear"
 version = "0.1.0"
 edition = "2021"
 authors = ["Dyne.org foundation <foundation@dyne.org>"]
@@ -7,7 +7,7 @@ license = "AGPL-3.0-only"
 
 [features]
 default = []
-async = ["darkfi-serial/async"]
+async = ["dwow-serial/async"]
 
 [dependencies]
 sled = "0.34"
@@ -21,7 +21,7 @@ merlin = "3"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-darkfi-sdk = { path = "../sdk", features = ["async"] }
-darkfi-serial = { path = "../serial", features = ["derive", "async"] }
+dwow-sdk = { path = "../sdk", features = ["async"] }
+dwow-serial = { path = "../serial", features = ["derive", "async"] }
 
 [dev-dependencies]

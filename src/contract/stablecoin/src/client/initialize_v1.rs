@@ -26,11 +26,11 @@
 //! This module handles the creation of a MoneyV3 token for the stablecoin.
 //! When initializing, stablecoin creates its token type (e.g., "USDx") in MoneyV3.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, BaseBlind},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use rand::rngs::OsRng;
 
 use crate::model::{InitializeParams, StablecoinModel};

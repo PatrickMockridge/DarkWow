@@ -27,7 +27,7 @@ Options:
 We can use the tool in our command line:
 
 ```
-$ vanityaddr -A drk | jq
+$ vanityaddr -A dww | jq
 [1.214124215s] 53370 attempts
 ```
 

@@ -35,7 +35,7 @@
 //! The auction contract COMPOSES with the escrow contract - bid deposits
 //! are managed by separate escrow contracts, not built into this contract.
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 define_contract_function!(AuctionFunction {
     CreateAuctionV1 = 0x00,

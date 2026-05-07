@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, FuncId,
         MerkleNode, PublicKey, ScalarBlind,
@@ -29,11 +29,11 @@ use darkfi_sdk::{
     error::ContractError,
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
-use darkfi_serial::async_trait;
+use dwow_serial::async_trait;
 
 /// Nullifier definitions
 pub mod nullifier;
@@ -41,7 +41,7 @@ pub use self::nullifier::Nullifier;
 
 /// Token ID definitions and methods
 pub mod token_id;
-pub use token_id::{TokenId, DARK_TOKEN_ID};
+pub use token_id::{TokenId, DRKW_TOKEN_ID};
 
 /// A `Coin` represented in the Money state
 #[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
@@ -71,9 +71,9 @@ impl Coin {
 }
 
 use core::str::FromStr;
-darkfi_sdk::fp_from_bs58!(Coin);
-darkfi_sdk::fp_to_bs58!(Coin);
-darkfi_sdk::ty_from_fp!(Coin);
+dwow_sdk::fp_from_bs58!(Coin);
+dwow_sdk::fp_to_bs58!(Coin);
+dwow_sdk::ty_from_fp!(Coin);
 
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 // ANCHOR: coin-attributes

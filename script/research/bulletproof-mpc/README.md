@@ -1,4 +1,4 @@
-# darkpool for drk
+# darkpool for dww
 
 ## renegade for dummies
 
@@ -11,7 +11,7 @@
 
 ## dark renegade
 
-- internal, and external wallet update state $T_I$, $T_E$ are replaced by drk money transfer contract.
+- internal, and external wallet update state $T_I$, $T_E$ are replaced by dww money transfer contract.
 - eliminate third-party for opening shares using witness encryption.
 
 # framework

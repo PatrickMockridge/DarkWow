@@ -23,13 +23,13 @@
 
 //! Roulette Contract Entrypoint
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{schnorr::SchnorrPublic, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::RouletteError;
 use crate::model::{
@@ -44,7 +44,7 @@ use crate::{
     ROULETTE_CONTRACT_NULLIFIERS_TREE, ROULETTE_CONTRACT_TABLES_TREE,
 };
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

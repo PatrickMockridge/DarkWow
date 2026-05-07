@@ -29,7 +29,7 @@ use hex;
 use smol::lock::RwLock;
 use url::Url;
 
-use darkfi::{
+use dwow::{
     system::ExecutorPtr,
     tx::{ContractCallLeaf, Transaction},
     util::path::expand_path,
@@ -37,8 +37,8 @@ use darkfi::{
     zkas::ZkBinary,
     Error, Result,
 };
-use darkfi_serial::deserialize_partial;
-use darkfi_sdk::{
+use dwow_serial::deserialize_partial;
+use dwow_sdk::{
     crypto::{
         keypair::{Address, Keypair, Network, PublicKey, SecretKey},
         pasta_prelude::PrimeField,
@@ -52,7 +52,7 @@ use darkfi_money_v3_contract::model::TransferParamsV1;
 use crate::contract_imports::{money::TokenId, MONEY_V3_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 use crate::swap::PartialSwapData;
 use crate::walletdb::CoinRecord;
-use darkfi_sdk::crypto::util::FieldElemAsStr;
+use dwow_sdk::crypto::util::FieldElemAsStr;
 
 /// Error codes
 pub mod error;
@@ -329,7 +329,7 @@ impl Drk {
                     .as_slice().try_into().unwrap();
                 let secret = SecretKey::from_bytes(secret_bytes).unwrap();
                 let public = PublicKey::from_secret(secret);
-                let std_addr = darkfi_sdk::crypto::keypair::StandardAddress::from_public(self.network, public);
+                let std_addr = dwow_sdk::crypto::keypair::StandardAddress::from_public(self.network, public);
                 Ok(std_addr.into())
             }
             None => Err(Error::Custom("No addresses in wallet".to_string())),
@@ -395,18 +395,18 @@ impl Drk {
     /// and appends it as a root-level call in the transaction.
     pub async fn attach_fee(&self, tx: &mut Transaction, _fee: u64) -> Result<()> {
         use crate::contract_imports::native_token::{
-            DARK_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
+            DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
             NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
         };
-        use darkfi::zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
-        use darkfi_sdk::crypto::{BaseBlind, MerkleNode};
-        use darkfi_serial::Encodable;
+        use dwow::zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
+        use dwow_sdk::crypto::{BaseBlind, MerkleNode};
+        use dwow_serial::Encodable;
         use rand::rngs::OsRng;
 
         const DEFAULT_FEE: u64 = 42_000_000;
 
         // Get DARK coin for fee
-        let dark_token_id_str = format!("{:?}", DARK_TOKEN_ID);
+        let dark_token_id_str = format!("{:?}", DRKW_TOKEN_ID);
         let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
             .map_err(|e| Error::Custom(format!("Failed to get DARK coins: {:?}", e)))?;
 
@@ -461,7 +461,7 @@ impl Drk {
 
         let fee_input = FeeCallInput {
             value: dark_coin.value,
-            token_id: DARK_TOKEN_ID,
+            token_id: DRKW_TOKEN_ID,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: dark_coin_blind,
@@ -503,7 +503,7 @@ impl Drk {
         };
 
         // Append fee as root-level call (no parent, no children)
-        tx.calls.push(darkfi::tx::DarkLeaf {
+        tx.calls.push(dwow::tx::DarkLeaf {
             data: fee_call,
             parent_index: None,
             children_indexes: vec![],
@@ -658,7 +658,7 @@ impl Drk {
 
     /// Money keygen
     pub async fn money_keygen(&self, output: &mut Vec<String>) -> Result<Keypair> {
-        use darkfi_sdk::crypto::Keypair;
+        use dwow_sdk::crypto::Keypair;
         use rand::rngs::OsRng;
 
         // Generate new keypair
@@ -971,7 +971,7 @@ impl Drk {
         function: &str,
         params: Option<&str>,
     ) -> Result<Transaction> {
-        use darkfi_serial::Encodable;
+        use dwow_serial::Encodable;
         use crate::contract_imports::dao_escrow::EnableDrainProtectionParamsV1;
         use darkfi_drain_protection_contract::model::InitializeParamsV1 as DrainInitParamsV1;
         use darkfi_drain_protection_contract::model::DrainConfig;
@@ -1156,7 +1156,7 @@ impl Drk {
 
 /// Convert CoinRecord database records to MoneyV3Note structs.
 fn coin_records_to_money_notes(records: &[CoinRecord]) -> Result<Vec<MoneyV3Note>> {
-    use darkfi_sdk::pasta::pallas;
+    use dwow_sdk::pasta::pallas;
 
     let mut notes = vec![];
     for record in records {

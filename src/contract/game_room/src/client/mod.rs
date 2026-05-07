@@ -25,7 +25,7 @@
 //!
 //! This module provides the client-side API for building Game Room contract calls.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };

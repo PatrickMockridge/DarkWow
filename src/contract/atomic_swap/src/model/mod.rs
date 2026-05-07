@@ -48,11 +48,11 @@
 //! - **Timelock**: Refund after expiration
 //! - **Non-custodial**: No third-party holds funds
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // ============================================================================
 // STATE TYPES
@@ -75,7 +75,7 @@ pub enum SwapState {
 }
 
 impl TryFrom<u8> for SwapState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -83,7 +83,7 @@ impl TryFrom<u8> for SwapState {
             1 => Ok(Self::Claimed),
             2 => Ok(Self::Refunded),
             3 => Ok(Self::Completed),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }

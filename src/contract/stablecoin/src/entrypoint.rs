@@ -37,7 +37,7 @@
 //! - **ZK proofs**: All state transitions verified without revealing data
 //! - **Pooled Debt**: All collateral backs all debt, no individual positions
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, ContractId, IntentNullifier},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -45,7 +45,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
 use crate::{
     error::StablecoinError,
@@ -83,7 +83,7 @@ const CDP_LAST_INTEREST_UPDATE_KEY: &[u8] = b"last_interest_update";
 // CONTRACT DEFINITION
 // ============================================================================
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -993,7 +993,7 @@ fn apply_accrue_interest_update(cid: ContractId, update: AccrueInterestUpdateV1)
 /// Update data for open position
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct OpenPositionUpdateV1 {
-    pub deposit_commitment: darkfi_sdk::crypto::IntentCommitment,
+    pub deposit_commitment: dwow_sdk::crypto::IntentCommitment,
     pub collateral_type: crate::model::CollateralType,
     pub collateral_amount: u64,
 }

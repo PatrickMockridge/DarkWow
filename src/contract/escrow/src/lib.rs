@@ -37,7 +37,7 @@
 //! - Parties hidden (public keys derived from secrets)
 //! - Claim/refund linkable only via nullifiers
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 define_contract_function!(EscrowFunction {
     InitializeV1 = 0x00,

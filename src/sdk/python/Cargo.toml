@@ -1,5 +1,5 @@
 [package]
-name = "darkfi-sdk-py"
+name = "dwow-sdk-py"
 description = "Python bindings for the DarkFi SDK"
 version = "0.5.0"
 edition = "2021"
@@ -9,15 +9,15 @@ homepage = "https://darkwow.org"
 repository = "https://codeberg.org/darkrenaissance/darkfi"
 
 [lib]
-name = "darkfi_sdk"
+name = "dwow_sdk"
 crate-type = ["cdylib"]
 doc = false
 
 [dependencies]
-darkfi = {path = "../../../", features = ["zk", "zkas", "tx"]}
-darkfi_deployooor_contract = {path = "../../contract/deployooor", features=["no-entrypoint", "client"]}
-darkfi-sdk = {path = "../"}
-darkfi-serial = {path = "../../serial", features = ["crypto"]}
+dwow = {path = "../../../", features = ["zk", "zkas", "tx"]}
+dwow_deployooor_contract = {path = "../../contract/deployooor", features=["no-entrypoint", "client"]}
+dwow-sdk = {path = "../"}
+dwow-serial = {path = "../../serial", features = ["crypto"]}
 halo2_proofs = {version = "0.3.2", features = ["circuit-params", "dev-graph", "sanity-checks"]}
 halo2_gadgets = {version = "0.4.0", features = ["circuit-params"]}
 plotters = "0.3.7"

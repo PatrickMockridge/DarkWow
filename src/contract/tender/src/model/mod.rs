@@ -39,11 +39,11 @@
 //!   └──[Timeout]──> Expired  └──[Reject]──> Rejected
 //! ```
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::poseidon_hash,
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Tender unique identifier (hash of tender data)
 pub type TenderId = pallas::Base;
@@ -67,7 +67,7 @@ pub enum TenderState {
 }
 
 impl TryFrom<u8> for TenderState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -76,7 +76,7 @@ impl TryFrom<u8> for TenderState {
             2 => Ok(Self::Revealed),
             3 => Ok(Self::Awarded),
             4 => Ok(Self::Cancelled),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }
@@ -97,7 +97,7 @@ pub enum BidState {
 }
 
 impl TryFrom<u8> for BidState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -106,7 +106,7 @@ impl TryFrom<u8> for BidState {
             2 => Ok(Self::Accepted),
             3 => Ok(Self::Rejected),
             4 => Ok(Self::Expired),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }

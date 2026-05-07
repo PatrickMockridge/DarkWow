@@ -21,12 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{
+use dwow::{
     zk::{Proof, ProvingKey},
     zkas::ZkBinary,
     ClientFailed, Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{note::AeadEncryptedNote, pasta_prelude::*, Blind, FuncId, PublicKey},
     pasta::pallas,
 };
@@ -39,7 +39,7 @@ use crate::{
         transfer_v1::{proof::create_transfer_mint_proof, TransferCallOutput},
         MoneyNote,
     },
-    model::{ClearInput, Coin, MoneyGenesisMintParamsV1, Output, DARK_TOKEN_ID},
+    model::{ClearInput, Coin, MoneyGenesisMintParamsV1, Output, DRKW_TOKEN_ID},
 };
 
 pub struct GenesisMintCallDebris {
@@ -90,8 +90,8 @@ impl GenesisMintCallBuilder {
         }
 
         // In this call, we will build one clear input and one anonymous output.
-        // Only DARK_TOKEN_ID can be minted on genesis block.
-        let token_id = *DARK_TOKEN_ID;
+        // Only DRKW_TOKEN_ID can be minted on genesis block.
+        let token_id = *DRKW_TOKEN_ID;
 
         // Building the clear input using random blinds
         let value_blind = Blind::random(&mut OsRng);

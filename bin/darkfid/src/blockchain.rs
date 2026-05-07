@@ -33,11 +33,11 @@ use std::sync::{
 };
 
 use randomx::{RandomXFlags, RandomXVM};
-use darkfi::runtime::vm_runtime::{BlockchainAccess, ContractStoreAccess, SimpleDbAccess};
-use darkfi::Error;
-use darkfi::Result;
-use darkfi_linear::{build_uncle_merkle, verify_uncle_proof, UncleBlock, Block, LinearStore, PoWConsensus};
-use darkfi_sdk::crypto::ContractId;
+use dwow::runtime::vm_runtime::{BlockchainAccess, ContractStoreAccess, SimpleDbAccess};
+use dwow::Error;
+use dwow::Result;
+use dwow_linear::{build_uncle_merkle, verify_uncle_proof, UncleBlock, Block, LinearStore, PoWConsensus};
+use dwow_sdk::crypto::ContractId;
 use tracing::{error, info};
 
 use crate::zk::ZkVerifier;
@@ -277,9 +277,9 @@ impl LinearBlockchain {
 
     /// Verify and apply a block to the chain
     ///
-    /// Note: darkfi_linear::Transaction is a UTXO transaction without contract calls.
+    /// Note: dwow_linear::Transaction is a UTXO transaction without contract calls.
     /// For smart contract execution, the linear Transaction type would need to be
-    /// extended to support contract calls similar to darkfi::Transaction.
+    /// extended to support contract calls similar to dwow::Transaction.
     pub async fn apply_block(&self, block: &Block) -> Result<()> {
         self.apply_block_with_uncles(block, &[]).await
     }
@@ -367,12 +367,12 @@ impl LinearBlockchain {
 
                 // Create runtime for this contract call
                 let tx_hash = tx.hash();
-                let tx_hash_bytes = darkfi_sdk::tx::TransactionHash(*tx_hash.as_bytes());
+                let tx_hash_bytes = dwow_sdk::tx::TransactionHash(*tx_hash.as_bytes());
                 let difficulty = {
                     let consensus = self.consensus.lock().unwrap();
                     consensus.difficulty_target()
                 };
-                let mut runtime = match darkfi::runtime::vm_runtime::Runtime::new(
+                let mut runtime = match dwow::runtime::vm_runtime::Runtime::new(
                     &wasm_bytes,
                     self.contract_store.clone(),
                     self.state_db.clone(),

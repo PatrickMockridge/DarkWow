@@ -1,5 +1,5 @@
 [package]
-name = "darkfi_subscription_contract"
+name = "dwow_subscription_contract"
 version = "0.1.0"
 edition = "2021"
 authors = ["DarkFi contributors"]
@@ -10,12 +10,12 @@ license = "AGPL-3.0-only"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
-darkfi-serial = { path = "../../serial" }
+dwow-sdk = { path = "../../sdk", features = ["wasm"] }
+dwow-serial = { path = "../../serial" }
 getrandom = { version = "0.2.8", features = ["custom"] }
 halo2_proofs = { version = "0.3.2", optional = true }
 
-[dependencies.darkfi]
+[dependencies.dwow]
 optional = true
 path = "../../../"
 
@@ -26,7 +26,7 @@ version = "0.8"
 [features]
 default = []
 no-entrypoint = []
-client = ["dep:darkfi", "dep:rand", "dep:halo2_proofs"]
+client = ["dep:dwow", "dep:rand", "dep:halo2_proofs"]
 
 [lints]
 workspace = true

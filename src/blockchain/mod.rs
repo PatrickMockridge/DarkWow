@@ -26,8 +26,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use darkfi_sdk::tx::TransactionHash;
-use darkfi_serial::{deserialize, Decodable};
+use dwow_sdk::tx::TransactionHash;
+use dwow_serial::{deserialize, Decodable};
 use sled_overlay::{
     sled,
     sled::{IVec, Transactional},
@@ -35,7 +35,7 @@ use sled_overlay::{
 use tracing::debug;
 
 #[cfg(feature = "async-serial")]
-use darkfi_serial::{deserialize_async, AsyncDecodable};
+use dwow_serial::{deserialize_async, AsyncDecodable};
 
 use crate::{tx::Transaction, util::time::Timestamp, Error, Result};
 

@@ -23,7 +23,7 @@
 
 use std::time::UNIX_EPOCH;
 
-use darkfi::{
+use dwow::{
     event_graph::Event,
     zk::{
         halo2::{Field, Value},
@@ -32,7 +32,7 @@ use darkfi::{
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Position,
     crypto::{pasta_prelude::FromUniformBytes, poseidon_hash, MerkleTree},
     pasta::pallas,

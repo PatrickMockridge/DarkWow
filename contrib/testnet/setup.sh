@@ -4,8 +4,8 @@
 
 set -e
 
-DARKFI_HOME="${DARKFI_HOME:-$HOME/.local/share/darkfi}"
-DARKFID_HOME="$DARKFI_HOME/darkfid"
+DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/darkfi}"
+DARKFID_HOME="$DWOW_HOME/darkfid"
 CONFIG_DIR="$DARKFID_HOME"
 CONFIG_FILE="$CONFIG_DIR/darkfid_config.toml"
 NETWORK="testnet"
@@ -24,14 +24,14 @@ echo ""
 # Check prerequisites
 echo "[1/5] Checking prerequisites..."
 
-if ! command -v darkfid &> /dev/null; then
-    echo -e "${RED}ERROR: darkfid not found in PATH${NC}"
-    echo "Please build darkfid first:"
-    echo "  cargo build --release -p darkfid"
+if ! command -v dwowd &> /dev/null; then
+    echo -e "${RED}ERROR: dwowd not found in PATH${NC}"
+    echo "Please build dwowd first:"
+    echo "  cargo build --release -p dwowd"
     exit 1
 fi
 
-echo -e "${GREEN}  darkfid found${NC}"
+echo -e "${GREEN}  dwowd found${NC}"
 
 # Create directories
 echo ""
@@ -41,7 +41,7 @@ echo -e "${GREEN}  Created $DARKFID_HOME/$NETWORK/${NC}"
 
 # Copy or create config
 echo ""
-echo "[3/5] Configuring darkfid..."
+echo "[3/5] Configuring dwowd..."
 
 if [ -f "$CONFIG_FILE" ]; then
     echo "  Using existing config: $CONFIG_FILE"
@@ -55,8 +55,8 @@ else
     echo "  No config found, copying default..."
     if [ -f "$(dirname $0)/../bin/darkfid/darkfid_config.toml" ]; then
         cp "$(dirname $0)/../bin/darkfid/darkfid_config.toml" "$CONFIG_FILE"
-    elif [ -f "$HOME/darkfi/bin/darkfid/darkfid_config.toml" ]; then
-        cp "$HOME/darkfi/bin/darkfid/darkfid_config.toml" "$CONFIG_FILE"
+    elif [ -f "$HOME/dwow/bin/darkfid/darkfid_config.toml" ]; then
+        cp "$HOME/dwow/bin/darkfid/darkfid_config.toml" "$CONFIG_FILE"
     else
         echo -e "${RED}ERROR: Could not find default config to copy${NC}"
         echo "Please copy your darkfid_config.toml to $CONFIG_FILE"
@@ -89,7 +89,7 @@ echo "  Start the daemon:"
 echo -e "    ${GREEN}./start.sh${NC}"
 echo ""
 echo "  Or manually:"
-echo -e "    ${GREEN}darkfid --network testnet${NC}"
+echo -e "    ${GREEN}dwowd --network testnet${NC}"
 echo ""
 echo "  Check status:"
 echo -e "    ${GREEN}./status.sh${NC}"

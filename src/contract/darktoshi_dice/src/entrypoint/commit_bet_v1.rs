@@ -28,12 +28,12 @@
 //! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
 //! locking the player's bet value.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     error::ContractError,
     msg,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::DiceError;
 use crate::model::{derive_bet_id, derive_nullifier, validate_house_edge, validate_target, Bet, BetState, CommitBetParamsV1, CommitBetUpdateV1};
@@ -47,9 +47,9 @@ use crate::DICE_CONTRACT_HOUSE_EDGE;
 /// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
 /// bundled for locking the player's bet value.
 pub fn dice_commit_bet_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: CommitBetParamsV1 = deserialize(&self_.data[1..])?;
@@ -152,7 +152,7 @@ pub fn dice_commit_bet_process_instruction_v1(
 
 /// Process update for CommitBetV1
 pub fn dice_commit_bet_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: CommitBetUpdateV1,
 ) -> Result<(), ContractError> {
     let bets_db = wasm::db::db_lookup(cid, DICE_CONTRACT_BETS_TREE)?;

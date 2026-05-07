@@ -23,19 +23,19 @@
 
 //! This API is crufty. Please rework it into something nice to read and nice to use.
 
-use darkfi::{
+use dwow::{
     zk::{Proof, ProvingKey},
     zkas::ZkBinary,
     ClientFailed, Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         note::AeadEncryptedNote, pasta_prelude::*, BaseBlind, Blind, FuncId, MerkleTree, PublicKey,
         ScalarBlind, SecretKey,
     },
     pasta::pallas,
 };
-use darkfi_serial::serialize;
+use dwow_serial::serialize;
 use rand::rngs::OsRng;
 use tracing::{debug, error};
 

@@ -56,7 +56,7 @@
 
 use std::{collections::HashSet, sync::atomic::Ordering::SeqCst};
 
-use darkfi::Result;
+use dwow::Result;
 use tracing::{error, info};
 
 use super::{

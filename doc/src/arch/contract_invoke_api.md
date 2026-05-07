@@ -131,10 +131,10 @@ pub trait ContractHandler: Send + Sync {
 
 | File | Description |
 |------|-------------|
-| `bin/darkfid/src/rpc/contract.rs` | RPC request/response types and handler |
-| `bin/darkfid/src/contract_registry.rs` | Registry trait and contract mapping |
-| `bin/darkfid/src/contract_handler/mod.rs` | Handler module |
-| `bin/darkfid/src/contract_handler/dao_escrow.rs` | DAO-Escrow handler implementation |
+| `bin/dwowd/src/rpc/contract.rs` | RPC request/response types and handler |
+| `bin/dwowd/src/contract_registry.rs` | Registry trait and contract mapping |
+| `bin/dwowd/src/contract_handler/mod.rs` | Handler module |
+| `bin/dwowd/src/contract_handler/dao_escrow.rs` | DAO-Escrow handler implementation |
 
 ## Implementation Status
 
@@ -189,7 +189,7 @@ pub async fn contract_invoke(
     params: serde_json::Value,
     dry_run: bool,
 ) -> ContractInvokeResult {
-    // ... calls darkfid contract.invoke
+    // ... calls dwowd contract.invoke
 }
 
 // WhistleblowerSubmit uses it:

@@ -24,8 +24,8 @@
 use core::str::FromStr;
 
 #[cfg(feature = "async")]
-use darkfi_serial::{AsyncDecodable, AsyncEncodable};
-use darkfi_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{AsyncDecodable, AsyncEncodable};
+use dwow_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
 
 use pasta_curves::{
     group::ff::{Field, PrimeField},

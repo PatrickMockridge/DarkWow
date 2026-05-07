@@ -23,12 +23,12 @@
 
 //! Auction claim_winnings_v1 ZK proof generation
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::PublicKey,
     pasta::pallas,
 };

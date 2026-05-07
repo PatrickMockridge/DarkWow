@@ -37,7 +37,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 
 use super::{ChainHandler, ChainId};
 

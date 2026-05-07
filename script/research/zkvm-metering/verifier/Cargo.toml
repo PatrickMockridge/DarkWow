@@ -10,9 +10,9 @@ edition = "2024"
 [workspace]
 
 [dependencies]
-darkfi-sdk = {path = "../../../../src/sdk"}
-darkfi = {path = "../../../../", features = ["zk"]}
-darkfi-serial = {path = "../../../../src/serial"}
+dwow-sdk = {path = "../../../../src/sdk"}
+dwow = {path = "../../../../", features = ["zk"]}
+dwow-serial = {path = "../../../../src/serial"}
 
 [patch.crates-io]
 halo2_proofs = {git="https://github.com/parazyd/halo2", branch="v032"}

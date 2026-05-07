@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for DrainProtection contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -46,7 +46,7 @@ impl DrainProtectionHarness {
         let exit_zkbin = ZkBinary::decode(exit_bin, false).unwrap();
 
         let exit_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&exit_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&exit_zkbin).unwrap(),
             &exit_zkbin,
         );
 

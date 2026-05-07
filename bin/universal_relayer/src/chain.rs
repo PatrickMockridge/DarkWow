@@ -28,7 +28,7 @@ use darkfi_bridge_contract::chain_handler::{
     ChainHandler as BridgeChainHandler, ChainId, ExternalDeposit, HtlcDeposit, TxHash as BridgeTxHash,
     VerifiedWithdrawal, WithdrawalRequest,
 };
-use darkfi_sdk::{error::ContractResult, pasta::pallas};
+use dwow_sdk::{error::ContractResult, pasta::pallas};
 use super::error::{PendingWithdrawal, Result, TxHash};
 
 /// Supported external chains for the bridge
@@ -157,27 +157,27 @@ impl BridgeChainHandler for DisabledExecutor {
     }
 
     async fn verify_deposit(&self, _deposit: &ExternalDeposit) -> ContractResult {
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn verify_withdrawal(&self, _withdrawal: &WithdrawalRequest) -> ContractResult {
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute(&self, _verified: &VerifiedWithdrawal) -> ContractResult {
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn estimate_fee(&self, _withdrawal: &WithdrawalRequest) -> ContractResult {
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn verify_confirmation(&self, _tx_hash: &BridgeTxHash) -> ContractResult {
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn verify_htlc_deposit(&self, _htlc_deposit: &HtlcDeposit) -> ContractResult {
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute_htlc_claim(
@@ -186,7 +186,7 @@ impl BridgeChainHandler for DisabledExecutor {
         _secret: pallas::Base,
         _recipient: &[u8],
     ) -> ContractResult {
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute_htlc_refund(
@@ -194,10 +194,10 @@ impl BridgeChainHandler for DisabledExecutor {
         _swap_id: &[u8; 32],
         _sender: &[u8],
     ) -> ContractResult {
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn get_htlc_status(&self, _swap_id: &[u8; 32]) -> ContractResult {
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 }

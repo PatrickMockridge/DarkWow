@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_serial::{Decodable, Encodable};
+use dwow_serial::{Decodable, Encodable};
 use std::io::Cursor;
 
 use crate::{

@@ -71,9 +71,9 @@ let contract_id = pipeline.deploy().await?;
 
 | Component | Path |
 |-----------|------|
-| GenesisHarness | `bin/darkfid/src/tests/genesis.rs` |
-| ContractDeployer | `bin/darkfid/src/tests/deployer.rs` |
-| ContractTestingPipeline | `bin/darkfid/src/tests/pipeline.rs` |
+| GenesisHarness | `bin/dwowd/src/tests/genesis.rs` |
+| ContractDeployer | `bin/dwowd/src/tests/deployer.rs` |
+| ContractTestingPipeline | `bin/dwowd/src/tests/pipeline.rs` |
 
 ## See Also
 

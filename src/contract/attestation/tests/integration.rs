@@ -23,8 +23,8 @@
 
 //! Attestation contract integration tests
 
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::pasta::pallas;
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::pasta::pallas;
 use darkfi_attestation_contract::{
     model::{
         Attestation, AttestationState, Claim, ClaimId, ClaimState, CreateAttestationParamsV1,

@@ -68,7 +68,7 @@ pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE;
 pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_FEES_TREE;
 
 // Constants
-pub use darkfi_native_token_contract::DARK_TOKEN_ID;
+pub use darkfi_native_token_contract::DRKW_TOKEN_ID;
 pub use darkfi_native_token_contract::NATIVE_TOKEN_MAX_COINS_PER_TX;
 pub use darkfi_native_token_contract::NATIVE_TOKEN_MAX_COIN_VALUE;
 pub use darkfi_native_token_contract::NATIVE_TOKEN_MIN_COIN_VALUE;

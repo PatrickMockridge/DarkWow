@@ -28,7 +28,7 @@ use smol::Executor;
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::info;
 
-use darkfi::{
+use dwow::{
     async_daemonize, cli_desc, net::settings::SettingsOpt, rpc::settings::RpcSettingsOpt, Error,
     Result,
 };
@@ -66,7 +66,7 @@ struct Args {
 async_daemonize!(realmain);
 async fn realmain(args: Args, ex: Arc<Executor<'static>>) -> Result<()> {
     info!(target: "damd", "Starting Denial-of-service Analysis Multitool daemon...");
-    let net_settings: darkfi::net::Settings =
+    let net_settings: dwow::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), args.net).try_into()?;
     let daemon = Damd::init(&net_settings, &ex).await?;
     daemon.start(&ex, &args.rpc.into()).await?;

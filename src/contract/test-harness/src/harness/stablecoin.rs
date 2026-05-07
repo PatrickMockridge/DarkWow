@@ -25,15 +25,15 @@
 //!
 //! Provides isolated testing for Stablecoin contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, IntentCommitment, IntentNullifier, BaseBlind, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::{Encodable, Decodable};
+use dwow_serial::{Encodable, Decodable};
 use darkfi_stablecoin_contract::client::{
     open_position_v1::{OpenPositionCallData, create_open_position_proof, OpenPositionPublicInputs},
     mint_stable_v1::{MintStableCallData, create_mint_stable_proof, MintStablePublicInputs},
@@ -117,35 +117,35 @@ impl StablecoinHarness {
         let repay_stable_zkbin = ZkBinary::decode(repay_stable_bin, false).unwrap();
 
         let open_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&open_position_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&open_position_zkbin).unwrap(),
             &open_position_zkbin,
         );
         let mint_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&mint_stable_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&mint_stable_zkbin).unwrap(),
             &mint_stable_zkbin,
         );
         let liquidate_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&liquidate_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&liquidate_zkbin).unwrap(),
             &liquidate_zkbin,
         );
         let governance_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&governance_report_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&governance_report_zkbin).unwrap(),
             &governance_report_zkbin,
         );
         let accrue_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&accrue_interest_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&accrue_interest_zkbin).unwrap(),
             &accrue_interest_zkbin,
         );
         let add_collateral_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&add_collateral_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&add_collateral_zkbin).unwrap(),
             &add_collateral_zkbin,
         );
         let remove_collateral_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&remove_collateral_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&remove_collateral_zkbin).unwrap(),
             &remove_collateral_zkbin,
         );
         let repay_stable_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&repay_stable_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&repay_stable_zkbin).unwrap(),
             &repay_stable_zkbin,
         );
 
@@ -352,7 +352,7 @@ impl StablecoinHarness {
 
         // Build GovernanceReportParams
         // Use reporter public key from secret
-        let reporter_pub = PublicKey::from_secret(darkfi_sdk::crypto::SecretKey::from_bytes(reporter_secret.to_repr()).unwrap());
+        let reporter_pub = PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_bytes(reporter_secret.to_repr()).unwrap());
         let (reporter_pub_x, reporter_pub_y) = reporter_pub.xy();
 
         let params = GovernanceReportParams {
@@ -400,7 +400,7 @@ impl StablecoinHarness {
 
         // Build AccrueInterestParams
         // Use accumulator public key from secret
-        let accumulator_pub = PublicKey::from_secret(darkfi_sdk::crypto::SecretKey::from_bytes(accumulator_secret.to_repr()).unwrap());
+        let accumulator_pub = PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_bytes(accumulator_secret.to_repr()).unwrap());
         let (accumulator_pub_x, accumulator_pub_y) = accumulator_pub.xy();
 
         let params = AccrueInterestParams {
@@ -481,33 +481,33 @@ pub struct OpenPositionResult {
     pub owner_public_key: pallas::Base,
     pub collateral_commitment: pallas::Base,
     pub debt_commitment: pallas::Base,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
 }
 
 /// Result of mint_stable
 pub struct MintStableResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: MintStablePublicInputs,
 }
 
 /// Result of liquidate
 pub struct LiquidateResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: LiquidatePublicInputs,
 }
 
 /// Result of governance_report
 pub struct GovernanceReportResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: GovernanceReportPublicInputs,
 }
 
 /// Result of accrue_interest
 pub struct AccrueInterestResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: AccrueInterestPublicInputs,
 }

@@ -23,7 +23,7 @@
 
 use std::sync::{Arc, LazyLock};
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{DEPLOYOOOR_CONTRACT_ID, MONEY_V2_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID},
     tx::TransactionHash,
 };
@@ -70,8 +70,8 @@ pub async fn deploy_native_contracts(
     info!(target: "validator::utils::deploy_native_contracts", "Deploying native WASM contracts");
 
     // Binary hashes for determinism verification
-    let deployooor_wasm_hash = sha256sum(&include_bytes!("../contract/deployooor/darkfi_deployooor_contract.wasm")[..]);
-    let native_token_wasm_hash = sha256sum(&include_bytes!("../contract/native_token/darkfi_native_token_contract.wasm")[..]);
+    let deployooor_wasm_hash = sha256sum(&include_bytes!("../contract/deployooor/dwow_deployooor_contract.wasm")[..]);
+    let native_token_wasm_hash = sha256sum(&include_bytes!("../contract/native_token/dwow_native_token_contract.wasm")[..]);
     info!(target: "validator::utils::deploy_native_contracts",
           "Deployooor WASM hash: {}", deployooor_wasm_hash);
     info!(target: "validator::utils::deploy_native_contracts",
@@ -87,13 +87,13 @@ pub async fn deploy_native_contracts(
         (
             "Deployooor Contract",
             *DEPLOYOOOR_CONTRACT_ID,
-            include_bytes!("../contract/deployooor/darkfi_deployooor_contract.wasm").to_vec(),
+            include_bytes!("../contract/deployooor/dwow_deployooor_contract.wasm").to_vec(),
             deployooor_contract_deploy_payload,
         ),
         (
             "Native Token Contract",
             *NATIVE_TOKEN_CONTRACT_ID,
-            include_bytes!("../contract/native_token/darkfi_native_token_contract.wasm").to_vec(),
+            include_bytes!("../contract/native_token/dwow_native_token_contract.wasm").to_vec(),
             native_token_contract_deploy_payload,
         ),
     ];

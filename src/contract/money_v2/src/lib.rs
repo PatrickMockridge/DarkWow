@@ -30,7 +30,7 @@
 //! Unlike v1, this version uses constrain_equal_base to bind derived
 //! public keys to their witnesses, making circuits provably correct.
 
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 
 /// Functions available in the contract
 #[repr(u8)]

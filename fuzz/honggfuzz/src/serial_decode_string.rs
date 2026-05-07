@@ -24,7 +24,7 @@
 extern crate darkfi_serial;
 
 use honggfuzz::fuzz;
-use darkfi_serial::deserialize;
+use dwow_serial::deserialize;
 
 fn main() {
     loop {

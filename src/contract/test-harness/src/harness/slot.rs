@@ -25,16 +25,16 @@
 //!
 //! Provides isolated testing for Slot contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use darkfi_slot_contract::model::{CommitSpinParamsV1, RevealSpinParamsV1};
 
@@ -60,11 +60,11 @@ impl SlotHarness {
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();
 
         let commit_bet_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
             &commit_bet_zkbin,
         );
         let settle_bet_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
             &settle_bet_zkbin,
         );
 

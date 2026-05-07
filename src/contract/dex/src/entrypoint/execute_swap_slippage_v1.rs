@@ -26,7 +26,7 @@
 //! Executes an atomic swap with slippage tolerance protection.
 //! Slippage tolerance: received >= min_expected * (1 - slippage_bps / 10000)
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::pasta_prelude::PrimeField,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -34,7 +34,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DexError,
@@ -45,7 +45,7 @@ use crate::{
 
 /// `get_metadata` function for `Dex::ExecuteSwapSlippageV1`
 pub(crate) fn dex_execute_swap_slippage_get_metadata_v1(
-    _cid: darkfi_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -75,7 +75,7 @@ pub(crate) fn dex_execute_swap_slippage_get_metadata_v1(
 
 /// `process_instruction` function for `Dex::ExecuteSwapSlippageV1`
 pub(crate) fn dex_execute_swap_slippage_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -150,7 +150,7 @@ pub(crate) fn dex_execute_swap_slippage_process_instruction_v1(
 
 /// `process_update` function for `Dex::ExecuteSwapSlippageV1`
 pub(crate) fn dex_execute_swap_slippage_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: ExecuteSwapUpdateV1,
 ) -> ContractResult {
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;

@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -35,12 +35,12 @@ use crate::{
 };
 
 pub(crate) fn game_room_settle_pot_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: SettlePotParamsV1 = darkfi_serial::deserialize(&self_.data[1..])?;
+    let params: SettlePotParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
 
     msg!(
         "[SettlePot] Settling pot {:?} in room {:?} with {} winners",
@@ -52,17 +52,17 @@ pub(crate) fn game_room_settle_pot_process_instruction_v1(
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     let Some(room_data) =
-        wasm::db::db_get(rooms_db, &darkfi_serial::serialize(&params.room_id))?
+        wasm::db::db_get(rooms_db, &dwow_serial::serialize(&params.room_id))?
     else {
         msg!("[SettlePot] Error: Room not found");
         return Err(GameRoomError::RoomNotFound.into())
     };
     let room: crate::model::GameRoom =
-        darkfi_serial::deserialize(&room_data)?;
+        dwow_serial::deserialize(&room_data)?;
 
     // Validate caller is owner DAO (use caller from params, verified by signature)
     let caller = params.caller;
-    if darkfi_sdk::crypto::ContractId::derive_public(caller) != room.config.owner_dao {
+    if dwow_sdk::crypto::ContractId::derive_public(caller) != room.config.owner_dao {
         msg!("[SettlePot] Error: Caller is not owner DAO");
         return Err(GameRoomError::CallerNotOwner.into())
     }
@@ -75,13 +75,13 @@ pub(crate) fn game_room_settle_pot_process_instruction_v1(
 
     // Get pot
     let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
-    let Some(pot_data) = wasm::db::db_get(pots_db, &darkfi_serial::serialize(&params.pot_id))?
+    let Some(pot_data) = wasm::db::db_get(pots_db, &dwow_serial::serialize(&params.pot_id))?
     else {
         msg!("[SettlePot] Error: Pot not found");
         return Err(GameRoomError::PotNotFound.into())
     };
     let mut pot: Pot =
-        darkfi_serial::deserialize(&pot_data)?;
+        dwow_serial::deserialize(&pot_data)?;
 
     // Validate pot state
     if pot.state == PotState::Settled {
@@ -108,7 +108,7 @@ pub(crate) fn game_room_settle_pot_process_instruction_v1(
 
     // Settle the pot
     pot.state = PotState::Settled;
-    wasm::db::db_set(pots_db, &darkfi_serial::serialize(&params.pot_id), &darkfi_serial::serialize(&pot))?;
+    wasm::db::db_set(pots_db, &dwow_serial::serialize(&params.pot_id), &dwow_serial::serialize(&pot))?;
 
     msg!("[SettlePot] Pot {:?} settled with total {}", params.pot_id, pot.total);
 
@@ -122,11 +122,11 @@ pub(crate) fn game_room_settle_pot_process_instruction_v1(
         winners,
         payouts,
     };
-    Ok(darkfi_serial::serialize(&update))
+    Ok(dwow_serial::serialize(&update))
 }
 
 pub(crate) fn game_room_settle_pot_process_update_v1(
-    _cid: darkfi_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     update: SettlePotUpdateV1,
 ) -> ContractResult {
     msg!(

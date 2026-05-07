@@ -25,14 +25,14 @@
 //!
 //! This module handles token creation and management using Money V3.
 
-use darkfi::{
+use dwow::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     util::parse::decode_base10,
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
     zkas::ZkBinary,
     Error, Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         pasta_prelude::PrimeField,
         poseidon_hash, BaseBlind, MerkleNode, PublicKey, SecretKey,
@@ -40,7 +40,7 @@ use darkfi_sdk::{
     pasta::pallas,
     tx::ContractCall as SdkContractCall,
 };
-use darkfi_serial::AsyncEncodable;
+use dwow_serial::AsyncEncodable;
 use rand::rngs::OsRng;
 
 use crate::contract_imports::{
@@ -55,7 +55,7 @@ use crate::contract_imports::{
         MintCallBuilder, MintCallInput,
     },
     native_token::{
-        DARK_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
+        DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
     },
     MONEY_V3_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
@@ -75,7 +75,7 @@ impl Drk {
     pub async fn import_mint_authority(
         &self,
         mint_authority: SecretKey,
-        token_blind: darkfi_sdk::crypto::BaseBlind,
+        token_blind: dwow_sdk::crypto::BaseBlind,
     ) -> Result<TokenId> {
         // Derive token_id = poseidon_hash(mint_authority_public, token_blind)
         // The mint_authority is the secret; we need its "public" representation
@@ -187,7 +187,7 @@ impl Drk {
         // Build fee call (NativeToken FeeV1)
         // =========================================================================
         // Get DARK coin for fee payment
-        let dark_token_id_str = format!("{:?}", DARK_TOKEN_ID);
+        let dark_token_id_str = format!("{:?}", DRKW_TOKEN_ID);
         let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
             .map_err(|e| Error::Custom(format!("Failed to get DARK coins: {:?}", e)))?;
 
@@ -248,7 +248,7 @@ impl Drk {
         // Build fee input
         let fee_input = FeeCallInput {
             value: dark_coin.value,
-            token_id: DARK_TOKEN_ID,
+            token_id: DRKW_TOKEN_ID,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: dark_coin_blind,
@@ -450,7 +450,7 @@ impl Drk {
         // =========================================================================
         // Build fee call (NativeToken FeeV1)
         // =========================================================================
-        let dark_token_id_str = format!("{:?}", DARK_TOKEN_ID);
+        let dark_token_id_str = format!("{:?}", DRKW_TOKEN_ID);
         let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
             .map_err(|e| Error::Custom(format!("Failed to get DARK coins: {:?}", e)))?;
 
@@ -506,7 +506,7 @@ impl Drk {
 
         let fee_input = FeeCallInput {
             value: dark_coin.value,
-            token_id: DARK_TOKEN_ID,
+            token_id: DRKW_TOKEN_ID,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: dark_coin_blind,

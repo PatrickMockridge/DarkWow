@@ -23,14 +23,14 @@
 
 //! DarkToshi Dice Contract Data Models
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         combine_block_hashes, mix_entropy, pasta_prelude::PrimeField, poseidon_hash,
         tx_hash_to_base, PublicKey,
     },
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::error::DiceError;
 use crate::{MAX_HOUSE_EDGE, MAX_TARGET, MIN_HOUSE_EDGE, ROLL_RANGE};
@@ -53,7 +53,7 @@ pub enum BetState {
 }
 
 impl TryFrom<u8> for BetState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -62,7 +62,7 @@ impl TryFrom<u8> for BetState {
             2 => Ok(Self::SettledPlayer),
             3 => Ok(Self::SettledHouse),
             4 => Ok(Self::Cancelled),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }

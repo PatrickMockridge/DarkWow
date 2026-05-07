@@ -1,5 +1,5 @@
 [package]
-name = "darkfi-derive-internal"
+name = "dwow-derive-internal"
 version = "0.5.1"
 homepage = "https://darkwow.org"
 description = "Internal crate for serialization derive macros"

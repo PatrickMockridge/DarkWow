@@ -30,7 +30,7 @@ use std::{
     time::Instant,
 };
 
-use darkfi_sdk::num_traits::{One, Zero};
+use dwow_sdk::num_traits::{One, Zero};
 use num_bigint::BigUint;
 use randomx::{RandomXCache, RandomXDataset, RandomXFlags, RandomXVM};
 use smol::channel::Receiver;
@@ -692,7 +692,7 @@ mod tests {
         process::Command,
     };
 
-    use darkfi_sdk::num_traits::Num;
+    use dwow_sdk::num_traits::Num;
     use num_bigint::BigUint;
     use sled_overlay::sled;
 

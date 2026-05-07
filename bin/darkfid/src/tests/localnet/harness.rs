@@ -29,7 +29,7 @@
 
 use std::sync::Arc;
 
-use darkfi::{
+use dwow::{
     blockchain::{BlockInfo, BlockchainOverlay, Header},
     net::Settings,
     system::sleep,
@@ -48,7 +48,7 @@ use darkfi_native_token_contract::{
     client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         keypair::Keypair,
         pasta_prelude::{Curve, CurveAffine},
@@ -56,7 +56,7 @@ use darkfi_sdk::{
     },
     ContractCall,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use url::Url;
 
 use crate::{

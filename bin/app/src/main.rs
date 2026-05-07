@@ -26,7 +26,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use clap::Parser;
-use darkfi::system::CondVar;
+use dwow::system::CondVar;
 use std::sync::{Arc, OnceLock};
 
 #[macro_use]
@@ -65,7 +65,7 @@ use crate::{
 use net::ZeroMQAdapter;
 #[cfg(feature = "enable-plugins")]
 use {
-    darkfi_serial::{deserialize, Decodable, Encodable},
+    dwow_serial::{deserialize, Decodable, Encodable},
     // Local imports
     gfx::Renderer,
     prop::{PropertyBool, PropertyStr, Role},

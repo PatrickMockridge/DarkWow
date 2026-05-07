@@ -25,16 +25,16 @@
 //!
 //! Provides isolated testing for Baccarat contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::{Field, Group}, poseidon_hash, PublicKey, SecretKey},
     crypto::schnorr::SchnorrSecret,
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
 use darkfi_baccarat_contract::client::{
@@ -68,11 +68,11 @@ impl BaccaratHarness {
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();
 
         let commit_bet_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
             &commit_bet_zkbin,
         );
         let settle_bet_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
             &settle_bet_zkbin,
         );
 
@@ -126,9 +126,9 @@ impl BaccaratHarness {
         )?;
 
         // Create value commitment using Pedersen
-        let value_commit = darkfi_sdk::crypto::pedersen_commitment_u64(
+        let value_commit = dwow_sdk::crypto::pedersen_commitment_u64(
             bet_value,
-            darkfi_sdk::crypto::Blind(value_blind),
+            dwow_sdk::crypto::Blind(value_blind),
         );
 
         // Derive bet_id
@@ -274,7 +274,7 @@ pub struct CommitBetResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: CommitBetV1PublicInputs,
     /// Derived bet ID
@@ -294,7 +294,7 @@ pub struct SettleBetResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: SettleBetV1PublicInputs,
 }

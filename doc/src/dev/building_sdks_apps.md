@@ -18,7 +18,7 @@ DarkWow applications typically follow a layered architecture:
 │  (WASM smart contracts + ZK circuits)                        │
 ├─────────────────────────────────────────────────────────────┤
 │                     Node Layer                               │
-│  (darkfid validator, P2P network, consensus)                 │
+│  (dwowd validator, P2P network, consensus)                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 

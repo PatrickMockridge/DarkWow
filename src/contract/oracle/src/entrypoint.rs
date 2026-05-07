@@ -35,14 +35,14 @@
 //! 3. Oracle creates attestations for specific values
 //! 4. Other contracts verify and consume attestations
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta, ContractCall,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::OracleError,
@@ -55,7 +55,7 @@ use crate::{
     ORACLE_CONTRACT_ORACLES_TREE,
 };
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         pasta_prelude::*,
         smt::{
@@ -36,7 +36,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use super::transfer_v1::{money_transfer_get_metadata_v1, money_transfer_process_update_v1};
 use crate::{

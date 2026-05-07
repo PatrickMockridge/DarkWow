@@ -156,7 +156,7 @@ let (params, own_bet) = CommitBetV1Builder::new(
     100,  // bet_value
     50,   // target (1-99)
 )
-.token_id(DARK_TOKEN_ID)
+.token_id(DRKW_TOKEN_ID)
 .build();
 ```
 

@@ -4,7 +4,7 @@ This section provides configuration examples for hosting DarkWow P2P nodes.
 
 ## Default Ports
 
-### `darkfid` Mainnet
+### `dwowd` Mainnet
 - `8340`: Inbound P2P
 - `_ +1`: Inbound Tor/I2p/...
 - `8345`: Public RPC server
@@ -13,7 +13,7 @@ This section provides configuration examples for hosting DarkWow P2P nodes.
 - `8348`: P2pool Merge Mining RPC server
 
 
-###  `darkfid` Testnet
+###  `dwowd` Testnet
 - `18340`: Inbound clear P2P
 - `_ + 1`: Inbound Tor/I2p/...
 - `18345`: General query RPC server

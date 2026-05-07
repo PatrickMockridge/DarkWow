@@ -36,15 +36,15 @@
 //! - Reel strips define symbol layouts (configurable)
 //! - Extension traits for bonus rounds (future work)
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, pasta_prelude::PrimeField, ContractId},
     dark_tree::DarkLeaf,
     error::GenericResult,
     msg, wasm,
     ContractCall,
 };
-use darkfi_sdk::pasta::pallas::Base;
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_sdk::pasta::pallas::Base;
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::error::SlotError;
 use crate::model::{
@@ -58,7 +58,7 @@ const SPINS_TREE: &str = "spins";
 const CONFIG_TREE: &str = "config";
 const HOUSE_TREE: &str = "house";
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

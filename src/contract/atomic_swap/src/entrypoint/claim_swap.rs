@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, pasta_prelude::*},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -29,7 +29,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Decodable, Encodable};
+use dwow_serial::{deserialize, serialize, Decodable, Encodable};
 
 use crate::{
     error::AtomicSwapError,
@@ -47,7 +47,7 @@ use crate::{
 /// the actual verification is done manually in `process_instruction` via
 /// `poseidon_hash(secret) == swap.hash`.
 pub(crate) fn atomic_swap_claim_get_metadata_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -79,7 +79,7 @@ pub(crate) fn atomic_swap_claim_get_metadata_v1(
 /// exists and could provide privacy-preserving verification if the runtime
 /// integration is completed.
 pub(crate) fn atomic_swap_claim_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -139,7 +139,7 @@ pub(crate) fn atomic_swap_claim_process_instruction_v1(
 
 /// `process_update` function for `AtomicSwap::ClaimV1`
 pub(crate) fn atomic_swap_claim_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: ClaimUpdateV1,
 ) -> ContractResult {
     // Load the swap

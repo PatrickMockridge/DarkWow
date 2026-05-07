@@ -28,8 +28,8 @@
 //! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
 //! the actual token transfer to the house for unclaimed prizes.
 
-use darkfi_sdk::{error::ContractError, msg, wasm};
-use darkfi_serial::{deserialize, serialize};
+use dwow_sdk::{error::ContractError, msg, wasm};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::LotteryError;
 use crate::model::{ExpireLotteryParamsV1, ExpireLotteryUpdateV1, LotteryState};
@@ -40,9 +40,9 @@ use crate::LOTTERY_CONTRACT_LOTTERIES_TREE;
 /// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
 /// bundled for the actual token transfer to the house.
 pub fn lottery_expire_lottery_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: ExpireLotteryParamsV1 = deserialize(&self_.data[1..])?;
@@ -108,7 +108,7 @@ pub fn lottery_expire_lottery_process_instruction_v1(
 
 /// Process update for ExpireLotteryV1
 pub fn lottery_expire_lottery_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: ExpireLotteryUpdateV1,
 ) -> Result<(), ContractError> {
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;

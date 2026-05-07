@@ -26,12 +26,12 @@
 //! This module provides the ability to build Transfer calls for private token transfers.
 //! Transfer is an atomic burn + mint operation that preserves privacy.
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{pasta_prelude::*, poseidon_hash, BaseBlind, MerkleNode},
     pasta::pallas,
@@ -215,7 +215,7 @@ impl TransferCallBuilder {
             let token_commit = poseidon_hash([output.token_id, output.coin_blind]);
             // Create placeholder note for output (real encryption would use recipient's public key)
             let dummy_note = {
-                use darkfi_sdk::crypto::{PublicKey, SecretKey};
+                use dwow_sdk::crypto::{PublicKey, SecretKey};
                 let ephem_secret = SecretKey::random(&mut OsRng);
                 let ephem_public = PublicKey::from_secret(ephem_secret);
                 AeadEncryptedNote { ciphertext: vec![], ephem_public }

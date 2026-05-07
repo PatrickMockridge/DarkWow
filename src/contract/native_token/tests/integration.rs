@@ -29,14 +29,14 @@
 mod tests {
     use darkfi_native_token_contract::{
         model::{
-            ClearInput, Coin, CoinAttributes, DARK_TOKEN_ID, FeeParamsV1, FeeUpdateV1,
+            ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID, FeeParamsV1, FeeUpdateV1,
             GenesisMintParamsV1, Input, MeltParamsV1, MeltUpdateV1, Output, PoWRewardParamsV1,
             PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1, TransferParamsV1, TransferUpdateV1,
             MAX_COIN_VALUE,
         },
         NativeTokenFunction,
     };
-    use darkfi_sdk::{crypto::Keypair, crypto::MerkleNode, pasta::pallas};
+    use dwow_sdk::{crypto::Keypair, crypto::MerkleNode, pasta::pallas};
     use pasta_curves::group::Group;
 
     // ================================================================
@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn test_dark_token_id_is_zero() {
-        assert_eq!(DARK_TOKEN_ID, pallas::Base::zero());
+        assert_eq!(DRKW_TOKEN_ID, pallas::Base::zero());
     }
 
     #[test]
@@ -95,7 +95,7 @@ mod tests {
 
         // Create coin from attributes
         let value = 0u64;
-        let token_id = DARK_TOKEN_ID;
+        let token_id = DRKW_TOKEN_ID;
         let spend_hook = pallas::Base::zero();
         let user_data = pallas::Base::zero();
         let blind = pallas::Base::zero();
@@ -114,7 +114,7 @@ mod tests {
 
         // Create coin with non-zero value
         let value = 1000u64;
-        let token_id = DARK_TOKEN_ID;
+        let token_id = DRKW_TOKEN_ID;
         let spend_hook = pallas::Base::zero();
         let user_data = pallas::Base::zero();
         let blind = pallas::Base::zero();
@@ -133,7 +133,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &public,
             0,
-            DARK_TOKEN_ID,
+            DRKW_TOKEN_ID,
             pallas::Base::zero(),
             pallas::Base::zero(),
             pallas::Base::zero(),
@@ -151,7 +151,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &public,
             0,
-            DARK_TOKEN_ID,
+            DRKW_TOKEN_ID,
             pallas::Base::zero(),
             pallas::Base::zero(),
             pallas::Base::zero(),
@@ -173,7 +173,7 @@ mod tests {
         let attributes = CoinAttributes {
             public_key: keypair.public,
             value: 0,
-            token_id: DARK_TOKEN_ID,
+            token_id: DRKW_TOKEN_ID,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             blind: pallas::Base::zero(),
@@ -191,7 +191,7 @@ mod tests {
         let attributes = CoinAttributes {
             public_key: keypair.public,
             value: 500,
-            token_id: DARK_TOKEN_ID,
+            token_id: DRKW_TOKEN_ID,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             blind: pallas::Base::zero(),
@@ -270,14 +270,14 @@ mod tests {
 
         let clear_input = ClearInput {
             value: 1000,
-            token_id: DARK_TOKEN_ID,
+            token_id: DRKW_TOKEN_ID,
             value_blind: pallas::Scalar::zero(),
             token_blind: pallas::Base::zero(),
             signature_public: keypair.public,
         };
 
         assert_eq!(clear_input.value, 1000);
-        assert_eq!(clear_input.token_id, DARK_TOKEN_ID);
+        assert_eq!(clear_input.token_id, DRKW_TOKEN_ID);
     }
 
     #[test]
@@ -319,7 +319,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DARK_TOKEN_ID,
+            DRKW_TOKEN_ID,
             pallas::Base::zero(),
             pallas::Base::zero(),
             pallas::Base::zero(),
@@ -329,7 +329,7 @@ mod tests {
             value_commit: pallas::Point::identity(),
             token_commit: pallas::Base::zero(),
             coin,
-            note: darkfi_sdk::crypto::note::AeadEncryptedNote {
+            note: dwow_sdk::crypto::note::AeadEncryptedNote {
                 ciphertext: vec![0u8; 32],
                 ephem_public: keypair.public,
             },
@@ -363,7 +363,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DARK_TOKEN_ID,
+            DRKW_TOKEN_ID,
             pallas::Base::zero(),
             pallas::Base::zero(),
             pallas::Base::zero(),
@@ -392,7 +392,7 @@ mod tests {
         let params = GenesisMintParamsV1 {
             input: ClearInput {
                 value: 1000,
-                token_id: DARK_TOKEN_ID,
+                token_id: DRKW_TOKEN_ID,
                 value_blind: pallas::Scalar::zero(),
                 token_blind: pallas::Base::zero(),
                 signature_public: keypair.public,
@@ -410,7 +410,7 @@ mod tests {
         let params = GenesisMintParamsV1 {
             input: ClearInput {
                 value: 2000,
-                token_id: DARK_TOKEN_ID,
+                token_id: DRKW_TOKEN_ID,
                 value_blind: pallas::Scalar::zero(),
                 token_blind: pallas::Base::zero(),
                 signature_public: keypair.public,
@@ -432,7 +432,7 @@ mod tests {
         let params = PoWRewardParamsV1 {
             input: ClearInput {
                 value: 1000,
-                token_id: DARK_TOKEN_ID,
+                token_id: DRKW_TOKEN_ID,
                 value_blind: pallas::Scalar::zero(),
                 token_blind: pallas::Base::zero(),
                 signature_public: keypair.public,
@@ -515,7 +515,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DARK_TOKEN_ID,
+            DRKW_TOKEN_ID,
             pallas::Base::zero(),
             pallas::Base::zero(),
             pallas::Base::zero(),
@@ -532,7 +532,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DARK_TOKEN_ID,
+            DRKW_TOKEN_ID,
             pallas::Base::zero(),
             pallas::Base::zero(),
             pallas::Base::zero(),
@@ -549,7 +549,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DARK_TOKEN_ID,
+            DRKW_TOKEN_ID,
             pallas::Base::zero(),
             pallas::Base::zero(),
             pallas::Base::zero(),
@@ -569,7 +569,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DARK_TOKEN_ID,
+            DRKW_TOKEN_ID,
             pallas::Base::zero(),
             pallas::Base::zero(),
             pallas::Base::zero(),

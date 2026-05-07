@@ -23,8 +23,8 @@
 
 //! FileClaimV1 Implementation
 
-use darkfi_sdk::{error::ContractError, msg, wasm};
-use darkfi_serial::{deserialize, serialize};
+use dwow_sdk::{error::ContractError, msg, wasm};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::InsuranceMarketError;
 use crate::model::{derive_claim_id, FileClaimParamsV1, FileClaimUpdateV1};
@@ -32,9 +32,9 @@ use crate::{INSURANCE_CONTRACT_CLAIMS_TREE, INSURANCE_CONTRACT_COVERAGES_TREE};
 
 /// Process instruction for FileClaimV1
 pub fn insurance_market_file_claim_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: FileClaimParamsV1 = deserialize(&self_.data[1..])?;
@@ -80,7 +80,7 @@ pub fn insurance_market_file_claim_process_instruction_v1(
     let mut bytes = [0u8; 8];
     let e_len = params.evidence.len().min(8);
     bytes[..e_len].copy_from_slice(&params.evidence[..e_len]);
-    let evidence_hash = darkfi_sdk::pasta::pallas::Base::from(u64::from_le_bytes(bytes));
+    let evidence_hash = dwow_sdk::pasta::pallas::Base::from(u64::from_le_bytes(bytes));
     let claim_id = derive_claim_id(params.coverage_id, evidence_hash, current_block);
 
     // Check if claim already exists
@@ -105,7 +105,7 @@ pub fn insurance_market_file_claim_process_instruction_v1(
 
 /// Process update for FileClaimV1
 pub fn insurance_market_file_claim_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: FileClaimUpdateV1,
 ) -> Result<(), ContractError> {
     let claims_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_CLAIMS_TREE)?;
@@ -121,7 +121,7 @@ pub fn insurance_market_file_claim_process_update_v1(
         state: crate::model::ClaimState::Filed,
         evidence: vec![], // Stored separately or in metadata
         attestation: vec![],
-        oracle_signature: darkfi_sdk::pasta::pallas::Base::zero(),
+        oracle_signature: dwow_sdk::pasta::pallas::Base::zero(),
         resolved_at: 0,
     };
 

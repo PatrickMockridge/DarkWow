@@ -28,7 +28,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use darkfi::{
+use dwow::{
     event_graph::{
         self,
         proto::{EventPut, ProtocolEventGraph},
@@ -42,7 +42,7 @@ use darkfi::{
     system::{sleep, Subscription},
     Result as DarkFiResult,
 };
-use darkfi_serial::{
+use dwow_serial::{
     deserialize_async, serialize, serialize_async, AsyncEncodable, Decodable, Encodable,
     SerialDecodable, SerialEncodable,
 };

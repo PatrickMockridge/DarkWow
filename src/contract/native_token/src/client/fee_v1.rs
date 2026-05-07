@@ -25,12 +25,12 @@
 //!
 //! This module provides the ability to build Fee calls for network fee payment.
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         note::AeadEncryptedNote,
@@ -42,7 +42,7 @@ use darkfi_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
-use darkfi_serial::serialize;
+use dwow_serial::serialize;
 
 use crate::model::{Coin, CoinAttributes, FeeParamsV1, Input, Nullifier};
 use crate::client::NativeNote;
@@ -101,7 +101,7 @@ impl FeeRevealed {
 pub struct FeeCallInput {
     /// Value of the coin being spent
     pub value: u64,
-    /// Token ID (should be DARK_TOKEN_ID = zero)
+    /// Token ID (should be DRKW_TOKEN_ID = zero)
     pub token_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,

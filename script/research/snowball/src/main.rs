@@ -26,8 +26,8 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use darkfi::util::time::Timestamp;
-use darkfi_serial::Encodable;
+use dwow::util::time::Timestamp;
+use dwow_serial::Encodable;
 use num_bigint::BigUint;
 use rand::prelude::SliceRandom;
 

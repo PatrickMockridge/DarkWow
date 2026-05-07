@@ -23,8 +23,8 @@
 
 //! Stablecoin contract integration tests
 
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::pasta::pallas;
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::pasta::pallas;
 use darkfi_stablecoin_contract::{
     model::{
         CollateralParams, CollateralPool, CollateralType, DeadManAction, DeadManSwitchConfig,

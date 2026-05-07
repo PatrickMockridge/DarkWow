@@ -28,7 +28,7 @@
 pub mod underwrite_with_capability_v1;
 pub mod purchase_coverage_with_capability_v1;
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::Group, PublicKey},
     pasta::pallas,
 };

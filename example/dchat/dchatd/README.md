@@ -15,7 +15,7 @@ make BINS=lilith
 You should see the following output:
 
 ```
-Config file created in '"/home/USER/.config/darkfi/lilith_config.toml"'. Please review it and try again.
+Config file created in '"/home/USER/.config/dwow/lilith_config.toml"'. Please review it and try again.
  ```
 
 Add dchat to the config as follows, keeping in mind that the port number

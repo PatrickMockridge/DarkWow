@@ -23,8 +23,8 @@
 
 use async_trait::async_trait;
 use atomic_float::AtomicF32;
-use darkfi::system::msleep;
-use darkfi_serial::Decodable;
+use dwow::system::msleep;
+use dwow_serial::Decodable;
 use futures::FutureExt;
 use miniquad::{KeyCode, KeyMods, MouseButton, TouchPhase};
 use parking_lot::Mutex as SyncMutex;

@@ -26,8 +26,8 @@
 //! This module handles atomic token swaps using Money V3 TransferV1.
 //! Atomic swap is implemented using spend_hook encoding of swap secrets.
 
-use darkfi::{Error, Result};
-use darkfi_sdk::{
+use dwow::{Error, Result};
+use dwow_sdk::{
     crypto::util::FieldElemAsStr,
     pasta::pallas,
 };
@@ -42,7 +42,7 @@ pub struct PartialSwapData {
     /// Our token ID
     pub token_id: pallas::Base,
     /// Recipient's public key for the output coin
-    pub recipient: darkfi_sdk::crypto::PublicKey,
+    pub recipient: dwow_sdk::crypto::PublicKey,
 }
 
 impl PartialSwapData {
@@ -57,7 +57,7 @@ impl PartialSwapData {
     }
 
     /// Deserialize from JSON string
-    pub fn from_json(s: &str) -> darkfi::Result<Self> {
+    pub fn from_json(s: &str) -> dwow::Result<Self> {
         use serde_json::{self, Value};
         let v: Value = serde_json::from_str(s).map_err(|e| Error::Custom(e.to_string()))?;
 
@@ -71,7 +71,7 @@ impl PartialSwapData {
 
         let recipient_bytes = bs58::decode(recipient_str).into_vec().map_err(|e| Error::Custom(e.to_string()))?
             .try_into().map_err(|_| Error::Custom("invalid recipient bytes".to_string()))?;
-        let recipient = darkfi_sdk::crypto::PublicKey::from_bytes(recipient_bytes)
+        let recipient = dwow_sdk::crypto::PublicKey::from_bytes(recipient_bytes)
             .map_err(|_| Error::Custom("invalid recipient".to_string()))?;
 
         Ok(PartialSwapData { value, token_id, recipient })
@@ -90,7 +90,7 @@ impl Drk {
         &self,
         _our_swap: PartialSwapData,
         _their_swap: PartialSwapData,
-    ) -> Result<darkfi::tx::Transaction> {
+    ) -> Result<dwow::tx::Transaction> {
         Err(Error::Custom("Atomic swap not yet implemented - requires Money V3 TransferV1 with spend_hook encoding".to_string()))
     }
 
@@ -101,7 +101,7 @@ impl Drk {
         &self,
         _secret: pallas::Base,
         _our_coins: Vec<pallas::Base>,
-    ) -> Result<darkfi::tx::Transaction> {
+    ) -> Result<dwow::tx::Transaction> {
         Err(Error::Custom("Claim atomic swap not yet implemented".to_string()))
     }
 }

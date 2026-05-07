@@ -23,11 +23,11 @@
 
 //! Insurance Market Contract Data Models
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::error::InsuranceMarketError;
 
@@ -65,7 +65,7 @@ pub enum RiskCategory {
 }
 
 impl TryFrom<u8> for RiskCategory {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -78,7 +78,7 @@ impl TryFrom<u8> for RiskCategory {
             6 => Ok(Self::GovernanceCapture),
             7 => Ok(Self::RegulatoryClampdown),
             8 => Ok(Self::Custom),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }
@@ -93,7 +93,7 @@ pub enum CoverageState {
 }
 
 impl TryFrom<u8> for CoverageState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -101,7 +101,7 @@ impl TryFrom<u8> for CoverageState {
             1 => Ok(Self::Expired),
             2 => Ok(Self::Claimed),
             3 => Ok(Self::Cancelled),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }
@@ -116,7 +116,7 @@ pub enum ClaimState {
 }
 
 impl TryFrom<u8> for ClaimState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -124,7 +124,7 @@ impl TryFrom<u8> for ClaimState {
             1 => Ok(Self::Resolved),
             2 => Ok(Self::Rejected),
             3 => Ok(Self::Paid),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }

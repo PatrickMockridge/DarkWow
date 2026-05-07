@@ -26,8 +26,8 @@
 //! This module provides a generic system for handling contracts with dependencies.
 //! Contracts like stablecoin, dex, and lottery depend on money_v3 for token transfers.
 
-use darkfi_sdk::crypto::ContractId;
-use darkfi_sdk::pasta::pallas;
+use dwow_sdk::crypto::ContractId;
+use dwow_sdk::pasta::pallas;
 
 // ============================================================================
 // Contract Trait and Registry
@@ -143,7 +143,7 @@ impl Default for ContractRegistry {
 #[derive(Debug, Clone)]
 pub struct ContractCallTree {
     /// The contract call
-    pub call: darkfi_sdk::tx::ContractCall,
+    pub call: dwow_sdk::tx::ContractCall,
     /// Child calls that must be executed with this call
     pub children: Vec<ContractCallTree>,
 }
@@ -167,7 +167,7 @@ pub fn create_spend_hook_call(
     // The actual params would be populated from the coin's user_data
     let call_data = vec![0x04u8]; // TransferV1 function code
 
-    let transfer_call = darkfi_sdk::tx::ContractCall {
+    let transfer_call = dwow_sdk::tx::ContractCall {
         contract_id: hook_contract_id,
         data: call_data,
     };

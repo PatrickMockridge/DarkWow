@@ -2,11 +2,11 @@
 
 ## Overview
 
-This document explains how darkfid initializes, deploys contracts, and how the test harness integrates with the system. Understanding this pipeline is critical for debugging contract testing issues.
+This document explains how dwowd initializes, deploys contracts, and how the test harness integrates with the system. Understanding this pipeline is critical for debugging contract testing issues.
 
 ## DarkWow Node Architecture
 
-darkfid is the DarkWow blockchain node software. It handles:
+dwowd is the DarkWow blockchain node software. It handles:
 - Consensus (Proof-of-Work)
 - Transaction validation
 - Smart contract execution (ZK proofs + state transitions)
@@ -20,10 +20,10 @@ DarkWow has two distinct contract types with fundamentally different deployment 
 
 | Contract | Package | ContractID | Deployed By |
 |----------|---------|------------|-------------|
-| Money | `darkfi_money_contract` | Hardcoded `MONEY_CONTRACT_ID` (index 0) | darkfid at startup |
-| DAO | `darkfi_dao_contract` | Hardcoded `DAO_CONTRACT_ID` (index 1) | darkfid at startup |
-| Deployooor | `darkfi_deployooor_contract` | Hardcoded `DEPLOYOOOR_CONTRACT_ID` (index 2) | darkfid at startup |
-| MoneyV2 | `darkfi_money_v2_contract` | Hardcoded `MONEY_V2_CONTRACT_ID` (index 3) | darkfid at startup |
+| Money | `darkfi_money_contract` | Hardcoded `MONEY_CONTRACT_ID` (index 0) | dwowd at startup |
+| DAO | `darkfi_dao_contract` | Hardcoded `DAO_CONTRACT_ID` (index 1) | dwowd at startup |
+| Deployooor | `darkfi_deployooor_contract` | Hardcoded `DEPLOYOOOR_CONTRACT_ID` (index 2) | dwowd at startup |
+| MoneyV2 | `darkfi_money_v2_contract` | Hardcoded `MONEY_V2_CONTRACT_ID` (index 3) | dwowd at startup |
 
 **Characteristics:**
 - ContractID known at compile time (static)
@@ -105,7 +105,7 @@ DarkWow has two distinct contract types with fundamentally different deployment 
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ STEP 5: deploy_native_contracts()                                             │
 │                                                                                │
-│   Contracts hardcoded in darkfid:                                             │
+│   Contracts hardcoded in dwowd:                                             │
 │   ┌────────────────────────────────────────────────────────────────────┐      │
 │   │  Name              │ ContractID            │ WASM Binary          │      │
 │   ├────────────────────────────────────────────────────────────────────┤      │
@@ -186,7 +186,7 @@ DarkWow has two distinct contract types with fundamentally different deployment 
    - Generates proof that satisfies circuit constraints
    - Proof attached to transaction
 
-2. **ZK Proof Verification** (darkfid):
+2. **ZK Proof Verification** (dwowd):
    - Receives transaction with proof
    - Looks up VerificationKey (VK) from contract's database
    - Verifies proof against VK
@@ -310,7 +310,7 @@ pub async fn new(holders: &[Holder], verify_fees: bool) -> Result<Self> {
     // 2. Create blockchain overlay
     let overlay = BlockchainOverlay::new(&Blockchain::new(&sled_db)?)?;
 
-    // 3. Inject VKs (same as darkfid startup)
+    // 3. Inject VKs (same as dwowd startup)
     vks::inject(&overlay, &vks)?;
 
     // 4. Deploy native contracts (Money, DAO, Deployooor, MoneyV2)
@@ -375,11 +375,11 @@ th.deploy_stablecoin() → Deploys Stablecoin via Deployooor
 | ContractID | Hardcoded | Derived at runtime |
 | Works? | ✅ Yes | ❌ No (VK missing) |
 
-### Mainnet Deployment (darkfid + drk)
+### Mainnet Deployment (dwowd + drk)
 
 | Aspect | Native Contracts | WASM Contracts |
 |--------|-----------------|----------------|
-| Deployment | At darkfid startup | Via Deployooor transaction |
+| Deployment | At dwowd startup | Via Deployooor transaction |
 | VK Injection | At startup (vks::inject) | Via `drk contract deploy`? |
 | ContractID | Hardcoded | Derived at runtime |
 | Works? | ✅ Yes | ❓ Unknown (untested) |

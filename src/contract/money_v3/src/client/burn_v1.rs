@@ -27,12 +27,12 @@
 //! Uses Poseidon hash only - no EC operations.
 //! Signature uses Schnorr-style where public_key = poseidon_hash(secret).
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{pasta_prelude::*, poseidon_hash, BaseBlind, MerkleNode},
     pasta::pallas,

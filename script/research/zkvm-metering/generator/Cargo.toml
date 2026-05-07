@@ -10,12 +10,12 @@ edition = "2024"
 [workspace]
 
 [dependencies]
-darkfi-sdk = {path = "../../../../src/sdk"}
-darkfi = {path = "../../../../", features = ["zk"]}
+dwow-sdk = {path = "../../../../src/sdk"}
+dwow = {path = "../../../../", features = ["zk"]}
 halo2_proofs = {version = "0.3.2", features = ["circuit-params"]}
 halo2_gadgets = {version = "0.4.0", features = ["circuit-params"]}
 rand = "0.8.5"
-darkfi-serial = {path = "../../../../src/serial"}
+dwow-serial = {path = "../../../../src/serial"}
 
 [dev-dependencies]
 halo2_proofs = {version = "0.3.1", features = ["dev-graph", "sanity-checks"]}

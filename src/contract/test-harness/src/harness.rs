@@ -107,7 +107,7 @@ pub use stablecoin::StablecoinHarness;
 pub use subscription::SubscriptionHarness;
 pub use tender::TenderHarness;
 
-use darkfi::{zk::ProvingKey, zkas::ZkBinary};
+use dwow::{zk::ProvingKey, zkas::ZkBinary};
 
 /// Trait for contract test harnesses providing ZK circuit access.
 ///

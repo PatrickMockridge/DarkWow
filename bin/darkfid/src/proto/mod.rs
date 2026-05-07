@@ -23,7 +23,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use darkfi::{
+use dwow::{
     net::{P2p, P2pPtr, Settings},
     system::ExecutorPtr,
     Result,
@@ -86,7 +86,7 @@ impl DarkfidP2pHandler {
     pub async fn init(
         settings: &Settings,
         executor: &ExecutorPtr,
-        linear_blockchain: Option<Arc<darkfi_linear::LinearBlockchain>>,
+        linear_blockchain: Option<Arc<dwow_linear::LinearBlockchain>>,
     ) -> Result<DarkfidP2pHandlerPtr> {
         info!(
             target: "darkfid::proto::mod::DarkfidP2pHandler::init",

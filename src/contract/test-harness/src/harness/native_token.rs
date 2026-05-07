@@ -25,15 +25,15 @@
 //!
 //! Provides isolated testing for NativeToken contract (consensus token).
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, Keypair, MerkleNode, PublicKey, SecretKey},
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use darkfi_native_token_contract::{
     client::{
@@ -74,11 +74,11 @@ impl NativeTokenHarness {
 
         // Build proving keys
         let mint_circuit =
-            ZkCircuit::new(darkfi::zk::empty_witnesses(&mint_zkbin).unwrap(), &mint_zkbin);
+            ZkCircuit::new(dwow::zk::empty_witnesses(&mint_zkbin).unwrap(), &mint_zkbin);
         let burn_circuit =
-            ZkCircuit::new(darkfi::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
+            ZkCircuit::new(dwow::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
         let fee_circuit =
-            ZkCircuit::new(darkfi::zk::empty_witnesses(&fee_zkbin).unwrap(), &fee_zkbin);
+            ZkCircuit::new(dwow::zk::empty_witnesses(&fee_zkbin).unwrap(), &fee_zkbin);
 
         let mint_pk = ProvingKey::build(mint_zkbin.k, &mint_circuit);
         let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit);
@@ -233,18 +233,18 @@ pub use darkfi_native_token_contract::client::burn_v1::BurnCallInput;
 pub struct PoWRewardResult {
     pub call_data: Vec<u8>,
     pub output: Output,
-    pub proofs: Vec<darkfi::zk::Proof>,
+    pub proofs: Vec<dwow::zk::Proof>,
 }
 
 /// Result of burn
 pub struct BurnResult {
     pub inputs: Vec<darkfi_native_token_contract::model::Input>,
-    pub proofs: Vec<darkfi::zk::Proof>,
+    pub proofs: Vec<dwow::zk::Proof>,
 }
 
 /// Result of fee
 pub struct FeeResult {
     pub call_data: Vec<u8>,
     pub params: FeeParamsV1,
-    pub proofs: Vec<darkfi::zk::Proof>,
+    pub proofs: Vec<dwow::zk::Proof>,
 }

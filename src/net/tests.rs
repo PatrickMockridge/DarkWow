@@ -30,7 +30,7 @@ use std::{
     sync::Arc,
 };
 
-use darkfi_serial::{async_trait, SerialDecodable, SerialEncodable};
+use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};
 use rand::{prelude::SliceRandom, rngs::ThreadRng, Rng};
 use smol::{channel, future, Executor};
 use tracing::{error, info, warn};

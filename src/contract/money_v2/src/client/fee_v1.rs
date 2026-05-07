@@ -21,12 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
@@ -208,7 +208,7 @@ pub fn create_fee_proof(
         Witness::Base(Value::known(token_blind.inner())),
     ];
 
-    //darkfi::zk::export_witness_json("proof/witness/fee_v1.json", &prover_witnesses, &public_inputs.to_vec());
+    //dwow::zk::export_witness_json("proof/witness/fee_v1.json", &prover_witnesses, &public_inputs.to_vec());
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 

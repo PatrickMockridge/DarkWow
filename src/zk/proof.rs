@@ -22,8 +22,8 @@
  */
 use std::{io, io::Cursor};
 
-use darkfi_sdk::pasta::{pallas, vesta};
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::pasta::{pallas, vesta};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use halo2_proofs::{
     helpers::SerdeFormat,
     plonk,

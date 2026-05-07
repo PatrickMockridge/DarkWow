@@ -23,8 +23,8 @@
 
 //! Subscription contract integration tests
 
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::{
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{
     crypto::{pasta_prelude::Group, PublicKey, SecretKey},
     pasta::pallas,
 };

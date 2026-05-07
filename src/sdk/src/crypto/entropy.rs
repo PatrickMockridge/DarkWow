@@ -44,7 +44,7 @@
 //! ## Usage
 //!
 //! ```rust
-//! use darkfi_sdk::crypto::entropy::{
+//! use dwow_sdk::crypto::entropy::{
 //!     draw_single, draw_unique_range, combine_block_hashes
 //! };
 //!

@@ -34,7 +34,7 @@ use smol::lock::MutexGuard;
 use tinyjson::JsonValue;
 use tracing::{debug, error, info};
 
-use darkfi::{
+use dwow::{
     rpc::{
         jsonrpc::{
             ErrorCode, ErrorCode::InvalidParams, JsonError, JsonRequest, JsonResponse, JsonResult,
@@ -253,7 +253,7 @@ impl DarkfiNode {
         agent: String,
     ) -> JsonResult {
         use crate::registry::model::generate_linear_block_template;
-        use darkfi_sdk::pasta::pallas;
+        use dwow_sdk::pasta::pallas;
         use std::time::{SystemTime, UNIX_EPOCH};
 
         // Generate a unique client ID based on timestamp and random bytes
@@ -317,14 +317,14 @@ impl DarkfiNode {
         let job_id = format!("linear-job-{}", template.height);
 
         // Get RandomX seed hash for this height
-        let randomx_key = darkfi_linear::Miner::derive_key_from_height(template.height);
+        let randomx_key = dwow_linear::Miner::derive_key_from_height(template.height);
         let seed_hash = hex::encode(randomx_key);
 
         // Build the mining blob using the standard compact header format.
         // This is the same format used by Block::hash() so the miner's hash
         // matches the block validation hash.
         // Create a temporary header with nonce=0 for the mining blob.
-        let mining_header = darkfi_linear::BlockHeader {
+        let mining_header = dwow_linear::BlockHeader {
             version: 1,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: blake3::hash(&[]),
@@ -619,7 +619,7 @@ impl DarkfiNode {
             return miner_status_response(id, "stale")
         }
 
-        let randomx_key = darkfi_linear::Miner::derive_key_from_height(submitted_height);
+        let randomx_key = dwow_linear::Miner::derive_key_from_height(submitted_height);
         let difficulty_target = {
             let consensus = linear_chain.consensus.lock().unwrap();
             consensus.difficulty_target()
@@ -644,7 +644,7 @@ impl DarkfiNode {
         let template = self.current_linear_template.lock().await.take();
         let (coinbase, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
             if !tmpl.zk_proof.is_empty() {
-                let cb = darkfi_linear::CoinbaseTransaction {
+                let cb = dwow_linear::CoinbaseTransaction {
                     proof: tmpl.zk_proof.clone(),
                     public_inputs: tmpl.zk_public_inputs,
                     coin: tmpl.coin,
@@ -665,10 +665,10 @@ impl DarkfiNode {
         };
 
         // Compute block reward from the exponential-decay emission schedule
-        let reward = darkfi_sdk::blockchain::expected_reward(submitted_height as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(submitted_height as u32);
 
         // Build block header with privacy fields
-        let header = darkfi_linear::BlockHeader {
+        let header = dwow_linear::BlockHeader {
             version: 1,
             previous: previous_hash,
             merkle_root: blake3::hash(&[]),
@@ -684,10 +684,10 @@ impl DarkfiNode {
         };
 
         // Create coinbase transaction with ZK privacy data
-        let coinbase_tx = darkfi_linear::Transaction {
+        let coinbase_tx = dwow_linear::Transaction {
             version: 1,
             inputs: vec![],
-            outputs: vec![darkfi_linear::Output {
+            outputs: vec![dwow_linear::Output {
                 value: reward,
                 script: vec![],
             }],
@@ -696,7 +696,7 @@ impl DarkfiNode {
             coinbase,
         };
 
-        let block = darkfi_linear::Block {
+        let block = dwow_linear::Block {
             header,
             transactions: vec![coinbase_tx],
         };
@@ -741,12 +741,12 @@ impl DarkfiNode {
                                 let new_job_id =
                                     format!("linear-job-{}", new_height);
                                 let new_randomx_key =
-                                    darkfi_linear::Miner::derive_key_from_height(
+                                    dwow_linear::Miner::derive_key_from_height(
                                         new_height,
                                     );
                                 let new_seed_hash = hex::encode(new_randomx_key);
 
-                                let new_mining_header = darkfi_linear::BlockHeader {
+                                let new_mining_header = dwow_linear::BlockHeader {
                                     version: 1,
                                     previous: blake3::Hash::from_bytes(
                                         new_template.previous,
@@ -805,7 +805,7 @@ impl DarkfiNode {
                                     Some(new_template);
 
                                 // Push notification to all subscribed miners
-                                let notification = darkfi::rpc::jsonrpc::JsonNotification::new("job", job_params);
+                                let notification = dwow::rpc::jsonrpc::JsonNotification::new("job", job_params);
                                 publisher.notify(notification).await;
 
                                 info!(

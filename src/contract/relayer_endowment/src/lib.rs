@@ -48,7 +48,7 @@
 //! This contract composes patterns from dao_escrow for endowment management
 //! and betting_stake for proportional share calculations.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     error::ContractError,
 };
 

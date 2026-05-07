@@ -9,8 +9,8 @@ license = "AGPL-3.0-only"
 edition = "2021"
 
 [dependencies]
-darkfi = {path = "../../", features = ["net"]}
-darkfi-serial = {path = "../../src/serial"}
+dwow = {path = "../../", features = ["net"]}
+dwow-serial = {path = "../../src/serial"}
 url = {version = "2.5.7", features = ["serde"]}
 smol = "2.0.2"
 

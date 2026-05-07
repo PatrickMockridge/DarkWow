@@ -11,9 +11,9 @@ edition = "2021"
 
 [dependencies]
 # Darkfi
-darkfi = {path = "../../../../", features = ["async-daemonize", "async-sdk", "rpc", "sled-overlay"]}
-darkfi-sdk = {path = "../../../../src/sdk"}
-darkfi-serial = {path = "../../../../src/serial"}
+dwow = {path = "../../../../", features = ["async-daemonize", "async-sdk", "rpc", "sled-overlay"]}
+dwow-sdk = {path = "../../../../src/sdk"}
+dwow-serial = {path = "../../../../src/serial"}
 
 # Misc
 bs58 = "0.5.1"

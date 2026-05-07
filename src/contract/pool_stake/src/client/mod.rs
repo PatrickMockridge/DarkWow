@@ -30,7 +30,7 @@ pub mod join_pool_v1;
 pub mod allocate_coverage_v1;
 pub mod slash_coverage_v1;
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };

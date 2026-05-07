@@ -25,16 +25,16 @@
 //!
 //! Provides isolated testing for Identity contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, PublicKey, SecretKey},
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use darkfi_identity_contract::client::{
     create_claim_v1::{CreateClaimCallData, create_claim_proof, CreateClaimPublicInputs},
@@ -106,35 +106,35 @@ impl IdentityHarness {
         let verify_capability_zkbin = ZkBinary::decode(verify_bin, false).unwrap();
 
         let claim_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_claim_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_claim_zkbin).unwrap(),
             &create_claim_zkbin,
         );
         let claim_dag_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_claim_dag_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_claim_dag_zkbin).unwrap(),
             &create_claim_dag_zkbin,
         );
         let claim_l1_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_claim_l1_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_claim_l1_zkbin).unwrap(),
             &create_claim_l1_zkbin,
         );
         let claim_l1_v2_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_claim_l1_v2_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_claim_l1_v2_zkbin).unwrap(),
             &create_claim_l1_v2_zkbin,
         );
         let claim_multi_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_claim_multi_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_claim_multi_zkbin).unwrap(),
             &create_claim_multi_zkbin,
         );
         let claim_ratio_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_claim_ratio_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_claim_ratio_zkbin).unwrap(),
             &create_claim_ratio_zkbin,
         );
         let issue_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&issue_credential_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&issue_credential_zkbin).unwrap(),
             &issue_credential_zkbin,
         );
         let verify_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&verify_capability_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&verify_capability_zkbin).unwrap(),
             &verify_capability_zkbin,
         );
 
@@ -221,8 +221,8 @@ impl IdentityHarness {
             holder_pub: hx.to_repr(),
             schema_hash: schema_hash.to_repr(),
             encrypted_attributes: vec![],
-            commitment: darkfi_sdk::crypto::IntentCommitment::from_bytes(public_inputs.commitment.to_repr()).unwrap(),
-            nullifier: darkfi_sdk::crypto::IntentNullifier::from_bytes(public_inputs.commitment.to_repr()).unwrap(),
+            commitment: dwow_sdk::crypto::IntentCommitment::from_bytes(public_inputs.commitment.to_repr()).unwrap(),
+            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.commitment.to_repr()).unwrap(),
             issued_at,
             expires_at,
             proof: vec![],
@@ -264,7 +264,7 @@ impl IdentityHarness {
 
         // Build CreateClaimParams
         let params = CreateClaimParams {
-            nullifier: darkfi_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
+            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
             claim_type: claim_type.to_repr().to_vec(),
             predicate: vec![],
             revealed_attributes: vec![],
@@ -335,12 +335,12 @@ pub struct InitializeResult {
 pub struct IssueCredentialResult {
     pub call_data: Vec<u8>,
     pub public_inputs: IssueCredentialPublicInputs,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
 }
 
 /// Result of create_claim
 pub struct CreateClaimResult {
     pub call_data: Vec<u8>,
     pub public_inputs: CreateClaimPublicInputs,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
 }

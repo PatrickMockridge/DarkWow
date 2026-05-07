@@ -21,16 +21,16 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, SecretKey},
     error::ContractError,
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
-use darkfi_serial::async_trait;
+use dwow_serial::async_trait;
 
 /// The `Nullifier` is represented as a base field element.
 /// Used for double-spend prevention (nullifier = poseidon_hash(spending_key, rho))

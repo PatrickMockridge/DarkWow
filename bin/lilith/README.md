@@ -22,11 +22,11 @@ FLAGS:
 OPTIONS:
         --accept-addrs <accept-addrs>...    Accept addresses (URL without port)
     -c, --config <config>                   Configuration file to use
-        --hosts-file <hosts-file>           Hosts .tsv file to use [default: ~/.config/darkfi/lilith_hosts.tsv]
+        --hosts-file <hosts-file>           Hosts .tsv file to use [default: ~/.config/dwow/lilith_hosts.tsv]
         --rpc-listen <rpc-listen>           JSON-RPC listen URL [default: tcp://127.0.0.1:18927]
 ```
 
-On first execution, daemon will create default config file ~/.config/darkfi/lilith_config.toml.
+On first execution, daemon will create default config file ~/.config/dwow/lilith_config.toml.
 Configuration must be verified, and application networks should be configured accordingly.
 
 Run lilith as follows:

@@ -26,7 +26,7 @@ use std::{
     sync::Arc,
 };
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::contract_id::{
         ContractId, SMART_CONTRACT_MONOTREE_DB_NAME, SMART_CONTRACT_ZKAS_DB_NAME,
     },
@@ -34,7 +34,7 @@ use darkfi_sdk::{
     wasm, AsHex,
 };
 use sha2::{Digest, Sha256};
-use darkfi_serial::serialize;
+use dwow_serial::serialize;
 use tracing::{debug, error, info};
 use wasmer::{
     imports, sys::CompilerConfig, wasmparser::Operator, AsStoreMut, AsStoreRef, Function,
@@ -686,7 +686,7 @@ impl Runtime {
         match retval {
             wasm::entrypoint::SUCCESS => Ok(retdata),
             _ => {
-                let err = darkfi_sdk::error::ContractError::from(retval);
+                let err = dwow_sdk::error::ContractError::from(retval);
                 error!(target: "runtime::vm_runtime", "[WASM] Contract returned: {err:?}");
                 Err(Error::ContractError(err))
             }

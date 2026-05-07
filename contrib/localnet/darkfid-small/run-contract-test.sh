@@ -2,9 +2,9 @@
 set -e
 set -x
 
-# Accept path to `drk` binary as arg or use default
-DEFAULT_DRK="../../../drk -c drk0.toml"
-DRK="${1:-$DEFAULT_DRK}"
+# Accept path to `dww` binary as arg or use default
+DEFAULT_DRK="../../../dww -c drk0.toml"
+DWW="${1:-$DEFAULT_DRK}"
 
 # Path to contract to be deployed
 WASM="../../../../smart-contract/membership.wasm"
@@ -15,7 +15,7 @@ OUTPUT_FOLDER=/tmp/darkfi
 mkdir -p $OUTPUT_FOLDER
 SLEEP_TIME=5
 
-# First run the darkfid nodes and the miners:
+# First run the dwowd nodes and the miners:
 #
 #   ./clean.sh
 #   ./init-wallets.sh
@@ -111,15 +111,15 @@ deregister_call() {
 }
 
 
-wait_token "$DRK" DRK
-CONTRACT_ADDRESS="$(deploy_contract "$DRK")"
-wait_deployment "$DRK" "$CONTRACT_ADDRESS"
+wait_token "$DWW" DWW
+CONTRACT_ADDRESS="$(deploy_contract "$DWW")"
+wait_deployment "$DWW" "$CONTRACT_ADDRESS"
 
-wait_token "$DRK" DRK
-SECRET_KEY="$(generate_key "$DRK" "$CONTRACT_ADDRESS")"
+wait_token "$DWW" DWW
+SECRET_KEY="$(generate_key "$DWW" "$CONTRACT_ADDRESS")"
 
-TX_ID="$(register_call "$DRK" "$CONTRACT_ADDRESS" "$SECRET_KEY")"
-wait_tx "$DRK" "$TX_ID"
+TX_ID="$(register_call "$DWW" "$CONTRACT_ADDRESS" "$SECRET_KEY")"
+wait_tx "$DWW" "$TX_ID"
 
-TX_ID="$(deregister_call "$DRK" "$CONTRACT_ADDRESS" "$SECRET_KEY")"
-wait_tx "$DRK" "$TX_ID"
+TX_ID="$(deregister_call "$DWW" "$CONTRACT_ADDRESS" "$SECRET_KEY")"
+wait_tx "$DWW" "$TX_ID"

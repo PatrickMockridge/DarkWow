@@ -23,7 +23,7 @@
 
 use std::io::Cursor;
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         pasta_prelude::*,
         smt::{PoseidonFp, SparseMerkleTree, StorageAdapter, EMPTY_NODES_FP, SMT_FP_DEPTH},
@@ -31,7 +31,7 @@ use darkfi_sdk::{
     error::{ContractError, ContractResult},
     wasm,
 };
-use darkfi_serial::{deserialize, serialize, Decodable, Encodable};
+use dwow_serial::{deserialize, serialize, Decodable, Encodable};
 use halo2_proofs::pasta::pallas;
 use num_bigint::BigUint;
 use tracing::{debug, error};
@@ -169,7 +169,7 @@ pub(crate) fn sparse_merkle_insert_batch(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas.
@@ -182,7 +182,7 @@ pub(crate) fn sparse_merkle_insert_batch(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): Failed to make slice from ptr"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     };
 
     let mut buf = vec![0_u8; len as usize];
@@ -191,7 +191,7 @@ pub(crate) fn sparse_merkle_insert_batch(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): Failed to read from memory slice: {e}"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     };
 
     // The buffer should deserialize into:
@@ -206,7 +206,7 @@ pub(crate) fn sparse_merkle_insert_batch(
                 target: "runtime::smt::sparse_merkle_insert_batch",
                 "[WASM] [{cid}] sparse_merkle_insert_batch(): Failed to decode db_info DbHandle: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
     let db_info_index = db_info_index as usize;
@@ -218,7 +218,7 @@ pub(crate) fn sparse_merkle_insert_batch(
             target: "runtime::smt::sparse_merkle_insert_batch",
                 "[WASM] [{cid}] sparse_merkle_insert_batch(): Failed to decode db_smt DbHandle: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
     let db_smt_index = db_smt_index as usize;
@@ -230,7 +230,7 @@ pub(crate) fn sparse_merkle_insert_batch(
                 target: "runtime::smt::sparse_merkle_insert_batch",
                 "[WASM] [{cid}] sparse_merkle_insert_batch(): Failed to decode db_roots DbHandle: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
     let db_roots_index = db_roots_index as usize;
@@ -243,7 +243,7 @@ pub(crate) fn sparse_merkle_insert_batch(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): Requested DbHandle that is out of bounds"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
     let db_info = &db_handles[db_info_index];
     let db_smt = &db_handles[db_smt_index];
@@ -258,7 +258,7 @@ pub(crate) fn sparse_merkle_insert_batch(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): Unauthorized to write to DbHandle"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // This `key` represents the sled key in info where the latest root is
@@ -269,7 +269,7 @@ pub(crate) fn sparse_merkle_insert_batch(
                 target: "runtime::smt::sparse_merkle_insert_batch",
                 "[WASM] [{cid}] sparse_merkle_insert_batch(): Failed to decode key vec: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
 
@@ -281,7 +281,7 @@ pub(crate) fn sparse_merkle_insert_batch(
                 target: "runtime::smt::sparse_merkle_insert_batch",
                 "[WASM] [{cid}] sparse_merkle_insert_batch(): Failed to decode pallas::Base: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
 
@@ -291,7 +291,7 @@ pub(crate) fn sparse_merkle_insert_batch(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): Mismatch between given length, and cursor length"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
 
     // Generate the SimpleDbStorage SMT
@@ -315,7 +315,7 @@ pub(crate) fn sparse_merkle_insert_batch(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): SMT failed to insert batch: {e}"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     };
 
     // Grab the current SMT root to add in our set of roots.
@@ -329,7 +329,7 @@ pub(crate) fn sparse_merkle_insert_batch(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): Latest root data length missmatch: {}", latest_root_data.len(),
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
 
     // Validate the new value data, to ensure their integrity
@@ -339,21 +339,21 @@ pub(crate) fn sparse_merkle_insert_batch(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): Failed to serialize transaction hash: {e}"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     };
     if let Err(e) = env.call_idx.encode(&mut new_value_data) {
         error!(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): Failed to serialize call index: {e}"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     };
     if new_value_data.len() != 32 + 1 {
         error!(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): New value data length missmatch: {}", new_value_data.len(),
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
 
     // Retrieve snapshot root data set
@@ -364,7 +364,7 @@ pub(crate) fn sparse_merkle_insert_batch(
                 target: "runtime::smt::sparse_merkle_insert_batch",
                 "[WASM] [{cid}] sparse_merkle_insert_batch(): SMT failed to retrieve current root snapshot: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
 
@@ -379,7 +379,7 @@ pub(crate) fn sparse_merkle_insert_batch(
                         target: "runtime::smt::sparse_merkle_insert_batch",
                         "[WASM] [{cid}] sparse_merkle_insert_batch(): Failed to deserialize current root snapshot: {e}"
                     );
-                    return darkfi_sdk::error::INTERNAL_ERROR
+                    return dwow_sdk::error::INTERNAL_ERROR
                 }
             };
 
@@ -404,7 +404,7 @@ pub(crate) fn sparse_merkle_insert_batch(
             db_roots.tree,
             e
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
 
     // Update the pointer to the latest known root
@@ -420,7 +420,7 @@ pub(crate) fn sparse_merkle_insert_batch(
             root_key.iter().take(8).collect::<Vec<_>>(),
             e
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
 
     // Subtract used gas.

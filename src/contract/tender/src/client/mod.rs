@@ -33,7 +33,7 @@ pub mod select_winner_v1;
 pub mod submit_bid_v1;
 pub mod submit_bid_with_capability_v1;
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::PublicKey,
     pasta::pallas,
 };

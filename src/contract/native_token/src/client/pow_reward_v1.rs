@@ -25,24 +25,24 @@
 //!
 //! This module provides the ability to build PoW reward calls for block rewards.
 
-use darkfi::{
+use dwow::{
     zk::{Proof, ProvingKey},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     blockchain::expected_reward,
     crypto::{
         note::AeadEncryptedNote, pasta_prelude::*, Blind, Keypair, PublicKey,
     },
     pasta::pallas,
 };
-use darkfi_serial::serialize;
+use dwow_serial::serialize;
 use rand::rngs::OsRng;
 use tracing::debug;
 
 use super::{transfer_v1::proof::create_transfer_mint_proof, NativeNote};
-use crate::model::{ClearInput, Coin, CoinAttributes, DARK_TOKEN_ID, Output, PoWRewardParamsV1};
+use crate::model::{ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID, Output, PoWRewardParamsV1};
 
 /// Debris produced by building a PoWReward call, containing the parameters
 /// and ZK proofs needed to execute the transaction.
@@ -102,8 +102,8 @@ impl PoWRewardCallBuilder {
         debug!(target: "contract::native_token::client::pow_reward", "Building NativeToken::PoWRewardV1 contract call");
 
         // In this call, we will build one clear input and one anonymous output.
-        // Only DARK_TOKEN_ID can be minted as PoW reward.
-        let token_id = DARK_TOKEN_ID;
+        // Only DRKW_TOKEN_ID can be minted as PoW reward.
+        let token_id = DRKW_TOKEN_ID;
 
         // Building the clear input using random blinds
         let value_blind = Blind::random(&mut OsRng);

@@ -23,7 +23,7 @@
 
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
-use darkfi_serial::{FutAsyncWriteExt, SerialDecodable, SerialEncodable};
+use dwow_serial::{FutAsyncWriteExt, SerialDecodable, SerialEncodable};
 use futures::{stream::FuturesUnordered, StreamExt};
 use parking_lot::Mutex as SyncMutex;
 use std::{

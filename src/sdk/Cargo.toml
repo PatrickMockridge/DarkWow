@@ -1,5 +1,5 @@
 [package]
-name = "darkfi-sdk"
+name = "dwow-sdk"
 version = "0.5.0"
 homepage = "https://darkwow.org"
 description = "SDK used for developing smart contracts on DarkFi"
@@ -13,7 +13,7 @@ doctest = false
 
 [features]
 default = []
-async = ["darkfi-serial/async"]
+async = ["dwow-serial/async"]
 wasm = []
 
 [dependencies]
@@ -21,7 +21,7 @@ wasm = []
 thiserror = "2.0.17"
 
 # Serialization
-darkfi-serial = {path = "../serial", features = ["derive", "crypto"]}
+dwow-serial = {path = "../serial", features = ["derive", "crypto"]}
 
 # Encoding
 bs58 = {version = "0.5.1", features = ["check"]}

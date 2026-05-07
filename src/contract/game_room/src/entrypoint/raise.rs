@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::poseidon_hash,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -40,12 +40,12 @@ use crate::{
 };
 
 pub(crate) fn game_room_raise_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: RaiseParamsV1 = darkfi_serial::deserialize(&self_.data[1..])?;
+    let params: RaiseParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
 
     msg!(
         "[Raise] Raising bet by {} in room {:?}",
@@ -56,13 +56,13 @@ pub(crate) fn game_room_raise_process_instruction_v1(
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     let Some(room_data) =
-        wasm::db::db_get(rooms_db, &darkfi_serial::serialize(&params.room_id))?
+        wasm::db::db_get(rooms_db, &dwow_serial::serialize(&params.room_id))?
     else {
         msg!("[Raise] Error: Room not found");
         return Err(GameRoomError::RoomNotFound.into())
     };
     let mut room: GameRoom =
-        darkfi_serial::deserialize(&room_data)?;
+        dwow_serial::deserialize(&room_data)?;
 
     // Validate room state
     if room.state != RoomState::Active {
@@ -92,13 +92,13 @@ pub(crate) fn game_room_raise_process_instruction_v1(
 
     // Get account
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = darkfi_serial::serialize(&(params.room_id, caller.xy().0));
+    let account_key = dwow_serial::serialize(&(params.room_id, caller.xy().0));
     let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
         msg!("[Raise] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())
     };
     let mut account: PlayerAccount =
-        darkfi_serial::deserialize(&account_data)?;
+        dwow_serial::deserialize(&account_data)?;
 
     if account.has_folded {
         msg!("[Raise] Error: Player has folded");
@@ -121,12 +121,12 @@ pub(crate) fn game_room_raise_process_instruction_v1(
         msg!("[Raise] Error: No current pot");
         return Err(GameRoomError::PotNotFound.into())
     };
-    let Some(pot_data) = wasm::db::db_get(pots_db, &darkfi_serial::serialize(&pot_id))? else {
+    let Some(pot_data) = wasm::db::db_get(pots_db, &dwow_serial::serialize(&pot_id))? else {
         msg!("[Raise] Error: Pot not found");
         return Err(GameRoomError::PotNotFound.into())
     };
     let mut pot: Pot =
-        darkfi_serial::deserialize(&pot_data)?;
+        dwow_serial::deserialize(&pot_data)?;
 
     // Validate pot state
     if pot.state != crate::model::PotState::Open {
@@ -171,21 +171,21 @@ pub(crate) fn game_room_raise_process_instruction_v1(
 
     // Store bet
     let bets_db = wasm::db::db_lookup(cid, GAME_ROOM_BETS_TREE)?;
-    wasm::db::db_set(bets_db, &darkfi_serial::serialize(&bet_id), &darkfi_serial::serialize(&bet))?;
+    wasm::db::db_set(bets_db, &dwow_serial::serialize(&bet_id), &dwow_serial::serialize(&bet))?;
 
     // Store updated pot
-    wasm::db::db_set(pots_db, &darkfi_serial::serialize(&pot_id), &darkfi_serial::serialize(&pot))?;
+    wasm::db::db_set(pots_db, &dwow_serial::serialize(&pot_id), &dwow_serial::serialize(&pot))?;
 
     // Store updated account
-    wasm::db::db_set(accounts_db, &account_key, &darkfi_serial::serialize(&account))?;
+    wasm::db::db_set(accounts_db, &account_key, &dwow_serial::serialize(&account))?;
 
     // Update room
     room.current_bet_amount = raise_total;
     room.current_better = Some(caller);
     wasm::db::db_set(
         rooms_db,
-        &darkfi_serial::serialize(&params.room_id),
-        &darkfi_serial::serialize(&room),
+        &dwow_serial::serialize(&params.room_id),
+        &dwow_serial::serialize(&room),
     )?;
 
     msg!("[Raise] Raise applied successfully");
@@ -198,11 +198,11 @@ pub(crate) fn game_room_raise_process_instruction_v1(
         new_pot_total,
         new_current_bet: raise_total,
     };
-    Ok(darkfi_serial::serialize(&update))
+    Ok(dwow_serial::serialize(&update))
 }
 
 pub(crate) fn game_room_raise_process_update_v1(
-    _cid: darkfi_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     update: RaiseUpdateV1,
 ) -> ContractResult {
     msg!(

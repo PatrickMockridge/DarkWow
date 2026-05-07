@@ -180,7 +180,7 @@ The DarkToshi Dice contract was successfully deployed and tested on localnet.
 ### Test Configuration
 
 - **Network**: localnet with `pow_fixed_difficulty=1`
-- **Mining**: `drk mine` against darkfid stratum server (port 48347)
+- **Mining**: `drk mine` against dwowd stratum server (port 48347)
 - **Block reward**: 20 DRKW per block
 - **Wallet**: Initialized and funded via mining
 
@@ -190,7 +190,7 @@ The DarkToshi Dice contract was successfully deployed and tested on localnet.
 # Deploy contract
 drk contract deploy BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
   target/wasm32-unknown-unknown/release/darkfi_darktoshi_dice_contract.wasm \
-  | drk broadcast
+  | dww broadcast
 
 # Transaction ID: e15a50bae7940593057ca9674f774aaf7f50e107bd4b3483d6e65130e55d8e2f
 # Contract ID: BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1
@@ -202,7 +202,7 @@ drk contract deploy BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
 2. `drk wallet coins` - View unspent coins
 3. `drk contract list` - List deploy authorities
 4. `drk scan` - Discover blockchain updates
-5. `drk contract deploy | drk broadcast` - Deploy contract
+5. `drk contract deploy | dww broadcast` - Deploy contract
 
 ### CLI Notes
 

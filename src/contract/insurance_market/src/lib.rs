@@ -40,7 +40,7 @@
 //! - **Money::TokenMint** for claim payouts
 //! - **PredictionMarket** for probability pricing
 
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 
 /// Functions available in the contract
 #[repr(u8)]

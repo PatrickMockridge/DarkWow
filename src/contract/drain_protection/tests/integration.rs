@@ -38,8 +38,8 @@ use darkfi_drain_protection_contract::{
     DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE, DRAIN_PROTECTION_CONTRACT_EXITS_TREE,
     DRAIN_PROTECTION_CONTRACT_VOTES_TREE,
 };
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::{
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{
     crypto::{pasta_prelude::Field, PublicKey, SecretKey},
     pasta::pallas,
 };

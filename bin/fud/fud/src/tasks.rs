@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use tracing::{error, info, warn};
 
-use darkfi::{
+use dwow::{
     dht::{event::DhtEvent, DhtHandler, DhtNode},
     geode::hash_to_string,
     system::{sleep, StoppableTask},

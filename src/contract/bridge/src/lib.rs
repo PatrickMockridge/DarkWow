@@ -51,7 +51,7 @@ pub mod light_client;
 /// Object Capability module - capability derivation and verification
 pub mod capability;
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 /// Functions available in the contract
 define_contract_function!(BridgeFunction {

@@ -24,7 +24,7 @@
 use async_gen::{gen as async_gen, AsyncIter};
 use async_trait::async_trait;
 use chrono::{Local, NaiveDate, TimeZone};
-use darkfi_serial::{Encodable, FutAsyncWriteExt, SerialDecodable, SerialEncodable};
+use dwow_serial::{Encodable, FutAsyncWriteExt, SerialDecodable, SerialEncodable};
 use futures::stream::{Stream, StreamExt};
 use image::{ImageBuffer, ImageReader, Rgba};
 use miniquad::{MouseButton, TextureFormat, TouchPhase};

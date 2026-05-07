@@ -19,12 +19,12 @@ path = "src/main.rs"
 
 [features]
 default = []
-upnp-igd = ["darkfi/upnp-igd"]
+upnp-igd = ["dwow/upnp-igd"]
 
 [dependencies]
-darkfi = {path = "../../", features = ["async-daemonize", "event-graph", "rpc", "zk"]}
-darkfi-sdk = {path = "../../src/sdk", features = ["async"]}
-darkfi-serial = {path = "../../src/serial", features = ["async"]}
+dwow = {path = "../../", features = ["async-daemonize", "event-graph", "rpc", "zk"]}
+dwow-sdk = {path = "../../src/sdk", features = ["async"]}
+dwow-serial = {path = "../../src/serial", features = ["async"]}
 libc = "0.2.178"
 
 # Event Graph DB

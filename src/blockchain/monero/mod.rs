@@ -27,10 +27,10 @@ use std::{
     iter,
 };
 
-use darkfi_sdk::{hex::decode_hex, AsHex};
+use dwow_sdk::{hex::decode_hex, AsHex};
 #[cfg(feature = "async-serial")]
-use darkfi_serial::{async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite};
-use darkfi_serial::{Decodable, Encodable};
+use dwow_serial::{async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite};
+use dwow_serial::{Decodable, Encodable};
 use monero::{
     blockdata::transaction::{ExtraField, RawExtraField, SubField},
     consensus::{Decodable as XmrDecodable, Encodable as XmrEncodable},
@@ -535,16 +535,16 @@ mod tests {
 
         let local_ex = smol::LocalExecutor::new();
 
-        let ser_sync = darkfi_serial::serialize(&powdata);
+        let ser_sync = dwow_serial::serialize(&powdata);
         let ser_async = smol::future::block_on(
-            local_ex.run(async { darkfi_serial::serialize_async(&powdata).await }),
+            local_ex.run(async { dwow_serial::serialize_async(&powdata).await }),
         );
 
         assert_eq!(ser_sync, ser_async);
 
-        let mut de_sync: MoneroPowData = darkfi_serial::deserialize(&ser_async).unwrap();
+        let mut de_sync: MoneroPowData = dwow_serial::deserialize(&ser_async).unwrap();
         let mut de_async: MoneroPowData = smol::future::block_on(
-            local_ex.run(async { darkfi_serial::deserialize_async(&ser_async).await.unwrap() }),
+            local_ex.run(async { dwow_serial::deserialize_async(&ser_async).await.unwrap() }),
         );
 
         assert_eq!(de_sync.header, powdata.header);

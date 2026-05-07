@@ -29,12 +29,12 @@
 
 use std::sync::Arc;
 
-use darkfi::{
+use dwow::{
     blockchain::{BlockchainOverlay, Blockchain, BlockInfo},
     validator::{utils::deploy_native_contracts, ValidatorConfig},
     Result,
 };
-use darkfi_sdk::num_traits::One;
+use dwow_sdk::num_traits::One;
 use num_bigint::BigUint;
 use sled;
 use smol::Executor;

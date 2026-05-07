@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{
+use dwow::{
     tx::{ContractCallLeaf, TransactionBuilder},
     zk::halo2::Field,
     Result,
@@ -40,7 +40,7 @@ use darkfi_money_contract::{
     MoneyFunction, MONEY_CONTRACT_ZKAS_BURN_NS_V1, MONEY_CONTRACT_ZKAS_FEE_NS_V1,
     MONEY_CONTRACT_ZKAS_MINT_NS_V1,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     blockchain::{compute_fee, expected_reward},
     crypto::{
         contract_id::MONEY_CONTRACT_ID, note::AeadEncryptedNote, BaseBlind, FuncId, MerkleNode,
@@ -49,7 +49,7 @@ use darkfi_sdk::{
     pasta::pallas,
     ContractCall,
 };
-use darkfi_serial::AsyncEncodable;
+use dwow_serial::AsyncEncodable;
 use rand::rngs::OsRng;
 
 #[test]

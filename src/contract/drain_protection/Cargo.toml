@@ -1,5 +1,5 @@
 [package]
-name = "darkfi_drain_protection_contract"
+name = "dwow_drain_protection_contract"
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-only"
@@ -8,8 +8,8 @@ license = "AGPL-3.0-only"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
-darkfi-serial = { path = "../../serial", features = ["derive", "crypto"] }
+dwow-sdk = { path = "../../sdk", features = ["wasm"] }
+dwow-serial = { path = "../../serial", features = ["derive", "crypto"] }
 thiserror = "2.0.17"
 serde = "1.0"
 sled = "0.34"
@@ -17,18 +17,18 @@ tracing = "0.1.44"
 rand = "0.8"
 
 # The following dependencies are used for the client API
-darkfi = { path = "../../../", features = ["zk"], optional = true }
+dwow = { path = "../../../", features = ["zk"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.8", features = ["custom"] }
-darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
+dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 
 [features]
 default = []
 no-entrypoint = []
 client = [
-    "darkfi",
-    "darkfi-serial/async",
+    "dwow",
+    "dwow-serial/async",
 ]
 
 [lints]

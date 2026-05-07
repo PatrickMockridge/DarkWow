@@ -23,19 +23,19 @@
 
 //! Insurance Market Contract Entrypoint
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::ContractId,
     dark_tree::DarkLeaf,
     error::ContractResult,
     wasm, ContractCall,
 };
-use darkfi_serial::deserialize;
+use dwow_serial::deserialize;
 
 use crate::error::InsuranceMarketError;
 use crate::model::*;
 use crate::InsuranceMarketFunction;
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

@@ -23,8 +23,8 @@
 
 //! RegisterRiskTypeV1 Implementation
 
-use darkfi_sdk::{error::ContractError, msg, wasm};
-use darkfi_serial::{deserialize, serialize};
+use dwow_sdk::{error::ContractError, msg, wasm};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::InsuranceMarketError;
 use crate::model::{derive_risk_type_id, RegisterRiskTypeParamsV1, RegisterRiskTypeUpdateV1};
@@ -32,9 +32,9 @@ use crate::INSURANCE_CONTRACT_RISK_TYPES_TREE;
 
 /// Process instruction for RegisterRiskTypeV1
 pub fn insurance_market_register_risk_type_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: RegisterRiskTypeParamsV1 = deserialize(&self_.data[1..])?;
@@ -85,7 +85,7 @@ pub fn insurance_market_register_risk_type_process_instruction_v1(
 
 /// Process update for RegisterRiskTypeV1
 pub fn insurance_market_register_risk_type_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: RegisterRiskTypeUpdateV1,
 ) -> Result<(), ContractError> {
     let risk_types_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_RISK_TYPES_TREE)?;

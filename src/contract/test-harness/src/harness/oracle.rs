@@ -25,12 +25,12 @@
 //!
 //! Provides isolated testing for Oracle contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{crypto::PublicKey, pasta::pallas};
-use darkfi_serial::Encodable;
+use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+use dwow_serial::Encodable;
 
 use darkfi_oracle_contract::client::register_oracle_v1::{
     RegisterOracleV1CallData, register_oracle_v1_proof,
@@ -55,7 +55,7 @@ impl OracleHarness {
             ZkBinary::decode(register_oracle_bin, false).unwrap();
 
         let register_oracle_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&register_oracle_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&register_oracle_zkbin).unwrap(),
             &register_oracle_zkbin,
         );
 
@@ -133,5 +133,5 @@ pub struct RegisterOracleResult {
     pub call_data: Vec<u8>,
     pub oracle_pub_x: pallas::Base,
     pub oracle_pub_y: pallas::Base,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
 }

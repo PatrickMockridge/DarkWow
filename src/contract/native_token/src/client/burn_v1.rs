@@ -25,12 +25,12 @@
 //!
 //! This module provides the ability to build Burn calls to destroy coins.
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, Keypair,
@@ -175,7 +175,7 @@ pub struct BurnCallInput {
     /// Merkle tree leaf position
     pub leaf_position: u64,
     /// Merkle path (siblings)
-    pub merkle_path: Vec<darkfi_sdk::crypto::MerkleNode>,
+    pub merkle_path: Vec<dwow_sdk::crypto::MerkleNode>,
     /// Caller's keypair for signing
     pub keypair: Keypair,
 }

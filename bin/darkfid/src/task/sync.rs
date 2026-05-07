@@ -23,11 +23,11 @@
 
 use std::collections::HashMap;
 
-use darkfi::{
+use dwow::{
     blockchain::HeaderHash, net::ChannelPtr, rpc::jsonrpc::JsonSubscriber, system::sleep,
     util::encoding::base64, validator::consensus::Proposal, Error, Result,
 };
-use darkfi_serial::serialize_async;
+use dwow_serial::serialize_async;
 use rand::{prelude::SliceRandom, rngs::OsRng};
 use tinyjson::JsonValue;
 use tracing::{debug, info, warn};

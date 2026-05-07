@@ -28,7 +28,7 @@ use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::info;
 use url::Url;
 
-use darkfi::{async_daemonize, cli_desc, rpc::settings::RpcSettingsOpt, Error, Result};
+use dwow::{async_daemonize, cli_desc, rpc::settings::RpcSettingsOpt, Error, Result};
 
 use rlnd::Rlnd;
 
@@ -43,7 +43,7 @@ struct Args {
     /// Configuration file to use
     config: Option<String>,
 
-    #[structopt(long, default_value = "~/.local/share/darkfi/rlnd")]
+    #[structopt(long, default_value = "~/.local/share/dwow/rlnd")]
     /// Path to the database directory
     database: String,
 

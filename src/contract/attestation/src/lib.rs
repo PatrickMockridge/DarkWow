@@ -45,7 +45,7 @@
 //! 3. Claim is verified (ZK + on-chain)
 //! 4. Claim can be consumed (prevents replay)
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 define_contract_function!(AttestationFunction {
     CreateAttestationV1 = 0x00,

@@ -36,11 +36,11 @@ mod tests {
         },
         MoneyV3Function, MONEY_V3_MAX_COIN_VALUE,
     };
-    use darkfi_sdk::{
+    use dwow_sdk::{
         crypto::{pasta_prelude::PrimeField, poseidon_hash, MerkleNode},
         pasta::pallas,
     };
-    use darkfi_serial::{deserialize, serialize};
+    use dwow_serial::{deserialize, serialize};
 
     // ================================================================
     // MoneyV3Function enum tests
@@ -343,7 +343,7 @@ mod tests {
                 pallas::Base::zero(),
                 pallas::Base::zero(),
             ),
-            note: darkfi_sdk::crypto::note::AeadEncryptedNote {
+            note: dwow_sdk::crypto::note::AeadEncryptedNote {
                 ciphertext: vec![0u8; 32],
                 nonce: [0u8; 12],
                 tag: [0u8; 16],

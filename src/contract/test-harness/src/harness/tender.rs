@@ -25,15 +25,15 @@
 //!
 //! Provides isolated testing for Tender contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::PublicKey,
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use darkfi_tender_contract::client::{
     create_tender_v1::{CreateTenderV1CallData, create_tender_v1_proof, CreateTenderV1PublicInputs},
@@ -79,19 +79,19 @@ impl TenderHarness {
         let select_winner_zkbin = ZkBinary::decode(select_bin, false).unwrap();
 
         let create_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_tender_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_tender_zkbin).unwrap(),
             &create_tender_zkbin,
         );
         let submit_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&submit_bid_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&submit_bid_zkbin).unwrap(),
             &submit_bid_zkbin,
         );
         let reveal_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&reveal_bid_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&reveal_bid_zkbin).unwrap(),
             &reveal_bid_zkbin,
         );
         let select_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&select_winner_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&select_winner_zkbin).unwrap(),
             &select_winner_zkbin,
         );
 
@@ -303,7 +303,7 @@ impl super::ContractHarness for TenderHarness {
 /// Result of create_tender
 pub struct CreateTenderResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: CreateTenderV1PublicInputs,
     pub tender_id: pallas::Base,
 }
@@ -311,20 +311,20 @@ pub struct CreateTenderResult {
 /// Result of submit_bid
 pub struct SubmitBidResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: SubmitBidV1PublicInputs,
 }
 
 /// Result of reveal_bid
 pub struct RevealBidResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: RevealBidV1PublicInputs,
 }
 
 /// Result of select_winner
 pub struct SelectWinnerResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: SelectWinnerV1PublicInputs,
 }

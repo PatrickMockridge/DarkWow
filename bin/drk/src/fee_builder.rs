@@ -25,22 +25,22 @@
 //!
 //! Shared functionality for building fee calls and finalizing transactions.
 
-use darkfi::{
+use dwow::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
     zkas::ZkBinary,
     Error, Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, BaseBlind, PublicKey, SecretKey, MerkleNode},
     pasta::pallas,
     tx::ContractCall,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use rand::{rngs::OsRng, Rng};
 
 use crate::contract_imports::native_token::{
-    DARK_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
+    DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
 };
 use crate::walletdb::WalletPtr;
@@ -55,7 +55,7 @@ pub async fn build_fee_and_finalize_tx(
     call_leaf: ContractCallLeaf,
 ) -> Result<Transaction> {
     // Get DARK coin for fee
-    let dark_token_id_str = format!("{:?}", DARK_TOKEN_ID);
+    let dark_token_id_str = format!("{:?}", DRKW_TOKEN_ID);
     let dark_coin_records = wallet.get_token_coins(&dark_token_id_str, false)
         .map_err(|e| Error::Custom(format!("Failed to get DARK coins: {:?}", e)))?;
 
@@ -115,7 +115,7 @@ pub async fn build_fee_and_finalize_tx(
     // Build fee input
     let fee_input = FeeCallInput {
         value: dark_coin.value,
-        token_id: DARK_TOKEN_ID,
+        token_id: DRKW_TOKEN_ID,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: dark_coin_blind,

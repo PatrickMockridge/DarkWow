@@ -23,7 +23,7 @@
 
 // ../zkas simple.zk
 
-use darkfi::{
+use dwow::{
     zk::{
         proof::{Proof, ProvingKey, VerifyingKey},
         vm::{Witness, ZkCircuit},
@@ -32,12 +32,12 @@ use darkfi::{
     zkas::decoder::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{poseidon_hash, MerkleNode, MerkleTree},
     pasta::{group::ff::Field, pallas},
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use halo2_proofs::circuit::Value;
 use rand::rngs::OsRng;
 

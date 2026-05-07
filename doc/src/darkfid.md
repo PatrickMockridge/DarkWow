@@ -1,8 +1,8 @@
-# DarkWow Daemon (darkfid)
+# DarkWow Daemon (dwowd)
 
 ## Overview
 
-darkfid is the DarkWow blockchain node software - the daemon that runs the full DarkWow network. It handles consensus, transaction validation, smart contract execution, and P2P networking.
+dwowd is the DarkWow blockchain node software - the daemon that runs the full DarkWow network. It handles consensus, transaction validation, smart contract execution, and P2P networking.
 
 ## Key Responsibilities
 
@@ -28,7 +28,7 @@ darkfid is the DarkWow blockchain node software - the daemon that runs the full 
 
 ## Native vs WASM Contracts
 
-darkfid ships with three **native contracts** compiled directly into the binary:
+dwowd ships with three **native contracts** compiled directly into the binary:
 
 | Contract | Purpose | ContractID |
 |----------|---------|------------|
@@ -42,10 +42,10 @@ Native contracts are deployed at startup via `deploy_native_contracts()` and hav
 
 ## Startup Sequence
 
-See [DarkWow Contract Deployment Pipeline](./arch/darkfid_contract_pipeline.md) for detailed startup flow.
+See [DarkWow Contract Deployment Pipeline](./arch/dwowd_contract_pipeline.md) for detailed startup flow.
 
 ```
-darkfid startup
+dwowd startup
      │
      ├── Load/create sled database
      ├── Load PKs and VKs from disk cache
@@ -57,10 +57,10 @@ darkfid startup
 
 ## Configuration
 
-darkfid reads configuration from a TOML file:
+dwowd reads configuration from a TOML file:
 
 ```toml
-# Example darkfid.toml
+# Example dwowd.toml
 [server]
 jsonrpc_host = "127.0.0.1"
 jsonrpc_port = 48345
@@ -80,32 +80,32 @@ stratum_port = 48347
 
 ### Localnet (for development)
 ```bash
-./darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
+./dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
 ```
 
 ### Testnet
 ```bash
-./darkfid -c config/testnet/darkfid.toml
+./dwowd -c config/testnet/dwowd.toml
 ```
 
 ### Mainnet
 ```bash
-./darkfid -c config/mainnet/darkfid.toml
+./dwowd -c config/mainnet/dwowd.toml
 ```
 
 ## Key Files and Directories
 
 | Path | Description |
 |------|-------------|
-| `bin/darkfid/` | darkfid binary |
+| `bin/dwowd/` | dwowd binary |
 | `contrib/localnet/` | Local development configuration |
 | `src/validator/` | Validator implementation |
 | `src/contract/` | Contract implementations |
-| `bin/darkfid/src/tests/harness.rs` | Test harness initialization |
+| `bin/dwowd/src/tests/harness.rs` | Test harness initialization |
 
 ## Related Documentation
 
-- [Contract Deployment Pipeline](./arch/darkfid_contract_pipeline.md) - How contracts are deployed and VKs injected
+- [Contract Deployment Pipeline](./arch/dwowd_contract_pipeline.md) - How contracts are deployed and VKs injected
 - [Test Harness Guide](./arch/test_harness_guide.md) - Testing infrastructure
 - [Localnet Contract Testing](./arch/localnet_contract_testing.md) - Local development workflow
-- [JSON-RPC API](../clients/darkfid_jsonrpc.md) - Wallet API reference
+- [JSON-RPC API](../clients/dwowd_jsonrpc.md) - Wallet API reference

@@ -42,7 +42,7 @@ use toml::Value;
 use tracing::{debug, error, info, warn};
 use url::Url;
 
-use darkfi::{
+use dwow::{
     async_daemonize, cli_desc,
     net::{
         self,

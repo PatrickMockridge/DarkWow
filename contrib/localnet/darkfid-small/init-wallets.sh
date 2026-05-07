@@ -1,9 +1,9 @@
 #!/bin/sh
 
-# Path to `drk` binary
-DRK="../../../drk"
-DRK0="$DRK -c drk0.toml"
-DRK1="$DRK -c drk1.toml"
+# Path to `dww` binary
+DWW="../../../dww"
+DRK0="$DWW -c drk0.toml"
+DRK1="$DWW -c drk1.toml"
 
 initialize() {
   $1 wallet initialize

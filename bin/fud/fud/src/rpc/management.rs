@@ -28,7 +28,7 @@ use smol::lock::{Mutex, MutexGuard};
 use tinyjson::JsonValue;
 use tracing::debug;
 
-use darkfi::{
+use dwow::{
     net::P2pPtr,
     rpc::{
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResponse, JsonResult, JsonSubscriber},

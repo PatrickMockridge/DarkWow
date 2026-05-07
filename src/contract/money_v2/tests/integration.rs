@@ -21,11 +21,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::Result;
+use dwow::Result;
 use darkfi_contract_test_harness::{
     contract_graph::Contract, init_logger, Holder, TestHarness,
 };
-use darkfi_sdk::blockchain::expected_reward;
+use dwow_sdk::blockchain::expected_reward;
 
 #[test]
 #[ignore] // Requires running darkfid node - run manually with: cargo test -p darkfi_money_v2_contract --test integration -- --ignored

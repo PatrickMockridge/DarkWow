@@ -1,11 +1,11 @@
 #!/bin/sh
 set -e
 
-# Start a tmux session with a darkfid node in linear-testnet mode
+# Start a tmux session with a dwowd node in linear-testnet mode
 # Mining is done via RPC: miner.mine_linear
 
-# Path to darkfid binary
-DARKFID="LOG_TARGETS='!net,!runtime,!sled' ../../../darkfid -c darkfid.toml"
+# Path to dwowd binary
+DARKFID="LOG_TARGETS='!net,!runtime,!sled' ../../../dwowd -c dwowd.toml"
 
 session=darkfid-single-node
 

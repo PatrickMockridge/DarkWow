@@ -23,14 +23,14 @@
 
 use std::{fmt, str::FromStr};
 
-use darkfi_sdk::{
+use dwow_sdk::{
     blockchain::block_version,
     crypto::{MerkleNode, MerkleTree},
     monotree::{Hash as StateHash, EMPTY_HASH},
 };
 #[cfg(feature = "async-serial")]
-use darkfi_serial::{async_trait, FutAsyncWriteExt};
-use darkfi_serial::{deserialize, serialize, Encodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{async_trait, FutAsyncWriteExt};
+use dwow_serial::{deserialize, serialize, Encodable, SerialDecodable, SerialEncodable};
 use sled_overlay::sled;
 
 use crate::{util::time::Timestamp, Error, Result};
@@ -505,7 +505,7 @@ impl HeaderStoreOverlay {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use darkfi_sdk::{crypto::pasta_prelude::PrimeField, pasta::Fp};
+    use dwow_sdk::{crypto::pasta_prelude::PrimeField, pasta::Fp};
     use rand::Rng;
 
     #[test]

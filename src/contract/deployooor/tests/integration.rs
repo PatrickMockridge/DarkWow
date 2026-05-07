@@ -30,7 +30,7 @@
 //!   4. Negative: locking an already-locked contract fails
 //!   5. Negative: deploying to a locked contract fails
 
-use darkfi::Result;
+use dwow::Result;
 use darkfi_contract_test_harness::{
     contract_graph::Contract, init_logger, Holder, TestHarness,
 };
@@ -46,8 +46,8 @@ fn deploy_integration() -> Result<()> {
         let block_height = 0;
         let mut th = TestHarness::new(&[Alice], false, &[Contract::Money, Contract::Deployooor]).await?;
 
-        let dao_escrow_wasm = include_bytes!("../../dao_escrow/darkfi_dao_escrow_contract.wasm");
-        let money_wasm = include_bytes!("../../money_v3/darkfi_money_v3_contract.wasm");
+        let dao_escrow_wasm = include_bytes!("../../dao_escrow/dwow_dao_escrow_contract.wasm");
+        let money_wasm = include_bytes!("../../money_v3/dwow_money_v3_contract.wasm");
 
         // Deploy a contract
         info!(target: "deploy", "Deploying dao_escrow contract");

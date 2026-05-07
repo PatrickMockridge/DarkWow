@@ -23,12 +23,12 @@
 
 //! CancelSwap ZK proof generation
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::poseidon_hash,
     pasta::pallas,
 };
@@ -136,7 +136,7 @@ pub fn create_cancel_swap_proof(
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
 
-    //darkfi::zk::export_witness_json("proof/witness/cancel_swap_v1.json", &witnesses, &public_inputs.to_vec());
+    //dwow::zk::export_witness_json("proof/witness/cancel_swap_v1.json", &witnesses, &public_inputs.to_vec());
     let circuit = ZkCircuit::new(witnesses, zkbin);
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 

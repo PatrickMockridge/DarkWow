@@ -26,7 +26,7 @@
 //! IVF is a simple container format with a 32-byte header followed by
 //! frame headers (12 bytes each) and frame data.
 
-use darkfi_serial::Decodable;
+use dwow_serial::Decodable;
 use std::io::{Cursor, Read};
 use thiserror::Error;
 

@@ -23,7 +23,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use darkfi::{
+use dwow::{
     net::{P2p, P2pPtr, Settings},
     rpc::jsonrpc::JsonSubscriber,
     system::ExecutorPtr,

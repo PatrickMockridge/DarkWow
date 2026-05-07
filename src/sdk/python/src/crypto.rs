@@ -23,7 +23,7 @@
 
 use std::{fmt::Write, ops::Deref};
 
-use darkfi_sdk::{crypto, crypto::util::FieldElemAsStr, hex::AsHex, pasta::pallas};
+use dwow_sdk::{crypto, crypto::util::FieldElemAsStr, hex::AsHex, pasta::pallas};
 use pyo3::{
     prelude::{PyDictMethods, PyModule, PyModuleMethods},
     pyclass, pyfunction, pymethods,

@@ -240,8 +240,8 @@ Response: {"jsonrpc": "2.0", "result": "base64encodedLinearBlockAdapter", "id": 
 
 ZK proof verification in the linear blockchain differs from the original:
 
-1. **darkfid validates all proofs** before including transactions in blocks
-2. The wallet scanner **does not verify proofs** - it trusts that darkfid has validated them
+1. **dwowd validates all proofs** before including transactions in blocks
+2. The wallet scanner **does not verify proofs** - it trusts that dwowd has validated them
 3. Scanner's only job is **note decryption** to detect wallet-owned coins
 
 This is a deliberate design choice that simplifies the wallet scanner significantly.
@@ -249,5 +249,5 @@ This is a deliberate design choice that simplifies the wallet scanner significan
 ## Limitations
 
 1. **No DarkLeaf children_indexes**: Linear `ContractCall` lacks the `children_indexes` field, so DAO child call traversal is not possible
-2. **No ZK verification in scanner**: Scanner trusts darkfid's validation
+2. **No ZK verification in scanner**: Scanner trusts dwowd's validation
 3. **Simplied state**: No overlay/rollback system means simpler but less powerful state management

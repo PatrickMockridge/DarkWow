@@ -25,12 +25,12 @@
 //!
 //! Data structures for Baccarat game state, card handling, and outcome calculation.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, schnorr::Signature, tx_hash_to_base, PublicKey},
     pasta::pallas,
     tx::TransactionHash,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // ============================================================================
 // CARD AND HAND TYPES

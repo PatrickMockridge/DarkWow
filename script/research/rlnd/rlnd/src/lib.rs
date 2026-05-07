@@ -27,7 +27,7 @@ use smol::lock::Mutex;
 use tracing::{error, info};
 use url::Url;
 
-use darkfi::{
+use dwow::{
     rpc::{
         server::{listen_and_serve, RequestHandler},
         settings::RpcSettings,

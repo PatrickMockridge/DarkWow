@@ -23,7 +23,7 @@
 
 use std::ops::Deref;
 
-use darkfi_sdk::crypto::{merkle_node, MerkleNode};
+use dwow_sdk::crypto::{merkle_node, MerkleNode};
 use pyo3::{
     prelude::{PyModule, PyModuleMethods},
     pyclass, pymethods, Bound, PyResult,

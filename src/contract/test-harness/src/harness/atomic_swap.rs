@@ -25,15 +25,15 @@
 //!
 //! Provides isolated testing for AtomicSwap contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::PublicKey,
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use darkfi_atomic_swap_contract::client::{
     create_swap_v1::{CreateSwapCallData, create_swap_proof, CreateSwapPublicInputs},
@@ -72,15 +72,15 @@ impl AtomicSwapHarness {
         let refund_swap_zkbin = ZkBinary::decode(refund_bin, false).unwrap();
 
         let create_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_swap_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_swap_zkbin).unwrap(),
             &create_swap_zkbin,
         );
         let claim_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&claim_swap_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&claim_swap_zkbin).unwrap(),
             &claim_swap_zkbin,
         );
         let refund_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&refund_swap_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&refund_swap_zkbin).unwrap(),
             &refund_swap_zkbin,
         );
 
@@ -234,18 +234,18 @@ impl super::ContractHarness for AtomicSwapHarness {
 
 pub struct CreateSwapResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: CreateSwapPublicInputs,
 }
 
 pub struct ClaimSwapResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: ClaimSwapPublicInputs,
 }
 
 pub struct RefundSwapResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: RefundSwapPublicInputs,
 }

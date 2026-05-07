@@ -59,7 +59,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use darkfi_sdk::crypto::{IntentSetIndexV1, IntentPostTransitionV1, IntentConsumeTransitionV1};
+//! use dwow_sdk::crypto::{IntentSetIndexV1, IntentPostTransitionV1, IntentConsumeTransitionV1};
 //!
 //! let mut index = IntentSetIndexV1::default();
 //!
@@ -74,7 +74,7 @@
 //! index.apply_consume(&consume)?;
 //! ```
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use pasta_curves::pallas;
 
 use super::{IntentCommitment, IntentNullifier};

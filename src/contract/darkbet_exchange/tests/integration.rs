@@ -40,8 +40,8 @@ use darkfi_darkbet_exchange_contract::{
     DarkbetFunction, DARKBET_EXCHANGE_COMMISSION_BP, DARKBET_EXCHANGE_MAX_MARKET_LIFETIME,
     DARKBET_EXCHANGE_MIN_ORDER_SIZE,
 };
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::{crypto::pasta_prelude::PrimeField, crypto::PublicKey, pasta::pallas};
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{crypto::pasta_prelude::PrimeField, crypto::PublicKey, pasta::pallas};
 
 /// Helper to create a pallas::Base from bytes
 fn make_base(bytes: [u8; 32]) -> pallas::Base {
@@ -50,7 +50,7 @@ fn make_base(bytes: [u8; 32]) -> pallas::Base {
 
 /// Helper to create PublicKey from a numeric seed
 fn make_pubkey(seed: u64) -> PublicKey {
-    use darkfi_sdk::crypto::SecretKey;
+    use dwow_sdk::crypto::SecretKey;
     let secret = SecretKey::from(pallas::Base::from(seed));
     PublicKey::from_secret(secret)
 }
@@ -435,7 +435,7 @@ fn test_lp_share_creation() {
 
 #[test]
 fn test_create_market_params_encoding() {
-    use darkfi_sdk::crypto::schnorr::Signature;
+    use dwow_sdk::crypto::schnorr::Signature;
 
     let params = CreateMarketParamsV1 {
         description: "Team A vs Team B".to_string(),
@@ -461,7 +461,7 @@ fn test_create_market_params_encoding() {
 
 #[test]
 fn test_place_back_params_encoding() {
-    use darkfi_sdk::crypto::schnorr::Signature;
+    use dwow_sdk::crypto::schnorr::Signature;
 
     let params = PlaceBackParamsV1 {
         market_id: make_base([1u8; 32]),
@@ -482,7 +482,7 @@ fn test_place_back_params_encoding() {
 
 #[test]
 fn test_place_lay_params_encoding() {
-    use darkfi_sdk::crypto::schnorr::Signature;
+    use dwow_sdk::crypto::schnorr::Signature;
 
     let params = PlaceLayParamsV1 {
         market_id: make_base([1u8; 32]),
@@ -503,7 +503,7 @@ fn test_place_lay_params_encoding() {
 
 #[test]
 fn test_match_orders_params_encoding() {
-    use darkfi_sdk::crypto::schnorr::Signature;
+    use dwow_sdk::crypto::schnorr::Signature;
 
     let params = MatchOrdersParamsV1 {
         market_id: make_base([1u8; 32]),
@@ -523,7 +523,7 @@ fn test_match_orders_params_encoding() {
 
 #[test]
 fn test_cancel_order_params_encoding() {
-    use darkfi_sdk::crypto::schnorr::Signature;
+    use dwow_sdk::crypto::schnorr::Signature;
 
     let params = CancelOrderParamsV1 {
         order_id: make_base([1u8; 32]),
@@ -539,7 +539,7 @@ fn test_cancel_order_params_encoding() {
 
 #[test]
 fn test_resolve_market_params_encoding() {
-    use darkfi_sdk::crypto::schnorr::Signature;
+    use dwow_sdk::crypto::schnorr::Signature;
 
     let params = ResolveMarketParamsV1 {
         market_id: make_base([1u8; 32]),

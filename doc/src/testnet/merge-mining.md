@@ -160,7 +160,7 @@ or press `p` to pause mining.
 
 > Note: `p2pool` uses plain `http` connections for RPC calls, as its
 > assumed to be running on a localnet. Don't run a `p2pool` instance
-> with a `darkfid` instance outside of your network, since someone
+> with a `dwowd` instance outside of your network, since someone
 > snooping your traffic can see your wallet address used for the block
 > rewards.
 
@@ -171,12 +171,12 @@ on DarkWow, we'll need a DarkWow wallet address so make sure you have
 default address:
 
 ```shell
-drk> wallet address
+dww> wallet address
 
 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
 
-We will also need `darkfid` running with mm_rpc enabled. The default
+We will also need `dwowd` running with mm_rpc enabled. The default
 testnet configuration already includes mm_rpc on port 18348:
 
 ```toml
@@ -186,7 +186,7 @@ rpc_listen = "http+tcp://127.0.0.1:18348"
 
 If using docker-compose, mm_rpc port 18348 is already exposed.
 
-Then start `darkfid` as usual:
+Then start `dwowd` as usual:
 
 Stop `p2pool` if it's running, and re-run it with the merge-mining
 parameters appended:
@@ -195,12 +195,12 @@ parameters appended:
 $ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:18348 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
 
-Now `p2pool` should communicate with both `monerod` and `darkfid` in
+Now `p2pool` should communicate with both `monerod` and `dwowd` in
 order to pick up Monero blocktemplates and inject them with DarkWow data
 necessary for merge-mining verification on the DarkWow side. Re-run
 `xmrig` and now we should be mining blocks again. Once blocks are
-found, they will be submitted to both `monerod` and `darkfid` and
-`darkfid` should verify them and release block rewards to the address
+found, they will be submitted to both `monerod` and `dwowd` and
+`dwowd` should verify them and release block rewards to the address
 provided to `p2pool` merge-mine parameters.
 
 Happy mining!
@@ -210,7 +210,7 @@ Happy mining!
 To retrieve a DAO merge mining configuration, execute:
 
 ```shell
-drk> dao mining-config {YOUR_DAO}
+dww> dao mining-config {YOUR_DAO}
 
 DarkWow DAO mining configuration address:
 {YOUR_DAO_WALLET_ADDRESS_MINING_CONFIGURATION}
@@ -227,7 +227,7 @@ After your miners have successfully mined confirmed blocks, you will
 see the DAO `DRKW` balance increasing:
 
 ```shell
-drk> dao balance {YOUR_DAO}
+dww> dao balance {YOUR_DAO}
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+---------
@@ -261,23 +261,23 @@ DarkWow's localnet configuration includes `mm_rpc` settings enabled by default,
 allowing you to test merge mining without external Monero infrastructure.
 The configuration files are located in `contrib/localnet/`:
 
-- `darkfid-single-node/darkfid.toml` - Single node setup
-- `darkfid-small/darkfid0.toml` - Small multi-node setup
-- `darkfid-five-nodes/darkfid0.toml` - Five node setup
+- `dwowd-single-node/dwowd.toml` - Single node setup
+- `dwowd-small/dwowd0.toml` - Small multi-node setup
+- `dwowd-five-nodes/dwowd0.toml` - Five node setup
 
 To test merge mining locally:
 
-1. Ensure `mm_rpc` is enabled in your `darkfid.toml`:
+1. Ensure `mm_rpc` is enabled in your `dwowd.toml`:
 
 ```toml
 [network_config."localnet".mm_rpc]
 rpc_listen = "http+tcp://127.0.0.1:48348"
 ```
 
-2. Start `darkfid` with localnet configuration:
+2. Start `dwowd` with localnet configuration:
 
 ```shell
-$ ./darkfid --network localnet --config contrib/localnet/darkfid-single-node/darkfid.toml
+$ ./dwowd --network localnet --config contrib/localnet/dwowd-single-node/dwowd.toml
 ```
 
 3. Verify `mm_rpc` is listening:
@@ -302,7 +302,7 @@ For full integration testing of the merge mining RPC implementation, use the
 test suite:
 
 ```shell
-$ cargo test -p darkfid merge_mining
+$ cargo test -p dwowd merge_mining
 ```
 
 [1]: https://github.com/monero-project/monero?tab=readme-ov-file#dependencies

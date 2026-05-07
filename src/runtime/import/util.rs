@@ -23,8 +23,8 @@
 
 use std::io::Cursor;
 
-use darkfi_sdk::wasm;
-use darkfi_serial::Decodable;
+use dwow_sdk::wasm;
+use dwow_serial::Decodable;
 use tracing::{debug, error};
 use wasmer::{FunctionEnvMut, WasmPtr};
 
@@ -59,7 +59,7 @@ pub(crate) fn drk_log(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u32) 
 /// The data will be read from `ptr` at a memory offset specified by `len`.
 ///
 /// Returns `SUCCESS` on success, otherwise returns an error code corresponding
-/// to a [`darkfi_sdk::error::ContractError`].
+/// to a [`dwow_sdk::error::ContractError`].
 ///
 /// Permissions: metadata, exec
 pub(crate) fn set_return_data(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u32) -> i64 {
@@ -72,19 +72,19 @@ pub(crate) fn set_return_data(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, le
             target: "runtime::util::set_return_data",
             "[WASM] [{cid}] set_return_data(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Here we count the length read from the memory slice.
     env.subtract_gas(&mut store, len as u64);
 
     let memory_view = env.memory_view(&store);
-    let Ok(slice) = ptr.slice(&memory_view, len) else { return darkfi_sdk::error::INTERNAL_ERROR };
-    let Ok(return_data) = slice.read_to_vec() else { return darkfi_sdk::error::INTERNAL_ERROR };
+    let Ok(slice) = ptr.slice(&memory_view, len) else { return dwow_sdk::error::INTERNAL_ERROR };
+    let Ok(return_data) = slice.read_to_vec() else { return dwow_sdk::error::INTERNAL_ERROR };
 
     // This function should only ever be called once on the runtime.
     if env.contract_return_data.take().is_some() {
-        return darkfi_sdk::error::SET_RETVAL_ERROR
+        return dwow_sdk::error::SET_RETVAL_ERROR
     }
     env.contract_return_data.set(Some(return_data));
 
@@ -110,7 +110,7 @@ pub(crate) fn get_object_bytes(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, i
             target: "runtime::util::get_object_bytes",
             "[WASM] [{cid}] get_object_bytes(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Get the object from env
@@ -120,13 +120,13 @@ pub(crate) fn get_object_bytes(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, i
             target: "runtime::util::get_object_bytes",
             "[WASM] [{cid}] get_object_bytes(): Tried to access object out of bounds"
         );
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
     let obj = objects[idx as usize].clone();
     drop(objects);
 
     if obj.len() > u32::MAX as usize {
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     // Subtract used gas. Here we count the bytes written to the memory slice
@@ -139,7 +139,7 @@ pub(crate) fn get_object_bytes(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, i
             target: "runtime::util::get_object_bytes",
             "[WASM] [{cid}] get_object_bytes(): Failed to make slice from ptr"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     };
 
     // Put the result in the VM
@@ -148,7 +148,7 @@ pub(crate) fn get_object_bytes(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, i
             target: "runtime::util::get_object_bytes",
             "[WASM] [{cid}] get_object_bytes(): Failed to write to memory slice: {e}"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     };
 
     wasm::entrypoint::SUCCESS
@@ -171,7 +171,7 @@ pub(crate) fn get_object_size(mut ctx: FunctionEnvMut<Env>, idx: u32) -> i64 {
             target: "runtime::util::get_object_size",
             "[WASM] [{cid}] get_object_size(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Get the object from env
@@ -181,7 +181,7 @@ pub(crate) fn get_object_size(mut ctx: FunctionEnvMut<Env>, idx: u32) -> i64 {
             target: "runtime::util::get_object_size",
             "[WASM] [{cid}] get_object_size(): Tried to access object out of bounds"
         );
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     let obj = &objects[idx as usize];
@@ -189,7 +189,7 @@ pub(crate) fn get_object_size(mut ctx: FunctionEnvMut<Env>, idx: u32) -> i64 {
     drop(objects);
 
     if obj_len > u32::MAX as usize {
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     // Subtract used gas. Here we count the size of the object.
@@ -213,7 +213,7 @@ pub(crate) fn get_verifying_block_height(mut ctx: FunctionEnvMut<Env>) -> i64 {
             target: "runtime::util::get_verifying_block_height",
             "[WASM] [{cid}] get_verifying_block_height(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Here we count the size of the object.
@@ -237,7 +237,7 @@ pub(crate) fn get_block_target(mut ctx: FunctionEnvMut<Env>) -> i64 {
             target: "runtime::util::get_block_target",
             "[WASM] [{cid}] get_block_target(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Here we count the size of the object.
@@ -261,7 +261,7 @@ pub(crate) fn get_tx_hash(mut ctx: FunctionEnvMut<Env>) -> i64 {
             target: "runtime::util::get_tx_hash",
             "[WASM] [{cid}] get_tx_hash(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Here we count the size of the object.
@@ -288,7 +288,7 @@ pub(crate) fn get_call_index(mut ctx: FunctionEnvMut<Env>) -> i64 {
             target: "runtime::util::get_call_index",
             "[WASM] [{cid}] get_call_index(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Here we count the size of the object.
@@ -313,7 +313,7 @@ pub(crate) fn get_blockchain_time(mut ctx: FunctionEnvMut<Env>) -> i64 {
             target: "runtime::util::get_blockchain_time",
             "[WASM] [{cid}] get_blockchain_time(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Grab current last block
@@ -324,7 +324,7 @@ pub(crate) fn get_blockchain_time(mut ctx: FunctionEnvMut<Env>) -> i64 {
                 target: "runtime::util::get_blockchain_time",
                 "[WASM] [{cid}] get_blockchain_time(): Internal error getting from blocks tree: {e}"
             );
-            return darkfi_sdk::error::DB_GET_FAILED
+            return dwow_sdk::error::DB_GET_FAILED
         }
     };
 
@@ -340,7 +340,7 @@ pub(crate) fn get_blockchain_time(mut ctx: FunctionEnvMut<Env>) -> i64 {
     let mut objects = env.objects.borrow_mut();
     objects.push(ret.to_vec());
     if objects.len() > u32::MAX as usize {
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     (objects.len() - 1) as i64
@@ -365,7 +365,7 @@ pub(crate) fn get_last_block_height(mut ctx: FunctionEnvMut<Env>) -> i64 {
             target: "runtime::util::get_last_block_height",
             "[WASM] [{cid}] get_last_block_height(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Grab current last block height
@@ -376,7 +376,7 @@ pub(crate) fn get_last_block_height(mut ctx: FunctionEnvMut<Env>) -> i64 {
                 target: "runtime::util::get_last_block_height",
                 "[WASM] [{cid}] get_last_block_height(): Internal error getting from blocks tree: {e}"
             );
-            return darkfi_sdk::error::DB_GET_FAILED
+            return dwow_sdk::error::DB_GET_FAILED
         }
     };
 
@@ -386,13 +386,13 @@ pub(crate) fn get_last_block_height(mut ctx: FunctionEnvMut<Env>) -> i64 {
 
     // Create the return object
     let mut ret = Vec::with_capacity(8);
-    ret.extend_from_slice(&darkfi_serial::serialize(&height));
+    ret.extend_from_slice(&dwow_serial::serialize(&height));
 
     // Copy Vec<u8> to the VM
     let mut objects = env.objects.borrow_mut();
     objects.push(ret.to_vec());
     if objects.len() > u32::MAX as usize {
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     (objects.len() - 1) as i64
@@ -417,7 +417,7 @@ pub(crate) fn get_tx(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) -> i64 {
             target: "runtime::util::get_tx",
             "[WASM] [{cid}] get_tx(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Here we count the length of the looked-up hash.
@@ -430,7 +430,7 @@ pub(crate) fn get_tx(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) -> i64 {
             target: "runtime::util::get_tx",
             "[WASM] [{cid}] get_tx(): Failed to make slice from ptr"
         );
-        return darkfi_sdk::error::DB_GET_FAILED
+        return dwow_sdk::error::DB_GET_FAILED
     };
 
     let mut buf = vec![0_u8; blake3::OUT_LEN];
@@ -439,7 +439,7 @@ pub(crate) fn get_tx(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) -> i64 {
             target: "runtime::util::get_tx",
             "[WASM] [{cid}] get_tx(): Failed to read from memory slice: {e}"
         );
-        return darkfi_sdk::error::DB_GET_FAILED
+        return dwow_sdk::error::DB_GET_FAILED
     };
 
     let mut buf_reader = Cursor::new(buf);
@@ -452,7 +452,7 @@ pub(crate) fn get_tx(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) -> i64 {
                 target: "runtime::util::get_tx",
                 "[WASM] [{cid}] get_tx(): Failed to decode hash from vec: {e}"
             );
-            return darkfi_sdk::error::DB_GET_FAILED
+            return dwow_sdk::error::DB_GET_FAILED
         }
     };
 
@@ -463,7 +463,7 @@ pub(crate) fn get_tx(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) -> i64 {
             target: "runtime::util::get_tx",
             "[WASM] [{cid}] get_tx(): Trailing bytes in argument stream"
         );
-        return darkfi_sdk::error::DB_GET_FAILED
+        return dwow_sdk::error::DB_GET_FAILED
     }
 
     // Retrieve transaction using the `hash`
@@ -474,7 +474,7 @@ pub(crate) fn get_tx(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) -> i64 {
                 target: "runtime::util::get_tx",
                 "[WASM] [{cid}] get_tx(): Internal error getting from tree: {e}"
             );
-            return darkfi_sdk::error::DB_GET_FAILED
+            return dwow_sdk::error::DB_GET_FAILED
         }
     };
 
@@ -484,11 +484,11 @@ pub(crate) fn get_tx(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) -> i64 {
             target: "runtime::util::get_tx",
             "[WASM] [{cid}] get_tx(): Return data is empty"
         );
-        return darkfi_sdk::error::DB_GET_EMPTY
+        return dwow_sdk::error::DB_GET_EMPTY
     };
 
     if return_data.len() > u32::MAX as usize {
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     // Subtract used gas. Here we count the length of the data read from db.
@@ -497,7 +497,7 @@ pub(crate) fn get_tx(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) -> i64 {
     // Copy the data (Vec<u8>) to the VM by pushing it to the objects Vector.
     let mut objects = env.objects.borrow_mut();
     if objects.len() == u32::MAX as usize {
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     // Return the length of the objects Vector.
@@ -525,7 +525,7 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
             target: "runtime::util::get_tx_location",
             "[WASM] [{cid}] get_tx_location(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Here we count the length of the looked-up hash.
@@ -538,7 +538,7 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
             target: "runtime::util::get_tx_location",
             "[WASM] [{cid}] get_tx_location(): Failed to make slice from ptr"
         );
-        return darkfi_sdk::error::DB_GET_FAILED
+        return dwow_sdk::error::DB_GET_FAILED
     };
 
     let mut buf = vec![0_u8; blake3::OUT_LEN];
@@ -547,7 +547,7 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
             target: "runtime::util::get_tx_location",
             "[WASM] [{cid}] get_tx_location(): Failed to read from memory slice: {e}"
         );
-        return darkfi_sdk::error::DB_GET_FAILED
+        return dwow_sdk::error::DB_GET_FAILED
     };
 
     let mut buf_reader = Cursor::new(buf);
@@ -560,7 +560,7 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
                 target: "runtime::util::get_tx_location",
                 "[WASM] [{cid}] get_tx_location(): Failed to decode hash from vec: {e}"
             );
-            return darkfi_sdk::error::DB_GET_FAILED
+            return dwow_sdk::error::DB_GET_FAILED
         }
     };
 
@@ -571,7 +571,7 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
             target: "runtime::util::get_tx_location",
             "[WASM] [{cid}] get_tx_location(): Trailing bytes in argument stream"
         );
-        return darkfi_sdk::error::DB_GET_FAILED
+        return dwow_sdk::error::DB_GET_FAILED
     }
 
     // Retrieve transaction using the `hash`
@@ -582,7 +582,7 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
                 target: "runtime::util::get_tx_location",
                 "[WASM] [{cid}] get_tx_location(): Internal error getting from tree: {e}"
             );
-            return darkfi_sdk::error::DB_GET_FAILED
+            return dwow_sdk::error::DB_GET_FAILED
         }
     };
 
@@ -592,11 +592,11 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
             target: "runtime::util::get_tx_location",
             "[WASM] [{cid}] get_tx_location(): Return data is empty"
         );
-        return darkfi_sdk::error::DB_GET_EMPTY
+        return dwow_sdk::error::DB_GET_EMPTY
     };
 
     if return_data.len() > u32::MAX as usize {
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     // Subtract used gas. Here we count the length of the data read from db.
@@ -605,7 +605,7 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
     // Copy the data (Vec<u8>) to the VM by pushing it to the objects Vector.
     let mut objects = env.objects.borrow_mut();
     if objects.len() == u32::MAX as usize {
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     // Return the length of the objects Vector.
@@ -633,7 +633,7 @@ pub(crate) fn get_block_hash_(mut ctx: FunctionEnvMut<Env>, height: i64) -> i64 
             target: "runtime::util::get_block_hash_",
             "[WASM] [{cid}] get_block_hash_(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas. Here we count the size of the returned hash.
@@ -649,21 +649,21 @@ pub(crate) fn get_block_hash_(mut ctx: FunctionEnvMut<Env>, height: i64) -> i64 
                     target: "runtime::util::get_block_hash_",
                     "[WASM] [{cid}] get_block_hash_(): Block at height {height} not found"
                 );
-                return darkfi_sdk::error::DB_GET_FAILED
+                return dwow_sdk::error::DB_GET_FAILED
             }
             Err(e) => {
                 error!(
                     target: "runtime::util::get_block_hash_",
                     "[WASM] [{cid}] get_block_hash_(): Internal error getting block hash: {e}"
                 );
-                return darkfi_sdk::error::DB_GET_FAILED
+                return dwow_sdk::error::DB_GET_FAILED
             }
         };
 
     // Copy the block hash (Vec<u8>) to the VM by pushing it to the objects Vector.
     let mut objects = env.objects.borrow_mut();
     if objects.len() == u32::MAX as usize {
-        return darkfi_sdk::error::DATA_TOO_LARGE
+        return dwow_sdk::error::DATA_TOO_LARGE
     }
 
     // Return the index of the objects Vector where the data was pushed

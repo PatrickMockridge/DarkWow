@@ -1,5 +1,5 @@
 [package]
-name = "darkfi_deployooor_contract"
+name = "dwow_deployooor_contract"
 version = "0.5.0"
 authors = ["Dyne.org foundation <foundation@dyne.org>"]
 license = "AGPL-3.0-only"
@@ -9,37 +9,37 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
-darkfi-serial = { path = "../../serial", features = ["derive", "crypto"] }
+dwow-sdk = { path = "../../sdk", features = ["wasm"] }
+dwow-serial = { path = "../../serial", features = ["derive", "crypto"] }
 thiserror = "2.0.17"
 wasmparser = "0.243.0"
 
 # The following dependencies are used for the client API and
 # probably shouldn't be in WASM
-darkfi = { path = "../../../", features = ["zk"], optional = true }
+dwow = { path = "../../../", features = ["zk"], optional = true }
 tracing = { version = "0.1.44", optional = true }
 rand = { version = "0.8.5", optional = true }
 
 # These are used for integration tests
 [dev-dependencies]
-darkfi-contract-test-harness = {path = "../test-harness"}
+dwow-contract-test-harness = {path = "../test-harness"}
 smol = "2.0.2"
 
 # We need to disable random using "custom" which makes the crate a noop
 # so the wasm32-unknown-unknown target is enabled.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.8", features = ["custom"] }
-darkfi-sdk = { path = "../../sdk", features = ["wasm"] }
+dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 
 [features]
 default = []
 no-entrypoint = []
-async = ["darkfi-sdk/async"]
+async = ["dwow-sdk/async"]
 client = [
-    "darkfi",
+    "dwow",
     "async",
-    "darkfi-sdk/async",
-    "darkfi-serial/async",
+    "dwow-sdk/async",
+    "dwow-serial/async",
 
     "tracing",
     "rand",

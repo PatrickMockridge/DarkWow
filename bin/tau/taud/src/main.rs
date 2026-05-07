@@ -36,7 +36,7 @@ use crypto_box::{
     aead::{Aead, AeadCore},
     ChaChaBox, SecretKey,
 };
-use darkfi_serial::{
+use dwow_serial::{
     async_trait, deserialize, deserialize_async_partial, serialize, serialize_async,
     SerialDecodable, SerialEncodable,
 };
@@ -49,7 +49,7 @@ use structopt_toml::StructOptToml;
 use tinyjson::JsonValue;
 use tracing::{debug, error, info};
 
-use darkfi::{
+use dwow::{
     async_daemonize,
     event_graph::{
         proto::{EventPut, ProtocolEventGraph},
@@ -65,7 +65,7 @@ use darkfi::{
     Error, Result,
 };
 
-use darkfi_sdk::crypto::{
+use dwow_sdk::crypto::{
     schnorr::{SchnorrPublic, SchnorrSecret, Signature},
     Keypair, PublicKey,
 };
@@ -86,7 +86,7 @@ use crate::{
 
 struct Workspace {
     read_key: ChaChaBox,
-    write_key: Option<darkfi_sdk::crypto::SecretKey>,
+    write_key: Option<dwow_sdk::crypto::SecretKey>,
     write_pubkey: PublicKey,
 }
 
@@ -225,7 +225,7 @@ fn parse_configured_workspaces(data: &toml::Value) -> Result<HashMap<String, Wor
                     info!(target: "taud", "Found configured write_key for {name} workspace");
                     let write_key = write_key.to_string();
                     let write_key_bytes = bs58::decode(write_key).into_vec().unwrap();
-                    let secret = match darkfi_sdk::crypto::SecretKey::from_bytes(
+                    let secret = match dwow_sdk::crypto::SecretKey::from_bytes(
                         write_key_bytes.try_into().unwrap(),
                     ) {
                         Ok(key) => key,
@@ -525,7 +525,7 @@ async fn realmain(settings: Args, executor: Arc<smol::Executor<'static>>) -> Res
     info!(target: "taud", "Instantiating event DAG");
     let sled_db = sled::open(datastore)?;
 
-    let p2p_settings: darkfi::net::Settings =
+    let p2p_settings: dwow::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), settings.net.clone()).try_into()?;
     let comms_timeout = p2p_settings.outbound_connect_timeout_max();
 

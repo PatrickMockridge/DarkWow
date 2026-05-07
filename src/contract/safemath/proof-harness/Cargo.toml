@@ -1,18 +1,18 @@
 [package]
-name = "darkfi-safemath-zk-proof-harness"
+name = "dwow-safemath-zk-proof-harness"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Portable DarkFi proof harness for darkfi-safemath-zk"
+description = "Portable DarkFi proof harness for dwow-safemath-zk"
 
 [lib]
 path = "src/lib.rs"
 
 [dependencies]
-darkfi-safemath-zk = { path = ".." }
+dwow-safemath-zk = { path = ".." }
 
 [dev-dependencies]
-darkfi_engine = { package = "darkfi", git = "https://codeberg.org/darkrenaissance/darkfi", rev = "bbcfa2f33bba31c92e72a70ba3992ef1147723d2", default-features = false, features = ["zk", "zkas"] }
+dwow_engine = { package = "dwow", git = "https://codeberg.org/darkrenaissance/darkfi", rev = "bbcfa2f33bba31c92e72a70ba3992ef1147723d2", default-features = false, features = ["zk", "zkas"] }
 halo2_proofs = "0.3.2"
 
 [patch.crates-io]

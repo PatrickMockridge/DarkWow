@@ -26,15 +26,15 @@
 //! Privacy-first native token design following money_v2 patterns.
 //! Uses Pedersen commitments for hidden values and nullifiers for double-spend prevention.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, Blind, MerkleNode, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
-use darkfi_serial::async_trait;
+use dwow_serial::async_trait;
 
 /// Nullifier definitions (for double-spend prevention)
 pub mod nullifier;
@@ -45,7 +45,7 @@ pub use self::nullifier::Nullifier;
 // ============================================================================
 
 /// DARK token ID (native token)
-pub const DARK_TOKEN_ID: pallas::Base = pallas::Base::zero();
+pub const DRKW_TOKEN_ID: pallas::Base = pallas::Base::zero();
 
 /// Maximum value per coin (prevent overflow)
 pub const MAX_COIN_VALUE: u64 = 1_000_000_000_000;

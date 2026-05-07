@@ -31,11 +31,11 @@
 //!   cargo run -p darkfi-contract-test-harness --bin prove_dao_escrow -- \
 //!     pay_premium <escrow_bulla> <member_secret> <value> <token_id> <expiry>
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey},
     pasta::pallas,
 };
@@ -82,7 +82,7 @@ fn run_init(args: &[String]) {
     let init_bin = include_bytes!("../../../dao_escrow/proof/init_v1.zk.bin");
     let zkbin = ZkBinary::decode(init_bin, false).unwrap();
 
-    let circuit = ZkCircuit::new(darkfi::zk::empty_witnesses(&zkbin).unwrap(), &zkbin);
+    let circuit = ZkCircuit::new(dwow::zk::empty_witnesses(&zkbin).unwrap(), &zkbin);
     let pk = ProvingKey::build(zkbin.k, &circuit);
 
     // Generate proof
@@ -120,7 +120,7 @@ fn run_pay_premium(args: &[String]) {
     let pay_premium_bin = include_bytes!("../../../dao_escrow/proof/pay_premium_v1.zk.bin");
     let zkbin = ZkBinary::decode(pay_premium_bin, false).unwrap();
 
-    let circuit = ZkCircuit::new(darkfi::zk::empty_witnesses(&zkbin).unwrap(), &zkbin);
+    let circuit = ZkCircuit::new(dwow::zk::empty_witnesses(&zkbin).unwrap(), &zkbin);
     let pk = ProvingKey::build(zkbin.k, &circuit);
 
     // Generate proof

@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use tinyjson::JsonValue;
 use tracing::{debug, error, info};
 
-use darkfi::{
+use dwow::{
     impl_p2p_message,
     net::{
         metering::MeteringConfiguration,
@@ -42,7 +42,7 @@ use darkfi::{
     util::time::NanoTimestamp,
     Error, Result,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Structure represening a bar message
 #[derive(Clone, Debug, SerialEncodable, SerialDecodable)]

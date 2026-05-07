@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::Result;
-use darkfi_sdk::crypto::Keypair;
+use dwow::Result;
+use dwow_sdk::crypto::Keypair;
 use tracing::debug;
 
 use crate::model::LockParamsV1;

@@ -34,7 +34,7 @@
 │                                                         │                    │
 │                                                         ▼                    │
 │                                          ┌────────────────────────┐          │
-│                                          │      darkfid           │          │
+│                                          │      dwowd           │          │
 │                                          │  (tx.broadcast RPC)   │          │
 │                                          └───────────┬────────────┘          │
 │                                                      │                      │
@@ -295,12 +295,12 @@ fn verify_onchain(
 ### Phase 2: On-Chain Verification (✅ UNBLOCKED via Tau_Pallas)
 - [x] Implement `verify_capability_onchain` with Identity contract interface
 - [x] **DONE**: Add wallet integration via Pallas-native darkfi_sdk crypto
-- [x] **DONE**: Connect to darkfid RPC for `tx.broadcast` via DarkfidClient
+- [x] **DONE**: Connect to dwowd RPC for `tx.broadcast` via DarkfidClient
 - [x] **DONE**: Build and sign transactions with Pallas keys
 
 **Solution**: Created **Tau_Pallas** (`bin/tau/tau_pallas/`) - a Pallas-native variant of tau that:
 - Uses `darkfi_sdk::crypto::Keypair` for Pallas curve key management
-- Has `DarkfidClient::broadcast_tx()` for darkfid RPC integration
+- Has `DarkfidClient::broadcast_tx()` for dwowd RPC integration
 - Can construct `Transaction` objects and sign with `tx.create_sigs()`
 - Implements working `verify_capability_onchain()` that broadcasts verification txs
 
@@ -314,7 +314,7 @@ Created as a separate binary alongside `taud` for direct DarkWow integration:
 |-----------|------|------------|
 | Keypair | NaCl/X25519 | Pallas (darkfi_sdk) |
 | Signing | crypto_box | Schnorr (tx.create_sigs) |
-| darkfid RPC | N/A | DarkfidClient |
+| dwowd RPC | N/A | DarkfidClient |
 | On-chain verification | Fallback only | Working |
 
 #### Architecture
@@ -336,7 +336,7 @@ Created as a separate binary alongside `taud` for direct DarkWow integration:
 │                           │                                          │
 │                           ▼                                          │
 │                  ┌─────────────────┐                               │
-│                  │    darkfid       │                               │
+│                  │    dwowd       │                               │
 │                  │  (blockchain)    │                               │
 │                  └────────┬────────┘                               │
 │                           │                                          │
@@ -372,7 +372,7 @@ When a worker claims a task with `verification_mode: OnChain`:
    - Params: capability_proof, verifier_pub, fee
 3. tau_pallas signs transaction with PM's Pallas secret key
 4. tau_pallas broadcasts via DarkfidClient.broadcast_tx()
-5. darkfid validates and includes tx in block
+5. dwowd validates and includes tx in block
 6. Identity contract verifies ZK proof on-chain
 7. Identity contract emits CapabilityVerified event
 ```
@@ -409,7 +409,7 @@ When a worker claims a task with `verification_mode: OnChain`:
 - `submit_task_deliverable` - Submits deliverable to labor market (placeholder for on-chain tx)
 - `register_capability` - Registers capabilities for tender winner (placeholder for identity contract)
 
-**Note**: Full on-chain transaction submission for `submit_task_deliverable` requires darkfid wallet integration (app-layer responsibility).
+**Note**: Full on-chain transaction submission for `submit_task_deliverable` requires dwowd wallet integration (app-layer responsibility).
 
 ### Phase 4: Privacy Hardening
 - [ ] Hide task-assignment correlation

@@ -23,13 +23,13 @@
 
 //! Lottery Contract Entrypoint
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::ContractId,
     dark_tree::DarkLeaf,
     error::ContractResult,
     wasm, ContractCall,
 };
-use darkfi_serial::deserialize;
+use dwow_serial::deserialize;
 
 use crate::model::{
     BuyTicketUpdateV1, ClaimPrizeUpdateV1, DrawWinnersUpdateV1, ExpireLotteryUpdateV1,
@@ -37,7 +37,7 @@ use crate::model::{
 };
 use crate::LotteryFunction;
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

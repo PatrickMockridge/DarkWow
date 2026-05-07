@@ -35,7 +35,7 @@ use tracing::info;
 use tracing_appender::non_blocking;
 use url::Url;
 
-use darkfi::{
+use dwow::{
     async_daemonize, cli_desc,
     system::ExecutorPtr,
     util::{
@@ -46,7 +46,7 @@ use darkfi::{
     },
     Error, Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         keypair::{Address, Keypair, Network, SecretKey, StandardAddress},
         BaseBlind, ContractId, FuncId,
@@ -54,9 +54,9 @@ use darkfi_sdk::{
     pasta::{group::ff::PrimeField, pallas},
     tx::TransactionHash,
 };
-use darkfi_serial::{deserialize_async, serialize_async};
+use dwow_serial::{deserialize_async, serialize_async};
 
-use drk::{
+use dww::{
     cli_util::{
         display_mining_config, generate_completions, kaching, parse_blockchain_config,
         parse_calls_from_stdin, parse_mining_config_from_stdin, parse_token_pair, parse_tree,
@@ -67,17 +67,17 @@ use drk::{
     swap::PartialSwapData,
     Drk,
 };
-use darkfi_sdk::crypto::{util::FieldElemAsStr, PublicKey};
+use dwow_sdk::crypto::{util::FieldElemAsStr, PublicKey};
 
-const CONFIG_FILE: &str = "drk_config.toml";
-const CONFIG_FILE_CONTENTS: &str = include_str!("../drk_config.toml");
+const CONFIG_FILE: &str = "dww_config.toml";
+const CONFIG_FILE_CONTENTS: &str = include_str!("../dww_config.toml");
 
 // Dev Note: when adding/modifying args here,
 // don't forget to update cli_util::generate_completions()
 // and interactive::help().
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]
 #[serde(default)]
-#[structopt(name = "drk", about = cli_desc!())]
+#[structopt(name = "dww", about = cli_desc!())]
 struct Args {
     #[structopt(short, long)]
     /// Configuration file to use
@@ -1863,7 +1863,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 };
                 let mut bytes = [0u8; 32];
                 bytes.copy_from_slice(&secret_bytes);
-                let deploy_auth = match darkfi_sdk::crypto::SecretKey::from_bytes(bytes) {
+                let deploy_auth = match dwow_sdk::crypto::SecretKey::from_bytes(bytes) {
                     Ok(s) => s,
                     Err(e) => {
                         eprintln!("Invalid deploy authority secret key: {}", e);
@@ -1981,7 +1981,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             }
 
             ContractSubcmd::DaoEscrowInit { dao_bulla, endowment_token_id, owner_pubkey, bulla_blind, enable_drain_protection } => {
-                use darkfi_sdk::pasta::pallas;
+                use dwow_sdk::pasta::pallas;
 
                 // Parse DAO bulla (use Base::zero() for standalone)
                 let dao_bulla = if dao_bulla.to_lowercase() == "zero" {
@@ -2069,7 +2069,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             }
 
             ContractSubcmd::DrainProtectionInit { fund_id, spend_authority, dao_escrow_bulla, rate_limit_bps, vote_threshold_bps } => {
-                use darkfi_sdk::pasta::pallas;
+                use dwow_sdk::pasta::pallas;
 
                 // Parse fund ID
                 let fund_id = {
@@ -2141,7 +2141,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             }
 
             ContractSubcmd::EnableDrainProtection { dao_escrow_bulla, drain_protection_bulla } => {
-                use darkfi_sdk::pasta::pallas;
+                use dwow_sdk::pasta::pallas;
 
                 // Parse DAO-Escrow bulla
                 let dao_escrow_bulla = {

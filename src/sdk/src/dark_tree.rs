@@ -23,7 +23,7 @@
 
 use std::{clone::Clone, collections::VecDeque, iter::FusedIterator, mem};
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::error::{DarkTreeError, DarkTreeResult};
 

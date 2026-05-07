@@ -28,11 +28,11 @@
 
 use std::sync::Arc;
 
-use darkfi::{
+use dwow::{
     runtime::vm_runtime::{Runtime, ContractStoreAccess, SimpleDbAccess, BlockchainAccess},
     Error,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::ContractId,
     tx::TransactionHash,
 };
@@ -120,7 +120,7 @@ impl LinearRuntime {
 
 /// Execute a transaction on the linear chain
 pub async fn execute_tx(
-    tx: &darkfi::tx::Transaction,
+    tx: &dwow::tx::Transaction,
     blockchain: Arc<LinearBlockchain>,
     verifying_block_height: u32,
     block_target: u32,

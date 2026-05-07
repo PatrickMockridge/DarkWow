@@ -41,7 +41,7 @@
 //! - Parties hidden (public keys derived from secrets)
 //! - Claim/refund linkable only via nullifiers
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         pasta_prelude::*,
         poseidon_hash, ContractId,
@@ -52,7 +52,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::EscrowError,
@@ -73,7 +73,7 @@ use crate::{
 
 const ESCROW_DB_VERSION_KEY: &[u8] = b"db_version";
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

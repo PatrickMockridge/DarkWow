@@ -23,7 +23,7 @@
 
 use darkfi_deployooor_contract::DeployFunction;
 use darkfi_money_contract::MoneyFunction;
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{DEPLOYOOOR_CONTRACT_ID, MONEY_CONTRACT_ID},
     dark_tree, tx,
 };

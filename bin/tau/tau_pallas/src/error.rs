@@ -23,7 +23,7 @@
 
 //! Error types for tau_pallas
 
-use darkfi::rpc::jsonrpc::{ErrorCode, JsonError, JsonResponse, JsonResult};
+use dwow::rpc::jsonrpc::{ErrorCode, JsonError, JsonResponse, JsonResult};
 use tinyjson::JsonValue;
 
 #[derive(Debug, thiserror::Error)]
@@ -35,7 +35,7 @@ pub enum TauPallasError {
     #[error("Invalid Data/Params: `{0}` ")]
     InvalidData(String),
     #[error("InternalError")]
-    Darkfi(#[from] darkfi::error::Error),
+    Darkfi(#[from] dwow::error::Error),
     #[error("Json serialization error: `{0}`")]
     JsonError(String),
     #[error("Encryption error: `{0}`")]

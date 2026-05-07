@@ -28,7 +28,7 @@ use smol::lock::{Mutex, MutexGuard};
 use tinyjson::JsonValue;
 use tracing::{debug, error};
 
-use darkfi::{
+use dwow::{
     event_graph::{proto::EventPut, Event, EventGraphPtr},
     net,
     rpc::{
@@ -40,7 +40,7 @@ use darkfi::{
     util::encoding::base64,
 };
 
-use darkfi_serial::{deserialize, deserialize_async_partial, serialize_async};
+use dwow_serial::{deserialize, deserialize_async_partial, serialize_async};
 use genevd::GenEvent;
 
 pub struct JsonRpcInterface {
@@ -248,7 +248,7 @@ impl JsonRpcInterface {
             seen_events.push(genevent);
         }
 
-        let ser = darkfi_serial::serialize(&seen_events);
+        let ser = dwow_serial::serialize(&seen_events);
         let enc = JsonValue::String(base64::encode(&ser));
 
         JsonResponse::new(enc, id).into()

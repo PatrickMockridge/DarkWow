@@ -23,7 +23,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use darkfi_sdk::{crypto::constants::OrchardFixedBases, pasta::pallas};
+use dwow_sdk::{crypto::constants::OrchardFixedBases, pasta::pallas};
 use halo2_gadgets::ecc as ecc_gadget;
 use halo2_proofs::{arithmetic::Field, circuit::AssignedCell};
 

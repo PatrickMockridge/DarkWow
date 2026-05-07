@@ -38,7 +38,7 @@
 //! - No price discovery (parties agree bilaterally)
 //! - No information leakage (swap either happens or refunds)
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 /// Functions available in the DEX contract
 define_contract_function!(DexFunction {

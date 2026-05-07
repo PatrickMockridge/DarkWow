@@ -30,7 +30,7 @@ use std::{
     },
 };
 
-use darkfi_serial::{async_trait, SerialDecodable, SerialEncodable};
+use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};
 use smol::Executor;
 use tracing::{debug, error, trace, warn};
 

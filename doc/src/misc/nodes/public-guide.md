@@ -9,7 +9,7 @@ explains how to run the optimal DarkWow public node configurations.
 a node using Tor.
 
 <u><b>Note</b></u>: This page is a general guide for public nodes in the DarkWow
-ecosystem and is applicable to other apps such as `taud` and `darkfid`. We use
+ecosystem and is applicable to other apps such as `taud` and `dwowd`. We use
 `darkirc` as our main example throughout this guide. Commands such as `./darkirc`
 and configuration filenames need to be adjusted if using different apps.
 If you're using another app, the network configurations remain the same except
@@ -25,7 +25,7 @@ After compiling, you can start the application so it can spawn its configuration
 % ./darkirc
 ```
 
-`darkirc` creates a configuration file `darkirc_config.toml` by default in `~/.config/darkfi/`. You will review and edit this configuration file for your preferred network settings.
+`darkirc` creates a configuration file `darkirc_config.toml` by default in `~/.config/dwow/`. You will review and edit this configuration file for your preferred network settings.
 
 ## Connect and test your node
 

@@ -25,22 +25,22 @@
 //!
 //! This module handles smart contract deployment using the Deployooor contract.
 
-use darkfi::{
+use dwow::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     Error, Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{Keypair, ContractId, PublicKey, SecretKey},
     pasta::pallas,
     tx::ContractCall,
 };
-use darkfi_serial::Encodable;
-use darkfi_sdk::deploy::DeployParamsV1;
+use dwow_serial::Encodable;
+use dwow_sdk::deploy::DeployParamsV1;
 use rand::rngs::OsRng;
 
 use crate::{rpc::ScanCache, Drk};
 use crate::contract_imports::deployooor::DeployCallBuilder;
-use darkfi_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
+use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
 /// Default network fee in DARK
 const DEFAULT_FEE: u64 = 42_000_000;
@@ -128,7 +128,7 @@ impl Drk {
         &self,
         scan_cache: &mut ScanCache,
         data: &[u8],
-        tx_hash: &darkfi_sdk::tx::TransactionHash,
+        tx_hash: &dwow_sdk::tx::TransactionHash,
         _block_height: &u32,
     ) -> Result<bool> {
         if data.is_empty() {
@@ -140,7 +140,7 @@ impl Drk {
         match function_code {
             // DeployV1 (0x00)
             0x00 => {
-                use darkfi_serial::Decodable;
+                use dwow_serial::Decodable;
                 let mut cursor = std::io::Cursor::new(&data[1..]);
                 let params = DeployParamsV1::decode(&mut cursor)
                     .map_err(|e| Error::Custom(format!("Failed to decode DeployV1 params: {:?}", e)))?;
@@ -185,7 +185,7 @@ impl Drk {
         &self,
         _scan_cache: &mut ScanCache,
         _params: &DeployParamsV1,
-        _tx_hash: &darkfi_sdk::tx::TransactionHash,
+        _tx_hash: &dwow_sdk::tx::TransactionHash,
         _block_height: &u32,
     ) -> Result<bool> {
         // TODO: Store deployment info in wallet database
@@ -197,7 +197,7 @@ impl Drk {
         &self,
         _scan_cache: &mut ScanCache,
         _public_key: &PublicKey,
-        _tx_hash: &darkfi_sdk::tx::TransactionHash,
+        _tx_hash: &dwow_sdk::tx::TransactionHash,
         _block_height: &u32,
     ) -> Result<bool> {
         // TODO: Store lock info in wallet database

@@ -14,10 +14,10 @@ edition = "2021"
 
 [dependencies]
 # Darkfi
-darkfi = {path = "../../../", features = ["bs58", "validator"]}
-darkfi-contract-test-harness = {path = "../../../src/contract/test-harness"}
-darkfi-sdk = {path = "../../../src/sdk"}
-darkfi-serial = {path = "../../../src/serial"}
+dwow = {path = "../../../", features = ["bs58", "validator"]}
+dwow-contract-test-harness = {path = "../../../src/contract/test-harness"}
+dwow-sdk = {path = "../../../src/sdk"}
+dwow-serial = {path = "../../../src/serial"}
 
 # Misc
 bs58 = "0.5.1"

@@ -26,9 +26,9 @@
 //! This module provides a wrapper around darkfi's ZK verification
 //! infrastructure for use with the linear blockchain.
 
-use darkfi::zk::Proof;
-use darkfi_sdk::pasta::pallas;
-use darkfi::zk::verifier::verify_zkp;
+use dwow::zk::Proof;
+use dwow_sdk::pasta::pallas;
+use dwow::zk::verifier::verify_zkp;
 
 /// ZK verifier for linear blockchain
 pub struct ZkVerifier;
@@ -48,7 +48,7 @@ impl ZkVerifier {
         zkbin_bytes: &[u8],
         instances: &[pallas::Base],
     ) -> bool {
-        verify_zkp(proof, zkbin_bytes, instances) == darkfi::zk::verifier::ZkVerifyResult::Ok
+        verify_zkp(proof, zkbin_bytes, instances) == dwow::zk::verifier::ZkVerifyResult::Ok
     }
 }
 

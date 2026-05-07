@@ -254,7 +254,7 @@ See also the [Blender Human Interface Guidelines: Paradigms](https://developer.b
 
 ## Roadmap
 
-1. Simple `drk` CLI tool with basic core apps working. We want to ship
+1. Simple `dww` CLI tool with basic core apps working. We want to ship
    so this is the only core prerequisite to start.
 2. We can add WASM addons with the basic framework after. Then migrate
    core apps such as money or DAO to this.
@@ -285,11 +285,11 @@ Multi-platform main view with splitting and these editors:
 ### Story
 
 The story goes like this. There's a node running of some kind. This
-could be darkfid or darkirc.
+could be dwowd or darkirc.
 
-In the case of darkfid, there's additional per wallet processing that's
+In the case of dwowd, there's additional per wallet processing that's
 done such as scanning transactions. Currently this is the role played
-by drk scan.
+by dww scan.
 
 Regardless of whether there's one node with functionality existing as
 pluggable modules, we assume now there are nodes running which the
@@ -345,7 +345,7 @@ and gives it a layer to draw in, which is simultaneously linked into both
 ```
 
 The plugin can then speak with modules by calling methods or
-subscribing to signals on `/mod/darkfid`. Methods and signals are
+subscribing to signals on `/mod/dwowd`. Methods and signals are
 automatically proxied from the node.
 
 ### Running a New Node per Function
@@ -357,7 +357,7 @@ At least in this case, there should be a way to spin up an event graph.
 
 For scanning transactions, is this done at startup incurring an
 initialization cost when opening the wallet? I guess so to maintain
-independence of keys from the darkfid node.
+independence of keys from the dwowd node.
 
 Another example is the task manager and darkirc chat. Do these remain
 separate daemons? When we add swarming support to p2p, it might be
@@ -374,7 +374,7 @@ reduce the burden for users to setup our infra.
 Wallets are clients talking to the node (remote).
 
 * There's persistent nodes running some process to sync data from the
-  network (darkfid downloading/verifying blockchain, event graph, ...)
+  network (dwowd downloading/verifying blockchain, event graph, ...)
 * There's scanning done by wallets on startup (check for recv'd
   payments, decrypt DMs, .etc)
   * Scanning downloads the updates from persistent nodes

@@ -24,7 +24,7 @@
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use darkfi::{rpc::client::RpcClient, util::logger::setup_logging, Result};
+use dwow::{rpc::client::RpcClient, util::logger::setup_logging, Result};
 use smol::Executor;
 use url::Url;
 

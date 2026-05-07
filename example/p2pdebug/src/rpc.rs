@@ -26,7 +26,7 @@ use log::debug;
 use serde_json::{json, Value};
 use url::Url;
 
-use darkfi::{
+use dwow::{
     net,
     rpc::{
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResponse, JsonResult},

@@ -29,11 +29,11 @@
 //! - Lock/unlock emergency controls
 //! - Member exit with haircut
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::PublicKey,
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Unique identifier for the protected fund (derived from DAO-Escrow bulla)
 pub type FundId = pallas::Base;

@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::pasta_prelude::*,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -29,7 +29,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Decodable, Encodable};
+use dwow_serial::{deserialize, serialize, Decodable, Encodable};
 
 use crate::{
     error::AtomicSwapError,
@@ -41,7 +41,7 @@ use crate::{
 
 /// `get_metadata` function for `AtomicSwap::RefundV1`
 pub(crate) fn atomic_swap_refund_get_metadata_v1(
-    _cid: darkfi_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -66,7 +66,7 @@ pub(crate) fn atomic_swap_refund_get_metadata_v1(
 
 /// `process_instruction` function for `AtomicSwap::RefundV1`
 pub(crate) fn atomic_swap_refund_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -124,7 +124,7 @@ pub(crate) fn atomic_swap_refund_process_instruction_v1(
 
 /// `process_update` function for `AtomicSwap::RefundV1`
 pub(crate) fn atomic_swap_refund_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: RefundUpdateV1,
 ) -> ContractResult {
     // Load the swap

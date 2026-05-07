@@ -23,7 +23,7 @@
 
 use std::{collections::HashSet, io::Write, path::PathBuf, sync::Arc};
 
-use darkfi::{
+use dwow::{
     async_daemonize, cli_desc,
     event_graph::{proto::ProtocolEventGraph, EventGraph, EventGraphPtr},
     net::{session::SESSION_DEFAULT, settings::SettingsOpt, P2p, P2pPtr},
@@ -36,7 +36,7 @@ use darkfi::{
     util::path::{expand_path, get_config_path},
     Error, Result,
 };
-use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use rand::rngs::OsRng;
 use settings::list_configured_contacts;
@@ -99,11 +99,11 @@ struct Args {
     /// Optional TLS certificate key file path if `irc_listen` uses TLS
     irc_tls_secret: Option<String>,
 
-    #[structopt(short, long, default_value = "~/.local/share/darkfi/darkirc_db")]
+    #[structopt(short, long, default_value = "~/.local/share/dwow/darkirc_db")]
     /// Datastore (DB) path
     datastore: String,
 
-    #[structopt(short, long, default_value = "~/.local/share/darkfi/replayed_darkirc_db")]
+    #[structopt(short, long, default_value = "~/.local/share/dwow/replayed_darkirc_db")]
     /// Replay logs (DB) path
     replay_datastore: String,
 
@@ -344,7 +344,7 @@ async fn realmain(args: Args, ex: Arc<Executor<'static>>) -> Result<()> {
             return Err(e.into());
         }
     };
-    let p2p_settings: darkfi::net::Settings =
+    let p2p_settings: dwow::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), args.net).try_into()?;
     let p2p = match P2p::new(p2p_settings, ex.clone()).await {
         Ok(p2p) => p2p,

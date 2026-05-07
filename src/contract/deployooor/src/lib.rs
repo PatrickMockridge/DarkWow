@@ -23,7 +23,7 @@
 
 //! Smart contract implementing non-native smart contract deployment.
 
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 
 /// Functions available in the contract
 #[repr(u8)]

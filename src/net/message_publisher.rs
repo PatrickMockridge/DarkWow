@@ -35,7 +35,7 @@ use crate::{
     system::{msleep, timeout::timeout},
     Error, Result,
 };
-use darkfi_serial::{AsyncDecodable, VarInt};
+use dwow_serial::{AsyncDecodable, VarInt};
 
 /// 64-bit identifier for message subscription.
 pub type MessageSubscriptionId = u64;

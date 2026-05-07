@@ -32,7 +32,7 @@ use smol::lock::MutexGuard;
 use tinyjson::JsonValue;
 use tracing::{debug, error, info};
 
-use darkfi::{
+use dwow::{
     blockchain::{
         header_store::PowData,
         monero::{
@@ -49,7 +49,7 @@ use darkfi::{
     },
     system::StoppableTaskPtr,
 };
-use darkfi_sdk::crypto::keypair::Network;
+use dwow_sdk::crypto::keypair::Network;
 
 use crate::{
     error::{miner_status_response, server_error, RpcError},

@@ -26,7 +26,7 @@ use std::{
     sync::Arc,
 };
 
-use darkfi::{
+use dwow::{
     net::{channel::ChannelPtr, P2pPtr},
     rpc::jsonrpc::JsonSubscriber,
     system::{ExecutorPtr, StoppableTask, StoppableTaskPtr},

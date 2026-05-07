@@ -31,8 +31,8 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use darkfi_sdk::crypto::SecretKey;
-//! use darkfi_sdk::pasta::pallas;
+//! use dwow_sdk::crypto::SecretKey;
+//! use dwow_sdk::pasta::pallas;
 //! use crate::tests::linear_sdk::{LinearTestnetSdk, NamedWallet};
 //!
 //! // Create SDK with multiple named wallets
@@ -60,17 +60,17 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use darkfi::{
+use dwow::{
     tx::{ContractCallLeaf, TransactionBuilder},
     Result,
 };
-use darkfi_linear::{Block, LinearStore, PoWConsensus};
-use darkfi_sdk::{
+use dwow_linear::{Block, LinearStore, PoWConsensus};
+use dwow_sdk::{
     crypto::{keypair::Keypair, DEPLOYOOOR_CONTRACT_ID, SecretKey},
     pasta::pallas,
     ContractCall,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 use sled::Config;
 
@@ -217,7 +217,7 @@ pub struct LinearTestnetSdk {
     /// Base reward per block (in smallest unit, default 1 DARK = 100_000_000)
     base_reward: u64,
     /// Deployed contracts (contract_id -> wasm bytes)
-    deployed_contracts: HashMap<darkfi_sdk::crypto::ContractId, Vec<u8>>,
+    deployed_contracts: HashMap<dwow_sdk::crypto::ContractId, Vec<u8>>,
 }
 
 impl LinearTestnetSdk {
@@ -310,12 +310,12 @@ impl LinearTestnetSdk {
     }
 
     /// Check if a contract is deployed
-    pub fn has_contract(&self, contract_id: &darkfi_sdk::crypto::ContractId) -> bool {
+    pub fn has_contract(&self, contract_id: &dwow_sdk::crypto::ContractId) -> bool {
         self.deployed_contracts.contains_key(contract_id)
     }
 
     /// Get deployed contract WASM
-    pub fn get_contract_wasm(&self, contract_id: &darkfi_sdk::crypto::ContractId) -> Option<&Vec<u8>> {
+    pub fn get_contract_wasm(&self, contract_id: &dwow_sdk::crypto::ContractId) -> Option<&Vec<u8>> {
         self.deployed_contracts.get(contract_id)
     }
 
@@ -356,7 +356,7 @@ impl LinearTestnetSdk {
 
         // For genesis, we don't include any txs - just the coinbase
         // The dev wallet gets funded via initial_balance in the first mined blocks
-        let transactions: Vec<darkfi::tx::Transaction> = vec![];
+        let transactions: Vec<dwow::tx::Transaction> = vec![];
         let mut block = self.create_block_with_txs(previous, 0, transactions, difficulty_target);
 
         let consensus = PoWConsensus::new(60, difficulty_target);
@@ -371,7 +371,7 @@ impl LinearTestnetSdk {
         &self,
         previous: blake3::Hash,
         height: u64,
-        transactions: Vec<darkfi::tx::Transaction>,
+        transactions: Vec<dwow::tx::Transaction>,
         difficulty_target: u32,
     ) -> Block {
         // Calculate merkle root for transactions
@@ -401,7 +401,7 @@ impl LinearTestnetSdk {
         let total_reward = self.base_reward;
 
         Block {
-            header: darkfi_linear::BlockHeader {
+            header: dwow_linear::BlockHeader {
                 version: 1,
                 previous,
                 merkle_root,
@@ -423,7 +423,7 @@ impl LinearTestnetSdk {
     /// Alice mines a block on top of the given previous hash
     pub fn alice_mine_block(&self, height: u64, previous: blake3::Hash) -> Block {
         let difficulty_target = 0x0000_FFFF;
-        let transactions: Vec<darkfi::tx::Transaction> = vec![];
+        let transactions: Vec<dwow::tx::Transaction> = vec![];
         let mut block = self.create_block_with_txs(previous, height, transactions, difficulty_target);
 
         let consensus = PoWConsensus::new(60, difficulty_target);
@@ -479,7 +479,7 @@ impl LinearTestnetSdk {
     /// Alice mines a block with a specific recipient
     fn alice_mine_block_with_recipient(&self, height: u64, previous: blake3::Hash, recipient: &Keypair) -> Block {
         let difficulty_target = 0x0000_FFFF;
-        let transactions: Vec<darkfi::tx::Transaction> = vec![];
+        let transactions: Vec<dwow::tx::Transaction> = vec![];
         let mut block = self.create_block_with_txs(previous, height, transactions, difficulty_target);
 
         let consensus = PoWConsensus::new(60, difficulty_target);
@@ -526,13 +526,13 @@ impl LinearTestnetSdk {
     }
 
     /// Deploy a WASM contract
-    pub fn deploy_contract(&mut self, wasm: &[u8], sender: &str) -> Result<darkfi_sdk::crypto::ContractId, Box<dyn std::error::Error>> {
+    pub fn deploy_contract(&mut self, wasm: &[u8], sender: &str) -> Result<dwow_sdk::crypto::ContractId, Box<dyn std::error::Error>> {
         let wallet = self.wallet_registry.get_or_panic(sender);
         let sender_pubkey = wallet.public_key();
 
         // Generate a deterministic contract ID based on sender and nonce
         let nonce = self.deployed_contracts.len() as u64;
-        let contract_id = darkfi_sdk::crypto::ContractId::from(pallas::Base::from(nonce + 1));
+        let contract_id = dwow_sdk::crypto::ContractId::from(pallas::Base::from(nonce + 1));
 
         // Deploy to all nodes
         for node in self.harness.all_nodes() {

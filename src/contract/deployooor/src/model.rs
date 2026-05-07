@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::crypto::{ContractId, PublicKey};
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::crypto::{ContractId, PublicKey};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// State update for `Deploy::Deploy`
 #[derive(Clone, Debug, SerialEncodable, SerialDecodable)]

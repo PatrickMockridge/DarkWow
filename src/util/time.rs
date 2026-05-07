@@ -27,9 +27,9 @@ use std::{
 };
 
 #[cfg(feature = "async-serial")]
-use darkfi_serial::async_trait;
+use dwow_serial::async_trait;
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::{Error, Result};
 

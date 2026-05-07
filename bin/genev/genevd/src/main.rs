@@ -23,7 +23,7 @@
 
 use std::sync::{Arc, OnceLock};
 
-use darkfi::{
+use dwow::{
     async_daemonize, cli_desc,
     event_graph::{proto::ProtocolEventGraph, EventGraph, EventGraphPtr, NULL_ID},
     net::{session::SESSION_DEFAULT, settings::SettingsOpt, P2p},
@@ -63,11 +63,11 @@ struct Args {
     /// P2P network settings
     net: SettingsOpt,
 
-    #[structopt(long, default_value = "~/.local/share/darkfi/genev_db")]
+    #[structopt(long, default_value = "~/.local/share/dwow/genev_db")]
     /// Sets Datastore Path
     datastore: String,
 
-    #[structopt(short, long, default_value = "~/.local/share/darkfi/replayed_genev_db")]
+    #[structopt(short, long, default_value = "~/.local/share/dwow/replayed_genev_db")]
     /// Replay logs (DB) path
     replay_datastore: String,
 
@@ -124,7 +124,7 @@ async fn realmain(settings: Args, executor: Arc<smol::Executor<'static>>) -> Res
     let replay_mode = settings.replay_mode;
 
     let sled_db = sled::open(datastore_path.clone())?;
-    let p2p_settings: darkfi::net::Settings =
+    let p2p_settings: dwow::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), settings.net).try_into()?;
     let p2p = P2p::new(p2p_settings, executor.clone()).await?;
     let event_graph = EventGraph::new(

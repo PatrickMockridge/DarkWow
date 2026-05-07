@@ -25,7 +25,7 @@ use crate::{
     error::{Error, Result},
     //prop::{Property, PropertySubType, PropertyType, PropertySExprValue},
 };
-use darkfi_serial::{
+use dwow_serial::{
     async_trait, Decodable, Encodable, FutAsyncWriteExt, ReadExt, SerialDecodable, SerialEncodable,
 };
 use std::io::{Read, Write};
@@ -473,7 +473,7 @@ impl Decodable for Op {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use darkfi_serial::{deserialize, serialize};
+    use dwow_serial::{deserialize, serialize};
 
     #[test]
     fn seval() {

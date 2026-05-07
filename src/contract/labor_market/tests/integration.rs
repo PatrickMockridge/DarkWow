@@ -23,8 +23,8 @@
 
 //! Labor Market contract integration tests
 
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::pasta::pallas;
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::pasta::pallas;
 use darkfi_labor_market_contract::{
     model::{
         AcceptJobParamsV1, CancelJobParamsV1, ConfirmDeliveryParamsV1, CreateJobParamsV1,

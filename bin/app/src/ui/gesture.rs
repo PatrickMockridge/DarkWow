@@ -22,7 +22,7 @@
  */
 
 use async_trait::async_trait;
-use darkfi_serial::serialize;
+use dwow_serial::serialize;
 use miniquad::TouchPhase;
 use std::sync::{Arc, Mutex as SyncMutex};
 

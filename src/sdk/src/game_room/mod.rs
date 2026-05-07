@@ -43,8 +43,8 @@
 //! ## Usage
 //!
 //! ```ignore
-//! use darkfi_sdk::game_room::{GameRoomClient, GameRoomConfig, BetType, EntropyMode};
-//! use darkfi_sdk::crypto::{Keypair, ContractId};
+//! use dwow_sdk::game_room::{GameRoomClient, GameRoomConfig, BetType, EntropyMode};
+//! use dwow_sdk::crypto::{Keypair, ContractId};
 //!
 //! // Create a client
 //! let keypair = Keypair::random();

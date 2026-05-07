@@ -24,8 +24,8 @@ if [ ! -d ".git" ]; then
 fi
 
 # Stop daemon if running
-if [ -f "$HOME/.local/share/darkfi/darkfid/testnet.pid" ]; then
-    echo "Stopping darkfid before upgrade..."
+if [ -f "$HOME/.local/share/dwow/darkfid/testnet.pid" ]; then
+    echo "Stopping dwowd before upgrade..."
     ./stop.sh
     sleep 2
 fi
@@ -38,12 +38,12 @@ echo "[1/3] Pulling latest changes..."
 git pull origin master
 
 echo ""
-echo "[2/3] Building darkfid..."
-cargo build --release -p darkfid
+echo "[2/3] Building dwowd..."
+cargo build --release -p dwowd
 
 echo ""
-echo "[3/3] Building drk wallet..."
-cargo build --release -p drk
+echo "[3/3] Building dww wallet..."
+cargo build --release -p dww
 
 echo ""
 echo -e "${GREEN}Upgrade complete!${NC}"

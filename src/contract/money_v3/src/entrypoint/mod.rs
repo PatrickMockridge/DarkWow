@@ -44,7 +44,7 @@
 //! - TransferV1: Private token transfer
 //! - OtcSwapV1: Atomic OTC token swap
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         pasta_prelude::{Field, PrimeField}, poseidon_hash,
         smt::{wasmdb::SmtWasmFp, PoseidonFp, EMPTY_NODES_FP}, ContractId, MerkleNode, MerkleTree,
@@ -55,7 +55,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable, WriteExt};
+use dwow_serial::{deserialize, serialize, Encodable, WriteExt};
 
 use crate::{
     error::MoneyV3Error,
@@ -75,7 +75,7 @@ use crate::{
 };
 
 // Generate WASM entrypoints
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -400,7 +400,7 @@ fn auth_token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     let nullifiers_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_NULLIFIERS_TREE)?;
 
     // Verify nullifier is NOT already spent
-    let smt_store = darkfi_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
     let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
     if smt.get_leaf(&params.nullifier.inner()) != pallas::Base::zero() {
         msg!("[auth_token_mint_v1] Error: Auth nullifier already used (replay attack)");
@@ -454,7 +454,7 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let nullifiers_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_NULLIFIERS_TREE)?;
 
     // SMT for nullifier lookup
-    let smt_store = darkfi_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
     let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
     let mut new_nullifiers = Vec::new();

@@ -1,6 +1,6 @@
 # Research
 
-This project maintains (inherited from upstream DarkFi) a public resource of zero-knowledge and math research
+This project maintains (inherited from upstream DarkWow) a public resource of zero-knowledge and math research
 in the [`script/research/`](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/script/research) directory of
 the repo.
 

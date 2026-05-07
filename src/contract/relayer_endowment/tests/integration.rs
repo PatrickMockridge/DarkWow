@@ -37,8 +37,8 @@ use darkfi_relayer_endowment_contract::{
     },
     RelayerEndowmentFunction, RELAYER_ENDOWMENT_BP_PRECISION, RELAYER_ENDOWMENT_MIN_DEPLOY,
 };
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::{crypto::pasta_prelude::PrimeField, crypto::PublicKey, pasta::pallas};
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{crypto::pasta_prelude::PrimeField, crypto::PublicKey, pasta::pallas};
 
 /// Helper to create a pallas::Base from bytes
 fn make_base(bytes: [u8; 32]) -> pallas::Base {
@@ -47,7 +47,7 @@ fn make_base(bytes: [u8; 32]) -> pallas::Base {
 
 /// Helper to create PublicKey from a numeric seed
 fn make_pubkey(seed: u64) -> PublicKey {
-    use darkfi_sdk::crypto::SecretKey;
+    use dwow_sdk::crypto::SecretKey;
     let secret = SecretKey::from(pallas::Base::from(seed));
     PublicKey::from_secret(secret)
 }

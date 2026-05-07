@@ -40,7 +40,7 @@
 //! - `ZecLightClient`: Zcash lightwalletd
 
 use async_trait::async_trait;
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Confirmation level for deposits
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]

@@ -24,7 +24,7 @@
 use structopt::StructOpt;
 use structopt_toml::{serde::Deserialize, StructOptToml};
 
-use darkfi::{
+use dwow::{
     cli_desc, dht::DhtSettingsOpt, net::settings::SettingsOpt, rpc::settings::RpcSettingsOpt,
 };
 
@@ -49,7 +49,7 @@ pub struct Args {
     /// Set log file path to output daemon logs into
     pub log: Option<String>,
 
-    #[structopt(long, default_value = "~/.local/share/darkfi/fud")]
+    #[structopt(long, default_value = "~/.local/share/dwow/fud")]
     /// Base directory for filesystem storage
     pub base_dir: String,
 

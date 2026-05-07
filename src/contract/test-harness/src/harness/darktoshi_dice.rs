@@ -25,16 +25,16 @@
 //!
 //! Provides isolated testing for DarkToshi Dice contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, Blind, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
 use darkfi_darktoshi_dice_contract::client::{
@@ -67,11 +67,11 @@ impl DarkToshiDiceHarness {
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();
 
         let commit_bet_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
             &commit_bet_zkbin,
         );
         let settle_bet_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
             &settle_bet_zkbin,
         );
 
@@ -220,7 +220,7 @@ impl DarkToshiDiceHarness {
 pub struct CommitBetResult {
     pub call_data: Vec<u8>,
     pub public_inputs: CommitBetV1PublicInputs,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
 }
 
 /// Result of reveal_roll
@@ -232,5 +232,5 @@ pub struct RevealRollResult {
 pub struct SettleBetResult {
     pub call_data: Vec<u8>,
     pub public_inputs: SettleBetV1PublicInputs,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
 }

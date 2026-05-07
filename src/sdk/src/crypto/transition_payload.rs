@@ -27,7 +27,7 @@
 //! - byte 0: function code
 //! - bytes 1..: `darkfi_serial` encoded params
 
-use darkfi_serial::{deserialize, Decodable, Encodable};
+use dwow_serial::{deserialize, Decodable, Encodable};
 
 use super::{IntentConsumeCallV1, IntentConsumeTransitionV1, IntentPostTransitionV1};
 use crate::ContractError;

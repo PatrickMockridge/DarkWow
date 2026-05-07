@@ -124,7 +124,7 @@
 //! - Level 2: Anonymous credentials (CL signatures)
 //! - Level 3: Self-sovereign identity with revocation
 
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 
 /// Identity Functions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-# Start a tmux session with five xmrig daemons and five darkfid nodes
+# Start a tmux session with five xmrig daemons and five dwowd nodes
 
 # Path to used binaries
 XMRIG="xmrig"

@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::zk::{Witness, halo2::Field};
-use darkfi_sdk::{
+use dwow::zk::{Witness, halo2::Field};
+use dwow_sdk::{
     crypto::{
         BaseBlind, FuncRef, MONEY_CONTRACT_ID, MerkleNode, MerkleTree, PublicKey, ScalarBlind,
         SecretKey,

@@ -26,7 +26,7 @@ Uses `scan_blocks()` which processes `BlockInfo` structures:
 Uses `scan_blocks_linear()` which processes `LinearBlockAdapter`:
 - Simplified translation layer for linear blocks
 - `ContractCall` lacks `children_indexes` (no child call traversal)
-- ZK proofs are trusted (darkfid validated before block inclusion)
+- ZK proofs are trusted (dwowd validated before block inclusion)
 
 ## Scanning Flow
 
@@ -103,7 +103,7 @@ Coins are stored in sled database trees:
 **The wallet scanner does NOT verify ZK proofs.**
 
 This is by design because:
-1. darkfid validates all ZK proofs before including transactions in blocks
+1. dwowd validates all ZK proofs before including transactions in blocks
 2. The scanner only needs to detect wallet-owned coins, not verify proofs
 3. Verification would require loading WASM binaries and ZK circuits, significantly increasing complexity
 
@@ -112,7 +112,7 @@ This is by design because:
 The linear blockchain scanning has unique characteristics:
 
 1. **No children_indexes**: DAO child call traversal not possible
-2. **Trusted verification**: darkfid has already validated proofs
+2. **Trusted verification**: dwowd has already validated proofs
 3. **Runtime contract IDs**: MoneyV3 and DAO-ESCROW use `OnceLock` for ContractId registration
 
 ## RPC Endpoints Used

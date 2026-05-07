@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::crypto::smt::SMT_FP_DEPTH;
+use dwow_sdk::crypto::smt::SMT_FP_DEPTH;
 use halo2_gadgets::poseidon::{
     primitives as poseidon, Hash as PoseidonHash, Pow5Chip as PoseidonChip,
     Pow5Config as PoseidonConfig,
@@ -240,7 +240,7 @@ impl PathChip {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use darkfi_sdk::crypto::smt::{MemoryStorageFp, PoseidonFp, SmtMemoryFp, EMPTY_NODES_FP};
+    use dwow_sdk::crypto::smt::{MemoryStorageFp, PoseidonFp, SmtMemoryFp, EMPTY_NODES_FP};
     use halo2_proofs::{circuit::floor_planner, dev::MockProver, plonk::Circuit};
     use rand::rngs::OsRng;
 

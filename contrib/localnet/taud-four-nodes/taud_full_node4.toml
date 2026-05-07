@@ -5,7 +5,7 @@
 datastore = "taud4"
 
 ## Sets DB logs replay datastore path
-#replay_datastore = "~/.local/share/darkfi/replayed_taud_db"
+#replay_datastore = "~/.local/share/dwow/replayed_taud_db"
 
 ## Run in replay mode to store Sled DB instructions
 ## (for eventgraph debugging tool)

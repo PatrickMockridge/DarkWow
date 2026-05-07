@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{crypto::Keypair, deploy::DeployParamsV1};
-use darkfi_serial::Encodable;
+use dwow_sdk::{crypto::Keypair, deploy::DeployParamsV1};
+use dwow_serial::Encodable;
 use tracing::info;
 
 use darkfi_deployooor_contract::{

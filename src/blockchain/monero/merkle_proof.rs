@@ -24,10 +24,10 @@
 use std::io::{self, Cursor, Error, Read, Write};
 
 #[cfg(feature = "async-serial")]
-use darkfi_serial::{
+use dwow_serial::{
     async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncReadExt, AsyncWrite,
 };
-use darkfi_serial::{Decodable, Encodable, ReadExt};
+use dwow_serial::{Decodable, Encodable, ReadExt};
 use monero::{
     consensus::{Decodable as XmrDecodable, Encodable as XmrEncodable},
     Hash,
@@ -394,16 +394,16 @@ mod tests {
 
         let local_ex = smol::LocalExecutor::new();
 
-        let ser_sync = darkfi_serial::serialize(&proof);
+        let ser_sync = dwow_serial::serialize(&proof);
         let ser_async = smol::future::block_on(
-            local_ex.run(async { darkfi_serial::serialize_async(&proof).await }),
+            local_ex.run(async { dwow_serial::serialize_async(&proof).await }),
         );
 
         assert_eq!(ser_sync, ser_async);
 
-        let de_sync: MerkleProof = darkfi_serial::deserialize(&ser_async).unwrap();
+        let de_sync: MerkleProof = dwow_serial::deserialize(&ser_async).unwrap();
         let de_async: MerkleProof = smol::future::block_on(
-            local_ex.run(async { darkfi_serial::deserialize_async(&ser_sync).await.unwrap() }),
+            local_ex.run(async { dwow_serial::deserialize_async(&ser_sync).await.unwrap() }),
         );
 
         assert_eq!(de_sync.branch, proof.branch);

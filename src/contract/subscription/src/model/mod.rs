@@ -42,11 +42,11 @@
 //! - **Cancelled**: User cancelled, refund available
 //! - **Expired**: Time lock expired, refund available
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // ============================================================================
 // STATE TYPES
@@ -67,14 +67,14 @@ pub enum SubscriptionState {
 }
 
 impl TryFrom<u8> for SubscriptionState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
             0 => Ok(Self::Active),
             1 => Ok(Self::Cancelled),
             2 => Ok(Self::Expired),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }

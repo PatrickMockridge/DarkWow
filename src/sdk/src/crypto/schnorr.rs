@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use halo2_gadgets::ecc::chip::FixedPoint;
 use pasta_curves::{
     group::{ff::PrimeField, Group, GroupEncoding},
@@ -93,7 +93,7 @@ impl SchnorrPublic for PublicKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use darkfi_serial::{deserialize, serialize};
+    use dwow_serial::{deserialize, serialize};
     use rand::rngs::OsRng;
 
     #[test]

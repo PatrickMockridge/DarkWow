@@ -11,9 +11,9 @@ edition = "2021"
 
 [dependencies]
 # Darkfi
-darkfi = {path = "../../../../", features = ["async-sdk", "rpc"]}
-darkfi-sdk = {path = "../../../../src/sdk"}
-darkfi-serial = {path = "../../../../src/serial"}
+dwow = {path = "../../../../", features = ["async-sdk", "rpc"]}
+dwow-sdk = {path = "../../../../src/sdk"}
+dwow-serial = {path = "../../../../src/serial"}
 rlnd = {path = "../rlnd"}
 
 # Misc

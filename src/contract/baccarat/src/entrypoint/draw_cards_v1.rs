@@ -25,12 +25,12 @@
 //!
 //! Draws cards using PoW block hashes for entropy and applies Baccarat drawing rules.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     error::ContractError,
     msg,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::BaccaratError;
 use crate::model::{
@@ -40,9 +40,9 @@ use crate::BACCARAT_CONTRACT_BETS_TREE;
 
 /// Process instruction for DrawCardsV1
 pub fn baccarat_draw_cards_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: DrawCardsParamsV1 = deserialize(&self_.data[1..])?;
@@ -130,7 +130,7 @@ pub fn baccarat_draw_cards_process_instruction_v1(
 
 /// Process update for DrawCardsV1
 pub fn baccarat_draw_cards_process_update_v1(
-    _cid: darkfi_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     update: DrawCardsUpdateV1,
 ) -> Result<(), ContractError> {
     msg!("[baccarat::draw_cards::update] Cards drawn confirmed for bet_id: {:?}", update.bet_id);

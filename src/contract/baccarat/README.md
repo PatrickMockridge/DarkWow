@@ -136,7 +136,7 @@ let (params, own_bet) = CommitBetV1Builder::new(
     100,  // bet_value
     BetType::Player,
 )
-.token_id(DARK_TOKEN_ID)
+.token_id(DRKW_TOKEN_ID)
 .confirmation_depth(3)  // Wait for 3 blocks
 .build();
 ```

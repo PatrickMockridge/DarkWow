@@ -1,6 +1,6 @@
 # zkVM Primitive Layer: Opcode Reasoning
 
-> **Note:** The core zkVM opcode layer (constraint system, bincode format, WASM execution model) is inherited from upstream DarkFi and tracks upstream. The opcode roadmap, contract integration patterns, and DarkWow-specific opcodes (LessThanOrEqual, BaseDiv) described here are DarkWow divergences.
+> **Note:** The core zkVM opcode layer (constraint system, bincode format, WASM execution model) is inherited from upstream DarkWow and tracks upstream. The opcode roadmap, contract integration patterns, and DarkWow-specific opcodes (LessThanOrEqual, BaseDiv) described here are DarkWow divergences.
 
 > **Prerequisite reading**: Before this document, read [Field Arithmetic Constraints](field_arithmetic.md). It explains why every operation in a ZK circuit must be re-expressed in finite field arithmetic — and why that re-expression is the primary difficulty in ZK circuit design. The examples in this document assume you understand field vs. integer ordering and modular arithmetic.
 
@@ -320,7 +320,7 @@ needed to deliver functionality already discussed publicly.
 
 ### Verification Status
 
-`LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), `BaseLtStrict` (0x57), and `BaseDiv` (0x58) are **additions to upstream's zkVM** — they do not exist in upstream DarkFi. The initial Rust implementation was prototyped on a [separate experimental branch](https://codeberg.org/rusticml/darkfi/commits/branch/less-than-or-equal-experiment) (by rusticml) and integrated into this repository at commit `41b0629e0`. Formal Lean4 verification was completed on this fork. `BaseModExp` remains unimplemented.
+`LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), `BaseLtStrict` (0x57), and `BaseDiv` (0x58) are **additions to upstream's zkVM** — they do not exist in upstream DarkWow. The initial Rust implementation was prototyped on a [separate experimental branch](https://codeberg.org/rusticml/darkfi/commits/branch/less-than-or-equal-experiment) (by rusticml) and integrated into this repository at commit `41b0629e0`. Formal Lean4 verification was completed on this fork. `BaseModExp` remains unimplemented.
 
 **Formal Verification Results** (Lean 4, see [Opcodes and Formal Verification](opcodes.md)):
 

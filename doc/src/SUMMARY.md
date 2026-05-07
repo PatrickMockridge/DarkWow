@@ -79,7 +79,7 @@
   - [Contract Testing & Debugging](dev/contracts_testing.md)
   - [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md)
 - [Architecture](arch/README.md)
-  - [DarkWow Daemon](darkfid.md)
+  - [DarkWow Daemon](dwowd.md)
   - [Overview](arch/overview.md)
 
 ## Consensus
@@ -101,7 +101,7 @@
   - [Smart Contracts](arch/sc/sc.md)
     - [Transaction lifetime](arch/sc/tx-lifetime.md)
   - [Contract Invocation API](arch/contract_invoke_api.md)
-  - [Contract Deployment Pipeline](arch/darkfid_contract_pipeline.md)
+  - [Contract Deployment Pipeline](arch/dwowd_contract_pipeline.md)
   - [Anonymous assets](arch/anonymous_assets.md)
   - [O-Cap & Composable Privacy](arch/ocap.md)
   - [Identity](arch/identity.md)
@@ -121,6 +121,9 @@
   - [Services](arch/services.md)
   - [Slashing & Economic Security](arch/slashing.md)
 
+## Economics
+  - [Mining Tokenomics](arch/mining-tokenomics.md)
+
 - [Contract Implementations]()
   - [Bridge Contract](dev/contracts/bridge.md)
   - [DEX Contract](dev/contracts/dex.md)
@@ -137,7 +140,7 @@
     - [Anonymous voting](zkas/examples/voting.md)
     - [Anonymous payments](zkas/examples/sapling.md)
 - [JSON-RPC API Reference]()
-  - [darkfid JSON-RPC API](clients/darkfid_jsonrpc.md)
+  - [dwowd JSON-RPC API](clients/dwowd_jsonrpc.md)
 
 # Crypto
 

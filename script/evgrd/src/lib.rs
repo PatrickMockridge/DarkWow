@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{
+use dwow::{
     event_graph::{
         util::{generate_genesis, millis_until_next_rotation, next_rotation_timestamp},
         Event, GENESIS_CONTENTS, INITIAL_GENESIS, NULL_ID, N_EVENT_PARENTS,
@@ -29,7 +29,7 @@ use darkfi::{
     system::{msleep, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
-use darkfi_serial::{
+use dwow_serial::{
     async_trait, deserialize_async, serialize_async, SerialDecodable, SerialEncodable,
 };
 use sled_overlay::{sled, SledTreeOverlay};

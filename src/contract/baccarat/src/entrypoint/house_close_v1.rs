@@ -28,13 +28,13 @@
 //! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
 //! collecting the house's share of the bet.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::schnorr::SchnorrPublic,
     error::ContractError,
     msg,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::BaccaratError;
 use crate::model::{calculate_house_take, Bet, BetState, HouseCloseParamsV1, HouseCloseUpdateV1};
@@ -48,9 +48,9 @@ use crate::{
 /// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
 /// bundled for collecting the house's share.
 pub fn baccarat_house_close_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
@@ -107,7 +107,7 @@ pub fn baccarat_house_close_process_instruction_v1(
 
     if let Some(bytes) = house_pubkey_bytes {
         // House pubkey is stored - verify caller matches via signature
-        let stored_house_pubkey: darkfi_sdk::crypto::PublicKey = deserialize(&bytes)?;
+        let stored_house_pubkey: dwow_sdk::crypto::PublicKey = deserialize(&bytes)?;
 
         // Verify the provided house_pub matches the stored one
         if params.house_pub != stored_house_pubkey {
@@ -142,7 +142,7 @@ pub fn baccarat_house_close_process_instruction_v1(
 
 /// Process update for HouseCloseV1
 pub fn baccarat_house_close_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: HouseCloseUpdateV1,
 ) -> Result<(), ContractError> {
     let bets_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_BETS_TREE)?;

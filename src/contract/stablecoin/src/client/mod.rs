@@ -547,7 +547,7 @@ pub enum StablecoinClientError {
 // Imports
 // ============================================================================
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, BaseBlind},
     pasta::pallas,
 };

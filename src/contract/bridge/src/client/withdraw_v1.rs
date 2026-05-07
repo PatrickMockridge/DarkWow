@@ -23,12 +23,12 @@
 
 //! WithdrawV1 ZK proof generation
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+use dwow_sdk::{crypto::poseidon_hash, pasta::pallas};
 use rand::rngs::OsRng;
 
 /// WithdrawV1 circuit public inputs

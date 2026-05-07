@@ -29,7 +29,7 @@ use std::{
 
 use tracing::debug;
 
-use darkfi::{Error, Result};
+use dwow::{Error, Result};
 use rand::{distributions::Alphanumeric, rngs::OsRng, Rng};
 
 use crate::task_info::{TaskEvent, TaskInfo};

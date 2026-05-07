@@ -2,9 +2,9 @@
 set -e
 set -x
 
-# Accept path to `drk` binary as arg or use default
-DEFAULT_DRK="../../../drk -c drk0.toml"
-DRK="${1:-$DEFAULT_DRK}"
+# Accept path to `dww` binary as arg or use default
+DEFAULT_DRK="../../../dww -c drk0.toml"
+DWW="${1:-$DEFAULT_DRK}"
 
 sync_wallet() {
   while true; do
@@ -17,4 +17,4 @@ sync_wallet() {
   $1 scan
 }
 
-sync_wallet "$DRK"
+sync_wallet "$DWW"

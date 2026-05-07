@@ -81,9 +81,9 @@ validator.append_proposal(&proposal)
 | `verify_zkp` | `src/zk/verifier.rs` | Pure ZK verification function |
 | `ZkVerifyResult` | `src/zk/verifier.rs` | Verification result enum |
 | `ZkBinEntry` | `src/validator/sync/types.rs` | `(ContractId, String, Vec<u8>, Vec<pallas::Base>)` |
-| `ExtendedProposalMessage` | `bin/darkfid/src/proto/protocol_proposal.rs` | P2P message with zkbin_data |
+| `ExtendedProposalMessage` | `bin/dwowd/src/proto/protocol_proposal.rs` | P2P message with zkbin_data |
 | `verify_block` | `src/validator/sync/verify.rs` | Verifies header + ZK proofs |
-| `handle_receive_proposal` | `bin/darkfid/src/proto/protocol_proposal.rs` | Calls verify_block before append |
+| `handle_receive_proposal` | `bin/dwowd/src/proto/protocol_proposal.rs` | Calls verify_block before append |
 
 ## API
 
@@ -312,10 +312,10 @@ src/validator/sync/
 ├── verify.rs            # verify_header, verify_block
 └── apply.rs             # apply_block (placeholder)
 
-bin/darkfid/src/proto/
+bin/dwowd/src/proto/
 └── protocol_proposal.rs  # ExtendedProposalMessage, handle_receive_proposal
 
-bin/darkfid/src/tests/
+bin/dwowd/src/tests/
 ├── genesis.rs           # GenesisHarness - baseline chain for WASM contract tests
 ├── sync_simple.rs       # Basic sync test
 └── sync_native.rs       # Full ZK verification test

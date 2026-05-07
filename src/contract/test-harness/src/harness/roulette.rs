@@ -25,15 +25,15 @@
 //!
 //! Provides isolated testing for Roulette contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use darkfi_roulette_contract::client::{
     place_bet_v1::{PlaceBetV1CallData, create_place_bet_v1_proof, PlaceBetV1PublicInputs},
@@ -66,11 +66,11 @@ impl RouletteHarness {
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();
 
         let place_bet_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&place_bet_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&place_bet_zkbin).unwrap(),
             &place_bet_zkbin,
         );
         let settle_bet_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
             &settle_bet_zkbin,
         );
 
@@ -162,7 +162,7 @@ impl RouletteHarness {
             table_id,
             nonce,
             house_pub,
-            signature: darkfi_sdk::crypto::schnorr::Signature::dummy(),
+            signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
         };
 
         let mut call_data = vec![];
@@ -208,7 +208,7 @@ impl RouletteHarness {
         let params = HouseCloseParamsV1 {
             table_id,
             house_pub,
-            signature: darkfi_sdk::crypto::schnorr::Signature::dummy(),
+            signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
         };
 
         let mut call_data = vec![];
@@ -254,7 +254,7 @@ pub struct PlaceBetResult {
     pub call_data: Vec<u8>,
     pub bet_id: pallas::Base,
     pub nullifier: pallas::Base,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
 }
 
 /// Result of spin_wheel
@@ -265,7 +265,7 @@ pub struct SpinWheelResult {
 /// Result of settle_bets
 pub struct SettleBetsResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
 }
 
 /// Result of house_close

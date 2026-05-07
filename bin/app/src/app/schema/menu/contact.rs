@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_serial::deserialize;
+use dwow_serial::deserialize;
 
 use super::{edit_switch::edit_switch, ColorScheme, CHANNELS, COLOR_SCHEME};
 use crate::{

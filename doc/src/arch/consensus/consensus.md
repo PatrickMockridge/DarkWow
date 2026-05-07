@@ -4,7 +4,7 @@ DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work — a deliber
 
 ## Why Uncle Merkle Replaces the Overlay/Diff Architecture
 
-The upstream DarkFi consensus uses a speculative overlay/diff system with sled-overlay for transactional state management. This architecture exists primarily to support the "under one tent" DAO governance model: a complex fork-deciding mechanism is required because the DAO must adjudicate which fork is canonical, preventing natural chain splits.
+The upstream DarkWow consensus uses a speculative overlay/diff system with sled-overlay for transactional state management. This architecture exists primarily to support the "under one tent" DAO governance model: a complex fork-deciding mechanism is required because the DAO must adjudicate which fork is canonical, preventing natural chain splits.
 
 This fork rejects that entire design stack for several reasons:
 

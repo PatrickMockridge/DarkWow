@@ -25,11 +25,11 @@
 
 use std::str::FromStr;
 
-use darkfi_sdk::crypto::ContractId;
+use dwow_sdk::crypto::ContractId;
 use tinyjson::JsonValue;
 use tracing::{error, info};
 
-use darkfi::{
+use dwow::{
     rpc::jsonrpc::{
         ErrorCode::{InvalidParams, InternalError},
         JsonError, JsonResponse, JsonResult,

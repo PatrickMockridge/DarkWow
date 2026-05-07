@@ -51,7 +51,7 @@
 pub mod error;
 pub mod model;
 
-use darkfi_sdk::{error::ContractResult, msg, wasm};
+use dwow_sdk::{error::ContractResult, msg, wasm};
 
 pub use error::GameRoomError;
 
@@ -129,7 +129,7 @@ pub mod client;
 // CONTRACT DEFINITION
 // ============================================================================
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -149,7 +149,7 @@ darkfi_sdk::define_contract!(
 /// - Bets (individual bet records)
 /// - Nullifiers (prevent double-actions)
 /// - Entropy (trusted setup contributions)
-pub fn init_contract(cid: darkfi_sdk::crypto::ContractId, _ix: &[u8]) -> ContractResult {
+pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[game_room::init_contract] Initializing game room contract");
 
     wasm::db::db_init(cid, GAME_ROOM_ROOMS_TREE)?;
@@ -167,7 +167,7 @@ pub fn init_contract(cid: darkfi_sdk::crypto::ContractId, _ix: &[u8]) -> Contrac
 // METADATA (placeholder for future ZK proof integration)
 // ============================================================================
 
-fn get_metadata(_cid: darkfi_sdk::crypto::ContractId, _ix: &[u8]) -> ContractResult {
+fn get_metadata(_cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractResult {
     // Placeholder - ZK proof integration deferred
     Ok(())
 }
@@ -177,12 +177,12 @@ fn get_metadata(_cid: darkfi_sdk::crypto::ContractId, _ix: &[u8]) -> ContractRes
 // ============================================================================
 
 fn process_instruction(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     ix: &[u8],
 ) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>> =
-        darkfi_serial::deserialize(ix)?;
+    let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>> =
+        dwow_serial::deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = GameRoomFunction::try_from(self_.data[0])?;
 
@@ -221,57 +221,57 @@ fn process_instruction(
 // STATE UPDATE
 // ============================================================================
 
-fn process_update(cid: darkfi_sdk::crypto::ContractId, update_data: &[u8]) -> ContractResult {
+fn process_update(cid: dwow_sdk::crypto::ContractId, update_data: &[u8]) -> ContractResult {
     match GameRoomFunction::try_from(update_data[0])? {
         GameRoomFunction::CreateRoomV1 => {
             let update: model::CreateRoomUpdateV1 =
-                darkfi_serial::deserialize(&update_data[1..])?;
+                dwow_serial::deserialize(&update_data[1..])?;
             Ok(entrypoint::create_room::game_room_create_process_update_v1(cid, update)?)
         }
         GameRoomFunction::DepositV1 => {
             let update: model::DepositUpdateV1 =
-                darkfi_serial::deserialize(&update_data[1..])?;
+                dwow_serial::deserialize(&update_data[1..])?;
             Ok(entrypoint::deposit::game_room_deposit_process_update_v1(cid, update)?)
         }
         GameRoomFunction::WithdrawV1 => {
             let update: model::WithdrawUpdateV1 =
-                darkfi_serial::deserialize(&update_data[1..])?;
+                dwow_serial::deserialize(&update_data[1..])?;
             Ok(entrypoint::withdraw::game_room_withdraw_process_update_v1(cid, update)?)
         }
         GameRoomFunction::PlaceBetV1 => {
             let update: model::PlaceBetUpdateV1 =
-                darkfi_serial::deserialize(&update_data[1..])?;
+                dwow_serial::deserialize(&update_data[1..])?;
             Ok(entrypoint::place_bet::game_room_place_bet_process_update_v1(cid, update)?)
         }
         GameRoomFunction::RaiseV1 => {
-            let update: model::RaiseUpdateV1 = darkfi_serial::deserialize(&update_data[1..])?;
+            let update: model::RaiseUpdateV1 = dwow_serial::deserialize(&update_data[1..])?;
             Ok(entrypoint::raise::game_room_raise_process_update_v1(cid, update)?)
         }
         GameRoomFunction::CallV1 => {
-            let update: model::CallUpdateV1 = darkfi_serial::deserialize(&update_data[1..])?;
+            let update: model::CallUpdateV1 = dwow_serial::deserialize(&update_data[1..])?;
             Ok(entrypoint::call::game_room_call_process_update_v1(cid, update)?)
         }
         GameRoomFunction::FoldV1 => {
-            let update: model::FoldUpdateV1 = darkfi_serial::deserialize(&update_data[1..])?;
+            let update: model::FoldUpdateV1 = dwow_serial::deserialize(&update_data[1..])?;
             Ok(entrypoint::fold::game_room_fold_process_update_v1(cid, update)?)
         }
         GameRoomFunction::ClosePotV1 => {
             let update: model::ClosePotUpdateV1 =
-                darkfi_serial::deserialize(&update_data[1..])?;
+                dwow_serial::deserialize(&update_data[1..])?;
             Ok(entrypoint::close_pot::game_room_close_pot_process_update_v1(cid, update)?)
         }
         GameRoomFunction::SettlePotV1 => {
             let update: model::SettlePotUpdateV1 =
-                darkfi_serial::deserialize(&update_data[1..])?;
+                dwow_serial::deserialize(&update_data[1..])?;
             Ok(entrypoint::settle_pot::game_room_settle_pot_process_update_v1(cid, update)?)
         }
         GameRoomFunction::ContributeEntropyV1 => {
             let update: model::ContributeEntropyUpdateV1 =
-                darkfi_serial::deserialize(&update_data[1..])?;
+                dwow_serial::deserialize(&update_data[1..])?;
             Ok(entrypoint::entropy::game_room_contribute_entropy_process_update_v1(cid, update)?)
         }
         GameRoomFunction::ClaimV1 => {
-            let update: model::ClaimUpdateV1 = darkfi_serial::deserialize(&update_data[1..])?;
+            let update: model::ClaimUpdateV1 = dwow_serial::deserialize(&update_data[1..])?;
             Ok(entrypoint::claim::game_room_claim_process_update_v1(cid, update)?)
         }
     }

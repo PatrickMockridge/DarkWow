@@ -17,15 +17,15 @@ name = "taud"
 path = "src/main.rs"
 
 [dependencies]
-darkfi = { path = "../../../", features = [
+dwow = { path = "../../../", features = [
     "bs58",
     "async-daemonize",
     "event-graph",
     "rpc",
 ] }
 
-darkfi-sdk = {path = "../../../src/sdk", features = ["async"]}
-darkfi-serial = {path = "../../../src/serial"}
+dwow-sdk = {path = "../../../src/sdk", features = ["async"]}
+dwow-serial = {path = "../../../src/serial"}
 
 # Event Graph DB
 sled-overlay = "0.1.20"

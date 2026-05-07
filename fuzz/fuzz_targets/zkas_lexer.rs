@@ -24,7 +24,7 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 
-use darkfi::zkas::Lexer;
+use dwow::zkas::Lexer;
 
 // Run with: ZKAS_SILENT=1 cargo fuzz run zkas-lexer
 

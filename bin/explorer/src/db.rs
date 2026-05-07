@@ -24,16 +24,16 @@
 use std::{io, str::FromStr};
 
 use bytemuck::{Pod, Zeroable};
-use darkfi::{
+use dwow::{
     blockchain::{BlockInfo, Header},
     tx::Transaction,
 };
 use darkfi_deployooor_contract::{model::LockParamsV1, DeployFunction};
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{schnorr::Signature, ContractId, DEPLOYOOOR_CONTRACT_ID},
     deploy::DeployParamsV1,
 };
-use darkfi_serial::{
+use dwow_serial::{
     async_trait, deserialize, deserialize_async, serialize, serialize_async, SerialDecodable,
     SerialEncodable,
 };

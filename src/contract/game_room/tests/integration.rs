@@ -23,8 +23,8 @@
 
 //! Game Room contract integration tests
 
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::{
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{
     crypto::pasta_prelude::Group,
     pasta::pallas,
 };
@@ -46,15 +46,15 @@ use darkfi_game_room_contract::{
 };
 
 /// Helper to create a test PublicKey
-fn make_pubkey(seed: u64) -> darkfi_sdk::crypto::PublicKey {
-    use darkfi_sdk::crypto::{PublicKey, SecretKey};
+fn make_pubkey(seed: u64) -> dwow_sdk::crypto::PublicKey {
+    use dwow_sdk::crypto::{PublicKey, SecretKey};
     let secret = SecretKey::from(pallas::Base::from(seed));
     PublicKey::from_secret(secret)
 }
 
 /// Helper to create a test ContractId
-fn make_contract_id(pubkey: &darkfi_sdk::crypto::PublicKey) -> darkfi_sdk::crypto::ContractId {
-    darkfi_sdk::crypto::ContractId::derive_public(*pubkey)
+fn make_contract_id(pubkey: &dwow_sdk::crypto::PublicKey) -> dwow_sdk::crypto::ContractId {
+    dwow_sdk::crypto::ContractId::derive_public(*pubkey)
 }
 
 #[test]

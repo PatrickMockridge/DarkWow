@@ -23,9 +23,9 @@
 
 use std::fmt::Write;
 
-use darkfi::tx::{MAX_TX_CALLS, MIN_TX_CALLS};
-use darkfi_sdk::dark_tree::dark_forest_leaf_vec_integrity_check;
-use darkfi_serial::deserialize;
+use dwow::tx::{MAX_TX_CALLS, MIN_TX_CALLS};
+use dwow_sdk::dark_tree::dark_forest_leaf_vec_integrity_check;
+use dwow_serial::deserialize;
 use pyo3::{
     exceptions::PyValueError,
     prelude::{PyDictMethods, PyModule, PyModuleMethods},
@@ -42,13 +42,13 @@ use super::{
 
 /// Class representing a transaction
 #[pyclass]
-pub struct Transaction(darkfi::tx::Transaction);
+pub struct Transaction(dwow::tx::Transaction);
 
 #[pymethods]
 impl Transaction {
     #[staticmethod]
     pub fn decode(data: Vec<u8>) -> PyResult<Self> {
-        let tx: darkfi::tx::Transaction = deserialize(&data)?;
+        let tx: dwow::tx::Transaction = deserialize(&data)?;
         dark_forest_leaf_vec_integrity_check(&tx.calls, Some(MIN_TX_CALLS), Some(MAX_TX_CALLS))
             .map_err(|e| {
                 PyValueError::new_err(format!(
@@ -164,7 +164,7 @@ impl Transaction {
 }
 
 #[pyclass]
-pub struct TransactionHash(darkfi_sdk::tx::TransactionHash);
+pub struct TransactionHash(dwow_sdk::tx::TransactionHash);
 
 #[pymethods]
 impl TransactionHash {

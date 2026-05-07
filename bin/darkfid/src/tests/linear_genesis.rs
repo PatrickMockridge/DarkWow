@@ -27,8 +27,8 @@
 
 use std::sync::Arc;
 
-use darkfi_linear::LinearStore;
-use darkfi_sdk::{crypto::DEPLOYOOOR_CONTRACT_ID, pasta::pallas};
+use dwow_linear::LinearStore;
+use dwow_sdk::{crypto::DEPLOYOOOR_CONTRACT_ID, pasta::pallas};
 use sled::Config;
 
 use crate::blockchain::LinearBlockchain;
@@ -48,11 +48,11 @@ fn test_linear_genesis_contracts() -> Result<(), Box<dyn std::error::Error>> {
 
     // Deployooor WASM
     let deployooor_wasm =
-        include_bytes!("../../../../src/contract/deployooor/darkfi_deployooor_contract.wasm").to_vec();
+        include_bytes!("../../../../src/contract/deployooor/dwow_deployooor_contract.wasm").to_vec();
 
     // Native Token WASM
     let native_token_wasm =
-        include_bytes!("../../../../src/contract/native_token/darkfi_native_token_contract.wasm").to_vec();
+        include_bytes!("../../../../src/contract/native_token/dwow_native_token_contract.wasm").to_vec();
 
     // Deploy Deployooor contract
     blockchain.deploy_contract(&deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID)?;
@@ -63,7 +63,7 @@ fn test_linear_genesis_contracts() -> Result<(), Box<dyn std::error::Error>> {
 
     // Deploy Native Token contract
     let native_token_id =
-        darkfi_sdk::crypto::ContractId::from(pallas::Base::from(42));
+        dwow_sdk::crypto::ContractId::from(pallas::Base::from(42));
     blockchain.deploy_contract(&native_token_wasm, native_token_id)?;
     println!("Deployed Native Token contract: {:?}", native_token_id.to_bytes());
 
@@ -104,13 +104,13 @@ fn test_linear_block_sync() -> Result<(), Box<dyn std::error::Error>> {
 
     // Deploy contracts to node 1
     let deployooor_wasm =
-        include_bytes!("../../../../src/contract/deployooor/darkfi_deployooor_contract.wasm").to_vec();
+        include_bytes!("../../../../src/contract/deployooor/dwow_deployooor_contract.wasm").to_vec();
     blockchain1.deploy_contract(&deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID)?;
 
     let native_token_wasm =
-        include_bytes!("../../../../src/contract/native_token/darkfi_native_token_contract.wasm").to_vec();
+        include_bytes!("../../../../src/contract/native_token/dwow_native_token_contract.wasm").to_vec();
     let native_token_id =
-        darkfi_sdk::crypto::ContractId::from(pallas::Base::from(42));
+        dwow_sdk::crypto::ContractId::from(pallas::Base::from(42));
     blockchain1.deploy_contract(&native_token_wasm, native_token_id)?;
 
     // Verify node 2 doesn't have the contracts yet

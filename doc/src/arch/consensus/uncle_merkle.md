@@ -4,7 +4,7 @@ Uncle Merkle consensus replaces DarkWow upstream's complex fork/overlay design w
 
 ## Motivation
 
-The upstream DarkFi consensus uses a complex overlay/diff system for speculative block verification. This complexity exists to support the DAO governance model: a mechanism must adjudicate between competing forks to prevent chain splits from undermining token-holder voting. This creates a cascade of engineering problems:
+The upstream DarkWow consensus uses a complex overlay/diff system for speculative block verification. This complexity exists to support the DAO governance model: a mechanism must adjudicate between competing forks to prevent chain splits from undermining token-holder voting. This creates a cascade of engineering problems:
 
 1. **Non-deterministic in time**: State can be speculative, committed, or rolled back — same code, different results depending on timing
 2. **Complex state management**: Overlays, checkpoints, and diffs all need careful coordination across the validator stack

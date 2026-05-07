@@ -45,11 +45,11 @@ use std::sync::Arc;
 
 use std::path::PathBuf;
 
-use darkfi::{Result, tx::Transaction};
+use dwow::{Result, tx::Transaction};
 use darkfi_contract_test_harness::harness::{
     ContractHarness, MoneyV3Harness, DexHarness, StablecoinHarness,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{SecretKey, pasta_prelude::PrimeField},
     pasta::pallas,
     ContractCall,
@@ -88,8 +88,8 @@ async fn read_wasm(contract_name: &str) -> std::result::Result<Vec<u8>, Heavywei
 
 /// Compute function ID for child contract calls
 /// FuncId = poseidon_hash([contract_id.inner(), func_code])
-fn compute_func_id(contract_id: darkfi_sdk::crypto::ContractId, func_code: u8) -> pallas::Base {
-    use darkfi_sdk::crypto::poseidon_hash;
+fn compute_func_id(contract_id: dwow_sdk::crypto::ContractId, func_code: u8) -> pallas::Base {
+    use dwow_sdk::crypto::poseidon_hash;
     poseidon_hash([contract_id.inner(), pallas::Base::from(func_code as u64)])
 }
 
@@ -97,7 +97,7 @@ fn compute_func_id(contract_id: darkfi_sdk::crypto::ContractId, func_code: u8) -
 fn make_config(port_base: u16) -> HarnessConfig {
     HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: format!("tcp+tls://127.0.0.1:{}", port_base),
@@ -128,8 +128,8 @@ fn test_money_v3_foundation() -> Result<()> {
 }
 
 async fn test_money_v3_foundation_impl(ex: Arc<Executor<'static>>) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::pasta_prelude::PrimeField;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     info!("=== test_money_v3_foundation ===");
@@ -168,8 +168,8 @@ fn test_money_v3_token_lifecycle() -> Result<()> {
 }
 
 async fn test_money_v3_token_lifecycle_impl(ex: Arc<Executor<'static>>) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::pasta_prelude::PrimeField;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     info!("=== test_money_v3_token_lifecycle ===");
@@ -257,9 +257,9 @@ fn test_dex_create_accept_execute_swap() -> Result<()> {
 }
 
 async fn test_dex_create_accept_execute_swap_impl(ex: Arc<Executor<'static>>) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_sdk::crypto::{SecretKey, pasta_prelude::PrimeField};
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::{SecretKey, pasta_prelude::PrimeField};
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     info!("=== test_dex_create_accept_execute_swap ===");
@@ -380,9 +380,9 @@ fn test_dex_cancel_and_refund() -> Result<()> {
 }
 
 async fn test_dex_cancel_and_refund_impl(ex: Arc<Executor<'static>>) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_sdk::crypto::{SecretKey, pasta_prelude::PrimeField};
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::{SecretKey, pasta_prelude::PrimeField};
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     info!("=== test_dex_cancel_and_refund ===");
@@ -465,8 +465,8 @@ fn test_stablecoin_open_cdp_and_mint() -> Result<()> {
 }
 
 async fn test_stablecoin_open_cdp_impl(ex: Arc<Executor<'static>>) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     info!("=== test_stablecoin_open_cdp_and_mint ===");
@@ -510,9 +510,9 @@ fn test_cross_contract_money_to_dex() -> Result<()> {
 }
 
 async fn test_cross_contract_money_to_dex_impl(ex: Arc<Executor<'static>>) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_sdk::crypto::{SecretKey, pasta_prelude::PrimeField};
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::{SecretKey, pasta_prelude::PrimeField};
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     info!("=== test_cross_contract_money_to_dex ===");
@@ -596,8 +596,8 @@ fn test_linear_sdk_full_deployment() -> Result<()> {
 }
 
 async fn test_linear_sdk_full_deployment_impl(ex: Arc<Executor<'static>>) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     info!("=== test_linear_sdk_full_deployment ===");

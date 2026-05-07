@@ -23,16 +23,16 @@
 
 //! DarkToshi Dice commit_bet_v1 ZK proof generation
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pedersen_commitment_u64, poseidon_hash, Blind, PublicKey},
     pasta::pallas,
 };
-use darkfi_sdk::crypto::pasta_prelude::*;
+use dwow_sdk::crypto::pasta_prelude::*;
 use rand::rngs::OsRng;
 
 /// CommitBetV1 circuit public inputs

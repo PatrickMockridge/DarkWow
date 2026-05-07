@@ -25,15 +25,15 @@
 //!
 //! Provides isolated testing for RelayerEndowment contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::PublicKey,
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use darkfi_relayer_endowment_contract::client::{
     initialize_v1::{InitializeV1CallData, initialize_v1_proof, InitializeV1PublicInputs},
@@ -72,15 +72,15 @@ impl RelayerEndowmentHarness {
         let claim_fees_zkbin = ZkBinary::decode(claim_bin, false).unwrap();
 
         let init_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&initialize_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&initialize_zkbin).unwrap(),
             &initialize_zkbin,
         );
         let deploy_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&deploy_capital_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&deploy_capital_zkbin).unwrap(),
             &deploy_capital_zkbin,
         );
         let claim_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&claim_fees_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&claim_fees_zkbin).unwrap(),
             &claim_fees_zkbin,
         );
 
@@ -226,7 +226,7 @@ pub struct InitializeResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: InitializeV1PublicInputs,
 }
@@ -236,7 +236,7 @@ pub struct DeployCapitalResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: DeployCapitalV1PublicInputs,
 }
@@ -246,7 +246,7 @@ pub struct ClaimFeesResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: ClaimFeesV1PublicInputs,
 }

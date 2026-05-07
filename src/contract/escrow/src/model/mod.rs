@@ -39,11 +39,11 @@
 //! - **Refunded**: Buyer proved timeout reached, funds returned
 //! - **Cancelled**: Buyer cancelled before funding
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, MerkleNode, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Escrow unique identifier (hash of escrow data)
 pub type EscrowId = pallas::Base;
@@ -64,7 +64,7 @@ pub enum EscrowState {
 }
 
 impl TryFrom<u8> for EscrowState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -73,7 +73,7 @@ impl TryFrom<u8> for EscrowState {
             2 => Ok(Self::Claimed),
             3 => Ok(Self::Refunded),
             4 => Ok(Self::Cancelled),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }

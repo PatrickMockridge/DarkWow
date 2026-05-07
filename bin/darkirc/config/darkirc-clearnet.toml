@@ -15,10 +15,10 @@ autojoin = [
 magic_bytes = [251, 229, 199, 181]
 
 ## Path to the P2P datastore
-datastore = "~/.local/share/darkfi/darkirc"
+datastore = "~/.local/share/dwow/darkirc"
 
 ## Path to a configured hostlist for saving known peers
-hostlist = "~/.local/share/darkfi/darkirc/p2p_hostlist.tsv"
+hostlist = "~/.local/share/dwow/darkirc/p2p_hostlist.tsv"
 
 ## Outbound connection slots
 outbound_connections = 8

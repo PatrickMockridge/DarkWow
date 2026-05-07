@@ -23,7 +23,7 @@
 
 #![no_main]
 extern crate darkfi_serial;
-use darkfi_serial::deserialize;
+use dwow_serial::deserialize;
 
 use libfuzzer_sys::fuzz_target;
 

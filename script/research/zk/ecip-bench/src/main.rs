@@ -24,7 +24,7 @@
 use rand::rngs::OsRng;
 use std::{marker::PhantomData, time::Instant};
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         constants::{
             sinsemilla::{OrchardCommitDomains, OrchardHashDomains},
@@ -54,7 +54,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use darkfi::zk::{
+use dwow::zk::{
     assign_free_advice,
     gadget::arithmetic::{ArithChip, ArithConfig, ArithInstruction},
     proof::{Proof, ProvingKey, VerifyingKey},
@@ -589,8 +589,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let public = vec![r_x, r_y];
 
     let start = Instant::now();
-    let pk = darkfi::zk::ProvingKey::build(k, &MyCircuit::default());
-    let vk = darkfi::zk::VerifyingKey::build(k, &MyCircuit::default());
+    let pk = dwow::zk::ProvingKey::build(k, &MyCircuit::default());
+    let vk = dwow::zk::VerifyingKey::build(k, &MyCircuit::default());
     println!("Setup: [{:?}]", start.elapsed());
 
     let start = Instant::now();

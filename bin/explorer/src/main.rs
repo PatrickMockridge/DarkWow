@@ -33,7 +33,7 @@ use std::{
 
 use arg::Args;
 use async_trait::async_trait;
-use darkfi::{
+use dwow::{
     blockchain::BlockInfo,
     rpc::{
         client::RpcClient,
@@ -45,7 +45,7 @@ use darkfi::{
     util::{encoding::base64, path::expand_path},
     verbose, Error, Result, ANSI_LOGO,
 };
-use darkfi_serial::deserialize_async;
+use dwow_serial::deserialize_async;
 use smol::{
     future,
     lock::{Mutex, MutexGuard},
@@ -70,7 +70,7 @@ Usage: explorer [OPTIONS]
 
 Options:
   -e <endpoint>  darkfid JSON-RPC endpoint (default: tcp://127.0.0.1:18345)
-  -d <path>      Path to database (default: ~/.local/share/darkfi/explorer/db)
+  -d <path>      Path to database (default: ~/.local/share/dwow/explorer/db)
   -r <height>    Revert database to <height>
   -h             Show this help
 "#;
@@ -418,7 +418,7 @@ async fn realmain(
 fn main() -> Result<()> {
     let mut hflag = false;
     let mut evalue = "tcp://127.0.0.1:18345".to_string();
-    let mut dvalue = "~/.local/share/darkfi/explorer/db".to_string();
+    let mut dvalue = "~/.local/share/dwow/explorer/db".to_string();
     let mut rvalue = "0".to_string();
     let mut verbose = 0;
 
@@ -462,7 +462,7 @@ fn main() -> Result<()> {
     let ex = Arc::new(Executor::new());
     let (signal, shutdown) = async_channel::unbounded::<()>();
 
-    darkfi::util::logger::setup_logging(verbose, None)?;
+    dwow::util::logger::setup_logging(verbose, None)?;
 
     info!(target: "explorer", "RPC Endpoint: {}", evalue);
     info!(target: "explorer", "DB Path: {}", dvalue);
@@ -476,7 +476,7 @@ fn main() -> Result<()> {
             future::block_on(async {
                 realmain(rpc_endpoint, db_path, revert_to, ex.clone()).await?;
                 drop(signal);
-                Ok::<(), darkfi::Error>(())
+                Ok::<(), dwow::Error>(())
             })
         });
 

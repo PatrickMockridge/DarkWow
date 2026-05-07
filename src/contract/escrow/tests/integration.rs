@@ -23,8 +23,8 @@
 
 //! Escrow contract integration tests
 
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::{
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{
     crypto::{MerkleNode, pasta_prelude::Group},
     pasta::pallas,
 };
@@ -41,8 +41,8 @@ use darkfi_escrow_contract::{
 };
 
 /// Helper to create a test PublicKey
-fn make_pubkey(seed: u64) -> darkfi_sdk::crypto::PublicKey {
-    use darkfi_sdk::crypto::{PublicKey, SecretKey};
+fn make_pubkey(seed: u64) -> dwow_sdk::crypto::PublicKey {
+    use dwow_sdk::crypto::{PublicKey, SecretKey};
     let secret = SecretKey::from(pallas::Base::from(seed));
     PublicKey::from_secret(secret)
 }

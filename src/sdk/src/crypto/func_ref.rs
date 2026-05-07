@@ -23,7 +23,7 @@
 
 use std::str::FromStr;
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use pasta_curves::pallas;
 
 use super::{pasta_prelude::*, poseidon_hash, ContractId};

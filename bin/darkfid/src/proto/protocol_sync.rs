@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use tracing::{debug, error};
 
-use darkfi::{
+use dwow::{
     blockchain::{BlockInfo, Header, HeaderHash},
     impl_p2p_message,
     net::{
@@ -41,7 +41,7 @@ use darkfi::{
     validator::{consensus::Proposal, ValidatorPtr},
     Error, Result,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // Constant defining max elements we send in vectors during syncing.
 pub const BATCH: usize = 20;

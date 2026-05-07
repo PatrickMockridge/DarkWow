@@ -24,7 +24,7 @@
 use std::{collections::HashSet, time::Instant};
 
 use async_trait::async_trait;
-use darkfi::{
+use dwow::{
     rpc::{
         client::RpcClient,
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResponse, JsonResult},
@@ -33,8 +33,8 @@ use darkfi::{
     system::{sleep, ExecutorPtr, StoppableTaskPtr},
     Error, Result,
 };
-use darkfi_sdk::{crypto::pasta_prelude::PrimeField, pasta::pallas};
-use darkfi_serial::serialize;
+use dwow_sdk::{crypto::pasta_prelude::PrimeField, pasta::pallas};
+use dwow_serial::serialize;
 use smol::lock::MutexGuard;
 use tinyjson::JsonValue;
 use tracing::{debug, error, info};

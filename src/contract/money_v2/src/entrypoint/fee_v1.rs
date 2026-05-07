@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         pasta_prelude::*,
         pedersen_commitment_u64, poseidon_hash,
@@ -37,11 +37,11 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::MoneyError,
-    model::{MoneyFeeParamsV1, MoneyFeeUpdateV1, DARK_TOKEN_ID},
+    model::{MoneyFeeParamsV1, MoneyFeeUpdateV1, DRKW_TOKEN_ID},
     MONEY_CONTRACT_COINS_TREE, MONEY_CONTRACT_COIN_MERKLE_TREE, MONEY_CONTRACT_COIN_ROOTS_TREE,
     MONEY_CONTRACT_FEES_TREE, MONEY_CONTRACT_INFO_TREE, MONEY_CONTRACT_LATEST_COIN_ROOT,
     MONEY_CONTRACT_LATEST_NULLIFIER_ROOT, MONEY_CONTRACT_NULLIFIERS_TREE,
@@ -119,7 +119,7 @@ pub(crate) fn money_fee_process_instruction_v1(
 
     // Fees can only be paid using the native token, so we'll compare
     // the token commitments with this one:
-    let native_token_commit = poseidon_hash([DARK_TOKEN_ID.inner(), params.token_blind.inner()]);
+    let native_token_commit = poseidon_hash([DRKW_TOKEN_ID.inner(), params.token_blind.inner()]);
 
     // ===================================
     // Perform the actual state transition

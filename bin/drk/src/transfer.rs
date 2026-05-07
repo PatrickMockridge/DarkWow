@@ -25,14 +25,14 @@
 //!
 //! This module handles token transfers using the Money V3 contract.
 
-use darkfi::{
+use dwow::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     util::parse::decode_base10,
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
     zkas::ZkBinary,
     Error, Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         pasta_prelude::PrimeField,
         poseidon_hash, BaseBlind, ContractId, MerkleNode, PublicKey, SecretKey,
@@ -41,7 +41,7 @@ use darkfi_sdk::{
     pasta::pallas,
     tx::ContractCall,
 };
-use darkfi_serial::AsyncEncodable;
+use dwow_serial::AsyncEncodable;
 use rand::rngs::OsRng;
 
 use crate::contract_imports::{
@@ -52,7 +52,7 @@ use crate::contract_imports::{
         TransferCallInput as MoneyTransferCallInput, TransferCallOutput as MoneyTransferCallOutput,
     },
     native_token::{
-        DARK_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
+        DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
     },
     MONEY_V3_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
@@ -298,7 +298,7 @@ impl Drk {
         // =========================================================================
         // Step 3: Get DARK coin for fee payment
         // =========================================================================
-        let dark_token_id_str = format!("{:?}", DARK_TOKEN_ID);
+        let dark_token_id_str = format!("{:?}", DRKW_TOKEN_ID);
         let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
             .map_err(|e| Error::Custom(format!("Failed to get DARK coins: {:?}", e)))?;
 
@@ -354,7 +354,7 @@ impl Drk {
         // Build fee input
         let fee_input = FeeCallInput {
             value: dark_coin.value,
-            token_id: DARK_TOKEN_ID,
+            token_id: DRKW_TOKEN_ID,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: dark_coin_blind,

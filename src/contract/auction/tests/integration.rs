@@ -35,8 +35,8 @@ use darkfi_auction_contract::{
     AUCTION_CONTRACT_AUCTIONS_TREE, AUCTION_CONTRACT_BIDS_TREE,
     AUCTION_CONTRACT_NULLIFIERS_TREE, AUCTION_CONTRACT_INFO_TREE,
 };
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::{
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{
     crypto::{pasta_prelude::Group, PublicKey, SecretKey},
     pasta::pallas,
 };

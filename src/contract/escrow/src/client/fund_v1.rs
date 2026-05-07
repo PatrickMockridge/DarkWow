@@ -23,12 +23,12 @@
 
 //! Escrow fund_v1 ZK proof generation
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{pedersen_commitment_u64, pasta_prelude::Curve, pasta_prelude::CurveAffine, Blind, MerkleNode},
     pasta::pallas,

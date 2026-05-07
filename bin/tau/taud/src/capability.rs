@@ -31,7 +31,7 @@
 //! - **OffChain (Hot Path)**: For trusted workers - fast, local verification
 //! - **OnChain (Cold Path)**: For unproven workers - full ZK verification via Identity contract
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::error::TaudResult;
 

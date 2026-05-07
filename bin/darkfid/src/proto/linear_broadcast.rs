@@ -35,7 +35,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use darkfi::{
+use dwow::{
     impl_p2p_message,
     net::{
         metering::MeteringConfiguration,
@@ -49,8 +49,8 @@ use darkfi::{
     util::time::NanoTimestamp,
     Result,
 };
-use darkfi_linear::LinearBlockchain;
-use darkfi_serial::{
+use dwow_linear::LinearBlockchain;
+use dwow_serial::{
     deserialize_async, serialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite,
     FutAsyncReadExt, FutAsyncWriteExt,
 };
@@ -64,7 +64,7 @@ use darkfi_serial::{
 /// receivers insert blocks locally without rebroadcast.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockBroadcast {
-    pub block: darkfi_linear::Block,
+    pub block: dwow_linear::Block,
 }
 
 /// Protocol metering configuration
@@ -153,7 +153,7 @@ impl LinearBroadcastHandler {
             handle_receive_block(self.handler.clone(), blockchain),
             |res| async move {
                 match res {
-                    Ok(()) | Err(darkfi::Error::DetachedTaskStopped) => {}
+                    Ok(()) | Err(dwow::Error::DetachedTaskStopped) => {}
                     Err(e) => {
                         tracing::error!(
                             target: "darkfid::proto::linear_broadcast",
@@ -162,7 +162,7 @@ impl LinearBroadcastHandler {
                     }
                 }
             },
-            darkfi::Error::DetachedTaskStopped,
+            dwow::Error::DetachedTaskStopped,
             executor.clone(),
         );
 
@@ -184,7 +184,7 @@ impl LinearBroadcastHandler {
 // ============================================================================
 
 /// Broadcast a block to all connected peers
-pub async fn broadcast_block(p2p: &P2pPtr, block: darkfi_linear::Block) {
+pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_linear::Block) {
     let msg = BlockBroadcast { block };
     tracing::debug!(
         target: "darkfid::proto::linear_broadcast",

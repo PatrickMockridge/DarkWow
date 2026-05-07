@@ -21,13 +21,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{util::path::expand_path, Error, Result};
-use darkfi_sdk::{
+use dwow::{util::path::expand_path, Error, Result};
+use dwow_sdk::{
     bridgetree::Position,
     crypto::{pasta_prelude::PrimeField, MerkleNode, MerkleTree},
     pasta::pallas,
 };
-use darkfi_serial::{async_trait, deserialize, serialize, SerialDecodable, SerialEncodable};
+use dwow_serial::{async_trait, deserialize, serialize, SerialDecodable, SerialEncodable};
 use sled_overlay::sled;
 
 /// This struct represents a tuple of the form (id, stake).

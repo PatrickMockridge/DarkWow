@@ -37,7 +37,7 @@ use structopt_toml::{
 };
 use url::Url;
 
-use darkfi::{
+use dwow::{
     cli_desc,
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     util::{encoding::base64, parse::decode_base10, path::get_config_path},
@@ -45,7 +45,7 @@ use darkfi::{
     Error, Result,
 };
 use crate::contract_imports::money::TokenId;
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         keypair::{Address, Network},
         pasta_prelude::PrimeField,
@@ -55,7 +55,7 @@ use darkfi_sdk::{
     pasta::pallas,
     ContractCallImport,
 };
-use darkfi_serial::deserialize_async;
+use dwow_serial::deserialize_async;
 
 use crate::{money::BALANCE_BASE10_DECIMALS, Drk};
 
@@ -64,11 +64,11 @@ use crate::{money::BALANCE_BASE10_DECIMALS, Drk};
 #[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
 #[structopt()]
 pub struct BlockchainNetwork {
-    #[structopt(long, default_value = "~/.local/share/darkfi/drk/localnet/cache")]
+    #[structopt(long, default_value = "~/.local/share/dwow/drk/localnet/cache")]
     /// Path to blockchain cache database
     pub cache_path: String,
 
-    #[structopt(long, default_value = "~/.local/share/darkfi/drk/localnet/wallet.db")]
+    #[structopt(long, default_value = "~/.local/share/dwow/drk/localnet/wallet.db")]
     /// Path to wallet database
     pub wallet_path: String,
 
@@ -80,7 +80,7 @@ pub struct BlockchainNetwork {
     /// darkfid JSON-RPC endpoint
     pub endpoint: Url,
 
-    #[structopt(long, default_value = "~/.local/share/darkfi/drk/localnet/history.txt")]
+    #[structopt(long, default_value = "~/.local/share/dwow/drk/localnet/history.txt")]
     /// Path to interactive shell history file
     pub history_path: String,
 }
@@ -1005,7 +1005,7 @@ fn check_cycles(entries: &[(usize, Vec<usize>)]) -> std::result::Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use darkfi_sdk::{
+    use dwow_sdk::{
         crypto::{pasta_prelude::Field, ContractId},
         ContractCall,
     };

@@ -63,7 +63,7 @@
 //! - **Endowment insurance**: DAO can authorize refunds from endowment fund
 //! - **Atomic swap**: Cross-chain payments via HTLC pattern
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 define_contract_function!(SubscriptionFunction {
     InitializeV1 = 0x00,

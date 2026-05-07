@@ -23,7 +23,7 @@
 
 use std::collections::HashSet;
 
-use darkfi_sdk::crypto::{
+use dwow_sdk::crypto::{
     constants::{
         sinsemilla::{OrchardCommitDomains, OrchardHashDomains, K},
         util::gen_const_array,

@@ -404,7 +404,7 @@ impl<const WINDOW_SIZE: usize, const NUM_OF_BITS: usize> LessThanChip<WINDOW_SIZ
 #[cfg(test)]
 mod tests {
     use super::*;
-    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+    use dwow_sdk::crypto::pasta_prelude::PrimeField;
     use halo2_proofs::{
         circuit::floor_planner,
         dev::{CircuitLayout, MockProver},

@@ -28,8 +28,8 @@
 //! Note: Deployooor has NO ZK circuits - it's a pure WASM contract that validates
 //! and deploys other WASM contracts. This harness only tests the client API.
 
-use darkfi::Result;
-use darkfi_sdk::crypto::Keypair;
+use dwow::Result;
+use dwow_sdk::crypto::Keypair;
 
 use darkfi_deployooor_contract::{
     client::{
@@ -85,11 +85,11 @@ impl DeployooorHarness {
 /// Result of deploy call
 pub struct DeployResult {
     pub wasm_bincode: Vec<u8>,
-    pub public_key: darkfi_sdk::crypto::PublicKey,
+    pub public_key: dwow_sdk::crypto::PublicKey,
     pub ix: Vec<u8>,
 }
 
 /// Result of lock call
 pub struct LockResult {
-    pub public_key: darkfi_sdk::crypto::PublicKey,
+    pub public_key: dwow_sdk::crypto::PublicKey,
 }

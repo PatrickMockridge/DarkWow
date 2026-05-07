@@ -33,9 +33,9 @@
 //! - 2/3 vote thresholds for large withdrawals
 //! - Emergency lock/unlock controls
 
-use darkfi::{tx::{ContractCallLeaf, Transaction}, Error, Result};
-use darkfi_sdk::{crypto::PublicKey, pasta::pallas, tx::ContractCall};
-use darkfi_serial::Encodable;
+use dwow::{tx::{ContractCallLeaf, Transaction}, Error, Result};
+use dwow_sdk::{crypto::PublicKey, pasta::pallas, tx::ContractCall};
+use dwow_serial::Encodable;
 
 use darkfi_drain_protection_contract::model::{InitializeParamsV1, VoteParamsV1, ExecuteParamsV1};
 use crate::contract_imports::drain_protection::DrainProtectionFunction;

@@ -23,8 +23,8 @@
 
 //! ResolveClaimV1 Implementation
 
-use darkfi_sdk::{error::ContractError, msg, wasm};
-use darkfi_serial::{deserialize, serialize};
+use dwow_sdk::{error::ContractError, msg, wasm};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::InsuranceMarketError;
 use crate::model::{
@@ -39,9 +39,9 @@ use crate::{
 
 /// Process instruction for ResolveClaimV1
 pub fn insurance_market_resolve_claim_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<darkfi_sdk::ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
@@ -133,7 +133,7 @@ pub fn insurance_market_resolve_claim_process_instruction_v1(
 
 /// Process update for ResolveClaimV1
 pub fn insurance_market_resolve_claim_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: ResolveClaimUpdateV1,
 ) -> Result<(), ContractError> {
     let claims_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_CLAIMS_TREE)?;
@@ -151,7 +151,7 @@ pub fn insurance_market_resolve_claim_process_update_v1(
         crate::model::ClaimState::Rejected
     };
     claim.attestation = vec![]; // Would be stored from params
-    claim.oracle_signature = darkfi_sdk::pasta::pallas::Base::zero(); // Would be stored from params
+    claim.oracle_signature = dwow_sdk::pasta::pallas::Base::zero(); // Would be stored from params
     claim.resolved_at = update.resolved_at;
     wasm::db::db_set(
         claims_db,

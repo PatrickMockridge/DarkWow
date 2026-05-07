@@ -42,8 +42,8 @@
 // Each attribute is tagged so verifiers know what they're checking.
 // ============================================================================
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
-use darkfi_sdk::crypto::{IntentCommitment, IntentNullifier};
+use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::crypto::{IntentCommitment, IntentNullifier};
 
 /// Namespace for identity intents (used with generic intent primitives)
 pub const IDENTITY_NAMESPACE: u64 = 0x0001;

@@ -86,7 +86,7 @@ pub enum PoolStakeError {
     InvalidChildCall,
 }
 
-impl From<PoolStakeError> for darkfi_sdk::error::ContractError {
+impl From<PoolStakeError> for dwow_sdk::error::ContractError {
     fn from(e: PoolStakeError) -> Self {
         match e {
             PoolStakeError::PoolNotFound => Self::Custom(1),

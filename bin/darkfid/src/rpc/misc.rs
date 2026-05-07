@@ -23,7 +23,7 @@
 
 use tinyjson::JsonValue;
 
-use darkfi::{
+use dwow::{
     rpc::jsonrpc::{JsonResponse, JsonResult},
     util::time::Timestamp,
 };

@@ -25,16 +25,16 @@ drk -c bin/drk/drk_config.toml -n testnet wallet address
 
 Save the address - you'll need it for mining rewards.
 
-## Step 2: Create darkfid Config
+## Step 2: Create dwowd Config
 
-Create `/home/patrick/darkfi-testnet/devnet_darkfid.config.toml`:
+Create `/home/patrick/darkfi-testnet/devnet_dwowd.config.toml`:
 
 ```toml
 # DarkWow testnet configuration for mining
 network = "testnet"
 
 [network_config."testnet"]
-database = "~/.local/share/darkfi/darkfid/testnet"
+database = "~/.local/share/dwow/dwowd/testnet"
 threshold = 6
 minerd_endpoint = "tcp://127.0.0.1:28467"
 pow_target = 120
@@ -48,8 +48,8 @@ rpc_listen = "tcp://127.0.0.1:8340"
 rpc_disabled_methods = ["p2p.get_info"]
 
 [network_config."testnet".net]
-p2p_datastore = "~/.local/share/darkfi/darkfid/testnet"
-hostlist = "~/.local/share/darkfi/darkfid/testnet/p2p_hostlist.tsv"
+p2p_datastore = "~/.local/share/dwow/dwowd/testnet"
+hostlist = "~/.local/share/dwow/dwowd/testnet/p2p_hostlist.tsv"
 inbound = ["tcp+tls://0.0.0.0:8342"]
 external_addrs = []
 peers = []
@@ -61,7 +61,7 @@ outbound_connections = 8
 
 Replace `recipient` with your wallet address from Step 1.
 
-## Step 3: Create drk Wallet Config
+## Step 3: Create dww Wallet Config
 
 Create `/home/patrick/darkfi-testnet/devnet_drk.config.toml`:
 
@@ -71,17 +71,17 @@ network = "testnet"
 fun = true
 
 [network_config."testnet"]
-cache_path = "~/.local/share/darkfi/drk/testnet/cache"
-wallet_path = "~/.local/share/darkfi/drk/testnet/wallet.db"
+cache_path = "~/.local/share/dwow/drk/testnet/cache"
+wallet_path = "~/.local/share/dwow/drk/testnet/wallet.db"
 wallet_pass = "test123"
 endpoint = "tcp://127.0.0.1:8340"
-history_path = "~/.local/share/darkfi/drk/testnet/history.txt"
+history_path = "~/.local/share/dwow/drk/testnet/history.txt"
 ```
 
 ## Step 4: Start darkfid
 
 ```bash
-darkfid -c /home/patrick/darkfi-testnet/devnet_darkfid.config.toml
+dwowd -c /home/patrick/darkfi-testnet/devnet_dwowd.config.toml
 ```
 
 Expected output:
@@ -116,7 +116,7 @@ Expected output:
 
 ## Step 6: Verify Mining Connection
 
-When darkfid connects to minerd, you'll see:
+When dwowd connects to minerd, you'll see:
 ```
 [INFO] [RPC] Server accepted conn from tcp://127.0.0.1:XXXXX/
 ```
@@ -145,33 +145,33 @@ drk -c /home/patrick/darkfi-testnet/devnet_drk.config.toml wallet balance
 
 ### RPC Connection Issues
 
-If minerd can't connect to darkfid:
-1. Verify darkfid is running: `ss -tlnp | grep 8340`
-2. Check `minerd_endpoint` in darkfid config matches minerd's `rpc_listen`
+If minerd can't connect to dwowd:
+1. Verify dwowd is running: `ss -tlnp | grep 8340`
+2. Check `minerd_endpoint` in dwowd config matches minerd's `rpc_listen`
 
 ### Sync Issues
 
-If darkfid won't sync:
-1. Check peer connections: darkfid logs show `[INFO] Blocks received: X/XXXX`
+If dwowd won't sync:
+1. Check peer connections: dwowd logs show `[INFO] Blocks received: X/XXXX`
 2. Verify seeds are reachable: `tcp+tls://lilith0.darkwow.org:8342`
 
 ### Mining Not Starting
 
-1. Ensure darkfid is fully synced before mining
-2. Check darkfid logs for: `[INFO] Received request to mine block...`
-3. Verify `recipient` address is valid in darkfid config
+1. Ensure dwowd is fully synced before mining
+2. Check dwowd logs for: `[INFO] Received request to mine block...`
+3. Verify `recipient` address is valid in dwowd config
 
 ## File Locations
 
 | Component | Path |
 |-----------|------|
-| darkfid binary | `/path/to/DarkWowMain/darkfi/bin/darkfid/darkfid` |
-| drk binary | `/path/to/DarkWowMain/darkfi/bin/drk/drk` |
-| minerd binary | `/path/to/DarkWowMain/darkfi/bin/minerd/minerd` |
-| darkfid config | `~/.config/darkfi/darkfid_config.toml` or custom |
-| drk config | `~/.config/darkfi/drk_config.toml` or custom |
-| darkfid data | `~/.local/share/darkfi/darkfid/testnet/` |
-| drk wallet | `~/.local/share/darkfi/drk/testnet/wallet.db` |
+| dwowd binary | `/path/to/DarkWowMain/dwow/bin/dwowd/dwowd` |
+| dww binary | `/path/to/DarkWowMain/dwow/bin/drk/drk` |
+| minerd binary | `/path/to/DarkWowMain/dwow/bin/minerd/minerd` |
+| dwowd config | `~/.config/dwow/dwowd_config.toml` or custom |
+| dww config | `~/.config/dwow/drk_config.toml` or custom |
+| dwowd data | `~/.local/share/dwow/dwowd/testnet/` |
+| dww wallet | `~/.local/share/dwow/drk/testnet/wallet.db` |
 
 ## Common Commands
 
@@ -206,7 +206,7 @@ For contract development, use the **linear-testnet** which provides a pre-funded
 ### Quick Start
 
 ```bash
-# 1. Build darkfid with linear-testnet support
+# 1. Build dwowd with linear-testnet support
 cargo build -p darkfid
 
 # 2. Start the 5-node linear-testnet Docker stack
@@ -225,7 +225,7 @@ drk contract deploy <dev_secret_hex> --wasm path/to/contract.wasm | broadcast
 
 ### Docker Stack Overview
 
-The linear-testnet runs 5 darkfid nodes with xmrig miners:
+The linear-testnet runs 5 dwowd nodes with xmrig miners:
 
 ```
 node0 (seed) ── xmrig0
@@ -280,17 +280,17 @@ curl -X POST http://localhost:28345 \
 
 ```bash
 # 1. Create a deploy authority
-drk --network linear contract generate-deploy
+dww --network linear contract generate-deploy
 # Output: Deploy Authority Secret: <hex>
 #         Contract ID: <contract_id>
 
 # 2. Deploy WASM (takes hex secret, not contract ID)
-drk --network linear contract deploy <secret_hex> \
+dww --network linear contract deploy <secret_hex> \
   --wasm path/to/my_contract.wasm \
   --deploy-ix path/to/deploy_ix.bin | broadcast
 
 # 3. Check deployment
-drk --network linear contract list
+dww --network linear contract list
 ```
 
 ### Using the Rust SDK

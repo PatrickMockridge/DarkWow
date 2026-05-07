@@ -28,10 +28,10 @@ use std::{
 };
 
 #[cfg(feature = "async-serial")]
-use darkfi_serial::{
+use dwow_serial::{
     async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
 };
-use darkfi_serial::{Decodable, Encodable, ReadExt, SerialDecodable, SerialEncodable, WriteExt};
+use dwow_serial::{Decodable, Encodable, ReadExt, SerialDecodable, SerialEncodable, WriteExt};
 
 const MAX_ARR_SIZE: usize = 60;
 

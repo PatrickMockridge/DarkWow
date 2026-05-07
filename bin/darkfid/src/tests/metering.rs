@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::blockchain::Header;
-use darkfi_serial::serialize;
+use dwow::blockchain::Header;
+use dwow_serial::serialize;
 
 use crate::proto::{
     ForkHeaderHashRequest, ForkHeaderHashResponse, ForkHeadersRequest, ForkHeadersResponse,

@@ -23,8 +23,8 @@
 
 //! Labor Market Contract Data Structures
 
-use darkfi_sdk::pasta::pallas;
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::pasta::pallas;
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Delivery type for job work
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]

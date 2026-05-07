@@ -23,17 +23,17 @@
 
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use darkfi_linear::Output;
+use dwow_linear::Output;
 
-use darkfi_sdk::crypto::PublicKey;
-use darkfi_sdk::crypto::keypair::{Address, Network};
+use dwow_sdk::crypto::PublicKey;
+use dwow_sdk::crypto::keypair::{Address, Network};
 
 use rand::rngs::OsRng;
 use sled::IVec;
 use tinyjson::JsonValue;
 use tracing::info;
 
-use darkfi::{
+use dwow::{
     blockchain::{BlockInfo, Header, HeaderHash},
     rpc::jsonrpc::JsonSubscriber,
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
@@ -52,7 +52,7 @@ use darkfi::{
     Error, Result,
 };
 use darkfi_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN};
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         keypair::{Keypair, SecretKey},
         pasta_prelude::PrimeField,
@@ -61,7 +61,7 @@ use darkfi_sdk::{
     pasta::pallas,
     ContractCall,
 };
-use darkfi_serial::{deserialize_async, Encodable};
+use dwow_serial::{deserialize_async, Encodable};
 
 use crate::error::RpcError;
 
@@ -267,7 +267,7 @@ impl PowRewardV1Zk {
 }
 
 /// Linear blockchain miner rewards recipient configuration.
-/// Reward value is computed from `darkfi_sdk::blockchain::expected_reward(height)`,
+/// Reward value is computed from `dwow_sdk::blockchain::expected_reward(height)`,
 /// not configured statically.
 #[derive(Debug, Clone)]
 pub struct LinearMinerRewardsRecipientConfig {
@@ -352,13 +352,13 @@ pub async fn build_linear_coinbase(
     value: u64,
     linear_zk: &LinearPowRewardZk,
 ) -> Result<(
-    darkfi_linear::CoinbaseTransaction,
+    dwow_linear::CoinbaseTransaction,
     [[u8; 32]; 4],
 )> {
     use darkfi_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
-    use darkfi_sdk::crypto::Keypair;
-    use darkfi_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
-    use darkfi_serial::Encodable;
+    use dwow_sdk::crypto::Keypair;
+    use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
+    use dwow_serial::Encodable;
     use rand::rngs::OsRng;
 
     // Generate an ephemeral keypair for the block signer
@@ -411,7 +411,7 @@ pub async fn build_linear_coinbase(
     output.note.encode(&mut note_bytes)
         .map_err(|e| Error::Custom(format!("Failed to encode encrypted note: {}", e)))?;
 
-    let coinbase = darkfi_linear::CoinbaseTransaction {
+    let coinbase = dwow_linear::CoinbaseTransaction {
         proof: proof_bytes,
         public_inputs,
         coin: coin_bytes,
@@ -486,7 +486,7 @@ pub async fn generate_linear_block_template(
     };
 
     // Compute block reward from the exponential-decay emission schedule.
-    use darkfi_sdk::blockchain::expected_reward;
+    use dwow_sdk::blockchain::expected_reward;
     let reward = expected_reward(height as u32);
 
     // Build ZK coinbase if ZK materials are available

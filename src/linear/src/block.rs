@@ -134,7 +134,7 @@ impl BlockHeader {
     ///   [previous(32)][height(8)][nonce(4)][difficulty_target(4)][version(1)]
     ///   [merkle_root(32)][timestamp(8)][uncle_merkle_root(32)][total_reward(8)]
     ///   [randomx_key(32)][coin_merkle_root(32)][nullifier_root(32)]
-    /// Nonce is at byte offset 40 (compatible with drk miner and xmrig).
+    /// Nonce is at byte offset 40 (compatible with dww miner and xmrig).
     pub fn to_mining_blob(&self) -> Vec<u8> {
         let mut blob = Vec::with_capacity(225);
         blob.extend_from_slice(self.previous.as_bytes());       // 0..32
@@ -431,7 +431,7 @@ pub fn create_block_with_uncles(
 
     // Build uncle merkle and compute rewards (uses blake3 for merkle structure)
     let (uncle_merkle_root, _) = build_uncle_merkle(uncles, vm);
-    let base_reward = darkfi_sdk::blockchain::expected_reward(height as u32);
+    let base_reward = dwow_sdk::blockchain::expected_reward(height as u32);
     let (total_reward, _) = compute_reward(base_reward, uncles);
 
     Block {
@@ -622,7 +622,7 @@ mod tests {
         assert_eq!(block.header.height, 1);
         assert_eq!(block.header.uncle_merkle_root, [0u8; 32]);
         // With no uncles, total_reward = base_reward = expected_reward(height)
-        assert_eq!(block.header.total_reward, darkfi_sdk::blockchain::expected_reward(1));
+        assert_eq!(block.header.total_reward, dwow_sdk::blockchain::expected_reward(1));
     }
 
     /// Verify the coinbase lifecycle: create blocks at heights 1, 2, 3,
@@ -641,7 +641,7 @@ mod tests {
             &[],
             &vm,
         );
-        let reward1 = darkfi_sdk::blockchain::expected_reward(1);
+        let reward1 = dwow_sdk::blockchain::expected_reward(1);
         assert_eq!(block1.header.total_reward, reward1);
         assert!(reward1 > 1_000_000_000, "height 1 reward should be > 1B base units");
 
@@ -654,7 +654,7 @@ mod tests {
             &[],
             &vm,
         );
-        let reward2 = darkfi_sdk::blockchain::expected_reward(2);
+        let reward2 = dwow_sdk::blockchain::expected_reward(2);
         assert_eq!(block2.header.total_reward, reward2);
         assert!(reward2 <= reward1, "reward must decay monotonically");
 
@@ -667,12 +667,12 @@ mod tests {
             &[],
             &vm,
         );
-        let reward3 = darkfi_sdk::blockchain::expected_reward(3);
+        let reward3 = dwow_sdk::blockchain::expected_reward(3);
         assert_eq!(block3.header.total_reward, reward3);
         assert!(reward3 <= reward2, "reward must decay monotonically");
 
         // All rewards must be >= TAIL_REWARD
-        let tail = darkfi_sdk::blockchain::reward::TAIL_REWARD;
+        let tail = dwow_sdk::blockchain::reward::TAIL_REWARD;
         assert!(reward1 >= tail);
         assert!(reward2 >= tail);
         assert!(reward3 >= tail);
@@ -685,7 +685,7 @@ mod tests {
         let previous = blake3::hash(b"genesis");
 
         let block = create_block(previous, 42, vec![], 0x0000_FFFF, &vm);
-        let expected = darkfi_sdk::blockchain::expected_reward(42);
+        let expected = dwow_sdk::blockchain::expected_reward(42);
         assert_eq!(block.header.total_reward, expected);
         assert_eq!(block.header.height, 42);
     }

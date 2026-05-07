@@ -37,7 +37,7 @@
 //! 3. Claim is verified (ZK + on-chain)
 //! 4. Claim can be consumed (prevents replay)
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -45,7 +45,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::{
     error::AttestationError,
@@ -66,7 +66,7 @@ use crate::{
     ATTESTATION_CONTRACT_NULLIFIERS_TREE, ATTESTATION_CONTRACT_RATE_LIMIT_TREE,
 };
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

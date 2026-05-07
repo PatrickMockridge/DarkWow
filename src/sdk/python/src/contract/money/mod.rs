@@ -24,8 +24,8 @@
 use std::fmt::Write;
 
 use darkfi_money_contract::{model as money_model, MoneyFunction};
-use darkfi_sdk::crypto::util::FieldElemAsStr;
-use darkfi_serial::deserialize;
+use dwow_sdk::crypto::util::FieldElemAsStr;
+use dwow_serial::deserialize;
 use pyo3::{
     prelude::{PyAnyMethods, PyDictMethods, PyModule, PyModuleMethods},
     pyclass,
@@ -73,7 +73,7 @@ pub use burn_v1::MoneyBurnParamsV1;
 pub fn decode_money_function_params(
     function_index: u8,
     data: &[u8],
-) -> darkfi::Result<Box<dyn FunctionParams>> {
+) -> dwow::Result<Box<dyn FunctionParams>> {
     let res: Box<dyn FunctionParams> = match MoneyFunction::try_from(function_index)? {
         MoneyFunction::FeeV1 => {
             let params: money_model::MoneyFeeParamsV1 = deserialize(&data[9..])?;

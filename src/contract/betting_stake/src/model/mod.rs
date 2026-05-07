@@ -25,11 +25,11 @@
 //!
 //! Data structures for capital staking against betting contracts.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{PublicKey, schnorr::Signature},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::EARNINGS_BP;
 
@@ -256,12 +256,12 @@ pub struct UpdateRiskUpdateV1 {
 
 /// Derive table ID from betting contract ID
 pub fn derive_table_id(betting_contract_id: pallas::Base, nonce: u64) -> pallas::Base {
-    use darkfi_sdk::crypto::poseidon_hash;
+    use dwow_sdk::crypto::poseidon_hash;
     poseidon_hash([betting_contract_id, pallas::Base::from(nonce)])
 }
 
 /// Derive stake ID
 pub fn derive_stake_id(table_id: pallas::Base, staker_pub: &PublicKey, amount: u64, nonce: u64) -> pallas::Base {
-    use darkfi_sdk::crypto::poseidon_hash;
+    use dwow_sdk::crypto::poseidon_hash;
     poseidon_hash([table_id, staker_pub.x(), staker_pub.y(), pallas::Base::from(amount), pallas::Base::from(nonce)])
 }

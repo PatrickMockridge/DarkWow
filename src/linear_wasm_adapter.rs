@@ -29,12 +29,12 @@
 
 use std::sync::Arc;
 
-use darkfi_sdk::crypto::ContractId;
-use darkfi_serial::{deserialize, serialize};
-use darkfi::runtime::vm_runtime::{BlockchainAccess, ContractStoreAccess, SimpleDbAccess};
-use darkfi::Result;
+use dwow_sdk::crypto::ContractId;
+use dwow_serial::{deserialize, serialize};
+use dwow::runtime::vm_runtime::{BlockchainAccess, ContractStoreAccess, SimpleDbAccess};
+use dwow::Result;
 
-use darkfi_linear::{LinearBlockchain, LinearStore};
+use dwow_linear::{LinearBlockchain, LinearStore};
 
 /// Prefix for contract state trees in LinearStore
 const CONTRACT_STATE_PREFIX: &str = "_contract_state_";
@@ -44,7 +44,7 @@ const CONTRACT_STATE_PREFIX: &str = "_contract_state_";
 impl ContractStoreAccess for Arc<LinearStore> {
     fn lookup(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
         let tree_key = format!("{}{}_{}", CONTRACT_STATE_PREFIX, cid.to_hex(), tree_name);
-        let _tree = self.db.open_tree(&tree_key).map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+        let _tree = self.db.open_tree(&tree_key).map_err(|e| dwow::Error::Custom(e.to_string()))?;
         let hash = blake3::hash(tree_key.as_bytes());
         let mut handle = [0u8; 32];
         handle.copy_from_slice(hash.as_bytes());
@@ -53,7 +53,7 @@ impl ContractStoreAccess for Arc<LinearStore> {
 
     fn init(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
         let tree_key = format!("{}{}_{}", CONTRACT_STATE_PREFIX, cid.to_hex(), tree_name);
-        self.db.open_tree(&tree_key).map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+        self.db.open_tree(&tree_key).map_err(|e| dwow::Error::Custom(e.to_string()))?;
         let hash = blake3::hash(tree_key.as_bytes());
         let mut handle = [0u8; 32];
         handle.copy_from_slice(hash.as_bytes());
@@ -62,15 +62,15 @@ impl ContractStoreAccess for Arc<LinearStore> {
 
     fn insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> Result<()> {
         let key = serialize(&cid);
-        self.contracts.insert(&key, bincode).map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+        self.contracts.insert(&key, bincode).map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(())
     }
 
     fn get_bincode(&self, cid: &ContractId) -> Result<Vec<u8>> {
         let key = serialize(cid);
-        match self.contracts.get(&key).map_err(|e| darkfi::Error::Custom(e.to_string()))? {
+        match self.contracts.get(&key).map_err(|e| dwow::Error::Custom(e.to_string()))? {
             Some(v) => Ok(v.to_vec()),
-            None => Err(darkfi::Error::Custom("Contract not found".to_string())),
+            None => Err(dwow::Error::Custom("Contract not found".to_string())),
         }
     }
 }
@@ -84,14 +84,14 @@ impl SimpleDbAccess for Arc<LinearStore> {
         let full_key = format!("{}:{}", tree_key, hex::encode(key));
         self.contracts
             .insert(full_key.as_bytes(), value)
-            .map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+            .map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(())
     }
 
     fn get(&self, tree: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>> {
         let tree_key = hex::encode(tree);
         let full_key = format!("{}:{}", tree_key, hex::encode(key));
-        match self.contracts.get(full_key.as_bytes()).map_err(|e| darkfi::Error::Custom(e.to_string()))? {
+        match self.contracts.get(full_key.as_bytes()).map_err(|e| dwow::Error::Custom(e.to_string()))? {
             Some(v) => Ok(Some(v.to_vec())),
             None => Ok(None),
         }
@@ -100,14 +100,14 @@ impl SimpleDbAccess for Arc<LinearStore> {
     fn remove(&self, tree: &[u8], key: &[u8]) -> Result<()> {
         let tree_key = hex::encode(tree);
         let full_key = format!("{}:{}", tree_key, hex::encode(key));
-        self.contracts.remove(full_key.as_bytes()).map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+        self.contracts.remove(full_key.as_bytes()).map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(())
     }
 
     fn contains_key(&self, tree: &[u8], key: &[u8]) -> Result<bool> {
         let tree_key = hex::encode(tree);
         let full_key = format!("{}:{}", tree_key, hex::encode(key));
-        self.contracts.contains_key(full_key.as_bytes()).map_err(|e| darkfi::Error::Custom(e.to_string()))
+        self.contracts.contains_key(full_key.as_bytes()).map_err(|e| dwow::Error::Custom(e.to_string()))
     }
 }
 
@@ -115,7 +115,7 @@ impl SimpleDbAccess for Arc<LinearStore> {
 /// This allows WASM contracts to query blockchain state.
 impl BlockchainAccess for Arc<LinearBlockchain> {
     fn last_block_timestamp(&self) -> Result<Vec<u8>> {
-        let block = self.get_latest_block().map_err(|e| darkfi::Error::Custom(e.to_string()))?;
+        let block = self.get_latest_block().map_err(|e| dwow::Error::Custom(e.to_string()))?;
         Ok(serialize(&block.header.timestamp))
     }
 
@@ -126,8 +126,8 @@ impl BlockchainAccess for Arc<LinearBlockchain> {
     fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
         match self.store.get_transaction(hash) {
             Ok(tx) => Ok(Some(serialize(&tx))),
-            Err(darkfi_linear::LinearError::TransactionNotFound(_)) => Ok(None),
-            Err(e) => Err(darkfi::Error::Custom(e.to_string())),
+            Err(dwow_linear::LinearError::TransactionNotFound(_)) => Ok(None),
+            Err(e) => Err(dwow::Error::Custom(e.to_string())),
         }
     }
 
@@ -139,8 +139,8 @@ impl BlockchainAccess for Arc<LinearBlockchain> {
     fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>> {
         match self.store.get_block(height as u64) {
             Ok(block) => Ok(Some(serialize(&block.hash()))),
-            Err(darkfi_linear::LinearError::BlockNotFound(_)) => Ok(None),
-            Err(e) => Err(darkfi::Error::Custom(e.to_string())),
+            Err(dwow_linear::LinearError::BlockNotFound(_)) => Ok(None),
+            Err(e) => Err(dwow::Error::Custom(e.to_string())),
         }
     }
 }

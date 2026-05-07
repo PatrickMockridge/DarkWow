@@ -23,14 +23,14 @@
 
 use std::str::FromStr;
 
-use darkfi::{
+use dwow::{
     blockchain::HeaderHash,
     rpc::{jsonrpc::JsonNotification, util::JsonValue},
     system::{sleep, ExecutorPtr, StoppableTask, Subscription},
     util::{encoding::base64, time::Timestamp},
     Error, Result,
 };
-use darkfi_serial::serialize_async;
+use dwow_serial::serialize_async;
 use tracing::{error, info};
 
 use crate::{
@@ -200,7 +200,7 @@ async fn consensus_task(
         // Refresh mining registry
         let mut registry = node.registry.state.write().await;
         if let Err(e) = registry.refresh(&validator).await {
-            error!(target: "darkfid", "Failed refreshing mining block templates: {e}")
+            error!(target: "dwowd", "Failed refreshing mining block templates: {e}")
         }
 
         if confirmed.is_empty() {
@@ -228,7 +228,7 @@ async fn consensus_task(
                 match res {
                     Ok(()) | Err(Error::GarbageCollectionTaskStopped) => { /* Do nothing */ }
                     Err(e) => {
-                        error!(target: "darkfid", "Failed starting garbage collection task: {e}")
+                        error!(target: "dwowd", "Failed starting garbage collection task: {e}")
                     }
                 }
             },

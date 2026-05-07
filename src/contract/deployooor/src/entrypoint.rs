@@ -21,10 +21,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::ContractId, dark_tree::DarkLeaf, error::ContractResult, wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::{
     model::{DeployUpdateV1, LockUpdateV1},
@@ -40,7 +40,7 @@ use deploy_v1::{deploy_get_metadata_v1, deploy_process_instruction_v1, deploy_pr
 mod lock_v1;
 use lock_v1::{lock_get_metadata_v1, lock_process_instruction_v1, lock_process_update_v1};
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

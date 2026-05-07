@@ -23,8 +23,8 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use darkfi_sdk::{crypto::MerkleTree, tx::TransactionHash};
-use darkfi_serial::{async_trait, deserialize, SerialDecodable, SerialEncodable};
+use dwow_sdk::{crypto::MerkleTree, tx::TransactionHash};
+use dwow_serial::{async_trait, deserialize, SerialDecodable, SerialEncodable};
 use num_bigint::BigUint;
 use sled_overlay::{database::SledDbOverlayStateDiff, sled::IVec};
 use tracing::{debug, info, warn};
@@ -670,7 +670,7 @@ pub struct Proposal {
     /// Block data
     pub block: BlockInfo,
     /// ZK binary data for sync verification: (contract_id, zkas_ns, zkbin_bytes, instances)
-    pub zkbin_data: Vec<(darkfi_sdk::crypto::ContractId, String, Vec<u8>, Vec<darkfi_sdk::pasta::pallas::Base>)>,
+    pub zkbin_data: Vec<(dwow_sdk::crypto::ContractId, String, Vec<u8>, Vec<dwow_sdk::pasta::pallas::Base>)>,
 }
 
 impl Proposal {

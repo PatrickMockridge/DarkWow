@@ -40,7 +40,7 @@
 //!
 //! See module-level documentation in lib.rs for full details.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, pasta_prelude::PrimeField, IntentCommitment, IntentNullifier},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -48,7 +48,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize, Decodable, Encodable};
+use dwow_serial::{deserialize, serialize, Decodable, Encodable};
 
 use crate::{
     error::DexError,
@@ -69,7 +69,7 @@ use crate::{
 ///
 /// The host uses these to verify the ZK proof.
 pub(crate) fn dex_create_swap_get_metadata_v1(
-    _cid: darkfi_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -116,7 +116,7 @@ pub(crate) fn dex_create_swap_get_metadata_v1(
 /// 2. lock_proof is valid against trusted Merkle root (TRUSTED SETUP)
 /// 3. Returns update with nullifier for storage
 pub(crate) fn dex_create_swap_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -170,7 +170,7 @@ pub(crate) fn dex_create_swap_process_instruction_v1(
 
 /// `process_update` function for `Dex::CreateSwapV1`
 pub(crate) fn dex_create_swap_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: CreateSwapUpdateV1,
 ) -> ContractResult {
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;

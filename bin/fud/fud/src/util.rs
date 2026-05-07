@@ -34,8 +34,8 @@ use smol::{
 };
 use tinyjson::JsonValue;
 
-pub use darkfi::geode::hash_to_string;
-use darkfi::{
+pub use dwow::geode::hash_to_string;
+use dwow::{
     net::{Message, MessageSubscription},
     rpc::util::json_map,
     Error, Result,

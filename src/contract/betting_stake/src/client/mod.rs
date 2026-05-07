@@ -27,7 +27,7 @@
 
 pub mod proof_gen;
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         poseidon_hash,
         schnorr::{SchnorrSecret, Signature},
@@ -35,7 +35,7 @@ use darkfi_sdk::{
     },
     pasta::pallas,
 };
-use darkfi_serial::serialize;
+use dwow_serial::serialize;
 
 use crate::model::{
     ClaimEarningsParamsV1, InitializeParamsV1, StakeParamsV1, UnstakeParamsV1, UpdateRiskParamsV1,

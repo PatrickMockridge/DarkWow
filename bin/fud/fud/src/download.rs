@@ -34,14 +34,14 @@ use rand::{
 };
 use tracing::{error, info, warn};
 
-use darkfi::{
+use dwow::{
     dht::{event::DhtEvent, DhtHandler, DhtNode},
     geode::{hash_to_string, ChunkedStorage},
     net::ChannelPtr,
     system::Subscription,
     Error, Result,
 };
-use darkfi_serial::serialize_async;
+use dwow_serial::serialize_async;
 
 use crate::{
     event::{self, notify_event, FudEvent},

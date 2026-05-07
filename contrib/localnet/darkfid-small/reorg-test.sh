@@ -9,12 +9,12 @@ DARKFID="LOG_TARGETS='!sled' ../../../darkfid"
 XMRIG_USER0="DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf"
 XMRIG_USER1="Dae4FtyzrnQ8JNuui5ibZL4jXUR786PbyjwBsq4aj6E1RPPYjtXLfnAf"
 
-# Path to `drk` binary
-DRK="../../../drk"
-DRK0="$DRK -c drk0.toml"
-DRK1="$DRK -c drk1.toml"
+# Path to `dww` binary
+DWW="../../../dww"
+DRK0="$DWW -c drk0.toml"
+DRK1="$DWW -c drk1.toml"
 
-# First run the darkfid nodes and the miners:
+# First run the dwowd nodes and the miners:
 #
 #   ./clean.sh
 #   ./init-wallets.sh
@@ -33,7 +33,7 @@ else
 fi
 
 wait_blocks() {
-    while [ "$(sh ./sync-wallet.sh "$1" | grep 'Last confirmed block reported by darkfid:' | awk 'NR==1 {print $7}')" -lt "$2" ]; do
+    while [ "$(sh ./sync-wallet.sh "$1" | grep 'Last confirmed block reported by dwowd:' | awk 'NR==1 {print $7}')" -lt "$2" ]; do
         sleep 5
     done
 }

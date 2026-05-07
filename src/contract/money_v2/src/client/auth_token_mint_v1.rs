@@ -21,12 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::crypto::{note::AeadEncryptedNote, Blind, Keypair};
+use dwow_sdk::crypto::{note::AeadEncryptedNote, Blind, Keypair};
 use rand::rngs::OsRng;
 use tracing::debug;
 
@@ -72,7 +72,7 @@ impl AuthTokenMintCallBuilder {
         let public_inputs =
             vec![mint_pubkey.x(), mint_pubkey.y(), self.token_attrs.to_token_id().inner()];
 
-        //darkfi::zk::export_witness_json("proof/witness/auth_token_mint_v1.json", &prover_witnesses, &public_inputs);
+        //dwow::zk::export_witness_json("proof/witness/auth_token_mint_v1.json", &prover_witnesses, &public_inputs);
         let circuit = ZkCircuit::new(prover_witnesses, &self.auth_mint_zkbin);
         let proof = Proof::create(&self.auth_mint_pk, &[circuit], &public_inputs, &mut OsRng)?;
 

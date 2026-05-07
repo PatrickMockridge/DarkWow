@@ -25,12 +25,12 @@
 //!
 //! This module provides the ability to authorize minting for an existing token type.
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{pasta_prelude::*, poseidon_hash, MerkleNode},
     pasta::pallas,

@@ -25,7 +25,7 @@ use core::{fmt, str::FromStr};
 use std::{io, iter};
 
 use bridgetree::{BridgeTree, Hashable, Level};
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use halo2_gadgets::sinsemilla::primitives::HashDomain;
 use lazy_static::lazy_static;
 use pasta_curves::{

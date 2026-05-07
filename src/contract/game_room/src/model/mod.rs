@@ -23,11 +23,11 @@
 
 //! Game Room contract data structures
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, ContractId, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Game room identifier
 pub type RoomId = pallas::Base;
@@ -51,14 +51,14 @@ pub enum RoomState {
 }
 
 impl TryFrom<u8> for RoomState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
             0 => Ok(Self::Open),
             1 => Ok(Self::Active),
             2 => Ok(Self::Concluded),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }
@@ -72,14 +72,14 @@ pub enum PotState {
 }
 
 impl TryFrom<u8> for PotState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
             0 => Ok(Self::Open),
             1 => Ok(Self::Closed),
             2 => Ok(Self::Settled),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }
@@ -97,7 +97,7 @@ pub enum BetType {
 }
 
 impl TryFrom<u8> for BetType {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -108,7 +108,7 @@ impl TryFrom<u8> for BetType {
             4 => Ok(Self::Call),
             5 => Ok(Self::AllIn),
             6 => Ok(Self::Fold),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }
@@ -121,13 +121,13 @@ pub enum EntropyMode {
 }
 
 impl TryFrom<u8> for EntropyMode {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
             0 => Ok(Self::BlockHash),
             1 => Ok(Self::TrustedSetup),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }

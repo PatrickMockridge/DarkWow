@@ -10,10 +10,10 @@ edition = "2021"
 
 [dependencies]
 # Darkfi
-darkfi = {path = "../../", features = ["async-daemonize", "rpc", "async-serial"]}
-darkfi-sdk = {path = "../../src/sdk", features = ["async"]}
-darkfi-serial = {path = "../../src/serial", features = ["async"]}
-darkfi_bridge_contract = {path = "../../src/contract/bridge"}
+dwow = {path = "../../", features = ["async-daemonize", "rpc", "async-serial"]}
+dwow-sdk = {path = "../../src/sdk", features = ["async"]}
+dwow-serial = {path = "../../src/serial", features = ["async"]}
+dwow_bridge_contract = {path = "../../src/contract/bridge"}
 
 # Serialization
 serde = {version = "1.0.228", features = ["derive"]}

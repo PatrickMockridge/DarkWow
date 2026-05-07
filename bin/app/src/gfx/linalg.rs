@@ -22,7 +22,7 @@
  */
 
 use async_trait::async_trait;
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, Sub, SubAssign};
 
 #[derive(Clone, Copy, Debug, SerialEncodable, SerialDecodable)]

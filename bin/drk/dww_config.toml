@@ -1,4 +1,4 @@
-## drk configuration file
+## dww configuration file
 ##
 ## Please make sure you go through all the settings so you can configure
 ## your daemon properly.
@@ -7,7 +7,7 @@
 ## uncommenting, or by using the command-line.
 
 # Blockchain network to use
-network = "testnet"
+network = "linear-testnet"
 
 # Flag indicating whether you want some fun in your life
 fun = true
@@ -15,10 +15,10 @@ fun = true
 # Localnet blockchain network configuration
 [network_config."localnet"]
 # Path to blockchain cache database
-cache_path = "~/.local/share/darkfi/drk/localnet/cache"
+cache_path = "~/.local/share/dwow/dww/localnet/cache"
 
 # Path to wallet database
-wallet_path = "~/.local/share/darkfi/drk/localnet/wallet.db"
+wallet_path = "~/.local/share/dwow/dww/localnet/wallet.db"
 
 # Password for the wallet database
 wallet_pass = "testpassword123"
@@ -27,15 +27,15 @@ wallet_pass = "testpassword123"
 endpoint = "tcp://127.0.0.1:48345"
 
 # Path to interactive shell history file
-history_path = "~/.local/share/darkfi/drk/localnet/history.txt"
+history_path = "~/.local/share/dwow/dww/localnet/history.txt"
 
 # Testnet blockchain network configuration
 [network_config."testnet"]
 # Path to blockchain cache database
-cache_path = "~/.local/share/darkfi/drk/testnet/cache"
+cache_path = "~/.local/share/dwow/dww/testnet/cache"
 
 # Path to wallet database
-wallet_path = "~/.local/share/darkfi/drk/testnet/wallet.db"
+wallet_path = "~/.local/share/dwow/dww/testnet/wallet.db"
 
 # Password for the wallet database
 wallet_pass = "testpassword123"
@@ -44,15 +44,32 @@ wallet_pass = "testpassword123"
 endpoint = "tcp://127.0.0.1:18345"
 
 # Path to interactive shell history file
-history_path = "~/.local/share/darkfi/drk/testnet/history.txt"
+history_path = "~/.local/share/dwow/dww/testnet/history.txt"
+
+# Linear-testnet blockchain network configuration
+[network_config."linear-testnet"]
+# Path to blockchain cache database
+cache_path = "~/.local/share/dwow/dww/linear-testnet/cache"
+
+# Path to wallet database
+wallet_path = "~/.local/share/dwow/dww/linear-testnet/wallet.db"
+
+# Password for the wallet database
+wallet_pass = "testpassword123"
+
+# darkfid JSON-RPC endpoint
+endpoint = "tcp://127.0.0.1:28345"
+
+# Path to interactive shell history file
+history_path = "~/.local/share/dwow/dww/linear-testnet/history.txt"
 
 # Mainnet blockchain network configuration
 [network_config."mainnet"]
 # Path to blockchain cache database
-cache_path = "~/.local/share/darkfi/drk/mainnet/cache"
+cache_path = "~/.local/share/dwow/dww/mainnet/cache"
 
 # Path to wallet database
-wallet_path = "~/.local/share/darkfi/drk/mainnet/wallet.db"
+wallet_path = "~/.local/share/dwow/dww/mainnet/wallet.db"
 
 # Password for the wallet database
 wallet_pass = "testpassword123"
@@ -61,4 +78,4 @@ wallet_pass = "testpassword123"
 endpoint = "tcp://127.0.0.1:8345"
 
 # Path to interactive shell history file
-history_path = "~/.local/share/darkfi/drk/mainnet/history.txt"
+history_path = "~/.local/share/dwow/dww/mainnet/history.txt"

@@ -77,7 +77,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use darkfi_sdk::crypto::{PrivateIntent, IntentCommitment, IntentNullifier};
+//! use dwow_sdk::crypto::{PrivateIntent, IntentCommitment, IntentNullifier};
 //!
 //! // Create an intent
 //! let intent = PrivateIntent::new(
@@ -98,7 +98,7 @@
 
 use core::str::FromStr;
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use pasta_curves::{group::ff::PrimeField, pallas};
 
 use super::{poseidon_hash, PublicKey, SecretKey};

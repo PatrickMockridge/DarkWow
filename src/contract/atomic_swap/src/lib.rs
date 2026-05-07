@@ -57,7 +57,7 @@
 //! This contract handles the DarkWow side of the swap. The external chain
 //! (Ethereum, Bitcoin, etc.) implements its own HTLC with the same hash.
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 define_contract_function!(AtomicSwapFunction {
     InitializeV1 = 0x00,

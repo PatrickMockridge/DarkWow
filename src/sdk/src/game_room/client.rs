@@ -34,7 +34,7 @@
 //! ## Usage
 //!
 //! ```ignore
-//! use darkfi_sdk::game_room::{GameRoomClient, RoomConfig, EntropyMode};
+//! use dwow_sdk::game_room::{GameRoomClient, RoomConfig, EntropyMode};
 //!
 //! // Create a client
 //! let client = GameRoomClient::new(
@@ -154,77 +154,77 @@ impl GameRoomClient {
     /// Build a CreateRoomV1 transaction
     pub fn build_create_room_tx(&self, params: CreateRoomParams) -> ContractCall {
         let mut data = vec![GameRoomFunction::CreateRoomV1.as_u8()];
-        data.extend_from_slice(&darkfi_serial::serialize(&params));
+        data.extend_from_slice(&dwow_serial::serialize(&params));
         ContractCall { contract_id: self.contract_id, data }
     }
 
     /// Build a DepositV1 transaction
     pub fn build_deposit_tx(&self, params: DepositParams) -> ContractCall {
         let mut data = vec![GameRoomFunction::DepositV1.as_u8()];
-        data.extend_from_slice(&darkfi_serial::serialize(&params));
+        data.extend_from_slice(&dwow_serial::serialize(&params));
         ContractCall { contract_id: self.contract_id, data }
     }
 
     /// Build a WithdrawV1 transaction
     pub fn build_withdraw_tx(&self, params: WithdrawParams) -> ContractCall {
         let mut data = vec![GameRoomFunction::WithdrawV1.as_u8()];
-        data.extend_from_slice(&darkfi_serial::serialize(&params));
+        data.extend_from_slice(&dwow_serial::serialize(&params));
         ContractCall { contract_id: self.contract_id, data }
     }
 
     /// Build a PlaceBetV1 transaction
     pub fn build_place_bet_tx(&self, params: PlaceBetParams) -> ContractCall {
         let mut data = vec![GameRoomFunction::PlaceBetV1.as_u8()];
-        data.extend_from_slice(&darkfi_serial::serialize(&params));
+        data.extend_from_slice(&dwow_serial::serialize(&params));
         ContractCall { contract_id: self.contract_id, data }
     }
 
     /// Build a RaiseV1 transaction
     pub fn build_raise_tx(&self, params: RaiseParams) -> ContractCall {
         let mut data = vec![GameRoomFunction::RaiseV1.as_u8()];
-        data.extend_from_slice(&darkfi_serial::serialize(&params));
+        data.extend_from_slice(&dwow_serial::serialize(&params));
         ContractCall { contract_id: self.contract_id, data }
     }
 
     /// Build a CallV1 transaction
     pub fn build_call_tx(&self, params: CallParams) -> ContractCall {
         let mut data = vec![GameRoomFunction::CallV1.as_u8()];
-        data.extend_from_slice(&darkfi_serial::serialize(&params));
+        data.extend_from_slice(&dwow_serial::serialize(&params));
         ContractCall { contract_id: self.contract_id, data }
     }
 
     /// Build a FoldV1 transaction
     pub fn build_fold_tx(&self, params: FoldParams) -> ContractCall {
         let mut data = vec![GameRoomFunction::FoldV1.as_u8()];
-        data.extend_from_slice(&darkfi_serial::serialize(&params));
+        data.extend_from_slice(&dwow_serial::serialize(&params));
         ContractCall { contract_id: self.contract_id, data }
     }
 
     /// Build a ClosePotV1 transaction
     pub fn build_close_pot_tx(&self, params: ClosePotParams) -> ContractCall {
         let mut data = vec![GameRoomFunction::ClosePotV1.as_u8()];
-        data.extend_from_slice(&darkfi_serial::serialize(&params));
+        data.extend_from_slice(&dwow_serial::serialize(&params));
         ContractCall { contract_id: self.contract_id, data }
     }
 
     /// Build a SettlePotV1 transaction
     pub fn build_settle_pot_tx(&self, params: SettlePotParams) -> ContractCall {
         let mut data = vec![GameRoomFunction::SettlePotV1.as_u8()];
-        data.extend_from_slice(&darkfi_serial::serialize(&params));
+        data.extend_from_slice(&dwow_serial::serialize(&params));
         ContractCall { contract_id: self.contract_id, data }
     }
 
     /// Build a ContributeEntropyV1 transaction
     pub fn build_contribute_entropy_tx(&self, params: ContributeEntropyParams) -> ContractCall {
         let mut data = vec![GameRoomFunction::ContributeEntropyV1.as_u8()];
-        data.extend_from_slice(&darkfi_serial::serialize(&params));
+        data.extend_from_slice(&dwow_serial::serialize(&params));
         ContractCall { contract_id: self.contract_id, data }
     }
 
     /// Build a ClaimV1 transaction
     pub fn build_claim_tx(&self, params: ClaimParams) -> ContractCall {
         let mut data = vec![GameRoomFunction::ClaimV1.as_u8()];
-        data.extend_from_slice(&darkfi_serial::serialize(&params));
+        data.extend_from_slice(&dwow_serial::serialize(&params));
         ContractCall { contract_id: self.contract_id, data }
     }
 
@@ -380,19 +380,19 @@ impl GameRoomClient {
 impl GameRoomClient {
     /// Serialize a contract call to bytes for transmission
     pub fn serialize_call(call: &ContractCall) -> Vec<u8> {
-        darkfi_serial::serialize(call)
+        dwow_serial::serialize(call)
     }
 
     /// Deserialize a contract call from bytes
     pub fn deserialize_call(data: &[u8]) -> Result<ContractCall, crate::error::ContractError> {
-        Ok(darkfi_serial::deserialize(data)?)
+        Ok(dwow_serial::deserialize(data)?)
     }
 
     /// Serialize multiple contract calls into a batch
     pub fn serialize_calls(calls: &[ContractCall]) -> Vec<u8> {
         let mut result = Vec::new();
         for call in calls {
-            result.extend_from_slice(&darkfi_serial::serialize(call));
+            result.extend_from_slice(&dwow_serial::serialize(call));
         }
         result
     }

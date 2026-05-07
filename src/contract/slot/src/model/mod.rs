@@ -35,12 +35,12 @@
 //! logic (hand values, drawing rules) is separate. For slots, spin results
 //! are from entropy, but symbol matching/payout logic is modular.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, tx_hash_to_base, PublicKey},
     pasta::pallas,
     tx::TransactionHash,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // ============================================================================
 // CORE SLOT TYPES

@@ -33,45 +33,45 @@
 //! The wallet uses a [`Contract`] trait-based registry for dependency resolution.
 //! See [`crate::contract_registry`] for the generic registry system.
 
-use darkfi_sdk::pasta::pallas;
-use darkfi_sdk::crypto::ContractId;
+use dwow_sdk::pasta::pallas;
+use dwow_sdk::crypto::ContractId;
 
 // ============================================================================
 // CONTRACT IDs
 // ============================================================================
 
-pub use darkfi_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+pub use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
 // Money V3 Contract ID - user deployed, no hardcoded ID
 // Use OnceLock to allow runtime registration
-pub static MONEY_V3_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
+pub static MONEY_V3_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
 pub const DEPLOYOOOR_CONTRACT_ID: &str = "deployooor";
 
 // DAO-Escrow Contract ID - user deployed, no hardcoded ID
-pub static DAO_ESCROW_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
+pub static DAO_ESCROW_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
 // DrainProtection Contract ID - user deployed, no hardcoded ID
-pub static DRAIN_PROTECTION_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
+pub static DRAIN_PROTECTION_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
 // DEX Contract ID - user deployed, no hardcoded ID
-pub static DEX_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
+pub static DEX_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
 // Auction Contract ID - user deployed, no hardcoded ID
-pub static AUCTION_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
+pub static AUCTION_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
 // Stablecoin Contract ID - user deployed, no hardcoded ID
-pub static STABLECOIN_CONTRACT_ID: std::sync::OnceLock<darkfi_sdk::crypto::ContractId> =
+pub static STABLECOIN_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
 /// Register a contract ID at runtime. Called after deploying a contract
 /// so that subsequent operations (transfer, invoke) can find it.
-pub fn register_contract_id(name: &str, cid: darkfi_sdk::crypto::ContractId) -> Result<(), String> {
+pub fn register_contract_id(name: &str, cid: dwow_sdk::crypto::ContractId) -> Result<(), String> {
     match name {
         "money_v3" => {
             MONEY_V3_CONTRACT_ID.set(cid)
@@ -156,8 +156,8 @@ impl From<DaoEscrowOpcodes> for u8 {
 // TOKEN ID CONSTANTS
 // ============================================================================
 
-pub const DARK_TOKEN_ID: pallas::Base = pallas::Base::zero();
-pub const DARK_TOKEN_ID_BYTES: [u8; 32] = [0u8; 32];
+pub const DRKW_TOKEN_ID: pallas::Base = pallas::Base::zero();
+pub const DRKW_TOKEN_ID_BYTES: [u8; 32] = [0u8; 32];
 
 // ============================================================================
 // MONEY MODULE (Money V3 - DeFi tokens / ERC-20 style)
@@ -199,7 +199,7 @@ pub mod money {
         TokenMintParamsV1, AuthTokenMintParamsV1, MintParamsV1, BurnParamsV1, TransferParamsV1,
     };
 
-    pub type TokenId = darkfi_sdk::pasta::pallas::Base;
+    pub type TokenId = dwow_sdk::pasta::pallas::Base;
 
     /// Balance decimal places
     pub const BALANCE_BASE10_DECIMALS: usize = 8;
@@ -242,7 +242,7 @@ pub mod native_token {
         Coin as NativeCoin, CoinAttributes as NativeCoinAttributes,
         Input as NativeInput, Output as NativeOutput,
         FeeParamsV1, BurnParamsV1, TransferParamsV1 as NativeTransferParamsV1,
-        DARK_TOKEN_ID,
+        DRKW_TOKEN_ID,
     };
 
     pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_COINS_TREE;

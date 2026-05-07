@@ -26,7 +26,7 @@ use smol::Executor;
 use std::{path::StripPrefixError, sync::Arc};
 use tracing::{debug, error, info, warn};
 
-use darkfi::{
+use dwow::{
     dht::{event::DhtEvent, DhtHandler},
     geode::hash_to_string,
     impl_p2p_message,
@@ -38,8 +38,8 @@ use darkfi::{
     },
     Error, Result,
 };
-use darkfi_sdk::crypto::schnorr::{SchnorrSecret, Signature};
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::crypto::schnorr::{SchnorrSecret, Signature};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::{
     dht::{FudNode, FudSeeder},

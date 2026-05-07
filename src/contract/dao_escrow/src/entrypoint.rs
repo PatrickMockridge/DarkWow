@@ -39,14 +39,14 @@
 //!                     (annual expiry)
 //! ```
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, ContractId},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DaoEscrowError,
@@ -61,7 +61,7 @@ use crate::{
 
 const DAO_ESCROW_DB_VERSION_KEY: &[u8] = b"db_version";
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -106,7 +106,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 /// Fetch metadata for ZK proof verification
 fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = DaoEscrowFunction::try_from(self_.data[0])?;
 
@@ -122,7 +122,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 /// Metadata for InitializeV1 (0x00)
-fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[darkfi_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Vec<u8> {
+fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
     let params: model::InitializeParamsV1 = match deserialize(&self_.data[1..]) {
         Ok(p) => p,
@@ -133,7 +133,7 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[darkfi_sd
 
     // Compute endowment_bulla using same formula as circuit and model
     // endowment_bulla = poseidon_hash(dao_bulla, owner_pub_x, owner_pub_y, endowment_token_id, bulla_blind)
-    let endowment_bulla = darkfi_sdk::crypto::poseidon_hash([
+    let endowment_bulla = dwow_sdk::crypto::poseidon_hash([
         params.dao_bulla,
         owner_pub_x,
         owner_pub_y,
@@ -155,7 +155,7 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[darkfi_sd
 }
 
 /// Metadata for PayPremiumV1 (0x02)
-fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[darkfi_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Vec<u8> {
+fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
     let params: model::PayPremiumParamsV1 = match deserialize(&self_.data[1..]) {
         Ok(p) => p,
@@ -186,7 +186,7 @@ fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[darkfi_s
 /// Verify state transition and produce update if valid
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = DaoEscrowFunction::try_from(self_.data[0])?;
 
@@ -455,7 +455,7 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
 fn withdraw_v1(
     cid: ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::WithdrawParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::withdraw_v1] Processing withdrawal");
@@ -580,7 +580,7 @@ fn enable_drain_protection_apply_v1(
 fn endowment_withdraw_v1(
     cid: ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::EndowmentWithdrawParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::endowment_withdraw_v1] Processing endowment withdrawal");
@@ -670,7 +670,7 @@ fn endowment_withdraw_apply_v1(
 fn treasury_spend_v1(
     cid: ContractId,
     call_idx: usize,
-    calls: Vec<darkfi_sdk::dark_tree::DarkLeaf<ContractCall>>,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::TreasurySpendParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::treasury_spend_v1] Processing treasury spend");

@@ -23,7 +23,7 @@
 
 use std::ops::Deref;
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{constants::NullifierK, pasta_prelude::*, util},
     pasta::{pallas, vesta},
 };
@@ -105,12 +105,12 @@ macro_rules! impl_elem {
             }
 
             fn serialize(&self) -> Vec<u8> {
-                darkfi_serial::serialize(&self.0)
+                dwow_serial::serialize(&self.0)
             }
 
             #[staticmethod]
             fn deserialize(data: &[u8]) -> PyResult<Self> {
-                darkfi_serial::deserialize(data)
+                dwow_serial::deserialize(data)
                     .map(Self)
                     .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
             }
@@ -223,12 +223,12 @@ macro_rules! impl_point {
             }
 
             fn serialize(&self) -> Vec<u8> {
-                darkfi_serial::serialize(&self.0)
+                dwow_serial::serialize(&self.0)
             }
 
             #[staticmethod]
             fn deserialize(data: &[u8]) -> PyResult<Self> {
-                darkfi_serial::deserialize(data)
+                dwow_serial::deserialize(data)
                     .map(Self)
                     .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
             }

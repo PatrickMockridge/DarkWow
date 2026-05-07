@@ -24,8 +24,8 @@
 use std::{collections::HashSet, sync::Arc};
 
 use crypto_box::ChaChaBox;
-use darkfi::{Error, Result};
-use darkfi_serial::{async_trait, deserialize_async_partial, SerialDecodable, SerialEncodable};
+use dwow::{Error, Result};
+use dwow_serial::{async_trait, deserialize_async_partial, SerialDecodable, SerialEncodable};
 
 /// IRC client state
 pub(crate) mod client;

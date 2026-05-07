@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{ClientFailed, Result};
-use darkfi_sdk::{crypto::Keypair, deploy::DeployParamsV1};
+use dwow::{ClientFailed, Result};
+use dwow_sdk::{crypto::Keypair, deploy::DeployParamsV1};
 use tracing::{debug, error};
 
 use crate::error::DeployError;

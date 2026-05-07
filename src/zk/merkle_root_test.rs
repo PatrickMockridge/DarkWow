@@ -57,7 +57,7 @@
 //! constrain_equal_base(root, merkle_root_input);
 //! ```
 
-use darkfi_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD;
+use dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD;
 
 #[cfg(test)]
 mod tests {
@@ -80,8 +80,8 @@ mod tests {
     // Example test structure:
     //
     // ```ignore
-    // use darkfi::zk::{ZkCircuit, empty_witnesses};
-    // use darkfi_sdk::crypto::MerkleNode;
+    // use dwow::zk::{ZkCircuit, empty_witnesses};
+    // use dwow_sdk::crypto::MerkleNode;
     // use pasta_curves::Fp;
     // use halo2_proofs::{dev::MockProver, pasta::pallas};
     //

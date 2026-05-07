@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::crypto::constants::{MERKLE_DEPTH_ORCHARD, SPARSE_MERKLE_DEPTH};
-use darkfi_serial::{async_trait, SerialDecodable, SerialEncodable};
+use dwow_sdk::crypto::constants::{MERKLE_DEPTH_ORCHARD, SPARSE_MERKLE_DEPTH};
+use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};
 
 use crate::zkas::{Opcode, VarType, ZkBinary};
 

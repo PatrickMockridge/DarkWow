@@ -33,7 +33,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
-use darkfi::{
+use dwow::{
     impl_p2p_message,
     net::{
         metering::MeteringConfiguration,
@@ -47,8 +47,8 @@ use darkfi::{
     util::time::NanoTimestamp,
     Error, Result,
 };
-use darkfi_linear::{Block, LinearBlockchain};
-use darkfi_serial::{serialize_async, deserialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
+use dwow_linear::{Block, LinearBlockchain};
+use dwow_serial::{serialize_async, deserialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 
 /// Constant defining max blocks we send in a single response.
 const LINEAR_SYNC_BATCH: usize = 20;

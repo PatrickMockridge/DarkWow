@@ -35,7 +35,7 @@
 //! - Uses AeadEncryptedNote for encrypted notes
 //! - Uses nullifiers for double-spend prevention
 
-use darkfi_sdk::{
+use dwow_sdk::{
     blockchain::{expected_reward, reward},
     crypto::{
         pasta_prelude::{Curve, CurveAffine, Field, PrimeField}, pedersen_commitment_u64, poseidon_hash,
@@ -47,12 +47,12 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable, WriteExt};
+use dwow_serial::{deserialize, serialize, Encodable, WriteExt};
 
 use crate::{
     error::NativeTokenError,
     model::{
-        BurnParamsV1, BurnUpdateV1, DARK_TOKEN_ID, FeeParamsV1, FeeUpdateV1, MintParamsV1,
+        BurnParamsV1, BurnUpdateV1, DRKW_TOKEN_ID, FeeParamsV1, FeeUpdateV1, MintParamsV1,
         MintUpdateV1, PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
         TransferParamsV1, TransferUpdateV1,
     },
@@ -66,7 +66,7 @@ use crate::{
 };
 
 // Generate WASM entrypoints
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -198,7 +198,7 @@ fn fee_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Public keys for the transaction signatures we have to verify
-    let signature_pubkeys: Vec<darkfi_sdk::crypto::PublicKey> = vec![params.input.signature_public];
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![params.input.signature_public];
 
     // Grab the Pedersen commitments and the signature pubkey from the params
     let input_value_coords = params.input.value_commit.to_affine().coordinates().unwrap();
@@ -237,7 +237,7 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Public keys for the transaction signatures we have to verify
-    let signature_pubkeys: Vec<darkfi_sdk::crypto::PublicKey> = vec![];
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     zk_public_inputs.push((
         "Mint_V1".to_string(),
@@ -257,7 +257,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<darkfi_sdk::crypto::PublicKey> = vec![];
+    let mut signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     for input in &params.inputs {
         let value_coords = input.value_commit.to_affine().coordinates().unwrap();
@@ -291,7 +291,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     let params: TransferParamsV1 = deserialize(&self_.data[1..]).unwrap();
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<darkfi_sdk::crypto::PublicKey> = vec![];
+    let mut signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     for input in &params.inputs {
         let (sig_x, sig_y) = input.signature_public.xy();
@@ -337,7 +337,7 @@ fn spend_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
     let params: SpendParamsV1 = deserialize(&self_.data[1..]).unwrap();
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let signature_pubkeys: Vec<darkfi_sdk::crypto::PublicKey> = vec![params.input.signature_public];
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![params.input.signature_public];
 
     let input_value_coords = params.input.value_commit.to_affine().coordinates().unwrap();
     let output_value_coords = params.output.value_commit.to_affine().coordinates().unwrap();
@@ -420,7 +420,7 @@ fn fee_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) 
     }
 
     // Verify nullifier is NOT already spent (SMT lookup)
-    let smt_store = darkfi_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
     let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
     if smt.get_leaf(&params.input.nullifier.inner()) != pallas::Base::zero() {
         msg!("[fee_v1] Error: Duplicate nullifier found");
@@ -527,7 +527,7 @@ fn spend_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>
 
     // Verify nullifier not already spent (SMT lookup)
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    let smt_store = darkfi_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
     let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
     if smt.get_leaf(&params.input.nullifier.inner()) != pallas::Base::zero() {
         msg!("[spend_v1] Error: Duplicate nullifier found");
@@ -586,7 +586,7 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
 
     // SMT for nullifier lookup
-    let smt_store = darkfi_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
     let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
     let mut new_nullifiers = Vec::new();
@@ -622,7 +622,7 @@ fn pow_reward_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Public keys for the transaction signatures we have to verify
-    let signature_pubkeys: Vec<darkfi_sdk::crypto::PublicKey> = vec![params.input.signature_public];
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![params.input.signature_public];
 
     // Grab the Pedersen commitment and token commit from the output
     let value_coords = params.output.value_commit.to_affine().coordinates().unwrap();
@@ -653,7 +653,7 @@ fn pow_reward_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
 
     // Verify input token is DARK (native token)
-    if params.input.token_id != DARK_TOKEN_ID {
+    if params.input.token_id != DRKW_TOKEN_ID {
         msg!("[pow_reward_v1] Error: Clear input used non-native token");
         return Err(NativeTokenError::TokenMismatch.into())
     }

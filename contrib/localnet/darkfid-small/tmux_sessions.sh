@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-# Start a tmux session with two mining and a non-mining darkfid nodes.
+# Start a tmux session with two mining and a non-mining dwowd nodes.
 # Additionally, start two xmrig daemons.
 
 # Generate each node folder

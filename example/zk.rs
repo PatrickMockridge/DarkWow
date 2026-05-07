@@ -23,7 +23,7 @@
 
 // ../zkas simple.zk
 
-use darkfi::{
+use dwow::{
     zk::{
         proof::{Proof, ProvingKey, VerifyingKey},
         vm::{Witness, ZkCircuit},
@@ -32,7 +32,7 @@ use darkfi::{
     zkas::decoder::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::pedersen::pedersen_commitment_u64,
     pasta::{
         arithmetic::CurveAffine,
@@ -70,7 +70,7 @@ fn main() -> Result<()> {
     let public_inputs = vec![*value_coords.x(), *value_coords.y()];
 
     // Create the circuit
-    //darkfi::zk::export_witness_json("example/simple.witness.json", &prover_witnesses, &public_inputs);
+    //dwow::zk::export_witness_json("example/simple.witness.json", &prover_witnesses, &public_inputs);
     let mut circuit = ZkCircuit::new(prover_witnesses, &zkbin.clone());
     circuit.enable_trace();
 

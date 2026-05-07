@@ -45,7 +45,7 @@
 //! - **Weather data**: Oracle attests to conditions, insurance contracts pay out
 //! - **Randomness**: Oracle attests to random values, NFT/s game uses for fairness
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 define_contract_function!(OracleFunction {
     RegisterOracleV1 = 0x00,

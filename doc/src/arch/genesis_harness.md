@@ -6,7 +6,7 @@ The `GenesisHarness` provides a reusable baseline chain setup for DarkWow contra
 
 **GenesisHarness is for NativeToken + Deployooor ONLY.** It does NOT deploy WASM contracts. Use `ContractTestingPipeline` for full WASM contract testing.
 
-**Location:** `bin/darkfid/src/tests/genesis.rs`
+**Location:** `bin/dwowd/src/tests/genesis.rs`
 
 ## Why GenesisHarness?
 
@@ -50,7 +50,7 @@ async fn test_native_token() -> Result<()> {
 
 ```rust
 pub struct GenesisHarness {
-    pub harness: Harness,                        // The underlying darkfid test harness
+    pub harness: Harness,                        // The underlying dwowd test harness
     pub fork: Fork,                              // Current fork for block production
     pub keypair: Keypair,                        // Default keypair for signing
     pub deployed_contracts: Vec<ContractId>,      // Track deployed contract IDs
@@ -278,9 +278,9 @@ async fn test_stablecoin() -> Result<()> {
 
 | File | Purpose |
 |------|---------|
-| `bin/darkfid/src/tests/genesis.rs` | GenesisHarness implementation |
-| `bin/darkfid/src/tests/mod.rs` | Module exports (contains `pub mod genesis`) |
-| `bin/darkfid/src/tests/harness.rs` | Underlying Harness struct |
+| `bin/dwowd/src/tests/genesis.rs` | GenesisHarness implementation |
+| `bin/dwowd/src/tests/mod.rs` | Module exports (contains `pub mod genesis`) |
+| `bin/dwowd/src/tests/harness.rs` | Underlying Harness struct |
 | `src/validator/sync/verify.rs` | `verify_block` function |
 | `src/validator/sync/apply.rs` | `apply_block` function |
 
@@ -294,5 +294,5 @@ async fn test_stablecoin() -> Result<()> {
 ## See Also
 
 - [Test Harness Guide](./test_harness_guide.md) - Full testing overview
-- [DarkWow Contract Pipeline](./darkfid_contract_pipeline.md) - How contracts are deployed
+- [DarkWow Contract Pipeline](./dwowd_contract_pipeline.md) - How contracts are deployed
 - [DEX Documentation](../contract/dex.md) - Example WASM contract

@@ -29,7 +29,7 @@
 
 use std::collections::HashMap;
 
-use darkfi_sdk::crypto::ContractId;
+use dwow_sdk::crypto::ContractId;
 use serde_json::Value as JsonValue;
 use tracing::error;
 
@@ -116,11 +116,11 @@ impl Default for ContractRegistry {
 /// For WASM contracts (dao_escrow), returns an error indicating it must be deployed first.
 pub async fn resolve_contract_id(
     contract_id_str: &str,
-    _validator: &darkfi::validator::Validator,
+    _validator: &dwow::validator::Validator,
 ) -> HandlerResult<ContractId> {
     match contract_id_str {
-        "native_token" => Ok(*darkfi_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID),
-        "deployooor" => Ok(*darkfi_sdk::crypto::DEPLOYOOOR_CONTRACT_ID),
+        "native_token" => Ok(*dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID),
+        "deployooor" => Ok(*dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID),
         // dao_escrow is a WASM contract, not native - must be deployed first
         "dao_escrow" => {
             error!(target: "contract_registry", "DAO-Escrow is a WASM contract and must be deployed first");

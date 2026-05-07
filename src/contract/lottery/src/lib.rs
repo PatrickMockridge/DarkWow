@@ -37,7 +37,7 @@
 //! - ClaimPrize pays out winner's share via money_v3::transfer_v1 (child call required)
 //! - ExpireLottery sends unclaimed to house via money_v3::transfer_v1 (child call required)
 
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 
 /// Functions available in the contract
 #[repr(u8)]

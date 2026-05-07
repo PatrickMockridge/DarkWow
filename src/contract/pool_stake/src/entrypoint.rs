@@ -23,7 +23,7 @@
 
 //! Pool Stake Contract Entrypoint
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, ContractId},
     dark_tree::DarkLeaf,
     error::ContractResult,
@@ -31,7 +31,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::error::PoolStakeError;
 use crate::model::*;
@@ -43,7 +43,7 @@ use crate::{
     POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V1, POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V1,
 };
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -109,7 +109,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
 fn create_pool_get_metadata_v1(
     params: CreatePoolParamsV1,
-) -> Result<Vec<u8>, darkfi_sdk::error::ContractError> {
+) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Only constrain_instance value: derived_pool_id
     zk_public_inputs.push((
@@ -123,7 +123,7 @@ fn create_pool_get_metadata_v1(
 
 fn join_pool_get_metadata_v1(
     params: JoinPoolParamsV1,
-) -> Result<Vec<u8>, darkfi_sdk::error::ContractError> {
+) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Only constrain_instance values: derived_member_id, value_commit_x, value_commit_y
     zk_public_inputs.push((
@@ -137,7 +137,7 @@ fn join_pool_get_metadata_v1(
 
 fn allocate_coverage_get_metadata_v1(
     params: AllocateCoverageParamsV1,
-) -> Result<Vec<u8>, darkfi_sdk::error::ContractError> {
+) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Only constrain_instance value: derived_allocation_id
     zk_public_inputs.push((
@@ -151,7 +151,7 @@ fn allocate_coverage_get_metadata_v1(
 
 fn slash_coverage_get_metadata_v1(
     params: SlashCoverageParamsV1,
-) -> Result<Vec<u8>, darkfi_sdk::error::ContractError> {
+) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Only constrain_instance value: derived_slash_id
     zk_public_inputs.push((
@@ -865,14 +865,14 @@ fn apply_update_pool_config_update(
 // ============================================================================
 
 fn derive_pool_id(nonce: u64) -> pallas::Base {
-    use darkfi_sdk::crypto::poseidon_hash;
-    use darkfi_sdk::pasta::pallas;
+    use dwow_sdk::crypto::poseidon_hash;
+    use dwow_sdk::pasta::pallas;
     poseidon_hash([pallas::Base::from(nonce)])
 }
 
 fn derive_stake_id(pool_id: pallas::Base, relayer_id: &[u8; 32], nonce: u64) -> pallas::Base {
-    use darkfi_sdk::crypto::poseidon_hash;
-    use darkfi_sdk::pasta::pallas;
+    use dwow_sdk::crypto::poseidon_hash;
+    use dwow_sdk::pasta::pallas;
     // Hash the relayer_id with blake3 to get bytes we can convert to pallas::Base
     let hashed = blake3::hash(relayer_id);
     let bytes: [u8; 32] = *hashed.as_bytes();
@@ -890,8 +890,8 @@ fn derive_allocation_id(
     withdrawal_nullifier: &[u8; 32],
     nonce: u64,
 ) -> pallas::Base {
-    use darkfi_sdk::crypto::poseidon_hash;
-    use darkfi_sdk::pasta::pallas;
+    use dwow_sdk::crypto::poseidon_hash;
+    use dwow_sdk::pasta::pallas;
     let hashed = blake3::hash(withdrawal_nullifier);
     let bytes: [u8; 32] = *hashed.as_bytes();
     let words: [u64; 4] = [

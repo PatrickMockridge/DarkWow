@@ -59,7 +59,7 @@ ENV PATH="/opt/android-sdk-linux/build-tools/36.0.0-rc5/:${PATH}"
 # Lets cache packages for faster builds
 RUN git clone --depth=1 https://codeberg.org/darkrenaissance/darkfi
 COPY Cargo.lock darkfi/bin/app/
-WORKDIR /root/darkfi/bin/app/
+WORKDIR /root/dwow/bin/app/
 RUN cargo fetch
-RUN rm -fr /root/darkfi/
+RUN rm -fr /root/dwow/
 

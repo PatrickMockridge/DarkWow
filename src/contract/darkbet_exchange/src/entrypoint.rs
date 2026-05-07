@@ -23,13 +23,13 @@
 
 //! DarkBet Exchange Contract Entrypoint
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, schnorr::SchnorrPublic, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::DarkbetError;
 use crate::model::{
@@ -53,7 +53,7 @@ use crate::{
     DEFAULT_LP_FEE as SDK_LP_FEE,
 };
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

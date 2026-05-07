@@ -23,9 +23,9 @@
 
 use std::sync::Arc;
 
-use darkfi::{net::Settings, validator::utils::best_fork_index, Result};
+use dwow::{net::Settings, validator::utils::best_fork_index, Result};
 use darkfi_contract_test_harness::init_logger;
-use darkfi_sdk::num_traits::One;
+use dwow_sdk::num_traits::One;
 use num_bigint::BigUint;
 use smol::Executor;
 use url::Url;

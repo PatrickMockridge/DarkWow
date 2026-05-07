@@ -23,7 +23,7 @@
 
 //! Money V3 Error types
 
-pub use darkfi_sdk::error::ContractError;
+pub use dwow_sdk::error::ContractError;
 use thiserror::Error;
 
 /// MoneyV3-specific errors

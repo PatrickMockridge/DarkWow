@@ -1,4 +1,4 @@
-## darkfid configuration file
+## dwowd configuration file
 ##
 ## Please make sure you go through all the settings so you can configure
 ## your daemon properly.
@@ -15,7 +15,7 @@ network = "linear-testnet"
 # Testnet blockchain network configuration
 [network_config."testnet"]
 # Path to the blockchain database directory
-database = "~/.local/share/darkfi/darkfid/testnet"
+database = "~/.local/share/dwow/dwowd/testnet"
 
 # Confirmation threshold, denominated by number of blocks
 threshold = 6
@@ -79,10 +79,10 @@ rpc_listen = "http+tcp://127.0.0.1:18348"
 magic_bytes = [163, 139, 113, 101]
 
 # Path to the P2P datastore
-p2p_datastore = "~/.local/share/darkfi/darkfid/testnet"
+p2p_datastore = "~/.local/share/dwow/dwowd/testnet"
 
 # Path to a configured hostlist for saving known peers
-hostlist = "~/.local/share/darkfi/darkfid/testnet/p2p_hostlist.tsv"
+hostlist = "~/.local/share/dwow/dwowd/testnet/p2p_hostlist.tsv"
 
 # Outbound connection slots number, this many connections will be
 # attempted. (This does not include manual connections)
@@ -213,7 +213,7 @@ seeds = [
 # Mainnet blockchain network configuration
 [network_config."mainnet"]
 # Path to the blockchain database directory
-database = "~/.local/share/darkfi/darkfid/mainnet"
+database = "~/.local/share/dwow/dwowd/mainnet"
 
 # Confirmation threshold, denominated by number of blocks
 threshold = 11
@@ -277,10 +277,10 @@ rpc_listen = "tcp://127.0.0.1:8346"
 magic_bytes = [101, 79, 61, 43]
 
 # Path to the P2P datastore
-p2p_datastore = "~/.local/share/darkfi/darkfid/mainnet"
+p2p_datastore = "~/.local/share/dwow/dwowd/mainnet"
 
 # Path to a configured hostlist for saving known peers
-hostlist = "~/.local/share/darkfi/darkfid/mainnet/p2p_hostlist.tsv"
+hostlist = "~/.local/share/dwow/dwowd/mainnet/p2p_hostlist.tsv"
 
 # Outbound connection slots number, this many connections will be
 # attempted. (This does not include manual connections)
@@ -405,7 +405,7 @@ seeds = ["tcp+tls://lilith0.dark.fi:8340", "tcp+tls://lilith1.dark.fi:8340"]
 # Localnet blockchain network configuration
 [network_config."localnet"]
 # Path to the blockchain database directory
-database = "~/.local/share/darkfi/darkfid/localnet"
+database = "~/.local/share/dwow/dwowd/localnet"
 
 # Confirmation threshold, denominated by number of blocks
 threshold = 3
@@ -472,10 +472,10 @@ rpc_listen = "tcp://127.0.0.1:28346"
 magic_bytes = [241, 227, 197, 179]
 
 # Path to the P2P datastore
-p2p_datastore = "~/.local/share/darkfi/darkfid/localnet"
+p2p_datastore = "~/.local/share/dwow/dwowd/localnet"
 
 # Path to a configured hostlist for saving known peers
-hostlist = "~/.local/share/darkfi/darkfid/localnet/p2p_hostlist.tsv"
+hostlist = "~/.local/share/dwow/dwowd/localnet/p2p_hostlist.tsv"
 
 # Outbound connection slots number, this many connections will be
 # attempted. (This does not include manual connections)
@@ -555,7 +555,7 @@ localnet = true
 # Linear-testnet blockchain network configuration
 [network_config."linear-testnet"]
 # Path to the blockchain database directory
-database = "~/.local/share/darkfi/darkfid/linear-testnet"
+database = "~/.local/share/dwow/dwowd/linear-testnet"
 
 # Confirmation threshold, denominated by number of blocks
 threshold = 1
@@ -594,10 +594,10 @@ rpc_listen = "tcp://127.0.0.1:28346"
 magic_bytes = [241, 227, 197, 179]
 
 # Path to the P2P datastore
-p2p_datastore = "~/.local/share/darkfi/darkfid/linear-testnet"
+p2p_datastore = "~/.local/share/dwow/dwowd/linear-testnet"
 
 # Path to a configured hostlist for saving known peers
-hostlist = "~/.local/share/darkfi/darkfid/linear-testnet/p2p_hostlist.tsv"
+hostlist = "~/.local/share/dwow/dwowd/linear-testnet/p2p_hostlist.tsv"
 
 # Allow localnet hosts
 localnet = true
@@ -609,7 +609,7 @@ localnet = true
 # DarkWow-testnet blockchain network configuration
 [network_config."darkwow-testnet"]
 # Path to the blockchain database directory
-database = "~/.local/share/darkfi/darkfid/darkwow-testnet"
+database = "~/.local/share/dwow/dwowd/darkwow-testnet"
 
 # Confirmation threshold, denominated by number of blocks
 threshold = 3
@@ -663,10 +663,10 @@ rpc_listen = "tcp://127.0.0.1:31346"
 magic_bytes = [68, 82, 75, 87]
 
 # Path to the P2P datastore
-p2p_datastore = "~/.local/share/darkfi/darkfid/darkwow-testnet"
+p2p_datastore = "~/.local/share/dwow/dwowd/darkwow-testnet"
 
 # Path to a configured hostlist for saving known peers
-hostlist = "~/.local/share/darkfi/darkfid/darkwow-testnet/p2p_hostlist.tsv"
+hostlist = "~/.local/share/dwow/dwowd/darkwow-testnet/p2p_hostlist.tsv"
 
 # Outbound connection slots number
 outbound_connections = 8

@@ -31,7 +31,7 @@ use crate::{
     crypto::{ContractId, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Game room identifier
 pub type RoomId = pallas::Base;

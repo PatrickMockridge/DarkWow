@@ -1,5 +1,5 @@
 [package]
-name = "darkfi-fuzz"
+name = "dwow-fuzz"
 version = "0.5.0"
 publish = false
 edition = "2021"
@@ -10,7 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4.10"
 
-[dependencies.darkfi]
+[dependencies.dwow]
 path = ".."
 features = ["zkas"]
 

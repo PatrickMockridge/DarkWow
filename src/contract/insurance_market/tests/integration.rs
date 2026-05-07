@@ -37,7 +37,7 @@ use darkfi_insurance_market_contract::{
     DEFAULT_COVERAGE_PERIOD, DEFAULT_PREMIUM_RATE, MIN_BOND_RATE,
     DEFAULT_COVERAGE_LEVERAGE, MAX_COVERAGE_LEVERAGE,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{PublicKey, SecretKey},
     pasta::pallas,
 };

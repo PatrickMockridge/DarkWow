@@ -22,7 +22,7 @@
  */
 
 //! VM heap type abstractions
-use darkfi_sdk::crypto::{
+use dwow_sdk::crypto::{
     constants::{OrchardFixedBases, MERKLE_DEPTH_ORCHARD},
     smt::SMT_FP_DEPTH,
     MerkleNode,

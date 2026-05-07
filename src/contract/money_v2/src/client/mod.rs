@@ -35,7 +35,7 @@
 
 use std::hash::{Hash, Hasher};
 
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree,
     crypto::{
         pasta_prelude::{Field, PrimeField},
@@ -43,11 +43,11 @@ use darkfi_sdk::{
     },
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
-use darkfi_serial::async_trait;
+use dwow_serial::async_trait;
 
 use crate::model::{Coin, Nullifier, TokenId};
 

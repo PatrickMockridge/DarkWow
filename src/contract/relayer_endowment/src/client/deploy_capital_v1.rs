@@ -23,12 +23,12 @@
 
 //! Relayer Endowment deploy_capital_v1 ZK proof generation
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pedersen_commitment_u64, pasta_prelude::{Curve, CurveAffine}, poseidon_hash, Blind, PublicKey},
     pasta::pallas,
 };

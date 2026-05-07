@@ -4,11 +4,11 @@ version = "0.5.0"
 edition = "2021"
 
 [dependencies]
-darkfi = {path = "../../", features = ["blockchain", "rpc"]}
-darkfi-serial = {path = "../../src/serial", features = ["derive"]}
-darkfi-sdk = {path = "../../src/sdk"}
+dwow = {path = "../../", features = ["blockchain", "rpc"]}
+dwow-serial = {path = "../../src/serial", features = ["derive"]}
+dwow-sdk = {path = "../../src/sdk"}
 
-darkfi_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
+dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
 
 monero = "0.21.0"
 tiny-keccak = "2.0.2"

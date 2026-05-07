@@ -30,7 +30,7 @@ use std::{
     hash::Hash,
 };
 
-use darkfi_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
 
 use crate::{net, net::P2pPtr, Result};
 

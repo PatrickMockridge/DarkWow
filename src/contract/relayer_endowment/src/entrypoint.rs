@@ -23,7 +23,7 @@
 
 //! Relayer Endowment Contract Entrypoint
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{ContractId, PublicKey},
     dark_tree::DarkLeaf,
     error::ContractResult,
@@ -31,7 +31,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::RelayerEndowmentError;
 use crate::model::*;
@@ -41,7 +41,7 @@ use crate::{
     RELAYER_ENDOWMENT_MIN_DEPLOY, RELAYER_ENDOWMENT_INFO_TREE,
 };
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -540,6 +540,6 @@ fn apply_update_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> 
 // ============================================================================
 
 fn derive_deployment_id(relayer_pub: PublicKey, backer_pub: &PublicKey, nonce: u64) -> pallas::Base {
-    use darkfi_sdk::crypto::poseidon_hash;
+    use dwow_sdk::crypto::poseidon_hash;
     poseidon_hash([relayer_pub.x(), relayer_pub.y(), backer_pub.x(), backer_pub.y(), pallas::Base::from(nonce)])
 }

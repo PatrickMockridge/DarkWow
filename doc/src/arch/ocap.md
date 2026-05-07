@@ -257,7 +257,7 @@ This bounded disclosure is **mathematically guaranteed** by the ZK proof constru
 
 ### LTE Gate: Formal Verification of Threshold Predicates
 
-The LessThanOrEqual (LTE) operation is central to O-Cap predicates, enabling threshold comparisons like `role >= senior_engineer`. `LessThanOrEqual` is a **DarkWow addition to the zkVM** — it does not exist in upstream DarkFi. Both the implementation and the Lean4 formal verification were completed on this fork.
+The LessThanOrEqual (LTE) operation is central to O-Cap predicates, enabling threshold comparisons like `role >= senior_engineer`. `LessThanOrEqual` is a **DarkWow addition to the zkVM** — it does not exist in upstream DarkWow. Both the implementation and the Lean4 formal verification were completed on this fork.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1476,7 +1476,7 @@ Several issues affect the ability to develop, test, and deploy smart contracts o
 
 ### Issue 1: async-trait Lifetime Bug (Rust 1.90+)
 
-**Impact**: Cannot build `darkfid`, `drk`, or integration tests from source when using Rust 1.90+.
+**Impact**: Cannot build `dwowd`, `dww`, or integration tests from source when using Rust 1.90+.
 
 **Root cause**: The `darkfi-serial/async` feature enables async-serialization which triggers a lifetime bug in `async-trait` 0.1.x.
 

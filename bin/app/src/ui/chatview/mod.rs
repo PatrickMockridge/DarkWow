@@ -24,8 +24,8 @@
 use async_lock::Mutex as AsyncMutex;
 use async_trait::async_trait;
 use atomic_float::AtomicF32;
-use darkfi::system::{msleep, CondVar};
-use darkfi_serial::{deserialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
+use dwow::system::{msleep, CondVar};
+use dwow_serial::{deserialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 use miniquad::{KeyCode, KeyMods, MouseButton, TouchPhase};
 use parking_lot::Mutex as SyncMutex;
 use rand::{rngs::OsRng, Rng};

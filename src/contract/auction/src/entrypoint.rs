@@ -44,16 +44,16 @@
 //! - Winner claims via escrow.claim()
 //! - Seller settles to receive the winning bid amount
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::ContractId,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta, ContractCall,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use crate::{
     error::AuctionError,
@@ -70,7 +70,7 @@ use crate::{
     AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1, AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1,
 };
 
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,

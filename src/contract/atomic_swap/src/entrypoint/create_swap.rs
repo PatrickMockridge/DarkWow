@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::pasta_prelude::*,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -29,7 +29,7 @@ use darkfi_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use darkfi_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::AtomicSwapError,
@@ -40,7 +40,7 @@ use crate::{
 
 /// `get_metadata` function for `AtomicSwap::CreateSwapV1`
 pub(crate) fn atomic_swap_create_get_metadata_v1(
-    _cid: darkfi_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -76,7 +76,7 @@ pub(crate) fn atomic_swap_create_get_metadata_v1(
 
 /// `process_instruction` function for `AtomicSwap::CreateSwapV1`
 pub(crate) fn atomic_swap_create_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -128,7 +128,7 @@ pub(crate) fn atomic_swap_create_process_instruction_v1(
 
 /// `process_update` function for `AtomicSwap::CreateSwapV1`
 pub(crate) fn atomic_swap_create_process_update_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     update: CreateSwapUpdateV1,
 ) -> ContractResult {
     let swaps_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_SWAPS_TREE)?;

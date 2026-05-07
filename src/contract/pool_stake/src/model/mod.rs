@@ -23,8 +23,8 @@
 
 //! Data structures for pool_stake contract calls
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
-use darkfi_sdk::{
+use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::{
     crypto::PublicKey,
     pasta::pallas,
 };

@@ -23,7 +23,7 @@
 
 //! Types for the clean sync module.
 
-use darkfi_sdk::{crypto::ContractId, pasta::pallas};
+use dwow_sdk::{crypto::ContractId, pasta::pallas};
 
 use crate::blockchain::BlockInfo;
 

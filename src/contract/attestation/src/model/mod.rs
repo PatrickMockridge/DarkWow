@@ -23,11 +23,11 @@
 
 //! Attestation contract data structures
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::poseidon_hash,
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Attestation unique identifier (hash of attestation data)
 pub type AttestationId = pallas::Base;
@@ -47,14 +47,14 @@ pub enum AttestationState {
 }
 
 impl TryFrom<u8> for AttestationState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
             0 => Ok(Self::Active),
             1 => Ok(Self::Revoked),
             2 => Ok(Self::Expired),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }
@@ -73,7 +73,7 @@ pub enum ClaimState {
 }
 
 impl TryFrom<u8> for ClaimState {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -81,7 +81,7 @@ impl TryFrom<u8> for ClaimState {
             1 => Ok(Self::Verified),
             2 => Ok(Self::Consumed),
             3 => Ok(Self::Rejected),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }
@@ -102,7 +102,7 @@ pub enum Predicate {
 }
 
 impl TryFrom<u8> for Predicate {
-    type Error = darkfi_sdk::error::ContractError;
+    type Error = dwow_sdk::error::ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -111,7 +111,7 @@ impl TryFrom<u8> for Predicate {
             2 => Ok(Self::LessOrEqual),
             3 => Ok(Self::Contains),
             4 => Ok(Self::Custom),
-            _ => Err(darkfi_sdk::error::ContractError::InvalidFunction),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
         }
     }
 }

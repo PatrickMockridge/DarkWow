@@ -28,13 +28,13 @@ use std::{
     path::Path,
 };
 
-use darkfi::{
+use dwow::{
     zk::{empty_witnesses, Proof, VerifyingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::pasta::pallas::Base;
-use darkfi_serial::deserialize;
+use dwow_sdk::pasta::pallas::Base;
+use dwow_serial::deserialize;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();

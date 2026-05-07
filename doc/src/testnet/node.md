@@ -12,15 +12,15 @@ For detailed manual configuration, continue reading below.
 This tutorial will cover the three DarkWow blockchain components and
 their current features. The components covered are:
 
-* `darkfid` is the DarkWow fullnode. It validates blockchain
+* `dwowd` is the DarkWow fullnode. It validates blockchain
 transactions and stays connected to the p2p network.
-* `drk` is a CLI wallet. It provides an interface to smart contracts
+* `dww` is a CLI wallet. It provides an interface to smart contracts
 such as Money and DAO, manages our keys and coins, and scans the
 blockchain to update our balances.
-* `xmrig` is the mining daemon used in DarkWow. Connects to `darkfid`
+* `xmrig` is the mining daemon used in DarkWow. Connects to `dwowd`
 over its `Stratum` RPC, and requests new block headers to mine.
 
-The config files for `darkfid` and `drk` are sectioned into three
+The config files for `dwowd` and `dww` are sectioned into three
 parts, each marked `[network_config]`. The sections look like this:
 
 * `[network_config."testnet"]`
@@ -45,8 +45,8 @@ rest of this tutorial assumes we are setting up a testnet node.
 For a simplified setup, use the provided shell scripts in `contrib/testnet/`:
 
 ```shell
-# 1. Build darkfid and drk
-cargo build --release -p darkfid -p drk
+# 1.  dwowd and dww
+cargo build --release -p dwowd -p dww
 
 # 2. Setup testnet node (creates directories and config)
 cd contrib/testnet
@@ -70,7 +70,7 @@ cd contrib/testnet
 | Script | Description |
 |--------|-------------|
 | `setup.sh` | First-time setup (creates directories and config) |
-| `start.sh` | Start darkfid daemon in background |
+| `start.sh` | Start dwowd daemon in background |
 | `stop.sh` | Stop the daemon gracefully |
 | `restart.sh` | Restart the daemon |
 | `status.sh` | Check sync status via RPC |
@@ -103,57 +103,57 @@ on how to install Rust and necessary deps. Skip last step of the build
 process, as you don't need to compile all binaries of the project.
 
 Once you have the repository in place, and everything is installed, we
-can compile the `darkfid` node and the `drk` wallet CLI:
+can compile the `dwowd` node and the `dww` wallet CLI:
 
 ```shell
-$ make darkfid drk
+$ make dwowd dww
 
 ...
-make -C bin/darkfid \
+make -C bin/dwowd \
         PREFIX="/home/anon/.cargo" \
         CARGO="cargo" \
         RUST_TARGET="x86_64-unknown-linux-gnu" \
         RUSTFLAGS=""
-make[1]: Entering directory '/home/anon/darkfi/bin/darkfid'
+make[1]: Entering directory '/home/anon/dwow/bin/dwowd'
 RUSTFLAGS="" cargo build --target=x86_64-unknown-linux-gnu --release --package darkfid
 ...
-   Compiling darkfid v0.5.0 (/home/anon/darkfi/bin/darkfid)
+   Compiling dwowd v0.5.0 (/home/anon/dwow/bin/dwowd)
     Finished `release` profile [optimized] target(s) in 4m 19s
-cp -f ../../target/x86_64-unknown-linux-gnu/release/darkfid darkfid
-cp -f ../../target/x86_64-unknown-linux-gnu/release/darkfid ../../darkfid
-make[1]: Leaving directory '/home/anon/darkfi/bin/darkfid'
-make -C bin/drk \
+cp -f ../../target/x86_64-unknown-linux-gnu/release/dwowd darkfid
+cp -f ../../target/x86_64-unknown-linux-gnu/release/dwowd ../../darkfid
+make[1]: Leaving directory '/home/anon/dwow/bin/dwowd'
+make -C bin/dww \
         PREFIX="/home/anon/.cargo" \
         CARGO="cargo" \
         RUST_TARGET="x86_64-unknown-linux-gnu" \
         RUSTFLAGS=""
-make[1]: Entering directory '/home/anon/darkfi/bin/drk'
-RUSTFLAGS="" cargo build --target=x86_64-unknown-linux-gnu --release --package drk
+make[1]: Entering directory '/home/anon/dwow/bin/drk'
+RUSTFLAGS="" cargo build --target=x86_64-unknown-linux-gnu --release --package dww
 ...
-   Compiling drk v0.5.0 (/home/anon/darkfi/bin/drk)
+   Compiling dww v0.5.0 (/home/anon/dwow/bin/drk)
     Finished `release` profile [optimized] target(s) in 2m 16s
-cp -f ../../target/x86_64-unknown-linux-gnu/release/drk drk
-cp -f ../../target/x86_64-unknown-linux-gnu/release/drk ../../drk
-make[1]: Leaving directory '/home/anon/darkfi/bin/drk'
+cp -f ../../target/x86_64-unknown-linux-gnu/release/dww dww
+cp -f ../../target/x86_64-unknown-linux-gnu/release/dww ../../dww
+make[1]: Leaving directory '/home/anon/dwow/bin/drk'
 ```
 
 This process will now compile the node and the wallet CLI tool.
-When finished, we can begin using the network. Run `darkfid` and `drk`
+When finished, we can begin using the network. Run `dwowd` and `dww`
 once so their config files are spawned on your system. These config files
-will be used to `darkfid` and `drk`.
+will be used to `dwowd` and `dww`.
 
 Please note that the exact paths may differ depending on your local setup.
 
 ```shell
 $ ./darkfid
 
-Config file created in "~/.config/darkfi/darkfid_config.toml". Please review it and try again.
+Config file created in "~/.config/dwow/dwowd_config.toml". Please review it and try again.
 ```
 
 ```shell
-$ ./drk interactive
+$ ./dww interactive
 
-Config file created in "~/.config/darkfi/drk_config.toml". Please review it and try again.
+Config file created in "~/.config/dwow/drk_config.toml". Please review it and try again.
 ```
 
 ## Running
@@ -161,7 +161,7 @@ Config file created in "~/.config/darkfi/drk_config.toml". Please review it and 
 ### Using Tor
 
 DarkWow supports Tor for network-level anonymity. To use the testnet over
-Tor, you'll need to make some modifications to the `darkfid` config
+Tor, you'll need to make some modifications to the `dwowd` config
 file.
 
 For detailed instructions and configuration options on how to do this,
@@ -169,13 +169,13 @@ follow the [Tor Guide](../misc/nodes/tor-guide.md#configure-network-settings).
 
 ### Wallet initialization
 
-Now it's time to initialize your wallet. For this we use `drk`, a separate
+Now it's time to initialize your wallet. For this we use `dww`, a separate
 wallet CLI which is created to interface with the smart contract used
 for payments and swaps.
 
-First, you need to change the password in the `drk` config. Open
+First, you need to change the password in the `dww` config. Open
 your config file in a text editor (the default path is
-`~/.config/darkfi/drk_config.toml`). Look for the section marked
+`~/.config/dwow/drk_config.toml`). Look for the section marked
 `[network_config."testnet"]` and change this line:
 
 ```toml
@@ -189,7 +189,7 @@ initialize a wallet, and create a keypair. The wallet address shown in
 the outputs is explanatory and will be different from the one you get.
 
 ```shell
-$ ./drk -c bin/drk/drk_config.toml -n localnet wallet initialize
+$ ./dww -c bin/drk/drk_config.toml -n localnet wallet initialize
 
 Initializing Money Merkle tree
 Successfully initialized Merkle tree for the Money contract
@@ -199,7 +199,7 @@ Successfully initialized Merkle trees for the DAO contract
 ```
 
 ```shell
-$ ./drk -c bin/drk/drk_config.toml -n localnet wallet keygen
+$ ./dww -c bin/drk/drk_config.toml -n localnet wallet keygen
 
 Generating a new keypair
 New address:
@@ -207,7 +207,7 @@ New address:
 ```
 
 ```shell
-$ ./drk -c bin/drk/drk_config.toml -n localnet wallet default-address 1
+$ ./dww -c bin/drk/drk_config.toml -n localnet wallet default-address 1
 ```
 
 The second command will print out your new DarkWow address where you
@@ -215,15 +215,15 @@ can receive payments. Take note of it. Alternatively, you can always
 retrieve your default address using:
 
 ```shell
-$ ./drk -c bin/drk/drk_config.toml -n localnet wallet address
+$ ./dww -c bin/drk/drk_config.toml -n localnet wallet address
 
 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
 
 ### Darkfid
 
-Now that `darkfid` configuration is in place, you can run it again and
-`darkfid` will start, create the necessary keys for validation of blocks
+Now that `dwowd` configuration is in place, you can run it again and
+`dwowd` will start, create the necessary keys for validation of blocks
 and transactions, and begin syncing the blockchain.
 
 ```shell
@@ -255,7 +255,7 @@ and you should see a `Blockchain synced!` message after some time.
 ### Miner
 
 It's not necessary for broadcasting transactions or proceeding with the
-rest of the tutorial (`darkfid` and `drk` handle this), but if you want
+rest of the tutorial (`dwowd` and `dww` handle this), but if you want
 to help secure the network, you can participate in the mining process
 by running an `xmrig` mining daemon. In this example we will build
 `xmrig` from its respective source code repository. Make sure you are
@@ -287,7 +287,7 @@ $ make -j$(nproc)
 ```
 
 The binary now exists in the current directory. Make sure you enable
-the `Stratum` RPC endpoint that will be used by `xmrig` in `darkfid`
+the `Stratum` RPC endpoint that will be used by `xmrig` in `dwowd`
 config:
 
 ```toml
@@ -297,7 +297,7 @@ rpc_listen = "tcp://127.0.0.1:18347"
 
 > Note:
 >
-> If you are not on the same network as the `darkfid` instance you
+> If you are not on the same network as the `dwowd` instance you
 > are using, you must configure and use `tcp+tls` for the RPC
 > endpoints, so your traffic is not plaintext, as it contains your
 > wallet address used for the block rewards.
@@ -305,18 +305,18 @@ rpc_listen = "tcp://127.0.0.1:18347"
 To mine on DarkWow we need to add a recipient to `xmrig` that specifies
 where the mining rewards will be minted to. You now have to configure
 `xmrig` to use your wallet address as the rewards recipient, when it
-retrieves blocks from `darkfid` to mine. Make sure you have
+retrieves blocks from `dwowd` to mine. Make sure you have
 [initialized](#wallet-initialization) your wallet and grab your default
 address:
 
 ```shell
-./drk wallet address
+./dww wallet address
 
 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
 
 Refer to [xmrig optimizations guide][2] to fully configure your system
-for maximum mining performance. Start `darkfid` as usual and then start
+for maximum mining performance. Start `dwowd` as usual and then start
 `xmrig`, specifying retries setup, how many threads to mine and for
 which wallet:
 
@@ -327,7 +327,7 @@ $ ./xmrig -u x+1 -r 1000 -R 20 -o 127.0.0.1:18347 -t {XMRIG_THREADS} -u {YOUR_DA
 > Note: All miners should use the lowest possible resources so other
 > people can mine blocks to retrieve `DRKW` for testing.
 
-In `darkfid`, you should see a notification like this:
+In `dwowd`, you should see a notification like this:
 
 ```shell
 ...
@@ -335,7 +335,7 @@ In `darkfid`, you should see a notification like this:
 ...
 ```
 
-This means that `darkfid` and `xmr` are connected over the `Stratum`
+This means that `dwowd` and `xmr` are connected over the `Stratum`
 RPC and `xmrig` can start mining. You will see log messages like these:
 
 ```shell
@@ -353,27 +353,27 @@ pause mining.
 
 ### Wallet sync
 
-From this point forward in the guide we will use `drk` in `interactive`
+From this point forward in the guide we will use `dww` in `interactive`
 mode for all our wallet operations. In another terminal, run the
 following command:
 
 ```shell
-$ ./drk interactive
+$ ./dww interactive
 
-drk>
+dww>
 ```
 
-In order to receive incoming coins, you'll need to use the `drk`
-tool to subscribe on `darkfid` so you can receive notifications for
+In order to receive incoming coins, you'll need to use the `dww`
+tool to subscribe on `dwowd` so you can receive notifications for
 incoming blocks. The blocks have to be scanned for transactions,
 and to find coins that are intended for you. In the interactive shell,
 run the following command to subscribe to new blocks:
 
 ```shell
-drk> subscribe
+dww> subscribe
 
 Requested to scan from block number: 0
-Last confirmed block reported by darkfid: 1 - da4455f461df6833a68b659d1770f58e44b6bc4abdd934cb22d084c24333255f
+Last confirmed block reported by dwowd: 1 - da4455f461df6833a68b659d1770f58e44b6bc4abdd934cb22d084c24333255f
 Requesting block 0...
 Block 0 received! Scanning block...
 =======================================
@@ -395,7 +395,7 @@ Requesting block 1...
 Block 1 received! Scanning block...
 ...
 Requested to scan from block number: 2
-Last confirmed block reported by darkfid: 1 - da4455f461df6833a68b659d1770f58e44b6bc4abdd934cb22d084c24333255f
+Last confirmed block reported by dwowd: 1 - da4455f461df6833a68b659d1770f58e44b6bc4abdd934cb22d084c24333255f
 Finished scanning blockchain
 Subscribing to receive notifications of incoming blocks
 Detached subscription to background
@@ -405,14 +405,14 @@ All is good. Waiting for block notifications...
 ## Local Deployment
 
 For local (non-testnet) development we recommend running master, and
-use the existing `contrib/localnet/darkfid-single-node` folder, which
+use the existing `contrib/localnet/dwowd-single-node` folder, which
 provides the corresponding configurations to operate. Some outputs are
 emitted since they are identical to previous steps.
 
-First, compile `darkfid` node and the `drk` wallet CLI:
+First, compile `dwowd` node and the `dww` wallet CLI:
 
 ```shell
-$ make darkfid drk
+$ make dwowd dww
 ```
 
 > Note:
@@ -423,12 +423,12 @@ $ make darkfid drk
 Enter the localnet folder, and initialize a wallet:
 
 ```shell
-$ cd contrib/localnet/darkfid-single-node/
+$ cd contrib/localnet/dwowd-single-node/
 $ ./init-wallet.sh
 ```
 
 Then configure your mining daemon in `tmux_sessions.sh`
-script, start the daemons and wait until `darkfid` is initialized:
+script, start the daemons and wait until `dwowd` is initialized:
 
 ```shell
 $ ./tmux_sessions.sh
@@ -437,7 +437,7 @@ $ ./tmux_sessions.sh
 After some blocks have been generated we
 will see some `DRKW` in our test wallet.
 On a different shell (or tmux pane in the session),
-navigate to `contrib/localnet/darkfid-single-node`
+navigate to `contrib/localnet/dwowd-single-node`
 folder again and check wallet balance
 
 ```shell
@@ -448,10 +448,10 @@ $ ./wallet-balance.sh
  241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb | DRKW     | 20
 ```
 
-Alternatively, use the drk CLI directly:
+Alternatively, use the dww CLI directly:
 
 ```shell
-$ ./drk -c drk.toml wallet balance
+$ ./dww -c dww.toml wallet balance
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+---------
@@ -459,8 +459,8 @@ $ ./drk -c drk.toml wallet balance
 ```
 
 Don't forget that when using this local node, all operations
-should be executed inside the `contrib/localnet/darkfid-single-node`
-folder. The `drk.toml` file in that folder contains the correct
+should be executed inside the `contrib/localnet/dwowd-single-node`
+folder. The `dww.toml` file in that folder contains the correct
 configuration for localnet.
 
 ## DIY Public Testnet
@@ -493,13 +493,13 @@ Choose network parameters that don't conflict with mainnet or testnet:
 
 ### Step 1: Create Configuration
 
-Create a configuration file for your seed node (`diynet-darkfid.toml`):
+Create a configuration file for your seed node (`diynet-dwowd.toml`):
 
 ```toml
 network = "diynet"
 
 [network_config."diynet"]
-database = "~/.local/share/darkfi/darkfid/diynet"
+database = "~/.local/share/dwow/dwowd/diynet"
 threshold = 3
 pow_target = 60
 pow_fixed_difficulty = 4
@@ -524,14 +524,14 @@ inbound = ["tcp+tls://0.0.0.0:18340"]
 seeds = []
 ```
 
-Create a corresponding wallet configuration (`diynet-drk.toml`):
+Create a corresponding wallet configuration (`diynet-dww.toml`):
 
 ```toml
 network = "diynet"
 
 [wallet]
 wallet_pass = "your_secure_password"
-wallet_db = "~/.local/share/darkfi/drk/diynet"
+wallet_db = "~/.local/share/dwow/drk/diynet"
 
 [network_config."diynet"]
 rpc_url = "http://127.0.0.1:18345"
@@ -541,9 +541,9 @@ stratum_url = "tcp://127.0.0.1:18347"
 ### Step 2: Initialize Wallet
 
 ```shell
-./drk -c diynet-drk.toml -n diynet wallet initialize
-./drk -c diynet-drk.toml -n diynet wallet keygen
-./drk -c diynet-drk.toml -n diynet wallet default-address 1
+./dww -c diynet-dww.toml -n diynet wallet initialize
+./dww -c diynet-dww.toml -n diynet wallet keygen
+./dww -c diynet-dww.toml -n diynet wallet default-address 1
 ```
 
 Save your wallet address for the mining step.
@@ -553,7 +553,7 @@ Save your wallet address for the mining step.
 On the machine that will act as seed node:
 
 ```shell
-./darkfid -c diynet-darkfid.toml
+./dwowd -c diynet-dwowd.toml
 ```
 
 On first startup, the node will generate a genesis block. Share the
@@ -567,10 +567,10 @@ Start xmrig with your wallet address as the recipient:
 ./xmrig -u x+1 -o tcp://SEED_IP:18347 -t 4 -u YOUR_WALLET_ADDRESS
 ```
 
-Or use `drk` for integrated mining:
+Or use `dww` for integrated mining:
 
 ```shell
-./drk -c diynet-drk.toml -n diynet mine
+./dww -c diynet-dww.toml -n diynet mine
 ```
 
 ### Step 5: Share Configuration
@@ -598,7 +598,7 @@ seeds = ["tcp+tls://SEED_IP:18340"]
 **Genesis mismatch**: All nodes must use identical configuration and
 genesis block. Clear database and restart if genesis differs.
 
-**Wallet locked**: Kill any running `drk` processes and retry.
+**Wallet locked**: Kill any running `dww` processes and retry.
 
 ### Restoring from Snapshot
 
@@ -611,7 +611,7 @@ state.
 To run a node in full debug mode:
 
 ```shell
-$ LOG_TARGETS='!sled,!rustls,!net' ./darkfid -vv | tee /tmp/darkfid.log
+$ LOG_TARGETS='!sled,!rustls,!net' ./dwowd -vv | tee /tmp/dwowd.log
 ```
 
 The `sled` and `net` targets are very noisy and slow down the node so
@@ -620,7 +620,7 @@ we disable those.
 We can now view the log, and grep through it.
 
 ```shell
-$ tail -n +0 -f /tmp/darkfid.log | grep -a --line-buffered -v DEBUG
+$ tail -n +0 -f /tmp/dwowd.log | grep -a --line-buffered -v DEBUG
 ```
 
 [1]: https://xmrig.com/docs/miner/build

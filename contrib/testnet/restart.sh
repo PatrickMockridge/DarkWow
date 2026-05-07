@@ -4,7 +4,7 @@
 
 VERBOSE="$1"
 
-echo "Restarting darkfid..."
+echo "Restarting dwowd..."
 ./stop.sh
 sleep 2
 ./start.sh $VERBOSE

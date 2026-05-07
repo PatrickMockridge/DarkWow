@@ -1,0 +1,64 @@
+## dww configuration file
+##
+## Please make sure you go through all the settings so you can configure
+## your daemon properly.
+##
+## The default values are left commented. They can be overridden either by
+## uncommenting, or by using the command-line.
+
+# Blockchain network to use
+network = "testnet"
+
+# Flag indicating whether you want some fun in your life
+fun = true
+
+# Localnet blockchain network configuration
+[network_config."localnet"]
+# Path to blockchain cache database
+cache_path = "~/.local/share/dwow/dww/localnet/cache"
+
+# Path to wallet database
+wallet_path = "~/.local/share/dwow/dww/localnet/wallet.db"
+
+# Password for the wallet database
+wallet_pass = "testpassword123"
+
+# dwowd JSON-RPC endpoint
+endpoint = "tcp://127.0.0.1:48345"
+
+# Path to interactive shell history file
+history_path = "~/.local/share/dwow/dww/localnet/history.txt"
+
+# Testnet blockchain network configuration
+[network_config."testnet"]
+# Path to blockchain cache database
+cache_path = "~/.local/share/dwow/dww/testnet/cache"
+
+# Path to wallet database
+wallet_path = "~/.local/share/dwow/dww/testnet/wallet.db"
+
+# Password for the wallet database
+wallet_pass = "testpassword123"
+
+# dwowd JSON-RPC endpoint
+endpoint = "tcp://127.0.0.1:18345"
+
+# Path to interactive shell history file
+history_path = "~/.local/share/dwow/dww/testnet/history.txt"
+
+# Mainnet blockchain network configuration
+[network_config."mainnet"]
+# Path to blockchain cache database
+cache_path = "~/.local/share/dwow/dww/mainnet/cache"
+
+# Path to wallet database
+wallet_path = "~/.local/share/dwow/dww/mainnet/wallet.db"
+
+# Password for the wallet database
+wallet_pass = "testpassword123"
+
+# dwowd JSON-RPC endpoint
+endpoint = "tcp://127.0.0.1:8345"
+
+# Path to interactive shell history file
+history_path = "~/.local/share/dwow/dww/mainnet/history.txt"

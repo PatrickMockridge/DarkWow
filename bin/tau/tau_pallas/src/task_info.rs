@@ -28,11 +28,11 @@ use std::{
     str::FromStr,
 };
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use tinyjson::JsonValue;
 use tracing::debug;
 
-use darkfi::{
+use dwow::{
     util::{
         file::{load_json_file, save_json_file},
         time::Timestamp,

@@ -49,7 +49,7 @@
 //! | TransferV1 | 0x03 | Private transfers | PRIVACY |
 //! | SpendV1 | 0x04 | Spend with change | PRIVACY |
 
-use darkfi_sdk::{error::ContractError, pasta::pallas};
+use dwow_sdk::{error::ContractError, pasta::pallas};
 
 /// Functions available in the contract
 #[repr(u8)]
@@ -171,7 +171,7 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN: &[u8] =
 // ============================================================================
 
 /// DARK token ID (native token = 0)
-pub const DARK_TOKEN_ID: pallas::Base = pallas::Base::zero();
+pub const DRKW_TOKEN_ID: pallas::Base = pallas::Base::zero();
 
 /// Maximum coins per transaction
 pub const NATIVE_TOKEN_MAX_COINS_PER_TX: usize = 16;

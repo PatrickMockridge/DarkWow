@@ -28,11 +28,11 @@
 pub mod commit_bet_v1;
 pub mod settle_bet_v1;
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pedersen_commitment_u64, poseidon_hash, PublicKey, ScalarBlind, SecretKey},
     pasta::pallas,
 };
-use darkfi_sdk::crypto::pasta_prelude::Field;
+use dwow_sdk::crypto::pasta_prelude::Field;
 
 use crate::model::{derive_bet_id, derive_nullifier, BetId, CommitBetParamsV1};
 use crate::{DEFAULT_HOUSE_EDGE, MAX_TARGET};

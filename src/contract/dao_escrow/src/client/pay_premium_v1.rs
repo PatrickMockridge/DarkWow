@@ -23,12 +23,12 @@
 
 //! DAO-Escrow PayPremium ZK proof generation
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey, pasta_prelude::PrimeField},
     pasta::pallas,
 };
@@ -94,7 +94,7 @@ impl PayPremiumV1CallData {
     ) -> Self {
         // Derive member public key from secret
         let member_pub = PublicKey::from_secret(
-            darkfi_sdk::crypto::SecretKey::from_bytes(member_secret.to_repr()).unwrap()
+            dwow_sdk::crypto::SecretKey::from_bytes(member_secret.to_repr()).unwrap()
         );
         let (mx, my) = member_pub.xy();
         Self {

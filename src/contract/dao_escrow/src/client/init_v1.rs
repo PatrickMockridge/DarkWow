@@ -23,12 +23,12 @@
 
 //! DAO-Escrow Init ZK proof generation
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey, pasta_prelude::PrimeField},
     pasta::pallas,
 };
@@ -72,7 +72,7 @@ impl InitV1CallData {
     ) -> Self {
         // Derive owner public key from secret
         let owner_pub = PublicKey::from_secret(
-            darkfi_sdk::crypto::SecretKey::from_bytes(owner_secret.to_repr()).unwrap()
+            dwow_sdk::crypto::SecretKey::from_bytes(owner_secret.to_repr()).unwrap()
         );
         let (ox, oy) = owner_pub.xy();
         Self {

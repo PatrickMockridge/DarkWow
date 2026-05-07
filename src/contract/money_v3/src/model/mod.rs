@@ -34,18 +34,18 @@
 //! - BurnV1: Burns tokens
 //! - TransferV1: Private token transfer
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, MerkleNode},
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
-use darkfi_serial::async_trait;
+use dwow_serial::async_trait;
 
 // Re-export for use in client modules
-pub use darkfi_sdk::crypto::note::AeadEncryptedNote;
+pub use dwow_sdk::crypto::note::AeadEncryptedNote;
 
 // ============================================================================
 // TOKEN/SYMBOLIC CONSTANTS

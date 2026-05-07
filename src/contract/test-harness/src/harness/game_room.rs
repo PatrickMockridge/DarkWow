@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for GameRoom contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -75,23 +75,23 @@ impl GameRoomHarness {
         let claim_zkbin = ZkBinary::decode(claim_bin, false).unwrap();
 
         let create_room_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&create_room_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&create_room_zkbin).unwrap(),
             &create_room_zkbin,
         );
         let deposit_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&deposit_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&deposit_zkbin).unwrap(),
             &deposit_zkbin,
         );
         let place_bet_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&place_bet_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&place_bet_zkbin).unwrap(),
             &place_bet_zkbin,
         );
         let settle_pot_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&settle_pot_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&settle_pot_zkbin).unwrap(),
             &settle_pot_zkbin,
         );
         let claim_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&claim_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&claim_zkbin).unwrap(),
             &claim_zkbin,
         );
 

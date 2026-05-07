@@ -30,14 +30,14 @@ See the user guide in the book for more info.
 
 ## Wallet testing
 
-Here is a table of all the `drk` stuff that needs to be tested to verify
+Here is a table of all the `dww` stuff that needs to be tested to verify
 wallet and node functionalities work as expected, based on the current
 testnet user guide.
 
 Notes:
 1. List is not exhaustive. Missing functionalities that are not part of
 the guide can be added for future regressions.
-2. All commands were executed in `drk` interactive mode.
+2. All commands were executed in `dww` interactive mode.
 
 | #  | Description                  | Command                                                         | Status |
 |----|------------------------------|-----------------------------------------------------------------|--------|

@@ -9,10 +9,10 @@ The default location for config files is `~/.config/darkfi`.
 
 <u><b>Note</b></u>: throughout this page we generally assume you are using
 `darkirc` since it's our main p2p app currently. If you're
-using a different app such as `darkfid` or `taud`, the syntax remains
+using a different app such as `dwowd` or `taud`, the syntax remains
 but the app name will change (for example, if using `taud`, 
-the config file `~/.config/darkfi/darkirc_config.toml` 
-would become `~/.config/darkfi/taud_config.toml`).
+the config file `~/.config/dwow/darkirc_config.toml` 
+would become `~/.config/dwow/taud_config.toml`).
 
 ## Common net problems 
 
@@ -82,7 +82,7 @@ connect to seed`.
 3. You can set a peer such as `tcp+tls://example_peer:9600` in your
 config file. Ask in the telegram community channel for an active peer
 (here we are using a fake peer called `example_peer`. Then open the
-config file at `~/.config/darkfi/darkirc_config.toml` and modify the `peers`
+config file at `~/.config/dwow/darkirc_config.toml` and modify the `peers`
 field with the provided peer as follows:
 
 ```
@@ -98,16 +98,16 @@ This is possible via a list of hosts that your darkirc node keeps locally.
 You can inspect the hostlist as follows:
 
 ```
-cat ~/.local/share/darkfi/darkirc/hostlist.tsv
+cat ~/.local/share/dwow/darkirc/hostlist.tsv
 ```
 
-If the list is empty, open `~/.config/darkfi/darkirc_config` and ensure
+If the list is empty, open `~/.config/dwow/darkirc_config` and ensure
 that the `hostlist` field is set with a path of your choosing.
 
 For example:
 
 ```
-hostlist = "~/.local/share/darkfi/darkirc/hostlist.tsv"
+hostlist = "~/.local/share/dwow/darkirc/hostlist.tsv"
 ```
 
 <u><b>Note</b></u>: If you are editing a line that is commented out, don't forget
@@ -175,7 +175,7 @@ your clock is wrong, set this up and try to reconnect again.
 If you see many rapid sync-related messages in the log, it is possible that there is
 an incompatibility with your local `darkirc` database and the state of the network.
 
-This can be resolved by deleting `~/.local/share/darkfi/darkirc_db/`
+This can be resolved by deleting `~/.local/share/dwow/darkirc_db/`
 
 This is a known bug and we are working on a fix.
 
@@ -252,7 +252,7 @@ You can run any app in debug mode as follows:
 $ ./darkirc -vv
 ```
 
-Alternatively, modify the config file at `~/.config/darkfi/darkirc.toml` as follows:
+Alternatively, modify the config file at `~/.config/dwow/darkirc.toml` as follows:
 
 ```toml
 # Log to file. Off by default.
@@ -297,7 +297,7 @@ If you receive message sync issues, verify:
 2. There are hosts in the hostlists (you should get hostlists from the 
 default seed on the first run). You can find the hostlist files within 
 the respective apps' repo. For example `darkirc`'s default hostlist location 
-is `~/.local/share/darkfi/darkirc/hostlist.tsv`.
+is `~/.local/share/dwow/darkirc/hostlist.tsv`.
 
 ### Error reporting
 

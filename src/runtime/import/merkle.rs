@@ -23,12 +23,12 @@
 
 use std::io::Cursor;
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{MerkleNode, MerkleTree},
     hex::AsHex,
     wasm,
 };
-use darkfi_serial::{serialize, Decodable, Encodable, WriteExt};
+use dwow_serial::{serialize, Decodable, Encodable, WriteExt};
 use tracing::{debug, error};
 use wasmer::{FunctionEnvMut, WasmPtr};
 
@@ -38,7 +38,7 @@ use crate::runtime::vm_runtime::{ContractSection, Env};
 /// Adds data to merkle tree. The tree, database connection, and new data to add is
 /// read from `ptr` at offset specified by `len`.
 /// Returns `0` on success; otherwise, returns an error-code corresponding to a
-/// [`darkfi_sdk::error::ContractError`] (defined in the SDK).
+/// [`dwow_sdk::error::ContractError`] (defined in the SDK).
 /// See also the method `merkle_add` in `sdk/src/merkle.rs`.
 ///
 /// Permissions: update
@@ -52,7 +52,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Called in unauthorized section: {e}"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // Subtract used gas.
@@ -68,7 +68,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Failed to make slice from ptr"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     };
 
     let mut buf = vec![0_u8; len as usize];
@@ -77,7 +77,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Failed to read from memory slice: {e}"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     };
 
     // The buffer should deserialize into:
@@ -95,7 +95,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Failed to decode db_info DbHandle: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
     let db_info_index = db_info_index as usize;
@@ -107,7 +107,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Failed to decode db_roots DbHandle: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
     let db_roots_index = db_roots_index as usize;
@@ -120,7 +120,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Requested DbHandle that is out of bounds"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
     let db_info = &db_handles[db_info_index];
     let db_roots = &db_handles[db_roots_index];
@@ -131,7 +131,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Unauthorized to write to DbHandle"
         );
-        return darkfi_sdk::error::CALLER_ACCESS_DENIED
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
     // This `key` represents the sled key in info where the latest root is
@@ -142,7 +142,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Failed to decode key vec: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
 
@@ -154,7 +154,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Failed to decode key vec: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
 
@@ -166,7 +166,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Failed to decode MerkleNode: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
 
@@ -176,7 +176,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Mismatch between given length, and cursor length"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
 
     // Read the current tree using simple_db for deterministic access
@@ -187,7 +187,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Internal error getting from tree: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
 
@@ -196,7 +196,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Return data is empty"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     };
 
     debug!(
@@ -218,7 +218,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Unable to read set size: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
 
@@ -229,7 +229,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Unable to deserialize Merkle tree: {e}"
             );
-            return darkfi_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::INTERNAL_ERROR
         }
     };
 
@@ -248,7 +248,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Couldn't reserialize modified tree"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
 
     // Apply changes to simple_db
@@ -260,7 +260,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             tree_key.iter().take(8).collect::<Vec<_>>(),
             e
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
 
     // Here we add the Merkle root to our set of roots
@@ -270,7 +270,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Unable to read the root of tree"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     };
 
     debug!(
@@ -290,7 +290,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Couldn't insert to db_roots tree"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
 
     // Write a pointer to the latest known root
@@ -304,7 +304,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Couldn't insert latest root to db_info tree"
         );
-        return darkfi_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::INTERNAL_ERROR
     }
 
     // Subtract used gas.

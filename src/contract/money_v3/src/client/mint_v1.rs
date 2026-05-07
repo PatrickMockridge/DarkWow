@@ -26,12 +26,12 @@
 //! This module provides the ability to build Mint calls to create new coins.
 //! Uses Poseidon hash only - no EC operations.
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{pasta_prelude::*, poseidon_hash, BaseBlind, Keypair, MerkleNode},
     pasta::pallas,
@@ -68,7 +68,7 @@ pub struct MintCallInput {
     /// Token registry Merkle tree leaf position
     pub token_leaf_pos: u32,
     /// Token registry Merkle path
-    pub token_path: Vec<darkfi_sdk::crypto::MerkleNode>,
+    pub token_path: Vec<dwow_sdk::crypto::MerkleNode>,
     /// Recipient public key (poseidon_hash of secret)
     pub recipient: pallas::Base,
     /// Value to mint

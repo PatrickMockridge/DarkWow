@@ -30,7 +30,7 @@
 //! and generated tokens can be processed as usual between multiple parties,
 //! with detection of erroneous transactions.
 
-use darkfi::Result;
+use dwow::Result;
 use darkfi_contract_test_harness::{
     contract_graph::Contract, init_logger, Holder, TestHarness,
 };

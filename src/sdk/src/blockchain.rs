@@ -26,19 +26,22 @@
 //! # Block Reward Design
 //!
 //! DarkWow uses a **continuous exponential decay** reward schedule with a
-//! permanent tail emission. The reward decreases every block — there are
-//! no step-function halvings.
+//! permanent tail emission — merging Bitcoin's 21M hard cap with Monero's
+//! fair CPU mining and tail subsidy. The reward decreases every block;
+//! there are no step-function halvings.
+//!
+//! For the full economic rationale, see [`doc/src/arch/mining-tokenomics.md`].
 //!
 //! ## Parameters
 //!
 //! | Parameter | Value | Notes |
 //! |-----------|-------|-------|
 //! | Block time | 120 seconds | 262,980 blocks/year |
-//! | Supply cap | 21,000,000 DRK | 2.1 × 10^15 base units |
+//! | Supply cap | 21,000,000 DRKW| 2.1 × 10^15 base units |
 //! | Half-life (H) | 1,051,920 blocks | ~4 years |
 //! | Tail emission | 1% per annum | 210,000 DRK/year |
-//! | Initial reward (R₀) | 1,383,800,000 | ~13.838 DRK |
-//! | Tail reward (R_tail) | 79,800,000 | ~0.798 DRK |
+//! | Initial reward (R₀) | 1,383,764,049 | ~13.838 DRKW|
+//! | Tail reward (R_tail) | 79,853,981 | ~0.7985 DRKW|
 //!
 //! ## Reward Function
 //!
@@ -50,7 +53,7 @@
 //!
 //! ## Supply Convergence
 //!
-//! The main emission asymptotically approaches 21M DRK through the
+//! The main emission asymptotically approaches 21M DRKWthrough the
 //! geometric decay. Tail emission begins when the exponential reward
 //! drops below the per-block tail threshold (~16.5 years after launch).
 
@@ -59,7 +62,7 @@ pub mod reward {
     /// Block reward for genesis block.
     pub const GENESIS_REWARD: u64 = 0;
 
-    /// Initial block reward at height 1 (in base units: 1 DRK = 10^8).
+    /// Initial block reward at height 1 (in base units: 1 DRKW= 10^8).
     ///
     /// Derived from: R₀ = ⌊total_supply × ln(2) / half_life_blocks⌋
     /// = ⌊2,100,000,000,000,000 × ln(2) / 1,051,920⌋

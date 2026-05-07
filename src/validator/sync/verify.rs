@@ -28,7 +28,7 @@
 
 use std::collections::HashMap;
 
-use darkfi_sdk::pasta::pallas;
+use dwow_sdk::pasta::pallas;
 
 use crate::{
     blockchain::BlockInfo,
@@ -67,7 +67,7 @@ pub fn verify_header(block: &BlockInfo, previous: &BlockInfo) -> Result<()> {
 
 /// ZK data entry from ExtendedProposalMessage
 /// Format: (contract_id, zkas_ns, zkbin_bytes, instances)
-pub type ZkBinEntry = (darkfi_sdk::crypto::ContractId, String, Vec<u8>, Vec<pallas::Base>);
+pub type ZkBinEntry = (dwow_sdk::crypto::ContractId, String, Vec<u8>, Vec<pallas::Base>);
 
 /// Verify a complete block (header + ZK proofs).
 ///

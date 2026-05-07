@@ -23,7 +23,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use darkfi_sdk::{
+use dwow_sdk::{
     blockchain::{block_version, compute_fee},
     crypto::{
         keypair::Keypair,
@@ -37,7 +37,7 @@ use darkfi_sdk::{
 
 /// Namespace for PoWReward Mint_V1 ZK circuit
 const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
-use darkfi_serial::{deserialize_async, serialize_async, AsyncDecodable, AsyncEncodable};
+use dwow_serial::{deserialize_async, serialize_async, AsyncDecodable, AsyncEncodable};
 use num_bigint::BigUint;
 use sled_overlay::SledDbOverlayStateDiff;
 use smol::io::Cursor;

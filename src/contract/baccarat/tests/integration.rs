@@ -27,8 +27,8 @@ use darkfi_baccarat_contract::{
     model::{BetState, BetType, Card, CommitBetParamsV1, CommitBetUpdateV1, Hand, Outcome},
     BaccaratFunction, BACCARAT_CONTRACT_BETS_TREE, BACCARAT_CONTRACT_NULLIFIERS_TREE,
 };
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::{
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{
     crypto::{pasta_prelude::{Group, PrimeField}, PublicKey, SecretKey},
     pasta::pallas,
 };

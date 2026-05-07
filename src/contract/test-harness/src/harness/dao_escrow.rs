@@ -25,16 +25,16 @@
 //!
 //! Provides isolated testing for DaoEscrow contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, poseidon_hash, PublicKey, SecretKey},
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use darkfi_dao_escrow_contract::client::{
     init_v1::{init_v1_proof, InitV1CallData, InitV1PublicInputs},
@@ -67,9 +67,9 @@ impl DaoEscrowHarness {
         let pay_premium_zkbin = ZkBinary::decode(pay_premium_bin, false).unwrap();
 
         let init_circuit =
-            ZkCircuit::new(darkfi::zk::empty_witnesses(&init_zkbin).unwrap(), &init_zkbin);
+            ZkCircuit::new(dwow::zk::empty_witnesses(&init_zkbin).unwrap(), &init_zkbin);
         let pay_premium_circuit =
-            ZkCircuit::new(darkfi::zk::empty_witnesses(&pay_premium_zkbin).unwrap(), &pay_premium_zkbin);
+            ZkCircuit::new(dwow::zk::empty_witnesses(&pay_premium_zkbin).unwrap(), &pay_premium_zkbin);
 
         let init_pk = ProvingKey::build(init_zkbin.k, &init_circuit);
         let pay_premium_pk = ProvingKey::build(pay_premium_zkbin.k, &pay_premium_circuit);
@@ -104,7 +104,7 @@ impl DaoEscrowHarness {
             dao_bulla,
             owner_pubkey: owner_pub,
             endowment_token_id,
-            bulla_blind: darkfi_sdk::crypto::Blind(bulla_blind),
+            bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
             enable_drain_protection: false,
         };
 
@@ -167,8 +167,8 @@ impl DaoEscrowHarness {
             value,
             token_id,
             expiry,
-            membership_blind: darkfi_sdk::crypto::Blind(membership_blind),
-            value_blind: darkfi_sdk::crypto::Blind(value_blind),
+            membership_blind: dwow_sdk::crypto::Blind(membership_blind),
+            value_blind: dwow_sdk::crypto::Blind(value_blind),
             member_pubkey: member_pub,
         };
 
@@ -190,7 +190,7 @@ impl DaoEscrowHarness {
             dao_bulla,
             owner_pubkey,
             endowment_token_id,
-            bulla_blind: darkfi_sdk::crypto::Blind(bulla_blind),
+            bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
             enable_drain_protection: false,
         };
         let mut call_data = vec![];
@@ -303,12 +303,12 @@ impl super::ContractHarness for DaoEscrowHarness {
 pub struct InitializeResult {
     pub call_data: Vec<u8>,
     pub public_inputs: InitV1PublicInputs,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
 }
 
 /// Result of paying premium to join DAO-Escrow
 pub struct PayPremiumResult {
     pub call_data: Vec<u8>,
     pub public_inputs: PayPremiumV1PublicInputs,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
 }

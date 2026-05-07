@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_serial::{async_trait, SerialDecodable, SerialEncodable};
+use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};
 
 #[derive(SerialEncodable, SerialDecodable, Clone, Debug)]
 pub struct GenEvent {

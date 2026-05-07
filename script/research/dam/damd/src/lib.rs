@@ -29,7 +29,7 @@ use std::{
 use smol::lock::Mutex;
 use tracing::{debug, error, info};
 
-use darkfi::{
+use dwow::{
     net::settings::Settings,
     rpc::{
         jsonrpc::JsonSubscriber,

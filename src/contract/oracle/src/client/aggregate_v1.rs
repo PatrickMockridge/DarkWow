@@ -23,12 +23,12 @@
 
 //! Oracle aggregate_v1 ZK proof generation
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::pasta::pallas;
+use dwow_sdk::pasta::pallas;
 use rand::rngs::OsRng;
 
 /// AggregateV1 circuit public inputs

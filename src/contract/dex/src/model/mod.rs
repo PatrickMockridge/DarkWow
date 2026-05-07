@@ -72,8 +72,8 @@
 //! - On-chain Merkle root verification
 //! - Event-based state synchronization between contracts
 
-use darkfi_serial::{SerialDecodable, SerialEncodable};
-use darkfi_sdk::crypto::{schnorr::Signature, IntentCommitment, IntentNullifier, PublicKey};
+use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::crypto::{schnorr::Signature, IntentCommitment, IntentNullifier, PublicKey};
 
 /// Namespace for DEX intents (used with generic intent primitives)
 pub const DEX_NAMESPACE: u64 = 0x0003;

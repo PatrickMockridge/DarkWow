@@ -28,9 +28,9 @@
 //!
 //! This ensures identical genesis initialization across all environments.
 
-use darkfi::blockchain::{BlockInfo, Blockchain, BlockchainOverlay};
-use darkfi::validator::{utils::deploy_native_contracts, ValidatorConfig};
-use darkfi::Result;
+use dwow::blockchain::{BlockInfo, Blockchain, BlockchainOverlay};
+use dwow::validator::{utils::deploy_native_contracts, ValidatorConfig};
+use dwow::Result;
 use num_bigint::BigUint;
 use sled;
 

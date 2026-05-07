@@ -25,15 +25,15 @@
 //!
 //! Provides isolated testing for Subscription contract.
 
-use darkfi::{
+use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, MerkleNode, PublicKey},
     pasta::pallas,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use darkfi_subscription_contract::client::{
     rate_limit_v1::{
@@ -87,19 +87,19 @@ impl SubscriptionHarness {
         let update_usage_zkbin = ZkBinary::decode(update_bin, false).unwrap();
 
         let subscribe_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&subscribe_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&subscribe_zkbin).unwrap(),
             &subscribe_zkbin,
         );
         let verify_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&verify_access_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&verify_access_zkbin).unwrap(),
             &verify_access_zkbin,
         );
         let rate_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&rate_limit_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&rate_limit_zkbin).unwrap(),
             &rate_limit_zkbin,
         );
         let update_circuit = ZkCircuit::new(
-            darkfi::zk::empty_witnesses(&update_usage_zkbin).unwrap(),
+            dwow::zk::empty_witnesses(&update_usage_zkbin).unwrap(),
             &update_usage_zkbin,
         );
 
@@ -407,26 +407,26 @@ impl super::ContractHarness for SubscriptionHarness {
 /// Result of subscribe
 pub struct SubscribeResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: SubscribePublicInputs,
 }
 
 /// Result of verify_access
 pub struct VerifyAccessResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: VerifyAccessPublicInputs,
 }
 
 /// Result of rate_limit
 pub struct RateLimitResult {
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: RateLimitPublicInputs,
 }
 
 /// Result of update_usage
 pub struct UpdateUsageResult {
     pub call_data: Vec<u8>,
-    pub proof: darkfi::zk::Proof,
+    pub proof: dwow::zk::Proof,
     pub public_inputs: UpdateUsagePublicInputs,
 }

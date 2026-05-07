@@ -6,7 +6,7 @@ communication medium between each other using a basic keypair setup.
 
 ## Configuring darkirc_config.toml
 
-`darkirc_config.toml` should be created by default in `~/.config/darkfi/`
+`darkirc_config.toml` should be created by default in `~/.config/dwow/`
 when you first run `darkirc`.
 
 Generate a keypair using the following command: 

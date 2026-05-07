@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use darkfi::{
+use dwow::{
     net::Settings,
     rpc::settings::RpcSettings,
     util::logger::{setup_test_logger, Level},
@@ -31,7 +31,7 @@ use darkfi::{
     Result,
 };
 use darkfi_contract_test_harness::init_logger;
-use darkfi_sdk::{crypto::keypair::Network, num_traits::One};
+use dwow_sdk::{crypto::keypair::Network, num_traits::One};
 use num_bigint::BigUint;
 use smol::Executor;
 use tracing::warn;
@@ -282,19 +282,19 @@ fn darkfid_programmatic_control() -> Result<()> {
         || {
             smol::block_on(async {
                 // Daemon configuration
-                let mut genesis_block = darkfi::blockchain::BlockInfo::default();
+                let mut genesis_block = dwow::blockchain::BlockInfo::default();
                 let producer_tx = genesis_block.txs.pop().unwrap();
                 genesis_block.append_txs(vec![producer_tx]);
                 let sled_db = sled::Config::new().temporary(true).open().unwrap();
-                let overlay = darkfi::blockchain::BlockchainOverlay::new(
-                    &darkfi::blockchain::Blockchain::new(&sled_db).unwrap(),
+                let overlay = dwow::blockchain::BlockchainOverlay::new(
+                    &dwow::blockchain::Blockchain::new(&sled_db).unwrap(),
                 )
                 .unwrap();
-                darkfi::validator::utils::deploy_native_contracts(&overlay, 20).await.unwrap();
+                dwow::validator::utils::deploy_native_contracts(&overlay, 20).await.unwrap();
                 let diff = overlay.lock().unwrap().overlay.lock().unwrap().diff(&[]).unwrap();
                 genesis_block.header.state_root =
                     overlay.lock().unwrap().contracts.update_state_monotree(&diff).unwrap();
-                let config = darkfi::validator::ValidatorConfig {
+                let config = dwow::validator::ValidatorConfig {
                     confirmation_threshold: 1,
                     max_forks: 8,
                     pow_target: 20,
@@ -321,7 +321,7 @@ fn darkfid_programmatic_control() -> Result<()> {
                     Network::Mainnet,
                     &sled_db,
                     &config,
-                    &darkfi::net::Settings::default(),
+                    &dwow::net::Settings::default(),
                     &None,
                     &ex,
                     true,

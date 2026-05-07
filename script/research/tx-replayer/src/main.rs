@@ -24,7 +24,7 @@
 use std::collections::HashMap;
 
 use clap::Parser;
-use darkfi::{
+use dwow::{
     blockchain::{
         Blockchain, BlockchainOverlay, BlockchainOverlayPtr, block_store::append_tx_to_merkle_tree,
     },
@@ -39,7 +39,7 @@ use darkfi::{
     },
     zk::VerifyingKey,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     blockchain::compute_fee,
     crypto::{ContractId, MerkleTree, PublicKey},
     dark_tree::dark_forest_leaf_vec_integrity_check,
@@ -47,7 +47,7 @@ use darkfi_sdk::{
     pasta::pallas,
     tx::TransactionHash,
 };
-use darkfi_serial::{AsyncDecodable, AsyncEncodable, deserialize_async, serialize_async};
+use dwow_serial::{AsyncDecodable, AsyncEncodable, deserialize_async, serialize_async};
 use smol::io::Cursor;
 
 #[derive(Parser)]
@@ -177,7 +177,7 @@ async fn verify_transaction_wasm(
     tree: &mut MerkleTree,
     _verifying_keys: &mut HashMap<[u8; 32], HashMap<String, VerifyingKey>>,
     verify_fee: bool,
-) -> darkfi::Result<GasData> {
+) -> dwow::Result<GasData> {
     let tx_hash = tx.hash();
 
     // Create a FeeData instance to hold the calculated fee data
@@ -331,7 +331,7 @@ async fn verify_transaction_zkps(
     tree: &mut MerkleTree,
     verifying_keys: &mut HashMap<[u8; 32], HashMap<String, VerifyingKey>>,
     verify_fee: bool,
-) -> darkfi::Result<GasData> {
+) -> dwow::Result<GasData> {
     let tx_hash = tx.hash();
 
     // Create a FeeData instance to hold the calculated fee data
@@ -505,7 +505,7 @@ async fn verify_transaction_signatures(
     tree: &mut MerkleTree,
     _verifying_keys: &mut HashMap<[u8; 32], HashMap<String, VerifyingKey>>,
     verify_fee: bool,
-) -> darkfi::Result<GasData> {
+) -> dwow::Result<GasData> {
     let tx_hash = tx.hash();
 
     // Create a FeeData instance to hold the calculated fee data

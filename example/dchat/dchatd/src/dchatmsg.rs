@@ -25,14 +25,14 @@
 use smol::lock::Mutex;
 use std::sync::Arc;
 
-use darkfi::{
+use dwow::{
     impl_p2p_message,
     net::{
         metering::{MeteringConfiguration, DEFAULT_METERING_CONFIGURATION},
         Message,
     },
 };
-use darkfi_serial::{async_trait, SerialDecodable, SerialEncodable};
+use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};
 
 pub type DchatMsgsBuffer = Arc<Mutex<Vec<DchatMsg>>>;
 

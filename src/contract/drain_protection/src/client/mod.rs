@@ -83,13 +83,13 @@
 //!     .build()?;
 //! ```
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{PublicKey, SecretKey},
     pasta::pallas,
 };
 #[cfg(feature = "async")]
-use darkfi_serial::async_trait;
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::async_trait;
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{
     DrainConfig, ExitParamsV1, FundId, LockParamsV1, ProposeParamsV1, RateLimit,

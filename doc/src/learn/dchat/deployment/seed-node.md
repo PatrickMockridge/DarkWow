@@ -2,7 +2,7 @@
 
 Let's try building `dchatd` at this point and running it. Assuming
 `dchatd` is located in the `example/dchat` directory, we build it from
-the `darkfi` root directory using the following command:
+the `dwow` root directory using the following command:
 
 ```bash
 cargo build --all-features --package dchatd
@@ -31,7 +31,7 @@ Everytime we start an `OutboundSession`, we attempt to connect to a seed
 using a `SeedSyncSession`.  If the `SeedSyncSession` fails we cannot
 establish any outbound connections. Let's remedy that.
 
-`darkfi` provides a standard seed node called `lilith` that can act as
+`dwow` provides a standard seed node called `lilith` that can act as
 the seed for many different protocols at the same time.
 
 Just like any p2p daemon, a seed node defines its networks settings

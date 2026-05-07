@@ -25,15 +25,15 @@
 //!
 //! This module implements the client-side API for NativeToken contract interaction.
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::pasta_prelude::PrimeField,
     pasta::pallas,
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
-use darkfi_serial::async_trait;
+use dwow_serial::async_trait;
 
 /// `NativeToken::BurnV1` API
 pub mod burn_v1;

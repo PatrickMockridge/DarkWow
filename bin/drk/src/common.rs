@@ -23,8 +23,8 @@
 
 use std::collections::HashMap;
 
-use darkfi::{tx::Transaction, util::parse::encode_base10, zk::halo2::Field};
-use darkfi_sdk::{
+use dwow::{tx::Transaction, util::parse::encode_base10, zk::halo2::Field};
+use dwow_sdk::{
     crypto::{
         keypair::{Address, Network, PublicKey, SecretKey, StandardAddress},
         ContractId, DEPLOYOOOR_CONTRACT_ID,
@@ -33,11 +33,11 @@ use darkfi_sdk::{
 };
 
 use crate::contract_imports::MONEY_V3_CONTRACT_ID;
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 use prettytable::{format, row, Table};
 
 use crate::contract_imports::money::{MoneyV3Note, TokenId, BALANCE_BASE10_DECIMALS};
-use darkfi_sdk::crypto::util::FieldElemAsStr;
+use dwow_sdk::crypto::util::FieldElemAsStr;
 
 pub fn prettytable_addrs(
     network: Network,

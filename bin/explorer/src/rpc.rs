@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use darkfi::{
+use dwow::{
     blockchain::{header_store::PowData, BlockInfo},
     rpc::jsonrpc::{
         ErrorCode::{InternalError, InvalidParams},
@@ -33,8 +33,8 @@ use darkfi::{
     util::{encoding::base64, parse::encode_base10},
 };
 use darkfi_money_contract::MoneyFunction;
-use darkfi_sdk::crypto::contract_id::MONEY_CONTRACT_ID;
-use darkfi_serial::{deserialize_async, serialize_async};
+use dwow_sdk::crypto::contract_id::MONEY_CONTRACT_ID;
+use dwow_serial::{deserialize_async, serialize_async};
 use monero::{consensus::encode::Encodable, VarInt};
 use tiny_keccak::{Hasher, Keccak};
 use tinyjson::JsonValue;

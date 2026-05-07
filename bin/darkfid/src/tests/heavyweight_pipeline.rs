@@ -58,12 +58,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use darkfi::{
+use dwow::{
     tx::{ContractCallLeaf, TransactionBuilder},
     Result,
 };
 use darkfi_contract_test_harness::harness::ContractHarness;
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{keypair::Keypair, poseidon_hash, ContractId},
     dark_tree::DarkTree,
     pasta::pallas,
@@ -193,8 +193,8 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         &mut self,
         function_id: u8,
         mut call_data: Vec<u8>,
-        proofs: Vec<darkfi::zk::Proof>,
-    ) -> std::result::Result<darkfi::tx::Transaction, HeavyweightError> {
+        proofs: Vec<dwow::zk::Proof>,
+    ) -> std::result::Result<dwow::tx::Transaction, HeavyweightError> {
         self.exec_with_children(function_id, call_data, proofs, vec![], vec![]).await
     }
 
@@ -205,10 +205,10 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         &mut self,
         function_id: u8,
         mut call_data: Vec<u8>,
-        proofs: Vec<darkfi::zk::Proof>,
+        proofs: Vec<dwow::zk::Proof>,
         children: Vec<ContractCall>,
-        child_proofs: Vec<Vec<darkfi::zk::Proof>>,
-    ) -> std::result::Result<darkfi::tx::Transaction, HeavyweightError> {
+        child_proofs: Vec<Vec<dwow::zk::Proof>>,
+    ) -> std::result::Result<dwow::tx::Transaction, HeavyweightError> {
         let contract_id =
             self.contract_id.ok_or(HeavyweightError::NotDeployed)?;
 
@@ -315,16 +315,16 @@ async fn test_dex_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{DexHarness, MoneyV3Harness};
-    use darkfi_sdk::crypto::{SecretKey, pasta_prelude::PrimeField};
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::{SecretKey, pasta_prelude::PrimeField};
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18646".to_string(),
@@ -338,7 +338,7 @@ async fn test_dex_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18560".to_string(),
@@ -463,14 +463,14 @@ async fn test_money_v3_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::MoneyV3Harness;
-    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::pasta_prelude::PrimeField;
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18570".to_string(),
@@ -571,9 +571,9 @@ async fn test_attestation_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::AttestationHarness;
-    use darkfi::zk::halo2::Field;
-    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
-    use darkfi_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
+    use dwow_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas::Base;
     use darkfi_attestation_contract::model::Predicate;
     use rand::rngs::OsRng;
 
@@ -582,7 +582,7 @@ async fn test_attestation_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18582".to_string(),
@@ -710,9 +710,9 @@ async fn test_auction_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::AuctionHarness;
-    use darkfi::zk::halo2::Field;
-    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
-    use darkfi_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
+    use dwow_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas::Base;
     use rand::rngs::OsRng;
 
     let harness = AuctionHarness::spawn();
@@ -720,7 +720,7 @@ async fn test_auction_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18584".to_string(),
@@ -849,18 +849,18 @@ async fn test_baccarat_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{BaccaratHarness, MoneyV3Harness};
-    use darkfi_sdk::crypto::pasta_prelude::{Group, PrimeField};
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi_sdk::crypto::SecretKey;
+    use dwow_sdk::crypto::pasta_prelude::{Group, PrimeField};
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow_sdk::crypto::SecretKey;
     use darkfi_baccarat_contract::model::BetType;
-    use darkfi::zk::halo2::Field;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first to get its contract_id for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18586".to_string(),
@@ -877,7 +877,7 @@ async fn test_baccarat_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18590".to_string(),
@@ -895,7 +895,7 @@ async fn test_baccarat_heavyweight_impl(
 
     // Generate player keypair
     let player_secret = SecretKey::random(&mut OsRng);
-    let player_pub = darkfi_sdk::crypto::PublicKey::from_secret(player_secret);
+    let player_pub = dwow_sdk::crypto::PublicKey::from_secret(player_secret);
 
     // Bet parameters
     let bet_value = 1000u64;
@@ -986,7 +986,7 @@ async fn test_baccarat_heavyweight_impl(
     // House closes the second bet (simulating timeout scenario)
     // The house uses its secret key to sign the close request
     let house_secret = SecretKey::random(&mut OsRng);
-    let house_pub = darkfi_sdk::crypto::PublicKey::from_secret(house_secret);
+    let house_pub = dwow_sdk::crypto::PublicKey::from_secret(house_secret);
 
     let close_result = harness2.house_close(
         commit_result2.bet_id,
@@ -1024,9 +1024,9 @@ async fn test_bridge_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{MoneyV3Harness, BridgeHarness};
-    use darkfi::zk::halo2::Field;
-    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, MerkleNode, MerkleTree, poseidon_hash};
-    use darkfi_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
+    use dwow_sdk::crypto::{pasta_prelude::PrimeField, MerkleNode, MerkleTree, poseidon_hash};
+    use dwow_sdk::pasta::pallas::Base;
     use darkfi_bridge_contract::model::ExternalChain;
     use rand::rngs::OsRng;
 
@@ -1034,7 +1034,7 @@ async fn test_bridge_heavyweight_impl(
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18634".to_string(),
@@ -1051,7 +1051,7 @@ async fn test_bridge_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18636".to_string(),
@@ -1086,8 +1086,8 @@ async fn test_bridge_heavyweight_impl(
 
     // Recipient keypair
     let recipient_secret = Base::random(&mut OsRng);
-    let recipient_public = darkfi_sdk::crypto::PublicKey::from_secret(
-        darkfi_sdk::crypto::SecretKey::from_bytes(recipient_secret.to_repr()).unwrap()
+    let recipient_public = dwow_sdk::crypto::PublicKey::from_secret(
+        dwow_sdk::crypto::SecretKey::from_bytes(recipient_secret.to_repr()).unwrap()
     );
 
     // External block hash (accepted as-is by circuit — not verified against light client)
@@ -1145,16 +1145,16 @@ async fn test_dao_escrow_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{MoneyV3Harness, DaoEscrowHarness};
-    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::pasta_prelude::PrimeField;
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first to get its contract_id for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18592".to_string(),
@@ -1171,7 +1171,7 @@ async fn test_dao_escrow_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18592".to_string(),
@@ -1194,8 +1194,8 @@ async fn test_dao_escrow_heavyweight_impl(
     let bulla_blind = Base::random(&mut OsRng);
 
     // Compute endowment_bulla the same way the circuit does
-    let owner_pub = darkfi_sdk::crypto::PublicKey::from_secret(
-        darkfi_sdk::crypto::SecretKey::from_bytes(owner_secret.to_repr()).unwrap()
+    let owner_pub = dwow_sdk::crypto::PublicKey::from_secret(
+        dwow_sdk::crypto::SecretKey::from_bytes(owner_secret.to_repr()).unwrap()
     );
     let (owner_pub_x, owner_pub_y) = owner_pub.xy();
     let dao_bulla = Base::from(1); // DAO bulla (simplified for test)
@@ -1308,16 +1308,16 @@ async fn test_darkbet_exchange_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{MoneyV3Harness, DarkbetExchangeHarness};
-    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
-    use darkfi_sdk::pasta::pallas::{Base, Scalar};
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::pasta_prelude::PrimeField;
+    use dwow_sdk::pasta::pallas::{Base, Scalar};
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first to get its contract_id for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18594".to_string(),
@@ -1334,7 +1334,7 @@ async fn test_darkbet_exchange_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18594".to_string(),
@@ -1445,16 +1445,16 @@ async fn test_darktoshi_dice_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{DarkToshiDiceHarness, MoneyV3Harness};
-    use darkfi_sdk::crypto::pasta_prelude::{Group, PrimeField};
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::pasta_prelude::{Group, PrimeField};
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first to get its contract_id for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18596".to_string(),
@@ -1471,7 +1471,7 @@ async fn test_darktoshi_dice_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18620".to_string(),
@@ -1496,8 +1496,8 @@ async fn test_darktoshi_dice_heavyweight_impl(
 
     // Player commits to a bet
     let player_secret = Base::random(&mut OsRng);
-    let player_pub = darkfi_sdk::crypto::PublicKey::from_secret(
-        darkfi_sdk::crypto::SecretKey::from_bytes(player_secret.to_repr()).unwrap()
+    let player_pub = dwow_sdk::crypto::PublicKey::from_secret(
+        dwow_sdk::crypto::SecretKey::from_bytes(player_secret.to_repr()).unwrap()
     );
     let bet_value = 100u64;
     let target = 99u8; // High target = good odds for player
@@ -1558,16 +1558,16 @@ async fn test_escrow_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{EscrowHarness, MoneyV3Harness};
-    use darkfi_sdk::crypto::pasta_prelude::{Group, PrimeField};
-    use darkfi_sdk::pasta::pallas::{Base, Scalar};
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::pasta_prelude::{Group, PrimeField};
+    use dwow_sdk::pasta::pallas::{Base, Scalar};
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     // First, deploy money_v3 to get its contract_id for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18598".to_string(),
@@ -1585,7 +1585,7 @@ async fn test_escrow_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18640".to_string(),
@@ -1605,9 +1605,9 @@ async fn test_escrow_heavyweight_impl(
     let buyer_secret = Base::random(&mut OsRng);
     let seller_secret = Base::random(&mut OsRng);
     let buyer_pubkey =
-        darkfi_sdk::crypto::PublicKey::from_secret(darkfi_sdk::crypto::SecretKey::from_bytes(buyer_secret.to_repr()).unwrap());
+        dwow_sdk::crypto::PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_bytes(buyer_secret.to_repr()).unwrap());
     let seller_pubkey =
-        darkfi_sdk::crypto::PublicKey::from_secret(darkfi_sdk::crypto::SecretKey::from_bytes(seller_secret.to_repr()).unwrap());
+        dwow_sdk::crypto::PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_bytes(seller_secret.to_repr()).unwrap());
 
     let value = 1000u64;
     let token_id = Base::from(1);
@@ -1695,9 +1695,9 @@ async fn test_identity_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::IdentityHarness;
-    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::pasta_prelude::PrimeField;
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     let harness = IdentityHarness::spawn();
@@ -1705,7 +1705,7 @@ async fn test_identity_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18600".to_string(),
@@ -1759,8 +1759,8 @@ async fn test_identity_heavyweight_impl(
     let attribute_value = Base::from(50);
     let threshold = Base::from(75);
     let commitment = issue_result.public_inputs.commitment;
-    let issuer_public = darkfi_sdk::crypto::PublicKey::from_secret(
-        darkfi_sdk::crypto::SecretKey::from_bytes(issuer_secret.to_repr()).unwrap()
+    let issuer_public = dwow_sdk::crypto::PublicKey::from_secret(
+        dwow_sdk::crypto::SecretKey::from_bytes(issuer_secret.to_repr()).unwrap()
     );
     let claim_type = Base::from(1);
 
@@ -1811,7 +1811,7 @@ async fn test_insurance_market_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18602".to_string(),
@@ -1851,9 +1851,9 @@ async fn test_labor_market_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::LaborMarketHarness;
-    use darkfi_sdk::crypto::{PublicKey, SecretKey, pasta_prelude::PrimeField};
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::{PublicKey, SecretKey, pasta_prelude::PrimeField};
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     let harness = LaborMarketHarness::spawn();
@@ -1861,7 +1861,7 @@ async fn test_labor_market_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18604".to_string(),
@@ -1969,18 +1969,18 @@ async fn test_lottery_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{MoneyV3Harness, LotteryHarness};
-    use darkfi::zk::halo2::Field;
-    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey, poseidon_hash};
-    use darkfi_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
+    use dwow_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey, poseidon_hash};
+    use dwow_sdk::pasta::pallas::Base;
     use darkfi_lottery_contract::model::{InitializeParamsV1, LotteryConfig, PrizeTierConfig};
-    use darkfi_serial::Encodable;
+    use dwow_serial::Encodable;
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first to get its contract_id for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18606".to_string(),
@@ -1997,7 +1997,7 @@ async fn test_lottery_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18608".to_string(),
@@ -2128,9 +2128,9 @@ async fn test_oracle_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::OracleHarness;
-    use darkfi_sdk::crypto::pasta_prelude::{Field, PrimeField};
-    use darkfi_sdk::crypto::SecretKey;
-    use darkfi_sdk::pasta::pallas;
+    use dwow_sdk::crypto::pasta_prelude::{Field, PrimeField};
+    use dwow_sdk::crypto::SecretKey;
+    use dwow_sdk::pasta::pallas;
     use rand::rngs::OsRng;
 
     let harness = OracleHarness::spawn();
@@ -2138,7 +2138,7 @@ async fn test_oracle_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18608".to_string(),
@@ -2156,8 +2156,8 @@ async fn test_oracle_heavyweight_impl(
 
     // Generate oracle operator keypair
     let oracle_secret = pallas::Base::random(&mut OsRng);
-    let oracle_pub = darkfi_sdk::crypto::PublicKey::from_secret(
-        darkfi_sdk::crypto::SecretKey::from_bytes(oracle_secret.to_repr()).unwrap()
+    let oracle_pub = dwow_sdk::crypto::PublicKey::from_secret(
+        dwow_sdk::crypto::SecretKey::from_bytes(oracle_secret.to_repr()).unwrap()
     );
     let oracle_id = pallas::Base::random(&mut OsRng);
 
@@ -2204,9 +2204,9 @@ async fn test_pool_stake_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::PoolStakeHarness;
-    use darkfi::zk::halo2::Field;
-    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
-    use darkfi_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
+    use dwow_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas::Base;
     use rand::rngs::OsRng;
 
     let harness = PoolStakeHarness::spawn();
@@ -2214,7 +2214,7 @@ async fn test_pool_stake_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18610".to_string(),
@@ -2326,14 +2326,14 @@ async fn test_slot_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{MoneyV3Harness, SlotHarness};
-    use darkfi_sdk::crypto::pasta_prelude::Group;
-    use darkfi_sdk::pasta::pallas::Base;
+    use dwow_sdk::crypto::pasta_prelude::Group;
+    use dwow_sdk::pasta::pallas::Base;
 
     // Deploy money_v3 first to get its contract_id for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18614".to_string(),
@@ -2350,7 +2350,7 @@ async fn test_slot_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18612".to_string(),
@@ -2382,13 +2382,13 @@ async fn test_slot_heavyweight_impl(
 
     // Commit a spin (0x01) - requires money_v3::transfer_v1 child call for bet locking
     // We can build the call_data but execution will fail without child call support
-    let player_pub = darkfi_sdk::crypto::PublicKey::from_secret(
-        darkfi_sdk::crypto::SecretKey::from(Base::from(1))
+    let player_pub = dwow_sdk::crypto::PublicKey::from_secret(
+        dwow_sdk::crypto::SecretKey::from(Base::from(1))
     );
     let secret_nonce = Base::from(12345);
     let blind = Base::from(67890);
     let token_id = Base::zero();
-    let value_commit = darkfi_sdk::pasta::pallas::Point::identity();
+    let value_commit = dwow_sdk::pasta::pallas::Point::identity();
 
     let commit_result = harness.commit_spin(
         player_pub,
@@ -2448,16 +2448,16 @@ async fn test_roulette_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{MoneyV3Harness, RouletteHarness};
-    use darkfi_sdk::crypto::pasta_prelude::{Group, PrimeField};
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::pasta_prelude::{Group, PrimeField};
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first to get its contract_id for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18616".to_string(),
@@ -2474,7 +2474,7 @@ async fn test_roulette_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18618".to_string(),
@@ -2498,8 +2498,8 @@ async fn test_roulette_heavyweight_impl(
     };
 
     // Create house keypair
-    let house_secret = darkfi_sdk::crypto::SecretKey::random(&mut OsRng);
-    let house_pub = darkfi_sdk::crypto::PublicKey::from_secret(house_secret);
+    let house_secret = dwow_sdk::crypto::SecretKey::random(&mut OsRng);
+    let house_pub = dwow_sdk::crypto::PublicKey::from_secret(house_secret);
 
     // Initialize roulette table (0x00) - no child call
     let init_result = harness
@@ -2511,15 +2511,15 @@ async fn test_roulette_heavyweight_impl(
     info!("Executed roulette::0x00 (tx: {:?})", tx.hash());
 
     // Derive table_id (same as contract: poseidon_hash([house_pub.x, house_pub.y, created_at]))
-    let table_id = darkfi_sdk::crypto::poseidon_hash([
+    let table_id = dwow_sdk::crypto::poseidon_hash([
         house_pub.x(),
         house_pub.y(),
         Base::from(1), // created_at block
     ]);
 
     // Create player keypair
-    let player_secret = darkfi_sdk::crypto::SecretKey::random(&mut OsRng);
-    let player_pub = darkfi_sdk::crypto::PublicKey::from_secret(player_secret);
+    let player_secret = dwow_sdk::crypto::SecretKey::random(&mut OsRng);
+    let player_pub = dwow_sdk::crypto::PublicKey::from_secret(player_secret);
 
     // PlaceBetV1 (0x01) - requires money_v3::transfer_v1 child call
     // BetType::Straight = 0
@@ -2604,16 +2604,16 @@ async fn test_stablecoin_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{MoneyV3Harness, StablecoinHarness};
-    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, BaseBlind};
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::{pasta_prelude::PrimeField, BaseBlind};
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first to get its contract_id for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18614".to_string(),
@@ -2630,7 +2630,7 @@ async fn test_stablecoin_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18614".to_string(),
@@ -2751,9 +2751,9 @@ async fn test_subscription_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::SubscriptionHarness;
-    use darkfi::zk::halo2::Field;
-    use darkfi_sdk::crypto::{MerkleNode, PublicKey, SecretKey, pasta_prelude::PrimeField, poseidon_hash};
-    use darkfi_sdk::pasta::pallas::{Base, Scalar};
+    use dwow::zk::halo2::Field;
+    use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey, pasta_prelude::PrimeField, poseidon_hash};
+    use dwow_sdk::pasta::pallas::{Base, Scalar};
     use rand::rngs::OsRng;
 
     let harness = SubscriptionHarness::spawn();
@@ -2761,7 +2761,7 @@ async fn test_subscription_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18636".to_string(),
@@ -2894,11 +2894,11 @@ async fn test_tender_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::TenderHarness;
-    use darkfi::zk::halo2::Field;
-    use darkfi_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
-    use darkfi_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
+    use dwow_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas::Base;
     use darkfi_tender_contract::model::CloseTenderParamsV1;
-    use darkfi_serial::Encodable;
+    use dwow_serial::Encodable;
     use rand::rngs::OsRng;
 
     let harness = TenderHarness::spawn();
@@ -2906,7 +2906,7 @@ async fn test_tender_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18638".to_string(),
@@ -3035,17 +3035,17 @@ async fn test_betting_stake_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{BettingStakeHarness, MoneyV3Harness, ClaimStakeInfo, UnstakeStakeInfo};
-    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
-    use darkfi_sdk::pasta::pallas::Base;
-    use darkfi::zk::halo2::Field;
-    use darkfi_sdk::crypto::{PublicKey, SecretKey};
+    use dwow_sdk::crypto::pasta_prelude::PrimeField;
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow::zk::halo2::Field;
+    use dwow_sdk::crypto::{PublicKey, SecretKey};
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first to get its contract_id for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18622".to_string(),
@@ -3062,7 +3062,7 @@ async fn test_betting_stake_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18622".to_string(),
@@ -3101,13 +3101,13 @@ async fn test_betting_stake_heavyweight_impl(
     info!("Executed betting_stake::0x00 (tx: {:?})", tx.hash());
 
     // Stake capital against the table (0x01) - requires money_v3 child call
-    let table_id = darkfi_sdk::crypto::poseidon_hash([betting_contract_id, Base::from(0u64)]);
+    let table_id = dwow_sdk::crypto::poseidon_hash([betting_contract_id, Base::from(0u64)]);
     let staker_secret = SecretKey::random(&mut OsRng);
     let staker_pub = PublicKey::from_secret(staker_secret);
     let amount = 1000u64;
     let token_id = Base::zero();
     let nonce = 0u64;
-    let spend_hook = darkfi_sdk::crypto::poseidon_hash([money_contract_id.inner(), Base::from(0x04)]);
+    let spend_hook = dwow_sdk::crypto::poseidon_hash([money_contract_id.inner(), Base::from(0x04)]);
     let user_data = Base::zero();
 
     let stake_result = harness.stake(
@@ -3147,7 +3147,7 @@ async fn test_betting_stake_heavyweight_impl(
     info!("Executed betting_stake::0x04 (tx: {:?})", tx.hash());
 
     // Claim accumulated earnings (0x03)
-    let stake_id = darkfi_sdk::crypto::poseidon_hash([
+    let stake_id = dwow_sdk::crypto::poseidon_hash([
         table_id,
         staker_pub.x(),
         staker_pub.y(),
@@ -3229,8 +3229,8 @@ async fn test_native_token_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::NativeTokenHarness;
-    use darkfi_sdk::blockchain::reward;
-    use darkfi_sdk::crypto::Keypair;
+    use dwow_sdk::blockchain::reward;
+    use dwow_sdk::crypto::Keypair;
     use rand::rngs::OsRng;
 
     let harness = NativeTokenHarness::spawn();
@@ -3238,7 +3238,7 @@ async fn test_native_token_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18624".to_string(),
@@ -3269,7 +3269,7 @@ async fn test_native_token_heavyweight_impl(
     // expected_reward(1) ≈ INITIAL_REWARD (exponential decay is negligible at block 1).
     // The coin's inner value is non-zero when reward was computed correctly.
     assert!(
-        mint_result.output.coin.inner() != darkfi_sdk::pasta::pallas::Base::zero(),
+        mint_result.output.coin.inner() != dwow_sdk::pasta::pallas::Base::zero(),
         "Coin commitment must be non-zero (reward was computed)"
     );
     info!("PoW reward commitment valid — reward schedule exercised");
@@ -3326,16 +3326,16 @@ async fn test_relayer_endowment_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{MoneyV3Harness, RelayerEndowmentHarness};
-    use darkfi_sdk::crypto::pasta_prelude::PrimeField;
-    use darkfi_sdk::pasta::pallas::{Base, Scalar};
-    use darkfi::zk::halo2::Field;
+    use dwow_sdk::crypto::pasta_prelude::PrimeField;
+    use dwow_sdk::pasta::pallas::{Base, Scalar};
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first to get its contract_id for child calls
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18624".to_string(),
@@ -3352,7 +3352,7 @@ async fn test_relayer_endowment_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18626".to_string(),
@@ -3376,14 +3376,14 @@ async fn test_relayer_endowment_heavyweight_impl(
 
     // Derive keypair for relayer
     let relayer_secret = Base::random(&mut OsRng);
-    let relayer_public = darkfi_sdk::crypto::PublicKey::from_secret(
-        darkfi_sdk::crypto::SecretKey::from_bytes(relayer_secret.to_repr()).unwrap()
+    let relayer_public = dwow_sdk::crypto::PublicKey::from_secret(
+        dwow_sdk::crypto::SecretKey::from_bytes(relayer_secret.to_repr()).unwrap()
     );
 
     // Derive keypair for backer
     let backer_secret = Base::random(&mut OsRng);
-    let backer_public = darkfi_sdk::crypto::PublicKey::from_secret(
-        darkfi_sdk::crypto::SecretKey::from_bytes(backer_secret.to_repr()).unwrap()
+    let backer_public = dwow_sdk::crypto::PublicKey::from_secret(
+        dwow_sdk::crypto::SecretKey::from_bytes(backer_secret.to_repr()).unwrap()
     );
 
     // 1. Initialize relayer endowment account (0x00)
@@ -3456,18 +3456,18 @@ async fn test_atomic_swap_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
     use darkfi_contract_test_harness::harness::{AtomicSwapHarness, MoneyV3Harness};
-    use darkfi_sdk::{
+    use dwow_sdk::{
         crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey, SecretKey},
         pasta::pallas::Base,
     };
-    use darkfi::zk::halo2::Field;
+    use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first for child calls (CreateSwapV1 requires money_v3::transfer_v1)
     let money_harness = MoneyV3Harness::spawn();
     let money_config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18626".to_string(),
@@ -3484,7 +3484,7 @@ async fn test_atomic_swap_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18628".to_string(),
@@ -3522,7 +3522,7 @@ async fn test_atomic_swap_heavyweight_impl(
     ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
     info!("Created swap: swap_id={}", hex::encode(create_result.public_inputs.swap_id.to_repr()));
 
-    let child_call = darkfi_sdk::ContractCall {
+    let child_call = dwow_sdk::ContractCall {
         contract_id: money_contract_id,
         data: vec![0x04], // money_v3::transfer_v1
     };
@@ -3578,7 +3578,7 @@ async fn test_game_room_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18630".to_string(),
@@ -3623,7 +3623,7 @@ async fn test_drain_protection_heavyweight_impl(
 
     let config = HarnessConfig {
         pow_target: 20,
-        pow_fixed_difficulty: Some(darkfi_sdk::num_traits::One::one()),
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
         confirmation_threshold: 1,
         max_forks: 8,
         alice_url: "tcp+tls://127.0.0.1:18632".to_string(),

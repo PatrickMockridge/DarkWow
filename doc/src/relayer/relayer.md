@@ -237,7 +237,7 @@ Create `universal_relayer_config.toml`:
 
 ```toml
 [darkfi]
-darkfid_url = "http://127.0.0.1:8543"
+dwowd_url = "http://127.0.0.1:8543"
 poll_interval_secs = 10
 max_concurrent_withdrawals = 10
 
@@ -286,7 +286,7 @@ fee_percentage = 1
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `darkfid_url` | `http://127.0.0.1:8543` | DarkWow node JSON-RPC endpoint |
+| `dwowd_url` | `http://127.0.0.1:8543` | DarkWow node JSON-RPC endpoint |
 | `poll_interval_secs` | 10 | How often to check for new withdrawals |
 | `max_concurrent_withdrawals` | 10 | Max simultaneous withdrawal executions |
 
@@ -439,7 +439,7 @@ journalctl -u universal_relayer -f
 # Check status
 ./universal_relayer status
 
-# View pending withdrawals (via darkfid RPC)
+# View pending withdrawals (via dwowd RPC)
 curl -X POST http://127.0.0.1:8543 -d '{
   "jsonrpc": "2.0",
   "method": "bridge.get_pending_withdrawals",
@@ -537,12 +537,12 @@ See [Bridge Documentation](../contract/bridge.md) for detailed architecture.
 #### Connection Refused to DarkWow
 
 ```bash
-Error: Failed to connect to darkfid: Connection refused
+Error: Failed to connect to dwowd: Connection refused
 
-# Solution: Ensure darkfid is running
+# Solution: Ensure dwowd is running
 systemctl status darkfid
 # or
-darkfid --config darkfid_config.toml
+dwowd --config dwowd_config.toml
 ```
 
 #### Invalid Private Key (Ethereum)

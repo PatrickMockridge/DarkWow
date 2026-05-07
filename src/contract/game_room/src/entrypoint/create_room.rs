@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -34,12 +34,12 @@ use crate::{
 };
 
 pub(crate) fn game_room_create_process_instruction_v1(
-    cid: darkfi_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: CreateRoomParamsV1 = darkfi_serial::deserialize(&self_.data[1..])?;
+    let params: CreateRoomParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
 
     msg!("[CreateRoom] Creating room with token: {:?}", params.token_id);
 
@@ -62,7 +62,7 @@ pub(crate) fn game_room_create_process_instruction_v1(
 
     // Derive room ID
     let room_id = GameRoom::derive_room_id(
-        &darkfi_sdk::crypto::ContractId::derive_public(owner),
+        &dwow_sdk::crypto::ContractId::derive_public(owner),
         params.token_id,
         current_block as u64,
         params.nonce,
@@ -72,7 +72,7 @@ pub(crate) fn game_room_create_process_instruction_v1(
 
     // Create room config
     let config = RoomConfig {
-        owner_dao: darkfi_sdk::crypto::ContractId::derive_public(owner),
+        owner_dao: dwow_sdk::crypto::ContractId::derive_public(owner),
         token_id: params.token_id,
         min_stake: params.min_stake,
         max_stake: params.max_stake,
@@ -90,18 +90,18 @@ pub(crate) fn game_room_create_process_instruction_v1(
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     wasm::db::db_set(
         rooms_db,
-        &darkfi_serial::serialize(&room_id),
-        &darkfi_serial::serialize(&room),
+        &dwow_serial::serialize(&room_id),
+        &dwow_serial::serialize(&room),
     )?;
 
     msg!("[CreateRoom] Room created successfully: {:?}", room_id);
 
     let update = CreateRoomUpdateV1 { room_id, owner_dao: config.owner_dao.clone(), config };
-    Ok(darkfi_serial::serialize(&update))
+    Ok(dwow_serial::serialize(&update))
 }
 
 pub(crate) fn game_room_create_process_update_v1(
-    _cid: darkfi_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     update: CreateRoomUpdateV1,
 ) -> ContractResult {
     // State is already stored in process_instruction

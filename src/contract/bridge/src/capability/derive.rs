@@ -45,7 +45,7 @@
 //! Nullifier = poseidon_hash(SendCap)
 //! ```
 
-use darkfi_sdk::{crypto::poseidon_hash, pasta::pallas};
+use dwow_sdk::{crypto::poseidon_hash, pasta::pallas};
 
 use crate::chain_handler::ChainId;
 

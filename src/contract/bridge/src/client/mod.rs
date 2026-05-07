@@ -50,7 +50,7 @@
 //! 5. DarkWow verifies proof, marks nullifier spent
 //! 6. Relayer broadcasts withdrawal to external chain
 
-use darkfi_sdk::error::ContractError;
+use dwow_sdk::error::ContractError;
 
 // ============================================================================
 // ZK Proof Generation Modules
@@ -286,7 +286,7 @@ impl DepositBuilder {
 
 /// Derive bridge address from recipient identity and nonce
 fn derive_bridge_address(recipient_pub_x: [u8; 32], recipient_pub_y: [u8; 32], nonce: u64) -> [u8; 32] {
-    use darkfi_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
+    use dwow_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
 
     // Derive bridge_secret = poseidon_hash(recipient_pub_x, recipient_pub_y, nonce)
     // Using poseidon ensures ZK-friendly derivation
@@ -301,7 +301,7 @@ fn derive_bridge_address(recipient_pub_x: [u8; 32], recipient_pub_y: [u8; 32], n
 
 /// Compute commitment from secret, amount, and bridge address
 fn compute_commitment(secret: [u8; 32], amount: u64, bridge_address: [u8; 32]) -> [u8; 32] {
-    use darkfi_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
+    use dwow_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
 
     // commitment = poseidon_hash(secret, amount, bridge_address)
     // Using poseidon ensures ZK-friendly derivation
@@ -429,7 +429,7 @@ impl WithdrawBuilder {
 
 /// Compute nullifier from secret
 pub fn compute_nullifier(secret: [u8; 32]) -> [u8; 32] {
-    use darkfi_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
+    use dwow_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
 
     // nullifier = poseidon_hash(secret)
     let secret_base = pallas::Base::from_repr(secret.into()).unwrap();
@@ -461,7 +461,7 @@ pub fn derive_bridge_address_external(
     user_pub_y: [u8; 32],
     nonce: u64,
 ) -> [u8; 32] {
-    use darkfi_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
+    use dwow_sdk::{crypto::{poseidon_hash, pasta_prelude::PrimeField}, pasta::pallas};
 
     // Use poseidon for ZK-friendly hashing
     let pub_x = pallas::Base::from_repr(user_pub_x.into()).unwrap();

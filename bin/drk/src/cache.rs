@@ -23,8 +23,8 @@
 
 use std::collections::HashMap;
 
-use darkfi::{blockchain::HeaderHash, Error, Result};
-use darkfi_sdk::{
+use dwow::{blockchain::HeaderHash, Error, Result};
+use dwow_sdk::{
     crypto::{
         pasta_prelude::PrimeField,
         smt::{PoseidonFp, SparseMerkleTree, StorageAdapter, SMT_FP_DEPTH},
@@ -33,7 +33,7 @@ use darkfi_sdk::{
     error::{ContractError, ContractResult},
     pasta::pallas,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 use num_bigint::BigUint;
 use sled_overlay::{sled, SledDbOverlay, SledDbOverlayStateDiff};
 use tracing::error;
@@ -248,8 +248,8 @@ impl StorageAdapter for CacheSmtStorage {
 
 #[cfg(test)]
 mod tests {
-    use darkfi::{zk::halo2::Field, Result};
-    use darkfi_sdk::{
+    use dwow::{zk::halo2::Field, Result};
+    use dwow_sdk::{
         crypto::smt::{gen_empty_nodes, util::FieldHasher, PoseidonFp, SparseMerkleTree},
         pasta::pallas,
     };

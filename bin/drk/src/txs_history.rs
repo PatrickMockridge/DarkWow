@@ -23,8 +23,8 @@
 
 use rusqlite::types::Value;
 
-use darkfi::{tx::Transaction, Error, Result};
-use darkfi_serial::{deserialize_async, serialize};
+use dwow::{tx::Transaction, Error, Result};
+use dwow_serial::{deserialize_async, serialize};
 
 use crate::{
     convert_named_params,

@@ -17,7 +17,7 @@ name = "tau_pallas"
 path = "src/main.rs"
 
 [dependencies]
-darkfi = { path = "../../../", features = [
+dwow = { path = "../../../", features = [
     "bs58",
     "async-daemonize",
     "event-graph",
@@ -25,13 +25,13 @@ darkfi = { path = "../../../", features = [
     "tx",
 ] }
 
-darkfi-sdk = {path = "../../../src/sdk", features = ["async"]}
-darkfi-serial = {path = "../../../src/serial"}
+dwow-sdk = {path = "../../../src/sdk", features = ["async"]}
+dwow-serial = {path = "../../../src/serial"}
 
 # Event Graph DB
 sled-overlay = "0.1.20"
 
-# Crypto (Pallas-native from darkfi_sdk)
+# Crypto (Pallas-native from dwow_sdk)
 blake3 = "1.8.2"
 rand = "0.8.5"
 

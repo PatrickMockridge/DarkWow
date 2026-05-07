@@ -281,9 +281,9 @@ let expected_reward = expected_reward(block_height) + paid_fee;
 
 The `expected_reward` function returns a predefined schedule that decreases over time (deflationary emission).
 
-## drk Wallet Integration
+## dww Wallet Integration
 
-The `drk` command-line wallet supports Money V3 with full functionality:
+The `dww` command-line wallet supports Money V3 with full functionality:
 
 | Feature | Status | Implementation |
 |---------|--------|----------------|
@@ -335,7 +335,7 @@ The `drk` command-line wallet supports Money V3 with full functionality:
 
 ### Upstream Rejection
 
-This fork is **incompatible with upstream DarkFi** because:
+This fork is **incompatible with upstream DarkWow** because:
 
 1. Upstream uses Money V1/V2 for tokens
 2. Upstream does not have NativeToken as a native contract
@@ -357,7 +357,7 @@ This fork is **incompatible with upstream DarkFi** because:
 
 ## Related Documentation
 
-- [Contract Deployment Pipeline](./darkfid_contract_pipeline.md) - How native contracts are deployed
+- [Contract Deployment Pipeline](./dwowd_contract_pipeline.md) - How native contracts are deployed
 - [Test Harness Guide](./test_harness_guide.md) - Testing architecture
 - [Contract Graph](./contract_graph.md) - Contract dependencies
 - [Money V3 Contract](../dev/contracts/money_v3.md) - Detailed Money V3 specification
@@ -370,5 +370,5 @@ This fork is **incompatible with upstream DarkFi** because:
   - NativeToken contract added (native, for DRKW)
   - All ZK circuits converted to Poseidon-only
   - Token IDs now hidden commitments (100% fungibility)
-  - drk wallet updated with full Money V3 support
+  - dww wallet updated with full Money V3 support
   - Transfer, token creation, token minting all functional

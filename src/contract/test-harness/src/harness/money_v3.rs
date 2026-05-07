@@ -25,12 +25,12 @@
 //!
 //! Provides isolated testing for MoneyV3 contract (DeFi token contract).
 
-use darkfi::{
+use dwow::{
     zk::{halo2::Value, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, poseidon_hash, BaseBlind, MerkleNode, MerkleTree},
     pasta::pallas,
 };
@@ -45,7 +45,7 @@ use darkfi_money_v3_contract::{
     },
     model::{Coin, MintParamsV1, TransferParamsV1},
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 // Re-export types for convenience
 pub use darkfi_money_v3_contract::client::mint_v1::MintCallInput as MintInput;
@@ -87,13 +87,13 @@ impl MoneyV3Harness {
 
         // Build proving keys
         let token_mint_circuit =
-            ZkCircuit::new(darkfi::zk::empty_witnesses(&token_mint_zkbin).unwrap(), &token_mint_zkbin);
+            ZkCircuit::new(dwow::zk::empty_witnesses(&token_mint_zkbin).unwrap(), &token_mint_zkbin);
         let auth_circuit =
-            ZkCircuit::new(darkfi::zk::empty_witnesses(&auth_zkbin).unwrap(), &auth_zkbin);
+            ZkCircuit::new(dwow::zk::empty_witnesses(&auth_zkbin).unwrap(), &auth_zkbin);
         let mint_circuit =
-            ZkCircuit::new(darkfi::zk::empty_witnesses(&mint_zkbin).unwrap(), &mint_zkbin);
+            ZkCircuit::new(dwow::zk::empty_witnesses(&mint_zkbin).unwrap(), &mint_zkbin);
         let burn_circuit =
-            ZkCircuit::new(darkfi::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
+            ZkCircuit::new(dwow::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
 
         let token_mint_pk = ProvingKey::build(token_mint_zkbin.k, &token_mint_circuit);
         let auth_pk = ProvingKey::build(auth_zkbin.k, &auth_circuit);
@@ -113,12 +113,12 @@ impl MoneyV3Harness {
     }
 
     /// Get the combined verifying key for all circuits
-    pub fn verifying_key(&self) -> darkfi::zk::VerifyingKey {
+    pub fn verifying_key(&self) -> dwow::zk::VerifyingKey {
         // Combine all circuit VKs
-        darkfi::zk::VerifyingKey::build(
+        dwow::zk::VerifyingKey::build(
             self.token_mint_zkbin.k,
             &ZkCircuit::new(
-                darkfi::zk::empty_witnesses(&self.token_mint_zkbin).unwrap(),
+                dwow::zk::empty_witnesses(&self.token_mint_zkbin).unwrap(),
                 &self.token_mint_zkbin,
             ),
         )
@@ -267,7 +267,7 @@ impl MoneyV3Harness {
             auth_proof: darkfi_money_v3_contract::model::AuthProof {
                 nullifier: darkfi_money_v3_contract::model::Nullifier::from_base(auth_nullifier),
                 mint_public: auth_mint_public,
-                token_registry_root: darkfi_sdk::crypto::MerkleNode::from(token_registry_root),
+                token_registry_root: dwow_sdk::crypto::MerkleNode::from(token_registry_root),
             },
             coin: debris.params.coin,
             value_commit: debris.params.value_commit,
@@ -382,8 +382,8 @@ pub struct TokenCreationResult {
     pub auth_nullifier: pallas::Base,
     pub auth_mint_public: pallas::Base,
     pub token_registry_root: pallas::Base,
-    pub auth_proofs: Vec<darkfi::zk::Proof>,
-    pub token_proofs: Vec<darkfi::zk::Proof>,
+    pub auth_proofs: Vec<dwow::zk::Proof>,
+    pub token_proofs: Vec<dwow::zk::Proof>,
 }
 
 /// Result of minting
@@ -391,17 +391,17 @@ pub struct MintResult {
     pub call_data: Vec<u8>,
     pub coin: Coin,
     pub value_commit: pallas::Base,
-    pub proofs: Vec<darkfi::zk::Proof>,
+    pub proofs: Vec<dwow::zk::Proof>,
 }
 
 /// Result of transfer
 pub struct TransferResult {
     pub call_data: Vec<u8>,
-    pub proofs: Vec<darkfi::zk::Proof>,
+    pub proofs: Vec<dwow::zk::Proof>,
 }
 
 /// Result of OTC swap
 pub struct OtcSwapResult {
     pub call_data: Vec<u8>,
-    pub proofs: Vec<darkfi::zk::Proof>,
+    pub proofs: Vec<dwow::zk::Proof>,
 }

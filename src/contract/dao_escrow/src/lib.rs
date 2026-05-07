@@ -107,7 +107,7 @@
 //! - **Protocol Treasury**: Treasury mode - same as DarkWow DAO
 //! - **Full-Featured DAO**: TreasuryEndowment mode - treasury + insurance
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 /// DAO-Escrow operating modes
 pub mod modes {

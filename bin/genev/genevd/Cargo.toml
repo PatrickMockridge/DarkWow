@@ -17,12 +17,12 @@ name = "genevd"
 path = "src/main.rs"
 
 [dependencies]
-darkfi = { path = "../../../", features = [
+dwow = { path = "../../../", features = [
     "async-daemonize",
     "event-graph",
     "rpc",
 ] }
-darkfi-serial = {path = "../../../src/serial"}
+dwow-serial = {path = "../../../src/serial"}
 
 # Crypto
 blake3 = "1.8.2"

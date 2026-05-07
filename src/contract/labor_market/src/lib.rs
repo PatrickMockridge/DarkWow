@@ -43,7 +43,7 @@
 //! - Parties hidden (public keys derived from secrets)
 //! - Dispute reason hashed for privacy
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 define_contract_function!(LaborMarketFunction {
     CreateJobV1 = 0x00,

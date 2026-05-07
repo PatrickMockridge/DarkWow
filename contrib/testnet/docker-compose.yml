@@ -1,7 +1,7 @@
 # DarkFi Testnet Docker Compose
 # Usage: docker-compose up -d
 #
-# This runs a darkfid node on testnet in a container.
+# This runs a dwowd node on testnet in a container.
 # Data is persisted to ~/.local/share/darkfi on the host.
 #
 # Ports:
@@ -21,14 +21,14 @@
 #   docker-compose down
 #
 #   # With custom config
-#   docker-compose -f docker-compose.yml run --rm darkfid --verbose
+#   docker-compose -f docker-compose.yml run --rm dwowd --verbose
 
 version: '3.8'
 
 services:
-  darkfid:
+  dwowd:
     image: darkfi/testnet:latest
-    container_name: darkfid-testnet
+    container_name: dwowd-testnet
     restart: unless-stopped
     volumes:
       - ${DARKFI_HOME:-$HOME/.local/share/darkfi}:/data
@@ -39,8 +39,8 @@ services:
       # - "18340:18340" # P2P (uncomment to enable inbound connections)
     environment:
       - NETWORK=testnet
-    # command: darkfid --network testnet --verbose  # Uncomment for verbose logging
-    command: darkfid --network testnet
+    # command: dwowd --network testnet --verbose  # Uncomment for verbose logging
+    command: dwowd --network testnet
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:18345/json_rpc"]
       interval: 30s

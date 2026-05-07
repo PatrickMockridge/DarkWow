@@ -36,7 +36,7 @@ use smol::{
 };
 use tracing::{error, info, warn};
 
-use darkfi::{
+use dwow::{
     dht::{tasks as dht_tasks, Dht, DhtHandler, DhtSettings},
     geode::{hash_to_string, Chunk, ChunkedStorage, FileSequence, Geode, MAX_CHUNK_SIZE},
     net::P2pPtr,
@@ -44,8 +44,8 @@ use darkfi::{
     util::{path::expand_path, time::Timestamp},
     Error, Result,
 };
-use darkfi_sdk::crypto::{schnorr::SchnorrSecret, SecretKey};
-use darkfi_serial::{deserialize_async, serialize_async};
+use dwow_sdk::crypto::{schnorr::SchnorrSecret, SecretKey};
+use dwow_serial::{deserialize_async, serialize_async};
 
 /// P2P protocols
 pub mod proto;

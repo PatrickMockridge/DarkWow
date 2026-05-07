@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use smol::lock::MutexGuard;
 use tracing::debug;
 
-use darkfi::{
+use dwow::{
     net::P2pPtr,
     rpc::{
         jsonrpc::{

@@ -2,7 +2,7 @@
 
 Implementing a `JSON-RPC` `RequestHandler` also requires that we implement
 a method called `connections_mut`. This introduces us to an important
-`darkfi` type called `StoppableTask`.
+`dwow` type called `StoppableTask`.
 
 `StoppableTask` is an async task wrapper that enables **cooperative
 graceful shutdown**. Unlike forceful `abort` which can leave resources in

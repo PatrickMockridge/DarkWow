@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{
         schnorr::{SchnorrSecret, Signature},
         MerkleTree, SecretKey,
@@ -29,7 +29,7 @@ use darkfi_sdk::{
     pasta::{group::ff::FromUniformBytes, pallas},
     tx::TransactionHash,
 };
-use darkfi_serial::{deserialize, serialize, SerialDecodable, SerialEncodable};
+use dwow_serial::{deserialize, serialize, SerialDecodable, SerialEncodable};
 use num_bigint::BigUint;
 use sled_overlay::{sled, SledDbOverlayStateDiff};
 
@@ -86,7 +86,7 @@ pub struct BlockInfo {
     /// Block producer signature
     pub signature: Signature,
     /// ZK binary data for sync verification: (contract_id, zkas_ns, zkbin_bytes, instances)
-    pub zkbin_data: Vec<(darkfi_sdk::crypto::ContractId, String, Vec<u8>, Vec<darkfi_sdk::pasta::pallas::Base>)>,
+    pub zkbin_data: Vec<(dwow_sdk::crypto::ContractId, String, Vec<u8>, Vec<dwow_sdk::pasta::pallas::Base>)>,
 }
 // ANCHOR_END: blockinfo
 

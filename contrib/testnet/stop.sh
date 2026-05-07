@@ -2,8 +2,8 @@
 # DarkFi Testnet Stop Script
 # Usage: ./stop.sh
 
-DARKFI_HOME="${DARKFI_HOME:-$HOME/.local/share/darkfi}"
-DARKFID_HOME="$DARKFI_HOME/darkfid"
+DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/darkfi}"
+DARKFID_HOME="$DWOW_HOME/darkfid"
 PID_FILE="$DARKFID_HOME/testnet.pid"
 
 RED='\033[0;31m'
@@ -14,7 +14,7 @@ if [ ! -f "$PID_FILE" ]; then
     # Try to find by pgrep
     PID=$(pgrep -f "darkfid.*testnet" 2>/dev/null | head -1)
     if [ -n "$PID" ]; then
-        echo "Found darkfid running (PID: $PID), stopping..."
+        echo "Found dwowd running (PID: $PID), stopping..."
         kill "$PID"
         sleep 2
         if kill -0 "$PID" 2>/dev/null; then
@@ -36,7 +36,7 @@ if ! kill -0 "$PID" 2>/dev/null; then
     exit 0
 fi
 
-echo "Stopping darkfid (PID: $PID)..."
+echo "Stopping dwowd (PID: $PID)..."
 kill "$PID"
 
 # Wait up to 10 seconds for graceful shutdown

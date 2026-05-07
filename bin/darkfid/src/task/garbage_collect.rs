@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{error::TxVerifyFailed, validator::verification::verify_transactions, Error, Result};
-use darkfi_sdk::crypto::MerkleTree;
+use dwow::{error::TxVerifyFailed, validator::verification::verify_transactions, Error, Result};
+use dwow_sdk::crypto::MerkleTree;
 use tracing::{debug, error, info};
 
 use crate::DarkfiNodePtr;

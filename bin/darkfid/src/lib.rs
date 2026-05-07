@@ -32,7 +32,7 @@ use std::{
 use smol::lock::Mutex;
 use tracing::{debug, error, info};
 
-use darkfi::{
+use dwow::{
     net::settings::Settings,
     rpc::{
         jsonrpc::{JsonNotification, JsonSubscriber},
@@ -43,9 +43,9 @@ use darkfi::{
     validator::{Validator, ValidatorConfig, ValidatorPtr},
     Error, Result,
 };
-use darkfi_linear::LinearBlockchain as LinearBlockchainCore;
-use darkfi_sdk::crypto::keypair::Network;
-use darkfi_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+use dwow_linear::LinearBlockchain as LinearBlockchainCore;
+use dwow_sdk::crypto::keypair::Network;
+use dwow_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 
 #[cfg(test)]
 mod tests;
@@ -285,11 +285,11 @@ impl Darkfid {
 
         // Deploy native contracts to linear blockchain
         info!(target: "darkfid::Darkfid::init_linear", "Deploying native contracts to linear blockchain...");
-        let deployooor_wasm = include_bytes!("../../../src/contract/deployooor/darkfi_deployooor_contract.wasm").to_vec();
+        let deployooor_wasm = include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm").to_vec();
         linear_blockchain.deploy_contract(&deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID)?;
         info!(target: "darkfid::Darkfid::init_linear", "Deployooor contract deployed");
 
-        let native_token_wasm = include_bytes!("../../../src/contract/native_token/darkfi_native_token_contract.wasm").to_vec();
+        let native_token_wasm = include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm").to_vec();
         linear_blockchain.deploy_contract(&native_token_wasm, *NATIVE_TOKEN_CONTRACT_ID)?;
         info!(target: "darkfid::Darkfid::init_linear", "NativeToken contract deployed");
 
@@ -300,7 +300,7 @@ impl Darkfid {
         // flags, this fails immediately with a clear error instead of crashing
         // during stratum submission.
         {
-            use darkfi_linear::{Block, BlockHeader, Miner, Transaction, Output};
+            use dwow_linear::{Block, BlockHeader, Miner, Transaction, Output};
             use std::time::SystemTime;
 
             let genesis_height = 1u64;
@@ -313,7 +313,7 @@ impl Darkfid {
                 .unwrap()
                 .as_secs();
 
-            let genesis_reward = darkfi_sdk::blockchain::expected_reward(genesis_height as u32);
+            let genesis_reward = dwow_sdk::blockchain::expected_reward(genesis_height as u32);
 
             let genesis_tx = Transaction {
                 version: 1,
@@ -361,8 +361,8 @@ impl Darkfid {
         // Auto-generate mining keypair if one does not exist.
         // The address is persisted for the Docker entrypoint/xmrig to consume.
         {
-            use darkfi_sdk::crypto::keypair::{Address, Keypair, StandardAddress};
-            use darkfi_sdk::crypto::pasta_prelude::PrimeField;
+            use dwow_sdk::crypto::keypair::{Address, Keypair, StandardAddress};
+            use dwow_sdk::crypto::pasta_prelude::PrimeField;
             use rand::rngs::OsRng;
             use std::fs;
 

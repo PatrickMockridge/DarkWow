@@ -21,12 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::{
+use dwow::{
     rpc::{client::RpcClient, jsonrpc::JsonRequest},
     util::encoding::base64,
     Result,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 use genevd::GenEvent;
 use tinyjson::JsonValue;
 use tracing::debug;

@@ -23,7 +23,7 @@
 
 // ANCHOR: protocol_dchat
 use async_trait::async_trait;
-use darkfi::{net, Result};
+use dwow::{net, Result};
 use smol::Executor;
 use std::sync::Arc;
 use tracing::debug;

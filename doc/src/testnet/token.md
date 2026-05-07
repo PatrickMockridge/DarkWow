@@ -12,15 +12,15 @@ with. Once your friend has submitted a transaction to the network, it
 should be in the consensus' mempool, waiting for inclusion in the next
 block(s). Depending on your network configuration, confirmation of the
 blocks could take some time. You'll have to wait for this to happen. If
-your `drk` subscription is running, then after some time your new
+your `dww` subscription is running, then after some time your new
 balance should be in your wallet.
 
 ![pablo-waiting0](img/pablo0.jpg)
 
-You can check your wallet balance using `drk`:
+You can check your wallet balance using `dww`:
 
 ```shell
-drk> wallet balance
+dww> wallet balance
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+---------
@@ -45,7 +45,7 @@ authorizes you to mint the token supply.
 We do this by simply executing the following command:
 
 ```shell
-drk> token generate-mint
+dww> token generate-mint
 
 Successfully imported mint authority for token ID: {TOKEN1}
 ```
@@ -53,7 +53,7 @@ Successfully imported mint authority for token ID: {TOKEN1}
 You can list your mint authorities with:
 
 ```shell
-drk> token list
+dww> token list
 
  Token ID | Aliases | Mint Authority          | Token Blind    | Frozen | Freeze Height
 ----------+---------+-------------------------+----------------+--------+---------------
@@ -65,7 +65,7 @@ Now execute the command again to generate the mint authority for a
 second set of tokens.
 
 ```shell
-drk> token generate-mint
+dww> token generate-mint
 
 Successfully imported mint authority for token ID: {TOKEN2}
 ```
@@ -73,7 +73,7 @@ Successfully imported mint authority for token ID: {TOKEN2}
 Verify you have two token mint authorities by running:
 
 ```shell
-drk> token list
+dww> token list
 
  Token ID | Aliases | Mint Authority          | Token Blind    | Frozen | Freeze Height
 ----------+---------+-------------------------+----------------+--------+---------------
@@ -94,7 +94,7 @@ to refer to `DRKW` when executing transactions using it.
 We can also list all our aliases using:
 
 ```shell
-drk> alias show
+dww> alias show
 
  Alias | Token ID
 -------+----------------------------------------------
@@ -107,19 +107,19 @@ drk> alias show
 Now let's create aliases for the two token IDs generated earlier:
 
 ```shell
-drk> alias add ANON {TOKEN1}
+dww> alias add ANON {TOKEN1}
 
 Generating alias ANON for Token: {TOKEN1}
 ```
 
 ```shell
-drk> alias add DAWN {TOKEN2}
+dww> alias add DAWN {TOKEN2}
 
 Generating alias DAWN for Token: {TOKEN2}
 ```
 
 ```shell
-drk> alias show
+dww> alias show
 
  Alias | Token ID
 -------+---------------------------------------------
@@ -135,7 +135,7 @@ address, then create the token mint transaction,
 and finally - broadcast it:
 
 ```shell
-drk> wallet address
+dww> wallet address
 
 {YOUR_ADDRESS}
 ```
@@ -148,7 +148,7 @@ We can either export a transaction to a file by appending
 simplicity.
 
 ```shell
-drk> token mint ANON 42.69 {YOUR_ADDRESS} | broadcast
+dww> token mint ANON 42.69 {YOUR_ADDRESS} | broadcast
 
 [mark_tx_spend] Processing transaction: e9ded45928f2e2dbcb4f8365653220a8e2346987dd8b75fe1ffdc401ce0362c2
 [mark_tx_spend] Found Money contract in call 0
@@ -163,7 +163,7 @@ included in a block. After the transaction is confirmed, perform the
 next one:
 
 ```shell
-drk> token mint DAWN 20.0 {YOUR_ADDRESS} | broadcast
+dww> token mint DAWN 20.0 {YOUR_ADDRESS} | broadcast
 
 [mark_tx_spend] Processing transaction: e404241902ba0a8825cf199b3083bff81cd518ca30928ca1267d5e0008f32277
 [mark_tx_spend] Found Money contract in call 0
@@ -178,7 +178,7 @@ is confirmed, your wallet should have your new tokens listed when you
 run:
 
 ```shell
-drk> wallet balance
+dww> wallet balance
 
  Token ID                                     | Aliases | Balance
 ----------------------------------------------+---------+-------------
@@ -193,7 +193,7 @@ We can lock a token's supply and disallow further mints by executing:
 
 
 ```shell
-drk> token freeze DAWN | broadcast
+dww> token freeze DAWN | broadcast
 
 [mark_tx_spend] Processing transaction: 138274448ac3af26f253e0a40d0964dc125b99b3c826ba321bcb989cabfb6df6
 [mark_tx_spend] Found Money contract in call 0
@@ -206,7 +206,7 @@ After the transaction has been confirmed, we will see the token freeze
 flag set to `true`, along with the block height it was frozen on:
 
 ```shell
-drk> token list
+dww> token list
 
  Token ID | Aliases | Mint Authority          | Token Blind    | Frozen | Freeze Height
 ----------+---------+-------------------------+----------------+--------+---------------

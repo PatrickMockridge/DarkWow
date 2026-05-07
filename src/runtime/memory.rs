@@ -46,7 +46,7 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    use darkfi_serial::Decodable;
+    use dwow_serial::Decodable;
     use wasmer::{Memory, MemoryType, Store};
 
     #[test]

@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_serial::ReadExt;
+use dwow_serial::ReadExt;
 use halo2_gadgets::poseidon::primitives as poseidon;
 use pasta_curves::{
     group::ff::{FromUniformBytes, PrimeField},

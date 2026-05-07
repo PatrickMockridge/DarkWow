@@ -23,11 +23,11 @@
 
 use std::ops::Deref;
 
-use darkfi::{
+use dwow::{
     zk::{self, empty_witnesses, halo2::Value},
     zkas::{self, decoder},
 };
-use darkfi_sdk::{crypto::MerkleNode, pasta::pallas};
+use dwow_sdk::{crypto::MerkleNode, pasta::pallas};
 use pyo3::{
     prelude::{PyModule, PyModuleMethods},
     pyclass, pymethods, Bound, PyResult, Python,

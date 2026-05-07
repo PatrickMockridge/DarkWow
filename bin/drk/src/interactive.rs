@@ -38,7 +38,7 @@ use rand::rngs::OsRng;
 use smol::channel::{Receiver, Sender};
 use url::Url;
 
-use darkfi::{
+use dwow::{
     cli_desc,
     system::{msleep, ExecutorPtr, StoppableTask, StoppableTaskPtr},
     util::{
@@ -49,7 +49,7 @@ use darkfi::{
     zk::halo2::Field,
     Error,
 };
-use darkfi_serial::{deserialize_async, serialize_async};
+use dwow_serial::{deserialize_async, serialize_async};
 
 use crate::{
     cli_util::{

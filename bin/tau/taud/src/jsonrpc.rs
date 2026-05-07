@@ -33,7 +33,7 @@ use smol::lock::{Mutex, MutexGuard};
 use tinyjson::JsonValue;
 use tracing::{debug, info, warn};
 
-use darkfi::{
+use dwow::{
     event_graph::EventGraphPtr,
     net,
     rpc::{

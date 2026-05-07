@@ -28,7 +28,7 @@ use darkfi_bridge_contract::chain_handler::{
     ChainHandler as BridgeChainHandler, ChainId, ExternalDeposit, HtlcDeposit, TxHash as BridgeTxHash,
     VerifiedWithdrawal, WithdrawalRequest,
 };
-use darkfi_sdk::{error::ContractResult, pasta::pallas};
+use dwow_sdk::{error::ContractResult, pasta::pallas};
 use super::super::chain::{ChainExecutor, ExternalChain};
 use super::super::config::AztecConfig;
 use super::super::error::{PendingWithdrawal, Result, TxHash};
@@ -117,11 +117,11 @@ impl BridgeChainHandler for AztecExecutor {
     }
 
     async fn verify_deposit(&self, _deposit: &ExternalDeposit) -> ContractResult {
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn verify_withdrawal(&self, _withdrawal: &WithdrawalRequest) -> ContractResult {
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute(&self, verified: &VerifiedWithdrawal) -> ContractResult {
@@ -137,7 +137,7 @@ impl BridgeChainHandler for AztecExecutor {
             guarantee_premium: 0,
         };
 
-        <Self as ChainExecutor>::execute(self, &pending).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        <Self as ChainExecutor>::execute(self, &pending).await.map_err(|_| dwow_sdk::error::ContractError::Custom(3))?;
         Ok(())
     }
 
@@ -154,13 +154,13 @@ impl BridgeChainHandler for AztecExecutor {
             guarantee_premium: 0,
         };
 
-        let _fee = <Self as ChainExecutor>::estimate_fee(self, &pending).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        let _fee = <Self as ChainExecutor>::estimate_fee(self, &pending).await.map_err(|_| dwow_sdk::error::ContractError::Custom(3))?;
         Ok(())
     }
 
     async fn verify_confirmation(&self, tx_hash: &BridgeTxHash) -> ContractResult {
         let tx = TxHash { chain: tx_hash.chain.as_u8(), hash: tx_hash.hash };
-        <Self as ChainExecutor>::verify_confirmation(self, &tx).await.map_err(|_| darkfi_sdk::error::ContractError::Custom(3))?;
+        <Self as ChainExecutor>::verify_confirmation(self, &tx).await.map_err(|_| dwow_sdk::error::ContractError::Custom(3))?;
         Ok(())
     }
 
@@ -172,7 +172,7 @@ impl BridgeChainHandler for AztecExecutor {
         // In production:
         // 1. Query Aztec rollup for HTLC deposit note
         // 2. Verify the deposit matches expected hash and timelock
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute_htlc_claim(
@@ -190,7 +190,7 @@ impl BridgeChainHandler for AztecExecutor {
         // 1. Connect to Aztec sequencer API
         // 2. Submit claim note to HTLC contract
         // 3. Wait for rollup inclusion
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn execute_htlc_refund(&self, swap_id: &[u8; 32], sender: &[u8]) -> ContractResult {
@@ -203,12 +203,12 @@ impl BridgeChainHandler for AztecExecutor {
         // 1. Connect to Aztec sequencer API
         // 2. Submit refund note after timelock
         // 3. Wait for rollup inclusion
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 
     async fn get_htlc_status(&self, swap_id: &[u8; 32]) -> ContractResult {
         tracing::debug!("Getting Aztec HTLC status for swap_id: {}", hex::encode(swap_id));
-        Err(darkfi_sdk::error::ContractError::Custom(2))
+        Err(dwow_sdk::error::ContractError::Custom(2))
     }
 }
 

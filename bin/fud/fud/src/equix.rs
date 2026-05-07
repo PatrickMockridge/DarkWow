@@ -32,7 +32,7 @@ use std::convert::AsRef;
 use blake2::{digest::consts::U4, Blake2b, Digest};
 pub use equix::{EquiXBuilder, HashError, RuntimeOption, Solution, SolverMemory};
 
-use darkfi::{Error, Result};
+use dwow::{Error, Result};
 
 /// Algorithm personalization string
 const P_STRING: &[u8] = b"DarkFi Equi-X\0";

@@ -24,7 +24,7 @@
 #[cfg(feature = "tinyjson")]
 use {
     super::halo2::Value,
-    darkfi_sdk::crypto::{pasta_prelude::*, util::FieldElemAsStr, MerkleNode},
+    dwow_sdk::crypto::{pasta_prelude::*, util::FieldElemAsStr, MerkleNode},
     std::{
         collections::HashMap,
         fs::File,
@@ -36,7 +36,7 @@ use {
     },
 };
 
-use darkfi_sdk::pasta::pallas;
+use dwow_sdk::pasta::pallas;
 use tracing::error;
 
 use super::{Witness, ZkCircuit};

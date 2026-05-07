@@ -33,12 +33,12 @@
 
 use std::sync::Arc;
 
-use darkfi::tx::{ContractCallLeaf, TransactionBuilder};
-use darkfi_sdk::{
+use dwow::tx::{ContractCallLeaf, TransactionBuilder};
+use dwow_sdk::{
     crypto::{ContractId, Keypair},
     tx::{ContractCall, TransactionHash},
 };
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use smol::Executor;
 
 use crate::error::{TauPallasError, TauPallasResult};

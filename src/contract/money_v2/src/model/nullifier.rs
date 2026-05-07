@@ -21,12 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::{crypto::pasta_prelude::PrimeField, error::ContractError, pasta::pallas};
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::{crypto::pasta_prelude::PrimeField, error::ContractError, pasta::pallas};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
 #[cfg(feature = "client")]
-use darkfi_serial::async_trait;
+use dwow_serial::async_trait;
 
 /// The `Nullifier` is represented as a base field element.
 #[repr(C)]
@@ -54,6 +54,6 @@ impl Nullifier {
 }
 
 use core::str::FromStr;
-darkfi_sdk::fp_from_bs58!(Nullifier);
-darkfi_sdk::fp_to_bs58!(Nullifier);
-darkfi_sdk::ty_from_fp!(Nullifier);
+dwow_sdk::fp_from_bs58!(Nullifier);
+dwow_sdk::fp_to_bs58!(Nullifier);
+dwow_sdk::ty_from_fp!(Nullifier);

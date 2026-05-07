@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use crate::{
     crypto::ContractId,

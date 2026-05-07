@@ -24,7 +24,7 @@
 extern crate darkfi_serial;
 
 use honggfuzz::fuzz;
-use darkfi::zkas::ZkBinary;
+use dwow::zkas::ZkBinary;
 
 fn main() {
     loop {

@@ -62,7 +62,7 @@ fn test_check_aux_chains_validation() {
 /// aux_chain_merkle_root when the Monero block was constructed.
 #[test]
 fn test_merkle_proof_construction() {
-    use darkfi::blockchain::monero::{
+    use dwow::blockchain::monero::{
         merkle_proof::MerkleProof,
         utils::create_merkle_proof,
     };
@@ -89,7 +89,7 @@ fn test_merkle_proof_construction() {
 /// The chain ID should be: blake3(genesis_hash || network || hard_fork_height)
 #[test]
 fn test_chain_id_generation() {
-    use darkfi::blockchain::HeaderHash;
+    use dwow::blockchain::HeaderHash;
 
     // Example genesis hash
     let genesis_hash = HeaderHash::from_str(

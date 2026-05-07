@@ -7,7 +7,7 @@
 ## uncommenting, or by using the command-line.
 
 # Path to the database directory
-database = "~/.local/share/darkfi/rlnd"
+database = "~/.local/share/dwow/rlnd"
 
 # Private JSON-RPC settings
 # JSON-RPC listen URL

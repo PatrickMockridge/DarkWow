@@ -23,7 +23,7 @@
 
 //! Async serialization implementations for linear blockchain types
 
-use darkfi_serial::{async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite};
+use dwow_serial::{async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite};
 use std::io::Result;
 
 use super::{Block, BlockHeader, ContractCall, Input, Output, Transaction, UncleBlock, UncleProof};

@@ -11,8 +11,8 @@ edition = "2021"
 
 [dependencies]
 # Darkfi
-darkfi = {path = "../../../../", features = ["async-sdk", "rpc"]}
-darkfi-serial = {path = "../../../../src/serial"}
+dwow = {path = "../../../../", features = ["async-sdk", "rpc"]}
+dwow-serial = {path = "../../../../src/serial"}
 
 # Misc
 clap = {version = "4.4.11", features = ["derive"]}

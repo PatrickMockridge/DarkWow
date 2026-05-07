@@ -27,7 +27,7 @@
 
 use std::sync::Arc;
 
-use darkfi_linear::Transaction;
+use dwow_linear::Transaction;
 use smol::lock::Mutex;
 
 /// Simple mempool for collecting transactions before mining
@@ -44,13 +44,13 @@ impl Mempool {
 
     /// Add a transaction to the mempool
     /// Returns error if transaction is already in mempool
-    pub async fn add(&self, tx: Transaction) -> darkfi::Result<()> {
+    pub async fn add(&self, tx: Transaction) -> dwow::Result<()> {
         let mut txs = self.txs.lock().await;
         // Check for duplicates
         let tx_hash = tx.hash();
         for existing in txs.iter() {
             if existing.hash() == tx_hash {
-                return Err(darkfi::Error::Custom("Transaction already in mempool".to_string()));
+                return Err(dwow::Error::Custom("Transaction already in mempool".to_string()));
             }
         }
         txs.push(tx);

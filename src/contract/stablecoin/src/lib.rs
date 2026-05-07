@@ -32,7 +32,7 @@
 //! - **Pedersen commitments**: Collateral and debt amounts hidden in SMT
 //! - **CDP Notes**: Special Money contract coins with spend_hook to CDP Engine
 
-use darkfi_sdk::define_contract_function;
+use dwow_sdk::define_contract_function;
 
 /// Functions available in the stablecoin contract
 define_contract_function!(StablecoinFunction {

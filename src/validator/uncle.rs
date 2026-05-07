@@ -36,7 +36,7 @@
 //! See doc/src/arch/uncle_merkle.md for full specification.
 
 use blake3::Hash;
-use darkfi_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::blockchain::{Header, HeaderHash};
 

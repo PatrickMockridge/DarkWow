@@ -10,7 +10,7 @@ The linear blockchain originally used a stateless ZK verification model without 
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `ZkVerifier` | `bin/darkfid/src/zk.rs` | Wrapper around `verify_zkp` for linear chain |
+| `ZkVerifier` | `bin/dwowd/src/zk.rs` | Wrapper around `verify_zkp` for linear chain |
 | `derive_vk()` | `src/validator/verification.rs:61` | Derives VerifyingKey from embedded zkbin_data |
 | `Runtime::new()` | `src/runtime/vm_runtime.rs:379` | Creates WASM runtime for contract execution |
 | WASM adapters | `src/linear_wasm_adapter.rs` | Trait implementations for linear storage |
@@ -43,10 +43,10 @@ fn derive_vk(
 Block → zkbin_data [(ContractId, zkas_ns, zkbin_bytes, instances)] → derive_vk() → verify_zkp()
 ```
 
-1. **Block inclusion**: darkfid validates all ZK proofs before adding transactions to blocks
+1. **Block inclusion**: dwowd validates all ZK proofs before adding transactions to blocks
 2. **Embedded data**: Proof verification data is stored in `zkbin_data` field
 3. **Stateless verification**: No WASM execution needed - VK derived from embedded bytes
-4. **Trust model**: Wallet scanner trusts darkfid's validation; only performs note decryption
+4. **Trust model**: Wallet scanner trusts dwowd's validation; only performs note decryption
 
 ## WASM Runtime Architecture
 
@@ -189,8 +189,8 @@ impl LinearBlockchain {
 
 | File | Purpose |
 |------|---------|
-| `bin/darkfid/src/zk.rs` | ZkVerifier wrapper |
-| `bin/darkfid/src/blockchain.rs` | LinearBlockchain with zk_verifier |
+| `bin/dwowd/src/zk.rs` | ZkVerifier wrapper |
+| `bin/dwowd/src/blockchain.rs` | LinearBlockchain with zk_verifier |
 | `src/validator/verification.rs` | derive_vk(), verify_producer_transaction() |
 | `src/runtime/vm_runtime.rs` | Runtime::new(), WASM execution |
 | `src/linear_wasm_adapter.rs` | Trait implementations for linear storage |
