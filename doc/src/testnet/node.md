@@ -1,6 +1,9 @@
 Compiling and Running a Node
 =========================
 
+> **See also:** [Level 4: Containerized Devnet Node](../dev/testing/level-4-devnet.md)
+> for running a Docker-based devnet node across multiple machines on LAN or internet.
+
 This guide covers setting up and running a DarkWow testnet node. For a quick
 start with simple shell scripts, see the [Quick Start](#quick-start) section.
 For detailed manual configuration, continue reading below.

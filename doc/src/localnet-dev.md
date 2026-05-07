@@ -1,5 +1,13 @@
 # Local Devnet Setup
 
+> [!NOTE]
+> This document includes both permanent reference material and dated operational
+> logs from April 2026. For the current testing taxonomy, see:
+> - [Level 1: Lightweight Tests](../dev/testing/level-1-lightweight.md)
+> - [Level 2: Heavyweight Tests](../dev/testing/level-2-heavyweight.md)
+> - [Level 3: Containerized Localnet](../dev/testing/level-3-localnet.md)
+> - [Level 4: Containerized Devnet Node](../dev/testing/level-4-devnet.md)
+
 ## Overview
 
 A local development network (devnet) for DarkWow testing, funded via block mining rather than a broken faucet. Uses RandomX PoW mining against the local dwowd node's stratum server to generate DRKW tokens for testing.

@@ -1,5 +1,10 @@
 # Mining and Transacting on DarkWow Testnet
 
+> **See also:** [Level 3: Containerized Localnet](../dev/testing/level-3-localnet.md)
+> for Docker-based multi-node testnet mining, and
+> [Level 4: Containerized Devnet Node](../dev/testing/level-4-devnet.md)
+> for running a mining node on a shared devnet.
+
 This guide covers setting up solo Proof-of-Work mining on DarkWow testnet using pre-built binaries. This is different from **merge mining** (which is for mainnet with Monero+p2pool).
 
 ## Prerequisites

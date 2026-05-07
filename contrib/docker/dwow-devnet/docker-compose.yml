@@ -1,0 +1,75 @@
+# DarkWow Devnet — Docker Compose Template
+#
+# Multi-machine LAN deployment:
+#   Machine 1 (seed):    docker-compose up seed
+#   Machine 2 (miner):   edit SEED_ADDR to Machine 1's LAN IP, then: docker-compose up miner
+#
+# Single-machine test (unique ports per node):
+#   docker-compose up
+
+version: '3.8'
+
+services:
+  seed:
+    image: dwow-devnet:latest
+    # To build from local source instead of pulling:
+    # build:
+    #   context: ../../..
+    #   dockerfile: contrib/docker/dwow-devnet/Dockerfile
+    container_name: dwow-devnet-seed
+    hostname: seed
+    network_mode: host
+    environment:
+      - IS_SEED=true
+      - NETWORK_NAME=our-devnet
+      - P2P_PORT=31342
+      - RPC_PORT=31345
+      - STRATUM_PORT=31347
+      - MANAGEMENT_PORT=31346
+      - FIXED_DIFFICULTY=1
+      - MINING_ENABLED=true
+      - MINING_THREADS=2
+      - TARGET_BLOCK_TIME=120
+      - THRESHOLD=1
+      - SKIP_SYNC=true
+      - SKIP_FEES=true
+    volumes:
+      - seed_data:/root/.local/share/dwow/dwowd
+    restart: unless-stopped
+
+  miner:
+    image: dwow-devnet:latest
+    # To build from local source instead of pulling:
+    # build:
+    #   context: ../../..
+    #   dockerfile: contrib/docker/dwow-devnet/Dockerfile
+    container_name: dwow-devnet-miner
+    hostname: miner
+    network_mode: host
+    environment:
+      # Change SEED_ADDR to the seed node's LAN IP when deploying on
+      # a separate machine. For single-machine, localhost works.
+      - SEED_ADDR=127.0.0.1:31342
+      - NETWORK_NAME=our-devnet
+      # Use different ports to avoid conflict with seed on same machine.
+      # On a separate machine, these can match the seed's ports.
+      - P2P_PORT=31343
+      - RPC_PORT=31346
+      - STRATUM_PORT=31348
+      - MANAGEMENT_PORT=31349
+      - FIXED_DIFFICULTY=1
+      - MINING_ENABLED=true
+      - MINING_THREADS=4
+      - TARGET_BLOCK_TIME=120
+      - THRESHOLD=1
+      - SKIP_SYNC=true
+      - SKIP_FEES=true
+    volumes:
+      - miner_data:/root/.local/share/dwow/dwowd
+    depends_on:
+      - seed
+    restart: unless-stopped
+
+volumes:
+  seed_data:
+  miner_data:

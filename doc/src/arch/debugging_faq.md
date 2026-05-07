@@ -473,6 +473,4 @@ Example function selectors from DAO-Escrow:
 
 - [Async Rust Fundamentals](../learn/dchat/async-rust-fundamentals.md)
 - [Generalized Contract Invocation API](contract_invoke_api.md)
-- [Localnet Contract Testing](localnet_contract_testing.md)
-- [Test Harness Guide](test_harness_guide.md)
-- [Test Harness Guide](test_harness_guide.md)
+- [Testing Overview](../dev/testing/overview.md) — Four-level taxonomy

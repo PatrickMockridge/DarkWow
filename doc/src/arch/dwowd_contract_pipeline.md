@@ -146,7 +146,5 @@ This fork:
 
 ## Related
 
-- [Genesis Harness](./genesis_harness.md) — Test harness initialization
-- [Uncle Merkle Consensus](./consensus/uncle_merkle.md) — Runtime consensus mechanism
-- [Test Harness Guide](./test_harness_guide.md) — Writing contract integration tests
+- [Testing Overview](../dev/testing/overview.md) — Four-level testing taxonomy
 - [NativeToken Contract](../contract/native_token.md) — Contract overview

@@ -106,6 +106,5 @@ stratum_port = 48347
 ## Related Documentation
 
 - [Contract Deployment Pipeline](./arch/dwowd_contract_pipeline.md) - How contracts are deployed and VKs injected
-- [Test Harness Guide](./arch/test_harness_guide.md) - Testing infrastructure
-- [Localnet Contract Testing](./arch/localnet_contract_testing.md) - Local development workflow
+- [Testing Overview](./dev/testing/overview.md) - Four-level testing taxonomy
 - [JSON-RPC API](../clients/dwowd_jsonrpc.md) - Wallet API reference

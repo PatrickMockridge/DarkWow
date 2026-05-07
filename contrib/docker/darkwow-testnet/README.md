@@ -2,6 +2,9 @@
 
 DarkWow is a fork of DarkFi. Magic bytes `[68, 82, 75, 87]` encode "DRKW" in ASCII, uniquely identifying DarkWow nodes on the P2P network.
 
+> **See also:** [Level 3: Containerized Localnet](../../doc/src/dev/testing/level-3-localnet.md)
+> for the testing taxonomy context and differences from Level 4 (Devnet Node).
+
 This directory provides a 3-container Docker testnet that mirrors public testnet conditions: `localnet=false`, `skip_fees=false`, `threshold=3`, `target_block_time=120s`, and RandomX mining via xmrig.
 
 ## Architecture

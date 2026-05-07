@@ -76,7 +76,6 @@
 
 - [Contributing & Developer Guide](dev/contrib/contrib.md)
   - [Contract Overview](dev/contracts.md)
-  - [Contract Testing & Debugging](dev/contracts_testing.md)
   - [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md)
 - [Architecture](arch/README.md)
   - [DarkWow Daemon](dwowd.md)
@@ -109,10 +108,11 @@
 ## Developer Tooling
   - [Security Analysis](arch/security-analysis.md)
   - [Debugging FAQ](arch/debugging_faq.md)
-  - [Test Harness Guide](arch/test_harness_guide.md)
-  - [Genesis Harness](arch/genesis_harness.md)
-  - [Contract Testing Pipeline](arch/pipeline.md)
-  - [Localnet Contract Testing](arch/localnet_contract_testing.md)
+  - [Testing Overview](dev/testing/overview.md)
+    - [Level 1: Lightweight Tests](dev/testing/level-1-lightweight.md)
+    - [Level 2: Heavyweight Tests](dev/testing/level-2-heavyweight.md)
+    - [Level 3: Containerized Localnet](dev/testing/level-3-localnet.md)
+    - [Level 4: Containerized Devnet Node](dev/testing/level-4-devnet.md)
   - [Public Key Constraint Hook](arch/pubkey-constraint-hook.md)
   - [Tooling](arch/tooling.md)
 

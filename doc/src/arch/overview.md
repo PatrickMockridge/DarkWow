@@ -73,7 +73,9 @@ DarkWow provides two testing pipelines:
 1. **Lightweight pipeline**: Deployment verification without ZK proof generation
 2. **Heavyweight pipeline**: Full ZK proof generation and contract execution testing
 
-See [Pipeline](./pipeline.md) and [Test Harness Guide](./test_harness_guide.md) for details.
+See [Testing Overview](../dev/testing/overview.md) for the full four-level taxonomy:
+[Level 1: Lightweight Tests](../dev/testing/level-1-lightweight.md) and
+[Level 2: Heavyweight Tests](../dev/testing/level-2-heavyweight.md).
 
 ## Genesis Contracts
 

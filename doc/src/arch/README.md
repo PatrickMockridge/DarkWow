@@ -70,10 +70,11 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 ## Reference
 
 - [Contract Invoke API](./contract_invoke_api.md) - Inter-contract calling convention
-- [pipeline](./pipeline.md) - Testing pipelines (lightweight + heavyweight)
-- [test_harness_guide](./test_harness_guide.md) - Writing contract integration tests
-- [genesis_harness](./genesis_harness.md) - Baseline chain setup
-- [localnet_contract_testing](./localnet_contract_testing.md) - Local devnet testing
+- [Testing Overview](../dev/testing/overview.md) — Four-level testing taxonomy
+  - [Level 1: Lightweight Tests](../dev/testing/level-1-lightweight.md)
+  - [Level 2: Heavyweight Tests](../dev/testing/level-2-heavyweight.md)
+  - [Level 3: Containerized Localnet](../dev/testing/level-3-localnet.md)
+  - [Level 4: Containerized Devnet Node](../dev/testing/level-4-devnet.md)
 - [anonymous_assets](./anonymous_assets.md) - Privacy token model
 - [wallet](./legacy/wallet.md) - Wallet architecture and key management
 
@@ -95,10 +96,10 @@ doc/src/arch/
 ├── slashing.md                  # Validator slashing
 ├── anonymous_assets.md          # Privacy token model
 ├── contract_invoke_api.md       # Inter-contract calling convention
-├── pipeline.md                  # Testing pipelines
-├── test_harness_guide.md        # Contract testing guide
-├── genesis_harness.md           # Baseline chain setup
-├── localnet_contract_testing.md # Local devnet testing
+├── pipeline.md                  # → ../dev/testing/ (redirect stub)
+├── test_harness_guide.md        # → ../dev/testing/ (redirect stub)
+├── genesis_harness.md           # → ../dev/testing/ (redirect stub)
+├── localnet_contract_testing.md # → ../dev/testing/ (redirect stub)
 ├── consensus/                   # Consensus documents
 │   ├── consensus.md
 │   ├── linear_blockchain.md
