@@ -320,7 +320,7 @@ needed to deliver functionality already discussed publicly.
 
 ### Verification Status
 
-`LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), `BaseLtStrict` (0x57), and `BaseDiv` (0x58) were initially developed on a [separate experimental branch](https://codeberg.org/rusticml/darkfi/commits/branch/less-than-or-equal-experiment) (by rusticml) and integrated into this repository at commit `41b0629e0`. `BaseModExp` remains unimplemented.
+`LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), `BaseLtStrict` (0x57), and `BaseDiv` (0x58) are **additions to upstream's zkVM** — they do not exist in upstream DarkFi. The initial Rust implementation was prototyped on a [separate experimental branch](https://codeberg.org/rusticml/darkfi/commits/branch/less-than-or-equal-experiment) (by rusticml) and integrated into this repository at commit `41b0629e0`. Formal Lean4 verification was completed on this fork. `BaseModExp` remains unimplemented.
 
 **Formal Verification Results** (Lean 4, see [Opcodes and Formal Verification](opcodes.md)):
 

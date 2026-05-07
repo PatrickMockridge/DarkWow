@@ -100,8 +100,8 @@ The DEX design is constrained by missing opcodes:
 
 | Opcode | Status | Impact |
 |--------|--------|-------|
-| `BaseDiv` | Implemented (0x58) | Enables price ratio calculations in circuit |
-| `LessThanOrEqual` | Experimental | Uses safemath pattern for assertions |
+| `BaseDiv` | Implemented (0x58) | DarkWow addition — enables price ratio calculations in circuit |
+| `LessThanOrEqual` | Verified Sound (0x55) | DarkWow addition — Boolean returns for conditional logic |
 | Cross-contract ZK | Not implemented | Requires trusted setup for Money contract |
 | `schnorr_verify` | Not implemented | Signature verification split between host and circuit |
 

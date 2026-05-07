@@ -257,7 +257,7 @@ This bounded disclosure is **mathematically guaranteed** by the ZK proof constru
 
 ### LTE Gate: Formal Verification of Threshold Predicates
 
-The LessThanOrEqual (LTE) operation is central to O-Cap predicates, enabling threshold comparisons like `role >= senior_engineer`.
+The LessThanOrEqual (LTE) operation is central to O-Cap predicates, enabling threshold comparisons like `role >= senior_engineer`. `LessThanOrEqual` is a **DarkWow addition to the zkVM** — it does not exist in upstream DarkFi. Both the implementation and the Lean4 formal verification were completed on this fork.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -265,8 +265,9 @@ The LessThanOrEqual (LTE) operation is central to O-Cap predicates, enabling thr
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  IMPLEMENTATION: less_than_or_equal(threshold, attribute_value) │
+│  (DarkWow addition — not in upstream)                             │
 │                                                                   │
-│  VERIFICATION: Lean 4 formal methods                              │
+│  VERIFICATION: Lean 4 formal methods (completed on this fork)     │
 │  - Proves circuit soundness for threshold comparisons             │
 │  - No floating-point approximations                             │
 │  - Mathematically correct boundary conditions                     │

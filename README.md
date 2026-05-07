@@ -4,7 +4,7 @@ A DarkFi fork rebuilt around **four rejections of upstream**:
 
 1. **No governance DAO** — pure PoW, no token-holder voting
 2. **No overlay/diff consensus** — deterministic Uncle Merkle with stateless verification
-3. **LessThanOrEqual and BaseDiv op codes proven sound in Lean4** and activated on this fork
+3. **LessThanOrEqual and BaseDiv opcodes built and proven sound in Lean4 on this fork** — additions to upstream's zkVM, not inherited
 4. **No premine** — every coin mined
 
 Zero vendor lock-in. Genesis is two contracts — NativeToken and Deployooor. Hard forks are a feature, not a threat. Extended and entirely voluntary smart contract feature set including but not limited to: Darktoshi Dice, DAO (with Escrow and Drain protection), DEX, Stablecoin, Prediction Market, Betting Stake, Identity, Sealed Bidding/Tendering, Labor Market and more.
@@ -29,11 +29,11 @@ DarkWow replaces this entirely with **Uncle Merkle consensus**: the canonical ch
 
 See [Uncle Merkle Consensus](doc/src/arch/consensus/uncle_merkle.md) for the full specification.
 
-### 3. ZK Opcodes — Formally Verified in Lean4
+### 3. ZK Opcodes — Built and Formally Verified in Lean4
 
-The `LessThanOrEqual` and `BaseDiv` opcodes deployed in DarkWow's zkVM have been formally proven sound using the Lean4 proof assistant. Unlike upstream's experimental opcodes that relied on empirical testing alone, these opcodes carry machine-checkable proofs of correctness.
+Upstream's zkVM has no `LessThanOrEqual` or `BaseDiv` opcodes. These were built on this fork — `LessThanOrEqual` (0x55) enables conditional logic and O-Cap predicate evaluation in circuits; `BaseDiv` (0x58) enables precise field division for cold-circuit governance operations (stablecoin interest accrual, governance ratio checks). Both have been formally proven sound using the Lean4 proof assistant, with machine-checkable proofs of correctness living in this repository (`proofs/lean/`).
 
-See [Opcodes and Formal Verification](doc/src/arch/zk/opcodes.md) for details.
+See [Opcodes and Formal Verification](doc/src/arch/zk/opcodes.md) for the full verification analysis.
 
 ### 4. No Premine — Every Coin Mined
 
