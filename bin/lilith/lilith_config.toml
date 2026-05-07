@@ -26,6 +26,17 @@ hostlist ="~/.local/share/darkfi/lilith/linear-testnet/hostlist.tsv"
 datastore = "~/.local/share/darkfi/lilith/linear-testnet"
 magic_bytes = [163, 139, 113, 101]
 
+[network."darkwow-testnet"]
+accept_addrs = ["tcp+tls://0.0.0.0:31340"]
+seeds = []
+peers = []
+version = "0.5.0"
+app_name = "darkfid"
+localnet = false
+hostlist = "~/.local/share/darkfi/lilith/darkwow-testnet/hostlist.tsv"
+datastore = "~/.local/share/darkfi/lilith/darkwow-testnet"
+magic_bytes = [68, 82, 75, 87]
+
 #[network."darkfid_testnet_v5"]
 #accept_addrs = ["tcp+tls://0.0.0.0:18345"]
 #seeds = []

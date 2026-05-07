@@ -171,6 +171,9 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         "linear-testnet" => {
             (parse_blockchain_config(args.config, "linear-testnet").await?, GENESIS_BLOCK_LINEAR_TESTNET)
         }
+        "darkwow-testnet" => {
+            (parse_blockchain_config(args.config, "darkwow-testnet").await?, GENESIS_BLOCK_LINEAR_TESTNET)
+        }
         _ => {
             error!("Unsupported chain `{}`", args.network);
             return Err(Error::UnsupportedChain)
@@ -178,7 +181,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     };
 
     // Handle linear-testnet separately since it uses LinearBlockchain instead of Validator
-    if args.network == "linear-testnet" {
+    if args.network == "linear-testnet" || args.network == "darkwow-testnet" {
         info!(target: "darkfid", "Starting DarkFi node in linear-testnet mode...");
 
         // Initialize or open sled database
@@ -354,7 +357,7 @@ pub async fn parse_blockchain_config(
     // Grab network prefix
     let used_net = match network {
         "mainnet" | "localnet" => Network::Mainnet,
-        "testnet" | "linear-testnet" => Network::Testnet,
+        "testnet" | "linear-testnet" | "darkwow-testnet" => Network::Testnet,
         _ => return Err(Error::ParseFailed("Invalid blockchain network")),
     };
 

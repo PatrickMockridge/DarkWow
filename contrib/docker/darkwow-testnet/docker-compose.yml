@@ -1,0 +1,82 @@
+version: '3.8'
+services:
+  lilith:
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+    container_name: darkfi-darkwow-lilith
+    hostname: lilith
+    # Override entrypoint - lilith uses inline config
+    entrypoint: ["/bin/sh", "-c", "cat > /tmp/lilith.toml << 'LILITH_EOF'\n[rpc]\nrpc_listen = \"tcp://127.0.0.1:18927\"\n\n[network.\"darkwow-testnet\"]\naccept_addrs = [\"tcp+tls://0.0.0.0:31340\"]\nseeds = []\npeers = []\nversion = \"0.5.0\"\napp_name = \"darkfid\"\nlocalnet = false\nhostlist =\"~/.local/share/darkfi/lilith/darkwow-testnet/hostlist.tsv\"\ndatastore = \"~/.local/share/darkfi/lilith/darkwow-testnet\"\nmagic_bytes = [68, 82, 75, 87]\nLILITH_EOF\nexec /app/lilith --config /tmp/lilith.toml"]
+    command: []
+    ports:
+      - "31340:31340"
+    volumes:
+      - lilith_data:/root/.local/share/darkfi/lilith
+    networks:
+      - darkfi-local
+    healthcheck:
+      test: ["CMD", "/app/lilith", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  node0:
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+    container_name: darkfi-darkwow-node0
+    hostname: node0
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      - NETWORK=darkwow-testnet
+    ports:
+      - "31345:31345"
+      - "31347:31347"
+      - "31342:31342"
+    volumes:
+      - node0_data:/root/.local/share/darkfi/darkfid
+    networks:
+      - darkfi-local
+    depends_on:
+      - lilith
+    healthcheck:
+      test: ["CMD", "/app/darkfid", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  node1:
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+    container_name: darkfi-darkwow-node1
+    hostname: node1
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      - NETWORK=darkwow-testnet
+    ports:
+      - "31346:31346"
+      - "31348:31348"
+      - "31343:31343"
+    volumes:
+      - node1_data:/root/.local/share/darkfi/darkfid
+    networks:
+      - darkfi-local
+    depends_on:
+      - lilith
+      - node0
+    healthcheck:
+      test: ["CMD", "/app/darkfid", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  darkfi-local:
+    driver: bridge
+
+volumes:
+  lilith_data:
+  node0_data:
+  node1_data:
