@@ -4,7 +4,7 @@ DarkWow is a layer-one Proof-of-Work blockchain supporting anonymous WASM smart 
 
 ## Consensus
 
-DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work. This replaces upstream's complex overlay/diff architecture — which exists to support DAO-based fork adjudication — with a simple, deterministic design:
+DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work. This replaces upstream's overlay/diff architecture with a deterministic design:
 
 - **Pure PoW**: The canonical chain is the one with the most accumulated work. No governance DAO decides between forks.
 - **Uncle Merkle pin mechanism**: The canonical chain is **obligated** to offer competing uncle chains a one-time option (within minutes) to form a side chain and share the PoW reward. Uncle chains can accept or reject.

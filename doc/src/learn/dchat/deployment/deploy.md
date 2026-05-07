@@ -5,7 +5,7 @@ run the seed node, go to the `lilith` directory and spawn a new config
 file by running it once:
 
 ```bash
-cd darkfi
+cd dwow
 make BINS=lilith
 ./lilith
 ```

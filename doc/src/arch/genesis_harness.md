@@ -91,7 +91,7 @@ Deploy a WASM contract via Deployooor:
 - Returns the derived `ContractId`
 
 ```rust
-let dex_wasm = include_bytes!("../../dex/darkfi_dex_contract.wasm").to_vec();
+let dex_wasm = include_bytes!("../../dex/dwow_dex_contract.wasm").to_vec();
 let dex_id = genesis.deploy_contract(dex_wasm, "DEX").await?;
 ```
 
@@ -256,7 +256,7 @@ async fn test_stablecoin() -> Result<()> {
     genesis.generate_genesis_blocks(3).await?;
 
     // Deploy Stablecoin via Deployooor
-    let stablecoin_wasm = include_bytes!("../../stablecoin/darkfi_stablecoin_contract.wasm").to_vec();
+    let stablecoin_wasm = include_bytes!("../../stablecoin/dwow_stablecoin_contract.wasm").to_vec();
     let stablecoin_id = genesis.deploy_contract(stablecoin_wasm, "Stablecoin").await?;
 
     // Now use Stablecoin client API to interact with it

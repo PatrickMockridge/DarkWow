@@ -33,7 +33,7 @@ From an end user perspective, they provide a dpath and get a value back.
 
 ```
 provide: darkrenaissance::darkfi::v0_4_1
-get:     0766e910aae7af482885d0a5b05ccb61ae7c1af4 (which is the commit for Darkfi v0.4.1, https://codeberg.org/PatrickM123/darkfi-jailbroken/commit/0766e910aae7af482885d0a5b05ccb61ae7c1af4)
+get:     0766e910aae7af482885d0a5b05ccb61ae7c1af4 (which is the commit for Darkfi v0.4.1, https://codeberg.org/PatrickM123/darkwow/commit/0766e910aae7af482885d0a5b05ccb61ae7c1af4)
 ```
 
 ### Syntax
@@ -70,12 +70,12 @@ All parts except the last resolve to a name registry.
 
 ```
 # Let's begin by building the zkas compiler
-git clone https://codeberg.org/PatrickM123/darkfi-jailbroken
+git clone https://codeberg.org/PatrickM123/darkwow
 cd darkfi && make zkas
 PATH="$PATH:$PWD"
 
 # Pull down the darkmap contract for our learning
-cd ../ && git clone https://codeberg.org/PatrickM123/darkfi-jailbroken
+cd ../ && git clone https://codeberg.org/PatrickM123/darkwow
 ```
 
 ## Tool 1: `ZKAS`, `ZKVM`
@@ -90,7 +90,7 @@ There is one circuit that Darkmap uses, which is the `set` circuit for gating th
 
 Let's see what it does and start reading `<darkmap>/proof/set_v1.zk`.
 
-### `zkrunner`, `darkfi-sdk-py`
+### `zkrunner`, `dwow-sdk-py`
 
 We mentioned ZKAS circuits are "run inside" ZKVM. How?
 
@@ -119,7 +119,7 @@ FIXME: perhaps more detailed explanation
 Currently, the infrastructure for deploying non-native contracts is being worked on. 
 So Darkmap was tested by modifying the darkfi validator to deploy it as native contract.
 
-If you like to try it out, take a look at the [pull request draft](https://codeberg.org/PatrickM123/darkfi-jailbroken/pulls/170/files#diff-1592d061816d5a4da17e089758e15df75ae1ab963b2288e6d84b8f29b06f7d4f).
+If you like to try it out, take a look at the [pull request draft](https://codeberg.org/PatrickM123/darkwow/pulls/170/files#diff-1592d061816d5a4da17e089758e15df75ae1ab963b2288e6d84b8f29b06f7d4f).
 
 In particular:
 * `src/consensus/validator.rs`
@@ -133,7 +133,7 @@ For now, the best place to learn is to learn from the darkmap pull request draft
 
 * Where are the states stored?
 * What are the host-provided functions you can call from within the contract?
-	* https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/runtime/import
+	* https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/runtime/import
 * What are the tools?
 	* zkas
         * zkvm

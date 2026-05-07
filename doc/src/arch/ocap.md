@@ -168,38 +168,35 @@ O-Caps achieve **authorization without revelation**:
 
 ---
 
-## Authorization Inversion: The Mathematical Foundation
+## Authorization Inversion: Design Rationale
 
-*The authorization model in DarkWow is not merely a design choice—it is a mathematical necessity. What follows is the formal reasoning behind why O-Cap authorization is the only sound approach to privacy-preserving authorization.*
+*O-Cap authorization addresses a fundamental property of identity-based access control. What follows describes why this fork chose O-Cap over ACLs for privacy-preserving authorization.*
 
-### The ACL Privacy Gap Theorem
+### The ACL Privacy Gap
 
-Access Control Lists (ACLs) have a fundamental mathematical limitation:
+Access Control Lists (ACLs) have an inherent privacy property when the authorization decision itself reveals information:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│            The Authorization Equivalence Theorem                      │
+│            ACL Privacy Gap                                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  DEFINITION: ACL Privacy Gap                                      │
+│  OBSERVATION:                                                     │
 │  When a verifier observes "ACCESS GRANTED", they learn the      │
-│  principal from the authorized set — reducing anonymity.        │
+│  principal came from the authorized set — reducing anonymity.   │
 │                                                                   │
-│  THEOREM:                                                         │
-│  "The ACL privacy gap is not an implementation flaw but a        │
-│   mathematical consequence of conditioning authorization          │
-│   on identity."                                                   │
-│                                                                   │
-│  PROOF SKETCH:                                                    │
 │  Let A = {principals authorized for action X}                    │
 │  When access is granted, verifier learns: ∃p ∈ A : p performed X│
-│  This directly reveals p's identity from the set A              │
-│  The only escape: don't condition on identity at all            │
+│  This reveals information about p from the set A                │
+│                                                                   │
+│  The O-Cap approach: don't condition on identity at all —       │
+│  instead, prove possession of a capability without revealing    │
+│  which identity holds it.                                        │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**The core insight**: ACLs *cannot* avoid leaking identity information because the authorization decision IS conditioned on identity. This is a mathematical truth, not an engineering problem.
+**Note:** This is not a flaw in ACLs. ACLs are simpler to implement, easier to audit, and are the right choice for systems that don't require anonymous authorization. The privacy property is a consequence of the ACL abstraction — identity-based authorization naturally reveals identity-adjacent information. For privacy-preserving systems, O-Caps provide an alternative model that avoids this inherent tradeoff.
 
 ### Authorization Inversion
 
@@ -253,7 +250,7 @@ Where:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-This bounded disclosure is **mathematically guaranteed** by the ZK proof construction—not by trust in the system.
+This bounded disclosure is **guaranteed** by the ZK proof construction — not by trust in the system.
 
 ### LTE Gate: Formal Verification of Threshold Predicates
 
@@ -283,7 +280,7 @@ The LessThanOrEqual (LTE) operation is central to O-Cap predicates, enabling thr
 
 ---
 
-*This mathematical framework explains why O-Cap authorization is not a feature—it's the only sound approach to authorization that preserves privacy by design.*
+*This framework explains why O-Cap authorization is the chosen approach for DarkWow's privacy-preserving authorization model.*
 
 ## O-Cap Full Opcode Reference (0x09-0x0c)
 
@@ -1389,7 +1386,7 @@ The Subscription contract demonstrates DarkWow's full composability stack: DAO-E
 The `PrivateIntent` struct provides a reusable authorization pattern:
 
 ```rust
-use darkfi_sdk::crypto::{PrivateIntent, IntentCommitment, IntentNullifier};
+use dwow_sdk::crypto::{PrivateIntent, IntentCommitment, IntentNullifier};
 
 // Create an intent
 let intent = PrivateIntent::new(
@@ -1413,7 +1410,7 @@ let nullifier = intent.derive_nullifier(owner_secret)?;  // IntentNullifier
 The `IntentSetIndexV1` provides a generic state machine:
 
 ```rust
-use darkfi_sdk::crypto::{IntentSetIndexV1, IntentPostTransitionV1, IntentConsumeTransitionV1};
+use dwow_sdk::crypto::{IntentSetIndexV1, IntentPostTransitionV1, IntentConsumeTransitionV1};
 
 let mut index = IntentSetIndexV1::new();
 
@@ -1482,9 +1479,9 @@ Several issues affect the ability to develop, test, and deploy smart contracts o
 
 **Feature chain**:
 ```
-darkfi/validator
-  └── darkfi/tx
-        └── darkfi/async-serial
+dwowd/validator
+  └── dwowd/tx
+        └── dwowd/async-serial
               └── darkfi-serial/async
                     └── async-trait 0.1.x  (buggy on Rust 1.90+)
 ```
@@ -1498,14 +1495,14 @@ cargo update typed-index-collections@3.4.0 --precise 3.3.0
 
 **Status**: Pre-built DarkWowMain binaries (v0.5.0) work around this issue.
 
-### Issue 2: Missing `drk wallet` Commands in v0.5.0 Binaries
+### Issue 2: Missing `dww wallet` Commands in v0.5.0 Binaries
 
 **Impact**: Cannot create wallets, check balances, mine tokens, or list coins using the CLI.
 
 **Available commands in v0.5.0**:
-- `drk alias` - Token alias management
-- `drk contract` - Contract deployment
-- `drk token` - Token operations (mint, freeze, import)
+- `dww alias` - Token alias management
+- `dww contract` - Contract deployment
+- `dww token` - Token operations (mint, freeze, import)
 
 **Workaround**: Use pre-built DarkWowMain binaries which include wallet functionality, or wait for v0.6.0 tooling.
 

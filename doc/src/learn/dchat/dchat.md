@@ -21,4 +21,4 @@ programming. If you need a refresher, read the
 [Async Rust Fundamentals](async-rust-fundamentals.md) preamble.
 
 The source code for this tutorial can be found at
-[example/dchat](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/example/dchat).
+[example/dchat](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/example/dchat).

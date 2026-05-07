@@ -180,7 +180,7 @@ The DarkToshi Dice contract was successfully deployed and tested on localnet.
 ### Test Configuration
 
 - **Network**: localnet with `pow_fixed_difficulty=1`
-- **Mining**: `drk mine` against dwowd stratum server (port 48347)
+- **Mining**: `dww mine` against dwowd stratum server (port 48347)
 - **Block reward**: 20 DRKW per block
 - **Wallet**: Initialized and funded via mining
 
@@ -188,7 +188,7 @@ The DarkToshi Dice contract was successfully deployed and tested on localnet.
 
 ```bash
 # Deploy contract
-drk contract deploy BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
+dww contract deploy BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
   target/wasm32-unknown-unknown/release/darkfi_darktoshi_dice_contract.wasm \
   | dww broadcast
 
@@ -198,15 +198,15 @@ drk contract deploy BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
 
 ### Verified Workflow
 
-1. `drk wallet balance` - Check DRKW tokens
-2. `drk wallet coins` - View unspent coins
-3. `drk contract list` - List deploy authorities
-4. `drk scan` - Discover blockchain updates
-5. `drk contract deploy | dww broadcast` - Deploy contract
+1. `dww wallet balance` - Check DRKW tokens
+2. `dww wallet coins` - View unspent coins
+3. `dww contract list` - List deploy authorities
+4. `dww scan` - Discover blockchain updates
+5. `dww contract deploy | dww broadcast` - Deploy contract
 
 ### CLI Notes
 
-- Config file required: `-c bin/drk/drk_config.toml`
+- Config file required: `-c bin/dww/dww_config.toml`
 - Network flag: `-n localnet`
 - `scan` is a top-level subcommand (not `wallet scan`)
 - Values displayed in raw units (8 decimal places)

@@ -120,10 +120,10 @@ struct PrizeTierConfig {
 
 ## Drawing Algorithm
 
-Winning numbers use block hash entropy via the [Entropy Module](./entropy.md) (`darkfi_sdk::crypto::entropy`):
+Winning numbers use block hash entropy via the [Entropy Module](./entropy.md) (`dwow_sdk::crypto::entropy`):
 
 ```rust
-use darkfi_sdk::crypto::entropy::draw_unique_range;
+use dwow_sdk::crypto::entropy::draw_unique_range;
 
 // Draw N unique numbers from 1 to M
 let numbers = draw_unique_range(block_hash, seed_nonce, num_picks, number_range);

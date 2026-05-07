@@ -1,6 +1,6 @@
 # Wallet Scanning
 
-The DarkWow wallet scanner (`bin/drk/src/rpc.rs`) scans blocks to detect coins belonging to the wallet.
+The DarkWow wallet scanner (`bin/dww/src/rpc.rs`) scans blocks to detect coins belonging to the wallet.
 
 ## Overview
 

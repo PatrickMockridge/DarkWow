@@ -38,8 +38,8 @@ App developers build game logic on top of the Game Room contract. The contract h
 ### Initialize Client
 
 ```rust
-use darkfi_sdk::game_room::{GameRoomClient, RoomConfig, EntropyMode};
-use darkfi_sdk::crypto::{ContractId, Keypair};
+use dwow_sdk::game_room::{GameRoomClient, RoomConfig, EntropyMode};
+use dwow_sdk::crypto::{ContractId, Keypair};
 
 // Connect to existing room
 let keypair = Keypair::random();
@@ -350,7 +350,7 @@ impl PokerRoom {
 ```rust
 #[cfg(test)]
 mod tests {
-    use darkfi_sdk::game_room::*;
+    use dwow_sdk::game_room::*;
 
     #[test]
     fn test_bet_lifecycle() {

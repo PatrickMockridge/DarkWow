@@ -1,5 +1,9 @@
 # DAO Short Explainer
 
+> **DEPRECATED — LEGACY DOCUMENTATION**
+>
+> This document describes the DAO v1 contract from the overlay-DAG architecture (upstream). On this fork, DAO v1 has been replaced by [DAO Escrow](dao_escrow.md), which uses ZK predicates instead of token-weighted ACL voting. This document is preserved for reference.
+
 ## Prerequisites
 
 There is a scheme called commit-and-reveal, where given an object $x$

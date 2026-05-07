@@ -209,8 +209,8 @@ Running a relayer requires maintaining full nodes for the chains you're servicin
 
 ```bash
 # Clone the repository
-git clone https://codeberg.org/PatrickM123/darkfi-jailbroken.git
-cd darkfi
+git clone https://codeberg.org/PatrickM123/darkwow.git
+cd dwow
 
 # Build the universal relayer
 cargo build -p universal_relayer --release
@@ -540,7 +540,7 @@ See [Bridge Documentation](../contract/bridge.md) for detailed architecture.
 Error: Failed to connect to dwowd: Connection refused
 
 # Solution: Ensure dwowd is running
-systemctl status darkfid
+systemctl status dwowd
 # or
 dwowd --config dwowd_config.toml
 ```

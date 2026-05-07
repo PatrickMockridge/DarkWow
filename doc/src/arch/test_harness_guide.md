@@ -66,19 +66,19 @@ These verify the contract's data model and serialization layer.
 - State machine transitions
 - Blockchain integration
 
-**Why:** The full test harness requires `darkfi/validator` which enables `darkfi-serial/async`, causing compilation issues on Rust 1.90+ with the current codebase.
+**Why:** The full test harness requires `dwowd/validator` which enables `darkfi-serial/async`, causing compilation issues on Rust 1.90+ with the current codebase.
 
 ## Current Limitations
 
 ### The async-serial Issue
 
-The full integration test harness (`darkfi-contract-test-harness`) depends on `darkfi/validator`. This transitively enables:
+The full integration test harness (`dwow-contract-test-harness`) depends on `dwowd/validator`. This transitively enables:
 
 ```
-darkfi/validator
-  └── darkfi/blockchain
-        └── darkfi/tx
-              └── darkfi/async-serial
+dwowd/validator
+  └── dwowd/blockchain
+        └── dwowd/tx
+              └── dwowd/async-serial
                     └── darkfi-serial/async
 ```
 
@@ -105,10 +105,10 @@ Your integration tests verify:
 
 This is still valuable - it catches type errors and serialization bugs early.
 
-### 3. Full Darkfid Test Harness (`darkfi-contract-test-harness`)
+### 3. Full Darkfid Test Harness (`dwow-contract-test-harness`)
 
 This is the **full integration test harness** that tests:
-- Full contract execution with darkfid
+- Full contract execution with dwowd
 - ZK proof generation and verification
 - State machine transitions
 - Multi-holder workflows
@@ -132,7 +132,7 @@ This is the **full integration test harness** that tests:
 
 **Why Two Levels of Testing?**
 
-Integration tests (`integration.rs`) catch type errors and serialization bugs quickly without needing the full darkfi stack. The full test harness (`darkfi-contract-test-harness`) verifies actual contract behavior end-to-end.
+Integration tests (`integration.rs`) catch type errors and serialization bugs quickly without needing the full darkfi stack. The full test harness (`dwow-contract-test-harness`) verifies actual contract behavior end-to-end.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -148,7 +148,7 @@ Integration tests (`integration.rs`) catch type errors and serialization bugs qu
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│              darkfi-contract-test-harness                        │
+│              dwow-contract-test-harness                        │
 │                   (Integration Tests)                             │
 │         - Contract interaction API                                │
 │         - Transaction building                                    │
@@ -237,7 +237,7 @@ DarkWow contracts come in two types:
 Native contracts are compiled into dwowd and have **static ContractIds** defined in the SDK:
 
 ```rust
-// In darkfi_sdk::crypto::contract_id
+// In dwow_sdk::crypto::contract_id
 pub static ref DEPLOYOOOR_CONTRACT_ID: ContractId =
     ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(0)]));
 pub static ref MONEY_V2_CONTRACT_ID: ContractId =
@@ -308,11 +308,11 @@ use darkfi::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     Result,
 };
-use darkfi_money_contract::{client::OwnCoin, model::MoneyFeeParamsV1};
-use darkfi_sdk::{
+use dwow_money_contract::{client::OwnCoin, model::MoneyFeeParamsV1};
+use dwow_sdk::{
     crypto::contract_id::CONTRACT_ID, ContractCall,
 };
-use darkfi_serial::Encodable;
+use dwow_serial::Encodable;
 
 use super::{Holder, TestHarness};
 
@@ -595,13 +595,13 @@ rustup install 1.89.0
 rustup override set 1.89.0
 cargo update typed-index-collections@3.4.0 --precise 3.3.0
 
-cargo test -p darkfi_baccarat_contract --test integration
+cargo test -p dwow_baccarat_contract --test integration
 ```
 
 ### Verify Contract Builds
 
 ```bash
-cargo build -p darkfi_baccarat_contract --lib
+cargo build -p dwow_baccarat_contract --lib
 ```
 
 If this succeeds but integration tests fail, the issue is with the test harness environment, not your tests.
@@ -628,7 +628,7 @@ src/contract/<name>/
 ### Importing Contract Types
 
 ```rust
-use darkfi_baccarat_contract::{
+use dwow_baccarat_contract::{
     model::{
         Bet, BetState, BetType, Card, CommitBetParamsV1, CommitBetUpdateV1, Hand, Outcome,
         BACCARAT_CONTRACT_BETS_TREE, BACCARAT_CONTRACT_NULLIFIERS_TREE,

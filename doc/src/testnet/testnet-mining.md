@@ -4,7 +4,7 @@ This guide covers setting up solo Proof-of-Work mining on DarkWow testnet using 
 
 ## Prerequisites
 
-- Pre-built DarkWow binaries from [DarkWowMain](https://codeberg.org/PatrickM123/darkfi-jailbroken)
+- Pre-built DarkWow binaries from [DarkWowMain](https://codeberg.org/PatrickM123/darkwow)
 - Wallet address (generate one first)
 - ~2GB RAM per mining thread
 
@@ -14,13 +14,13 @@ This guide covers setting up solo Proof-of-Work mining on DarkWow testnet using 
 
 ```bash
 # Initialize wallet
-drk -c bin/drk/drk_config.toml -n testnet wallet initialize
+dww -c bin/dww/dww_config.toml -n testnet wallet initialize
 
 # Generate keypair
-drk -c bin/drk/drk_config.toml -n testnet wallet keygen
+dww -c bin/dww/dww_config.toml -n testnet wallet keygen
 
 # Get your address
-drk -c bin/drk/drk_config.toml -n testnet wallet address
+dww -c bin/dww/dww_config.toml -n testnet wallet address
 ```
 
 Save the address - you'll need it for mining rewards.
@@ -71,14 +71,14 @@ network = "testnet"
 fun = true
 
 [network_config."testnet"]
-cache_path = "~/.local/share/dwow/drk/testnet/cache"
-wallet_path = "~/.local/share/dwow/drk/testnet/wallet.db"
+cache_path = "~/.local/share/dwow/dww/testnet/cache"
+wallet_path = "~/.local/share/dwow/dww/testnet/wallet.db"
 wallet_pass = "test123"
 endpoint = "tcp://127.0.0.1:8340"
-history_path = "~/.local/share/dwow/drk/testnet/history.txt"
+history_path = "~/.local/share/dwow/dww/testnet/history.txt"
 ```
 
-## Step 4: Start darkfid
+## Step 4: Start dwowd
 
 ```bash
 dwowd -c /home/patrick/darkfi-testnet/devnet_dwowd.config.toml
@@ -137,8 +137,8 @@ If you see this error, it's normal (happens when a new block arrives):
 After blocks are mined, sync your wallet to see the DRKW tokens:
 
 ```bash
-drk -c /home/patrick/darkfi-testnet/devnet_drk.config.toml scan
-drk -c /home/patrick/darkfi-testnet/devnet_drk.config.toml wallet balance
+dww -c /home/patrick/darkfi-testnet/devnet_drk.config.toml scan
+dww -c /home/patrick/darkfi-testnet/devnet_drk.config.toml wallet balance
 ```
 
 ## Troubleshooting
@@ -166,31 +166,31 @@ If dwowd won't sync:
 | Component | Path |
 |-----------|------|
 | dwowd binary | `/path/to/DarkWowMain/dwow/bin/dwowd/dwowd` |
-| dww binary | `/path/to/DarkWowMain/dwow/bin/drk/drk` |
+| dww binary | `/path/to/DarkWowMain/dwow/bin/dww/dww` |
 | minerd binary | `/path/to/DarkWowMain/dwow/bin/minerd/minerd` |
 | dwowd config | `~/.config/dwow/dwowd_config.toml` or custom |
-| dww config | `~/.config/dwow/drk_config.toml` or custom |
+| dww config | `~/.config/dwow/dww_config.toml` or custom |
 | dwowd data | `~/.local/share/dwow/dwowd/testnet/` |
-| dww wallet | `~/.local/share/dwow/drk/testnet/wallet.db` |
+| dww wallet | `~/.local/share/dwow/dww/testnet/wallet.db` |
 
 ## Common Commands
 
 ```bash
 # Check wallet balance
-drk -c bin/drk/drk_config.toml -n testnet wallet balance
+dww -c bin/dww/dww_config.toml -n testnet wallet balance
 
 # List tokens
-drk -c bin/drk/drk_config.toml -n testnet token list
+dww -c bin/dww/dww_config.toml -n testnet token list
 
 # List contracts
-drk -c bin/drk/drk_config.toml -n testnet contract list
+dww -c bin/dww/dww_config.toml -n testnet contract list
 
 # Deploy contract
-drk -c bin/drk/drk_config.toml -n testnet contract deploy <authority> <wasm-path> [deploy-ix]
+dww -c bin/dww/dww_config.toml -n testnet contract deploy <authority> <wasm-path> [deploy-ix]
 
 # Mint custom token
-drk -c bin/drk/drk_config.toml -n testnet token generate-mint
-drk -c bin/drk/drk_config.toml -n testnet token mint <token-id> <amount> <recipient>
+dww -c bin/dww/dww_config.toml -n testnet token generate-mint
+dww -c bin/dww/dww_config.toml -n testnet token mint <token-id> <amount> <recipient>
 ```
 
 ## Notes
@@ -207,7 +207,7 @@ For contract development, use the **linear-testnet** which provides a pre-funded
 
 ```bash
 # 1. Build dwowd with linear-testnet support
-cargo build -p darkfid
+cargo build -p dwowd
 
 # 2. Start the 5-node linear-testnet Docker stack
 cd contrib/docker/linear-testnet
@@ -220,7 +220,7 @@ docker logs darkfi-linear-node0 2>&1 | grep "dev_wallet"
 ./scripts/mine.sh 0 100000000
 
 # 5. Deploy a contract
-drk contract deploy <dev_secret_hex> --wasm path/to/contract.wasm | broadcast
+dww contract deploy <dev_secret_hex> --wasm path/to/contract.wasm | broadcast
 ```
 
 ### Docker Stack Overview
@@ -298,7 +298,7 @@ dww --network linear contract list
 For tests, use `LinearTestnetSdk`:
 
 ```rust
-use darkfi_sdk::crypto::SecretKey;
+use dwow_sdk::crypto::SecretKey;
 use darkfi::tests::linear_sdk::{LinearTestnetSdk, DevWalletConfig};
 
 async fn test_contract() -> Result<()> {

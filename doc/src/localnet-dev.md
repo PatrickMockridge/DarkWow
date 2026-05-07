@@ -11,16 +11,16 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 ./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
 
 # Terminal 2: Mine blocks to your wallet
-./target/release/dww -c bin/drk/drk_config.toml -n localnet mine
+./target/release/dww -c bin/dww/dww_config.toml -n localnet mine
 
 # Terminal 3: Check balance
-./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet balance
+./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet balance
 ```
 
 ## How It Works
 
 1. **dwowd** runs a stratum mining server on port 48347 (configured in localnet toml)
-2. **drk mine** connects via TCP, logs in with your wallet address as recipient
+2. **dww mine** connects via TCP, logs in with your wallet address as recipient
 3. dwowd sends mining jobs (RandomX blob + target)
 4. dww mines RandomX hashes in a background thread
 5. Shares found are submitted back to stratum server
@@ -47,38 +47,38 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 
 **Wallet subcommands:**
 ```
-drk wallet address            Get the default address
-drk wallet addresses          Print all addresses
-drk wallet balance            Query known balances
-drk wallet coins              Print all coins
-drk wallet default-address    Set default address
-drk wallet import-secrets     Import secret keys from stdin
-drk wallet initialize         Initialize wallet database
-drk wallet keygen             Generate new keypair
-drk wallet mining-config      Print wallet address mining configuration
-drk wallet secrets            Print all secret keys
-drk wallet tree               Print Merkle tree
+dww wallet address            Get the default address
+dww wallet addresses          Print all addresses
+dww wallet balance            Query known balances
+dww wallet coins              Print all coins
+dww wallet default-address    Set default address
+dww wallet import-secrets     Import secret keys from stdin
+dww wallet initialize         Initialize wallet database
+dww wallet keygen             Generate new keypair
+dww wallet mining-config      Print wallet address mining configuration
+dww wallet secrets            Print all secret keys
+dww wallet tree               Print Merkle tree
 ```
 
 **Contract subcommands:**
 ```
-drk contract dao-escrow-init <dao-bulla> <token-id>    Initialize a DAO-Escrow endowment
-drk contract drain-protection-init <fund-id> <spend-auth> <dao-bulla>  Initialize DrainProtection
-drk contract enable-drain-protection <dao-bulla> <drain-bulla>          Enable drain protection
-drk contract deploy <auth> <wasm-path> [deploy-ix]    Deploy a smart contract
-drk contract export-data <tx-hash>                     Export wasm bincode + deploy ix
-drk contract generate-deploy                          Generate new deploy authority
-drk contract invoke <contract-id> <function>           Invoke a contract function
-drk contract list [contract-id]                        List deploy authorities
-drk contract lock <deploy-auth>                        Lock a smart contract
+dww contract dao-escrow-init <dao-bulla> <token-id>    Initialize a DAO-Escrow endowment
+dww contract drain-protection-init <fund-id> <spend-auth> <dao-bulla>  Initialize DrainProtection
+dww contract enable-drain-protection <dao-bulla> <drain-bulla>          Enable drain protection
+dww contract deploy <auth> <wasm-path> [deploy-ix]    Deploy a smart contract
+dww contract export-data <tx-hash>                     Export wasm bincode + deploy ix
+dww contract generate-deploy                          Generate new deploy authority
+dww contract invoke <contract-id> <function>           Invoke a contract function
+dww contract list [contract-id]                        List deploy authorities
+dww contract lock <deploy-auth>                        Lock a smart contract
 ```
 
 **Universal Contract Invocation:**
 ```
-drk contract invoke <contract-name-or-id> <function> [--params <json-file>]
+dww contract invoke <contract-name-or-id> <function> [--params <json-file>]
 
 # Example: Enable drain protection on DAO-Escrow
-drk contract invoke dao_escrow enable_drain_protection --params params.json
+dww contract invoke dao_escrow enable_drain_protection --params params.json
 
 # Where params.json contains:
 # {"dao_escrow_bulla": "...", "drain_protection_bulla": "..."}
@@ -97,8 +97,8 @@ drk contract invoke dao_escrow enable_drain_protection --params params.json
 
 ### 1. Initialize wallet (first time only)
 ```bash
-./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet initialize
-./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet keygen
+./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet initialize
+./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet keygen
 ```
 
 ### 2. Start localnet
@@ -108,39 +108,39 @@ drk contract invoke dao_escrow enable_drain_protection --params params.json
 
 ### 3. Mine blocks
 ```bash
-./target/release/dww -c bin/drk/drk_config.toml -n localnet mine
+./target/release/dww -c bin/dww/dww_config.toml -n localnet mine
 # Press Ctrl+C when sufficient DRKW accumulated
 ```
 
 ### 4. Check balance
 ```bash
-./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet balance
+./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet balance
 ```
 
 ### 5. Scan blockchain
 ```bash
-./target/release/dww -c bin/drk/drk_config.toml -n localnet scan
+./target/release/dww -c bin/dww/dww_config.toml -n localnet scan
 # Or reset and rescan from block 0:
-./target/release/dww -c bin/drk/drk_config.toml -n localnet scan --reset 0
+./target/release/dww -c bin/dww/dww_config.toml -n localnet scan --reset 0
 ```
 
 ### 6. List known coins
 ```bash
-./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet coins
+./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet coins
 ```
 
 ### 7. Deploy a contract
 ```bash
 # Generate deploy authority if needed
-./target/release/dww -c bin/drk/drk_config.toml -n localnet contract generate-deploy
+./target/release/dww -c bin/dww/dww_config.toml -n localnet contract generate-deploy
 
 # Deploy contract (pipe output to broadcast)
-./target/release/dww -c bin/drk/drk_config.toml -n localnet contract deploy <contract-id> <wasm-path> | ./target/release/dww -c bin/drk/drk_config.toml -n localnet broadcast
+./target/release/dww -c bin/dww/dww_config.toml -n localnet contract deploy <contract-id> <wasm-path> | ./target/release/dww -c bin/dww/dww_config.toml -n localnet broadcast
 ```
 
 ### 8. Verify deployment
 ```bash
-./target/release/dww -c bin/drk/drk_config.toml -n localnet contract list
+./target/release/dww -c bin/dww/dww_config.toml -n localnet contract list
 ```
 
 ## Network Ports
@@ -155,10 +155,10 @@ drk contract invoke dao_escrow enable_drain_protection --params params.json
 ```bash
 # If "Resource temporarily unavailable" error on wallet db:
 # Kill any running dww processes
-pkill -f "drk.*mine"
+pkill -f "dww.*mine"
 
 # Then retry wallet commands
-./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet balance
+./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet balance
 ```
 
 ## CLI Quirks
@@ -167,48 +167,48 @@ pkill -f "drk.*mine"
 
 The `scan` command is not under `wallet` - it's a top-level subcommand:
 ```bash
-drk scan                    # Correct - scan blockchain
-drk wallet scan             # Wrong - this doesn't exist
+dww scan                    # Correct - scan blockchain
+dww wallet scan             # Wrong - this doesn't exist
 ```
 
-This differs from other wallet operations which are under `drk wallet <subcommand>`.
+This differs from other wallet operations which are under `dww wallet <subcommand>`.
 
 ### Config file must be passed explicitly
 
 There is no default config file location. Every command requires `-c`:
 ```bash
-drk -c bin/drk/drk_config.toml -n localnet wallet balance  # Correct
-drk -n localnet wallet balance                              # Wrong - fails
+dww -c bin/dww/dww_config.toml -n localnet wallet balance  # Correct
+dww -n localnet wallet balance                              # Wrong - fails
 ```
 
 ### --reset uses space, not equals
 
 The `--reset` flag for scan uses space-separated syntax:
 ```bash
-drk scan --reset 0     # Correct - space
-drk scan --reset=0    # Wrong - equals sign doesn't work
+dww scan --reset 0     # Correct - space
+dww scan --reset=0    # Wrong - equals sign doesn't work
 ```
 
 ### broadcast reads base64 from stdin
 
 The `broadcast` command reads a base64-encoded transaction from stdin:
 ```bash
-drk contract deploy <auth> <wasm> | dww broadcast  # Pipe output to broadcast
+dww contract deploy <auth> <wasm> | dww broadcast  # Pipe output to broadcast
 ```
 
 ### balance shows unspent only
 
-`drk wallet balance` shows only unspent balances. Spent coins are not included in the balance calculation.
+`dww wallet balance` shows only unspent balances. Spent coins are not included in the balance calculation.
 
 ### coin values are in raw units
 
-Coin values in `drk wallet coins` output are shown as raw values (e.g., `2000000000`) with a formatted version in parentheses (e.g., `(20)`). The DRKW token has 8 decimal places.
+Coin values in `dww wallet coins` output are shown as raw values (e.g., `2000000000`) with a formatted version in parentheses (e.g., `(20)`). The DRKW token has 8 decimal places.
 
 ### contract list without args lists all authorities
 
 ```bash
-drk contract list              # Lists ALL deploy authorities
-drk contract list <contract>  # Shows history for specific contract
+dww contract list              # Lists ALL deploy authorities
+dww contract list <contract>  # Shows history for specific contract
 ```
 
 The history lookup requires the deployment transaction hash (tx-hash), not the contract ID.
@@ -262,13 +262,13 @@ Roulette, betting_stake, and Lottery are concept-wise >90% the same - privacy-pr
 Both roulette and betting_stake had `msg` missing from imports:
 ```rust
 // WRONG - msg not imported
-use darkfi_sdk::{wasm, ContractCall};
+use dwow_sdk::{wasm, ContractCall};
 
-// CORRECT - msg imported from darkfi_sdk
-use darkfi_sdk::{msg, wasm, ContractCall};
+// CORRECT - msg imported from dwow_sdk
+use dwow_sdk::{msg, wasm, ContractCall};
 ```
 
-Also: `wasm::msg!` should be just `msg!` (macro is exported from darkfi_sdk, not wasm module)
+Also: `wasm::msg!` should be just `msg!` (macro is exported from dwow_sdk, not wasm module)
 
 #### Bug 2: Error Type in TryFrom (both roulette and betting_stake)
 ```rust
@@ -341,7 +341,7 @@ if table.state != RouletteTableState::Spun && table.state != RouletteTableState:
 // WRONG - wasm::msg! doesn't exist
 wasm::msg!("[betting_stake::stake] Staking {}", params.amount);
 
-// CORRECT - msg! is exported directly from darkfi_sdk
+// CORRECT - msg! is exported directly from dwow_sdk
 msg!("[betting_stake::stake] Staking {}", params.amount);
 ```
 
@@ -376,10 +376,10 @@ msg!("Stake created");
 #### Bug 9: Missing Imports (betting_stake)
 ```rust
 // WRONG - missing pallas and PublicKey
-use darkfi_sdk::{crypto::ContractId, ...};
+use dwow_sdk::{crypto::ContractId, ...};
 
 // CORRECT - need both pallas and PublicKey for helper functions
-use darkfi_sdk::{crypto::{poseidon_hash, ContractId, PublicKey}, pasta::pallas, ...};
+use dwow_sdk::{crypto::{poseidon_hash, ContractId, PublicKey}, pasta::pallas, ...};
 ```
 
 ### Bug Pattern Root Cause
@@ -395,7 +395,7 @@ All three contracts (roulette, betting_stake) were written by someone who:
 ### New Betting Contract Checklist
 
 Before declaring a betting contract "done", verify against lottery:
-1. Is `msg` imported from `darkfi_sdk`?
+1. Is `msg` imported from `dwow_sdk`?
 2. Does `TryFrom` error map to `ContractError`?
 3. Does `process_instruction` return `Ok(serialize(&update))` and call `set_return_data`?
 4. Does `process_update` return `Ok(())`?
@@ -409,11 +409,11 @@ Before declaring a betting contract "done", verify against lottery:
 
 ```bash
 # Generate authority
-drk -c bin/drk/drk_config.toml -n localnet contract generate-deploy
+dww -c bin/dww/dww_config.toml -n localnet contract generate-deploy
 
 # Deploy (pipe to broadcast)
-drk -c bin/drk/drk_config.toml -n localnet contract deploy <auth> <wasm> | \
- dww -c bin/drk/drk_config.toml -n localnet broadcast
+dww -c bin/dww/dww_config.toml -n localnet contract deploy <auth> <wasm> | \
+ dww -c bin/dww/dww_config.toml -n localnet broadcast
 ```
 
 All three previously-failed contracts (roulette, betting_stake, drain_protection) are now deployed with proper WASM sizes (171KB-239KB).
@@ -436,7 +436,7 @@ These contracts use `ix: &[u8]` (no underscore) and call `.decode()` on the init
 | dex | `init_contract(cid, ix)` | `InitializeParams { timeout, fee, trusted_money_merkle_root, transparency_config }` |
 | stablecoin | `init_contract(cid, ix)` | `UpdateConfigParams { min_collateralization_ratio, liquidation_threshold }` |
 
-**Root Cause**: When `drk contract deploy <auth> <wasm>` is used without a deploy-ix file, it sends an empty `vec![]`. The `.decode()` call on empty data fails.
+**Root Cause**: When `dww contract deploy <auth> <wasm>` is used without a deploy-ix file, it sends an empty `vec![]`. The `.decode()` call on empty data fails.
 
 **Fix**: Create a properly encoded binary deploy instruction file with valid params.
 
@@ -522,11 +522,11 @@ pub const RELAYER_ENDOWMENT_INFO_TREE: &str = "relayer_endowment_info";
 
 ### Deploy Instruction Encoding (Group 1)
 
-For contracts that expect init data, create binary files using `serialize()` from `darkfi_serial`:
+For contracts that expect init data, create binary files using `serialize()` from `dwow_serial`:
 
 ```rust
 // Example: bridge deploy instruction
-use darkfi_serial::serialize;
+use dwow_serial::serialize;
 let params = UpdateConfigParams {
     deposit_fee: 0,
     withdrawal_fee: 0,
@@ -542,20 +542,20 @@ let data = serialize(&params);
 
 **Group 1** (with deploy instruction files):
 ```bash
-AUTH=$(drk -c bin/drk/drk_config.toml -n localnet contract generate-deploy)
+AUTH=$(dww -c bin/dww/dww_config.toml -n localnet contract generate-deploy)
 
 # bridge
-drk -c bin/drk/drk_config.toml -n localnet contract deploy $AUTH \
-  target/wasm32-unknown-unknown/release/darkfi_bridge_contract.wasm bridge_deploy_ix.bin | \
- dww -c bin/drk/drk_config.toml -n localnet broadcast
+dww -c bin/dww/dww_config.toml -n localnet contract deploy $AUTH \
+  target/wasm32-unknown-unknown/release/dwow_bridge_contract.wasm bridge_deploy_ix.bin | \
+ dww -c bin/dww/dww_config.toml -n localnet broadcast
 ```
 
 **Group 2** (underscore contracts, fixed with db_lookup guards):
 ```bash
 # darkbet_exchange
-drk -c bin/drk/drk_config.toml -n localnet contract deploy $AUTH \
+dww -c bin/dww/dww_config.toml -n localnet contract deploy $AUTH \
   target/wasm32-unknown-unknown/release/darkfi_darkbet_exchange_contract.wasm | \
- dww -c bin/drk/drk_config.toml -n localnet broadcast
+ dww -c bin/dww/dww_config.toml -n localnet broadcast
 ```
 
 ### Current Status (2026-04-07)
@@ -699,9 +699,9 @@ The identity contract **cannot compile** - it uses SDK APIs that don't exist.
 **102 compilation errors** due to API incompatibility:
 
 1. **Missing SDK modules**: Imports from non-existent paths:
-   - `darkfi_sdk::bridge` (doesn't exist)
-   - `darkfi_sdk::contract` (doesn't exist)
-   - `darkfi_sdk::runtime` (doesn't exist)
+   - `dwow_sdk::bridge` (doesn't exist)
+   - `dwow_sdk::contract` (doesn't exist)
+   - `dwow_sdk::runtime` (doesn't exist)
 
 2. **Undefined constants**: Uses `IDENTITY_CONTRACT_*` constants that aren't defined in lib.rs
 
@@ -709,7 +709,7 @@ The identity contract **cannot compile** - it uses SDK APIs that don't exist.
 
 ### Root Cause
 
-The identity contract was written for a **future/different SDK version** that hasn't been implemented yet. It uses APIs (`Runtime::create_tree()`, `BridgeCall::decode()`) that don't exist in the current `darkfi-sdk` crate.
+The identity contract was written for a **future/different SDK version** that hasn't been implemented yet. It uses APIs (`Runtime::create_tree()`, `BridgeCall::decode()`) that don't exist in the current `dwow-sdk` crate.
 
 ### Solution
 
@@ -742,22 +742,22 @@ Share rejected: {"id":1,"result":{"status":"rejected"},"jsonrpc":"2.0"}
 **Resolution Steps**:
 ```bash
 # Kill all dww mining processes
-pkill -f "drk.*mine"
+pkill -f "dww.*mine"
 
-# Kill darkfid
-pkill darkfid
+# Kill dwowd
+pkill dwowd
 
 # Wait for ports to clear
 sleep 2
 
-# Restart darkfid
+# Restart dwowd
 ./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml &
 
 # Wait for startup
 sleep 3
 
 # Check wallet (may need to reset)
-./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet balance
+./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet balance
 ```
 
 ### Symptom: "Failed to calculate transaction's gas"
@@ -783,8 +783,8 @@ Not all `ParseFailed: Requires deploy instruction` errors are the same:
 
 - `bin/dwowd/src/rpc/miner.rs` - dwowd stratum server implementation
 - `bin/dwowd/src/lib.rs` - `DarkfiNode::is_localnet()` guard
-- `bin/drk/src/main.rs` - Subcommand definitions and handlers
-- `bin/drk/src/rpc.rs` - `miner_mine()` stratum client
-- `bin/drk/drk_config.toml` - Network configuration
+- `bin/dww/src/main.rs` - Subcommand definitions and handlers
+- `bin/dww/src/rpc.rs` - `miner_mine()` stratum client
+- `bin/dww/dww_config.toml` - Network configuration
 - `contrib/localnet/dwowd-single-node/dwowd.toml` - Localnet config
 - `src/contract/dao_escrow/src/` - DAO Escrow contract (deployed 2026-04-08)

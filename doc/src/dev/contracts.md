@@ -8,11 +8,11 @@ DarkWow implements several privacy-preserving smart contracts. Each contract fol
 |---------|---------|--------------|
 | [Money](../spec/contract/money/money.md) | Token transfers | Nullifiers, Pedersen commitments |
 | [DAO](../spec/contract/dao/dao.md) | Governance |提案投票,  treasury management |
-| [Oracle](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/contract/oracle/README.md) | External data feeds | Stake-based attestations |
-| [Auction](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/contract/auction/README.md) | Sealed-bid auctions | Escrow integration |
-| [Attestation](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/contract/attestation/README.md) | Credential verification | Predicate-based claims |
-| [Tender](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/contract/tender/README.md) | Request for proposals | O-Cap capability gating |
-| [Labor Market](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/contract/labor_market/README.md) | Service marketplaces | Milestone-based payments |
+| [Oracle](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/oracle/README.md) | External data feeds | Stake-based attestations |
+| [Auction](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/auction/README.md) | Sealed-bid auctions | Escrow integration |
+| [Attestation](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/attestation/README.md) | Credential verification | Predicate-based claims |
+| [Tender](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/tender/README.md) | Request for proposals | O-Cap capability gating |
+| [Labor Market](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/labor_market/README.md) | Service marketplaces | Milestone-based payments |
 | [Bridge](dev/contracts/bridge.md) | Cross-chain transfers | Object Capability Security |
 | [DEX](dev/contracts/dex.md) | Atomic swap DAO | Minimal viable information |
 | [Identity](dev/contracts/identity.md) | Credential proofs | Selective disclosure |
@@ -77,7 +77,7 @@ let id = poseidon_hash([
 ### Function Enum Definition
 
 ```rust
-darkfi_sdk::define_contract_function!(ContractFunction {
+dwow_sdk::define_contract_function!(ContractFunction {
     InitializeV1 = 0x00,
     DoSomethingV1 = 0x01,
     DoSomethingElseV1 = 0x02,
@@ -87,8 +87,8 @@ darkfi_sdk::define_contract_function!(ContractFunction {
 ### Data Structures
 
 ```rust
-use darkfi_serial::{SerialEncodable, SerialDecodable};
-use darkfi_sdk::pasta::pallas;
+use dwow_serial::{SerialEncodable, SerialDecodable};
+use dwow_sdk::pasta::pallas;
 
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct SomeParamsV1 {
@@ -121,7 +121,7 @@ wasm::db::db_set(db, &key, &serialize(&obj)?)?;
 ### Error Handling
 
 ```rust
-use darkfi_sdk::error::{ContractError, ContractResult};
+use dwow_sdk::error::{ContractError, ContractResult};
 
 impl From<MyError> for ContractError {
     fn from(e: MyError) -> Self {
@@ -174,7 +174,7 @@ cargo test -p darkfi_<name>_contract
 
 When debugging contract issues, check:
 
-1. **Import correctness** - Use `darkfi_sdk::crypto::ContractId`, not `pasta_prelude`
+1. **Import correctness** - Use `dwow_sdk::crypto::ContractId`, not `pasta_prelude`
 2. **Database handles** - Use `db_lookup` for existing DBs, `db_init` only in initialization
 3. **Deserialization** - `db_get` returns `Option<Vec<u8>>`, must deserialize
 4. **Type prefixes** - Use `pasta::pallas::Base` not `pallas::Base`

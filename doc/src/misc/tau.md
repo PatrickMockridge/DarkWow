@@ -8,8 +8,8 @@ and all users will have synced tasks.
 ## Install 
 
 ```shell
-% git clone https://codeberg.org/PatrickM123/darkfi-jailbroken
-% cd darkfi
+% git clone https://codeberg.org/PatrickM123/darkwow
+% cd dwow
 % make taud
 ```
 
@@ -38,7 +38,7 @@ Then you can run it with:
 ```
 Or you can alias it by adding this line to your `~/.bashrc`:
 ```shell
-% alias tau=/path-to-darkfi/bin/tau/tau-python/tau
+% alias tau=/path-to-dwow/bin/tau/tau-python/tau
 ```
 
 ## Usage 
@@ -143,7 +143,7 @@ for a description which allows entering multiline text.
 #### Switch workspace
 
 ```shell
-% tau switch darkfi-dev     # darkfi-dev workspace needs to be configured in config file
+% tau switch dwow-dev     # dwow-dev workspace needs to be configured in config file
 ```
 
 In addition to indexing tasks by there IDs, one can use their RefID (Reference ID):

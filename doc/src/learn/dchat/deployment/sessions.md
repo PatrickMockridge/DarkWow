@@ -6,7 +6,7 @@ network. An inbound node receives connections. An outbound node makes
 connections.
 
 The behavior of these nodes is defined in what is called a
-[Session](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/net/session/mod.rs#L119).
+[Session](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/net/session/mod.rs#L119).
 There are five types of sessions: `Manual`, `Inbound`, `Outbound`, `SeedSync` and `Direct`.
 
 > **Session Types Architecture**: Different node configurations run different

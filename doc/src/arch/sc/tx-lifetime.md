@@ -1,6 +1,14 @@
 Transaction lifetime
 ====================
 
+> **Note:** This document uses legacy contract names (`Money::Transfer`,
+> `Money::Fee`, `DAO::Exec`) from the original overlay-DAG architecture.
+> In the current linear-master branch, these operations map to:
+> `Money::Transfer`/`Money::Fee` → `NativeToken::TransferV1`/`FeeV1`,
+> `DAO::Exec` → `DAO_escrow::Exec`. The general transaction model
+> (ordered calls, atomic execution, prover-verifier separation) remains
+> applicable.
+
 Let $T$ be a transaction on the DarkWow network. Each transaction
 consists of multiple ordered contract calls:
 

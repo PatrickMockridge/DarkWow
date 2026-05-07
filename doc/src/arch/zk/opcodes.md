@@ -1,6 +1,6 @@
 # DarkWow Opcodes and Formal Verification
 
-> **Important**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), `BaseLtStrict` (0x57), and `BaseDiv` (0x58) are **DarkWow additions to the zkVM** — they do not exist in upstream DarkWow. The Lean4 formal verification proofs live in this repository (`proofs/lean/`) and were completed on this fork.
+> **Important**: `LessThanOrEqual` (0x55), `IsEqualBase` (0x54), `NotBase` (0x56), `BaseLtStrict` (0x57), and `BaseDiv` (0x58) are **additions to the zkVM, beyond what upstream currently provides**. The Lean4 formal verification proofs live in this repository (`proofs/lean/`) and were completed on this fork.
 
 > **Summary**: All comparison opcodes are **verified sound**. `IsEqualBase` has a confirmed bug. `BaseDiv` is **implemented** using binary exponentiation. Use `less_than_strict` or cross-multiplication for ratio checks when Boolean return is not needed.
 

@@ -20,7 +20,7 @@ cargo test -p darkfi_<name>_contract --test integration
 cargo test --workspace
 
 # With output
-cargo test -p darkfi_oracle_contract --test integration -- --nocapture
+cargo test -p dwow_oracle_contract --test integration -- --nocapture
 ```
 
 ## Test Structure
@@ -28,8 +28,8 @@ cargo test -p darkfi_oracle_contract --test integration -- --nocapture
 Integration tests follow a consistent pattern:
 
 ```rust
-use darkfi_serial::{deserialize, serialize};
-use darkfi_sdk::pasta::pallas;
+use dwow_serial::{deserialize, serialize};
+use dwow_sdk::pasta::pallas;
 use darkfi_<contract>_contract::{
     model::{ParamsV1, UpdateV1},
     ContractFunction,
@@ -121,7 +121,7 @@ fn test_derive_id() {
 Many contracts use helper functions to create consistent test data:
 
 ```rust
-use darkfi_sdk::crypto::pasta_prelude::{Field, Group};
+use dwow_sdk::crypto::pasta_prelude::{Field, Group};
 
 /// Create a public key for testing
 fn make_pubkey(seed: u64) -> PublicKey {
@@ -131,8 +131,8 @@ fn make_pubkey(seed: u64) -> PublicKey {
 
 /// Create a dummy subscription for testing
 fn create_dummy_subscription(id: SubscriptionId) -> Subscription {
-    let keypair = darkfi_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng);
-    let subscriber_pubkey = darkfi_sdk::crypto::PublicKey::from_secret(keypair.secret);
+    let keypair = dwow_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng);
+    let subscriber_pubkey = dwow_sdk::crypto::PublicKey::from_secret(keypair.secret);
     Subscription {
         id,
         subscriber_pubkey,
@@ -195,7 +195,7 @@ error: no method named `encode` found for struct `Foo`
 help: trait `Encodable` which provides `encode` is not in scope
 ```
 
-**Fix**: Use `darkfi_serial::{serialize, deserialize}` instead of `.encode()`/`.decode()`:
+**Fix**: Use `dwow_serial::{serialize, deserialize}` instead of `.encode()`/`.decode()`:
 
 ```rust
 // Wrong
@@ -314,14 +314,14 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
 ```rust
 // CORRECT imports
-use darkfi_sdk::{
+use dwow_sdk::{
     crypto::{pasta_prelude::*, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta, ContractCall,
     wasm,
 };
-use darkfi_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize};
 ```
 
 ### Debugging with cargo check

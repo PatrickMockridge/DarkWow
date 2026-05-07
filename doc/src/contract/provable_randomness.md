@@ -102,9 +102,9 @@ final_value = Hash(reveal_hash, commit)
 ### Roll Calculation
 
 ```rust
-// Using darkfi_sdk::crypto::entropy module
+// Using dwow_sdk::crypto::entropy module
 
-use darkfi_sdk::crypto::entropy::{tx_hash_to_base, mix_entropy};
+use dwow_sdk::crypto::entropy::{tx_hash_to_base, mix_entropy};
 
 // Modern implementation using SDK entropy module
 pub fn calculate_roll(tx_hash_bytes: [u8; 32], bet_id: BetId, secret_nonce: pallas::Base) -> u8 {
@@ -116,7 +116,7 @@ pub fn calculate_roll(tx_hash_bytes: [u8; 32], bet_id: BetId, secret_nonce: pall
 
 // High-security version with multiple block confirmations
 pub fn calculate_roll_with_depth(block_hashes: &[pallas::Base], bet_id: BetId, secret_nonce: pallas::Base) -> u8 {
-    use darkfi_sdk::crypto::entropy::{combine_block_hashes, draw_with_depth};
+    use dwow_sdk::crypto::entropy::{combine_block_hashes, draw_with_depth};
     let entropy = combine_block_hashes(block_hashes);
     let final_entropy = mix_entropy(entropy, &[bet_id, secret_nonce]);
     let bytes = final_entropy.to_repr();

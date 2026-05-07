@@ -17,7 +17,7 @@ For configuration file generation, see [Common Setup Steps](public-guide.md#gene
 
 ## Configure network settings
 
-Modify the network settings located in the `~/.config/darkfi` directory.
+Modify the network settings located in the `~/.config/dwow` directory.
 This  configuration allows your node to send and receive traffic only
 via Tor.
 

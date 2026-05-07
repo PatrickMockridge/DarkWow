@@ -112,7 +112,7 @@ Source code is under `src/` subdirectory. Main interesting modules are:
 
 Inside `bin/` contains utilities and applications:
 
-* `dwowd/` is the main daemon and `drk/` is the wallet.
+* `dwowd/` is the main daemon and `dww/` is the wallet.
 * `dnet/` is a viewer to see the p2p traffic of nodes. Used for debugging
   and monitoring the p2p network.
 * `dhtd/` is a distributed hash table, like IPFS, for transferring

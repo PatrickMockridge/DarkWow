@@ -1,6 +1,6 @@
 # Base Field Arithmetic: The Invisible Wall
 
-> **Note:** Pallas base field arithmetic constraints are a property of the Halo2 proving system inherited from upstream DarkWow — they apply identically to both DarkWow and DarkWow. The `LessThanOrEqual` and `BaseDiv` opcodes discussed here are **DarkWow-specific additions** — they do not exist in upstream DarkWow's zkVM. Both were formally verified in Lean4 on this fork.
+> **Note:** Pallas base field arithmetic constraints are a property of the Halo2 proving system inherited from upstream DarkFi — they apply identically to both DarkFi and DarkWow. The `LessThanOrEqual` and `BaseDiv` opcodes discussed here are additions beyond what upstream currently provides in the zkVM. Both were formally verified in Lean4 on this fork.
 
 This document is about the fundamental constraint that shapes everything DarkWow's smart contracts can and cannot do: **the base field arithmetic wall**.
 
@@ -155,7 +155,7 @@ For comparison operations, there are two paths:
 | **Native Opcode** | When you need Boolean return value for composability | Single implementation, full composability, but needs formal verification |
 | **Safemath Template** | When you only need to assert a relation (no return value) | No circuit bloat, sound, production-ready, but only constrain-only |
 
-The `LessThanOrEqual` opcode is a **DarkWow addition** — it does not exist in upstream DarkWow's zkVM. Prototyped on an experimental branch, integrated into this fork, and **formally verified sound** via Lean 4 exhaustive testing. For **assertion-only use cases** (like stablecoin collateralization checks), the [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) library provides production-ready templates using only sound opcodes (`less_than_strict`, `base_add`, `range_check`).
+The `LessThanOrEqual` opcode is a **DarkWow addition** — it is an addition beyond what upstream currently provides in the zkVM. Prototyped on an experimental branch, integrated into this fork, and **formally verified sound** via Lean 4 exhaustive testing. For **assertion-only use cases** (like stablecoin collateralization checks), the [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) library provides production-ready templates using only sound opcodes (`less_than_strict`, `base_add`, `range_check`).
 
 **Key insight**: Not every `LessThanOrEqual` use case needs the opcode. If you're just asserting `a <= b` as a circuit constraint (not returning a Boolean), safemath templates work without the soundness concerns.
 

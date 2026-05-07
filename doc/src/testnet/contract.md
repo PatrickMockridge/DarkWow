@@ -18,7 +18,7 @@ with the `--network linear` flag. The linear-testnet supports 5-node consensus
 and provides full ZK proof generation infrastructure.
 
 ```shell
-drk --network linear contract deploy <secret_key_hex> --wasm path/to/contract.wasm
+dww --network linear contract deploy <secret_key_hex> --wasm path/to/contract.wasm
 ```
 
 ## Hello World

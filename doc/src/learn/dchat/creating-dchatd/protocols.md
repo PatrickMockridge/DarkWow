@@ -8,20 +8,20 @@ are automatically activated when nodes connect to eachother on the
 p2p network. Here are examples of two protocols that every node runs
 continuously in the background:
 
-* [ProtocolPing](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/net/protocol/protocol_ping.rs):
+* [ProtocolPing](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/net/protocol/protocol_ping.rs):
 sends `ping`, receives `pong`
-* [ProtocolAddress](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/net/protocol/protocol_address.rs):
+* [ProtocolAddress](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/net/protocol/protocol_address.rs):
 receives a `get_address` message, sends an `address` message
 
 Under the hood, these protocols have a few similarities:
 
 * They create a subscription to a message type, such as `ping` and `pong`.
-* They implement [ProtocolBase](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/net/protocol/protocol_base.rs),
+* They implement [ProtocolBase](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/net/protocol/protocol_base.rs),
 DarkWow's generic protocol trait.
 * They run asynchronously using the
-[ProtocolJobsManager](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/net/protocol/protocol_jobs_manager.rs).
-* They hold a pointer to [Channel](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/net/channel.rs) which
-invokes the [MessageSubsystem](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/net/message_subscriber.rs#L170).
+[ProtocolJobsManager](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/net/protocol/protocol_jobs_manager.rs).
+* They hold a pointer to [Channel](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/net/channel.rs) which
+invokes the [MessageSubsystem](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/net/message_subscriber.rs#L170).
 
 This introduces several generic interfaces that we must use to build
 our custom protocol. In particular:

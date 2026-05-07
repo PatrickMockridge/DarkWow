@@ -238,4 +238,5 @@
 - [Transaction Lifetime (DAG)](arch/legacy/tx_lifetime.md)
 - [Wallet (Original Design)](arch/legacy/wallet.md)
 - [Money Version Bridge (Historical)](arch/legacy/money-version-bridge.md)
+- [Contract Deployment Pipeline (DAG)](arch/legacy/darkfid_contract_pipeline.md)
 - [Money Vulnerability Analysis](arch/legacy/money-vulnerability-analysis.md)

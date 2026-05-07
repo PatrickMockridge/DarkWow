@@ -278,7 +278,7 @@ cargo test    # Run tests
 ### Client API Usage
 
 ```rust
-use darkfi_stablecoin_contract::client::{
+use dwow_stablecoin_contract::client::{
     initialize_v1::InitializeCallBuilder,
     open_position_v1::CollateralMintBuilder,
     mint_stable_v1::CollateralBurnBuilder,

@@ -186,20 +186,23 @@ DAG-based fork tracking (uncle references live in the canonical block header).
 
 ## Difficulty Adjustment
 
-Dynamic adjustment with asymmetric clamping:
+Dynamic adjustment with delta clamping:
 
 ```
-adjustment = clamp( actual_interval / target_block_time, 0.5, 1.1 )
-new_difficulty = difficulty × adjustment
+ratio = clamp( target_block_time / avg_interval, 0.5, 2.0 )
+delta = clamp( ratio - 1.0, -0.1, 0.1 )
+new_difficulty = difficulty × (1.0 + delta)
 ```
 
 - **Target**: 120-second block time
 - **Window**: Rolling average of recent block intervals
-- **Asymmetric clamp**: -50% down, +10% up per adjustment
+- **Delta cap**: ±10% per adjustment window
+- **Ratio bound**: [0.5, 2.0] — prevents divergence under extreme hashrate changes
 - **Bounds**: [1, u32::MAX]
 
-The asymmetry protects against sudden miner exodus — difficulty can drop fast
-(50%) but rises slowly (10%), preventing runaway difficulty spikes.
+Each adjustment is limited to a 10% change from current difficulty in either
+direction. The broader [0.5, 2.0] ratio bound ensures the system stays within
+sane limits even under extreme conditions, but typical operation never hits it.
 
 ---
 

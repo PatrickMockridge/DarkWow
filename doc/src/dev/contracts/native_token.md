@@ -102,7 +102,7 @@ Nullifiers prevent double-spending by hashing the spending key with the coin has
 | MintV1 | 0x01 | Create new coins | CONSENSUS |
 | BurnV1 | 0x02 | Destroy coins with nullifier | PRIVACY |
 | TransferV1 | 0x03 | Private transfers | PRIVACY |
-| SpendV1 | 0x04 | (removed - merged into BurnV1) | - |
+| SpendV1 | 0x04 | Spend coins with change output | PRIVACY |
 | PoWRewardV1 | 0x05 | Block rewards | CONSENSUS |
 
 > [!NOTE]
@@ -143,8 +143,7 @@ Creates new coins with Pedersen commitments. Used for genesis minting and genera
 **Parameters:**
 ```rust
 struct MintParamsV1 {
-    input: ClearInput,      // Clear input (no privacy needed for minting)
-    outputs: Vec<Output>,   // Anonymous outputs
+    coin: Coin,      // The newly minted coin
 }
 ```
 
@@ -225,8 +224,8 @@ Unlike MoneyV2, NativeToken has **no token freezing capability**. This was an in
 
 By removing token freezing:
 - No on-chain regulatory controls
-- Burn client API is stubbed (requires Merkle proof infrastructure)
-- SpendV1 merged into BurnV1 for simplicity
+- No freeze authority to manage
+- Enables true permissionless operation
 
 ## The EC Heap Bug in MoneyV2
 
@@ -347,7 +346,7 @@ NATIVE_TOKEN_CONTRACT_INFO_TREE           - contract metadata
 cargo build -p darkfi_native_token_contract
 
 # Run test harness
-cargo run -p darkfi-contract-test-harness --bin test_native_token
+cargo run -p dwow-contract-test-harness --bin test_native_token
 ```
 
 **Test Status:**

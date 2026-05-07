@@ -409,8 +409,8 @@ if call.data.contract_id == *NEW_CONTRACT_ID.get().unwrap() {
 
 ## References
 
-- `bin/drk/src/rpc.rs` - ScanCache and scanning implementation
-- `bin/drk/src/contract_imports.rs` - Contract definitions and opcodes
-- `bin/drk/src/contract_registry.rs` - Contract registry system
-- `bin/drk/src/transfer.rs` - Transfer transaction building with spend hooks
+- `bin/dww/src/rpc.rs` - ScanCache and scanning implementation
+- `bin/dww/src/contract_imports.rs` - Contract definitions and opcodes
+- `bin/dww/src/contract_registry.rs` - Contract registry system
+- `bin/dww/src/transfer.rs` - Transfer transaction building with spend hooks
 - `src/zk/verifier.rs` - ZK proof verification

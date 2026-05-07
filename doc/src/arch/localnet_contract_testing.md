@@ -41,8 +41,8 @@ The unified pipeline handles:
 ## Quick Start
 
 ```rust
-use darkfi::Result;
-use darkfi_sdk::num_traits::One;
+use dwow::Result;
+use dwow_sdk::num_traits::One;
 use num_bigint::BigUint;
 
 let config = HarnessConfig {

@@ -5,7 +5,7 @@ issues. If you see inconsistencies in the docs: always trust
 `${DARKFI_REPO}/bin/darkirc/darkirc_config.toml` or whichever respective 
 apps' repo config file. Documentation updates are a current WIP.
 
-The default location for config files is `~/.config/darkfi`.
+The default location for config files is `~/.config/dwow`.
 
 <u><b>Note</b></u>: throughout this page we generally assume you are using
 `darkirc` since it's our main p2p app currently. If you're
@@ -181,7 +181,7 @@ This is a known bug and we are working on a fix.
 
 ## dnet
 
-dnet is a simple tui to explore darkfi p2p network topology. You can use 
+dnet is a simple tui to explore DarkWow p2p network topology. You can use 
 dnet to gather more network information. dnet displays:
 
 1. Active p2p nodes
@@ -272,7 +272,7 @@ When running in debug mode, you will see `[INFO]` messages that indicate
 
 ### Config file
 
-Your config files are generated in your `~/.config/darkfi` directory. 
+Your config files are generated in your `~/.config/dwow` directory. 
 You'll have to run each daemon once for the app to spawn a config file, 
 which you can review and edit. There is also helpful information within 
 the config files.

@@ -115,26 +115,26 @@ make -C bin/dwowd \
         RUST_TARGET="x86_64-unknown-linux-gnu" \
         RUSTFLAGS=""
 make[1]: Entering directory '/home/anon/dwow/bin/dwowd'
-RUSTFLAGS="" cargo build --target=x86_64-unknown-linux-gnu --release --package darkfid
+RUSTFLAGS="" cargo build --target=x86_64-unknown-linux-gnu --release --package dwowd
 ...
    Compiling dwowd v0.5.0 (/home/anon/dwow/bin/dwowd)
     Finished `release` profile [optimized] target(s) in 4m 19s
-cp -f ../../target/x86_64-unknown-linux-gnu/release/dwowd darkfid
-cp -f ../../target/x86_64-unknown-linux-gnu/release/dwowd ../../darkfid
+cp -f ../../target/x86_64-unknown-linux-gnu/release/dwowd dwowd
+cp -f ../../target/x86_64-unknown-linux-gnu/release/dwowd ../../dwowd
 make[1]: Leaving directory '/home/anon/dwow/bin/dwowd'
 make -C bin/dww \
         PREFIX="/home/anon/.cargo" \
         CARGO="cargo" \
         RUST_TARGET="x86_64-unknown-linux-gnu" \
         RUSTFLAGS=""
-make[1]: Entering directory '/home/anon/dwow/bin/drk'
+make[1]: Entering directory '/home/anon/dwow/bin/dww'
 RUSTFLAGS="" cargo build --target=x86_64-unknown-linux-gnu --release --package dww
 ...
-   Compiling dww v0.5.0 (/home/anon/dwow/bin/drk)
+   Compiling dww v0.5.0 (/home/anon/dwow/bin/dww)
     Finished `release` profile [optimized] target(s) in 2m 16s
 cp -f ../../target/x86_64-unknown-linux-gnu/release/dww dww
 cp -f ../../target/x86_64-unknown-linux-gnu/release/dww ../../dww
-make[1]: Leaving directory '/home/anon/dwow/bin/drk'
+make[1]: Leaving directory '/home/anon/dwow/bin/dww'
 ```
 
 This process will now compile the node and the wallet CLI tool.
@@ -145,7 +145,7 @@ will be used to `dwowd` and `dww`.
 Please note that the exact paths may differ depending on your local setup.
 
 ```shell
-$ ./darkfid
+$ ./dwowd
 
 Config file created in "~/.config/dwow/dwowd_config.toml". Please review it and try again.
 ```
@@ -153,7 +153,7 @@ Config file created in "~/.config/dwow/dwowd_config.toml". Please review it and 
 ```shell
 $ ./dww interactive
 
-Config file created in "~/.config/dwow/drk_config.toml". Please review it and try again.
+Config file created in "~/.config/dwow/dww_config.toml". Please review it and try again.
 ```
 
 ## Running
@@ -175,7 +175,7 @@ for payments and swaps.
 
 First, you need to change the password in the `dww` config. Open
 your config file in a text editor (the default path is
-`~/.config/dwow/drk_config.toml`). Look for the section marked
+`~/.config/dwow/dww_config.toml`). Look for the section marked
 `[network_config."testnet"]` and change this line:
 
 ```toml
@@ -189,7 +189,7 @@ initialize a wallet, and create a keypair. The wallet address shown in
 the outputs is explanatory and will be different from the one you get.
 
 ```shell
-$ ./dww -c bin/drk/drk_config.toml -n localnet wallet initialize
+$ ./dww -c bin/dww/dww_config.toml -n localnet wallet initialize
 
 Initializing Money Merkle tree
 Successfully initialized Merkle tree for the Money contract
@@ -199,7 +199,7 @@ Successfully initialized Merkle trees for the DAO contract
 ```
 
 ```shell
-$ ./dww -c bin/drk/drk_config.toml -n localnet wallet keygen
+$ ./dww -c bin/dww/dww_config.toml -n localnet wallet keygen
 
 Generating a new keypair
 New address:
@@ -207,7 +207,7 @@ New address:
 ```
 
 ```shell
-$ ./dww -c bin/drk/drk_config.toml -n localnet wallet default-address 1
+$ ./dww -c bin/dww/dww_config.toml -n localnet wallet default-address 1
 ```
 
 The second command will print out your new DarkWow address where you
@@ -215,7 +215,7 @@ can receive payments. Take note of it. Alternatively, you can always
 retrieve your default address using:
 
 ```shell
-$ ./dww -c bin/drk/drk_config.toml -n localnet wallet address
+$ ./dww -c bin/dww/dww_config.toml -n localnet wallet address
 
 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
@@ -227,7 +227,7 @@ Now that `dwowd` configuration is in place, you can run it again and
 and transactions, and begin syncing the blockchain.
 
 ```shell
-$ ./darkfid
+$ ./dwowd
 
 [INFO] Initializing DarkWow node...
 [INFO] Node is configured to run with fixed PoW difficulty: 1
@@ -531,7 +531,7 @@ network = "diynet"
 
 [wallet]
 wallet_pass = "your_secure_password"
-wallet_db = "~/.local/share/dwow/drk/diynet"
+wallet_db = "~/.local/share/dwow/dww/diynet"
 
 [network_config."diynet"]
 rpc_url = "http://127.0.0.1:18345"

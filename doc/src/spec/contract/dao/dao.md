@@ -1,11 +1,11 @@
 # DAO
 
 > [!WARNING]
-> **DEPRECATED**: DAO V1 is deprecated on this fork.
+> **DEPRECATED**: DAO V1 is not used on this fork.
 >
-> DAO V1 had tight coupling to Money V1's ACL (Access Control List), creating forced vendor lock-in that breaks privacy and anonymity fundamentals. All token flows through DAO governance were visible to DAO operators.
+> DAO V1 uses token-weighted ACL voting tightly coupled to the Money contract. This model reveals voter identity and token balance through the ACL mechanism.
 >
-> Use **DAO Escrow** (WASM contract) instead for governance functionality. DAO Escrow is composable, optional, and preserves user privacy by using Merkle proofs for membership rather than ACL coupling.
+> This fork uses **DAO Escrow** (WASM contract) instead for governance. DAO Escrow uses ZK predicates for membership — composable, optional, and preserves user privacy.
 >
 > See [DAO Escrow concepts](../dao_escrow/concepts.md) for the recommended governance solution.
 

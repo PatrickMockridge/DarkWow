@@ -75,89 +75,72 @@ Key architectural documents:
 
 All contracts are **EXPERIMENTAL** and **UNAUDITED**.
 
-This fork addresses **critical governance and identity leakage vulnerabilities** in upstream DarkWow.
+## Relationship to Upstream
 
-### Why This Fork Exists: Upstream DarkWow's Critical Flaws
+This project is a fork of [DarkFi](https://codeberg.org/darkrenaissance/darkfi). It inherits the core zkVM, ZKAS circuit language, P2P networking stack, and WASM contract runtime. The fork makes different design choices in four areas:
 
-#### 1. Governance Can Freeze Native Token (Catastrophic for PoW)
+### What's Inherited (From Upstream)
 
-Upstream's DAO can control the native token, creating a **plutocratic freeze attack**:
+| Component | Description |
+|-----------|-------------|
+| **zkVM** | ZK virtual machine for proof generation and verification |
+| **ZKAS** | Circuit language and compiler |
+| **P2P stack** | Peer discovery, session management, protocol negotiation |
+| **WASM runtime** | In-node WASM execution for smart contracts |
+| **Halo2** | Proof system backend (Poseidon/Pallas) |
 
-```
-Attack Scenario:
-1. Large token holders dominate DAO via SAFT/pre-mine holdings
-2. Vote to restrict native token operations
-3. Miners can't receive block rewards → PoW consensus fails
-4. Validators can't collect fees → Consensus weakens
-5. Network becomes extortable
-```
+### Design Changes (This Fork)
 
-**Why this breaks PoW:**
-- Native token serves consensus-critical functions (block rewards, fees)
-- If governance can freeze minting, miners may not get paid
-- The network becomes attackable by wealthy token holders
+#### 1. Native Token — No Governance Coupling
 
-#### 2. ACL Identity Leakage: Poor to Rich Deanonymization
+Upstream's architecture ties the native token to DAO governance. Token holders can vote on operations including native token minting — the same token that pays block rewards and fees. This is a design choice that supports on-chain coordination through token-weighted voting.
 
-Upstream DarkWow uses **ACL-based governance** where voters must reveal:
+This fork decouples them. [NativeToken](dev/contracts/native_token.md) has no governance surface — no DAO can freeze, restrict, or modify its operation. Block rewards and fee payment are consensus-critical functions; keeping them outside governance scope means miners and validators can't be voted out of their income. The governance use case is served separately by [DAO Escrow](contract/dao_escrow.md), which uses ZK predicates rather than token-weighted ACLs.
 
-| What is revealed | Impact |
-|-----------------|--------|
-| Public key | Wallet address traceable |
-| Token balance | Rich/poor status exposed |
-| Vote choices | Political views deanonymized |
+#### 2. Privacy — ZK Predicates Instead of ACLs
 
-This leaks identity from poor to rich. If you're poor, your vote matters less. If you're rich, you're a target.
+Upstream uses ACL-based voting where participants reveal their public key and token balance to prove eligibility. This is the standard approach — simple to implement, straightforward to audit — but it exposes voter identity and wealth.
 
-#### 3. SAFT Pre-mine Creates Whale Dominance
+This fork uses ZK predicates: a voter proves they meet a condition (e.g., "holds >= 1000 tokens") without revealing their public key, exact balance, or any other identifying information. The verifier learns only the boolean result. This trades implementation simplicity for stronger privacy guarantees.
 
-Upstream distributed DRKW tokens at genesis to:
-- Early investors
-- Team members
-- SAFT participants
+#### 3. Token Distribution — Pure PoW, No Premine
 
-This concentrates governance in the hands of the wealthiest token holders.
+Upstream's launch included token distributions to early contributors, investors, and SAFT participants — a common model for bootstrapping development funding.
 
-#### 4. Overlay/Diff Consensus Exists to Serve the Anti-Fork DAO
+This fork has zero premine. Every token in circulation was mined. This is the Bitcoin model: the only way to acquire the native token is to contribute proof-of-work. It trades early funding certainty for distribution fairness.
 
-Upstream's consensus uses a complex overlay/diff architecture with sled-overlay for transactional state management. This isn't gratuitous complexity — it exists because the DAO governance model requires a mechanism to adjudicate between competing forks:
+#### 4. Consensus — Uncle Merkle Instead of Overlay/DAG
 
-- **Speculative verification**: Blocks are verified against an in-memory overlay that can be committed or rolled back
-- **Diff logging**: Every state change is tracked for potential rollback, creating non-deterministic behavior where the same code produces different results depending on timing
-- **Implicit fork competition**: The overlay system decides which fork wins, rather than letting the chain with the most accumulated work naturally dominate
+Upstream uses an overlay-diff architecture: a DAG of events where blocks are verified speculatively against an in-memory overlay that can be committed or rolled back. This provides sophisticated fork arbitration — the overlay tracks competing forks and their state implications, then decides which to accept. It allows a unified governance model to adjudicate between forks.
 
-This makes deterministic testing effectively impossible. Race conditions, timing-dependent state, and speculative commits create flaky tests that erode confidence in the entire contract system. All of this complexity exists for one reason: the DAO must keep everything under one tent to preserve token-holder voting power across a unified chain.
+This fork uses Uncle Merkle consensus: the canonical chain (most accumulated work) is obligated to offer competing uncle chains a one-time pin reward — a share of the block reward rather than zero. This achieves the same Pareto benefit (miners aren't punished for producing non-canonical blocks) through a simpler mechanism: uncle references live in the canonical block header, and pin rewards follow a geometric schedule. No overlay, no speculative state, no rollback — every state change is final. Both approaches prevent wasted miner work; this fork trades fork-arbitration flexibility for deterministic, testable state.
 
-This fork replaces the entire overlay/diff stack with **Uncle Merkle consensus**: the canonical chain with the most accumulated work **obligates** offering uncle chains a one-time option (within a short time window, minutes) to form a side chain and share the PoW reward. The uncle chain can accept or reject. This achieves the Pareto efficient benefit of upstream's fork-handling — miners aren't punished for producing non-canonical blocks — without the complex rewind and sled overlay logic.
+### Summary
 
-With pure PoW and no governance DAO, hard forks are handled the Bitcoin way: if nodes want to fork, they can (like BCash). Both chains coexist. No complex mechanism needed to keep everything under one tent.
-
-### This Fork's Solutions
-
-| Problem | Upstream | This Fork |
+| Concern | Upstream | This Fork |
 |---------|----------|-----------|
-| Native token freeze | DAO can control it | **No governance, no freeze** |
-| Identity leakage | ACL voting reveals balance | **ZK predicates reveal boolean only** |
-| Token distribution | SAFT/pre-mine at genesis | **Pure PoW mining only** |
-| Governance | Token-holder ACL voting | **DAO Escrow (ZK predicate, voluntary)** |
-| Consensus complexity | Overlay/diff for anti-fork DAO | **Uncle Merkle — simple, deterministic, Pareto efficient** |
+| Native token control | DAO-governed | No governance surface |
+| Privacy model | ACL-based (identity revealed) | ZK predicates (boolean only) |
+| Token distribution | Contributor allocations | Pure PoW mining |
+| Governance mechanism | Token-weighted voting | ZK predicate (DAO Escrow) |
+| Consensus | Overlay-DAG (fork arbitration) | Uncle Merkle (obligated pin rewards) |
 
-For the full analysis, see [Contract Standards](dev/contracts/standards.md).
+For a detailed analysis of circuit design standards, see [Contract Standards](dev/contracts/standards.md).
 
 ### Privacy Architecture
 
-DarkWow uses **ZK predicates** instead of ACL:
+DarkWow uses **ZK predicates** for authorization:
 
 ```
-ZK Predicate (GOOD):
+ZK Predicate (this fork):
   - Prove: "I am a verified contractor"
   - Verifier learns: ✓ Boolean (yes/no)
   - Verifier DOES NOT learn: Public key, balance, identity
 
-ACL (BAD - upstream uses this):
+ACL (upstream approach):
   - Prove: "I have 1000 tokens"
   - Verifier learns: Public key AND token balance
-  - Identity leaked from rich to poor
+  - Simpler to implement and audit, but reveals identity
 ```
 
 ### Known Security Issues
@@ -176,8 +159,8 @@ See [Running a Node](testnet/node.md) for setup instructions.
 
 ```bash
 # Clone this fork
-git clone https://codeberg.org/PatrickM123/darkfi-jailbroken
-cd darkfi-jailbroken
+git clone https://codeberg.org/PatrickM123/darkwow
+cd darkwow
 
 # Build the project
 cargo build --release
@@ -194,9 +177,9 @@ mdbook build
 ./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
 
 # Mine tokens for testing
-./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet initialize
-./target/release/dww -c bin/drk/drk_config.toml -n localnet wallet keygen
-./target/release/dww -c bin/drk/drk_config.toml -n localnet mine
+./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet initialize
+./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet keygen
+./target/release/dww -c bin/dww/dww_config.toml -n localnet mine
 ```
 
 See [Localnet Development](localnet-dev.md) for detailed setup.

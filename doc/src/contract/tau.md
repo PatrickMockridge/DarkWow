@@ -294,12 +294,12 @@ fn verify_onchain(
 
 ### Phase 2: On-Chain Verification (✅ UNBLOCKED via Tau_Pallas)
 - [x] Implement `verify_capability_onchain` with Identity contract interface
-- [x] **DONE**: Add wallet integration via Pallas-native darkfi_sdk crypto
+- [x] **DONE**: Add wallet integration via Pallas-native dwow_sdk crypto
 - [x] **DONE**: Connect to dwowd RPC for `tx.broadcast` via DarkfidClient
 - [x] **DONE**: Build and sign transactions with Pallas keys
 
 **Solution**: Created **Tau_Pallas** (`bin/tau/tau_pallas/`) - a Pallas-native variant of tau that:
-- Uses `darkfi_sdk::crypto::Keypair` for Pallas curve key management
+- Uses `dwow_sdk::crypto::Keypair` for Pallas curve key management
 - Has `DarkfidClient::broadcast_tx()` for dwowd RPC integration
 - Can construct `Transaction` objects and sign with `tx.create_sigs()`
 - Implements working `verify_capability_onchain()` that broadcasts verification txs
@@ -312,7 +312,7 @@ Created as a separate binary alongside `taud` for direct DarkWow integration:
 
 | Component | taud | tau_pallas |
 |-----------|------|------------|
-| Keypair | NaCl/X25519 | Pallas (darkfi_sdk) |
+| Keypair | NaCl/X25519 | Pallas (dwow_sdk) |
 | Signing | crypto_box | Schnorr (tx.create_sigs) |
 | dwowd RPC | N/A | DarkfidClient |
 | On-chain verification | Fallback only | Working |
@@ -354,7 +354,7 @@ Created as a separate binary alongside `taud` for direct DarkWow integration:
 The core of tau_pallas's on-chain capability is `DarkfidClient`:
 
 ```rust
-// Create client connected to darkfid
+// Create client connected to dwowd
 let client = DarkfidClient::new("http://localhost:18332", executor).await?;
 
 // Broadcast a transaction

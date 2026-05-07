@@ -196,8 +196,8 @@ Inside the container:
 # rustup-init --default-toolchain stable -y
 # source ~/.cargo/env
 # rustup target add wasm32-unknown-unknown --toolchain stable
-# git clone https://codeberg.org/PatrickM123/darkfi-jailbroken -b master --depth 1
-# cd darkfi
+# git clone https://codeberg.org/PatrickM123/darkwow -b master --depth 1
+# cd dwow
 # make darkirc
 ```
 

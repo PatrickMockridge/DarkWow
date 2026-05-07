@@ -4,11 +4,11 @@
 
 This document describes the architecture of DarkWow on this fork:
 
-- **Money V1/V2 are DEPRECATED and REMOVED** - Only Money V3 exists
-- **DAO v1 is DEPRECATED and REMOVED** - Use `dao_escrow` contract instead
-- **NativeToken is the native DRKW token contract** - Handles fees and consensus
-- **Money V3 is a WASM contract** - DeFi tokens (ERC-20 style) with full privacy
-- **Money V3 uses Poseidon-only design** - Zero EC operations, no heap bugs
+- **Money V1/V2 are not used on this fork** — Replaced by Money V3 (DeFi tokens) and NativeToken (consensus operations)
+- **DAO v1 is not used on this fork** — Replaced by [dao_escrow](./dao_escrow.md)
+- **NativeToken is the native DRKW token contract** — Handles fees and consensus
+- **Money V3 is a WASM contract** — DeFi tokens (ERC-20 style) with full privacy
+- **Money V3 uses Poseidon-only design** — Avoids EC operations implicated in heap corruption
 
 This change constitutes a **hard fork** of the DarkWow protocol. Nodes running the old software will reject the new genesis block because:
 
@@ -204,7 +204,7 @@ Purpose: Privacy-first DeFi tokens
 ContractIds are derived using poseidon hash with a prefix and index:
 
 ```rust
-// In darkfi_sdk::crypto::contract_id
+// In dwow_sdk::crypto::contract_id
 pub static ref CONTRACT_ID_PREFIX: pallas::Base = pallas::Base::from(42);
 
 pub static ref NATIVE_TOKEN_CONTRACT_ID: ContractId =
@@ -223,7 +223,7 @@ The `deploy_native_contracts()` function deploys 2 native contracts:
 ```rust
 let native_contracts = vec![
     ("NativeToken Contract", *NATIVE_TOKEN_CONTRACT_ID, include_bytes!("../contract/native_token/darkfi_native_token_contract.wasm").to_vec(), vec![]),
-    ("Deployooor Contract", *DEPLOYOOOR_CONTRACT_ID, include_bytes!("../contract/deployooor/darkfi_deployooor_contract.wasm").to_vec(), vec![]),
+    ("Deployooor Contract", *DEPLOYOOOR_CONTRACT_ID, include_bytes!("../contract/deployooor/dwow_deployooor_contract.wasm").to_vec(), vec![]),
 ];
 ```
 

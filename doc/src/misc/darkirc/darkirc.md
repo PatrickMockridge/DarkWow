@@ -156,7 +156,7 @@ following commands (there is an assumption that `irc_listen` in the
 `darkirc` config file is set to `127.0.0.1:6667`):
 
 ```
-/server add darkfi localhost/6667 -notls -autoconnect
+/server add dwow localhost/6667 -notls -autoconnect
 /save
 /quit
 ```
@@ -198,7 +198,7 @@ which requests a list of addresses from the seed node and disconnects
 straight after receiving them.
 
 The first time you run the program, a config file will be created in
-`~/.config/darkfi` if you are using Linux or in 
+`~/.config/dwow` if you are using Linux or in 
 `~/Library/Application Support/dwow/` on MacOS. 
 You must specify an inbound accept address in your config file to configure a seed node:
 

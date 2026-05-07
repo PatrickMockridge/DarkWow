@@ -8,15 +8,15 @@ This document defines the standards for building smart contracts on DarkWow. The
 
 ### The Problem with EC Operations
 
-Elliptic curve (EC) operations in ZK circuits have caused critical heap bugs in DarkWow:
+Elliptic curve (EC) operations in ZK circuits have been implicated in heap corruption issues in the halo2 stack:
 
-| Circuit | EC Operations | Status |
+| Circuit | EC Operations | Circuit Type |
 |---------|-------------|--------|
-| Fee_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| Mint_V2 | ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| Burn_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| AuthTokenMint_V2 | ec_mul_base | **BUGGY** |
-| TokenMint_V2 | None (Poseidon only) | **SAFE** |
+| Fee_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | EC-heavy (heap risk) |
+| Mint_V2 | ec_mul_short, ec_mul, ec_add | EC-heavy (heap risk) |
+| Burn_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | EC-heavy (heap risk) |
+| AuthTokenMint_V2 | ec_mul_base | EC-heavy (heap risk) |
+| TokenMint_V2 | None (Poseidon only) | Poseidon-only (no EC) |
 
 ### EC Operations Used in DarkWow Circuits
 

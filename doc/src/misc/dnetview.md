@@ -1,6 +1,6 @@
 # Dnetview
 
-A simple tui to explore darkfi darkirc network topology.
+A simple tui to explore DarkWow darkirc network topology.
 
 dnetview displays: 
 
@@ -11,8 +11,8 @@ dnetview displays:
 ## Install 
 
 ```shell
-% git clone https://codeberg.org/PatrickM123/darkfi-jailbroken
-% cd darkfi
+% git clone https://codeberg.org/PatrickM123/darkwow
+% cd dwow
 % make BINS=dnetview
 ```
 
@@ -24,7 +24,7 @@ Run dnetview as follows:
 dnetview -v
 ```
 
-On first run, dnetview will create a config file in .config/darkfi. You
+On first run, dnetview will create a config file in .config/dwow. You
 must manually enter the RPC ports of the nodes you want to connect to
 and title them as you see fit.
 

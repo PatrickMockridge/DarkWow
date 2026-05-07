@@ -32,7 +32,7 @@ This issue was fixed by updating the derive macros to use fully qualified paths:
 - `#[#cratename::async_trait]` instead of `#[async_trait]`
 - `#cratename::FutAsyncWriteExt::write_all()` instead of unqualified method calls
 
-Contracts no longer need to import `async_trait` at use sites. The generated code in `src/serial/derive-internal/src/async_derive.rs` now uses `darkfi_serial::async_trait` directly.
+Contracts no longer need to import `async_trait` at use sites. The generated code in `src/serial/derive-internal/src/async_derive.rs` now uses `dwow_serial::async_trait` directly.
 
 **Related:**
 - [Async Rust Fundamentals](../learn/dchat/async-rust-fundamentals.md) - Background on Rust async patterns
@@ -40,13 +40,13 @@ Contracts no longer need to import `async_trait` at use sites. The generated cod
 ### Feature Flag Propagation
 
 **Common pattern:**
-When a contract enables `client` feature, it typically propagates to `darkfi-sdk/async` which enables `darkfi-serial/async`:
+When a contract enables `client` feature, it typically propagates to `dwow-sdk/async` which enables `darkfi-serial/async`:
 
 ```toml
 # In contract's Cargo.toml
 [features]
 client = [
-    "darkfi-sdk/async",      # This enables darkfi-serial/async
+    "dwow-sdk/async",      # This enables darkfi-serial/async
     # ...
 ]
 ```
@@ -57,11 +57,11 @@ Example from a contract's Cargo.toml:
 
 ```toml
 [features]
-async = ["darkfi-sdk/async"]
+async = ["dwow-sdk/async"]
 client = [
     "darkfi",
     "async",                  # client depends on async
-    "darkfi-sdk/async",
+    "dwow-sdk/async",
     "darkfi-serial/async",
     # ...
 ]
@@ -79,12 +79,12 @@ error[E0433]: failed to resolve: could not find `async_trait` in the list of imp
 ```
 
 **Cause:**
-When `darkfi-serial/async` is enabled, the `SerialEncodable` and `SerialDecodable` derive macros generate async code that uses `#[async_trait]`. Previously, the generated code used `#[async_trait]` directly, expecting the macro to be in scope at the use site. However, `async_trait` is only available as a transitive dependency through `darkfi_serial`, not as a direct import at use sites in `darkfi_sdk`.
+When `darkfi-serial/async` is enabled, the `SerialEncodable` and `SerialDecodable` derive macros generate async code that uses `#[async_trait]`. Previously, the generated code used `#[async_trait]` directly, expecting the macro to be in scope at the use site. However, `async_trait` is only available as a transitive dependency through `dwow_serial`, not as a direct import at use sites in `dwow_sdk`.
 
 **Fix Applied:**
 The fix was in `src/serial/derive-internal/src/async_derive.rs`:
 
-1. Changed `#[async_trait]` to `#[#cratename::async_trait]` in generated code - this uses the fully qualified path through `darkfi_serial` where the trait is re-exported
+1. Changed `#[async_trait]` to `#[#cratename::async_trait]` in generated code - this uses the fully qualified path through `dwow_serial` where the trait is re-exported
 2. Changed `s.write_all(&bytes).await?` to `#cratename::FutAsyncWriteExt::write_all(&mut *s, &bytes).await?` - uses fully qualified trait method
 
 This makes the generated code self-contained and doesn't require contracts to import `async_trait` at use sites.
@@ -193,7 +193,7 @@ error[E0425]: cannot find function `poseidon_hash` in this scope
 
 **Solution:** Ensure imports are in correct scope:
 ```rust
-use darkfi_sdk::crypto::{
+use dwow_sdk::crypto::{
     // imports must be inside nested crypto block
     poseidon_hash,
     // ...

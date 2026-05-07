@@ -9,7 +9,7 @@ DarkWow applications typically follow a layered architecture:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Application Layer                          │
-│  (CLI tools like drk, desktop wallets, web frontends)        │
+│  (CLI tools like dww, desktop wallets, web frontends)        │
 ├─────────────────────────────────────────────────────────────┤
 │                       SDK Layer                              │
 │  (Client transaction builders, RPC clients, wallet APIs)     │
@@ -309,7 +309,7 @@ let call_data = CreateSwapBuilder::new()
 DarkWow contracts use `define_contract!` with four functions:
 
 ```rust
-darkfi_sdk::define_contract!(
+dwow_sdk::define_contract!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
@@ -341,7 +341,7 @@ First byte of call data = function selector.
 ### WASM APIs
 
 ```rust
-use darkfi_sdk::wasm;
+use dwow_sdk::wasm;
 
 // Database
 let info_db = wasm::db::db_init(cid, "info")?;
@@ -357,7 +357,7 @@ wasm::util::set_return_data(&metadata)?;
 ### Error Handling
 
 ```rust
-use darkfi_sdk::error::{ContractError, ContractResult};
+use dwow_sdk::error::{ContractError, ContractResult};
 
 // Valid variants:
 ContractError::IoError("message".to_string())
@@ -431,19 +431,19 @@ pub struct CreateSwapParams {
 For a complete DarkWow application:
 
 ```
-drk-desktop-wallet/           # Workspace
+dww-desktop-wallet/           # Workspace
 ├── Cargo.toml
 ├── crates/
-│   ├── drk-desktop-wallet-domain/   # API types + domain models
+│   ├── dww-desktop-wallet-domain/   # API types + domain models
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── api.rs               # ApiRequest/ApiResponse
 │   │       └── model.rs            # Domain types
-│   ├── drk-desktop-wallet-client/  # SDK implementation
+│   ├── dww-desktop-wallet-client/  # SDK implementation
 │   │   └── src/
 │   │       ├── lib.rs              # WalletClient<T>
 │   │       └── transport.rs        # Transport trait + impls
-│   └── drk-desktop-wallet-core/    # Business logic
+│   └── dww-desktop-wallet-core/    # Business logic
 ├── src/                            # Application binary
 │   └── main.rs
 └── app_ui/                         # Optional UI code
@@ -477,4 +477,4 @@ mod tests {
 - [Contract Architecture](../arch/sc/sc.md)
 - [Transaction Lifetime](../arch/tx_lifetime.md)
 - [ZK VM Primitives](../arch/zk/zkvm_primitives.md)
-- Example domain-driven SDK: `crates/drk-desktop-wallet-domain/` in chatty-watty-tinker-token-box
+- Example domain-driven SDK: `crates/dww-desktop-wallet-domain/` in chatty-watty-tinker-token-box

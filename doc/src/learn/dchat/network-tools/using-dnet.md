@@ -2,7 +2,7 @@
 
 ## dnet
 
-A simple tui to explore darkfi p2p network topology. Displays:
+A simple tui to explore DarkWow p2p network topology. Displays:
 
 1. Active p2p nodes
 2. Outgoing, incoming, manual and seed sessions

@@ -2,7 +2,7 @@
 
 ## DarkWow Fullnode Daemon
 
-`dwowd` is the darkfi fullnode. It manages the blockchain, validates
+`dwowd` is the DarkWow fullnode. It manages the blockchain, validates
 transactions and remains connected to the p2p network.
 
 Clients can connect over localhost RPC or secure socket and perform

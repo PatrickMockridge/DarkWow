@@ -1,6 +1,6 @@
 # Consensus
 
-DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work — a deliberately simple, deterministic design chosen over upstream's complex fork/overlay architecture.
+DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work — a deterministic design chosen over upstream's overlay/diff architecture.
 
 ## Why Uncle Merkle Replaces the Overlay/Diff Architecture
 

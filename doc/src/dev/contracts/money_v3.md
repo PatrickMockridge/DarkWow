@@ -343,7 +343,7 @@ MONEY_CONTRACT_AUTH_NULLIFIERS_TREE    - auth nullifier -> spent
 cargo build -p darkfi_money_v3_contract
 
 # Run test harness
-cargo run -p darkfi-contract-test-harness --bin test_money_v3
+cargo run -p dwow-contract-test-harness --bin test_money_v3
 ```
 
 ## Migration from MoneyV2

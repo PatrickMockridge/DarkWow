@@ -16,8 +16,8 @@ A DarkWow fork rebuilt around four rejections of upstream: no governance DAO (pu
 ## Build
 
 ```shell
-git clone https://codeberg.org/PatrickM123/darkfi-jailbroken
-cd darkfi-jailbroken
+git clone https://codeberg.org/PatrickM123/darkwow
+cd darkwow
 rustup target add wasm32-unknown-unknown
 make
 ```
