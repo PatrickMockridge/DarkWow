@@ -39,6 +39,12 @@ impl EncDecode for pallas::Base {}
 impl EncDecode for pallas::Scalar {}
 
 /// Blinding factor used in bullas. Every bulla should contain one.
+#[cfg(feature = "async")]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct Blind<F: Field + EncDecode + AsyncEncodable + AsyncDecodable>(pub F);
+
+/// Blinding factor used in bullas. Every bulla should contain one.
+#[cfg(not(feature = "async"))]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
 pub struct Blind<F: Field + EncDecode>(pub F);
 

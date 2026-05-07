@@ -533,7 +533,7 @@ mod tests {
             pallas::Base::zero(),
         );
 
-        let update = PoWRewardUpdateV1 { coin, height: 100 };
+        let update = PoWRewardUpdateV1 { coin, height: 100, new_total_supply: 0 };
 
         assert_eq!(update.height, 100);
     }

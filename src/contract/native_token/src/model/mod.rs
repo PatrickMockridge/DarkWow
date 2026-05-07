@@ -222,6 +222,8 @@ pub struct PoWRewardParamsV1 {
 pub struct PoWRewardUpdateV1 {
     pub coin: Coin,
     pub height: u32,
+    /// Cumulative total supply after this reward (for supply cap enforcement)
+    pub new_total_supply: u64,
 }
 
 /// Parameters for TransferV1 - private token transfer (PRIVACY)

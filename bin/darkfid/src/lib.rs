@@ -271,7 +271,7 @@ impl Darkfid {
 
         // Create PoW config from network settings
         let pow_config = crate::blockchain::LinearPoWConfig {
-            target_block_time: net_settings.pow.target_block_time.unwrap_or(60),
+            target_block_time: net_settings.pow.target_block_time.unwrap_or(120),
             initial_difficulty: net_settings.pow.initial_difficulty.unwrap_or(0x000000FF) as u32,
             min_difficulty: net_settings.pow.min_difficulty.unwrap_or(1) as u32,
             max_difficulty: net_settings.pow.max_difficulty.unwrap_or(u32::MAX) as u32,

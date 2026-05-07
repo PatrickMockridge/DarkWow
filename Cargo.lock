@@ -2387,6 +2387,7 @@ name = "darkfi_linear"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "darkfi-sdk",
  "darkfi-serial",
  "hex",
  "merlin",

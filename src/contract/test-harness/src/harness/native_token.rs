@@ -117,7 +117,11 @@ impl NativeTokenHarness {
         }
         .build()?;
 
+        let mut call_data = vec![0x05];
+        debris.params.encode(&mut call_data)?;
+
         Ok(PoWRewardResult {
+            call_data,
             output: debris.params.output,
             proofs: debris.proofs,
         })
@@ -222,6 +226,7 @@ pub use darkfi_native_token_contract::client::burn_v1::BurnCallInput;
 
 /// Result of PoW reward minting
 pub struct PoWRewardResult {
+    pub call_data: Vec<u8>,
     pub output: Output,
     pub proofs: Vec<darkfi::zk::Proof>,
 }

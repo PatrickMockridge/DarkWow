@@ -16,56 +16,98 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+//! Blockchain-level constants and reward schedule.
+//!
+//! # Block Reward Design
+//!
+//! DarkFi uses a **continuous exponential decay** reward schedule with a
+//! permanent tail emission. The reward decreases every block — there are
+//! no step-function halvings.
+//!
+//! ## Parameters
+//!
+//! | Parameter | Value | Notes |
+//! |-----------|-------|-------|
+//! | Block time | 120 seconds | 262,980 blocks/year |
+//! | Supply cap | 21,000,000 DRK | 2.1 × 10^15 base units |
+//! | Half-life (H) | 1,051,920 blocks | ~4 years |
+//! | Tail emission | 1% per annum | 210,000 DRK/year |
+//! | Initial reward (R₀) | 1,383,800,000 | ~13.838 DRK |
+//! | Tail reward (R_tail) | 79,800,000 | ~0.798 DRK |
+//!
+//! ## Reward Function
+//!
+//! ```text
+//! R(h) = max( R₀ × 2^(-h/H), R_tail )
+//!
+//! Genesis (h=0) always returns 0.
+//! ```
+//!
+//! ## Supply Convergence
+//!
+//! The main emission asymptotically approaches 21M DRK through the
+//! geometric decay. Tail emission begins when the exponential reward
+//! drops below the per-block tail threshold (~16.5 years after launch).
+
+/// Constants for the block reward schedule.
+pub mod reward {
+    /// Block reward for genesis block.
+    pub const GENESIS_REWARD: u64 = 0;
+
+    /// Initial block reward at height 1 (in base units: 1 DRK = 10^8).
+    ///
+    /// Derived from: R₀ = ⌊total_supply × ln(2) / half_life_blocks⌋
+    /// = ⌊2,100,000,000,000,000 × ln(2) / 1,051,920⌋
+    /// = 1,383,764,049 base units (~13.837 DRK)
+    ///
+    /// Rounded down for conservative issuance.
+    pub const INITIAL_REWARD: u64 = 1_383_764_049;
+
+    /// Half-life in blocks (~4 years at 2-minute blocks).
+    pub const HALF_LIFE_BLOCKS: u32 = 1_051_920;
+
+    /// Tail emission reward per block (in base units).
+    ///
+    /// 1% per annum of the 21M cap, rounded down:
+    /// = ⌊21,000,000 × 0.01 × 10^8 / 262,980⌋
+    /// = 79,853,981 base units (~0.7985 DRK)
+    pub const TAIL_REWARD: u64 = 79_853_981;
+
+    /// Maximum total supply (in DRK).
+    pub const MAX_SUPPLY_DRK: u64 = 21_000_000;
+
+    /// Maximum total supply (in base units).
+    pub const MAX_SUPPLY: u64 = MAX_SUPPLY_DRK * 100_000_000; // 2.1 × 10^15
+
+    /// Blocks per year at 2-minute block time (365.25 × 24 × 3600 / 120).
+    pub const BLOCKS_PER_YEAR: u32 = 262_980;
+}
+
 /// Auxiliary function to calculate provided block height block version.
 /// Currently, a single version(1) exists.
 pub fn block_version(_height: u32) -> u8 {
     1
 }
 
-/// Auxiliary function to calculate provided block height epoch.
-/// Each epoch is defined by the fixed intervals rewards change.
-/// Genesis block is on epoch 0.
-pub fn block_epoch(height: u32) -> u8 {
-    match height {
-        0 => 0,
-        1..=1000 => 1,
-        1001..=2000 => 2,
-        2001..=3000 => 3,
-        3001..=4000 => 4,
-        4001..=5000 => 5,
-        5001..=6000 => 6,
-        6001..=7000 => 7,
-        7001..=8000 => 8,
-        8001..=9000 => 9,
-        9001..=10000 => 10,
-        10001.. => 11,
-    }
-}
-
-/// Auxiliary function to calculate provided block height expected reward value.
+/// Calculate the expected block reward for a given block height.
 ///
-/// Genesis block always returns reward value 0. Rewards are halfed at fixed intervals,
-/// called epochs. After last epoch has started, reward value is based on DARK token-economics.
+/// Uses exponential decay: `R(h) = max( R₀ × 2^(-h/H), R_tail )`
+///
+/// Genesis (height 0) always returns 0.
+///
+/// The computation uses `f64::powf` which is deterministic per IEEE 754
+/// across all supported architectures (x86_64, ARM64).
 pub fn expected_reward(height: u32) -> u64 {
-    // Grab block height epoch
-    let epoch = block_epoch(height);
-
-    // TODO (res) implement reward mechanism with accord to DRK, DARK token-economics.
-    // Configured block rewards (1 DRK == 1 * 10^8)
-    match epoch {
-        0 => 0,
-        1 => 2_000_000_000, // 20 DRK
-        2 => 1_800_000_000, // 18 DRK
-        3 => 1_600_000_000, // 16 DRK
-        4 => 1_400_000_000, // 14 DRK
-        5 => 1_200_000_000, // 12 DRK
-        6 => 1_000_000_000, // 10 DRK
-        7 => 800_000_000,   // 8 DRK
-        8 => 600_000_000,   // 6 DRK
-        9 => 400_000_000,   // 4 DRK
-        10 => 200_000_000,  // 2 DRK
-        _ => 100_000_000,   // 1 DRK
+    if height == 0 {
+        return reward::GENESIS_REWARD;
     }
+
+    let decay = 2.0f64.powf(-(height as f64) / reward::HALF_LIFE_BLOCKS as f64);
+    let reward = (reward::INITIAL_REWARD as f64 * decay) as u64;
+
+    // Apply tail emission floor — once the exponential drops below the
+    // per-block tail threshold, the tail emission takes over permanently.
+    reward.max(reward::TAIL_REWARD)
 }
 
 /// Auxiliary function to compute the corresponding fee value

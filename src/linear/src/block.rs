@@ -426,7 +426,7 @@ pub fn create_block_with_uncles(
 
     // Build uncle merkle and compute rewards (uses blake3 for merkle structure)
     let (uncle_merkle_root, _) = build_uncle_merkle(uncles, vm);
-    let base_reward = 100_000_000u64; // TODO: wire up to consensus params
+    let base_reward = darkfi_sdk::blockchain::expected_reward(height as u32);
     let (total_reward, _) = compute_reward(base_reward, uncles);
 
     Block {

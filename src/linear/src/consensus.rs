@@ -196,7 +196,7 @@ impl Default for PoWConsensus {
     fn default() -> Self {
         Self {
             difficulty_target: 0x0000_FFFF,
-            target_block_time: 60,      // 60 seconds between blocks
+            target_block_time: 120,      // 2 minutes between blocks
             min_difficulty: 1,
             max_difficulty: u32::MAX,
             timestamps: RingBuffer::new(20),

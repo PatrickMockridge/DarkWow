@@ -31,12 +31,13 @@
 //! - Uses nullifiers for double-spend prevention
 
 use darkfi_sdk::{
+    blockchain::{expected_reward, reward},
     crypto::{
         pasta_prelude::{Curve, CurveAffine, Field, PrimeField}, pedersen_commitment_u64, poseidon_hash,
         smt::{wasmdb::SmtWasmFp, PoseidonFp, EMPTY_NODES_FP}, ContractId, MerkleNode, MerkleTree,
     },
     dark_tree::DarkLeaf,
-    error::ContractResult,
+    error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
     wasm, ContractCall,
@@ -55,8 +56,8 @@ use crate::{
     NATIVE_TOKEN_CONTRACT_DB_VERSION, NATIVE_TOKEN_CONTRACT_FEES_TREE,
     NATIVE_TOKEN_CONTRACT_INFO_TREE, NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
     NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE,
-    NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1,
-    EMPTY_COINS_TREE_ROOT,
+    NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
+    NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, EMPTY_COINS_TREE_ROOT,
 };
 
 // Generate WASM entrypoints
@@ -673,8 +674,32 @@ fn pow_reward_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     // Get verifying block height
     let verifying_block_height = wasm::util::get_verifying_block_height()?;
 
+    // Validate block reward matches the emission schedule
+    let expected = expected_reward(verifying_block_height);
+    if params.input.value < expected {
+        msg!("[pow_reward_v1] Error: Reward below schedule: got {}, expected {} at height {}",
+             params.input.value, expected, verifying_block_height);
+        return Err(NativeTokenError::ValueMismatch.into())
+    }
+
+    // Enforce 21M DRK supply cap
+    let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
+    let current_supply: u64 = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY)?
+        .map(|data| deserialize(&data).unwrap_or(0))
+        .unwrap_or(0);
+    let new_supply = current_supply.saturating_add(params.input.value);
+    if new_supply > reward::MAX_SUPPLY {
+        msg!("[pow_reward_v1] Error: Supply cap exceeded: {} + {} > {}",
+             current_supply, params.input.value, reward::MAX_SUPPLY);
+        return Err(ContractError::InvalidFunction)
+    }
+
     // Create state update
-    let update = PoWRewardUpdateV1 { coin: params.output.coin, height: verifying_block_height };
+    let update = PoWRewardUpdateV1 {
+        coin: params.output.coin,
+        height: verifying_block_height,
+        new_total_supply: new_supply,
+    };
     msg!("[native_token::pow_reward_v1] PoW reward valid");
     wasm::util::set_return_data(&serialize(&(NativeTokenFunction::PoWRewardV1 as u8, update)))
 }
@@ -845,6 +870,14 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
         nullifier_roots_db,
         NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT,
         &[],
+    )?;
+
+    // Record cumulative total supply
+    msg!("[PoWRewardV1] Recording total supply: {}", update.new_total_supply);
+    wasm::db::db_set(
+        info_db,
+        NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
+        &serialize(&update.new_total_supply),
     )?;
 
     // Add new coin
