@@ -1,113 +1,221 @@
 #!/bin/bash
-# DarkWow Testnet Entry Point Script
-# Provisional name: "DarkWow" (token ticker: DRKW)
-# Handles config generation and invokes dwowd
+# DarkWow Testnet Entrypoint
+# Generates config from environment variables at container start.
+# Supports two roles: lilith (P2P seed) and dwowd (fullnode + optional miner).
+#
+# Usage:
+#   docker compose up                              # 3-node local testnet
+#   docker run --network=host -e ROLE=lilith ...   # standalone seed
+#   docker run --network=host -e SEED_ADDR=...     # join existing devnet
 
 set -e
 
+# --- Configuration from environment ---
+ROLE="${ROLE:-dwowd}"
 NETWORK="${NETWORK:-darkwow-testnet}"
-HOSTNAME="${HOSTNAME:-node0}"
+P2P_PORT="${P2P_PORT:-31342}"
+RPC_PORT="${RPC_PORT:-31345}"
+STRATUM_PORT="${STRATUM_PORT:-31347}"
+MANAGEMENT_PORT="${MANAGEMENT_PORT:-31346}"
+SEED_ADDR="${SEED_ADDR:-}"
+PEER_ADDR="${PEER_ADDR:-}"
+EXTERNAL_ADDR="${EXTERNAL_ADDR:-}"
+IS_SEED="${IS_SEED:-false}"
+FIXED_DIFFICULTY="${FIXED_DIFFICULTY:-}"
+TARGET_BLOCK_TIME="${TARGET_BLOCK_TIME:-120}"
+MINING_ENABLED="${MINING_ENABLED:-true}"
+MINING_THREADS="${MINING_THREADS:-1}"
+THRESHOLD="${THRESHOLD:-3}"
+SKIP_SYNC="${SKIP_SYNC:-false}"
+SKIP_FEES="${SKIP_FEES:-false}"
+LOCALNET="${LOCALNET:-false}"
+WALLET_ADDRESS="${WALLET_ADDRESS:-}"
+DATADIR="${DATADIR:-/root/.local/share/dwow/dwowd/${NETWORK}}"
+LILITH_DATADIR="${LILITH_DATADIR:-/root/.local/share/dwow/lilith/${NETWORK}}"
 
-echo "[entrypoint] Starting DarkWow entrypoint..."
-echo "[entrypoint] NETWORK=$NETWORK HOSTNAME=$HOSTNAME"
+echo "=== DarkWow Testnet Node ==="
+echo "  ROLE=$ROLE  NETWORK=$NETWORK"
+echo "  P2P=$P2P_PORT  RPC=$RPC_PORT  STRATUM=$STRATUM_PORT"
 
-# Determine node-specific settings based on hostname
-case "$HOSTNAME" in
-    node0)
-        RPC_PORT=31345
-        STRATUM_PORT=31347
-        INBOUND_PORT=31342
-        SEEDS="seeds = [\"tcp+tls://lilith:31340\"]"
-        PEERS="peers = [\"tcp+tls://node1:31343\"]"
-        EXTERNAL_ADDRS="external_addrs = [\"tcp+tls://node0:31342\"]"
-        ;;
-    node1)
-        RPC_PORT=31346
-        STRATUM_PORT=31348
-        INBOUND_PORT=31343
-        SEEDS="seeds = [\"tcp+tls://lilith:31340\"]"
-        PEERS="peers = [\"tcp+tls://node0:31342\"]"
-        EXTERNAL_ADDRS="external_addrs = [\"tcp+tls://node1:31343\"]"
-        ;;
-    *)
-        echo "[entrypoint] WARNING: Unknown hostname $HOSTNAME, using node0 defaults"
-        RPC_PORT=31345
-        STRATUM_PORT=31347
-        INBOUND_PORT=31342
-        SEEDS="seeds = [\"tcp+tls://lilith:31340\"]"
-        PEERS="peers = [\"tcp+tls://node1:31343\"]"
-        EXTERNAL_ADDRS="external_addrs = [\"tcp+tls://node0:31342\"]"
-        ;;
-esac
+# --- Derive magic bytes from NETWORK if not explicitly set ---
+if [ -z "$MAGIC_BYTES" ]; then
+    if command -v b3sum >/dev/null 2>&1; then
+        NET_HASH=$(echo -n "$NETWORK" | b3sum --no-names | head -c 8)
+        B0=$((16#${NET_HASH:0:2}))
+        B1=$((16#${NET_HASH:2:2}))
+        B2=$((16#${NET_HASH:4:2}))
+        B3=$((16#${NET_HASH:6:2}))
+        MAGIC_BYTES="$B0, $B1, $B2, $B3"
+    elif command -v openssl >/dev/null 2>&1; then
+        RAW=$(echo -n "$NETWORK" | openssl dgst -blake2b512 -binary | head -c 4 | \
+            od -A n -t u1 -w4 | head -1 | sed 's/ /, /g')
+        MAGIC_BYTES="$RAW"
+    else
+        SUM=0; for ((i=0; i<${#NETWORK}; i++)); do
+            SUM=$(( (SUM + $(printf '%d' "'${NETWORK:$i:1}")) % 256 ))
+        done
+        MAGIC_BYTES="$SUM, $(( (SUM * 7 + 13) % 256 )), $(( (SUM * 31 + 37) % 256 )), $(( (SUM * 127 + 73) % 256 ))"
+        echo "  WARNING: No b3sum/openssl, magic bytes from simple hash: [$MAGIC_BYTES]"
+    fi
+fi
+echo "  Magic bytes: [$MAGIC_BYTES]"
 
-echo "[entrypoint] Generating config for $HOSTNAME (rpc=$RPC_PORT, stratum=$STRATUM_PORT, inbound=$INBOUND_PORT)..."
-mkdir -p /root/.config/dwow
-cat > /root/.config/dwow/dwowd_config.toml << EOF
-network = "darkwow-testnet"
+# ============================================================================
+# ROLE: lilith — P2P seed node
+# ============================================================================
+if [ "$ROLE" = "lilith" ]; then
+    echo "  Mode: lilith seed node"
+    LILITH_RPC_PORT="${LILITH_RPC_PORT:-18927}"
 
-[network_config."darkwow-testnet"]
-database = "~/.local/share/dwow/dwowd/darkwow-testnet"
-threshold = 3
+    mkdir -p "$(dirname "$LILITH_DATADIR")"
+
+    cat > /tmp/lilith.toml << LILITHEOF
+[rpc]
+rpc_listen = "tcp://127.0.0.1:${LILITH_RPC_PORT}"
+
+[network."${NETWORK}"]
+accept_addrs = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
+seeds = []
+peers = []
+version = "0.5.0"
+app_name = "dwowd"
+localnet = ${LOCALNET}
+hostlist = "${LILITH_DATADIR}/hostlist.tsv"
+datastore = "${LILITH_DATADIR}"
+magic_bytes = [${MAGIC_BYTES}]
+LILITHEOF
+
+    echo "  Lilith config written to /tmp/lilith.toml"
+    echo "  P2P accept: tcp+tls://0.0.0.0:${P2P_PORT}"
+    echo "Starting lilith..."
+    exec /app/lilith --config /tmp/lilith.toml "$@"
+fi
+
+# ============================================================================
+# ROLE: dwowd (default) — fullnode with optional mining
+# ============================================================================
+
+CONFIGDIR="${CONFIGDIR:-/root/.config/dwow}"
+CONFIGFILE="${CONFIGDIR}/dwowd_config.toml"
+
+# --- Build seeds / peers / external_addrs config lines ---
+SEEDS_LINE=""
+PEERS_LINE=""
+EXTERNAL_LINE=""
+
+if [ "$IS_SEED" = "true" ]; then
+    echo "  Mode: SEED (no upstream seeds configured)"
+else
+    if [ -n "$SEED_ADDR" ]; then
+        SEEDS_LINE="seeds = [\"tcp+tls://${SEED_ADDR}\"]"
+        echo "  Seeds: tcp+tls://${SEED_ADDR}"
+    fi
+fi
+
+if [ -n "$PEER_ADDR" ]; then
+    PEER_LIST=""
+    IFS=',' read -ra PEERS <<< "$PEER_ADDR"
+    for peer in "${PEERS[@]}"; do
+        peer=$(echo "$peer" | xargs)  # trim whitespace
+        if [ -z "$PEER_LIST" ]; then
+            PEER_LIST="\"tcp+tls://${peer}\""
+        else
+            PEER_LIST="${PEER_LIST}, \"tcp+tls://${peer}\""
+        fi
+    done
+    PEERS_LINE="peers = [${PEER_LIST}]"
+    echo "  Peers: ${PEER_LIST}"
+fi
+
+if [ -n "$EXTERNAL_ADDR" ]; then
+    EXTERNAL_LINE="external_addrs = [\"tcp+tls://${EXTERNAL_ADDR}\"]"
+    echo "  External addr: tcp+tls://${EXTERNAL_ADDR}"
+fi
+
+# --- Generate dwowd config ---
+mkdir -p "$CONFIGDIR" "$DATADIR"
+
+cat > "$CONFIGFILE" << DWOWEOF
+network = "${NETWORK}"
+
+[network_config."${NETWORK}"]
+database = "${DATADIR}"
+threshold = ${THRESHOLD}
 max_forks = 8
-skip_sync = false
-skip_fees = false
+pow_target = ${TARGET_BLOCK_TIME}
+skip_sync = ${SKIP_SYNC}
+skip_fees = ${SKIP_FEES}
 txs_batch_size = 50
-pow_target = 120
 
-[network_config."darkwow-testnet".pow]
-target_block_time = 120
+[network_config."${NETWORK}".pow]
+target_block_time = ${TARGET_BLOCK_TIME}
 initial_difficulty = 255
 min_difficulty = 1
 max_difficulty = 4294967295
 min_block_interval = 10
+DWOWEOF
 
-[network_config."darkwow-testnet".rpc]
-rpc_listen = "tcp://0.0.0.0:$RPC_PORT"
+if [ -n "$FIXED_DIFFICULTY" ]; then
+    echo "pow_fixed_difficulty = ${FIXED_DIFFICULTY}" >> "$CONFIGFILE"
+fi
 
-[network_config."darkwow-testnet".stratum_rpc]
-rpc_listen = "tcp://0.0.0.0:$STRATUM_PORT"
+cat >> "$CONFIGFILE" << DWOWEOF
 
-[network_config."darkwow-testnet".net]
-localnet = false
+[network_config."${NETWORK}".rpc]
+rpc_listen = "tcp://0.0.0.0:${RPC_PORT}"
+
+[network_config."${NETWORK}".stratum_rpc]
+rpc_listen = "tcp://0.0.0.0:${STRATUM_PORT}"
+
+[network_config."${NETWORK}".management_rpc]
+rpc_listen = "tcp://127.0.0.1:${MANAGEMENT_PORT}"
+
+[network_config."${NETWORK}".net]
+localnet = ${LOCALNET}
 active_profiles = ["tcp+tls"]
-inbound = ["tcp+tls://0.0.0.0:$INBOUND_PORT"]
-magic_bytes = [68, 82, 75, 87]
-hostlist = "/root/.local/share/dwow/dwowd/darkwow-testnet/hostlist.tsv"
-$SEEDS
-$PEERS
-$EXTERNAL_ADDRS
+inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
+magic_bytes = [${MAGIC_BYTES}]
+hostlist = "${DATADIR}/hostlist.tsv"
+DWOWEOF
 
-[network_config."darkwow-testnet".net.profiles."tcp+tls"]
-inbound = ["tcp+tls://0.0.0.0:$INBOUND_PORT"]
-EOF
-echo "[entrypoint] Config generated successfully"
+if [ -n "$SEEDS_LINE" ]; then
+    echo "$SEEDS_LINE" >> "$CONFIGFILE"
+fi
+if [ -n "$PEERS_LINE" ]; then
+    echo "$PEERS_LINE" >> "$CONFIGFILE"
+fi
+if [ -n "$EXTERNAL_LINE" ]; then
+    echo "$EXTERNAL_LINE" >> "$CONFIGFILE"
+fi
 
-echo "[entrypoint] Starting dwowd..."
+cat >> "$CONFIGFILE" << DWOWEOF
+
+[network_config."${NETWORK}".net.profiles."tcp+tls"]
+inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
+DWOWEOF
+
+echo "  Config written to $CONFIGFILE"
+
+# --- Start dwowd ---
+echo "Starting dwowd..."
 /app/dwowd "$@" &
+DWOWD_PID=$!
 
-DARKFID_PID=$!
+# --- Start xmrig for mining ---
+if [ "$MINING_ENABLED" = "true" ]; then
+    MINER_ADDRESS_FILE="${DATADIR}/mining_address"
 
-# Start xmrig on mining nodes
-if [ "$HOSTNAME" = "node0" ] || [ "$HOSTNAME" = "node1" ]; then
-    STRATUM_PORT=$(if [ "$HOSTNAME" = "node0" ]; then echo "31347"; else echo "31348"; fi)
-    DATADIR="/root/.local/share/dwow/dwowd/darkwow-testnet"
-    MINER_ADDRESS_FILE="$DATADIR/mining_address"
-
-    # Three-tier address resolution:
-    # 1. Explicit WALLET_ADDRESS env var (operator-provided)
-    # 2. Persisted file from prior dwowd run
-    # 3. Wait for dwowd to auto-generate a keypair on first run
     if [ -n "$WALLET_ADDRESS" ]; then
-        echo "[entrypoint] Using provided WALLET_ADDRESS: $WALLET_ADDRESS"
+        echo "Using provided WALLET_ADDRESS: $WALLET_ADDRESS"
     elif [ -f "$MINER_ADDRESS_FILE" ]; then
         WALLET_ADDRESS=$(cat "$MINER_ADDRESS_FILE")
-        echo "[entrypoint] Using persisted mining address: $WALLET_ADDRESS"
+        echo "Using persisted mining address: $WALLET_ADDRESS"
     else
-        echo "[entrypoint] Waiting for dwowd to generate mining address..."
+        echo "Waiting for dwowd to generate mining address..."
         for i in $(seq 1 30); do
             if [ -f "$MINER_ADDRESS_FILE" ]; then
                 WALLET_ADDRESS=$(cat "$MINER_ADDRESS_FILE")
-                echo "[entrypoint] Generated mining address: $WALLET_ADDRESS"
+                echo "Generated mining address: $WALLET_ADDRESS"
                 break
             fi
             sleep 1
@@ -115,15 +223,16 @@ if [ "$HOSTNAME" = "node0" ] || [ "$HOSTNAME" = "node1" ]; then
     fi
 
     if [ -n "$WALLET_ADDRESS" ]; then
-        echo "[entrypoint] Starting xmrig on $HOSTNAME (stratum port $STRATUM_PORT)..."
+        echo "Starting xmrig (stratum+tcp://127.0.0.1:$STRATUM_PORT, $MINING_THREADS threads)..."
         xmrig \
             -o "stratum+tcp://127.0.0.1:${STRATUM_PORT}" \
             -u "$WALLET_ADDRESS" \
             -a rx/0 \
-            -t 1 &
+            -t "$MINING_THREADS" \
+            --keepalive &
     else
-        echo "[entrypoint] WARNING: No mining address available, xmrig not started"
+        echo "WARNING: No mining address available after 30s, xmrig not started"
     fi
 fi
 
-wait $DARKFID_PID
+wait $DWOWD_PID

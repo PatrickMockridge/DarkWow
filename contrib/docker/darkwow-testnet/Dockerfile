@@ -1,11 +1,10 @@
 # DarkWow Testnet Docker Image
 #
-# Provisional name: "DarkWow" (token ticker: DRKW)
-# Magic bytes [68, 82, 75, 87] = ASCII "DRKW"
+# Multi-stage build from local source. Build from repo root:
+#   docker build -t darkwow-testnet . -f contrib/docker/darkwow-testnet/Dockerfile
 #
-# Multi-stage build: clones from origin, builds dwowd inside Docker
-# Build from repo root:
-#   docker build -t darkfi:darkwow-testnet . -f contrib/docker/darkwow-testnet/Dockerfile
+# Or use the build script:
+#   contrib/docker/darkwow-testnet/build-and-push.sh
 
 # ============================================================================
 # Stage: Builder
@@ -15,7 +14,7 @@ FROM ubuntu:24.04 AS builder
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential gcc g++ make cmake curl git \
-    libssl-dev pkg-config tcl-dev clang libsqlite3-dev libasound2-dev libsqlcipher-dev
+    libssl-dev pkg-config tcl-dev clang libsqlite3-dev libasound2-dev libsqlcipher3-dev
 
 # Install Rust with default toolchain
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y \
@@ -29,9 +28,7 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 WORKDIR /app
 
-# Clone from origin on linear-master branch - deterministic source
-RUN git clone https://codeberg.org/PatrickM123/darkfi-jailbroken.git /app && \
-    git -C /app checkout linear-master
+COPY . /app
 
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
 RUN cargo build --release -p zkas
@@ -62,9 +59,9 @@ RUN cargo build -p dwowd --release -j 2
 # Build lilith seed node
 RUN cargo build -p lilith --release -j 2
 
-RUN cp target/release/dwowd /app/dwowd
-RUN cp target/release/lilith /app/lilith
-RUN cp bin/lilith/lilith_config.toml /app/lilith_config.toml
+RUN cp target/release/dwowd /app/dwowd && \
+    cp target/release/lilith /app/lilith && \
+    cp bin/lilith/lilith_config.toml /app/lilith_config.toml
 
 # ============================================================================
 # Stage: Runtime
@@ -72,7 +69,7 @@ RUN cp bin/lilith/lilith_config.toml /app/lilith_config.toml
 FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y \
-    libssl3 libsqlite3-0 liblzma5 libstdc++6 curl bash wget
+    libssl3 libsqlite3-0 liblzma5 libstdc++6 curl bash wget openssl
 
 # Use official xmrig binary (statically linked) to avoid glibc fortify buffer overflow
 # in Ubuntu's packaged xmrig 6.21.1 during RandomX dataset init

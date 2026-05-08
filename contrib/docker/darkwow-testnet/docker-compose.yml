@@ -1,3 +1,16 @@
+# DarkWow Testnet — 3-node local devnet
+#
+# Architecture:
+#   lilith — P2P seed/bootstrap node (no upstream seeds)
+#   node0  — mining fullnode (connects to lilith, peers with node1)
+#   node1  — mining fullnode (connects to lilith, peers with node0)
+#
+# Quick start:
+#   docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up
+#
+# Multi-machine: switch to host networking and set SEED_ADDR to the seed's LAN IP.
+# See README.md for full deployment guide.
+
 version: '3.8'
 services:
   lilith:
@@ -6,15 +19,21 @@ services:
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
     container_name: dwow-lilith
     hostname: lilith
-    # Override entrypoint - lilith uses inline config
-    entrypoint: ["/bin/sh", "-c", "cat > /tmp/lilith.toml << 'LILITH_EOF'\n[rpc]\nrpc_listen = \"tcp://127.0.0.1:18927\"\n\n[network.\"darkwow-testnet\"]\naccept_addrs = [\"tcp+tls://0.0.0.0:31340\"]\nseeds = []\npeers = []\nversion = \"0.5.0\"\napp_name = \"darkfid\"\nlocalnet = false\nhostlist =\"~/.local/share/dwow/lilith/darkwow-testnet/hostlist.tsv\"\ndatastore = \"~/.local/share/dwow/lilith/darkwow-testnet\"\nmagic_bytes = [68, 82, 75, 87]\nLILITH_EOF\nexec /app/lilith --config /tmp/lilith.toml"]
+    entrypoint: ["/app/entrypoint.sh"]
     command: []
+    environment:
+      - ROLE=lilith
+      - NETWORK=darkwow-testnet
+      - P2P_PORT=31340
+      - MAGIC_BYTES=68,82,75,87
+      - LOCALNET=false
     ports:
       - "31340:31340"
     volumes:
       - lilith_data:/root/.local/share/dwow/lilith
     networks:
       - dwow-local
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "/app/lilith", "--version"]
       interval: 10s
@@ -29,7 +48,21 @@ services:
     hostname: node0
     entrypoint: ["/app/entrypoint.sh"]
     environment:
+      - ROLE=dwowd
       - NETWORK=darkwow-testnet
+      - P2P_PORT=31342
+      - RPC_PORT=31345
+      - STRATUM_PORT=31347
+      - SEED_ADDR=lilith:31340
+      - PEER_ADDR=node1:31343
+      - MAGIC_BYTES=68,82,75,87
+      - MINING_THREADS=1
+      - THRESHOLD=3
+      - TARGET_BLOCK_TIME=120
+      - SKIP_SYNC=false
+      - SKIP_FEES=false
+      - LOCALNET=false
+      - EXTERNAL_ADDR=node0:31342
     ports:
       - "31345:31345"
       - "31347:31347"
@@ -40,6 +73,7 @@ services:
       - dwow-local
     depends_on:
       - lilith
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "/app/dwowd", "--version"]
       interval: 10s
@@ -54,7 +88,21 @@ services:
     hostname: node1
     entrypoint: ["/app/entrypoint.sh"]
     environment:
+      - ROLE=dwowd
       - NETWORK=darkwow-testnet
+      - P2P_PORT=31343
+      - RPC_PORT=31346
+      - STRATUM_PORT=31348
+      - SEED_ADDR=lilith:31340
+      - PEER_ADDR=node0:31342
+      - MAGIC_BYTES=68,82,75,87
+      - MINING_THREADS=1
+      - THRESHOLD=3
+      - TARGET_BLOCK_TIME=120
+      - SKIP_SYNC=false
+      - SKIP_FEES=false
+      - LOCALNET=false
+      - EXTERNAL_ADDR=node1:31343
     ports:
       - "31346:31346"
       - "31348:31348"
@@ -66,6 +114,7 @@ services:
     depends_on:
       - lilith
       - node0
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "/app/dwowd", "--version"]
       interval: 10s

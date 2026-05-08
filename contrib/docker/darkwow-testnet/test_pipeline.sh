@@ -89,7 +89,7 @@ docker-compose ps
 # Check xmrig connections
 echo ""
 info "Mining status:"
-docker-compose logs xmrig0 2>&1 | grep -i "new job\|accepted\|error" | tail -5 || warn "No xmrig data yet"
+docker-compose logs node0 2>&1 | grep -i "new job\|accepted\|error" | tail -5 || warn "No xmrig data yet"
 
 echo ""
 echo -e "${GREEN}=== Pipeline Complete ===${NC}"
