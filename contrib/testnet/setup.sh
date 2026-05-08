@@ -4,7 +4,7 @@
 
 set -e
 
-DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/darkfi}"
+DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/dwow}"
 DARKFID_HOME="$DWOW_HOME/darkfid"
 CONFIG_DIR="$DARKFID_HOME"
 CONFIG_FILE="$CONFIG_DIR/darkfid_config.toml"

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Linear-Testnet Mining Pipeline
-# Two darkfi nodes mining on linear-testnet
+# Two dwowd nodes mining on linear-testnet
 # Robust: validates entrypoint, verifies containers, fails fast on errors
 
 set -e

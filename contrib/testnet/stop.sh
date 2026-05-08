@@ -2,7 +2,7 @@
 # DarkFi Testnet Stop Script
 # Usage: ./stop.sh
 
-DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/darkfi}"
+DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/dwow}"
 DARKFID_HOME="$DWOW_HOME/darkfid"
 PID_FILE="$DARKFID_HOME/testnet.pid"
 

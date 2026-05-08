@@ -11,7 +11,7 @@ elif [ "$1" = "-v" ]; then
     VERBOSE="-v"
 fi
 
-DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/darkfi}"
+DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/dwow}"
 DARKFID_HOME="$DWOW_HOME/darkfid"
 CONFIG_FILE="$DARKFID_HOME/darkfid_config.toml"
 PID_FILE="$DARKFID_HOME/testnet.pid"

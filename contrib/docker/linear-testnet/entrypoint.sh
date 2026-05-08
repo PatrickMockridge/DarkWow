@@ -40,7 +40,7 @@ case "$HOSTNAME" in
 esac
 
 echo "[entrypoint] Generating config for $HOSTNAME (rpc=$RPC_PORT, stratum=$STRATUM_PORT, inbound=$INBOUND_PORT)..."
-mkdir -p /root/.config/darkfi
+mkdir -p /root/.config/dwow
 cat > /root/.config/dwow/darkfid_config.toml << EOF
 network = "linear-testnet"
 

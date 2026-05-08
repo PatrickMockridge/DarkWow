@@ -5,7 +5,7 @@
 set -e
 
 WALLET_NAME="${1:-testnet_wallet}"
-WALLET_DIR="${DWOW_HOME:-$HOME/.local/share/darkfi}/dww"
+WALLET_DIR="${DWOW_HOME:-$HOME/.local/share/dwow}/dww"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

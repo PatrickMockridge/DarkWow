@@ -2,7 +2,7 @@
 # DarkFi Testnet Status Script
 # Usage: ./status.sh
 
-DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/darkfi}"
+DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/dwow}"
 DARKFID_HOME="$DWOW_HOME/darkfid"
 PID_FILE="$DARKFID_HOME/testnet.pid"
 
