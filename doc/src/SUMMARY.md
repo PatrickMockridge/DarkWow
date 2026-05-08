@@ -13,6 +13,7 @@
 
 # User Guide
 
+- [Testnet Bootstrapping Plan](testnet/bootstrapping.md)
 - [Running a Node](testnet/node.md)
 - [Tokens](testnet/token.md)
 - [Payments](testnet/payment.md)
