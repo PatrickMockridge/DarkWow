@@ -257,6 +257,17 @@ src/contract/{name}/
 
 ## Part 5: Testing Standards
 
+> [!NOTE]
+> This section defines testing standards for contract code quality. For the
+> operational testing infrastructure — how to actually run tests at each level,
+> with Docker devnets and live mining — see the [Developer Quick Start Guide](../quickstart.md)
+> and [Testing Overview](../testing/overview.md). The four-layer pyramid below
+> (Circuit → Contract → Composition → Integration) describes code-level testing
+> discipline. The project's operational taxonomy (Lightweight → Heavyweight →
+> Containerized Localnet → Containerized Devnet) maps onto these layers: Levels
+> 1-2 are local single-process tests (Layers 1-3 below), Levels 3-4 add P2P
+> networking and multi-machine deployment (Layer 4 below).
+
 ### Four Testing Layers
 
 ```

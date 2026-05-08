@@ -23,10 +23,15 @@ DarkWow loosely follows the standardized Unix directory structure.
 
 ## Using DarkWow
 
-Refer to the main [README](../index.html) file for instructions on how
-to install Rust and necessary dependencies.
+### Developer Quick Start
 
-Then proceed to the [Running a Node](testnet/node.md) guide.
+New developers should begin with the [Developer Quick Start Guide](dev/quickstart.md),
+which covers the four-level testing taxonomy, contract test harnesses, and Docker
+devnet setups. This is the fastest way to get a working development environment.
+
+Refer to the main [README](../index.html) file for instructions on how
+to install Rust and necessary dependencies. Then proceed to the
+[Running a Node](testnet/node.md) guide.
 
 ## Join the Community
 

@@ -90,6 +90,54 @@ Verifier DOES NOT learn: Alice's public key, balance, or identity
 
 ---
 
+## Developer Tooling
+
+DarkWow ships with a **four-level testing infrastructure** that upstream DarkFi
+does not have — from fast unit tests to multi-machine Docker devnets. The
+extended smart contract suite (28+ contracts) is designed to be forked,
+customized, and built on.
+
+| Level | Name | Scope | Command |
+|-------|------|-------|---------|
+| 1 | Lightweight | Unit/integration tests, no ZK overhead | `cargo test` |
+| 2 | Heavyweight | Full ZK proofs, contract execution | `cargo test --release` |
+| 3 | Containerized Localnet | Multi-node Docker testnet (seed + miners) | `docker compose up` |
+| 4 | Containerized Devnet | LAN/internet shared devnet node | `docker run --network=host` |
+
+Every contract ships with a **test harness** implementing the `ContractHarness`
+trait — compile-time ZK circuit loading, typed call builders, and automated
+proof verification. No blockchain required for Level 1 and 2 testing.
+
+For a goal-oriented entry point, see the [Developer Quick Start Guide](doc/src/dev/quickstart.md).
+
+### Docker Devnets
+
+- **darkwow-testnet** — 3-container local devnet (lilith seed + 2 mining nodes)
+  for P2P, block propagation, and mining tests. `docker compose up` and mine.
+  See [darkwow-testnet README](contrib/docker/darkwow-testnet/README.md).
+- **dwow-devnet** — Single-container devnet node for multi-machine LAN/internet
+  deployment. Turn any Linux machine into a seed or miner.
+  See [dwow-devnet README](contrib/docker/dwow-devnet/README.md).
+
+### Contract Testing
+
+```bash
+# Level 1: Fast deployment checks (seconds)
+cargo test -p dwowd test_pipeline
+
+# Level 2: Full ZK proof tests (minutes)
+RAYON_NUM_THREADS=10 cargo test --release -p dwowd test_heavyweight
+
+# Level 3: Multi-node Docker testnet with live mining
+./contrib/docker/darkwow-testnet/test-contracts.sh
+```
+
+**Fork, build, customize.** Every contract in `src/contract/<name>/` is
+self-contained with its own ZK circuits, tests, and harness — use any contract
+as a template for your own.
+
+---
+
 ## Build
 
 ```shell
@@ -115,6 +163,7 @@ cargo run -p darkfid -- --network darkwow-testnet
 
 ## Documentation
 
+- [Developer Quick Start Guide](doc/src/dev/quickstart.md)
 - [Architecture Overview](doc/src/arch/overview.md)
 - [Uncle Merkle Consensus](doc/src/arch/consensus/consensus.md)
 - [O-Cap Authorization](doc/src/arch/ocap.md)

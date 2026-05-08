@@ -151,6 +151,14 @@ For ZK circuit security, see [ZK Circuit Troubleshooting](dev/zk-circuit-trouble
 
 ## Getting Started
 
+### Developer Quick Start
+
+If you're a developer who wants to build, test, or customize DarkWow contracts,
+start with the [Developer Quick Start Guide](dev/quickstart.md). It covers the
+four-level testing taxonomy, 28 contract test harnesses, Docker devnet setups,
+and the "fork and build" workflow. This is the fastest path to a working
+development environment.
+
 ### Running a Node
 
 See [Running a Node](testnet/node.md) for setup instructions.
@@ -158,31 +166,14 @@ See [Running a Node](testnet/node.md) for setup instructions.
 ### Building from Source
 
 ```bash
-# Clone this fork
 git clone https://codeberg.org/PatrickM123/darkwow
 cd darkwow
-
-# Build the project
-cargo build --release
-
-# Build documentation
-cd doc
-mdbook build
+make
 ```
 
-### Local Development
-
-```bash
-# Start localnet
-./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
-
-# Mine tokens for testing
-./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet initialize
-./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet keygen
-./target/release/dww -c bin/dww/dww_config.toml -n localnet mine
-```
-
-See [Localnet Development](localnet-dev.md) for detailed setup.
+See [Localnet Development](localnet-dev.md) for manual localnet setup. For
+Docker-based local development (the recommended approach), see Level 3 of the
+[Developer Quick Start Guide](dev/quickstart.md).
 
 ## Documentation Structure
 

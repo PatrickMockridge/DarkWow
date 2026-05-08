@@ -74,6 +74,7 @@
 
 # Developer Doc
 
+- [Developer Quick Start](dev/quickstart.md)
 - [Contributing & Developer Guide](dev/contrib/contrib.md)
   - [Contract Overview](dev/contracts.md)
   - [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md)

@@ -1,5 +1,15 @@
 # Testing Overview
 
+DarkWow's testing infrastructure is a key differentiator from upstream DarkFi.
+Where upstream provides no structured testing taxonomy and no containerized
+development environments, DarkWow ships with four distinct testing levels,
+each with dedicated tooling, Docker configurations, and documentation. This
+infrastructure was built to support the "fork, build, and customize" development
+model: clone the repo, run `cargo test` for fast iteration, then scale up through
+the testing levels as your contract matures.
+
+For a developer-oriented entry point, see the [Developer Quick Start Guide](../quickstart.md).
+
 DarkWow has four testing levels, three local (developer machine) and one
 public-facing (LAN/internet).
 

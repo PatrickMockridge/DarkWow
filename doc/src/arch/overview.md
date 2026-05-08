@@ -68,14 +68,17 @@ All private state transitions use ZK proofs verified on-chain:
 
 ## Testing
 
-DarkWow provides two testing pipelines:
+DarkWow provides a four-level testing infrastructure, from fast unit tests to
+multi-machine Docker devnets — a key differentiator from upstream DarkFi:
 
-1. **Lightweight pipeline**: Deployment verification without ZK proof generation
-2. **Heavyweight pipeline**: Full ZK proof generation and contract execution testing
+1. **Level 1 (Lightweight)**: Unit and integration tests with no ZK overhead (seconds)
+2. **Level 2 (Heavyweight)**: Full ZK proof generation and contract execution (minutes)
+3. **Level 3 (Containerized Localnet)**: Multi-node Docker testnet for P2P and mining tests
+4. **Level 4 (Containerized Devnet)**: Single-container node for LAN/internet shared devnets
 
-See [Testing Overview](../dev/testing/overview.md) for the full four-level taxonomy:
-[Level 1: Lightweight Tests](../dev/testing/level-1-lightweight.md) and
-[Level 2: Heavyweight Tests](../dev/testing/level-2-heavyweight.md).
+Start with the [Developer Quick Start Guide](../dev/quickstart.md) for a
+goal-oriented entry point ("I want to X — what do I run?"). For full details,
+see [Testing Overview](../dev/testing/overview.md).
 
 ## Genesis Contracts
 
