@@ -674,21 +674,23 @@ outbound_connections = 8
 # Allow localnet hosts (FALSE for public testnet)
 localnet = false
 
-# tcp+tls is the default for clearnet testnet; switch to "tor" for
-# privacy-preserving deployments
-active_profiles = ["tcp+tls"]
+# Whitelisted network transports for outbound connections
+active_profiles = ["tor"]
 
-# Seeds: configure for your specific testnet deployment.
-# The Docker entrypoint generates these dynamically from SEED_ADDR.
-# For bare-metal, uncomment and set your seed node addresses:
-#[network_config."darkwow-testnet".net.profiles."tcp+tls"]
-#seeds = ["tcp+tls://<your-seed-ip>:31340"]
+[network_config."darkwow-testnet".net.profiles."tcp+tls"]
+seeds = ["tcp+tls://lilith0.dark.fi:18340", "tcp+tls://lilith1.dark.fi:18340"]
 
-#[network_config."darkwow-testnet".net.profiles."tor"]
-#seeds = ["tor://<your-seed-onion>:31341"]
+[network_config."darkwow-testnet".net.profiles."tor"]
+seeds = [
+    "tor://g7fxelebievvpr27w7gt24lflptpw3jeeuvafovgliq5utdst6xyruyd.onion:18341",
+    "tor://yvklzjnfmwxhyodhrkpomawjcdvcaushsj6torjz2gyd7e25f3gfunyd.onion:18341",
+]
 
-#[network_config."darkwow-testnet".net.profiles."tor+tls"]
-#seeds = ["tor+tls://<your-seed-onion>:31340"]
+[network_config."darkwow-testnet".net.profiles."tor+tls"]
+seeds = [
+    "tor+tls://lilith0.dark.fi:18340",
+    "tor+tls://lilith1.dark.fi:18340",
+]
 
 ## ===========================
 ## DWOW-DEVNET CONFIGURATION (reference)
