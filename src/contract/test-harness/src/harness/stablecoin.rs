@@ -34,15 +34,15 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use dwow_serial::{Encodable, Decodable};
-use darkfi_stablecoin_contract::client::{
+use dwow_stablecoin_contract::client::{
     open_position_v1::{OpenPositionCallData, create_open_position_proof, OpenPositionPublicInputs},
     mint_stable_v1::{MintStableCallData, create_mint_stable_proof, MintStablePublicInputs},
     liquidate_v1::{LiquidateCallData, create_liquidate_proof, LiquidatePublicInputs},
     governance_report_v1::{GovernanceReportCallData, create_governance_report_proof, GovernanceReportPublicInputs},
     accrue_interest_v1::{AccrueInterestCallData, create_accrue_interest_proof, AccrueInterestPublicInputs},
 };
-use darkfi_stablecoin_contract::StablecoinFunction;
-use darkfi_stablecoin_contract::model::{DepositCollateralParams, MintStableParams, LiquidateParams, GovernanceReportParams, AccrueInterestParams};
+use dwow_stablecoin_contract::StablecoinFunction;
+use dwow_stablecoin_contract::model::{DepositCollateralParams, MintStableParams, LiquidateParams, GovernanceReportParams, AccrueInterestParams};
 
 /// Helper to convert pallas::Base to IntentCommitment
 fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
@@ -203,7 +203,7 @@ impl StablecoinHarness {
         let params = DepositCollateralParams {
             deposit_commitment: to_intent_commitment(public_inputs.position_commitment),
             collateral_amount,
-            collateral_type: darkfi_stablecoin_contract::model::CollateralType::Xmr,
+            collateral_type: dwow_stablecoin_contract::model::CollateralType::Xmr,
             proof: vec![],
             fee: 0,
             zk_public_inputs: public_inputs.to_vec(),

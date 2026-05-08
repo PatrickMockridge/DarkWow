@@ -23,26 +23,32 @@
 
 use std::fmt::Write;
 
-use darkfi_money_contract::model as money_model;
+use dwow_money_v3_contract::model as money_model;
 use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python};
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`money_model::MoneyTokenMintParamsV1`] python binding.
+/// [`money_model::TokenMintParamsV1`] python binding.
 #[pyclass]
-pub struct MoneyTokenMintParamsV1(money_model::MoneyTokenMintParamsV1);
-impl_py_methods!(MoneyTokenMintParamsV1);
+pub struct MoneyV3TokenMintParamsV1(money_model::TokenMintParamsV1);
+impl_py_methods!(MoneyV3TokenMintParamsV1);
 
-impl FunctionParams for money_model::MoneyTokenMintParamsV1 {
+impl FunctionParams for money_model::TokenMintParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
-        dict.set_item("coin", self.coin.to_string())?;
+        dict.set_item("coin", format!("{:?}", self.coin))?;
+        dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
+        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("token_commit", format!("{:?}", self.token_commit))?;
         Ok(dict.unbind())
     }
 
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
-        writeln!(out, "{prefix}coin: {}", self.coin).unwrap();
+        writeln!(out, "{prefix}coin: {:?}", self.coin).unwrap();
+        writeln!(out, "{prefix}value_commit: {:?}", self.value_commit).unwrap();
+        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}token_commit: {:?}", self.token_commit).unwrap();
         Ok(())
     }
 }

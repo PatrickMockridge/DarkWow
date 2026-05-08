@@ -51,7 +51,7 @@ use dwow::{
     zkas::ZkBinary,
     Error, Result,
 };
-use darkfi_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN};
+use dwow_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN};
 use dwow_sdk::{
     crypto::{
         keypair::{Keypair, SecretKey},
@@ -355,7 +355,7 @@ pub async fn build_linear_coinbase(
     dwow_linear::CoinbaseTransaction,
     [[u8; 32]; 4],
 )> {
-    use darkfi_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
+    use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
     use dwow_sdk::crypto::Keypair;
     use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
     use dwow_serial::Encodable;
@@ -399,14 +399,14 @@ pub async fn build_linear_coinbase(
         token_commit_bytes,
     ];
 
-    // Serialize the ZK proofs using darkfi_serial Encodable
+    // Serialize the ZK proofs using dwow_serial Encodable
     let mut proof_bytes = vec![];
     for proof in &debris.proofs {
         proof.encode(&mut proof_bytes)
             .map_err(|e| Error::Custom(format!("Failed to encode ZK proof: {}", e)))?;
     }
 
-    // Serialize the encrypted note using darkfi_serial Encodable
+    // Serialize the encrypted note using dwow_serial Encodable
     let mut note_bytes = vec![];
     output.note.encode(&mut note_bytes)
         .map_err(|e| Error::Custom(format!("Failed to encode encrypted note: {}", e)))?;

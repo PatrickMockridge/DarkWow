@@ -49,28 +49,25 @@ lazy_static! {
     pub static ref DEPLOYOOOR_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(2)]));
 
-    /// Contract ID for the Money V2 contract (hardcoded at genesis)
-    ///
-    /// Money V2 replaces Money V1 as the native token contract for block rewards.
-    /// It uses WASM execution but has a hardcoded ContractId for genesis availability.
+    /// Well-known ContractId for Money V3 token derivation (used by vanityaddr).
+    /// Money V3 is deployed as a WASM contract via Deployooor — this fixed ID
+    /// serves as a stable reference for deriving token FuncIds.
     pub static ref MONEY_V2_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(3)]));
 
-    /// Contract ID for the Native Token contract (hardcoded at genesis)
-    ///
-    /// Native Token is the consensus-first native token contract.
-    /// It uses WASM execution but has a hardcoded ContractId for genesis availability.
+    /// Contract ID for the Native Token contract (hardcoded at genesis).
+    /// Native Token handles ONLY consensus-critical operations: block rewards and fees.
+    /// All ERC-20 style DeFi functionality lives in Money V3 (WASM, deployed via Deployooor).
     pub static ref NATIVE_TOKEN_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(4)]));
 
-    /// Native contract IDs bytes, for various checks
-    pub static ref NATIVE_CONTRACT_IDS_BYTES: [[u8; 32]; 3] =
-        [DEPLOYOOOR_CONTRACT_ID.to_bytes(), MONEY_V2_CONTRACT_ID.to_bytes(), NATIVE_TOKEN_CONTRACT_ID.to_bytes()];
+    /// Native contract IDs bytes (only true native contracts: Deployooor + NativeToken)
+    pub static ref NATIVE_CONTRACT_IDS_BYTES: [[u8; 32]; 2] =
+        [DEPLOYOOOR_CONTRACT_ID.to_bytes(), NATIVE_TOKEN_CONTRACT_ID.to_bytes()];
 
-    /// Native contract zkas circuits database trees, for various checks
-    pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 3] = [
+    /// Native contract zkas circuits database trees
+    pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 2] = [
         DEPLOYOOOR_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
-        MONEY_V2_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
         NATIVE_TOKEN_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
     ];
 }

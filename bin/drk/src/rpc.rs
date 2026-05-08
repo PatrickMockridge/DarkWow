@@ -58,10 +58,10 @@ use dwow_sdk::{
     dark_tree::DarkLeaf,
     tx::{ContractCall, TransactionHash},
 };
-use darkfi_money_v3_contract::client::MoneyV3Note;
-use darkfi_money_v3_contract::model::{Coin, TransferParamsV1};
-use darkfi_native_token_contract::client::NativeNote;
-use darkfi_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
+use dwow_money_v3_contract::client::MoneyV3Note;
+use dwow_money_v3_contract::model::{Coin, TransferParamsV1};
+use dwow_native_token_contract::client::NativeNote;
+use dwow_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
 use dwow_serial::Decodable;
 use dwow_serial::{deserialize_async, serialize_async};
@@ -1324,7 +1324,7 @@ impl Drk {
                         // In native token, Coin(pallas::Base) is poseidon_hash of attributes
                         // public_key in native token uses EC: (pub_x, pub_y) = secret * G
                         use dwow_sdk::crypto::PublicKey;
-                        use darkfi_native_token_contract::model::CoinAttributes;
+                        use dwow_native_token_contract::model::CoinAttributes;
                         let public_key = PublicKey::from_secret(*secret);
                         let coin_attrs = CoinAttributes {
                             public_key,
@@ -1412,7 +1412,7 @@ impl Drk {
                 for secret in &scan_cache.notes_secrets {
                     if let Ok(decrypted_note) = output.note.decrypt::<NativeNote>(secret) {
                         use dwow_sdk::crypto::PublicKey;
-                        use darkfi_native_token_contract::model::CoinAttributes;
+                        use dwow_native_token_contract::model::CoinAttributes;
                         let public_key = PublicKey::from_secret(*secret);
                         let coin_attrs = CoinAttributes {
                             public_key,

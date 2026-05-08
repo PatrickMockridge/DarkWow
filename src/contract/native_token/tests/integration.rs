@@ -27,7 +27,7 @@
 
 #[cfg(test)]
 mod tests {
-    use darkfi_native_token_contract::{
+    use dwow_native_token_contract::{
         model::{
             ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID, FeeParamsV1, FeeUpdateV1,
             GenesisMintParamsV1, Input, MeltParamsV1, MeltUpdateV1, Output, PoWRewardParamsV1,
@@ -209,7 +209,7 @@ mod tests {
     fn test_nullifier_from_bytes_zero() {
         let bytes = [0u8; 32];
         let nullifier =
-            darkfi_native_token_contract::model::Nullifier::from_bytes(bytes).unwrap();
+            dwow_native_token_contract::model::Nullifier::from_bytes(bytes).unwrap();
         assert_eq!(nullifier.inner(), pallas::Base::zero());
     }
 
@@ -219,14 +219,14 @@ mod tests {
         let mut bytes = [0u8; 32];
         bytes[0] = 0x01;
         let nullifier =
-            darkfi_native_token_contract::model::Nullifier::from_bytes(bytes).unwrap();
+            dwow_native_token_contract::model::Nullifier::from_bytes(bytes).unwrap();
         assert!(nullifier.inner() != pallas::Base::zero());
     }
 
     #[test]
     fn test_nullifier_to_bytes() {
         let nullifier =
-            darkfi_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
+            dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
         let bytes = nullifier.to_bytes();
         assert_eq!(bytes.len(), 32);
         assert_eq!(bytes, [0u8; 32]);
@@ -238,7 +238,7 @@ mod tests {
         let mut original_bytes = [0u8; 32];
         original_bytes[0] = 0x01; // Smallest valid non-zero canonical byte
         let nullifier =
-            darkfi_native_token_contract::model::Nullifier::from_bytes(original_bytes).unwrap();
+            dwow_native_token_contract::model::Nullifier::from_bytes(original_bytes).unwrap();
         let output_bytes = nullifier.to_bytes();
         assert_eq!(original_bytes, output_bytes);
     }
@@ -306,7 +306,7 @@ mod tests {
             value_commit: pallas::Point::identity(),
             token_commit: pallas::Base::zero(),
             nullifier:
-                darkfi_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap(),
+                dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap(),
             merkle_root: MerkleNode::new(pallas::Base::zero()),
             user_data_enc: pallas::Base::zero(),
             signature_public: keypair.public,
@@ -371,7 +371,7 @@ mod tests {
 
         let update = FeeUpdateV1 {
             nullifier:
-                darkfi_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap(),
+                dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap(),
             coin,
             height: 100,
             fee: 5,
@@ -521,7 +521,7 @@ mod tests {
             pallas::Base::zero(),
         );
 
-        let update = darkfi_native_token_contract::model::GenesisMintUpdateV1 { coins: vec![coin] };
+        let update = dwow_native_token_contract::model::GenesisMintUpdateV1 { coins: vec![coin] };
 
         assert_eq!(update.coins.len(), 1);
     }
@@ -555,7 +555,7 @@ mod tests {
             pallas::Base::zero(),
         );
         let nullifier =
-            darkfi_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
+            dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
 
         let update = TransferUpdateV1 { nullifiers: vec![nullifier], coins: vec![coin] };
 
@@ -575,7 +575,7 @@ mod tests {
             pallas::Base::zero(),
         );
         let nullifier =
-            darkfi_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
+            dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
 
         let update = SpendUpdateV1 { nullifier, coin };
 
@@ -585,7 +585,7 @@ mod tests {
     #[test]
     fn test_melt_update_v1_structure() {
         let nullifier =
-            darkfi_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
+            dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
 
         let update = MeltUpdateV1 { nullifiers: vec![nullifier] };
 

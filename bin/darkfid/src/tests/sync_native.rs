@@ -35,8 +35,8 @@ use dwow::{
     zk::{empty_witnesses, ProvingKey, ZkCircuit},
     Result,
 };
-use darkfi_deployooor_contract::DeployFunction;
-use darkfi_native_token_contract::{
+use dwow_deployooor_contract::DeployFunction;
+use dwow_native_token_contract::{
     client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
 };
@@ -184,7 +184,7 @@ async fn generate_deploy_block(
 
     // Get WASM bincode to deploy
     let wasm_bincode =
-        include_bytes!("../../../../src/contract/money_v2/darkfi_money_contract.wasm").to_vec();
+        include_bytes!("../../../../src/contract/money_v3/dwow_money_v3_contract.wasm").to_vec();
 
     // Generate deploy transaction (no ZK proof needed for Deployooor)
     let tx = generate_deploy_tx(deploy_keypair, wasm_bincode, 0)?;

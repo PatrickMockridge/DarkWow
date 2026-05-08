@@ -25,7 +25,7 @@
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::{crypto::pasta_prelude::Group, pasta::pallas};
-use darkfi_slot_contract::{
+use dwow_slot_contract::{
     model::{
         CancelSpinParamsV1, CancelSpinUpdateV1, CommitSpinParamsV1, CommitSpinUpdateV1,
         GameConfig, Payline, Paytable, PaytableEntry, RevealSpinParamsV1, RevealSpinUpdateV1,
@@ -195,7 +195,7 @@ fn test_settle_spin_update_encoding() {
     let update = SettleSpinUpdateV1 {
         spin_id: pallas::Base::from(1),
         wins: vec![
-            darkfi_slot_contract::model::Win {
+            dwow_slot_contract::model::Win {
                 payline_id: 0,
                 symbol: Symbol(1),
                 count: 3,

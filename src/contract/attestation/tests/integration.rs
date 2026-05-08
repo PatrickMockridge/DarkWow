@@ -25,7 +25,7 @@
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::pasta::pallas;
-use darkfi_attestation_contract::{
+use dwow_attestation_contract::{
     model::{
         Attestation, AttestationState, Claim, ClaimId, ClaimState, CreateAttestationParamsV1,
         CreateAttestationUpdateV1, CreateClaimParamsV1, CreateClaimUpdateV1,

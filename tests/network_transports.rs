@@ -21,11 +21,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_serial::{AsyncDecodable, AsyncEncodable};
+use dwow_serial::{AsyncDecodable, AsyncEncodable};
 use smol::{io, LocalExecutor};
 use url::Url;
 
-use darkfi::net::transport::{Dialer, Listener};
+use dwow::net::transport::{Dialer, Listener};
 
 #[test]
 fn tcp_transport() {
@@ -131,7 +131,7 @@ fn unix_transport() {
 
     let tmpdir = std::env::temp_dir();
     let url = Url::parse(&format!(
-        "unix://{}/darkfi_unix_plain.sock",
+        "unix://{}/dwow_unix_plain.sock",
         tmpdir.as_os_str().to_str().unwrap()
     ))
     .unwrap();

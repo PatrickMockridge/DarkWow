@@ -23,7 +23,7 @@
 
 //! DAO-Escrow contract integration tests
 
-use darkfi_dao_escrow_contract::{
+use dwow_dao_escrow_contract::{
     modes::{MODE_ESCROW, MODE_TREASURY, MODE_TREASURY_ENDOWMENT},
     model::{
         DaoEscrow, DaoEscrowMode, EnableDrainProtectionParamsV1, EnableDrainProtectionUpdateV1,

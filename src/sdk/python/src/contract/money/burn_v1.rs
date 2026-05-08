@@ -23,17 +23,17 @@
 
 use std::fmt::Write;
 
-use darkfi_money_contract::model as money_model;
+use dwow_money_v3_contract::model as money_model;
 use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python};
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`money_model::MoneyBurnParamsV1`] python binding.
+/// [`money_model::BurnParamsV1`] python binding.
 #[pyclass]
-pub struct MoneyBurnParamsV1(money_model::MoneyBurnParamsV1);
-impl_py_methods!(MoneyBurnParamsV1);
+pub struct MoneyV3BurnParamsV1(money_model::BurnParamsV1);
+impl_py_methods!(MoneyV3BurnParamsV1);
 
-impl FunctionParams for money_model::MoneyBurnParamsV1 {
+impl FunctionParams for money_model::BurnParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item(

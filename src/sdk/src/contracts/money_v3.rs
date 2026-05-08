@@ -50,23 +50,23 @@
 //! | BurnV1 | 0x03 | Burn/destroy tokens |
 //! | TransferV1 | 0x04 | Private token transfer |
 
-// Re-export from darkfi_money_v3_contract
-pub use darkfi_money_v3_contract::MoneyV3Function;
+// Re-export from dwow_money_v3_contract
+pub use dwow_money_v3_contract::MoneyV3Function;
 
 // ZK namespaces
-pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
-pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1;
-pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1;
-pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1;
+pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
+pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1;
+pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1;
+pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1;
 
 // Database tree names
-pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_COINS_TREE;
-pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_NULLIFIERS_TREE;
-pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_MERKLE_TREE;
-pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_INFO_TREE;
-pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_FEES_TREE;
+pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_COINS_TREE;
+pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_NULLIFIERS_TREE;
+pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_MERKLE_TREE;
+pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_INFO_TREE;
+pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_FEES_TREE;
 
 // Constants
-pub use darkfi_money_v3_contract::MONEY_V3_MAX_COINS_PER_TX;
-pub use darkfi_money_v3_contract::MONEY_V3_MAX_COIN_VALUE;
-pub use darkfi_money_v3_contract::MONEY_V3_MIN_COIN_VALUE;
+pub use dwow_money_v3_contract::MONEY_V3_MAX_COINS_PER_TX;
+pub use dwow_money_v3_contract::MONEY_V3_MAX_COIN_VALUE;
+pub use dwow_money_v3_contract::MONEY_V3_MIN_COIN_VALUE;

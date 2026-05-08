@@ -32,10 +32,10 @@ use dwow::{
 use dwow_sdk::{crypto::PublicKey, pasta::pallas};
 use dwow_serial::Encodable;
 
-use darkfi_oracle_contract::client::register_oracle_v1::{
+use dwow_oracle_contract::client::register_oracle_v1::{
     RegisterOracleV1CallData, register_oracle_v1_proof,
 };
-use darkfi_oracle_contract::model::RegisterOracleParamsV1;
+use dwow_oracle_contract::model::RegisterOracleParamsV1;
 
 /// Oracle Harness for isolated testing
 pub struct OracleHarness {

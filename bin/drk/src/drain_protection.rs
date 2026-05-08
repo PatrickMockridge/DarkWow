@@ -37,12 +37,12 @@ use dwow::{tx::{ContractCallLeaf, Transaction}, Error, Result};
 use dwow_sdk::{crypto::PublicKey, pasta::pallas, tx::ContractCall};
 use dwow_serial::Encodable;
 
-use darkfi_drain_protection_contract::model::{InitializeParamsV1, VoteParamsV1, ExecuteParamsV1};
+use dwow_drain_protection_contract::model::{InitializeParamsV1, VoteParamsV1, ExecuteParamsV1};
 use crate::contract_imports::drain_protection::DrainProtectionFunction;
 use crate::fee_builder::build_fee_and_finalize_tx;
 use crate::Drk;
 
-use darkfi_drain_protection_contract::model::DrainConfig;
+use dwow_drain_protection_contract::model::DrainConfig;
 
 impl Drk {
     /// Initialize a new DrainProtection protected fund

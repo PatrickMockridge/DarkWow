@@ -433,7 +433,7 @@ impl DarkfiNode {
         };
 
         // Validate the aux chain merkle proof
-        let Ok(darkfi_hash) = HeaderHash::from_str(aux_hash) else {
+        let Ok(dwow_hash) = HeaderHash::from_str(aux_hash) else {
             return miner_status_response(id, "rejected")
         };
         let genesis_hash = match self.validator.read().await.blockchain.genesis() {
@@ -444,7 +444,7 @@ impl DarkfiNode {
             &monero_pow_data,
             merge_mining_params,
             &aux_chain_merkle_root,
-            darkfi_hash,
+            dwow_hash,
             genesis_hash,
         ) {
             error!(

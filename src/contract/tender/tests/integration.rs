@@ -25,7 +25,7 @@
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::pasta::pallas;
-use darkfi_tender_contract::{
+use dwow_tender_contract::{
     model::{
         Bid, BidState, CancelTenderParamsV1, CancelTenderUpdateV1, CloseTenderParamsV1,
         CloseTenderUpdateV1, CreateTenderParamsV1, CreateTenderUpdateV1, RejectBidParamsV1,

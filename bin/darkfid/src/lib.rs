@@ -268,10 +268,10 @@ impl Darkfid {
     ) -> Result<DarkfidPtr> {
         info!(target: "darkfid::Darkfid::init_linear", "Initializing a Darkfi daemon for linear-testnet...");
 
-        // Initialize linear blockchain (darkfi_linear for P2P)
+        // Initialize linear blockchain (dwow_linear for P2P)
         let linear_blockchain_p2p = Arc::new(LinearBlockchainCore::new(Arc::new(sled_db.clone())).map_err(|e| Error::Custom(e.to_string()))?);
 
-        // Initialize darkfid's blockchain wrapper (uses darkfi_linear store)
+        // Initialize darkfid's blockchain wrapper (uses dwow_linear store)
         let store = linear_blockchain_p2p.store.clone();
 
         // Create PoW config from network settings
@@ -352,7 +352,7 @@ impl Darkfid {
             );
         }
 
-        // Initialize P2P network (linear P2P handlers use darkfi_linear types)
+        // Initialize P2P network (linear P2P handlers use dwow_linear types)
         let p2p_handler = DarkfidP2pHandler::init(net_settings, ex, Some(linear_blockchain_p2p.clone())).await?;
 
         // Initialize the miners registry (placeholder for now)

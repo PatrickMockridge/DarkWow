@@ -35,12 +35,12 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_atomic_swap_contract::client::{
+use dwow_atomic_swap_contract::client::{
     create_swap_v1::{CreateSwapCallData, create_swap_proof, CreateSwapPublicInputs},
     claim_swap_v1::{ClaimSwapCallData, create_claim_proof, ClaimSwapPublicInputs},
     refund_swap_v1::{RefundSwapCallData, create_refund_proof, RefundSwapPublicInputs},
 };
-use darkfi_atomic_swap_contract::model::{
+use dwow_atomic_swap_contract::model::{
     CreateSwapParamsV1, ClaimParamsV1, RefundParamsV1,
 };
 

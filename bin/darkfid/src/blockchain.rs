@@ -23,7 +23,7 @@
 
 //! Linear blockchain for localnet
 //!
-//! This module provides a LinearBlockchain that combines darkfi_linear's
+//! This module provides a LinearBlockchain that combines dwow_linear's
 //! LinearStore with darkfi's Runtime and ZK verification for contract execution.
 
 use std::collections::HashSet;
@@ -67,7 +67,7 @@ impl Default for LinearPoWConfig {
 
 /// Linear blockchain with WASM runtime and ZK verification
 pub struct LinearBlockchain {
-    /// Storage backend (darkfi_linear)
+    /// Storage backend (dwow_linear)
     pub store: Arc<LinearStore>,
     /// Contract store adapter for Runtime
     contract_store: Arc<dyn ContractStoreAccess>,

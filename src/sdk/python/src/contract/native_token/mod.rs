@@ -23,7 +23,7 @@
 
 use std::fmt::Write;
 
-use dwow_money_v3_contract::{model as money_model, MoneyV3Function};
+use dwow_native_token_contract::{model as native_token_model, NativeTokenFunction};
 use dwow_serial::deserialize;
 use pyo3::{
     prelude::{PyAnyMethods, PyDictMethods, PyModule, PyModuleMethods},
@@ -36,71 +36,48 @@ use crate::crypto::AeadEncryptedNote;
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`MoneyV3Function::AuthTokenMintV1`] function call parameter's python bindings.
-pub mod auth_token_mint_v1;
-pub use auth_token_mint_v1::MoneyV3AuthTokenMintParamsV1;
+/// [`NativeTokenFunction::FeeV1`] function call parameter's python bindings.
+pub mod fee_v1;
+pub use fee_v1::FeeParamsV1;
 
-/// [`MoneyV3Function::TokenMintV1`] function call parameter's bindings.
-pub mod token_mint_v1;
-pub use token_mint_v1::MoneyV3TokenMintParamsV1;
+/// [`NativeTokenFunction::PoWRewardV1`] function call parameter's python bindings.
+pub mod pow_reward_v1;
+pub use pow_reward_v1::PoWRewardParamsV1;
 
-/// [`MoneyV3Function::TransferV1`] function call parameter's bindings.
-pub mod transfer_v1;
-pub use transfer_v1::MoneyV3TransferParamsV1;
-
-/// [`MoneyV3Function::BurnV1`] function call parameter's bindings.
-pub mod burn_v1;
-pub use burn_v1::MoneyV3BurnParamsV1;
-
-/// [`MoneyV3Function::MintV1`] function call parameter's bindings.
-pub mod mint_v1;
-pub use mint_v1::MoneyV3MintParamsV1;
-
-/// Decodes the parameters of a Money V3 contract function call.
-pub fn decode_money_function_params(
+/// Decodes the parameters of a NativeToken contract function call.
+pub fn decode_native_token_function_params(
     function_index: u8,
     data: &[u8],
 ) -> dwow::Result<Box<dyn FunctionParams>> {
-    let res: Box<dyn FunctionParams> = match MoneyV3Function::try_from(function_index)? {
-        MoneyV3Function::TokenMintV1 => {
-            let params: money_model::TokenMintParamsV1 = deserialize(&data[1..])?;
+    let res: Box<dyn FunctionParams> = match NativeTokenFunction::try_from(function_index)? {
+        NativeTokenFunction::FeeV1 => {
+            let params: native_token_model::FeeParamsV1 = deserialize(&data[9..])?;
             Box::new(params)
         }
-        MoneyV3Function::AuthTokenMintV1 => {
-            let params: money_model::AuthTokenMintParamsV1 = deserialize(&data[1..])?;
+        NativeTokenFunction::PoWRewardV1 => {
+            let params: native_token_model::PoWRewardParamsV1 = deserialize(&data[1..])?;
             Box::new(params)
         }
-        MoneyV3Function::MintV1 => {
-            let params: money_model::MintParamsV1 = deserialize(&data[1..])?;
-            Box::new(params)
-        }
-        MoneyV3Function::BurnV1 => {
-            let params: money_model::BurnParamsV1 = deserialize(&data[1..])?;
-            Box::new(params)
-        }
-        MoneyV3Function::TransferV1 | MoneyV3Function::OtcSwapV1 => {
-            let params: money_model::TransferParamsV1 = deserialize(&data[1..])?;
-            Box::new(params)
-        }
+        _ => return Err(dwow::Error::ParseFailed("unsupported NativeToken function")),
     };
 
     Ok(res)
 }
 
-/// [`money_model::Input`] python binding
+/// [`native_token_model::Input`] python binding
 #[pyclass]
-pub struct Input(money_model::Input);
+pub struct Input(native_token_model::Input);
 impl_py_methods!(Input);
 
-impl FunctionParams for money_model::Input {
+impl FunctionParams for native_token_model::Input {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
         dict.set_item("token_commit", format!("{:?}", self.token_commit))?;
         dict.set_item("nullifier", format!("{:?}", self.nullifier))?;
-        dict.set_item("merkle_root", self.merkle_root.to_string())?;
+        dict.set_item("merkle_root", format!("{:?}", self.merkle_root))?;
         dict.set_item("user_data_enc", format!("{:?}", self.user_data_enc))?;
-        dict.set_item("signature_public", format!("{:?}", self.signature_public))?;
+        dict.set_item("signature_public", self.signature_public.to_string())?;
         Ok(dict.unbind())
     }
 
@@ -109,19 +86,19 @@ impl FunctionParams for money_model::Input {
         writeln!(out, "{prefix}value_commit: {:?}", self.value_commit).unwrap();
         writeln!(out, "{prefix}token_commit: {:?}", self.token_commit).unwrap();
         writeln!(out, "{prefix}nullifier: {:?}", self.nullifier).unwrap();
-        writeln!(out, "{prefix}merkle_root: {}", self.merkle_root).unwrap();
+        writeln!(out, "{prefix}merkle_root: {:?}", self.merkle_root).unwrap();
         writeln!(out, "{prefix}user_data_enc: {:?}", self.user_data_enc).unwrap();
-        writeln!(out, "{prefix}signature_public: {:?}", self.signature_public).unwrap();
+        writeln!(out, "{prefix}signature_public: {}", self.signature_public).unwrap();
         Ok(())
     }
 }
 
-/// [`money_model::Output`] python binding
+/// [`native_token_model::Output`] python binding
 #[pyclass]
-pub struct Output(money_model::Output);
+pub struct Output(native_token_model::Output);
 impl_py_methods!(Output);
 
-impl FunctionParams for money_model::Output {
+impl FunctionParams for native_token_model::Output {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
@@ -142,20 +119,45 @@ impl FunctionParams for money_model::Output {
     }
 }
 
-/// Create money module and provide the python bindings.
-pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
-    let submod = PyModule::new(py, "money")?;
+/// [`native_token_model::ClearInput`] python binding
+#[pyclass]
+pub struct ClearInput(native_token_model::ClearInput);
+impl_py_methods!(ClearInput);
 
-    submod.add_class::<MoneyV3AuthTokenMintParamsV1>()?;
-    submod.add_class::<MoneyV3TokenMintParamsV1>()?;
-    submod.add_class::<MoneyV3TransferParamsV1>()?;
-    submod.add_class::<MoneyV3BurnParamsV1>()?;
-    submod.add_class::<MoneyV3MintParamsV1>()?;
+impl FunctionParams for native_token_model::ClearInput {
+    fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
+        let dict = PyDict::new(py);
+        dict.set_item("value", self.value)?;
+        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("value_blind", self.value_blind.to_string())?;
+        dict.set_item("token_blind", format!("{:?}", self.token_blind))?;
+        dict.set_item("signature_public", self.signature_public.to_string())?;
+        Ok(dict.unbind())
+    }
+
+    fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
+        let prefix = format!("{}├─ ", "   ".repeat(depth));
+        writeln!(out, "{prefix}value: {}", self.value).unwrap();
+        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}value_blind: {}", self.value_blind).unwrap();
+        writeln!(out, "{prefix}token_blind: {:?}", self.token_blind).unwrap();
+        writeln!(out, "{prefix}signature_public: {}", self.signature_public).unwrap();
+        Ok(())
+    }
+}
+
+/// Create native_token module and provide the python bindings.
+pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
+    let submod = PyModule::new(py, "native_token")?;
+
+    submod.add_class::<FeeParamsV1>()?;
+    submod.add_class::<PoWRewardParamsV1>()?;
     submod.add_class::<Input>()?;
     submod.add_class::<Output>()?;
+    submod.add_class::<ClearInput>()?;
     submod.add_class::<AeadEncryptedNote>()?;
 
-    py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.contract.money", &submod)?;
+    py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.contract.native_token", &submod)?;
 
     Ok(submod)
 }

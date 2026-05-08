@@ -21,11 +21,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_sdk::crypto::smt::{MemoryStorageFp, PoseidonFp, SmtMemoryFp, EMPTY_NODES_FP};
+use dwow_sdk::crypto::smt::{MemoryStorageFp, PoseidonFp, SmtMemoryFp, EMPTY_NODES_FP};
 use halo2_proofs::{arithmetic::Field, circuit::Value, dev::MockProver, pasta::Fp};
 use rand::rngs::OsRng;
 
-use darkfi::{
+use dwow::{
     zk::{
         proof::{ProvingKey, VerifyingKey},
         vm::ZkCircuit,

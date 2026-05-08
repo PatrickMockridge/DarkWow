@@ -29,7 +29,7 @@
 //! - Model type invariants
 //! - Order matching logic
 
-use darkfi_darkbet_exchange_contract::{
+use dwow_darkbet_exchange_contract::{
     model::{
         CancelOrderParamsV1, CreateMarketParamsV1,
         LpShare, LpShareState, Market, MarketState, MarketType, Match, MatchOrdersParamsV1,

@@ -35,7 +35,7 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_subscription_contract::client::{
+use dwow_subscription_contract::client::{
     rate_limit_v1::{
         RateLimitCallData, RateLimitPublicInputs, create_rate_limit_proof,
     },
@@ -49,7 +49,7 @@ use darkfi_subscription_contract::client::{
         VerifyAccessCallData, VerifyAccessPublicInputs, create_verify_access_proof,
     },
 };
-use darkfi_subscription_contract::model::{
+use dwow_subscription_contract::model::{
     SubscribeParamsV1, UpdateUsageParamsV1, VerifyAccessParamsV1,
 };
 

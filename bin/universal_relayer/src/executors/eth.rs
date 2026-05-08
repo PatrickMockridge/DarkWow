@@ -26,7 +26,7 @@
 //! Uses ureq for HTTP requests to avoid dependency conflicts.
 
 use async_trait::async_trait;
-use darkfi_bridge_contract::chain_handler::{
+use dwow_bridge_contract::chain_handler::{
     ChainHandler as BridgeChainHandler, ChainId, ExternalDeposit, HtlcDeposit, TxHash as BridgeTxHash,
     VerifiedWithdrawal, WithdrawalRequest,
 };

@@ -184,7 +184,7 @@ pub const DARKBET_EXCHANGE_ZKAS_ADD_LIQUIDITY_NS: &str = "AddLiquidity";
 // - DAO-Escrow: Commission treasury, governance
 //
 // Cross-contract call IDs (placeholder - would be actual contract IDs in production):
-pub const DEX_CONTRACT_ID: &[u8] = b"darkfi_dex";
-pub const BETTING_STAKE_CONTRACT_ID: &[u8] = b"darkfi_betting_stake";
-pub const ORACLE_CONTRACT_ID: &[u8] = b"darkfi_oracle";
-pub const DAO_ESCROW_CONTRACT_ID: &[u8] = b"darkfi_dao_escrow";
+pub const DEX_CONTRACT_ID: &[u8] = b"dwow_dex";
+pub const BETTING_STAKE_CONTRACT_ID: &[u8] = b"dwow_betting_stake";
+pub const ORACLE_CONTRACT_ID: &[u8] = b"dwow_oracle";
+pub const DAO_ESCROW_CONTRACT_ID: &[u8] = b"dwow_dao_escrow";

@@ -39,7 +39,7 @@
 //! ## Usage
 //!
 //! ```ignore
-//! use darkfi_contract_test_harness::harness::{DexHarness, ContractHarness};
+//! use dwow_contract_test_harness::harness::{DexHarness, ContractHarness};
 //!
 //! let harness = DexHarness::new();
 //! let mut pipeline = HeavyweightPipeline::new(harness, "dex", config, ex).await?;
@@ -62,7 +62,7 @@ use dwow::{
     tx::{ContractCallLeaf, TransactionBuilder},
     Result,
 };
-use darkfi_contract_test_harness::harness::ContractHarness;
+use dwow_contract_test_harness::harness::ContractHarness;
 use dwow_sdk::{
     crypto::{keypair::Keypair, poseidon_hash, ContractId},
     dark_tree::DarkTree,
@@ -284,7 +284,7 @@ fn contract_base_dir() -> PathBuf {
 async fn read_wasm(contract_name: &str) -> std::result::Result<Vec<u8>, HeavyweightError> {
     let wasm_path = contract_base_dir()
         .join(contract_name)
-        .join(format!("darkfi_{}_contract.wasm", contract_name));
+        .join(format!("dwow_{}_contract.wasm", contract_name));
 
     smol::fs::read(&wasm_path).await.map_err(|e| HeavyweightError::DeploymentFailed(e.to_string()))
 }
@@ -314,7 +314,7 @@ fn test_dex_heavyweight() -> Result<()> {
 async fn test_dex_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{DexHarness, MoneyV3Harness};
+    use dwow_contract_test_harness::harness::{DexHarness, MoneyV3Harness};
     use dwow_sdk::crypto::{SecretKey, pasta_prelude::PrimeField};
     use dwow_sdk::pasta::pallas::Base;
     use dwow::zk::halo2::Field;
@@ -462,7 +462,7 @@ fn test_money_v3_heavyweight() -> Result<()> {
 async fn test_money_v3_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::MoneyV3Harness;
+    use dwow_contract_test_harness::harness::MoneyV3Harness;
     use dwow_sdk::crypto::pasta_prelude::PrimeField;
     use dwow_sdk::pasta::pallas::Base;
     use dwow::zk::halo2::Field;
@@ -570,11 +570,11 @@ fn test_attestation_heavyweight() -> Result<()> {
 async fn test_attestation_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::AttestationHarness;
+    use dwow_contract_test_harness::harness::AttestationHarness;
     use dwow::zk::halo2::Field;
     use dwow_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas::Base;
-    use darkfi_attestation_contract::model::Predicate;
+    use dwow_attestation_contract::model::Predicate;
     use rand::rngs::OsRng;
 
     let harness = AttestationHarness::spawn();
@@ -709,7 +709,7 @@ fn test_auction_heavyweight() -> Result<()> {
 async fn test_auction_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::AuctionHarness;
+    use dwow_contract_test_harness::harness::AuctionHarness;
     use dwow::zk::halo2::Field;
     use dwow_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas::Base;
@@ -848,11 +848,11 @@ fn test_baccarat_heavyweight() -> Result<()> {
 async fn test_baccarat_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{BaccaratHarness, MoneyV3Harness};
+    use dwow_contract_test_harness::harness::{BaccaratHarness, MoneyV3Harness};
     use dwow_sdk::crypto::pasta_prelude::{Group, PrimeField};
     use dwow_sdk::pasta::pallas::Base;
     use dwow_sdk::crypto::SecretKey;
-    use darkfi_baccarat_contract::model::BetType;
+    use dwow_baccarat_contract::model::BetType;
     use dwow::zk::halo2::Field;
     use rand::rngs::OsRng;
 
@@ -1023,11 +1023,11 @@ fn test_bridge_heavyweight() -> Result<()> {
 async fn test_bridge_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{MoneyV3Harness, BridgeHarness};
+    use dwow_contract_test_harness::harness::{MoneyV3Harness, BridgeHarness};
     use dwow::zk::halo2::Field;
     use dwow_sdk::crypto::{pasta_prelude::PrimeField, MerkleNode, MerkleTree, poseidon_hash};
     use dwow_sdk::pasta::pallas::Base;
-    use darkfi_bridge_contract::model::ExternalChain;
+    use dwow_bridge_contract::model::ExternalChain;
     use rand::rngs::OsRng;
 
     // Deploy money_v3 first to get its contract_id for child calls
@@ -1144,7 +1144,7 @@ fn test_dao_escrow_heavyweight() -> Result<()> {
 async fn test_dao_escrow_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{MoneyV3Harness, DaoEscrowHarness};
+    use dwow_contract_test_harness::harness::{MoneyV3Harness, DaoEscrowHarness};
     use dwow_sdk::crypto::pasta_prelude::PrimeField;
     use dwow_sdk::pasta::pallas::Base;
     use dwow::zk::halo2::Field;
@@ -1307,7 +1307,7 @@ fn test_darkbet_exchange_heavyweight() -> Result<()> {
 async fn test_darkbet_exchange_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{MoneyV3Harness, DarkbetExchangeHarness};
+    use dwow_contract_test_harness::harness::{MoneyV3Harness, DarkbetExchangeHarness};
     use dwow_sdk::crypto::pasta_prelude::PrimeField;
     use dwow_sdk::pasta::pallas::{Base, Scalar};
     use dwow::zk::halo2::Field;
@@ -1444,7 +1444,7 @@ fn test_darktoshi_dice_heavyweight() -> Result<()> {
 async fn test_darktoshi_dice_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{DarkToshiDiceHarness, MoneyV3Harness};
+    use dwow_contract_test_harness::harness::{DarkToshiDiceHarness, MoneyV3Harness};
     use dwow_sdk::crypto::pasta_prelude::{Group, PrimeField};
     use dwow_sdk::pasta::pallas::Base;
     use dwow::zk::halo2::Field;
@@ -1557,7 +1557,7 @@ fn test_escrow_heavyweight() -> Result<()> {
 async fn test_escrow_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{EscrowHarness, MoneyV3Harness};
+    use dwow_contract_test_harness::harness::{EscrowHarness, MoneyV3Harness};
     use dwow_sdk::crypto::pasta_prelude::{Group, PrimeField};
     use dwow_sdk::pasta::pallas::{Base, Scalar};
     use dwow::zk::halo2::Field;
@@ -1694,7 +1694,7 @@ fn test_identity_heavyweight() -> Result<()> {
 async fn test_identity_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::IdentityHarness;
+    use dwow_contract_test_harness::harness::IdentityHarness;
     use dwow_sdk::crypto::pasta_prelude::PrimeField;
     use dwow_sdk::pasta::pallas::Base;
     use dwow::zk::halo2::Field;
@@ -1804,7 +1804,7 @@ fn test_insurance_market_heavyweight() -> Result<()> {
 async fn test_insurance_market_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::InsuranceMarketHarness;
+    use dwow_contract_test_harness::harness::InsuranceMarketHarness;
 
     let harness = InsuranceMarketHarness::spawn();
     info!("InsuranceMarket harness created with circuits: {:?}", harness.circuits());
@@ -1850,7 +1850,7 @@ fn test_labor_market_heavyweight() -> Result<()> {
 async fn test_labor_market_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::LaborMarketHarness;
+    use dwow_contract_test_harness::harness::LaborMarketHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey, pasta_prelude::PrimeField};
     use dwow_sdk::pasta::pallas::Base;
     use dwow::zk::halo2::Field;
@@ -1968,11 +1968,11 @@ fn test_lottery_heavyweight() -> Result<()> {
 async fn test_lottery_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{MoneyV3Harness, LotteryHarness};
+    use dwow_contract_test_harness::harness::{MoneyV3Harness, LotteryHarness};
     use dwow::zk::halo2::Field;
     use dwow_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey, poseidon_hash};
     use dwow_sdk::pasta::pallas::Base;
-    use darkfi_lottery_contract::model::{InitializeParamsV1, LotteryConfig, PrizeTierConfig};
+    use dwow_lottery_contract::model::{InitializeParamsV1, LotteryConfig, PrizeTierConfig};
     use dwow_serial::Encodable;
     use rand::rngs::OsRng;
 
@@ -2047,7 +2047,7 @@ async fn test_lottery_heavyweight_impl(
     // The current_block during initialization was the verifying block height.
     // Since we don't know it exactly, we derive heuristically.
     // We'll use a known block height (genesis blocks give us 0-indexed heights).
-    let lottery_id = darkfi_lottery_contract::model::derive_lottery_id(&house_pub, 2);
+    let lottery_id = dwow_lottery_contract::model::derive_lottery_id(&house_pub, 2);
     info!("Derived lottery_id: {}", hex::encode(lottery_id.to_repr()));
 
     // Create player keypair
@@ -2127,7 +2127,7 @@ fn test_oracle_heavyweight() -> Result<()> {
 async fn test_oracle_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::OracleHarness;
+    use dwow_contract_test_harness::harness::OracleHarness;
     use dwow_sdk::crypto::pasta_prelude::{Field, PrimeField};
     use dwow_sdk::crypto::SecretKey;
     use dwow_sdk::pasta::pallas;
@@ -2203,7 +2203,7 @@ fn test_pool_stake_heavyweight() -> Result<()> {
 async fn test_pool_stake_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::PoolStakeHarness;
+    use dwow_contract_test_harness::harness::PoolStakeHarness;
     use dwow::zk::halo2::Field;
     use dwow_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas::Base;
@@ -2325,7 +2325,7 @@ fn test_slot_heavyweight() -> Result<()> {
 async fn test_slot_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{MoneyV3Harness, SlotHarness};
+    use dwow_contract_test_harness::harness::{MoneyV3Harness, SlotHarness};
     use dwow_sdk::crypto::pasta_prelude::Group;
     use dwow_sdk::pasta::pallas::Base;
 
@@ -2447,7 +2447,7 @@ fn test_roulette_heavyweight() -> Result<()> {
 async fn test_roulette_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{MoneyV3Harness, RouletteHarness};
+    use dwow_contract_test_harness::harness::{MoneyV3Harness, RouletteHarness};
     use dwow_sdk::crypto::pasta_prelude::{Group, PrimeField};
     use dwow_sdk::pasta::pallas::Base;
     use dwow::zk::halo2::Field;
@@ -2603,7 +2603,7 @@ fn test_stablecoin_heavyweight() -> Result<()> {
 async fn test_stablecoin_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{MoneyV3Harness, StablecoinHarness};
+    use dwow_contract_test_harness::harness::{MoneyV3Harness, StablecoinHarness};
     use dwow_sdk::crypto::{pasta_prelude::PrimeField, BaseBlind};
     use dwow_sdk::pasta::pallas::Base;
     use dwow::zk::halo2::Field;
@@ -2750,7 +2750,7 @@ fn test_subscription_heavyweight() -> Result<()> {
 async fn test_subscription_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::SubscriptionHarness;
+    use dwow_contract_test_harness::harness::SubscriptionHarness;
     use dwow::zk::halo2::Field;
     use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey, pasta_prelude::PrimeField, poseidon_hash};
     use dwow_sdk::pasta::pallas::{Base, Scalar};
@@ -2893,11 +2893,11 @@ fn test_tender_heavyweight() -> Result<()> {
 async fn test_tender_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::TenderHarness;
+    use dwow_contract_test_harness::harness::TenderHarness;
     use dwow::zk::halo2::Field;
     use dwow_sdk::crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas::Base;
-    use darkfi_tender_contract::model::CloseTenderParamsV1;
+    use dwow_tender_contract::model::CloseTenderParamsV1;
     use dwow_serial::Encodable;
     use rand::rngs::OsRng;
 
@@ -3034,7 +3034,7 @@ fn test_betting_stake_heavyweight() -> Result<()> {
 async fn test_betting_stake_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{BettingStakeHarness, MoneyV3Harness, ClaimStakeInfo, UnstakeStakeInfo};
+    use dwow_contract_test_harness::harness::{BettingStakeHarness, MoneyV3Harness, ClaimStakeInfo, UnstakeStakeInfo};
     use dwow_sdk::crypto::pasta_prelude::PrimeField;
     use dwow_sdk::pasta::pallas::Base;
     use dwow::zk::halo2::Field;
@@ -3228,7 +3228,7 @@ fn test_native_token_heavyweight() -> Result<()> {
 async fn test_native_token_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::NativeTokenHarness;
+    use dwow_contract_test_harness::harness::NativeTokenHarness;
     use dwow_sdk::blockchain::reward;
     use dwow_sdk::crypto::Keypair;
     use rand::rngs::OsRng;
@@ -3325,7 +3325,7 @@ fn test_relayer_endowment_heavyweight() -> Result<()> {
 async fn test_relayer_endowment_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{MoneyV3Harness, RelayerEndowmentHarness};
+    use dwow_contract_test_harness::harness::{MoneyV3Harness, RelayerEndowmentHarness};
     use dwow_sdk::crypto::pasta_prelude::PrimeField;
     use dwow_sdk::pasta::pallas::{Base, Scalar};
     use dwow::zk::halo2::Field;
@@ -3455,7 +3455,7 @@ fn test_atomic_swap_heavyweight() -> Result<()> {
 async fn test_atomic_swap_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::{AtomicSwapHarness, MoneyV3Harness};
+    use dwow_contract_test_harness::harness::{AtomicSwapHarness, MoneyV3Harness};
     use dwow_sdk::{
         crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey, SecretKey},
         pasta::pallas::Base,
@@ -3571,7 +3571,7 @@ fn test_game_room_heavyweight() -> Result<()> {
 async fn test_game_room_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::GameRoomHarness;
+    use dwow_contract_test_harness::harness::GameRoomHarness;
 
     let harness = GameRoomHarness::spawn();
     info!("GameRoom harness created with circuits: {:?}", harness.circuits());
@@ -3616,7 +3616,7 @@ fn test_drain_protection_heavyweight() -> Result<()> {
 async fn test_drain_protection_heavyweight_impl(
     ex: Arc<Executor<'static>>,
 ) -> std::result::Result<(), HeavyweightError> {
-    use darkfi_contract_test_harness::harness::DrainProtectionHarness;
+    use dwow_contract_test_harness::harness::DrainProtectionHarness;
 
     let harness = DrainProtectionHarness::spawn();
     info!("DrainProtection harness created with circuits: {:?}", harness.circuits());

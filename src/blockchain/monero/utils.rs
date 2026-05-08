@@ -205,16 +205,16 @@ pub fn create_blockhashing_blob(
 /// Validates the aux chain merkle proof.
 ///
 /// This function verifies that:
-/// 1. The merkle proof correctly proves `darkfi_hash` was included in `aux_chain_merkle_root`
+/// 1. The merkle proof correctly proves `dwow_hash` was included in `aux_chain_merkle_root`
 /// 2. The position in the merkle tree matches the expected position
 pub fn check_aux_chains(
     monero_data: &MoneroPowData,
     merge_mining_params: VarInt,
     aux_chain_merkle_root: &monero::Hash,
-    darkfi_hash: HeaderHash,
-    darkfi_genesis_hash: HeaderHash,
+    dwow_hash: HeaderHash,
+    dwow_genesis_hash: HeaderHash,
 ) -> bool {
-    let df_hash = monero::Hash::from_slice(darkfi_hash.as_slice());
+    let df_hash = monero::Hash::from_slice(dwow_hash.as_slice());
 
     if merge_mining_params == VarInt(0) {
         // Interpret 0 as only 1 chain
@@ -230,7 +230,7 @@ pub fn check_aux_chains(
 
     let hash_position = U256::from_little_endian(
         &Sha256::new()
-            .chain_update(darkfi_genesis_hash.as_slice())
+            .chain_update(dwow_genesis_hash.as_slice())
             .chain_update(merkle_tree_params.aux_nonce().to_le_bytes())
             .chain_update((109_u8).to_le_bytes())
             .finalize(),

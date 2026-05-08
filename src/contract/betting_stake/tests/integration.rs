@@ -25,7 +25,7 @@
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::pasta::pallas;
-use darkfi_betting_stake_contract::{
+use dwow_betting_stake_contract::{
     model::{
         ClaimEarningsParamsV1, ClaimEarningsUpdateV1, InitializeParamsV1, InitializeUpdateV1,
         Stake, StakeParamsV1, StakeUpdateV1, TableStakeRegistry, UnstakeParamsV1,
@@ -421,7 +421,7 @@ fn test_stake_can_unstake_with_lock() {
 
 #[test]
 fn test_derive_table_id() {
-    use darkfi_betting_stake_contract::model::derive_table_id;
+    use dwow_betting_stake_contract::model::derive_table_id;
 
     let betting_contract_id = pallas::Base::from(1);
     let nonce = 42u64;
@@ -434,7 +434,7 @@ fn test_derive_table_id() {
 
 #[test]
 fn test_derive_stake_id() {
-    use darkfi_betting_stake_contract::model::derive_stake_id;
+    use dwow_betting_stake_contract::model::derive_stake_id;
 
     let table_id = pallas::Base::from(1);
     let staker_pub = make_pubkey(2);

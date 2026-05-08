@@ -28,7 +28,7 @@ use dwow_sdk::{
     crypto::pasta_prelude::Group,
     pasta::pallas,
 };
-use darkfi_darktoshi_dice_contract::{
+use dwow_darktoshi_dice_contract::{
     model::{
         Bet, BetId, BetState, CommitBetParamsV1, CommitBetUpdateV1, HouseCloseParamsV1,
         HouseCloseUpdateV1, RevealRollParamsV1, RevealRollUpdateV1, SettleBetParamsV1,
@@ -328,7 +328,7 @@ fn test_bet_calculate_house_take() {
 
 #[test]
 fn test_derive_bet_id() {
-    use darkfi_darktoshi_dice_contract::model::derive_bet_id;
+    use dwow_darktoshi_dice_contract::model::derive_bet_id;
 
     let player_pub = make_pubkey(1);
     let bet_value = 1000u64;
@@ -345,7 +345,7 @@ fn test_derive_bet_id() {
 
 #[test]
 fn test_derive_nullifier() {
-    use darkfi_darktoshi_dice_contract::model::derive_nullifier;
+    use dwow_darktoshi_dice_contract::model::derive_nullifier;
 
     let bet_id = pallas::Base::from(1);
     let secret_nonce = pallas::Base::from(42);

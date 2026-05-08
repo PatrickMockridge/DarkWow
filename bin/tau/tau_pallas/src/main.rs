@@ -24,7 +24,7 @@
 //! Tau_Pallas entry point
 //!
 //! This is a Pallas-native variant of tau with DarkWow on-chain integration.
-//! It uses darkfi_sdk crypto (Pallas curve) throughout, enabling direct
+//! It uses dwow_sdk crypto (Pallas curve) throughout, enabling direct
 //! transaction signing and darkfid RPC integration for on-chain capability
 //! verification.
 

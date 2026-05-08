@@ -35,7 +35,7 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_labor_market_contract::client::{
+use dwow_labor_market_contract::client::{
     accept_job_v1::{AcceptJobV1CallData, AcceptJobV1PublicInputs, accept_job_v1_proof},
     confirm_delivery_v1::{
         ConfirmDeliveryV1CallData, ConfirmDeliveryV1PublicInputs, confirm_delivery_v1_proof,
@@ -51,7 +51,7 @@ use darkfi_labor_market_contract::client::{
         submit_git_deliverable_v1_proof,
     },
 };
-use darkfi_labor_market_contract::model::{
+use dwow_labor_market_contract::model::{
     AcceptJobParamsV1, ConfirmDeliveryParamsV1, CreateJobParamsV1, DisputeParamsV1,
     RefundParamsV1, SubmitDeliverableParamsV1, SubmitGitDeliverableParamsV1,
 };

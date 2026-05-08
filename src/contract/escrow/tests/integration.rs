@@ -28,7 +28,7 @@ use dwow_sdk::{
     crypto::{MerkleNode, pasta_prelude::Group},
     pasta::pallas,
 };
-use darkfi_escrow_contract::{
+use dwow_escrow_contract::{
     model::{
         CancelEscrowParamsV1, CancelEscrowUpdateV1, ClaimEscrowParamsV1, ClaimEscrowUpdateV1,
         CreateEscrowParamsV1, CreateEscrowUpdateV1, Escrow, EscrowId, EscrowState,

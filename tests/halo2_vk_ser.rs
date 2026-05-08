@@ -22,7 +22,7 @@
  */
 use std::io::Cursor;
 
-use darkfi_sdk::crypto::{
+use dwow_sdk::crypto::{
     pedersen::pedersen_commitment_u64, util::fp_mod_fv, Blind, MerkleNode, MerkleTree, PublicKey,
     SecretKey,
 };
@@ -37,7 +37,7 @@ use halo2_proofs::{
 };
 use rand::rngs::OsRng;
 
-use darkfi::{
+use dwow::{
     zk::{
         proof::{ProvingKey, VerifyingKey},
         vm::ZkCircuit,

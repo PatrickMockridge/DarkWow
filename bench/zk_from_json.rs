@@ -25,7 +25,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::OsRng;
 use std::{fs::File, io::Read};
 
-use darkfi::{
+use dwow::{
     zk::{
         proof::{ProvingKey, VerifyingKey},
         vm::ZkCircuit,

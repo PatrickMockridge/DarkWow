@@ -23,7 +23,7 @@
 
 use std::fmt::Write;
 
-use darkfi_deployooor_contract::model as deployooor_model;
+use dwow_deployooor_contract::model as deployooor_model;
 use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python};
 
 use super::{impl_py_methods, FunctionParams};

@@ -25,7 +25,7 @@ use dwow_sdk::{crypto::Keypair, deploy::DeployParamsV1};
 use dwow_serial::Encodable;
 use tracing::info;
 
-use darkfi_deployooor_contract::{
+use dwow_deployooor_contract::{
     client::deploy_v1::DeployCallBuilder,
     DeployFunction,
 };

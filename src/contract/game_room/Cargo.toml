@@ -34,9 +34,5 @@ client = [
 [dev-dependencies]
 serial_test = "3"
 
-[profile.release]
-opt-level = "s"
-lto = true
-
 [lints]
 workspace = true

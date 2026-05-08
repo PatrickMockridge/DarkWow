@@ -36,7 +36,7 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-use darkfi_money_v3_contract::{
+use dwow_money_v3_contract::{
     client::{
         auth_token_mint_v1::{AuthTokenMintCallBuilder, AuthTokenMintCallInput},
         mint_v1::{MintCallBuilder, MintCallInput},
@@ -48,8 +48,8 @@ use darkfi_money_v3_contract::{
 use dwow_serial::Encodable;
 
 // Re-export types for convenience
-pub use darkfi_money_v3_contract::client::mint_v1::MintCallInput as MintInput;
-pub use darkfi_money_v3_contract::client::auth_token_mint_v1::AuthTokenMintCallInput as AuthInput;
+pub use dwow_money_v3_contract::client::mint_v1::MintCallInput as MintInput;
+pub use dwow_money_v3_contract::client::auth_token_mint_v1::AuthTokenMintCallInput as AuthInput;
 
 /// MoneyV3 Harness for isolated testing
 pub struct MoneyV3Harness {
@@ -197,7 +197,7 @@ impl MoneyV3Harness {
         let token_registry_root = auth_debris.params.token_registry_root.inner();
 
         // Encode TokenMintParamsV1 + AuthTokenMintParamsV1 for call_data
-        let auth_params = darkfi_money_v3_contract::model::AuthTokenMintParamsV1 {
+        let auth_params = dwow_money_v3_contract::model::AuthTokenMintParamsV1 {
             nullifier: auth_debris.params.nullifier,
             mint_public: auth_debris.params.mint_public,
             token_id,
@@ -264,8 +264,8 @@ impl MoneyV3Harness {
 
         // Build MintParamsV1 with auth_proof including token_registry_root
         let mint_params = MintParamsV1 {
-            auth_proof: darkfi_money_v3_contract::model::AuthProof {
-                nullifier: darkfi_money_v3_contract::model::Nullifier::from_base(auth_nullifier),
+            auth_proof: dwow_money_v3_contract::model::AuthProof {
+                nullifier: dwow_money_v3_contract::model::Nullifier::from_base(auth_nullifier),
                 mint_public: auth_mint_public,
                 token_registry_root: dwow_sdk::crypto::MerkleNode::from(token_registry_root),
             },

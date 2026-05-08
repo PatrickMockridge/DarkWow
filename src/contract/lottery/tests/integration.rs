@@ -25,8 +25,8 @@
 
 #[cfg(test)]
 mod tests {
-    use darkfi_lottery_contract::model::{LotteryConfig, PrizeTierConfig};
-    use darkfi_lottery_contract::LotteryFunction;
+    use dwow_lottery_contract::model::{LotteryConfig, PrizeTierConfig};
+    use dwow_lottery_contract::LotteryFunction;
 
     #[test]
     fn test_lottery_function_enum_valid() {
@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn test_uk_lottery_config() {
-        let uk_config = darkfi_lottery_contract::UK_LOTTERY_CONFIG();
+        let uk_config = dwow_lottery_contract::UK_LOTTERY_CONFIG();
         assert_eq!(uk_config.num_picks, 6);
         assert_eq!(uk_config.number_range, 59);
         assert_eq!(uk_config.house_edge_bp, 2500);
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn test_neighborhood_config() {
-        let neighborhood = darkfi_lottery_contract::NEIGHBORHOOD_CONFIG();
+        let neighborhood = dwow_lottery_contract::NEIGHBORHOOD_CONFIG();
         assert_eq!(neighborhood.num_picks, 3);
         assert_eq!(neighborhood.number_range, 10);
         assert_eq!(neighborhood.house_edge_bp, 1000);
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_min_matches() {
-        let config = darkfi_lottery_contract::SIMPLE_690_CONFIG();
+        let config = dwow_lottery_contract::SIMPLE_690_CONFIG();
         assert_eq!(config.min_matches(), 3); // Last tier is 3 matches
         assert_eq!(config.max_matches(), 6); // num_picks
     }

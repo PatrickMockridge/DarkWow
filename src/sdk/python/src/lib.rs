@@ -42,32 +42,32 @@ mod contract;
 mod tx;
 
 #[pyo3::prelude::pymodule]
-fn darkfi_sdk(
+fn dwow_sdk(
     py: pyo3::Python<'_>,
     m: &pyo3::Bound<'_, pyo3::prelude::PyModule>,
 ) -> pyo3::PyResult<()> {
     let submodule = pasta::create_module(py)?;
-    py.import("sys")?.getattr("modules")?.set_item("darkfi_sdk.pasta", &submodule)?;
+    py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.pasta", &submodule)?;
     pyo3::types::PyModuleMethods::add_submodule(m, &submodule)?;
 
     let submodule = merkle::create_module(py)?;
-    py.import("sys")?.getattr("modules")?.set_item("darkfi_sdk.merkle", &submodule)?;
+    py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.merkle", &submodule)?;
     pyo3::types::PyModuleMethods::add_submodule(m, &submodule)?;
 
     let submodule = crypto::create_module(py)?;
-    py.import("sys")?.getattr("modules")?.set_item("darkfi_sdk.crypto", &submodule)?;
+    py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.crypto", &submodule)?;
     pyo3::types::PyModuleMethods::add_submodule(m, &submodule)?;
 
     let submodule = zkas::create_module(py)?;
-    py.import("sys")?.getattr("modules")?.set_item("darkfi_sdk.zkas", &submodule)?;
+    py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.zkas", &submodule)?;
     pyo3::types::PyModuleMethods::add_submodule(m, &submodule)?;
 
     let submodule = tx::create_module(py)?;
-    py.import("sys")?.getattr("modules")?.set_item("darkfi_sdk.tx", &submodule)?;
+    py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.tx", &submodule)?;
     pyo3::types::PyModuleMethods::add_submodule(m, &submodule)?;
 
     let submodule = contract::create_module(py)?;
-    py.import("sys")?.getattr("modules")?.set_item("darkfi_sdk.contract", &submodule)?;
+    py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.contract", &submodule)?;
     pyo3::types::PyModuleMethods::add_submodule(m, &submodule)?;
 
     Ok(())

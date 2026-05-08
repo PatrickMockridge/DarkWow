@@ -25,7 +25,7 @@
 //!
 //! Payload format:
 //! - byte 0: function code
-//! - bytes 1..: `darkfi_serial` encoded params
+//! - bytes 1..: `dwow_serial` encoded params
 
 use dwow_serial::{deserialize, Decodable, Encodable};
 

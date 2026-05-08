@@ -33,7 +33,7 @@ use super::gametextinput::{GameTextInput, GAME_TEXT_INPUT};
 /// Called from MainActivity when the InputConnection is created. It passes
 /// the Java InputConnection object to the native GameTextInput library.
 #[no_mangle]
-pub extern "C" fn Java_darkfi_darkfi_1app_MainActivity_setInputConnectionNative(
+pub extern "C" fn Java_dwow_dwow_1app_MainActivity_setInputConnectionNative(
     _env: *mut ndk_sys::JNIEnv,
     _class: ndk_sys::jclass,
     input_connection: ndk_sys::jobject,
@@ -50,7 +50,7 @@ pub extern "C" fn Java_darkfi_darkfi_1app_MainActivity_setInputConnectionNative(
 /// Called from the Java InputConnection's Listener whenever the IME sends
 /// a state change (text typed, cursor moved, etc.).
 #[no_mangle]
-pub extern "C" fn Java_darkfi_darkfi_1app_MainActivity_onTextInputEventNative(
+pub extern "C" fn Java_dwow_dwow_1app_MainActivity_onTextInputEventNative(
     _env: *mut ndk_sys::JNIEnv,
     _class: ndk_sys::jclass,
     soft_keyboard_event: ndk_sys::jobject,

@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi::net::transport::socks5::Socks5Client;
+use dwow::net::transport::socks5::Socks5Client;
 use futures::{AsyncReadExt, AsyncWriteExt};
 
 #[test]

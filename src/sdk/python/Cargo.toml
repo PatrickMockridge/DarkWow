@@ -16,6 +16,8 @@ doc = false
 [dependencies]
 dwow = {path = "../../../", features = ["zk", "zkas", "tx"]}
 dwow_deployooor_contract = {path = "../../contract/deployooor", features=["no-entrypoint", "client"]}
+dwow_native_token_contract = {path = "../../contract/native_token", features=["no-entrypoint", "client"]}
+dwow_money_v3_contract = {path = "../../contract/money_v3", features=["no-entrypoint", "client"]}
 dwow-sdk = {path = "../"}
 dwow-serial = {path = "../../serial", features = ["crypto"]}
 halo2_proofs = {version = "0.3.2", features = ["circuit-params", "dev-graph", "sanity-checks"]}

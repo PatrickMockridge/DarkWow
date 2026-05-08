@@ -34,7 +34,7 @@
 use crate::model::*;
 
 #[cfg(feature = "client")]
-pub use darkfi_money_v3_contract::client::token_mint_v1::TokenMintCallInput;
+pub use dwow_money_v3_contract::client::token_mint_v1::TokenMintCallInput;
 
 // ============================================================================
 // ZK Proof Generation Modules

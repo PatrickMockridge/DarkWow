@@ -22,7 +22,7 @@
  */
 
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
-use darkfi_sdk::crypto::pasta_prelude::*;
+use dwow_sdk::crypto::pasta_prelude::*;
 use halo2_proofs::pasta::Fp;
 use rand::rngs::OsRng;
 

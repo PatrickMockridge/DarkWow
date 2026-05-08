@@ -23,7 +23,7 @@
 
 //! Auction contract integration tests
 
-use darkfi_auction_contract::{
+use dwow_auction_contract::{
     model::{
         Auction, AuctionState, Bid, BidState, ClaimWinningsParamsV1, ClaimWinningsUpdateV1,
         CloseAuctionParamsV1, CloseAuctionUpdateV1, CreateAuctionParamsV1, CreateAuctionUpdateV1,

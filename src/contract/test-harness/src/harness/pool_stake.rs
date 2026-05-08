@@ -35,13 +35,13 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_pool_stake_contract::client::{
+use dwow_pool_stake_contract::client::{
     allocate_coverage_v1::{AllocateCoverageV1CallData, allocate_coverage_v1_proof, AllocateCoverageV1PublicInputs},
     create_pool_v1::{CreatePoolV1CallData, create_pool_v1_proof, CreatePoolV1PublicInputs},
     join_pool_v1::{JoinPoolV1CallData, join_pool_v1_proof, JoinPoolV1PublicInputs},
     slash_coverage_v1::{SlashCoverageV1CallData, slash_coverage_v1_proof, SlashCoverageV1PublicInputs},
 };
-use darkfi_pool_stake_contract::model::{
+use dwow_pool_stake_contract::model::{
     CreatePoolParamsV1, JoinPoolParamsV1, LeavePoolParamsV1,
     AllocateCoverageParamsV1, SlashCoverageParamsV1,
 };

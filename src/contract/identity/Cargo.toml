@@ -50,9 +50,5 @@ client = [
     "halo2_proofs",
 ]
 
-[profile.release]
-opt-level = "z"
-lto = true
-
 [lints]
 workspace = true

@@ -35,12 +35,12 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_relayer_endowment_contract::client::{
+use dwow_relayer_endowment_contract::client::{
     initialize_v1::{InitializeV1CallData, initialize_v1_proof, InitializeV1PublicInputs},
     deploy_capital_v1::{DeployCapitalV1CallData, deploy_capital_v1_proof, DeployCapitalV1PublicInputs},
     claim_fees_v1::{ClaimFeesV1CallData, claim_fees_v1_proof, ClaimFeesV1PublicInputs},
 };
-use darkfi_relayer_endowment_contract::model::{
+use dwow_relayer_endowment_contract::model::{
     InitializeParamsV1, DeployCapitalParamsV1, ClaimFeesParamsV1,
 };
 

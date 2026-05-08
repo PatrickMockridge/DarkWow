@@ -32,7 +32,7 @@ use dwow::{
 use dwow_sdk::{crypto::PublicKey, pasta::pallas};
 use dwow_serial::Encodable;
 
-use darkfi_auction_contract::client::{
+use dwow_auction_contract::client::{
     claim_winnings_v1::{ClaimWinningsV1CallData, claim_winnings_v1_proof, ClaimWinningsV1PublicInputs},
     close_auction_v1::{CloseAuctionV1CallData, close_auction_v1_proof, CloseAuctionV1PublicInputs},
     create_auction_v1::{CreateAuctionV1CallData, create_auction_v1_proof, CreateAuctionV1PublicInputs},
@@ -40,7 +40,7 @@ use darkfi_auction_contract::client::{
     refund_bid_v1::{RefundBidV1CallData, refund_bid_v1_proof, RefundBidV1PublicInputs},
     settle_auction_v1::{SettleAuctionV1CallData, settle_auction_v1_proof, SettleAuctionV1PublicInputs},
 };
-use darkfi_auction_contract::model::{
+use dwow_auction_contract::model::{
     CreateAuctionParamsV1, PlaceBidParamsV1, CloseAuctionParamsV1,
     ClaimWinningsParamsV1, SettleAuctionParamsV1, RefundBidParamsV1,
 };

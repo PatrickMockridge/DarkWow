@@ -32,7 +32,7 @@ use dwow::{
 use dwow_sdk::{crypto::PublicKey, pasta::pallas};
 use dwow_serial::Encodable;
 
-use darkfi_attestation_contract::client::{
+use dwow_attestation_contract::client::{
     consume_claim_v1::{
         ConsumeClaimV1CallData, consume_claim_v1_proof, ConsumeClaimV1PublicInputs,
     },
@@ -50,7 +50,7 @@ use darkfi_attestation_contract::client::{
         VerifyClaimV1CallData, verify_claim_v1_proof, VerifyClaimV1PublicInputs,
     },
 };
-use darkfi_attestation_contract::model::{
+use dwow_attestation_contract::model::{
     ConsumeClaimParamsV1, CreateAttestationParamsV1, CreateClaimParamsV1,
     DelegateAttestationParamsV1, VerifyClaimParamsV1, Predicate,
 };

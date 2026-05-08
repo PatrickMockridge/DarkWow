@@ -22,7 +22,7 @@
  */
 
 use dwow::error::Result;
-use darkfi_deployooor_contract::{model as deployooor_model, DeployFunction};
+use dwow_deployooor_contract::{model as deployooor_model, DeployFunction};
 use dwow_sdk::deploy;
 use dwow_serial::deserialize;
 use pyo3::{
@@ -66,7 +66,7 @@ pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
     submod.add_class::<DeployParamsV1>()?;
     submod.add_class::<LockParamsV1>()?;
 
-    py.import("sys")?.getattr("modules")?.set_item("darkfi_sdk.contract.deployooor", &submod)?;
+    py.import("sys")?.getattr("modules")?.set_item("dwow_sdk.contract.deployooor", &submod)?;
 
     Ok(submod)
 }

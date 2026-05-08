@@ -31,7 +31,7 @@
 //! Full ZK integration tests require the contract to be integrated with
 //! the test harness infrastructure (see test-harness/src/vks.rs).
 
-use darkfi_identity_contract::{
+use dwow_identity_contract::{
     model::{Attribute, AttributeType, Claim, CreateClaimParams, CreateClaimParamsL1, Credential, CredentialSchema, InitializeParams, IssueCredentialParams, Issuer},
     IdentityFunction,
 };

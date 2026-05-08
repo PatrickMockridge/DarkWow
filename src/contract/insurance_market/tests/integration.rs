@@ -23,7 +23,7 @@
 
 //! Insurance Market contract integration tests
 
-use darkfi_insurance_market_contract::{
+use dwow_insurance_market_contract::{
     model::{
         calculate_max_coverage, calculate_premium, calculate_slash, derive_claim_id,
         derive_coverage_id, derive_risk_type_id, derive_underwriter_id, ClaimState, CoverageState,

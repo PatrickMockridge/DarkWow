@@ -34,7 +34,7 @@ use tinyjson::JsonValue;
 use tracing::warn;
 use url::Url;
 
-use darkfi::{
+use dwow::{
     rpc::{
         client::RpcClient,
         jsonrpc::*,

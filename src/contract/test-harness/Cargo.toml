@@ -43,6 +43,7 @@ dwow_game_room_contract = {path = "../game_room", features = ["client", "no-entr
 
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }
+hex = "0.4.3"
 rand = "0.8.5"
 
 [[bin]]
@@ -56,14 +57,6 @@ path = "src/deployooor.rs"
 [[bin]]
 name = "prove_dao_escrow"
 path = "src/prove_dao_escrow.rs"
-
-[[bin]]
-name = "prove_stablecoin"
-path = "src/prove_stablecoin.rs"
-
-[[bin]]
-name = "prove_dex"
-path = "src/prove_dex.rs"
 
 [lints]
 workspace = true

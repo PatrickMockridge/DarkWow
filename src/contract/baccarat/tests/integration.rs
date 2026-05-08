@@ -23,7 +23,7 @@
 
 //! Baccarat contract integration tests
 
-use darkfi_baccarat_contract::{
+use dwow_baccarat_contract::{
     model::{BetState, BetType, Card, CommitBetParamsV1, CommitBetUpdateV1, Hand, Outcome},
     BaccaratFunction, BACCARAT_CONTRACT_BETS_TREE, BACCARAT_CONTRACT_NULLIFIERS_TREE,
 };
@@ -257,7 +257,7 @@ fn test_commit_bet_update_encoding() {
 
 #[test]
 fn test_draw_cards_update_encoding() {
-    let update = darkfi_baccarat_contract::model::DrawCardsUpdateV1 {
+    let update = dwow_baccarat_contract::model::DrawCardsUpdateV1 {
         bet_id: pallas::Base::from(1),
         player_card1: Card::new(0),
         player_card2: Card::new(1),
@@ -270,7 +270,7 @@ fn test_draw_cards_update_encoding() {
     };
 
     let encoded = serialize(&update);
-    let decoded: darkfi_baccarat_contract::model::DrawCardsUpdateV1 = deserialize(&encoded).unwrap();
+    let decoded: dwow_baccarat_contract::model::DrawCardsUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.outcome, Outcome::Player);
     assert_eq!(decoded.state, BetState::CardsDrawn);
@@ -280,14 +280,14 @@ fn test_draw_cards_update_encoding() {
 
 #[test]
 fn test_settle_bet_update_encoding() {
-    let update = darkfi_baccarat_contract::model::SettleBetUpdateV1 {
+    let update = dwow_baccarat_contract::model::SettleBetUpdateV1 {
         bet_id: pallas::Base::from(1),
         payout: 950,
         state: BetState::Settled,
     };
 
     let encoded = serialize(&update);
-    let decoded: darkfi_baccarat_contract::model::SettleBetUpdateV1 = deserialize(&encoded).unwrap();
+    let decoded: dwow_baccarat_contract::model::SettleBetUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.payout, 950);
     assert_eq!(decoded.state, BetState::Settled);
@@ -295,14 +295,14 @@ fn test_settle_bet_update_encoding() {
 
 #[test]
 fn test_house_close_update_encoding() {
-    let update = darkfi_baccarat_contract::model::HouseCloseUpdateV1 {
+    let update = dwow_baccarat_contract::model::HouseCloseUpdateV1 {
         bet_id: pallas::Base::from(1),
         house_take: 1000,
         state: BetState::Cancelled,
     };
 
     let encoded = serialize(&update);
-    let decoded: darkfi_baccarat_contract::model::HouseCloseUpdateV1 = deserialize(&encoded).unwrap();
+    let decoded: dwow_baccarat_contract::model::HouseCloseUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.house_take, 1000);
     assert_eq!(decoded.state, BetState::Cancelled);
@@ -386,7 +386,7 @@ fn test_baccarat_draw_rules_natural_8() {
 
 #[test]
 fn test_derive_nullifier() {
-    use darkfi_baccarat_contract::model::derive_nullifier;
+    use dwow_baccarat_contract::model::derive_nullifier;
 
     let bet_id = pallas::Base::from(12345);
     let secret_nonce = pallas::Base::from(67890);

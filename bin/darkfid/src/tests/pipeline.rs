@@ -297,7 +297,7 @@ impl ContractTestingPipeline {
             .join("src")
             .join("contract")
             .join(contract_name)
-            .join(format!("darkfi_{}_contract.wasm", contract_name));
+            .join(format!("dwow_{}_contract.wasm", contract_name));
 
         let zkbin_dir = base_dir
             .join("..")
@@ -489,7 +489,7 @@ impl ContractTestingPipeline {
                 "build",
                 "--release",
                 "-p",
-                &format!("darkfi_{}_contract", self.contract_name),
+                &format!("dwow_{}_contract", self.contract_name),
             ])
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .output()
@@ -567,7 +567,7 @@ impl ContractTestingPipeline {
     ) -> std::result::Result<ContractId, PipelineError> {
         let wasm_path = ContractManifest::base_dir()
             .join(contract_name)
-            .join(format!("darkfi_{}_contract.wasm", contract_name));
+            .join(format!("dwow_{}_contract.wasm", contract_name));
 
         // Make sure WASM exists
         if !wasm_path.exists() {

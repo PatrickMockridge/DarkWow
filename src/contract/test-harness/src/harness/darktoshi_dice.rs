@@ -37,11 +37,11 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
-use darkfi_darktoshi_dice_contract::client::{
+use dwow_darktoshi_dice_contract::client::{
     commit_bet_v1::{create_commit_bet_v1_proof, CommitBetV1CallData, CommitBetV1PublicInputs},
     settle_bet_v1::{create_settle_bet_v1_proof, SettleBetV1CallData, SettleBetV1PublicInputs},
 };
-use darkfi_darktoshi_dice_contract::model::{
+use dwow_darktoshi_dice_contract::model::{
     CommitBetParamsV1, RevealRollParamsV1, SettleBetParamsV1,
 };
 

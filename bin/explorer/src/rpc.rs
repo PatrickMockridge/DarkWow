@@ -32,8 +32,8 @@ use dwow::{
     tx::Transaction,
     util::{encoding::base64, parse::encode_base10},
 };
-use darkfi_money_contract::MoneyFunction;
-use dwow_sdk::crypto::contract_id::MONEY_CONTRACT_ID;
+use dwow_native_token_contract::NativeTokenFunction;
+use dwow_sdk::crypto::contract_id::NATIVE_TOKEN_CONTRACT_ID;
 use dwow_serial::{deserialize_async, serialize_async};
 use monero::{consensus::encode::Encodable, VarInt};
 use tiny_keccak::{Hasher, Keccak};
@@ -89,7 +89,7 @@ impl TransactionInfo {
         for call in &tx.calls {
             let func = call.data.data[0];
 
-            if call.data.contract_id == *MONEY_CONTRACT_ID && func == MoneyFunction::FeeV1 as u8 {
+            if call.data.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV1 as u8 {
                 fee = deserialize_async(&call.data.data[1..9]).await.unwrap();
             }
 
@@ -139,7 +139,7 @@ impl ExplTxInfo {
         for call in &tx.calls {
             let func = call.data.data[0];
 
-            if call.data.contract_id == *MONEY_CONTRACT_ID && func == MoneyFunction::FeeV1 as u8 {
+            if call.data.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV1 as u8 {
                 fee = deserialize_async(&call.data.data[1..9]).await.unwrap();
             }
 

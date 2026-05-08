@@ -25,7 +25,7 @@
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::pasta::pallas;
-use darkfi_oracle_contract::{
+use dwow_oracle_contract::{
     model::{AttestValueParamsV1, Oracle, PushValueParamsV1, RegisterOracleParamsV1},
     OracleFunction,
     // Constants

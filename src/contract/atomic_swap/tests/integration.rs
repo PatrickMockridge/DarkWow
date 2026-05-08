@@ -23,7 +23,7 @@
 
 //! Atomic Swap contract integration tests
 
-use darkfi_atomic_swap_contract::{
+use dwow_atomic_swap_contract::{
     model::{
         chains, ClaimParamsV1, ClaimUpdateV1, CreateSwapParamsV1, CreateSwapUpdateV1,
         RefundParamsV1, RefundUpdateV1, Swap, SwapState,

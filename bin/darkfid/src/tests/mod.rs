@@ -30,7 +30,7 @@ use dwow::{
     validator::{consensus::Fork, utils::best_fork_index, verification::verify_block},
     Result,
 };
-use darkfi_contract_test_harness::init_logger;
+use dwow_contract_test_harness::init_logger;
 use dwow_sdk::{crypto::keypair::Network, num_traits::One};
 use num_bigint::BigUint;
 use smol::Executor;

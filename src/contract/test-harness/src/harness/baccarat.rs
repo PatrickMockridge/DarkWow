@@ -37,11 +37,11 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
-use darkfi_baccarat_contract::client::{
+use dwow_baccarat_contract::client::{
     commit_bet_v1::{CommitBetV1CallData, CommitBetV1PublicInputs, create_commit_bet_v1_proof},
     settle_bet_v1::{SettleBetV1CallData, SettleBetV1PublicInputs, create_settle_bet_v1_proof},
 };
-use darkfi_baccarat_contract::model::{
+use dwow_baccarat_contract::model::{
     derive_bet_id, BetId, BetType, CommitBetParamsV1, DrawCardsParamsV1, HouseCloseParamsV1,
     SettleBetParamsV1,
 };

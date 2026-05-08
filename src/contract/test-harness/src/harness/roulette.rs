@@ -35,11 +35,11 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_roulette_contract::client::{
+use dwow_roulette_contract::client::{
     place_bet_v1::{PlaceBetV1CallData, create_place_bet_v1_proof, PlaceBetV1PublicInputs},
     settle_bet_v1::{SettleBetV1CallData, create_settle_bet_v1_proof, SettleBetV1PublicInputs},
 };
-use darkfi_roulette_contract::model::{
+use dwow_roulette_contract::model::{
     BetType, InitializeParamsV1, PlaceBetParamsV1, SpinWheelParamsV1,
     SettleBetsParamsV1, HouseCloseParamsV1,
 };

@@ -28,7 +28,7 @@ use dwow::{
     blockchain::{BlockInfo, Header},
     tx::Transaction,
 };
-use darkfi_deployooor_contract::{model::LockParamsV1, DeployFunction};
+use dwow_deployooor_contract::{model::LockParamsV1, DeployFunction};
 use dwow_sdk::{
     crypto::{schnorr::Signature, ContractId, DEPLOYOOOR_CONTRACT_ID},
     deploy::DeployParamsV1,
@@ -38,7 +38,7 @@ use dwow_serial::{
     SerialEncodable,
 };
 use sled::{transaction::TransactionError, Transactional};
-use tapes::{BlobTape, FixedSizedTape, Persistence, TapeOpenOptions, Tapes};
+use tapes::{BlobTape, FixedSizedTape, Persistence, TapeOpenOptions, Tapes, TapesAppend, TapesRead, TapesTruncate};
 use tracing::info;
 
 use super::Explorer;
@@ -298,14 +298,14 @@ impl Explorer {
         drop(reader);
 
         let mut truncate_tx = self.tapes_db.truncate();
-        truncate_tx.drop_from_fixed_sized_tape(&self.database.block_index, count);
-        truncate_tx.drop_from_fixed_sized_tape(&self.database.difficulty_index, count);
+        truncate_tx.drop_fixed_sized_tape(&self.database.block_index, count);
+        truncate_tx.drop_fixed_sized_tape(&self.database.difficulty_index, count);
 
         let tx_idx_to_remove = current_tx_idx_len - new_tx_idx_len;
-        truncate_tx.drop_from_fixed_sized_tape(&self.database.tx_index, tx_idx_to_remove);
+        truncate_tx.drop_fixed_sized_tape(&self.database.tx_index, tx_idx_to_remove);
 
-        truncate_tx.set_blob_tape_len(&self.database.blocks, new_block_blob_len);
-        truncate_tx.set_blob_tape_len(&self.database.transactions, new_tx_blob_len);
+        truncate_tx.truncate_blob_tape(&self.database.blocks, new_block_blob_len);
+        truncate_tx.truncate_blob_tape(&self.database.transactions, new_tx_blob_len);
 
         truncate_tx.commit(Persistence::SyncData)?;
 
@@ -433,7 +433,7 @@ impl Explorer {
         let txs = self.get_block_txs(height).await?.unwrap_or_default();
 
         // We don't care about displaying the block signature.
-        Ok(Some(BlockInfo { header, txs, signature: Signature::dummy() }))
+        Ok(Some(BlockInfo { header, txs, signature: Signature::dummy(), zkbin_data: vec![] }))
     }
 
     /// Get basic block info without loading all transactions.

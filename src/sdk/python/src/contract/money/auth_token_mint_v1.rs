@@ -23,31 +23,32 @@
 
 use std::fmt::Write;
 
-use darkfi_money_contract::model as money_model;
+use dwow_money_v3_contract::model as money_model;
 use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python};
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`money_model::MoneyAuthTokenMintParamsV1`] python binding.
+/// [`money_model::AuthTokenMintParamsV1`] python binding.
 #[pyclass]
-pub struct MoneyAuthTokenMintParamsV1(money_model::MoneyAuthTokenMintParamsV1);
-impl_py_methods!(MoneyAuthTokenMintParamsV1);
+pub struct MoneyV3AuthTokenMintParamsV1(money_model::AuthTokenMintParamsV1);
+impl_py_methods!(MoneyV3AuthTokenMintParamsV1);
 
-impl FunctionParams for money_model::MoneyAuthTokenMintParamsV1 {
+impl FunctionParams for money_model::AuthTokenMintParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
-        dict.set_item("token_id", self.token_id.to_string())?;
-        dict.set_item("enc_note", self.enc_note.to_pydict(py)?)?;
-        dict.set_item("mint_pubkey", self.mint_pubkey.to_string())?;
+        dict.set_item("nullifier", format!("{:?}", self.nullifier))?;
+        dict.set_item("mint_public", format!("{:?}", self.mint_public))?;
+        dict.set_item("token_id", format!("{:?}", self.token_id))?;
+        dict.set_item("token_registry_root", self.token_registry_root.to_string())?;
         Ok(dict.unbind())
     }
 
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
-        writeln!(out, "{prefix}token_id: {}", self.token_id).unwrap();
-        writeln!(out, "{prefix}mint_pubkey: {}", self.mint_pubkey).unwrap();
-        writeln!(out, "{prefix}enc_note:").unwrap();
-        self.enc_note.fmt_pretty(out, depth + 2)?;
+        writeln!(out, "{prefix}nullifier: {:?}", self.nullifier).unwrap();
+        writeln!(out, "{prefix}mint_public: {:?}", self.mint_public).unwrap();
+        writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
+        writeln!(out, "{prefix}token_registry_root: {}", self.token_registry_root).unwrap();
         Ok(())
     }
 }

@@ -36,11 +36,11 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_dao_escrow_contract::client::{
+use dwow_dao_escrow_contract::client::{
     init_v1::{init_v1_proof, InitV1CallData, InitV1PublicInputs},
     pay_premium_v1::{pay_premium_v1_proof, PayPremiumV1CallData, PayPremiumV1PublicInputs},
 };
-use darkfi_dao_escrow_contract::model::{
+use dwow_dao_escrow_contract::model::{
     InitializeParamsV1, PayPremiumParamsV1, WithdrawParamsV1, EndowmentWithdrawParamsV1,
     TreasurySpendParamsV1,
 };

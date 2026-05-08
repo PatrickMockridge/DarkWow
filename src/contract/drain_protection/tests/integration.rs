@@ -23,7 +23,7 @@
 
 //! DrainProtection contract integration tests
 
-use darkfi_drain_protection_contract::{
+use dwow_drain_protection_contract::{
     model::{
         DrainConfig, ExitParamsV1, ExitQueueEntry, ExitRequest, ExitUpdateV1, LockParamsV1,
         LockState, LockUpdateV1, MemberWeight, ProposeParamsV1, ProposeUpdateV1, ProtectedFund,

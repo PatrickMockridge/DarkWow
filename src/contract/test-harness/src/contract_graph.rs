@@ -35,12 +35,12 @@
 //! ## Example
 //!
 //! ```rust
-//! use darkfi_contract_test_harness::contract_graph::{Contract, get_contracts};
+//! use dwow_contract_test_harness::contract_graph::{Contract, get_contracts};
 //!
 //! // Get only NativeToken contract circuits
 //! let native_circuits = get_contracts(&[Contract::NativeToken]);
 //!
-//! // Get DAO-Escrow + its dependencies (Money)
+//! // Get DAO-Escrow (no dependencies)
 //! let dao_circuits = get_contracts(&[Contract::DaoEscrow]);
 //!
 //! // Get Roulette only (isolated, no dependencies)
@@ -60,8 +60,6 @@ pub enum Contract {
     Identity,
     /// DEX WASM - decentralized exchange
     Dex,
-    /// Money V2 WASM - next version of Money
-    MoneyV2,
     /// Money V3 WASM - privacy-first token (Poseidon-only, no EC)
     MoneyV3,
     /// Native Token WASM - consensus-first native token
@@ -146,13 +144,6 @@ impl Contract {
                 "ExecuteSwapFeeV1",
             ],
             Contract::DaoEscrow => vec!["Init", "PayPremium"],
-            Contract::MoneyV2 => vec![
-                "Fee_V2",
-                "Mint_V2",
-                "Burn_V2",
-                "TokenMint_V1",
-                "AuthTokenMint_V1",
-            ],
             Contract::MoneyV3 => vec![
                 "TokenMint_V1",
                 "AuthTokenMint_V1",
@@ -220,7 +211,6 @@ impl Contract {
             Contract::Identity => "Identity",
             Contract::Dex => "Dex",
             Contract::DaoEscrow => "DaoEscrow",
-            Contract::MoneyV2 => "MoneyV2",
             Contract::MoneyV3 => "MoneyV3",
             Contract::NativeToken => "NativeToken",
             Contract::Auction => "Auction",
@@ -261,7 +251,6 @@ impl Contract {
             | Contract::Identity
             | Contract::Dex
             | Contract::DaoEscrow
-            | Contract::MoneyV2
             | Contract::MoneyV3
             | Contract::NativeToken
             | Contract::Auction

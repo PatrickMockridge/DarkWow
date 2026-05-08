@@ -52,23 +52,23 @@
 //! | SpendV1 | 0x04 | Spend with change |
 //! | PoWRewardV1 | 0x05 | Block rewards for miners |
 
-// Re-export from darkfi_native_token_contract
-pub use darkfi_native_token_contract::NativeTokenFunction;
+// Re-export from dwow_native_token_contract
+pub use dwow_native_token_contract::NativeTokenFunction;
 
 // ZK namespaces
-pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1;
-pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1;
-pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1;
 
 // Database tree names
-pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_COINS_TREE;
-pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE;
-pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_MERKLE_TREE;
-pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE;
-pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_FEES_TREE;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_COINS_TREE;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_MERKLE_TREE;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_FEES_TREE;
 
 // Constants
-pub use darkfi_native_token_contract::DRKW_TOKEN_ID;
-pub use darkfi_native_token_contract::NATIVE_TOKEN_MAX_COINS_PER_TX;
-pub use darkfi_native_token_contract::NATIVE_TOKEN_MAX_COIN_VALUE;
-pub use darkfi_native_token_contract::NATIVE_TOKEN_MIN_COIN_VALUE;
+pub use dwow_native_token_contract::DRKW_TOKEN_ID;
+pub use dwow_native_token_contract::NATIVE_TOKEN_MAX_COINS_PER_TX;
+pub use dwow_native_token_contract::NATIVE_TOKEN_MAX_COIN_VALUE;
+pub use dwow_native_token_contract::NATIVE_TOKEN_MIN_COIN_VALUE;

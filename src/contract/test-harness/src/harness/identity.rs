@@ -36,7 +36,7 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_identity_contract::client::{
+use dwow_identity_contract::client::{
     create_claim_v1::{CreateClaimCallData, create_claim_proof, CreateClaimPublicInputs},
     create_claim_v1_dag::{CreateClaimDagCallData, create_claim_dag_proof},
     create_claim_v1_l1::{CreateClaimL1CallData, create_claim_l1_proof},
@@ -46,7 +46,7 @@ use darkfi_identity_contract::client::{
     issue_credential_v1::{IssueCredentialCallData, create_issue_credential_proof, IssueCredentialPublicInputs},
     verify_capability_v1::{VerifyCapabilityCallData, create_verify_capability_proof},
 };
-use darkfi_identity_contract::model::{CreateClaimParams, InitializeParams, IssueCredentialParams};
+use dwow_identity_contract::model::{CreateClaimParams, InitializeParams, IssueCredentialParams};
 
 /// Identity Harness for isolated testing
 pub struct IdentityHarness {

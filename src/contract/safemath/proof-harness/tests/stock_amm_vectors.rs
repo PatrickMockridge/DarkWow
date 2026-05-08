@@ -1,8 +1,8 @@
-use darkfi_engine::{
+use dwow_engine::{
     zk::{halo2::Value, vm::ZkCircuit, vm_heap::Witness},
     zkas::{Analyzer, Compiler, Lexer, Parser, ZkBinary},
 };
-use darkfi_safemath_zk::{
+use dwow_safemath_zk::{
     host::{cross_mul_gte_u64, floor_div_u128_by_u64_to_u64, floor_sqrt_u128_to_u64, split_u128},
     safemath::stock::{
         helpers::{

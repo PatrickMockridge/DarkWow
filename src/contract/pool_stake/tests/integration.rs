@@ -28,7 +28,7 @@
 //! - Data structure encoding/decoding
 //! - Model type invariants
 
-use darkfi_pool_stake_contract::{
+use dwow_pool_stake_contract::{
     model::{
         AllocateCoverageParamsV1, AllocateCoverageUpdateV1, ClaimFeesParamsV1, ClaimFeesUpdateV1,
         CoverageAllocation, CreatePoolParamsV1, CreatePoolUpdateV1, JoinPoolParamsV1,

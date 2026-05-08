@@ -46,7 +46,7 @@ use std::sync::Arc;
 use std::path::PathBuf;
 
 use dwow::{Result, tx::Transaction};
-use darkfi_contract_test_harness::harness::{
+use dwow_contract_test_harness::harness::{
     ContractHarness, MoneyV3Harness, DexHarness, StablecoinHarness,
 };
 use dwow_sdk::{
@@ -81,7 +81,7 @@ fn contract_base_dir() -> PathBuf {
 async fn read_wasm(contract_name: &str) -> std::result::Result<Vec<u8>, HeavyweightError> {
     let wasm_path = contract_base_dir()
         .join(contract_name)
-        .join(format!("darkfi_{}_contract.wasm", contract_name));
+        .join(format!("dwow_{}_contract.wasm", contract_name));
 
     smol::fs::read(&wasm_path).await.map_err(|e| HeavyweightError::DeploymentFailed(e.to_string()))
 }

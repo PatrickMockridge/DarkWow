@@ -25,7 +25,7 @@
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::{crypto::schnorr::Signature, pasta::pallas};
-use darkfi_roulette_contract::{
+use dwow_roulette_contract::{
     model::{
         BetType, HouseCloseParamsV1, HouseCloseUpdateV1, InitializeParamsV1,
         InitializeUpdateV1, PlaceBetParamsV1, PlaceBetUpdateV1, RouletteTableState,

@@ -1,8 +1,8 @@
-use darkfi_engine::{
+use dwow_engine::{
     zk::{halo2::Value, vm::ZkCircuit, vm_heap::Witness},
     zkas::{Analyzer, Compiler, Lexer, Parser, ZkBinary},
 };
-use darkfi_safemath_zk::safemath::experimental::{
+use dwow_safemath_zk::safemath::experimental::{
     DIV_FLOOR_V1_ZK, MIN_SELECT_V1_ZK, RATIO_LTE_V1_ZK, SQRT_FLOOR_V1_ZK,
 };
 use halo2_proofs::{dev::MockProver, pasta::pallas};

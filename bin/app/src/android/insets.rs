@@ -45,7 +45,7 @@ pub fn get_insets() -> Insets {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn Java_darkfi_darkfi_1app_ResizingLayout_onApplyInsets(
+pub unsafe extern "C" fn Java_dwow_dwow_1app_ResizingLayout_onApplyInsets(
     _env: *mut ndk_sys::JNIEnv,
     _: ndk_sys::jobject,
     sys_left: ndk_sys::jint,

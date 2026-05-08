@@ -95,7 +95,7 @@ impl Drk {
         // Build InitV1CallData for ZK proof
         // Note: nullifier_k is a CONSTANT in the circuit - it's baked into the .zk.bin
         // and NOT passed as a witness. We pass 0 here but it's ignored.
-        let init_input = darkfi_dao_escrow_contract::client::init_v1::InitV1CallData::new(
+        let init_input = dwow_dao_escrow_contract::client::init_v1::InitV1CallData::new(
             pallas::Scalar::zero(), // nullifier_k constant - ignored, embedded in circuit
             dao_bulla,
             owner_secret_base,
@@ -105,7 +105,7 @@ impl Drk {
 
         // Generate ZK proof
         let (proof, _public_inputs) =
-            darkfi_dao_escrow_contract::client::init_v1::init_v1_proof(
+            dwow_dao_escrow_contract::client::init_v1::init_v1_proof(
                 &init_zkbin,
                 &init_pk,
                 &init_input,
@@ -248,7 +248,7 @@ impl Drk {
         let premium_pk = dwow::zk::proof::ProvingKey::build(premium_zkbin.k, &premium_circuit);
 
         // Build PayPremiumV1CallData for ZK proof
-        let call_data = darkfi_dao_escrow_contract::client::pay_premium_v1::PayPremiumV1CallData::new(
+        let call_data = dwow_dao_escrow_contract::client::pay_premium_v1::PayPremiumV1CallData::new(
             pallas::Scalar::zero(), // nullifier_k constant - ignored, embedded in circuit
             dao_escrow_bulla,
             current_block,
@@ -267,7 +267,7 @@ impl Drk {
 
         // Generate ZK proof
         let (proof, _public_inputs) =
-            darkfi_dao_escrow_contract::client::pay_premium_v1::pay_premium_v1_proof(
+            dwow_dao_escrow_contract::client::pay_premium_v1::pay_premium_v1_proof(
                 &premium_zkbin,
                 &premium_pk,
                 &call_data,

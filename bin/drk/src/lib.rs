@@ -47,8 +47,8 @@ use dwow_sdk::{
     pasta::pallas,
     tx::ContractCall,
 };
-use darkfi_money_v3_contract::client::MoneyV3Note;
-use darkfi_money_v3_contract::model::TransferParamsV1;
+use dwow_money_v3_contract::client::MoneyV3Note;
+use dwow_money_v3_contract::model::TransferParamsV1;
 use crate::contract_imports::{money::TokenId, MONEY_V3_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 use crate::swap::PartialSwapData;
 use crate::walletdb::CoinRecord;
@@ -973,8 +973,8 @@ impl Drk {
     ) -> Result<Transaction> {
         use dwow_serial::Encodable;
         use crate::contract_imports::dao_escrow::EnableDrainProtectionParamsV1;
-        use darkfi_drain_protection_contract::model::InitializeParamsV1 as DrainInitParamsV1;
-        use darkfi_drain_protection_contract::model::DrainConfig;
+        use dwow_drain_protection_contract::model::InitializeParamsV1 as DrainInitParamsV1;
+        use dwow_drain_protection_contract::model::DrainConfig;
 
         // First try to look up as contract name (e.g., "dao_escrow")
         // If not found, try to parse as Base58 contract ID

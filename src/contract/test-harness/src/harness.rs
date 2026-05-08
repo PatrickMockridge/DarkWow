@@ -37,7 +37,7 @@
 //! ## Usage
 //!
 //! ```rust
-//! use darkfi_contract_test_harness::harness;
+//! use dwow_contract_test_harness::harness;
 //!
 //! // MoneyV3 (DeFi tokens)
 //! let money_v3 = harness::money_v3::MoneyV3Harness::spawn();

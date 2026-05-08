@@ -27,7 +27,7 @@
 
 #[cfg(test)]
 mod tests {
-    use darkfi_money_v3_contract::{
+    use dwow_money_v3_contract::{
         model::{
             AuthProof, AuthTokenMintParamsV1, AuthTokenMintUpdateV1, BurnParamsV1, BurnUpdateV1,
             Coin, CoinAttributes, Input, MintParamsV1, MintUpdateV1, Nullifier, Output,

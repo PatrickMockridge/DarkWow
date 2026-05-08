@@ -23,7 +23,7 @@
 
 //! DEX contract integration tests
 
-use darkfi_dex_contract::{
+use dwow_dex_contract::{
     model::{
         AcceptSwapParams, CancelSwapParams, CreateSwapParams, ExecuteSwapParams, InitializeParams,
         TransparencyConfig, UpdateConfigParams,

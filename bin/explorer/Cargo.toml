@@ -9,6 +9,7 @@ dwow-serial = {path = "../../src/serial", features = ["derive"]}
 dwow-sdk = {path = "../../src/sdk"}
 
 dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
+dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["no-entrypoint", "client"]}
 
 monero = "0.21.0"
 tiny-keccak = "2.0.2"

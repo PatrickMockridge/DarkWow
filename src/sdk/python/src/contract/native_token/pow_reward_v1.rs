@@ -23,27 +23,21 @@
 
 use std::fmt::Write;
 
-use darkfi_money_contract::model as money_model;
+use dwow_native_token_contract::model as native_token_model;
 use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python};
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`money_model::MoneyGenesisMintParamsV1`] python binding.
+/// [`native_token_model::PoWRewardParamsV1`] python binding.
 #[pyclass]
-pub struct MoneyGenesisMintParamsV1(money_model::MoneyGenesisMintParamsV1);
-impl_py_methods!(MoneyGenesisMintParamsV1);
+pub struct PoWRewardParamsV1(native_token_model::PoWRewardParamsV1);
+impl_py_methods!(PoWRewardParamsV1);
 
-impl FunctionParams for money_model::MoneyGenesisMintParamsV1 {
+impl FunctionParams for native_token_model::PoWRewardParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("input", self.input.to_pydict(py)?)?;
-        dict.set_item(
-            "outputs",
-            self.outputs
-                .iter()
-                .map(|output| output.to_pydict(py))
-                .collect::<PyResult<Vec<Py<PyDict>>>>()?,
-        )?;
+        dict.set_item("output", self.output.to_pydict(py)?)?;
         Ok(dict.unbind())
     }
 
@@ -51,12 +45,8 @@ impl FunctionParams for money_model::MoneyGenesisMintParamsV1 {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}input:").unwrap();
         self.input.fmt_pretty(out, depth + 2)?;
-        writeln!(out, "{prefix}outputs:").unwrap();
-
-        for output in &self.outputs {
-            output.fmt_pretty(out, depth + 2)?;
-            writeln!(out).unwrap();
-        }
+        writeln!(out, "{prefix}output:").unwrap();
+        self.output.fmt_pretty(out, depth + 2)?;
         Ok(())
     }
 }

@@ -36,7 +36,7 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_slot_contract::model::{CommitSpinParamsV1, RevealSpinParamsV1};
+use dwow_slot_contract::model::{CommitSpinParamsV1, RevealSpinParamsV1};
 
 /// Slot Harness for isolated testing
 pub struct SlotHarness {

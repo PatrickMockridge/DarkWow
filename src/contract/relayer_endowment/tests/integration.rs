@@ -28,7 +28,7 @@
 //! - Data structure encoding/decoding
 //! - Model type invariants
 
-use darkfi_relayer_endowment_contract::{
+use dwow_relayer_endowment_contract::{
     model::{
         ClaimFeesParamsV1, ClaimFeesUpdateV1, DeployCapitalParamsV1, DeployCapitalUpdateV1,
         EndowmentDeployment, InitializeParamsV1, InitializeUpdateV1, RelayerEndowmentAccount,

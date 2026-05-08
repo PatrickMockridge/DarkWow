@@ -38,7 +38,7 @@ use dwow::{
     zk::{empty_witnesses, ZkCircuit, ProvingKey},
     Error,
 };
-use darkfi_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction};
+use dwow_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction};
 use dwow_sdk::{
     crypto::{keypair::Keypair, pasta_prelude::PrimeField, MerkleTree, NATIVE_TOKEN_CONTRACT_ID},
     tx::ContractCall,
@@ -121,7 +121,7 @@ impl DarkfiNode {
         let zkbin = match validator.blockchain.contracts.get_zkas(
             &validator.blockchain.sled_db,
             &NATIVE_TOKEN_CONTRACT_ID,
-            darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1,
+            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1,
         ) {
             Ok(z) => z.0,
             Err(e) => {

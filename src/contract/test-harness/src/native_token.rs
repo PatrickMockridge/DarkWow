@@ -29,7 +29,7 @@ use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 use tracing::info;
 
-use darkfi_native_token_contract::{
+use dwow_native_token_contract::{
     client::{
         burn_v1::{BurnCallBuilder, BurnCallInput},
         pow_reward_v1::PoWRewardCallBuilder,

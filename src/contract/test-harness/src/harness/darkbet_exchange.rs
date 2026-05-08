@@ -36,13 +36,13 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_darkbet_exchange_contract::client::{
+use dwow_darkbet_exchange_contract::client::{
     add_liquidity_v1::{add_liquidity_v1_proof, AddLiquidityV1CallData, AddLiquidityV1PublicInputs},
     buy_position_v1::{buy_position_v1_proof, BuyPositionV1CallData, BuyPositionV1PublicInputs},
     claim_winnings_v1::{claim_winnings_v1_proof, ClaimWinningsV1CallData, ClaimWinningsV1PublicInputs},
     create_market_v1::{create_market_v1_proof, CreateMarketV1CallData, CreateMarketV1PublicInputs},
 };
-use darkfi_darkbet_exchange_contract::model::{
+use dwow_darkbet_exchange_contract::model::{
     AddLiquidityParamsV1, BuyPositionParamsV1, ClaimWinningsParamsV1, CreateMarketParamsV1,
 };
 

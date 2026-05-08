@@ -451,11 +451,11 @@ pub enum Error {
     #[error("wasm runtime out of memory")]
     WasmerOomError(String),
 
-    #[cfg(feature = "darkfi-sdk")]
+    #[cfg(feature = "dwow-sdk")]
     #[error("Contract execution failed: {0}")]
     ContractError(dwow_sdk::error::ContractError),
 
-    #[cfg(feature = "darkfi-sdk")]
+    #[cfg(feature = "dwow-sdk")]
     #[error("Invalid DarkTree: {0}")]
     DarkTreeError(dwow_sdk::error::DarkTreeError),
 
@@ -819,14 +819,14 @@ impl From<wasmer::MemoryError> for Error {
     }
 }
 
-#[cfg(feature = "darkfi-sdk")]
+#[cfg(feature = "dwow-sdk")]
 impl From<dwow_sdk::error::ContractError> for Error {
     fn from(err: dwow_sdk::error::ContractError) -> Self {
         Self::ContractError(err)
     }
 }
 
-#[cfg(feature = "darkfi-sdk")]
+#[cfg(feature = "dwow-sdk")]
 impl From<dwow_sdk::error::DarkTreeError> for Error {
     fn from(err: dwow_sdk::error::DarkTreeError) -> Self {
         Self::DarkTreeError(err)

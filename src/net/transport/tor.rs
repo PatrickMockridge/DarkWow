@@ -217,7 +217,7 @@ impl TorListener {
             }
         };
 
-        let hs_nick = HsNickname::new("darkfi_tor".to_string()).unwrap();
+        let hs_nick = HsNickname::new("dwow_tor".to_string()).unwrap();
 
         let hs_config = match OnionServiceConfigBuilder::default().nickname(hs_nick).build() {
             Ok(v) => v,

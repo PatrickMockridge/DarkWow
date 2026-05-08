@@ -35,7 +35,7 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_native_token_contract::{
+use dwow_native_token_contract::{
     client::{
         pow_reward_v1::PoWRewardCallBuilder,
         burn_v1::BurnCallBuilder,
@@ -227,7 +227,7 @@ impl super::ContractHarness for NativeTokenHarness {
 }
 
 /// Input for burn call (re-exported from native_token contract)
-pub use darkfi_native_token_contract::client::burn_v1::BurnCallInput;
+pub use dwow_native_token_contract::client::burn_v1::BurnCallInput;
 
 /// Result of PoW reward minting
 pub struct PoWRewardResult {
@@ -238,7 +238,7 @@ pub struct PoWRewardResult {
 
 /// Result of burn
 pub struct BurnResult {
-    pub inputs: Vec<darkfi_native_token_contract::model::Input>,
+    pub inputs: Vec<dwow_native_token_contract::model::Input>,
     pub proofs: Vec<dwow::zk::Proof>,
 }
 

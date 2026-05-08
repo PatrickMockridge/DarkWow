@@ -21,10 +21,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use darkfi_deployooor_contract::DeployFunction;
-use darkfi_money_contract::MoneyFunction;
+use dwow_deployooor_contract::DeployFunction;
+use dwow_money_v3_contract::MoneyV3Function;
+use dwow_native_token_contract::NativeTokenFunction;
 use dwow_sdk::{
-    crypto::{DEPLOYOOOR_CONTRACT_ID, MONEY_CONTRACT_ID},
+    crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID},
     dark_tree, tx,
 };
 use pyo3::{
@@ -35,9 +36,13 @@ use pyo3::{
     Bound, Py, PyResult, Python,
 };
 
-/// Money contract definitions
+/// Money V3 contract definitions (DeFi tokens)
 pub mod money;
 pub use money::decode_money_function_params;
+
+/// NativeToken contract definitions (fees, PoW rewards)
+pub mod native_token;
+pub use native_token::decode_native_token_function_params;
 
 /// Deployooor contract definitions
 pub mod deployooor;
@@ -106,8 +111,8 @@ impl ContractCall {
 
     /// Name of the contract being invoked.
     pub fn contract_name(&self) -> Option<String> {
-        if self.0.contract_id == *MONEY_CONTRACT_ID {
-            Some("Money".to_string())
+        if self.0.contract_id == *NATIVE_TOKEN_CONTRACT_ID {
+            Some("NativeToken".to_string())
         } else if self.0.contract_id == *DEPLOYOOOR_CONTRACT_ID {
             Some("Deployooor".to_string())
         } else {
@@ -126,8 +131,11 @@ impl ContractCall {
     /// Name of the contract function being invoked.
     pub fn function_name(&self) -> Option<String> {
         match self.contract_name().as_deref() {
+            Some("NativeToken") => {
+                NativeTokenFunction::try_from(self.function_index()).map(|f| format!("{f:?}")).ok()
+            }
             Some("Money") => {
-                MoneyFunction::try_from(self.function_index()).map(|f| format!("{f:?}")).ok()
+                MoneyV3Function::try_from(self.function_index()).map(|f| format!("{f:?}")).ok()
             }
             Some("Deployooor") => {
                 DeployFunction::try_from(self.function_index()).map(|f| format!("{f:?}")).ok()
@@ -139,6 +147,11 @@ impl ContractCall {
     /// Represents the parameters of a contract function call as a Python dictionary.
     pub fn function_params_dict(&self, py: Python) -> PyResult<Py<PyDict>> {
         match self.contract_name().as_deref() {
+            Some("NativeToken") => {
+                decode_native_token_function_params(self.function_index(), &self.0.data)
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?
+                    .to_pydict(py)
+            }
             Some("Money") => decode_money_function_params(self.function_index(), &self.0.data)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?
                 .to_pydict(py),
@@ -156,6 +169,11 @@ impl ContractCall {
     pub fn function_params_str(&self, depth: usize) -> PyResult<String> {
         let mut output = String::new();
         match self.contract_name().as_deref() {
+            Some("NativeToken") => {
+                decode_native_token_function_params(self.function_index(), &self.0.data)
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?
+                    .fmt_pretty(&mut output, depth)?
+            }
             Some("Money") => decode_money_function_params(self.function_index(), &self.0.data)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?
                 .fmt_pretty(&mut output, depth)?,
@@ -178,10 +196,12 @@ pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
     submod.add_class::<DarkLeafContractCall>()?;
     submod.add_class::<ContractCall>()?;
 
-    // money, deployooor submodules will be inside contract submodule
+    // native_token, money, deployooor submodules will be inside contract submodule
+    let native_token_submodule = native_token::create_module(py)?;
     let money_submodule = money::create_module(py)?;
     let deployooor_submodule = deployooor::create_module(py)?;
 
+    submod.add_submodule(&native_token_submodule)?;
     submod.add_submodule(&money_submodule)?;
     submod.add_submodule(&deployooor_submodule)?;
 

@@ -23,7 +23,7 @@
 
 //! Tau_Pallas: Pallas-native tau with DarkWow on-chain integration
 //!
-//! This is a variant of tau that uses darkfi_sdk Pallas-native crypto
+//! This is a variant of tau that uses dwow_sdk Pallas-native crypto
 //! throughout, enabling direct transaction signing and darkfid RPC integration
 //! for on-chain capability verification.
 

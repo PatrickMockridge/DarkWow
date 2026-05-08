@@ -39,7 +39,7 @@ use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey},
     pasta::pallas,
 };
-use darkfi_dao_escrow_contract::client::{
+use dwow_dao_escrow_contract::client::{
     init_v1::{init_v1_proof, InitV1CallData, InitV1PublicInputs},
     pay_premium_v1::{pay_premium_v1_proof, PayPremiumV1CallData, PayPremiumV1PublicInputs},
 };
@@ -79,7 +79,7 @@ fn run_init(args: &[String]) {
     let bulla_blind = parse_hex_to_base(&args[3]).expect("Invalid bulla_blind hex");
 
     // Load circuit binary
-    let init_bin = include_bytes!("../../../dao_escrow/proof/init_v1.zk.bin");
+    let init_bin = include_bytes!("../../dao_escrow/proof/init_v1.zk.bin");
     let zkbin = ZkBinary::decode(init_bin, false).unwrap();
 
     let circuit = ZkCircuit::new(dwow::zk::empty_witnesses(&zkbin).unwrap(), &zkbin);
@@ -100,8 +100,8 @@ fn run_init(args: &[String]) {
     // Output proof and public inputs
     println!("Proof: {}", hex::encode(proof.as_ref()));
     println!("Public inputs:");
-    println!("  dao_bulla: {}", public_inputs.dao_bulla);
-    println!("  endowment_bulla: {}", public_inputs.endowment_bulla);
+    println!("  dao_bulla: {:?}", public_inputs.dao_bulla);
+    println!("  endowment_bulla: {:?}", public_inputs.endowment_bulla);
 }
 
 fn run_pay_premium(args: &[String]) {
@@ -117,7 +117,7 @@ fn run_pay_premium(args: &[String]) {
     let expiry: u64 = args[4].parse().expect("Invalid expiry");
 
     // Load circuit binary
-    let pay_premium_bin = include_bytes!("../../../dao_escrow/proof/pay_premium_v1.zk.bin");
+    let pay_premium_bin = include_bytes!("../../dao_escrow/proof/pay_premium_v1.zk.bin");
     let zkbin = ZkBinary::decode(pay_premium_bin, false).unwrap();
 
     let circuit = ZkCircuit::new(dwow::zk::empty_witnesses(&zkbin).unwrap(), &zkbin);
@@ -147,8 +147,8 @@ fn run_pay_premium(args: &[String]) {
     // Output proof and public inputs
     println!("Proof: {}", hex::encode(proof.as_ref()));
     println!("Public inputs:");
-    println!("  dao_escrow_bulla: {}", public_inputs.dao_escrow_bulla);
-    println!("  membership_note: {}", public_inputs.membership_note);
+    println!("  dao_escrow_bulla: {:?}", public_inputs.dao_escrow_bulla);
+    println!("  membership_note: {:?}", public_inputs.membership_note);
 }
 
 fn parse_hex_to_base(s: &str) -> Result<pallas::Base, String> {
@@ -159,5 +159,5 @@ fn parse_hex_to_base(s: &str) -> Result<pallas::Base, String> {
     }
     let mut repr = [0u8; 32];
     repr.copy_from_slice(&bytes);
-    pallas::Base::from_repr(repr).ok_or_else(|| "Invalid base value".to_string())
+    Option::from(pallas::Base::from_repr(repr)).ok_or_else(|| "Invalid base value".to_string())
 }

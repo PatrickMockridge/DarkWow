@@ -28,7 +28,7 @@ use dwow_sdk::{
     crypto::{pasta_prelude::Group, PublicKey, SecretKey},
     pasta::pallas,
 };
-use darkfi_subscription_contract::{
+use dwow_subscription_contract::{
     model::{
         permissions, CancelParamsV1, CancelUpdateV1, DaoControlAction, DaoControlParamsV1,
         DaoControlUpdateV1, Plan, RenewParamsV1, RenewUpdateV1, SubscribeParamsV1,

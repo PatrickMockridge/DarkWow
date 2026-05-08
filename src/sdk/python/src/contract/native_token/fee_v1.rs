@@ -23,30 +23,36 @@
 
 use std::fmt::Write;
 
-use darkfi_money_contract::model as money_model;
+use dwow_native_token_contract::model as native_token_model;
 use pyo3::{prelude::PyDictMethods, pyclass, types::PyDict, Py, PyResult, Python};
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`money_model::MoneyPoWRewardParamsV1`] python binding.
+/// [`native_token_model::FeeParamsV1`] python binding.
 #[pyclass]
-pub struct MoneyPoWRewardParamsV1(money_model::MoneyPoWRewardParamsV1);
-impl_py_methods!(MoneyPoWRewardParamsV1);
+pub struct FeeParamsV1(native_token_model::FeeParamsV1);
+impl_py_methods!(FeeParamsV1);
 
-impl FunctionParams for money_model::MoneyPoWRewardParamsV1 {
+impl FunctionParams for native_token_model::FeeParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
-        let dict = PyDict::new(py);
-        dict.set_item("input", self.input.to_pydict(py)?)?;
-        dict.set_item("output", self.output.to_pydict(py)?)?;
-        Ok(dict.unbind())
+        let res = PyDict::new(py);
+        res.set_item("input", self.input.to_pydict(py)?)?;
+        res.set_item("output", self.output.to_pydict(py)?)?;
+        res.set_item("fee_value_blind", format!("{:?}", self.fee_value_blind))?;
+        res.set_item("fee_token_blind", format!("{:?}", self.fee_token_blind))?;
+        Ok(res.unbind())
     }
 
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
         writeln!(out, "{prefix}input:").unwrap();
         self.input.fmt_pretty(out, depth + 2)?;
+
         writeln!(out, "{prefix}output:").unwrap();
         self.output.fmt_pretty(out, depth + 2)?;
+
+        writeln!(out, "{prefix}fee_value_blind: {:?}", self.fee_value_blind).unwrap();
+        writeln!(out, "{prefix}fee_token_blind: {:?}", self.fee_token_blind).unwrap();
         Ok(())
     }
 }

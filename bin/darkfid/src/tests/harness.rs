@@ -38,7 +38,7 @@ use dwow::{
     zk::{empty_witnesses, ProvingKey, ZkCircuit},
     Result,
 };
-use darkfi_native_token_contract::{
+use dwow_native_token_contract::{
     client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1,
 };

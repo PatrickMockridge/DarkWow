@@ -35,11 +35,11 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_bridge_contract::client::{
+use dwow_bridge_contract::client::{
     deposit_v1::{DepositCallData, DepositPublicInputs, create_deposit_proof},
     withdraw_v1::{WithdrawCallData, WithdrawPublicInputs, create_withdraw_proof},
 };
-use darkfi_bridge_contract::model::{DepositParams, ExternalChain, WithdrawParams};
+use dwow_bridge_contract::model::{DepositParams, ExternalChain, WithdrawParams};
 
 /// Bridge Harness for isolated testing
 pub struct BridgeHarness {

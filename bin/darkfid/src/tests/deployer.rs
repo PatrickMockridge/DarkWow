@@ -126,7 +126,7 @@ impl ContractDeployer {
             .join("src")
             .join("contract")
             .join(contract_name)
-            .join(format!("darkfi_{}_contract.wasm", contract_name));
+            .join(format!("dwow_{}_contract.wasm", contract_name));
 
         let zkbin_dir = base_dir
             .join("..")
@@ -205,7 +205,7 @@ impl ContractDeployer {
 
         // Run cargo build for this contract
         let output = std::process::Command::new("cargo")
-            .args(["build", "--release", "-p", &format!("darkfi_{}_contract", self.contract_name)])
+            .args(["build", "--release", "-p", &format!("dwow_{}_contract", self.contract_name)])
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .output()
             .map_err(|e| DeployerError::BuildFailed(format!("Failed to run cargo build: {}", e)))?;

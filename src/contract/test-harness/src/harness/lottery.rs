@@ -35,11 +35,11 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_lottery_contract::client::{
+use dwow_lottery_contract::client::{
     commit_ticket_v1::{CommitTicketV1CallData, create_commit_ticket_v1_proof, CommitTicketV1PublicInputs},
     reveal_ticket_v1::{RevealTicketV1CallData, create_reveal_ticket_v1_proof, RevealTicketV1PublicInputs},
 };
-use darkfi_lottery_contract::model::{BuyTicketParamsV1, RevealTicketParamsV1};
+use dwow_lottery_contract::model::{BuyTicketParamsV1, RevealTicketParamsV1};
 
 /// Lottery Harness for isolated testing
 pub struct LotteryHarness {

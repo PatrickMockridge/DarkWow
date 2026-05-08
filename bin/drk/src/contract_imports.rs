@@ -164,37 +164,37 @@ pub const DRKW_TOKEN_ID_BYTES: [u8; 32] = [0u8; 32];
 // ============================================================================
 
 pub mod money {
-    pub use darkfi_money_v3_contract::MoneyV3Function;
+    pub use dwow_money_v3_contract::MoneyV3Function;
 
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1;
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1;
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1;
 
     // ZK Circuit binaries
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN;
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_V1_BIN;
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN;
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_V1_BIN;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_V1_BIN;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_V1_BIN;
 
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_COINS_TREE;
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_NULLIFIERS_TREE;
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_MERKLE_TREE;
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_INFO_TREE;
-    pub use darkfi_money_v3_contract::MONEY_V3_CONTRACT_FEES_TREE;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_COINS_TREE;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_MERKLE_TREE;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_INFO_TREE;
+    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_FEES_TREE;
 
     // Client types
-    pub use darkfi_money_v3_contract::client::MoneyV3Note;
-    pub use darkfi_money_v3_contract::client::transfer_v1::{
+    pub use dwow_money_v3_contract::client::MoneyV3Note;
+    pub use dwow_money_v3_contract::client::transfer_v1::{
         TransferCallBuilder, TransferCallDebris, TransferCallInput, TransferCallOutput,
     };
-    pub use darkfi_money_v3_contract::client::token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput};
-    pub use darkfi_money_v3_contract::client::auth_token_mint_v1::{AuthTokenMintCallBuilder, AuthTokenMintCallInput};
-    pub use darkfi_money_v3_contract::client::mint_v1::{MintCallBuilder, MintCallInput};
-    pub use darkfi_money_v3_contract::client::burn_v1::BurnCallBuilder;
+    pub use dwow_money_v3_contract::client::token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput};
+    pub use dwow_money_v3_contract::client::auth_token_mint_v1::{AuthTokenMintCallBuilder, AuthTokenMintCallInput};
+    pub use dwow_money_v3_contract::client::mint_v1::{MintCallBuilder, MintCallInput};
+    pub use dwow_money_v3_contract::client::burn_v1::BurnCallBuilder;
 
     // Model types
-    pub use darkfi_money_v3_contract::model::{
+    pub use dwow_money_v3_contract::model::{
         Coin, CoinAttributes, Input as MoneyV3Input, Output as MoneyV3Output,
         TokenMintParamsV1, AuthTokenMintParamsV1, MintParamsV1, BurnParamsV1, TransferParamsV1,
     };
@@ -222,34 +222,34 @@ pub mod money {
 // ============================================================================
 
 pub mod native_token {
-    pub use darkfi_native_token_contract::NativeTokenFunction;
+    pub use dwow_native_token_contract::NativeTokenFunction;
 
-    pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1;
-    pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1;
-    pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1;
 
     // ZK Circuit binaries
-    pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN;
-    pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN;
-    pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN;
 
-    pub use darkfi_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
-    pub use darkfi_native_token_contract::client::burn_v1::{BurnCallBuilder, BurnCallDebris, BurnCallInput};
-    pub use darkfi_native_token_contract::client::fee_v1::{FeeCallBuilder, FeeCallInput, FeeCallOutput, FeeRevealed, FeeCallDebris as FeeDebris};
-    pub use darkfi_native_token_contract::client::NativeNote;
+    pub use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
+    pub use dwow_native_token_contract::client::burn_v1::{BurnCallBuilder, BurnCallDebris, BurnCallInput};
+    pub use dwow_native_token_contract::client::fee_v1::{FeeCallBuilder, FeeCallInput, FeeCallOutput, FeeRevealed, FeeCallDebris as FeeDebris};
+    pub use dwow_native_token_contract::client::NativeNote;
 
-    pub use darkfi_native_token_contract::model::{
+    pub use dwow_native_token_contract::model::{
         Coin as NativeCoin, CoinAttributes as NativeCoinAttributes,
         Input as NativeInput, Output as NativeOutput,
         FeeParamsV1, BurnParamsV1, TransferParamsV1 as NativeTransferParamsV1,
         DRKW_TOKEN_ID,
     };
 
-    pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_COINS_TREE;
-    pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE;
-    pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_MERKLE_TREE;
-    pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE;
-    pub use darkfi_native_token_contract::NATIVE_TOKEN_CONTRACT_FEES_TREE;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_COINS_TREE;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_MERKLE_TREE;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE;
+    pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_FEES_TREE;
 }
 
 // ============================================================================
@@ -258,33 +258,33 @@ pub mod native_token {
 
 pub mod dao_escrow {
     // Opcodes
-    pub use darkfi_dao_escrow_contract::DaoEscrowFunction;
+    pub use dwow_dao_escrow_contract::DaoEscrowFunction;
 
     // ZK namespaces
-    pub use darkfi_dao_escrow_contract::DAO_ESCROW_ZKAS_INIT_NS;
-    pub use darkfi_dao_escrow_contract::DAO_ESCROW_ZKAS_PREMIUM_NS;
+    pub use dwow_dao_escrow_contract::DAO_ESCROW_ZKAS_INIT_NS;
+    pub use dwow_dao_escrow_contract::DAO_ESCROW_ZKAS_PREMIUM_NS;
 
     // ZK Circuit binaries
-    pub use darkfi_dao_escrow_contract::DAO_ESCROW_ZKAS_INIT_V1_BIN;
-    pub use darkfi_dao_escrow_contract::DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN;
+    pub use dwow_dao_escrow_contract::DAO_ESCROW_ZKAS_INIT_V1_BIN;
+    pub use dwow_dao_escrow_contract::DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN;
 
     // Database tree names
-    pub use darkfi_dao_escrow_contract::DAO_ESCROW_CONTRACT_INFO_TREE;
-    pub use darkfi_dao_escrow_contract::DAO_ESCROW_CONTRACT_BULLAS_TREE;
-    pub use darkfi_dao_escrow_contract::DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE;
-    pub use darkfi_dao_escrow_contract::DAO_ESCROW_CONTRACT_ENDOWMENT_TREE;
+    pub use dwow_dao_escrow_contract::DAO_ESCROW_CONTRACT_INFO_TREE;
+    pub use dwow_dao_escrow_contract::DAO_ESCROW_CONTRACT_BULLAS_TREE;
+    pub use dwow_dao_escrow_contract::DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE;
+    pub use dwow_dao_escrow_contract::DAO_ESCROW_CONTRACT_ENDOWMENT_TREE;
 
     // Mode constants
-    pub use darkfi_dao_escrow_contract::modes::MODE_ESCROW;
-    pub use darkfi_dao_escrow_contract::modes::MODE_TREASURY;
-    pub use darkfi_dao_escrow_contract::modes::MODE_TREASURY_ENDOWMENT;
+    pub use dwow_dao_escrow_contract::modes::MODE_ESCROW;
+    pub use dwow_dao_escrow_contract::modes::MODE_TREASURY;
+    pub use dwow_dao_escrow_contract::modes::MODE_TREASURY_ENDOWMENT;
 
     // Model types
     #[cfg(feature = "client")]
-    pub use darkfi_dao_escrow_contract::client::{
+    pub use dwow_dao_escrow_contract::client::{
         init_v1::*, pay_premium_v1::*,
     };
-    pub use darkfi_dao_escrow_contract::model::{
+    pub use dwow_dao_escrow_contract::model::{
         DaoEscrow, DaoEscrowBulla, DaoEscrowMode, FeeConfig, Membership,
         MembershipNote, ClaimId, VoteType,
         InitializeParamsV1, InitializeUpdateV1,
@@ -308,12 +308,12 @@ pub mod dao_escrow {
 // ============================================================================
 
 pub mod deployooor {
-    pub use darkfi_deployooor_contract::DeployFunction;
-    pub use darkfi_deployooor_contract::client::deploy_v1::DeployCallBuilder;
-    pub use darkfi_deployooor_contract::client::lock_v1::LockCallBuilder;
-    pub use darkfi_deployooor_contract::model::*;
-    pub use darkfi_deployooor_contract::DEPLOY_CONTRACT_INFO_TREE;
-    pub use darkfi_deployooor_contract::DEPLOY_CONTRACT_LOCK_TREE;
+    pub use dwow_deployooor_contract::DeployFunction;
+    pub use dwow_deployooor_contract::client::deploy_v1::DeployCallBuilder;
+    pub use dwow_deployooor_contract::client::lock_v1::LockCallBuilder;
+    pub use dwow_deployooor_contract::model::*;
+    pub use dwow_deployooor_contract::DEPLOY_CONTRACT_INFO_TREE;
+    pub use dwow_deployooor_contract::DEPLOY_CONTRACT_LOCK_TREE;
 }
 
 // ============================================================================
@@ -321,31 +321,31 @@ pub mod deployooor {
 // ============================================================================
 
 pub mod stablecoin {
-    pub use darkfi_stablecoin_contract::StablecoinFunction;
+    pub use dwow_stablecoin_contract::StablecoinFunction;
 
     // ZK namespaces
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1;
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1;
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1;
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1;
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1;
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1;
 
     // Database tree names
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_INFO_TREE;
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_POSITIONS_TREE;
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE;
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_STABLECOIN_TREE;
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_COLLATERAL_TREE;
-    pub use darkfi_stablecoin_contract::STABLECOIN_CONTRACT_LIQUIDATIONS_TREE;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_INFO_TREE;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_POSITIONS_TREE;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_STABLECOIN_TREE;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_COLLATERAL_TREE;
+    pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_LIQUIDATIONS_TREE;
 
     // Client types
     #[cfg(feature = "client")]
-    pub use darkfi_stablecoin_contract::client::*;
+    pub use dwow_stablecoin_contract::client::*;
 
     // Model types
     #[cfg(feature = "client")]
-    pub use darkfi_stablecoin_contract::model::*;
+    pub use dwow_stablecoin_contract::model::*;
 
     // Opcodes
     #[derive(Debug, Clone, Copy)]
@@ -373,21 +373,21 @@ pub mod stablecoin {
 // ============================================================================
 
 pub mod drain_protection {
-    pub use darkfi_drain_protection_contract::DrainProtectionFunction;
+    pub use dwow_drain_protection_contract::DrainProtectionFunction;
 
     // Database tree names
-    pub use darkfi_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_INFO_TREE;
-    pub use darkfi_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE;
-    pub use darkfi_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_VOTES_TREE;
-    pub use darkfi_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_FUNDS_TREE;
+    pub use dwow_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_INFO_TREE;
+    pub use dwow_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE;
+    pub use dwow_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_VOTES_TREE;
+    pub use dwow_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_FUNDS_TREE;
 
     // Model types
     #[cfg(feature = "client")]
-    pub use darkfi_drain_protection_contract::model::*;
+    pub use dwow_drain_protection_contract::model::*;
 
     // Client types
     #[cfg(feature = "client")]
-    pub use darkfi_drain_protection_contract::client::*;
+    pub use dwow_drain_protection_contract::client::*;
 }
 
 // ============================================================================

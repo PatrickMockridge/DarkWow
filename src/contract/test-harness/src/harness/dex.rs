@@ -50,16 +50,16 @@ fn base_to_bytes(base: pallas::Base) -> [u8; 32] {
     base.to_repr()
 }
 
-use darkfi_dex_contract::client::{
+use dwow_dex_contract::client::{
     create_swap_v1::{create_create_swap_proof, CreateSwapCallData, CreateSwapPublicInputs},
     accept_swap_v1::{create_accept_swap_proof, AcceptSwapCallData, AcceptSwapPublicInputs},
     execute_swap_v1::{create_execute_swap_proof, ExecuteSwapCallData, ExecuteSwapPublicInputs},
     cancel_swap_v1::{create_cancel_swap_proof, CancelSwapCallData, CancelSwapPublicInputs},
 };
-use darkfi_dex_contract::model::{
+use dwow_dex_contract::model::{
     CreateSwapParams, AcceptSwapParams, ExecuteSwapParams, CancelSwapParams,
 };
-use darkfi_dex_contract::DexFunction;
+use dwow_dex_contract::DexFunction;
 
 /// DEX Harness for atomic swap testing
 pub struct DexHarness {

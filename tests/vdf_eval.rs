@@ -28,7 +28,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use darkfi_sdk::{crypto::mimc_vdf, num_bigint::BigUint, num_traits::Num};
+use dwow_sdk::{crypto::mimc_vdf, num_bigint::BigUint, num_traits::Num};
 use prettytable::{format, row, Table};
 
 #[test]

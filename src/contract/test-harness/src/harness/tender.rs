@@ -35,13 +35,13 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use darkfi_tender_contract::client::{
+use dwow_tender_contract::client::{
     create_tender_v1::{CreateTenderV1CallData, create_tender_v1_proof, CreateTenderV1PublicInputs},
     reveal_bid_v1::{RevealBidV1CallData, reveal_bid_v1_proof, RevealBidV1PublicInputs},
     select_winner_v1::{SelectWinnerV1CallData, select_winner_v1_proof, SelectWinnerV1PublicInputs},
     submit_bid_v1::{SubmitBidV1CallData, submit_bid_v1_proof, SubmitBidV1PublicInputs},
 };
-use darkfi_tender_contract::model::{
+use dwow_tender_contract::model::{
     CreateTenderParamsV1, SubmitBidParamsV1, RevealBidParamsV1, SelectWinnerParamsV1,
 };
 
@@ -134,7 +134,7 @@ impl TenderHarness {
             &call_data_input,
         )?;
         let (ix, iy) = requester_public.xy();
-        let tender_id = darkfi_tender_contract::model::Tender::derive_id(
+        let tender_id = dwow_tender_contract::model::Tender::derive_id(
             ix, iy, &title, specification, attestation_id,
             min_bid, max_bid, bid_deadline, reveal_deadline,
             delivery_deadline, requester_secret,

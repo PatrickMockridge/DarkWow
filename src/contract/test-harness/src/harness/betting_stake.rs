@@ -42,11 +42,11 @@ use dwow_sdk::{
 use dwow_serial::{Encodable, serialize};
 use rand::rngs::OsRng;
 
-use darkfi_betting_stake_contract::client::proof_gen::{
+use dwow_betting_stake_contract::client::proof_gen::{
     init_v1_proof, stake_v1_proof, unstake_v1_proof, claim_v1_proof, update_risk_v1_proof,
     InitV1CallData, StakeV1CallData, UnstakeV1CallData, ClaimV1CallData, UpdateRiskV1CallData,
 };
-use darkfi_betting_stake_contract::model::{
+use dwow_betting_stake_contract::model::{
     ClaimEarningsParamsV1, InitializeParamsV1, StakeParamsV1, UnstakeParamsV1, UpdateRiskParamsV1,
 };
 

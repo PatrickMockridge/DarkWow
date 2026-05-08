@@ -73,6 +73,7 @@ impl ZkBinary {
             analyzer.statements,
             analyzer.literals,
             false,
+            None,
         );
 
         let bincode = compiler.compile().unwrap();
@@ -303,6 +304,7 @@ impl Proof {
             witnesses: Vec::new(),
             opcodes: Vec::new(),
             debug_info: None,
+            source_hash: None,
         };
         let empty_circuit = zk::vm::ZkCircuit::new(Vec::new(), &zkbin);
         let empty_py_circuit = ZkCircuit(empty_circuit, Vec::new(), zkbin);
