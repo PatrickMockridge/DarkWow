@@ -30,7 +30,7 @@ use dwow::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, Keypair, MerkleNode, PublicKey, SecretKey},
+    crypto::{Keypair, MerkleNode, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -41,7 +41,7 @@ use dwow_native_token_contract::{
         burn_v1::BurnCallBuilder,
         fee_v1::{FeeCallBuilder, FeeCallInput, FeeCallOutput},
     },
-    model::{FeeParamsV1, Input, Output},
+    model::{FeeParamsV1, Output},
 };
 
 /// NativeToken Harness for isolated testing

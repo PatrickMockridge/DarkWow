@@ -41,6 +41,7 @@ use super::acl::acl_allow;
 use crate::runtime::vm_runtime::{ContractSection, Env, SimpleDbAccess};
 
 /// An SMT adapter for sled overlay storage. Compatible with the WasmDb SMT adapter
+#[allow(dead_code)]
 pub struct SledStorage<'a> {
     overlay: &'a mut sled_overlay::SledDbOverlay,
     tree_key: &'a [u8],

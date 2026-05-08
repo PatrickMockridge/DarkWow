@@ -38,13 +38,7 @@ use dwow_serial::Encodable;
 
 use dwow_identity_contract::client::{
     create_claim_v1::{CreateClaimCallData, create_claim_proof, CreateClaimPublicInputs},
-    create_claim_v1_dag::{CreateClaimDagCallData, create_claim_dag_proof},
-    create_claim_v1_l1::{CreateClaimL1CallData, create_claim_l1_proof},
-    create_claim_v1_l1_v2::{CreateClaimL1V2CallData, create_claim_l1_v2_proof},
-    create_claim_v1_multi::{CreateClaimMultiCallData, create_claim_multi_proof},
-    create_claim_v1_ratio::{CreateClaimRatioCallData, create_claim_ratio_proof},
     issue_credential_v1::{IssueCredentialCallData, create_issue_credential_proof, IssueCredentialPublicInputs},
-    verify_capability_v1::{VerifyCapabilityCallData, create_verify_capability_proof},
 };
 use dwow_identity_contract::model::{CreateClaimParams, InitializeParams, IssueCredentialParams};
 
@@ -213,8 +207,8 @@ impl IdentityHarness {
         )?;
 
         // Build IssueCredentialParams
-        let (ix, iy) = issuer_public.xy();
-        let (hx, hy) = holder_public.xy();
+        let (ix, _iy) = issuer_public.xy();
+        let (hx, _hy) = holder_public.xy();
 
         let params = IssueCredentialParams {
             issuer_pub: ix.to_repr(),

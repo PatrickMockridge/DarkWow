@@ -32,7 +32,7 @@ use dwow::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, poseidon_hash, BaseBlind, MerkleNode},
+    crypto::{poseidon_hash, BaseBlind},
     pasta::pallas,
 };
 use rand::rngs::OsRng;

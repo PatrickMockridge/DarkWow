@@ -42,6 +42,7 @@ pub struct LinearSimpleDb {
     store: Arc<LinearStore>,
 }
 
+#[allow(dead_code)]
 impl LinearSimpleDb {
     /// Create a new LinearSimpleDb wrapping the given LinearStore
     pub fn new(store: Arc<LinearStore>) -> Self {

@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Unified configuration for the universal relayer
 
 use serde::Deserialize;

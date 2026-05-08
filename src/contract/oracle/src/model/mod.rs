@@ -27,7 +27,7 @@
 //! Oracles create attestations for external data that other contracts
 //! can then verify and consume.
 
-use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+use dwow_sdk::pasta::pallas;
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Oracle unique identifier

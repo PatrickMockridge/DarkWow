@@ -140,7 +140,7 @@ fn run_benchmark(c: &mut Criterion, name: &str, proof: &str, witness: &str) {
     f.read_to_end(&mut bincode).unwrap();
     let zkbin = ZkBinary::decode(&bincode).unwrap();
 
-    let (prover_witnesses, public_inputs) = darkfi::zk::import_witness_json(witness);
+    let (prover_witnesses, public_inputs) = dwow::zk::import_witness_json(witness);
     let circuit = ZkCircuit::new(prover_witnesses.clone(), &zkbin);
 
     let proving_key = ProvingKey::build(zkbin.k, &circuit.clone());

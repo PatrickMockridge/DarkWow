@@ -46,7 +46,7 @@
 
 use dwow_sdk::{
     crypto::{
-        pasta_prelude::{Field, PrimeField}, poseidon_hash,
+        pasta_prelude::{Field, PrimeField},
         smt::{wasmdb::SmtWasmFp, PoseidonFp, EMPTY_NODES_FP}, ContractId, MerkleNode, MerkleTree,
     },
     dark_tree::DarkLeaf,
@@ -66,7 +66,7 @@ use crate::{
     },
     MoneyV3Function, MONEY_V3_CONTRACT_COIN_MERKLE_TREE,
     MONEY_V3_CONTRACT_COIN_ROOTS_TREE, MONEY_V3_CONTRACT_COINS_TREE,
-    MONEY_V3_CONTRACT_DB_VERSION, MONEY_V3_CONTRACT_FEES_TREE,
+    MONEY_V3_CONTRACT_DB_VERSION,
     MONEY_V3_CONTRACT_INFO_TREE, MONEY_V3_CONTRACT_LATEST_COIN_ROOT,
     MONEY_V3_CONTRACT_LATEST_NULLIFIER_ROOT, MONEY_V3_CONTRACT_NULLIFIERS_TREE,
     MONEY_V3_CONTRACT_NULLIFIER_ROOTS_TREE, MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1,

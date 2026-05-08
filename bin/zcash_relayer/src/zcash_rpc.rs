@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Zcash RPC Client
 //!
 //! Interfaces with Zcash lightwalletd to observe Sapling notes.
@@ -86,7 +88,7 @@ impl ZcashRpcClient {
     /// or `get_address_shielded` and `get_notes_sapling` endpoints.
     ///
     /// The view key allows observing incoming notes but NOT spending them.
-    pub async fn scan_for_notes(&self, from_height: u64) -> Result<Vec<SaplingNote>> {
+    pub async fn scan_for_notes(&self, _from_height: u64) -> Result<Vec<SaplingNote>> {
         // TODO: Implement actual lightwalletd RPC calls
         //
         // 1. List addresses: GET /addresses
@@ -110,7 +112,7 @@ impl ZcashRpcClient {
     ///
     /// Uses lightwalletd's `get_mempool_tx_address` and `get_item_mempool` or
     /// `get_witness_receipts` endpoint.
-    pub async fn get_merkle_proof(&self, tx_hash: &str, position: u64) -> Result<Vec<[u8; 32]>> {
+    pub async fn get_merkle_proof(&self, _tx_hash: &str, _position: u64) -> Result<Vec<[u8; 32]>> {
         // TODO: Implement actual lightwalletd RPC call
         // POST /get_witness_receipts
         // Body: { "transaction_id": tx_hash, "output_index": position }
@@ -120,7 +122,7 @@ impl ZcashRpcClient {
     /// Get the Sapling anchor at a given height
     ///
     /// Uses lightwalletd's `get_block_header` endpoint.
-    pub async fn get_anchor(&self, height: u64) -> Result<[u8; 32]> {
+    pub async fn get_anchor(&self, _height: u64) -> Result<[u8; 32]> {
         // TODO: Implement actual lightwalletd RPC call
         // GET /blockHeader?height=height
         // Response contains saplingCommitmentTreeRoot

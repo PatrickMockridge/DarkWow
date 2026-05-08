@@ -29,7 +29,7 @@ use dwow::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, pasta_prelude::PrimeField, PublicKey},
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;

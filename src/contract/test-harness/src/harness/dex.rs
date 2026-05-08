@@ -30,10 +30,10 @@ use dwow::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{SecretKey, PublicKey, IntentCommitment, IntentNullifier, pasta_prelude::PrimeField},
+    crypto::{SecretKey, IntentCommitment, IntentNullifier, pasta_prelude::PrimeField},
     pasta::pallas,
 };
-use dwow_serial::{Encodable, Decodable};
+use dwow_serial::Encodable;
 
 /// Helper to convert pallas::Base to IntentCommitment
 fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
@@ -41,6 +41,7 @@ fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
 }
 
 /// Helper to convert pallas::Base to IntentNullifier
+#[allow(dead_code)]
 fn to_intent_nullifier(base: pallas::Base) -> IntentNullifier {
     IntentNullifier::from_bytes(base.to_repr()).unwrap()
 }
@@ -59,7 +60,6 @@ use dwow_dex_contract::client::{
 use dwow_dex_contract::model::{
     CreateSwapParams, AcceptSwapParams, ExecuteSwapParams, CancelSwapParams,
 };
-use dwow_dex_contract::DexFunction;
 
 /// DEX Harness for atomic swap testing
 pub struct DexHarness {

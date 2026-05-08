@@ -557,7 +557,7 @@ impl RpcHandler {
             ))
         }
 
-        let capability_name = params[0].get::<String>().unwrap();
+        let _capability_name = params[0].get::<String>().unwrap();
         let _credential_req = params[1].get::<HashMap<String, JsonValue>>().unwrap();
 
         // TODO: Implement actual capability registration via identity contract

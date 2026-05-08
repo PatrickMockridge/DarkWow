@@ -34,7 +34,7 @@
 
 use dwow_sdk::define_contract_function;
 
-/// Functions available in the stablecoin contract
+// Functions available in the stablecoin contract
 define_contract_function!(StablecoinFunction {
     InitializeV1 = 0x00,
     OpenPositionV1 = 0x01,

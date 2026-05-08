@@ -548,7 +548,7 @@ pub enum StablecoinClientError {
 // ============================================================================
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, BaseBlind},
+    crypto::{BaseBlind},
     pasta::pallas,
 };
 use rand::rngs::OsRng;

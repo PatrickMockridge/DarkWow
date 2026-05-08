@@ -152,9 +152,9 @@ impl LiquidateCallData {
 
     /// Generate prover witnesses for the circuit
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let owner_pub = self.owner_public_key();
+        let _owner_pub = self.owner_public_key();
         let new_position = self.new_position_commitment();
-        let new_collateral = self.collateral_amount.saturating_sub(self.liquidator_reward);
+        let _new_collateral = self.collateral_amount.saturating_sub(self.liquidator_reward);
 
         vec![
             // Public inputs

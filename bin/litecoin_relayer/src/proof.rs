@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Litecoin Deposit Proof Construction
 //!
 //! Constructs the ZK proof data for Litecoin deposits.
@@ -36,7 +38,7 @@ use crate::{litecoin_rpc::LitecoinDeposit, Config};
 /// Submit a Litecoin deposit to the DarkWow bridge
 ///
 /// Constructs the LitecoinDepositProof and submits it via the DarkWow RPC.
-pub async fn submit_deposit(deposit: &LitecoinDeposit, config: &Config) -> Result<()> {
+pub async fn submit_deposit(deposit: &LitecoinDeposit, _config: &Config) -> Result<()> {
     // TODO: Implement actual proof construction and submission
     //
     // The LitecoinDepositProof requires:
@@ -99,10 +101,10 @@ pub fn derive_mweb_commitment(value: u64, blinding: &[u8; 32]) -> Result<[u8; 32
 /// Litecoin uses SHA256 for its Merkle tree (same as Bitcoin).
 /// The proof verifies the transaction is in the block.
 pub fn verify_merkle_path(
-    tx_hash: &[u8; 32],
-    position: u32,
-    path: &[[u8; 32]],
-    merkle_root: &[u8; 32],
+    _tx_hash: &[u8; 32],
+    _position: u32,
+    _path: &[[u8; 32]],
+    _merkle_root: &[u8; 32],
 ) -> Result<bool> {
     // TODO: Implement actual Merkle verification using SHA256
     // Litecoin uses the same Merkle tree structure as Bitcoin

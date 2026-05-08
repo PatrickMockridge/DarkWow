@@ -24,7 +24,7 @@
 use std::sync::{Arc, LazyLock};
 
 use dwow_sdk::{
-    crypto::{DEPLOYOOOR_CONTRACT_ID, MONEY_V2_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID},
+    crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID},
     tx::TransactionHash,
 };
 use num_bigint::BigUint;
@@ -32,7 +32,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 
 use crate::{
-    blockchain::{BlockInfo, BlockchainOverlayPtr, Header, SimpleDb},
+    blockchain::{BlockInfo, BlockchainOverlayPtr, Header},
     runtime::vm_runtime::{ContractStoreAccessAdapter, BlockchainAccessAdapter, Runtime},
     validator::{
         consensus::{Fork, Proposal},

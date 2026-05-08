@@ -780,7 +780,7 @@ impl DarkfiNode {
 
         // If key provided, return just that value
         if params.len() >= 2 && params[1].is_string() {
-            let key_str = params[1].get::<String>().unwrap();
+            let _key_str = params[1].get::<String>().unwrap();
             match linear_blockchain.store.get_contract_data(&contract_id) {
                 Ok(data) if !data.is_empty() => {
                     JsonResponse::new(JsonValue::String(base64::encode(&data)), id).into()

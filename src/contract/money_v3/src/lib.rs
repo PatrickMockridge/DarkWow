@@ -71,7 +71,6 @@
 //! | TransferV1 | 0x04 | Private token transfer |
 //! | OtcSwapV1 | 0x05 | Atomic OTC token swap |
 
-use dwow_sdk::pasta::pallas;
 pub use dwow_sdk::error::ContractError;
 
 /// Functions available in the contract

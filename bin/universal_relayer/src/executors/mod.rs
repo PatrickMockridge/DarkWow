@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Chain executor modules
 //!
 //! Each executor implements both:
@@ -41,7 +43,7 @@ use dwow_bridge_contract::chain_handler::{
 use dwow_sdk::{error::ContractResult, pasta::pallas};
 use super::chain::{ChainExecutor, ExternalChain, DisabledExecutor};
 use super::config::Config;
-use super::error::{PendingWithdrawal, Result, TxHash};
+use super::error::{PendingWithdrawal, TxHash};
 use std::sync::Arc;
 
 /// Wrapper that adapts `Arc<dyn ChainExecutor>` to implement `BridgeChainHandler`
@@ -141,7 +143,7 @@ impl BridgeChainHandlerTrait for HandlerAdapter {
         &self,
         swap_id: &[u8; 32],
         secret: pallas::Base,
-        recipient: &[u8],
+        _recipient: &[u8],
     ) -> ContractResult {
         tracing::info!(
             "HandlerAdapter executing HTLC claim for swap_id: {}, secret: {:?}",

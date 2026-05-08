@@ -37,7 +37,7 @@ use crypto_box::{
     ChaChaBox, SecretKey,
 };
 use dwow_serial::{
-    async_trait, deserialize, deserialize_async_partial, serialize, serialize_async,
+    deserialize, deserialize_async_partial, serialize, serialize_async,
     SerialDecodable, SerialEncodable,
 };
 use futures::{select, FutureExt};

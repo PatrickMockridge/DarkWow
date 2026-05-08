@@ -27,13 +27,13 @@ use std::{
     time::Instant,
 };
 
-use futures::{AsyncReadExt, AsyncWriteExt};
+use futures::AsyncWriteExt;
 use smol::channel::Sender;
 use smol::net::TcpStream;
 use url::Url;
 
 use dwow::{
-    blockchain::{BlockInfo, HeaderHash, PowData},
+    blockchain::{BlockInfo, HeaderHash},
     rpc::{
         client::RpcClient,
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResult},
@@ -52,7 +52,7 @@ use dwow_sdk::{
         keypair::Network,
         poseidon_hash,
         smt::{PoseidonFp, EMPTY_NODES_FP},
-        ContractId, MerkleTree, PublicKey, SecretKey, DEPLOYOOOR_CONTRACT_ID, MerkleNode, NATIVE_TOKEN_CONTRACT_ID,
+        ContractId, MerkleTree, PublicKey, SecretKey, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
     },
     pasta::{pallas, group::ff::PrimeField},
     dark_tree::DarkLeaf,

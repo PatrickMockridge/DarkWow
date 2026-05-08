@@ -38,7 +38,7 @@
 //! 4. Claim can be consumed (prevents replay)
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, poseidon_hash, ContractId},
+    crypto::{poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -48,9 +48,8 @@ use dwow_sdk::{
 use dwow_serial::{deserialize, serialize};
 
 use crate::{
-    error::AttestationError,
     model::{
-        Attestation, AttestationId, AttestationState, Claim, ClaimId, ClaimState, Predicate,
+        Attestation, AttestationState, Claim, ClaimState, Predicate,
         ConsumeClaimParamsV1, ConsumeClaimUpdateV1, CreateAttestationParamsV1,
         CreateAttestationUpdateV1, CreateClaimParamsV1, CreateClaimUpdateV1,
         ExpireAttestationParamsV1, ExpireAttestationUpdateV1, RevokeAttestationParamsV1,
@@ -840,7 +839,7 @@ fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> Co
 // PROCESS UPDATE
 // ============================================================================
 
-fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
+fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
     match AttestationFunction::try_from(update_data[0])? {
         AttestationFunction::CreateAttestationV1 => {
             let update: CreateAttestationUpdateV1 = deserialize(&update_data[1..])?;

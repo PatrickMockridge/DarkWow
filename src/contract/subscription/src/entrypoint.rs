@@ -119,7 +119,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 // ============================================================================
 
 /// Fetch metadata for ZK proof verification
-fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
@@ -407,7 +407,7 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     // Look up the plan to get duration
     let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
     let plan_bytes = wasm::db::db_get(plans_db, &old_subscription.plan_id.to_le_bytes())?;
-    let plan: Plan = match plan_bytes {
+    let _plan: Plan = match plan_bytes {
         Some(data) => deserialize(&data)?,
         None => {
             msg!("[subscription::renew_v1] ERROR: Plan not found");

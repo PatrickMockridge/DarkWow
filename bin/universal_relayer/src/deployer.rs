@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Capital deployer management for external backing
 //!
 //! This module provides functionality for external capital providers ("backers")

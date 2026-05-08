@@ -21,7 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_sdk::{crypto::Keypair, deploy::DeployParamsV1};
+#![allow(dead_code)]
+
+use dwow_sdk::crypto::Keypair;
 use dwow_serial::Encodable;
 use tracing::info;
 

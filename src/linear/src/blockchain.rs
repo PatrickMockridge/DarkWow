@@ -26,7 +26,7 @@
 //! This module provides a full linear blockchain implementation using
 //! the darkfi Runtime for WASM contract execution and ZK verification.
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use randomx::{RandomXFlags, RandomXVM};
 use tracing::{debug, error, info};

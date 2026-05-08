@@ -41,7 +41,7 @@
 //! 7. Task tracked via Tau
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, poseidon_hash, ContractId},
+    crypto::{poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta,
@@ -56,14 +56,13 @@ use crate::{
 };
 
 use crate::{
-    error::TenderError,
     model::{
-        Bid, BidId, BidState, CancelTenderParamsV1, CancelTenderUpdateV1, CloseTenderParamsV1,
+        Bid, BidState, CancelTenderParamsV1, CancelTenderUpdateV1, CloseTenderParamsV1,
         CloseTenderUpdateV1, CreateTenderParamsV1, CreateTenderUpdateV1,
         CreateTenderWithCapabilityParamsV1, CreateTenderWithCapabilityUpdateV1,
         RejectBidParamsV1, RejectBidUpdateV1, RevealBidParamsV1, RevealBidUpdateV1,
         SelectWinnerParamsV1, SelectWinnerUpdateV1, SubmitBidParamsV1, SubmitBidUpdateV1,
-        SubmitBidWithCapabilityParamsV1, SubmitBidWithCapabilityUpdateV1, Tender, TenderId,
+        SubmitBidWithCapabilityParamsV1, SubmitBidWithCapabilityUpdateV1, Tender,
         TenderState,
     },
     TenderFunction, TENDER_CONTRACT_BIDS_TREE, TENDER_CONTRACT_INFO_TREE,
@@ -149,8 +148,8 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 fn create_tender_get_metadata_v1(
     cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
     params: CreateTenderParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::create_tender_get_metadata_v1] Creating tender: {:?}", params.tender_id);
@@ -175,8 +174,8 @@ fn create_tender_get_metadata_v1(
 
 fn submit_bid_get_metadata_v1(
     cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
     params: SubmitBidParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::submit_bid_get_metadata_v1] Submitting bid: {:?}", params.bid_id);
@@ -226,8 +225,8 @@ fn submit_bid_get_metadata_v1(
 
 fn submit_bid_with_capability_get_metadata_v1(
     cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
     params: SubmitBidWithCapabilityParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::submit_bid_with_capability_get_metadata_v1] Submitting bid with capability: {:?}", params.bid_id);
@@ -284,8 +283,8 @@ fn submit_bid_with_capability_get_metadata_v1(
 
 fn reveal_bid_get_metadata_v1(
     cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
     params: RevealBidParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::reveal_bid_get_metadata_v1] Revealing bid: {:?}", params.bid_id);
@@ -335,8 +334,8 @@ fn reveal_bid_get_metadata_v1(
 
 fn close_tender_get_metadata_v1(
     cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
     params: CloseTenderParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::close_tender_get_metadata_v1] Closing tender: {:?}", params.tender_id);
@@ -367,8 +366,8 @@ fn close_tender_get_metadata_v1(
 
 fn select_winner_get_metadata_v1(
     cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
     params: SelectWinnerParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::select_winner_get_metadata_v1] Selecting winner: {:?}", params.winner_bid_id);
@@ -983,7 +982,7 @@ fn submit_bid_with_capability_v1(
 // PROCESS UPDATE
 // ============================================================================
 
-fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
+fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
     match update_data[0] {
         0 => {
             let update: CreateTenderUpdateV1 = deserialize(&update_data[1..])?;

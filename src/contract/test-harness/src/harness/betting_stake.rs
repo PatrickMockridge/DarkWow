@@ -32,8 +32,7 @@ use dwow::{
 };
 use dwow_sdk::{
     crypto::{
-        pasta_prelude::{Field, Group},
-        poseidon_hash,
+        pasta_prelude::Field,
         schnorr::SchnorrSecret,
         PublicKey, SecretKey,
     },

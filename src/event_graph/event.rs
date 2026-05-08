@@ -23,7 +23,7 @@
 
 use std::{collections::HashSet, time::UNIX_EPOCH};
 
-use dwow_serial::{async_trait, deserialize_async, Encodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{deserialize_async, Encodable, SerialDecodable, SerialEncodable};
 use sled_overlay::{sled, SledTreeOverlay};
 
 use crate::Result;

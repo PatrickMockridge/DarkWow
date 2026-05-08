@@ -36,7 +36,6 @@ use dwow::{
     },
     tx::{ContractCallLeaf, TransactionBuilder},
     zk::{empty_witnesses, ZkCircuit, ProvingKey},
-    Error,
 };
 use dwow_native_token_contract::{client::pow_reward_v1::PoWRewardCallBuilder, NativeTokenFunction};
 use dwow_sdk::{

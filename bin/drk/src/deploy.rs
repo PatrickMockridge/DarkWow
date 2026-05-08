@@ -31,7 +31,6 @@ use dwow::{
 };
 use dwow_sdk::{
     crypto::{Keypair, ContractId, PublicKey, SecretKey},
-    pasta::pallas,
     tx::ContractCall,
 };
 use dwow_serial::Encodable;
@@ -43,6 +42,7 @@ use crate::contract_imports::deployooor::DeployCallBuilder;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
 /// Default network fee in DARK
+#[allow(dead_code)]
 const DEFAULT_FEE: u64 = 42_000_000;
 
 impl Drk {
@@ -53,6 +53,7 @@ impl Drk {
     /// 2. Builds a DeployV1 call to Deployooor contract
     /// 3. Uses the deploy authority's public key to derive the new contract ID
     /// 4. Broadcasts the deployment transaction
+    #[allow(dead_code)]
     pub async fn deploy_contract(
         &self,
         deploy_keypair: &Keypair,
@@ -108,7 +109,7 @@ impl Drk {
         deploy_keypair: &Keypair,
         wasm_bincode: Vec<u8>,
         deploy_ix: Vec<u8>,
-        wait_for_confirm: bool,
+        _wait_for_confirm: bool,
         output: &mut Vec<String>,
     ) -> Result<String> {
         // Create deployment transaction

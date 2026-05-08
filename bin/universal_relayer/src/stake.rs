@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Stake management for relayer coverage
 
 use serde::{Deserialize, Serialize};

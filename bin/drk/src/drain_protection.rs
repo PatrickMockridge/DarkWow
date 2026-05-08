@@ -61,8 +61,8 @@ impl Drk {
         fund_id: pallas::Base,
         spend_authority: PublicKey,
         dao_escrow_bulla: pallas::Base,
-        rate_limit_bps: u64,
-        vote_threshold_bps: u64,
+        _rate_limit_bps: u64,
+        _vote_threshold_bps: u64,
     ) -> Result<Transaction> {
         // Build initialize params using model types
         let params = InitializeParamsV1 {

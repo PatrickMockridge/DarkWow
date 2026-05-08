@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! XMR Withdrawal handling for the relayer
 //!
 //! This module handles the DarkWow → XMR withdrawal direction:

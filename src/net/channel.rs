@@ -32,7 +32,7 @@ use std::{
 };
 
 use dwow_serial::{
-    async_trait, AsyncDecodable, AsyncEncodable, SerialDecodable, SerialEncodable, VarInt,
+    AsyncDecodable, AsyncEncodable, SerialDecodable, SerialEncodable, VarInt,
 };
 use rand::{rngs::OsRng, Rng};
 use smol::{

@@ -35,14 +35,13 @@ use dwow_sdk::{
     crypto::{
         note::AeadEncryptedNote,
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, MerkleNode,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode,
         PublicKey, ScalarBlind, SecretKey,
     },
     error::ContractError,
     pasta::pallas,
 };
 use rand::rngs::OsRng;
-use dwow_serial::serialize;
 
 use crate::model::{Coin, CoinAttributes, FeeParamsV1, Input, Nullifier};
 use crate::client::NativeNote;

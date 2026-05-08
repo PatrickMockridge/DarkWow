@@ -28,7 +28,7 @@ use std::{
     str::FromStr,
 };
 
-use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use tinyjson::JsonValue;
 use tracing::debug;
 

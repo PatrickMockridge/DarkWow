@@ -29,9 +29,8 @@ use dwow::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, MerkleNode, PublicKey, SecretKey},
+    crypto::{MerkleNode, PublicKey},
     pasta::pallas,
-    pasta::Fq,
 };
 use rand::rngs::OsRng;
 

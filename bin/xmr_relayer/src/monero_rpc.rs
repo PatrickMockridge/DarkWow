@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Monero RPC client for the relayer
 //!
 //! This module provides a simple RPC client for connecting to Monero

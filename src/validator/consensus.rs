@@ -24,7 +24,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use dwow_sdk::{crypto::MerkleTree, tx::TransactionHash};
-use dwow_serial::{async_trait, deserialize, SerialDecodable, SerialEncodable};
+use dwow_serial::{deserialize, SerialDecodable, SerialEncodable};
 use num_bigint::BigUint;
 use sled_overlay::{database::SledDbOverlayStateDiff, sled::IVec};
 use tracing::{debug, info, warn};

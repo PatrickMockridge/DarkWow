@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-extern crate darkfi_serial;
+extern crate dwow_serial;
 
 use honggfuzz::fuzz;
 use dwow::zkas::ZkBinary;

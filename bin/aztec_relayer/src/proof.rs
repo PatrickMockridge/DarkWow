@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Aztec Deposit Proof Construction
 //!
 //! Constructs the ZK proof data for Aztec rollup deposits.
@@ -36,7 +38,7 @@ use crate::{aztec_rpc::AztecNote, Config};
 /// Submit an Aztec deposit to the DarkWow bridge
 ///
 /// Constructs the AztecDepositProof and submits it via the DarkWow RPC.
-pub async fn submit_deposit(note: &AztecNote, config: &Config) -> Result<()> {
+pub async fn submit_deposit(note: &AztecNote, _config: &Config) -> Result<()> {
     // TODO: Implement actual proof construction and submission
     //
     // The AztecDepositProof requires:
@@ -123,10 +125,10 @@ pub fn derive_commitment(
 /// The Aztec note tree uses a Merkle tree with Pedersen hashing.
 /// For DarkWow bridge compatibility, we use blake3 for verification.
 pub fn verify_merkle_path(
-    commitment: &[u8; 32],
-    position: u32,
-    path: &[[u8; 32]],
-    anchor: &[u8; 32],
+    _commitment: &[u8; 32],
+    _position: u32,
+    _path: &[[u8; 32]],
+    _anchor: &[u8; 32],
 ) -> Result<bool> {
     // TODO: Implement actual Aztec Merkle path verification
     // Using Pedersen hash for the tree hashing

@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Aztec RPC Client
 //!
 //! Interfaces with Ethereum to observe Aztec rollup deposits.
@@ -100,7 +102,7 @@ impl AztecRpcClient {
     /// We scan the rollup events to find deposits to our bridge addresses.
     ///
     /// The view key allows decrypting note data to observe deposits.
-    pub async fn scan_for_notes(&self, from_rollup: u64) -> Result<Vec<AztecNote>> {
+    pub async fn scan_for_notes(&self, _from_rollup: u64) -> Result<Vec<AztecNote>> {
         // TODO: Implement actual Aztec rollup scanning
         //
         // 1. Query Ethereum for Aztec rollup events:
@@ -127,8 +129,8 @@ impl AztecRpcClient {
     /// Queries the Aztec rollup contract for the merkle authentication path.
     pub async fn get_merkle_proof(
         &self,
-        rollup_height: u64,
-        leaf_index: u64,
+        _rollup_height: u64,
+        _leaf_index: u64,
     ) -> Result<Vec<[u8; 32]>> {
         // TODO: Implement actual Aztec merkle proof retrieval
         //
@@ -138,7 +140,7 @@ impl AztecRpcClient {
     }
 
     /// Get the anchor (merkle root) at a given rollup height
-    pub async fn get_anchor(&self, rollup_height: u64) -> Result<[u8; 32]> {
+    pub async fn get_anchor(&self, _rollup_height: u64) -> Result<[u8; 32]> {
         // TODO: Implement actual Aztec anchor retrieval
         //
         // The rollup posts the tree root at each rollup.
@@ -147,7 +149,7 @@ impl AztecRpcClient {
     }
 
     /// Get the Ethereum block height for a given rollup
-    pub async fn get_rollup_eth_block(&self, rollup_height: u64) -> Result<u64> {
+    pub async fn get_rollup_eth_block(&self, _rollup_height: u64) -> Result<u64> {
         // TODO: Implement actual Aztec rollup to Ethereum block mapping
         //
         // Each Aztec rollup is posted to Ethereum as a transaction.

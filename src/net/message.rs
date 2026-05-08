@@ -24,7 +24,7 @@
 use std::net::Ipv6Addr;
 
 use dwow_serial::{
-    async_trait, serialize_async, AsyncDecodable, AsyncEncodable, SerialDecodable, SerialEncodable,
+    serialize_async, AsyncDecodable, AsyncEncodable, SerialDecodable, SerialEncodable,
 };
 use url::{Host, Url};
 

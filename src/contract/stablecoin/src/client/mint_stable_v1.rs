@@ -44,7 +44,6 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-use crate::model::{CollateralType, MintStableParams};
 
 /// MintStable circuit public inputs (in order of constrain_instance)
 #[derive(Debug, Clone)]
@@ -163,11 +162,11 @@ impl MintStableCallData {
 
     /// Generate prover witnesses for the circuit
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let owner_pub = self.owner_public_key();
-        let old_collateral_commit = self.collateral_commitment(self.old_collateral);
-        let old_debt_commit = self.debt_commitment(self.old_debt);
-        let new_collateral_commit = self.collateral_commitment(self.new_collateral);
-        let new_debt_commit = self.debt_commitment(self.new_debt);
+        let _owner_pub = self.owner_public_key();
+        let _old_collateral_commit = self.collateral_commitment(self.old_collateral);
+        let _old_debt_commit = self.debt_commitment(self.old_debt);
+        let _new_collateral_commit = self.collateral_commitment(self.new_collateral);
+        let _new_debt_commit = self.debt_commitment(self.new_debt);
         let new_position = self.new_position_commitment();
 
         vec![

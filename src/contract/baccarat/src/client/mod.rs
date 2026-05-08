@@ -29,7 +29,7 @@ pub mod commit_bet_v1;
 pub mod settle_bet_v1;
 
 use dwow_sdk::{
-    crypto::{pedersen_commitment_u64, poseidon_hash, PublicKey, ScalarBlind, SecretKey},
+    crypto::{pedersen_commitment_u64, PublicKey, ScalarBlind, SecretKey},
     pasta::pallas,
 };
 use dwow_sdk::crypto::pasta_prelude::Field;

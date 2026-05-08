@@ -62,7 +62,7 @@ pub mod sync;
 pub mod verification;
 use verification::{
     apply_producer_transaction, verify_block, verify_checkpoint_block, verify_genesis_block,
-    verify_producer_transaction, verify_transaction, verify_transactions,
+    verify_transaction, verify_transactions,
 };
 
 /// Fee calculation helpers

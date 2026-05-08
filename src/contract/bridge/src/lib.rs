@@ -53,7 +53,7 @@ pub mod capability;
 
 use dwow_sdk::define_contract_function;
 
-/// Functions available in the contract
+// Functions available in the contract
 define_contract_function!(BridgeFunction {
     InitializeV1 = 0x00,
     DepositV1 = 0x01,

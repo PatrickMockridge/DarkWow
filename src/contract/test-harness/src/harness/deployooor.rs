@@ -31,13 +31,10 @@
 use dwow::Result;
 use dwow_sdk::crypto::Keypair;
 
-use dwow_deployooor_contract::{
-    client::{
+use dwow_deployooor_contract::client::{
         deploy_v1::{DeployCallBuilder, DeployCallDebris},
         lock_v1::{LockCallBuilder, LockCallDebris},
-    },
-    DeployFunction,
-};
+    };
 
 /// Deployooor Harness for isolated testing
 ///

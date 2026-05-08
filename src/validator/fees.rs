@@ -22,7 +22,7 @@
  */
 
 use dwow_sdk::crypto::constants::{MERKLE_DEPTH_ORCHARD, SPARSE_MERKLE_DEPTH};
-use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::zkas::{Opcode, VarType, ZkBinary};
 

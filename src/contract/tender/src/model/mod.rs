@@ -156,7 +156,7 @@ impl Tender {
     pub fn derive_id(
         requester_pub_x: pallas::Base,
         requester_pub_y: pallas::Base,
-        title: &str,
+        _title: &str,
         specification: pallas::Base,
         attestation_id: pallas::Base,
         min_bid: u64,

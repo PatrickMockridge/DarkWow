@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Zcash Withdrawal Handling
 //!
 //! Executes ZEC withdrawals on the Zcash chain when users burn wZEC on DarkWow.
@@ -105,7 +107,7 @@ pub async fn check_timeouts() -> Result<()> {
 ///
 /// When a relayer fails to execute a withdrawal within the timeout,
 /// they can be slashed as punishment.
-pub async fn slash_relayer(relayer: [u8; 32], withdrawal_nullifier: [u8; 32]) -> Result<()> {
+pub async fn slash_relayer(_relayer: [u8; 32], _withdrawal_nullifier: [u8; 32]) -> Result<()> {
     // TODO: Implement actual slashing
     // Submit slash transaction to DarkWow bridge contract
     // BRIDGE_CONTRACT_SLASH_AMOUNT is slashed from relayer

@@ -30,7 +30,6 @@ use dwow_sdk::{
     crypto::{poseidon_hash, BaseBlind},
     pasta::pallas,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 use rand::rngs::OsRng;
 
 use crate::model::{InitializeParams, StablecoinModel};

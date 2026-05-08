@@ -170,6 +170,7 @@ impl LinearBroadcastHandler {
     }
 
     /// Stop the handler
+    #[allow(dead_code)]
     pub async fn stop(&self) {
         info!(
             target: "darkfid::proto::linear_broadcast::stop",

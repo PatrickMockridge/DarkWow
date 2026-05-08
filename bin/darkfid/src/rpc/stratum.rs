@@ -24,7 +24,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::Ordering,
         Arc,
     },
 };
@@ -253,7 +253,7 @@ impl DarkfiNode {
         agent: String,
     ) -> JsonResult {
         use crate::registry::model::generate_linear_block_template;
-        use dwow_sdk::pasta::pallas;
+        
         use std::time::{SystemTime, UNIX_EPOCH};
 
         // Generate a unique client ID based on timestamp and random bytes

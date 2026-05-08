@@ -87,8 +87,6 @@ use dwow_sdk::{
     crypto::{PublicKey, SecretKey},
     pasta::pallas,
 };
-#[cfg(feature = "async")]
-use dwow_serial::async_trait;
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{

@@ -26,24 +26,23 @@
 //! Provides isolated testing for MoneyV3 contract (DeFi token contract).
 
 use dwow::{
-    zk::{halo2::Value, ProvingKey, ZkCircuit},
+    zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, poseidon_hash, BaseBlind, MerkleNode, MerkleTree},
+    crypto::{poseidon_hash, MerkleNode, MerkleTree},
     pasta::pallas,
 };
-use rand::rngs::OsRng;
 
 use dwow_money_v3_contract::{
     client::{
         auth_token_mint_v1::{AuthTokenMintCallBuilder, AuthTokenMintCallInput},
         mint_v1::{MintCallBuilder, MintCallInput},
         token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput},
-        transfer_v1::{TransferCallBuilder, TransferCallDebris, TransferCallInput, TransferCallOutput},
+        transfer_v1::{TransferCallBuilder, TransferCallInput, TransferCallOutput},
     },
-    model::{Coin, MintParamsV1, TransferParamsV1},
+    model::{Coin, MintParamsV1},
 };
 use dwow_serial::Encodable;
 

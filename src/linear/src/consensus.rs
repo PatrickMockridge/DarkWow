@@ -29,12 +29,14 @@ use super::{Block, UncleBlock, Result};
 
 /// Ring buffer for storing timestamps or difficulties
 /// Using simple vector-based implementation for clarity
+#[allow(dead_code)]
 struct RingBuffer<T> {
     data: Vec<T>,
     capacity: usize,
     index: usize,
 }
 
+#[allow(dead_code)]
 impl<T: Clone> RingBuffer<T> {
     fn new(capacity: usize) -> Self {
         Self { data: Vec::with_capacity(capacity), capacity, index: 0 }

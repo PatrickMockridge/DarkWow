@@ -145,8 +145,8 @@ impl OpenPositionCallData {
     /// Generate prover witnesses for the circuit
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let owner_pub = self.owner_public_key();
-        let collateral_commit = self.collateral_commitment();
-        let debt_commit = self.debt_commitment();
+        let _collateral_commit = self.collateral_commitment();
+        let _debt_commit = self.debt_commitment();
         let position_commitment = self.position_commitment();
         let position_nullifier = self.position_nullifier();
 

@@ -35,8 +35,8 @@ use dwow_sdk::{
 use dwow_sdk::crypto::pasta_prelude::Group;
 
 use crate::model::{
-    CancelSpinParamsV1, CommitSpinParamsV1, Paytable, PaytableEntry, ReelStrip,
-    RevealSpinParamsV1, SettleSpinParamsV1, SpinId, Symbol,
+    CancelSpinParamsV1, CommitSpinParamsV1,
+    RevealSpinParamsV1, SettleSpinParamsV1, SpinId,
 };
 
 /// Client-side spin note for tracking spins
@@ -241,7 +241,7 @@ pub fn validate_bet_value(bet_value: u64) -> Result<(), crate::error::SlotError>
 pub fn validate_paylines(
     paylines: u32,
     max_paylines: u32,
-    game_type: u8,
+    _game_type: u8,
 ) -> Result<(), crate::error::SlotError> {
     if paylines == 0 {
         return Err(crate::error::SlotError::InvalidPayline)

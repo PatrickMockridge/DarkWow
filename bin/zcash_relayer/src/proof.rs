@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Zcash Deposit Proof Construction
 //!
 //! Constructs the ZK proof data for Zcash Sapling deposits.
@@ -36,7 +38,7 @@ use crate::{zcash_rpc::SaplingNote, Config};
 /// Submit a Zcash deposit to the DarkWow bridge
 ///
 /// Constructs the ZcashDepositProof and submits it via the DarkWow RPC.
-pub async fn submit_deposit(note: &SaplingNote, config: &Config) -> Result<()> {
+pub async fn submit_deposit(note: &SaplingNote, _config: &Config) -> Result<()> {
     // TODO: Implement actual proof construction and submission
     //
     // The ZcashDepositProof requires:
@@ -88,7 +90,7 @@ pub fn derive_nullifier(
     nk: &[u8; 32],
     position: u64,
 ) -> Result<[u8; 32]> {
-    use blake2s_simd::{Hash, Params};
+    use blake2s_simd::Params;
 
     let mut h = Params::new()
         .hash_length(32)
@@ -119,7 +121,7 @@ pub fn derive_commitment(
     randomness: &[u8; 32],
     pub_key: &[u8; 32],
 ) -> Result<[u8; 32]> {
-    use blake2s_simd::{Hash, Params};
+    use blake2s_simd::Params;
 
     let mut h = Params::new()
         .hash_length(32)
@@ -144,10 +146,10 @@ pub fn derive_commitment(
 ///
 /// For DarkWow bridge compatibility, we verify using poseidon_hash.
 pub fn verify_merkle_path(
-    commitment: &[u8; 32],
-    position: u32,
-    path: &[[u8; 32]],
-    anchor: &[u8; 32],
+    _commitment: &[u8; 32],
+    _position: u32,
+    _path: &[[u8; 32]],
+    _anchor: &[u8; 32],
 ) -> Result<bool> {
     // TODO: Implement actual Sapling Merkle path verification
     // Using PedersenHash for the tree hashing

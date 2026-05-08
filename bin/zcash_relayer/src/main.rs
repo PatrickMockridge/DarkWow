@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! ZEC Relayer Service
 //!
 //! Zcash bridge relayer that:
@@ -220,7 +222,7 @@ fn derive_address(pub_x: String, pub_y: String, nonce: u64) -> Result<()> {
     let mut addr_hasher = blake3::Hasher::new();
     addr_hasher.update(b"zec_bridge_addr");
     addr_hasher.update(&bridge_secret);
-    let addr_hash = *addr_hasher.finalize().as_bytes();
+    let _addr_hash = *addr_hasher.finalize().as_bytes();
 
     // Encode as zcash transparent or shielded address
     // For shielded, we'd use bech32 encoding with "zs" prefix

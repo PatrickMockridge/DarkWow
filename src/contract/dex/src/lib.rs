@@ -40,7 +40,7 @@
 
 use dwow_sdk::define_contract_function;
 
-/// Functions available in the DEX contract
+// Functions available in the DEX contract
 define_contract_function!(DexFunction {
     InitializeV1 = 0x00,
     CreateSwapV1 = 0x01,

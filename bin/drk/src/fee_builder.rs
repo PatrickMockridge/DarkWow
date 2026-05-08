@@ -37,7 +37,7 @@ use dwow_sdk::{
     tx::ContractCall,
 };
 use dwow_serial::Encodable;
-use rand::{rngs::OsRng, Rng};
+use rand::rngs::OsRng;
 
 use crate::contract_imports::native_token::{
     DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,

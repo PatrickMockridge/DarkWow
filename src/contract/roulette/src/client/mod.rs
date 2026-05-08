@@ -29,8 +29,6 @@ use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey, schnorr::Signature},
     pasta::pallas,
 };
-use blake3::hash;
-
 use crate::model::{
     BetType, InitializeParamsV1, PlaceBetParamsV1, SpinWheelParamsV1,
     SettleBetsParamsV1, HouseCloseParamsV1,

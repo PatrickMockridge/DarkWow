@@ -33,15 +33,14 @@ use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, IntentCommitment, IntentNullifier, BaseBlind, PublicKey},
     pasta::pallas,
 };
-use dwow_serial::{Encodable, Decodable};
+use dwow_serial::Encodable;
 use dwow_stablecoin_contract::client::{
-    open_position_v1::{OpenPositionCallData, create_open_position_proof, OpenPositionPublicInputs},
+    open_position_v1::{OpenPositionCallData, create_open_position_proof},
     mint_stable_v1::{MintStableCallData, create_mint_stable_proof, MintStablePublicInputs},
     liquidate_v1::{LiquidateCallData, create_liquidate_proof, LiquidatePublicInputs},
     governance_report_v1::{GovernanceReportCallData, create_governance_report_proof, GovernanceReportPublicInputs},
     accrue_interest_v1::{AccrueInterestCallData, create_accrue_interest_proof, AccrueInterestPublicInputs},
 };
-use dwow_stablecoin_contract::StablecoinFunction;
 use dwow_stablecoin_contract::model::{DepositCollateralParams, MintStableParams, LiquidateParams, GovernanceReportParams, AccrueInterestParams};
 
 /// Helper to convert pallas::Base to IntentCommitment
@@ -50,6 +49,7 @@ fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
 }
 
 /// Helper to convert pallas::Base to IntentNullifier
+#[allow(dead_code)]
 fn to_intent_nullifier(base: pallas::Base) -> IntentNullifier {
     IntentNullifier::from_bytes(base.to_repr()).unwrap()
 }

@@ -112,7 +112,7 @@ fn main() -> Result<()> {
     }))
 }
 
-async fn run_relayer(config_path: &PathBuf, executor: Arc<smol::Executor<'_>>) -> Result<()> {
+async fn run_relayer(config_path: &PathBuf, _executor: Arc<smol::Executor<'_>>) -> Result<()> {
     // Load configuration
     let config = Config::load(config_path)?;
 

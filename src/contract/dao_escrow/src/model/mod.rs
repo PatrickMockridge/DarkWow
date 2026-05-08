@@ -74,8 +74,6 @@ use dwow_sdk::{
     crypto::{poseidon_hash, BaseBlind, PublicKey, ScalarBlind},
     pasta::pallas,
 };
-#[cfg(feature = "async")]
-use dwow_serial::async_trait;
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// DAO-Escrow unique identifier (hash of parameters)

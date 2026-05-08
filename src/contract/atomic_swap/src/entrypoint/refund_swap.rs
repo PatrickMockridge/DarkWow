@@ -22,14 +22,13 @@
  */
 
 use dwow_sdk::{
-    crypto::pasta_prelude::*,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Decodable, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::AtomicSwapError,

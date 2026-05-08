@@ -523,7 +523,7 @@ pub struct CancelSpinUpdateV1 {
 pub fn derive_spin_positions(
     block_hashes: &[TransactionHash],
     spin_id: SpinId,
-    secret_nonce: pallas::Base,
+    _secret_nonce: pallas::Base,
     num_reels: usize,
 ) -> Vec<u64> {
     // Combine entropy from block hashes

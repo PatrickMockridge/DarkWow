@@ -22,14 +22,14 @@
  */
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, pasta_prelude::*},
+    crypto::poseidon_hash,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Decodable, Encodable};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::AtomicSwapError,
@@ -47,7 +47,7 @@ use crate::{
 /// the actual verification is done manually in `process_instruction` via
 /// `poseidon_hash(secret) == swap.hash`.
 pub(crate) fn atomic_swap_claim_get_metadata_v1(
-    cid: dwow_sdk::crypto::ContractId,
+    _cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {

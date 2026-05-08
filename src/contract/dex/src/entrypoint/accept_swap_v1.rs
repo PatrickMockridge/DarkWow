@@ -39,7 +39,7 @@
 //! cross-contract ZK composition opcodes.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, pasta_prelude::PrimeField, IntentCommitment, IntentNullifier},
+    crypto::{poseidon_hash, pasta_prelude::PrimeField},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,

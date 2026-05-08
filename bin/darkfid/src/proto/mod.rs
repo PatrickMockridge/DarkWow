@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use dwow::{
     net::{P2p, P2pPtr, Settings},
@@ -57,7 +57,7 @@ pub use linear_sync::{LinearSyncHandler, LinearSyncHandlerPtr};
 
 /// Linear blockchain block broadcast protocol
 pub mod linear_broadcast;
-pub use linear_broadcast::{broadcast_block, LinearBroadcastHandler, LinearBroadcastHandlerPtr, BlockBroadcast};
+pub use linear_broadcast::{LinearBroadcastHandler, LinearBroadcastHandlerPtr};
 
 /// Atomic pointer to the Darkfid P2P protocols handler.
 pub type DarkfidP2pHandlerPtr = Arc<DarkfidP2pHandler>;

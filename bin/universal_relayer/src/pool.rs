@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Staking pool management for shared coverage
 //!
 //! This module provides functionality for relayers to form pools and share
@@ -284,7 +286,7 @@ impl PoolManager {
         }
 
         let initial_len = self.active_allocations.len();
-        self.active_allocations.retain(|a| {
+        self.active_allocations.retain(|_a| {
             // Keep allocations that haven't timed out
             // For simplicity, we check against a threshold
             true

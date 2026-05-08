@@ -52,7 +52,7 @@ lazy_static! {
     /// Well-known ContractId for Money V3 token derivation (used by vanityaddr).
     /// Money V3 is deployed as a WASM contract via Deployooor — this fixed ID
     /// serves as a stable reference for deriving token FuncIds.
-    pub static ref MONEY_V2_CONTRACT_ID: ContractId =
+    pub static ref MONEY_TOKEN_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(3)]));
 
     /// Contract ID for the Native Token contract (hardcoded at genesis).

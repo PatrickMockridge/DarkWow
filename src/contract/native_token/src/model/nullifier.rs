@@ -28,10 +28,6 @@ use dwow_sdk::{
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
-// async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
-#[cfg(feature = "client")]
-use dwow_serial::async_trait;
-
 /// The `Nullifier` is represented as a base field element.
 /// Used for double-spend prevention (nullifier = poseidon_hash(spending_key, rho))
 #[repr(C)]

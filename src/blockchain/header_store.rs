@@ -28,8 +28,6 @@ use dwow_sdk::{
     crypto::{MerkleNode, MerkleTree},
     monotree::{Hash as StateHash, EMPTY_HASH},
 };
-#[cfg(feature = "async-serial")]
-use dwow_serial::{async_trait, FutAsyncWriteExt};
 use dwow_serial::{deserialize, serialize, Encodable, SerialDecodable, SerialEncodable};
 use sled_overlay::sled;
 

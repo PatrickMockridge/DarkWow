@@ -66,11 +66,9 @@ pub mod init_v1;
 pub mod pay_premium_v1;
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey, SecretKey},
+    crypto::{PublicKey, SecretKey},
     pasta::pallas,
 };
-#[cfg(feature = "async")]
-use dwow_serial::async_trait;
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{

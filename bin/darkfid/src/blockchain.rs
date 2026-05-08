@@ -193,7 +193,7 @@ impl LinearBlockchain {
         for tx in &block.transactions {
             if let Some(ref coinbase) = tx.coinbase {
                 let mut coin_set = self.coin_set.lock().unwrap();
-                let mut nullifier_set = self.nullifier_set.lock().unwrap();
+                let _nullifier_set = self.nullifier_set.lock().unwrap();
                 coin_set.insert(coinbase.coin);
                 // Mint transactions don't create nullifiers, but check for future use
                 // Spends would add nullifiers here

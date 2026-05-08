@@ -37,7 +37,7 @@ pub mod verify_chain_v1;
 pub mod update_delegation_v1;
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, PublicKey},
+    crypto::{PublicKey},
     pasta::pallas,
 };
 

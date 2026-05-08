@@ -32,7 +32,7 @@ use dwow::{
         Message,
     },
 };
-use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 pub type DchatMsgsBuffer = Arc<Mutex<Vec<DchatMsg>>>;
 

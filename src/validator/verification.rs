@@ -28,7 +28,7 @@ use dwow_sdk::{
     crypto::{
         keypair::Keypair,
         schnorr::{SchnorrPublic, Signature},
-        ContractId, MerkleTree, PublicKey, NATIVE_TOKEN_CONTRACT_ID,
+        ContractId, MerkleTree, PublicKey,
     },
     dark_tree::dark_forest_leaf_vec_integrity_check,
     deploy::DeployParamsV1,

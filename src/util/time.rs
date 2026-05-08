@@ -26,9 +26,6 @@ use std::{
     time::{Duration, UNIX_EPOCH},
 };
 
-#[cfg(feature = "async-serial")]
-use dwow_serial::async_trait;
-
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::{Error, Result};

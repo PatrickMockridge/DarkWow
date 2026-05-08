@@ -33,7 +33,7 @@ use dwow::{
 };
 use dwow_sdk::{
     bridgetree::Hashable,
-    crypto::{pasta_prelude::*, poseidon_hash, BaseBlind, Keypair, MerkleNode},
+    crypto::{poseidon_hash, BaseBlind, MerkleNode},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -127,7 +127,7 @@ impl MintCallBuilder {
         let value_commit = poseidon_hash([pallas::Base::from(self.input.value), value_blind.inner()]);
 
         // Create token commitment
-        let token_commit = poseidon_hash([self.input.token_id, self.input.coin_blind]);
+        let _token_commit = poseidon_hash([self.input.token_id, self.input.coin_blind]);
 
         // Calculate token_registry_root from Merkle path
         let token_registry_root = {

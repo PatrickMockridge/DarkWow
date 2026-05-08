@@ -31,7 +31,7 @@ use dwow::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, poseidon_hash, PublicKey, SecretKey},
+    crypto::{pasta_prelude::*, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -97,7 +97,7 @@ impl DaoEscrowHarness {
 
         // Derive owner public key from secret
         let owner_pub = PublicKey::from_secret(SecretKey::from_bytes(owner_secret.to_repr()).unwrap());
-        let (owner_pub_x, owner_pub_y) = owner_pub.xy();
+        let (_owner_pub_x, _owner_pub_y) = owner_pub.xy();
 
         // Build InitializeParamsV1 for call_data
         let params = InitializeParamsV1 {

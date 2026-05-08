@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![allow(dead_code)]
+
 //! Litecoin RPC Client
 //!
 //! Interfaces with Litecoin node via RPC to observe deposits.
@@ -85,7 +87,7 @@ impl LitecoinRpcClient {
     ///
     /// Scans the Litecoin blockchain for deposits to bridge one-time addresses.
     /// Supports both transparent P2PKH/P2SH and MWEB (MimbleWimble) deposits.
-    pub async fn scan_for_deposits(&self, from_height: u64) -> Result<Vec<LitecoinDeposit>> {
+    pub async fn scan_for_deposits(&self, _from_height: u64) -> Result<Vec<LitecoinDeposit>> {
         // TODO: Implement actual Litecoin scanning
         //
         // 1. For each block from from_height:
@@ -108,7 +110,7 @@ impl LitecoinRpcClient {
     /// Get merkle proof for a transaction
     ///
     /// Uses Litecoin's gettxoutproof to prove tx is in a block.
-    pub async fn get_merkle_proof(&self, tx_hash: &str) -> Result<Vec<[u8; 32]>> {
+    pub async fn get_merkle_proof(&self, _tx_hash: &str) -> Result<Vec<[u8; 32]>> {
         // TODO: Implement actual merkle proof retrieval
         // POST to self.rpc_url
         // Method: "gettxoutproof"
@@ -119,7 +121,7 @@ impl LitecoinRpcClient {
     /// Get block header merkle root
     ///
     /// Gets the Merkle root from the block header for verification.
-    pub async fn get_block_merkle_root(&self, block_height: u64) -> Result<[u8; 32]> {
+    pub async fn get_block_merkle_root(&self, _block_height: u64) -> Result<[u8; 32]> {
         // TODO: Implement actual block header retrieval
         // POST to self.rpc_url
         // Method: "getblockhash"
@@ -130,7 +132,7 @@ impl LitecoinRpcClient {
     /// Check if a transaction is a MWEB deposit
     ///
     /// Queries the MWEB state to check if the deposit used MimbleWimble.
-    pub async fn check_mweb_deposit(&self, tx_hash: &str) -> Result<bool> {
+    pub async fn check_mweb_deposit(&self, _tx_hash: &str) -> Result<bool> {
         // TODO: Implement actual MWEB check
         // This would involve parsing MWEB extension block data
         Ok(false)

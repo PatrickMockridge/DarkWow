@@ -470,7 +470,7 @@ fn roulette_settle_bets_process_instruction_v1(
 
     // Get table
     let tables_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_TABLES_TREE)?;
-    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &serialize(&params.table_id))? {
+    let table: RouletteTable = match wasm::db::db_get(tables_db, &serialize(&params.table_id))? {
         Some(data) => deserialize(&data)?,
         None => return Err(RouletteError::TableNotFound.into()),
     };

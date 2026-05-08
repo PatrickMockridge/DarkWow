@@ -41,6 +41,7 @@ pub type HandlerResult<T> = Result<T, ContractHandlerError>;
 
 /// Errors that can occur during contract handling
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum ContractHandlerError {
     #[error("Contract not found: {0}")]
     ContractNotFound(String),
@@ -114,6 +115,7 @@ impl Default for ContractRegistry {
 ///
 /// For native contracts (native_token, deployooor), returns the hardcoded ID.
 /// For WASM contracts (dao_escrow), returns an error indicating it must be deployed first.
+#[allow(dead_code)]
 pub async fn resolve_contract_id(
     contract_id_str: &str,
     _validator: &dwow::validator::Validator,

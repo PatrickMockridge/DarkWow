@@ -35,9 +35,6 @@ use dwow_sdk::{
     tx::{ContractCall, TransactionHash},
 };
 
-#[cfg(feature = "async-serial")]
-use dwow_serial::async_trait;
-
 use dwow_serial::{Encodable, SerialDecodable, SerialEncodable};
 use tracing::{debug, error};
 

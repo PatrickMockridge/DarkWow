@@ -73,6 +73,7 @@ const DEX_TRANSPARENCY_LEVEL_KEY: &[u8] = b"transparency_level";
 use crate::model::TransparencyLevel;
 
 /// Get current transparency level from config
+#[allow(dead_code)]
 fn get_transparency_level(config_db: u32) -> Result<TransparencyLevel, ContractError> {
     let data = wasm::db::db_get(config_db, DEX_TRANSPARENCY_LEVEL_KEY)?;
     match data {

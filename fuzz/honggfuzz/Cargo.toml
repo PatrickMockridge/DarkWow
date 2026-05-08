@@ -15,7 +15,7 @@ bitcoin = "0.32.8"
 path = "../.."
 features = ["zkas"]
 
-[dependencies.darkfi-serial]
+[dependencies.dwow-serial]
 path = "../../src/serial"
 features = ["derive", "semver", "collections", "crypto", "hash"]
 

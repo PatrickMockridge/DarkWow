@@ -63,13 +63,13 @@ use crate::{
     model::{
         CancelWithdrawParams, ClaimHtlcParams, ClaimHtlcUpdateV1, CreateHtlcParams,
         CreateHtlcUpdateV1, Deposit, DepositParams, ExecuteGuaranteedWithdrawParams,
-        ExternalChain, HtlcSwapInfo, HtlcSwapState, PendingWithdrawal, RefundHtlcParams,
+        ExternalChain, HtlcSwapInfo, HtlcSwapState, RefundHtlcParams,
         RefundHtlcUpdateV1, UpdateConfigParams, Withdrawal, WithdrawParams, XmrDepositProof,
         ZcashDepositProof, AztecDepositProof, LitecoinDepositProof,
     },
     BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_INFO_TREE,
-    BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE,
-    BRIDGE_CONTRACT_WITHDRAWALS_TREE, BRIDGE_CONTRACT_STATE, BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS,
+    BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE,
+    BRIDGE_CONTRACT_WITHDRAWALS_TREE, BRIDGE_CONTRACT_STATE,
     BRIDGE_CONTRACT_XMR_CONFIRMATIONS, BRIDGE_CONTRACT_ZEC_CONFIRMATIONS, BRIDGE_CONTRACT_AZT_CONFIRMATIONS,
     BRIDGE_CONTRACT_LTC_CONFIRMATIONS, BRIDGE_CONTRACT_HTLCS_TREE, BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE,
 };
@@ -144,7 +144,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 // ============================================================================
 
 /// Fetch metadata for ZK proof verification
-fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
@@ -658,7 +658,7 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
 
     // Verify deposit exists (the commitment must be in the deposit tree)
     // In production, we would verify the merkle proof here
-    let deposits_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;
+    let _deposits_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;
 
     // For v1, we trust the ZK proof verification happened at host level
     // The proof demonstrates knowledge of secret corresponding to a registered deposit
@@ -674,7 +674,7 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
 }
 
 /// Process configuration update instruction
-fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+fn process_config_instruction(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
     let _params: UpdateConfigParams = deserialize(&self_.data[1..])?;
 
@@ -690,7 +690,7 @@ fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkL
 /// The timeout prevents relayer censorship - if relayer doesn't execute
 /// within BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS, user can reclaim funds.
 fn process_cancel_withdraw_instruction(
-    cid: ContractId,
+    _cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
@@ -735,7 +735,7 @@ fn process_cancel_withdraw_instruction(
 /// 3. If execution fails, pool stake is slashed to compensate user
 /// 4. If execution succeeds, guarantee_premium is refunded to relayer
 fn process_execute_guaranteed_withdraw_instruction(
-    cid: ContractId,
+    _cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {

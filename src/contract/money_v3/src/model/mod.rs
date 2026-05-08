@@ -40,10 +40,6 @@ use dwow_sdk::{
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
-// async_trait is required by darkfi-serial derive macros when darkfi-serial/async feature is enabled
-#[cfg(feature = "client")]
-use dwow_serial::async_trait;
-
 // Re-export for use in client modules
 pub use dwow_sdk::crypto::note::AeadEncryptedNote;
 

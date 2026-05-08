@@ -22,7 +22,7 @@
  */
 
 use dwow_sdk::{bridgetree, crypto::SecretKey};
-use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Rate-Limit Nullifier account data
 #[derive(Debug, Copy, Clone, SerialEncodable, SerialDecodable)]

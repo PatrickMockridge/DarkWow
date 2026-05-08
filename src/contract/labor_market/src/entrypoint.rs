@@ -43,13 +43,13 @@
 //! - **Git**: Worker submits `commit_hash` as proof of work
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, ContractId},
+    crypto::ContractId,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize};
 
 use crate::{
     error::LaborMarketError,
@@ -261,7 +261,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 /// CreateJobV1 instruction
-fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobParamsV1) -> ContractResult {
+fn create_job_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_v1] Creating job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for escrow deposit
@@ -288,7 +288,7 @@ fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
 }
 
 /// AcceptJobV1 instruction
-fn accept_job_v1(cid: ContractId, params: AcceptJobParamsV1) -> ContractResult {
+fn accept_job_v1(_cid: ContractId, params: AcceptJobParamsV1) -> ContractResult {
     msg!("[labor_market::accept_job_v1] Accepting job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -299,7 +299,7 @@ fn accept_job_v1(cid: ContractId, params: AcceptJobParamsV1) -> ContractResult {
 }
 
 /// SubmitDeliverableV1 instruction
-fn submit_deliverable_v1(cid: ContractId, params: SubmitDeliverableParamsV1) -> ContractResult {
+fn submit_deliverable_v1(_cid: ContractId, params: SubmitDeliverableParamsV1) -> ContractResult {
     msg!("[labor_market::submit_deliverable_v1] Submitting deliverable for job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -310,7 +310,7 @@ fn submit_deliverable_v1(cid: ContractId, params: SubmitDeliverableParamsV1) -> 
 }
 
 /// SubmitGitDeliverableV1 instruction
-fn submit_git_deliverable_v1(cid: ContractId, params: SubmitGitDeliverableParamsV1) -> ContractResult {
+fn submit_git_deliverable_v1(_cid: ContractId, params: SubmitGitDeliverableParamsV1) -> ContractResult {
     msg!("[labor_market::submit_git_deliverable_v1] Submitting git deliverable for job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -321,7 +321,7 @@ fn submit_git_deliverable_v1(cid: ContractId, params: SubmitGitDeliverableParams
 }
 
 /// ConfirmDeliveryV1 instruction
-fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmDeliveryParamsV1) -> ContractResult {
+fn confirm_delivery_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmDeliveryParamsV1) -> ContractResult {
     msg!("[labor_market::confirm_delivery_v1] Confirming delivery for job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for worker payout
@@ -347,7 +347,7 @@ fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
 }
 
 /// DisputeV1 instruction
-fn dispute_v1(cid: ContractId, params: DisputeParamsV1) -> ContractResult {
+fn dispute_v1(_cid: ContractId, params: DisputeParamsV1) -> ContractResult {
     msg!("[labor_market::dispute_v1] Creating dispute for job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -358,7 +358,7 @@ fn dispute_v1(cid: ContractId, params: DisputeParamsV1) -> ContractResult {
 }
 
 /// RefundV1 instruction
-fn refund_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: RefundParamsV1) -> ContractResult {
+fn refund_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: RefundParamsV1) -> ContractResult {
     msg!("[labor_market::refund_v1] Processing refund for job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for refund to employer
@@ -384,7 +384,7 @@ fn refund_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
 }
 
 /// CancelV1 instruction
-fn cancel_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CancelJobParamsV1) -> ContractResult {
+fn cancel_job_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CancelJobParamsV1) -> ContractResult {
     msg!("[labor_market::cancel_job_v1] Cancelling job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for refund
@@ -819,7 +819,7 @@ fn cancel_job_apply_v1(cid: ContractId, params: CancelJobParamsV1) -> ContractRe
 // ============================================================================
 
 /// CreateJobWithMilestonesV1 instruction
-fn create_job_with_milestones_v1(cid: ContractId, params: CreateJobWithMilestonesParamsV1) -> ContractResult {
+fn create_job_with_milestones_v1(_cid: ContractId, params: CreateJobWithMilestonesParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_with_milestones_v1] Creating job with milestones: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -830,7 +830,7 @@ fn create_job_with_milestones_v1(cid: ContractId, params: CreateJobWithMilestone
 }
 
 /// SubmitMilestoneV1 instruction
-fn submit_milestone_v1(cid: ContractId, params: SubmitMilestoneDeliverableParamsV1) -> ContractResult {
+fn submit_milestone_v1(_cid: ContractId, params: SubmitMilestoneDeliverableParamsV1) -> ContractResult {
     msg!("[labor_market::submit_milestone_v1] Submitting milestone for job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -841,7 +841,7 @@ fn submit_milestone_v1(cid: ContractId, params: SubmitMilestoneDeliverableParams
 }
 
 /// ConfirmMilestoneV1 instruction
-fn confirm_milestone_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmMilestoneParamsV1) -> ContractResult {
+fn confirm_milestone_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmMilestoneParamsV1) -> ContractResult {
     msg!("[labor_market::confirm_milestone_v1] Confirming milestone for job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for milestone payment
@@ -867,7 +867,7 @@ fn confirm_milestone_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 }
 
 /// InitiateDisputeV1 instruction
-fn initiate_dispute_v1(cid: ContractId, params: InitiateDisputeParamsV1) -> ContractResult {
+fn initiate_dispute_v1(_cid: ContractId, params: InitiateDisputeParamsV1) -> ContractResult {
     msg!("[labor_market::initiate_dispute_v1] Initiating dispute for job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -1120,7 +1120,7 @@ fn initiate_dispute_apply_v1(cid: ContractId, params: InitiateDisputeParamsV1) -
 // ============================================================================
 
 /// AcceptJobWithCapabilityV1 instruction
-fn accept_job_with_capability_v1(cid: ContractId, params: AcceptJobWithCapabilityParamsV1) -> ContractResult {
+fn accept_job_with_capability_v1(_cid: ContractId, params: AcceptJobWithCapabilityParamsV1) -> ContractResult {
     msg!("[labor_market::accept_job_with_capability_v1] Accepting job with capability: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)

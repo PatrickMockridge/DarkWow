@@ -33,7 +33,7 @@ use dwow::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
-        pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, Keypair,
+        pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Keypair,
         MerkleNode, PublicKey, ScalarBlind, SecretKey,
     },
     error::ContractError,
@@ -42,7 +42,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{BurnParamsV1, Coin, CoinAttributes, Input, Nullifier};
+use crate::model::{BurnParamsV1, CoinAttributes, Input, Nullifier};
 
 /// Public inputs revealed after burn proof creation
 pub struct BurnRevealed {

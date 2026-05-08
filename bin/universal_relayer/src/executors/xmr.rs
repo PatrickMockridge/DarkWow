@@ -179,7 +179,7 @@ impl BridgeChainHandler for MoneroExecutor {
         &self,
         swap_id: &[u8; 32],
         secret: pallas::Base,
-        recipient: &[u8],
+        _recipient: &[u8],
     ) -> ContractResult {
         tracing::info!(
             "Executing XMR HTLC claim for swap_id: {}, secret: {:?}",

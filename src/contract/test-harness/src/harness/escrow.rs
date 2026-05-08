@@ -30,7 +30,7 @@ use dwow::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pedersen_commitment_u64, pasta_prelude::PrimeField, Blind, MerkleNode, MerkleTree, PublicKey},
+    crypto::{pedersen_commitment_u64, Blind, MerkleNode, MerkleTree, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -46,6 +46,7 @@ use dwow_escrow_contract::model::{
 };
 
 /// Escrow Harness for isolated testing
+#[allow(dead_code)]
 pub struct EscrowHarness {
     /// CreateEscrow_V1 ZkBinary
     create_escrow_zkbin: ZkBinary,

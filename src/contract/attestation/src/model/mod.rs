@@ -23,10 +23,7 @@
 
 //! Attestation contract data structures
 
-use dwow_sdk::{
-    crypto::poseidon_hash,
-    pasta::pallas,
-};
+use dwow_sdk::pasta::pallas;
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Attestation unique identifier (hash of attestation data)

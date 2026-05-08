@@ -31,7 +31,7 @@ use arg::Args;
 use dwow::{util::cli::ProgressInc, ANSI_LOGO};
 use dwow_money_v3_contract::{model::TokenId, MoneyFunction};
 use dwow_sdk::crypto::{
-    contract_id::MONEY_V2_CONTRACT_ID,
+    contract_id::MONEY_TOKEN_CONTRACT_ID,
     keypair::{Address, Network, StandardAddress},
     poseidon_hash, BaseBlind, ContractId, FuncRef, PublicKey, SecretKey,
 };

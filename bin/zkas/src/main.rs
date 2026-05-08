@@ -86,6 +86,7 @@ Example:
   zkas rebuild src/contract/dao_escrow/proof/
 "#;
 
+#[allow(dead_code)]
 const PROVE_USAGE: &str = r#"
 Usage: zkas prove <CIRCUIT.zk.bin> [OPTIONS]
 
@@ -118,6 +119,7 @@ fn rebuild_usage() {
     eprint!("{REBUILD_USAGE}");
 }
 
+#[allow(dead_code)]
 fn prove_usage() {
     eprint!("{PROVE_USAGE}");
 }

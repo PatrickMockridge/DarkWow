@@ -44,12 +44,11 @@ use dwow_sdk::{
     ContractCall,
 };
 use dwow_sdk::pasta::pallas::Base;
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize};
 
 use crate::error::SlotError;
 use crate::model::{
-    classic_paytable, video_paytable, CommitSpinParamsV1, CommitSpinUpdateV1, GameConfig,
-    Paytable, ReelStrip, Spin, SpinId, SpinState,
+    video_paytable, CommitSpinParamsV1, CommitSpinUpdateV1, GameConfig, Spin, SpinId, SpinState,
 };
 use crate::SlotFunction;
 
@@ -133,7 +132,7 @@ fn initialize_process_instruction_v1(
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> GenericResult<Vec<u8>> {
-    let self_ = &calls[call_idx].data;
+    let _self_ = &calls[call_idx].data;
     // Initialize takes no params, just sets up config
     // In a full implementation, this would include game type selection
 
@@ -360,7 +359,7 @@ fn reveal_spin_process_instruction_v1(
 }
 
 fn reveal_spin_process_update_v1(
-    cid: ContractId,
+    _cid: ContractId,
     update: crate::model::RevealSpinUpdateV1,
 ) -> GenericResult<()> {
     // State already updated in process_instruction
@@ -458,7 +457,7 @@ fn settle_spin_process_instruction_v1(
 }
 
 fn settle_spin_process_update_v1(
-    cid: ContractId,
+    _cid: ContractId,
     update: crate::model::SettleSpinUpdateV1,
 ) -> GenericResult<()> {
     msg!(
@@ -542,7 +541,7 @@ fn cancel_spin_process_instruction_v1(
 }
 
 fn cancel_spin_process_update_v1(
-    cid: ContractId,
+    _cid: ContractId,
     update: crate::model::CancelSpinUpdateV1,
 ) -> GenericResult<()> {
     msg!(

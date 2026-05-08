@@ -50,6 +50,7 @@ pub struct LinearContractStore {
     tree_names: Mutex<HashMap<TreeHandle, String>>,
 }
 
+#[allow(dead_code)]
 impl LinearContractStore {
     /// Create a new LinearContractStore wrapping the given LinearStore
     pub fn new(store: Arc<LinearStore>) -> Self {

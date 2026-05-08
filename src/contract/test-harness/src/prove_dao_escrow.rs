@@ -36,12 +36,12 @@ use dwow::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey},
+    crypto::pasta_prelude::PrimeField,
     pasta::pallas,
 };
 use dwow_dao_escrow_contract::client::{
-    init_v1::{init_v1_proof, InitV1CallData, InitV1PublicInputs},
-    pay_premium_v1::{pay_premium_v1_proof, PayPremiumV1CallData, PayPremiumV1PublicInputs},
+    init_v1::{init_v1_proof, InitV1CallData},
+    pay_premium_v1::{pay_premium_v1_proof, PayPremiumV1CallData},
 };
 use std::env;
 

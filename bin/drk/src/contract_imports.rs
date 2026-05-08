@@ -280,7 +280,6 @@ pub mod dao_escrow {
     pub use dwow_dao_escrow_contract::modes::MODE_TREASURY_ENDOWMENT;
 
     // Model types
-    #[cfg(feature = "client")]
     pub use dwow_dao_escrow_contract::client::{
         init_v1::*, pay_premium_v1::*,
     };
@@ -340,11 +339,9 @@ pub mod stablecoin {
     pub use dwow_stablecoin_contract::STABLECOIN_CONTRACT_LIQUIDATIONS_TREE;
 
     // Client types
-    #[cfg(feature = "client")]
     pub use dwow_stablecoin_contract::client::*;
 
     // Model types
-    #[cfg(feature = "client")]
     pub use dwow_stablecoin_contract::model::*;
 
     // Opcodes
@@ -382,11 +379,9 @@ pub mod drain_protection {
     pub use dwow_drain_protection_contract::DRAIN_PROTECTION_CONTRACT_FUNDS_TREE;
 
     // Model types
-    #[cfg(feature = "client")]
     pub use dwow_drain_protection_contract::model::*;
 
     // Client types
-    #[cfg(feature = "client")]
     pub use dwow_drain_protection_contract::client::*;
 }
 

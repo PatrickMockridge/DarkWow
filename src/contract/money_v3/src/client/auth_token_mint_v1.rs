@@ -32,7 +32,7 @@ use dwow::{
 };
 use dwow_sdk::{
     bridgetree::Hashable,
-    crypto::{pasta_prelude::*, poseidon_hash, MerkleNode},
+    crypto::{poseidon_hash, MerkleNode},
     pasta::pallas,
 };
 use rand::rngs::OsRng;

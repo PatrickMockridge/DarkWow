@@ -30,12 +30,11 @@ use dwow::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::{Field, Group}, poseidon_hash, PublicKey, SecretKey},
+    crypto::{pasta_prelude::Field, PublicKey, SecretKey},
     crypto::schnorr::SchnorrSecret,
     pasta::pallas,
 };
 use dwow_serial::Encodable;
-use rand::rngs::OsRng;
 
 use dwow_baccarat_contract::client::{
     commit_bet_v1::{CommitBetV1CallData, CommitBetV1PublicInputs, create_commit_bet_v1_proof},

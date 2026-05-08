@@ -43,6 +43,7 @@ use crate::{blockchain::LinearBlockchain, contract_store::LinearContractStore, l
 /// Runtime executor for linear blockchain
 ///
 /// Wraps darkfi's Runtime with LinearStore-based adapters.
+#[allow(dead_code)]
 pub struct LinearRuntime {
     /// Inner darkfi Runtime
     inner: Runtime,
@@ -52,6 +53,7 @@ pub struct LinearRuntime {
     state_db: Arc<LinearSimpleDb>,
 }
 
+#[allow(dead_code)]
 impl LinearRuntime {
     /// Create a new LinearRuntime for executing a contract call
     pub fn new(
@@ -119,6 +121,7 @@ impl LinearRuntime {
 }
 
 /// Execute a transaction on the linear chain
+#[allow(dead_code)]
 pub async fn execute_tx(
     tx: &dwow::tx::Transaction,
     blockchain: Arc<LinearBlockchain>,
@@ -159,6 +162,7 @@ pub async fn execute_tx(
 }
 
 /// Deploy a new contract to the linear chain
+#[allow(dead_code)]
 pub fn deploy_contract(
     wasm: &[u8],
     contract_id: ContractId,

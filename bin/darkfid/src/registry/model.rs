@@ -276,6 +276,7 @@ pub struct LinearMinerRewardsRecipientConfig {
 }
 
 impl LinearMinerRewardsRecipientConfig {
+    #[allow(dead_code)]
     pub fn new(recipient: PublicKey) -> Self {
         Self { recipient }
     }
@@ -328,6 +329,7 @@ pub struct LinearBlockTemplate {
 
 impl LinearBlockTemplate {
     /// Create a coinbase output for the miner (transparent fallback)
+    #[allow(dead_code)]
     pub fn create_coinbase_output(recipient: &PublicKey, value: u64) -> Output {
         Output {
             value,

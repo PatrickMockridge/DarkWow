@@ -36,13 +36,13 @@
 //! 4. Other contracts verify and consume attestations
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, ContractId},
+    crypto::ContractId,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta, ContractCall,
     wasm,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, serialize};
 
 use crate::{
     error::OracleError,
@@ -364,7 +364,7 @@ fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> ContractResult {
 // PROCESS UPDATE
 // ============================================================================
 
-fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
+fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
     match OracleFunction::try_from(update_data[0])? {
         OracleFunction::RegisterOracleV1 => {
             let update: RegisterOracleUpdateV1 = deserialize(&update_data[1..])?;

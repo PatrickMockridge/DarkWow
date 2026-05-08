@@ -218,7 +218,7 @@ impl ContractStoreAccess for ContractStoreAccessAdapter {
     }
 
     fn init(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
-        let mut overlay = self.0.lock().unwrap();
+        let overlay = self.0.lock().unwrap();
         overlay.contracts.init(cid, tree_name)
     }
 

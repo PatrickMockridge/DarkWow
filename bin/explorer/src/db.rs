@@ -34,7 +34,7 @@ use dwow_sdk::{
     deploy::DeployParamsV1,
 };
 use dwow_serial::{
-    async_trait, deserialize, deserialize_async, serialize, serialize_async, SerialDecodable,
+    deserialize, deserialize_async, serialize, serialize_async, SerialDecodable,
     SerialEncodable,
 };
 use sled::{transaction::TransactionError, Transactional};

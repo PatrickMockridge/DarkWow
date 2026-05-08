@@ -24,7 +24,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::AtomicU64,
         Arc,
     },
 };
@@ -39,7 +39,7 @@ use dwow::{
         server::{listen_and_serve, RequestHandler},
         settings::RpcSettings,
     },
-    system::{ExecutorPtr, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr},
+    system::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
     validator::{Validator, ValidatorConfig, ValidatorPtr},
     Error, Result,
 };
