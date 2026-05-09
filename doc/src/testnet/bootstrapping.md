@@ -117,7 +117,33 @@ P2P mesh is working.
 
 ### Wallet Setup
 
-Extract the mining secret and fund a wallet:
+**Recommended — Pre-configured wallet (one-step):**
+
+Generate a keypair on the host before starting the miner. Coinbase rewards flow
+directly to your wallet — no manual extraction needed.
+
+```bash
+# Generate a keypair for mining rewards
+./target/release/dww -n darkwow-testnet wallet keygen
+# Output: address (bs58) and secret (hex)
+
+# Pass both to the Docker container
+docker run -d --name dwow-node --network=host \
+    -e ROLE=dwowd \
+    -e NETWORK=darkwow-testnet \
+    -e WALLET_ADDRESS="<bs58-address>" \
+    -e WALLET_SECRET="<hex-secret>" \
+    ... \
+    darkwow-testnet:latest
+
+# Wallet already has the key — just scan
+./target/release/dww -n darkwow-testnet scan
+./target/release/dww -n darkwow-testnet wallet balance
+```
+
+**Alternative — Extract from running container (two-step):**
+
+If no WALLET_SECRET was provided, the daemon auto-generates a keypair:
 
 ```bash
 SECRET_HEX=$(docker exec dwow-node \

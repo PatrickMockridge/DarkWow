@@ -30,6 +30,7 @@ SKIP_SYNC="${SKIP_SYNC:-false}"
 SKIP_FEES="${SKIP_FEES:-false}"
 LOCALNET="${LOCALNET:-false}"
 WALLET_ADDRESS="${WALLET_ADDRESS:-}"
+WALLET_SECRET="${WALLET_SECRET:-}"
 DATADIR="${DATADIR:-/root/.local/share/dwow/dwowd/${NETWORK}}"
 LILITH_DATADIR="${LILITH_DATADIR:-/root/.local/share/dwow/lilith/${NETWORK}}"
 
@@ -195,6 +196,18 @@ inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
 DWOWEOF
 
 echo "  Config written to $CONFIGFILE"
+
+# --- Pre-seed mining keypair if both address and secret are provided ---
+MINER_ADDRESS_FILE="${DATADIR}/mining_address"
+MINER_SECRET_FILE="${DATADIR}/mining_secret"
+
+if [ -n "$WALLET_ADDRESS" ] && [ -n "$WALLET_SECRET" ]; then
+    if [ ! -f "$MINER_ADDRESS_FILE" ] || [ ! -f "$MINER_SECRET_FILE" ]; then
+        echo "Pre-seeding mining keypair from WALLET_ADDRESS/WALLET_SECRET..."
+        echo "$WALLET_ADDRESS" > "$MINER_ADDRESS_FILE"
+        echo "$WALLET_SECRET" > "$MINER_SECRET_FILE"
+    fi
+fi
 
 # --- Start dwowd ---
 echo "Starting dwowd..."

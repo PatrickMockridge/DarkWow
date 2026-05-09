@@ -63,6 +63,8 @@ services:
       - SKIP_FEES=false
       - LOCALNET=false
       - EXTERNAL_ADDR=node0:31342
+      # - WALLET_ADDRESS=<bs58-address>    # Pre-configure mining payout wallet
+      # - WALLET_SECRET=<hex-secret>       # Required if WALLET_ADDRESS is set
     ports:
       - "31345:31345"
       - "31347:31347"
@@ -103,6 +105,8 @@ services:
       - SKIP_FEES=false
       - LOCALNET=false
       - EXTERNAL_ADDR=node1:31343
+      # - WALLET_ADDRESS=<bs58-address>    # Pre-configure mining payout wallet
+      # - WALLET_SECRET=<hex-secret>       # Required if WALLET_ADDRESS is set
     ports:
       - "31346:31346"
       - "31348:31348"

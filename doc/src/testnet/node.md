@@ -318,6 +318,13 @@ address:
 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
 
+> **Docker pre-configured wallet**: When running a Docker-based node, you can
+> skip the manual address extraction. Pass `WALLET_ADDRESS` and `WALLET_SECRET`
+> as environment variables to pre-seed the mining keypair before the daemon
+> starts. Coinbase rewards flow directly to your wallet with no manual steps.
+> See the [darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md#wallet-setup)
+> for the one-step setup.
+
 Refer to [xmrig optimizations guide][2] to fully configure your system
 for maximum mining performance. Start `dwowd` as usual and then start
 `xmrig`, specifying retries setup, how many threads to mine and for

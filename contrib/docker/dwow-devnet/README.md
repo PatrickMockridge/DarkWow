@@ -81,6 +81,45 @@ networks.
 | `SKIP_FEES` | `true` | Disable fee verification |
 | `LOCALNET` | `false` | P2P localnet flag |
 | `WALLET_ADDRESS` | auto | Mining payout address (auto-generated if unset) |
+| `WALLET_SECRET` | auto | Hex-encoded secret key for pre-configured wallet |
+
+## Wallet Setup
+
+### Pre-Configured Wallet (Recommended)
+
+Generate a keypair on the host and pass it to the container. The miner sends
+coinbase rewards directly to a wallet you already control.
+
+```shell
+# Generate a keypair
+./target/release/dww wallet keygen
+# Output: address (bs58) and secret (hex)
+
+# Start the devnet with the pre-configured wallet
+docker run --rm --network=host \
+  -e IS_SEED=true \
+  -e WALLET_ADDRESS="<bs58-address>" \
+  -e WALLET_SECRET="<hex-secret>" \
+  <registry>/dwow-devnet:latest
+
+# Wallet already has the key — scan for coins
+./target/release/dww -n dwow-devnet scan
+./target/release/dww -n dwow-devnet wallet balance
+```
+
+### Extract from Running Container
+
+If no WALLET_SECRET was provided, the daemon auto-generates a keypair. Extract
+it manually:
+
+```shell
+SECRET_HEX=$(docker exec <container> \
+    cat /root/.local/share/dwow/dwowd/dwow-devnet/mining_secret)
+./target/release/dww -n dwow-devnet wallet initialize
+./target/release/dww -n dwow-devnet wallet import-secret-hex "$SECRET_HEX"
+./target/release/dww -n dwow-devnet scan
+./target/release/dww -n dwow-devnet wallet balance
+```
 
 ## Opening to the Internet
 

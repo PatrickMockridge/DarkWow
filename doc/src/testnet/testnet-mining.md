@@ -7,6 +7,8 @@
 
 This guide covers setting up solo Proof-of-Work mining on DarkWow testnet using pre-built binaries. This is different from **merge mining** (which is for mainnet with Monero+p2pool).
 
+For Docker-based mining, see the [darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md) which supports pre-configuring a wallet via `WALLET_ADDRESS` and `WALLET_SECRET` environment variables — coinbase rewards flow directly to your wallet with no manual secret extraction needed.
+
 ## Prerequisites
 
 - Pre-built DarkWow binaries from [DarkWowMain](https://codeberg.org/PatrickM123/darkwow)

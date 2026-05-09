@@ -145,6 +145,7 @@ To allow external participants (outside your LAN) to join:
 | `SKIP_SYNC` | `false` | Skip blockchain sync on startup |
 | `SKIP_FEES` | `false` | Disable fee verification |
 | `WALLET_ADDRESS` | auto | Mining payout address (auto-generated if unset) |
+| `WALLET_SECRET` | auto | Hex-encoded secret key for pre-configured wallet |
 | `DATADIR` | `~/.local/share/dwow/dwowd/<network>` | Blockchain data directory |
 
 ## Building from Source
@@ -172,7 +173,44 @@ REGISTRY=docker.io/myuser/ IMAGE_NAME=darkwow-testnet \
 
 ## Wallet Setup
 
+### Pre-Configured Wallet (Recommended)
+
+Generate a keypair on the host and pass it to the container. The miner sends
+coinbase rewards directly to a wallet you already control — no manual secret
+extraction needed.
+
 ```bash
+NETWORK="darkwow-testnet"
+DRK="./target/release/dww"
+
+# Generate a new keypair for mining rewards
+$DRK -n $NETWORK wallet keygen
+# Output: address (bs58) and secret (hex)
+
+# Start the testnet with the pre-configured wallet
+WALLET_ADDRESS="<bs58-address>"
+WALLET_SECRET="<hex-secret>"
+
+docker run --rm --network=host \
+  -e ROLE=dwowd \
+  -e NETWORK=darkwow-testnet \
+  -e WALLET_ADDRESS="$WALLET_ADDRESS" \
+  -e WALLET_SECRET="$WALLET_SECRET" \
+  -e SEED_ADDR=<seed-host>:31340 \
+  -e MAGIC_BYTES=68,82,75,87 \
+  -e MINING_THREADS=4 \
+  -v /data/node0:/root/.local/share/dwow/dwowd \
+  darkwow-testnet:latest
+
+# The wallet already has the key — just scan for coins
+$DRK -n $NETWORK scan
+$DRK -n $NETWORK wallet balance
+```
+
+### Extract from Running Container
+
+If no WALLET_SECRET was provided, the daemon auto-generates a keypair on first
+startup. Extract it manually:
 # Set network
 NETWORK="darkwow-testnet"
 DRK="./target/release/dww"
