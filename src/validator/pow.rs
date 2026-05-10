@@ -463,6 +463,32 @@ impl std::fmt::Display for PoWModule {
     }
 }
 
+/// Build-time hard cap on RandomX mining threads.
+/// Set `DARKFI_RANDOMX_MAX_THREADS` env var at build time to override (default: 10).
+pub fn randomx_hard_cap_threads() -> usize {
+    option_env!("DARKFI_RANDOMX_MAX_THREADS")
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(10)
+}
+
+/// Compute the effective number of RandomX threads given a config value.
+/// `config_threads`:
+///   - 0 means "use all available cores" (container/public node mode)
+///   - 1+ means "use this many threads"
+/// Result is capped by [`randomx_hard_cap_threads`].
+pub fn effective_randomx_threads(config_threads: usize) -> usize {
+    let available = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    let requested = if config_threads == 0 {
+        available
+    } else {
+        config_threads.min(available)
+    };
+    requested.min(randomx_hard_cap_threads())
+}
+
 /// Auxiliary function to define `RandomXFlags` used in mining.
 ///
 /// Note: RandomX recommended flags will include `SSSE3` and `AVX2`
@@ -481,11 +507,12 @@ pub fn get_mining_flags(fast_mode: bool, large_pages: bool, secure: bool) -> Ran
     flags
 }
 
-/// Auxiliary function to initialize a `RandomXDataset` using all
-/// available threads.
+/// Auxiliary function to initialize a `RandomXDataset` using up to
+/// `max_threads` (capped by [`RANDOMX_HARD_CAP_THREADS`]).
 fn init_dataset(
     flags: RandomXFlags,
     input: &HeaderHash,
+    max_threads: usize,
     stop_signal: &Receiver<()>,
 ) -> Result<RandomXDataset> {
     // Allocate cache and dataset
@@ -493,9 +520,8 @@ fn init_dataset(
     let dataset_item_count = RandomXDataset::count()?;
     let dataset = RandomXDataset::new(flags, cache, dataset_item_count)?;
 
-    // Multithreaded dataset init using all available threads
-    let threads = thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
-    debug!(target: "validator::pow::init_dataset", "[MINER] Initializing RandomX dataset using {threads} threads...");
+    let threads = effective_randomx_threads(max_threads);
+    debug!(target: "validator::pow::init_dataset", "[MINER] Initializing RandomX dataset using {threads} threads (config: {max_threads}, hard cap: {})...", randomx_hard_cap_threads());
     let mut handles = Vec::with_capacity(threads);
     let threads_u32 = threads as u32;
     let per_thread = dataset_item_count / threads_u32;
@@ -529,19 +555,21 @@ fn init_dataset(
 }
 
 /// Auxiliary function to generate mining VMs for provided RandomX key.
+/// `threads` is capped by [`RANDOMX_HARD_CAP_THREADS`].
 pub fn generate_mining_vms(
     flags: RandomXFlags,
     input: &HeaderHash,
     threads: usize,
     stop_signal: &Receiver<()>,
 ) -> Result<Vec<Arc<RandomXVM>>> {
+    let threads = effective_randomx_threads(threads);
     debug!(target: "validator::pow::generate_mining_vms", "[MINER] Initializing RandomX cache and dataset...");
     debug!(target: "validator::pow::generate_mining_vms", "[MINER] PoW input: {input}");
     let setup_start = Instant::now();
     // Check if fast mode is enabled
     let (cache, dataset) = if flags.contains(RandomXFlags::FULLMEM) {
         // Initialize dataset
-        let dataset = init_dataset(flags, input, stop_signal)?;
+        let dataset = init_dataset(flags, input, threads, stop_signal)?;
         (None, Some(dataset))
     } else {
         // Initialize cache for light mode

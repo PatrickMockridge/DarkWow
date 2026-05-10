@@ -25,6 +25,7 @@ FIXED_DIFFICULTY="${FIXED_DIFFICULTY:-}"
 TARGET_BLOCK_TIME="${TARGET_BLOCK_TIME:-120}"
 MINING_ENABLED="${MINING_ENABLED:-true}"
 MINING_THREADS="${MINING_THREADS:-1}"
+RANDOMX_MAX_THREADS="${RANDOMX_MAX_THREADS:-0}"
 THRESHOLD="${THRESHOLD:-3}"
 SKIP_SYNC="${SKIP_SYNC:-false}"
 SKIP_FEES="${SKIP_FEES:-false}"
@@ -156,6 +157,7 @@ initial_difficulty = 255
 min_difficulty = 1
 max_difficulty = 4294967295
 min_block_interval = 10
+randomx_max_threads = ${RANDOMX_MAX_THREADS:-0}
 DWOWEOF
 
 if [ -n "$FIXED_DIFFICULTY" ]; then

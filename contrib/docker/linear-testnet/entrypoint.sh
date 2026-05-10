@@ -59,6 +59,7 @@ initial_difficulty = 255
 min_difficulty = 1
 max_difficulty = 4294967295
 min_block_interval = 10
+randomx_max_threads = 1
 
 [network_config."linear-testnet".rpc]
 rpc_listen = "tcp://0.0.0.0:$RPC_PORT"

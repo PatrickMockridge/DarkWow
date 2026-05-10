@@ -13,7 +13,7 @@ FROM ubuntu:24.04 AS builder
 
 RUN apt-get update && apt-get install -y \
     build-essential gcc g++ make cmake curl git \
-    libssl-dev pkg-config tcl-dev clang libsqlite3-dev libasound2-dev libsqlcipher3-dev
+    libssl-dev pkg-config tcl-dev clang libsqlite3-dev libasound2-dev libsqlcipher-dev
 
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y \
     --default-toolchain nightly-2025-04-10

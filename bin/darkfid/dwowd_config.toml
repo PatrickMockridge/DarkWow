@@ -41,6 +41,13 @@ skip_fees = false
 # Garbage collection task transactions batch size
 txs_batch_size = 50
 
+## Testnet PoW settings
+[network_config."testnet".pow]
+# Max RandomX mining threads: 0 = use all available cores, 1+ = exact count.
+# Capped by build-time DARKFI_RANDOMX_MAX_THREADS (default 10).
+# For public nodes set to 0 (all cores); for local dev set to 1.
+#randomx_max_threads = 0
+
 ## Testnet JSON-RPC settings
 [network_config."testnet".rpc]
 # JSON-RPC listen URL
@@ -239,6 +246,13 @@ skip_fees = false
 # Garbage collection task transactions batch size
 txs_batch_size = 50
 
+## Mainnet PoW settings
+[network_config."mainnet".pow]
+# Max RandomX mining threads: 0 = use all available cores, 1+ = exact count.
+# Capped by build-time DARKFI_RANDOMX_MAX_THREADS (default 10).
+# For public nodes set to 0 (all cores); for local dev set to 1.
+#randomx_max_threads = 0
+
 ## Mainnet JSON-RPC settings
 [network_config."mainnet".rpc]
 # JSON-RPC listen URL
@@ -434,6 +448,13 @@ skip_fees = false
 # Garbage collection task transactions batch size
 txs_batch_size = 50
 
+## Localnet PoW settings
+[network_config."localnet".pow]
+# Max RandomX mining threads: 0 = use all available cores, 1+ = exact count.
+# Capped by build-time DARKFI_RANDOMX_MAX_THREADS (default 10).
+# Default 1 for local dev safety.
+#randomx_max_threads = 1
+
 ## Localnet JSON-RPC settings
 [network_config."localnet".rpc]
 # JSON-RPC listen URL
@@ -578,6 +599,13 @@ skip_fees = true
 # Garbage collection task transactions batch size
 txs_batch_size = 50
 
+## Linear-testnet PoW settings
+[network_config."linear-testnet".pow]
+# Max RandomX mining threads: 0 = use all available cores, 1+ = exact count.
+# Capped by build-time DARKFI_RANDOMX_MAX_THREADS (default 10).
+# Default 1 for local dev safety.
+#randomx_max_threads = 1
+
 ## Linear-testnet JSON-RPC settings
 [network_config."linear-testnet".rpc]
 # JSON-RPC listen URL
@@ -636,6 +664,10 @@ initial_difficulty = 255
 min_difficulty = 1
 max_difficulty = 4294967295
 min_block_interval = 10
+# Max RandomX mining threads: 0 = use all available cores, 1+ = exact count.
+# Capped by build-time DARKFI_RANDOMX_MAX_THREADS (default 10).
+# Public testnet defaults to 0 (all cores); set to 1 for local dev.
+#randomx_max_threads = 0
 
 ## DarkWow-testnet JSON-RPC settings
 [network_config."darkwow-testnet".rpc]
@@ -724,6 +756,7 @@ seeds = [
 #min_difficulty = 1
 #max_difficulty = 4294967295
 #min_block_interval = 10
+#randomx_max_threads = 0
 #
 #[network_config."dwow-devnet".rpc]
 #rpc_listen = "tcp://0.0.0.0:31345"

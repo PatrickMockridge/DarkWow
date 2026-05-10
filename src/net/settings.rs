@@ -154,6 +154,9 @@ pub struct PowSettings {
     pub max_difficulty: Option<u32>,
     /// Minimum interval between blocks in seconds
     pub min_block_interval: Option<u64>,
+    /// Max RandomX mining threads (0 = use all available cores, 1+ = exact count).
+    /// Capped by the build-time DARKFI_RANDOMX_MAX_THREADS constant (default 10).
+    pub randomx_max_threads: Option<usize>,
 }
 
 impl Default for Settings {
@@ -428,6 +431,12 @@ pub struct PowSettingsOpt {
     #[serde(default)]
     #[structopt(long = "pow-min-block-interval")]
     pub min_block_interval: Option<u64>,
+
+    /// Max RandomX mining threads (0 = use all available cores, 1+ = exact count).
+    /// Capped by the build-time DARKFI_RANDOMX_MAX_THREADS constant (default 10).
+    #[serde(default)]
+    #[structopt(long = "pow-randomx-max-threads")]
+    pub randomx_max_threads: Option<usize>,
 }
 
 impl TryFrom<(&str, &str, SettingsOpt)> for Settings {
@@ -511,6 +520,7 @@ impl TryFrom<(&str, &str, SettingsOpt)> for Settings {
                 min_difficulty: opt.pow.min_difficulty,
                 max_difficulty: opt.pow.max_difficulty,
                 min_block_interval: opt.pow.min_block_interval,
+                randomx_max_threads: opt.pow.randomx_max_threads,
             },
         })
     }
