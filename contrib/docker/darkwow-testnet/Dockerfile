@@ -29,7 +29,7 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 WORKDIR /app
 
 # Clone from origin on linear-master branch — deterministic source
-RUN git clone https://codeberg.org/PatrickM123/darkfi-jailbroken.git /app && \
+RUN git clone https://codeberg.org/PatrickM123/darkwow.git /app && \
     git -C /app checkout linear-master
 
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
