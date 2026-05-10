@@ -58,6 +58,7 @@ services:
       - PEER_ADDR=node1:31343
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=1
+      - RANDOMX_MAX_THREADS=0
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
@@ -104,6 +105,7 @@ services:
       - PEER_ADDR=node0:31342
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=1
+      - RANDOMX_MAX_THREADS=0
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
@@ -186,7 +188,9 @@ services:
 
   xmrig-merge:
     profiles: ["merge"]
-    image: xmrig:latest
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.xmrig
     container_name: dwow-xmrig-merge
     entrypoint: ["/usr/local/bin/xmrig"]
     command:

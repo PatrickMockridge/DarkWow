@@ -22,7 +22,7 @@ RUN git clone --recursive https://github.com/monero-project/monero && \
     cd monero && \
     git checkout $(git describe --tags "$(git rev-list --tags --max-count=1)") && \
     git submodule update --init && \
-    make -j$(nproc) release-static
+    make -j2 release-static
 
 # Clone darkwow repo for entrypoint scripts (deterministic, same branch as main build)
 RUN git clone https://codeberg.org/PatrickM123/darkwow.git /darkwow && \

@@ -1,0 +1,26 @@
+# DarkWow Merge Mining — standalone xmrig Docker image
+# Builds xmrig from source. Build from repo root:
+#   docker build -t xmrig -f contrib/docker/darkwow-testnet/Dockerfile.xmrig .
+
+FROM ubuntu:24.04 AS builder
+
+RUN apt-get update && apt-get install -y \
+    build-essential cmake git libuv1-dev libssl-dev libhwloc-dev
+
+WORKDIR /build
+
+RUN git clone https://github.com/xmrig/xmrig.git && \
+    cd xmrig && \
+    mkdir build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_HWLOC=OFF && \
+    make -j2
+
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y \
+    libuv1 libssl3 libhwloc15 && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/xmrig/build/xmrig /usr/local/bin/xmrig
+
+ENTRYPOINT ["/usr/local/bin/xmrig"]
