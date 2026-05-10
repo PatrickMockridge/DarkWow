@@ -223,7 +223,7 @@ fi
 
 # --- Start dwowd ---
 echo "Starting dwowd..."
-/app/dwowd "$@" &
+/app/dwowd --config "$CONFIGFILE" "$@" &
 DWOWD_PID=$!
 
 # --- Start xmrig for mining ---

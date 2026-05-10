@@ -1,6 +1,6 @@
 # DarkWow Testnet Docker Image
 #
-# Multi-stage build from local source. Build from repo root:
+# Multi-stage build: clones from origin, builds inside Docker. Build from repo root:
 #   docker build -t darkwow-testnet . -f contrib/docker/darkwow-testnet/Dockerfile
 #
 # Or use the build script:
@@ -14,7 +14,7 @@ FROM ubuntu:24.04 AS builder
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential gcc g++ make cmake curl git \
-    libssl-dev pkg-config tcl-dev clang libsqlite3-dev libasound2-dev libsqlcipher3-dev
+    libssl-dev pkg-config tcl-dev clang libsqlite3-dev libasound2-dev libsqlcipher-dev
 
 # Install Rust with default toolchain
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y \
@@ -28,7 +28,9 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 WORKDIR /app
 
-COPY . /app
+# Clone from origin on linear-master branch — deterministic source
+RUN git clone https://codeberg.org/PatrickM123/darkfi-jailbroken.git /app && \
+    git -C /app checkout linear-master
 
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
 RUN cargo build --release -p zkas
@@ -83,7 +85,7 @@ WORKDIR /app
 COPY --from=builder /app/dwowd ./
 COPY --from=builder /app/lilith ./
 COPY --from=builder /app/lilith_config.toml ./
-COPY contrib/docker/darkwow-testnet/entrypoint.sh /app/entrypoint.sh
+COPY --from=builder /app/contrib/docker/darkwow-testnet/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Entrypoint handles config generation, CMD provides default binary args

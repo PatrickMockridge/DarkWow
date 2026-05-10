@@ -47,6 +47,7 @@ services:
     container_name: dwow-node0
     hostname: node0
     entrypoint: ["/app/entrypoint.sh"]
+    command: []
     environment:
       - ROLE=dwowd
       - NETWORK=darkwow-testnet
@@ -65,8 +66,8 @@ services:
       - EXTERNAL_ADDR=node0:31342
       - MERGE_MINING=${MERGE_MINING:-false}
       - MM_RPC_PORT=31348
-      # - WALLET_ADDRESS=<bs58-address>    # Pre-configure mining payout wallet
-      # - WALLET_SECRET=<hex-secret>       # Required if WALLET_ADDRESS is set
+      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - WALLET_SECRET=${WALLET_SECRET:-}
     ports:
       - "31345:31345"
       - "31347:31347"
@@ -92,12 +93,13 @@ services:
     container_name: dwow-node1
     hostname: node1
     entrypoint: ["/app/entrypoint.sh"]
+    command: []
     environment:
       - ROLE=dwowd
       - NETWORK=darkwow-testnet
       - P2P_PORT=31343
       - RPC_PORT=31346
-      - STRATUM_PORT=31348
+      - STRATUM_PORT=31349
       - SEED_ADDR=lilith:31340
       - PEER_ADDR=node0:31342
       - MAGIC_BYTES=68,82,75,87
@@ -108,11 +110,11 @@ services:
       - SKIP_FEES=false
       - LOCALNET=false
       - EXTERNAL_ADDR=node1:31343
-      # - WALLET_ADDRESS=<bs58-address>    # Pre-configure mining payout wallet
-      # - WALLET_SECRET=<hex-secret>       # Required if WALLET_ADDRESS is set
+      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - WALLET_SECRET=${WALLET_SECRET:-}
     ports:
       - "31346:31346"
-      - "31348:31348"
+      - "31349:31349"
       - "31343:31343"
     volumes:
       - node1_data:/root/.local/share/dwow/dwowd
