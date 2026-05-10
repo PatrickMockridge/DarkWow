@@ -24,6 +24,10 @@ RUN git clone --recursive https://github.com/monero-project/monero && \
     git submodule update --init && \
     make -j$(nproc) release-static
 
+# Clone darkwow repo for entrypoint scripts (deterministic, same branch as main build)
+RUN git clone https://codeberg.org/PatrickM123/darkwow.git /darkwow && \
+    git -C /darkwow checkout linear-master
+
 # ============================================================================
 # Stage: Runtime
 # ============================================================================
@@ -37,7 +41,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY --from=builder /build/monero/build/Linux/*/release/bin/monerod /usr/local/bin/
-COPY contrib/docker/darkwow-testnet/entrypoint-monero.sh /app/entrypoint-monero.sh
+COPY --from=builder /darkwow/contrib/docker/darkwow-testnet/entrypoint-monero.sh /app/entrypoint-monero.sh
 RUN chmod +x /app/entrypoint-monero.sh
 
 ENTRYPOINT ["/app/entrypoint-monero.sh"]

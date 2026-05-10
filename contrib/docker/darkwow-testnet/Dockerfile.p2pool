@@ -26,6 +26,10 @@ RUN git clone --recursive https://github.com/SChernykh/p2pool && \
     cmake .. && \
     make -j$(nproc)
 
+# Clone darkwow repo for entrypoint scripts (deterministic, same branch as main build)
+RUN git clone https://codeberg.org/PatrickM123/darkwow.git /darkwow && \
+    git -C /darkwow checkout linear-master
+
 # ============================================================================
 # Stage: Runtime
 # ============================================================================
@@ -39,7 +43,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY --from=builder /build/p2pool/build/p2pool /usr/local/bin/
-COPY contrib/docker/darkwow-testnet/entrypoint-p2pool.sh /app/entrypoint-p2pool.sh
+COPY --from=builder /darkwow/contrib/docker/darkwow-testnet/entrypoint-p2pool.sh /app/entrypoint-p2pool.sh
 RUN chmod +x /app/entrypoint-p2pool.sh
 
 ENTRYPOINT ["/app/entrypoint-p2pool.sh"]
