@@ -6,6 +6,41 @@ able to merge-mine DarkWow using `p2pool` and `xmrig`.
 
 > **Conda Users**: If using conda environments, run `conda deactivate` before running DarkWow binaries. Conda's Python and library paths may conflict with DarkWow's native dependencies. Consider using a venv as described in [Using dnet](../learn/dchat/network-tools/using-dnet.md).
 
+## Docker Quick Start
+
+The easiest way to test merge mining is with the darkwow-testnet Docker
+setup, which bundles monerod + p2pool + xmrig behind a single flag:
+
+```bash
+# Start with merge mining (adds monerod, p2pool, and xmrig-merge containers)
+MERGE_MINING=true docker compose --profile merge \
+    -f contrib/docker/darkwow-testnet/docker-compose.yml up -d
+
+# Check logs
+docker logs dwow-p2pool
+docker logs dwow-monerod
+
+# Check blockchain status
+curl -s http://127.0.0.1:31345 -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"method":"blockchain.info","params":[],"id":1}'
+
+# Tear down
+docker compose --profile merge \
+    -f contrib/docker/darkwow-testnet/docker-compose.yml down
+```
+
+By default, `monerod` runs in offline mode (no Monero testnet sync needed).
+To connect to the live Monero testnet, set `MONERO_OFFLINE=false`.
+
+See the [darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md)
+for the full merge mining env var reference.
+
+## Bare-Metal Setup
+
+The sections below cover building and running each component from source.
+Use this for production or non-Docker deployments.
+
 Please read the whole document first before executing commands, to
 understand all the steps required and how each component operates.
 Unless instructed otherwise, each daemon runs on its own shell, so

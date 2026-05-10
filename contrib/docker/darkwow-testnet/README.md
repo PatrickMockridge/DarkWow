@@ -146,6 +146,8 @@ To allow external participants (outside your LAN) to join:
 | `SKIP_FEES` | `false` | Disable fee verification |
 | `WALLET_ADDRESS` | auto | Mining payout address (auto-generated if unset) |
 | `WALLET_SECRET` | auto | Hex-encoded secret key for pre-configured wallet |
+| `MERGE_MINING` | `false` | Enable merge mining via Monero p2pool |
+| `MM_RPC_PORT` | `31348` | Merge mining JSON-RPC port (p2pool protocol) |
 | `DATADIR` | `~/.local/share/dwow/dwowd/<network>` | Blockchain data directory |
 
 ## Building from Source
@@ -229,6 +231,66 @@ $DRK -n $NETWORK scan
 # Check balance (should show DRKW from mining rewards)
 $DRK -n $NETWORK wallet balance
 ```
+
+## Merge Mining (Optional)
+
+The testnet supports Monero merge mining via p2pool as an opt-in feature.
+Set `MERGE_MINING=true` to use it; leave unset (default) for native mining.
+
+```
+MERGE_MINING=false (default)
+  xmrig → dwowd stratum (native RandomX mining)
+
+MERGE_MINING=true
+  xmrig → p2pool stratum → monerod (parent chain)
+                         → dwowd mm_rpc (aux chain)
+```
+
+### Quick Start
+
+```bash
+# Start with merge mining (adds monerod + p2pool + xmrig-merge containers)
+MERGE_MINING=true docker compose --profile merge up -d
+
+# Check merge mining status
+docker logs dwow-p2pool
+docker logs dwow-monerod
+
+# Check that blocks are being produced
+curl -s http://127.0.0.1:31345 -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"method":"blockchain.info","params":[],"id":1}'
+
+# Tear down (stops merge mining containers too)
+docker compose --profile merge down
+```
+
+By default, `monerod` runs in **offline mode** with fixed difficulty — no need
+to sync the real Monero testnet. Set `MONERO_OFFLINE=false` to connect to the
+public Monero testnet.
+
+Merge mining uses **two independent wallets on two different curves**:
+
+| Wallet | Curve | Address format | Env var |
+|--------|-------|---------------|---------|
+| DarkWow | Pallas (pasta) | bs58 | `WALLET_ADDRESS` |
+| Monero | Ed25519/Curve25519 | base58 | `MONERO_WALLET_ADDRESS` |
+
+Keys cannot be shared between them — they are different cryptographic curves
+with no algebraic conversion. Both wallets earn rewards: Monero coinbase from
+the parent chain, DarkWow coinbase from the aux chain.
+
+### Merge Mining Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `MERGE_MINING` | `false` | Enable merge mining (`true`/`false`) |
+| `MM_RPC_PORT` | `31348` | dwowd merge mining RPC port |
+| `MONERO_OFFLINE` | `true` | Run monerod in offline mode (local devnet) |
+| `MONERO_FIXED_DIFFICULTY` | `20000` | Fixed difficulty when offline |
+| `MONERO_WALLET_ADDRESS` | (empty) | Monero wallet for p2pool mining rewards |
+| `WALLET_ADDRESS` | (empty) | DarkWow wallet for aux chain mining rewards |
+| `XMERGE_THREADS` | `1` | xmrig-merge thread count |
 
 ## Contract Tests
 

@@ -31,6 +31,8 @@ SKIP_FEES="${SKIP_FEES:-false}"
 LOCALNET="${LOCALNET:-false}"
 WALLET_ADDRESS="${WALLET_ADDRESS:-}"
 WALLET_SECRET="${WALLET_SECRET:-}"
+MERGE_MINING="${MERGE_MINING:-false}"
+MM_RPC_PORT="${MM_RPC_PORT:-31348}"
 DATADIR="${DATADIR:-/root/.local/share/dwow/dwowd/${NETWORK}}"
 LILITH_DATADIR="${LILITH_DATADIR:-/root/.local/share/dwow/lilith/${NETWORK}}"
 
@@ -195,6 +197,16 @@ cat >> "$CONFIGFILE" << DWOWEOF
 inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
 DWOWEOF
 
+# --- Merge mining RPC config (optional) ---
+if [ "$MERGE_MINING" = "true" ]; then
+    cat >> "$CONFIGFILE" << DWOWEOF
+
+[network_config."${NETWORK}".mm_rpc]
+rpc_listen = "http+tcp://0.0.0.0:${MM_RPC_PORT}"
+DWOWEOF
+    echo "  Merge mining RPC: http+tcp://0.0.0.0:${MM_RPC_PORT}"
+fi
+
 echo "  Config written to $CONFIGFILE"
 
 # --- Pre-seed mining keypair if both address and secret are provided ---
@@ -215,7 +227,9 @@ echo "Starting dwowd..."
 DWOWD_PID=$!
 
 # --- Start xmrig for mining ---
-if [ "$MINING_ENABLED" = "true" ]; then
+if [ "$MERGE_MINING" = "true" ]; then
+    echo "Merge mining enabled — xmrig connects to p2pool instead of dwowd stratum"
+elif [ "$MINING_ENABLED" = "true" ]; then
     MINER_ADDRESS_FILE="${DATADIR}/mining_address"
 
     if [ -n "$WALLET_ADDRESS" ]; then

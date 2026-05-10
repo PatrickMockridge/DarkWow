@@ -1,0 +1,45 @@
+# DarkWow Merge Mining — p2pool Docker image
+#
+# Builds p2pool from the latest release tag. Build from repo root:
+#   docker build -t darkwow-p2pool -f contrib/docker/darkwow-testnet/Dockerfile.p2pool .
+#
+# Requires monerod built first (p2pool links against Monero libraries).
+
+# ============================================================================
+# Stage: Builder
+# ============================================================================
+FROM ubuntu:24.04 AS builder
+
+RUN apt-get update && apt-get install -y \
+    build-essential cmake git libboost-all-dev libssl-dev libzmq3-dev \
+    libsodium-dev libpgm-dev libunbound-dev libunwind8-dev liblzma-dev \
+    libreadline6-dev libldns-dev libexpat1-dev libgtest-dev doxygen graphviz \
+    libpcsclite-dev libhidapi-dev libusb-1.0-0-dev
+
+WORKDIR /build
+
+RUN git clone --recursive https://github.com/SChernykh/p2pool && \
+    cd p2pool && \
+    git checkout $(git describe --tags "$(git rev-list --tags --max-count=1)") && \
+    git submodule update --init && \
+    mkdir build && cd build && \
+    cmake .. && \
+    make -j$(nproc)
+
+# ============================================================================
+# Stage: Runtime
+# ============================================================================
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y \
+    libboost-filesystem1.83 libboost-thread1.83 libssl3 libzmq5 \
+    libsodium23 libunbound8 liblzma5 libhidapi-libusb0 && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder /build/p2pool/build/p2pool /usr/local/bin/
+COPY contrib/docker/darkwow-testnet/entrypoint-p2pool.sh /app/entrypoint-p2pool.sh
+RUN chmod +x /app/entrypoint-p2pool.sh
+
+ENTRYPOINT ["/app/entrypoint-p2pool.sh"]

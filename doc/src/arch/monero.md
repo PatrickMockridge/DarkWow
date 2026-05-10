@@ -47,6 +47,110 @@ DarkWow uses Monero's CryptoNight-RandomX proof-of-work algorithm for merge mini
 
 **Reference:** [Merge Mining (User Guide)](../testnet/merge-mining.md)
 
+### Protocol Architecture: Two Separate Protocols
+
+Merge mining uses **two completely separate protocols** — p2pool communicates
+with dwowd via HTTP JSON-RPC, not the DarkWow P2P network. This is by design.
+
+```
+MERGE MINING SIDE                           DARKFI P2P SIDE
+══════════════════                         ══════════════════
+
+p2pool                                     dwowd node0 (mm_rpc receiver)
+  │                                           │
+  │  HTTP JSON-RPC                            │
+  ├─ merge_mining_get_chain_id ──────────────►│
+  ├─ merge_mining_get_aux_block ─────────────►│
+  │                                           │  constructs block template
+  │◄────────────── aux_blob, aux_hash ────────┤
+  │                                           │
+  │  (injects aux data into Monero block)     │
+  │  (xmrig mines Monero block)               │
+  │                                           │
+  ├─ merge_mining_submit_solution ───────────►│
+  │                                           │  validates: check_aux_chains,
+  │                                           │  RandomX hash, coinbase proof
+  │                                           │  registry.submit()
+  │                                           │
+  │                                           ├─ validator.append_proposal()
+  │                                           ├─ p2p.broadcast(ExtendedProposalMessage)
+  │                                           │     │
+  │                                           │     ▼
+  │                                           │  ┌──────────────────────────┐
+  │                                           │  │  DarkWow P2P Network     │
+  │                                           │  │  (magic bytes, version    │
+  │                                           │  │   handshake, hostlist,    │
+  │                                           │  │   block/tx propagation)   │
+  │                                           │  ├─ node1 ◄─────────────────┤
+  │                                           │  ├─ node2 ◄─────────────────┤
+  │                                           │  └─ ...   ◄─────────────────┘
+  │                                           │
+  │◄── result ────────────────────────────────┤
+```
+
+**Key insight**: p2pool connects to exactly one dwowd node via HTTP JSON-RPC.
+That dwowd node handles all DarkWow-side P2P — validating the merge-mined
+block, then broadcasting it to all P2P peers via [`p2p.broadcast()`](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/net/p2p.rs).
+Other dwowd nodes receive the block as a normal `ExtendedProposalMessage` and
+validate it through the standard block validation path (stateless ZK
+verification + PoW check on `PowData::Monero`).
+
+Block propagation from merge-mined origin to the entire P2P mesh is automatic.
+No special p2pool discovery mechanism is needed.
+
+#### Why p2pool Cannot Join the P2P Network
+
+DarkWow's P2P network enforces three strict barriers:
+
+1. **Magic bytes** — every P2P message begins with a 4-byte network identifier.
+   Mismatch causes immediate disconnect and peer ban. Implemented in
+   [`src/net/channel.rs`](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/net/channel.rs).
+
+2. **Version handshake** — `app_name`, `app_version.major`, and
+   `app_version.minor` must match exactly on both sides. A non-dwowd peer
+   would be rejected during the `ProtocolVersion` handshake in
+   [`src/net/protocol/protocol_version.rs`](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/net/protocol/protocol_version.rs).
+
+3. **Custom serialization** — all P2P messages use the `dwow_serial` binary
+   format, not JSON or protobuf. A non-Rust implementation would need to
+   reimplement the full DarkWow wire protocol.
+
+Making p2pool speak the DarkWow P2P protocol would require forking p2pool and
+implementing the DarkWow wire format. This is unnecessary — the RPC bridge
+architecture handles everything correctly.
+
+#### Call Chain: p2pool Submission → P2P Propagation
+
+```
+1. p2pool POST merge_mining_submit_solution → bin/darkfid/src/rpc/xmr.rs
+2. MmRpcHandler: MoneroPowData::new, check_aux_chains, block.sign
+3. registry.submit(&mut validator, &subscribers, &p2p, block)
+4. validator.append_proposal → Consensus::append_proposal
+   ├─ verify_proposal → verify_block → validate_block
+   │  ├─ header.validate_powdata()  — coinbase + aux chain merkle proofs
+   │  ├─ PoWModule.verify_block_hash — RandomX hash vs mine target
+   │  ├─ verify_transactions — ZK proof verification
+   │  └─ overlay.add_block(block)
+   └─ fork.append_proposal(proposal)
+5. p2p.broadcast(&ExtendedProposalMessage{proposal, zkbin_data})
+6. Peer node receives ExtendedProposalMessage
+   ├─ sync::verify_block (stateless ZK check with embedded zkbin_data)
+   ├─ validator.append_proposal (same validation as step 4)
+   └─ re-broadcast to all peers except sender
+```
+
+#### Fault Tolerance
+
+p2pool submits to only one dwowd node. For production, operators can
+configure p2pool to round-robin across multiple dwowd mm_rpc endpoints.
+In the Docker testnet, auto-restart policies handle process failures.
+
+| Scenario | Impact | Mitigation |
+|----------|--------|-----------|
+| dwowd mm_rpc node crashes | p2pool can't submit solutions | Restart policy; point p2pool at another node |
+| p2pool crashes | Merge mining stops | Container restart policy |
+| monerod crashes | p2pool can't get templates | Container restart policy |
+
 ## 2. Bridging & Wrapping
 
 The bridge contract enables moving XMR between Monero and DarkWow using an **Object Capability Security** model instead of VSS-based approaches.

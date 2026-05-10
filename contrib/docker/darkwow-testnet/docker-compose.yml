@@ -63,12 +63,15 @@ services:
       - SKIP_FEES=false
       - LOCALNET=false
       - EXTERNAL_ADDR=node0:31342
+      - MERGE_MINING=${MERGE_MINING:-false}
+      - MM_RPC_PORT=31348
       # - WALLET_ADDRESS=<bs58-address>    # Pre-configure mining payout wallet
       # - WALLET_SECRET=<hex-secret>       # Required if WALLET_ADDRESS is set
     ports:
       - "31345:31345"
       - "31347:31347"
       - "31342:31342"
+      - "31348:31348"
     volumes:
       - node0_data:/root/.local/share/dwow/dwowd
     networks:
@@ -125,6 +128,79 @@ services:
       timeout: 5s
       retries: 3
 
+  # ============================================================================
+  # Merge Mining Services (--profile merge)
+  #
+  # Start with:  docker compose --profile merge up -d
+  # Without the profile flag, these services are skipped and native mining
+  # (xmrig → dwowd stratum) is used.
+  # ============================================================================
+  monerod:
+    profiles: ["merge"]
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.monero
+    container_name: dwow-monerod
+    hostname: monerod
+    environment:
+      - OFFLINE=${MONERO_OFFLINE:-true}
+      - FIXED_DIFFICULTY=${MONERO_FIXED_DIFFICULTY:-20000}
+      - ZMQ_PORT=28083
+      - RPC_PORT=28081
+    ports:
+      - "28081:28081"
+    volumes:
+      - monerod_data:/root/.bitmonero
+    networks:
+      - dwow-local
+    restart: unless-stopped
+
+  p2pool:
+    profiles: ["merge"]
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.p2pool
+    container_name: dwow-p2pool
+    hostname: p2pool
+    entrypoint: ["/app/entrypoint-p2pool.sh"]
+    environment:
+      - MONERO_HOST=monerod
+      - MONERO_RPC_PORT=28081
+      - MONERO_ZMQ_PORT=28083
+      - DWOWD_MM_RPC=node0:31348
+      - STRATUM_PORT=3333
+      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
+    ports:
+      - "3333:3333"
+    volumes:
+      - p2pool_data:/root/.p2pool
+    networks:
+      - dwow-local
+    depends_on:
+      - monerod
+      - node0
+    restart: unless-stopped
+
+  xmrig-merge:
+    profiles: ["merge"]
+    image: xmrig:latest
+    container_name: dwow-xmrig-merge
+    entrypoint: ["/usr/local/bin/xmrig"]
+    command:
+      - "-o"
+      - "p2pool:3333"
+      - "-a"
+      - "rx/0"
+      - "-t"
+      - "${XMERGE_THREADS:-1}"
+      - "--keepalive"
+    networks:
+      - dwow-local
+    depends_on:
+      - p2pool
+    restart: unless-stopped
+
 networks:
   dwow-local:
     driver: bridge
@@ -133,3 +209,5 @@ volumes:
   lilith_data:
   node0_data:
   node1_data:
+  monerod_data:
+  p2pool_data:

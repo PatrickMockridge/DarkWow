@@ -206,7 +206,20 @@ docker run -d --name dwow-node --network=host \
 - Docker log rotation: configure `max-size` and `max-file` in the Docker daemon or use `--log-opt` on `docker run`
 - Data backup: periodic snapshots of `/data/dwowd` and `/data/lilith`
 
-## Phase 4: Ongoing Operations
+## Phase 4: Merge Mining (Optional)
+
+Once the native mining testnet is stable, add Monero merge mining:
+
+```bash
+# Enable merge mining on the darkwow-testnet
+MERGE_MINING=true docker compose --profile merge up -d
+```
+
+This adds monerod + p2pool + xmrig-merge containers. monerod runs in offline
+mode for local testing; connect to Monero public testnet with
+`MONERO_OFFLINE=false`. See [Merge Mining](merge-mining.md) for the full guide.
+
+## Phase 5: Ongoing Operations
 
 - **Contract deployments**: Deploy the extended contract suite (money_v3, DEX,
   dao_escrow, etc.) to the live testnet
