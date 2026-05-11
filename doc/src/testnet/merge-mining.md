@@ -4,6 +4,28 @@ DarkWow x Monero Merge Mining using p2pool and xmrig
 This document provides a way to set up a Monero testnet that is
 able to merge-mine DarkWow using `p2pool` and `xmrig`.
 
+## Merge Mining Economics
+
+Merge mining allows Monero miners to produce valid DarkWow blocks using the
+same RandomX proof-of-work. Two reward streams flow independently:
+
+| Reward | Chain | Wallet curve | Delivery mechanism |
+|--------|-------|-------------|-------------------|
+| XMR coinbase | Monero | Ed25519/Curve25519 | p2pool `--wallet` |
+| DRKW block reward | DarkWow | Pallas | p2pool `--merge-mine` address → `NativeToken::PoWRewardV1` |
+
+**Competition.** Merge-mined blocks (`PowData::Monero`) and native DarkWow
+blocks (`PowData::DarkFi`) compete under the identical `block_rank()` formula.
+Monero's vastly larger hashpower means merge-mined blocks will win nearly all
+canonical slots. Native miners rely on **Uncle Merkle rewards** (Phase 2) to
+remain economically viable — without them, native mining has no path to
+profitability.
+
+The full economic model is documented in [Mining Tokenomics](../arch/mining-tokenomics.md#merge-mining-competition).
+A Python simulation matching the Rust consensus 1:1 is available at
+`contrib/docker/darkwow-testnet/merge_mining_model.py` — run it to explore
+hashpower ratios, uncle phases, and reward distribution interactively.
+
 > **Conda Users**: If using conda environments, run `conda deactivate` before running DarkWow binaries. Conda's Python and library paths may conflict with DarkWow's native dependencies. Consider using a venv as described in [Using dnet](../learn/dchat/network-tools/using-dnet.md).
 
 ## Docker Quick Start

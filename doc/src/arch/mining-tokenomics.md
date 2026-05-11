@@ -182,6 +182,71 @@ This is Pareto efficient: miners are never punished for producing non-canonical
 blocks, smaller miners aren't excluded from rewards, and it's simpler than
 DAG-based fork tracking (uncle references live in the canonical block header).
 
+### Merge Mining Competition
+
+Merge mining introduces a second block source: Monero miners (via p2pool) can
+produce DarkWow blocks using the same RandomX PoW, with `PowData::Monero` instead
+of `PowData::DarkFi`. Both block types compete identically under the `block_rank()`
+formula — neither has protocol-level preference.
+
+```
+Merge-mined block (PowData::Monero)       Native block (PowData::DarkFi)
+         │                                         │
+         ▼                                         ▼
+    p2pool submits                             xmrig submits
+    solution to                                solution to
+    dwowd mm_rpc                               dwowd stratum
+         │                                         │
+         └──────────────┬──────────────────────────┘
+                        ▼
+              Both enter fork competition
+              Identical block_rank() formula
+              Winner = better RandomX hash
+                        │
+              ┌─────────┴──────────┐
+              ▼                    ▼
+         Canonical slot       Uncle (Phase 2)
+         Full emission        emission / 2^depth
+         reward               partial reward
+```
+
+**Hashpower asymmetry.** Monero's total network hashrate exceeds DarkWow native
+hashrate by several orders of magnitude. Merge-mined blocks will therefore win
+>99% of canonical slots. Native miners cannot compete for canonical blocks —
+their only path to economic viability is through uncle rewards in Phase 2.
+
+**Phase 1 is not viable for merge mining.** With `uncle_merkle_root = 0` (no
+uncle rewards), the loser of every slot is orphaned and earns nothing. At a
+1000:1 hashpower ratio, the native miner earns zero DRKW — the chain is secured
+entirely by Monero hashpower with no economic participation from DarkWow-native
+miners. Phase 2 fixes this: native miners who lose canonical slots become
+uncles and receive `emission_reward / 2^depth`.
+
+**Reward split at 1000:1 hashpower (Phase 2):**
+
+| Miner | Canonical wins | Uncle rewards | % of total issuance |
+|-------|:---:|:---:|:---:|
+| Merge miner (Monero via p2pool) | ~100% | 0% | ~75% |
+| Native miner (DarkWow via stratum) | ~0% | 100% of uncle slots | ~25% |
+
+The 75/25 split emerges from the uncle reward formula: canonical gets
+`emission_reward + emission_reward/2` (the pair bonus), uncle gets
+`emission_reward/2`. At equal hashpower, the split converges to ~50/50.
+
+**Two reward streams.** Merge miners receive two separate rewards on two
+separate chains:
+- **Monero XMR coinbase** → Monero wallet (Ed25519/Curve25519) via p2pool `--wallet`
+- **DarkWow DRKW reward** → DarkWow wallet (Pallas curve) via p2pool `--merge-mine` address
+
+The wallets are on different elliptic curves — keys cannot be shared. The
+DarkWow reward is delivered via `NativeToken::PoWRewardV1`, a ZK transaction
+minting `expected_reward(height)` to the recipient address.
+
+**Model.** A Python toy model matching the Rust consensus code 1:1 is available
+at `contrib/docker/darkwow-testnet/merge_mining_model.py`. It simulates the
+competition between merge-mined and native blocks across configurable hashpower
+ratios, uncle phases, and slot counts.
+
 ---
 
 ## Difficulty Adjustment
