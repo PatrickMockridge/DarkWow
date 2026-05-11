@@ -15,7 +15,7 @@ ZMQ_PORT="${ZMQ_PORT:-28083}"
 echo "=== Monero Node (testnet) ==="
 echo "  OFFLINE=$OFFLINE  RPC=$RPC_PORT  ZMQ=$ZMQ_PORT"
 
-ARGS="--testnet --no-igd --data-dir /root/.bitmonero --log-level 1 --hide-my-port"
+ARGS="--testnet --non-interactive --no-igd --data-dir /root/.bitmonero --log-level 1 --hide-my-port"
 ARGS="$ARGS --zmq-pub tcp://0.0.0.0:${ZMQ_PORT}"
 ARGS="$ARGS --rpc-bind-ip 0.0.0.0 --rpc-bind-port ${RPC_PORT} --confirm-external-bind"
 
