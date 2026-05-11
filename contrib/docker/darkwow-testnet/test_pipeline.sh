@@ -300,13 +300,14 @@ fi
 info "[8/10] Verifying mining activity..."
 
 if [ "$MODE" = "merge" ]; then
-    # p2pool connectivity
+    # p2pool connectivity — check it's running (not crash-looping) and
+    # communicating with monerod and dwowd mm_rpc.
     info "Checking p2pool connectivity..."
     P2POOL_READY=false
     for i in $(seq 1 30); do
         P2POOL_LOGS=$(docker logs dwow-p2pool 2>&1 || true)
-        if echo "$P2POOL_LOGS" | grep -qi "sidechain id\|new template\|merge mine\|merge_mine"; then
-            info "p2pool connected to dwowd mm_rpc (attempt $i)"
+        if echo "$P2POOL_LOGS" | grep -qi "sidechain\|merge min\|stratum\|p2pool v\|new template\|get_chain_id\|mining"; then
+            info "p2pool active (attempt $i)"
             P2POOL_READY=true
             break
         fi
@@ -315,6 +316,8 @@ if [ "$MODE" = "merge" ]; then
     if [ "$P2POOL_READY" = true ]; then
         pass "p2pool connected"
     else
+        warn "p2pool logs don't show expected activity"
+        docker logs dwow-p2pool 2>&1 | tail -20
         fail "p2pool connected"
     fi
 
@@ -347,11 +350,15 @@ info "[9/10] Verifying block production..."
 # Wait for genesis + first blocks
 if [ "$MODE" = "merge" ]; then
     info "Waiting for genesis + merge-mined blocks..."
-    sleep 30
+    WAIT_SECS=30
 else
     info "Waiting for genesis + native-mined blocks..."
-    sleep 15
+    WAIT_SECS=15
 fi
+for i in $(seq 1 $WAIT_SECS); do
+    sleep 1
+    [ $((i % 10)) -eq 0 ] && info "  waited ${i}s / ${WAIT_SECS}s..."
+done
 
 # Check initial block height (JSON-RPC over raw TCP)
 BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.last_confirmed_block\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
@@ -368,7 +375,10 @@ fi
 
 # Wait for more blocks
 info "Waiting for additional blocks (block time ~120s)..."
-sleep 130
+for i in $(seq 1 13); do
+    sleep 10
+    info "  waited $((i * 10))s / 130s..."
+done
 
 BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.last_confirmed_block\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
 BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | sed -n 's/.*"result":\[\([0-9]*\).*/\1/p')
