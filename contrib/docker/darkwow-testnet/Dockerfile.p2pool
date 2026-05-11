@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
     build-essential cmake git libboost-all-dev libssl-dev libzmq3-dev \
     libsodium-dev libpgm-dev libunbound-dev libunwind8-dev liblzma-dev \
     libreadline6-dev libldns-dev libexpat1-dev libgtest-dev doxygen graphviz \
-    libpcsclite-dev libhidapi-dev libusb-1.0-0-dev
+    libpcsclite-dev libhidapi-dev libusb-1.0-0-dev libuv1-dev libcurl4-openssl-dev
 
 WORKDIR /build
 
@@ -24,7 +24,7 @@ RUN git clone --recursive https://github.com/SChernykh/p2pool && \
     git submodule update --init && \
     mkdir build && cd build && \
     cmake .. && \
-    make -j$(nproc)
+    make -j2
 
 # Clone darkwow repo for entrypoint scripts (deterministic, same branch as main build)
 RUN git clone https://codeberg.org/PatrickM123/darkwow.git /darkwow && \
