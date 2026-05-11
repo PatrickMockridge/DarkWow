@@ -248,10 +248,10 @@ done
 # ==============================================================================
 info "[7/10] Verifying RPC health..."
 
-# node0 RPC
+# node0 RPC (JSON-RPC over raw TCP — use bash /dev/tcp, not HTTP curl)
 info "Waiting for node0 RPC (port 31345)..."
 for i in $(seq 1 30); do
-    if docker exec "$NODE0" curl -s --max-time 2 "$RPC_URL" >/dev/null 2>&1; then
+    if docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"method\":\"blockchain.info\",\"params\":[],\"id\":1}" >&3; read -t 3 RESP <&3; [ -n "$RESP" ]' 2>/dev/null; then
         info "node0 RPC is up (attempt $i)"
         break
     fi
@@ -263,7 +263,7 @@ pass "node0 RPC healthy"
 # node1 RPC
 info "Waiting for node1 RPC (port 31346)..."
 for i in $(seq 1 30); do
-    if docker exec dwow-node1 curl -s --max-time 2 http://127.0.0.1:31346 >/dev/null 2>&1; then
+    if docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"method\":\"blockchain.info\",\"params\":[],\"id\":1}" >&3; read -t 3 RESP <&3; [ -n "$RESP" ]' 2>/dev/null; then
         info "node1 RPC is up (attempt $i)"
         break
     fi
@@ -347,11 +347,8 @@ else
     sleep 15
 fi
 
-# Check initial block height
-BLOCK_INFO=$(docker exec "$NODE0" curl -s --max-time 5 -X POST \
-    -H 'Content-Type: application/json' \
-    -d '{"method":"blockchain.info","params":[],"id":1}' \
-    "$RPC_URL" 2>&1)
+# Check initial block height (JSON-RPC over raw TCP)
+BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"method\":\"blockchain.info\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
 echo "$BLOCK_INFO"
 
 BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '"block_height":[0-9]*' | head -1 | cut -d':' -f2)
@@ -367,10 +364,7 @@ fi
 info "Waiting for additional blocks (block time ~120s)..."
 sleep 130
 
-BLOCK_INFO=$(docker exec "$NODE0" curl -s --max-time 5 -X POST \
-    -H 'Content-Type: application/json' \
-    -d '{"method":"blockchain.info","params":[],"id":1}' \
-    "$RPC_URL" 2>&1)
+BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"method\":\"blockchain.info\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
 BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '"block_height":[0-9]*' | head -1 | cut -d':' -f2)
 info "Block height after waiting: $BLOCK_HEIGHT"
 
@@ -383,10 +377,7 @@ fi
 # Mode-specific PoW verification in block data
 if [ "$BLOCK_HEIGHT" -ge 1 ]; then
     info "Inspecting block 1 for PoW data..."
-    BLOCK_DATA=$(docker exec "$NODE0" curl -s --max-time 5 -X POST \
-        -H 'Content-Type: application/json' \
-        -d "{\"method\":\"blockchain.get_block\",\"params\":[1],\"id\":1}" \
-        "$RPC_URL" 2>&1)
+    BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"method\":\"blockchain.get_block\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
 
     if [ "$MODE" = "merge" ]; then
         if echo "$BLOCK_DATA" | grep -qi "monero\|aux_blob\|aux_hash\|mm_tag"; then
@@ -396,7 +387,7 @@ if [ "$BLOCK_HEIGHT" -ge 1 ]; then
             fail "block contains Monero merge mining data"
         fi
     else
-        if echo "$BLOCK_DATA" | grep -qi "darkfi\|pow_data\|powdata"; then
+        if echo "$BLOCK_DATA" | grep -qi "dwow\|pow_data\|powdata"; then
             pass "block contains native PoW data"
         else
             fail "block contains native PoW data"

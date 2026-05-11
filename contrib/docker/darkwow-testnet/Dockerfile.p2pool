@@ -37,7 +37,7 @@ FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y \
     libboost-filesystem1.83 libboost-thread1.83 libssl3 libzmq5 \
-    libsodium23 libunbound8 liblzma5 libhidapi-libusb0 libuv1t64 && \
+    libsodium23 libunbound8 liblzma5 libhidapi-libusb0 libuv1t64 libcurl4t64 && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
