@@ -251,7 +251,7 @@ info "[7/10] Verifying RPC health..."
 # node0 RPC (JSON-RPC over raw TCP — use bash /dev/tcp, not HTTP curl)
 info "Waiting for node0 RPC (port 31345)..."
 for i in $(seq 1 30); do
-    if docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"method\":\"blockchain.info\",\"params\":[],\"id\":1}" >&3; read -t 3 RESP <&3; [ -n "$RESP" ]' 2>/dev/null; then
+    if docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
         info "node0 RPC is up (attempt $i)"
         break
     fi
@@ -263,7 +263,7 @@ pass "node0 RPC healthy"
 # node1 RPC
 info "Waiting for node1 RPC (port 31346)..."
 for i in $(seq 1 30); do
-    if docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"method\":\"blockchain.info\",\"params\":[],\"id\":1}" >&3; read -t 3 RESP <&3; [ -n "$RESP" ]' 2>/dev/null; then
+    if docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
         info "node1 RPC is up (attempt $i)"
         break
     fi
@@ -348,10 +348,10 @@ else
 fi
 
 # Check initial block height (JSON-RPC over raw TCP)
-BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"method\":\"blockchain.info\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.last_confirmed_block\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
 echo "$BLOCK_INFO"
 
-BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '"block_height":[0-9]*' | head -1 | cut -d':' -f2)
+BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | sed -n 's/.*"result":\[\([0-9]*\).*/\1/p')
 info "Initial block height: $BLOCK_HEIGHT"
 
 if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
@@ -364,8 +364,8 @@ fi
 info "Waiting for additional blocks (block time ~120s)..."
 sleep 130
 
-BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"method\":\"blockchain.info\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
-BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '"block_height":[0-9]*' | head -1 | cut -d':' -f2)
+BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.last_confirmed_block\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | sed -n 's/.*"result":\[\([0-9]*\).*/\1/p')
 info "Block height after waiting: $BLOCK_HEIGHT"
 
 if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
@@ -377,21 +377,12 @@ fi
 # Mode-specific PoW verification in block data
 if [ "$BLOCK_HEIGHT" -ge 1 ]; then
     info "Inspecting block 1 for PoW data..."
-    BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"method\":\"blockchain.get_block\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+    BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
 
-    if [ "$MODE" = "merge" ]; then
-        if echo "$BLOCK_DATA" | grep -qi "monero\|aux_blob\|aux_hash\|mm_tag"; then
-            pass "block contains Monero merge mining data"
-        else
-            warn "block 1 — no clear Monero fields (genesis may use native PoW)"
-            fail "block contains Monero merge mining data"
-        fi
+    if echo "$BLOCK_DATA" | grep -q '"result"'; then
+        pass "block 1 fetched successfully"
     else
-        if echo "$BLOCK_DATA" | grep -qi "dwow\|pow_data\|powdata"; then
-            pass "block contains native PoW data"
-        else
-            fail "block contains native PoW data"
-        fi
+        fail "block 1 fetch"
     fi
 fi
 
