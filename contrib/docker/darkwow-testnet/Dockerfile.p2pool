@@ -20,10 +20,10 @@ WORKDIR /build
 
 RUN git clone --recursive https://github.com/SChernykh/p2pool && \
     cd p2pool && \
-    git checkout $(git describe --tags "$(git rev-list --tags --max-count=1)") && \
+    git checkout v4.14 && \
     git submodule update --init && \
     mkdir build && cd build && \
-    cmake .. && \
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
     make -j2
 
 # Clone darkwow repo for entrypoint scripts (deterministic, same branch as main build)

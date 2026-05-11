@@ -20,10 +20,8 @@ MERGE_MINING=true docker compose --profile merge \
 docker logs dwow-p2pool
 docker logs dwow-monerod
 
-# Check blockchain status
-curl -s http://127.0.0.1:31345 -X POST \
-    -H 'Content-Type: application/json' \
-    -d '{"method":"blockchain.info","params":[],"id":1}'
+# Check blockchain status (dwowd uses raw TCP JSON-RPC)
+docker exec dwow-node0 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.last_confirmed_block\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3'
 
 # Tear down
 docker compose --profile merge \
