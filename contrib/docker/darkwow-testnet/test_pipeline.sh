@@ -110,6 +110,9 @@ for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | gre
     docker rmi -f "$img" 2>/dev/null || true
 done
 
+# Remove orphan volumes not captured by compose down -v
+docker volume prune -f 2>/dev/null || true
+
 # Clear all build cache — ensures fresh git clones on next build
 docker builder prune -a -f 2>/dev/null || true
 pass "clean"
