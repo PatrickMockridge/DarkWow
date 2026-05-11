@@ -100,6 +100,9 @@ if [ -n "$STALE" ]; then
     warn "Removing stale containers..."
     echo "$STALE" | xargs docker rm -f 2>/dev/null || true
 fi
+
+# Clear build cache to reclaim disk and ensure fresh git clones
+docker builder prune -a -f 2>/dev/null || true
 pass "clean"
 
 # ==============================================================================
