@@ -12,10 +12,12 @@ FIXED_DIFFICULTY="${FIXED_DIFFICULTY:-20000}"
 RPC_PORT="${RPC_PORT:-28081}"
 ZMQ_PORT="${ZMQ_PORT:-28083}"
 
-echo "=== Monero Node (testnet) ==="
+echo "=== Monero Node (offline mainnet) ==="
 echo "  OFFLINE=$OFFLINE  RPC=$RPC_PORT  ZMQ=$ZMQ_PORT"
 
-ARGS="--testnet --non-interactive --no-igd --data-dir /root/.bitmonero --log-level 1 --hide-my-port"
+# No --testnet/--mainnet flag: monerod defaults to mainnet, which matches
+# the pre-built p2pool binary (GitHub releases are mainnet-only).
+ARGS="--non-interactive --no-igd --data-dir /root/.bitmonero --log-level 1 --hide-my-port"
 ARGS="$ARGS --zmq-pub tcp://0.0.0.0:${ZMQ_PORT}"
 ARGS="$ARGS --rpc-bind-ip 0.0.0.0 --rpc-bind-port ${RPC_PORT} --confirm-external-bind"
 
