@@ -92,16 +92,25 @@ echo ""
 info "[1/10] Cleaning previous deployment..."
 
 cd "$SCRIPT_DIR"
-docker compose down -v 2>/dev/null || true
-docker compose --profile merge down -v 2>/dev/null || true
 
+# Tear down compose services (containers, networks, volumes)
+docker compose down --rmi all -v 2>/dev/null || true
+docker compose --profile merge down --rmi all -v 2>/dev/null || true
+
+# Remove any lingering dwow-* containers (defense in depth)
 STALE=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^dwow-" || true)
 if [ -n "$STALE" ]; then
     warn "Removing stale containers..."
-    echo "$STALE" | xargs docker rm -f 2>/dev/null || true
+    echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
 fi
 
-# Clear build cache to reclaim disk and ensure fresh git clones
+# Remove darkwow testnet images explicitly (docker compose --rmi misses
+# images that were built with different profile combinations)
+for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet-" || true); do
+    docker rmi -f "$img" 2>/dev/null || true
+done
+
+# Clear all build cache — ensures fresh git clones on next build
 docker builder prune -a -f 2>/dev/null || true
 pass "clean"
 
