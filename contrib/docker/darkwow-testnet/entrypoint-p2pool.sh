@@ -25,11 +25,16 @@ if [ -z "$WALLET_ADDRESS" ]; then
     echo "WARNING: WALLET_ADDRESS not set — DarkWow coinbase rewards will use dwowd default"
 fi
 
+WALLET_ARG=()
+if [ -n "$MONERO_WALLET_ADDRESS" ]; then
+    WALLET_ARG=(--wallet "${MONERO_WALLET_ADDRESS}")
+fi
+
 exec p2pool \
     --host "${MONERO_HOST}" \
     --rpc-port "${MONERO_RPC_PORT}" \
     --zmq-port "${MONERO_ZMQ_PORT}" \
-    --wallet "${MONERO_WALLET_ADDRESS}" \
+    "${WALLET_ARG[@]}" \
     --stratum "0.0.0.0:${STRATUM_PORT}" \
     --data-dir /root/.p2pool \
     --no-igd \

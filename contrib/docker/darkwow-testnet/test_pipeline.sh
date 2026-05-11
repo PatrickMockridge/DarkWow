@@ -58,7 +58,9 @@ WASM_DEX="${REPO_ROOT}/src/contract/dex/dwow_dex_contract.wasm"
 WASM_DAO_ESCROW="${REPO_ROOT}/src/contract/dao_escrow/dwow_dao_escrow_contract.wasm"
 
 # Monero wallet for p2pool parent chain rewards (merge mode only)
-MONERO_WALLET_ADDRESS="${MONERO_WALLET_ADDRESS:-9y52SGYaGQAPFh4gFg2KBiq6Q2kHhvCD8A8VqnBVBSoed3i6jJe57L3osLpFtQxkXcRaPqWCMk3sxUMwvXmPLgRSLXCwYTM}"
+# In offline mode, p2pool doesn't need a wallet. Set this to a valid
+# testnet address for live Monero testnet merge mining.
+MONERO_WALLET_ADDRESS="${MONERO_WALLET_ADDRESS:-}"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -173,7 +175,11 @@ info "  Address (bs58): ${WALLET_ADDRESS:0:16}..."
 info "  Secret (hex):   ${WALLET_SECRET:0:16}..."
 
 if [ "$MODE" = "merge" ]; then
-    info "  Monero wallet:  $MONERO_WALLET_ADDRESS"
+    if [ -n "$MONERO_WALLET_ADDRESS" ]; then
+        info "  Monero wallet:  $MONERO_WALLET_ADDRESS"
+    else
+        info "  Monero wallet:  (none — offline mode, no wallet needed)"
+    fi
 fi
 
 # Export for docker compose

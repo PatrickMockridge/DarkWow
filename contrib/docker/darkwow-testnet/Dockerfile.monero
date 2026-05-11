@@ -1,47 +1,29 @@
 # DarkWow Merge Mining — monerod Docker image
 #
-# Builds monerod from the latest Monero release tag. Build from repo root:
+# Downloads pre-built monerod binary from getmonero.org.
+# Build from repo root:
 #   docker build -t darkwow-monerod -f contrib/docker/darkwow-testnet/Dockerfile.monero .
-#
-# The build takes 30-60 minutes. Pre-built images are recommended for CI.
 
-# ============================================================================
-# Stage: Builder
-# ============================================================================
-FROM ubuntu:24.04 AS builder
-
-RUN apt-get update && apt-get install -y \
-    build-essential cmake git libboost-all-dev libssl-dev libzmq3-dev \
-    libsodium-dev libpgm-dev libunbound-dev libunwind8-dev liblzma-dev \
-    libreadline6-dev libldns-dev libexpat1-dev libgtest-dev doxygen graphviz \
-    libpcsclite-dev libhidapi-dev libusb-1.0-0-dev libevent-dev
-
-WORKDIR /build
-
-RUN git clone --recursive https://github.com/monero-project/monero && \
-    cd monero && \
-    git checkout $(git describe --tags "$(git rev-list --tags --max-count=1)") && \
-    git submodule update --init && \
-    make -j2 release
-
-# Clone darkwow repo for entrypoint scripts (deterministic, same branch as main build)
-RUN git clone https://codeberg.org/PatrickM123/darkwow.git /darkwow && \
-    git -C /darkwow checkout linear-master
-
-# ============================================================================
-# Stage: Runtime
-# ============================================================================
 FROM ubuntu:24.04
 
+# Runtime dependencies for Monero CLI binaries (monerod + monero-wallet-cli)
 RUN apt-get update && apt-get install -y \
-    libboost-filesystem1.83 libboost-thread1.83 libboost-program-options1.83.0 libssl3 libzmq5 \
-    libsodium23 libunbound8 liblzma5 libhidapi-libusb0 libreadline8t64 curl && \
+    curl bzip2 \
+    libboost-filesystem1.83 libboost-thread1.83 libboost-program-options1.83.0 \
+    libssl3 libzmq5 libsodium23 libunbound8 liblzma5 libhidapi-libusb0 \
+    libreadline8t64 libuv1t64 && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY --from=builder /build/monero/build/Linux/*/release/bin/monerod /usr/local/bin/
-COPY --from=builder /darkwow/contrib/docker/darkwow-testnet/entrypoint-monero.sh /app/entrypoint-monero.sh
+# Download latest Monero CLI release (includes monerod + monero-wallet-cli)
+RUN curl -sL https://downloads.getmonero.org/cli/linux64 -o monero.tar.bz2 && \
+    tar -xjf monero.tar.bz2 --strip-components=1 && \
+    rm monero.tar.bz2 && \
+    chmod +x monerod monero-wallet-cli && \
+    cp monerod monero-wallet-cli /usr/local/bin/
+
+COPY contrib/docker/darkwow-testnet/entrypoint-monero.sh /app/entrypoint-monero.sh
 RUN chmod +x /app/entrypoint-monero.sh
 
 ENTRYPOINT ["/app/entrypoint-monero.sh"]
