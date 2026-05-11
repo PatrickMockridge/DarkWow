@@ -34,7 +34,7 @@ RUN git clone https://codeberg.org/PatrickM123/darkwow.git /darkwow && \
 FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y \
-    libboost-filesystem1.83 libboost-thread1.83 libssl3 libzmq5 \
+    libboost-filesystem1.83 libboost-thread1.83 libboost-program-options1.83.0 libssl3 libzmq5 \
     libsodium23 libunbound8 liblzma5 libhidapi-libusb0 && \
     rm -rf /var/lib/apt/lists/*
 

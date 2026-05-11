@@ -136,10 +136,10 @@ pub fn expand_path(path: &str) -> Result<PathBuf> {
     Ok(ret)
 }
 
-/// Join a path with `config_dir()/darkfi`.
+/// Join a path with `config_dir()/dwow`.
 pub fn join_config_path(file: &Path) -> Result<PathBuf> {
     let mut path = PathBuf::new();
-    let dfi_path = Path::new("darkfi");
+    let dfi_path = Path::new("dwow");
 
     if let Some(v) = config_dir() {
         path.push(v);
