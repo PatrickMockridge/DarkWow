@@ -596,7 +596,7 @@ impl BlockStore {
     /// Fetch the last block hash in the order tree, based on the `Ord`
     /// implementation for `Vec<u8>`.
     pub fn get_last(&self) -> Result<(u32, HeaderHash)> {
-        let found = self.order.last()?.unwrap();
+        let Some(found) = self.order.last()? else { return Err(Error::BlockHeightNotFound(0u32)) };
         let (height, hash) = parse_u32_key_record(found)?;
 
         Ok((height, hash))
