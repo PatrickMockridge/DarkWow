@@ -120,7 +120,10 @@ harness.verify_sync()?;
 | Block proposal         | Block that has not yet been appended onto the canonical blockchain                     |
 | P2P network           | Peer-to-peer network on which nodes communicate with each other                          |
 | Confirmation           | State achieved when a block and its contents are appended to the canonical blockchain  |
+| Anchor                 | Monero block reference providing finality for a DarkWow block                          |
+| Anchoring Finality     | Modular security overlay — finalized blocks cannot be reorganized                      |
 
 See [Uncle Merkle Consensus](uncle_merkle.md) for detailed specification.
+See [Mining Tokenomics](../mining-tokenomics.md#anchoring-finality-gadget) for the anchoring finality gadget specification.
 
 The original fork/overlay DAG consensus specification has been archived to [legacy/consensus_dag.md](legacy/consensus_dag.md).

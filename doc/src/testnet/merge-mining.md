@@ -21,6 +21,13 @@ canonical slots. Native miners rely on **Uncle Merkle rewards** (Phase 2) to
 remain economically viable — without them, native mining has no path to
 profitability.
 
+**Anchoring finality.** Merge-mined and native blocks can include Monero block
+references as anchors. Once the anchor has N confirmations on Monero, the
+DarkWow block is finalized — protected against reorgs, double-spends, and
+re-ordering attacks. This is a modular security overlay that does not replace
+PoW fork choice. See [Anchoring Finality Gadget](../arch/mining-tokenomics.md#anchoring-finality-gadget)
+for the full design.
+
 The full economic model is documented in [Mining Tokenomics](../arch/mining-tokenomics.md#merge-mining-competition).
 A Python simulation matching the Rust consensus 1:1 is available at
 `contrib/docker/darkwow-testnet/merge_mining_model.py` — run it to explore

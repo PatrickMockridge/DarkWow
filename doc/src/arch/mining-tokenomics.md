@@ -247,6 +247,54 @@ at `contrib/docker/darkwow-testnet/merge_mining_model.py`. It simulates the
 competition between merge-mined and native blocks across configurable hashpower
 ratios, uncle phases, and slot counts.
 
+### Anchoring Finality Gadget
+
+Merge mining introduces a security asymmetry: Monero's hashrate dwarfs DarkWow's.
+At a 1000:1 ratio, a dominant merge miner could reorg the chain at will, orphaning
+native-mined blocks and stealing their rewards. Anchoring solves this.
+
+**What it is.** A modular finality overlay backed by Monero's cumulative difficulty.
+DarkWow blocks can include a reference to a recent Monero block (the "anchor").
+Once that Monero block has N confirmations, the DarkWow block is **finalized** —
+it cannot be reorganized. All ancestors of a finalized block are also finalized.
+
+**What it is NOT.** Anchoring does not replace PoW fork choice. Blocks still compete
+on DarkWow difficulty via `block_rank()`. The anchor is a constraint, not a weight —
+forks that conflict with finalized blocks are simply invalid. Within the set of
+valid forks, normal `targets_rank`/`hashes_rank` applies.
+
+**Three security benefits:**
+
+1. **Secures mining rewards** — finalized blocks can't be orphaned. Uncle rewards
+   earned by native miners are permanent once the anchor confirms.
+2. **Protects against double-spend attacks** — an attacker can't reverse a
+   transaction in a finalized block without also reversing Monero's chain.
+3. **Protects against re-ordering attacks** — transaction order within finalized
+   blocks is immutable.
+
+**How it works.** An attacker trying to reorganize finalized DarkWow blocks would
+need to reorganize Monero's chain (the anchor lives on Monero). Monero's cumulative
+difficulty is orders of magnitude higher than DarkWow's — the anchor borrows
+Monero's security without requiring Monero validators to know about DarkWow.
+
+```
+Forks ──► [Finality Filter: drop forks conflicting with finalized blocks]
+              │
+              ▼
+         Valid forks ──► best_fork_index() by targets_rank, hashes_rank
+              │
+              ▼
+         Best fork becomes canonical
+```
+
+**Configuration.** Anchoring is modular — enabled/disabled independently of PoW
+consensus. The minimum Monero confirmations before finality is a network parameter
+(default: 3). This means a DarkWow block is finalized when the Monero block it
+anchors to has 3+ confirmations (~6 minutes on Monero).
+
+See `contrib/docker/darkwow-testnet/merge_mining_model.py` for the simulation
+implementation, including reorg attack scenarios with and without anchoring.
+
 ---
 
 ## Difficulty Adjustment
