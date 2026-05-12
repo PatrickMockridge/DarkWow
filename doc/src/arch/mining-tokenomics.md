@@ -182,6 +182,80 @@ This is Pareto efficient: miners are never punished for producing non-canonical
 blocks, smaller miners aren't excluded from rewards, and it's simpler than
 DAG-based fork tracking (uncle references live in the canonical block header).
 
+### Mining Network Architecture
+
+DarkWow mining operates in three layers. The separation of concerns is absolute:
+every computer on the network handshakes via lilith. Pool mining and merge
+mining are overlays on top — they add capabilities without replacing the base
+P2P layer.
+
+**Layer 1: DarkWow P2P (mandatory)**
+
+Every computer participating in the DarkWow network — whether solo miner, pool
+operator, or merge miner — handshakes via lilith. This is non-negotiable. The
+lilith handshake provides node discovery, block propagation, and transaction
+gossip. dwowd connects to a lilith seed node on startup and participates as a
+full peer.
+
+```
+┌──────────────┐    lilith     ┌──────────────┐
+│   dwowd A    │◄─────────────►│   dwowd B    │
+│ (solo miner) │    handshake  │ (pool op)    │
+└──────────────┘               └──────┬───────┘
+       │                              │
+       │ stratum (local)              │ mm_rpc (local)
+       ▼                              ▼
+  ┌─────────┐                  ┌───────────┐
+  │  xmrig  │                  │  p2pool   │
+  └─────────┘                  └───────────┘
+```
+
+**Layer 2: Pool Mining Overlay (optional)**
+
+A p2pool operator runs a stratum server alongside their dwowd node. Individual
+miners connect their xmrig to p2pool's stratum port instead of dwowd's. p2pool
+aggregates their hashrate, distributes mining jobs, and pays out rewards via a
+PPLNS (Pay Per Last N Shares) scheme over a 2160-block window.
+
+This is how p2pool works on Monero — it's a decentralized pool mining protocol.
+On DarkWow, the pool operator's dwowd is the block submitter: from the chain's
+perspective, the pool appears as a single miner. All pool participants share the
+DRKW reward according to their contributed shares.
+
+**Layer 3: Merge Mining Bridge (optional)**
+
+The same p2pool instance can bridge to Monero. It connects to a local monerod
+(via JSON-RPC for block data, ZMQ PUB for new block notifications), embeds
+DarkWow aux data (`TX_EXTRA_MERGE_MINING_TAG`) into Monero coinbase transactions,
+and when a block is found, submits the solution to both chains.
+
+The `mm_rpc` interface on dwowd (raw TCP JSON-RPC, port 31348) provides:
+- `merge_mining_get_chain_id` — identify the DarkWow chain
+- `merge_mining_get_aux_block` — get the current block template with aux data
+- `merge_mining_submit_solution` — submit a found merge-mined block
+
+```
+                    ┌──────────────┐
+                    │   monerod    │
+                    └──┬───────┬──┘
+               RPC / ZMQ     RPC / ZMQ
+                       │           │
+  ┌─────────┐    stratum  ┌───────────┐    mm_rpc    ┌──────────┐
+  │  xmrig  │◄───────────►│  p2pool   │◄────────────►│  dwowd   │
+  └─────────┘              └───────────┘              └──────────┘
+                                   │
+                                   │ lilith handshake
+                                   ▼
+                          DarkWow P2P Network
+```
+
+**The mm_rpc interface** is a local communication channel between co-located
+p2pool and dwowd processes. It is NOT a replacement for P2P participation —
+p2pool must still handshake via lilith to participate in the DarkWow network.
+The mm_rpc exists because merge mining requires tight coordination: p2pool
+polls for aux block data every 500ms and needs to submit solutions to dwowd
+immediately when blocks are found.
+
 ### Merge Mining Competition
 
 Merge mining introduces a second block source: Monero miners (via p2pool) can
@@ -265,8 +339,9 @@ valid forks, normal `targets_rank`/`hashes_rank` applies.
 
 **Three security benefits:**
 
-1. **Secures mining rewards** — finalized blocks can't be orphaned. Uncle rewards
-   earned by native miners are permanent once the anchor confirms.
+1. **Secures mining rewards** — finalized blocks can't be orphaned. All rewards
+   in finalized blocks (canonical coinbase, uncle payouts, inclusion bonuses)
+   are permanent once the anchor confirms.
 2. **Protects against double-spend attacks** — an attacker can't reverse a
    transaction in a finalized block without also reversing Monero's chain.
 3. **Protects against re-ordering attacks** — transaction order within finalized

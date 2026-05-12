@@ -113,6 +113,7 @@ harness.verify_sync()?;
 |------------------------|----------------------------------------------------------------------------------------|
 | Consensus              | Algorithm for reaching blockchain consensus between participating nodes                |
 | Node/Validator         | DarkWow daemon participating in the network                                             |
+| Lilith Handshake       | Base P2P networking layer — every computer must handshake to participate               |
 | Miner                  | Block producer                                                                         |
 | Uncle Block            | Block that was mined but not canonical, but referenced by a canonical block            |
 | Pin                    | Use-it-or-lose-it reward offer from canonical to uncle chain                            |

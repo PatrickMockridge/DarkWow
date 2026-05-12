@@ -4,6 +4,21 @@ DarkWow x Monero Merge Mining using p2pool and xmrig
 This document provides a way to set up a Monero testnet that is
 able to merge-mine DarkWow using `p2pool` and `xmrig`.
 
+## Architecture
+
+DarkWow merge mining operates in three layers. Every computer on the network
+handshakes via lilith — pool mining and merge mining are overlays on top, not
+replacements for the base P2P layer.
+
+| Layer | Component | Role | Mandatory? |
+|-------|-----------|------|------------|
+| 1 — P2P | lilith + dwowd | Node discovery, block propagation, tx gossip | **Yes** — everyone |
+| 2 — Pool | p2pool stratum | Aggregates miner hashrate, PPLNS payouts | No — solo miners skip |
+| 3 — Merge | p2pool + monerod | Bridges to Monero, embeds aux data | No — pure DarkWow pools skip |
+
+See [Mining Network Architecture](../arch/mining-tokenomics.md#mining-network-architecture)
+for the full topology, ASCII diagrams, and mm_rpc interface description.
+
 ## Merge Mining Economics
 
 Merge mining allows Monero miners to produce valid DarkWow blocks using the

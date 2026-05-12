@@ -44,8 +44,9 @@ be reorganized.
 
 ### Three Security Benefits
 
-1. **Secures mining rewards** — finalized blocks can't be orphaned. Uncle rewards
-   earned by native miners are permanent once the anchor confirms.
+1. **Secures mining rewards** — finalized blocks can't be orphaned. All rewards
+   in finalized blocks (canonical coinbase, uncle payouts, inclusion bonuses)
+   are permanent once the anchor confirms.
 2. **Protects against double-spend attacks** — reversing a transaction in a
    finalized block requires also reversing Monero's chain.
 3. **Protects against re-ordering attacks** — transaction order within finalized
@@ -83,6 +84,8 @@ of magnitude higher, this is prohibitively expensive.
 | *(finality gadget)* | `get_finalized_blocks()` | Find blocks finalized by Monero anchor confirmations |
 | *(finality gadget)* | `fork_conflicts_with_finalized()` | Check if a fork would orphan finalized blocks |
 | *(finality gadget)* | `get_valid_forks()` | Filter forks to those respecting finality |
+| *(reorg simulation)* | `simulate_reorg_attack()` | Simulate attacker building secret fork, testing reorg success |
+| *(difficulty)* | `DynamicDifficulty` | EMA difficulty adjustment, ±10% delta, 720-block window |
 
 ## Key Constants
 
@@ -120,9 +123,9 @@ The default run includes seven scenarios:
 3. **Native consensus, 1000:1 hashpower, Phase 1** — No uncle rewards. Native
    miner gets zero. Demonstrates why Phase 1 is not viable for merge mining.
 
-4. **Anchoring finality, 1000:1 hashpower, Phase 2** — Native miner gets uncle
-   rewards. Once a native block's Monero anchor finalizes, that reward is
-   permanent — can't be stolen by reorg.
+4. **Anchoring finality, 1000:1 hashpower, Phase 2** — All rewards in
+   finalized blocks (canonical coinbases, uncle payouts, inclusion bonuses)
+   are permanent — can't be stolen by reorg.
 
 5. **Native consensus, 3 p2pools, 1000:1 hashpower** — Three p2pools with
    different `--merge-mine` addresses compete, distributing canonical slots
@@ -130,16 +133,22 @@ The default run includes seven scenarios:
 
 6. **Anchoring finality, 3 p2pools, 1000:1 hashpower** — Multiple p2pool
    operators + finality + native miner. Even dominant merge miners can't
-   steal finalized uncle rewards.
+   steal rewards from finalized blocks.
 
-7. **Reorg attack comparison** — Same seed, with and without anchoring.
-   Without anchoring: dominant merge miner can reorg and steal rewards.
-   With anchoring: finalized blocks are immovable, native rewards are safe.
+7. **Reorg attack simulation** — Builds a 6-block chain at equal hashpower
+   (native wins some canonical slots). Attacker with 10x hashpower builds a
+   secret fork from height 2. Without anchoring: attacker replaces all 5
+   blocks, steals ~13.8B in rewards. With anchoring: 4 blocks finalized,
+   only 1 replaced, attacker can only steal ~2.1B. Demonstrates exactly
+   what anchoring protects and quantifies the damage reduction.
 
 ## Running Custom Simulations
 
 ```python
-from merge_mining_model import SimulationConfig, ConsensusMode, run_simulation, print_results
+from merge_mining_model import (
+    SimulationConfig, ConsensusMode,
+    run_simulation, print_results, simulate_reorg_attack,
+)
 
 # Native consensus — pure block_rank() competition
 config = SimulationConfig(
@@ -169,11 +178,26 @@ config_anchor = SimulationConfig(
 )
 result_anchor = run_simulation(config_anchor)
 print_results(result_anchor)
+
+# Reorg attack — simulate attacker building a secret fork
+reorg = simulate_reorg_attack(
+    native_hashpower=500_000.0,
+    merge_hashpower=500_000.0,
+    chain_length=6,
+    reorg_from_height=2,
+    consensus_mode=ConsensusMode.ANCHOR,
+    attacker_hashpower=5_000_000.0,
+    anchor_min_confirmations=2,
+    seed=42,
+)
+print(f"Attacker accepted: {reorg.attacker_fork_accepted}")
+print(f"Blocks replaced: {reorg.blocks_replaced}")
+print(f"Blocks protected: {reorg.blocks_protected}")
 ```
 
 ## Verification
 
-All 15 verification tests run automatically before any simulation. Tests validate:
+All 18 verification tests run automatically before any simulation. Tests validate:
 
 | # | Test | What it checks |
 |---|------|---------------|
@@ -191,7 +215,10 @@ All 15 verification tests run automatically before any simulation. Tests validat
 | 12 | p2pool uncle penalty | 20% penalty on uncle blocks |
 | 13 | Anchoring finality | Finalized blocks cannot be reorganized |
 | 14 | Finality confirmation threshold | Not-enough-confirmations blocks remain unfinalized |
-| 15 | Reorg attack protection | Without anchoring: attacker succeeds. With anchoring: attacker fails. |
+| 15 | Single-block reorg protection | Without anchoring: attacker wins. With: attacker filtered. |
+| 16 | Multi-block reorg (native) | Attacker replaces 5 canonical blocks at 10x hashpower |
+| 17 | Multi-block reorg (anchored) | Finalized blocks block the reorg, only unfinalized replaced |
+| 18 | Reward conservation | Reorg redistributes rewards, destroys inclusion bonuses |
 
 ## See Also
 
