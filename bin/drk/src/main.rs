@@ -542,6 +542,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
         "localnet" => parse_blockchain_config(args.config, "localnet", CONFIG_FILE).await?,
         "testnet" => parse_blockchain_config(args.config, "testnet", CONFIG_FILE).await?,
         "linear-testnet" => parse_blockchain_config(args.config, "linear-testnet", CONFIG_FILE).await?,
+        "darkwow-testnet" => parse_blockchain_config(args.config, "darkwow-testnet", CONFIG_FILE).await?,
         "mainnet" => parse_blockchain_config(args.config, "mainnet", CONFIG_FILE).await?,
         _ => {
             eprintln!("Unsupported chain `{}`", args.network);

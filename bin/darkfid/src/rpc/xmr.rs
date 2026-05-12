@@ -21,6 +21,38 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+//! Merge mining RPC handler (mm_rpc) — local coordination channel between
+//! co-located p2pool and dwowd processes.
+//!
+//! ## Architecture
+//!
+//! mm_rpc is a **local-only** raw TCP JSON-RPC interface. It is NOT a replacement
+//! for P2P participation. Every mining computer must handshake via lilith (Layer 1).
+//! p2pool and merge mining are overlays (Layers 2-3) on top of that base P2P layer.
+//!
+//! The co-located dwowd is the lilith P2P peer. The submission path is:
+//!
+//! ```text
+//! p2pool --[mm_rpc]--> dwowd
+//!                        ├── registry.submit()
+//!                        ├── validator.append_proposal()
+//!                        └── p2p.broadcast() --> DarkWow P2P network
+//! ```
+//!
+//! | Layer | Component | Role | Mandatory? |
+//! |-------|-----------|------|------------|
+//! | 1 — P2P | lilith + dwowd | Node discovery, block propagation, tx gossip | Yes |
+//! | 2 — Pool | p2pool stratum | Aggregates miner hashrate, PPLNS payouts | No |
+//! | 3 — Merge | p2pool + monerod | Bridges to Monero, embeds aux data | No |
+//!
+//! ## Connection enforcement
+//!
+//! - **localhost-only**: The registry refuses to start if mm_rpc is configured
+//!   to bind to a non-localhost address (127.0.0.1, ::1, or localhost).
+//! - **P2P connectivity**: `get_aux_block` and `submit_solution` require the node
+//!   to have at least one active P2P peer (via `p2p.is_connected()`). Without P2P
+//!   connectivity, found blocks cannot be broadcast.
+
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -174,6 +206,13 @@ impl DarkfiNode {
     //       "id": 1
     //     }
     pub async fn xmr_merge_mining_get_aux_block(&self, id: u16, params: JsonValue) -> JsonResult {
+        // Reject if the node is not participating in the P2P network.
+        // mm_rpc is a local coordination channel — the co-located dwowd must be a
+        // lilith P2P peer so found blocks can be broadcast to the network.
+        if !self.p2p_handler.p2p.is_connected() {
+            return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
+        }
+
         // Check if node is synced before responding to p2pool
         let validator = self.validator.read().await;
         if !validator.synced {
@@ -297,6 +336,13 @@ impl DarkfiNode {
     //     }
     // <-- {"jsonrpc":"2.0", "result": {"status": "accepted"}, "id": 1}
     pub async fn xmr_merge_mining_submit_solution(&self, id: u16, params: JsonValue) -> JsonResult {
+        // Reject if the node is not participating in the P2P network.
+        // mm_rpc is a local coordination channel — the co-located dwowd must be a
+        // lilith P2P peer so found blocks can be broadcast to the network.
+        if !self.p2p_handler.p2p.is_connected() {
+            return miner_status_response(id, "rejected")
+        }
+
         // Check if node is synced before responding to p2pool
         let mut validator = self.validator.write().await;
         if !validator.synced {

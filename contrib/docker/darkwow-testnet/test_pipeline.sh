@@ -9,6 +9,7 @@
 #   ./test_pipeline.sh               # native mining (default)
 #   ./test_pipeline.sh --mode native  # native mining
 #   ./test_pipeline.sh --mode merge   # merge mining (Monero aux PoW)
+#   ./test_pipeline.sh --mode native-p2pool  # DarkWow-primary pooled mining (adaptor)
 #
 # After this succeeds, run contract tests:
 #   ./test-contracts.sh --mode native
@@ -27,12 +28,12 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
         --mode=*) MODE="${1#*=}"; shift ;;
-        *) echo "Unknown flag: $1"; echo "Usage: $0 [--mode native|merge]"; exit 1 ;;
+        *) echo "Unknown flag: $1"; echo "Usage: $0 [--mode native|merge|native-p2pool]"; exit 1 ;;
     esac
 done
 
-if [ "$MODE" != "native" ] && [ "$MODE" != "merge" ]; then
-    echo "Invalid mode: $MODE (must be 'native' or 'merge')"
+if [ "$MODE" != "native" ] && [ "$MODE" != "merge" ] && [ "$MODE" != "native-p2pool" ]; then
+    echo "Invalid mode: $MODE (must be 'native', 'merge', or 'native-p2pool')"
     exit 1
 fi
 
@@ -98,6 +99,7 @@ cd "$SCRIPT_DIR"
 # Tear down compose services (containers, networks, volumes)
 docker compose down --rmi all -v 2>/dev/null || true
 docker compose --profile merge down --rmi all -v 2>/dev/null || true
+docker compose --profile native-p2pool down --rmi all -v 2>/dev/null || true
 
 # Remove any lingering dwow-* containers (defense in depth)
 STALE=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^dwow-" || true)
@@ -133,6 +135,11 @@ if [ "$MODE" = "merge" ]; then
     [ -f "$SCRIPT_DIR/Dockerfile.p2pool" ] || error "Dockerfile.p2pool missing (needed for merge mode)"
     [ -f "$SCRIPT_DIR/entrypoint-monero.sh" ] || error "entrypoint-monero.sh missing"
     [ -f "$SCRIPT_DIR/entrypoint-p2pool.sh" ] || error "entrypoint-p2pool.sh missing"
+elif [ "$MODE" = "native-p2pool" ]; then
+    [ -f "$SCRIPT_DIR/Dockerfile.p2pool" ] || error "Dockerfile.p2pool missing (needed for native-p2pool mode)"
+    [ -f "$SCRIPT_DIR/Dockerfile.xmrig" ] || error "Dockerfile.xmrig missing (needed for native-p2pool mode)"
+    [ -f "$SCRIPT_DIR/entrypoint-adaptor.sh" ] || error "entrypoint-adaptor.sh missing"
+    [ -f "$SCRIPT_DIR/entrypoint-p2pool-darkwow.sh" ] || error "entrypoint-p2pool-darkwow.sh missing"
 fi
 
 # Check dww
@@ -195,6 +202,9 @@ info "[4/10] Building images..."
 if [ "$MODE" = "merge" ]; then
     docker compose --profile merge build 2>&1 | tail -20
     check $? "docker build (merge profile)"
+elif [ "$MODE" = "native-p2pool" ]; then
+    docker compose --profile native-p2pool build 2>&1 | tail -20
+    check $? "docker build (native-p2pool profile)"
 else
     docker compose build 2>&1 | tail -20
     check $? "docker build"
@@ -210,6 +220,9 @@ info "[5/10] Starting containers..."
 if [ "$MODE" = "merge" ]; then
     MERGE_MINING=true WALLET_ADDRESS="$WALLET_ADDRESS" WALLET_SECRET="$WALLET_SECRET" \
         docker compose --profile merge up -d
+elif [ "$MODE" = "native-p2pool" ]; then
+    WALLET_ADDRESS="$WALLET_ADDRESS" WALLET_SECRET="$WALLET_SECRET" \
+        docker compose --profile native-p2pool up -d
 else
     WALLET_ADDRESS="$WALLET_ADDRESS" WALLET_SECRET="$WALLET_SECRET" \
         docker compose up -d
@@ -220,6 +233,8 @@ sleep 5
 # Check for immediate exits
 if [ "$MODE" = "merge" ]; then
     EXITED=$(docker compose --profile merge ps 2>/dev/null | grep "Exit" || true)
+elif [ "$MODE" = "native-p2pool" ]; then
+    EXITED=$(docker compose --profile native-p2pool ps 2>/dev/null | grep "Exit" || true)
 else
     EXITED=$(docker compose ps 2>/dev/null | grep "Exit" || true)
 fi
@@ -237,6 +252,8 @@ info "[6/10] Verifying containers..."
 
 if [ "$MODE" = "merge" ]; then
     EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-monerod dwow-p2pool dwow-xmrig-merge)
+elif [ "$MODE" = "native-p2pool" ]; then
+    EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool)
 else
     EXPECTED=(dwow-lilith dwow-node0 dwow-node1)
 fi
@@ -277,6 +294,20 @@ for i in $(seq 1 30); do
     sleep 2
 done
 pass "node1 RPC healthy"
+
+# adaptor RPC (native-p2pool only)
+if [ "$MODE" = "native-p2pool" ]; then
+    info "Waiting for adaptor RPC (port 28081)..."
+    for i in $(seq 1 60); do
+        if docker exec dwow-adaptor bash -c 'exec 3<>/dev/tcp/127.0.0.1/28081; echo -e "POST /json_rpc HTTP/1.0\r\nContent-Type: application/json\r\nContent-Length: 64\r\n\r\n{\"jsonrpc\":\"2.0\",\"method\":\"get_info\",\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "OK"' 2>/dev/null; then
+            info "adaptor RPC is up (attempt $i)"
+            break
+        fi
+        [ "$i" -eq 60 ] && error "Adaptor RPC did not become healthy"
+        sleep 2
+    done
+    pass "adaptor RPC healthy"
+fi
 
 # monerod RPC (merge only)
 if [ "$MODE" = "merge" ]; then
@@ -330,6 +361,47 @@ if [ "$MODE" = "merge" ]; then
         warn "node0 logs don't show merge activity yet"
         fail "node0 merge mining activity"
     fi
+elif [ "$MODE" = "native-p2pool" ]; then
+    # Adaptor activity
+    info "Checking adaptor activity..."
+    ADAPTOR_LOGS=$(docker logs dwow-adaptor 2>&1 || true)
+    if echo "$ADAPTOR_LOGS" | grep -qi "listening\|rpc\|connected"; then
+        pass "adaptor active"
+    else
+        warn "adaptor logs don't show expected activity"
+        docker logs dwow-adaptor 2>&1 | tail -20
+        fail "adaptor active"
+    fi
+
+    # p2pool-darkwow connectivity
+    info "Checking p2pool-darkwow connectivity..."
+    P2POOL_READY=false
+    for i in $(seq 1 30); do
+        P2POOL_LOGS=$(docker logs dwow-p2pool-darkwow 2>&1 || true)
+        if echo "$P2POOL_LOGS" | grep -qi "stratum\|p2pool v\|new template\|mining\|sidechain"; then
+            info "p2pool-darkwow active (attempt $i)"
+            P2POOL_READY=true
+            break
+        fi
+        sleep 3
+    done
+    if [ "$P2POOL_READY" = true ]; then
+        pass "p2pool-darkwow connected"
+    else
+        warn "p2pool-darkwow logs don't show expected activity"
+        docker logs dwow-p2pool-darkwow 2>&1 | tail -20
+        fail "p2pool-darkwow connected"
+    fi
+
+    # node0 should show block production
+    info "Checking node0 for block production..."
+    NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
+    if echo "$NODE0_LOGS" | grep -qi "block\|mining\|stratum\|new job\|accepted"; then
+        pass "node0 block production activity"
+    else
+        warn "node0 logs don't show clear mining activity"
+        fail "node0 block production activity"
+    fi
 else
     # Native — check xmrig stratum
     info "Checking native mining activity (xmrig → stratum)..."
@@ -350,6 +422,9 @@ info "[9/10] Verifying block production..."
 # Wait for genesis + first blocks
 if [ "$MODE" = "merge" ]; then
     info "Waiting for genesis + merge-mined blocks..."
+    WAIT_SECS=30
+elif [ "$MODE" = "native-p2pool" ]; then
+    info "Waiting for genesis + p2pool-mined blocks..."
     WAIT_SECS=30
 else
     info "Waiting for genesis + native-mined blocks..."
@@ -420,6 +495,8 @@ if [ "$FAIL" -gt 0 ]; then
     echo "Debug info — check logs:"
     if [ "$MODE" = "merge" ]; then
         echo "  docker compose --profile merge logs"
+    elif [ "$MODE" = "native-p2pool" ]; then
+        echo "  docker compose --profile native-p2pool logs"
     else
         echo "  docker compose logs"
     fi
@@ -432,6 +509,8 @@ echo ""
 echo "Tear down:"
 if [ "$MODE" = "merge" ]; then
     echo "  docker compose --profile merge down -v"
+elif [ "$MODE" = "native-p2pool" ]; then
+    echo "  docker compose --profile native-p2pool down -v"
 else
     echo "  docker compose down -v"
 fi

@@ -37,6 +37,11 @@ impl RpcSettings {
     pub fn use_http(&self) -> bool {
         self.listen.scheme().starts_with("http+")
     }
+    /// Returns true if the listen URL binds to localhost.
+    /// Used to enforce that mm_rpc and stratum_rpc are local-only channels.
+    pub fn is_localhost(&self) -> bool {
+        matches!(self.listen.host_str(), Some("127.0.0.1") | Some("localhost") | Some("::1"))
+    }
 }
 
 impl Default for RpcSettings {

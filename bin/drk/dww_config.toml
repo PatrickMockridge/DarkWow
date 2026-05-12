@@ -63,6 +63,23 @@ endpoint = "tcp://127.0.0.1:28345"
 # Path to interactive shell history file
 history_path = "~/.local/share/dwow/dww/linear-testnet/history.txt"
 
+# DarkWow Testnet blockchain network configuration
+[network_config."darkwow-testnet"]
+# Path to blockchain cache database
+cache_path = "~/.local/share/dwow/dww/darkwow-testnet/cache"
+
+# Path to wallet database
+wallet_path = "~/.local/share/dwow/dww/darkwow-testnet/wallet.db"
+
+# Password for the wallet database
+wallet_pass = "testpassword123"
+
+# darkfid JSON-RPC endpoint
+endpoint = "tcp://127.0.0.1:31345"
+
+# Path to interactive shell history file
+history_path = "~/.local/share/dwow/dww/darkwow-testnet/history.txt"
+
 # Mainnet blockchain network configuration
 [network_config."mainnet"]
 # Path to blockchain cache database

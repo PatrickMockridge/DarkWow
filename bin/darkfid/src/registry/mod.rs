@@ -203,6 +203,11 @@ impl DarkfiMinersRegistryState {
     }
 
     /// Submit provided block to the provided node.
+    ///
+    /// This is the architectural enforcement point: all blocks (native-stratum and
+    /// merge-mined via mm_rpc) enter the P2P network through this same path.
+    /// `p2p_handler.p2p.broadcast()` sends the block to all lilith P2P peers,
+    /// ensuring every block is propagated through the mandatory P2P layer.
     pub async fn submit(
         &self,
         validator: &mut Validator,
@@ -226,7 +231,9 @@ impl DarkfiMinersRegistryState {
             target: "darkfid::registry::mod::DarkfiMinersRegistry::submit",
             "Broadcasting new block to network",
         );
-        // Send ExtendedProposalMessage with zkbin_data for sync verification
+        // Broadcast to all lilith P2P peers — this is what makes merge-mined
+        // blocks visible to the network. Every block must enter through a node
+        // that has completed the lilith handshake (Layer 1 requirement).
         let message = ExtendedProposalMessage { proposal, zkbin_data: block.zkbin_data };
         p2p_handler.p2p.broadcast(&message).await;
 
@@ -486,6 +493,40 @@ impl DarkfiMinersRegistry {
             target: "darkfid::registry::mod::DarkfiMinersRegistry::start",
             "Starting the DarkFi node miners registry..."
         );
+
+        // Enforce localhost-only binding. mm_rpc and stratum_rpc are local coordination
+        // channels between co-located processes (p2pool <-> dwowd, xmrig <-> dwowd).
+        // They are NOT replacements for P2P participation: every mining computer must
+        // handshake via lilith, and these channels exist solely for tight local
+        // coordination (template polling, solution submission).
+        if let Some(ref stratum_rpc) = stratum_rpc_settings {
+            if !stratum_rpc.is_localhost() {
+                error!(
+                    target: "darkfid::registry::mod::DarkfiMinersRegistry::start",
+                    "Stratum RPC is configured to bind to '{}', which is not a localhost address. \
+                     Stratum is a local coordination channel between co-located xmrig and dwowd. \
+                     It is NOT a replacement for lilith P2P. Bind to 127.0.0.1 or ::1.",
+                    stratum_rpc.listen,
+                );
+                return Err(Error::ParseFailed(
+                    "Stratum RPC must bind to localhost (127.0.0.1, ::1, or localhost)",
+                ));
+            }
+        }
+        if let Some(ref mm_rpc) = mm_rpc_settings {
+            if !mm_rpc.is_localhost() {
+                error!(
+                    target: "darkfid::registry::mod::DarkfiMinersRegistry::start",
+                    "mm_rpc is configured to bind to '{}', which is not a localhost address. \
+                     mm_rpc is a local coordination channel between co-located p2pool and dwowd. \
+                     It is NOT a replacement for lilith P2P. Bind to 127.0.0.1 or ::1.",
+                    mm_rpc.listen,
+                );
+                return Err(Error::ParseFailed(
+                    "mm_rpc must bind to localhost (127.0.0.1, ::1, or localhost)",
+                ));
+            }
+        }
 
         // Start the stratum server JSON-RPC task
         if let Some(stratum_rpc) = stratum_rpc_settings {

@@ -61,8 +61,12 @@ RUN cargo build -p dwowd --release -j 2
 # Build lilith seed node
 RUN cargo build -p lilith --release -j 2
 
+# Build p2pool chain adaptor (presents dwowd as monerod to p2pool)
+RUN cargo build -p dwow-p2pool-adaptor --release -j 2
+
 RUN cp target/release/dwowd /app/dwowd && \
     cp target/release/lilith /app/lilith && \
+    cp target/release/dwow-p2pool-adaptor /app/dwow-p2pool-adaptor && \
     cp bin/lilith/lilith_config.toml /app/lilith_config.toml
 
 # ============================================================================
@@ -85,8 +89,10 @@ WORKDIR /app
 COPY --from=builder /app/dwowd ./
 COPY --from=builder /app/lilith ./
 COPY --from=builder /app/lilith_config.toml ./
+COPY --from=builder /app/dwow-p2pool-adaptor ./
 COPY --from=builder /app/contrib/docker/darkwow-testnet/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+COPY --from=builder /app/contrib/docker/darkwow-testnet/entrypoint-adaptor.sh /app/entrypoint-adaptor.sh
+RUN chmod +x /app/entrypoint.sh /app/entrypoint-adaptor.sh
 
 # Entrypoint handles config generation, CMD provides default binary args
 ENTRYPOINT ["/app/entrypoint.sh"]

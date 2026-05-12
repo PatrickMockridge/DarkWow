@@ -684,6 +684,8 @@ impl Drk {
             .map_err(|e| Error::Custom(format!("Failed to insert secret: {:?}", e)))?;
 
         output.push(format!("Generated new address: {}", &public_str[..16]));
+        output.push(format!("Address (bs58): {public_str}"));
+        output.push(format!("Secret (hex): {}", hex::encode(secret_bytes)));
 
         Ok(keypair)
     }
