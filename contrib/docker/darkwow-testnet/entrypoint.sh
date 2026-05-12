@@ -204,9 +204,9 @@ if [ "$MERGE_MINING" = "true" ]; then
     cat >> "$CONFIGFILE" << DWOWEOF
 
 [network_config."${NETWORK}".mm_rpc]
-rpc_listen = "http+tcp://0.0.0.0:${MM_RPC_PORT}"
+rpc_listen = "tcp://0.0.0.0:${MM_RPC_PORT}"
 DWOWEOF
-    echo "  Merge mining RPC: http+tcp://0.0.0.0:${MM_RPC_PORT}"
+    echo "  Merge mining RPC: tcp://0.0.0.0:${MM_RPC_PORT} (raw TCP JSON-RPC for p2pool)"
 fi
 
 echo "  Config written to $CONFIGFILE"
