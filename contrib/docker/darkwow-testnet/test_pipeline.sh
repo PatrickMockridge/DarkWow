@@ -167,19 +167,26 @@ info "Generating keypair..."
 KEYGEN_OUTPUT=$("$DWW" -n "$NETWORK" wallet keygen 2>&1)
 echo "$KEYGEN_OUTPUT"
 
-WALLET_ADDRESS=$(echo "$KEYGEN_OUTPUT" | grep "Address (bs58):" | awk '{print $3}')
 WALLET_SECRET=$(echo "$KEYGEN_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
 
-if [ -z "$WALLET_ADDRESS" ]; then
-    error "Failed to parse wallet address from keygen output"
-fi
 if [ -z "$WALLET_SECRET" ] || [ "${#WALLET_SECRET}" -ne 64 ]; then
     error "Failed to parse wallet secret from keygen output (got: ${WALLET_SECRET:-empty})"
 fi
 
+# Get the full Address (with network prefix + checksum) from the wallet.
+# The raw public key from `wallet keygen` is structurally incompatible with
+# Address::from_str (which expects base58check). `wallet address` produces
+# the correct format: base58check([0xaf prefix][32B pubkey][4B blake3 checksum])
+info "Fetching full wallet address..."
+WALLET_ADDRESS=$("$DWW" -n "$NETWORK" wallet address 2>&1)
+
+if [ -z "$WALLET_ADDRESS" ]; then
+    error "Failed to get wallet address (run: dww -n $NETWORK wallet address)"
+fi
+
 pass "DarkWow keypair generated"
-info "  Address (bs58): ${WALLET_ADDRESS:0:16}..."
-info "  Secret (hex):   ${WALLET_SECRET:0:16}..."
+info "  Address: ${WALLET_ADDRESS:0:16}..."
+info "  Secret (hex):  ${WALLET_SECRET:0:16}..."
 
 if [ "$MODE" = "merge" ]; then
     if [ -n "$MONERO_WALLET_ADDRESS" ]; then
