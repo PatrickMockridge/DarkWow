@@ -33,6 +33,7 @@ use smol::lock::Mutex;
 use tracing::{debug, error, info};
 
 use dwow::{
+    blockchain::HeaderHash,
     net::settings::Settings,
     rpc::{
         jsonrpc::{JsonNotification, JsonSubscriber},
@@ -133,6 +134,9 @@ pub struct DarkfiNode {
     linear_recipient_config: Mutex<Option<LinearMinerRewardsRecipientConfig>>,
     /// Serializes block submission to prevent concurrent RandomX VM access
     linear_submit_lock: Mutex<()>,
+    /// Genesis block hash for linear-testnet mm_rpc (validator.genesis() is
+    /// empty because genesis lives in linear_blockchain, not the validator).
+    linear_genesis_hash: Mutex<Option<HeaderHash>>,
 }
 
 impl DarkfiNode {
@@ -165,6 +169,7 @@ impl DarkfiNode {
             linear_stratum_publisher: Mutex::new(None),
             linear_recipient_config: Mutex::new(None),
             linear_submit_lock: Mutex::new(()),
+            linear_genesis_hash: Mutex::new(None),
         }))
     }
 
@@ -299,7 +304,7 @@ impl Darkfid {
         // before miners connect. If RandomX is compiled with incompatible CPU
         // flags, this fails immediately with a clear error instead of crashing
         // during stratum submission.
-        {
+        let linear_genesis_hash: HeaderHash = {
             use dwow_linear::{Block, BlockHeader, Miner, Transaction, Output};
             use std::time::SystemTime;
 
@@ -350,7 +355,10 @@ impl Darkfid {
                 "Genesis block created at height 1: {}",
                 genesis_hash,
             );
-        }
+
+            // Convert blake3::Hash to HeaderHash for mm_rpc access
+            HeaderHash(genesis_hash.into())
+        };
 
         // Initialize P2P network (linear P2P handlers use dwow_linear types)
         let p2p_handler = DarkfidP2pHandler::init(net_settings, ex, Some(linear_blockchain_p2p.clone())).await?;
@@ -437,6 +445,10 @@ impl Darkfid {
             false,
             min_block_interval,
         ).await?;
+
+        // Store genesis hash for mm_rpc (validator.genesis() is empty in
+        // linear mode because genesis lives in linear_blockchain).
+        node.linear_genesis_hash.lock().await.replace(linear_genesis_hash);
 
         // Generate the background tasks
         let dnet_task = StoppableTask::new();

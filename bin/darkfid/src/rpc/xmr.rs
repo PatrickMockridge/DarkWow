@@ -106,15 +106,21 @@ impl DarkfiNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        // Grab genesis block to use as chain identifier
-        let (_, genesis_hash) = match self.validator.read().await.blockchain.genesis() {
-            Ok(v) => v,
-            Err(e) => {
-                error!(
-                    target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_get_chain_id",
-                    "[RPC-XMR] Error fetching genesis block hash: {e}"
-                );
-                return JsonError::new(ErrorCode::InternalError, None, id).into()
+        // Grab genesis block to use as chain identifier.
+        // In linear-testnet mode, genesis lives in linear_blockchain, not
+        // the validator's order tree, so we use the stored hash instead.
+        let genesis_hash = if let Some(hash) = self.linear_genesis_hash.lock().await.as_ref() {
+            *hash
+        } else {
+            match self.validator.read().await.blockchain.genesis() {
+                Ok(v) => v.1,
+                Err(e) => {
+                    error!(
+                        target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_get_chain_id",
+                        "[RPC-XMR] Error fetching genesis block hash: {e}"
+                    );
+                    return JsonError::new(ErrorCode::InternalError, None, id).into()
+                }
             }
         };
 
