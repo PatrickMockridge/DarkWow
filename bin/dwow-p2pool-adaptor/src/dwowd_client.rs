@@ -319,7 +319,7 @@ impl DwowdClient {
         Ok(status)
     }
 
-    /// Query dwowd JSON-RPC for chain state (HTTP).
+    /// Query dwowd JSON-RPC for chain state (raw TCP newline-delimited).
     async fn rpc_call(
         &self,
         method: &str,
@@ -331,7 +331,7 @@ impl DwowdClient {
             "params": params,
             "id": 1
         });
-        let body_str = serde_json::to_string(&body).unwrap();
+        let body_str = serde_json::to_string(&body).unwrap() + "\n";
 
         let mut stream = smol::net::TcpStream::connect(&self.rpc_url)
             .await
@@ -341,31 +341,20 @@ impl DwowdClient {
             .map_err(|_| "set_nodelay failed")?;
 
         use smol::io::AsyncWriteExt;
-        let request = format!(
-            "POST / HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            self.rpc_url,
-            body_str.len(),
-            body_str,
-        );
         stream
-            .write_all(request.as_bytes())
+            .write_all(body_str.as_bytes())
             .await
             .map_err(|e| format!("RPC write failed: {e}"))?;
 
-        use smol::io::AsyncReadExt;
-        let mut buf = Vec::new();
-        stream
-            .read_to_end(&mut buf)
+        use smol::io::AsyncBufReadExt;
+        let mut reader = smol::io::BufReader::new(stream);
+        let mut line = String::new();
+        reader
+            .read_line(&mut line)
             .await
             .map_err(|e| format!("RPC read failed: {e}"))?;
 
-        let response_str =
-            String::from_utf8(buf).map_err(|e| format!("RPC invalid UTF-8: {e}"))?;
-
-        let body_start = response_str.find("\r\n\r\n").map(|i| i + 4).unwrap_or(0);
-        let json_body = &response_str[body_start..];
-
-        let parsed: serde_json::Value = serde_json::from_str(json_body)
+        let parsed: serde_json::Value = serde_json::from_str(line.trim())
             .map_err(|e| format!("RPC parse error: {e}"))?;
 
         Ok(parsed)

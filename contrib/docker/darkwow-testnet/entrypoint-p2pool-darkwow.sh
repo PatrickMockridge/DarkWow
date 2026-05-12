@@ -25,7 +25,7 @@ DARKFI_WALLET="${WALLET_ADDRESS:-}"
 
 # p2pool requires a Monero wallet address, even though we're mining DarkWow.
 # The adaptor ignores it for block rewards. Use the DarkWow address or a dummy.
-MONERO_ADDR="${MONERO_WALLET_ADDRESS:-44AFFq5kSiGBoZ4NMDwYtD18dTGk8RvuNRPYKFubgZ9QSPN5KyjAcALsPKEuRgYKMXoBGQYXhgLMEUFYULFVVvkEMQvNZx}"
+MONERO_ADDR="${MONERO_WALLET_ADDRESS:-9wviCeWe2D8ZwF6BxR3BPfKAKE5uufTkjmdVFpj2HRuzunmKZQz}"
 
 echo "=== p2pool (DarkWow-native) ==="
 echo "Adaptor host:   $MONERO_HOST:$MONERO_RPC_PORT"
