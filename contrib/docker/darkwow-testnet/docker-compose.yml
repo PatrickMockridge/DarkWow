@@ -249,8 +249,6 @@ services:
     environment:
       - MONERO_HOST=adaptor
       - MONERO_RPC_PORT=28081
-      - MONERO_ZMQ_PORT=  # No ZMQ (adaptor doesn't support it yet)
-      - DWOWD_MM_RPC=node0:31348
       - STRATUM_PORT=3333
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
     ports:
