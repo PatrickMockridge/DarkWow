@@ -442,40 +442,44 @@ for i in $(seq 1 $WAIT_SECS); do
     [ $((i % 10)) -eq 0 ] && info "  waited ${i}s / ${WAIT_SECS}s..."
 done
 
-# Check initial block height (JSON-RPC over raw TCP)
-BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.last_confirmed_block\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
-echo "$BLOCK_INFO"
+	# Check initial block height via get_block_linear (linear chain)
+	# blockchain.last_confirmed_block doesn't work for the linear chain because
+	# blockchain.last() queries the shadow fork-based blockchain, not linear_blockchain.
+	BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+	echo "$BLOCK_INFO" | head -c 200
 
-BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | sed -n 's/.*"result":\[\([0-9]*\).*/\1/p')
-info "Initial block height: $BLOCK_HEIGHT"
+	# Extract height from the escaped-JSON-string result
+	BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
+	info "Initial block height: $BLOCK_HEIGHT"
 
-if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
-    pass "block height >= 1 (initialized)"
-else
-    fail "block height >= 1 (got: $BLOCK_HEIGHT)"
-fi
+	if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
+	    pass "block height >= 1 (initialized)"
+	else
+	    fail "block height >= 1 (got: $BLOCK_HEIGHT)"
+	fi
 
-# Wait for more blocks
-info "Waiting for additional blocks (block time ~120s)..."
-for i in $(seq 1 13); do
-    sleep 10
-    info "  waited $((i * 10))s / 130s..."
-done
+	# Wait for more blocks
+	info "Waiting for additional blocks (block time ~120s)..."
+	for i in $(seq 1 13); do
+	    sleep 10
+	    info "  waited $((i * 10))s / 130s..."
+	done
 
-BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.last_confirmed_block\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
-BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | sed -n 's/.*"result":\[\([0-9]*\).*/\1/p')
-info "Block height after waiting: $BLOCK_HEIGHT"
+	# Check if block height has advanced (query block 2)
+	BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+	BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
+	info "Block height after waiting: $BLOCK_HEIGHT"
 
-if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
-    pass "$MODE blocks produced (height=$BLOCK_HEIGHT)"
-else
-    fail "$MODE blocks produced (height=$BLOCK_HEIGHT, expected >= 2)"
-fi
+	if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
+	    pass "$MODE blocks produced (height=$BLOCK_HEIGHT)"
+	else
+	    fail "$MODE blocks produced (height=$BLOCK_HEIGHT, expected >= 2)"
+	fi
 
 # Mode-specific PoW verification in block data
 if [ "$BLOCK_HEIGHT" -ge 1 ]; then
     info "Inspecting block 1 for PoW data..."
-    BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+    BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
 
     if echo "$BLOCK_DATA" | grep -q '"result"'; then
         pass "block 1 fetched successfully"

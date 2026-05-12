@@ -361,16 +361,47 @@ impl DwowdClient {
     }
 
     /// Query the latest confirmed block info.
+    ///
+    /// Uses `blockchain.last_confirmed_block` first; falls back to the linear
+    /// chain RPC (`get_block_linear`) for DarkWow linear nodes where the
+    /// standard `last()` method operates on a shadow blockchain.
     pub async fn get_last_block_info(&self) -> Result<(u64, String, u64), String> {
-        let resp = self
+        // Try standard last_confirmed_block first
+        if let Ok(resp) = self
             .rpc_call("blockchain.last_confirmed_block", serde_json::json!([]))
+            .await
+        {
+            if let Some(result) = resp.get("result") {
+                let height = result[0].as_u64().unwrap_or(0);
+                let hash = result[1].as_str().unwrap_or("").to_string();
+                let timestamp = result[2].as_u64().unwrap_or(0);
+                return Ok((height, hash, timestamp));
+            }
+        }
+
+        // Fallback: use stratum job height and query get_block_linear
+        let job = self.current_job().await;
+        let height = job.map(|j| j.height).unwrap_or(1);
+
+        // Query the latest block via get_block_linear
+        let resp = self
+            .rpc_call(
+                "blockchain.get_block_linear",
+                serde_json::json!([height.saturating_sub(1)]),
+            )
             .await?;
 
-        let result = resp.get("result").ok_or("No result in RPC response")?;
-        let height = result[0].as_u64().unwrap_or(0);
-        let hash = result[1].as_str().unwrap_or("").to_string();
-        let timestamp = result[2].as_u64().unwrap_or(0);
+        let block_json = resp
+            .get("result")
+            .and_then(|r| r.as_str())
+            .ok_or("No result in get_block_linear response")?;
 
-        Ok((height, hash, timestamp))
+        let block: serde_json::Value = serde_json::from_str(block_json)
+            .map_err(|e| format!("Failed to parse block JSON: {e}"))?;
+
+        // Hash the block JSON to produce a deterministic block hash
+        let hash = blake3::hash(block_json.as_bytes()).to_hex().to_string();
+
+        Ok((height.saturating_sub(1), hash, 0))
     }
 }
