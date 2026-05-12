@@ -144,14 +144,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         info!(target: "adaptor", "Listening for p2pool on http://{}", args.listen);
 
+        // Blocking listener + smol::spawn doesn't work: the main executor
+        // thread is blocked in accept(), so spawned tasks never execute.
+        // Use std::thread::spawn with its own smol::block_on for each connection.
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
                     let state = state.clone();
-                    smol::spawn(async move {
-                        handle_connection(stream, state).await;
-                    })
-                    .detach();
+                    std::thread::spawn(move || {
+                        smol::block_on(async {
+                            handle_connection(stream, state).await;
+                        });
+                    });
                 }
                 Err(e) => {
                     warn!(target: "adaptor", "Connection error: {e}");
