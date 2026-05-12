@@ -38,9 +38,14 @@ impl RpcSettings {
         self.listen.scheme().starts_with("http+")
     }
     /// Returns true if the listen URL binds to localhost.
-    /// Used to enforce that mm_rpc and stratum_rpc are local-only channels.
     pub fn is_localhost(&self) -> bool {
         matches!(self.listen.host_str(), Some("127.0.0.1") | Some("localhost") | Some("::1"))
+    }
+    /// Returns true if the listen URL binds to all interfaces (0.0.0.0).
+    /// Accepted for Docker devnet where stratum/mm_rpc clients run in separate
+    /// containers on the same bridge network.
+    pub fn is_wildcard(&self) -> bool {
+        matches!(self.listen.host_str(), Some("0.0.0.0"))
     }
 }
 

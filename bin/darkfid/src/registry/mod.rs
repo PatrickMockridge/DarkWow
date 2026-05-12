@@ -494,37 +494,46 @@ impl DarkfiMinersRegistry {
             "Starting the DarkFi node miners registry..."
         );
 
-        // Enforce localhost-only binding. mm_rpc and stratum_rpc are local coordination
-        // channels between co-located processes (p2pool <-> dwowd, xmrig <-> dwowd).
-        // They are NOT replacements for P2P participation: every mining computer must
-        // handshake via lilith, and these channels exist solely for tight local
-        // coordination (template polling, solution submission).
+        // Enforce local-only binding for stratum and mm_rpc. These are local
+        // coordination channels (xmrig/p2pool <-> dwowd), not replacements for
+        // lilith P2P. 0.0.0.0 is accepted for Docker devnet where the adaptor
+        // or p2pool runs in a separate container on the same bridge network.
         if let Some(ref stratum_rpc) = stratum_rpc_settings {
-            if !stratum_rpc.is_localhost() {
+            if !stratum_rpc.is_localhost() && !stratum_rpc.is_wildcard() {
                 error!(
                     target: "darkfid::registry::mod::DarkfiMinersRegistry::start",
-                    "Stratum RPC is configured to bind to '{}', which is not a localhost address. \
-                     Stratum is a local coordination channel between co-located xmrig and dwowd. \
-                     It is NOT a replacement for lilith P2P. Bind to 127.0.0.1 or ::1.",
+                    "Stratum RPC is configured to bind to '{}', which is not a local address. \
+                     Stratum is a local coordination channel. Bind to 127.0.0.1, ::1, or 0.0.0.0.",
                     stratum_rpc.listen,
                 );
                 return Err(Error::ParseFailed(
-                    "Stratum RPC must bind to localhost (127.0.0.1, ::1, or localhost)",
+                    "Stratum RPC must bind to localhost or 0.0.0.0",
                 ));
+            }
+            if stratum_rpc.is_wildcard() {
+                info!(
+                    target: "darkfid::registry::mod::DarkfiMinersRegistry::start",
+                    "Stratum RPC binding to 0.0.0.0 (all-interfaces — Docker devnet mode)",
+                );
             }
         }
         if let Some(ref mm_rpc) = mm_rpc_settings {
-            if !mm_rpc.is_localhost() {
+            if !mm_rpc.is_localhost() && !mm_rpc.is_wildcard() {
                 error!(
                     target: "darkfid::registry::mod::DarkfiMinersRegistry::start",
-                    "mm_rpc is configured to bind to '{}', which is not a localhost address. \
-                     mm_rpc is a local coordination channel between co-located p2pool and dwowd. \
-                     It is NOT a replacement for lilith P2P. Bind to 127.0.0.1 or ::1.",
+                    "mm_rpc is configured to bind to '{}', which is not a local address. \
+                     mm_rpc is a local coordination channel. Bind to 127.0.0.1, ::1, or 0.0.0.0.",
                     mm_rpc.listen,
                 );
                 return Err(Error::ParseFailed(
-                    "mm_rpc must bind to localhost (127.0.0.1, ::1, or localhost)",
+                    "mm_rpc must bind to localhost or 0.0.0.0",
                 ));
+            }
+            if mm_rpc.is_wildcard() {
+                info!(
+                    target: "darkfid::registry::mod::DarkfiMinersRegistry::start",
+                    "mm_rpc binding to 0.0.0.0 (all-interfaces — Docker devnet mode)",
+                );
             }
         }
 
