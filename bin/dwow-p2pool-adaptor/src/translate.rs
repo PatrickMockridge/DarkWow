@@ -166,4 +166,25 @@ mod tests {
         let nonce = u32::from_le_bytes(nonce_bytes);
         assert_eq!(nonce, 0xDEADBEEF);
     }
+
+    #[test]
+    fn test_build_template_response_format() {
+        let template = build_template_response(
+            "abcd1234",
+            42,
+            1000,
+            "deadbeef00000000000000000000000000000000000000000000000000000000",
+            77,
+        );
+
+        assert_eq!(template["status"], "OK");
+        assert_eq!(template["height"], 42);
+        assert_eq!(template["difficulty"], 1000);
+        assert_eq!(template["blocktemplate_blob"], "abcd1234");
+        assert_eq!(template["blockhashing_blob"], "abcd1234");
+        assert_eq!(template["prev_hash"], "deadbeef00000000000000000000000000000000000000000000000000000000");
+        assert_eq!(template["reserved_offset"], 77);
+        assert_eq!(template["untrusted"], false);
+        assert_eq!(template["expected_reward"], 0);
+    }
 }

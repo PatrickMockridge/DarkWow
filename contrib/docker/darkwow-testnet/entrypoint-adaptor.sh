@@ -16,14 +16,24 @@ set -euo pipefail
 DWOWD_RPC="${DWOWD_RPC:-node0:31345}"
 DWOWD_STRATUM="${DWOWD_STRATUM:-node0:31347}"
 ADAPTOR_LISTEN="${ADAPTOR_LISTEN:-0.0.0.0:28081}"
+WALLET_ADDRESS="${WALLET_ADDRESS:-}"
+CONNECT_RETRIES="${CONNECT_RETRIES:-30}"
 
 echo "=== dwow-p2pool-adaptor ==="
-echo "dwowd RPC:      $DWOWD_RPC"
-echo "dwowd stratum:  $DWOWD_STRATUM"
-echo "Listen:         $ADAPTOR_LISTEN"
+echo "dwowd RPC:       $DWOWD_RPC"
+echo "dwowd stratum:   $DWOWD_STRATUM"
+echo "Listen:          $ADAPTOR_LISTEN"
+echo "Wallet address:  ${WALLET_ADDRESS:-<none>}"
+
+if [ -z "$WALLET_ADDRESS" ]; then
+    echo "ERROR: WALLET_ADDRESS is required for stratum login"
+    exit 1
+fi
 
 exec /app/dwow-p2pool-adaptor \
     --dwowd-rpc "$DWOWD_RPC" \
     --dwowd-stratum "$DWOWD_STRATUM" \
     --listen "$ADAPTOR_LISTEN" \
+    --wallet-address "$WALLET_ADDRESS" \
+    --connect-retries "$CONNECT_RETRIES" \
     -v

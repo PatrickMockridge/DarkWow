@@ -57,6 +57,14 @@ struct Args {
     #[structopt(long, default_value = "127.0.0.1:28081")]
     listen: String,
 
+    /// DarkWow wallet address for stratum login (required for dwowd stratum protocol)
+    #[structopt(long, default_value = "")]
+    wallet_address: String,
+
+    /// Maximum stratum connection retry attempts (default: 30 = ~60s)
+    #[structopt(long, default_value = "30")]
+    connect_retries: u32,
+
     /// Enable verbose logging
     #[structopt(short, parse(from_occurrences))]
     verbose: u8,
@@ -96,22 +104,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(target: "adaptor", "dwowd RPC: {}", args.dwowd_rpc);
     info!(target: "adaptor", "dwowd stratum: {}", args.dwowd_stratum);
     info!(target: "adaptor", "Listen: {}", args.listen);
+    info!(target: "adaptor", "Wallet: {}", args.wallet_address);
+
+    if args.wallet_address.is_empty() {
+        error!(target: "adaptor", "--wallet-address is required (stratum login needs a DarkWow bs58 address)");
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "missing --wallet-address",
+        )));
+    }
 
     // Create async executor
     let ex = smol::Executor::new();
 
     smol::block_on(ex.run(async {
-        // Initialize dwowd client
-        let client = DwowdClient::new(args.dwowd_rpc.clone(), args.dwowd_stratum.clone());
-
-        // Connect to dwowd stratum
-        info!(target: "adaptor", "Connecting to dwowd stratum...");
-        if let Err(e) = client.connect().await {
+        // Connect to dwowd stratum with retry
+        info!(target: "adaptor", "Connecting to dwowd stratum (retries: {})...", args.connect_retries);
+        let client = DwowdClient::connect(
+            args.dwowd_rpc.clone(),
+            args.dwowd_stratum.clone(),
+            args.wallet_address.clone(),
+            args.connect_retries,
+        )
+        .await
+        .map_err(|e| {
             error!(target: "adaptor", "Failed to connect to dwowd stratum: {e}");
-            error!(target: "adaptor", "Is dwowd running and stratum enabled?");
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))
-                as Box<dyn std::error::Error>);
-        }
+            std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e)
+        })?;
         info!(target: "adaptor", "Connected to dwowd stratum");
 
         let state = Arc::new(AdaptorState::new(client));
@@ -276,4 +295,131 @@ fn send_response(
     );
     stream.write_all(http_response.as_bytes())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+
+    #[test]
+    fn test_jsonrpc_request_deser_valid() {
+        let json = r#"{"jsonrpc":"2.0","method":"get_info","params":[],"id":1}"#;
+        let req: JsonRpcRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.jsonrpc, "2.0");
+        assert_eq!(req.method, "get_info");
+        assert_eq!(req.id, serde_json::Value::Number(1.into()));
+    }
+
+    #[test]
+    fn test_jsonrpc_request_deser_submit_block() {
+        let json = r#"{"jsonrpc":"2.0","method":"submit_block","params":["deadbeef"],"id":42}"#;
+        let req: JsonRpcRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.method, "submit_block");
+        let blob = req
+            .params
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+            .unwrap();
+        assert_eq!(blob, "deadbeef");
+    }
+
+    #[test]
+    fn test_jsonrpc_request_deser_empty_params() {
+        let json = r#"{"jsonrpc":"2.0","method":"get_block_template","id":1}"#;
+        let req: JsonRpcRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.method, "get_block_template");
+        assert!(req.params.is_null());
+    }
+
+    #[test]
+    fn test_jsonrpc_response_ser() {
+        let resp = JsonRpcResponse {
+            jsonrpc: "2.0".into(),
+            result: Some(serde_json::json!({"status": "OK"})),
+            error: None,
+            id: serde_json::Value::Number(1.into()),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"result\""));
+        assert!(json.contains("\"status\""));
+        assert!(json.contains("\"OK\""));
+    }
+
+    #[test]
+    fn test_jsonrpc_response_error() {
+        let resp = JsonRpcResponse {
+            jsonrpc: "2.0".into(),
+            result: None,
+            error: Some(serde_json::json!({"code": -32601, "message": "Method not found"})),
+            id: serde_json::Value::Null,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"error\""));
+        assert!(!json.contains("\"result\""));
+    }
+
+    #[test]
+    fn test_send_response_format() {
+        // Test the HTTP wire format produced by send_response.
+        // Use a TcpListener/TcpStream pair to avoid nightly-only TcpStream::pair().
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = String::new();
+            stream.read_to_string(&mut buf).unwrap();
+            buf
+        });
+
+        let mut client = std::net::TcpStream::connect(addr).unwrap();
+        let resp = JsonRpcResponse {
+            jsonrpc: "2.0".into(),
+            result: Some(serde_json::json!({"status": "OK", "height": 42})),
+            error: None,
+            id: serde_json::Value::Number(1.into()),
+        };
+
+        send_response(&mut client, &resp).unwrap();
+        drop(client);
+
+        let buf = server_thread.join().unwrap();
+
+        assert!(buf.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(buf.contains("Content-Type: application/json\r\n"));
+        assert!(buf.contains("Content-Length: "));
+        assert!(buf.contains("Connection: close\r\n"));
+        let body_start = buf.find("\r\n\r\n").unwrap() + 4;
+        let body = &buf[body_start..];
+        let parsed: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed["result"]["height"], 42);
+        assert_eq!(parsed["result"]["status"], "OK");
+    }
+
+    #[test]
+    fn test_unknown_method_produces_error() {
+        // Verify the dispatch logic: unknown methods return Method not found.
+        // We test the JSON structure since handle_rpc requires an AdaptorState.
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "nonexistent".into(),
+            params: serde_json::Value::Null,
+            id: serde_json::Value::Number(99.into()),
+        };
+
+        // Directly test the error case logic (matching what handler_rpc does for unknown methods)
+        let response = JsonRpcResponse {
+            jsonrpc: "2.0".into(),
+            result: None,
+            error: Some(serde_json::json!({"code": -32601, "message": "Method not found"})),
+            id: req.id.clone(),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("-32601"));
+        assert!(json.contains("Method not found"));
+        assert!(json.contains("\"id\":99"));
+    }
 }

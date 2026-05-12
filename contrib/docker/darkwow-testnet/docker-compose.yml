@@ -228,6 +228,8 @@ services:
       - DWOWD_RPC=node0:31345
       - DWOWD_STRATUM=node0:31347
       - ADAPTOR_LISTEN=0.0.0.0:28081
+      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - CONNECT_RETRIES=30
     ports:
       - "28081:28081"
     networks:
