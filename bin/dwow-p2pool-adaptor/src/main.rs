@@ -179,12 +179,19 @@ async fn handle_connection(
 
     let mut reader = BufReader::new(match stream.try_clone() {
         Ok(s) => s,
-        Err(_) => return,
+        Err(e) => {
+            warn!(target: "adaptor", "Failed to clone stream: {e}");
+            return;
+        }
     });
+
+    // Set a read timeout so incorrect Content-Length doesn't block forever
+    let _ = reader.get_mut().set_read_timeout(Some(std::time::Duration::from_secs(30)));
 
     // Read HTTP request
     let mut request_line = String::new();
     if reader.read_line(&mut request_line).is_err() {
+        warn!(target: "adaptor", "Failed to read HTTP request line");
         return;
     }
 
@@ -193,6 +200,7 @@ async fn handle_connection(
     loop {
         let mut header_line = String::new();
         if reader.read_line(&mut header_line).is_err() {
+            warn!(target: "adaptor", "Failed to read HTTP header");
             return;
         }
         if header_line.trim().is_empty() {
@@ -213,7 +221,8 @@ async fn handle_connection(
     let mut body = vec![0u8; content_length];
     if content_length > 0 {
         use std::io::Read;
-        if reader.read_exact(&mut body).is_err() {
+        if let Err(e) = reader.read_exact(&mut body) {
+            warn!(target: "adaptor", "Failed to read body (Content-Length: {content_length}): {e}");
             return;
         }
     }
