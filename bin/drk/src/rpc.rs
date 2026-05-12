@@ -916,14 +916,14 @@ impl Drk {
     pub async fn get_next_block_height(&self) -> Result<u32> {
         let rep = self
             .darkfid_daemon_request(
-                "blockchain.best_fork_next_block_height",
+                "blockchain.last_confirmed_block",
                 &JsonValue::Array(vec![]),
             )
             .await?;
+        let params = rep.get::<Vec<JsonValue>>().unwrap();
+        let height = *params[0].get::<f64>().unwrap() as u32;
 
-        let next_height = *rep.get::<f64>().unwrap() as u32;
-
-        Ok(next_height)
+        Ok(height + 1)
     }
 
     /// Queries darkfid for currently configured block target time.

@@ -194,7 +194,7 @@ curl -X POST http://localhost:28345 \
 ```bash
 curl -X POST http://localhost:28345 \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"blockchain.best_fork_next_block_height","params":[],"id":1}'
+  -d '{"jsonrpc":"2.0","method":"blockchain.get_block_linear","params":[1],"id":1}'
 ```
 
 ### Check xmrig is connected

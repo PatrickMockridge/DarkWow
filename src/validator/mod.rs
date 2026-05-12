@@ -841,16 +841,6 @@ impl Validator {
         self.consensus.best_current_fork().await
     }
 
-    /// Auxiliary function to retrieve current best fork next block
-    /// height.
-    pub async fn best_fork_next_block_height(&self) -> Result<u32> {
-        let index = best_fork_index(&self.consensus.forks)?;
-        let fork = &self.consensus.forks[index];
-        let next_block_height = fork.get_next_block_height()?;
-
-        Ok(next_block_height)
-    }
-
     /// Auxiliary function to reset the validator blockchain and
     /// consensus states to the provided block height.
     pub async fn reset_to_height(&mut self, height: u32) -> Result<()> {

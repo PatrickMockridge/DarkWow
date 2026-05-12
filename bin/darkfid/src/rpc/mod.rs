@@ -86,7 +86,6 @@ impl RequestHandler<DefaultRpcHandler> for DarkfiNode {
             "blockchain.get_difficulty_linear" => self.blockchain_get_difficulty_linear(req.id, req.params).await,
             "blockchain.get_block_linear" => self.blockchain_get_block_linear(req.id, req.params).await,
             "blockchain.last_confirmed_block" => self.blockchain_last_confirmed_block(req.id, req.params).await,
-            "blockchain.best_fork_next_block_height" => self.blockchain_best_fork_next_block_height(req.id, req.params).await,
             "blockchain.block_target" => self.blockchain_block_target(req.id, req.params).await,
             "blockchain.lookup_wasm" => self.blockchain_lookup_wasm(req.id, req.params).await,
             "blockchain.lookup_zkas" => self.blockchain_lookup_zkas(req.id, req.params).await,

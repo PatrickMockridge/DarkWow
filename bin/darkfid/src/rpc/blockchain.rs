@@ -314,37 +314,6 @@ impl DarkfiNode {
     }
 
     // RPCAPI:
-    // Queries the validator to find the current best fork next block height.
-    //
-    // **Params:**
-    // * Empty
-    //
-    // **Returns:**
-    // * `f64`: Current best fork next block height
-    //
-    // --> {"jsonrpc": "2.0", "method": "blockchain.best_fork_next_block_height", "params": [], "id": 1}
-    // <-- {"jsonrpc": "2.0", "result": 1234, "id": 1}
-    pub async fn blockchain_best_fork_next_block_height(
-        &self,
-        id: u16,
-        params: JsonValue,
-    ) -> JsonResult {
-        let Some(params) = params.get::<Vec<JsonValue>>() else {
-            return JsonError::new(InvalidParams, None, id).into()
-        };
-        if !params.is_empty() {
-            return JsonError::new(InvalidParams, None, id).into()
-        }
-
-        let Ok(next_block_height) = self.validator.read().await.best_fork_next_block_height().await
-        else {
-            return JsonError::new(InternalError, None, id).into()
-        };
-
-        JsonResponse::new(JsonValue::Number(next_block_height as f64), id).into()
-    }
-
-    // RPCAPI:
     // Queries the validator to get the currently configured block target time.
     //
     // **Params:**

@@ -190,37 +190,6 @@ Queries the blockchain database to find the last confirmed block.
 }
 ```
 
-### `blockchain.best_fork_next_block_height` <sup><a href="https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/bin/dwowd/src/rpc/blockchain.rs#L209">[source]</a></sup> {#blockchainbest_fork_next_block_height}
-
-Queries the validator to find the current best fork next block height.
-
-**Params:**
-* Empty
-
-**Returns:**
-* `f64`: Current best fork next block height
-
-**Request:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "blockchain.best_fork_next_block_height",
-  "params": [],
-  "id": 1
-}
-```
-
-**Response:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "result": 1234,
-  "id": 1
-}
-```
-
 ### `blockchain.block_target` <sup><a href="https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/bin/dwowd/src/rpc/blockchain.rs#L240">[source]</a></sup> {#blockchainblock_target}
 
 Queries the validator to get the currently configured block target time.
