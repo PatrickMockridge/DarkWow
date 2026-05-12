@@ -27,7 +27,7 @@ fi
 
 if [ -z "$MONERO_WALLET_ADDRESS" ]; then
     echo "WARNING: MONERO_WALLET_ADDRESS not set — using dummy address for offline mode"
-    MONERO_WALLET_ADDRESS="9wviCeWe2D8ZwF6BxR3BPfKAKE5uufTkjmdVFpj2HRuzunmKZQz"
+    MONERO_WALLET_ADDRESS="9wenrVcFffvbTR4nEQ7KAbDMw7bq6B7uwgsraJzFVLkq9SiqMYFf72544RyXLaXKmZYfYNdcdZWpKaBv5dD8xkpS5djBZPM"
 fi
 
 exec p2pool \
