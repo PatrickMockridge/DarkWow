@@ -1,8 +1,8 @@
 # Consensus
 
-DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work — a deterministic design chosen over upstream's overlay/diff architecture.
+DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work for new networks (`linear-testnet`, `darkwow-testnet`). The original fork/overlay consensus remains active for the legacy `testnet` network. Both implementations coexist in the codebase, with new development targeting the linear blockchain.
 
-## Why Uncle Merkle Replaces the Overlay/Diff Architecture
+## Why Uncle Merkle Was Chosen Over the Overlay/Diff Architecture
 
 The upstream DarkWow consensus uses a speculative overlay/diff system with sled-overlay for transactional state management. This architecture exists primarily to support the "under one tent" DAO governance model: a complex fork-deciding mechanism is required because the DAO must adjudicate which fork is canonical, preventing natural chain splits.
 
@@ -106,6 +106,30 @@ harness.verify_sync()?;
 | Determinism | Non-deterministic in time | Fully deterministic |
 | Testing | Flaky, timing-dependent | Deterministic, isolated |
 | Complexity | High | Low |
+
+## Current State (May 2026)
+
+Both consensus implementations are active. The network name in `dwowd_config.toml`
+determines which one is used at startup (`bin/darkfid/src/main.rs:188-189`):
+
+| Network | Consensus | Location | Status |
+|---------|-----------|----------|--------|
+| `testnet` | Fork/overlay (DAG) | `src/validator/consensus.rs` | Legacy — maintained, no new features |
+| `linear-testnet` | Uncle Merkle (linear) | `src/linear/` | Development — WASM/Runtime integration in progress |
+| `darkwow-testnet` | Uncle Merkle (linear) | `src/linear/` | Public testnet — mining, contracts, merge mining |
+
+**In the fork-based validator**, uncle Merkle verification is a placeholder
+("Phase 2 TODO" at `src/validator/verification.rs:314`). Only the zero/empty
+uncle root is accepted — no actual uncle blocks are validated or rewarded.
+
+**In the linear blockchain**, uncle structures and verification are implemented
+in `src/linear/src/block.rs`. The `runtime` integration (WASM contract execution
+during block validation) is partially complete — marked TODO at
+`src/linear/src/blockchain.rs:192-193`.
+
+All new feature development (contract testing, merge mining, p2pool adaptor,
+anchoring finality) targets the linear blockchain. The fork-based validator is
+kept for compatibility with existing `testnet` deployments.
 
 ## Glossary
 

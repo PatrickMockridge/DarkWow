@@ -227,6 +227,35 @@ struct LinearHeaderAdapter {
 }
 ```
 
+## Confirmation Model
+
+The linear blockchain uses **depth-based confirmation** — substantially simpler
+than the fork-based model:
+
+1. Blocks are appended sequentially to a single canonical chain. There are no
+   competing forks — by design, there is only one valid next block at any height.
+2. A block is **confirmed** when a configurable number of subsequent blocks
+   have built on top of it. This depth is set by the `threshold` parameter in
+   `dwowd_config.toml` (default: 3 for `darkwow-testnet`, 1 for `linear-testnet`).
+3. With a 120-second block time and `threshold = 3`, finality is reached in
+   approximately 6 minutes.
+4. **No fork choice** is needed — the chain is linear by construction. There is
+   no `best_fork_index()`, no rank competition, and no overlay/diff system.
+
+### Comparison with Fork-Based Consensus
+
+| Aspect | Fork/Overlay (DAG) | Linear (Uncle Merkle) |
+|--------|-------------------|----------------------|
+| Chain structure | DAG of competing forks | Single linear chain |
+| Confirmation | Fork length > threshold + no competing fork with same rank | Block depth > threshold |
+| Fork resolution | Ranking (`targets_rank`, `hashes_rank`) | Not applicable (no forks) |
+| State model | Overlay + diffs + rollback | Plain sled (final writes) |
+| Uncle handling | Implicit competition | Explicit reference + pin reward |
+
+The `threshold` parameter serves the same semantic role in both models (minimum
+depth before a block is considered final), but the linear model has no fork
+ranking or competition logic.
+
 ## RPC Endpoint
 
 The `blockchain.get_block_linear` RPC endpoint returns wallet-compatible blocks:

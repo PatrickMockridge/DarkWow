@@ -290,6 +290,54 @@ the parent chain, DarkWow coinbase from the aux chain.
 | `WALLET_ADDRESS` | (empty) | DarkWow wallet for aux chain mining rewards |
 | `XMERGE_THREADS` | `1` | xmrig-merge thread count |
 
+## Native P2Pool Mining (DarkWow-Only)
+
+An alternative mining mode using the `dwow-p2pool-adaptor` to run p2pool without
+a Monero chain. p2pool mines DarkWow blocks as the primary chain — rewards are
+DRKW only.
+
+```
+xmrig → p2pool → adaptor → dwowd stratum → lilith P2P
+```
+
+### Quick Start
+
+```bash
+# Full pipeline (build + start + verify):
+./test_pipeline.sh --mode native-p2pool
+
+# Or directly with docker compose:
+docker compose --profile native-p2pool up -d
+```
+
+This starts three containers: `dwow-adaptor` (protocol bridge), `dwow-p2pool-darkwow`
+(p2pool pool), and `dwow-xmrig-p2pool` (xmrig miner).
+
+### How It Differs from Merge Mining
+
+| Aspect | Merge Mining | Native P2Pool |
+|--------|-------------|---------------|
+| Monero chain | Required | Not used |
+| p2pool flag | `--merge-mine` | No merge flag |
+| Rewards | XMR + DRKW | DRKW only |
+| Wallet addresses | Two (Monero + DarkWow) | One (DarkWow only) |
+
+### Native P2Pool Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DWOWD_RPC` | `node0:31345` | dwowd JSON-RPC for chain queries (adaptor) |
+| `DWOWD_STRATUM` | `node0:31347` | dwowd stratum for block templates (adaptor) |
+| `ADAPTOR_LISTEN` | `0.0.0.0:28081` | Where the adaptor listens for p2pool |
+| `MONERO_HOST` | `adaptor` | p2pool's monerod endpoint (the adaptor) |
+| `MONERO_RPC_PORT` | `28081` | Adaptor's listening port |
+| `STRATUM_PORT` | `3333` | p2pool stratum port for xmrig |
+| `WALLET_ADDRESS` | *(optional)* | DarkWow wallet for mining rewards |
+| `CONNECT_RETRIES` | `30` | Max retries for adaptor→dwowd connection |
+
+See [Native P2Pool Mining](../../doc/src/testnet/native-p2pool.md) for
+bare-metal setup, adaptor RPC reference, and known limitations.
+
 ## Contract Tests
 
 Tests the full economic cycle: mine blocks → fund wallet → deploy contracts →
@@ -354,7 +402,12 @@ If you need bridge networking for multi-machine, map ports and set
 | `Dockerfile` | Multi-stage build from local source (dwowd + lilith + WASM contracts) |
 | `docker-compose.yml` | 3-container orchestration with environment-driven config |
 | `entrypoint.sh` | Dynamic config generation for lilith and dwowd roles |
+| `entrypoint-adaptor.sh` | Start dwow-p2pool-adaptor for native p2pool mining |
+| `entrypoint-p2pool.sh` | Start p2pool in merge mining mode |
+| `entrypoint-p2pool-darkwow.sh` | Start p2pool in native DarkWow mode |
+| `entrypoint-monero.sh` | Start monerod for merge mining |
+| `Dockerfile.p2pool` | p2pool + xmrig image (merge and native modes) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
-| `test_pipeline.sh` | Clean → validate → build → start → health-check |
+| `test_pipeline.sh` | Clean → validate → build → start → health-check (3 modes) |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
