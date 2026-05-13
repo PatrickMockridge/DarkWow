@@ -452,20 +452,21 @@ phase_wallet() {
 phase_build() {
     info "Phase 4: Building images..."
 
-    # Always build from scratch for deterministic results.
-    # Docker layer caching ties the outcome to prior machine state
-    # and hides stale COPY layers — --no-cache prevents that.
+    # Determinism: the clean phase removes old images before builder prune,
+    # so stale COPY layers are evicted. Docker's layer cache is content-
+    # addressed — same file content produces the same layer digest every
+    # time. No --no-cache needed.
     if [ "$MODE" = "merge" ]; then
-        docker compose --profile merge build --no-cache 2>&1 | tail -20
+        docker compose --profile merge build 2>&1 | tail -20
         check $? "docker build (merge profile)"
     elif [ "$MODE" = "native-p2pool" ]; then
-        docker compose --profile native-p2pool build --no-cache 2>&1 | tail -20
+        docker compose --profile native-p2pool build 2>&1 | tail -20
         check $? "docker build (native-p2pool profile)"
     elif [ "$MODE" = "join-merge" ]; then
-        docker compose --profile join-merge build --no-cache 2>&1 | tail -20
+        docker compose --profile join-merge build 2>&1 | tail -20
         check $? "docker build (join-merge profile)"
     else
-        docker compose build --no-cache 2>&1 | tail -20
+        docker compose build 2>&1 | tail -20
         check $? "docker build"
     fi
 
