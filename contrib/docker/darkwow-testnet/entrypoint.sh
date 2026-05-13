@@ -250,7 +250,7 @@ fi
 
 # --- Start dwowd ---
 echo "Starting dwowd..."
-/app/dwowd "$@" &
+/app/dwowd &
 DWOWD_PID=$!
 
 # --- Start xmrig for mining ---
