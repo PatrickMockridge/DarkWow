@@ -309,8 +309,9 @@ phase_clean() {
     rm -f /tmp/dwow_mining_secret 2>/dev/null || true
 
     # Remove dww wallet state so each run generates a fresh keypair.
+    # (Do NOT remove ~/.config/dwow — dww wallet initialize treats
+    # missing config as first run and requires manual review.)
     rm -rf ~/.local/share/dwow/dww 2>/dev/null || true
-    rm -rf ~/.config/dwow 2>/dev/null || true
 
     cd "$SCRIPT_DIR"
 
