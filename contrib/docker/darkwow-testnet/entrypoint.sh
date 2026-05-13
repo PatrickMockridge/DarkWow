@@ -112,8 +112,18 @@ if [ "$IS_SEED" = "true" ]; then
     echo "  Mode: SEED (no upstream seeds configured)"
 else
     if [ -n "$SEED_ADDR" ]; then
-        SEEDS_LINE="seeds = [\"tcp+tls://${SEED_ADDR}\"]"
-        echo "  Seeds: tcp+tls://${SEED_ADDR}"
+        SEED_LIST=""
+        IFS=',' read -ra SEEDS <<< "$SEED_ADDR"
+        for seed in "${SEEDS[@]}"; do
+            seed=$(echo "$seed" | xargs)
+            if [ -z "$SEED_LIST" ]; then
+                SEED_LIST="\"tcp+tls://${seed}\""
+            else
+                SEED_LIST="${SEED_LIST}, \"tcp+tls://${seed}\""
+            fi
+        done
+        SEEDS_LINE="seeds = [${SEED_LIST}]"
+        echo "  Seeds: ${SEED_LIST}"
     fi
 fi
 

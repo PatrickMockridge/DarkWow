@@ -190,6 +190,21 @@ External participants then set `SEED_ADDR=<public-ip>:31340`.
 
 ### External Participant Quick Start
 
+**Recommended — use join-testnet.sh:**
+
+```bash
+# Native mining (solo)
+./contrib/docker/darkwow-testnet/join-testnet.sh --mode native
+
+# Merge mining with Monero testnet
+./contrib/docker/darkwow-testnet/join-testnet.sh --mode merge
+```
+
+The script auto-detects your public IP and sets sensible defaults. See
+`join-testnet.sh --help` for all options.
+
+**Manual docker run:**
+
 ```bash
 docker run -d --name dwow-node --network=host \
     -e ROLE=dwowd \
@@ -197,7 +212,7 @@ docker run -d --name dwow-node --network=host \
     -e P2P_PORT=31342 \
     -e RPC_PORT=31345 \
     -e STRATUM_PORT=31347 \
-    -e SEED_ADDR=<seed-host>:<seed-port> \
+    -e SEED_ADDR=lilith0.dark.fi:31340,lilith1.dark.fi:31340 \
     -e EXTERNAL_ADDR=<my-public-ip>:31342 \
     -e MAGIC_BYTES=68,82,75,87 \
     -e MINING_THREADS=<cores> \
@@ -206,6 +221,9 @@ docker run -d --name dwow-node --network=host \
     -v /data/dwowd:/root/.local/share/dwow/dwowd \
     darkwow-testnet:latest
 ```
+
+The hostlist file at `/data/dwowd/hostlist.tsv` persists peer addresses across
+restarts, so the node remembers peers it has connected to.
 
 ### Monitoring
 
@@ -218,13 +236,16 @@ docker run -d --name dwow-node --network=host \
 Once the native mining testnet is stable, add Monero merge mining:
 
 ```bash
-# Enable merge mining on the darkwow-testnet
+# Join with merge mining (single node, connects to Monero testnet)
+./contrib/docker/darkwow-testnet/join-testnet.sh --mode merge
+
+# Or for local testing: full 3-node devnet with merge mining
 MERGE_MINING=true docker compose --profile merge up -d
 ```
 
-This adds monerod + p2pool + xmrig-merge containers. monerod runs in offline
-mode for local testing; connect to Monero public testnet with
-`MONERO_OFFLINE=false`. See [Merge Mining](merge-mining.md) for the full guide.
+This starts monerod syncing the public Monero testnet, p2pool bridging to dwowd's
+mm_rpc, and xmrig mining through p2pool. See [Merge Mining](merge-mining.md) for
+the full guide.
 
 ## Phase 5: Ongoing Operations
 

@@ -287,6 +287,113 @@ services:
       - p2pool-darkwow
     restart: unless-stopped
 
+  # ============================================================================
+  # Public Testnet Join Services (--profile join-merge)
+  #
+  # Single-node merge mining stack for joining the public DarkWow testnet.
+  # No lilith seed, no second mining node — this is a self-contained external
+  # participant stack. All services use host networking so dwowd's P2P layer
+  # sees the host's real IP address for peer discovery.
+  #
+  # Start with:  docker compose --profile join-merge up -d
+  # Config via:  contrib/docker/darkwow-testnet/join-testnet.sh --mode merge
+  # ============================================================================
+  dwowd-join:
+    profiles: ["join-merge"]
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+    container_name: dwow-node0
+    entrypoint: ["/app/entrypoint.sh"]
+    command: []
+    network_mode: host
+    environment:
+      - ROLE=dwowd
+      - NETWORK=${NETWORK:-darkwow-testnet}
+      - P2P_PORT=${P2P_PORT:-31342}
+      - RPC_PORT=${RPC_PORT:-31345}
+      - STRATUM_PORT=${STRATUM_PORT:-31347}
+      - SEED_ADDR=${SEED_ADDR:-lilith0.dark.fi:31340,lilith1.dark.fi:31340}
+      - MAGIC_BYTES=${MAGIC_BYTES:-68,82,75,87}
+      - MINING_THREADS=0
+      - RANDOMX_MAX_THREADS=0
+      - THRESHOLD=${THRESHOLD:-3}
+      - TARGET_BLOCK_TIME=${TARGET_BLOCK_TIME:-120}
+      - SKIP_SYNC=false
+      - SKIP_FEES=false
+      - LOCALNET=false
+      - EXTERNAL_ADDR=${EXTERNAL_ADDR:-}
+      - MERGE_MINING=true
+      - MM_RPC_PORT=${MM_RPC_PORT:-31348}
+      - MINING_ENABLED=false
+      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - WALLET_SECRET_FILE=/run/secrets/mining_secret
+    volumes:
+      - ${DATA_DIR:-./data/dwowd}:/root/.local/share/dwow/dwowd
+    restart: unless-stopped
+
+  monerod-join:
+    profiles: ["join-merge"]
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.monero
+    container_name: dwow-monerod
+    network_mode: host
+    environment:
+      - OFFLINE=${MONERO_OFFLINE:-false}
+      - MONERO_NETWORK=${MONERO_NETWORK:-testnet}
+      - FIXED_DIFFICULTY=${MONERO_FIXED_DIFFICULTY:-20000}
+      - ZMQ_PORT=28083
+      - RPC_PORT=28081
+      - MONERO_ADD_PEERS=${MONERO_ADD_PEERS:-125.229.105.12:28081,37.187.74.171:28089}
+    volumes:
+      - ${MONERO_DATA_DIR:-./data/monerod}:/root/.bitmonero
+    restart: unless-stopped
+
+  p2pool-join:
+    profiles: ["join-merge"]
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.p2pool
+    container_name: dwow-p2pool
+    network_mode: host
+    entrypoint: ["/app/entrypoint-p2pool.sh"]
+    environment:
+      - MONERO_HOST=127.0.0.1
+      - MONERO_RPC_PORT=28081
+      - MONERO_ZMQ_PORT=28083
+      - MONERO_NETWORK=${MONERO_NETWORK:-testnet}
+      - DWOWD_MM_RPC=127.0.0.1:${MM_RPC_PORT:-31348}
+      - STRATUM_PORT=3333
+      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
+    volumes:
+      - ${P2POOL_DATA_DIR:-./data/p2pool}:/root/.p2pool
+    depends_on:
+      - monerod-join
+      - dwowd-join
+    restart: unless-stopped
+
+  xmrig-join:
+    profiles: ["join-merge"]
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.xmrig
+    container_name: dwow-xmrig-merge
+    network_mode: host
+    entrypoint: ["/usr/local/bin/xmrig"]
+    command:
+      - "-o"
+      - "127.0.0.1:3333"
+      - "-a"
+      - "rx/0"
+      - "-t"
+      - "${MINING_THREADS:-4}"
+      - "--keepalive"
+    depends_on:
+      - p2pool-join
+    restart: unless-stopped
+
 networks:
   dwow-local:
     driver: bridge

@@ -21,6 +21,36 @@ docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml logs -f
 docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml down
 ```
 
+## Joining the Public Testnet
+
+To join the existing public DarkWow testnet as an external participant, use the
+`join-testnet.sh` script. This launches a single mining node (not the full 3-node
+devnet) that connects to the public lilith seeds.
+
+```bash
+# Native mining (solo) — xmrig mines via dwowd's built-in stratum
+./contrib/docker/darkwow-testnet/join-testnet.sh --mode native
+
+# Merge mining — xmrig mines via p2pool, submits to Monero testnet + DarkWow
+./contrib/docker/darkwow-testnet/join-testnet.sh --mode merge
+```
+
+The script auto-detects your public IP for P2P reachability and sets sensible
+defaults for the public testnet (magic bytes `[68, 82, 75, 87]`, threshold 3,
+block time 120s, public seeds). Override any default via CLI flags or environment
+variables.
+
+The node remembers peers it has connected to via a persistent hostlist file
+stored in the data directory (`./data/dwowd/`). On restart, it reconnects to
+known peers without relying solely on the seed nodes.
+
+Prerequisites:
+- Docker image built or pulled (`darkwow-testnet:latest`)
+- A DarkWow wallet address for mining rewards
+- For merge mode: a Monero testnet wallet address
+
+See `./join-testnet.sh --help` for all options.
+
 ## Architecture
 
 Three containers on a bridge network (`dwow-local`):
@@ -100,12 +130,20 @@ To allow external participants (outside your LAN) to join:
      -e EXTERNAL_ADDR=<your-public-ip>:31340 \
      darkwow-testnet:latest
    ```
-3. **External participants** connect with:
+3. **External participants** join with `join-testnet.sh` (recommended) or manually:
    ```bash
+   # Recommended: use the join script
+   ./contrib/docker/darkwow-testnet/join-testnet.sh --mode native
+
+   # Or manually: pass SEED_ADDR (comma-separated for multiple seeds)
    docker run --network=host \
-     -e SEED_ADDR=<your-public-ip>:31340 \
+     -e SEED_ADDR=<seed-1>:31340,<seed-2>:31340 \
      darkwow-testnet:latest
    ```
+
+The node remembers peers across restarts via a persistent hostlist file in its
+data directory. Mount a host volume (`-v /data/dwowd:/root/.local/share/dwow/dwowd`)
+to persist the hostlist and blockchain data.
 
 ## Environment Variable Reference
 
@@ -133,7 +171,7 @@ To allow external participants (outside your LAN) to join:
 | `RPC_PORT` | `31345` | JSON-RPC port |
 | `STRATUM_PORT` | `31347` | Stratum mining port |
 | `MANAGEMENT_PORT` | `31346` | Management RPC port |
-| `SEED_ADDR` | (empty) | `host:port` of seed node for P2P bootstrap |
+| `SEED_ADDR` | (empty) | Comma-separated seed `host:port` for P2P bootstrap |
 | `PEER_ADDR` | (empty) | Comma-separated additional peer `host:port` |
 | `EXTERNAL_ADDR` | (empty) | Public `host:port` for internet-facing nodes |
 | `IS_SEED` | `false` | Run as seed (no upstream seeds configured) |
@@ -280,7 +318,9 @@ the parent chain, DarkWow coinbase from the aux chain.
 | `MERGE_MINING` | `false` | Enable merge mining (`true`/`false`) |
 | `MM_RPC_PORT` | `31348` | dwowd merge mining RPC port |
 | `MONERO_OFFLINE` | `true` | Run monerod in offline mode (local devnet) |
+| `MONERO_NETWORK` | `testnet` | Monero network: `testnet` or `mainnet` |
 | `MONERO_FIXED_DIFFICULTY` | `20000` | Fixed difficulty when offline |
+| `MONERO_ADD_PEERS` | (empty) | Comma-separated Monero bootstrap `host:port` |
 | `MONERO_WALLET_ADDRESS` | (empty) | Monero wallet for p2pool mining rewards |
 | `WALLET_ADDRESS` | (empty) | DarkWow wallet for aux chain mining rewards |
 | `XMERGE_THREADS` | `1` | xmrig-merge thread count |
@@ -409,6 +449,7 @@ If you need bridge networking for multi-machine, map ports and set
 | `entrypoint-monero.sh` | Start monerod for merge mining |
 | `Dockerfile.p2pool` | p2pool + xmrig image (merge and native modes) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
+| `join-testnet.sh` | Join the public DarkWow testnet as a mining node (native or merge) |
 | `test_pipeline.sh` | Clean → validate → build → start → health-check (3 modes) |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |

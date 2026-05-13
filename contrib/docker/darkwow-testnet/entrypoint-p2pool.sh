@@ -3,19 +3,30 @@
 #
 # Bridges monerod and dwowd for merge mining. xmrig connects to p2pool's
 # stratum port; p2pool submits found blocks to both monerod and dwowd.
+#
+# Environment:
+#   MONERO_HOST           - monerod hostname (default: monerod)
+#   MONERO_RPC_PORT       - monerod RPC port (default: 28081)
+#   MONERO_ZMQ_PORT       - monerod ZMQ pub port (default: 28083)
+#   MONERO_NETWORK        - "testnet" or "mainnet" (default: testnet)
+#   DWOWD_MM_RPC          - dwowd merge mining RPC (default: node0:31348)
+#   STRATUM_PORT          - p2pool stratum port (default: 3333)
+#   WALLET_ADDRESS        - DarkWow wallet for aux chain rewards
+#   MONERO_WALLET_ADDRESS - Monero wallet for parent chain rewards
 
 set -e
 
 MONERO_HOST="${MONERO_HOST:-monerod}"
 MONERO_RPC_PORT="${MONERO_RPC_PORT:-28081}"
 MONERO_ZMQ_PORT="${MONERO_ZMQ_PORT:-28083}"
+MONERO_NETWORK="${MONERO_NETWORK:-testnet}"
 DWOWD_MM_RPC="${DWOWD_MM_RPC:-node0:31348}"
 STRATUM_PORT="${STRATUM_PORT:-3333}"
 WALLET_ADDRESS="${WALLET_ADDRESS:-}"
 MONERO_WALLET_ADDRESS="${MONERO_WALLET_ADDRESS:-}"
 
 echo "=== p2pool Merge Mining ==="
-echo "  Monero: $MONERO_HOST (RPC=$MONERO_RPC_PORT ZMQ=$MONERO_ZMQ_PORT)"
+echo "  Monero: $MONERO_HOST (RPC=$MONERO_RPC_PORT ZMQ=$MONERO_ZMQ_PORT network=$MONERO_NETWORK)"
 echo "  dwowd mm_rpc: $DWOWD_MM_RPC"
 echo "  Stratum: 0.0.0.0:$STRATUM_PORT"
 echo "  DarkWow wallet: $WALLET_ADDRESS"
@@ -30,6 +41,11 @@ if [ -z "$MONERO_WALLET_ADDRESS" ]; then
     MONERO_WALLET_ADDRESS="9wenrVcFffvbTR4nEQ7KAbDMw7bq6B7uwgsraJzFVLkq9SiqMYFf72544RyXLaXKmZYfYNdcdZWpKaBv5dD8xkpS5djBZPM"
 fi
 
+NETWORK_FLAG=""
+if [ "$MONERO_NETWORK" = "testnet" ]; then
+    NETWORK_FLAG="--testnet --mini"
+fi
+
 exec p2pool \
     --host "${MONERO_HOST}" \
     --rpc-port "${MONERO_RPC_PORT}" \
@@ -38,4 +54,5 @@ exec p2pool \
     --stratum "0.0.0.0:${STRATUM_PORT}" \
     --data-dir /root/.p2pool \
     --no-igd \
+    $NETWORK_FLAG \
     --merge-mine "${DWOWD_MM_RPC}" "${WALLET_ADDRESS}"

@@ -66,7 +66,7 @@ localnet = false
 active_profiles = ["tcp+tls"]
 inbound = ["tcp+tls://0.0.0.0:31342"]
 hostlist = "~/.local/share/dwow/dwowd/darkwow-testnet/hostlist.tsv"
-seeds = ["tcp+tls://lilith0.darkwow.org:31340", "tcp+tls://lilith1.darkwow.org:31340"]
+seeds = ["tcp+tls://lilith0.dark.fi:31340", "tcp+tls://lilith1.dark.fi:31340"]
 allowed_transports = ["tcp+tls"]
 outbound_connections = 8
 ```
@@ -149,15 +149,28 @@ The quickest way to get a mining node running is with the containerized testnet:
 ```bash
 cd contrib/docker/darkwow-testnet
 
-# Native mining (dwowd + xmrig)
+# Full 3-node local devnet with health checks
 ./test_pipeline.sh --mode native
+
+# Join the public DarkWow testnet as a single node
+./join-testnet.sh --mode native
+
+# Join with merge mining (Monero public testnet)
+./join-testnet.sh --mode merge
 
 # Adaptor pathway (p2pool + adaptor + xmrig)
 ./test_pipeline.sh --mode native-p2pool
 
-# Merge mining with Monero (monerod + p2pool + xmrig)
+# Merge mining with Monero (local monerod + p2pool + xmrig)
 ./test_pipeline.sh --mode merge
 ```
+
+`test_pipeline.sh` starts a full 3-node local devnet. `join-testnet.sh` launches
+a single container that connects to the public DarkWow testnet seeds. Use
+`join-testnet.sh --help` to see all options.
+
+The node remembers peers across restarts via a persistent hostlist file in its
+data directory — mount a volume to preserve it.
 
 See the [darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md) for full details.
 
