@@ -93,7 +93,7 @@ LILITHEOF
     echo "  Lilith config written to /tmp/lilith.toml"
     echo "  P2P accept: tcp+tls://0.0.0.0:${P2P_PORT}"
     echo "Starting lilith..."
-    exec /app/lilith --config /tmp/lilith.toml "$@"
+    exec /app/lilith --config /tmp/lilith.toml
 fi
 
 # ============================================================================
