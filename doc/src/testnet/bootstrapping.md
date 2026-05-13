@@ -203,6 +203,19 @@ External participants then set `SEED_ADDR=<public-ip>:31340`.
 The script auto-detects your public IP and sets sensible defaults. See
 `join-testnet.sh --help` for all options.
 
+**Test the join before going live:**
+
+```bash
+# Verify the join works end-to-end before deploying for real
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-native
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-merge
+```
+
+Run `./test_pipeline.sh --help` for full documentation of all modes, phases,
+and environment variables. The pipeline builds the image, validates config,
+tests the seed fallback, and verifies mining — all sequentially, one phase
+at a time, for reproducible results.
+
 **Manual docker run:**
 
 ```bash
@@ -238,6 +251,9 @@ Once the native mining testnet is stable, add Monero merge mining:
 ```bash
 # Join with merge mining (single node, connects to Monero testnet)
 ./contrib/docker/darkwow-testnet/join-testnet.sh --mode merge
+
+# Or test the join end-to-end first
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-merge
 
 # Or for local testing: full 3-node devnet with merge mining
 MERGE_MINING=true docker compose --profile merge up -d

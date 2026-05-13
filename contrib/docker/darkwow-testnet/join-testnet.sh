@@ -195,13 +195,79 @@ mkdir -p "$DATA_DIR" "$MONERO_DATA_DIR" "$P2POOL_DATA_DIR"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
 
+# --- Seed reachability check ---
+FALLBACK_SEED_PORT="${FALLBACK_SEED_PORT:-31341}"
+FALLBACK_SEED_DATA="${FALLBACK_SEED_DATA:-$(pwd)/data/lilith}"
+FALLBACK_LILITH_NAME="dwow-fallback-lilith"
+AUTO_FALLBACK="${AUTO_FALLBACK:-true}"
+
+check_seeds() {
+    local seeds="$1"
+    local reachable=0
+    IFS=',' read -ra SEED_ARRAY <<< "$seeds"
+    for seed in "${SEED_ARRAY[@]}"; do
+        seed=$(echo "$seed" | xargs)
+        local host="${seed%:*}"
+        local port="${seed##*:}"
+        if timeout 5 bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null; then
+            echo "  Seed reachable: $seed"
+            reachable=1
+            break
+        else
+            echo "  Seed unreachable: $seed"
+        fi
+    done
+    return $(( 1 - reachable ))
+}
+
+start_fallback_lilith() {
+    echo "  No public seeds reachable — starting local fallback lilith..."
+    echo "  Fallback P2P port: $FALLBACK_SEED_PORT"
+    echo "  Fallback data dir: $FALLBACK_SEED_DATA"
+
+    mkdir -p "$FALLBACK_SEED_DATA"
+
+    # Remove any previous fallback lilith
+    docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
+    docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
+
+    docker run -d \
+        --name "$FALLBACK_LILITH_NAME" \
+        --network=host \
+        -e ROLE=lilith \
+        -e NETWORK="$NETWORK" \
+        -e P2P_PORT="$FALLBACK_SEED_PORT" \
+        -e MAGIC_BYTES="$MAGIC_BYTES" \
+        -e LOCALNET=false \
+        -v "$FALLBACK_SEED_DATA:/root/.local/share/dwow/lilith" \
+        --restart unless-stopped \
+        "$IMAGE"
+
+    echo "  Fallback lilith started — nodes will use 127.0.0.1:$FALLBACK_SEED_PORT as seed"
+
+    # Return the local seed address
+    FALLBACK_SEED_ADDR="127.0.0.1:${FALLBACK_SEED_PORT}"
+}
+
 # --- Build docker run args for native mode ---
 run_native() {
     echo "=== DarkWow Public Testnet — Native Mining ==="
+
+    # Check seed reachability and start fallback if needed
+    local effective_seed="$SEED_ADDR"
+    if [ "$AUTO_FALLBACK" = "true" ]; then
+        echo "  Checking seed reachability..."
+        if ! check_seeds "$SEED_ADDR"; then
+            start_fallback_lilith
+            effective_seed="$FALLBACK_SEED_ADDR"
+        fi
+        echo
+    fi
+
     echo "  Mode:      solo (xmrig -> dwowd stratum)"
     echo "  Image:     $IMAGE"
     echo "  Network:   $NETWORK"
-    echo "  Seed:      $SEED_ADDR"
+    echo "  Seed:      $effective_seed"
     echo "  External:  $EXTERNAL_ADDR"
     echo "  P2P:       $P2P_PORT"
     echo "  RPC:       $RPC_PORT"
@@ -232,7 +298,7 @@ run_native() {
         -e P2P_PORT="$P2P_PORT" \
         -e RPC_PORT="$RPC_PORT" \
         -e STRATUM_PORT="$STRATUM_PORT" \
-        -e SEED_ADDR="$SEED_ADDR" \
+        -e SEED_ADDR="$effective_seed" \
         -e MAGIC_BYTES="$MAGIC_BYTES" \
         -e MINING_THREADS="$MINING_THREADS" \
         -e THRESHOLD="$THRESHOLD" \
@@ -272,11 +338,22 @@ run_native() {
 
 # --- Docker Compose for merge mode ---
 run_merge() {
+    # Check seed reachability and start fallback if needed
+    local effective_seed="$SEED_ADDR"
+    if [ "$AUTO_FALLBACK" = "true" ]; then
+        echo "  Checking seed reachability..."
+        if ! check_seeds "$SEED_ADDR"; then
+            start_fallback_lilith
+            effective_seed="$FALLBACK_SEED_ADDR"
+        fi
+        echo
+    fi
+
     echo "=== DarkWow Public Testnet — Merge Mining ==="
     echo "  Mode:      merge (xmrig -> p2pool -> monerod + dwowd mm_rpc)"
     echo "  Image:     $IMAGE"
     echo "  Network:   $NETWORK"
-    echo "  Seed:      $SEED_ADDR"
+    echo "  Seed:      $effective_seed"
     echo "  External:  $EXTERNAL_ADDR"
     echo "  P2P:       $P2P_PORT"
     echo "  RPC:       $RPC_PORT"
@@ -296,7 +373,8 @@ run_merge() {
     # Export all vars so docker compose can substitute them
     export IMAGE NETWORK P2P_PORT RPC_PORT STRATUM_PORT MM_RPC_PORT
     export MINING_THREADS THRESHOLD TARGET_BLOCK_TIME
-    export SEED_ADDR MAGIC_BYTES EXTERNAL_ADDR
+    export SEED_ADDR="$effective_seed"
+    export MAGIC_BYTES EXTERNAL_ADDR
     export WALLET_ADDRESS WALLET_SECRET_FILE MONERO_WALLET_ADDRESS
     export DATA_DIR MONERO_DATA_DIR P2POOL_DATA_DIR
     export MONERO_OFFLINE MONERO_NETWORK MONERO_ADD_PEERS MONERO_FIXED_DIFFICULTY

@@ -144,30 +144,33 @@ dww -c dww_config.toml wallet balance
 
 ## Docker-Based Mining
 
-The quickest way to get a mining node running is with the containerized testnet:
+The quickest way to get a mining node running is with the containerized testnet.
+All builds and tests go through a single pipeline entry point:
 
 ```bash
 cd contrib/docker/darkwow-testnet
 
-# Full 3-node local devnet with health checks
+# Local 3-node devnet (build + start + verify)
 ./test_pipeline.sh --mode native
-
-# Join the public DarkWow testnet as a single node
-./join-testnet.sh --mode native
-
-# Join with merge mining (Monero public testnet)
-./join-testnet.sh --mode merge
-
-# Adaptor pathway (p2pool + adaptor + xmrig)
+./test_pipeline.sh --mode merge
 ./test_pipeline.sh --mode native-p2pool
 
-# Merge mining with Monero (local monerod + p2pool + xmrig)
-./test_pipeline.sh --mode merge
+# Join public testnet as a single node (build + validate + verify)
+./test_pipeline.sh --mode join-native
+./test_pipeline.sh --mode join-merge
+
+# Join the public testnet for real (no verification — just launch)
+./join-testnet.sh --mode native
+./join-testnet.sh --mode merge
 ```
 
-`test_pipeline.sh` starts a full 3-node local devnet. `join-testnet.sh` launches
-a single container that connects to the public DarkWow testnet seeds. Use
-`join-testnet.sh --help` to see all options.
+`test_pipeline.sh` is the single entry point for all builds and tests. Run
+`./test_pipeline.sh --help` for full documentation of all 5 modes, phases,
+and environment variables. Every phase runs sequentially — one thing at a time
+for reproducible results.
+
+`join-testnet.sh` launches the actual node without the test harness. Use it
+after the pipeline passes. See `join-testnet.sh --help` for all options.
 
 The node remembers peers across restarts via a persistent hostlist file in its
 data directory — mount a volume to preserve it.

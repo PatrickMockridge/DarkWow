@@ -379,20 +379,41 @@ See [Merge Mining Adaptor](../../doc/src/testnet/native-p2pool.md) for
 bare-metal setup, adaptor RPC reference, block header translation, and
 known limitations.
 
+## Test Pipeline
+
+`test_pipeline.sh` is the single entry point for all builds and tests. Every mode
+builds the Docker image, starts the stack, and verifies correctness.
+
+```bash
+# Local 3-node devnet
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode merge
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native-p2pool
+
+# Join public testnet as a single node
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-native
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-merge
+```
+
+**Sequential determinism**: Every phase runs to completion before the next begins.
+No background tasks, no parallel operations. One machine, one thing at a time.
+This guarantees reproducible results across different machines.
+
+Run `./test_pipeline.sh --help` for full documentation of all modes, phases, and
+environment variables.
+
 ## Contract Tests
 
 Tests the full economic cycle: mine blocks → fund wallet → deploy contracts →
-transfer tokens → pay fees.
+transfer tokens → pay fees. Run after the pipeline passes.
 
 ```bash
-# Full pipeline (clean → build → start → health-check)
-./contrib/docker/darkwow-testnet/test_pipeline.sh
-
 # Single-contract test (deploy + transfer)
 ./contrib/docker/darkwow-testnet/contract_test.sh
 
 # Multi-contract test (deploy money_v3, DEX, dao_escrow + transfers)
-./contrib/docker/darkwow-testnet/test-contracts.sh
+./contrib/docker/darkwow-testnet/test-contracts.sh --mode native
+./contrib/docker/darkwow-testnet/test-contracts.sh --mode merge
 ```
 
 ## Data Persistence
@@ -450,6 +471,6 @@ If you need bridge networking for multi-machine, map ports and set
 | `Dockerfile.p2pool` | p2pool + xmrig image (merge and native modes) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
 | `join-testnet.sh` | Join the public DarkWow testnet as a mining node (native or merge) |
-| `test_pipeline.sh` | Clean → validate → build → start → health-check (3 modes) |
+| `test_pipeline.sh` | Single entry point — clean → build → verify (5 modes; run --help) |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |

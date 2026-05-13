@@ -1,17 +1,22 @@
 #!/bin/bash
 # DarkWow Testnet Full Pipeline
 #
-# Builds, starts, and verifies the darkwow-testnet Docker stack.
-# Supports both native mining (xmrig → dwowd stratum) and merge mining
-# (xmrig → p2pool → monerod + dwowd mm_rpc).
+# Single entry point for all DarkWow testnet builds and tests.
+# Every mode builds the image, starts the stack, and verifies correctness.
 #
 # Usage:
-#   ./test_pipeline.sh               # native mining (default)
-#   ./test_pipeline.sh --mode native  # native mining
-#   ./test_pipeline.sh --mode merge   # merge mining (Monero aux PoW)
-#   ./test_pipeline.sh --mode native-p2pool  # DarkWow-primary pooled mining (adaptor)
+#   ./test_pipeline.sh --mode native        # 3-node local devnet, native mining
+#   ./test_pipeline.sh --mode merge         # 3-node local devnet, merge mining
+#   ./test_pipeline.sh --mode native-p2pool # 3-node local devnet, adaptor pathway
+#   ./test_pipeline.sh --mode join-native   # Single node joins public testnet, native
+#   ./test_pipeline.sh --mode join-merge    # Single node joins public testnet, merge
 #
-# After this succeeds, run contract tests:
+# Sequential determinism:
+#   Every phase runs to completion before the next begins. No background tasks,
+#   no parallel operations. One machine, one thing at a time. This guarantees
+#   reproducible results across different machines.
+#
+# After the pipeline passes, run contract tests:
 #   ./test-contracts.sh --mode native
 #   ./test-contracts.sh --mode merge
 
@@ -22,18 +27,89 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 DWW_BIN="${REPO_ROOT}/target/release/dww"
 DWW_DEBUG="${REPO_ROOT}/target/debug/dww"
 
+# --- Help ---
+usage() {
+    cat <<'EOF'
+DarkWow Testnet Full Pipeline
+
+Usage:
+  ./test_pipeline.sh --mode <mode>
+
+Modes:
+  native         3-node local devnet, native mining (xmrig → dwowd stratum)
+  merge          3-node local devnet, merge mining (Monero aux PoW via p2pool)
+  native-p2pool  3-node local devnet, adaptor pathway (p2pool → adaptor → dwowd)
+  join-native    Single node joining public testnet, native mining
+  join-merge     Single node joining public testnet, merge mining
+
+Phases (native, merge, native-p2pool):
+  1.  Clean                Tear down previous containers, images, volumes
+  2.  Validate prereqs     Check required files exist on disk
+  3.  Generate wallet      Create DarkWow keypair via dww
+  4.  Build                Build Docker images via compose
+  5.  Start                Launch containers
+  6.  Verify containers    Check all expected containers are running
+  7.  RPC health           Wait for JSON-RPC endpoints to respond
+  8.  Mining activity      Verify stratum/p2pool activity in logs
+  9.  Block production     Wait for blocks to be mined
+  10. Report               Print pass/fail summary
+
+Phases (join-native, join-merge):
+  1.  Clean                Tear down previous join containers + fallback lilith
+  2.  Validate prereqs     Check join-testnet.sh and required files exist
+  3.  Generate wallet      Create DarkWow keypair via dww
+  4.  Build                Build Docker image via compose
+  5.  Static config        Extract generated dwowd_config.toml and validate keys
+  6.  Container lifecycle  Start container, verify startup log messages
+  7.  Seed fallback        Test local lilith fallback when public seeds unreachable
+  8.  P2P connectivity     Wait for peer connections via p2p.info
+  9.  Blockchain sync      Wait for block_height > 0 via blockchain.info
+  10. Mining verification  Wait for block production or merge stack health
+  11. Persistence          Stop container, verify data survives, restart
+  12. Report               Print pass/fail summary
+
+Sequential determinism:
+  Every phase runs to completion before the next begins. No background tasks,
+  no parallel operations. One machine, one thing at a time. This guarantees
+  reproducible results across different machines.
+
+Environment:
+  RAYON_NUM_THREADS         Cargo build parallelism (default: 10)
+  MONERO_WALLET_ADDRESS     Monero testnet wallet for merge mining rewards
+
+Examples:
+  ./test_pipeline.sh                         # local devnet, native mining
+  ./test_pipeline.sh --mode merge            # local devnet, merge mining
+  ./test_pipeline.sh --mode join-native      # join public testnet, solo mining
+  ./test_pipeline.sh --mode join-merge       # join public testnet, merge mining
+
+After pipeline passes:
+  ./test-contracts.sh --mode native          # contract deploy + transfer test
+  ./test-contracts.sh --mode merge           # merge mode contract test
+EOF
+    exit 0
+}
+
 # --- Parse flags ---
 MODE="native"
 while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
         --mode=*) MODE="${1#*=}"; shift ;;
-        *) echo "Unknown flag: $1"; echo "Usage: $0 [--mode native|merge|native-p2pool]"; exit 1 ;;
+        --help|-h) usage ;;
+        *)
+            echo "Unknown flag: $1"
+            echo "Usage: $0 --mode native|merge|native-p2pool|join-native|join-merge"
+            echo "       $0 --help"
+            exit 1 ;;
     esac
 done
 
-if [ "$MODE" != "native" ] && [ "$MODE" != "merge" ] && [ "$MODE" != "native-p2pool" ]; then
-    echo "Invalid mode: $MODE (must be 'native', 'merge', or 'native-p2pool')"
+VALID_MODES="native merge native-p2pool join-native join-merge"
+if ! echo "$VALID_MODES" | grep -qw "$MODE"; then
+    echo "Invalid mode: $MODE"
+    echo "Valid modes: $VALID_MODES"
+    echo "Run '$0 --help' for full documentation."
     exit 1
 fi
 
@@ -51,15 +127,32 @@ fi
 
 NETWORK="darkwow-testnet"
 NODE0="dwow-node0"
+IMAGE="${IMAGE:-darkwow-testnet:latest}"
+
+# Public testnet constants (join modes)
+MAGIC_BYTES="${MAGIC_BYTES:-68,82,75,87}"
+SEED_ADDR="${SEED_ADDR:-lilith0.dark.fi:31340,lilith1.dark.fi:31340}"
+P2P_PORT=31342
+RPC_PORT=31345
+STRATUM_PORT=31347
+MM_RPC_PORT=31348
+FALLBACK_SEED_PORT="${FALLBACK_SEED_PORT:-31341}"
+CONTAINER_NAME="dwow-test-node"
+FALLBACK_LILITH_NAME="dwow-fallback-lilith"
+COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+
+# Test data paths (join modes)
+JOIN_TEST_DATA="$(pwd)/test-data"
+JOIN_TEST_MONERO="$(pwd)/test-monero-data"
+JOIN_TEST_P2POOL="$(pwd)/test-p2pool-data"
+JOIN_TEST_FALLBACK="$(pwd)/test-fallback-data"
+JOIN_TEST_PERSIST="$(pwd)/test-persist-data"
 
 # WASM contract paths
 WASM_MONEY_V3="${REPO_ROOT}/src/contract/money_v3/dwow_money_v3_contract.wasm"
 WASM_DEX="${REPO_ROOT}/src/contract/dex/dwow_dex_contract.wasm"
 WASM_DAO_ESCROW="${REPO_ROOT}/src/contract/dao_escrow/dwow_dao_escrow_contract.wasm"
 
-# Monero wallet for p2pool parent chain rewards (merge mode only)
-# In offline mode, p2pool doesn't need a wallet. Set this to a valid
-# testnet address for live Monero testnet merge mining.
 MONERO_WALLET_ADDRESS="${MONERO_WALLET_ADDRESS:-}"
 
 GREEN='\033[0;32m'
@@ -73,8 +166,11 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 PASS=0
 FAIL=0
+SKIP=0
+
 pass() { echo -e "${GREEN}[PASS]${NC} $*"; PASS=$((PASS + 1)); }
 fail() { echo -e "${RED}[FAIL]${NC} $*"; FAIL=$((FAIL + 1)); }
+skip() { echo -e "${YELLOW}[SKIP]${NC} $*"; SKIP=$((SKIP + 1)); }
 
 check() {
     if [ "$1" -eq 0 ]; then
@@ -84,450 +180,1275 @@ check() {
     fi
 }
 
-echo "=== DarkWow Testnet Full Pipeline ==="
-echo "  Mode: $MODE mining"
-echo ""
+is_join_mode() {
+    [ "$MODE" = "join-native" ] || [ "$MODE" = "join-merge" ]
+}
+
+# ==============================================================================
+# Join-mode helpers
+# ==============================================================================
+
+check_image() {
+    if ! docker image inspect "$IMAGE" &>/dev/null; then
+        skip "Docker image '$IMAGE' not found (build phase should have created it)"
+        return 1
+    fi
+    return 0
+}
+
+check_network() {
+    if ! curl -s --connect-timeout 5 https://api.ipify.org >/dev/null 2>&1; then
+        skip "No internet connectivity detected"
+        return 1
+    fi
+    return 0
+}
+
+jsonrpc() {
+    local port="$1" method="$2"
+    curl -s --connect-timeout 5 --max-time 10 \
+        http://127.0.0.1:"$port" \
+        -X POST -H 'Content-Type: application/json' \
+        -d "{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}" 2>/dev/null || echo '{"error":"RPC unreachable"}'
+}
+
+report() {
+    echo ""
+    echo "==========================================="
+    echo "  Mode: $MODE"
+    echo -e "  ${GREEN}PASS: $PASS${NC}  ${RED}FAIL: $FAIL${NC}  ${YELLOW}SKIP: $SKIP${NC}"
+    echo "==========================================="
+    echo ""
+
+    if [ "$FAIL" -gt 0 ]; then
+        echo -e "${RED}Some checks failed${NC}"
+        echo ""
+        echo "Debug info — check logs:"
+        if [ "$MODE" = "merge" ]; then
+            echo "  docker compose --profile merge logs"
+        elif [ "$MODE" = "native-p2pool" ]; then
+            echo "  docker compose --profile native-p2pool logs"
+        elif [ "$MODE" = "join-native" ]; then
+            echo "  docker logs $CONTAINER_NAME"
+        elif [ "$MODE" = "join-merge" ]; then
+            echo "  docker compose -f $COMPOSE_FILE --profile join-merge logs"
+        else
+            echo "  docker compose logs"
+        fi
+        exit 1
+    fi
+
+    if is_join_mode; then
+        echo "Join test passed. To join the public testnet for real:"
+        echo "  ./contrib/docker/darkwow-testnet/join-testnet.sh --mode ${MODE#join-}"
+    else
+        echo "Run contract tests:"
+        echo "  ./test-contracts.sh --mode $MODE"
+        echo ""
+        echo "Tear down:"
+        if [ "$MODE" = "merge" ]; then
+            echo "  docker compose --profile merge down -v"
+        elif [ "$MODE" = "native-p2pool" ]; then
+            echo "  docker compose --profile native-p2pool down -v"
+        else
+            echo "  docker compose down -v"
+        fi
+    fi
+    echo ""
+    echo -e "${GREEN}Pipeline passed${NC}"
+}
 
 # ==============================================================================
 # Phase 1: Clean
 # ==============================================================================
-info "[1/10] Cleaning previous deployment..."
+phase_clean() {
+    info "Phase 1: Clean — tearing down previous state..."
 
-cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR"
 
-# Tear down compose services (containers, networks, volumes)
-docker compose down --rmi all -v 2>/dev/null || true
-docker compose --profile merge down --rmi all -v 2>/dev/null || true
-docker compose --profile native-p2pool down --rmi all -v 2>/dev/null || true
+    if is_join_mode; then
+        docker stop "$CONTAINER_NAME" 2>/dev/null || true
+        docker rm "$CONTAINER_NAME" 2>/dev/null || true
+        docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
+        docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --profile join-merge down 2>/dev/null || true
+        rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL" \
+               "$JOIN_TEST_FALLBACK" "$JOIN_TEST_PERSIST"
+        pass "clean (join mode)"
+        return
+    fi
 
-# Remove any lingering dwow-* containers (defense in depth)
-STALE=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^dwow-" || true)
-if [ -n "$STALE" ]; then
-    warn "Removing stale containers..."
-    echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
-fi
+    # Tear down compose services (containers, networks, volumes)
+    docker compose down --rmi all -v 2>/dev/null || true
+    docker compose --profile merge down --rmi all -v 2>/dev/null || true
+    docker compose --profile native-p2pool down --rmi all -v 2>/dev/null || true
 
-# Remove darkwow testnet images explicitly (docker compose --rmi misses
-# images that were built with different profile combinations)
-for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet-" || true); do
-    docker rmi -f "$img" 2>/dev/null || true
-done
+    # Remove any lingering dwow-* containers (defense in depth)
+    STALE=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^dwow-" || true)
+    if [ -n "$STALE" ]; then
+        warn "Removing stale containers..."
+        echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
+    fi
 
-# Remove orphan volumes not captured by compose down -v
-docker volume prune -f 2>/dev/null || true
+    # Remove darkwow testnet images explicitly (docker compose --rmi misses
+    # images that were built with different profile combinations)
+    for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet-" || true); do
+        docker rmi -f "$img" 2>/dev/null || true
+    done
 
-# Clear all build cache — ensures fresh git clones on next build
-docker builder prune -a -f 2>/dev/null || true
-pass "clean"
+    # Remove orphan volumes not captured by compose down -v
+    docker volume prune -f 2>/dev/null || true
+
+    # Clear all build cache — ensures fresh git clones on next build
+    docker builder prune -a -f 2>/dev/null || true
+    pass "clean"
+}
 
 # ==============================================================================
 # Phase 2: Validate prerequisites
 # ==============================================================================
-info "[2/10] Validating prerequisites..."
+phase_prereqs() {
+    info "Phase 2: Validating prerequisites..."
 
-[ -f "$SCRIPT_DIR/entrypoint.sh" ]      || error "entrypoint.sh missing"
-[ -f "$SCRIPT_DIR/docker-compose.yml" ] || error "docker-compose.yml missing"
-[ -f "$SCRIPT_DIR/Dockerfile" ]         || error "Dockerfile missing"
+    if is_join_mode; then
+        [ -f "$SCRIPT_DIR/join-testnet.sh" ] || error "join-testnet.sh missing"
+        [ -f "$SCRIPT_DIR/entrypoint.sh" ] || error "entrypoint.sh missing"
+        [ -f "$SCRIPT_DIR/docker-compose.yml" ] || error "docker-compose.yml missing"
+        [ -f "$SCRIPT_DIR/Dockerfile" ] || error "Dockerfile missing"
+        if [ "$MODE" = "join-merge" ]; then
+            [ -f "$SCRIPT_DIR/Dockerfile.monero" ] || error "Dockerfile.monero missing"
+            [ -f "$SCRIPT_DIR/Dockerfile.p2pool" ] || error "Dockerfile.p2pool missing"
+            [ -f "$SCRIPT_DIR/entrypoint-monero.sh" ] || error "entrypoint-monero.sh missing"
+            [ -f "$SCRIPT_DIR/entrypoint-p2pool.sh" ] || error "entrypoint-p2pool.sh missing"
+        fi
+        pass "join prereqs present"
+        return
+    fi
 
-if [ "$MODE" = "merge" ]; then
-    [ -f "$SCRIPT_DIR/Dockerfile.monero" ] || error "Dockerfile.monero missing (needed for merge mode)"
-    [ -f "$SCRIPT_DIR/Dockerfile.p2pool" ] || error "Dockerfile.p2pool missing (needed for merge mode)"
-    [ -f "$SCRIPT_DIR/entrypoint-monero.sh" ] || error "entrypoint-monero.sh missing"
-    [ -f "$SCRIPT_DIR/entrypoint-p2pool.sh" ] || error "entrypoint-p2pool.sh missing"
-elif [ "$MODE" = "native-p2pool" ]; then
-    [ -f "$SCRIPT_DIR/Dockerfile.p2pool" ] || error "Dockerfile.p2pool missing (needed for native-p2pool mode)"
-    [ -f "$SCRIPT_DIR/Dockerfile.xmrig" ] || error "Dockerfile.xmrig missing (needed for native-p2pool mode)"
-    [ -f "$SCRIPT_DIR/entrypoint-adaptor.sh" ] || error "entrypoint-adaptor.sh missing"
-    [ -f "$SCRIPT_DIR/entrypoint-p2pool-darkwow.sh" ] || error "entrypoint-p2pool-darkwow.sh missing"
-fi
+    [ -f "$SCRIPT_DIR/entrypoint.sh" ]      || error "entrypoint.sh missing"
+    [ -f "$SCRIPT_DIR/docker-compose.yml" ] || error "docker-compose.yml missing"
+    [ -f "$SCRIPT_DIR/Dockerfile" ]         || error "Dockerfile missing"
 
-# Check dww
-info "Using dww binary: $DWW"
-"$DWW" --version 2>/dev/null || warn "dww --version failed (non-fatal)"
+    if [ "$MODE" = "merge" ]; then
+        [ -f "$SCRIPT_DIR/Dockerfile.monero" ] || error "Dockerfile.monero missing (needed for merge mode)"
+        [ -f "$SCRIPT_DIR/Dockerfile.p2pool" ] || error "Dockerfile.p2pool missing (needed for merge mode)"
+        [ -f "$SCRIPT_DIR/entrypoint-monero.sh" ] || error "entrypoint-monero.sh missing"
+        [ -f "$SCRIPT_DIR/entrypoint-p2pool.sh" ] || error "entrypoint-p2pool.sh missing"
+    elif [ "$MODE" = "native-p2pool" ]; then
+        [ -f "$SCRIPT_DIR/Dockerfile.p2pool" ] || error "Dockerfile.p2pool missing (needed for native-p2pool mode)"
+        [ -f "$SCRIPT_DIR/Dockerfile.xmrig" ] || error "Dockerfile.xmrig missing (needed for native-p2pool mode)"
+        [ -f "$SCRIPT_DIR/entrypoint-adaptor.sh" ] || error "entrypoint-adaptor.sh missing"
+        [ -f "$SCRIPT_DIR/entrypoint-p2pool-darkwow.sh" ] || error "entrypoint-p2pool-darkwow.sh missing"
+    fi
 
-# Check WASM files
-[ -f "$WASM_MONEY_V3" ] && pass "money_v3 WASM found" || fail "money_v3 WASM missing"
-[ -f "$WASM_DEX" ] && pass "DEX WASM found" || warn "DEX WASM not found"
-[ -f "$WASM_DAO_ESCROW" ] && pass "dao_escrow WASM found" || warn "dao_escrow WASM not found"
+    # Check dww
+    info "Using dww binary: $DWW"
+    "$DWW" --version 2>/dev/null || warn "dww --version failed (non-fatal)"
 
-pass "all required files present"
+    # Check WASM files
+    [ -f "$WASM_MONEY_V3" ] && pass "money_v3 WASM found" || fail "money_v3 WASM missing"
+    [ -f "$WASM_DEX" ] && pass "DEX WASM found" || warn "DEX WASM not found"
+    [ -f "$WASM_DAO_ESCROW" ] && pass "dao_escrow WASM found" || warn "dao_escrow WASM not found"
+
+    pass "all required files present"
+}
 
 # ==============================================================================
 # Phase 3: Generate Wallet
 # ==============================================================================
-info "[3/10] Generating DarkWow wallet..."
+phase_wallet() {
+    info "Phase 3: Generating DarkWow wallet..."
 
-# Initialize wallet directory
-info "Initializing wallet..."
-"$DWW" -n "$NETWORK" wallet initialize 2>&1 || warn "Wallet init warning (non-fatal)"
+    # Initialize wallet directory
+    info "Initializing wallet..."
+    "$DWW" -n "$NETWORK" wallet initialize 2>&1 || warn "Wallet init warning (non-fatal)"
 
-# Generate keypair
-info "Generating keypair..."
-KEYGEN_OUTPUT=$("$DWW" -n "$NETWORK" wallet keygen 2>&1)
-# NOTE: keygen output contains the secret — intentionally not logged
+    # Generate keypair
+    info "Generating keypair..."
+    KEYGEN_OUTPUT=$("$DWW" -n "$NETWORK" wallet keygen 2>&1)
+    # NOTE: keygen output contains the secret — intentionally not logged
 
-WALLET_SECRET=$(echo "$KEYGEN_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
+    WALLET_SECRET=$(echo "$KEYGEN_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
 
-if [ -z "$WALLET_SECRET" ] || [ "${#WALLET_SECRET}" -ne 64 ]; then
-    error "Failed to parse wallet secret from keygen output (got: ${WALLET_SECRET:-empty})"
-fi
-
-# Get the full Address (with network prefix + checksum) from the wallet.
-# The raw public key from `wallet keygen` is structurally incompatible with
-# Address::from_str (which expects base58check). `wallet address` produces
-# the correct format: base58check([0xaf prefix][32B pubkey][4B blake3 checksum])
-info "Fetching full wallet address..."
-WALLET_ADDRESS=$("$DWW" -n "$NETWORK" wallet address 2>&1)
-
-if [ -z "$WALLET_ADDRESS" ]; then
-    error "Failed to get wallet address (run: dww -n $NETWORK wallet address)"
-fi
-
-pass "DarkWow keypair generated"
-info "  Address: ${WALLET_ADDRESS:0:16}..."
-info "  Secret (hex):  ${WALLET_SECRET:0:16}..."
-
-if [ "$MODE" = "merge" ]; then
-    if [ -n "$MONERO_WALLET_ADDRESS" ]; then
-        info "  Monero wallet:  $MONERO_WALLET_ADDRESS"
-    else
-        info "  Monero wallet:  (none — offline mode, no wallet needed)"
+    if [ -z "$WALLET_SECRET" ] || [ "${#WALLET_SECRET}" -ne 64 ]; then
+        error "Failed to parse wallet secret from keygen output (got: ${WALLET_SECRET:-empty})"
     fi
-fi
 
-# Write secret to fixed path for bind-mount into containers.
-# The compose file mounts this as /run/secrets/mining_secret:ro.
-SECRET_FILE="/tmp/dwow_mining_secret"
-echo -n "$WALLET_SECRET" > "$SECRET_FILE"
-chmod 600 "$SECRET_FILE"
-export WALLET_ADDRESS
-export MONERO_WALLET_ADDRESS
+    info "Fetching full wallet address..."
+    WALLET_ADDRESS=$("$DWW" -n "$NETWORK" wallet address 2>&1)
+
+    if [ -z "$WALLET_ADDRESS" ]; then
+        error "Failed to get wallet address (run: dww -n $NETWORK wallet address)"
+    fi
+
+    pass "DarkWow keypair generated"
+    info "  Address: ${WALLET_ADDRESS:0:16}..."
+    info "  Secret (hex):  ${WALLET_SECRET:0:16}..."
+
+    if [ "$MODE" = "merge" ] || [ "$MODE" = "join-merge" ]; then
+        if [ -n "$MONERO_WALLET_ADDRESS" ]; then
+            info "  Monero wallet:  $MONERO_WALLET_ADDRESS"
+        else
+            info "  Monero wallet:  (none — offline mode, no wallet needed)"
+        fi
+    fi
+
+    # Write secret to fixed path for bind-mount into containers.
+    SECRET_FILE="/tmp/dwow_mining_secret"
+    echo -n "$WALLET_SECRET" > "$SECRET_FILE"
+    chmod 600 "$SECRET_FILE"
+    export WALLET_ADDRESS
+    export MONERO_WALLET_ADDRESS
+}
 
 # ==============================================================================
 # Phase 4: Build
 # ==============================================================================
-info "[4/10] Building images..."
+phase_build() {
+    info "Phase 4: Building images..."
 
-if [ "$MODE" = "merge" ]; then
-    docker compose --profile merge build 2>&1 | tail -20
-    check $? "docker build (merge profile)"
-elif [ "$MODE" = "native-p2pool" ]; then
-    docker compose --profile native-p2pool build 2>&1 | tail -20
-    check $? "docker build (native-p2pool profile)"
-else
-    docker compose build 2>&1 | tail -20
-    check $? "docker build"
-fi
-
-pass "build complete"
-
-# ==============================================================================
-# Phase 5: Start
-# ==============================================================================
-info "[5/10] Starting containers..."
-
-if [ "$MODE" = "merge" ]; then
-    MERGE_MINING=true WALLET_ADDRESS="$WALLET_ADDRESS" \
-        docker compose --profile merge up -d
-elif [ "$MODE" = "native-p2pool" ]; then
-    WALLET_ADDRESS="$WALLET_ADDRESS" \
-        docker compose --profile native-p2pool up -d
-else
-    WALLET_ADDRESS="$WALLET_ADDRESS" \
-        docker compose up -d
-fi
-# Shred temp secret file now that containers have read it
-rm -f "$SECRET_FILE"
-
-sleep 5
-
-# Check for immediate exits
-if [ "$MODE" = "merge" ]; then
-    EXITED=$(docker compose --profile merge ps 2>/dev/null | grep "Exit" || true)
-elif [ "$MODE" = "native-p2pool" ]; then
-    EXITED=$(docker compose --profile native-p2pool ps 2>/dev/null | grep "Exit" || true)
-else
-    EXITED=$(docker compose ps 2>/dev/null | grep "Exit" || true)
-fi
-if [ -n "$EXITED" ]; then
-    echo "$EXITED"
-    error "Container exited immediately — check logs"
-fi
-
-pass "containers started"
-
-# ==============================================================================
-# Phase 6: Verify containers
-# ==============================================================================
-info "[6/10] Verifying containers..."
-
-if [ "$MODE" = "merge" ]; then
-    EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-monerod dwow-p2pool dwow-xmrig-merge)
-elif [ "$MODE" = "native-p2pool" ]; then
-    EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool)
-else
-    EXPECTED=(dwow-lilith dwow-node0 dwow-node1)
-fi
-
-for c in "${EXPECTED[@]}"; do
-    if docker ps --format '{{.Names}}' | grep -q "$c"; then
-        pass "$c running"
-    else
-        fail "$c running"
-    fi
-done
-
-# ==============================================================================
-# Phase 7: Verify RPC health
-# ==============================================================================
-info "[7/10] Verifying RPC health..."
-
-# node0 RPC (JSON-RPC over raw TCP — use bash /dev/tcp, not HTTP curl)
-info "Waiting for node0 RPC (port 31345)..."
-for i in $(seq 1 30); do
-    if docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
-        info "node0 RPC is up (attempt $i)"
-        break
-    fi
-    [ "$i" -eq 30 ] && error "Node0 RPC did not become healthy"
-    sleep 2
-done
-pass "node0 RPC healthy"
-
-# node1 RPC
-info "Waiting for node1 RPC (port 31346)..."
-for i in $(seq 1 30); do
-    if docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
-        info "node1 RPC is up (attempt $i)"
-        break
-    fi
-    [ "$i" -eq 30 ] && error "Node1 RPC did not become healthy"
-    sleep 2
-done
-pass "node1 RPC healthy"
-
-# adaptor RPC (native-p2pool only)
-if [ "$MODE" = "native-p2pool" ]; then
-    info "Waiting for adaptor RPC (port 28081)..."
-    for i in $(seq 1 60); do
-        if docker exec dwow-adaptor bash -c 'exec 3<>/dev/tcp/127.0.0.1/28081; echo -e "POST /json_rpc HTTP/1.0\r\nContent-Type: application/json\r\nContent-Length: 44\r\n\r\n{\"jsonrpc\":\"2.0\",\"method\":\"get_info\",\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "OK"' 2>/dev/null; then
-            info "adaptor RPC is up (attempt $i)"
-            break
-        fi
-        [ "$i" -eq 60 ] && error "Adaptor RPC did not become healthy"
-        sleep 2
-    done
-    pass "adaptor RPC healthy"
-fi
-
-# monerod RPC (merge only)
-if [ "$MODE" = "merge" ]; then
-    info "Waiting for monerod RPC (port 28081)..."
-    for i in $(seq 1 60); do
-        if docker exec dwow-monerod curl -s --max-time 2 http://127.0.0.1:28081/json_rpc \
-            -H 'Content-Type: application/json' \
-            -d '{"jsonrpc":"2.0","method":"get_info","id":1}' >/dev/null 2>&1; then
-            info "monerod RPC is up (attempt $i)"
-            break
-        fi
-        [ "$i" -eq 60 ] && error "monerod RPC did not become healthy"
-        sleep 2
-    done
-    pass "monerod RPC healthy"
-fi
-
-# ==============================================================================
-# Phase 8: Verify mining activity
-# ==============================================================================
-info "[8/10] Verifying mining activity..."
-
-if [ "$MODE" = "merge" ]; then
-    # p2pool connectivity — check it's running (not crash-looping) and
-    # communicating with monerod and dwowd mm_rpc.
-    info "Checking p2pool connectivity..."
-    P2POOL_READY=false
-    for i in $(seq 1 30); do
-        P2POOL_LOGS=$(docker logs dwow-p2pool 2>&1 || true)
-        if echo "$P2POOL_LOGS" | grep -qi "sidechain\|merge min\|stratum\|p2pool v\|new template\|get_chain_id\|mining"; then
-            info "p2pool active (attempt $i)"
-            P2POOL_READY=true
-            break
-        fi
-        sleep 3
-    done
-    if [ "$P2POOL_READY" = true ]; then
-        pass "p2pool connected"
-    else
-        warn "p2pool logs don't show expected activity"
-        docker logs dwow-p2pool 2>&1 | tail -20
-        fail "p2pool connected"
-    fi
-
-    # node0 merge mining logs
-    info "Checking node0 for merge mining activity..."
-    NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-    if echo "$NODE0_LOGS" | grep -qi "monero\|merge\|aux"; then
-        pass "node0 merge mining activity"
-    else
-        warn "node0 logs don't show merge activity yet"
-        fail "node0 merge mining activity"
-    fi
-elif [ "$MODE" = "native-p2pool" ]; then
-    # Adaptor activity
-    info "Checking adaptor activity..."
-    ADAPTOR_LOGS=$(docker logs dwow-adaptor 2>&1 || true)
-    if echo "$ADAPTOR_LOGS" | grep -qi "listening\|rpc\|connected"; then
-        pass "adaptor active"
-    else
-        warn "adaptor logs don't show expected activity"
-        docker logs dwow-adaptor 2>&1 | tail -20
-        fail "adaptor active"
-    fi
-
-    # p2pool-darkwow connectivity
-    info "Checking p2pool-darkwow connectivity..."
-    P2POOL_READY=false
-    for i in $(seq 1 30); do
-        P2POOL_LOGS=$(docker logs dwow-p2pool-darkwow 2>&1 || true)
-        if echo "$P2POOL_LOGS" | grep -qi "stratum\|p2pool v\|new template\|mining\|sidechain"; then
-            info "p2pool-darkwow active (attempt $i)"
-            P2POOL_READY=true
-            break
-        fi
-        sleep 3
-    done
-    if [ "$P2POOL_READY" = true ]; then
-        pass "p2pool-darkwow connected"
-    else
-        warn "p2pool-darkwow logs don't show expected activity"
-        docker logs dwow-p2pool-darkwow 2>&1 | tail -20
-        fail "p2pool-darkwow connected"
-    fi
-
-    # node0 should show block production
-    info "Checking node0 for block production..."
-    NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-    if echo "$NODE0_LOGS" | grep -qi "block\|mining\|stratum\|new job\|accepted"; then
-        pass "node0 block production activity"
-    else
-        warn "node0 logs don't show clear mining activity"
-        fail "node0 block production activity"
-    fi
-else
-    # Native — check xmrig stratum
-    info "Checking native mining activity (xmrig → stratum)..."
-    NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-    if echo "$NODE0_LOGS" | grep -qi "new job\|accepted\|stratum"; then
-        pass "native mining activity (xmrig → stratum)"
-    else
-        warn "node0 logs don't show clear mining activity"
-        fail "native mining activity"
-    fi
-fi
-
-# ==============================================================================
-# Phase 9: Verify block production
-# ==============================================================================
-info "[9/10] Verifying block production..."
-
-# Wait for genesis + first blocks
-if [ "$MODE" = "merge" ]; then
-    info "Waiting for genesis + merge-mined blocks..."
-    WAIT_SECS=30
-elif [ "$MODE" = "native-p2pool" ]; then
-    info "Waiting for genesis + p2pool-mined blocks..."
-    WAIT_SECS=30
-else
-    info "Waiting for genesis + native-mined blocks..."
-    WAIT_SECS=15
-fi
-for i in $(seq 1 $WAIT_SECS); do
-    sleep 1
-    [ $((i % 10)) -eq 0 ] && info "  waited ${i}s / ${WAIT_SECS}s..."
-done
-
-# Check initial block height via get_block_linear (linear chain)
-# blockchain.last_confirmed_block doesn't work for the linear chain because
-# blockchain.last() queries the shadow fork-based blockchain, not linear_blockchain.
-BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
-echo "$BLOCK_INFO" | head -c 200
-
-# Extract height from the escaped-JSON-string result
-BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
-info "Initial block height: $BLOCK_HEIGHT"
-
-if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
-    pass "block height >= 1 (initialized)"
-else
-    fail "block height >= 1 (got: $BLOCK_HEIGHT)"
-fi
-
-# Wait for more blocks
-info "Waiting for additional blocks (block time ~120s)..."
-for i in $(seq 1 13); do
-    sleep 10
-    info "  waited $((i * 10))s / 130s..."
-done
-
-# Check if block height has advanced (query block 2)
-BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
-BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
-info "Block height after waiting: $BLOCK_HEIGHT"
-
-if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
-    pass "$MODE blocks produced (height=$BLOCK_HEIGHT)"
-else
-    fail "$MODE blocks produced (height=$BLOCK_HEIGHT, expected >= 2)"
-fi
-
-# Mode-specific PoW verification in block data
-if [ "$BLOCK_HEIGHT" -ge 1 ]; then
-    info "Inspecting block 1 for PoW data..."
-    BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
-
-    if echo "$BLOCK_DATA" | grep -q '"result"'; then
-        pass "block 1 fetched successfully"
-    else
-        fail "block 1 fetch"
-    fi
-fi
-
-# ==============================================================================
-# Phase 10: Report
-# ==============================================================================
-echo ""
-info "[10/10] Pipeline Complete"
-echo ""
-echo "==========================================="
-echo "  Mode: $MODE mining"
-echo -e "  ${GREEN}PASS: $PASS${NC}  ${RED}FAIL: $FAIL${NC}"
-echo "==========================================="
-echo ""
-
-if [ "$FAIL" -gt 0 ]; then
-    echo -e "${RED}Some checks failed${NC}"
-    echo ""
-    echo "Debug info — check logs:"
     if [ "$MODE" = "merge" ]; then
-        echo "  docker compose --profile merge logs"
+        docker compose --profile merge build 2>&1 | tail -20
+        check $? "docker build (merge profile)"
     elif [ "$MODE" = "native-p2pool" ]; then
-        echo "  docker compose --profile native-p2pool logs"
+        docker compose --profile native-p2pool build 2>&1 | tail -20
+        check $? "docker build (native-p2pool profile)"
+    elif [ "$MODE" = "join-merge" ]; then
+        docker compose --profile join-merge build 2>&1 | tail -20
+        check $? "docker build (join-merge profile)"
     else
-        echo "  docker compose logs"
+        docker compose build 2>&1 | tail -20
+        check $? "docker build"
     fi
-    exit 1
-fi
 
-echo "Run contract tests:"
-echo "  ./test-contracts.sh --mode $MODE"
+    pass "build complete"
+}
+
+# ==============================================================================
+# Phase 5: Start (local devnet) or Static Config (join modes)
+# ==============================================================================
+phase_start_or_config() {
+    if is_join_mode; then
+        phase_join_config
+    else
+        phase_start
+    fi
+}
+
+phase_start() {
+    info "Phase 5: Starting containers..."
+
+    if [ "$MODE" = "merge" ]; then
+        MERGE_MINING=true WALLET_ADDRESS="$WALLET_ADDRESS" \
+            docker compose --profile merge up -d
+    elif [ "$MODE" = "native-p2pool" ]; then
+        WALLET_ADDRESS="$WALLET_ADDRESS" \
+            docker compose --profile native-p2pool up -d
+    else
+        WALLET_ADDRESS="$WALLET_ADDRESS" \
+            docker compose up -d
+    fi
+    # Shred temp secret file now that containers have read it
+    rm -f "$SECRET_FILE"
+
+    sleep 5
+
+    # Check for immediate exits
+    if [ "$MODE" = "merge" ]; then
+        EXITED=$(docker compose --profile merge ps 2>/dev/null | grep "Exit" || true)
+    elif [ "$MODE" = "native-p2pool" ]; then
+        EXITED=$(docker compose --profile native-p2pool ps 2>/dev/null | grep "Exit" || true)
+    else
+        EXITED=$(docker compose ps 2>/dev/null | grep "Exit" || true)
+    fi
+    if [ -n "$EXITED" ]; then
+        echo "$EXITED"
+        error "Container exited immediately — check logs"
+    fi
+
+    pass "containers started"
+}
+
+# ==============================================================================
+# Join Phase 5: Static Config Validation
+# ==============================================================================
+phase_join_config() {
+    echo ""
+    echo "=== Join Phase 5: Static Config Validation ==="
+    check_image || return 0
+
+    echo "  Starting container to capture generated config..."
+    mkdir -p "$JOIN_TEST_DATA"
+
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        --network=host \
+        -e ROLE=dwowd \
+        -e NETWORK="$NETWORK" \
+        -e P2P_PORT="$P2P_PORT" \
+        -e RPC_PORT="$RPC_PORT" \
+        -e STRATUM_PORT="$STRATUM_PORT" \
+        -e SEED_ADDR="$SEED_ADDR" \
+        -e MAGIC_BYTES="$MAGIC_BYTES" \
+        -e THRESHOLD=3 \
+        -e TARGET_BLOCK_TIME=120 \
+        -e SKIP_SYNC=false \
+        -e SKIP_FEES=false \
+        -e LOCALNET=false \
+        -e MINING_ENABLED=true \
+        -e MINING_THREADS=1 \
+        -e RANDOMX_MAX_THREADS=0 \
+        -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
+        "$IMAGE" 2>&1
+
+    sleep 5
+
+    if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        echo "  Container logs:"
+        docker logs "$CONTAINER_NAME" 2>&1 | tail -20
+        fail "Container failed to start"
+        docker stop "$CONTAINER_NAME" 2>/dev/null || true
+        docker rm "$CONTAINER_NAME" 2>/dev/null || true
+        return 0
+    fi
+
+    local config
+    config=$(docker exec "$CONTAINER_NAME" cat /root/.config/dwow/dwowd_config.toml 2>/dev/null || echo "")
+    if [ -z "$config" ]; then
+        fail "Could not read generated config"
+        docker stop "$CONTAINER_NAME" 2>/dev/null || true
+        docker rm "$CONTAINER_NAME" 2>/dev/null || true
+        return 0
+    fi
+
+    echo "  --- Generated config (first 30 lines) ---"
+    echo "$config" | head -30
+    echo "  --- End config ---"
+
+    # Network Identity
+    if echo "$config" | grep -q 'magic_bytes = \[68,82,75,87\]'; then
+        pass "magic_bytes = [68,82,75,87]"
+    else
+        fail "magic_bytes incorrect"
+    fi
+
+    if echo "$config" | grep -q "network = \"$NETWORK\""; then
+        pass "network = $NETWORK"
+    else
+        fail "network incorrect"
+    fi
+
+    # P2P Bootstrap
+    if echo "$config" | grep -q 'tcp+tls://lilith0.dark.fi:31340'; then
+        pass "lilith0 seed present"
+    else
+        fail "lilith0 seed missing"
+    fi
+
+    if echo "$config" | grep -q 'tcp+tls://lilith1.dark.fi:31340'; then
+        pass "lilith1 seed present"
+    else
+        fail "lilith1 seed missing"
+    fi
+
+    if echo "$config" | grep -q 'hostlist = '; then
+        pass "hostlist path configured"
+    else
+        fail "hostlist path missing"
+    fi
+
+    if echo "$config" | grep -q 'localnet = false'; then
+        pass "localnet = false"
+    else
+        fail "localnet incorrect"
+    fi
+
+    if echo "$config" | grep -q 'inbound = \["tcp+tls://0.0.0.0:'; then
+        pass "inbound configured"
+    else
+        fail "inbound missing"
+    fi
+
+    # Blockchain params
+    if echo "$config" | grep -q 'threshold = 3'; then
+        pass "threshold = 3"
+    else
+        fail "threshold incorrect"
+    fi
+
+    if echo "$config" | grep -q 'pow_target = 120'; then
+        pass "pow_target = 120"
+    else
+        fail "pow_target incorrect"
+    fi
+
+    if echo "$config" | grep -q 'skip_sync = false'; then
+        pass "skip_sync = false"
+    else
+        fail "skip_sync incorrect"
+    fi
+
+    if echo "$config" | grep -q 'skip_fees = false'; then
+        pass "skip_fees = false"
+    else
+        fail "skip_fees incorrect"
+    fi
+
+    # Stratum/RPC
+    if echo "$config" | grep -q 'rpc_listen = "tcp://0.0.0.0:'; then
+        pass "stratum/JSON-RPC listen configured"
+    else
+        fail "stratum/JSON-RPC listen missing"
+    fi
+
+    # external_addrs (only when set)
+    if echo "$config" | grep -q 'external_addrs'; then
+        pass "external_addrs configured"
+    else
+        echo "  (external_addrs only present when EXTERNAL_ADDR is set)"
+    fi
+
+    echo "  Config validation complete."
+    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$CONTAINER_NAME" 2>/dev/null || true
+}
+
+# ==============================================================================
+# Phase 6: Verify containers (local) or Container Lifecycle (join)
+# ==============================================================================
+phase_verify_or_lifecycle() {
+    if is_join_mode; then
+        phase_join_lifecycle
+    else
+        phase_verify
+    fi
+}
+
+phase_verify() {
+    info "Phase 6: Verifying containers..."
+
+    if [ "$MODE" = "merge" ]; then
+        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-monerod dwow-p2pool dwow-xmrig-merge)
+    elif [ "$MODE" = "native-p2pool" ]; then
+        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool)
+    else
+        EXPECTED=(dwow-lilith dwow-node0 dwow-node1)
+    fi
+
+    for c in "${EXPECTED[@]}"; do
+        if docker ps --format '{{.Names}}' | grep -q "$c"; then
+            pass "$c running"
+        else
+            fail "$c running"
+        fi
+    done
+}
+
+# ==============================================================================
+# Join Phase 6: Container Lifecycle
+# ==============================================================================
+phase_join_lifecycle() {
+    echo ""
+    echo "=== Join Phase 6: Container Lifecycle ==="
+    check_image || return 0
+
+    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$CONTAINER_NAME" 2>/dev/null || true
+    rm -rf "$JOIN_TEST_DATA"
+    mkdir -p "$JOIN_TEST_DATA"
+
+    echo "  Starting native mode container..."
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        --network=host \
+        -e ROLE=dwowd \
+        -e NETWORK="$NETWORK" \
+        -e P2P_PORT="$P2P_PORT" \
+        -e RPC_PORT="$RPC_PORT" \
+        -e STRATUM_PORT="$STRATUM_PORT" \
+        -e SEED_ADDR="$SEED_ADDR" \
+        -e MAGIC_BYTES="$MAGIC_BYTES" \
+        -e MINING_THREADS=1 \
+        -e THRESHOLD=3 \
+        -e TARGET_BLOCK_TIME=120 \
+        -e SKIP_SYNC=false \
+        -e SKIP_FEES=false \
+        -e LOCALNET=false \
+        -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
+        "$IMAGE" 2>&1
+
+    sleep 10
+
+    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        pass "Container is running after 10s"
+    else
+        echo "  Container logs:"
+        docker logs "$CONTAINER_NAME" 2>&1 | tail -20
+        fail "Container stopped unexpectedly"
+        docker stop "$CONTAINER_NAME" 2>/dev/null || true
+        docker rm "$CONTAINER_NAME" 2>/dev/null || true
+        rm -rf "$JOIN_TEST_DATA"
+        return 0
+    fi
+
+    local logs
+    logs=$(docker logs "$CONTAINER_NAME" 2>&1)
+    if echo "$logs" | grep -q "Starting dwowd"; then
+        pass "Log shows dwowd starting"
+    else
+        fail "Log missing 'Starting dwowd'"
+    fi
+
+    if echo "$logs" | grep -qi "magic bytes"; then
+        pass "Log shows magic bytes"
+    else
+        fail "Log missing magic bytes"
+    fi
+
+    if ! echo "$logs" | grep -qi "ERROR"; then
+        pass "No ERROR lines in logs"
+    else
+        echo "  WARNING: ERROR lines found (may be benign startup noise):"
+        echo "$logs" | grep -i "ERROR" | head -5
+    fi
+
+    echo "  Container is running. Leaving it for next phase."
+}
+
+# ==============================================================================
+# Phase 7: RPC health (local) or Seed Fallback (join)
+# ==============================================================================
+phase_rpc_or_fallback() {
+    if is_join_mode; then
+        phase_join_fallback
+    else
+        phase_rpc_health
+    fi
+}
+
+phase_rpc_health() {
+    info "Phase 7: Verifying RPC health..."
+
+    # node0 RPC (JSON-RPC over raw TCP — use bash /dev/tcp, not HTTP curl)
+    info "Waiting for node0 RPC (port 31345)..."
+    for i in $(seq 1 30); do
+        if docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
+            info "node0 RPC is up (attempt $i)"
+            break
+        fi
+        [ "$i" -eq 30 ] && error "Node0 RPC did not become healthy"
+        sleep 2
+    done
+    pass "node0 RPC healthy"
+
+    # node1 RPC
+    info "Waiting for node1 RPC (port 31346)..."
+    for i in $(seq 1 30); do
+        if docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
+            info "node1 RPC is up (attempt $i)"
+            break
+        fi
+        [ "$i" -eq 30 ] && error "Node1 RPC did not become healthy"
+        sleep 2
+    done
+    pass "node1 RPC healthy"
+
+    # adaptor RPC (native-p2pool only)
+    if [ "$MODE" = "native-p2pool" ]; then
+        info "Waiting for adaptor RPC (port 28081)..."
+        for i in $(seq 1 60); do
+            if docker exec dwow-adaptor bash -c 'exec 3<>/dev/tcp/127.0.0.1/28081; echo -e "POST /json_rpc HTTP/1.0\r\nContent-Type: application/json\r\nContent-Length: 44\r\n\r\n{\"jsonrpc\":\"2.0\",\"method\":\"get_info\",\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "OK"' 2>/dev/null; then
+                info "adaptor RPC is up (attempt $i)"
+                break
+            fi
+            [ "$i" -eq 60 ] && error "Adaptor RPC did not become healthy"
+            sleep 2
+        done
+        pass "adaptor RPC healthy"
+    fi
+
+    # monerod RPC (merge only)
+    if [ "$MODE" = "merge" ]; then
+        info "Waiting for monerod RPC (port 28081)..."
+        for i in $(seq 1 60); do
+            if docker exec dwow-monerod curl -s --max-time 2 http://127.0.0.1:28081/json_rpc \
+                -H 'Content-Type: application/json' \
+                -d '{"jsonrpc":"2.0","method":"get_info","id":1}' >/dev/null 2>&1; then
+                info "monerod RPC is up (attempt $i)"
+                break
+            fi
+            [ "$i" -eq 60 ] && error "monerod RPC did not become healthy"
+            sleep 2
+        done
+        pass "monerod RPC healthy"
+    fi
+}
+
+# ==============================================================================
+# Join Phase 7: Seed Fallback
+# ==============================================================================
+phase_join_fallback() {
+    echo ""
+    echo "=== Join Phase 7: Seed Fallback ==="
+    check_image || return 0
+
+    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$CONTAINER_NAME" 2>/dev/null || true
+    docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
+    docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
+    rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
+    mkdir -p "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
+
+    local unreachable_seeds="unreachable.example.com:9999,another.dead.host:9999"
+    echo "  Testing with unreachable seeds: $unreachable_seeds"
+
+    echo "  Starting local fallback lilith..."
+    docker run -d \
+        --name "$FALLBACK_LILITH_NAME" \
+        --network=host \
+        -e ROLE=lilith \
+        -e NETWORK="$NETWORK" \
+        -e P2P_PORT="$FALLBACK_SEED_PORT" \
+        -e MAGIC_BYTES="$MAGIC_BYTES" \
+        -e LOCALNET=false \
+        -v "$JOIN_TEST_FALLBACK:/root/.local/share/dwow/lilith" \
+        --restart unless-stopped \
+        "$IMAGE" 2>&1
+
+    sleep 5
+
+    if docker ps --format '{{.Names}}' | grep -q "^${FALLBACK_LILITH_NAME}$"; then
+        pass "Fallback lilith started"
+    else
+        echo "  Container logs:"
+        docker logs "$FALLBACK_LILITH_NAME" 2>&1 | tail -10
+        fail "Fallback lilith failed to start"
+        rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
+        return 0
+    fi
+
+    echo "  Starting dwowd with fallback seed 127.0.0.1:${FALLBACK_SEED_PORT}..."
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        --network=host \
+        -e ROLE=dwowd \
+        -e NETWORK="$NETWORK" \
+        -e P2P_PORT="$P2P_PORT" \
+        -e RPC_PORT="$RPC_PORT" \
+        -e STRATUM_PORT="$STRATUM_PORT" \
+        -e SEED_ADDR="127.0.0.1:${FALLBACK_SEED_PORT}" \
+        -e MAGIC_BYTES="$MAGIC_BYTES" \
+        -e MINING_THREADS=1 \
+        -e RANDOMX_MAX_THREADS=0 \
+        -e THRESHOLD=3 \
+        -e TARGET_BLOCK_TIME=120 \
+        -e SKIP_SYNC=false \
+        -e SKIP_FEES=false \
+        -e LOCALNET=false \
+        -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
+        "$IMAGE" 2>&1
+
+    sleep 10
+
+    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        pass "dwowd started with fallback seed"
+    else
+        echo "  Container logs:"
+        docker logs "$CONTAINER_NAME" 2>&1 | tail -20
+        fail "dwowd failed to start with fallback seed"
+        docker stop "$CONTAINER_NAME" 2>/dev/null || true
+        docker rm "$CONTAINER_NAME" 2>/dev/null || true
+        docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
+        docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
+        rm -rf "$JOIN_TEST_FALLBACK"
+        return 0
+    fi
+
+    local config
+    config=$(docker exec "$CONTAINER_NAME" cat /root/.config/dwow/dwowd_config.toml 2>/dev/null || echo "")
+    if echo "$config" | grep -q 'tcp+tls://127.0.0.1:31341'; then
+        pass "Fallback seed address in generated config"
+    else
+        echo "  Config seeds line:"
+        echo "$config" | grep "seeds =" || echo "  (not found)"
+        fail "Fallback seed address not in config"
+    fi
+
+    echo "  Waiting for P2P connection to fallback lilith (up to 60s)..."
+    local connected=0
+    for i in $(seq 1 12); do
+        sleep 5
+        local peers
+        peers=$(jsonrpc "$RPC_PORT" "p2p.info")
+        if echo "$peers" | grep -q '"sessions":[1-9]'; then
+            pass "dwowd connected to fallback lilith (P2P session active)"
+            connected=1
+            break
+        fi
+    done
+
+    if [ "$connected" -eq 0 ]; then
+        echo "  p2p.info response:"
+        jsonrpc "$RPC_PORT" "p2p.info" | head -1
+        fail "No P2P connection to fallback lilith after 60s"
+    fi
+
+    echo "  Stopping containers..."
+    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$CONTAINER_NAME" 2>/dev/null || true
+    docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
+    docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
+
+    if [ -f "$JOIN_TEST_FALLBACK/hostlist.tsv" ]; then
+        pass "Fallback lilith hostlist.tsv persisted"
+        echo "  hostlist entries: $(wc -l < "$JOIN_TEST_FALLBACK/hostlist.tsv")"
+    else
+        echo "  Fallback data dir contents:"
+        ls -la "$JOIN_TEST_FALLBACK/" 2>/dev/null || echo "  (empty)"
+        fail "Fallback lilith hostlist.tsv not found — hostlist may not be written yet"
+    fi
+
+    rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
+}
+
+# ==============================================================================
+# Phase 8: Mining activity (local) or P2P Connectivity (join)
+# ==============================================================================
+phase_mining_or_p2p() {
+    if is_join_mode; then
+        phase_join_p2p
+    else
+        phase_mining_activity
+    fi
+}
+
+phase_mining_activity() {
+    info "Phase 8: Verifying mining activity..."
+
+    if [ "$MODE" = "merge" ]; then
+        info "Checking p2pool connectivity..."
+        P2POOL_READY=false
+        for i in $(seq 1 30); do
+            P2POOL_LOGS=$(docker logs dwow-p2pool 2>&1 || true)
+            if echo "$P2POOL_LOGS" | grep -qi "sidechain\|merge min\|stratum\|p2pool v\|new template\|get_chain_id\|mining"; then
+                info "p2pool active (attempt $i)"
+                P2POOL_READY=true
+                break
+            fi
+            sleep 3
+        done
+        if [ "$P2POOL_READY" = true ]; then
+            pass "p2pool connected"
+        else
+            warn "p2pool logs don't show expected activity"
+            docker logs dwow-p2pool 2>&1 | tail -20
+            fail "p2pool connected"
+        fi
+
+        info "Checking node0 for merge mining activity..."
+        NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
+        if echo "$NODE0_LOGS" | grep -qi "monero\|merge\|aux"; then
+            pass "node0 merge mining activity"
+        else
+            warn "node0 logs don't show merge activity yet"
+            fail "node0 merge mining activity"
+        fi
+    elif [ "$MODE" = "native-p2pool" ]; then
+        info "Checking adaptor activity..."
+        ADAPTOR_LOGS=$(docker logs dwow-adaptor 2>&1 || true)
+        if echo "$ADAPTOR_LOGS" | grep -qi "listening\|rpc\|connected"; then
+            pass "adaptor active"
+        else
+            warn "adaptor logs don't show expected activity"
+            docker logs dwow-adaptor 2>&1 | tail -20
+            fail "adaptor active"
+        fi
+
+        info "Checking p2pool-darkwow connectivity..."
+        P2POOL_READY=false
+        for i in $(seq 1 30); do
+            P2POOL_LOGS=$(docker logs dwow-p2pool-darkwow 2>&1 || true)
+            if echo "$P2POOL_LOGS" | grep -qi "stratum\|p2pool v\|new template\|mining\|sidechain"; then
+                info "p2pool-darkwow active (attempt $i)"
+                P2POOL_READY=true
+                break
+            fi
+            sleep 3
+        done
+        if [ "$P2POOL_READY" = true ]; then
+            pass "p2pool-darkwow connected"
+        else
+            warn "p2pool-darkwow logs don't show expected activity"
+            docker logs dwow-p2pool-darkwow 2>&1 | tail -20
+            fail "p2pool-darkwow connected"
+        fi
+
+        info "Checking node0 for block production..."
+        NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
+        if echo "$NODE0_LOGS" | grep -qi "block\|mining\|stratum\|new job\|accepted"; then
+            pass "node0 block production activity"
+        else
+            warn "node0 logs don't show clear mining activity"
+            fail "node0 block production activity"
+        fi
+    else
+        info "Checking native mining activity (xmrig → stratum)..."
+        NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
+        if echo "$NODE0_LOGS" | grep -qi "new job\|accepted\|stratum"; then
+            pass "native mining activity (xmrig → stratum)"
+        else
+            warn "node0 logs don't show clear mining activity"
+            fail "native mining activity"
+        fi
+    fi
+}
+
+# ==============================================================================
+# Join Phase 8: P2P Connectivity
+# ==============================================================================
+phase_join_p2p() {
+    echo ""
+    echo "=== Join Phase 8: P2P Connectivity ==="
+
+    if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        skip "Container not running (lifecycle phase left it)"
+        return 0
+    fi
+
+    check_network || return 0
+
+    echo "  Waiting for P2P connections (up to 90s)..."
+    local connected=0
+    for i in $(seq 1 18); do
+        local peers
+        peers=$(jsonrpc "$RPC_PORT" "p2p.info")
+        if echo "$peers" | grep -q '"result"'; then
+            local count
+            count=$(echo "$peers" | grep -o '"sessions":[0-9]*' | grep -o '[0-9]*' || echo "0")
+            if [ -n "$count" ] && [ "$count" -gt 0 ] 2>/dev/null; then
+                pass "P2P connected: $count session(s) after $((i * 5))s"
+                connected=1
+                break
+            fi
+        fi
+        sleep 5
+    done
+
+    if [ "$connected" -eq 0 ]; then
+        echo "  Last p2p.info response:"
+        jsonrpc "$RPC_PORT" "p2p.info" | head -1
+        fail "No P2P connections after 90s"
+    fi
+}
+
+# ==============================================================================
+# Phase 9: Block production (local) or Blockchain Sync (join)
+# ==============================================================================
+phase_blocks_or_sync() {
+    if is_join_mode; then
+        phase_join_sync
+    else
+        phase_blocks
+    fi
+}
+
+phase_blocks() {
+    info "Phase 9: Verifying block production..."
+
+    if [ "$MODE" = "merge" ]; then
+        info "Waiting for genesis + merge-mined blocks..."
+        WAIT_SECS=30
+    elif [ "$MODE" = "native-p2pool" ]; then
+        info "Waiting for genesis + p2pool-mined blocks..."
+        WAIT_SECS=30
+    else
+        info "Waiting for genesis + native-mined blocks..."
+        WAIT_SECS=15
+    fi
+    for i in $(seq 1 $WAIT_SECS); do
+        sleep 1
+        [ $((i % 10)) -eq 0 ] && info "  waited ${i}s / ${WAIT_SECS}s..."
+    done
+
+    BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+    echo "$BLOCK_INFO" | head -c 200
+
+    BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
+    info "Initial block height: $BLOCK_HEIGHT"
+
+    if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
+        pass "block height >= 1 (initialized)"
+    else
+        fail "block height >= 1 (got: $BLOCK_HEIGHT)"
+    fi
+
+    info "Waiting for additional blocks (block time ~120s)..."
+    for i in $(seq 1 13); do
+        sleep 10
+        info "  waited $((i * 10))s / 130s..."
+    done
+
+    BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+    BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
+    info "Block height after waiting: $BLOCK_HEIGHT"
+
+    if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
+        pass "$MODE blocks produced (height=$BLOCK_HEIGHT)"
+    else
+        fail "$MODE blocks produced (height=$BLOCK_HEIGHT, expected >= 2)"
+    fi
+
+    if [ "$BLOCK_HEIGHT" -ge 1 ]; then
+        info "Inspecting block 1 for PoW data..."
+        BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+
+        if echo "$BLOCK_DATA" | grep -q '"result"'; then
+            pass "block 1 fetched successfully"
+        else
+            fail "block 1 fetch"
+        fi
+    fi
+}
+
+# ==============================================================================
+# Join Phase 9: Blockchain Sync
+# ==============================================================================
+phase_join_sync() {
+    echo ""
+    echo "=== Join Phase 9: Blockchain Sync ==="
+
+    if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        skip "Container not running (run lifecycle phase first)"
+        return 0
+    fi
+
+    echo "  Checking blockchain sync (up to 300s)..."
+    local synced=0
+    local height=0
+    for i in $(seq 1 60); do
+        local info
+        info=$(jsonrpc "$RPC_PORT" "blockchain.info")
+        if echo "$info" | grep -q '"block_height"'; then
+            height=$(echo "$info" | grep -o '"block_height":[0-9]*' | grep -o '[0-9]*' || echo "0")
+            if [ -n "$height" ] && [ "$height" -gt 0 ] 2>/dev/null; then
+                pass "Blockchain synced: height $height after $((i * 5))s"
+                synced=1
+                break
+            fi
+        fi
+        sleep 5
+    done
+
+    if [ "$synced" -eq 0 ]; then
+        echo "  Last blockchain.info response:"
+        jsonrpc "$RPC_PORT" "blockchain.info" | head -1
+        fail "Blockchain height is 0 after 300s (public testnet may not have blocks yet)"
+    fi
+}
+
+# ==============================================================================
+# Phase 10: Report (local) or Mining Verification (join)
+# ==============================================================================
+phase_report_or_mining() {
+    if is_join_mode; then
+        phase_join_mining
+    else
+        report
+    fi
+}
+
+# ==============================================================================
+# Join Phase 10: Mining Verification
+# ==============================================================================
+phase_join_mining() {
+    echo ""
+    if [ "$MODE" = "join-merge" ]; then
+        echo "=== Join Phase 10: Merge Mining Verification ==="
+        phase_join_merge_mining
+    else
+        echo "=== Join Phase 10: Native Mining Verification ==="
+        phase_join_native_mining
+    fi
+}
+
+phase_join_native_mining() {
+    check_image || return 0
+
+    if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        skip "Container not running"
+        return 0
+    fi
+
+    local initial_height
+    local info
+    info=$(jsonrpc "$RPC_PORT" "blockchain.info")
+    initial_height=$(echo "$info" | grep -o '"block_height":[0-9]*' | grep -o '[0-9]*' || echo "0")
+    echo "  Initial block height: $initial_height"
+
+    echo "  Checking stratum connectivity..."
+    local logs
+    logs=$(docker logs "$CONTAINER_NAME" 2>&1)
+    if echo "$logs" | grep -qi "stratum"; then
+        pass "Stratum-related log entries found"
+    else
+        echo "  (stratum logs may appear after xmrig connects)"
+    fi
+
+    if echo "$logs" | grep -qi "xmrig"; then
+        pass "xmrig started in container"
+    else
+        echo "  WARNING: xmrig may not have started yet"
+    fi
+
+    echo "  Waiting for block height to advance (up to 360s)..."
+    local advanced=0
+    for i in $(seq 1 72); do
+        sleep 5
+        info=$(jsonrpc "$RPC_PORT" "blockchain.info")
+        local current_height
+        current_height=$(echo "$info" | grep -o '"block_height":[0-9]*' | grep -o '[0-9]*' || echo "0")
+        if [ -n "$current_height" ] && [ "$current_height" -gt "$initial_height" ] 2>/dev/null; then
+            pass "Block height advanced: $initial_height -> $current_height after $((i * 5))s"
+            advanced=1
+            break
+        fi
+    done
+
+    if [ "$advanced" -eq 0 ]; then
+        echo "  Note: block height may not advance if there are no other miners on the network"
+        echo "  or if this is a new testnet with no blocks yet."
+        echo "  Current height: $(jsonrpc "$RPC_PORT" "blockchain.info")"
+    fi
+
+    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$CONTAINER_NAME" 2>/dev/null || true
+    rm -rf "$JOIN_TEST_DATA"
+}
+
+phase_join_merge_mining() {
+    check_image || return 0
+    check_network || return 0
+
+    docker compose -f "$COMPOSE_FILE" --profile join-merge down 2>/dev/null || true
+    rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL"
+    mkdir -p "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL"
+
+    echo "  Starting merge mining stack..."
+
+    export NETWORK P2P_PORT RPC_PORT STRATUM_PORT MM_RPC_PORT
+    export SEED_ADDR MAGIC_BYTES
+    export MONERO_OFFLINE="${MONERO_OFFLINE:-false}"
+    export MONERO_NETWORK="${MONERO_NETWORK:-testnet}"
+    export MONERO_ADD_PEERS="${MONERO_ADD_PEERS:-125.229.105.12:28081,37.187.74.171:28089}"
+    export MONERO_FIXED_DIFFICULTY="${MONERO_FIXED_DIFFICULTY:-20000}"
+    export MINING_THREADS="${MINING_THREADS:-1}"
+    export WALLET_ADDRESS="${WALLET_ADDRESS:-}"
+    export MONERO_WALLET_ADDRESS="${MONERO_WALLET_ADDRESS:-}"
+    export THRESHOLD=3
+    export TARGET_BLOCK_TIME=120
+    export DATA_DIR="$JOIN_TEST_DATA"
+    export MONERO_DATA_DIR="$JOIN_TEST_MONERO"
+    export P2POOL_DATA_DIR="$JOIN_TEST_P2POOL"
+
+    cd "$REPO_ROOT"
+    docker compose -f "$COMPOSE_FILE" --profile join-merge up -d 2>&1
+
+    echo "  Waiting for containers to initialize (30s)..."
+    sleep 30
+
+    local all_up=1
+    if docker ps --format '{{.Names}}' | grep -q "dwow-node0"; then
+        pass "dwowd container running"
+    else
+        fail "dwowd container not running"
+        all_up=0
+    fi
+
+    if docker ps --format '{{.Names}}' | grep -q "dwow-monerod"; then
+        pass "monerod container running"
+    else
+        fail "monerod container not running"
+        all_up=0
+    fi
+
+    if docker ps --format '{{.Names}}' | grep -q "dwow-p2pool"; then
+        pass "p2pool container running"
+    else
+        fail "p2pool container not running"
+        all_up=0
+    fi
+
+    if docker ps --format '{{.Names}}' | grep -q "dwow-xmrig-merge"; then
+        pass "xmrig container running"
+    else
+        fail "xmrig container not running"
+        all_up=0
+    fi
+
+    if [ "$all_up" -eq 0 ]; then
+        echo "  Some containers failed. Logs:"
+        docker compose -f "$COMPOSE_FILE" --profile join-merge logs 2>&1 | tail -40
+        fail "Merge stack not fully up"
+        return 0
+    fi
+
+    echo "  Checking monerod sync status..."
+    local monero_logs
+    monero_logs=$(docker logs dwow-monerod 2>&1 | tail -10)
+    if echo "$monero_logs" | grep -qi "synced\|SYNCHRONIZED"; then
+        pass "monerod reports synced"
+    elif echo "$monero_logs" | grep -q "Synced"; then
+        pass "monerod is syncing"
+    else
+        echo "  monerod logs:"
+        echo "$monero_logs"
+        echo "  (monerod may still be initializing — check again later)"
+    fi
+
+    echo "  Checking p2pool..."
+    local p2pool_logs
+    p2pool_logs=$(docker logs dwow-p2pool 2>&1 | tail -10)
+    if echo "$p2pool_logs" | grep -qi "sidechain\|stratum\|p2pool"; then
+        pass "p2pool running"
+    else
+        echo "  p2pool logs:"
+        echo "$p2pool_logs"
+    fi
+
+    sleep 10
+    local dwowd_info
+    dwowd_info=$(jsonrpc "$RPC_PORT" "blockchain.info")
+    if echo "$dwowd_info" | grep -q '"block_height"'; then
+        pass "dwowd JSON-RPC reachable"
+    else
+        echo "  dwowd may still be starting"
+    fi
+
+    echo "  Merge stack is running. Leaving it for manual inspection."
+    echo "  Run: docker compose -f $COMPOSE_FILE --profile join-merge logs -f"
+}
+
+# ==============================================================================
+# Phase 11: Persistence (join modes only)
+# ==============================================================================
+phase_persistence() {
+    if ! is_join_mode; then
+        return 0
+    fi
+
+    echo ""
+    echo "=== Join Phase 11: Persistence / Restart ==="
+    check_image || return 0
+
+    local persist_dir="$JOIN_TEST_PERSIST"
+    rm -rf "$persist_dir"
+    mkdir -p "$persist_dir"
+
+    echo "  Starting first run..."
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        --network=host \
+        -e ROLE=dwowd \
+        -e NETWORK="$NETWORK" \
+        -e P2P_PORT="$P2P_PORT" \
+        -e RPC_PORT="$RPC_PORT" \
+        -e STRATUM_PORT="$STRATUM_PORT" \
+        -e SEED_ADDR="$SEED_ADDR" \
+        -e MAGIC_BYTES="$MAGIC_BYTES" \
+        -e MINING_THREADS=1 \
+        -e THRESHOLD=3 \
+        -e TARGET_BLOCK_TIME=120 \
+        -e SKIP_SYNC=false \
+        -e SKIP_FEES=false \
+        -e LOCALNET=false \
+        -v "$persist_dir:/root/.local/share/dwow/dwowd" \
+        "$IMAGE" 2>&1
+
+    sleep 15
+
+    if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        fail "Container failed to start"
+        rm -rf "$persist_dir"
+        return 0
+    fi
+
+    if [ -f "$persist_dir/hostlist.tsv" ] || ls "$persist_dir/"*.sled 2>/dev/null | head -1 | grep -q sled; then
+        pass "Data files created on first run"
+    else
+        echo "  Data dir contents:"
+        ls -la "$persist_dir/" 2>/dev/null || echo "  (empty)"
+        echo "  (data files may not be created yet in 15s — this may be ok)"
+    fi
+
+    echo "  Stopping container..."
+    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$CONTAINER_NAME" 2>/dev/null || true
+
+    if [ -d "$persist_dir" ] && [ "$(ls -A "$persist_dir" 2>/dev/null)" ]; then
+        pass "Host data survived container removal"
+    else
+        fail "Host data missing after container stop"
+        rm -rf "$persist_dir"
+        return 0
+    fi
+
+    echo "  Starting second run (same data dir)..."
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        --network=host \
+        -e ROLE=dwowd \
+        -e NETWORK="$NETWORK" \
+        -e P2P_PORT="$P2P_PORT" \
+        -e RPC_PORT="$RPC_PORT" \
+        -e STRATUM_PORT="$STRATUM_PORT" \
+        -e SEED_ADDR="$SEED_ADDR" \
+        -e MAGIC_BYTES="$MAGIC_BYTES" \
+        -e MINING_THREADS=1 \
+        -e THRESHOLD=3 \
+        -e TARGET_BLOCK_TIME=120 \
+        -e SKIP_SYNC=false \
+        -e SKIP_FEES=false \
+        -e LOCALNET=false \
+        -v "$persist_dir:/root/.local/share/dwow/dwowd" \
+        "$IMAGE" 2>&1
+
+    sleep 10
+
+    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        pass "Container restarted successfully with persisted data"
+    else
+        fail "Container failed to restart"
+    fi
+
+    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$CONTAINER_NAME" 2>/dev/null || true
+    rm -rf "$persist_dir"
+}
+
+# ==============================================================================
+# Pipeline header
+# ==============================================================================
+echo "=== DarkWow Testnet Full Pipeline ==="
+echo "  Mode: $MODE"
 echo ""
-echo "Tear down:"
-if [ "$MODE" = "merge" ]; then
-    echo "  docker compose --profile merge down -v"
-elif [ "$MODE" = "native-p2pool" ]; then
-    echo "  docker compose --profile native-p2pool down -v"
-else
-    echo "  docker compose down -v"
+
+# ==============================================================================
+# Main dispatch — sequential, one phase at a time
+# ==============================================================================
+phase_clean
+phase_prereqs
+phase_wallet
+phase_build
+phase_start_or_config
+phase_verify_or_lifecycle
+phase_rpc_or_fallback
+phase_mining_or_p2p
+phase_blocks_or_sync
+phase_report_or_mining
+phase_persistence
+
+# If we're in a join mode and haven't reported yet, report now.
+# (Local devnet modes call report() inside phase_report_or_mining.)
+if is_join_mode; then
+    report
 fi
-echo ""
-echo -e "${GREEN}Pipeline passed — ready for contract testing${NC}"
