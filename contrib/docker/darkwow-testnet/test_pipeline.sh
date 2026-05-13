@@ -140,6 +140,7 @@ FALLBACK_SEED_PORT="${FALLBACK_SEED_PORT:-31341}"
 CONTAINER_NAME="dwow-test-node"
 FALLBACK_LILITH_NAME="dwow-fallback-lilith"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+export COMPOSE_PROJECT_NAME="darkwow-testnet"
 
 # Test data paths (join modes)
 JOIN_TEST_DATA="$(pwd)/test-data"
@@ -297,6 +298,20 @@ report() {
 phase_clean() {
     info "Phase 1: Clean — tearing down previous state..."
 
+    # Kill orphan build processes from prior interrupted runs.
+    # These hold file locks on target/ and Cargo.lock, causing
+    # the next build to fail or deadlock.
+    pkill -9 -f 'cargo build' 2>/dev/null || true
+    pkill -9 -f 'rustc' 2>/dev/null || true
+
+    # Remove stale wallet secret — otherwise docker compose bind-mounts
+    # the old secret and the new wallet keypair is ignored.
+    rm -f /tmp/dwow_mining_secret 2>/dev/null || true
+
+    # Remove dww wallet state so each run generates a fresh keypair.
+    rm -rf ~/.local/share/dwow/dww 2>/dev/null || true
+    rm -rf ~/.config/dwow 2>/dev/null || true
+
     cd "$SCRIPT_DIR"
 
     if is_join_mode; then
@@ -304,7 +319,7 @@ phase_clean() {
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
         docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
         docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
-        docker compose -f "$COMPOSE_FILE" --profile join-merge down --rmi all -v 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true
         # Remove stale join containers
         for c in dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge; do
             docker stop "$c" 2>/dev/null || true
@@ -315,7 +330,11 @@ phase_clean() {
         for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet" || true); do
             docker rmi -f "$img" 2>/dev/null || true
         done
+        # Clear all build cache — ensures fresh builds on next run
         docker builder prune -a -f 2>/dev/null || true
+        for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
+            docker buildx prune -a -f --builder "$b" 2>/dev/null || true
+        done
         docker volume prune -f 2>/dev/null || true
         clean_data_dir "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL" \
                "$JOIN_TEST_FALLBACK" "$JOIN_TEST_PERSIST"
@@ -324,9 +343,11 @@ phase_clean() {
     fi
 
     # Tear down compose services (containers, networks, volumes)
-    docker compose down --rmi all -v 2>/dev/null || true
-    docker compose --profile merge down --rmi all -v 2>/dev/null || true
-    docker compose --profile native-p2pool down --rmi all -v 2>/dev/null || true
+    # --remove-orphans catches containers from services that were
+    # renamed or removed between compose file revisions.
+    docker compose --remove-orphans down --rmi all -v 2>/dev/null || true
+    docker compose --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
+    docker compose --profile native-p2pool --remove-orphans down --rmi all -v 2>/dev/null || true
 
     # Remove any lingering dwow-* containers (defense in depth)
     STALE=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^dwow-" || true)
@@ -344,8 +365,12 @@ phase_clean() {
     # Remove orphan volumes not captured by compose down -v
     docker volume prune -f 2>/dev/null || true
 
-    # Clear all build cache — ensures fresh git clones on next build
+    # Clear all build cache — ensures fresh git clones on next build.
+    # Prune default builder and all non-default buildx builders.
     docker builder prune -a -f 2>/dev/null || true
+    for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
+        docker buildx prune -a -f --builder "$b" 2>/dev/null || true
+    done
     pass "clean"
 }
 
