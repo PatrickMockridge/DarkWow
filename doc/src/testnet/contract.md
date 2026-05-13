@@ -11,15 +11,17 @@ DarkWow [zkVM][1], becoming anonymous engineers themselves!
 More information about the smart contracts architecture can be found
 [here][2].
 
-## Linear Testnet
+## Devnet Testing
 
-For testing contracts on the linear-testnet, use the `dww` command-line tool
-with the `--network linear` flag. The linear-testnet supports 5-node consensus
-and provides full ZK proof generation infrastructure.
+For testing contracts on the devnet, use the `dww` command-line tool
+with the `--network` flag. The dwow-devnet Docker stack provides a
+3-node local network with fast block times and full ZK proof generation.
 
 ```shell
-dww --network linear contract deploy <secret_key_hex> --wasm path/to/contract.wasm
+dww --network dwow-devnet contract deploy <secret_key_hex> --wasm path/to/contract.wasm
 ```
+
+See `contrib/docker/dwow-devnet/` for the Docker devnet setup and test scripts.
 
 ## Hello World
 
@@ -257,14 +259,14 @@ The invocation system uses the test harness infrastructure to generate
 ZK proofs. Supported contracts include DAO Escrow, Stablecoin, DEX,
 and others implementing the `ContractHarness` trait.
 
-## Testing with Linear Testnet
+## Testing with Devnet
 
 > **See [Level 2: Heavyweight Tests](../dev/testing/level-2-heavyweight.md)** for
 > the full heavyweight pipeline including `HeavyweightPipeline`, `ContractHarness`,
 > and five-node harness tests. For the complete four-level testing taxonomy, see
 > [Testing Overview](../dev/testing/overview.md).
 
-To test contracts on the linear-testnet with full ZK proof generation:
+To test contracts on the devnet with full ZK proof generation:
 
 ```bash
 # Run contract integration tests

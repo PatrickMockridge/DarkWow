@@ -119,41 +119,48 @@ P2P mesh is working.
 
 **Recommended — Pre-configured wallet (one-step):**
 
-Generate a keypair on the host before starting the miner. Coinbase rewards flow
-directly to your wallet — no manual extraction needed.
+Generate a keypair on the host before starting the miner. Pass the secret via a
+bind-mounted file (not an env var) to avoid exposing it in `docker inspect`.
+Coinbase rewards flow directly to your wallet — no manual extraction needed.
 
 ```bash
 # Generate a keypair for mining rewards
 ./target/release/dww -n darkwow-testnet wallet keygen
 # Output: address (bs58) and secret (hex)
 
-# Pass both to the Docker container
+# Write the secret to a secure temp file
+echo -n "<hex-secret>" > /tmp/dwow_mining_secret
+chmod 600 /tmp/dwow_mining_secret
+
+# Pass address as env var, secret via file mount
 docker run -d --name dwow-node --network=host \
     -e ROLE=dwowd \
     -e NETWORK=darkwow-testnet \
     -e WALLET_ADDRESS="<bs58-address>" \
-    -e WALLET_SECRET="<hex-secret>" \
+    -e WALLET_SECRET_FILE=/run/secrets/mining_secret \
+    -v /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro \
     ... \
     darkwow-testnet:latest
+
+# Clean up the temp file
+rm -f /tmp/dwow_mining_secret
 
 # Wallet already has the key — just scan
 ./target/release/dww -n darkwow-testnet scan
 ./target/release/dww -n darkwow-testnet wallet balance
 ```
 
-**Alternative — Extract from running container (two-step):**
+**Alternative — Auto-generated keypair:**
 
-If no WALLET_SECRET was provided, the daemon auto-generates a keypair:
+If no `WALLET_SECRET` or `WALLET_SECRET_FILE` is provided, the daemon
+auto-generates a random keypair on first startup. The secret exists only inside
+the container's datadir. Mining rewards are unspendable until the secret is
+imported into a wallet.
 
-```bash
-SECRET_HEX=$(docker exec dwow-node \
-    cat /root/.local/share/dwow/dwowd/darkwow-testnet/mining_secret)
-
-./target/release/dww -n darkwow-testnet wallet initialize
-./target/release/dww -n darkwow-testnet wallet import-secret-hex "$SECRET_HEX"
-./target/release/dww -n darkwow-testnet scan
-./target/release/dww -n darkwow-testnet wallet balance
-```
+The `docker exec cat mining_secret` pattern is **not recommended** for
+production — it exposes the secret in shell history and treats the container
+filesystem as a secrets store. Pre-generate a keypair and provision it via
+SSH or config management instead.
 
 ## Phase 3: Internet Expansion
 

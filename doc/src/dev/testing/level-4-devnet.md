@@ -85,6 +85,8 @@ per devnet** to avoid collisions on shared networks.
 | `SKIP_SYNC` | `true` | Skip blockchain sync on startup |
 | `SKIP_FEES` | `true` | Disable fee verification |
 | `WALLET_ADDRESS` | auto | Mining payout address (auto-generated if unset) |
+| `WALLET_SECRET_FILE` | (empty) | Path to file containing hex-encoded secret key (preferred) |
+| `WALLET_SECRET` | auto | Hex-encoded secret key (deprecated — use WALLET_SECRET_FILE) |
 
 ## Opening to the Internet
 
@@ -136,13 +138,13 @@ template is provided with seed + miner services.
 docker compose -f contrib/docker/dwow-devnet/docker-compose.yml up
 ```
 
-**Multi-machine (one service per machine):**
+**Multi-machine (one service per machine, host networking):**
 ```shell
 # Machine 1
-docker compose -f contrib/docker/dwow-devnet/docker-compose.yml up seed
+docker compose -f contrib/docker/dwow-devnet/docker-compose.yml --profile host up seed
 
 # Machine 2 (after editing SEED_ADDR in compose file)
-docker compose -f contrib/docker/dwow-devnet/docker-compose.yml up miner
+docker compose -f contrib/docker/dwow-devnet/docker-compose.yml --profile host up miner
 ```
 
 ## Building from Source
@@ -184,4 +186,7 @@ REGISTRY=docker.io/youruser/ ./contrib/docker/dwow-devnet/build-and-push.sh
 | Docker Compose template | `contrib/docker/dwow-devnet/docker-compose.yml` |
 | Build/push script | `contrib/docker/dwow-devnet/build-and-push.sh` |
 | README | `contrib/docker/dwow-devnet/README.md` |
+| test_pipeline.sh | `contrib/docker/dwow-devnet/test_pipeline.sh` |
+| contract_test.sh | `contrib/docker/dwow-devnet/contract_test.sh` |
+| test-contracts.sh | `contrib/docker/dwow-devnet/test-contracts.sh` |
 | Config reference | `bin/darkfid/dwowd_config.toml` (`dwow-devnet` section) |

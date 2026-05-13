@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
         --mode=*) MODE="${1#*=}"; shift ;;
-        *) echo "Unknown flag: $1"; echo "Usage: $0 [--mode native|merge]"; exit 1 ;;
+        *) echo "Usage: $0 [--mode native|merge]" && exit 1 ;;
     esac
 done
 
@@ -110,16 +110,10 @@ done
 echo ""
 info "=== Phase 1: Funding wallet from mining ==="
 
-SECRET_HEX=$(docker exec "$NODE0" cat /root/.local/share/dwow/dwowd/${NETWORK}/mining_secret 2>/dev/null)
-[ -n "$SECRET_HEX" ] || { error "Failed to extract mining secret from node0"; exit 1; }
-info "Mining secret: ${SECRET_HEX:0:16}..."
-
-info "Initializing wallet..."
-"$DWW" -n "$NETWORK" wallet initialize 2>&1 || warn "Wallet already initialized"
-
-info "Importing mining secret..."
-"$DWW" -n "$NETWORK" wallet import-secret-hex "$SECRET_HEX" 2>&1
-check $? "import mining secret"
+# Wallet should already be initialized by test_pipeline.sh with the mining key.
+if ! "$DWW" -n "$NETWORK" wallet address >/dev/null 2>&1; then
+    error "Wallet has no keys. Run test_pipeline.sh first to generate a keypair."
+fi
 
 info "Scanning blockchain for coins..."
 "$DWW" -n "$NETWORK" scan 2>&1 | tail -5

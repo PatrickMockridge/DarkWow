@@ -32,6 +32,7 @@ SKIP_FEES="${SKIP_FEES:-false}"
 LOCALNET="${LOCALNET:-false}"
 WALLET_ADDRESS="${WALLET_ADDRESS:-}"
 WALLET_SECRET="${WALLET_SECRET:-}"
+WALLET_SECRET_FILE="${WALLET_SECRET_FILE:-}"
 MERGE_MINING="${MERGE_MINING:-false}"
 MM_RPC_PORT="${MM_RPC_PORT:-31348}"
 DATADIR="${DATADIR:-/root/.local/share/dwow/dwowd/${NETWORK}}"
@@ -211,16 +212,30 @@ fi
 
 echo "  Config written to $CONFIGFILE"
 
-# --- Pre-seed mining keypair if both address and secret are provided ---
+# --- Pre-seed mining keypair ---
 MINER_ADDRESS_FILE="${DATADIR}/mining_address"
 MINER_SECRET_FILE="${DATADIR}/mining_secret"
 
-if [ -n "$WALLET_ADDRESS" ] && [ -n "$WALLET_SECRET" ]; then
+# Resolve wallet secret: prefer file, fall back to env var
+RESOLVED_SECRET=""
+if [ -n "$WALLET_SECRET_FILE" ] && [ -f "$WALLET_SECRET_FILE" ]; then
+    RESOLVED_SECRET=$(cat "$WALLET_SECRET_FILE")
+elif [ -n "$WALLET_SECRET" ]; then
+    echo "  WARNING: WALLET_SECRET from environment is visible in docker inspect."
+    echo "  Use WALLET_SECRET_FILE instead for production deployments."
+    RESOLVED_SECRET="$WALLET_SECRET"
+fi
+
+if [ -n "$WALLET_ADDRESS" ] && [ -n "$RESOLVED_SECRET" ]; then
     if [ ! -f "$MINER_ADDRESS_FILE" ] || [ ! -f "$MINER_SECRET_FILE" ]; then
-        echo "Pre-seeding mining keypair from WALLET_ADDRESS/WALLET_SECRET..."
+        echo "Pre-seeding mining keypair..."
         echo "$WALLET_ADDRESS" > "$MINER_ADDRESS_FILE"
-        echo "$WALLET_SECRET" > "$MINER_SECRET_FILE"
+        echo "$RESOLVED_SECRET" > "$MINER_SECRET_FILE"
     fi
+elif [ -z "$RESOLVED_SECRET" ] && [ ! -f "$MINER_SECRET_FILE" ]; then
+    echo "No wallet secret provided — dwowd will auto-generate a random mining keypair."
+    echo "Mining rewards will go to an address whose secret exists only in this container."
+    echo "To use a pre-configured wallet, set WALLET_SECRET_FILE."
 fi
 
 # --- Start dwowd ---

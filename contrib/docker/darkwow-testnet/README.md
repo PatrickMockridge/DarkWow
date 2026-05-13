@@ -141,11 +141,13 @@ To allow external participants (outside your LAN) to join:
 | `TARGET_BLOCK_TIME` | `120` | Block time target in seconds |
 | `MINING_ENABLED` | `true` | Auto-start xmrig mining |
 | `MINING_THREADS` | `1` | xmrig thread count |
+| `RANDOMX_MAX_THREADS` | `0` | Maximum RandomX VM threads (0 = unlimited) |
 | `THRESHOLD` | `3` | Confirmation threshold in blocks |
 | `SKIP_SYNC` | `false` | Skip blockchain sync on startup |
 | `SKIP_FEES` | `false` | Disable fee verification |
 | `WALLET_ADDRESS` | auto | Mining payout address (auto-generated if unset) |
-| `WALLET_SECRET` | auto | Hex-encoded secret key for pre-configured wallet |
+| `WALLET_SECRET_FILE` | (empty) | Path to file containing hex-encoded secret key (preferred) |
+| `WALLET_SECRET` | auto | Hex-encoded secret key (deprecated — use WALLET_SECRET_FILE) |
 | `MERGE_MINING` | `false` | Enable merge mining via Monero p2pool |
 | `MM_RPC_PORT` | `31348` | Merge mining JSON-RPC port (p2pool protocol) |
 | `DATADIR` | `~/.local/share/dwow/dwowd/<network>` | Blockchain data directory |
@@ -177,60 +179,53 @@ REGISTRY=docker.io/myuser/ IMAGE_NAME=darkwow-testnet \
 
 ### Pre-Configured Wallet (Recommended)
 
-Generate a keypair on the host and pass it to the container. The miner sends
-coinbase rewards directly to a wallet you already control — no manual secret
-extraction needed.
+Generate a keypair on the host and pass it to the container via a file mount.
+The miner sends coinbase rewards directly to a wallet you already control —
+no secret extraction needed.
 
 ```bash
 NETWORK="darkwow-testnet"
 DRK="./target/release/dww"
 
-# Generate a new keypair for mining rewards
+# Generate a keypair
 $DRK -n $NETWORK wallet keygen
 # Output: address (bs58) and secret (hex)
 
-# Start the testnet with the pre-configured wallet
-WALLET_ADDRESS="<bs58-address>"
-WALLET_SECRET="<hex-secret>"
+# Write the secret to a secure temp file
+echo -n "<hex-secret>" > /tmp/dwow_mining_secret
+chmod 600 /tmp/dwow_mining_secret
 
+# Start the testnet — mount the secret file, pass path via env var
 docker run --rm --network=host \
   -e ROLE=dwowd \
   -e NETWORK=darkwow-testnet \
-  -e WALLET_ADDRESS="$WALLET_ADDRESS" \
-  -e WALLET_SECRET="$WALLET_SECRET" \
+  -e WALLET_ADDRESS="<bs58-address>" \
+  -e WALLET_SECRET_FILE=/run/secrets/mining_secret \
   -e SEED_ADDR=<seed-host>:31340 \
   -e MAGIC_BYTES=68,82,75,87 \
   -e MINING_THREADS=4 \
   -v /data/node0:/root/.local/share/dwow/dwowd \
+  -v /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro \
   darkwow-testnet:latest
 
-# The wallet already has the key — just scan for coins
+# Clean up the temp file
+rm -f /tmp/dwow_mining_secret
+
+# The wallet already has the key — scan for coins
 $DRK -n $NETWORK scan
 $DRK -n $NETWORK wallet balance
 ```
 
-### Extract from Running Container
+### Auto-Generated Keypair
 
-If no WALLET_SECRET was provided, the daemon auto-generates a keypair on first
-startup. Extract it manually:
-# Set network
-NETWORK="darkwow-testnet"
-DRK="./target/release/dww"
+If no `WALLET_SECRET` or `WALLET_SECRET_FILE` is provided, dwowd auto-generates
+a random keypair on first startup. The secret exists only inside the container's
+datadir. Mining rewards are unspendable until the secret is imported into a wallet.
 
-# Extract the mining secret from the running node0
-SECRET_HEX=$(docker exec dwow-node0 \
-    cat /root/.local/share/dwow/dwowd/darkwow-testnet/mining_secret)
-
-# Initialize wallet and import the mining key
-$DRK -n $NETWORK wallet initialize
-$DRK -n $NETWORK wallet import-secret-hex "$SECRET_HEX"
-
-# Scan the blockchain for coins
-$DRK -n $NETWORK scan
-
-# Check balance (should show DRKW from mining rewards)
-$DRK -n $NETWORK wallet balance
-```
+For production: always pre-generate a keypair and provision it securely (SSH,
+config management, or mounted secrets file). The `docker exec cat mining_secret`
+pattern is **not recommended** — it exposes the secret in the shell history and
+treats the container filesystem as a secrets store.
 
 ## Merge Mining (Optional)
 
@@ -381,19 +376,19 @@ For multi-machine deployment, switch to **host networking** (`--network=host` or
 If you need bridge networking for multi-machine, map ports and set
 `EXTERNAL_ADDR` to the host's IP with the mapped port.
 
-## Differences from linear-testnet Docker
+## Differences from dwow-devnet Docker
 
-| Feature | `linear-testnet/` | `darkwow-testnet/` |
-|---------|-------------------|-------------------|
-| `localnet` | `true` | `false` |
-| Magic bytes | `[163, 139, 113, 101]` | `[68, 82, 75, 87]` ("DRKW") |
+| Feature | `dwow-devnet/` | `darkwow-testnet/` |
+|---------|----------------|-------------------|
+| `localnet` | `false` | `false` |
+| Magic bytes | auto-derived | `[68, 82, 75, 87]` ("DRKW") |
 | Consensus threshold | 1 | 3 |
-| `pow_target` | 1 | 120 |
-| Block time | 60s | 120s |
-| `skip_fees` | `false` | `false` |
-| RPC port (node0) | 28345 | 31345 |
-| Stratum port (node0) | 48347 | 31347 |
-| Configuration | Hardcoded per-hostname | Fully environment-driven |
+| `fixed_difficulty` | 1 | auto-adjusting |
+| Block time | 120s | 120s |
+| `skip_fees` | `true` | `false` |
+| RPC port (node0) | 31345 | 31345 |
+| Stratum port (node0) | 31347 | 31347 |
+| Configuration | Fully environment-driven | Fully environment-driven |
 
 ## File Overview
 

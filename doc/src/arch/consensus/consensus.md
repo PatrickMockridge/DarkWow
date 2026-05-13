@@ -1,6 +1,6 @@
 # Consensus
 
-DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work for new networks (`linear-testnet`, `darkwow-testnet`). The original fork/overlay consensus remains active for the legacy `testnet` network. Both implementations coexist in the codebase, with new development targeting the linear blockchain.
+DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work for new networks (`dwow-devnet`, `darkwow-testnet`, and the legacy-named `linear-testnet`). The original fork/overlay consensus remains active for the legacy `testnet` network. Both implementations coexist in the codebase, with new development targeting the linear blockchain.
 
 ## Why Uncle Merkle Was Chosen Over the Overlay/Diff Architecture
 
@@ -115,7 +115,8 @@ determines which one is used at startup (`bin/darkfid/src/main.rs:188-189`):
 | Network | Consensus | Location | Status |
 |---------|-----------|----------|--------|
 | `testnet` | Fork/overlay (DAG) | `src/validator/consensus.rs` | Legacy — maintained, no new features |
-| `linear-testnet` | Uncle Merkle (linear) | `src/linear/` | Development — WASM/Runtime integration in progress |
+| `dwow-devnet` | Uncle Merkle (linear) | `src/linear/` | Local devnet — fast iteration, fixed difficulty |
+| `linear-testnet` (legacy name) | Uncle Merkle (linear) | `src/linear/` | Still valid in code, prefer `dwow-devnet` for new setups |
 | `darkwow-testnet` | Uncle Merkle (linear) | `src/linear/` | Public testnet — mining, contracts, merge mining |
 
 **In the fork-based validator**, uncle Merkle verification is a placeholder

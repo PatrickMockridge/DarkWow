@@ -72,24 +72,24 @@ Mining address resolution follows a three-tier priority:
 
 1. `WALLET_ADDRESS` environment variable (operator-provided)
 2. Persisted file from a prior dwowd run
-3. Auto-generated keypair on first dwowd start
+3. Auto-generated keypair on first dwowd start (if no secret provided)
 
 Block reward is 20 DRKW per block. At `pow_fixed_difficulty = 1`, blocks
 mine instantly; for realistic mining, set a higher difficulty.
 
 ## Wallet Setup
 
+The wallet is initialized by `test_pipeline.sh` with the same mining keypair
+used by the nodes. No secret extraction from containers is needed — `dww scan`
+decrypts coinbase AEAD-encrypted notes client-side using the wallet's local
+secret key.
+
 ```bash
 NETWORK="darkwow-testnet"
 DRK="./target/release/dww"
 
-# Extract the mining secret from the running node0
-SECRET_HEX=$(docker exec dwow-node0 \
-    cat /root/.local/share/dwow/dwowd/darkwow-testnet/mining_secret)
-
-# Initialize wallet and import the mining key
-$DRK -n $NETWORK wallet initialize
-$DRK -n $NETWORK wallet import-secret-hex "$SECRET_HEX"
+# Verify wallet has keys (test_pipeline.sh must complete first)
+$DRK -n $NETWORK wallet address
 
 # Scan the blockchain for coins
 $DRK -n $NETWORK scan
@@ -111,22 +111,25 @@ $DRK -n $NETWORK wallet balance
 The contract tests exercise the full economic cycle: mining → fund wallet →
 deploy WASM contract → transfer tokens → pay fees.
 
-## Linear-Testnet Variant
+## Dwow-Devnet Variant
 
-A 5-node variant is available at `contrib/docker/linear-testnet/` with relaxed parameters:
+A 3-node bridge-networked variant is available at `contrib/docker/dwow-devnet/`
+with relaxed parameters for rapid local iteration:
 
-| Feature | `darkwow-testnet` | `linear-testnet` |
-|---------|-------------------|------------------|
-| `localnet` | `false` | `true` |
-| Magic bytes | `[68, 82, 75, 87]` | `[163, 139, 113, 101]` |
+| Feature | `darkwow-testnet` | `dwow-devnet` |
+|---------|-------------------|---------------|
+| `localnet` | `false` | `false` |
+| Magic bytes | `[68, 82, 75, 87]` | auto-derived |
 | Threshold | 3 | 1 |
-| `pow_target` | 120 | 1 |
-| Block time | 120s | ~60s |
-| Nodes | 3 (seed + 2 miners) | 5 (seed + 4 miners + xmrig each) |
+| `pow_target` | 120 | 120 |
+| `fixed_difficulty` | auto-adjusting | 1 (instant blocks) |
+| `skip_fees` | `false` | `true` |
+| `skip_sync` | `false` | `true` |
+| Nodes | 3 (seed + 2 miners) | 3 (lilith + 2 miners) |
+| Networking | Bridge (port-mapped) | Bridge (default) or Host |
 
-Use `linear-testnet` when you need more nodes for consensus testing or want
-faster block times. Use `darkwow-testnet` when you need parameters matching
-the public testnet.
+Use `dwow-devnet` for fast local contract testing. Use `darkwow-testnet` when
+you need parameters matching the public testnet.
 
 ## File Overview
 

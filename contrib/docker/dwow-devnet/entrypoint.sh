@@ -4,12 +4,15 @@
 # A single pre-built image works for any devnet topology.
 #
 # Usage:
-#   docker run --network=host -e IS_SEED=true dwow-devnet
+#   docker run --network=host -e ROLE=dwowd -e IS_SEED=true dwow-devnet
 #   docker run --network=host -e SEED_ADDR=192.168.1.10:31342 dwow-devnet
+#   docker compose up                      # bridge mode (3-node local devnet)
+#   docker compose --profile host up       # host mode (multi-machine LAN)
 
 set -e
 
 # --- Configuration from environment ---
+ROLE="${ROLE:-dwowd}"
 NETWORK_NAME="${NETWORK_NAME:-dwow-devnet}"
 IS_SEED="${IS_SEED:-false}"
 SEED_ADDR="${SEED_ADDR:-}"
@@ -29,18 +32,18 @@ SKIP_FEES="${SKIP_FEES:-true}"
 LOCALNET="${LOCALNET:-false}"
 WALLET_ADDRESS="${WALLET_ADDRESS:-}"
 WALLET_SECRET="${WALLET_SECRET:-}"
+WALLET_SECRET_FILE="${WALLET_SECRET_FILE:-}"
+LILITH_RPC_PORT="${LILITH_RPC_PORT:-18927}"
 DATADIR="${DATADIR:-/root/.local/share/dwow/dwowd/${NETWORK_NAME}}"
+LILITH_DATADIR="${LILITH_DATADIR:-/root/.local/share/dwow/lilith/${NETWORK_NAME}}"
 CONFIGDIR="${CONFIGDIR:-/root/.config/dwow}"
 CONFIGFILE="${CONFIGDIR}/dwowd_config.toml"
 
 echo "=== DarkWow Devnet Node ==="
-echo "  NETWORK_NAME=$NETWORK_NAME  IS_SEED=$IS_SEED"
-echo "  P2P=$P2P_PORT  RPC=$RPC_PORT  STRATUM=$STRATUM_PORT"
-echo "  Mining: enabled=$MINING_ENABLED  threads=$MINING_THREADS"
+echo "  ROLE=$ROLE  NETWORK_NAME=$NETWORK_NAME"
 
 # --- Derive magic bytes from NETWORK_NAME if not explicitly set ---
 if [ -z "$MAGIC_BYTES" ]; then
-    # Hash the network name with blake3, take first 4 bytes as decimal tuple
     if command -v b3sum >/dev/null 2>&1; then
         MAGIC_BYTES=$(echo -n "$NETWORK_NAME" | b3sum --no-names | head -c 8 | \
             xxd -r -p | od -A n -t u1 -w4 | head -1 | sed 's/ /, /g')
@@ -49,15 +52,63 @@ if [ -z "$MAGIC_BYTES" ]; then
             od -A n -t u1 -w4 | head -1 | sed 's/ /, /g')
         MAGIC_BYTES="$RAW"
     else
-        # Fallback: deterministic bytes from simple character sum
         SUM=0; for ((i=0; i<${#NETWORK_NAME}; i++)); do
             SUM=$(( (SUM + $(printf '%d' "'${NETWORK_NAME:$i:1}")) % 256 ))
         done
         MAGIC_BYTES="$SUM, $(( (SUM * 7 + 13) % 256 )), $(( (SUM * 31 + 37) % 256 )), $(( (SUM * 127 + 73) % 256 ))"
-        echo "  WARNING: No b3sum/openssl, magic bytes derived from simple hash: [$MAGIC_BYTES]"
+        echo "  WARNING: No b3sum/openssl, magic bytes from simple hash: [$MAGIC_BYTES]"
     fi
 fi
+
+# ============================================================================
+# ROLE: lilith — P2P seed node
+# ============================================================================
+if [ "$ROLE" = "lilith" ]; then
+    echo "  Role: lilith seed node"
+    echo "  P2P=$P2P_PORT  LILITH_RPC=$LILITH_RPC_PORT"
+    echo "  Magic bytes: [$MAGIC_BYTES]"
+
+    mkdir -p "$(dirname "$LILITH_DATADIR")"
+
+    cat > /tmp/lilith.toml << LILITHEOF
+[rpc]
+rpc_listen = "tcp://127.0.0.1:${LILITH_RPC_PORT}"
+
+[network."${NETWORK_NAME}"]
+accept_addrs = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
+seeds = []
+peers = []
+version = "0.5.0"
+app_name = "dwowd"
+localnet = ${LOCALNET}
+hostlist = "${LILITH_DATADIR}/hostlist.tsv"
+datastore = "${LILITH_DATADIR}"
+magic_bytes = [${MAGIC_BYTES}]
+LILITHEOF
+
+    echo "  Lilith config written to /tmp/lilith.toml"
+    echo "  P2P accept: tcp+tls://0.0.0.0:${P2P_PORT}"
+    echo "Starting lilith..."
+    exec /app/lilith --config /tmp/lilith.toml "$@"
+fi
+
+# ============================================================================
+# ROLE: dwowd (default) — fullnode with optional mining
+# ============================================================================
+echo "  P2P=$P2P_PORT  RPC=$RPC_PORT  STRATUM=$STRATUM_PORT"
+echo "  Mining: enabled=$MINING_ENABLED  threads=$MINING_THREADS"
 echo "  Magic bytes: [$MAGIC_BYTES]"
+
+# --- Resolve wallet secret: prefer file, fall back to env var ---
+RESOLVED_SECRET=""
+if [ -n "$WALLET_SECRET_FILE" ] && [ -f "$WALLET_SECRET_FILE" ]; then
+    RESOLVED_SECRET=$(cat "$WALLET_SECRET_FILE")
+    echo "  Wallet secret: loaded from $WALLET_SECRET_FILE"
+elif [ -n "$WALLET_SECRET" ]; then
+    echo "  WARNING: WALLET_SECRET from environment is visible in docker inspect."
+    echo "  Use WALLET_SECRET_FILE instead for production deployments."
+    RESOLVED_SECRET="$WALLET_SECRET"
+fi
 
 # --- Build seeds/external_addrs config lines ---
 SEEDS_LINE=""
@@ -102,7 +153,6 @@ min_block_interval = 10
 randomx_max_threads = ${RANDOMX_MAX_THREADS:-0}
 DWOWEOF
 
-# Add fixed difficulty if set
 if [ -n "$FIXED_DIFFICULTY" ]; then
     echo "pow_fixed_difficulty = ${FIXED_DIFFICULTY}" >> "$CONFIGFILE"
 fi
@@ -142,18 +192,22 @@ cat >> "$CONFIGFILE" << DWOWEOF
 inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
 DWOWEOF
 
-echo "Config written to $CONFIGFILE"
+echo "  Config written to $CONFIGFILE"
 
-# --- Pre-seed mining keypair if both address and secret are provided ---
+# --- Pre-seed mining keypair ---
 MINER_ADDRESS_FILE="${DATADIR}/mining_address"
 MINER_SECRET_FILE="${DATADIR}/mining_secret"
 
-if [ -n "$WALLET_ADDRESS" ] && [ -n "$WALLET_SECRET" ]; then
+if [ -n "$WALLET_ADDRESS" ] && [ -n "$RESOLVED_SECRET" ]; then
     if [ ! -f "$MINER_ADDRESS_FILE" ] || [ ! -f "$MINER_SECRET_FILE" ]; then
-        echo "Pre-seeding mining keypair from WALLET_ADDRESS/WALLET_SECRET..."
+        echo "Pre-seeding mining keypair..."
         echo "$WALLET_ADDRESS" > "$MINER_ADDRESS_FILE"
-        echo "$WALLET_SECRET" > "$MINER_SECRET_FILE"
+        echo "$RESOLVED_SECRET" > "$MINER_SECRET_FILE"
     fi
+elif [ -z "$RESOLVED_SECRET" ] && [ ! -f "$MINER_SECRET_FILE" ]; then
+    echo "No wallet secret provided — dwowd will auto-generate a random mining keypair."
+    echo "Mining rewards will go to an address whose secret exists only in this container."
+    echo "To use a pre-configured wallet, set WALLET_SECRET_FILE."
 fi
 
 # --- Start dwowd ---

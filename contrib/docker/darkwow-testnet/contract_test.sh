@@ -28,14 +28,13 @@ else
     elif [ -x "$DWW_BIN" ]; then
         DWW="$DWW_BIN"
     else
-        echo "ERROR: dww binary not found" after build"
+        echo "ERROR: dww binary not found after build"
         exit 1
     fi
 fi
 
 NETWORK="darkwow-testnet"
 NODE0="dwow-node0"
-RPC_URL="tcp://127.0.0.1:31345"
 WASM_MONEY_V3="${REPO_ROOT}/src/contract/money_v3/dwow_money_v3_contract.wasm"
 
 # Colors
@@ -51,7 +50,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 # ==============================================================================
 # PHASE 1: Prerequisites
 # ==============================================================================
-echo "=== Contract Test on Linear-Testnet ==="
+echo "=== Contract Test on DarkWow-Testnet ==="
 echo ""
 
 info "Checking prerequisites..."
@@ -63,8 +62,8 @@ docker ps >/dev/null 2>&1 || error "Docker not running"
 if ! docker ps --format '{{.Names}}' | grep -q "$NODE0"; then
     warn "Docker testnet not running. Starting..."
     cd "$SCRIPT_DIR"
-    docker-compose build --no-cache 2>&1 | tail -5
-    docker-compose up -d
+    docker compose build --no-cache 2>&1 | tail -5
+    docker compose up -d
     info "Waiting for testnet to be ready..."
     sleep 10
 fi
@@ -92,19 +91,13 @@ info "Using dww binary: $DWW"
 echo ""
 info "=== Phase 2: Funding wallet from mining ==="
 
-# Extract mining secret from node0
-SECRET_HEX=$(docker exec "$NODE0" cat /root/.local/share/dwow/dwowd/darkwow-testnet/mining_secret 2>/dev/null) || \
-    error "Failed to extract mining secret from node0"
-
-info "Mining secret: ${SECRET_HEX:0:16}..."
-
-# Initialize wallet
-info "Initializing wallet..."
-"$DWW" -n "$NETWORK" wallet initialize 2>&1 || warn "Wallet init warning (may already be initialized)"
-
-# Import mining secret
-info "Importing mining secret..."
-"$DWW" -n "$NETWORK" wallet import-secret-hex "$SECRET_HEX" 2>&1 || error "Failed to import mining secret"
+# Wallet should already be initialized by test_pipeline.sh with the mining key.
+# The wallet holds the secret key locally — scan decrypts coinbase notes
+# client-side via AEAD. No secret extraction from the node needed.
+info "Checking wallet status..."
+if ! "$DWW" -n "$NETWORK" wallet address >/dev/null 2>&1; then
+    error "Wallet has no keys. Run test_pipeline.sh first to generate a keypair."
+fi
 
 # Scan for coins
 info "Scanning blockchain for coins..."
@@ -176,8 +169,7 @@ info "=== Phase 4: Transfer with fee payment ==="
 
 # Generate a second keypair for the transfer recipient
 info "Generating recipient keypair..."
-KEYGEN_OUTPUT=$("$DWW" -n "$NETWORK" wallet keygen 2>&1) || error "Keygen failed"
-echo "$KEYGEN_OUTPUT"
+"$DWW" -n "$NETWORK" wallet keygen 2>&1 >/dev/null || error "Keygen failed"
 
 # Extract the recipient address - keygen prints a SecretKey
 # We need an Address to send to. Use the wallet's default address for now.

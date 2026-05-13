@@ -67,7 +67,7 @@ services:
       - MERGE_MINING=${MERGE_MINING:-false}
       - MM_RPC_PORT=31348
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
-      - WALLET_SECRET=${WALLET_SECRET:-}
+      - WALLET_SECRET_FILE=/run/secrets/mining_secret
     ports:
       - "31345:31345"
       - "31347:31347"
@@ -75,6 +75,7 @@ services:
       - "31348:31348"
     volumes:
       - node0_data:/root/.local/share/dwow/dwowd
+      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
     networks:
       - dwow-local
     depends_on:
@@ -112,13 +113,14 @@ services:
       - LOCALNET=false
       - EXTERNAL_ADDR=node1:31343
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
-      - WALLET_SECRET=${WALLET_SECRET:-}
+      - WALLET_SECRET_FILE=/run/secrets/mining_secret
     ports:
       - "31346:31346"
       - "31349:31349"
       - "31343:31343"
     volumes:
       - node1_data:/root/.local/share/dwow/dwowd
+      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
     networks:
       - dwow-local
     depends_on:

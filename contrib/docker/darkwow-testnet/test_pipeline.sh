@@ -51,7 +51,6 @@ fi
 
 NETWORK="darkwow-testnet"
 NODE0="dwow-node0"
-RPC_URL="http://127.0.0.1:31345"
 
 # WASM contract paths
 WASM_MONEY_V3="${REPO_ROOT}/src/contract/money_v3/dwow_money_v3_contract.wasm"
@@ -165,7 +164,7 @@ info "Initializing wallet..."
 # Generate keypair
 info "Generating keypair..."
 KEYGEN_OUTPUT=$("$DWW" -n "$NETWORK" wallet keygen 2>&1)
-echo "$KEYGEN_OUTPUT"
+# NOTE: keygen output contains the secret — intentionally not logged
 
 WALLET_SECRET=$(echo "$KEYGEN_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
 
@@ -196,9 +195,12 @@ if [ "$MODE" = "merge" ]; then
     fi
 fi
 
-# Export for docker compose
+# Write secret to fixed path for bind-mount into containers.
+# The compose file mounts this as /run/secrets/mining_secret:ro.
+SECRET_FILE="/tmp/dwow_mining_secret"
+echo -n "$WALLET_SECRET" > "$SECRET_FILE"
+chmod 600 "$SECRET_FILE"
 export WALLET_ADDRESS
-export WALLET_SECRET
 export MONERO_WALLET_ADDRESS
 
 # ==============================================================================
@@ -225,15 +227,17 @@ pass "build complete"
 info "[5/10] Starting containers..."
 
 if [ "$MODE" = "merge" ]; then
-    MERGE_MINING=true WALLET_ADDRESS="$WALLET_ADDRESS" WALLET_SECRET="$WALLET_SECRET" \
+    MERGE_MINING=true WALLET_ADDRESS="$WALLET_ADDRESS" \
         docker compose --profile merge up -d
 elif [ "$MODE" = "native-p2pool" ]; then
-    WALLET_ADDRESS="$WALLET_ADDRESS" WALLET_SECRET="$WALLET_SECRET" \
+    WALLET_ADDRESS="$WALLET_ADDRESS" \
         docker compose --profile native-p2pool up -d
 else
-    WALLET_ADDRESS="$WALLET_ADDRESS" WALLET_SECRET="$WALLET_SECRET" \
+    WALLET_ADDRESS="$WALLET_ADDRESS" \
         docker compose up -d
 fi
+# Shred temp secret file now that containers have read it
+rm -f "$SECRET_FILE"
 
 sleep 5
 
@@ -442,39 +446,39 @@ for i in $(seq 1 $WAIT_SECS); do
     [ $((i % 10)) -eq 0 ] && info "  waited ${i}s / ${WAIT_SECS}s..."
 done
 
-	# Check initial block height via get_block_linear (linear chain)
-	# blockchain.last_confirmed_block doesn't work for the linear chain because
-	# blockchain.last() queries the shadow fork-based blockchain, not linear_blockchain.
-	BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
-	echo "$BLOCK_INFO" | head -c 200
+# Check initial block height via get_block_linear (linear chain)
+# blockchain.last_confirmed_block doesn't work for the linear chain because
+# blockchain.last() queries the shadow fork-based blockchain, not linear_blockchain.
+BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+echo "$BLOCK_INFO" | head -c 200
 
-	# Extract height from the escaped-JSON-string result
-	BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
-	info "Initial block height: $BLOCK_HEIGHT"
+# Extract height from the escaped-JSON-string result
+BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
+info "Initial block height: $BLOCK_HEIGHT"
 
-	if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
-	    pass "block height >= 1 (initialized)"
-	else
-	    fail "block height >= 1 (got: $BLOCK_HEIGHT)"
-	fi
+if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
+    pass "block height >= 1 (initialized)"
+else
+    fail "block height >= 1 (got: $BLOCK_HEIGHT)"
+fi
 
-	# Wait for more blocks
-	info "Waiting for additional blocks (block time ~120s)..."
-	for i in $(seq 1 13); do
-	    sleep 10
-	    info "  waited $((i * 10))s / 130s..."
-	done
+# Wait for more blocks
+info "Waiting for additional blocks (block time ~120s)..."
+for i in $(seq 1 13); do
+    sleep 10
+    info "  waited $((i * 10))s / 130s..."
+done
 
-	# Check if block height has advanced (query block 2)
-	BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
-	BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
-	info "Block height after waiting: $BLOCK_HEIGHT"
+# Check if block height has advanced (query block 2)
+BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
+info "Block height after waiting: $BLOCK_HEIGHT"
 
-	if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
-	    pass "$MODE blocks produced (height=$BLOCK_HEIGHT)"
-	else
-	    fail "$MODE blocks produced (height=$BLOCK_HEIGHT, expected >= 2)"
-	fi
+if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
+    pass "$MODE blocks produced (height=$BLOCK_HEIGHT)"
+else
+    fail "$MODE blocks produced (height=$BLOCK_HEIGHT, expected >= 2)"
+fi
 
 # Mode-specific PoW verification in block data
 if [ "$BLOCK_HEIGHT" -ge 1 ]; then

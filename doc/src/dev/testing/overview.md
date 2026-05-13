@@ -109,7 +109,7 @@ on real machines across networks.
 | Test harness crate (28 contracts) | `src/contract/test-harness/` |
 | Daemon integration tests | `bin/darkfid/src/tests/` |
 | Docker localnet (3-container) | `contrib/docker/darkwow-testnet/` |
-| Docker linear localnet (5-container) | `contrib/docker/linear-testnet/` |
+| Docker devnet (3-container, fast iteration) | `contrib/docker/dwow-devnet/` |
 | Docker devnet node (single-container) | `contrib/docker/dwow-devnet/` |
 | Manual localnet scripts | `contrib/localnet/` |
 | Public testnet management scripts | `contrib/testnet/` |
