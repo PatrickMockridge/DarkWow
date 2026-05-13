@@ -206,10 +206,31 @@ check_network() {
 
 jsonrpc() {
     local port="$1" method="$2"
-    curl -s --connect-timeout 5 --max-time 10 \
-        http://127.0.0.1:"$port" \
-        -X POST -H 'Content-Type: application/json' \
-        -d "{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}" 2>/dev/null || echo '{"error":"RPC unreachable"}'
+    # dwowd JSON-RPC is raw TCP, not HTTP. Use bash /dev/tcp via docker exec.
+    # Retry up to 3 times if the port isn't listening yet.
+    for attempt in 1 2 3; do
+        if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            local result
+            result=$(docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>/dev/null)
+            if [ -n "$result" ] && echo "$result" | grep -q '"result"\|"sessions"\|"block_height"'; then
+                echo "$result"
+                return
+            fi
+            # If we got a response but it's an error, return it
+            if [ -n "$result" ]; then
+                echo "$result"
+                return
+            fi
+        else
+            exec 3<>/dev/tcp/127.0.0.1/"$port" 2>/dev/null || { echo '{"error":"RPC unreachable"}'; return; }
+            echo "{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}" >&3
+            timeout 3 cat <&3 2>/dev/null || echo '{"error":"RPC unreachable"}'
+            exec 3>&-
+            return
+        fi
+        [ "$attempt" -lt 3 ] && sleep 2
+    done
+    echo '{"error":"RPC unreachable after 3 attempts"}'
 }
 
 report() {
@@ -271,7 +292,19 @@ phase_clean() {
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
         docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
         docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
-        docker compose -f "$COMPOSE_FILE" --profile join-merge down 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --profile join-merge down --rmi all -v 2>/dev/null || true
+        # Remove stale join containers
+        for c in dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge; do
+            docker stop "$c" 2>/dev/null || true
+            docker rm "$c" 2>/dev/null || true
+        done
+        # Remove old images first — builder prune skips layers still
+        # referenced by existing images, so stale COPY caches survive.
+        for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet" || true); do
+            docker rmi -f "$img" 2>/dev/null || true
+        done
+        docker builder prune -a -f 2>/dev/null || true
+        docker volume prune -f 2>/dev/null || true
         rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL" \
                "$JOIN_TEST_FALLBACK" "$JOIN_TEST_PERSIST"
         pass "clean (join mode)"
@@ -874,24 +907,46 @@ phase_join_fallback() {
         fail "Fallback seed address not in config"
     fi
 
-    echo "  Waiting for P2P connection to fallback lilith (up to 60s)..."
-    local connected=0
-    for i in $(seq 1 12); do
-        sleep 5
-        local peers
-        peers=$(jsonrpc "$RPC_PORT" "p2p.info")
-        if echo "$peers" | grep -q '"sessions":[1-9]'; then
-            pass "dwowd connected to fallback lilith (P2P session active)"
-            connected=1
+    # Wait for the RPC port to become reachable before querying
+    echo "  Waiting for RPC port $RPC_PORT to become available..."
+    local rpc_ready=0
+    for i in $(seq 1 10); do
+        if docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT && echo ok >&3" 2>/dev/null; then
+            rpc_ready=1
             break
         fi
+        sleep 2
     done
 
-    if [ "$connected" -eq 0 ]; then
-        echo "  p2p.info response:"
-        jsonrpc "$RPC_PORT" "p2p.info" | head -1
-        fail "No P2P connection to fallback lilith after 60s"
+    if [ "$rpc_ready" -eq 0 ]; then
+        echo "  dwowd logs (last 30 lines):"
+        docker logs "$CONTAINER_NAME" 2>&1 | tail -30
+        fail "RPC port $RPC_PORT never became available"
+    else
+        pass "RPC port $RPC_PORT is reachable"
+
+        echo "  Waiting for P2P connection to fallback lilith (up to 60s)..."
+        local connected=0
+        for i in $(seq 1 12); do
+            sleep 5
+            local peers
+            peers=$(jsonrpc "$RPC_PORT" "p2p.info")
+            if echo "$peers" | grep -q '"sessions":[1-9]'; then
+                pass "dwowd connected to fallback lilith (P2P session active)"
+                connected=1
+                break
+            fi
+        done
+
+        if [ "$connected" -eq 0 ]; then
+            echo "  p2p.info response:"
+            jsonrpc "$RPC_PORT" "p2p.info" | head -1
+            fail "No P2P connection to fallback lilith after 60s"
+        fi
     fi
+
+    # Give lilith a moment to flush its hostlist to disk
+    sleep 5
 
     echo "  Stopping containers..."
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
@@ -899,13 +954,15 @@ phase_join_fallback() {
     docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
     docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
 
-    if [ -f "$JOIN_TEST_FALLBACK/hostlist.tsv" ]; then
+    # Hostlist is at <datadir>/<network>/hostlist.tsv (e.g. darkwow-testnet/hostlist.tsv)
+    local hostlist_path="$JOIN_TEST_FALLBACK/$NETWORK/hostlist.tsv"
+    if [ -f "$hostlist_path" ]; then
         pass "Fallback lilith hostlist.tsv persisted"
-        echo "  hostlist entries: $(wc -l < "$JOIN_TEST_FALLBACK/hostlist.tsv")"
+        echo "  hostlist entries: $(wc -l < "$hostlist_path")"
     else
-        echo "  Fallback data dir contents:"
-        ls -la "$JOIN_TEST_FALLBACK/" 2>/dev/null || echo "  (empty)"
-        fail "Fallback lilith hostlist.tsv not found — hostlist may not be written yet"
+        echo "  Fallback data dir structure (ls -R):"
+        ls -R "$JOIN_TEST_FALLBACK" 2>/dev/null | head -30 || echo "  (empty or missing)"
+        fail "Fallback lilith hostlist.tsv not found"
     fi
 
     rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
