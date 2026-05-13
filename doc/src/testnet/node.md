@@ -26,7 +26,7 @@ over its `Stratum` RPC, and requests new block headers to mine.
 The config files for `dwowd` and `dww` are sectioned into three
 parts, each marked `[network_config]`. The sections look like this:
 
-* `[network_config."testnet"]`
+* `[network_config."darkwow-testnet"]`
 * `[network_config."mainnet"]`
 * `[network_config."localnet"]`
 
@@ -35,7 +35,7 @@ used by changing the following line:
 
 ```toml
 # Blockchain network to use
-network = "testnet"
+network = "darkwow-testnet"
 ```
 
 This enables us to configure the daemons for different contexts, namely
@@ -194,11 +194,11 @@ the outputs is explanatory and will be different from the one you get.
 ```shell
 $ ./dww -c bin/dww/dww_config.toml -n localnet wallet initialize
 
-Initializing Money Merkle tree
-Successfully initialized Merkle tree for the Money contract
+Initializing NativeToken Merkle tree
+Successfully initialized Merkle tree for the NativeToken contract
 Generating alias DRKW for Token: 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb
-Initializing DAO Merkle trees
-Successfully initialized Merkle trees for the DAO contract
+Initializing Deployooor Merkle trees
+Successfully initialized Merkle trees for the Deployooor contract
 ```
 
 ```shell
@@ -240,7 +240,7 @@ $ ./dwowd
 [INFO] Deploying native WASM contracts
 [INFO] Deploying NativeToken Contract with ContractID DgmXpuU1EcM54E8GuNTAkBUThcCoYzGN5kRCNXA4cPtw
 [INFO] Successfully deployed NativeToken Contract
-[INFO] Deploying MoneyV2 Contract with ContractID 21LYoifepcySKhyDA1vzxRDWGHyDizPQ8f11zSqhep7t
+[INFO] Deploying WASM contract with ContractID 21LYoifepcySKhyDA1vzxRDWGHyDizPQ8f11zSqhep7t
 ...
 ```
 
@@ -294,8 +294,8 @@ the `Stratum` RPC endpoint that will be used by `xmrig` in `dwowd`
 config:
 
 ```toml
-[network_config."testnet".stratum_rpc]
-rpc_listen = "tcp://127.0.0.1:18347"
+[network_config."darkwow-testnet".stratum_rpc]
+rpc_listen = "tcp://127.0.0.1:31347"
 ```
 
 > Note:
@@ -331,7 +331,7 @@ for maximum mining performance. Start `dwowd` as usual and then start
 which wallet:
 
 ```shell
-$ ./xmrig -u x+1 -r 1000 -R 20 -o 127.0.0.1:18347 -t {XMRIG_THREADS} -u {YOUR_DARKFI_WALLET_ADDRESS}
+$ ./xmrig -u x+1 -r 1000 -R 20 -o 127.0.0.1:31347 -t {XMRIG_THREADS} -u {YOUR_WALLET_ADDRESS}
 ```
 
 > Note: All miners should use the lowest possible resources so other

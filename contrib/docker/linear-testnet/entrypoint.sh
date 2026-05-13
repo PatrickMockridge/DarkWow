@@ -1,5 +1,5 @@
 #!/bin/bash
-# DarkFi Entry Point Script
+# DarkWow Linear-Testnet Entry Point Script
 # Handles config generation and invokes dwowd
 
 set -e
@@ -7,7 +7,7 @@ set -e
 NETWORK="${NETWORK:-linear-testnet}"
 HOSTNAME="${HOSTNAME:-node0}"
 
-echo "[entrypoint] Starting DarkFi entrypoint..."
+echo "[entrypoint] Starting DarkWow entrypoint..."
 echo "[entrypoint] NETWORK=$NETWORK HOSTNAME=$HOSTNAME"
 
 # Determine node-specific settings based on hostname
@@ -41,11 +41,11 @@ esac
 
 echo "[entrypoint] Generating config for $HOSTNAME (rpc=$RPC_PORT, stratum=$STRATUM_PORT, inbound=$INBOUND_PORT)..."
 mkdir -p /root/.config/dwow
-cat > /root/.config/dwow/darkfid_config.toml << EOF
+cat > /root/.config/dwow/dwowd_config.toml << EOF
 network = "linear-testnet"
 
 [network_config."linear-testnet"]
-database = "~/.local/share/dwow/darkfid/linear-testnet"
+database = "~/.local/share/dwow/dwowd/linear-testnet"
 threshold = 1
 max_forks = 8
 skip_sync = true
@@ -72,7 +72,7 @@ localnet = true
 active_profiles = ["tcp+tls"]
 inbound = ["tcp+tls://0.0.0.0:$INBOUND_PORT"]
 magic_bytes = [163, 139, 113, 101]
-hostlist = "/root/.local/share/dwow/darkfid/linear-testnet/hostlist.tsv"
+hostlist = "/root/.local/share/dwow/dwowd/linear-testnet/hostlist.tsv"
 $SEEDS
 $PEERS
 $EXTERNAL_ADDRS
@@ -85,12 +85,12 @@ echo "[entrypoint] Config generated successfully"
 echo "[entrypoint] Starting dwowd..."
 /app/dwowd "$@" &
 
-DARKFID_PID=$!
+DWOWD_PID=$!
 
 # Start xmrig on mining nodes
 if [ "$HOSTNAME" = "node0" ] || [ "$HOSTNAME" = "node1" ]; then
     STRATUM_PORT=$(if [ "$HOSTNAME" = "node0" ]; then echo "48347"; else echo "48447"; fi)
-    DATADIR="/root/.local/share/dwow/darkfid/linear-testnet"
+    DATADIR="/root/.local/share/dwow/dwowd/linear-testnet"
     MINER_ADDRESS_FILE="$DATADIR/mining_address"
 
     # Three-tier address resolution:
@@ -126,4 +126,4 @@ if [ "$HOSTNAME" = "node0" ] || [ "$HOSTNAME" = "node1" ]; then
     fi
 fi
 
-wait $DARKFID_PID
+wait $DWOWD_PID

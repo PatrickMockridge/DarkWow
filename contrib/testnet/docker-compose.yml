@@ -1,55 +1,54 @@
-# DarkFi Testnet Docker Compose
-# Usage: docker-compose up -d
+# DarkWow Testnet Docker Compose
+# Usage: docker compose up -d
 #
-# This runs a dwowd node on testnet in a container.
-# Data is persisted to ~/.local/share/darkfi on the host.
+# Runs a dwowd node on darkwow-testnet in a container.
+# Data is persisted to ~/.local/share/dwow on the host.
 #
 # Ports:
-#   18345 - JSON-RPC
-#   18346 - Management JSON-RPC
-#   18348 - Merge Mining JSON-RPC (p2pool)
-#   18340 - P2P (if inbound enabled)
+#   31345 - JSON-RPC
+#   31347 - Stratum (xmrig)
+#   31348 - Merge Mining JSON-RPC (p2pool)
+#   31342 - P2P (if inbound enabled)
 #
 # Example:
 #   # Start
-#   docker-compose up -d
+#   docker compose up -d
 #
 #   # View logs
-#   docker-compose logs -f
+#   docker compose logs -f
 #
 #   # Stop
-#   docker-compose down
+#   docker compose down
 #
 #   # With custom config
-#   docker-compose -f docker-compose.yml run --rm dwowd --verbose
+#   docker compose run --rm dwowd --verbose
 
 version: '3.8'
 
 services:
   dwowd:
-    image: darkfi/testnet:latest
+    image: dwow:testnet
     container_name: dwowd-testnet
     restart: unless-stopped
     volumes:
-      - ${DARKFI_HOME:-$HOME/.local/share/darkfi}:/data
+      - ${DWOW_HOME:-$HOME/.local/share/dwow}:/data
     ports:
-      - "18345:18345"   # JSON-RPC
-      - "18346:18346"   # Management JSON-RPC
-      - "18348:18348"   # Merge Mining JSON-RPC (p2pool)
-      # - "18340:18340" # P2P (uncomment to enable inbound connections)
+      - "31345:31345"   # JSON-RPC
+      - "31347:31347"   # Stratum (xmrig)
+      - "31348:31348"   # Merge Mining JSON-RPC (p2pool)
+      # - "31342:31342" # P2P (uncomment to enable inbound connections)
     environment:
-      - NETWORK=testnet
-    # command: dwowd --network testnet --verbose  # Uncomment for verbose logging
-    command: dwowd --network testnet
+      - NETWORK=darkwow-testnet
+    command: dwowd --network darkwow-testnet
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:18345/json_rpc"]
+      test: ["CMD", "/usr/bin/dwowd", "--version"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
     networks:
-      - darkfi
+      - dwow-local
 
 networks:
-  darkfi:
+  dwow-local:
     driver: bridge

@@ -153,10 +153,10 @@ Minimum Rust version: **1.87.0**.
 
 ```bash
 # Local development (single node)
-cargo run -p darkfid -- --network linear-testnet
+cargo run -p dwowd -- --network linear-testnet
 
 # DarkWow public testnet
-cargo run -p darkfid -- --network darkwow-testnet
+cargo run -p dwowd -- --network darkwow-testnet
 ```
 
 ---

@@ -12,7 +12,7 @@ FIXED_DIFFICULTY="${FIXED_DIFFICULTY:-20000}"
 RPC_PORT="${RPC_PORT:-28081}"
 ZMQ_PORT="${ZMQ_PORT:-28083}"
 
-echo "=== Monero Node (offline mainnet) ==="
+echo "=== Monero Node (offline devnet) ==="
 echo "  OFFLINE=$OFFLINE  RPC=$RPC_PORT  ZMQ=$ZMQ_PORT"
 
 # No --testnet/--mainnet flag: monerod defaults to mainnet, which matches

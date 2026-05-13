@@ -7,7 +7,7 @@ services:
     container_name: dwow-linear-lilith
     hostname: lilith
     # Override entrypoint - lilith uses inline config
-    entrypoint: ["/bin/sh", "-c", "cat > /tmp/lilith.toml << 'LILITH_EOF'\n[rpc]\nrpc_listen = \"tcp://127.0.0.1:18927\"\n\n[network.\"linear-testnet\"]\naccept_addrs = [\"tcp+tls://0.0.0.0:18345\"]\nseeds = []\npeers = []\nversion = \"0.5.0\"\napp_name = \"darkfid\"\nlocalnet = true\nhostlist =\"~/.local/share/dwow/lilith/linear-testnet/hostlist.tsv\"\ndatastore = \"~/.local/share/dwow/lilith/linear-testnet\"\nmagic_bytes = [163, 139, 113, 101]\nLILITH_EOF\nexec /app/lilith --config /tmp/lilith.toml"]
+    entrypoint: ["/bin/sh", "-c", "cat > /tmp/lilith.toml << 'LILITH_EOF'\n[rpc]\nrpc_listen = \"tcp://127.0.0.1:18927\"\n\n[network.\"linear-testnet\"]\naccept_addrs = [\"tcp+tls://0.0.0.0:18345\"]\nseeds = []\npeers = []\nversion = \"0.5.0\"\napp_name = \"dwowd\"\nlocalnet = true\nhostlist =\"~/.local/share/dwow/lilith/linear-testnet/hostlist.tsv\"\ndatastore = \"~/.local/share/dwow/lilith/linear-testnet\"\nmagic_bytes = [163, 139, 113, 101]\nLILITH_EOF\nexec /app/lilith --config /tmp/lilith.toml"]
     command: []
     ports:
       - "18345:18345"
@@ -35,7 +35,7 @@ services:
       - "48347:48347"
       - "28340:28340"
     volumes:
-      - node0_data:/root/.local/share/dwow/darkfid
+      - node0_data:/root/.local/share/dwow/dwowd
     networks:
       - dwow-local
     depends_on:
@@ -60,7 +60,7 @@ services:
       - "48447:48447"
       - "28341:28341"
     volumes:
-      - node1_data:/root/.local/share/dwow/darkfid
+      - node1_data:/root/.local/share/dwow/dwowd
     networks:
       - dwow-local
     depends_on:

@@ -1,111 +1,115 @@
 # DarkWow Linear-Testnet Docker Setup
 
-A 5-node Docker-based linear-testnet with xmrig for external RandomX mining.
+A 3-node Docker-based linear-testnet with xmrig for external RandomX mining.
+(docker-compose defines lilith + node0 + node1; node2-4 from the architecture
+diagram are added by scaling node1.)
 
 ## Overview
 
-This setup runs 5 darkfid nodes in `--network linear-testnet` mode, each with an xmrig miner connected via stratum protocol. Node0 acts as the seed peer for the network.
+This setup runs dwowd nodes in `--network linear-testnet` mode, each with an
+xmrig miner connected via stratum protocol. Lilith acts as the P2P seed peer;
+node0 and node1 connect to lilith and peer with each other.
 
 ## Architecture
 
 ```
                     +-------------------+
-                    |  dwow-local     |
+                    |  dwow-local       |
                     |     network       |
                     +-------------------+
                             |
         +-------------------+-------------------+
-        |                   |                   |
-    +---+---+           +---+---+           +---+---+
-    |node0  |           |node1  |           |node2  |
-    |P2P:28340|  <----  |P2P:28341|          |P2P:28342|
-    |RPC:28345|         |RPC:28346|          |RPC:28347|
-    |STR:48347|         |STR:48447|          |STR:48547|
-    +---+---+           +---+---+           +---+---+
-        |                   |                   |
-    +---+---+           +---+---+           +---+---+
-    |xmrig0 |           |xmrig1 |           |xmrig2 |
-    +---+---+           +---+---+           +---+---+
-
-    (node3/node4 follow same pattern)
+        |                                       |
+    +---+---+                               +---+---+
+    |node0  |                               |node1  |
+    |P2P:28340|  <----------------------->  |P2P:28341|
+    |RPC:28345|                             |RPC:28346|
+    |STR:48347|                             |STR:48447|
+    +---+---+                               +---+---+
+        |                                       |
+    +---+---+                               +---+---+
+    |xmrig0 |                               |xmrig1 |
+    +---+---+                               +---+---+
 ```
 
 ## Ports
 
 | Node | RPC | Stratum | P2P |
 |------|-----|---------|-----|
+| lilith | — | — | 18345 |
 | node0 | 28345 | 48347 | 28340 |
 | node1 | 28346 | 48447 | 28341 |
-| node2 | 28347 | 48547 | 28342 |
-| node3 | 28348 | 48647 | 28343 |
-| node4 | 28349 | 48747 | 28344 |
 
 ## Prerequisites
 
-- Docker and docker-compose installed
-- darkfid binary built (or build from source in Docker)
+- Docker installed (`docker compose` plugin)
+- dwowd binary built (or build from source in Docker)
 
 ## Quick Start
 
-### 1. Build darkfid binary (if not using pre-built)
+### 1. Build dwowd binary (if not using pre-built)
 
 ```bash
-cargo build -p darkfid --release
+cargo build -p dwowd --release
 ```
 
 ### 2. Copy binary to docker context
 
-The docker-compose expects the binary at `../../target/release/darkfid`. If your build is elsewhere, you may need to adjust the Dockerfile.
+The docker-compose expects the binary at `../../target/release/dwowd`. If your
+build is elsewhere, adjust the Dockerfile.
 
 ### 3. Start the stack
 
 ```bash
 cd contrib/docker/linear-testnet
-./scripts/start.sh
+docker compose up -d
 ```
 
 ### 4. Check status
 
 ```bash
-docker-compose ps
+docker compose ps
 ```
 
 ### 5. View logs
 
 ```bash
-./scripts/logs.sh all        # all logs
-./scripts/logs.sh node0       # node0 only
-./scripts/logs.sh xmrig0     # xmrig0 only
+docker compose logs -f           # all logs
+docker compose logs node0        # node0 only
+docker compose logs xmrig0       # xmrig0 connects via entrypoint
 ```
 
-### 6. Mine a block via RPC
+### 6. Check block height
 
 ```bash
-./scripts/mine.sh 0 100000000   # mine on node0 with 1 token reward
+# dwowd uses raw TCP JSON-RPC (not HTTP). Use dww or netcat:
+echo '{"jsonrpc":"2.0","method":"blockchain.get_block_linear","params":[1],"id":1}' | nc -w1 localhost 28345
 ```
 
-Or use the RPC directly:
+### 7. Mine via RPC
 
 ```bash
+# Use the miner.mine_linear RPC with a wallet address and reward amount
 curl -X POST http://localhost:28345 \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
     "method": "miner.mine_linear",
-    "params": ["DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf", 100000000],
+    "params": ["<wallet_address>", 100000000],
     "id": 1
   }'
 ```
 
-### 7. Stop the stack
+### 8. Stop the stack
 
 ```bash
-./scripts/stop.sh
+docker compose down
 ```
 
 ## Wallet Setup
 
-Each node has an associated wallet for receiving mining rewards and deploying contracts.
+Each node has an associated wallet for receiving mining rewards and deploying
+contracts.
 
 ### Generate Wallets
 
@@ -139,37 +143,19 @@ done
 
 ### Use with Docker
 
-Update `WALLET_ADDR_0` through `WALLET_ADDR_4` environment variables:
+Set `WALLET_ADDRESS` and `WALLET_SECRET` environment variables:
 
 ```bash
-# Start with specific wallets
-WALLET_ADDR_0=<wallet0_addr> \
-WALLET_ADDR_1=<wallet1_addr> \
-docker-compose up -d
-```
-
-## Minting Tokens
-
-Each wallet mints native tokens by mining blocks:
-
-```bash
-# Mine to wallet 0
-./scripts/mine.sh 0 100000000  # 1 token with 8 decimals
-
-# Mine to wallet 1
-curl -X POST http://localhost:28346 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "miner.mine_linear",
-    "params": ["<wallet1_address>", 100000000],
-    "id": 1
-  }'
+# Start with specific wallet
+WALLET_ADDRESS=<wallet_addr> \
+WALLET_SECRET=<wallet_secret> \
+docker compose up -d
 ```
 
 ## Contract Deployment
 
-Use `dww` to deploy and test smart contracts:
+Use `dww` to deploy and test smart contracts via the Deployooor genesis
+contract:
 
 ```bash
 # Deploy a contract using wallet 0
@@ -181,37 +167,34 @@ Use `dww` to deploy and test smart contracts:
 
 ## Verification
 
-### Check node health
+### Check node health (raw TCP JSON-RPC)
 
 ```bash
-curl -X POST http://localhost:28345 \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"ping","params":[],"id":1}'
+echo '{"jsonrpc":"2.0","method":"ping","params":[],"id":1}' | nc -w1 localhost 28345
 ```
 
 ### Check block height
 
 ```bash
-curl -X POST http://localhost:28345 \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"blockchain.get_block_linear","params":[1],"id":1}'
+echo '{"jsonrpc":"2.0","method":"blockchain.get_block_linear","params":[1],"id":1}' | nc -w1 localhost 28345
 ```
 
 ### Check xmrig is connected
 
 ```bash
-docker-compose logs xmrig0 2>&1 | grep -i "connected\|job\|submit"
+docker compose logs node0 2>&1 | grep -i "stratum\|xmrig\|job\|submit"
 ```
 
 ## Troubleshooting
 
 ### Nodes not connecting to each other
 
-Check that `skip_sync = true` is set and all nodes are using `tcp+tls://node0:28340` as peer.
+Check that `skip_sync = true` is set and all nodes use lilith as seed peer.
 
 ### xmrig not connecting to stratum
 
-Check that stratum RPC is enabled and port mapping is correct. xmrig connects to `node0:48347` (container internal) which maps to host `127.0.0.1:48347`.
+Check that stratum RPC is enabled and port mapping is correct. xmrig connects to
+`node0:48347` (container internal) which maps to host `127.0.0.1:48347`.
 
 ### Build fails
 
@@ -221,7 +204,7 @@ The Dockerfile supports two modes:
 
 To build from source:
 ```bash
-docker build . -t darkfi:linear-testnet --build-arg BUILD_FROM_SOURCE=1
+docker build . -t dwow:linear-testnet --build-arg BUILD_FROM_SOURCE=1
 ```
 
 ## Files
@@ -229,30 +212,28 @@ docker build . -t darkfi:linear-testnet --build-arg BUILD_FROM_SOURCE=1
 ```
 contrib/docker/linear-testnet/
 ├── docker-compose.yml    # Stack orchestration
-├── Dockerfile            # darkfid image
+├── Dockerfile            # dwowd + xmrig image
+├── entrypoint.sh         # Config generation + startup
 ├── node0.toml ... node4.toml  # Per-node configs
 ├── wallets/               # Wallet configurations
 │   ├── setup_wallets.sh      # Create wallet configs
 │   ├── generate_addresses.sh # Generate wallet addresses
 │   └── test_transactions.sh # Test transaction script
-├── scripts/
-│   ├── start.sh      # Start the stack
-│   ├── stop.sh       # Stop the stack
-│   ├── logs.sh       # View logs
-│   └── mine.sh       # Mine via RPC
-└── README.md          # This file
+├── test_pipeline.sh       # CI pipeline
+└── README.md              # This file
 ```
 
-## Contract Deployment
+## Genesis Contracts
 
-At startup, darkfid nodes automatically deploy:
-- **Deployooor contract**: Enables further contract deployment
-- **NativeToken contract**: Consensus token for fees/rewards
+At startup, dwowd nodes deploy genesis contracts at block 1:
+- **Deployooor**: Enables WASM contract deployment via `DeployV1` calls
+- **NativeToken**: Consensus token for network fees (FeeV1) and block rewards
+  (PoWRewardV1)
 
-These are deployed via `Darkfid::init_linear()` in `bin/darkfid/src/lib.rs`.
+These are deployed by `build_genesis_config()` in `bin/darkfid/src/genesis.rs`.
 
 ## See Also
 
-- [Linear Blockchain Architecture](../../arch/linear_blockchain.md)
-- [Uncle Merkle Consensus](../../arch/uncle_merkle.md)
-- [DarkWow Testnet Mining](../testnet/merge-mining.md)
+- [Linear Blockchain Architecture](../../doc/src/arch/linear_blockchain.md)
+- [Uncle Merkle Consensus](../../doc/src/arch/consensus/uncle_merkle.md)
+- [DarkWow Testnet README](../darkwow-testnet/README.md)

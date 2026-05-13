@@ -254,14 +254,14 @@ dww> wallet address
 ```
 
 We will also need `dwowd` running with mm_rpc enabled. The default
-testnet configuration already includes mm_rpc on port 18348:
+testnet configuration already includes mm_rpc on port 31348:
 
 ```toml
-[network_config."testnet".mm_rpc]
-rpc_listen = "http+tcp://127.0.0.1:18348"
+[network_config."darkwow-testnet".mm_rpc]
+rpc_listen = "tcp://127.0.0.1:31348"
 ```
 
-If using docker-compose, mm_rpc port 18348 is already exposed.
+If using docker compose, mm_rpc port 31348 is already exposed.
 
 Then start `dwowd` as usual:
 
@@ -269,7 +269,7 @@ Stop `p2pool` if it's running, and re-run it with the merge-mining
 parameters appended:
 
 ```shell
-$ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:18348 {YOUR_DARKFI_WALLET_ADDRESS}
+$ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:31348 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
 
 Now `p2pool` should communicate with both `monerod` and `dwowd` in
@@ -297,7 +297,7 @@ Stop `p2pool` if it's running, and re-run it with the merge-mining
 parameters appended:
 
 ```shell
-$ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_DAO_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:18348 {YOUR_DAO_WALLET_ADDRESS_MINING_CONFIGURATION}
+$ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_DAO_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:31348 {YOUR_DAO_WALLET_ADDRESS_MINING_CONFIGURATION}
 ```
 
 After your miners have successfully mined confirmed blocks, you will
@@ -323,7 +323,7 @@ $ ./monerod --testnet --no-igd --data-dir bitmonero --log-level 1 --hide-my-port
 Now start `p2pool`:
 
 ```shell
-$ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:18348 {YOUR_DARKFI_WALLET_ADDRESS}
+$ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:31348 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
 
 And `xmrig`:

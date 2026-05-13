@@ -231,7 +231,7 @@ Tested WASM contract deployment on localnet.
 |----------|------------|--------|
 | darktoshi_dice | 196KB | ✅ Deployed |
 | baccarat | 199KB | ✅ Deployed |
-| money_v2 | 496KB | ✅ Deployed (only Money contract on this fork) |
+| money_v3 | 496KB | ✅ Deployed (DeFi tokens contract; NativeToken handles fees/rewards) |
 | escrow | 177KB | ✅ Deployed |
 | lottery | 228KB | ✅ Deployed |
 | roulette | 239KB | ✅ Deployed (2026-04-07) |

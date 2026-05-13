@@ -107,7 +107,7 @@ on real machines across networks.
 |-----------|------|
 | Contract unit/integration tests | `src/contract/<name>/tests/` |
 | Test harness crate (28 contracts) | `src/contract/test-harness/` |
-| Daemon integration tests (23 modules) | `bin/darkfid/src/tests/` |
+| Daemon integration tests | `bin/darkfid/src/tests/` |
 | Docker localnet (3-container) | `contrib/docker/darkwow-testnet/` |
 | Docker linear localnet (5-container) | `contrib/docker/linear-testnet/` |
 | Docker devnet node (single-container) | `contrib/docker/dwow-devnet/` |

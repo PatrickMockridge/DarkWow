@@ -9,7 +9,7 @@ external participants.
 The P2P bootstrap is simple:
 
 1. **Nodes connect to a seed** — any lilith seed works. DarkWow uses the public
-   dark.fi lilith seeds (`lilith0.dark.fi:18340`, `lilith1.dark.fi:18340`) that
+   dark.fi lilith seeds (`lilith0.dark.fi:31340`, `lilith1.dark.fi:31340`) that
    are already configured in `dwowd_config.toml`.
 2. **Nodes discover each other** — the seed maintains a hostlist keyed by network
    magic bytes (`[68, 82, 75, 87]` = "DRKW"). Nodes with matching magic bytes
@@ -33,7 +33,7 @@ The P2P bootstrap is simple:
 | P2P seed port | 31340 |
 | RPC port | 31345 |
 | Stratum port | 31347 |
-| Seed nodes | `lilith0.dark.fi:18340`, `lilith1.dark.fi:18340` |
+| Seed nodes | `lilith0.dark.fi:31340`, `lilith1.dark.fi:31340` |
 
 ## Phase 1: Single-Machine Validation
 
