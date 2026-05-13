@@ -172,6 +172,18 @@ pass() { echo -e "${GREEN}[PASS]${NC} $*"; PASS=$((PASS + 1)); }
 fail() { echo -e "${RED}[FAIL]${NC} $*"; FAIL=$((FAIL + 1)); }
 skip() { echo -e "${YELLOW}[SKIP]${NC} $*"; SKIP=$((SKIP + 1)); }
 
+# Remove directories that may contain root-owned files from Docker volumes.
+# Falls back to sudo if needed, or docker rm to clean up.
+clean_data_dir() {
+    for dir in "$@"; do
+        [ -d "$dir" ] || continue
+        rm -rf "$dir" 2>/dev/null || \
+            sudo rm -rf "$dir" 2>/dev/null || \
+            docker run --rm -v "$dir:$dir" alpine:latest rm -rf "$dir" 2>/dev/null || \
+            { warn "Could not remove $dir (may contain root-owned files)"; }
+    done
+}
+
 check() {
     if [ "$1" -eq 0 ]; then
         pass "$2"
@@ -305,7 +317,7 @@ phase_clean() {
         done
         docker builder prune -a -f 2>/dev/null || true
         docker volume prune -f 2>/dev/null || true
-        rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL" \
+        clean_data_dir "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL" \
                "$JOIN_TEST_FALLBACK" "$JOIN_TEST_PERSIST"
         pass "clean (join mode)"
         return
@@ -687,7 +699,7 @@ phase_join_lifecycle() {
 
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
-    rm -rf "$JOIN_TEST_DATA"
+    clean_data_dir "$JOIN_TEST_DATA"
     mkdir -p "$JOIN_TEST_DATA"
 
     echo "  Starting native mode container..."
@@ -720,7 +732,7 @@ phase_join_lifecycle() {
         fail "Container stopped unexpectedly"
         docker stop "$CONTAINER_NAME" 2>/dev/null || true
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
-        rm -rf "$JOIN_TEST_DATA"
+        clean_data_dir "$JOIN_TEST_DATA"
         return 0
     fi
 
@@ -829,7 +841,7 @@ phase_join_fallback() {
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
     docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
     docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
-    rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
+    clean_data_dir "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
     mkdir -p "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
 
     local unreachable_seeds="unreachable.example.com:9999,another.dead.host:9999"
@@ -856,7 +868,7 @@ phase_join_fallback() {
         echo "  Container logs:"
         docker logs "$FALLBACK_LILITH_NAME" 2>&1 | tail -10
         fail "Fallback lilith failed to start"
-        rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
+        clean_data_dir "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
         return 0
     fi
 
@@ -893,7 +905,7 @@ phase_join_fallback() {
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
         docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
         docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
-        rm -rf "$JOIN_TEST_FALLBACK"
+        clean_data_dir "$JOIN_TEST_FALLBACK"
         return 0
     fi
 
@@ -965,7 +977,7 @@ phase_join_fallback() {
         fail "Fallback lilith hostlist.tsv not found"
     fi
 
-    rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
+    clean_data_dir "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
 }
 
 # ==============================================================================
@@ -1279,7 +1291,7 @@ phase_join_native_mining() {
 
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
-    rm -rf "$JOIN_TEST_DATA"
+    clean_data_dir "$JOIN_TEST_DATA"
 }
 
 phase_join_merge_mining() {
@@ -1287,7 +1299,7 @@ phase_join_merge_mining() {
     check_network || return 0
 
     docker compose -f "$COMPOSE_FILE" --profile join-merge down 2>/dev/null || true
-    rm -rf "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL"
+    clean_data_dir "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL"
     mkdir -p "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL"
 
     echo "  Starting merge mining stack..."
@@ -1398,7 +1410,7 @@ phase_persistence() {
     check_image || return 0
 
     local persist_dir="$JOIN_TEST_PERSIST"
-    rm -rf "$persist_dir"
+    clean_data_dir "$persist_dir"
     mkdir -p "$persist_dir"
 
     echo "  Starting first run..."
@@ -1425,7 +1437,7 @@ phase_persistence() {
 
     if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
         fail "Container failed to start"
-        rm -rf "$persist_dir"
+        clean_data_dir "$persist_dir"
         return 0
     fi
 
@@ -1445,7 +1457,7 @@ phase_persistence() {
         pass "Host data survived container removal"
     else
         fail "Host data missing after container stop"
-        rm -rf "$persist_dir"
+        clean_data_dir "$persist_dir"
         return 0
     fi
 
@@ -1479,7 +1491,7 @@ phase_persistence() {
 
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
-    rm -rf "$persist_dir"
+    clean_data_dir "$persist_dir"
 }
 
 # ==============================================================================
