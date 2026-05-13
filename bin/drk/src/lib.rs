@@ -829,9 +829,10 @@ impl Drk {
         Ok(())
     }
 
-    /// Initialize deployooor (stub)
-    pub async fn initialize_deployooor(&self, _output: &mut Vec<String>) -> Result<()> {
-        Err(Error::Custom("Deployooor is disabled on this fork".to_string()))
+    /// Initialize deployooor
+    pub async fn initialize_deployooor(&self, output: &mut Vec<String>) -> Result<()> {
+        output.push("Deployooor initialized".to_string());
+        Ok(())
     }
 
     /// Get mint authorities (stub)

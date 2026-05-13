@@ -32,7 +32,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 
-use crate::contract_imports::MONEY_V3_CONTRACT_ID;
+use crate::contract_imports::{MONEY_V3_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_serial::{deserialize, serialize};
 use prettytable::{format, row, Table};
 
@@ -223,12 +223,12 @@ pub fn pretty_tx(tx: &Transaction) -> String {
     table.add_row(row!["", "Contract", "Function"]);
 
     for (i, call) in tx.calls.iter().enumerate() {
-        // Money contract fee check: contract ID matches and function byte is 0x00 (FeeV2)
-        let is_money_fee = call.data.contract_id == *MONEY_V3_CONTRACT_ID.get().unwrap()
+        // NativeToken fee check: contract ID matches and function byte is 0x00 (FeeV1)
+        let is_native_fee = call.data.contract_id == *NATIVE_TOKEN_CONTRACT_ID
             && !call.data.data.is_empty()
             && call.data.data[0] == 0x00;
 
-        if is_money_fee {
+        if is_native_fee {
             if let Ok(fee) = deserialize(&call.data.data[1..9]) {
                 fees.push(format!("{} DRK", encode_base10(fee, BALANCE_BASE10_DECIMALS)));
                 fees_total = fees_total.checked_add(fee).unwrap_or_else(|| {

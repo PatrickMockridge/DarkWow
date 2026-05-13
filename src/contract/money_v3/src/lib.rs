@@ -138,8 +138,6 @@ pub const MONEY_V3_CONTRACT_INFO_TREE: &str = "info";
 pub const MONEY_V3_CONTRACT_COIN_ROOTS_TREE: &str = "coin_roots";
 /// Stores nullifier roots for historical verification
 pub const MONEY_V3_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
-/// Stores accumulated fees per block height
-pub const MONEY_V3_CONTRACT_FEES_TREE: &str = "fees";
 
 // ============================================================================
 // DATABASE KEYS

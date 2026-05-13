@@ -181,7 +181,6 @@ pub mod money {
     pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_NULLIFIERS_TREE;
     pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_MERKLE_TREE;
     pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_INFO_TREE;
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_FEES_TREE;
 
     // Client types
     pub use dwow_money_v3_contract::client::MoneyV3Note;
