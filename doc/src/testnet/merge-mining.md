@@ -13,8 +13,14 @@ replacements for the base P2P layer.
 | Layer | Component | Role | Mandatory? |
 |-------|-----------|------|------------|
 | 1 — P2P | lilith + dwowd | Node discovery, block propagation, tx gossip | **Yes** — everyone |
-| 2 — Pool | p2pool stratum | Aggregates miner hashrate, PPLNS payouts | No — solo miners skip |
+| 2 — Pool | p2pool + adaptor | Aggregates miner hashrate, PPLNS payouts | No — solo miners skip |
 | 3 — Merge | p2pool + monerod | Bridges to Monero, embeds aux data | No — pure DarkWow pools skip |
+
+The [dwow-p2pool-adaptor](native-p2pool.md) translates dwowd's stratum to
+monerod-compatible JSON-RPC so p2pool can connect. It is the interface between
+Layer 2 and the dwowd node — p2pool speaks Monero protocol; the adaptor
+translates to DarkWow's native stratum. For merge mining (Layer 3), p2pool
+additionally connects to monerod via `mm_rpc`.
 
 See [Mining Network Architecture](../arch/mining-tokenomics.md#mining-network-architecture)
 for the full topology, ASCII diagrams, and mm_rpc interface description.

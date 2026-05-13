@@ -209,11 +209,15 @@ services:
     restart: unless-stopped
 
   # ============================================================================
-  # Native p2pool Services (--profile native-p2pool)
+  # Merge Mining Adaptor Services (--profile native-p2pool)
   #
-  # DarkWow-native pooled mining: p2pool mines DarkWow blocks as the primary
-  # chain through the chain adaptor. No Monero required — this is pure DarkWow
-  # mining with PPLNS pool reward sharing.
+  # The adaptor bridges p2pool to dwowd stratum, enabling merge mining with
+  # Monero and the anchoring/finality gadget. DarkWow as a minority-mined
+  # RandomX L1 borrows security from Monero's hashpower through this pathway.
+  #
+  # DarkWow-native pooled mining (DRKW reward distribution without Monero) is
+  # an ecosystem concern — not bundled or maintained here. The node software
+  # and this adaptor are the only mining infrastructure provided by this repo.
   #
   # Start with:  docker compose --profile native-p2pool up -d
   # ============================================================================

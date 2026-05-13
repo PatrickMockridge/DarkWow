@@ -10,8 +10,13 @@ node and using the wallet to transact. Mining uses **xmrig** connecting to
 dwowd's built-in stratum server (RandomX `rx/0`).
 
 For **merge mining** with Monero+p2pool, see [merge-mining.md](merge-mining.md).
-For **native p2pool** mining without a real Monero chain, use the
-`darkwow-testnet` docker pipeline with `--mode native-p2pool`.
+The [dwow-p2pool-adaptor](native-p2pool.md) bridges p2pool to dwowd stratum
+for the merge mining pathway and anchoring finality gadget.
+
+**Scope boundary:** DarkWow-native mining pools (DRKW reward distribution
+without Monero merge mining) are an ecosystem concern — this repo provides
+the node software and the adaptor; pool protocols and reward distribution
+schemes use the same stratum interface but are not bundled here.
 
 ## Prerequisites
 
@@ -147,7 +152,7 @@ cd contrib/docker/darkwow-testnet
 # Native mining (dwowd + xmrig)
 ./test_pipeline.sh --mode native
 
-# Native p2pool mining (adaptor + p2pool + xmrig)
+# Adaptor pathway (p2pool + adaptor + xmrig)
 ./test_pipeline.sh --mode native-p2pool
 
 # Merge mining with Monero (monerod + p2pool + xmrig)

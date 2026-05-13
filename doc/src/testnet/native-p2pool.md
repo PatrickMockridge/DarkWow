@@ -1,8 +1,15 @@
-# Native P2Pool Mining (DarkWow-Only)
+# Merge Mining Adaptor
 
-This guide covers DarkWow-native p2pool mining via the `dwow-p2pool-adaptor`.
-Unlike [merge mining](merge-mining.md), no Monero chain is required — p2pool
-mines DarkWow blocks as the primary chain, and rewards are DRKW only.
+The `dwow-p2pool-adaptor` bridges p2pool to dwowd's stratum protocol, enabling
+merge mining with Monero and the [anchoring/finality gadget](#anchoring-finality-gadget).
+DarkWow is a minority-mined RandomX L1 — in the beginning, it borrows security
+from Monero's hashpower through this pathway.
+
+**Scope boundary:** The adaptor is merge mining and finality gadget
+infrastructure. DarkWow-native pooled mining (DRKW reward distribution without
+Monero merge mining) is an ecosystem concern — this repo provides the node
+software and the adaptor; pool protocols and reward distribution schemes use the
+same stratum interface but are not bundled or maintained here.
 
 ## Architecture
 
@@ -11,21 +18,65 @@ xmrig --stratum--> p2pool --[monerod RPC]--> adaptor --[stratum]--> dwowd
                                                               --> lilith P2P
 ```
 
-The `dwow-p2pool-adaptor` is a protocol bridge: p2pool thinks it's talking to
-monerod, but the adaptor translates all requests to DarkWow's native stratum
-interface. From p2pool's perspective, it's just mining on a "Monero-compatible"
-chain — no `--merge-mine` flag, no auxiliary chain.
+The adaptor is a protocol bridge: it translates dwowd's native stratum
+interface into monerod-compatible JSON-RPC (`get_block_template`, `submit_block`,
+`get_info`). p2pool thinks it's talking to monerod, and the adaptor translates
+every request into DarkWow's stratum protocol.
 
-### How It Differs from Merge Mining
+This design reuses p2pool (SChernykh's Monero p2pool) without modification — the
+adaptor handles the protocol translation, and p2pool provides its full feature
+set: PPLNS payout distribution, a sidechain with uncle blocks every 10 seconds,
+a stratum server for xmrig, and share tracking. No Monero chain is required when
+mining through the adaptor.
 
-| Aspect | Merge Mining | Native P2Pool |
-|--------|-------------|---------------|
-| Monero chain | Required (real monerod) | Not used |
-| p2pool flag | `--merge-mine` | No merge flag |
-| Rewards | XMR + DRKW (dual) | DRKW only |
-| ZMQ | Used for block notifications | Not available (p2pool polls) |
-| Block template | Monero header with aux data | DarkWow header in Monero format |
-| Wallet addresses | Two (Monero + DarkWow) | One (DarkWow only) |
+### Why a Protocol Bridge?
+
+The adaptor exists because DarkWow does not implement its own pool protocol.
+Instead, it reuses Monero's p2pool ecosystem through a compatibility layer. This
+is deliberate:
+
+- **p2pool is battle-tested.** It has years of production use in the Monero
+  ecosystem. Reimplementing its PPLNS logic, sidechain accounting, and share
+  tracking in Rust would be thousands of lines of consensus-critical code.
+- **The adaptor is thin.** ~600 lines of Rust across 4 source files. It only
+  translates protocols — it does not implement pool logic itself.
+- **p2pool can be upgraded independently.** The adaptor isolates protocol
+  translation from pool mechanics. When p2pool releases improvements, DarkWow
+  benefits without code changes.
+
+### Relationship to Merge Mining
+
+The adaptor and merge mining are complementary:
+
+| Pathway | Data flow | p2pool flag | Rewards |
+|---------|-----------|-------------|---------|
+| **Merge mining** | xmrig → p2pool → monerod + dwowd `mm_rpc` | `--merge-mine` | XMR + DRKW |
+| **Adaptor** | xmrig → p2pool → adaptor → dwowd stratum | (none) | DRKW only |
+
+The adaptor pathway is a subset: it uses the same p2pool stratum and the same
+dwowd chain, but without Monero as the parent chain. Merge mining provides the
+dual-reward + finality pathway; the adaptor provides the pool infrastructure
+that both pathways share.
+
+## Anchoring Finality Gadget
+
+DarkWow is a minority-mined RandomX L1. Without merge mining, an attacker with
+superior RandomX hashpower could reorganize the chain. The anchoring finality
+gadget prevents this by borrowing Monero's cumulative difficulty.
+
+Each merge-mined DarkWow block references a specific Monero block as an anchor.
+Once the Monero anchor has enough confirmations (default 3), the DarkWow block
+is **finalized** — it cannot be reorganized, even by an attacker with superior
+hashpower. Among candidate forks, any fork that would orphan a finalized block
+is rejected.
+
+The adaptor is critical infrastructure for this model: it enables the stratum
+pathway that merge miners use to connect p2pool to dwowd. Without the adaptor,
+the finality gadget has no mining infrastructure to run on.
+
+See [Mining Tokenomics](../arch/mining-tokenomics.md#anchoring-finality-gadget) for
+the full design, and `contrib/docker/darkwow-testnet/merge_mining_model.py` for
+the Python simulation.
 
 ## Prerequisites
 
@@ -41,7 +92,7 @@ cargo build -p dwow-p2pool-adaptor --release
 
 ## Docker Quick Start
 
-The quickest way to run native-p2pool mining is with the containerized testnet:
+The quickest way to run with the adaptor is the containerized testnet:
 
 ```bash
 cd contrib/docker/darkwow-testnet
@@ -255,7 +306,7 @@ Miners modify bytes 77-80 (the nonce) to find a valid RandomX hash.
 
 ## See Also
 
-- [Merge Mining](merge-mining.md) — Monero merge mining guide
+- [Merge Mining](merge-mining.md) — Monero merge mining with the finality gadget
 - [Mining on Testnet](testnet-mining.md) — Solo mining with xmrig
 - [DarkWow Testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md) — Containerized devnet
 - [Mining Tokenomics](../arch/mining-tokenomics.md) — Architecture overview

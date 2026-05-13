@@ -285,15 +285,29 @@ the parent chain, DarkWow coinbase from the aux chain.
 | `WALLET_ADDRESS` | (empty) | DarkWow wallet for aux chain mining rewards |
 | `XMERGE_THREADS` | `1` | xmrig-merge thread count |
 
-## Native P2Pool Mining (DarkWow-Only)
+## Merge Mining Adaptor (p2pool Bridge)
 
-An alternative mining mode using the `dwow-p2pool-adaptor` to run p2pool without
-a Monero chain. p2pool mines DarkWow blocks as the primary chain — rewards are
-DRKW only.
+The `dwow-p2pool-adaptor` bridges p2pool to dwowd's stratum protocol, enabling
+merge mining with Monero and the anchoring/finality gadget. DarkWow is a
+minority-mined RandomX L1 — in the beginning, it borrows security from Monero's
+hashpower through this pathway.
 
 ```
 xmrig → p2pool → adaptor → dwowd stratum → lilith P2P
 ```
+
+The adaptor translates dwowd's native stratum interface into monerod-compatible
+JSON-RPC (`get_block_template`, `submit_block`, `get_info`). p2pool connects to
+the adaptor thinking it's monerod, and the adaptor translates every request into
+DarkWow's stratum protocol. This means unmodified p2pool — with its full PPLNS
+reward distribution, sidechain, and stratum server — interoperates with DarkWow
+without any DarkWow-specific code in p2pool itself.
+
+**Scope boundary:** The adaptor is merge mining / finality gadget infrastructure
+— it is not a general-purpose DarkWow mining pool. DarkWow-native pooled mining
+(DRKW reward distribution without Monero merge mining) is an ecosystem concern.
+This repo provides the node software and the adaptor; pool protocols and reward
+distribution schemes use the same stratum interface but are not bundled here.
 
 ### Quick Start
 
@@ -306,23 +320,14 @@ docker compose --profile native-p2pool up -d
 ```
 
 This starts three containers: `dwow-adaptor` (protocol bridge), `dwow-p2pool-darkwow`
-(p2pool pool), and `dwow-xmrig-p2pool` (xmrig miner).
+(p2pool), and `dwow-xmrig-p2pool` (xmrig miner).
 
-### How It Differs from Merge Mining
-
-| Aspect | Merge Mining | Native P2Pool |
-|--------|-------------|---------------|
-| Monero chain | Required | Not used |
-| p2pool flag | `--merge-mine` | No merge flag |
-| Rewards | XMR + DRKW | DRKW only |
-| Wallet addresses | Two (Monero + DarkWow) | One (DarkWow only) |
-
-### Native P2Pool Environment Variables
+### Adaptor Environment Variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `DWOWD_RPC` | `node0:31345` | dwowd JSON-RPC for chain queries (adaptor) |
-| `DWOWD_STRATUM` | `node0:31347` | dwowd stratum for block templates (adaptor) |
+| `DWOWD_RPC` | `node0:31345` | dwowd JSON-RPC for chain queries |
+| `DWOWD_STRATUM` | `node0:31347` | dwowd stratum for block templates |
 | `ADAPTOR_LISTEN` | `0.0.0.0:28081` | Where the adaptor listens for p2pool |
 | `MONERO_HOST` | `adaptor` | p2pool's monerod endpoint (the adaptor) |
 | `MONERO_RPC_PORT` | `28081` | Adaptor's listening port |
@@ -330,8 +335,9 @@ This starts three containers: `dwow-adaptor` (protocol bridge), `dwow-p2pool-dar
 | `WALLET_ADDRESS` | *(optional)* | DarkWow wallet for mining rewards |
 | `CONNECT_RETRIES` | `30` | Max retries for adaptor→dwowd connection |
 
-See [Native P2Pool Mining](../../doc/src/testnet/native-p2pool.md) for
-bare-metal setup, adaptor RPC reference, and known limitations.
+See [Merge Mining Adaptor](../../doc/src/testnet/native-p2pool.md) for
+bare-metal setup, adaptor RPC reference, block header translation, and
+known limitations.
 
 ## Contract Tests
 
@@ -397,7 +403,7 @@ If you need bridge networking for multi-machine, map ports and set
 | `Dockerfile` | Multi-stage build from local source (dwowd + lilith + WASM contracts) |
 | `docker-compose.yml` | 3-container orchestration with environment-driven config |
 | `entrypoint.sh` | Dynamic config generation for lilith and dwowd roles |
-| `entrypoint-adaptor.sh` | Start dwow-p2pool-adaptor for native p2pool mining |
+| `entrypoint-adaptor.sh` | Start dwow-p2pool-adaptor (merge mining protocol bridge) |
 | `entrypoint-p2pool.sh` | Start p2pool in merge mining mode |
 | `entrypoint-p2pool-darkwow.sh` | Start p2pool in native DarkWow mode |
 | `entrypoint-monero.sh` | Start monerod for merge mining |

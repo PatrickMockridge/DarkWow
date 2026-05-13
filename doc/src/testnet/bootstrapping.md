@@ -238,6 +238,8 @@ mode for local testing; connect to Monero public testnet with
 
 - [Running a Node](node.md) — Bare-metal node setup
 - [Mining on Testnet](testnet-mining.md) — Solo mining with dww
+- [Merge Mining](merge-mining.md) — Monero merge mining with the finality gadget
+- [Merge Mining Adaptor](native-p2pool.md) — p2pool-to-dwowd protocol bridge
 - [Level 3: Containerized Localnet](../dev/testing/level-3-localnet.md) — Docker localnet architecture
 - [Level 4: Containerized Devnet Node](../dev/testing/level-4-devnet.md) — Single-container devnet deployment
 - [DarkWow Testnet Docker README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md) — Full env var reference
