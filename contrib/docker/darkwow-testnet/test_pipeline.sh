@@ -189,7 +189,7 @@ clean_data_dir() {
         [ -d "$dir" ] || continue
         rm -rf "$dir" 2>/dev/null || \
             sudo rm -rf "$dir" 2>/dev/null || \
-            docker run --rm -v "$dir:$dir" alpine:latest rm -rf "$dir" 2>/dev/null || \
+            docker run --rm -v "$dir:$dir" ubuntu:24.04 rm -rf "$dir" 2>/dev/null || \
             { warn "Could not remove $dir (may contain root-owned files)"; }
     done
 }
@@ -318,7 +318,7 @@ phase_clean() {
     # sticky-bit /tmp. Same pattern as clean_data_dir().
     rm -f /tmp/dwow_mining_secret 2>/dev/null || \
         sudo rm -f /tmp/dwow_mining_secret 2>/dev/null || \
-        docker run --rm -v /tmp/dwow_mining_secret:/tmp/dwow_mining_secret alpine:latest rm -f /tmp/dwow_mining_secret 2>/dev/null || \
+        docker run --rm -v /tmp/dwow_mining_secret:/tmp/dwow_mining_secret ubuntu:24.04 rm -f /tmp/dwow_mining_secret 2>/dev/null || \
         { warn "Could not remove /tmp/dwow_mining_secret (may be root-owned)"; }
 
     # Remove dww wallet state so each run generates a fresh keypair.
