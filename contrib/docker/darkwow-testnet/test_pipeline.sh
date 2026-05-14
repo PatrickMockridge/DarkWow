@@ -21,6 +21,7 @@
 #   ./test-contracts.sh --mode merge
 
 set -e
+set -E  # inherit ERR trap into shell functions
 
 # Fatal error trap — every failure must be visible.
 # set -e kills the script on any non-zero exit; without this trap
@@ -28,9 +29,7 @@ set -e
 trap 'echo "[FATAL] Pipeline failed at line $LINENO — exit code $?" >&2' ERR
 
 # Signal traps — catch kills that bypass ERR (tmux crash, timeout, ^C).
-# EXIT fires on ANY exit (normal or signal); ERR already covers normal
-# failures, so this is belt-and-suspenders for signal-induced deaths.
-trap 'echo "[FATAL] Pipeline killed by signal — last line ~$LINENO" >&2; exit 1' INT TERM HUP
+trap 'echo "[FATAL] Pipeline killed by signal — last line ~$LINENO" >&2; exit 1' INT TERM HUP PIPE
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -1207,7 +1206,9 @@ phase_blocks() {
     fi
     for i in $(seq 1 $WAIT_SECS); do
         sleep 1
-        [ $((i % 10)) -eq 0 ] && info "  waited ${i}s / ${WAIT_SECS}s..."
+        if [ $((i % 10)) -eq 0 ]; then
+            info "  waited ${i}s / ${WAIT_SECS}s..."
+        fi
     done
 
     BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) || {
