@@ -1211,10 +1211,14 @@ phase_blocks() {
         fi
     done
 
-    BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) || {
-        echo "[FATAL] docker exec failed — cannot reach node0 RPC for block 1 query" >&2
+    for attempt in 1 2 3 4 5; do
+        BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
+        sleep 2
+    done
+    if [ -z "$BLOCK_INFO" ]; then
+        echo "[FATAL] docker exec failed after 5 retries — cannot reach node0 RPC for block 1" >&2
         exit 1
-    }
+    fi
     echo "$BLOCK_INFO" | head -c 200
 
     BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
@@ -1232,10 +1236,14 @@ phase_blocks() {
         info "  waited $((i * 10))s / 130s..."
     done
 
-    BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) || {
-        echo "[FATAL] docker exec failed — cannot reach node0 RPC for block 2 query" >&2
+    for attempt in 1 2 3 4 5; do
+        BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
+        sleep 2
+    done
+    if [ -z "$BLOCK_INFO" ]; then
+        echo "[FATAL] docker exec failed after 5 retries — cannot reach node0 RPC for block 2" >&2
         exit 1
-    }
+    fi
     BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
     info "Block height after waiting: $BLOCK_HEIGHT"
 
@@ -1247,10 +1255,14 @@ phase_blocks() {
 
     if [ "$BLOCK_HEIGHT" -ge 1 ]; then
         info "Inspecting block 1 for PoW data..."
-        BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) || {
-            echo "[FATAL] docker exec failed — cannot reach node0 RPC for PoW inspection" >&2
+        for attempt in 1 2 3 4 5; do
+            BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
+            sleep 2
+        done
+        if [ -z "$BLOCK_DATA" ]; then
+            echo "[FATAL] docker exec failed after 5 retries — cannot reach node0 RPC for PoW inspection" >&2
             exit 1
-        }
+        fi
 
         if echo "$BLOCK_DATA" | grep -q '"result"'; then
             pass "block 1 fetched successfully"
