@@ -27,6 +27,11 @@ set -e
 # the log just stops mid-line with no clue what failed.
 trap 'echo "[FATAL] Pipeline failed at line $LINENO — exit code $?" >&2' ERR
 
+# Signal traps — catch kills that bypass ERR (tmux crash, timeout, ^C).
+# EXIT fires on ANY exit (normal or signal); ERR already covers normal
+# failures, so this is belt-and-suspenders for signal-induced deaths.
+trap 'echo "[FATAL] Pipeline killed by signal — last line ~$LINENO" >&2; exit 1' INT TERM HUP
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 DWW_BIN="${REPO_ROOT}/target/release/dww"
@@ -1205,10 +1210,13 @@ phase_blocks() {
         [ $((i % 10)) -eq 0 ] && info "  waited ${i}s / ${WAIT_SECS}s..."
     done
 
-    BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+    BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) || {
+        echo "[FATAL] docker exec failed — cannot reach node0 RPC for block 1 query" >&2
+        exit 1
+    }
     echo "$BLOCK_INFO" | head -c 200
 
-    BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
+    BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
     info "Initial block height: $BLOCK_HEIGHT"
 
     if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
@@ -1223,8 +1231,11 @@ phase_blocks() {
         info "  waited $((i * 10))s / 130s..."
     done
 
-    BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
-    BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*')
+    BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) || {
+        echo "[FATAL] docker exec failed — cannot reach node0 RPC for block 2 query" >&2
+        exit 1
+    }
+    BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
     info "Block height after waiting: $BLOCK_HEIGHT"
 
     if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
@@ -1235,7 +1246,10 @@ phase_blocks() {
 
     if [ "$BLOCK_HEIGHT" -ge 1 ]; then
         info "Inspecting block 1 for PoW data..."
-        BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1)
+        BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) || {
+            echo "[FATAL] docker exec failed — cannot reach node0 RPC for PoW inspection" >&2
+            exit 1
+        }
 
         if echo "$BLOCK_DATA" | grep -q '"result"'; then
             pass "block 1 fetched successfully"
