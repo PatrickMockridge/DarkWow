@@ -22,6 +22,11 @@
 
 set -e
 
+# Fatal error trap — every failure must be visible.
+# set -e kills the script on any non-zero exit; without this trap
+# the log just stops mid-line with no clue what failed.
+trap 'echo "[FATAL] Pipeline failed at line $LINENO — exit code $?" >&2' ERR
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 DWW_BIN="${REPO_ROOT}/target/release/dww"
@@ -483,16 +488,16 @@ phase_build() {
     # addressed — same file content produces the same layer digest every
     # time. No --no-cache needed.
     if [ "$MODE" = "merge" ]; then
-        docker compose --profile merge build 2>&1 | tail -20
+        docker compose --profile merge build 2>&1
         check $? "docker build (merge profile)"
     elif [ "$MODE" = "native-p2pool" ]; then
-        docker compose --profile native-p2pool build 2>&1 | tail -20
+        docker compose --profile native-p2pool build 2>&1
         check $? "docker build (native-p2pool profile)"
     elif [ "$MODE" = "join-merge" ]; then
-        docker compose --profile join-merge build 2>&1 | tail -20
+        docker compose --profile join-merge build 2>&1
         check $? "docker build (join-merge profile)"
     else
-        docker compose build 2>&1 | tail -20
+        docker compose build 2>&1
         check $? "docker build"
     fi
 
