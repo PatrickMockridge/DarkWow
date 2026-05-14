@@ -233,7 +233,7 @@ jsonrpc() {
     for attempt in 1 2 3; do
         if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
             local result
-            result=$(docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>/dev/null)
+            result=$(docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>/dev/null) || true
             if [ -n "$result" ] && echo "$result" | grep -q '"result"\|"sessions"\|"block_height"'; then
                 echo "$result"
                 return
