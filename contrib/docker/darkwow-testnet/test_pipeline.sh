@@ -313,12 +313,12 @@ phase_clean() {
     pkill -9 -f 'cargo build' 2>/dev/null || true
     pkill -9 -f 'rustc' 2>/dev/null || true
 
-    # Remove stale wallet secret with 3-tier fallback. Docker bind-mounts
-    # create this as root; plain rm -f can't delete root-owned files in
-    # sticky-bit /tmp. Same pattern as clean_data_dir().
-    rm -f /tmp/dwow_mining_secret 2>/dev/null || \
-        sudo rm -f /tmp/dwow_mining_secret 2>/dev/null || \
-        docker run --rm -v /tmp/dwow_mining_secret:/tmp/dwow_mining_secret ubuntu:24.04 rm -f /tmp/dwow_mining_secret 2>/dev/null || \
+    # Remove stale wallet secret with 3-tier fallback. Mount /tmp (parent)
+    # not the file itself — if the file doesn't exist, -v auto-creates a
+    # directory at the mount point, making the problem worse.
+    rm -rf /tmp/dwow_mining_secret 2>/dev/null || \
+        sudo rm -rf /tmp/dwow_mining_secret 2>/dev/null || \
+        docker run --rm -v /tmp:/tmp ubuntu:24.04 rm -rf /tmp/dwow_mining_secret 2>/dev/null || \
         { warn "Could not remove /tmp/dwow_mining_secret (may be root-owned)"; }
 
     # Remove dww wallet state so each run generates a fresh keypair.
