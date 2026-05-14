@@ -331,12 +331,20 @@ phase_clean() {
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
         docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
         docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --remove-orphans down --rmi all -v 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --profile native-p2pool --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true
-        # Remove stale join containers
-        for c in dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge; do
+        # Remove stale join containers and ALL dwow-* containers
+        for c in dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool; do
             docker stop "$c" 2>/dev/null || true
             docker rm "$c" 2>/dev/null || true
         done
+        STALE=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^dwow-" || true)
+        if [ -n "$STALE" ]; then
+            warn "Removing stale containers..."
+            echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
+        fi
         # Remove old images first — builder prune skips layers still
         # referenced by existing images, so stale COPY caches survive.
         for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet" || true); do
