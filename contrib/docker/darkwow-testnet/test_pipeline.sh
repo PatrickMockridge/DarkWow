@@ -176,11 +176,9 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 PASS=0
 FAIL=0
-SKIP=0
 
 pass() { echo -e "${GREEN}[PASS]${NC} $*"; PASS=$((PASS + 1)); }
 fail() { echo -e "${RED}[FAIL]${NC} $*"; FAIL=$((FAIL + 1)); }
-skip() { echo -e "${YELLOW}[SKIP]${NC} $*"; SKIP=$((SKIP + 1)); }
 
 # Remove directories that may contain root-owned files from Docker volumes.
 # Falls back to sudo if needed, or docker rm to clean up.
@@ -210,9 +208,14 @@ is_join_mode() {
 # Join-mode helpers
 # ==============================================================================
 
+_CHECK_IMAGE_FAILED=0
 check_image() {
+    if [ "$_CHECK_IMAGE_FAILED" -eq 1 ]; then
+        return 1
+    fi
     if ! docker image inspect "$IMAGE" &>/dev/null; then
-        skip "Docker image '$IMAGE' not found (build phase should have created it)"
+        _CHECK_IMAGE_FAILED=1
+        fail "Docker image '$IMAGE' not found (build phase should have created it)"
         return 1
     fi
     return 0
@@ -220,7 +223,7 @@ check_image() {
 
 check_network() {
     if ! curl -s --connect-timeout 5 https://api.ipify.org >/dev/null 2>&1; then
-        skip "No internet connectivity detected"
+        fail "No internet connectivity detected"
         return 1
     fi
     return 0
@@ -259,7 +262,7 @@ report() {
     echo ""
     echo "==========================================="
     echo "  Mode: $MODE"
-    echo -e "  ${GREEN}PASS: $PASS${NC}  ${RED}FAIL: $FAIL${NC}  ${YELLOW}SKIP: $SKIP${NC}"
+    echo -e "  ${GREEN}PASS: $PASS${NC}  ${RED}FAIL: $FAIL${NC}"
     echo "==========================================="
     echo ""
 
@@ -437,8 +440,8 @@ phase_prereqs() {
 
     # Check WASM files
     [ -f "$WASM_MONEY_V3" ] && pass "money_v3 WASM found" || fail "money_v3 WASM missing"
-    [ -f "$WASM_DEX" ] && pass "DEX WASM found" || warn "DEX WASM not found"
-    [ -f "$WASM_DAO_ESCROW" ] && pass "dao_escrow WASM found" || warn "dao_escrow WASM not found"
+    [ -f "$WASM_DEX" ] && pass "DEX WASM found" || fail "DEX WASM not found"
+    [ -f "$WASM_DAO_ESCROW" ] && pass "dao_escrow WASM found" || fail "dao_escrow WASM not found"
 
     pass "all required files present"
 }
@@ -699,7 +702,7 @@ phase_join_config() {
     if echo "$config" | grep -q 'external_addrs'; then
         pass "external_addrs configured"
     else
-        echo "  (external_addrs only present when EXTERNAL_ADDR is set)"
+        fail "external_addrs not configured (EXTERNAL_ADDR not set)"
     fi
 
     echo "  Config validation complete."
@@ -802,8 +805,9 @@ phase_join_lifecycle() {
     if ! echo "$logs" | grep -qi "ERROR"; then
         pass "No ERROR lines in logs"
     else
-        echo "  WARNING: ERROR lines found (may be benign startup noise):"
+        echo "  ERROR lines found:"
         echo "$logs" | grep -i "ERROR" | head -5
+        fail "ERROR lines found in container logs"
     fi
 
     echo "  Container is running. Leaving it for next phase."
@@ -1004,7 +1008,7 @@ phase_join_fallback() {
                     pass "dwowd connected to fallback lilith (log evidence)"
                     connected=1
                 else
-                    skip "dwowd appears running but p2p.info not available (RPC method unimplemented)"
+                    fail "dwowd appears running but p2p.info not available (RPC method unimplemented)"
                     connected=1
                 fi
                 break
@@ -1030,16 +1034,51 @@ phase_join_fallback() {
         pass "Fallback lilith wrote data files to datastore"
     else
         echo "  Lilith datastore is empty — no peers connected, hostlist not yet created"
-        skip "Fallback lilith datastore empty (normal when no peers connect)"
+        pass "Fallback lilith datastore empty (expected — no peers in isolated test)"
     fi
 
-    echo "  Stopping containers..."
+    echo "  Stopping fallback containers..."
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
     docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
     docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
 
     clean_data_dir "$JOIN_TEST_DATA" "$JOIN_TEST_FALLBACK"
+
+    # Start a fresh container so subsequent phases (8-10) have a running
+    # target. Uses the same parameters as Phase 6 (lifecycle).
+    echo "  Starting test container for subsequent phases..."
+    mkdir -p "$JOIN_TEST_DATA"
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        --network=host \
+        -e ROLE=dwowd \
+        -e NETWORK="$NETWORK" \
+        -e P2P_PORT="$P2P_PORT" \
+        -e RPC_PORT="$RPC_PORT" \
+        -e STRATUM_PORT="$STRATUM_PORT" \
+        -e SEED_ADDR="$SEED_ADDR" \
+        -e MAGIC_BYTES="$MAGIC_BYTES" \
+        -e MINING_THREADS=1 \
+        -e THRESHOLD=3 \
+        -e TARGET_BLOCK_TIME=120 \
+        -e SKIP_SYNC=false \
+        -e SKIP_FEES=false \
+        -e LOCALNET=false \
+        -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
+        "$IMAGE" 2>&1
+
+    sleep 10
+
+    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        pass "Test container restarted for subsequent phases"
+    else
+        echo "  Container logs:"
+        docker logs "$CONTAINER_NAME" 2>&1 | tail -20
+        fail "Test container failed to restart"
+        docker stop "$CONTAINER_NAME" 2>/dev/null || true
+        docker rm "$CONTAINER_NAME" 2>/dev/null || true
+    fi
 }
 
 # ==============================================================================
@@ -1142,7 +1181,7 @@ phase_join_p2p() {
     echo "=== Join Phase 8: P2P Connectivity ==="
 
     if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        skip "Container not running (lifecycle phase left it)"
+        fail "Container not running (lifecycle phase left it)"
         return 0
     fi
 
@@ -1160,9 +1199,9 @@ phase_join_p2p() {
         if echo "$logs" | grep -qi "session.*open\|peer.*connected\|P2P.*connected"; then
             pass "P2P connections active (log evidence)"
         elif echo "$logs" | grep -qi "Unable to connect to seed"; then
-            skip "No P2P connections (seeds unreachable — public testnet may be down)"
+            fail "No P2P connections (seeds unreachable — public testnet may be down)"
         else
-            skip "p2p.info method not implemented — cannot verify P2P connectivity"
+            fail "p2p.info method not implemented — cannot verify P2P connectivity"
         fi
         return 0
     fi
@@ -1290,7 +1329,7 @@ phase_join_sync() {
     echo "=== Join Phase 9: Blockchain Sync ==="
 
     if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        skip "Container not running (run lifecycle phase first)"
+        fail "Container not running (run lifecycle phase first)"
         return 0
     fi
 
@@ -1308,7 +1347,7 @@ phase_join_sync() {
         elif echo "$logs" | grep -qi "genesis"; then
             pass "Genesis block detected (log evidence)"
         else
-            skip "blockchain.info method not implemented — cannot verify sync"
+            fail "blockchain.info method not implemented — cannot verify sync"
         fi
         return 0
     fi
@@ -1365,7 +1404,7 @@ phase_join_native_mining() {
     check_image || return 0
 
     if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        skip "Container not running"
+        fail "Container not running"
         return 0
     fi
 
@@ -1381,7 +1420,7 @@ phase_join_native_mining() {
         if echo "$logs" | grep -qi "mined\|new job\|accepted\|stratum"; then
             pass "Mining activity detected (log evidence)"
         else
-            skip "blockchain.info method not implemented — cannot verify mining"
+            fail "blockchain.info method not implemented — cannot verify mining"
         fi
         docker stop "$CONTAINER_NAME" 2>/dev/null || true
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
@@ -1398,13 +1437,13 @@ phase_join_native_mining() {
     if echo "$logs" | grep -qi "stratum"; then
         pass "Stratum-related log entries found"
     else
-        echo "  (stratum logs may appear after xmrig connects)"
+        fail "Stratum-related log entries not found"
     fi
 
     if echo "$logs" | grep -qi "xmrig"; then
         pass "xmrig started in container"
     else
-        echo "  WARNING: xmrig may not have started yet"
+        fail "xmrig not detected in container logs"
     fi
 
     echo "  Waiting for block height to advance (up to 360s)..."
@@ -1425,6 +1464,7 @@ phase_join_native_mining() {
         echo "  Note: block height may not advance if there are no other miners on the network"
         echo "  or if this is a new testnet with no blocks yet."
         echo "  Current height: $(jsonrpc "$RPC_PORT" "blockchain.info")"
+        fail "Block height did not advance after 360s"
     fi
 
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
@@ -1456,6 +1496,13 @@ phase_join_merge_mining() {
     export DATA_DIR="$JOIN_TEST_DATA"
     export MONERO_DATA_DIR="$JOIN_TEST_MONERO"
     export P2POOL_DATA_DIR="$JOIN_TEST_P2POOL"
+
+    # Ensure no conflicting containers exist (compose down above may miss
+    # containers from a different profile/compose invocation using the same names).
+    for c in dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge dwow-lilith; do
+        docker stop "$c" 2>/dev/null || true
+        docker rm "$c" 2>/dev/null || true
+    done
 
     cd "$REPO_ROOT"
     docker compose -f "$COMPOSE_FILE" --profile join-merge up -d 2>&1
@@ -1509,7 +1556,7 @@ phase_join_merge_mining() {
     else
         echo "  monerod logs:"
         echo "$monero_logs"
-        echo "  (monerod may still be initializing — check again later)"
+        fail "monerod sync status unknown"
     fi
 
     echo "  Checking p2pool..."
@@ -1520,6 +1567,7 @@ phase_join_merge_mining() {
     else
         echo "  p2pool logs:"
         echo "$p2pool_logs"
+        fail "p2pool not showing expected activity"
     fi
 
     sleep 10
@@ -1529,6 +1577,7 @@ phase_join_merge_mining() {
         pass "dwowd JSON-RPC reachable"
     else
         echo "  dwowd may still be starting"
+        fail "dwowd JSON-RPC not reachable"
     fi
 
     echo "  Merge stack is running. Leaving it for manual inspection."
@@ -1540,6 +1589,7 @@ phase_join_merge_mining() {
 # ==============================================================================
 phase_persistence() {
     if ! is_join_mode; then
+        pass "persistence (N/A for local devnet)"
         return 0
     fi
 
@@ -1550,6 +1600,9 @@ phase_persistence() {
     local persist_dir="$JOIN_TEST_PERSIST"
     clean_data_dir "$persist_dir"
     mkdir -p "$persist_dir"
+
+    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$CONTAINER_NAME" 2>/dev/null || true
 
     echo "  Starting first run..."
     docker run -d \
@@ -1584,7 +1637,7 @@ phase_persistence() {
     else
         echo "  Data dir contents:"
         ls -la "$persist_dir/" 2>/dev/null || echo "  (empty)"
-        echo "  (data files may not be created yet in 15s — this may be ok)"
+        fail "Data files not created on first run"
     fi
 
     echo "  Stopping container..."
