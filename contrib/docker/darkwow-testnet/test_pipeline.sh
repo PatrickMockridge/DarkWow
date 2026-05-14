@@ -313,14 +313,16 @@ phase_clean() {
     pkill -9 -f 'cargo build' 2>/dev/null || true
     pkill -9 -f 'rustc' 2>/dev/null || true
 
-    # Remove stale wallet secret — otherwise docker compose bind-mounts
-    # the old secret and the new wallet keypair is ignored.
-    rm -f /tmp/dwow_mining_secret 2>/dev/null || true
+    # Remove stale wallet secret with 3-tier fallback. Docker bind-mounts
+    # create this as root; plain rm -f can't delete root-owned files in
+    # sticky-bit /tmp. Same pattern as clean_data_dir().
+    rm -f /tmp/dwow_mining_secret 2>/dev/null || \
+        sudo rm -f /tmp/dwow_mining_secret 2>/dev/null || \
+        docker run --rm -v /tmp/dwow_mining_secret:/tmp/dwow_mining_secret alpine:latest rm -f /tmp/dwow_mining_secret 2>/dev/null || \
+        { warn "Could not remove /tmp/dwow_mining_secret (may be root-owned)"; }
 
     # Remove dww wallet state so each run generates a fresh keypair.
-    # (Do NOT remove ~/.config/dwow — dww wallet initialize treats
-    # missing config as first run and requires manual review.)
-    rm -rf ~/.local/share/dwow/dww 2>/dev/null || true
+    clean_data_dir ~/.local/share/dwow/dww
 
     cd "$SCRIPT_DIR"
 
