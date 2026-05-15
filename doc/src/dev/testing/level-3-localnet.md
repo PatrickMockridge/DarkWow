@@ -49,17 +49,21 @@ rewards paid to an auto-generated mining address.
 ```bash
 cd contrib/docker/darkwow-testnet
 
-# Build and start all 3 containers
-docker compose up --build -d
+# Full pipeline — 5 modes (clean → build → verify)
+./test_pipeline.sh --mode native        # 3-node local devnet, native mining
+./test_pipeline.sh --mode merge         # 3-node devnet + Monero merge mining
+./test_pipeline.sh --mode native-p2pool # 3-node devnet + adaptor pathway
+./test_pipeline.sh --mode join-native   # Single node joining public testnet
+./test_pipeline.sh --mode join-merge    # Single merge-mining node, public testnet
+
+# Or manually:
+docker compose up -d                    # Start the 3-node stack (native)
 
 # Check status
 docker compose ps
 
 # View logs
 docker compose logs -f
-
-# Full pipeline (clean → build → start → health-check)
-./test_pipeline.sh
 
 # Tear down
 docker compose down
@@ -74,8 +78,8 @@ Mining address resolution follows a three-tier priority:
 2. Persisted file from a prior dwowd run
 3. Auto-generated keypair on first dwowd start (if no secret provided)
 
-Block reward is 20 DRKW per block. At `pow_fixed_difficulty = 1`, blocks
-mine instantly; for realistic mining, set a higher difficulty.
+Block reward is 20 DRKW per block. The testnet uses auto-adjusting difficulty
+with an initial difficulty of 255 and a target block time of 120 seconds.
 
 ## Wallet Setup
 
@@ -135,9 +139,24 @@ you need parameters matching the public testnet.
 
 | File | Purpose |
 |------|----------|
-| `Dockerfile` | Multi-stage build: zkas → WASM contracts → dwowd + lilith |
-| `docker-compose.yml` | 3-container orchestration on bridge network |
-| `entrypoint.sh` | Per-container config generation + dwowd + xmrig launch |
-| `test_pipeline.sh` | Clean → validate → build → start → health-check |
+| `Dockerfile` | Multi-stage build: zkas → WASM contracts → dwowd + lilith + adaptor + xmrig |
+| `Dockerfile.monero` | Monero daemon image using pre-built binary (merge mining) |
+| `Dockerfile.p2pool` | p2pool image using pre-built binary (v4.14), with merge and native entrypoints |
+| `Dockerfile.xmrig` | Standalone xmrig miner built from source (cmake, no hwloc) |
+| `docker-compose.yml` | Service orchestration with 4 profiles: native, merge, native-p2pool, join-merge |
+| `entrypoint.sh` | Dynamic TOML config generation for lilith and dwowd roles; spawns xmrig for native mining |
+| `entrypoint-adaptor.sh` | Start dwow-p2pool-adaptor (protocol bridge for native-p2pool mode) |
+| `entrypoint-p2pool.sh` | Start p2pool in merge mining mode (Monero parent + DarkWow aux) |
+| `entrypoint-p2pool-darkwow.sh` | Start p2pool in native DarkWow mode (adaptor as monerod) |
+| `entrypoint-monero.sh` | Start monerod for merge mining (offline or connected mode) |
+| `build-and-push.sh` | Build and optionally push image to a registry |
+| `join-testnet.sh` | Launch a single node joining the public DarkWow testnet (native or merge) |
+| `test_pipeline.sh` | Single entry point: 5 modes (native, merge, native-p2pool, join-native, join-merge), 10-12 phases each |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
+
+See the [darkwow-testnet README] for the full modes comparison table, Docker
+image catalog, compose profile reference, and current pass/fail counts for all
+five pipeline modes.
+
+[darkwow-testnet README]: https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/darkwow-testnet/README.md

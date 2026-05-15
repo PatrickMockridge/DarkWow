@@ -16,6 +16,7 @@ testing infrastructure is the platform that makes this possible.
 | Test contract model/serialization code | 1 | `cargo test -p dwow_<contract> --test integration` | seconds |
 | Deploy all contracts (no ZK proofs) | 1 | `cargo test -p dwowd test_pipeline -- --nocapture` | ~2 min |
 | Run full contract execution with ZK proofs | 2 | `cargo test --release -p dwowd test_<contract>_heavyweight` | 30-120s |
+| Run the test pipeline (5 modes) | 3 | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` | ~5 min |
 | Run a multi-node blockchain locally | 3 | `docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up -d` | persistent |
 | Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true dwow-devnet` | persistent |
 | Run the full contract test suite | 3 | `./contrib/docker/darkwow-testnet/test-contracts.sh` | ~5 min |
@@ -70,14 +71,28 @@ A 3-container Docker stack: **lilith** (P2P seed) + **node0** and **node1**
 (mining fullnodes with xmrig). Tests P2P networking, block propagation, and
 RandomX mining with realistic parameters.
 
+The test pipeline (`test_pipeline.sh`) supports five modes — three local devnet
+modes plus two join modes for connecting to the public testnet as an external
+participant. Each mode builds Docker images, starts the stack, and runs 10-12
+sequential verification phases (clean, prereqs, wallet, build, start, container
+verification, RPC health, mining activity, block production, report, plus
+persistence and seed fallback for join modes). Every check reports PASS or FAIL.
+
+See the [darkwow-testnet README] for the full modes comparison table, Docker
+image catalog, compose profile reference, and current pass/fail counts.
+
 ```bash
-# Start the testnet
+# Full pipeline — 5 modes (clean → build → verify)
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode merge
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-native
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-merge
+
+# Or manually start the testnet
 docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up -d
 
-# Check RPC health
-curl -s http://localhost:31345 -X POST \
-    -H 'Content-Type: application/json' \
-    -d '{"method":"blockchain.info","params":[],"id":1}'
+# Check RPC health (dwowd uses raw TCP JSON-RPC, not HTTP)
+docker exec dwow-node0 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3'
 
 # Run contract deploy + transfer test
 ./contrib/docker/darkwow-testnet/contract_test.sh
@@ -88,6 +103,8 @@ curl -s http://localhost:31345 -X POST \
 # Tear down
 docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml down -v
 ```
+
+[darkwow-testnet README]: https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/darkwow-testnet/README.md
 
 **What it covers:** 3-container stack (seed + 2 miners), P2P gossip, block
 production, RandomX mining via xmrig, RPC endpoint interaction.
@@ -177,6 +194,9 @@ RAYON_NUM_THREADS=10 cargo test --release -p dwowd \
 
 # Spin up a local network
 docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up -d
+
+# Or run the full test pipeline (clean → build → verify)
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native
 ```
 
 Every contract is self-contained in `src/contract/<name>/` with its own `proof/`
