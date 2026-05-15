@@ -339,7 +339,7 @@ phase_clean() {
         docker compose -f "$COMPOSE_FILE" --profile native-p2pool --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true
         # Remove stale join containers and ALL dwow-* containers
-        for c in dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool; do
+        for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool; do
             docker stop "$c" 2>/dev/null || true
             docker rm "$c" 2>/dev/null || true
         done
@@ -1499,7 +1499,7 @@ phase_join_merge_mining() {
 
     # Ensure no conflicting containers exist (compose down above may miss
     # containers from a different profile/compose invocation using the same names).
-    for c in dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge dwow-lilith; do
+    for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge dwow-lilith; do
         docker stop "$c" 2>/dev/null || true
         docker rm "$c" 2>/dev/null || true
     done
@@ -1511,7 +1511,7 @@ phase_join_merge_mining() {
     sleep 30
 
     local all_up=1
-    if docker ps --format '{{.Names}}' | grep -q "dwow-node0"; then
+    if docker ps --format '{{.Names}}' | grep -q "dwow-node0-join"; then
         pass "dwowd container running"
     else
         fail "dwowd container not running"

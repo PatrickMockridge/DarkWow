@@ -303,7 +303,7 @@ services:
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
-    container_name: dwow-node0
+    container_name: dwow-node0-join
     entrypoint: ["/app/entrypoint.sh"]
     command: []
     network_mode: host
