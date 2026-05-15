@@ -68,9 +68,12 @@ impl LinearBlockchain {
         })
     }
 
-    /// Create a new RandomX VM with the given key
+    /// Create a new RandomX VM with the given key.
+    ///
+    /// JIT is explicitly disabled to avoid SIGILL from -DARCH=native
+    /// misdetecting CPU features in the JIT compiler on containerized hosts.
     fn create_vm(key: &[u8; 32]) -> Result<Arc<RandomXVM>> {
-        let flags = RandomXFlags::get_recommended_flags();
+        let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
         let cache = randomx::RandomXCache::new(flags, key)
             .map_err(|e| LinearError::StorageError(format!("RandomX cache error: {}", e)))?;
         let vm = RandomXVM::new(flags, Some(cache), None)

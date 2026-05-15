@@ -701,8 +701,33 @@ impl DarkfiNode {
             transactions: vec![coinbase_tx],
         };
 
-        // Apply block with full validation (PoW, merkle roots, previous hash)
-        // insert_block also records the block for difficulty adjustment
+        // Verify PoW before inserting the block. This catches invalid
+        // nonces (e.g. from adaptor blob layout mismatches) before they
+        // corrupt chain state.
+        {
+            let vm = linear_chain.get_vm(randomx_key);
+            match linear_chain.consensus.lock().unwrap().verify_proof(&block, &vm) {
+                Ok(true) => {}
+                Ok(false) => {
+                    info!(
+                        target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                        "[RPC-STRATUM] Block at height {} rejected: PoW verification failed",
+                        submitted_height
+                    );
+                    return miner_status_response(id, "rejected");
+                }
+                Err(e) => {
+                    info!(
+                        target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                        "[RPC-STRATUM] Block at height {} rejected: PoW error: {}",
+                        submitted_height, e
+                    );
+                    return miner_status_response(id, "rejected");
+                }
+            }
+        }
+
+        // Insert the validated block into the chain
         match linear_chain.insert_block(&block) {
             Ok(_) => {
                 // Trigger difficulty adjustment

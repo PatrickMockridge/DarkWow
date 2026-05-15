@@ -379,6 +379,26 @@ See [Merge Mining Adaptor](../../doc/src/testnet/native-p2pool.md) for
 bare-metal setup, adaptor RPC reference, block header translation, and
 known limitations.
 
+### 2026-05-15: Segfault Fix
+
+Two root causes were identified and fixed for the dwowd exit-139 crash in
+native-p2pool mode:
+
+1. **JIT in P2P RandomX VM** (`src/linear/src/blockchain.rs`):
+   `dwow_linear::LinearBlockchain::create_vm` used `RandomXFlags::get_recommended_flags()`
+   which includes JIT. When the P2P layer received a block broadcast and called
+   `block.hash(&vm)`, the JIT-compiled code executed illegal instructions on
+   Docker hosts with restricted CPU features. Fixed by masking out
+   `RandomXFlags::JIT`, matching the stratum path which already did this.
+
+2. **Adaptor blob layout** (`bin/dwow-p2pool-adaptor/src/translate.rs`):
+   The adaptor's `NONCE_OFFSET` was 77, but `BlockHeader::NONCE_OFFSET` is 40.
+   p2pool was modifying merkle_root bytes instead of the nonce. Fixed by aligning
+   the adaptor's serialization layout with `BlockHeader::to_mining_blob()`.
+
+Defense-in-depth: PoW validation was added to `stratum_submit_linear` so invalid
+nonces are rejected before chain insertion.
+
 ## Test Pipeline
 
 `test_pipeline.sh` is the single entry point for all builds and tests. Every mode
@@ -391,7 +411,7 @@ phases. Every check reports PASS or FAIL — there are no skipped or silent chec
 |------|------|---------|----------|--------|------|
 | `native` | 3-node local devnet | `native` | 3 (lilith, node0, node1) | 10 | 18 |
 | `merge` | 3-node local devnet + Monero merge mining | `merge` | 6 (native + monerod, p2pool, xmrig-merge) | 10 | 23 |
-| `native-p2pool` | 3-node local devnet + adaptor pathway | `native-p2pool` | 6 (native + adaptor, p2pool-darkwow, xmrig-p2pool) | 10 | N/A |
+| `native-p2pool` | 3-node local devnet + adaptor pathway | `native-p2pool` | 6 (native + adaptor, p2pool-darkwow, xmrig-p2pool) | 10 | TBD |
 | `join-native` | Single node joining public testnet | — (docker run, host net) | 1 | 12 | 34 |
 | `join-merge` | Single merge-mining node, public testnet | `join-merge` | 4 | 12 | 42 |
 
@@ -450,7 +470,7 @@ This guarantees reproducible results across different machines.
 | `merge` | 23 | 0 | Verified pass |
 | `join-native` | 34 | 0 | Verified pass |
 | `join-merge` | 42 | 0 | Verified pass |
-| `native-p2pool` | — | — | Known issue: dwowd segfault (exit 139) in the p2pool-adaptor pathway (application-level bug, not a pipeline issue) |
+| `native-p2pool` | — | — | Fix applied: JIT disabled in P2P RandomX VM, adaptor blob layout corrected, PoW validation added to stratum submit. Pending pipeline verification. |
 
 ## Contract Tests
 
