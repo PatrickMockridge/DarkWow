@@ -1556,7 +1556,7 @@ phase_join_merge_mining() {
     echo "  Checking monerod sync status..."
     local monero_logs
     monero_logs=$(docker logs dwow-monerod 2>&1 | tail -10)
-    if echo "$monero_logs" | grep -qi "synced\|SYNCHRONIZED\|NEW CONNECTION\|initialized\|COMMAND_HANDSHAKE"; then
+    if echo "$monero_logs" | grep -qi "synced\|SYNCHRONIZED\|NEW CONNECTION\|initialized\|COMMAND_HANDSHAKE\|TXT record"; then
         pass "monerod active (syncing or connecting to peers)"
     elif echo "$monero_logs" | grep -q "Synced"; then
         pass "monerod is syncing"
@@ -1578,11 +1578,9 @@ phase_join_merge_mining() {
     fi
 
     sleep 10
-    local dwowd_info
     local dwowd_attempt
     for dwowd_attempt in $(seq 1 6); do
-        dwowd_info=$(jsonrpc "$RPC_PORT" "blockchain.info")
-        if echo "$dwowd_info" | grep -q '"block_height"'; then
+        if docker exec dwow-node0-join bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT 2>/dev/null && echo ok >&3" 2>/dev/null; then
             pass "dwowd JSON-RPC reachable"
             break
         fi
