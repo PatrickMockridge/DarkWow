@@ -334,7 +334,7 @@ phase_clean() {
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
         docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
         docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
-        docker compose -f "$COMPOSE_FILE" --remove-orphans down --rmi all -v 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --profile native --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile native-p2pool --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true
@@ -368,7 +368,7 @@ phase_clean() {
     # Tear down compose services (containers, networks, volumes)
     # --remove-orphans catches containers from services that were
     # renamed or removed between compose file revisions.
-    docker compose --remove-orphans down --rmi all -v 2>/dev/null || true
+    docker compose --profile native --remove-orphans down --rmi all -v 2>/dev/null || true
     docker compose --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
     docker compose --profile native-p2pool --remove-orphans down --rmi all -v 2>/dev/null || true
 
@@ -514,7 +514,7 @@ phase_build() {
         docker compose --profile join-merge build 2>&1
         check $? "docker build (join-merge profile)"
     else
-        docker compose build 2>&1
+        docker compose --profile native build 2>&1
         check $? "docker build"
     fi
 
@@ -543,7 +543,7 @@ phase_start() {
             docker compose --profile native-p2pool up -d
     else
         WALLET_ADDRESS="$WALLET_ADDRESS" \
-            docker compose up -d
+            docker compose --profile native up -d
     fi
     # Shred temp secret file now that containers have read it
     rm -f "$SECRET_FILE"
@@ -556,7 +556,7 @@ phase_start() {
     elif [ "$MODE" = "native-p2pool" ]; then
         EXITED=$(docker compose --profile native-p2pool ps 2>/dev/null | grep "Exit" || true)
     else
-        EXITED=$(docker compose ps 2>/dev/null | grep "Exit" || true)
+        EXITED=$(docker compose --profile native ps 2>/dev/null | grep "Exit" || true)
     fi
     if [ -n "$EXITED" ]; then
         echo "$EXITED"

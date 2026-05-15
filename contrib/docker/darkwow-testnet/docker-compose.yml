@@ -13,6 +13,7 @@
 
 services:
   lilith:
+    profiles: ["native", "merge", "native-p2pool"]
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -40,6 +41,7 @@ services:
       retries: 3
 
   node0:
+    profiles: ["native", "merge", "native-p2pool"]
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -88,6 +90,7 @@ services:
       retries: 3
 
   node1:
+    profiles: ["native", "merge", "native-p2pool"]
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
