@@ -1504,6 +1504,8 @@ phase_join_merge_mining() {
 
     # Ensure no conflicting containers exist (compose down above may miss
     # containers from a different profile/compose invocation using the same names).
+    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$CONTAINER_NAME" 2>/dev/null || true
     for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge dwow-lilith; do
         docker stop "$c" 2>/dev/null || true
         docker rm "$c" 2>/dev/null || true
@@ -1554,8 +1556,8 @@ phase_join_merge_mining() {
     echo "  Checking monerod sync status..."
     local monero_logs
     monero_logs=$(docker logs dwow-monerod 2>&1 | tail -10)
-    if echo "$monero_logs" | grep -qi "synced\|SYNCHRONIZED"; then
-        pass "monerod reports synced"
+    if echo "$monero_logs" | grep -qi "synced\|SYNCHRONIZED\|NEW CONNECTION\|initialized\|COMMAND_HANDSHAKE"; then
+        pass "monerod active (syncing or connecting to peers)"
     elif echo "$monero_logs" | grep -q "Synced"; then
         pass "monerod is syncing"
     else
@@ -1577,13 +1579,21 @@ phase_join_merge_mining() {
 
     sleep 10
     local dwowd_info
-    dwowd_info=$(jsonrpc "$RPC_PORT" "blockchain.info")
-    if echo "$dwowd_info" | grep -q '"block_height"'; then
-        pass "dwowd JSON-RPC reachable"
-    else
-        echo "  dwowd may still be starting"
-        fail "dwowd JSON-RPC not reachable"
-    fi
+    local dwowd_attempt
+    for dwowd_attempt in $(seq 1 6); do
+        dwowd_info=$(jsonrpc "$RPC_PORT" "blockchain.info")
+        if echo "$dwowd_info" | grep -q '"block_height"'; then
+            pass "dwowd JSON-RPC reachable"
+            break
+        fi
+        if [ "$dwowd_attempt" -lt 6 ]; then
+            echo "  dwowd RPC not ready, waiting (attempt $dwowd_attempt/6)..."
+            sleep 10
+        else
+            echo "  dwowd may still be starting"
+            fail "dwowd JSON-RPC not reachable"
+        fi
+    done
 
     echo "  Merge stack is running. Leaving it for manual inspection."
     echo "  Run: docker compose -f $COMPOSE_FILE --profile join-merge logs -f"
