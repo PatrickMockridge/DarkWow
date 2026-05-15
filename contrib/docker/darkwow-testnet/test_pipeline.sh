@@ -513,6 +513,11 @@ phase_build() {
     elif [ "$MODE" = "join-merge" ]; then
         docker compose --profile join-merge build 2>&1
         check $? "docker build (join-merge profile)"
+        docker compose --profile native build lilith 2>&1
+        check $? "docker build (lilith image for join phases)"
+    elif [ "$MODE" = "join-native" ]; then
+        docker compose --profile native build lilith 2>&1
+        check $? "docker build (lilith image for join phases)"
     else
         docker compose --profile native build 2>&1
         check $? "docker build"
