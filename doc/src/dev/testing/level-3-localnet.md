@@ -15,7 +15,7 @@ on a single machine with 3 containers: a seed node (lilith) and 2 mining nodes
 │              │     │              │     │              │
 │ P2P: 31340   │     │ P2P: 31342   │     │ P2P: 31343   │
 │              │     │ RPC: 31345   │     │ RPC: 31346   │
-│              │     │ Stratum:31347│     │ Stratum:31348│
+│              │     │ Stratum:31347│     │ Stratum:31349│
 └──────────────┘     └──────────────┘     └──────────────┘
        │                     │                     │
        └─────────────────────┴─────────────────────┘
@@ -26,7 +26,7 @@ on a single machine with 3 containers: a seed node (lilith) and 2 mining nodes
 |-----------|------|----------|----------|--------------|
 | `dwow-lilith` | Seed node | 31340 | — | — |
 | `dwow-node0` | Mining node | 31342 | 31345 | 31347 |
-| `dwow-node1` | Mining node | 31343 | 31346 | 31348 |
+| `dwow-node1` | Mining node | 31343 | 31346 | 31349 |
 
 Each mining node runs dwowd + xmrig. Nodes connect to lilith as their seed and
 each other as peers. xmrig mines via the local stratum server, with coinbase
@@ -56,8 +56,10 @@ cd contrib/docker/darkwow-testnet
 ./test_pipeline.sh --mode join-native   # Single node joining public testnet
 ./test_pipeline.sh --mode join-merge    # Single merge-mining node, public testnet
 
-# Or manually:
-docker compose up -d                    # Start the 3-node stack (native)
+# Or manually (requires --profile since all services use profiles):
+docker compose --profile native up -d    # Start the 3-node stack (native)
+docker compose --profile merge up -d     # Start with merge mining
+docker compose --profile native-p2pool up -d  # Start with adaptor pathway
 
 # Check status
 docker compose ps
@@ -78,8 +80,11 @@ Mining address resolution follows a three-tier priority:
 2. Persisted file from a prior dwowd run
 3. Auto-generated keypair on first dwowd start (if no secret provided)
 
-Block reward is 20 DRKW per block. The testnet uses auto-adjusting difficulty
-with an initial difficulty of 255 and a target block time of 120 seconds.
+Block reward follows an exponential-decay emission schedule starting at
+~13.84 DRKW at height 1, with a tail emission floor of ~0.80 DRKW.
+Total supply cap is 21,000,000 DRKW. The testnet uses auto-adjusting
+difficulty with an initial difficulty of 255 and a target block time
+of 120 seconds.
 
 ## Wallet Setup
 

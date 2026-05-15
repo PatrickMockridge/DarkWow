@@ -17,8 +17,9 @@ testing infrastructure is the platform that makes this possible.
 | Deploy all contracts (no ZK proofs) | 1 | `cargo test -p dwowd test_pipeline -- --nocapture` | ~2 min |
 | Run full contract execution with ZK proofs | 2 | `cargo test --release -p dwowd test_<contract>_heavyweight` | 30-120s |
 | Run the test pipeline (5 modes) | 3 | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` | ~5 min |
-| Run a multi-node blockchain locally | 3 | `docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up -d` | persistent |
+| Run a multi-node blockchain locally | 3 | `docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d` | persistent |
 | Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true dwow-devnet` | persistent |
+| Join the public testnet as a miner | 4 | `docker run --network=host -e MODE=native darkwow-node/testnet` | persistent |
 | Run the full contract test suite | 3 | `./contrib/docker/darkwow-testnet/test-contracts.sh` | ~5 min |
 
 ## The Four Testing Levels
@@ -89,7 +90,7 @@ image catalog, compose profile reference, and current pass/fail counts.
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-merge
 
 # Or manually start the testnet
-docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up -d
+docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d
 
 # Check RPC health (dwowd uses raw TCP JSON-RPC, not HTTP)
 docker exec dwow-node0 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3'
@@ -141,8 +142,36 @@ docker run --rm --network=host \
 **What it covers:** Multi-machine P2P, host networking for LAN discovery,
 env-var-driven configuration, xmrig auto-mining, seed/miner role selection.
 
-→ [Level 4: Containerized Devnet Node](testing/level-4-devnet.md)
-→ [darkwow-testnet README](https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/darkwow-testnet/README.md)
+### Public Testnet Node (Docker Hub)
+
+A single-image, dual-mode container for joining the **public DarkWow testnet**
+as a mining node. One `docker pull`, two modes:
+
+```bash
+# Pull from Docker Hub
+docker pull darkwow-node/testnet:latest
+
+# Native RandomX mining (solo)
+docker run --network=host \
+    -e MODE=native \
+    -e WALLET_SECRET_FILE=/run/secrets/mining_secret \
+    -v /path/to/secret:/run/secrets/mining_secret:ro \
+    -v /path/to/data:/root/.local/share/dwow/dwowd \
+    darkwow-node/testnet:latest
+
+# Merge mining (Monero testnet + DarkWow via p2pool)
+docker run --network=host \
+    -e MODE=merge \
+    -e WALLET_SECRET_FILE=/run/secrets/mining_secret \
+    -v /path/to/secret:/run/secrets/mining_secret:ro \
+    -v /path/to/data:/root/.local/share/dwow/dwowd \
+    darkwow-node/testnet:latest
+```
+
+**What it covers:** Public testnet participation, native and merge mining,
+wallet-persistent configuration, host networking for P2P peer discovery.
+
+→ [Public Testnet Node README](https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/testnet-node/README.md)
 
 ## Contract Suite
 
@@ -193,7 +222,7 @@ RAYON_NUM_THREADS=10 cargo test --release -p dwowd \
     test_<contract>_heavyweight         # Level 2: full ZK
 
 # Spin up a local network
-docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up -d
+docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d
 
 # Or run the full test pipeline (clean → build → verify)
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native

@@ -190,3 +190,20 @@ REGISTRY=docker.io/youruser/ ./contrib/docker/dwow-devnet/build-and-push.sh
 | contract_test.sh | `contrib/docker/dwow-devnet/contract_test.sh` |
 | test-contracts.sh | `contrib/docker/dwow-devnet/test-contracts.sh` |
 | Config reference | `bin/darkfid/dwowd_config.toml` (`dwow-devnet` section) |
+
+## Public Testnet Node
+
+A separate image, `darkwow-node/testnet`, provides a one-command entry point
+for joining the **public DarkWow testnet** as a mining node. Unlike the LAN
+devnet image above, this connects to public seed infrastructure.
+
+Two mining modes:
+- `MODE=native` — solo RandomX mining (dwowd + xmrig)
+- `MODE=merge` — Monero merge mining via p2pool (monerod + dwowd + p2pool + xmrig)
+
+```bash
+docker pull darkwow-node/testnet:latest
+docker run --network=host -e MODE=native darkwow-node/testnet:latest
+```
+
+→ [Public Testnet Node README](https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/testnet-node/README.md)
