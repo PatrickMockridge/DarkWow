@@ -120,6 +120,6 @@ pub const RELAYER_ENDOWMENT_MIN_DEPLOY: u64 = 1_000_000; // 1 DAI equivalent
 pub const RELAYER_ENDOWMENT_BP_PRECISION: u32 = 10000;
 
 // zkas circuit namespaces
-pub const RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1: &str = "Init_V1";
-pub const RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1: &str = "DeployCapital_V1";
-pub const RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V1: &str = "ClaimFees_V1";
+pub const RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1: &str = "Initialize";
+pub const RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1: &str = "DeployCapital";
+pub const RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V1: &str = "ClaimFees";

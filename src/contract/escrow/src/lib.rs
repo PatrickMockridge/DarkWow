@@ -73,7 +73,7 @@ pub const ESCROW_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 pub const ESCROW_CONTRACT_STATE: &[u8] = b"state";
 
 // zkas circuit namespaces
-pub const ESCROW_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateEscrow_V1";
-pub const ESCROW_CONTRACT_ZKAS_FUND_NS_V1: &str = "Fund_V1";
-pub const ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1: &str = "Claim_V1";
-pub const ESCROW_CONTRACT_ZKAS_REFUND_NS_V1: &str = "Refund_V1";
+pub const ESCROW_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateEscrow";
+pub const ESCROW_CONTRACT_ZKAS_FUND_NS_V1: &str = "FundEscrow";
+pub const ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1: &str = "ClaimEscrow";
+pub const ESCROW_CONTRACT_ZKAS_REFUND_NS_V1: &str = "RefundEscrow";

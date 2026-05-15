@@ -141,6 +141,6 @@ pub const MAX_COVERAGE_LEVERAGE: u32 = 50;
 
 // zkas circuit namespaces
 pub const INSURANCE_MARKET_ZKAS_UNDERWRITE_WITH_CAPABILITY_NS_V1: &str =
-    "UnderwriteWithCapability_V1";
+    "Underwrite";
 pub const INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_CAPABILITY_NS_V1: &str =
-    "PurchaseCoverageWithCapability_V1";
+    "PurchaseCoverage";

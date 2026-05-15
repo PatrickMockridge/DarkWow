@@ -154,22 +154,24 @@ pub const STABLECOIN_CONTRACT_REDEMPTION_RATE: &[u8] = b"redemption_rate";
 // zkas Circuit Namespaces
 // ============================================================================
 
+/// zkas init circuit namespace
+pub const STABLECOIN_CONTRACT_ZKAS_INIT_NS_V1: &str = "InitV1";
 /// zkas open position circuit namespace
-pub const STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1: &str = "OpenPosition_V1";
+pub const STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1: &str = "OpenPositionV1";
 /// zkas add collateral circuit namespace
-pub const STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1: &str = "AddCollateral_V1";
+pub const STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1: &str = "AddCollateralV1";
 /// zkas remove collateral circuit namespace
-pub const STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1: &str = "RemoveCollateral_V1";
+pub const STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1: &str = "RemoveCollateralV1";
 /// zkas mint stablecoin circuit namespace
-pub const STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1: &str = "MintStable_V1";
+pub const STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1: &str = "MintStableV1";
 /// zkas repay stablecoin circuit namespace
-pub const STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1: &str = "RepayStable_V1";
+pub const STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1: &str = "RepayStableV1";
 /// zkas liquidate circuit namespace
-pub const STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1: &str = "Liquidate_V1";
+pub const STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1: &str = "LiquidateV1";
 /// zkas governance report circuit namespace (precise, uses BaseDiv)
-pub const STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1: &str = "GovernanceReport_V1";
+pub const STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1: &str = "GovernanceReportV1";
 /// zkas interest accrual circuit namespace (precise, uses BaseDiv)
-pub const STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1: &str = "AccrueInterest_V1";
+pub const STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1: &str = "AccrueInterestV1";
 
 // ============================================================================
 // XMR Collateral Constants

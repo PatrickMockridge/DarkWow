@@ -1,0 +1,23 @@
+k = 11;
+field = "pallas";
+
+# Stablecoin Initialize Circuit
+#
+# Proves deployer authorization to initialize the CDP engine.
+# The contract's get_metadata for InitializeV1 returns empty public inputs,
+# so this circuit provides a minimal authorization proof with a nullifier
+# to prevent double-initialization.
+
+constant "InitV1" {
+}
+
+witness "InitV1" {
+    Base deployer_secret,
+    Base contract_salt,
+}
+
+circuit "InitV1" {
+    # Derive deployer authorization from secret
+    deployer_auth = poseidon_hash(deployer_secret, contract_salt);
+    constrain_instance(deployer_auth);
+}

@@ -88,12 +88,14 @@ pub const LABOR_CONTRACT_INFO_TREE: &str = "info";
 pub const LABOR_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 
 // zkas circuit namespaces
-pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1: &str = "CreateJob_V1";
-pub const LABOR_CONTRACT_ZKAS_ACCEPT_JOB_NS_V1: &str = "AcceptJob_V1";
-pub const LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1: &str = "SubmitDeliverable_V1";
-pub const LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V1: &str = "SubmitGitDeliverable_V1";
-pub const LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1: &str = "ConfirmDelivery_V1";
-pub const LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1: &str = "Dispute_V1";
-pub const LABOR_CONTRACT_ZKAS_REFUND_NS_V1: &str = "Refund_V1";
-pub const LABOR_CONTRACT_ZKAS_MILESTONE_PAYMENT_NS_V1: &str = "MilestonePayment_V1";
-pub const LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1: &str = "AcceptJobWithCapability_V1";
+pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1: &str = "CreateJob";
+pub const LABOR_CONTRACT_ZKAS_ACCEPT_JOB_NS_V1: &str = "AcceptJob";
+pub const LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1: &str = "SubmitDeliverable";
+pub const LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V1: &str = "SubmitGitDeliverable";
+pub const LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1: &str = "ConfirmDelivery";
+pub const LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1: &str = "Dispute";
+pub const LABOR_CONTRACT_ZKAS_REFUND_NS_V1: &str = "Refund";
+pub const LABOR_CONTRACT_ZKAS_MILESTONE_PAYMENT_NS_V1: &str = "MilestonePayment";
+pub const LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1: &str = "AcceptJobWithCapability";
+pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_CAPABILITY_NS_V1: &str = "CreateJobWithCapability";
+pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_MILESTONES_AND_CAPABILITY_NS_V1: &str = "CreateJobWithMilestonesAndCapability";

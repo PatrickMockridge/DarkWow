@@ -71,6 +71,7 @@ members = [
     "src/contract/oracle",
     "src/contract/tender",
     "src/contract/labor_market",
+    "src/contract/money_v3",
     "src/contract/game_room",
     "src/contract/test-harness",
 

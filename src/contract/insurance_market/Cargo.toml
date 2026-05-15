@@ -7,17 +7,19 @@ license = "AGPL-3.0"
 
 [lib]
 name = "dwow_insurance_market_contract"
-crate-type = ["lib", "cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 dwow-serial = { path = "../../serial", features = ["derive", "crypto"] }
 thiserror = "1.0"
 rand = "0.8"
-getrandom = { version = "0.2", features = ["js"] }
 
 dwow = { path = "../../../", features = ["zk"], optional = true }
 halo2_proofs = { version = "0.3.2", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["custom"] }
 
 [features]
 default = []

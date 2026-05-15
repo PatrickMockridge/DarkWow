@@ -135,7 +135,7 @@ impl ContractMetadataRegistry {
 		};
 		self.contracts.insert("deployooor", deployooor);
 
-		// DEX Contract (token swaps)
+		// DEX Contract (token swaps — privacy is user-selectable via set_transparency_level)
 		let dex = ContractMetadata {
 			name: "dex",
 			functions: vec![
@@ -156,12 +156,12 @@ impl ContractMetadataRegistry {
 		let auction = ContractMetadata {
 			name: "auction",
 			functions: vec![
-				FunctionSignature { name: "create_auction", code: 0x00, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "place_bid", code: 0x01, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "close_auction", code: 0x02, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "claim_winnings", code: 0x03, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "settle_auction", code: 0x04, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "refund_bid", code: 0x05, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "create_auction", code: 0x00, requires_proof: true, proof_circuit: Some("create_auction_v1") },
+				FunctionSignature { name: "place_bid", code: 0x01, requires_proof: true, proof_circuit: Some("place_bid_v1") },
+				FunctionSignature { name: "close_auction", code: 0x02, requires_proof: true, proof_circuit: Some("close_auction_v1") },
+				FunctionSignature { name: "claim_winnings", code: 0x03, requires_proof: true, proof_circuit: Some("claim_winnings_v1") },
+				FunctionSignature { name: "settle_auction", code: 0x04, requires_proof: true, proof_circuit: Some("settle_auction_v1") },
+				FunctionSignature { name: "refund_bid", code: 0x05, requires_proof: true, proof_circuit: Some("refund_bid_v1") },
 			],
 		};
 		self.contracts.insert("auction", auction);
@@ -178,8 +178,8 @@ impl ContractMetadataRegistry {
 				FunctionSignature { name: "repay_stable", code: 0x05, requires_proof: true, proof_circuit: Some("repay_stable_v1") },
 				FunctionSignature { name: "liquidate", code: 0x06, requires_proof: true, proof_circuit: Some("liquidate_v1") },
 				FunctionSignature { name: "update_config", code: 0x07, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "governance_report", code: 0x08, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "accrue_interest", code: 0x09, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "governance_report", code: 0x08, requires_proof: true, proof_circuit: Some("governance_report_v1") },
+				FunctionSignature { name: "accrue_interest", code: 0x09, requires_proof: true, proof_circuit: Some("accrue_interest_v1") },
 			],
 		};
 		self.contracts.insert("stablecoin", stablecoin);
@@ -192,7 +192,7 @@ impl ContractMetadataRegistry {
 				FunctionSignature { name: "propose", code: 0x01, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "vote", code: 0x02, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "execute", code: 0x03, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "exit", code: 0x04, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "exit", code: 0x04, requires_proof: true, proof_circuit: Some("exit_v1") },
 				FunctionSignature { name: "transfer", code: 0x05, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "lock", code: 0x06, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "unlock", code: 0x07, requires_proof: false, proof_circuit: None },
@@ -217,17 +217,17 @@ impl ContractMetadataRegistry {
 		let attestation = ContractMetadata {
 			name: "attestation",
 			functions: vec![
-				FunctionSignature { name: "create_attestation", code: 0x00, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "create_attestation", code: 0x00, requires_proof: true, proof_circuit: Some("create_attestation_v1") },
 				FunctionSignature { name: "revoke_attestation", code: 0x01, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "expire_attestation", code: 0x02, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_claim", code: 0x03, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "verify_claim", code: 0x04, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "consume_claim", code: 0x05, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "create_claim", code: 0x03, requires_proof: true, proof_circuit: Some("create_claim_v1") },
+				FunctionSignature { name: "verify_claim", code: 0x04, requires_proof: true, proof_circuit: Some("verify_claim_v1") },
+				FunctionSignature { name: "consume_claim", code: 0x05, requires_proof: true, proof_circuit: Some("consume_claim_v1") },
 				FunctionSignature { name: "validate_claim", code: 0x06, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "check_not_revoked", code: 0x07, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "delegate_attestation", code: 0x08, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "verify_chain", code: 0x09, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "update_delegation", code: 0x0a, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "check_not_revoked", code: 0x07, requires_proof: true, proof_circuit: Some("check_not_revoked_v1") },
+				FunctionSignature { name: "delegate_attestation", code: 0x08, requires_proof: true, proof_circuit: Some("delegate_attestation_v1") },
+				FunctionSignature { name: "verify_chain", code: 0x09, requires_proof: true, proof_circuit: Some("verify_chain_v1") },
+				FunctionSignature { name: "update_delegation", code: 0x0a, requires_proof: true, proof_circuit: Some("update_delegation_v1") },
 			],
 		};
 		self.contracts.insert("attestation", attestation);
@@ -252,7 +252,7 @@ impl ContractMetadataRegistry {
 				FunctionSignature { name: "initialize", code: 0x00, requires_proof: true, proof_circuit: Some("init_v1") },
 				FunctionSignature { name: "stake", code: 0x01, requires_proof: true, proof_circuit: Some("stake_v1") },
 				FunctionSignature { name: "unstake", code: 0x02, requires_proof: true, proof_circuit: Some("unstake_v1") },
-				FunctionSignature { name: "claim_earnings", code: 0x03, requires_proof: true, proof_circuit: Some("claim_earnings_v1") },
+				FunctionSignature { name: "claim_earnings", code: 0x03, requires_proof: true, proof_circuit: Some("claim_v1") },
 				FunctionSignature { name: "update_risk", code: 0x04, requires_proof: true, proof_circuit: Some("update_risk_v1") },
 			],
 		};
@@ -279,17 +279,17 @@ impl ContractMetadataRegistry {
 		let darkbet_exchange = ContractMetadata {
 			name: "darkbet_exchange",
 			functions: vec![
-				FunctionSignature { name: "create_market", code: 0x00, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "create_market", code: 0x00, requires_proof: true, proof_circuit: Some("create_market_v1") },
 				FunctionSignature { name: "place_back", code: 0x01, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "place_lay", code: 0x02, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "match_orders", code: 0x03, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "resolve_market", code: 0x04, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "settle_market", code: 0x05, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "cancel_order", code: 0x06, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "buy_position", code: 0x07, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "add_liquidity", code: 0x08, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "buy_position", code: 0x07, requires_proof: true, proof_circuit: Some("buy_position_v1") },
+				FunctionSignature { name: "add_liquidity", code: 0x08, requires_proof: true, proof_circuit: Some("add_liquidity_v1") },
 				FunctionSignature { name: "remove_liquidity", code: 0x09, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "claim_winnings", code: 0x0A, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "claim_winnings", code: 0x0A, requires_proof: true, proof_circuit: Some("claim_winnings_v1") },
 			],
 		};
 		self.contracts.insert("darkbet_exchange", darkbet_exchange);
@@ -345,19 +345,19 @@ impl ContractMetadataRegistry {
 			name: "identity",
 			functions: vec![
 				FunctionSignature { name: "initialize", code: 0x00, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "issue_credential", code: 0x01, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "issue_credential", code: 0x01, requires_proof: true, proof_circuit: Some("issue_credential_v1") },
 				FunctionSignature { name: "revoke_credential", code: 0x02, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_claim", code: 0x03, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "create_claim", code: 0x03, requires_proof: true, proof_circuit: Some("create_claim_v1") },
 				FunctionSignature { name: "verify_claim", code: 0x04, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_claim_l1", code: 0x05, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_claim_l1_v2", code: 0x06, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_claim_multi", code: 0x07, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_claim_ratio", code: 0x08, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "create_claim_l1", code: 0x05, requires_proof: true, proof_circuit: Some("create_claim_v1_l1") },
+				FunctionSignature { name: "create_claim_l1_v2", code: 0x06, requires_proof: true, proof_circuit: Some("create_claim_v1_l1_v2") },
+				FunctionSignature { name: "create_claim_multi", code: 0x07, requires_proof: true, proof_circuit: Some("create_claim_v1_multi") },
+				FunctionSignature { name: "create_claim_ratio", code: 0x08, requires_proof: true, proof_circuit: Some("create_claim_v1_ratio") },
 				FunctionSignature { name: "register_capability", code: 0x09, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "issue_capability", code: 0x0a, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "verify_capability", code: 0x0b, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "verify_capability", code: 0x0b, requires_proof: true, proof_circuit: Some("verify_capability_v1") },
 				FunctionSignature { name: "revoke_capability", code: 0x0c, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_claim_dag", code: 0x0d, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "create_claim_dag", code: 0x0d, requires_proof: true, proof_circuit: Some("create_claim_v1_dag") },
 			],
 		};
 		self.contracts.insert("identity", identity);
@@ -375,8 +375,8 @@ impl ContractMetadataRegistry {
 				FunctionSignature { name: "resolve_claim", code: 0x06, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "withdraw_premium", code: 0x07, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "update_premium", code: 0x08, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "underwrite_with_capability", code: 0x09, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "purchase_coverage_with_capability", code: 0x0a, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "underwrite_with_capability", code: 0x09, requires_proof: true, proof_circuit: Some("underwrite_with_capability_v1") },
+				FunctionSignature { name: "purchase_coverage_with_capability", code: 0x0a, requires_proof: true, proof_circuit: Some("purchase_coverage_with_capability_v1") },
 				FunctionSignature { name: "purchase_coverage_with_dag", code: 0x0b, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "resolve_claim_with_capability", code: 0x0c, requires_proof: false, proof_circuit: None },
 			],
@@ -387,20 +387,20 @@ impl ContractMetadataRegistry {
 		let labor_market = ContractMetadata {
 			name: "labor_market",
 			functions: vec![
-				FunctionSignature { name: "create_job", code: 0x00, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "accept_job", code: 0x01, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "submit_deliverable", code: 0x02, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "submit_git_deliverable", code: 0x03, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "confirm_delivery", code: 0x04, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "dispute", code: 0x05, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "refund", code: 0x06, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "create_job", code: 0x00, requires_proof: true, proof_circuit: Some("create_job_v1") },
+				FunctionSignature { name: "accept_job", code: 0x01, requires_proof: true, proof_circuit: Some("accept_job_v1") },
+				FunctionSignature { name: "submit_deliverable", code: 0x02, requires_proof: true, proof_circuit: Some("submit_deliverable_v1") },
+				FunctionSignature { name: "submit_git_deliverable", code: 0x03, requires_proof: true, proof_circuit: Some("submit_git_deliverable_v1") },
+				FunctionSignature { name: "confirm_delivery", code: 0x04, requires_proof: true, proof_circuit: Some("confirm_delivery_v1") },
+				FunctionSignature { name: "dispute", code: 0x05, requires_proof: true, proof_circuit: Some("dispute_v1") },
+				FunctionSignature { name: "refund", code: 0x06, requires_proof: true, proof_circuit: Some("refund_v1") },
 				FunctionSignature { name: "cancel", code: 0x07, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "create_job_with_milestones", code: 0x08, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "submit_milestone", code: 0x09, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "confirm_milestone", code: 0x0a, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "initiate_dispute", code: 0x0b, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "create_job_with_capability", code: 0x0c, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "accept_job_with_capability", code: 0x0d, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "accept_job_with_capability", code: 0x0d, requires_proof: true, proof_circuit: Some("accept_job_with_capability_v1") },
 				FunctionSignature { name: "create_job_with_milestones_and_capability", code: 0x0e, requires_proof: false, proof_circuit: None },
 			],
 		};
@@ -411,9 +411,9 @@ impl ContractMetadataRegistry {
 			name: "lottery",
 			functions: vec![
 				FunctionSignature { name: "initialize", code: 0x00, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "buy_ticket", code: 0x01, requires_proof: true, proof_circuit: Some("commit_v1") },
+				FunctionSignature { name: "buy_ticket", code: 0x01, requires_proof: true, proof_circuit: Some("commit_ticket_v1") },
 				FunctionSignature { name: "draw_winners", code: 0x02, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "reveal_ticket", code: 0x03, requires_proof: true, proof_circuit: Some("reveal_v1") },
+				FunctionSignature { name: "reveal_ticket", code: 0x03, requires_proof: true, proof_circuit: Some("reveal_ticket_v1") },
 				FunctionSignature { name: "claim_prize", code: 0x04, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "expire_lottery", code: 0x05, requires_proof: false, proof_circuit: None },
 			],
@@ -424,11 +424,11 @@ impl ContractMetadataRegistry {
 		let oracle = ContractMetadata {
 			name: "oracle",
 			functions: vec![
-				FunctionSignature { name: "register_oracle", code: 0x00, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "push_value", code: 0x01, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "attest_value", code: 0x02, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "push_value_commitment", code: 0x03, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "aggregate", code: 0x04, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "register_oracle", code: 0x00, requires_proof: true, proof_circuit: Some("register_oracle_v1") },
+				FunctionSignature { name: "push_value", code: 0x01, requires_proof: true, proof_circuit: Some("push_value_v1") },
+				FunctionSignature { name: "attest_value", code: 0x02, requires_proof: true, proof_circuit: Some("attest_value_v1") },
+				FunctionSignature { name: "push_value_commitment", code: 0x03, requires_proof: true, proof_circuit: Some("push_value_commitment_v1") },
+				FunctionSignature { name: "aggregate", code: 0x04, requires_proof: true, proof_circuit: Some("aggregate_v1") },
 			],
 		};
 		self.contracts.insert("oracle", oracle);
@@ -437,12 +437,12 @@ impl ContractMetadataRegistry {
 		let pool_stake = ContractMetadata {
 			name: "pool_stake",
 			functions: vec![
-				FunctionSignature { name: "create_pool", code: 0x00, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "join_pool", code: 0x01, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "create_pool", code: 0x00, requires_proof: true, proof_circuit: Some("create_pool_v1") },
+				FunctionSignature { name: "join_pool", code: 0x01, requires_proof: true, proof_circuit: Some("join_pool_v1") },
 				FunctionSignature { name: "leave_pool", code: 0x02, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "allocate_coverage", code: 0x03, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "allocate_coverage", code: 0x03, requires_proof: true, proof_circuit: Some("allocate_coverage_v1") },
 				FunctionSignature { name: "release_coverage", code: 0x04, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "slash_coverage", code: 0x05, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "slash_coverage", code: 0x05, requires_proof: true, proof_circuit: Some("slash_coverage_v1") },
 				FunctionSignature { name: "claim_fees", code: 0x06, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "update_pool_config", code: 0x07, requires_proof: false, proof_circuit: None },
 			],
@@ -453,8 +453,8 @@ impl ContractMetadataRegistry {
 		let relayer_endowment = ContractMetadata {
 			name: "relayer_endowment",
 			functions: vec![
-				FunctionSignature { name: "initialize", code: 0x00, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "deploy_capital", code: 0x01, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "initialize", code: 0x00, requires_proof: true, proof_circuit: Some("initialize_v1") },
+				FunctionSignature { name: "deploy_capital", code: 0x01, requires_proof: true, proof_circuit: Some("deploy_capital_v1") },
 				FunctionSignature { name: "withdraw_deployment", code: 0x02, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "claim_relayer_fees", code: 0x03, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "settle_fees", code: 0x04, requires_proof: false, proof_circuit: None },
@@ -470,7 +470,7 @@ impl ContractMetadataRegistry {
 				FunctionSignature { name: "initialize", code: 0x00, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "place_bet", code: 0x01, requires_proof: true, proof_circuit: Some("place_bet_v1") },
 				FunctionSignature { name: "spin_wheel", code: 0x02, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "settle_bets", code: 0x03, requires_proof: true, proof_circuit: Some("settle_bets_v1") },
+				FunctionSignature { name: "settle_bets", code: 0x03, requires_proof: true, proof_circuit: Some("settle_bet_v1") },
 				FunctionSignature { name: "house_close", code: 0x04, requires_proof: false, proof_circuit: None },
 			],
 		};
@@ -481,9 +481,9 @@ impl ContractMetadataRegistry {
 			name: "slot",
 			functions: vec![
 				FunctionSignature { name: "initialize", code: 0x00, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "commit_spin", code: 0x01, requires_proof: true, proof_circuit: Some("commit_spin_v1") },
+				FunctionSignature { name: "commit_spin", code: 0x01, requires_proof: true, proof_circuit: Some("commit_bet_v1") },
 				FunctionSignature { name: "reveal_spin", code: 0x02, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "settle_spin", code: 0x03, requires_proof: true, proof_circuit: Some("settle_spin_v1") },
+				FunctionSignature { name: "settle_spin", code: 0x03, requires_proof: true, proof_circuit: Some("settle_bet_v1") },
 				FunctionSignature { name: "cancel_spin", code: 0x04, requires_proof: false, proof_circuit: None },
 			],
 		};
@@ -499,7 +499,7 @@ impl ContractMetadataRegistry {
 				FunctionSignature { name: "renew", code: 0x03, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "verify_access", code: 0x04, requires_proof: true, proof_circuit: Some("verify_access_v1") },
 				FunctionSignature { name: "dao_control", code: 0x05, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "update_usage", code: 0x06, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "update_usage", code: 0x06, requires_proof: true, proof_circuit: Some("update_usage_v1") },
 			],
 		};
 		self.contracts.insert("subscription", subscription);
@@ -516,7 +516,7 @@ impl ContractMetadataRegistry {
 				FunctionSignature { name: "cancel_tender", code: 0x05, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "reject_bid", code: 0x06, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "create_tender_with_capability", code: 0x07, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "submit_bid_with_capability", code: 0x08, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "submit_bid_with_capability", code: 0x08, requires_proof: true, proof_circuit: Some("submit_bid_with_capability_v1") },
 			],
 		};
 		self.contracts.insert("tender", tender);

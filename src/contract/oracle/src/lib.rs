@@ -75,8 +75,8 @@ pub const ORACLE_CONTRACT_ATTESTATIONS_TREE: &str = "attestations";
 pub const ORACLE_CONTRACT_INFO_TREE: &str = "info";
 
 // zkas circuit namespaces
-pub const ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V1: &str = "RegisterOracle_V1";
-pub const ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V1: &str = "PushValue_V1";
-pub const ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V1: &str = "AttestValue_V1";
-pub const ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1: &str = "PushValueCommitment_V1";
-pub const ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1: &str = "Aggregate_V1";
+pub const ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V1: &str = "RegisterOracle";
+pub const ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V1: &str = "PushValue";
+pub const ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V1: &str = "AttestValue";
+pub const ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1: &str = "PushValueCommitment";
+pub const ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1: &str = "Aggregate";

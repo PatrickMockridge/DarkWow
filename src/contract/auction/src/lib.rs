@@ -70,9 +70,9 @@ pub const AUCTION_CONTRACT_INFO_TREE: &str = "info";
 pub const AUCTION_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 
 // zkas circuit namespaces
-pub const AUCTION_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateAuction_V1";
-pub const AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V1: &str = "PlaceBid_V1";
-pub const AUCTION_CONTRACT_ZKAS_CLOSE_NS_V1: &str = "CloseAuction_V1";
-pub const AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V1: &str = "ClaimWinnings_V1";
-pub const AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1: &str = "SettleAuction_V1";
-pub const AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1: &str = "RefundBid_V1";
+pub const AUCTION_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateAuction";
+pub const AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V1: &str = "PlaceBid";
+pub const AUCTION_CONTRACT_ZKAS_CLOSE_NS_V1: &str = "CloseAuction";
+pub const AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V1: &str = "ClaimWinnings";
+pub const AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1: &str = "SettleAuction";
+pub const AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1: &str = "RefundBid";

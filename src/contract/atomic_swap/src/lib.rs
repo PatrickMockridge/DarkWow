@@ -104,8 +104,8 @@ pub const ATOMIC_SWAP_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 // ============================================================================
 
 /// CreateSwap circuit namespace
-pub const ATOMIC_SWAP_CONTRACT_ZKAS_CREATE_NS: &str = "CreateSwap_V1";
+pub const ATOMIC_SWAP_CONTRACT_ZKAS_CREATE_NS: &str = "CreateSwap";
 /// Claim circuit namespace
-pub const ATOMIC_SWAP_CONTRACT_ZKAS_CLAIM_NS: &str = "ClaimSwap_V1";
+pub const ATOMIC_SWAP_CONTRACT_ZKAS_CLAIM_NS: &str = "ClaimSwap";
 /// Refund circuit namespace
-pub const ATOMIC_SWAP_CONTRACT_ZKAS_REFUND_NS: &str = "RefundSwap_V1";
+pub const ATOMIC_SWAP_CONTRACT_ZKAS_REFUND_NS: &str = "RefundSwap";

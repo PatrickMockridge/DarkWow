@@ -102,14 +102,14 @@ pub const DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY: &[u8] = b"governance_pubkey";
 // ============================================================================
 
 /// Create swap circuit namespace
-pub const DEX_CONTRACT_ZKAS_CREATE_SWAP_NS_V1: &str = "CreateSwap_V1";
+pub const DEX_CONTRACT_ZKAS_CREATE_SWAP_NS_V1: &str = "CreateSwapV1";
 /// Accept swap circuit namespace
-pub const DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V1: &str = "AcceptSwap_V1";
+pub const DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V1: &str = "AcceptSwapV1";
 /// Execute swap circuit namespace
-pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1: &str = "ExecuteSwap_V1";
+pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1: &str = "ExecuteSwapV1";
 /// Cancel swap circuit namespace
-pub const DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1: &str = "CancelSwap_V1";
+pub const DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1: &str = "CancelSwapV1";
 /// Execute swap with slippage tolerance circuit namespace
-pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_SLIPPAGE_NS_V1: &str = "ExecuteSwapSlippage_V1";
+pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_SLIPPAGE_NS_V1: &str = "ExecuteSwapSlippageV1";
 /// Execute swap with fee circuit namespace
-pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V1: &str = "ExecuteSwapFee_V1";
+pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V1: &str = "ExecuteSwapFeeV1";

@@ -224,18 +224,20 @@ pub const IDENTITY_CONTRACT_INFO_TREE: &str = "identity_info";
 // ============================================================================
 
 /// Credential issuance circuit namespace
-pub const IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V1: &str = "IssueCredential_V1";
+pub const IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V1: &str = "IssueCredentialV1";
 /// Claim generation circuit namespace (Level 0 - zk_only)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1: &str = "CreateClaim_V1";
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1: &str = "CreateClaimV1";
 /// Claim generation circuit namespace (Level 1 - selective disclosure)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1: &str = "CreateClaim_V1_L1";
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1: &str = "CreateClaimV1L1";
 /// Claim generation circuit namespace (Level 1 v2 - simplified selective)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1_V2: &str = "CreateClaim_V1L1V2";
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1_V2: &str = "CreateClaimV1L1V2";
+/// Claim generation circuit namespace (DAG-based)
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_DAG: &str = "CreateClaimV1DAG";
 /// Multi-credential claim circuit namespace
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_MULTI: &str = "CreateClaim_V1Multi";
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_MULTI: &str = "CreateClaimV1Multi";
 /// Ratio-based claim circuit namespace
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_RATIO: &str = "CreateClaim_V1Ratio";
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_RATIO: &str = "CreateClaimV1Ratio";
 /// Claim verification circuit namespace
-pub const IDENTITY_CONTRACT_ZKAS_VERIFY_NS_V1: &str = "VerifyClaim_V1";
+pub const IDENTITY_CONTRACT_ZKAS_VERIFY_NS_V1: &str = "VerifyClaimV1";
 /// Capability verification circuit namespace
-pub const IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V1: &str = "VerifyCapability_V1";
+pub const IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V1: &str = "VerifyCapabilityV1";

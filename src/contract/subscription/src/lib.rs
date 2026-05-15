@@ -111,10 +111,10 @@ pub const SUBSCRIPTION_CONTRACT_STATE: &[u8] = b"state";
 // ============================================================================
 
 /// Subscribe circuit namespace
-pub const SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V1: &str = "Subscribe_V1";
+pub const SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V1: &str = "Subscribe";
 /// Verify access circuit namespace
-pub const SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V1: &str = "VerifyAccess_V1";
+pub const SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V1: &str = "VerifyAccess";
 /// Rate limit circuit namespace
-pub const SUBSCRIPTION_CONTRACT_ZKAS_RATELIMIT_NS_V1: &str = "RateLimit_V1";
+pub const SUBSCRIPTION_CONTRACT_ZKAS_RATELIMIT_NS_V1: &str = "RateLimit";
 /// Update usage circuit namespace
-pub const SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1: &str = "UpdateUsage_V1";
+pub const SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1: &str = "UpdateUsage";

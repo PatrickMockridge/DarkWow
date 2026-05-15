@@ -87,11 +87,11 @@ pub const ATTESTATION_CONTRACT_DELEGATIONS_TREE: &str = "delegations";
 pub const ATTESTATION_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 
 // zkas circuit namespaces
-pub const ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateAttestation_V1";
-pub const ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1: &str = "CreateClaim_V1";
-pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1: &str = "VerifyClaim_V1";
-pub const ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V1: &str = "ConsumeClaim_V1";
-pub const ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V1: &str = "CheckNotRevoked_V1";
-pub const ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1: &str = "DelegateAttestation_V1";
-pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1: &str = "VerifyChain_V1";
-pub const ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1: &str = "UpdateDelegation_V1";
+pub const ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateAttestation";
+pub const ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1: &str = "CreateClaim";
+pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1: &str = "VerifyClaim";
+pub const ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V1: &str = "ConsumeClaim";
+pub const ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V1: &str = "CheckNotRevoked";
+pub const ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1: &str = "DelegateAttestation";
+pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1: &str = "VerifyChain";
+pub const ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1: &str = "UpdateDelegation";
