@@ -43,24 +43,33 @@ DATADIR="${DATADIR:-/root/.local/share/dwow/dwowd/${NETWORK}}"
 echo "=== DarkWow Public Testnet Node ==="
 echo "  MODE=$MODE  NETWORK=$NETWORK"
 
+# --- Derive magic bytes from NETWORK name ---
+derive_magic_bytes() {
+    local network="${1:-}"
+    if command -v b3sum >/dev/null 2>&1; then
+        local net_hash
+        net_hash=$(echo -n "$network" | b3sum --no-names | head -c 8)
+        local b0=$((16#${net_hash:0:2}))
+        local b1=$((16#${net_hash:2:2}))
+        local b2=$((16#${net_hash:4:2}))
+        local b3=$((16#${net_hash:6:2}))
+        echo "$b0, $b1, $b2, $b3"
+    elif command -v openssl >/dev/null 2>&1; then
+        echo -n "$network" | openssl dgst -blake2b512 -binary | head -c 4 | \
+            od -A n -t u1 -w4 | head -1 | tr -s ' ' | sed 's/^ //; s/ /, /g'
+    else
+        local sum=0
+        for ((i=0; i<${#network}; i++)); do
+            sum=$(( (sum + $(printf '%d' "'${network:$i:1}")) % 256 ))
+        done
+        echo "$sum, $(( (sum * 7 + 13) % 256 )), $(( (sum * 31 + 37) % 256 )), $(( (sum * 127 + 73) % 256 ))"
+    fi
+}
+
 # --- Derive magic bytes from NETWORK if not explicitly set ---
 if [ -z "$MAGIC_BYTES" ]; then
-    if command -v b3sum >/dev/null 2>&1; then
-        NET_HASH=$(echo -n "$NETWORK" | b3sum --no-names | head -c 8)
-        B0=$((16#${NET_HASH:0:2}))
-        B1=$((16#${NET_HASH:2:2}))
-        B2=$((16#${NET_HASH:4:2}))
-        B3=$((16#${NET_HASH:6:2}))
-        MAGIC_BYTES="$B0, $B1, $B2, $B3"
-    elif command -v openssl >/dev/null 2>&1; then
-        RAW=$(echo -n "$NETWORK" | openssl dgst -blake2b512 -binary | head -c 4 | \
-            od -A n -t u1 -w4 | head -1 | sed 's/ /, /g')
-        MAGIC_BYTES="$RAW"
-    else
-        SUM=0; for ((i=0; i<${#NETWORK}; i++)); do
-            SUM=$(( (SUM + $(printf '%d' "'${NETWORK:$i:1}")) % 256 ))
-        done
-        MAGIC_BYTES="$SUM, $(( (SUM * 7 + 13) % 256 )), $(( (SUM * 31 + 37) % 256 )), $(( (SUM * 127 + 73) % 256 ))"
+    MAGIC_BYTES=$(derive_magic_bytes "$NETWORK")
+    if ! command -v b3sum >/dev/null 2>&1 && ! command -v openssl >/dev/null 2>&1; then
         echo "  WARNING: No b3sum/openssl, magic bytes from simple hash: [$MAGIC_BYTES]"
     fi
 fi
@@ -157,6 +166,7 @@ DWOWEOF
 preseed_wallet() {
     local miner_addr_file="${DATADIR}/mining_address"
     local miner_secret_file="${DATADIR}/mining_secret"
+    mkdir -p "$DATADIR"
 
     local resolved_secret=""
     if [ -n "$WALLET_SECRET_FILE" ] && [ -f "$WALLET_SECRET_FILE" ]; then
@@ -215,6 +225,13 @@ start_xmrig_native() {
         echo "  WARNING: No mining address available after 30s, xmrig not started"
     fi
 }
+
+# ============================================================================
+# Source-only guard — allow tests to load functions without executing main flow
+# ============================================================================
+if [ -n "${ENTRYPOINT_SOURCE_ONLY:-}" ]; then
+    return 0 2>/dev/null || exit 0
+fi
 
 # ============================================================================
 # MODE: lilith — standalone P2P seed node

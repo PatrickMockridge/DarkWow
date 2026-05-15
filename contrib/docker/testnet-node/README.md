@@ -176,6 +176,15 @@ curl -s http://127.0.0.1:3333/stats
 - **Security.** `WALLET_SECRET` from env vars is visible in `docker inspect`.
   Always use `WALLET_SECRET_FILE` for production.
 
+## Testing
+
+Unit tests for the entrypoint script cover config generation, wallet preseed,
+magic bytes derivation, and error handling. No Docker or binaries required.
+
+```bash
+bash contrib/docker/testnet-node/test_entrypoint.sh
+```
+
 ## Docs
 
 - [Full DarkWow Documentation](../../doc/src/dev/)
