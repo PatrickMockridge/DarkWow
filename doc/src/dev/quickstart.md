@@ -20,6 +20,7 @@ testing infrastructure is the platform that makes this possible.
 | Run a multi-node blockchain locally | 3 | `docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d` | persistent |
 | Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true dwow-devnet` | persistent |
 | Join the public testnet as a miner | 4 | `docker run --network=host -e MODE=native darkwow-node/testnet` | persistent |
+| Run native mining + deploy contracts | N/A | `./contrib/docker/testnet-node/native-workflow.sh` | ~10 min |
 | Run the full contract test suite | 3 | `./contrib/docker/darkwow-testnet/test-contracts.sh` | ~5 min |
 
 ## The Four Testing Levels
@@ -247,4 +248,5 @@ the full pipeline.
 - [Contract Development Guide](contracts.md) — Smart contract architecture and patterns
 - [Contract Standards](contracts/standards.md) — ZK circuit rules, token layer architecture, testing standards
 - [Architecture Overview](../arch/overview.md) — Consensus, WASM runtime, token architecture
+- [Native Mining + Contract Workflow](native-workflow.md) — Run a node, mine coins, deploy contracts
 - [ZK Circuit Troubleshooting](zk-circuit-troubleshooting.md) — Debugging circuit issues

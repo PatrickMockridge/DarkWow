@@ -118,6 +118,10 @@ For a goal-oriented entry point, see the [Developer Quick Start Guide](doc/src/d
 - **dwow-devnet** — Single-container devnet node for multi-machine LAN/internet
   deployment. Turn any Linux machine into a seed or miner.
   See [dwow-devnet README](contrib/docker/dwow-devnet/README.md).
+- **testnet-node** — Single-image, dual-mode container for joining the **public
+  DarkWow testnet** as a mining node. `docker pull` and mine with native RandomX
+  or Monero merge mining via p2pool.
+  See [testnet-node README](contrib/docker/testnet-node/README.md).
 
 ### Contract Testing
 
@@ -128,8 +132,14 @@ cargo test -p dwowd test_pipeline
 # Level 2: Full ZK proof tests (minutes)
 RAYON_NUM_THREADS=10 cargo test --release -p dwowd test_heavyweight
 
-# Level 3: Multi-node Docker testnet with live mining
+# Level 3: Full test pipeline — 5 modes (clean → build → verify)
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native
+
+# Level 3: Multi-node Docker testnet with live mining + contract tests
 ./contrib/docker/darkwow-testnet/test-contracts.sh
+
+# Native (no Docker): mine on public testnet, deploy contracts, send transfers
+./contrib/docker/testnet-node/native-workflow.sh
 ```
 
 **Fork, build, customize.** Every contract in `src/contract/<name>/` is
@@ -141,8 +151,8 @@ as a template for your own.
 ## Build
 
 ```shell
-git clone https://codeberg.org/PatrickM123/darkfi-jailbroken
-cd darkfi-jailbroken
+git clone https://codeberg.org/PatrickM123/darkwow
+cd darkwow
 rustup target add wasm32-unknown-unknown
 make
 ```
@@ -163,12 +173,34 @@ cargo run -p dwowd -- --network darkwow-testnet
 
 ## Documentation
 
-- [Developer Quick Start Guide](doc/src/dev/quickstart.md)
+### Getting Started
+- [Developer Quick Start Guide](doc/src/dev/quickstart.md) — Goal-oriented entry point: "I want to do X — what do I run?"
+- [Native Mining + Contract Workflow](doc/src/dev/native-workflow.md) — Run a node, mine DRKW, deploy contracts (no Docker)
+
+### Testing Infrastructure
+- [Testing Overview](doc/src/dev/testing/overview.md) — Full four-level taxonomy with file map
+- [Level 1: Lightweight Tests](doc/src/dev/testing/level-1-lightweight.md) — Unit/integration, no ZK overhead
+- [Level 2: Heavyweight Tests](doc/src/dev/testing/level-2-heavyweight.md) — Full ZK proofs, contract execution
+- [Level 3: Containerized Localnet](doc/src/dev/testing/level-3-localnet.md) — Docker architecture, wallet setup
+- [Level 4: Containerized Devnet](doc/src/dev/testing/level-4-devnet.md) — Multi-machine deployment
+
+### Architecture
 - [Architecture Overview](doc/src/arch/overview.md)
 - [Uncle Merkle Consensus](doc/src/arch/consensus/consensus.md)
 - [O-Cap Authorization](doc/src/arch/ocap.md)
 - [Opcodes & Formal Verification](doc/src/arch/zk/opcodes.md)
+- [Security Analysis](doc/src/arch/security-analysis.md)
+
+### Contracts
 - [Contract Development Guide](doc/src/dev/contracts.md)
+- [Contract Standards](doc/src/dev/contracts/standards.md) — ZK circuit rules, token layer architecture
+- [ZK Circuit Troubleshooting](doc/src/dev/zk-circuit-troubleshooting.md)
+
+### Operations
+- [Contributing & Developer Guide](doc/src/dev/contrib/contrib.md)
+- [darkwow-testnet Pipeline](contrib/docker/darkwow-testnet/README.md) — 5-mode test pipeline, Docker images, compose profiles
+- [Public Testnet Node](contrib/docker/testnet-node/README.md) — Docker Hub image, native/merge mining, wallet setup
+- [dwow-devnet Node](contrib/docker/dwow-devnet/README.md) — Multi-machine shared devnet
 
 ---
 

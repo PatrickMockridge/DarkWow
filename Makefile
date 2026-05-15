@@ -48,9 +48,34 @@ $(PROOFS_BIN): zkas $(PROOFS_SRC)
 	./zkas $(basename $@) -o $@
 
 contracts: zkas
-	$(MAKE) -C src/contract/money
-	$(MAKE) -C src/contract/dao
+	$(MAKE) -C src/contract/native_token
 	$(MAKE) -C src/contract/deployooor
+	$(MAKE) -C src/contract/money_v3
+	$(MAKE) -C src/contract/dao_escrow
+	$(MAKE) -C src/contract/dex
+	$(MAKE) -C src/contract/stablecoin
+	$(MAKE) -C src/contract/atomic_swap
+	$(MAKE) -C src/contract/attestation
+	$(MAKE) -C src/contract/auction
+	$(MAKE) -C src/contract/baccarat
+	$(MAKE) -C src/contract/betting_stake
+	$(MAKE) -C src/contract/bridge
+	$(MAKE) -C src/contract/darkbet_exchange
+	$(MAKE) -C src/contract/darktoshi_dice
+	$(MAKE) -C src/contract/drain_protection
+	$(MAKE) -C src/contract/escrow
+	$(MAKE) -C src/contract/game_room
+	$(MAKE) -C src/contract/identity
+	$(MAKE) -C src/contract/insurance_market
+	$(MAKE) -C src/contract/labor_market
+	$(MAKE) -C src/contract/lottery
+	$(MAKE) -C src/contract/oracle
+	$(MAKE) -C src/contract/pool_stake
+	$(MAKE) -C src/contract/relayer_endowment
+	$(MAKE) -C src/contract/roulette
+	$(MAKE) -C src/contract/slot
+	$(MAKE) -C src/contract/subscription
+	$(MAKE) -C src/contract/tender
 
 dwowd: contracts
 	$(MAKE) -C bin/$@ \

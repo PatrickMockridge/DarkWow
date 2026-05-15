@@ -69,6 +69,86 @@ pub static AUCTION_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId
 pub static STABLECOIN_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
+// AtomicSwap Contract ID
+pub static ATOMIC_SWAP_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Attestation Contract ID
+pub static ATTESTATION_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Baccarat Contract ID
+pub static BACCARAT_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// BettingStake Contract ID
+pub static BETTING_STAKE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Bridge Contract ID
+pub static BRIDGE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// DarkbetExchange Contract ID
+pub static DARKBET_EXCHANGE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// DarktoshiDice Contract ID
+pub static DARKTOSHI_DICE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Escrow Contract ID
+pub static ESCROW_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// GameRoom Contract ID
+pub static GAME_ROOM_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Identity Contract ID
+pub static IDENTITY_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// InsuranceMarket Contract ID
+pub static INSURANCE_MARKET_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// LaborMarket Contract ID
+pub static LABOR_MARKET_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Lottery Contract ID
+pub static LOTTERY_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Oracle Contract ID
+pub static ORACLE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// PoolStake Contract ID
+pub static POOL_STAKE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// RelayerEndowment Contract ID
+pub static RELAYER_ENDOWMENT_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Roulette Contract ID
+pub static ROULETTE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Slot Contract ID
+pub static SLOT_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Subscription Contract ID
+pub static SUBSCRIPTION_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
+// Tender Contract ID
+pub static TENDER_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
 /// Register a contract ID at runtime. Called after deploying a contract
 /// so that subsequent operations (transfer, invoke) can find it.
 pub fn register_contract_id(name: &str, cid: dwow_sdk::crypto::ContractId) -> Result<(), String> {
@@ -96,6 +176,86 @@ pub fn register_contract_id(name: &str, cid: dwow_sdk::crypto::ContractId) -> Re
         "stablecoin" => {
             STABLECOIN_CONTRACT_ID.set(cid)
                 .map_err(|_| "stablecoin contract ID already registered".to_string())
+        }
+        "atomic_swap" => {
+            ATOMIC_SWAP_CONTRACT_ID.set(cid)
+                .map_err(|_| "atomic_swap contract ID already registered".to_string())
+        }
+        "attestation" => {
+            ATTESTATION_CONTRACT_ID.set(cid)
+                .map_err(|_| "attestation contract ID already registered".to_string())
+        }
+        "baccarat" => {
+            BACCARAT_CONTRACT_ID.set(cid)
+                .map_err(|_| "baccarat contract ID already registered".to_string())
+        }
+        "betting_stake" => {
+            BETTING_STAKE_CONTRACT_ID.set(cid)
+                .map_err(|_| "betting_stake contract ID already registered".to_string())
+        }
+        "bridge" => {
+            BRIDGE_CONTRACT_ID.set(cid)
+                .map_err(|_| "bridge contract ID already registered".to_string())
+        }
+        "darkbet_exchange" => {
+            DARKBET_EXCHANGE_CONTRACT_ID.set(cid)
+                .map_err(|_| "darkbet_exchange contract ID already registered".to_string())
+        }
+        "darktoshi_dice" => {
+            DARKTOSHI_DICE_CONTRACT_ID.set(cid)
+                .map_err(|_| "darktoshi_dice contract ID already registered".to_string())
+        }
+        "escrow" => {
+            ESCROW_CONTRACT_ID.set(cid)
+                .map_err(|_| "escrow contract ID already registered".to_string())
+        }
+        "game_room" => {
+            GAME_ROOM_CONTRACT_ID.set(cid)
+                .map_err(|_| "game_room contract ID already registered".to_string())
+        }
+        "identity" => {
+            IDENTITY_CONTRACT_ID.set(cid)
+                .map_err(|_| "identity contract ID already registered".to_string())
+        }
+        "insurance_market" => {
+            INSURANCE_MARKET_CONTRACT_ID.set(cid)
+                .map_err(|_| "insurance_market contract ID already registered".to_string())
+        }
+        "labor_market" => {
+            LABOR_MARKET_CONTRACT_ID.set(cid)
+                .map_err(|_| "labor_market contract ID already registered".to_string())
+        }
+        "lottery" => {
+            LOTTERY_CONTRACT_ID.set(cid)
+                .map_err(|_| "lottery contract ID already registered".to_string())
+        }
+        "oracle" => {
+            ORACLE_CONTRACT_ID.set(cid)
+                .map_err(|_| "oracle contract ID already registered".to_string())
+        }
+        "pool_stake" => {
+            POOL_STAKE_CONTRACT_ID.set(cid)
+                .map_err(|_| "pool_stake contract ID already registered".to_string())
+        }
+        "relayer_endowment" => {
+            RELAYER_ENDOWMENT_CONTRACT_ID.set(cid)
+                .map_err(|_| "relayer_endowment contract ID already registered".to_string())
+        }
+        "roulette" => {
+            ROULETTE_CONTRACT_ID.set(cid)
+                .map_err(|_| "roulette contract ID already registered".to_string())
+        }
+        "slot" => {
+            SLOT_CONTRACT_ID.set(cid)
+                .map_err(|_| "slot contract ID already registered".to_string())
+        }
+        "subscription" => {
+            SUBSCRIPTION_CONTRACT_ID.set(cid)
+                .map_err(|_| "subscription contract ID already registered".to_string())
+        }
+        "tender" => {
+            TENDER_CONTRACT_ID.set(cid)
+                .map_err(|_| "tender contract ID already registered".to_string())
         }
         _ => Err(format!("Unknown contract name: {}", name)),
     }
@@ -540,4 +700,440 @@ impl Contract for DrainProtectionContract {
     fn is_initialized(&self) -> bool {
         DRAIN_PROTECTION_CONTRACT_ID.get().is_some()
     }
+}
+// ============================================================================
+// ATOMIC SWAP MODULE
+// ============================================================================
+
+pub mod atomic_swap {
+    pub use dwow_atomic_swap_contract::AtomicSwapFunction;
+    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_INFO_TREE;
+    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_SWAPS_TREE;
+    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_SECRETS_TREE;
+    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_ZKAS_CREATE_NS;
+    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_ZKAS_CLAIM_NS;
+    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_ZKAS_REFUND_NS;
+}
+
+pub struct AtomicSwapContract;
+impl Contract for AtomicSwapContract {
+    fn contract_id(&self) -> ContractId { *ATOMIC_SWAP_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "AtomicSwap" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { ATOMIC_SWAP_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// ATTESTATION MODULE
+// ============================================================================
+
+pub mod attestation {
+    pub use dwow_attestation_contract::AttestationFunction;
+    pub use dwow_attestation_contract::ATTESTATION_CONTRACT_ATTESTATIONS_TREE;
+    pub use dwow_attestation_contract::ATTESTATION_CONTRACT_CLAIMS_TREE;
+    pub use dwow_attestation_contract::ATTESTATION_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_attestation_contract::ATTESTATION_CONTRACT_INDEX_TREE as ATTESTATION_INFO_TREE;
+}
+
+pub struct AttestationContract;
+impl Contract for AttestationContract {
+    fn contract_id(&self) -> ContractId { *ATTESTATION_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "Attestation" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { ATTESTATION_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// BACCARAT MODULE
+// ============================================================================
+
+pub mod baccarat {
+    pub use dwow_baccarat_contract::BaccaratFunction;
+    pub use dwow_baccarat_contract::BACCARAT_CONTRACT_BETS_TREE;
+    pub use dwow_baccarat_contract::BACCARAT_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_baccarat_contract::BACCARAT_CONTRACT_INFO_TREE;
+    pub use dwow_baccarat_contract::BACCARAT_CONTRACT_HOUSE_TREE;
+    pub use dwow_baccarat_contract::BACCARAT_CONTRACT_ZKAS_COMMIT_NS;
+    pub use dwow_baccarat_contract::BACCARAT_CONTRACT_ZKAS_SETTLE_NS;
+}
+
+pub struct BaccaratContract;
+impl Contract for BaccaratContract {
+    fn contract_id(&self) -> ContractId { *BACCARAT_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "Baccarat" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { BACCARAT_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// BETTING STAKE MODULE
+// ============================================================================
+
+pub mod betting_stake {
+    pub use dwow_betting_stake_contract::BettingStakeFunction;
+    pub use dwow_betting_stake_contract::BETTING_STAKE_REGISTRY_TREE;
+    pub use dwow_betting_stake_contract::BETTING_STAKE_STAKES_TREE;
+    pub use dwow_betting_stake_contract::BETTING_STAKE_EARNINGS_TREE;
+    pub use dwow_betting_stake_contract::BETTING_STAKE_ZKAS_INIT_NS;
+    pub use dwow_betting_stake_contract::BETTING_STAKE_ZKAS_STAKE_NS;
+    pub use dwow_betting_stake_contract::BETTING_STAKE_ZKAS_UNSTAKE_NS;
+    pub use dwow_betting_stake_contract::BETTING_STAKE_ZKAS_CLAIM_NS;
+    pub use dwow_betting_stake_contract::BETTING_STAKE_ZKAS_UPDATE_RISK_NS;
+}
+
+pub struct BettingStakeContract;
+impl Contract for BettingStakeContract {
+    fn contract_id(&self) -> ContractId { *BETTING_STAKE_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "BettingStake" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn is_initialized(&self) -> bool { BETTING_STAKE_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// BRIDGE MODULE
+// ============================================================================
+
+pub mod bridge {
+    pub use dwow_bridge_contract::BridgeFunction;
+    pub use dwow_bridge_contract::BRIDGE_CONTRACT_INFO_TREE;
+    pub use dwow_bridge_contract::BRIDGE_CONTRACT_DEPOSITS_TREE;
+    pub use dwow_bridge_contract::BRIDGE_CONTRACT_WITHDRAWALS_TREE;
+    pub use dwow_bridge_contract::BRIDGE_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_bridge_contract::BRIDGE_CONTRACT_HTLCS_TREE;
+    pub use dwow_bridge_contract::BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1;
+    pub use dwow_bridge_contract::BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1;
+}
+
+pub struct BridgeContract;
+impl Contract for BridgeContract {
+    fn contract_id(&self) -> ContractId { *BRIDGE_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "Bridge" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { BRIDGE_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// DARKBET EXCHANGE MODULE
+// ============================================================================
+
+pub mod darkbet_exchange {
+    pub use dwow_darkbet_exchange_contract::DarkbetFunction;
+    pub use dwow_darkbet_exchange_contract::DARKBET_EXCHANGE_MARKETS_TREE;
+    pub use dwow_darkbet_exchange_contract::DARKBET_EXCHANGE_BACK_ORDERS_TREE;
+    pub use dwow_darkbet_exchange_contract::DARKBET_EXCHANGE_LAY_ORDERS_TREE;
+    pub use dwow_darkbet_exchange_contract::DARKBET_EXCHANGE_MATCHES_TREE;
+    pub use dwow_darkbet_exchange_contract::DARKBET_EXCHANGE_POSITIONS_TREE;
+    pub use dwow_darkbet_exchange_contract::DARKBET_EXCHANGE_NULLIFIERS_TREE;
+    pub use dwow_darkbet_exchange_contract::DARKBET_EXCHANGE_INFO_TREE;
+}
+
+pub struct DarkbetExchangeContract;
+impl Contract for DarkbetExchangeContract {
+    fn contract_id(&self) -> ContractId { *DARKBET_EXCHANGE_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "DarkbetExchange" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn is_initialized(&self) -> bool { DARKBET_EXCHANGE_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// DARKTOSHI DICE MODULE
+// ============================================================================
+
+pub mod darktoshi_dice {
+    pub use dwow_darktoshi_dice_contract::DiceFunction;
+    pub use dwow_darktoshi_dice_contract::DICE_CONTRACT_BETS_TREE;
+    pub use dwow_darktoshi_dice_contract::DICE_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_darktoshi_dice_contract::DICE_CONTRACT_INFO_TREE;
+    pub use dwow_darktoshi_dice_contract::DICE_CONTRACT_HOUSE_TREE;
+    pub use dwow_darktoshi_dice_contract::DICE_CONTRACT_ZKAS_COMMIT_NS;
+    pub use dwow_darktoshi_dice_contract::DICE_CONTRACT_ZKAS_SETTLE_NS;
+}
+
+pub struct DarktoshiDiceContract;
+impl Contract for DarktoshiDiceContract {
+    fn contract_id(&self) -> ContractId { *DARKTOSHI_DICE_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "DarktoshiDice" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { DARKTOSHI_DICE_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// ESCROW MODULE
+// ============================================================================
+
+pub mod escrow {
+    pub use dwow_escrow_contract::EscrowFunction;
+    pub use dwow_escrow_contract::ESCROW_CONTRACT_INFO_TREE;
+    pub use dwow_escrow_contract::ESCROW_CONTRACT_ESCROWS_TREE;
+    pub use dwow_escrow_contract::ESCROW_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_escrow_contract::ESCROW_CONTRACT_ZKAS_CREATE_NS_V1;
+    pub use dwow_escrow_contract::ESCROW_CONTRACT_ZKAS_FUND_NS_V1;
+    pub use dwow_escrow_contract::ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1;
+    pub use dwow_escrow_contract::ESCROW_CONTRACT_ZKAS_REFUND_NS_V1;
+}
+
+pub struct EscrowContract;
+impl Contract for EscrowContract {
+    fn contract_id(&self) -> ContractId { *ESCROW_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "Escrow" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { ESCROW_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// GAME ROOM MODULE
+// ============================================================================
+
+pub mod game_room {
+    pub use dwow_game_room_contract::GameRoomFunction;
+    pub use dwow_game_room_contract::GAME_ROOM_ROOMS_TREE;
+    pub use dwow_game_room_contract::GAME_ROOM_ACCOUNTS_TREE;
+    pub use dwow_game_room_contract::GAME_ROOM_POTS_TREE;
+    pub use dwow_game_room_contract::GAME_ROOM_BETS_TREE;
+    pub use dwow_game_room_contract::GAME_ROOM_NULLIFIERS_TREE;
+    pub use dwow_game_room_contract::GAME_ROOM_ZKAS_CREATE_ROOM_NS;
+    pub use dwow_game_room_contract::GAME_ROOM_ZKAS_DEPOSIT_NS;
+    pub use dwow_game_room_contract::GAME_ROOM_ZKAS_PLACE_BET_NS;
+    pub use dwow_game_room_contract::GAME_ROOM_ZKAS_SETTLE_POT_NS;
+    pub use dwow_game_room_contract::GAME_ROOM_ZKAS_CLAIM_NS;
+}
+
+pub struct GameRoomContract;
+impl Contract for GameRoomContract {
+    fn contract_id(&self) -> ContractId { *GAME_ROOM_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "GameRoom" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn is_initialized(&self) -> bool { GAME_ROOM_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// IDENTITY MODULE
+// ============================================================================
+
+pub mod identity {
+    pub use dwow_identity_contract::IdentityFunction;
+    pub use dwow_identity_contract::IDENTITY_CONTRACT_CREDENTIALS_TREE;
+    pub use dwow_identity_contract::IDENTITY_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_identity_contract::IDENTITY_CONTRACT_ISSUERS_TREE;
+    pub use dwow_identity_contract::IDENTITY_CONTRACT_INFO_TREE;
+}
+
+pub struct IdentityContract;
+impl Contract for IdentityContract {
+    fn contract_id(&self) -> ContractId { *IDENTITY_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "Identity" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { IDENTITY_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// INSURANCE MARKET MODULE
+// ============================================================================
+
+pub mod insurance_market {
+    pub use dwow_insurance_market_contract::InsuranceMarketFunction;
+    pub use dwow_insurance_market_contract::INSURANCE_CONTRACT_RISK_TYPES_TREE;
+    pub use dwow_insurance_market_contract::INSURANCE_CONTRACT_MARKETS_TREE;
+    pub use dwow_insurance_market_contract::INSURANCE_CONTRACT_UNDERWRITERS_TREE;
+    pub use dwow_insurance_market_contract::INSURANCE_CONTRACT_COVERAGES_TREE;
+    pub use dwow_insurance_market_contract::INSURANCE_CONTRACT_CLAIMS_TREE;
+}
+
+pub struct InsuranceMarketContract;
+impl Contract for InsuranceMarketContract {
+    fn contract_id(&self) -> ContractId { *INSURANCE_MARKET_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "InsuranceMarket" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn is_initialized(&self) -> bool { INSURANCE_MARKET_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// LABOR MARKET MODULE
+// ============================================================================
+
+pub mod labor_market {
+    pub use dwow_labor_market_contract::LaborMarketFunction;
+    pub use dwow_labor_market_contract::LABOR_CONTRACT_JOBS_TREE;
+    pub use dwow_labor_market_contract::LABOR_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_labor_market_contract::LABOR_CONTRACT_INFO_TREE;
+}
+
+pub struct LaborMarketContract;
+impl Contract for LaborMarketContract {
+    fn contract_id(&self) -> ContractId { *LABOR_MARKET_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "LaborMarket" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn is_initialized(&self) -> bool { LABOR_MARKET_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// LOTTERY MODULE
+// ============================================================================
+
+pub mod lottery {
+    pub use dwow_lottery_contract::LotteryFunction;
+    pub use dwow_lottery_contract::LOTTERY_CONTRACT_LOTTERIES_TREE;
+    pub use dwow_lottery_contract::LOTTERY_CONTRACT_TICKETS_TREE;
+    pub use dwow_lottery_contract::LOTTERY_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_lottery_contract::LOTTERY_CONTRACT_CLAIMS_TREE;
+    pub use dwow_lottery_contract::LOTTERY_CONTRACT_ZKAS_COMMIT_NS;
+    pub use dwow_lottery_contract::LOTTERY_CONTRACT_ZKAS_REVEAL_NS;
+}
+
+pub struct LotteryContract;
+impl Contract for LotteryContract {
+    fn contract_id(&self) -> ContractId { *LOTTERY_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "Lottery" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { LOTTERY_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// ORACLE MODULE
+// ============================================================================
+
+pub mod oracle {
+    pub use dwow_oracle_contract::OracleFunction;
+    pub use dwow_oracle_contract::ORACLE_CONTRACT_ORACLES_TREE;
+    pub use dwow_oracle_contract::ORACLE_CONTRACT_ATTESTATIONS_TREE;
+    pub use dwow_oracle_contract::ORACLE_CONTRACT_INFO_TREE;
+}
+
+pub struct OracleContract;
+impl Contract for OracleContract {
+    fn contract_id(&self) -> ContractId { *ORACLE_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "Oracle" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { ORACLE_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// POOL STAKE MODULE
+// ============================================================================
+
+pub mod pool_stake {
+    pub use dwow_pool_stake_contract::PoolStakeFunction;
+    pub use dwow_pool_stake_contract::POOL_STAKE_REGISTRY_TREE;
+    pub use dwow_pool_stake_contract::POOL_STAKE_MEMBERS_TREE;
+    pub use dwow_pool_stake_contract::POOL_STAKE_ALLOCATIONS_TREE;
+    pub use dwow_pool_stake_contract::POOL_STAKE_FEES_TREE;
+    pub use dwow_pool_stake_contract::POOL_STAKE_INFO_TREE;
+}
+
+pub struct PoolStakeContract;
+impl Contract for PoolStakeContract {
+    fn contract_id(&self) -> ContractId { *POOL_STAKE_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "PoolStake" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn is_initialized(&self) -> bool { POOL_STAKE_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// RELAYER ENDOWMENT MODULE
+// ============================================================================
+
+pub mod relayer_endowment {
+    pub use dwow_relayer_endowment_contract::RelayerEndowmentFunction;
+    pub use dwow_relayer_endowment_contract::RELAYER_ENDOWMENT_REGISTRY_TREE;
+    pub use dwow_relayer_endowment_contract::RELAYER_ENDOWMENT_DEPLOYMENTS_TREE;
+    pub use dwow_relayer_endowment_contract::RELAYER_ENDOWMENT_FEES_TREE;
+    pub use dwow_relayer_endowment_contract::RELAYER_ENDOWMENT_INFO_TREE;
+}
+
+pub struct RelayerEndowmentContract;
+impl Contract for RelayerEndowmentContract {
+    fn contract_id(&self) -> ContractId { *RELAYER_ENDOWMENT_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "RelayerEndowment" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn is_initialized(&self) -> bool { RELAYER_ENDOWMENT_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// ROULETTE MODULE
+// ============================================================================
+
+pub mod roulette {
+    pub use dwow_roulette_contract::RouletteFunction;
+    pub use dwow_roulette_contract::ROULETTE_CONTRACT_TABLES_TREE;
+    pub use dwow_roulette_contract::ROULETTE_CONTRACT_BETS_TREE;
+    pub use dwow_roulette_contract::ROULETTE_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_roulette_contract::ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V1;
+    pub use dwow_roulette_contract::ROULETTE_CONTRACT_ZKAS_SETTLE_BET_NS_V1;
+}
+
+pub struct RouletteContract;
+impl Contract for RouletteContract {
+    fn contract_id(&self) -> ContractId { *ROULETTE_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "Roulette" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { ROULETTE_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// SLOT MODULE
+// ============================================================================
+
+pub mod slot {
+    pub use dwow_slot_contract::SlotFunction;
+    pub use dwow_slot_contract::SLOT_CONTRACT_SPINS_TREE;
+    pub use dwow_slot_contract::SLOT_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_slot_contract::SLOT_CONTRACT_CONFIG_TREE;
+    pub use dwow_slot_contract::SLOT_CONTRACT_HOUSE_TREE;
+    pub use dwow_slot_contract::SLOT_CONTRACT_ZKAS_COMMIT_NS;
+    pub use dwow_slot_contract::SLOT_CONTRACT_ZKAS_SETTLE_NS;
+}
+
+pub struct SlotContract;
+impl Contract for SlotContract {
+    fn contract_id(&self) -> ContractId { *SLOT_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "Slot" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { SLOT_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// SUBSCRIPTION MODULE
+// ============================================================================
+
+pub mod subscription {
+    pub use dwow_subscription_contract::SubscriptionFunction;
+    pub use dwow_subscription_contract::SUBSCRIPTION_CONTRACT_INFO_TREE;
+    pub use dwow_subscription_contract::SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE;
+    pub use dwow_subscription_contract::SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_subscription_contract::SUBSCRIPTION_CONTRACT_PLANS_TREE;
+    pub use dwow_subscription_contract::SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V1;
+    pub use dwow_subscription_contract::SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V1;
+}
+
+pub struct SubscriptionContract;
+impl Contract for SubscriptionContract {
+    fn contract_id(&self) -> ContractId { *SUBSCRIPTION_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "Subscription" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { SUBSCRIPTION_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// TENDER MODULE
+// ============================================================================
+
+pub mod tender {
+    pub use dwow_tender_contract::TenderFunction;
+    pub use dwow_tender_contract::TENDER_CONTRACT_TENDERS_TREE;
+    pub use dwow_tender_contract::TENDER_CONTRACT_BIDS_TREE;
+    pub use dwow_tender_contract::TENDER_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_tender_contract::TENDER_CONTRACT_INFO_TREE;
+    pub use dwow_tender_contract::TENDER_CONTRACT_ZKAS_CREATE_NS_V1;
+    pub use dwow_tender_contract::TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1;
+    pub use dwow_tender_contract::TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1;
+    pub use dwow_tender_contract::TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V1;
+}
+
+pub struct TenderContract;
+impl Contract for TenderContract {
+    fn contract_id(&self) -> ContractId { *TENDER_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "Tender" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { TENDER_CONTRACT_ID.get().is_some() }
 }

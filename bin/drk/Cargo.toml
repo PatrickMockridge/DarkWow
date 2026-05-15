@@ -26,6 +26,28 @@ dwow_native_token_contract = {path = "../../src/contract/native_token", features
 dwow_dao_escrow_contract = {path = "../../src/contract/dao_escrow", features = ["client", "no-entrypoint"]}
 dwow_stablecoin_contract = {path = "../../src/contract/stablecoin", features = ["client", "no-entrypoint"]}
 dwow_drain_protection_contract = {path = "../../src/contract/drain_protection", features = ["client"]}
+dwow_atomic_swap_contract = {path = "../../src/contract/atomic_swap", features = ["client"]}
+dwow_attestation_contract = {path = "../../src/contract/attestation", features = ["client"]}
+dwow_auction_contract = {path = "../../src/contract/auction", features = ["client"]}
+dwow_baccarat_contract = {path = "../../src/contract/baccarat", features = ["client"]}
+dwow_betting_stake_contract = {path = "../../src/contract/betting_stake", features = ["client"]}
+dwow_bridge_contract = {path = "../../src/contract/bridge", features = ["client"]}
+dwow_darkbet_exchange_contract = {path = "../../src/contract/darkbet_exchange", features = ["client"]}
+dwow_darktoshi_dice_contract = {path = "../../src/contract/darktoshi_dice", features = ["client"]}
+dwow_dex_contract = {path = "../../src/contract/dex", features = ["client"]}
+dwow_escrow_contract = {path = "../../src/contract/escrow", features = ["client"]}
+dwow_game_room_contract = {path = "../../src/contract/game_room", features = ["client"]}
+dwow_identity_contract = {path = "../../src/contract/identity", features = ["client"]}
+dwow_insurance_market_contract = {path = "../../src/contract/insurance_market", features = ["client"]}
+dwow_labor_market_contract = {path = "../../src/contract/labor_market", features = ["client"]}
+dwow_lottery_contract = {path = "../../src/contract/lottery", features = ["client"]}
+dwow_oracle_contract = {path = "../../src/contract/oracle", features = ["client"]}
+dwow_pool_stake_contract = {path = "../../src/contract/pool_stake", features = ["client"]}
+dwow_relayer_endowment_contract = {path = "../../src/contract/relayer_endowment", features = ["client"]}
+dwow_roulette_contract = {path = "../../src/contract/roulette", features = ["client"]}
+dwow_slot_contract = {path = "../../src/contract/slot", features = ["client"]}
+dwow_subscription_contract = {path = "../../src/contract/subscription", features = ["client"]}
+dwow_tender_contract = {path = "../../src/contract/tender", features = ["client"]}
 
 # Misc
 blake3 = "1.8.2"
