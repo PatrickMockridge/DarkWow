@@ -28,3 +28,4 @@
 pub mod initialize_v1;
 pub mod deploy_capital_v1;
 pub mod claim_fees_v1;
+pub mod settle_fees_v1;

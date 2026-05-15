@@ -1,0 +1,123 @@
+# DarkWow Bridge Node — Docker Compose
+#
+# Architecture:
+#   lilith       — P2P seed/bootstrap node
+#   bridge-node  — dwowd + bridge contracts + universal_relayer
+#
+# Quick start:
+#   docker compose -f contrib/docker/bridge-node/docker-compose.yml --profile full up -d
+#   docker compose -f contrib/docker/bridge-node/docker-compose.yml --profile relayer-only up -d
+#
+# Profiles:
+#   full         — lilith seed + full bridge node (dwowd + contracts + relayer)
+#   relayer-only — universal_relayer only, connects to external dwowd
+
+services:
+  lilith:
+    profiles: ["full"]
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/bridge-node/Dockerfile
+    container_name: dwow-bridge-lilith
+    hostname: lilith
+    entrypoint: ["/app/entrypoint.sh"]
+    command: []
+    environment:
+      - MODE=lilith
+      - NETWORK=${NETWORK:-darkwow-testnet}
+      - P2P_PORT=31340
+      - MAGIC_BYTES=${MAGIC_BYTES:-68,82,75,87}
+      - LOCALNET=${LOCALNET:-false}
+    ports:
+      - "31340:31340"
+    volumes:
+      - lilith_data:/root/.local/share/dwow/lilith
+    networks:
+      - bridge-local
+    restart: unless-stopped
+
+  bridge-node:
+    profiles: ["full"]
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/bridge-node/Dockerfile
+    container_name: dwow-bridge-node
+    hostname: bridge-node
+    entrypoint: ["/app/entrypoint.sh"]
+    command: []
+    environment:
+      - MODE=full
+      - NETWORK=${NETWORK:-darkwow-testnet}
+      - P2P_PORT=31342
+      - RPC_PORT=31345
+      - STRATUM_PORT=31347
+      - SEED_ADDR=lilith:31340
+      - MAGIC_BYTES=${MAGIC_BYTES:-68,82,75,87}
+      - THRESHOLD=${THRESHOLD:-3}
+      - TARGET_BLOCK_TIME=${TARGET_BLOCK_TIME:-120}
+      - SKIP_SYNC=${SKIP_SYNC:-false}
+      - SKIP_FEES=${SKIP_FEES:-false}
+      - LOCALNET=${LOCALNET:-false}
+      - WALLET_SECRET_FILE=${WALLET_SECRET_FILE:-/run/secrets/mining_secret}
+      # Bridge config
+      - BRIDGE_RELAYER_FEE_BP=${BRIDGE_RELAYER_FEE_BP:-100}
+      - BRIDGE_TIMEOUT_BLOCKS=${BRIDGE_TIMEOUT_BLOCKS:-100}
+      # Chain enables
+      - ETH_ENABLED=${ETH_ENABLED:-false}
+      - XMR_ENABLED=${XMR_ENABLED:-false}
+      - ZEC_ENABLED=${ZEC_ENABLED:-false}
+      - AZT_ENABLED=${AZT_ENABLED:-false}
+      - LTC_ENABLED=${LTC_ENABLED:-false}
+      # Relayer config
+      - POLL_INTERVAL_SECS=${POLL_INTERVAL_SECS:-10}
+      - MAX_CONCURRENT_WITHDRAWALS=${MAX_CONCURRENT_WITHDRAWALS:-10}
+    ports:
+      - "31345:31345"
+      - "31347:31347"
+      - "31342:31342"
+    volumes:
+      - bridge_data:/root/.local/share/dwow/dwowd
+    networks:
+      - bridge-local
+    depends_on:
+      - lilith
+    restart: unless-stopped
+
+  relayer-only:
+    profiles: ["relayer-only"]
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/bridge-node/Dockerfile
+    container_name: dwow-bridge-relayer
+    entrypoint: ["/app/entrypoint.sh"]
+    command: []
+    network_mode: host
+    environment:
+      - MODE=relayer-only
+      - DARKFID_URL=${DARKFID_URL:-tcp://127.0.0.1:31345}
+      # Chain enables
+      - ETH_ENABLED=${ETH_ENABLED:-false}
+      - XMR_ENABLED=${XMR_ENABLED:-false}
+      - ZEC_ENABLED=${ZEC_ENABLED:-false}
+      - AZT_ENABLED=${AZT_ENABLED:-false}
+      - LTC_ENABLED=${LTC_ENABLED:-false}
+      # Relayer config
+      - POLL_INTERVAL_SECS=${POLL_INTERVAL_SECS:-10}
+      - MAX_CONCURRENT_WITHDRAWALS=${MAX_CONCURRENT_WITHDRAWALS:-10}
+      - RELAYER_TIMEOUT_BLOCKS=${RELAYER_TIMEOUT_BLOCKS:-100}
+      - RELAYER_FEE_PERCENTAGE=${RELAYER_FEE_PERCENTAGE:-1}
+      # Ethereum
+      - ETH_NODE_URL=${ETH_NODE_URL:-}
+      - ETH_RELAYER_PRIVATE_KEY=${ETH_RELAYER_PRIVATE_KEY:-}
+      # Monero
+      - XMR_WALLET_RPC_URL=${XMR_WALLET_RPC_URL:-}
+      - XMR_NODE_RPC_URL=${XMR_NODE_RPC_URL:-}
+    restart: unless-stopped
+
+networks:
+  bridge-local:
+    driver: bridge
+
+volumes:
+  lilith_data:
+  bridge_data:

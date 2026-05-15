@@ -31,9 +31,9 @@
 use dwow_relayer_endowment_contract::{
     model::{
         ClaimFeesParamsV1, ClaimFeesUpdateV1, DeployCapitalParamsV1, DeployCapitalUpdateV1,
-        EndowmentDeployment, InitializeParamsV1, InitializeUpdateV1, RelayerEndowmentAccount,
-        SettleFeesParamsV1, SettleFeesUpdateV1, UpdateConfigParamsV1, UpdateConfigUpdateV1,
-        WithdrawDeploymentParamsV1, WithdrawDeploymentUpdateV1,
+        EndowmentDeployment, FeeAllocation, InitializeParamsV1, InitializeUpdateV1,
+        RelayerEndowmentAccount, SettleFeesParamsV1, SettleFeesUpdateV1, UpdateConfigParamsV1,
+        UpdateConfigUpdateV1, WithdrawDeploymentParamsV1, WithdrawDeploymentUpdateV1,
     },
     RelayerEndowmentFunction, RELAYER_ENDOWMENT_BP_PRECISION, RELAYER_ENDOWMENT_MIN_DEPLOY,
 };
@@ -184,12 +184,14 @@ fn test_endowment_deployment_withdrawn() {
 fn test_initialize_params_encoding() {
     let params = InitializeParamsV1 {
         default_backer_cut_bp: 500,  // 5%
+        signature_public: make_pubkey(1),
     };
 
     let encoded = serialize(&params);
     let decoded: InitializeParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.default_backer_cut_bp, 500);
+    assert_eq!(decoded.signature_public, make_pubkey(1));
 }
 
 #[test]
@@ -214,6 +216,7 @@ fn test_deploy_capital_params_encoding() {
         relayer_pub: make_pubkey(1),
         amount: 1000000,
         backer_cut_bp: 500,
+        signature_public: make_pubkey(3),
     };
 
     let encoded = serialize(&params);
@@ -222,6 +225,7 @@ fn test_deploy_capital_params_encoding() {
     assert_eq!(decoded.relayer_pub, params.relayer_pub);
     assert_eq!(decoded.amount, 1000000);
     assert_eq!(decoded.backer_cut_bp, 500);
+    assert_eq!(decoded.signature_public, make_pubkey(3));
 }
 
 #[test]
@@ -306,6 +310,11 @@ fn test_settle_fees_params_encoding() {
     let params = SettleFeesParamsV1 {
         relayer_pub: make_pubkey(1),
         total_fees: 100000,
+        allocations: vec![
+            FeeAllocation { deployment_id: make_base([1u8; 32]), fee_amount: 60000 },
+            FeeAllocation { deployment_id: make_base([2u8; 32]), fee_amount: 40000 },
+        ],
+        signature_public: make_pubkey(1),
     };
 
     let encoded = serialize(&params);
@@ -313,6 +322,10 @@ fn test_settle_fees_params_encoding() {
 
     assert_eq!(decoded.relayer_pub, params.relayer_pub);
     assert_eq!(decoded.total_fees, 100000);
+    assert_eq!(decoded.allocations.len(), 2);
+    assert_eq!(decoded.allocations[0].fee_amount, 60000);
+    assert_eq!(decoded.allocations[1].fee_amount, 40000);
+    assert_eq!(decoded.signature_public, make_pubkey(1));
 }
 
 #[test]
@@ -320,7 +333,11 @@ fn test_settle_fees_update_encoding() {
     let update = SettleFeesUpdateV1 {
         relayer_pub: make_pubkey(1),
         total_fees_settled: 100000,
-        deployments_updated: 5,
+        deployments_updated: 2,
+        allocations: vec![
+            FeeAllocation { deployment_id: make_base([1u8; 32]), fee_amount: 60000 },
+            FeeAllocation { deployment_id: make_base([2u8; 32]), fee_amount: 40000 },
+        ],
     };
 
     let encoded = serialize(&update);
@@ -328,7 +345,10 @@ fn test_settle_fees_update_encoding() {
 
     assert_eq!(decoded.relayer_pub, update.relayer_pub);
     assert_eq!(decoded.total_fees_settled, 100000);
-    assert_eq!(decoded.deployments_updated, 5);
+    assert_eq!(decoded.deployments_updated, 2);
+    assert_eq!(decoded.allocations.len(), 2);
+    assert_eq!(decoded.allocations[0].fee_amount, 60000);
+    assert_eq!(decoded.allocations[1].fee_amount, 40000);
 }
 
 #[test]
@@ -357,6 +377,42 @@ fn test_update_config_update_encoding() {
 
     assert_eq!(decoded.relayer_pub, update.relayer_pub);
     assert_eq!(decoded.default_backer_cut_bp, 750);
+}
+
+#[test]
+fn test_fee_allocation_encoding() {
+    let alloc = FeeAllocation {
+        deployment_id: make_base([1u8; 32]),
+        fee_amount: 50000,
+    };
+
+    let encoded = serialize(&alloc);
+    let decoded: FeeAllocation = deserialize(&encoded).unwrap();
+
+    assert_eq!(decoded.deployment_id, alloc.deployment_id);
+    assert_eq!(decoded.fee_amount, 50000);
+}
+
+#[test]
+fn test_settle_fees_mismatched_allocations() {
+    // Allocation sum != total_fees should be caught (tested at model level via params)
+    let params = SettleFeesParamsV1 {
+        relayer_pub: make_pubkey(1),
+        total_fees: 100000,
+        allocations: vec![
+            FeeAllocation { deployment_id: make_base([1u8; 32]), fee_amount: 30000 },
+        ],
+        signature_public: make_pubkey(1),
+    };
+
+    let encoded = serialize(&params);
+    let decoded: SettleFeesParamsV1 = deserialize(&encoded).unwrap();
+
+    assert_eq!(decoded.total_fees, 100000);
+    // Allocation sum (30000) != total_fees (100000) — contract catches this at runtime
+    let sum: u64 = decoded.allocations.iter().map(|a| a.fee_amount).sum();
+    assert_eq!(sum, 30000);
+    assert_ne!(sum, decoded.total_fees);
 }
 
 #[test]

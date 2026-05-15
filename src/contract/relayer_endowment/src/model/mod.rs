@@ -147,6 +147,15 @@ pub struct ClaimFeesUpdateV1 {
     pub remaining_fees: u64,
 }
 
+/// Per-deployment fee allocation for SettleFees
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct FeeAllocation {
+    /// Deployment receiving fees
+    pub deployment_id: pallas::Base,
+    /// Fee amount allocated to this deployment
+    pub fee_amount: u64,
+}
+
 /// Parameters for settling fees to deployments
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct SettleFeesParamsV1 {
@@ -154,6 +163,10 @@ pub struct SettleFeesParamsV1 {
     pub relayer_pub: PublicKey,
     /// Total fees to distribute
     pub total_fees: u64,
+    /// Per-deployment fee allocations
+    pub allocations: Vec<FeeAllocation>,
+    /// Public key of the relayer (from transaction signature)
+    pub signature_public: PublicKey,
 }
 
 /// Update returned after settling fees
@@ -162,6 +175,8 @@ pub struct SettleFeesUpdateV1 {
     pub relayer_pub: PublicKey,
     pub total_fees_settled: u64,
     pub deployments_updated: u64,
+    /// Per-deployment fee allocations applied
+    pub allocations: Vec<FeeAllocation>,
 }
 
 /// Parameters for updating fee configuration

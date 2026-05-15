@@ -22,6 +22,7 @@ testing infrastructure is the platform that makes this possible.
 | Join the public testnet as a miner | 4 | `docker run --network=host -e MODE=native darkwow-node/testnet` | persistent |
 | Run native mining + deploy contracts | N/A | `./contrib/docker/testnet-node/native-workflow.sh` | ~10 min |
 | Run the full contract test suite | 3 | `./contrib/docker/darkwow-testnet/test-contracts.sh` | ~5 min |
+| Run a bridge relayer with endowment | 4 | `docker run --network=host -e MODE=full darkwow-node/bridge` | persistent |
 
 ## The Four Testing Levels
 
@@ -249,4 +250,5 @@ the full pipeline.
 - [Contract Standards](contracts/standards.md) — ZK circuit rules, token layer architecture, testing standards
 - [Architecture Overview](../arch/overview.md) — Consensus, WASM runtime, token architecture
 - [Native Mining + Contract Workflow](native-workflow.md) — Run a node, mine coins, deploy contracts
+- [Bridge Node](bridge-node.md) — Cross-chain bridge relayer with capital endowment
 - [ZK Circuit Troubleshooting](zk-circuit-troubleshooting.md) — Debugging circuit issues

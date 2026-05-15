@@ -449,6 +449,11 @@ fn process_settle_fees_instruction(
 
     msg!("[relayer_endowment::settle_fees] Settling {} fees to relayer {:?}", params.total_fees, params.relayer_pub);
 
+    // Auth: caller must be the relayer
+    if params.signature_public != params.relayer_pub {
+        return Err(RelayerEndowmentError::Unauthorized.into());
+    }
+
     // Get endowment account
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
     let account: RelayerEndowmentAccount =
@@ -457,21 +462,52 @@ fn process_settle_fees_instruction(
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
         };
 
-    // In a full implementation, we would iterate through deployments and distribute fees
-    // proportionally based on each deployment's backer_cut_bp
+    if !account.is_active {
+        return Err(RelayerEndowmentError::EndpointInactive.into());
+    }
+
+    // Validate allocation sum matches total_fees
+    let alloc_sum: u64 = params.allocations.iter().map(|a| a.fee_amount).sum();
+    if alloc_sum != params.total_fees {
+        msg!("[relayer_endowment::settle_fees] Allocation sum {} != total_fees {}", alloc_sum, params.total_fees);
+        return Err(RelayerEndowmentError::InvalidParams("allocation sum != total_fees".into()).into());
+    }
+
+    // Verify each deployment exists, belongs to this relayer, and is not withdrawn
+    let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
+    for alloc in &params.allocations {
+        let deployment: EndowmentDeployment =
+            match wasm::db::db_get(deployments_db, &serialize(&alloc.deployment_id))? {
+                Some(data) => deserialize(&data)?,
+                None => {
+                    msg!("[relayer_endowment::settle_fees] Deployment {:?} not found", alloc.deployment_id);
+                    return Err(RelayerEndowmentError::DeploymentNotFound.into());
+                }
+            };
+        if deployment.relayer_pub != params.relayer_pub {
+            msg!("[relayer_endowment::settle_fees] Deployment {:?} belongs to different relayer", alloc.deployment_id);
+            return Err(RelayerEndowmentError::Unauthorized.into());
+        }
+        if deployment.withdrawn {
+            msg!("[relayer_endowment::settle_fees] Deployment {:?} already withdrawn", alloc.deployment_id);
+            return Err(RelayerEndowmentError::DeploymentAlreadyWithdrawn.into());
+        }
+    }
 
     let update = SettleFeesUpdateV1 {
         relayer_pub: params.relayer_pub,
         total_fees_settled: params.total_fees,
-        deployments_updated: account.active_deployments,
+        deployments_updated: params.allocations.len() as u64,
+        allocations: params.allocations,
     };
 
-    msg!("[relayer_endowment::settle_fees] Settled fees to {} deployments", account.active_deployments);
+    msg!("[relayer_endowment::settle_fees] Settled fees to {} deployments", update.deployments_updated);
     wasm::util::set_return_data(&serialize(&update))
 }
 
 fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> ContractResult {
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
+    let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
 
     let mut account: RelayerEndowmentAccount =
         match wasm::db::db_get(registry_db, &serialize(&update.relayer_pub))? {
@@ -479,7 +515,22 @@ fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> Cont
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
         };
 
-    // Accumulate fees in the account for later distribution
+    // Distribute fees to each deployment
+    for alloc in &update.allocations {
+        let mut deployment: EndowmentDeployment =
+            match wasm::db::db_get(deployments_db, &serialize(&alloc.deployment_id))? {
+                Some(data) => deserialize(&data)?,
+                None => continue,
+            };
+        deployment.accumulated_fees += alloc.fee_amount;
+        wasm::db::db_set(
+            deployments_db,
+            &serialize(&alloc.deployment_id),
+            &serialize(&deployment),
+        )?;
+    }
+
+    // Track total fees ever settled
     account.accumulated_fees += update.total_fees_settled;
 
     wasm::db::db_set(
@@ -487,7 +538,7 @@ fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> Cont
         &serialize(&update.relayer_pub),
         &serialize(&account),
     )?;
-    msg!("[relayer_endowment::settle_fees::update] Fees accumulated");
+    msg!("[relayer_endowment::settle_fees::update] Fees distributed to {} deployments", update.deployments_updated);
 
     Ok(())
 }

@@ -122,6 +122,10 @@ For a goal-oriented entry point, see the [Developer Quick Start Guide](doc/src/d
   DarkWow testnet** as a mining node. `docker pull` and mine with native RandomX
   or Monero merge mining via p2pool.
   See [testnet-node README](contrib/docker/testnet-node/README.md).
+- **bridge-node** — Single-image container for running a cross-chain bridge
+  relayer with capital endowment. Combines dwowd, bridge/endowment contracts,
+  and universal_relayer. Three modes: full, relayer-only, lilith.
+  See [bridge-node README](contrib/docker/bridge-node/README.md).
 
 ### Contract Testing
 
@@ -201,6 +205,7 @@ cargo run -p dwowd -- --network darkwow-testnet
 - [darkwow-testnet Pipeline](contrib/docker/darkwow-testnet/README.md) — 5-mode test pipeline, Docker images, compose profiles
 - [Public Testnet Node](contrib/docker/testnet-node/README.md) — Docker Hub image, native/merge mining, wallet setup
 - [dwow-devnet Node](contrib/docker/dwow-devnet/README.md) — Multi-machine shared devnet
+- [Bridge Node](contrib/docker/bridge-node/README.md) — Cross-chain bridge relayer with capital endowment
 
 ---
 

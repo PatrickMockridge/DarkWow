@@ -60,6 +60,9 @@ pub enum RelayerEndowmentError {
 
     #[error("Invalid child call")]
     InvalidChildCall,
+
+    #[error("Endowment account is inactive")]
+    EndpointInactive,
 }
 
 impl From<RelayerEndowmentError> for dwow_sdk::error::ContractError {
@@ -76,6 +79,7 @@ impl From<RelayerEndowmentError> for dwow_sdk::error::ContractError {
             RelayerEndowmentError::UpdateFailed(_) => Self::Custom(9),
             RelayerEndowmentError::InvalidChildrenIndexes => Self::Custom(10),
             RelayerEndowmentError::InvalidChildCall => Self::Custom(11),
+            RelayerEndowmentError::EndpointInactive => Self::Custom(12),
         }
     }
 }
