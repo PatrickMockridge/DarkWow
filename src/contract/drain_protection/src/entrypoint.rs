@@ -125,7 +125,7 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
 // ============================================================================
 
 /// Fetch metadata for ZK proof verification
-fn get_metadata(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult {
+fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
@@ -582,7 +582,7 @@ fn lock_process_instruction_v1(
 /// `process_instruction` for UnlockV1
 fn unlock_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
-    params: UnlockParamsV1,
+    _params: UnlockParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[UnlockV1] Unlocking funds");
 
@@ -679,13 +679,13 @@ fn process_update(_cid: dwow_sdk::crypto::ContractId, _update_data: &[u8]) -> Co
 /// Check if a transfer exceeds the rate limit
 fn check_rate_limit(
     fund: &ProtectedFund,
-    transfers_db: u32,
+    _transfers_db: u32,
     amount: u64,
     current_block: u64,
 ) -> Result<bool, ContractError> {
     // Calculate total transferred in averaging window
-    let window_start = current_block.saturating_sub(fund.rate_limit.averaging_window_blocks);
-    let mut total_recent = 0u64;
+    let _window_start = current_block.saturating_sub(fund.rate_limit.averaging_window_blocks);
+    let _total_recent = 0u64;
 
     // This is a simplified check - in production, iterate over transfer history
     let rate_threshold = fund.total_funds * fund.rate_limit.base_rate_bps / 10_000;

@@ -38,7 +38,7 @@
 //! - **Pooled Debt**: All collateral backs all debt, no individual positions
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId, IntentNullifier},
+    crypto::{ContractId, IntentNullifier},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -52,17 +52,18 @@ use crate::{
     model::{
         AddCollateralUpdateV1, AccrueInterestParams, AccrueInterestUpdateV1, CollateralType,
         DepositCollateralParams, GovernanceReportParams, GovernanceReportUpdateV1,
-        LiquidateParams, LiquidateUpdateV1, MintStableParams, MintStableUpdateV1,
-        RemoveCollateralUpdateV1, RepayStableParams, RepayStableUpdateV1, UpdateConfigParams,
-        UpdateConfigUpdateV1, WithdrawCollateralParams,
+        InitializeParams, LiquidateParams, LiquidateUpdateV1, MintStableParams,
+        MintStableUpdateV1, RemoveCollateralUpdateV1, RepayStableParams, RepayStableUpdateV1,
+        UpdateConfigParams, UpdateConfigUpdateV1, WithdrawCollateralParams,
     },
     StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
     STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
     STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
-    STABLECOIN_CONTRACT_STABLECOIN_TREE, STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1,
-    STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1, STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1,
-    STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1, STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1,
-    STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1, STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1,
+    STABLECOIN_CONTRACT_STABLECOIN_TREE, STABLECOIN_CONTRACT_ZKAS_INIT_NS_V1,
+    STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1, STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1,
+    STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1, STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1,
+    STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1, STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1,
+    STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1,
 };
 
@@ -96,7 +97,7 @@ dwow_sdk::define_contract!(
 
 /// Initialize the CDP engine
 pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
-    let params = UpdateConfigParams::decode(&mut std::io::Cursor::new(ix))
+    let params = InitializeParams::decode(&mut std::io::Cursor::new(ix))
         .map_err(|_| ContractError::IoError("Decode error".to_string()))?;
 
     msg!("[stablecoin::init_contract] Initializing CDP engine");
@@ -172,7 +173,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let func = StablecoinFunction::try_from(self_.data[0])?;
 
     match func {
-        StablecoinFunction::InitializeV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::InitializeV1 => {
+            let params: InitializeParams = deserialize(&self_.data[1..])?;
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                STABLECOIN_CONTRACT_ZKAS_INIT_NS_V1.to_string(),
+                vec![params.deployer_auth],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
+        }
         StablecoinFunction::OpenPositionV1 => {
             let params: DepositCollateralParams = deserialize(&self_.data[1..])?;
 

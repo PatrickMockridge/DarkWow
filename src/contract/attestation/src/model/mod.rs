@@ -327,6 +327,10 @@ pub struct VerifyClaimParamsV1 {
     pub evidence_commitment: pallas::Base,
     /// Revealed result from ZK proof verification
     pub revealed_result: pallas::Base,
+    /// Revocation Merkle root
+    pub revocation_root: pallas::Base,
+    /// Attestation data (hash of claim_data)
+    pub attestation_data: pallas::Base,
 }
 
 /// State update for VerifyClaimV1
@@ -387,6 +391,8 @@ pub struct DelegateAttestationParamsV1 {
     pub proof: Vec<u8>,
     /// Unique delegation ID
     pub delegation_id: pallas::Base,
+    /// Parent delegation ID in the chain
+    pub parent_id: pallas::Base,
     /// Delegator's public key x coordinate
     pub delegator_pub_x: pallas::Base,
     /// Delegator's public key y coordinate
@@ -395,10 +401,14 @@ pub struct DelegateAttestationParamsV1 {
     pub delegatee_pub_x: pallas::Base,
     /// Delegatee's public key y coordinate
     pub delegatee_pub_y: pallas::Base,
+    /// Type of delegation (0=None, 1=Full, 2=Restricted)
+    pub delegation_type: pallas::Base,
     /// Maximum allowed delegation ratio (e.g., 10000 = 100%)
     pub max_ratio: pallas::Base,
     /// Revocation Merkle root
     pub revocation_root: pallas::Base,
+    /// Merkle root of the delegation chain tree
+    pub chain_root: pallas::Base,
     /// Current chain depth
     pub chain_depth: pallas::Base,
     /// Maximum allowed chain depth

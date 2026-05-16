@@ -169,7 +169,6 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.encode(&mut metadata)?;
             metadata
         }
-        _ => vec![],
     };
 
     wasm::util::set_return_data(&metadata)

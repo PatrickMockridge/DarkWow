@@ -542,12 +542,9 @@ fn process_allocate_coverage_instruction(
         wasm::util::get_verifying_block_height()? as u64,
     );
 
-    // Find contributing members (simplified - proportional from all members)
-    // TODO: This requires iterating over all members in POOL_STAKE_MEMBERS_TREE.
-    // The wasm::db API doesn't support iteration, so this needs either:
-    // 1. A per-pool member index (pool_id -> Vec<stake_id>)
-    // 2. Iteration support added to wasm::db
-    // For now, contributing_members is empty - implement proportional lookup when iteration is available.
+    // NOTE: contributing_members requires iteration over POOL_STAKE_MEMBERS_TREE.
+    // The wasm::db API currently lacks iteration support. Deferred to DB API upgrade
+    // (per-pool member index or wasm::db iteration). Proportional payout is skipped.
     let contributing_members = vec![];
 
     let update = AllocateCoverageUpdateV1 {

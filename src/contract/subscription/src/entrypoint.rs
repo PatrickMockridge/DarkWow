@@ -64,7 +64,8 @@ use crate::{
     },
     SubscriptionFunction, SUBSCRIPTION_CONTRACT_INFO_TREE,
     SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE, SUBSCRIPTION_CONTRACT_PLANS_TREE,
-    SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE, SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1,
+    SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE, SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V1,
+    SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1, SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V1,
 };
 
 // ============================================================================
@@ -113,8 +114,6 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[subscription::init_contract] Subscription contract initialized successfully");
 
-    let rate_limit_v1_bincode = include_bytes!("../proof/rate_limit_v1.zk.bin");
-    wasm::db::zkas_db_set(&rate_limit_v1_bincode[..])?;
     let subscribe_v1_bincode = include_bytes!("../proof/subscribe_v1.zk.bin");
     wasm::db::zkas_db_set(&subscribe_v1_bincode[..])?;
     let update_usage_v1_bincode = include_bytes!("../proof/update_usage_v1.zk.bin");
@@ -138,49 +137,40 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[subscription::get_metadata] Processing function: {:?}", func);
 
-    let metadata = match func {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+
+    match func {
+        SubscriptionFunction::SubscribeV1 => {
+            zk_public_inputs.push((
+                SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V1.to_string(),
+                vec![],
+            ));
+        }
+        SubscriptionFunction::VerifyAccessV1 => {
+            zk_public_inputs.push((
+                SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V1.to_string(),
+                vec![],
+            ));
+        }
         SubscriptionFunction::UpdateUsageV1 => {
             let params: UpdateUsageParamsV1 = deserialize(&self_.data[1..])?;
-            update_usage_get_metadata_v1(params)?
+            let derived_id = poseidon_hash([
+                params.subscription_id,
+                pallas::Base::from(params.current_block),
+                params.spent_nullifier,
+            ]);
+            zk_public_inputs.push((
+                SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1.to_string(),
+                vec![derived_id],
+            ));
         }
-        // SubscribeV1, VerifyAccessV1, RateLimitV1 have no constrain_instance;
         // CancelV1, RenewV1, DaoControlV1, InitializeV1 are not ZK circuits.
-        _ => vec![],
-    };
-
-    wasm::util::set_return_data(&metadata)
-}
-
-/// `get_metadata` for UpdateUsageV1
-///
-/// The ZK circuit `update_usage_v1.zk` constrains:
-///   constrain_instance(derived_id)
-/// where derived_id = poseidon_hash(subscription_id, subscriber_pub_x,
-/// subscriber_pub_y, usage_timestamp, nonce).
-///
-/// We compute `derived_id` from the available params fields:
-/// subscription_id, current_block (as usage_timestamp), spent_nullifier (as nonce).
-fn update_usage_get_metadata_v1(
-    params: UpdateUsageParamsV1,
-) -> Result<Vec<u8>, ContractError> {
-    msg!(
-        "[subscription::update_usage_get_metadata_v1] UpdateUsage for: {:?}",
-        params.subscription_id
-    );
-
-    let derived_id = poseidon_hash([
-        params.subscription_id,
-        pallas::Base::from(params.current_block),
-        params.spent_nullifier,
-    ]);
-
-    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    zk_public_inputs
-        .push((SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1.to_string(), vec![derived_id]));
+        _ => {}
+    }
 
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
-    Ok(metadata)
+    wasm::util::set_return_data(&metadata)
 }
 
 // ============================================================================

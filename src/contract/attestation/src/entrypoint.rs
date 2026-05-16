@@ -148,28 +148,38 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: CreateAttestationParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
-                vec![params.attestation_id],
+                vec![params.attestor_pub_x, params.attestor_pub_y],
             ));
         }
         AttestationFunction::CreateClaimV1 => {
             let params: CreateClaimParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1.to_string(),
-                vec![params.claim_id],
+                vec![params.attestation_id, params.claimant_pub_x, params.claimant_pub_y],
             ));
         }
         AttestationFunction::VerifyClaimV1 => {
             let params: VerifyClaimParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1.to_string(),
-                vec![params.claim_id, params.attestation_id],
+                vec![
+                    params.claim_id,
+                    params.revealed_result,
+                    params.revocation_root,
+                    params.attestation_data,
+                ],
             ));
         }
         AttestationFunction::ConsumeClaimV1 => {
             let params: ConsumeClaimParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V1.to_string(),
-                vec![params.nullifier],
+                vec![
+                    params.claim_id,
+                    params.claimant_pub_x,
+                    params.claimant_pub_y,
+                    params.nullifier,
+                ],
             ));
         }
         AttestationFunction::CheckNotRevokedV1 => {
@@ -183,21 +193,50 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: DelegateAttestationParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1.to_string(),
-                vec![params.delegation_id, params.revocation_root],
+                vec![
+                    params.delegation_id,
+                    params.parent_id,
+                    params.delegator_pub_x,
+                    params.delegator_pub_y,
+                    params.delegatee_pub_x,
+                    params.delegatee_pub_y,
+                    params.delegation_type,
+                    params.max_ratio,
+                    params.revocation_root,
+                    params.chain_root,
+                    params.chain_depth,
+                    params.max_depth,
+                    params.delegator_stake,
+                    params.delegatee_stake,
+                ],
             ));
         }
         AttestationFunction::VerifyChainV1 => {
             let params: VerifyChainParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1.to_string(),
-                vec![params.delegation_id, params.chain_root],
+                vec![
+                    params.delegation_id,
+                    params.parent_id,
+                    params.chain_root,
+                    params.current_depth,
+                    params.max_depth,
+                ],
             ));
         }
         AttestationFunction::UpdateDelegationV1 => {
             let params: UpdateDelegationParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1.to_string(),
-                vec![params.original_attestation_id],
+                vec![
+                    params.original_attestation_id,
+                    params.delegation_type,
+                    params.current_depth,
+                    params.max_depth,
+                    params.delegator_stake,
+                    params.delegatee_stake,
+                    params.max_ratio,
+                ],
             ));
         }
         // RevokeAttestationV1, ExpireAttestationV1, ValidateClaimV1

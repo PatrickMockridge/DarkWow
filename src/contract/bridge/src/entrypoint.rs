@@ -83,7 +83,6 @@ use crate::{
 
 const BRIDGE_DB_VERSION_KEY: &[u8] = b"db_version";
 const BRIDGE_DEPOSIT_ROOT_KEY: &[u8] = b"deposit_root";
-const BRIDGE_NULLIFIER_ROOT_KEY: &[u8] = b"nullifier_root";
 const BRIDGE_MIN_CONFIRMATIONS_KEY: &[u8] = b"min_confirmations";
 const BRIDGE_DEPOSIT_FEE_KEY: &[u8] = b"deposit_fee";
 const BRIDGE_WITHDRAW_FEE_KEY: &[u8] = b"withdraw_fee";
@@ -120,6 +119,10 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     wasm::db::zkas_db_set(&deposit_v1_bincode[..])?;
     wasm::db::zkas_db_set(&withdraw_v1_bincode[..])?;
+
+    // NOTE: xmr_deposit_v1.zk, ltc_deposit_v1.zk, zec_deposit_v1.zk, and
+    // azt_deposit_v1.zk exist in proof/ but are deferred to v1.1 cross-chain
+    // support — they are not loaded or wired to get_metadata yet.
 
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, BRIDGE_CONTRACT_INFO_TREE)?;
@@ -1106,18 +1109,6 @@ fn build_pending_key(nullifier: &[u8; 32]) -> Vec<u8> {
     key
 }
 
-/// Get current block height from info_db
-fn get_current_block_height(info_db: u32) -> Result<u64, ContractError> {
-    let data = wasm::db::db_get(info_db, b"current_block_height")?;
-    match data {
-        Some(d) => {
-            let mut cursor = std::io::Cursor::new(&d);
-            u64::decode(&mut cursor).map_err(|_| ContractError::IoError("decode error".to_string()))
-        }
-        None => Ok(0),
-    }
-}
-
 /// Get current timestamp from info_db
 fn get_current_timestamp(info_db: u32) -> Result<u64, ContractError> {
     let data = wasm::db::db_get(info_db, b"current_timestamp")?;
@@ -1127,20 +1118,6 @@ fn get_current_timestamp(info_db: u32) -> Result<u64, ContractError> {
             u64::decode(&mut cursor).map_err(|_| ContractError::IoError("decode error".to_string()))
         }
         None => Ok(0),
-    }
-}
-
-/// Get minimum confirmations from config
-fn get_min_confirmations(cid: ContractId) -> Result<u32, ContractError> {
-    let config_db = wasm::db::db_lookup(cid, "config")?;
-
-    let data = wasm::db::db_get(config_db, BRIDGE_MIN_CONFIRMATIONS_KEY)?;
-    match data {
-        Some(d) => {
-            let mut cursor = std::io::Cursor::new(&d);
-            u32::decode(&mut cursor).map_err(|_| ContractError::IoError("decode error".to_string()))
-        }
-        None => Ok(12), // Default 12 confirmations
     }
 }
 

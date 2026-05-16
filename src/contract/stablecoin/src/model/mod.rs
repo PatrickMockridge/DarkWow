@@ -173,6 +173,9 @@ pub struct InitializeParams {
 
     /// Token symbol for the stablecoin (e.g., "USDx") - used if create_token is true
     pub token_symbol: [u8; 32],
+
+    /// Deployer authorization for InitV1 ZK proof (poseidon_hash(deployer_secret, contract_salt))
+    pub deployer_auth: pallas::Base,
 }
 
 /// Deposit collateral into the pool

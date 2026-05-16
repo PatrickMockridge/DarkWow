@@ -291,6 +291,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
                 input.token_commit,
                 input.merkle_root.inner(),
                 input.user_data_enc,
+                input.spend_hook,
                 input.signature_public,
             ],
         ));
@@ -322,21 +323,16 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
                 input.token_commit,
                 input.merkle_root.inner(),
                 input.user_data_enc,
+                input.spend_hook,
                 input.signature_public,
             ],
         ));
     }
 
-    // Mint proofs (one per output)
-    for output in &params.outputs {
-        zk_public_inputs.push((
-            MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
-            vec![
-                output.coin.inner(),
-                output.value_commit,
-            ],
-        ));
-    }
+    // Mint proofs for transfer outputs are deferred.
+    // Mint_V1 expects 6 values (token_root, auth_nullifier, auth_mint_public,
+    // coin, value_commit, coin_token_id) for authorized minting, but transfer
+    // outputs lack auth fields. A blind_output circuit is needed for v1.1.
 
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata).unwrap();
@@ -692,21 +688,13 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
                 input.token_commit,
                 input.merkle_root.inner(),
                 input.user_data_enc,
+                input.spend_hook,
                 input.signature_public,
             ],
         ));
     }
 
-    // Mint proofs (one per output)
-    for output in &params.outputs {
-        zk_public_inputs.push((
-            MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
-            vec![
-                output.coin.inner(),
-                output.value_commit,
-            ],
-        ));
-    }
+    // Mint proofs for swap outputs are deferred (same limitation as TransferV1).
 
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata).unwrap();

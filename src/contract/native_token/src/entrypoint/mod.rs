@@ -236,13 +236,20 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     let params: MintParamsV1 = deserialize(&self_.data.data[1..]).unwrap();
 
     // Public inputs for the ZK proofs we have to verify
+    let value_coords = params.value_commit.to_affine().coordinates().unwrap();
+
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Public keys for the transaction signatures we have to verify
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
-        vec![params.coin.inner()],
+        vec![
+            params.coin.inner(),
+            *value_coords.x(),
+            *value_coords.y(),
+            params.token_commit,
+        ],
     ));
 
     let mut metadata = vec![];
@@ -274,6 +281,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
                 input.token_commit,
                 input.merkle_root.inner(),
                 input.user_data_enc,
+                input.spend_hook,
                 sig_x,
                 sig_y,
             ],
@@ -308,6 +316,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
                 input.token_commit,
                 input.merkle_root.inner(),
                 input.user_data_enc,
+                input.spend_hook,
                 sig_x,
                 sig_y,
             ],
@@ -319,9 +328,10 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
             vec![
-                output.token_commit,
+                output.coin.inner(),
                 *value_coords.x(),
                 *value_coords.y(),
+                output.token_commit,
             ],
         ));
     }
@@ -353,11 +363,19 @@ fn spend_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
             params.input.token_commit,
             params.input.merkle_root.inner(),
             params.input.user_data_enc,
+            params.input.spend_hook,
             sig_x,
             sig_y,
+        ],
+    ));
+
+    zk_public_inputs.push((
+        NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
+        vec![
             params.output.coin.inner(),
             *output_value_coords.x(),
             *output_value_coords.y(),
+            params.output.token_commit,
         ],
     ));
 

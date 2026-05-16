@@ -155,7 +155,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: HouseCloseUpdateV1 = deserialize(&update_data[1..])?;
             roulette_house_close_process_update_v1(cid, update)
         }
-        _ => Err(RouletteError::InvalidFunction.into()),
     }
 }
 

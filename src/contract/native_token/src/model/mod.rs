@@ -260,6 +260,10 @@ pub struct SpendUpdateV1 {
 pub struct MintParamsV1 {
     /// The newly minted coin
     pub coin: Coin,
+    /// Pedersen commitment of the value
+    pub value_commit: pallas::Point,
+    /// Commitment of the token ID
+    pub token_commit: pallas::Base,
 }
 
 /// State update for MintV1
