@@ -304,41 +304,58 @@ DarkWow mints wLTC to user
 |----------|-----|-------------|
 | InitializeV1 | 0x00 | Initialize bridge state |
 | DepositV1 | 0x01 | Register external chain deposit |
-| WithdrawV1 | 0x02 | Claim withdrawal to external chain |
+| WithdrawV1 | 0x02 | Request withdrawal to external chain |
 | UpdateConfigV1 | 0x03 | Update bridge configuration |
 | CancelWithdrawV1 | 0x04 | Cancel timed-out withdrawal |
+| ExecuteGuaranteedWithdrawV1 | 0x05 | Execute guaranteed withdrawal with pool stake |
+| CreateHtlcV1 | 0x06 | Create HTLC swap for cross-chain atomic swap |
+| ClaimHtlcV1 | 0x07 | Claim HTLC swap with secret |
+| RefundHtlcV1 | 0x08 | Refund HTLC swap after timelock expiry |
+| ReassignWithdrawalV1 | 0x09 | Reassign stuck withdrawal to a new relayer |
 
 ## Withdrawal Timeout & Slashing
 
-All withdrawals use a timeout mechanism:
+All withdrawals use a timeout mechanism with two execution modes:
+
+**Standard Mode (feed_mode = 0)**: User pays a fee; relayer executes. No refund on failure.
+
+**Guaranteed Mode (feed_mode = 1)**: User pays fee + premium; if relayer fails to execute by timeout, user claims refund + slashing compensation.
 
 ```
-User submits withdrawal
+User submits withdrawal (with optional max_fee_bp cap)
      ↓
-Relayer picks up pending withdrawal
+Relayer picks up pending withdrawal (checks GUARANTEED_PENDING ≤ MAX_GUARANTEED_TOTAL)
      ↓
 Relayer executes on external chain
      ↓
 If timeout (100 blocks) expires without execution:
      - User can cancel and reclaim funds
-     - Relayer gets slashed (BRIDGE_CONTRACT_SLASH_AMOUNT)
+     - Relayer gets slashed: max(MIN_SLASH, amount × SLASH_BP / BP_PRECISION)
+     - Another relayer can reassign via ReassignWithdrawalV1 (0x09)
 ```
 
-**Trust Model:**
+**Proportional Slashing**: Slash scales with withdrawal amount. `MIN_SLASH = 1_000_000` (floor), `SLASH_BP = 1000` (10%), `BP_PRECISION = 10000`.
+
+**Fee Caps**: Bridge enforces `MAX_FEE_BP = 1000` (10%). Users can set tighter `max_fee_bp` per withdrawal.
+
+**Circuit Breaker**: Guaranteed withdrawals are capped by `MAX_GUARANTEED_TOTAL`. A `GUARANTEED_PENDING` counter prevents over-acceptance.
+
+**Trust Model (Updated):**
 - Relayer is honest-but-curious (can observe but not steal)
-- Economic incentives: relayer earns fee, gets slashed if fails
-- User can always reclaim via CancelWithdrawV1
+- Economic incentives: relayer earns fee, gets proportionally slashed if fails
+- User can cancel, reassign, or claim refund depending on feed_mode
+- Fee caps prevent monopoly pricing abuse
 
 ## ZK Circuits
 
-| Circuit | Purpose | Chain |
-|---------|---------|-------|
-| deposit_v1.zk | Prove ETH deposit | Ethereum |
-| withdraw_v1.zk | Prove withdrawal authorization | All |
-| xmr_deposit_v1.zk | Prove Monero deposit (DLEq) | Monero |
-| zec_deposit_v1.zk | Prove Zcash Sapling deposit | Zcash |
-| azt_deposit_v1.zk | Prove Aztec rollup deposit | Aztec |
-| ltc_deposit_v1.zk | Prove Litecoin deposit (MWEB optional) | Litecoin |
+| Circuit | Purpose | Chain | Notes |
+|---------|---------|-------|-------|
+| deposit_v1.zk | Prove ETH deposit | Ethereum | Uses `merkle_root` opcode with `MerklePath` type |
+| withdraw_v1.zk | Prove withdrawal authorization | All | Uses `sparse_merkle_root` with `SparseMerklePath` type, `token_minimum` public input |
+| xmr_deposit_v1.zk | Prove Monero deposit (DLEq) | Monero | |
+| zec_deposit_v1.zk | Prove Zcash Sapling deposit | Zcash | |
+| azt_deposit_v1.zk | Prove Aztec rollup deposit | Aztec | |
+| ltc_deposit_v1.zk | Prove Litecoin deposit (MWEB optional) | Litecoin | |
 
 ## Data Structures
 

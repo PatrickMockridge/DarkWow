@@ -1,26 +1,185 @@
-# Contract Token Integration Audit
+# DarkWow Smart Contract Security Audit
 
-> **STATUS**: DEPRECATED (2026-04-16)
-> **Superseded by**: `bin/darkfid/src/tests/heavyweight_pipeline.rs` and per-contract test harnesses
+> **USE AT YOUR OWN RISK.** The smart contracts in this repository have undergone internal review and simulation-based security analysis but have NOT been audited by an independent third-party firm. Smart contracts carry inherent risks including but not limited to bugs, economic exploits, and cross-chain bridge vulnerabilities. No warranty is provided. You are solely responsible for any funds you deposit.
 
----
+## Scope
 
-## DEPRECATED
+| Contract | Version | Audit Date | Auditor |
+|----------|---------|------------|---------|
+| Bridge (`src/contract/bridge/`) | v1 (May 2026 hardening) | 2026-05-16 | Internal — simulation-based |
+| Relayer Endowment (`src/contract/relayer_endowment/`) | v1 (May 2026 hardening) | 2026-05-16 | Internal — simulation-based |
 
-This audit document served its purpose during the MoneyV2 → MoneyV3 migration (completed).
+**Out of scope**: universal_relayer binary, pool_stake contract, all other 26 contracts in this repository, ZK circuit soundness proofs, external chain integration code.
 
-**Current Verification Infrastructure:**
-- `bin/darkfid/src/tests/heavyweight_pipeline.rs` - Full ZK proof + endpoint tests for all 22 contracts
-- `scripts/validate_zk_bins.sh` - ZK binary validation tool
-- `src/contract/*/tests/` - Per-contract test harnesses
+## Methodology
 
-**Migration Results (Historical):**
-| Contract | Old | New | Status |
-|----------|-----|-----|--------|
-| dao_escrow | money::TransferV2 | money_v3::transfer_v1 | ✅ Migrated |
-| game_room | money::TransferV2 | money_v3::transfer_v1 | ✅ Migrated |
-| subscription | money::TransferV2 | money_v3::transfer_v1 | ✅ Migrated |
-| dex | money::OtcSwapV2 | money_v3::otc_swap_v1 | ✅ Migrated |
-| stablecoin | N/A | money_v3::token_mint_v1 | ✅ Correct |
+The audit combined three approaches:
 
-All 18 remaining contracts audited - no money_v2 usage found.
+1. **Discrete-Event Simulation**: 10 adversarial scenarios modeled block-by-block across the bridge + relayer_endowment + universal_relayer system — crash recovery, capital exhaustion, fee evasion, malicious relayers, slash loops, bank runs, network partitions, fee manipulation, pool tragedy of commons, and HTLC race conditions.
+
+2. **State Machine Analysis**: Manual review of all state transitions in the bridge contract (deposit, withdraw, HTLC create/claim/refund, cancel, execute, reassign) and relayer endowment contract (initialize, deploy, withdraw deployment, claim fees, settle fees, update config, force settle).
+
+3. **ZK Circuit Constraint Review**: Reviewed `withdraw_v1.zk`, `deposit_v1.zk` for missing or incorrect constraints — Merkle proof verification, range checks, equality constraints, dust thresholds.
+
+## Findings
+
+17 failure modes were identified: 1 CRITICAL, 6 HIGH, 8 MEDIUM, 2 LOW.
+
+| # | Severity | Category | Description | Contract | Status |
+|---|----------|----------|-------------|----------|--------|
+| 1 | **CRITICAL** | Capital Exhaustion | 1960 guaranteed withdrawals rejected due to insufficient stake coverage — users cannot access their funds | Bridge | FIXED |
+| 2 | **HIGH** | Liveness | No multi-relayer redundancy — other relayers did not process withdrawals during relayer crash | Bridge | FIXED |
+| 3 | **HIGH** | Liveness | 20 withdrawals stuck in pending state at simulation end — no dynamic capacity scaling | Bridge | FIXED |
+| 4 | **HIGH** | Capital | Total relayer stake < 10% of user deposit capacity — sudden withdrawal surge exhausts coverage | Bridge | FIXED |
+| 5 | **HIGH** | Liveness | No withdrawal reassignment during network partition — stuck until timeout | Bridge | FIXED |
+| 6 | **HIGH** | Economic | No fee cap — monopoly relayer can charge extortionate rates | Bridge | FIXED |
+| 7 | **HIGH** | Economic | Pool slashes degrade all members equally — no per-member accountability | Pool (relayer binary) | PLANNED |
+| 8 | **MEDIUM** | Capital | Pending withdrawals exceed total relayer stake — coverage ratio violated at system level | Bridge | FIXED |
+| 9 | **MEDIUM** | Economic | Backer ROI zero or negative — no fee settlement detection | Relayer Endowment | FIXED |
+| 10 | **MEDIUM** | Economic | No mechanism to detect fee evasion early | Relayer Endowment | FIXED |
+| 11 | **MEDIUM** | Economic | No auto-withdraw from dishonest relayers | Relayer Endowment | FIXED |
+| 12 | **MEDIUM** | Economic | Only 0/11 guaranteed withdrawals received slash refunds — flat slash too small | Bridge | FIXED |
+| 13 | **MEDIUM** | Economic | Total slashed < 1% of guaranteed withdrawal volume — slash doesn't scale | Bridge | FIXED |
+| 14 | **MEDIUM** | UX | No fee discovery — users cannot query relayer fees before committing | Relayer Binary | PLANNED |
+| 15 | **MEDIUM** | Economic | Adverse selection — good relayers leave pools due to shared slashing | Pool (relayer binary) | PLANNED |
+| 16 | **LOW** | ZK Soundness | ZK circuit assumed Merkle verification but didn't enforce it in constraints | Bridge ZK | FIXED |
+| 17 | **LOW** | Atomicity | HTLC race condition — claim + refund can both succeed in same block | Bridge | FIXED |
+
+## Hardening Applied (May 2026)
+
+### Phase 1: Critical State Machine Fixes
+
+**HTLC State Machine Atomicity** (finding #17):
+- Added `claimed_at: Option<u64>` and `refunded_at: Option<u64>` to `HtlcSwapInfo`
+- `claim_htlc` now only valid from `Pending` state
+- `refund_htlc` now checks `claimed_at.is_none()` atomically
+- Both timestamps set in `process_update` for mutual exclusion
+
+**Circuit Breaker for Guaranteed Withdrawals** (findings #1, #3, #4, #8):
+- Added `GUARANTEED_PENDING` counter that increments/decrements with guaranteed withdrawal lifecycle
+- Added `MAX_GUARANTEED_TOTAL` configurable cap
+- Bridge rejects new guaranteed withdrawals when `guaranteed_pending + amount > max_guaranteed_total`
+- Added `MIN_GUARANTEED_COVERAGE_RATIO = 15000` (150% in basis points)
+
+**Withdrawal Reassignment** (findings #2, #5):
+- New `ReassignWithdrawalV1` function (opcode `0x09`)
+- Added `reassignable_after: Option<u64>` and `heartbeat_at: Option<u64>` to `PendingWithdrawal`
+- Any relayer can claim a stuck withdrawal after `reassignable_after` block
+- Original relayer is partially slashed (50% of slash amount) for abandonment
+
+### Phase 2: Economic Hardening
+
+**Proportional Slashing** (findings #12, #13):
+- `MIN_SLASH = 1_000_000` (floor) + `SLASH_BP = 1000` (10%)
+- Slash computed as `max(MIN_SLASH, amount * SLASH_BP / BP_PRECISION)`
+- Previously flat 1,000,000 regardless of withdrawal size
+
+**Fee Caps** (finding #6):
+- `MAX_FEE_BP = 1000` (10% maximum) enforced by bridge contract
+- Users can specify tighter `max_fee_bp: Option<u64>` in `WithdrawParams`
+- Withdrawal validation rejects if `fee > amount * max(effective_max_fee_bp) / BP_PRECISION`
+
+**Backer-Initiated Force Settlement** (findings #9, #10, #11):
+- New `ForceSettleV1` function (opcode `0x06`) in relayer_endowment contract
+- Backers can force pro-rata fee distribution after `FORCE_SETTLEMENT_TIMEOUT = 1000` blocks of inactivity
+- Added `last_settlement_height: u64` and `total_collected_fees_log: u64` to `RelayerEndowmentAccount`
+- Each `SettleFeesV1` call resets `last_settlement_height`
+
+### Phase 4: ZK Circuit Hardening
+
+**Merkle Proof Verification** (finding #16):
+- `withdraw_v1.zk` rewritten to use `SparseMerklePath` type instead of individual merkle proof elements
+- Added `computed_root = sparse_merkle_root(leaf_index, merkle_path, deposit_leaf)` + `constrain_equal_base(computed_root, merkle_root)`
+- Replaced hardcoded `witness_base(100_000_000)` dust threshold with `token_minimum: Base` public input
+
+## Residual Risks
+
+The following risks remain after hardening. **Users and operators should understand these before depositing funds.**
+
+### Fund Loss Risk
+
+| Risk | Severity | Details |
+|------|----------|---------|
+| ZK circuit soundness unproven | **HIGH** | ZK circuits have not undergone formal verification. A soundness bug could allow forging withdrawal proofs. |
+| No external block header verification | **HIGH** | `external_block_hash` is accepted as public input but NOT verified against a real chain. A valid Merkle proof could reference a non-existent block. |
+| No deposit finality guarantee | **MEDIUM** | The circuit proves a deposit EXISTS, not that it's FINAL. Chain reorganizations could revert deposits after proof submission. |
+| Implementation bugs | **MEDIUM** | The contract code has not been formally verified. Bugs in `process_instruction` or `process_update` could cause fund loss. |
+| Relayer theft (HTLC path) | **LOW** | In HTLC withdrawals, secret is revealed to the relayer. A malicious relayer could front-run on the external chain. Mitigated by fresh addresses per deposit. |
+| Pool reputation not yet implemented | **MEDIUM** | Until Phase 2d is deployed, shared staking pools remain vulnerable to one reckless member degrading coverage for all. |
+
+### Privacy Risk
+
+| Risk | Severity | Details |
+|------|----------|---------|
+| Relayer observes recipient addresses | **MEDIUM** | Relayers learn the recipient's external chain address when executing withdrawals. This is inherent to the HTLC model. |
+| Deposit correlation via timing | **LOW** | An observer monitoring both DarkWow and an external chain could correlate deposits by timing analysis. Fresh addresses per deposit mitigate this. |
+| Nullifier linkability | **LOW** | Nullifiers reveal that a specific deposit was spent but not by whom. Over time, spending patterns could enable heuristics. |
+
+### Liveness Risk
+
+| Risk | Severity | Details |
+|------|----------|---------|
+| Relayer centralization | **MEDIUM** | If only one relayer operates, they have a monopoly on withdrawal execution. Fee caps protect against pricing abuse but not censorship. |
+| No automated relayer restart | **MEDIUM** | Until Phase 3 (health check + watchdog) is deployed, relayer crashes require manual intervention. |
+| Guaranteed withdrawal circuit breaker | **LOW** | When `GUARANTEED_PENDING` reaches `MAX_GUARANTEED_TOTAL`, new guaranteed withdrawals are rejected. Users fall back to standard mode. |
+
+### Counterparty Risk
+
+| Risk | Severity | Details |
+|------|----------|---------|
+| Backer capital at relayer's operational risk | **MEDIUM** | Backers' deployed capital is exposed to relayer slashing events. Force settlement protects fee distribution but not principal. |
+| No slashing for pool members | **MEDIUM** | Pool reputation tracking (Phase 2d) is not yet deployed. One reckless pool member affects all. |
+| Bridge contract upgrade risk | **LOW** | Contract upgrades require governance. A malicious upgrade could introduce vulnerabilities. |
+
+## ZK Circuit Safety
+
+### Opcodes Used
+
+| Opcode | Circuit | Safety Status |
+|--------|---------|---------------|
+| `poseidon_hash` | deposit_v1, withdraw_v1 | Standard — production |
+| `constrain_equal_base` | deposit_v1, withdraw_v1 | Standard — production |
+| `range_check` | deposit_v1, withdraw_v1 | Standard — production |
+| `ec_mul_base` | deposit_v1 | Standard — production |
+| `ec_get_x` / `ec_get_y` | deposit_v1 | Standard — production |
+| `merkle_root` | deposit_v1 | Standard — production |
+| `sparse_merkle_root` | withdraw_v1 | Standard — production |
+| `less_than_strict` | withdraw_v1 | Constrain-only — sound |
+| `zero_cond` | deposit_v1 | Conditional select — sound |
+
+### Not Used (Experimental / Unverified)
+
+| Opcode | Reason Avoided |
+|--------|---------------|
+| `LessThanOrEqual` | Gate soundness unverified — returns Boolean |
+| `IsEqualBase` | Delta-invert soundness issue when `a == b` |
+| `schnorr_verify` | Not implemented in zkVM |
+
+No experimental opcodes are used in production circuits. `less_than_strict` is constrain-only (no Boolean return), which is sufficient for minimum amount assertions.
+
+## User Guidance
+
+If you choose to use these contracts:
+
+1. **Start small** — test with minimal amounts before depositing significant value
+2. **Use standard mode** — guaranteed withdrawal premiums are only worthwhile if you trust the specific relayer
+3. **Set `max_fee_bp`** — always specify a fee cap in your withdrawal parameters
+4. **Monitor your withdrawals** — be prepared to reassign or cancel if the relayer is unresponsive
+5. **Verify relayer reputation** — check relayer slash history and settlement frequency before using guaranteed mode
+6. **Diversify relayers** — don't depend on a single relayer for critical withdrawals
+7. **Keep your secret safe** — your deposit secret is the only way to authorize a withdrawal; losing it means permanent fund loss
+8. **Don't trust, verify** — review the contract code yourself or wait for a third-party audit
+
+## Acknowledgments
+
+- **Simulation system** (`sim/`): Python discrete-event engine that modeled all 10 failure scenarios
+- **Code contributors**: DarkWow development team
+- **Review**: Internal review only — no independent third-party audit has been performed
+
+## See Also
+
+- [Bridge Contract README](bridge/README.md) — Detailed contract documentation
+- [Relayer Endowment README](relayer_endowment/README.md) — Endowment contract documentation
+- [Simulation Report](../../sim/report.md) — Full simulation results and failure mode catalog
+- [Relayer Economics](../../doc/src/relayer/relayer_economics.md) — Economic model and incentives
+- [Universal Relayer Docs](../../doc/src/relayer/relayer.md) — Relayer operations guide

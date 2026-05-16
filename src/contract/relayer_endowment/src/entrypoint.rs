@@ -42,6 +42,7 @@ use crate::{
     RELAYER_ENDOWMENT_MIN_DEPLOY, RELAYER_ENDOWMENT_INFO_TREE,
     RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1, RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1,
     RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V1,
+    RELAYER_ENDOWMENT_FORCE_SETTLEMENT_TIMEOUT,
 };
 
 dwow_sdk::define_contract!(
@@ -208,6 +209,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         RelayerEndowmentFunction::UpdateConfigV1 => {
             process_update_config_instruction(cid, call_idx, calls)
         }
+        RelayerEndowmentFunction::ForceSettleV1 => {
+            process_force_settle_instruction(cid, call_idx, calls)
+        }
     }
 }
 
@@ -238,6 +242,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         RelayerEndowmentFunction::UpdateConfigV1 => {
             let update: UpdateConfigUpdateV1 = deserialize(&update_data[1..])?;
             apply_update_config_update(cid, update)
+        }
+        RelayerEndowmentFunction::ForceSettleV1 => {
+            let update: ForceSettleUpdateV1 = deserialize(&update_data[1..])?;
+            apply_force_settle_update(cid, update)
         }
     }
 }
@@ -284,6 +292,8 @@ fn apply_initialize_update(cid: ContractId, update: InitializeUpdateV1) -> Contr
         accumulated_fees: 0,
         default_backer_cut_bp: update.default_backer_cut_bp,
         created_at: update.created_at,
+        last_settlement_height: update.created_at,
+        total_collected_fees_log: 0,
         is_active: true,
     };
 
@@ -636,8 +646,9 @@ fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> Cont
         )?;
     }
 
-    // Track total fees ever settled
+    // Track total fees ever settled and update settlement height
     account.accumulated_fees += update.total_fees_settled;
+    account.last_settlement_height = wasm::util::get_verifying_block_height()? as u64;
 
     wasm::db::db_set(
         registry_db,
@@ -688,6 +699,116 @@ fn apply_update_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> 
         &serialize(&account),
     )?;
     msg!("[relayer_endowment::update_config::update] Config updated");
+
+    Ok(())
+}
+
+// ============================================================================
+// FORCE SETTLE
+// ============================================================================
+
+fn process_force_settle_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: ForceSettleParamsV1 = deserialize(&self_.data[1..])?;
+
+    msg!("[relayer_endowment::force_settle] Force settling fees for deployment {:?}", params.deployment_id);
+
+    // Get endowment account
+    let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
+    let account: RelayerEndowmentAccount =
+        match wasm::db::db_get(registry_db, &serialize(&params.relayer_pub))? {
+            Some(data) => deserialize(&data)?,
+            None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
+        };
+
+    if !account.is_active {
+        return Err(RelayerEndowmentError::EndpointInactive.into());
+    }
+
+    // Verify settlement timeout has elapsed
+    let blocks_since_settlement = params.current_block.saturating_sub(account.last_settlement_height);
+    if blocks_since_settlement < RELAYER_ENDOWMENT_FORCE_SETTLEMENT_TIMEOUT {
+        msg!("[relayer_endowment::force_settle] Settlement not due: {} blocks since last settlement (need {})",
+            blocks_since_settlement, RELAYER_ENDOWMENT_FORCE_SETTLEMENT_TIMEOUT);
+        return Err(RelayerEndowmentError::SettlementNotDue.into());
+    }
+
+    // Get the deployment and verify backer ownership
+    let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
+    let deployment: EndowmentDeployment =
+        match wasm::db::db_get(deployments_db, &serialize(&params.deployment_id))? {
+            Some(data) => deserialize(&data)?,
+            None => return Err(RelayerEndowmentError::DeploymentNotFound.into()),
+        };
+
+    if deployment.withdrawn {
+        return Err(RelayerEndowmentError::DeploymentAlreadyWithdrawn.into());
+    }
+    if deployment.relayer_pub != params.relayer_pub {
+        return Err(RelayerEndowmentError::Unauthorized.into());
+    }
+    if deployment.backer_pub != params.signature_public {
+        return Err(RelayerEndowmentError::Unauthorized.into());
+    }
+
+    // Compute pro-rata share of logged fees
+    let force_settled_amount = if account.total_collected_fees_log > 0 && account.total_deployed > 0 {
+        (account.total_collected_fees_log as u128)
+            .saturating_mul(deployment.amount as u128)
+            .saturating_div(account.total_deployed as u128) as u64
+    } else {
+        0
+    };
+
+    let update = ForceSettleUpdateV1 {
+        deployment_id: params.deployment_id,
+        relayer_pub: params.relayer_pub,
+        force_settled_amount,
+    };
+
+    msg!("[relayer_endowment::force_settle] Force settled {} fees", force_settled_amount);
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+fn apply_force_settle_update(cid: ContractId, update: ForceSettleUpdateV1) -> ContractResult {
+    let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
+    let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
+
+    let mut account: RelayerEndowmentAccount =
+        match wasm::db::db_get(registry_db, &serialize(&update.relayer_pub))? {
+            Some(data) => deserialize(&data)?,
+            None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
+        };
+
+    // Credit the force-settled fees to the deployment
+    if update.force_settled_amount > 0 {
+        let mut deployment: EndowmentDeployment =
+            match wasm::db::db_get(deployments_db, &serialize(&update.deployment_id))? {
+                Some(data) => deserialize(&data)?,
+                None => return Err(RelayerEndowmentError::DeploymentNotFound.into()),
+            };
+        deployment.accumulated_fees += update.force_settled_amount;
+        wasm::db::db_set(
+            deployments_db,
+            &serialize(&update.deployment_id),
+            &serialize(&deployment),
+        )?;
+    }
+
+    // Subtract force-settled amount from fee log and update settlement height
+    account.total_collected_fees_log = account.total_collected_fees_log.saturating_sub(update.force_settled_amount);
+    account.last_settlement_height = wasm::util::get_verifying_block_height()? as u64;
+
+    wasm::db::db_set(
+        registry_db,
+        &serialize(&update.relayer_pub),
+        &serialize(&account),
+    )?;
+    msg!("[relayer_endowment::force_settle::update] Force settlement complete");
 
     Ok(())
 }

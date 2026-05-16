@@ -211,7 +211,11 @@ cargo run -p dwowd -- --network darkwow-testnet
 
 ## Security Status
 
-All contracts are **EXPERIMENTAL** and **UNAUDITED**. Known issues are documented in [Security Analysis](doc/src/arch/security-analysis.md).
+> **USE AT YOUR OWN RISK.** No third-party audit has been performed. Smart contracts carry inherent risks including bugs, economic exploits, and cross-chain bridge vulnerabilities.
+
+**May 2026**: The bridge and relayer_endowment contracts underwent internal simulation-based security review. 10 adversarial scenarios identified 17 failure modes — 14 have been fixed (HTLC atomicity, circuit breaker, withdrawal reassignment, proportional slashing, fee caps, Merkle proof enforcement, force settlement). 3 remain planned (pool reputation, fee discovery, health checks).
+
+See [Security Audit](src/contract/AUDIT.md) for full findings, mitigations, and residual risks. Known architectural issues are documented in [Security Analysis](doc/src/arch/security-analysis.md).
 
 ---
 

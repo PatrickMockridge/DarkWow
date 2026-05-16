@@ -41,6 +41,7 @@
 - [DEX](contract/dex.md)
 - [DAO](contract/dao.md)
   - [DAO-Escrow](contract/dao_escrow.md)
+- [Security Audit](contract/audit.md)
 - [Bridge](contract/bridge.md)
   - [Atomic Swap](contract/atomic_swap.md)
 - [Auction](contract/auction.md)

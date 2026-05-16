@@ -142,6 +142,9 @@ pub struct WithdrawParams {
 
     /// Feed mode: 0 = standard (fee only), 1 = guaranteed (fee + premium)
     pub feed_mode: u8,
+
+    /// Optional user-specified max fee in basis points (0 = use contract default)
+    pub max_fee_bp: Option<u64>,
 }
 
 /// Bridge configuration update parameters
@@ -649,6 +652,12 @@ pub struct PendingWithdrawal {
 
     /// Pool stake coverage allocation ID (for guaranteed withdrawals)
     pub stake_lock_id: Option<[u8; 32]>,
+
+    /// Block height after which another relayer can reassign this withdrawal
+    pub reassignable_after: Option<u64>,
+
+    /// Last heartbeat block from assigned relayer
+    pub heartbeat_at: Option<u64>,
 }
 
 /// Cancellation parameters for timed-out withdrawals
@@ -687,6 +696,33 @@ pub struct ExecuteGuaranteedWithdrawParams {
 
     /// External chain-specific execution data (tx hash, etc)
     pub execution_data: Vec<u8>,
+}
+
+/// Parameters for reassigning a withdrawal to a new relayer
+///
+/// When a relayer has been offline past `reassignable_after`,
+/// another relayer can claim the withdrawal. The original relayer's
+/// stake is partially slashed for abandonment.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ReassignWithdrawalParamsV1 {
+    /// Nullifier of the withdrawal to reassign
+    pub nullifier: IntentNullifier,
+
+    /// New relayer address taking over
+    pub new_relayer: [u8; 32],
+
+    /// Current block height for timeout verification
+    pub current_block: u64,
+}
+
+/// Update for reassigning a withdrawal to a new relayer
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ReassignWithdrawalUpdateV1 {
+    /// Nullifier of the withdrawal
+    pub nullifier: IntentNullifier,
+
+    /// New relayer taking over
+    pub new_relayer: [u8; 32],
 }
 
 // ============================================================================
@@ -787,6 +823,8 @@ pub struct HtlcSwapInfo {
     pub external_recipient: Vec<u8>,
     pub state: u8,  // HtlcSwapState as u8
     pub created_at: u64,
+    pub claimed_at: Option<u64>,
+    pub refunded_at: Option<u64>,
 }
 
 /// Relayer slash record

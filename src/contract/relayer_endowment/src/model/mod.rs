@@ -44,6 +44,10 @@ pub struct RelayerEndowmentAccount {
     pub default_backer_cut_bp: u32,
     /// Block when account was created
     pub created_at: u64,
+    /// Last block height when fees were settled (for force-settlement timeout)
+    pub last_settlement_height: u64,
+    /// Total fees collected since last settlement (for backer audit)
+    pub total_collected_fees_log: u64,
     /// Whether account is active
     pub is_active: bool,
 }
@@ -201,4 +205,28 @@ pub struct UpdateConfigParamsV1 {
 pub struct UpdateConfigUpdateV1 {
     pub relayer_pub: PublicKey,
     pub default_backer_cut_bp: u32,
+}
+
+/// Parameters for backer-initiated force settlement
+///
+/// If a relayer hasn't settled fees within `FORCE_SETTLEMENT_TIMEOUT` blocks,
+/// any backer with active deployment can force a pro-rata settlement.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ForceSettleParamsV1 {
+    /// Relayer whose fees are being force-settled
+    pub relayer_pub: PublicKey,
+    /// Deployment ID to force-settle for
+    pub deployment_id: pallas::Base,
+    /// Current block height for timeout verification
+    pub current_block: u64,
+    /// Backer's public key (from transaction signature)
+    pub signature_public: PublicKey,
+}
+
+/// Update returned after force settlement
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ForceSettleUpdateV1 {
+    pub deployment_id: pallas::Base,
+    pub relayer_pub: PublicKey,
+    pub force_settled_amount: u64,
 }

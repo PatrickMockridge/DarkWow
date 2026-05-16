@@ -88,6 +88,12 @@ pub enum BridgeError {
 
     #[error("Withdrawal not found")]
     WithdrawalNotFound,
+
+    #[error("Insufficient guarantee coverage - relayer stake too low for guaranteed withdrawal")]
+    InsufficientGuaranteeCoverage,
+
+    #[error("Fee exceeds maximum allowed cap")]
+    FeeExceedsCap,
 }
 
 impl From<BridgeError> for ContractError {
@@ -114,6 +120,8 @@ impl From<BridgeError> for ContractError {
             BridgeError::InvalidChildrenIndexes => Self::Custom(19),
             BridgeError::InvalidChildCall => Self::Custom(20),
             BridgeError::WithdrawalNotFound => Self::Custom(21),
+            BridgeError::InsufficientGuaranteeCoverage => Self::Custom(22),
+            BridgeError::FeeExceedsCap => Self::Custom(23),
         }
     }
 }

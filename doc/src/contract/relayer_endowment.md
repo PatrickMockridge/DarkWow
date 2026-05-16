@@ -43,6 +43,7 @@ This contract enables:
 | 0x03 | ClaimRelayerFeesV1 | Backer claims their share of relayer fees |
 | 0x04 | SettleFeesV1 | Relayer settles fees to backers |
 | 0x05 | UpdateConfigV1 | Update fee configuration |
+| 0x06 | ForceSettleV1 | Backer force-settles fees after relayer inactivity timeout |
 
 ## Data Model
 
@@ -56,6 +57,8 @@ pub struct RelayerEndowmentAccount {
     pub accumulated_fees: u64,
     pub default_backer_cut_bp: u32,
     pub created_at: u64,
+    pub last_settlement_height: u64,      // NEW: track settlement activity
+    pub total_collected_fees_log: u64,    // NEW: backer-auditable fee log
     pub is_active: bool,
 }
 ```
@@ -76,12 +79,25 @@ pub struct EndowmentDeployment {
 }
 ```
 
+## Force Settlement (May 2026 Hardening)
+
+If a relayer fails to call `SettleFeesV1` within `FORCE_SETTLEMENT_TIMEOUT` blocks (1000), any backer with an active deployment can call `ForceSettleV1` (opcode `0x06`) to claim their pro-rata share of accumulated fees. This protects backers from relayer fee evasion.
+
+```
+ForceSettleV1 flow:
+1. Backer checks current_block - account.last_settlement_height > FORCE_SETTLEMENT_TIMEOUT
+2. Backer submits ForceSettleV1 with deployment_id
+3. Contract computes pro-rata fee share from total_collected_fees_log
+4. Fees credited to backer's deployment
+5. last_settlement_height updated to current block
+```
+
 ## Economic Model
 
 | Role | Deposit | Earn | Risk |
 |------|---------|------|------|
-| Relayer | Own stake | Full fees (minus backer cut) | Reputation |
-| Backer | Deployment capital | `backer_cut_bp` of relayer fees | Relayer default |
+| Relayer | Own stake | Full fees (minus backer cut) | Reputation, slashing |
+| Backer | Deployment capital | `backer_cut_bp` of relayer fees | Relayer default, mitigated by ForceSettleV1 |
 
 ### Fee Calculation
 

@@ -63,6 +63,9 @@ pub enum RelayerEndowmentError {
 
     #[error("Endowment account is inactive")]
     EndpointInactive,
+
+    #[error("Settlement not yet due — timeout not elapsed")]
+    SettlementNotDue,
 }
 
 impl From<RelayerEndowmentError> for dwow_sdk::error::ContractError {
@@ -80,6 +83,7 @@ impl From<RelayerEndowmentError> for dwow_sdk::error::ContractError {
             RelayerEndowmentError::InvalidChildrenIndexes => Self::Custom(10),
             RelayerEndowmentError::InvalidChildCall => Self::Custom(11),
             RelayerEndowmentError::EndpointInactive => Self::Custom(12),
+            RelayerEndowmentError::SettlementNotDue => Self::Custom(13),
         }
     }
 }

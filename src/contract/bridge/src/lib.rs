@@ -65,6 +65,7 @@ define_contract_function!(BridgeFunction {
     CreateHtlcV1 = 0x06,
     ClaimHtlcV1 = 0x07,
     RefundHtlcV1 = 0x08,
+    ReassignWithdrawalV1 = 0x09,  // Reassign stuck withdrawal to a new relayer
 });
 
 /// Internal contract errors
@@ -135,5 +136,23 @@ pub const BRIDGE_CONTRACT_LTC_HASH_FUNCTION: u8 = 5;
 /// Withdrawal timeout constants
 /// Default number of blocks before a withdrawal can be cancelled
 pub const BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS: u64 = 100;
-/// Slash amount for relayer timeout (in smallest unit)
-pub const BRIDGE_CONTRACT_SLASH_AMOUNT: u64 = 1_000_000; // 0.001 XMR equivalent
+
+/// Basis point precision (10000 = 100%)
+pub const BRIDGE_CONTRACT_BP_PRECISION: u64 = 10000;
+
+/// Slash parameters — proportional to withdrawal amount
+/// Minimum slash floor (in smallest unit) — 0.001 XMR equivalent
+pub const BRIDGE_CONTRACT_MIN_SLASH: u64 = 1_000_000;
+/// Slash rate in basis points (1000 = 10% of withdrawal amount)
+pub const BRIDGE_CONTRACT_SLASH_BP: u64 = 1000;
+
+/// Maximum relayer fee in basis points (1000 = 10% of withdrawal amount)
+pub const BRIDGE_CONTRACT_MAX_FEE_BP: u64 = 1000;
+
+/// Minimum guaranteed coverage ratio (15000 = 150%)
+/// Relayer must have 1.5x the withdrawal amount in available stake
+pub const BRIDGE_CONTRACT_MIN_GUARANTEED_COVERAGE_RATIO: u64 = 15000;
+/// Info tree key: max guaranteed withdrawal total (circuit breaker)
+pub const BRIDGE_CONTRACT_MAX_GUARANTEED_TOTAL: &[u8] = b"max_guaranteed_total";
+/// Info tree key: current pending guaranteed amount
+pub const BRIDGE_CONTRACT_GUARANTEED_PENDING: &[u8] = b"guaranteed_pending";

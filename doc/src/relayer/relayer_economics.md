@@ -1,6 +1,6 @@
 # Relayer Economics
 
-> **Note:** The economic layer described here builds on relayer infrastructure that is still under development. The feed market, staking pools, and capital deployment mechanisms are aspirational designs.
+> **Note:** The economic layer described here builds on relayer infrastructure that is still under development. The feed market, staking pools, and capital deployment mechanisms are aspirational designs. **Hardening applied May 2026**: proportional slashing, fee caps, force settlement, and circuit breaker are now live in the bridge and endowment contracts. See [Security Audit](../contract/audit.md).
 
 *On-chain coordination, feed markets, staking pools, and capital deployment for DarkWow relayers*
 
@@ -100,7 +100,12 @@ The feed market allows relayers to price their service in two modes:
 │  If relayer fails:                                                 │
 │  - User can cancel withdrawal after timeout                        │
 │  - User gets funds back (no extra compensation)                   │
+│  - Relayer is slashed proportionally (10% of amount)               │
 │  - Relayer reputation suffers                                       │
+│                                                                     │
+│  FEE CAP (May 2026 hardening):                                     │
+│  - Bridge enforces MAX_FEE_BP = 1000 (10% maximum)                │
+│  - Users can specify tighter per-withdrawal max_fee_bp            │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -194,13 +199,17 @@ Relayers can form pools to share stake and coverage:
 │  │ Relayer 2 (30% stake) = 30% of pool fees                   │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
-│  SLASHING:                                                        │
+│  SLASHING (Updated May 2026):                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │ Slashing shared proportional to stake                       │   │
-│  │ If pool fails 1000 DAI claim:                             │   │
-│  │   Relayer 1: -500 DAI                                       │   │
-│  │   Relayer 2: -300 DAI                                       │   │
-│  │   Relayer 3: -200 DAI                                       │   │
+│  │ PROPORTIONAL SLASHING: slash = max(MIN_SLASH, amount *     │   │
+│  │ SLASH_BP / BP_PRECISION). Currently 10% of withdrawal.     │   │
+│  │ Previously flat 1 DAI regardless of amount.                │   │
+│  │                                                              │   │
+│  │ If pool fails 1000 DAI claim (guaranteed withdrawal):     │   │
+│  │   Total slash: 100 DAI (10% of 1000)                       │   │
+│  │   Relayer 1 (50%): -50 DAI                                 │   │
+│  │   Relayer 2 (30%): -30 DAI                                 │   │
+│  │   Relayer 3 (20%): -20 DAI                                 │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
 │  BENEFITS:                                                        │
@@ -327,6 +336,7 @@ The [Relayer Endowment Contract](./endowment.md) provides the on-chain implement
 - **ClaimRelayerFeesV1**: Backer claims fee share
 - **SettleFeesV1**: Relayer settles fees to backers
 - **UpdateConfigV1**: Update fee configuration
+- **ForceSettleV1** (May 2026): Backer force-settles fees after relayer inactivity timeout
 
 ### ZK Proof for Combined Stake
 
@@ -511,13 +521,15 @@ The betting stake creates an additional economic layer:
 │                    On-Chain vs Off-Chain                               │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  ON-CHAIN (DarkWow Contract):                                       │
+│  ON-CHAIN (DarkWow Contract) — Updated May 2026:                     │
 │  ├── Relayer registry (stake, status, reputation)                   │
 │  ├── Stake locking/unlocking                                       │
-│  ├── Withdrawal state machine                                      │
-│  ├── Claim processing                                             │
-│  ├── Pool management                                              │
-│  └── Partial payout calculations                                  │
+│  ├── Withdrawal state machine (with reassignment)                  │
+│  ├── Claim processing (proportional slashing)                      │
+│  ├── Fee cap enforcement (MAX_FEE_BP)                               │
+│  ├── Circuit breaker (GUARANTEED_PENDING counter)                   │
+│  ├── Force settlement (backer-initiated fee distribution)           │
+│  └── Pool management (reputation tracking planned)                  │
 │                                                                     │
 │  OFF-CHAIN (Relayer Operations):                                   │
 │  ├── Withdrawal execution (external chain)                         │
@@ -539,6 +551,15 @@ The betting stake creates an additional economic layer:
 │                    Open Questions                                      │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
+│  RESOLVED (May 2026 hardening):                                    │
+│                                                                     │
+│  ✓ FEE CAPS — Bridge enforces MAX_FEE_BP = 10%                    │
+│  ✓ BACKER PROTECTION — ForceSettleV1 after 1000-block timeout      │
+│  ✓ SLASH PROPORTIONALITY — Slash scales with withdrawal amount     │
+│  ✓ WITHDRAWAL REASSIGNMENT — ReassignWithdrawalV1 for stuck txs    │
+│                                                                     │
+│  STILL OPEN:                                                        │
+│                                                                     │
 │  1. POOL GOVERNANCE                                               │
 │     How to handle member disputes? Unanimous vs threshold?          │
 │                                                                     │
@@ -553,6 +574,7 @@ The betting stake creates an additional economic layer:
 │                                                                     │
 │  5. REPUTATION WEIGHTING                                          │
 │     How much does past performance affect coverage limits?          │
+│     (Phase 2d planned — per-member reputation scoring)             │
 │                                                                     │
 │  6. MODE 2 PREMIUM CALCULATION                                     │
 │     Fixed premium or market-determined?                            │

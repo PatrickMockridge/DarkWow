@@ -13,13 +13,11 @@ witness "WithdrawV1" {
     Base bridge_address,
     Base merkle_root,
     Base commitment,
+    Base token_minimum,
 
     # Private inputs
     Base secret,
-    Base merkle_proof_0,
-    Base merkle_proof_1,
-    Base merkle_proof_2,
-    Base merkle_proof_3,
+    SparseMerklePath merkle_path,
     Base leaf_index,
 }
 
@@ -40,6 +38,10 @@ circuit "WithdrawV1" {
     deposit_leaf = poseidon_hash(secret, amount);
     constrain_instance(deposit_leaf);
 
+    # Verify Merkle proof: deposit leaf is in the bridge's Merkle tree
+    computed_root = sparse_merkle_root(leaf_index, merkle_path, deposit_leaf);
+    constrain_equal_base(computed_root, merkle_root);
+
     # Verify recipient hash matches (privacy-preserving address)
     derived_recipient = poseidon_hash(recipient_hash);
     constrain_instance(derived_recipient);
@@ -48,11 +50,9 @@ circuit "WithdrawV1" {
     range_check(64, amount);
 
     # Minimum amount check (prevents dust/zero-value griefing)
-    # TODO: This should be token-aware and use DEX price feed for 1 DAI equivalent.
-    # Pending DEX integration, using 100_000_000 as conservative dust threshold.
-    # less_than_strict(a, b) constrains a < b (constrain-only, sound)
-    minimum_withdraw = witness_base(100000000);
-    less_than_strict(minimum_withdraw, amount);
+    # Token-aware minimum passed as public input from bridge config
+    constrain_instance(token_minimum);
+    less_than_strict(token_minimum, amount);
 
     # Verify leaf_index is valid for Merkle proof
     range_check(64, leaf_index);

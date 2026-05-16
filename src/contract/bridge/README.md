@@ -1,5 +1,7 @@
 # DarkWow Bridge Contract
 
+> **USE AT YOUR OWN RISK.** This contract has undergone internal simulation-based security review (May 2026) but has NOT been independently audited. Cross-chain bridges carry inherent risks. See [AUDIT.md](../AUDIT.md) for full findings, mitigations, and residual risks.
+
 Anonymous bridge contract for cross-chain asset transfers.
 
 ## Overview
@@ -87,8 +89,14 @@ cargo test
 |----------|-----|-------------|
 | InitializeV1 | 0x00 | Initialize bridge state |
 | DepositV1 | 0x01 | Register external chain deposit |
-| WithdrawV1 | 0x02 | Claim withdrawal to external chain |
-| UpdateConfigV1 | 0x03 | Update bridge operators/threshold |
+| WithdrawV1 | 0x02 | Request withdrawal to external chain |
+| UpdateConfigV1 | 0x03 | Update bridge configuration |
+| CancelWithdrawV1 | 0x04 | Cancel timed-out withdrawal |
+| ExecuteGuaranteedWithdrawV1 | 0x05 | Execute guaranteed withdrawal with pool stake |
+| CreateHtlcV1 | 0x06 | Create HTLC swap for cross-chain atomic swap |
+| ClaimHtlcV1 | 0x07 | Claim HTLC swap with secret |
+| RefundHtlcV1 | 0x08 | Refund HTLC swap after timelock expiry |
+| ReassignWithdrawalV1 | 0x09 | Reassign stuck withdrawal to a new relayer |
 
 ## Implementation Flow
 
@@ -135,12 +143,15 @@ let withdrawal = WithdrawBuilder::new()
     .nullifier(nullifier)
     .recipient_hash(recipient_hash)
     .amount(withdraw_amount)
+    .feed_mode(0)           // 0=standard, 1=guaranteed (with premium)
+    .max_fee_bp(Some(500))  // cap relayer fee at 5% (optional)
     .build()?;
 
 // 5. Submit to DarkWow bridge contract
 client.submit(withdrawal).await?;
 
 // 6. Relayer sees event, broadcasts ETH tx to Ethereum
+// 7. If relayer unresponsive: reassign via ReassignWithdrawalV1, or cancel after timeout
 ```
 
 ### How Deposit is Processed (Contract-Side)
@@ -190,6 +201,64 @@ client.submit(withdrawal).await?;
 | Deposit | Not already registered | Prevents double-deposit |
 | Withdraw | ZK proof valid | Proves ownership without revealing secret |
 | Withdraw | Nullifier not spent | Prevents double-spend |
+
+## Hardening (May 2026)
+
+The bridge contract underwent a hardening pass in May 2026 to address 14 failure modes identified by discrete-event simulation. See [AUDIT.md](../AUDIT.md) for the full audit report.
+
+### HTLC State Machine Atomicity
+
+**Problem**: Claim and refund could both succeed on the same HTLC if they arrived in the same block.
+
+**Fix**: `HtlcSwapInfo` now tracks `claimed_at: Option<u64>` and `refunded_at: Option<u64>`. Claim only valid from `Pending` state. Refund checks `claimed_at.is_none()` atomically in `process_update`. Both timestamps provide mutual exclusion.
+
+### Circuit Breaker for Guaranteed Withdrawals
+
+**Problem**: Relayer could accept unlimited guaranteed withdrawals, leading to capital exhaustion when total pending exceeds available stake.
+
+**Fix**: Bridge maintains a `GUARANTEED_PENDING` counter. `process_withdraw_instruction` rejects new guaranteed withdrawals when `guaranteed_pending + amount > max_guaranteed_total`. The counter is incremented on withdrawal acceptance and decremented on execution, cancellation, or timeout. Configurable via `MAX_GUARANTEED_TOTAL` constant.
+
+### Withdrawal Reassignment
+
+**Problem**: If a relayer crashed or was partitioned after accepting a withdrawal, no other relayer could take over. Funds stuck until timeout (100 blocks).
+
+**Fix**: `ReassignWithdrawalV1` (opcode `0x09`) — any relayer can claim a stuck withdrawal after `reassignable_after` block height. `PendingWithdrawal` tracks `reassignable_after` (set at withdrawal acceptance) and `heartbeat_at`. Original relayer is partially slashed for abandonment.
+
+### Proportional Slashing
+
+**Problem**: Slash amount was flat `1_000_000` regardless of withdrawal size. A 1 DAI slash on a 1000 DAI withdrawal provided no meaningful deterrent.
+
+**Fix**: Slash computed as `max(MIN_SLASH, amount * SLASH_BP / BP_PRECISION)`. Constants: `MIN_SLASH = 1_000_000` (floor), `SLASH_BP = 1000` (10%), `BP_PRECISION = 10000`. Slash now scales with withdrawal amount.
+
+### Fee Caps
+
+**Problem**: No upper bound on relayer fees. A monopoly relayer could charge extortionate rates.
+
+**Fix**: Bridge enforces `MAX_FEE_BP = 1000` (10% maximum). Users can specify a tighter `max_fee_bp: Option<u64>` in `WithdrawParams`. Withdrawal validates `fee <= amount * effective_max_fee_bp / BP_PRECISION`.
+
+### Token-Aware Dust Minimum
+
+**Problem**: ZK circuit had a hardcoded dust threshold (`100_000_000`) with a TODO to make it token-aware.
+
+**Fix**: `withdraw_v1.zk` now accepts `token_minimum: Base` as a public input. The bridge contract passes the token-specific minimum from bridge config in `get_metadata`. Circuit enforces `less_than_strict(token_minimum, amount)`.
+
+### New Constants
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `BP_PRECISION` | 10000 | Basis points precision |
+| `MIN_SLASH` | 1,000,000 | Minimum slash amount (floor) |
+| `SLASH_BP` | 1000 | Slash as proportion of amount (10%) |
+| `MAX_FEE_BP` | 1000 | Maximum relayer fee (10%) |
+| `MIN_GUARANTEED_COVERAGE_RATIO` | 15000 | Required relayer stake coverage (150%) |
+| `WITHDRAWAL_TIMEOUT_BLOCKS` | 100 | Blocks before withdrawal can be cancelled |
+
+### New Error Variants
+
+| Error | Code | Description |
+|-------|------|-------------|
+| `InsufficientGuaranteeCoverage` | Custom(22) | Relayer stake too low for guaranteed withdrawal |
+| `FeeExceedsCap` | Custom(23) | Relayer fee exceeds maximum allowed cap |
 
 ## Design Principles
 
@@ -662,7 +731,7 @@ Relayers run the actual full nodes on external chains to execute withdrawals.
 | Circuit | Status | Opcode Safety | Notes |
 |---------|--------|---------------|-------|
 | `deposit_v1.zk` | **Verified** | ✅ Only proven opcodes | Uses real `merkle_root` opcode with `MerklePath` type |
-| `withdraw_v1.zk` | **Verified** | ✅ Only proven opcodes | Uses `constrain_equal_base` + minimum amount floor |
+| `withdraw_v1.zk` | **Verified** | ✅ Only proven opcodes | Uses `sparse_merkle_root` with `SparseMerklePath` type + `token_minimum` public input |
 
 ### Opcode Safety
 

@@ -57,6 +57,8 @@ struct RelayerEndowmentAccount {
     accumulated_fees: u64,         // Fees to distribute to backers
     default_backer_cut_bp: u32,    // Default fee cut (basis points)
     created_at: u64,
+    last_settlement_height: u64,   // Block of last settlement (May 2026)
+    total_collected_fees_log: u64, // Backer-auditable fee log (May 2026)
     is_active: bool,
 }
 ```
@@ -89,6 +91,7 @@ struct EndowmentDeployment {
 | 0x03 | ClaimRelayerFeesV1 | Backer claims their share of relayer fees |
 | 0x04 | SettleFeesV1 | Relayer settles fees to backers |
 | 0x05 | UpdateConfigV1 | Update fee configuration |
+| 0x06 | ForceSettleV1 | Backer force-settles fees after relayer inactivity (May 2026) |
 
 ## Economic Model
 
@@ -104,6 +107,10 @@ relayer_earnings = total_fees × (10000 - backer_cut_bp) / 10000
 For example, with `backer_cut_bp = 2000` (20%):
 - Backer earns 20% of bridge fees
 - Relayer keeps 80% of bridge fees
+
+## Force Settlement (May 2026 Hardening)
+
+If a relayer fails to call `SettleFeesV1` within 1000 blocks, any backer can call `ForceSettleV1` (opcode `0x06`) to force a pro-rata distribution of accumulated fees. This prevents relayer fee evasion and gives backers on-chain recourse if a relayer becomes unresponsive or dishonest.
 
 ## Composability
 
