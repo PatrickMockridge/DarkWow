@@ -69,17 +69,8 @@ pub fn insurance_market_underwrite_with_capability_process_instruction_v1(
 
     let required_capability_id = market.required_underwriter_capability.unwrap();
 
-    // Verify the provided capability matches the required capability
-    // In a full implementation, we would verify the ZK proof against the capability
-    // For now, we check that the capability_secret is not zero (placeholder verification)
-    if params.capability_secret == [0u8; 32] {
-        return Err(InsuranceMarketError::InvalidCapability.into())
-    }
-
-    // Verify the capability_proof is not empty (indicates ZK proof was provided)
-    if params.capability_proof.is_empty() {
-        return Err(InsuranceMarketError::CapabilityRequired.into())
-    }
+    // ZK proof verified by host via get_metadata
+    // (namespace: INSURANCE_MARKET_ZKAS_UNDERWRITE_WITH_CAPABILITY_NS_V1)
 
     // Look up risk type to get min bond rate
     let risk_types_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_RISK_TYPES_TREE)?;

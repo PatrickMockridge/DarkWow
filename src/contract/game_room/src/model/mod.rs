@@ -197,24 +197,21 @@ impl GameRoom {
     }
 }
 
-/// Player account (balance ledger per room)
+/// Player account (per-room player state)
+///
+/// Token balances are tracked by money_v3, not this contract.
+/// money_v3::transfer_v1 child calls handle all token movement.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct PlayerAccount {
     pub pubkey: PublicKey,
-    pub balance: u64,
-    pub locked: u64,
     pub last_action_block: u64,
     pub has_folded: bool,
     pub entropy_contribution: Option<EntropyContribution>,
 }
 
 impl PlayerAccount {
-    pub fn new(pubkey: PublicKey, balance: u64, block: u64) -> Self {
-        Self { pubkey, balance, locked: 0, last_action_block: block, has_folded: false, entropy_contribution: None }
-    }
-
-    pub fn available_balance(&self) -> u64 {
-        self.balance.saturating_sub(self.locked)
+    pub fn new(pubkey: PublicKey, block: u64) -> Self {
+        Self { pubkey, last_action_block: block, has_folded: false, entropy_contribution: None }
     }
 }
 
@@ -336,7 +333,7 @@ pub struct DepositParamsV1 {
 pub struct DepositUpdateV1 {
     pub room_id: RoomId,
     pub player: PublicKey,
-    pub new_balance: u64,
+    pub amount: u64,
 }
 
 /// Parameters for WithdrawV1
@@ -352,7 +349,7 @@ pub struct WithdrawParamsV1 {
 pub struct WithdrawUpdateV1 {
     pub room_id: RoomId,
     pub player: PublicKey,
-    pub new_balance: u64,
+    pub amount: u64,
 }
 
 /// Parameters for PlaceBetV1
@@ -372,8 +369,7 @@ pub struct PlaceBetUpdateV1 {
     pub pot_id: PotId,
     pub player: PublicKey,
     pub bet_id: BetId,
-    pub new_balance: u64,
-    pub new_locked: u64,
+    pub amount: u64,
     pub new_pot_total: u64,
     pub new_current_bet: u64,
     pub new_current_better: PublicKey,
@@ -393,8 +389,7 @@ pub struct RaiseParamsV1 {
 pub struct RaiseUpdateV1 {
     pub room_id: RoomId,
     pub player: PublicKey,
-    pub new_balance: u64,
-    pub new_locked: u64,
+    pub amount: u64,
     pub new_pot_total: u64,
     pub new_current_bet: u64,
 }
@@ -412,8 +407,7 @@ pub struct CallParamsV1 {
 pub struct CallUpdateV1 {
     pub room_id: RoomId,
     pub player: PublicKey,
-    pub new_balance: u64,
-    pub new_locked: u64,
+    pub amount: u64,
     pub new_pot_total: u64,
 }
 
@@ -511,5 +505,4 @@ pub struct ClaimUpdateV1 {
     pub pot_id: PotId,
     pub winner: PublicKey,
     pub amount: u64,
-    pub new_balance: u64,
 }

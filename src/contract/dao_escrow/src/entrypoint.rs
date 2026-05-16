@@ -82,6 +82,12 @@ dwow_sdk::define_contract!(
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[dao_escrow::init_contract] Initializing DAO-Escrow contract");
 
+    let init_v1_bincode = include_bytes!("../proof/init_v1.zk.bin");
+    let pay_premium_v1_bincode = include_bytes!("../proof/pay_premium_v1.zk.bin");
+
+    wasm::db::zkas_db_set(&init_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&pay_premium_v1_bincode[..])?;
+
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, DAO_ESCROW_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;

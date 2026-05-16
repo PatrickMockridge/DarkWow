@@ -49,6 +49,18 @@ dwow_sdk::define_contract!(
 
 /// Initialize the contract
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
+    let init_v1_bincode = include_bytes!("../proof/init_v1.zk.bin");
+    let stake_v1_bincode = include_bytes!("../proof/stake_v1.zk.bin");
+    let unstake_v1_bincode = include_bytes!("../proof/unstake_v1.zk.bin");
+    let claim_v1_bincode = include_bytes!("../proof/claim_v1.zk.bin");
+    let update_risk_v1_bincode = include_bytes!("../proof/update_risk_v1.zk.bin");
+
+    wasm::db::zkas_db_set(&init_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&stake_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&unstake_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&claim_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&update_risk_v1_bincode[..])?;
+
     // Initialize database trees
     wasm::db::db_init(cid, BETTING_STAKE_REGISTRY_TREE)?;
     wasm::db::db_init(cid, BETTING_STAKE_STAKES_TREE)?;

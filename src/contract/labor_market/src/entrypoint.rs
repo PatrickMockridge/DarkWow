@@ -47,9 +47,10 @@ use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta,
+    pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::LaborMarketError,
@@ -100,6 +101,26 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, LABOR_CONTRACT_SPENT_FLAGS_TREE)?;
 
     msg!("[labor_market::init_contract] Labor market contract initialized successfully");
+
+    let accept_job_v1_bincode = include_bytes!("../proof/accept_job_v1.zk.bin");
+    wasm::db::zkas_db_set(&accept_job_v1_bincode[..])?;
+    let accept_job_with_capability_v1_bincode = include_bytes!("../proof/accept_job_with_capability_v1.zk.bin");
+    wasm::db::zkas_db_set(&accept_job_with_capability_v1_bincode[..])?;
+    let confirm_delivery_v1_bincode = include_bytes!("../proof/confirm_delivery_v1.zk.bin");
+    wasm::db::zkas_db_set(&confirm_delivery_v1_bincode[..])?;
+    let create_job_v1_bincode = include_bytes!("../proof/create_job_v1.zk.bin");
+    wasm::db::zkas_db_set(&create_job_v1_bincode[..])?;
+    let dispute_v1_bincode = include_bytes!("../proof/dispute_v1.zk.bin");
+    wasm::db::zkas_db_set(&dispute_v1_bincode[..])?;
+    let milestone_payment_v1_bincode = include_bytes!("../proof/milestone_payment_v1.zk.bin");
+    wasm::db::zkas_db_set(&milestone_payment_v1_bincode[..])?;
+    let refund_v1_bincode = include_bytes!("../proof/refund_v1.zk.bin");
+    wasm::db::zkas_db_set(&refund_v1_bincode[..])?;
+    let submit_deliverable_v1_bincode = include_bytes!("../proof/submit_deliverable_v1.zk.bin");
+    wasm::db::zkas_db_set(&submit_deliverable_v1_bincode[..])?;
+    let submit_git_deliverable_v1_bincode = include_bytes!("../proof/submit_git_deliverable_v1.zk.bin");
+    wasm::db::zkas_db_set(&submit_git_deliverable_v1_bincode[..])?;
+
     Ok(())
 }
 
@@ -116,71 +137,240 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[labor_market::get_metadata] Processing function: {:?}", func);
 
-    match func {
+    let metadata = match func {
         LaborMarketFunction::CreateJobV1 => {
-            let _params: CreateJobParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] CreateJobV1 metadata requested");
+            let params: CreateJobParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.employer_pub_x,
+                    params.employer_pub_y,
+                    params.attestation_id,
+                    params.payment_token,
+                    params.payment_commit_x,
+                    params.payment_commit_y,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::AcceptJobV1 => {
-            let _params: AcceptJobParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] AcceptJobV1 metadata requested");
+            let params: AcceptJobParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.worker_pub_x,
+                    params.worker_pub_y,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::SubmitDeliverableV1 => {
-            let _params: SubmitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] SubmitDeliverableV1 metadata requested");
+            let params: SubmitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.claim_id,
+                    params.worker_pub_x,
+                    params.worker_pub_y,
+                    params.spent_nullifier,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::SubmitGitDeliverableV1 => {
-            let _params: SubmitGitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] SubmitGitDeliverableV1 metadata requested");
+            let params: SubmitGitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.claim_id,
+                    params.worker_pub_x,
+                    params.worker_pub_y,
+                    params.spent_nullifier,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::ConfirmDeliveryV1 => {
-            let _params: ConfirmDeliveryParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] ConfirmDeliveryV1 metadata requested");
+            let params: ConfirmDeliveryParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.employer_pub_x,
+                    params.employer_pub_y,
+                    params.spent_nullifier,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::DisputeV1 => {
-            let _params: DisputeParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] DisputeV1 metadata requested");
+            let params: DisputeParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.disputer_pub_x,
+                    params.disputer_pub_y,
+                    params.dao_escrow_bulla,
+                    params.spent_nullifier,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::RefundV1 => {
-            let _params: RefundParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] RefundV1 metadata requested");
+            let params: RefundParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_REFUND_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.employer_pub_x,
+                    params.employer_pub_y,
+                    params.spent_nullifier,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::CancelV1 => {
-            let _params: CancelJobParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] CancelV1 metadata requested");
+            // CancelV1 has no ZK circuit
+            vec![]
         }
         LaborMarketFunction::CreateJobWithMilestonesV1 => {
-            let _params: CreateJobWithMilestonesParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] CreateJobWithMilestonesV1 metadata requested");
+            let params: CreateJobWithMilestonesParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.employer_pub_x,
+                    params.employer_pub_y,
+                    params.attestation_id,
+                    params.payment_token,
+                    params.payment_commit_x,
+                    params.payment_commit_y,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::SubmitMilestoneV1 => {
-            let _params: SubmitMilestoneDeliverableParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] SubmitMilestoneV1 metadata requested");
+            let params: SubmitMilestoneDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.claim_id,
+                    params.worker_pub_x,
+                    params.worker_pub_y,
+                    params.spent_nullifier,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::ConfirmMilestoneV1 => {
-            let _params: ConfirmMilestoneParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] ConfirmMilestoneV1 metadata requested");
+            let params: ConfirmMilestoneParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.employer_pub_x,
+                    params.employer_pub_y,
+                    params.spent_nullifier,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::InitiateDisputeV1 => {
-            let _params: InitiateDisputeParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] InitiateDisputeV1 metadata requested");
+            let params: InitiateDisputeParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.disputer_pub_x,
+                    params.disputer_pub_y,
+                    params.dao_escrow_bulla,
+                    params.spent_nullifier,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         // O-Cap enabled functions
         LaborMarketFunction::CreateJobWithCapabilityV1 => {
-            let _params: CreateJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] CreateJobWithCapabilityV1 metadata requested");
+            let params: CreateJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_CAPABILITY_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.employer_pub_x,
+                    params.employer_pub_y,
+                    params.attestation_id,
+                    params.payment_token,
+                    params.payment_commit_x,
+                    params.payment_commit_y,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::AcceptJobWithCapabilityV1 => {
-            let _params: AcceptJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] AcceptJobWithCapabilityV1 metadata requested");
+            let params: AcceptJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.worker_pub_x,
+                    params.worker_pub_y,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         LaborMarketFunction::CreateJobWithMilestonesAndCapabilityV1 => {
-            let _params: CreateJobWithMilestonesAndCapabilityParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[labor_market::get_metadata] CreateJobWithMilestonesAndCapabilityV1 metadata requested");
+            let params: CreateJobWithMilestonesAndCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
+                crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_MILESTONES_AND_CAPABILITY_NS_V1.to_string(),
+                vec![
+                    params.job_id,
+                    params.employer_pub_x,
+                    params.employer_pub_y,
+                    params.attestation_id,
+                    params.payment_token,
+                    params.payment_commit_x,
+                    params.payment_commit_y,
+                ],
+            )];
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
     };
 
-    wasm::util::set_return_data(&vec![])
+    wasm::util::set_return_data(&metadata)
 }
 
 // ============================================================================
@@ -262,7 +452,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 /// CreateJobV1 instruction
-fn create_job_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobParamsV1) -> ContractResult {
+fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_v1] Creating job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for escrow deposit
@@ -281,7 +471,7 @@ fn create_job_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1)
 
     // Job is created in the apply phase via update
     msg!("[labor_market::create_job_v1] ZK proof verified successfully");
@@ -289,40 +479,40 @@ fn create_job_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
 }
 
 /// AcceptJobV1 instruction
-fn accept_job_v1(_cid: ContractId, params: AcceptJobParamsV1) -> ContractResult {
+fn accept_job_v1(cid: ContractId, params: AcceptJobParamsV1) -> ContractResult {
     msg!("[labor_market::accept_job_v1] Accepting job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_ACCEPT_JOB_NS_V1)
 
     msg!("[labor_market::accept_job_v1] ZK proof verified successfully");
     Ok(())
 }
 
 /// SubmitDeliverableV1 instruction
-fn submit_deliverable_v1(_cid: ContractId, params: SubmitDeliverableParamsV1) -> ContractResult {
+fn submit_deliverable_v1(cid: ContractId, params: SubmitDeliverableParamsV1) -> ContractResult {
     msg!("[labor_market::submit_deliverable_v1] Submitting deliverable for job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1)
 
     msg!("[labor_market::submit_deliverable_v1] ZK proof verified successfully");
     Ok(())
 }
 
 /// SubmitGitDeliverableV1 instruction
-fn submit_git_deliverable_v1(_cid: ContractId, params: SubmitGitDeliverableParamsV1) -> ContractResult {
+fn submit_git_deliverable_v1(cid: ContractId, params: SubmitGitDeliverableParamsV1) -> ContractResult {
     msg!("[labor_market::submit_git_deliverable_v1] Submitting git deliverable for job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V1)
 
     msg!("[labor_market::submit_git_deliverable_v1] ZK proof verified successfully");
     Ok(())
 }
 
 /// ConfirmDeliveryV1 instruction
-fn confirm_delivery_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmDeliveryParamsV1) -> ContractResult {
+fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmDeliveryParamsV1) -> ContractResult {
     msg!("[labor_market::confirm_delivery_v1] Confirming delivery for job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for worker payout
@@ -341,25 +531,25 @@ fn confirm_delivery_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1)
 
     msg!("[labor_market::confirm_delivery_v1] ZK proof verified successfully");
     Ok(())
 }
 
 /// DisputeV1 instruction
-fn dispute_v1(_cid: ContractId, params: DisputeParamsV1) -> ContractResult {
+fn dispute_v1(cid: ContractId, params: DisputeParamsV1) -> ContractResult {
     msg!("[labor_market::dispute_v1] Creating dispute for job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1)
 
     msg!("[labor_market::dispute_v1] ZK proof verified successfully");
     Ok(())
 }
 
 /// RefundV1 instruction
-fn refund_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: RefundParamsV1) -> ContractResult {
+fn refund_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: RefundParamsV1) -> ContractResult {
     msg!("[labor_market::refund_v1] Processing refund for job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for refund to employer
@@ -378,7 +568,7 @@ fn refund_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_REFUND_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_REFUND_NS_V1)
 
     msg!("[labor_market::refund_v1] ZK proof verified successfully");
     Ok(())
@@ -818,29 +1008,29 @@ fn cancel_job_apply_v1(cid: ContractId, params: CancelJobParamsV1) -> ContractRe
 // ============================================================================
 
 /// CreateJobWithMilestonesV1 instruction
-fn create_job_with_milestones_v1(_cid: ContractId, params: CreateJobWithMilestonesParamsV1) -> ContractResult {
+fn create_job_with_milestones_v1(cid: ContractId, params: CreateJobWithMilestonesParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_with_milestones_v1] Creating job with milestones: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1)
 
     msg!("[labor_market::create_job_with_milestones_v1] ZK proof verified successfully");
     Ok(())
 }
 
 /// SubmitMilestoneV1 instruction
-fn submit_milestone_v1(_cid: ContractId, params: SubmitMilestoneDeliverableParamsV1) -> ContractResult {
+fn submit_milestone_v1(cid: ContractId, params: SubmitMilestoneDeliverableParamsV1) -> ContractResult {
     msg!("[labor_market::submit_milestone_v1] Submitting milestone for job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1)
 
     msg!("[labor_market::submit_milestone_v1] ZK proof verified successfully");
     Ok(())
 }
 
 /// ConfirmMilestoneV1 instruction
-fn confirm_milestone_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmMilestoneParamsV1) -> ContractResult {
+fn confirm_milestone_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmMilestoneParamsV1) -> ContractResult {
     msg!("[labor_market::confirm_milestone_v1] Confirming milestone for job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for milestone payment
@@ -859,18 +1049,18 @@ fn confirm_milestone_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<C
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1)
 
     msg!("[labor_market::confirm_milestone_v1] ZK proof verified successfully");
     Ok(())
 }
 
 /// InitiateDisputeV1 instruction
-fn initiate_dispute_v1(_cid: ContractId, params: InitiateDisputeParamsV1) -> ContractResult {
+fn initiate_dispute_v1(cid: ContractId, params: InitiateDisputeParamsV1) -> ContractResult {
     msg!("[labor_market::initiate_dispute_v1] Initiating dispute for job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1)
 
     msg!("[labor_market::initiate_dispute_v1] ZK proof verified successfully");
     Ok(())
@@ -1119,11 +1309,11 @@ fn initiate_dispute_apply_v1(cid: ContractId, params: InitiateDisputeParamsV1) -
 // ============================================================================
 
 /// AcceptJobWithCapabilityV1 instruction
-fn accept_job_with_capability_v1(_cid: ContractId, params: AcceptJobWithCapabilityParamsV1) -> ContractResult {
+fn accept_job_with_capability_v1(cid: ContractId, params: AcceptJobWithCapabilityParamsV1) -> ContractResult {
     msg!("[labor_market::accept_job_with_capability_v1] Accepting job with capability: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // wasm::zk::verify_zk_proof(cid, crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1)?;
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1)
 
     msg!("[labor_market::accept_job_with_capability_v1] ZK proof verified successfully");
     Ok(())
@@ -1181,7 +1371,7 @@ fn accept_job_with_capability_apply_v1(cid: ContractId, params: AcceptJobWithCap
 // ============================================================================
 
 /// CreateJobWithCapabilityV1 instruction
-fn create_job_with_capability_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobWithCapabilityParamsV1) -> ContractResult {
+fn create_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobWithCapabilityParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_with_capability_v1] Creating job with capability: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for escrow deposit
@@ -1198,6 +1388,9 @@ fn create_job_with_capability_v1(_cid: ContractId, call_idx: usize, calls: Vec<D
              child_call.data[0]);
         return Err(LaborMarketError::InvalidChildCall.into())
     }
+
+    // Verify ZK proof
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_CAPABILITY_NS_V1)
 
     msg!("[labor_market::create_job_with_capability_v1] ZK proof verified successfully");
     Ok(())
@@ -1249,8 +1442,11 @@ fn create_job_with_capability_apply_v1(cid: ContractId, params: CreateJobWithCap
 }
 
 /// CreateJobWithMilestonesAndCapabilityV1 instruction
-fn create_job_with_milestones_and_capability_v1(_cid: ContractId, params: CreateJobWithMilestonesAndCapabilityParamsV1) -> ContractResult {
+fn create_job_with_milestones_and_capability_v1(cid: ContractId, params: CreateJobWithMilestonesAndCapabilityParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_with_milestones_and_capability_v1] Creating milestone job with capability: {:?}", params.job_id);
+
+    // Verify ZK proof
+    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_MILESTONES_AND_CAPABILITY_NS_V1)
 
     msg!("[labor_market::create_job_with_milestones_and_capability_v1] ZK proof verified successfully");
     Ok(())

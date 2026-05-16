@@ -118,3 +118,4 @@ circuit "SubmitBidWithCapability" {
     # - Bidder identity is hidden, only capability is proven
     #
     # Soundness: Uses proven opcodes (ec_mul_base, ec_get_x, ec_get_y, poseidon_hash)
+}

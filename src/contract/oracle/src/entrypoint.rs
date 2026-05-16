@@ -39,10 +39,10 @@ use dwow_sdk::{
     crypto::ContractId,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
-    msg, pasta, ContractCall,
+    msg, pasta::pallas::Base, ContractCall,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::OracleError,
@@ -53,6 +53,11 @@ use crate::{
     },
     OracleFunction, ORACLE_CONTRACT_ATTESTATIONS_TREE, ORACLE_CONTRACT_INFO_TREE,
     ORACLE_CONTRACT_ORACLES_TREE,
+    ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V1,
+    ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V1,
+    ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V1,
+    ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1,
+    ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1,
 };
 
 dwow_sdk::define_contract!(
@@ -81,6 +86,18 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, ORACLE_CONTRACT_ATTESTATIONS_TREE)?;
 
     msg!("[oracle::init_contract] Oracle contract initialized successfully");
+
+    let aggregate_v1_bincode = include_bytes!("../proof/aggregate_v1.zk.bin");
+    wasm::db::zkas_db_set(&aggregate_v1_bincode[..])?;
+    let attest_value_v1_bincode = include_bytes!("../proof/attest_value_v1.zk.bin");
+    wasm::db::zkas_db_set(&attest_value_v1_bincode[..])?;
+    let push_value_commitment_v1_bincode = include_bytes!("../proof/push_value_commitment_v1.zk.bin");
+    wasm::db::zkas_db_set(&push_value_commitment_v1_bincode[..])?;
+    let push_value_v1_bincode = include_bytes!("../proof/push_value_v1.zk.bin");
+    wasm::db::zkas_db_set(&push_value_v1_bincode[..])?;
+    let register_oracle_v1_bincode = include_bytes!("../proof/register_oracle_v1.zk.bin");
+    wasm::db::zkas_db_set(&register_oracle_v1_bincode[..])?;
+
     Ok(())
 }
 
@@ -96,30 +113,49 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[oracle::get_metadata] Processing function: {:?}", func);
 
+    let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
+
     match func {
         OracleFunction::RegisterOracleV1 => {
-            let _params: RegisterOracleParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[oracle::get_metadata] RegisterOracleV1 metadata requested");
+            let params: RegisterOracleParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V1.to_string(),
+                vec![params.oracle_id],
+            ));
         }
         OracleFunction::PushValueV1 => {
-            let _params: PushValueParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[oracle::get_metadata] PushValueV1 metadata requested");
+            let params: PushValueParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V1.to_string(),
+                vec![params.oracle_id, params.value],
+            ));
         }
         OracleFunction::AttestValueV1 => {
-            let _params: AttestValueParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[oracle::get_metadata] AttestValueV1 metadata requested");
+            let params: AttestValueParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V1.to_string(),
+                vec![params.oracle_id, params.attestation_id],
+            ));
         }
         OracleFunction::PushValueCommitmentV1 => {
-            let _params: PushValueCommitmentParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[oracle::get_metadata] PushValueCommitmentV1 metadata requested");
+            let params: PushValueCommitmentParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1.to_string(),
+                vec![params.commitment, params.data_root],
+            ));
         }
         OracleFunction::AggregateV1 => {
-            let _params: AggregateParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[oracle::get_metadata] AggregateV1 metadata requested");
+            let params: AggregateParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1.to_string(),
+                vec![params.oracle_id, params.result],
+            ));
         }
-    };
+    }
 
-    wasm::util::set_return_data(&vec![])
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    wasm::util::set_return_data(&metadata)
 }
 
 // ============================================================================
@@ -183,7 +219,7 @@ fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> Contra
         oracle_pub_y: params.oracle_pub_y,
         name: params.name.clone(),
         data_type: params.data_type.clone(),
-        value: pasta::pallas::Base::zero(),
+        value: Base::zero(),
         updated_at: current_block,
         is_active: true,
     };

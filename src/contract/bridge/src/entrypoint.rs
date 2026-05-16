@@ -56,7 +56,7 @@ use dwow_sdk::{
     wasm,
     pasta::group::GroupEncoding,
 };
-use dwow_serial::{deserialize, serialize, Decodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
 use crate::{
     error::BridgeError,
@@ -68,6 +68,7 @@ use crate::{
         ZcashDepositProof, AztecDepositProof, LitecoinDepositProof,
     },
     BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_INFO_TREE,
+    BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1,
     BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE,
     BRIDGE_CONTRACT_WITHDRAWALS_TREE, BRIDGE_CONTRACT_STATE,
     BRIDGE_CONTRACT_XMR_CONFIRMATIONS, BRIDGE_CONTRACT_ZEC_CONFIRMATIONS, BRIDGE_CONTRACT_AZT_CONFIRMATIONS,
@@ -112,6 +113,12 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[bridge::init_contract] Initializing bridge contract");
 
+    let deposit_v1_bincode = include_bytes!("../proof/deposit_v1.zk.bin");
+    let withdraw_v1_bincode = include_bytes!("../proof/withdraw_v1.zk.bin");
+
+    wasm::db::zkas_db_set(&deposit_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&withdraw_v1_bincode[..])?;
+
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, BRIDGE_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, BRIDGE_DB_VERSION_KEY, env!("CARGO_PKG_VERSION").as_bytes())?;
@@ -150,51 +157,78 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let self_ = &calls[call_idx].data;
     let func = BridgeFunction::try_from(self_.data[0])?;
 
-    match func {
-        BridgeFunction::InitializeV1 => wasm::util::set_return_data(&vec![]),
-        BridgeFunction::DepositV1 => {
-            // For DepositV1, public inputs would include:
-            // - commitment
-            // - recipient_pub_x, recipient_pub_y
-            // - merkle_proof root
-            // The ZK proof verifies the deposit exists in external chain
-            msg!("[bridge::get_metadata] DepositV1 metadata requested");
-            wasm::util::set_return_data(&vec![])
-        }
-        BridgeFunction::WithdrawV1 => {
-            // For WithdrawV1, public inputs would include:
-            // - nullifier
-            // - recipient_hash
-            // The ZK proof verifies the depositor knows the secret
-            msg!("[bridge::get_metadata] WithdrawV1 metadata requested");
-            wasm::util::set_return_data(&vec![])
-        }
-        BridgeFunction::UpdateConfigV1 => wasm::util::set_return_data(&vec![]),
-        BridgeFunction::CancelWithdrawV1 => {
-            // CancelWithdraw doesn't require ZK proof metadata
-            // It's a simple timeout check
-            msg!("[bridge::get_metadata] CancelWithdrawV1 metadata requested");
-            wasm::util::set_return_data(&vec![])
-        }
-        BridgeFunction::ExecuteGuaranteedWithdrawV1 => {
-            // ExecuteGuaranteedWithdraw verifies pool stake coverage via ZK proof
-            msg!("[bridge::get_metadata] ExecuteGuaranteedWithdrawV1 metadata requested");
-            wasm::util::set_return_data(&vec![])
-        }
-        // HTLC operations (no ZK proof metadata needed)
-        BridgeFunction::CreateHtlcV1 => {
-            msg!("[bridge::get_metadata] CreateHtlcV1 metadata requested");
-            wasm::util::set_return_data(&vec![])
-        }
-        BridgeFunction::ClaimHtlcV1 => {
-            msg!("[bridge::get_metadata] ClaimHtlcV1 metadata requested");
-            wasm::util::set_return_data(&vec![])
-        }
-        BridgeFunction::RefundHtlcV1 => {
-            msg!("[bridge::get_metadata] RefundHtlcV1 metadata requested");
-            wasm::util::set_return_data(&vec![])
-        }
-    }
+    let metadata = match func {
+        BridgeFunction::InitializeV1 => vec![],
+        BridgeFunction::DepositV1 => deposit_get_metadata(&self_.data[1..]),
+        BridgeFunction::WithdrawV1 => withdraw_get_metadata(&self_.data[1..]),
+        BridgeFunction::UpdateConfigV1 => vec![],
+        BridgeFunction::CancelWithdrawV1 => vec![],
+        BridgeFunction::ExecuteGuaranteedWithdrawV1 => vec![],
+        BridgeFunction::CreateHtlcV1 => vec![],
+        BridgeFunction::ClaimHtlcV1 => vec![],
+        BridgeFunction::RefundHtlcV1 => vec![],
+    };
+
+    wasm::util::set_return_data(&metadata)
+}
+
+/// Metadata for DepositV1 ZK proof verification.
+///
+/// Public inputs:
+/// - commitment: the deposit commitment hash
+/// - recipient_pub_x, recipient_pub_y: recipient public key coordinates
+/// - external_state_root: merkle root proving inclusion on external chain
+fn deposit_get_metadata(data: &[u8]) -> Vec<u8> {
+    use dwow_sdk::pasta::pallas;
+
+    let params: DepositParams = deserialize(data).unwrap();
+
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+
+    let commitment = params.commitment.inner();
+    let recipient_pub_x = pallas::Base::from_repr(params.recipient_pub_x).unwrap();
+    let recipient_pub_y = pallas::Base::from_repr(params.recipient_pub_y).unwrap();
+    let merkle_root = pallas::Base::from_repr(params.external_state_root).unwrap();
+
+    zk_public_inputs.push((
+        BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1.to_string(),
+        vec![commitment, recipient_pub_x, recipient_pub_y, merkle_root],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata).unwrap();
+    // No signature pubkeys for bridge deposits (verified via ZK proof of external chain inclusion)
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
+    signature_pubkeys.encode(&mut metadata).unwrap();
+    metadata
+}
+
+/// Metadata for WithdrawV1 ZK proof verification.
+///
+/// Public inputs:
+/// - nullifier: proves the deposit hasn't been spent yet
+/// - recipient_hash: hash of the recipient's external chain address
+fn withdraw_get_metadata(data: &[u8]) -> Vec<u8> {
+    use dwow_sdk::pasta::pallas;
+
+    let params: WithdrawParams = deserialize(data).unwrap();
+
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+
+    let nullifier = params.nullifier.inner();
+    let recipient_hash = pallas::Base::from_repr(params.recipient_hash).unwrap();
+
+    zk_public_inputs.push((
+        BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1.to_string(),
+        vec![nullifier, recipient_hash],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata).unwrap();
+    // No signature pubkeys for bridge withdrawals (verified via ZK proof of deposit ownership)
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
+    signature_pubkeys.encode(&mut metadata).unwrap();
+    metadata
 }
 
 // ============================================================================

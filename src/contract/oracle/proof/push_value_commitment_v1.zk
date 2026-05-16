@@ -61,6 +61,9 @@ witness "PushValueCommitment" {
 
     # The commitment itself (should match poseidon_hash(value, nonce))
     Base commitment,
+
+    # Merkle root of the data tree (public input for set_membership)
+    Base data_root,
 }
 
 circuit "PushValueCommitment" {
@@ -104,7 +107,8 @@ circuit "PushValueCommitment" {
 
     # The result must be 1 (commitment is in tree)
     # This constraint ensures the proof fails if membership check fails
-    constrain_equal_base(is_member, Base(1));
+    ONE = witness_base(1);
+    constrain_equal_base(is_member, ONE);
 
     # ==========================================================================
     # PHASE 5: Expose public inputs

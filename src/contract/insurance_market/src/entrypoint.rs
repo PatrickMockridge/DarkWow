@@ -24,12 +24,13 @@
 //! Insurance Market Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{pasta_prelude::PrimeField, ContractId},
     dark_tree::DarkLeaf,
-    error::ContractResult,
+    error::{ContractError, ContractResult},
+    pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::deserialize;
+use dwow_serial::{deserialize, Encodable};
 
 use crate::error::InsuranceMarketError;
 use crate::model::*;
@@ -79,12 +80,75 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, crate::INSURANCE_CONTRACT_CLAIMS_TREE)?;
     wasm::db::db_init(cid, crate::INSURANCE_CONTRACT_ENDOWMENT_TREE)?;
 
+    let purchase_coverage_with_capability_v1_bincode = include_bytes!("../proof/purchase_coverage_with_capability_v1.zk.bin");
+    wasm::db::zkas_db_set(&purchase_coverage_with_capability_v1_bincode[..])?;
+    let underwrite_with_capability_v1_bincode = include_bytes!("../proof/underwrite_with_capability_v1.zk.bin");
+    wasm::db::zkas_db_set(&underwrite_with_capability_v1_bincode[..])?;
+
     Ok(())
 }
 
-/// Get metadata for verification
-fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
-    Ok(())
+/// Get metadata for ZK proof verification
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = InsuranceMarketFunction::try_from(self_.data[0])?;
+
+    let metadata = match func {
+        InsuranceMarketFunction::UnderwriteWithCapabilityV1 => {
+            let params: UnderwriteWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            underwrite_with_capability_get_metadata_v1(params)?
+        }
+        InsuranceMarketFunction::PurchaseCoverageWithCapabilityV1 => {
+            let params: PurchaseCoverageWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            purchase_coverage_with_capability_get_metadata_v1(params)?
+        }
+        // All other functions are non-ZK
+        _ => vec![],
+    };
+
+    wasm::util::set_return_data(&metadata)
+}
+
+/// `get_metadata` for UnderwriteWithCapabilityV1
+///
+/// The ZK circuit `underwrite_with_capability_v1.zk` constrains:
+///   constrain_instance(underwriter_pub_x);
+///   constrain_instance(underwriter_pub_y);
+///   constrain_instance(required_capability_id);
+fn underwrite_with_capability_get_metadata_v1(
+    params: UnderwriteWithCapabilityParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let (ux, uy) = params.underwriter.xy();
+    zk_public_inputs.push((
+        crate::INSURANCE_MARKET_ZKAS_UNDERWRITE_WITH_CAPABILITY_NS_V1.to_string(),
+        vec![ux, uy, pallas::Base::from_repr(params.capability_secret).unwrap_or(pallas::Base::zero())],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+/// `get_metadata` for PurchaseCoverageWithCapabilityV1
+///
+/// The ZK circuit `purchase_coverage_with_capability_v1.zk` constrains:
+///   constrain_instance(buyer_pub_x);
+///   constrain_instance(buyer_pub_y);
+///   constrain_instance(required_capability_id);
+fn purchase_coverage_with_capability_get_metadata_v1(
+    params: PurchaseCoverageWithCapabilityParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let (bx, by) = params.buyer.xy();
+    zk_public_inputs.push((
+        crate::INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_CAPABILITY_NS_V1.to_string(),
+        vec![bx, by, pallas::Base::from_repr(params.capability_secret).unwrap_or(pallas::Base::zero())],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Process instruction

@@ -53,6 +53,21 @@ pub(crate) fn game_room_raise_process_instruction_v1(
         params.room_id
     );
 
+    // Validate child call is money_v3::transfer_v1 (0x04) for raise stake
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[Raise] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(GameRoomError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[Raise] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(GameRoomError::InvalidChildCall.into())
+    }
+
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     let Some(room_data) =
@@ -90,7 +105,7 @@ pub(crate) fn game_room_raise_process_instruction_v1(
         }
     }
 
-    // Get account
+    // Verify account exists (balance enforced by money_v3 child call)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
     let account_key = dwow_serial::serialize(&(params.room_id, caller.xy().0));
     let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
@@ -103,16 +118,6 @@ pub(crate) fn game_room_raise_process_instruction_v1(
     if account.has_folded {
         msg!("[Raise] Error: Player has folded");
         return Err(GameRoomError::CallerNotPlayer.into())
-    }
-
-    // Check available balance for the raise
-    if account.available_balance() < params.amount {
-        msg!(
-            "[Raise] Error: Insufficient available balance for raise (have {}, need {})",
-            account.available_balance(),
-            params.amount
-        );
-        return Err(GameRoomError::InsufficientBalance.into())
     }
 
     // Get pot
@@ -134,11 +139,8 @@ pub(crate) fn game_room_raise_process_instruction_v1(
         return Err(GameRoomError::PotNotOpen.into())
     }
 
-    // Update account
-    account.balance -= params.amount;
-    account.locked += params.amount;
-    let new_balance = account.balance;
-    let new_locked = account.locked;
+    // Only update last_action_block (token movement handled by money_v3 child call)
+    account.last_action_block = wasm::util::get_verifying_block_height()? as u64;
 
     // Update pot
     pot.total += params.amount;
@@ -193,8 +195,7 @@ pub(crate) fn game_room_raise_process_instruction_v1(
     let update = RaiseUpdateV1 {
         room_id: params.room_id,
         player: caller,
-        new_balance,
-        new_locked,
+        amount: params.amount,
         new_pot_total,
         new_current_bet: raise_total,
     };
@@ -206,10 +207,9 @@ pub(crate) fn game_room_raise_process_update_v1(
     update: RaiseUpdateV1,
 ) -> ContractResult {
     msg!(
-        "[Raise] Update applied: player {:?} new balance {}, locked {}, pot total {}, new bet {}",
+        "[Raise] Update applied: player {:?} amount {}, pot total {}, new bet {}",
         update.player,
-        update.new_balance,
-        update.new_locked,
+        update.amount,
         update.new_pot_total,
         update.new_current_bet
     );

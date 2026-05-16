@@ -6,13 +6,6 @@ constant "XmrDepositV1" {
     # NULLIFIER_K is a fixed generator point on the Pallas curve.
     # Used with ec_mul_base to derive public keys from secrets.
     # This is the same base point used throughout DarkFi for key derivation.
-
-    EcFixedPointBase PALLAS_GENERATOR,
-    # Generator point for DLEq proof verification on Pallas curve.
-    # Y1 = x * PALLAS_GENERATOR proves ownership.
-
-    EcFixedPointBase MONTGOMERY_GENERATOR,
-    # Generator point for DLEq proof verification on Montgomery curve (curve25519).
     # Y2 = x * MONTGOMERY_GENERATOR for cross-curve DLEq.
     # Note: DarkFi uses Pallas for all operations, but DLEq spans two curves.
 }

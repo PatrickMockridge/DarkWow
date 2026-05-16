@@ -32,6 +32,9 @@ witness "PushValue" {
     # Oracle's public key coordinates (registered)
     Base oracle_pub_x,
     Base oracle_pub_y,
+
+    # Value being pushed
+    Base value,
 }
 
 circuit "PushValue" {

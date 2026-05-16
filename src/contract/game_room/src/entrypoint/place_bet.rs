@@ -54,6 +54,21 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
         params.room_id
     );
 
+    // Validate child call is money_v3::transfer_v1 (0x04) for bet stake
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[PlaceBet] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(GameRoomError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[PlaceBet] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(GameRoomError::InvalidChildCall.into())
+    }
+
     // Validate bet type
     match params.bet_type {
         BetType::Ante | BetType::Blind | BetType::Bet => {}
@@ -92,7 +107,7 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
     // Use player from params (verified by proof/signature)
     let caller = params.player;
 
-    // Get account
+    // Verify account exists (balance enforced by money_v3 child call)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
     let account_key = dwow_serial::serialize(&(params.room_id, caller.xy().0));
     let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
@@ -105,16 +120,6 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
     if account.has_folded {
         msg!("[PlaceBet] Error: Player has folded");
         return Err(GameRoomError::CallerNotPlayer.into())
-    }
-
-    // Check available balance
-    if account.available_balance() < params.amount {
-        msg!(
-            "[PlaceBet] Error: Insufficient available balance (have {}, need {})",
-            account.available_balance(),
-            params.amount
-        );
-        return Err(GameRoomError::InsufficientBalance.into())
     }
 
     // Get or create current pot
@@ -151,11 +156,8 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
         return Err(GameRoomError::PotNotOpen.into())
     }
 
-    // Update account
-    account.balance -= params.amount;
-    account.locked += params.amount;
-    let new_balance = account.balance;
-    let new_locked = account.locked;
+    // Only update last_action_block (token movement handled by money_v3 child call)
+    account.last_action_block = wasm::util::get_verifying_block_height()? as u64;
 
     // Update pot
     pot.total += params.amount;
@@ -215,8 +217,7 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
         pot_id,
         player: caller,
         bet_id,
-        new_balance,
-        new_locked,
+        amount: params.amount,
         new_pot_total,
         new_current_bet: params.amount,
         new_current_better: caller,
@@ -229,8 +230,9 @@ pub(crate) fn game_room_place_bet_process_update_v1(
     update: PlaceBetUpdateV1,
 ) -> ContractResult {
     msg!(
-        "[PlaceBet] Update applied: bet {:?} by {:?}, pot {:?} now {}",
+        "[PlaceBet] Update applied: bet {:?} amount {} by {:?}, pot {:?} now {}",
         update.bet_id,
+        update.amount,
         update.player,
         update.pot_id,
         update.new_pot_total

@@ -35,7 +35,8 @@ use dwow_sdk::{
     msg, ContractCall,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_sdk::pasta::pallas::Base;
 
 use crate::error::IdentityError;
 use crate::model::*;
@@ -45,6 +46,14 @@ use crate::{
     IDENTITY_CONTRACT_ISSUERS_TREE, IDENTITY_CONTRACT_CONFIG_TREE,
     IDENTITY_CONTRACT_CAPABILITIES_TREE, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE,
     IDENTITY_CONTRACT_INFO_TREE,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_DAG,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1_V2,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_MULTI,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_RATIO,
+    IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V1,
+    IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V1,
 };
 
 dwow_sdk::define_contract!(
@@ -85,11 +94,97 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_init(cid, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE)?;
     }
 
+    let create_claim_v1_dag_bincode = include_bytes!("../proof/create_claim_v1_dag.zk.bin");
+    wasm::db::zkas_db_set(&create_claim_v1_dag_bincode[..])?;
+    let create_claim_v1_l1_v2_bincode = include_bytes!("../proof/create_claim_v1_l1_v2.zk.bin");
+    wasm::db::zkas_db_set(&create_claim_v1_l1_v2_bincode[..])?;
+    let create_claim_v1_l1_bincode = include_bytes!("../proof/create_claim_v1_l1.zk.bin");
+    wasm::db::zkas_db_set(&create_claim_v1_l1_bincode[..])?;
+    let create_claim_v1_multi_bincode = include_bytes!("../proof/create_claim_v1_multi.zk.bin");
+    wasm::db::zkas_db_set(&create_claim_v1_multi_bincode[..])?;
+    let create_claim_v1_ratio_bincode = include_bytes!("../proof/create_claim_v1_ratio.zk.bin");
+    wasm::db::zkas_db_set(&create_claim_v1_ratio_bincode[..])?;
+    let create_claim_v1_bincode = include_bytes!("../proof/create_claim_v1.zk.bin");
+    wasm::db::zkas_db_set(&create_claim_v1_bincode[..])?;
+    let issue_credential_v1_bincode = include_bytes!("../proof/issue_credential_v1.zk.bin");
+    wasm::db::zkas_db_set(&issue_credential_v1_bincode[..])?;
+    let verify_capability_v1_bincode = include_bytes!("../proof/verify_capability_v1.zk.bin");
+    wasm::db::zkas_db_set(&verify_capability_v1_bincode[..])?;
+
     Ok(())
 }
 
-fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
-    Ok(())
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = IdentityFunction::try_from(self_.data[0])?;
+
+    let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
+
+    match func {
+        IdentityFunction::IssueCredentialV1 => {
+            let params: IssueCredentialParams = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V1.to_string(),
+                vec![params.commitment.inner()],
+            ));
+        }
+        IdentityFunction::CreateClaimV1 => {
+            let params: CreateClaimParams = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1.to_string(),
+                vec![params.nullifier.inner()],
+            ));
+        }
+        IdentityFunction::CreateClaimV1L1 => {
+            let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1.to_string(),
+                vec![params.nullifier.inner()],
+            ));
+        }
+        IdentityFunction::CreateClaimV1L1V2 => {
+            let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1_V2.to_string(),
+                vec![params.nullifier.inner()],
+            ));
+        }
+        IdentityFunction::CreateClaimV1Multi => {
+            let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_MULTI.to_string(),
+                vec![params.nullifier.inner()],
+            ));
+        }
+        IdentityFunction::CreateClaimV1Ratio => {
+            let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_RATIO.to_string(),
+                vec![params.nullifier.inner()],
+            ));
+        }
+        IdentityFunction::CreateClaimDAGV1 => {
+            zk_public_inputs.push((
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_DAG.to_string(),
+                vec![],
+            ));
+        }
+        IdentityFunction::VerifyCapabilityV1 => {
+            let params: VerifyCapabilityParams = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V1.to_string(),
+                vec![params.capability_proof.nullifier.inner()],
+            ));
+        }
+        // Non-ZK functions: no public inputs
+        _ => {}
+    }
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    wasm::util::set_return_data(&metadata)
 }
 
 // ============================================================================

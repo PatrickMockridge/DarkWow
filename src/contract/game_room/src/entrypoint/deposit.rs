@@ -44,6 +44,21 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
 
     msg!("[Deposit] Depositing {} to room {:?}", params.amount, params.room_id);
 
+    // Validate child call is money_v3::transfer_v1 (0x04) for token deposit
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[Deposit] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(GameRoomError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[Deposit] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(GameRoomError::InvalidChildCall.into())
+    }
+
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     let Some(room_data) =
@@ -78,28 +93,25 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
     // Use player from params (verified by proof/signature)
     let caller = params.player;
 
-    // Get or create account
+    // Get or create account (token balance tracked by money_v3)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
     let account_key = dwow_serial::serialize(&(params.room_id, caller.xy().0));
     let account = match wasm::db::db_get(accounts_db, &account_key)? {
         Some(data) => {
             let mut acc: PlayerAccount =
                 dwow_serial::deserialize(&data)?;
-            acc.balance += params.amount;
             acc.last_action_block = current_block as u64;
             acc
         }
-        None => PlayerAccount::new(caller, params.amount, current_block as u64),
+        None => PlayerAccount::new(caller, current_block as u64),
     };
 
-    let new_balance = account.balance;
-
-    msg!("[Deposit] Player balance now: {}", new_balance);
+    msg!("[Deposit] Player account updated at block {}", current_block);
 
     // Store updated account
     wasm::db::db_set(accounts_db, &account_key, &dwow_serial::serialize(&account))?;
 
-    let update = DepositUpdateV1 { room_id: params.room_id, player: caller, new_balance };
+    let update = DepositUpdateV1 { room_id: params.room_id, player: caller, amount: params.amount };
     Ok(dwow_serial::serialize(&update))
 }
 
@@ -108,9 +120,9 @@ pub(crate) fn game_room_deposit_process_update_v1(
     update: DepositUpdateV1,
 ) -> ContractResult {
     msg!(
-        "[Deposit] Deposit applied: player {:?} balance now {}",
+        "[Deposit] Deposit applied: player {:?} amount {}",
         update.player,
-        update.new_balance
+        update.amount
     );
     Ok(())
 }

@@ -50,7 +50,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DrainProtectionError,
@@ -113,6 +113,10 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
     wasm::db::db_init(cid, DRAIN_PROTECTION_CONTRACT_VOTES_TREE)?;
 
     msg!("[drain_protection::init_contract] DrainProtection contract initialized");
+
+    let exit_v1_bincode = include_bytes!("../proof/exit_v1.zk.bin");
+    wasm::db::zkas_db_set(&exit_v1_bincode[..])?;
+
     Ok(())
 }
 
@@ -127,56 +131,32 @@ fn get_metadata(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult 
     let self_ = &calls[call_idx].data;
     let func = DrainProtectionFunction::try_from(self_.data[0])?;
 
-    msg!("[drain_protection::get_metadata] Processing function: {:?}", func);
-
-    match func {
-        DrainProtectionFunction::InitializeV1 => {
-            // No ZK proof needed for initialization
-            wasm::util::set_return_data(&[]);
-        }
-        DrainProtectionFunction::ProposeV1 => {
-            // TODO: ZK proof for proposal authorization
-            wasm::util::set_return_data(&[]);
-        }
-        DrainProtectionFunction::VoteV1 => {
-            // No ZK proof needed for voting
-            wasm::util::set_return_data(&[]);
-        }
-        DrainProtectionFunction::ExecuteV1 => {
-            // No ZK proof needed for execution
-            wasm::util::set_return_data(&[]);
-        }
+    let metadata = match func {
         DrainProtectionFunction::ExitV1 => {
             let params: ExitParamsV1 = deserialize(&self_.data[1..])?;
-            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_public_inputs.push(("ExitProof".to_string(), vec![
-                params.fund_id,
-                params.member_pubkey.x(),
-                params.member_pubkey.y(),
-                pallas::Base::from(params.contribution_weight),
-                pallas::Base::from(params.current_block),
-            ]));
-            wasm::util::set_return_data(&serialize(&zk_public_inputs));
+            drain_protection_exit_get_metadata_v1(params)?
         }
-        DrainProtectionFunction::TransferV1 => {
-            // No ZK proof needed for transfer
-            wasm::util::set_return_data(&[]);
-        }
-        DrainProtectionFunction::LockV1 => {
-            // No ZK proof needed for lock
-            wasm::util::set_return_data(&[]);
-        }
-        DrainProtectionFunction::UnlockV1 => {
-            // No ZK proof needed for unlock
-            wasm::util::set_return_data(&[]);
-        }
-        DrainProtectionFunction::UpdateConfigV1 => {
-            // No ZK proof needed for config update
-            wasm::util::set_return_data(&[]);
-        }
-    }
+        // No ZK circuits for other functions yet
+        _ => vec![],
+    };
 
-    Ok(())
+    wasm::util::set_return_data(&metadata)
+}
+
+fn drain_protection_exit_get_metadata_v1(
+    params: ExitParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    zk_public_inputs.push(("ExitProof".to_string(), vec![
+        params.fund_id,
+        params.member_pubkey.x(),
+        params.member_pubkey.y(),
+        pallas::Base::from(params.contribution_weight),
+        pallas::Base::from(params.current_block),
+    ]));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================

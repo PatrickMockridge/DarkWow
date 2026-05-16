@@ -30,7 +30,7 @@ use dwow_sdk::{
 
 use crate::{
     error::GameRoomError,
-    model::{PlayerAccount, WithdrawParamsV1, WithdrawUpdateV1},
+    model::{WithdrawParamsV1, WithdrawUpdateV1},
     GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_ROOMS_TREE,
 };
 
@@ -43,6 +43,21 @@ pub(crate) fn game_room_withdraw_process_instruction_v1(
     let params: WithdrawParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
 
     msg!("[Withdraw] Requesting withdrawal of {} from room {:?}", params.amount, params.room_id);
+
+    // Validate child call is money_v3::transfer_v1 (0x04) for token withdrawal
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[Withdraw] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+             this_call.children_indexes.len());
+        return Err(GameRoomError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[Withdraw] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(GameRoomError::InvalidChildCall.into())
+    }
 
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
@@ -64,37 +79,17 @@ pub(crate) fn game_room_withdraw_process_instruction_v1(
     // Use player from params (verified by proof/signature)
     let caller = params.player;
 
-    // Get account
+    // Verify account exists (balance enforced by money_v3 child call)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
     let account_key = dwow_serial::serialize(&(params.room_id, caller.xy().0));
-    let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
+    if !wasm::db::db_contains_key(accounts_db, &account_key)? {
         msg!("[Withdraw] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())
-    };
-    let account: PlayerAccount =
-        dwow_serial::deserialize(&account_data)?;
-
-    // Check available balance (not locked in pot)
-    if account.available_balance() < params.amount {
-        msg!(
-            "[Withdraw] Error: Insufficient available balance (have {}, need {})",
-            account.available_balance(),
-            params.amount
-        );
-        return Err(GameRoomError::InsufficientBalance.into())
     }
 
-    // Calculate new balance
-    let new_balance = account.balance - params.amount;
+    msg!("[Withdraw] Withdrawal prepared: player {:?} amount {}", caller, params.amount);
 
-    msg!("[Withdraw] New balance: {}", new_balance);
-
-    // Store updated account
-    let mut account = account;
-    account.balance = new_balance;
-    wasm::db::db_set(accounts_db, &account_key, &dwow_serial::serialize(&account))?;
-
-    let update = WithdrawUpdateV1 { room_id: params.room_id, player: caller, new_balance };
+    let update = WithdrawUpdateV1 { room_id: params.room_id, player: caller, amount: params.amount };
     Ok(dwow_serial::serialize(&update))
 }
 
@@ -103,9 +98,9 @@ pub(crate) fn game_room_withdraw_process_update_v1(
     update: WithdrawUpdateV1,
 ) -> ContractResult {
     msg!(
-        "[Withdraw] Withdrawal applied: player {:?} new balance {}",
+        "[Withdraw] Withdrawal applied: player {:?} amount {}",
         update.player,
-        update.new_balance
+        update.amount
     );
     Ok(())
 }

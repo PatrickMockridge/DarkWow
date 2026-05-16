@@ -488,6 +488,8 @@ pub struct RevealSpinUpdateV1 {
 pub struct SettleSpinParamsV1 {
     /// Spin ID to settle
     pub spin_id: SpinId,
+    /// Expected payout (must match ZK circuit public input)
+    pub payout: u64,
 }
 
 /// Update produced by SettleSpinV1

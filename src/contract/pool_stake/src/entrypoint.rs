@@ -71,6 +71,16 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     if wasm::db::db_lookup(cid, POOL_STAKE_ALLOCATIONS_TREE).is_err() {
         wasm::db::db_init(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
     }
+
+    let allocate_coverage_v1_bincode = include_bytes!("../proof/allocate_coverage_v1.zk.bin");
+    wasm::db::zkas_db_set(&allocate_coverage_v1_bincode[..])?;
+    let create_pool_v1_bincode = include_bytes!("../proof/create_pool_v1.zk.bin");
+    wasm::db::zkas_db_set(&create_pool_v1_bincode[..])?;
+    let join_pool_v1_bincode = include_bytes!("../proof/join_pool_v1.zk.bin");
+    wasm::db::zkas_db_set(&join_pool_v1_bincode[..])?;
+    let slash_coverage_v1_bincode = include_bytes!("../proof/slash_coverage_v1.zk.bin");
+    wasm::db::zkas_db_set(&slash_coverage_v1_bincode[..])?;
+
     Ok(())
 }
 

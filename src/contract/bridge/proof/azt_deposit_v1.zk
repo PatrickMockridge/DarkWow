@@ -6,13 +6,6 @@ constant "AztDepositV1" {
     # NULLIFIER_K is a fixed generator point on the Pallas curve.
     # Used with ec_mul_base to derive public keys from secrets.
     # This is the same base point used throughout DarkFi for key derivation.
-
-    EcFixedPointBase PALLAS_GENERATOR,
-    # Generator point for Pedersen commitments on Pallas curve.
-    # commitment = value * G_v + secret * G_s
-
-    EcFixedPointBase ASSET_ID_BASE,
-    # Fixed point for asset ID personalization in nullifier derivation
 }
 
 witness "AztDepositV1" {

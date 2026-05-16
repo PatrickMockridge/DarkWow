@@ -24,14 +24,14 @@
 //! Relayer Endowment Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{ContractId, PublicKey},
+    crypto::{poseidon_hash, ContractId, PublicKey},
     dark_tree::DarkLeaf,
-    error::ContractResult,
+    error::{ContractError, ContractResult},
     msg, ContractCall,
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::error::RelayerEndowmentError;
 use crate::model::*;
@@ -39,6 +39,8 @@ use crate::RelayerEndowmentFunction;
 use crate::{
     RELAYER_ENDOWMENT_DEPLOYMENTS_TREE, RELAYER_ENDOWMENT_REGISTRY_TREE,
     RELAYER_ENDOWMENT_MIN_DEPLOY, RELAYER_ENDOWMENT_INFO_TREE,
+    RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1, RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1,
+    RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V1,
 };
 
 dwow_sdk::define_contract!(
@@ -66,11 +68,110 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     if wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE).is_err() {
         wasm::db::db_init(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
     }
+
+    let claim_fees_v1_bincode = include_bytes!("../proof/claim_fees_v1.zk.bin");
+    wasm::db::zkas_db_set(&claim_fees_v1_bincode[..])?;
+    let deploy_capital_v1_bincode = include_bytes!("../proof/deploy_capital_v1.zk.bin");
+    wasm::db::zkas_db_set(&deploy_capital_v1_bincode[..])?;
+    let initialize_v1_bincode = include_bytes!("../proof/initialize_v1.zk.bin");
+    wasm::db::zkas_db_set(&initialize_v1_bincode[..])?;
+
     Ok(())
 }
 
-fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
-    Ok(())
+fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = RelayerEndowmentFunction::try_from(self_.data[0])?;
+
+    let metadata = match func {
+        RelayerEndowmentFunction::InitializeV1 => {
+            let params: InitializeParamsV1 = deserialize(&self_.data[1..])?;
+            relayer_endowment_initialize_get_metadata_v1(cid, params)?
+        }
+        RelayerEndowmentFunction::DeployCapitalV1 => {
+            let params: DeployCapitalParamsV1 = deserialize(&self_.data[1..])?;
+            relayer_endowment_deploy_capital_get_metadata_v1(cid, params)?
+        }
+        RelayerEndowmentFunction::ClaimRelayerFeesV1 => {
+            let params: ClaimFeesParamsV1 = deserialize(&self_.data[1..])?;
+            relayer_endowment_claim_fees_get_metadata_v1(cid, params)?
+        }
+        // No ZK circuits for WithdrawDeployment, SettleFees, UpdateConfig
+        _ => vec![],
+    };
+
+    wasm::util::set_return_data(&metadata)
+}
+
+fn relayer_endowment_initialize_get_metadata_v1(
+    _cid: ContractId,
+    params: InitializeParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let (rx, ry) = params.signature_public.xy();
+    let config_hash = poseidon_hash([pallas::Base::from(params.default_backer_cut_bp as u64)]);
+    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()? as u64);
+    let endowment_id = poseidon_hash([rx, ry, config_hash, nonce]);
+    zk_public_inputs.push((
+        RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1.to_string(),
+        vec![endowment_id],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+fn relayer_endowment_deploy_capital_get_metadata_v1(
+    _cid: ContractId,
+    params: DeployCapitalParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let (rx, ry) = params.relayer_pub.xy();
+    let (bx, by) = params.signature_public.xy();
+    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()? as u64);
+    // Compute endowment_id the same way as initialize
+    let config_hash = poseidon_hash([pallas::Base::from(params.backer_cut_bp as u64)]);
+    let endowment_id = poseidon_hash([rx, ry, config_hash, nonce]);
+    let deployment_id = poseidon_hash([
+        endowment_id,
+        bx,
+        by,
+        pallas::Base::from(params.amount),
+        nonce,
+    ]);
+    // Note: value_commit coordinates are not available in params for v1
+    zk_public_inputs.push((
+        RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1.to_string(),
+        vec![deployment_id, pallas::Base::zero(), pallas::Base::zero()],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+fn relayer_endowment_claim_fees_get_metadata_v1(
+    _cid: ContractId,
+    params: ClaimFeesParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()? as u64);
+    // Compute claim_id from deployment_id + nonce (backer_pub/fee_share not in params for v1)
+    let claim_id = poseidon_hash([
+        params.deployment_id,
+        pallas::Base::zero(), // backer_pub_x placeholder
+        pallas::Base::zero(), // backer_pub_y placeholder
+        pallas::Base::zero(), // fee_share placeholder
+        nonce,
+    ]);
+    zk_public_inputs.push((
+        RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V1.to_string(),
+        vec![claim_id],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================

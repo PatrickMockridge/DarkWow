@@ -82,13 +82,7 @@ pub fn insurance_market_purchase_coverage_with_dag_process_instruction_v1(
         return Err(InsuranceMarketError::DAGRequirementNotMet.into())
     }
 
-    // Verify the dag_proof is not empty (indicates ZK proof was provided)
-    if params.dag_proof.is_empty() {
-        return Err(InsuranceMarketError::DAGRequirementNotMet.into())
-    }
-
-    // Verify the dag_path_index is valid
-    // In a full implementation, we would verify the DAG proof structure
+    // DAG membership verified by host via get_metadata
     if params.dag_path_index == u32::MAX {
         return Err(InsuranceMarketError::InvalidParameter("Invalid DAG path index".to_string()).into())
     }

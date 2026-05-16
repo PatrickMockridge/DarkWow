@@ -44,7 +44,7 @@ use dwow_sdk::{
 
 use crate::{
     error::GameRoomError,
-    model::{ClaimParamsV1, ClaimUpdateV1, PlayerAccount, Pot, PotState},
+    model::{ClaimParamsV1, ClaimUpdateV1, Pot, PotState},
     GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_NULLIFIERS_TREE,
     GAME_ROOM_POTS_TREE, GAME_ROOM_ROOMS_TREE,
 };
@@ -132,35 +132,23 @@ pub(crate) fn game_room_claim_process_instruction_v1(
         return Err(GameRoomError::InvalidAmount.into())
     }
 
-    // Get winner's account
+    // Verify winner's account exists (token payout handled by money_v3 child call)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
     let account_key = dwow_serial::serialize(&(params.room_id, params.winner.xy().0));
-    let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
+    if !wasm::db::db_contains_key(accounts_db, &account_key)? {
         msg!("[Claim] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())
-    };
-    let mut account: PlayerAccount =
-        dwow_serial::deserialize(&account_data)?;
+    }
 
-    // Calculate new balance - add winnings to balance
-    // Note: In a full implementation with locked funds tracking, we would unlock
-    // the winner's contribution to the pot here.
     let winnings = params.payout_amount;
-    account.balance += winnings;
-
-    let new_balance = account.balance;
-
-    // Store updated account
-    wasm::db::db_set(accounts_db, &account_key, &dwow_serial::serialize(&account))?;
 
     // Record nullifier to prevent double-claim
     wasm::db::db_set(nullifiers_db, &claim_key, &[])?;
 
     msg!(
-        "[Claim] Claim prepared: winner {:?} will receive {} (new balance: {})",
+        "[Claim] Claim prepared: winner {:?} will receive {}",
         params.winner,
-        winnings,
-        new_balance
+        winnings
     );
 
     let update = ClaimUpdateV1 {
@@ -168,7 +156,6 @@ pub(crate) fn game_room_claim_process_instruction_v1(
         pot_id: params.pot_id,
         winner: params.winner,
         amount: winnings,
-        new_balance,
     };
     Ok(dwow_serial::serialize(&update))
 }
@@ -178,11 +165,10 @@ pub(crate) fn game_room_claim_process_update_v1(
     update: ClaimUpdateV1,
 ) -> ContractResult {
     msg!(
-        "[Claim] Update applied: winner {:?} claimed {} from pot {:?}, new balance {}",
+        "[Claim] Update applied: winner {:?} claimed {} from pot {:?}",
         update.winner,
         update.amount,
-        update.pot_id,
-        update.new_balance
+        update.pot_id
     );
     Ok(())
 }

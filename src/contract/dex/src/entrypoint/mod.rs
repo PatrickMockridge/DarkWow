@@ -201,6 +201,20 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     msg!("[dex::init_contract] DEX contract initialized successfully");
     msg!("[dex::init_contract] WARNING: Using trusted Merkle root from initialization");
     msg!("[dex::init_contract] This is a workaround for lack of cross-contract ZK composition");
+
+    let accept_swap_v1_bincode = include_bytes!("../../proof/accept_swap_v1.zk.bin");
+    wasm::db::zkas_db_set(&accept_swap_v1_bincode[..])?;
+    let cancel_swap_v1_bincode = include_bytes!("../../proof/cancel_swap_v1.zk.bin");
+    wasm::db::zkas_db_set(&cancel_swap_v1_bincode[..])?;
+    let create_swap_v1_bincode = include_bytes!("../../proof/create_swap_v1.zk.bin");
+    wasm::db::zkas_db_set(&create_swap_v1_bincode[..])?;
+    let execute_swap_fee_v1_bincode = include_bytes!("../../proof/execute_swap_fee_v1.zk.bin");
+    wasm::db::zkas_db_set(&execute_swap_fee_v1_bincode[..])?;
+    let execute_swap_slippage_v1_bincode = include_bytes!("../../proof/execute_swap_slippage_v1.zk.bin");
+    wasm::db::zkas_db_set(&execute_swap_slippage_v1_bincode[..])?;
+    let execute_swap_v1_bincode = include_bytes!("../../proof/execute_swap_v1.zk.bin");
+    wasm::db::zkas_db_set(&execute_swap_v1_bincode[..])?;
+
     Ok(())
 }
 

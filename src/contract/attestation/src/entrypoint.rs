@@ -38,14 +38,14 @@
 //! 4. Claim can be consumed (prevents replay)
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
-    pasta::pallas,
+    pasta::pallas::{self, Base},
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     model::{
@@ -63,6 +63,14 @@ use crate::{
     ATTESTATION_CONTRACT_CLAIMS_TREE, ATTESTATION_CONTRACT_DELEGATIONS_TREE,
     ATTESTATION_CONTRACT_INDEX_TREE,
     ATTESTATION_CONTRACT_NULLIFIERS_TREE, ATTESTATION_CONTRACT_RATE_LIMIT_TREE,
+    ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1,
+    ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1,
+    ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1,
+    ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V1,
+    ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V1,
+    ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1,
+    ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1,
+    ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1,
 };
 
 dwow_sdk::define_contract!(
@@ -79,6 +87,24 @@ dwow_sdk::define_contract!(
 /// Initialize attestation contract state
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[attestation::init_contract] Initializing attestation contract");
+
+    let check_not_revoked_v1_bincode = include_bytes!("../proof/check_not_revoked_v1.zk.bin");
+    let consume_claim_v1_bincode = include_bytes!("../proof/consume_claim_v1.zk.bin");
+    let create_attestation_v1_bincode = include_bytes!("../proof/create_attestation_v1.zk.bin");
+    let create_claim_v1_bincode = include_bytes!("../proof/create_claim_v1.zk.bin");
+    let delegate_attestation_v1_bincode = include_bytes!("../proof/delegate_attestation_v1.zk.bin");
+    let update_delegation_v1_bincode = include_bytes!("../proof/update_delegation_v1.zk.bin");
+    let verify_chain_v1_bincode = include_bytes!("../proof/verify_chain_v1.zk.bin");
+    let verify_claim_v1_bincode = include_bytes!("../proof/verify_claim_v1.zk.bin");
+
+    wasm::db::zkas_db_set(&check_not_revoked_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&consume_claim_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&create_attestation_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&create_claim_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&delegate_attestation_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&update_delegation_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&verify_chain_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&verify_claim_v1_bincode[..])?;
 
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
@@ -115,59 +141,73 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[attestation::get_metadata] Processing function: {:?}", func);
 
+    let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
+
     match func {
         AttestationFunction::CreateAttestationV1 => {
-            let _params: CreateAttestationParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[attestation::get_metadata] CreateAttestationV1 metadata requested");
+            let params: CreateAttestationParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
+                vec![params.attestation_id],
+            ));
         }
         AttestationFunction::CreateClaimV1 => {
-            let _params: CreateClaimParamsV1 = deserialize(&self_.data[1..])?;
-            msg!("[attestation::get_metadata] CreateClaimV1 metadata requested");
+            let params: CreateClaimParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1.to_string(),
+                vec![params.claim_id],
+            ));
         }
         AttestationFunction::VerifyClaimV1 => {
-            msg!("[attestation::get_metadata] VerifyClaimV1 metadata requested");
+            let params: VerifyClaimParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1.to_string(),
+                vec![params.claim_id, params.attestation_id],
+            ));
         }
         AttestationFunction::ConsumeClaimV1 => {
-            msg!("[attestation::get_metadata] ConsumeClaimV1 metadata requested");
-        }
-        AttestationFunction::ValidateClaimV1 => {
-            msg!("[attestation::get_metadata] ValidateClaimV1 metadata requested");
-        }
-        AttestationFunction::RevokeAttestationV1 => {
-            msg!("[attestation::get_metadata] RevokeAttestationV1 metadata requested");
-        }
-        AttestationFunction::ExpireAttestationV1 => {
-            msg!("[attestation::get_metadata] ExpireAttestationV1 metadata requested");
+            let params: ConsumeClaimParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V1.to_string(),
+                vec![params.nullifier],
+            ));
         }
         AttestationFunction::CheckNotRevokedV1 => {
-            msg!("[attestation::get_metadata] CheckNotRevokedV1 metadata requested");
+            let params: CheckNotRevokedParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V1.to_string(),
+                vec![params.nonce, params.revocation_root],
+            ));
         }
         AttestationFunction::DelegateAttestationV1 => {
-            msg!("[attestation::get_metadata] DelegateAttestationV1 metadata requested");
+            let params: DelegateAttestationParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1.to_string(),
+                vec![params.delegation_id, params.revocation_root],
+            ));
         }
         AttestationFunction::VerifyChainV1 => {
-            msg!("[attestation::get_metadata] VerifyChainV1 metadata requested");
+            let params: VerifyChainParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1.to_string(),
+                vec![params.delegation_id, params.chain_root],
+            ));
         }
         AttestationFunction::UpdateDelegationV1 => {
-            msg!("[attestation::get_metadata] UpdateDelegationV1 metadata requested");
+            let params: UpdateDelegationParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1.to_string(),
+                vec![params.original_attestation_id],
+            ));
         }
-    };
+        // RevokeAttestationV1, ExpireAttestationV1, ValidateClaimV1
+        // have no ZK circuits; return empty metadata.
+        _ => {}
+    }
 
-    wasm::util::set_return_data(&vec![])
-}
-
-fn create_attestation_get_metadata_v1(
-    _params: CreateAttestationParamsV1,
-) -> ContractResult {
-    msg!("[attestation::create_attestation_get_metadata_v1] Creating attestation: {:?}", _params.attestation_id);
-    Ok(())
-}
-
-fn create_claim_get_metadata_v1(
-    _params: CreateClaimParamsV1,
-) -> ContractResult {
-    msg!("[attestation::create_claim_get_metadata_v1] Creating claim: {:?}", _params.claim_id);
-    Ok(())
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    wasm::util::set_return_data(&metadata)
 }
 
 // ============================================================================
@@ -494,7 +534,7 @@ fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> ContractResu
     }
 
     // Get and verify claim
-    let mut claim: Claim =
+    let claim: Claim =
         match wasm::db::db_get(claims_db, &serialize(&params.claim_id))? {
             Some(data) => deserialize(&data)?,
             None => {
@@ -515,33 +555,53 @@ fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> ContractResu
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Verify the evidence matches the attestation data based on predicate
+    // Verify the evidence commitment matches the claim's stored commitment
+    let claim_commitment = match claim.evidence_commitment.len() {
+        32 => {
+            let mut repr = [0u8; 32];
+            repr.copy_from_slice(&claim.evidence_commitment);
+            pallas::Base::from_repr(repr).unwrap_or(pallas::Base::zero())
+        }
+        _ => pallas::Base::zero(),
+    };
+    if params.evidence_commitment != claim_commitment {
+        msg!("[attestation::verify_claim_v1] ERROR: Evidence commitment mismatch");
+        return Err(ContractError::InvalidFunction.into())
+    }
+
+    // Verify based on predicate type.
+    // ZK circuit (verified by host via get_metadata) constrains revealed_result
+    // to match the predicate evaluation against claim_data and evidence.
     let verified = match claim.predicate {
         Predicate::Matches => {
-            // For Matches: verify evidence_commitment hash matches attestation.claim_data
-            // The claim stores evidence_commitment as Vec<u8> (hash of evidence)
-            // The attestation stores claim_data as Vec<pallas::Base>
-            // Simple comparison: check if revealed result indicates match
+            // ZK circuit constrains: revealed_result == poseidon_hash(evidence)
+            // Match confirmed if revealed_result is non-zero
             params.revealed_result != pallas::Base::zero()
         }
         Predicate::GreaterOrEqual => {
-            // For GreaterOrEqual: revealed_result should be >= attestation.claim_data[0]
-            // If claim_data is empty or revealed_result is non-zero, consider verified
-            params.revealed_result != pallas::Base::zero()
+            // ZK circuit constrains: ev0 >= cd0 → revealed_result = 1, else 0
+            params.revealed_result == pallas::Base::one()
         }
         Predicate::LessOrEqual => {
-            // For LessOrEqual: revealed_result should be <= attestation.claim_data[0]
+            // ZK circuit constrains: ev0 <= cd0 → revealed_result = 1, else 0
+            params.revealed_result == pallas::Base::one()
+        }
+        Predicate::Contains => {
+            // ZK circuit constrains set membership check
             params.revealed_result != pallas::Base::zero()
         }
-        Predicate::Contains | Predicate::Custom => {
-            // These require ZK verification - verified if revealed_result is non-zero
+        Predicate::Custom => {
+            // ZK circuit handles external proof verification
             params.revealed_result != pallas::Base::zero()
         }
     };
 
-    // Update claim state
-    claim.state = if verified { ClaimState::Verified } else { ClaimState::Rejected };
-    wasm::db::db_set(claims_db, &serialize(&params.claim_id), &serialize(&claim))?;
+    // Return update — DB write handled in process_update
+    let update = VerifyClaimUpdateV1 {
+        claim_id: params.claim_id,
+        verified,
+    };
+    wasm::util::set_return_data(&serialize(&update))?;
 
     msg!("[attestation::verify_claim_v1] Claim verification result: {:?}", verified);
     Ok(())
@@ -869,6 +929,12 @@ fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
         }
         AttestationFunction::VerifyClaimV1 => {
             let update: VerifyClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let claims_db = wasm::db::db_lookup(_cid, ATTESTATION_CONTRACT_CLAIMS_TREE)?;
+            let claim_bytes =
+                wasm::db::db_get(claims_db, &serialize(&update.claim_id))?.unwrap();
+            let mut claim: Claim = deserialize(&claim_bytes)?;
+            claim.state = if update.verified { ClaimState::Verified } else { ClaimState::Rejected };
+            wasm::db::db_set(claims_db, &serialize(&update.claim_id), &serialize(&claim))?;
             msg!(
                 "[attestation::process_update] VerifyClaim: {:?} verified={:?}",
                 update.claim_id,

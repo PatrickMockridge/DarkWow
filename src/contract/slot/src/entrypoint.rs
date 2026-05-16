@@ -39,18 +39,20 @@
 use dwow_sdk::{
     crypto::{poseidon_hash, pasta_prelude::PrimeField, ContractId},
     dark_tree::DarkLeaf,
-    error::GenericResult,
+    error::{GenericResult, ContractError},
     msg, wasm,
     ContractCall,
 };
+use pasta_curves::{arithmetic::CurveAffine, group::Curve};
 use dwow_sdk::pasta::pallas::Base;
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::error::SlotError;
 use crate::model::{
     video_paytable, CommitSpinParamsV1, CommitSpinUpdateV1, GameConfig, Spin, SpinId, SpinState,
 };
 use crate::SlotFunction;
+use crate::{SLOT_CONTRACT_ZKAS_COMMIT_NS, SLOT_CONTRACT_ZKAS_SETTLE_NS};
 
 // Database trees
 const SPINS_TREE: &str = "spins";
@@ -69,12 +71,75 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> GenericResult<()> {
     wasm::db::db_init(cid, SPINS_TREE)?;
     wasm::db::db_init(cid, CONFIG_TREE)?;
     wasm::db::db_init(cid, HOUSE_TREE)?;
+
+    let commit_bet_v1_bincode = include_bytes!("../proof/commit_bet_v1.zk.bin");
+    wasm::db::zkas_db_set(&commit_bet_v1_bincode[..])?;
+    let settle_bet_v1_bincode = include_bytes!("../proof/settle_bet_v1.zk.bin");
+    wasm::db::zkas_db_set(&settle_bet_v1_bincode[..])?;
+
     Ok(())
 }
 
-/// Get metadata for verification
-fn get_metadata(_cid: ContractId, _ix: &[u8]) -> GenericResult<()> {
-    Ok(())
+/// Get metadata for ZK proof verification
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> GenericResult<()> {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = SlotFunction::try_from(self_.data[0])?;
+
+    let metadata = match func {
+        SlotFunction::CommitSpinV1 => {
+            let params: CommitSpinParamsV1 = deserialize(&self_.data[1..])?;
+            slot_commit_bet_get_metadata_v1(params)?
+        }
+        SlotFunction::SettleSpinV1 => {
+            let params: crate::model::SettleSpinParamsV1 = deserialize(&self_.data[1..])?;
+            slot_settle_bet_get_metadata_v1(params)?
+        }
+        // No ZK circuits for Initialize, RevealSpin, CancelSpin
+        _ => vec![],
+    };
+
+    wasm::util::set_return_data(&metadata)
+}
+
+fn slot_commit_bet_get_metadata_v1(
+    params: CommitSpinParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
+    let (px, py) = params.player_pub.xy();
+    let spin_id = poseidon_hash([
+        px,
+        py,
+        Base::from(params.bet_value),
+        Base::from(params.paylines_played as u64),
+        params.secret_nonce,
+        params.blind,
+        params.token_id,
+    ]);
+    let vc_affine = params.value_commit.to_affine();
+    let vc_coords = vc_affine.coordinates().unwrap();
+    let (vc_x, vc_y) = (*vc_coords.x(), *vc_coords.y());
+    zk_public_inputs.push((
+        SLOT_CONTRACT_ZKAS_COMMIT_NS.to_string(),
+        vec![spin_id, vc_x, vc_y],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+fn slot_settle_bet_get_metadata_v1(
+    params: crate::model::SettleSpinParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
+    zk_public_inputs.push((
+        SLOT_CONTRACT_ZKAS_SETTLE_NS.to_string(),
+        vec![params.spin_id, Base::from(params.payout)],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Process instruction
@@ -434,6 +499,12 @@ fn settle_spin_process_instruction_v1(
 
     // Calculate payout
     let payout = crate::model::calculate_payout(spin.bet_value, &wins, spin.house_edge);
+
+    // Verify ZK proof public input matches computed payout
+    if params.payout != payout {
+        msg!("[slot::settle_spin] ERROR: Payout mismatch: computed={}, claimed={}", payout, params.payout);
+        return Err(SlotError::InvalidBetValue.into())
+    }
 
     // Update spin
     spin.wins = wins.clone();

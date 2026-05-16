@@ -59,6 +59,11 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
     wasm::db::db_init(cid, ROULETTE_CONTRACT_BETS_HISTORY_TREE)?;
 
+    let place_bet_v1_bincode = include_bytes!("../proof/place_bet_v1.zk.bin");
+    wasm::db::zkas_db_set(&place_bet_v1_bincode[..])?;
+    let settle_bet_v1_bincode = include_bytes!("../proof/settle_bet_v1.zk.bin");
+    wasm::db::zkas_db_set(&settle_bet_v1_bincode[..])?;
+
     Ok(())
 }
 

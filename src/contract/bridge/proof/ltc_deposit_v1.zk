@@ -6,13 +6,6 @@ constant "LtcDepositV1" {
     # NULLIFIER_K is a fixed generator point on the Pallas curve.
     # Used with ec_mul_base to derive public keys from secrets.
     # This is the same base point used throughout DarkFi for key derivation.
-
-    EcFixedPointBase PALLAS_GENERATOR,
-    # Generator point for Pedersen commitments on Pallas curve.
-    # Used for MWEB confidential commitment verification.
-
-    EcFixedPointBase MWEB_COMMITMENT_BASE,
-    # Generator point for MimbleWimble MWEB commitments.
     # commitment = value * G_v + blinding * G_r
 }
 

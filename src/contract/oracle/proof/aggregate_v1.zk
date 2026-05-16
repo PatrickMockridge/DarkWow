@@ -149,3 +149,4 @@ circuit "Aggregate" {
     # - This circuit assumes exactly 4 values (fixed-size input)
     # - For production, consider a loop-based approach or multiple circuits
     # - The bounds checking uses field arithmetic (circular range checks)
+}

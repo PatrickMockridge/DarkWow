@@ -91,6 +91,20 @@ dwow_sdk::define_contract!(
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[auction::init_contract] Initializing auction contract");
 
+    let create_auction_v1_bincode = include_bytes!("../proof/create_auction_v1.zk.bin");
+    let place_bid_v1_bincode = include_bytes!("../proof/place_bid_v1.zk.bin");
+    let close_auction_v1_bincode = include_bytes!("../proof/close_auction_v1.zk.bin");
+    let refund_bid_v1_bincode = include_bytes!("../proof/refund_bid_v1.zk.bin");
+    let claim_winnings_v1_bincode = include_bytes!("../proof/claim_winnings_v1.zk.bin");
+    let settle_auction_v1_bincode = include_bytes!("../proof/settle_auction_v1.zk.bin");
+
+    wasm::db::zkas_db_set(&create_auction_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&place_bid_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&close_auction_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&refund_bid_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&claim_winnings_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&settle_auction_v1_bincode[..])?;
+
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, AUCTION_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, b"db_version", &env!("CARGO_PKG_VERSION").as_bytes())?;
