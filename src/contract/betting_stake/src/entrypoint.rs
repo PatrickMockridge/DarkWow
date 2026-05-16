@@ -125,6 +125,50 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.encode(&mut metadata)?;
             metadata
         }
+        BettingStakeFunction::UnstakeV1 => {
+            let params: crate::model::UnstakeParamsV1 = deserialize(&self_.data[1..])?;
+            let staker_x = params.staker_pub.x();
+            let staker_y = params.staker_pub.y();
+            let stake_id = poseidon_hash([
+                params.table_id,
+                staker_x,
+                staker_y,
+                pallas::Base::from(params.original_amount),
+                params.nonce,
+            ]);
+            let vc_affine = params.value_commit.to_affine();
+            let vc_coords = vc_affine.coordinates().unwrap();
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::BETTING_STAKE_ZKAS_UNSTAKE_NS.to_string(),
+                vec![stake_id, *vc_coords.x(), *vc_coords.y()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
+        BettingStakeFunction::ClaimEarningsV1 => {
+            let params: crate::model::ClaimEarningsParamsV1 = deserialize(&self_.data[1..])?;
+            let staker_x = params.staker_pub.x();
+            let staker_y = params.staker_pub.y();
+            let stake_id = poseidon_hash([
+                params.table_id,
+                staker_x,
+                staker_y,
+                pallas::Base::from(params.current_amount),
+                params.nonce,
+            ]);
+            let vc_affine = params.value_commit.to_affine();
+            let vc_coords = vc_affine.coordinates().unwrap();
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::BETTING_STAKE_ZKAS_CLAIM_NS.to_string(),
+                vec![stake_id, *vc_coords.x(), *vc_coords.y()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
         _ => vec![],
     };
 

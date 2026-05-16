@@ -321,6 +321,12 @@ pub struct ExitParamsV1 {
     pub contribution_weight: u64,
     /// Current block height
     pub current_block: u64,
+    /// DAO-Escrow bulla identifier (public input for ZK proof)
+    pub dao_escrow_bulla: pallas::Base,
+    /// DAO-Escrow membership note (public input for ZK proof)
+    pub dao_membership_note: pallas::Base,
+    /// Effective weight after time multiplier (public input for ZK proof)
+    pub effective_weight: pallas::Base,
     /// ZK proof of membership
     pub proof: Vec<u8>,
 }

@@ -343,6 +343,9 @@ pub struct ExitBuilder {
     member_pubkey: PublicKey,
     contribution_weight: u64,
     current_block: u64,
+    dao_escrow_bulla: pallas::Base,
+    dao_membership_note: pallas::Base,
+    effective_weight: pallas::Base,
     proof: Vec<u8>,
 }
 
@@ -353,6 +356,9 @@ impl ExitBuilder {
             member_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
             contribution_weight: 0,
             current_block: 0,
+            dao_escrow_bulla: pallas::Base::zero(),
+            dao_membership_note: pallas::Base::zero(),
+            effective_weight: pallas::Base::zero(),
             proof: vec![],
         }
     }
@@ -377,6 +383,21 @@ impl ExitBuilder {
         self
     }
 
+    pub fn dao_escrow_bulla(mut self, bulla: pallas::Base) -> Self {
+        self.dao_escrow_bulla = bulla;
+        self
+    }
+
+    pub fn dao_membership_note(mut self, note: pallas::Base) -> Self {
+        self.dao_membership_note = note;
+        self
+    }
+
+    pub fn effective_weight(mut self, weight: pallas::Base) -> Self {
+        self.effective_weight = weight;
+        self
+    }
+
     pub fn proof(mut self, proof: Vec<u8>) -> Self {
         self.proof = proof;
         self
@@ -388,6 +409,9 @@ impl ExitBuilder {
             member_pubkey: self.member_pubkey,
             contribution_weight: self.contribution_weight,
             current_block: self.current_block,
+            dao_escrow_bulla: self.dao_escrow_bulla,
+            dao_membership_note: self.dao_membership_note,
+            effective_weight: self.effective_weight,
             proof: self.proof.clone(),
         })
     }

@@ -85,6 +85,9 @@ pub enum BridgeError {
 
     #[error("Invalid child call")]
     InvalidChildCall,
+
+    #[error("Withdrawal not found")]
+    WithdrawalNotFound,
 }
 
 impl From<BridgeError> for ContractError {
@@ -110,6 +113,7 @@ impl From<BridgeError> for ContractError {
             BridgeError::InvalidFunction => Self::Custom(18),
             BridgeError::InvalidChildrenIndexes => Self::Custom(19),
             BridgeError::InvalidChildCall => Self::Custom(20),
+            BridgeError::WithdrawalNotFound => Self::Custom(21),
         }
     }
 }

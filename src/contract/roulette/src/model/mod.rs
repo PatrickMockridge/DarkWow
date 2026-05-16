@@ -375,6 +375,8 @@ pub struct SettleBetsParamsV1 {
     pub table_id: pallas::Base,
     /// Bet IDs to settle
     pub bet_ids: Vec<pallas::Base>,
+    /// Total payout amount (public input for ZK proof)
+    pub payout: u64,
 }
 
 /// Update from SettleBetsV1

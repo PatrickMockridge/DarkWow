@@ -30,6 +30,7 @@
 //! - No secret sharing between bridge nodes
 //! - User alone controls withdrawal via their secret
 
+use dwow_sdk::pasta::pallas;
 use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::crypto::{IntentCommitment, IntentNullifier};
 
@@ -120,6 +121,9 @@ pub struct WithdrawParams {
     /// Hash of actual address for privacy
     pub recipient_hash: [u8; 32],
 
+    /// Deposit leaf = poseidon_hash(secret, amount) — public input for ZK proof
+    pub deposit_leaf: pallas::Base,
+
     /// Amount to withdraw
     pub amount: u64,
 
@@ -132,6 +136,12 @@ pub struct WithdrawParams {
 
     /// Bridge fee paid by withdrawer
     pub fee: u64,
+
+    /// Block height after which the withdrawal can be cancelled if not executed
+    pub timeout_height: u64,
+
+    /// Feed mode: 0 = standard (fee only), 1 = guaranteed (fee + premium)
+    pub feed_mode: u8,
 }
 
 /// Bridge configuration update parameters
@@ -653,6 +663,9 @@ pub struct CancelWithdrawParams {
     /// Original signature or proof that this withdrawal was valid
     /// This ensures only the original submitter can cancel
     pub proof: Vec<u8>,
+
+    /// Current block height (for timeout verification)
+    pub current_block: u64,
 }
 
 /// Parameters for executing a guaranteed withdrawal with pool stake coverage
@@ -740,6 +753,18 @@ pub struct ClaimHtlcUpdateV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RefundHtlcUpdateV1 {
     pub swap_id: [u8; 32],
+}
+
+/// Update data for withdrawal cancellation
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CancelWithdrawUpdateV1 {
+    pub nullifier: IntentNullifier,
+}
+
+/// Update data for guaranteed withdrawal execution
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ExecuteGuaranteedWithdrawUpdateV1 {
+    pub nullifier: IntentNullifier,
 }
 
 /// HTLC state enum for database storage

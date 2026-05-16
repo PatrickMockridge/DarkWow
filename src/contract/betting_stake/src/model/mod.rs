@@ -202,6 +202,16 @@ pub struct StakeUpdateV1 {
 pub struct UnstakeParamsV1 {
     /// Stake ID to unstake
     pub stake_id: pallas::Base,
+    /// Associated table registry ID
+    pub table_id: pallas::Base,
+    /// Staker's public key
+    pub staker_pub: PublicKey,
+    /// Original stake amount (used in stake_id derivation)
+    pub original_amount: u64,
+    /// Nonce for stake_id derivation (public input for ZK proof)
+    pub nonce: pallas::Base,
+    /// Value commitment point (public input for ZK proof)
+    pub value_commit: pallas::Point,
     /// Signature from staker
     pub signature: Signature,
     /// Spend hook FuncId for money_v3::transfer_v1 callback
@@ -223,6 +233,16 @@ pub struct UnstakeUpdateV1 {
 pub struct ClaimEarningsParamsV1 {
     /// Stake ID to claim earnings for
     pub stake_id: pallas::Base,
+    /// Associated table registry ID
+    pub table_id: pallas::Base,
+    /// Staker's public key
+    pub staker_pub: PublicKey,
+    /// Current stake amount (used in stake_id derivation)
+    pub current_amount: u64,
+    /// Nonce for stake_id derivation (public input for ZK proof)
+    pub nonce: pallas::Base,
+    /// Value commitment point (public input for ZK proof)
+    pub value_commit: pallas::Point,
     /// Signature from staker
     pub signature: Signature,
 }

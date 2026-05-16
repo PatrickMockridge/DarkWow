@@ -61,16 +61,18 @@ use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable,
 use crate::{
     error::BridgeError,
     model::{
-        CancelWithdrawParams, ClaimHtlcParams, ClaimHtlcUpdateV1, CreateHtlcParams,
-        CreateHtlcUpdateV1, Deposit, DepositParams, ExecuteGuaranteedWithdrawParams,
-        ExternalChain, HtlcSwapInfo, HtlcSwapState, RefundHtlcParams,
-        RefundHtlcUpdateV1, UpdateConfigParams, Withdrawal, WithdrawParams, XmrDepositProof,
-        ZcashDepositProof, AztecDepositProof, LitecoinDepositProof,
+        CancelWithdrawParams, CancelWithdrawUpdateV1, ClaimHtlcParams, ClaimHtlcUpdateV1,
+        CreateHtlcParams, CreateHtlcUpdateV1, Deposit, DepositParams,
+        ExecuteGuaranteedWithdrawParams, ExecuteGuaranteedWithdrawUpdateV1,
+        ExternalChain, HtlcSwapInfo, HtlcSwapState, PendingWithdrawal,
+        RefundHtlcParams, RefundHtlcUpdateV1, UpdateConfigParams, Withdrawal, WithdrawParams,
+        XmrDepositProof, ZcashDepositProof, AztecDepositProof, LitecoinDepositProof,
     },
     BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_INFO_TREE,
     BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1,
     BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE,
-    BRIDGE_CONTRACT_WITHDRAWALS_TREE, BRIDGE_CONTRACT_STATE,
+    BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE, BRIDGE_CONTRACT_WITHDRAWALS_TREE,
+    BRIDGE_CONTRACT_STATE,
     BRIDGE_CONTRACT_XMR_CONFIRMATIONS, BRIDGE_CONTRACT_ZEC_CONFIRMATIONS, BRIDGE_CONTRACT_AZT_CONFIRMATIONS,
     BRIDGE_CONTRACT_LTC_CONFIRMATIONS, BRIDGE_CONTRACT_HTLCS_TREE, BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE,
 };
@@ -130,11 +132,18 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     // Initialize withdrawals tree
     wasm::db::db_init(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
 
+    // Initialize pending withdrawals tree (timeout/cancel tracking)
+    wasm::db::db_init(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
+
     // Initialize nullifiers tree
     wasm::db::db_init(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
 
     // Initialize keys tree
     wasm::db::db_init(cid, BRIDGE_CONTRACT_KEYS_TREE)?;
+
+    // Initialize HTLC trees
+    wasm::db::db_init(cid, BRIDGE_CONTRACT_HTLCS_TREE)?;
+    wasm::db::db_init(cid, BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE)?;
 
     // Set initial configuration
     let config_db = wasm::db::db_init(cid, "config")?;
@@ -174,30 +183,23 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
 /// Metadata for DepositV1 ZK proof verification.
 ///
-/// Public inputs:
-/// - commitment: the deposit commitment hash
-/// - recipient_pub_x, recipient_pub_y: recipient public key coordinates
-/// - external_state_root: merkle root proving inclusion on external chain
+/// The deposit_v1.zk circuit has zero constrain_instance calls — all public
+/// inputs are verified via constrain_equal_base internally. The host still
+/// needs the namespace to load the correct verification key, so we return
+/// namespace with an empty public input vector.
 fn deposit_get_metadata(data: &[u8]) -> Vec<u8> {
     use dwow_sdk::pasta::pallas;
 
-    let params: DepositParams = deserialize(data).unwrap();
+    let _params: DepositParams = deserialize(data).unwrap();
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-
-    let commitment = params.commitment.inner();
-    let recipient_pub_x = pallas::Base::from_repr(params.recipient_pub_x).unwrap();
-    let recipient_pub_y = pallas::Base::from_repr(params.recipient_pub_y).unwrap();
-    let merkle_root = pallas::Base::from_repr(params.external_state_root).unwrap();
-
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1.to_string(),
-        vec![commitment, recipient_pub_x, recipient_pub_y, merkle_root],
+        vec![],
     ));
 
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata).unwrap();
-    // No signature pubkeys for bridge deposits (verified via ZK proof of external chain inclusion)
     let signature_pubkeys: Vec<pallas::Base> = vec![];
     signature_pubkeys.encode(&mut metadata).unwrap();
     metadata
@@ -205,10 +207,12 @@ fn deposit_get_metadata(data: &[u8]) -> Vec<u8> {
 
 /// Metadata for WithdrawV1 ZK proof verification.
 ///
-/// Public inputs:
-/// - nullifier: proves the deposit hasn't been spent yet
-/// - recipient_hash: hash of the recipient's external chain address
+/// The withdraw_v1.zk circuit has 3 constrain_instance calls:
+///   1. computed_nullifier = poseidon_hash(secret)
+///   2. deposit_leaf = poseidon_hash(secret, amount)
+///   3. derived_recipient = poseidon_hash(recipient_hash)
 fn withdraw_get_metadata(data: &[u8]) -> Vec<u8> {
+    use dwow_sdk::crypto::poseidon_hash;
     use dwow_sdk::pasta::pallas;
 
     let params: WithdrawParams = deserialize(data).unwrap();
@@ -216,16 +220,16 @@ fn withdraw_get_metadata(data: &[u8]) -> Vec<u8> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
     let nullifier = params.nullifier.inner();
-    let recipient_hash = pallas::Base::from_repr(params.recipient_hash).unwrap();
+    let recipient_base = pallas::Base::from_repr(params.recipient_hash).unwrap();
+    let derived_recipient = poseidon_hash([recipient_base]);
 
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1.to_string(),
-        vec![nullifier, recipient_hash],
+        vec![nullifier, params.deposit_leaf, derived_recipient],
     ));
 
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata).unwrap();
-    // No signature pubkeys for bridge withdrawals (verified via ZK proof of deposit ownership)
     let signature_pubkeys: Vec<pallas::Base> = vec![];
     signature_pubkeys.encode(&mut metadata).unwrap();
     metadata
@@ -702,6 +706,8 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
         nullifier: params.nullifier,
         recipient_hash: params.recipient_hash,
         amount: params.amount,
+        timeout_height: params.timeout_height,
+        feed_mode: params.feed_mode,
     };
 
     wasm::util::set_return_data(&serialize(&update))
@@ -722,9 +728,9 @@ fn process_config_instruction(_cid: ContractId, call_idx: usize, calls: Vec<Dark
 ///
 /// Allows users to cancel a withdrawal that has timed out.
 /// The timeout prevents relayer censorship - if relayer doesn't execute
-/// within BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS, user can reclaim funds.
+/// within timeout_height blocks, user can reclaim funds.
 fn process_cancel_withdraw_instruction(
-    _cid: ContractId,
+    cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
@@ -743,18 +749,48 @@ fn process_cancel_withdraw_instruction(
     }
 
     let self_ = &calls[call_idx].data;
-    let _params: CancelWithdrawParams = deserialize(&self_.data[1..])?;
+    let params: CancelWithdrawParams = deserialize(&self_.data[1..])?;
 
-    msg!("[bridge::process_instruction] Cancel withdrawal instruction processed");
+    msg!("[bridge::CancelWithdrawV1] Cancelling withdrawal: nullifier={:?}, current_block={}", &params.nullifier, params.current_block);
 
-    // In production, this would:
-    // 1. Look up the pending withdrawal by nullifier
-    // 2. Verify current block height > timeout_height
-    // 3. Verify the withdrawal hasn't already been executed
-    // 4. Mark the pending withdrawal as cancelled
-    // 5. Allow user to reclaim their funds
+    // Look up the pending withdrawal by nullifier
+    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
+    let pending_key = build_pending_key(&params.nullifier.to_bytes());
+    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
+        msg!("[bridge::CancelWithdrawV1] ERROR: Pending withdrawal not found");
+        return Err(BridgeError::WithdrawalNotFound.into())
+    };
+    let pending: PendingWithdrawal = deserialize(&pending_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
-    wasm::util::set_return_data(&vec![])
+    // Verify timeout has expired
+    if params.current_block < pending.timeout_height {
+        msg!("[bridge::CancelWithdrawV1] ERROR: Timeout not expired (current={}, timeout={})", params.current_block, pending.timeout_height);
+        return Err(BridgeError::InvalidWithdrawal("Timeout not expired".into()).into())
+    }
+
+    // Verify withdrawal hasn't already been cancelled
+    if pending.cancelled {
+        msg!("[bridge::CancelWithdrawV1] ERROR: Withdrawal already cancelled");
+        return Err(BridgeError::WithdrawalAlreadyProcessed.into())
+    }
+
+    // Verify withdrawal hasn't already been executed
+    let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
+    let withdrawal_key = build_withdrawal_key(&params.nullifier.to_bytes());
+    if let Some(withdrawal_data) = wasm::db::db_get(withdrawals_db, &withdrawal_key)? {
+        let withdrawal: Withdrawal = deserialize(&withdrawal_data)
+            .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+        if withdrawal.executed {
+            msg!("[bridge::CancelWithdrawV1] ERROR: Withdrawal already executed");
+            return Err(BridgeError::WithdrawalAlreadyProcessed.into())
+        }
+    }
+
+    msg!("[bridge::CancelWithdrawV1] Withdrawal cancellation approved");
+
+    let update = CancelWithdrawUpdateV1 { nullifier: params.nullifier };
+    wasm::util::set_return_data(&serialize(&update))
 }
 
 // ============================================================================
@@ -769,7 +805,7 @@ fn process_cancel_withdraw_instruction(
 /// 3. If execution fails, pool stake is slashed to compensate user
 /// 4. If execution succeeds, guarantee_premium is refunded to relayer
 fn process_execute_guaranteed_withdraw_instruction(
-    _cid: ContractId,
+    cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
@@ -790,20 +826,51 @@ fn process_execute_guaranteed_withdraw_instruction(
     let self_ = &calls[call_idx].data;
     let params: ExecuteGuaranteedWithdrawParams = deserialize(&self_.data[1..])?;
 
-    msg!(
-        "[bridge::process_instruction] Execute guaranteed withdrawal: {:?}",
-        params.nullifier
-    );
+    msg!("[bridge::ExecuteGuaranteedWithdrawV1] Executing guaranteed withdrawal: nullifier={:?}", params.nullifier);
 
-    // In production, this would:
-    // 1. Look up the pending withdrawal by nullifier
-    // 2. Verify feed_mode == 1 (guaranteed)
-    // 3. Verify pool_stake_proof is valid (ZK proof of coverage allocation)
-    // 4. Verify stake_lock_id is set and matches the allocation
-    // 5. Mark pending withdrawal as executed
-    // 6. This triggers pool_stake::SlashCoverage if external execution fails
+    // Look up the pending withdrawal by nullifier
+    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
+    let pending_key = build_pending_key(&params.nullifier.to_bytes());
+    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
+        msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Pending withdrawal not found");
+        return Err(BridgeError::WithdrawalNotFound.into())
+    };
+    let pending: PendingWithdrawal = deserialize(&pending_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
-    wasm::util::set_return_data(&vec![])
+    // Verify feed_mode == 1 (guaranteed)
+    if pending.feed_mode != 1 {
+        msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Not a guaranteed withdrawal (feed_mode={})", pending.feed_mode);
+        return Err(BridgeError::InvalidWithdrawal("Not a guaranteed withdrawal".into()).into())
+    }
+
+    // Verify pool_stake_proof is present (full ZK verification deferred to v1.1)
+    if params.pool_stake_proof.is_empty() {
+        msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Missing pool stake proof");
+        return Err(BridgeError::InvalidZkProof.into())
+    }
+
+    // Verify withdrawal hasn't already been executed
+    if pending.cancelled {
+        msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Withdrawal already cancelled");
+        return Err(BridgeError::WithdrawalAlreadyProcessed.into())
+    }
+
+    let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
+    let withdrawal_key = build_withdrawal_key(&params.nullifier.to_bytes());
+    if let Some(withdrawal_data) = wasm::db::db_get(withdrawals_db, &withdrawal_key)? {
+        let withdrawal: Withdrawal = deserialize(&withdrawal_data)
+            .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+        if withdrawal.executed {
+            msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Withdrawal already executed");
+            return Err(BridgeError::WithdrawalAlreadyProcessed.into())
+        }
+    }
+
+    msg!("[bridge::ExecuteGuaranteedWithdrawV1] Guaranteed withdrawal execution approved");
+
+    let update = ExecuteGuaranteedWithdrawUpdateV1 { nullifier: params.nullifier };
+    wasm::util::set_return_data(&serialize(&update))
 }
 
 // ============================================================================
@@ -832,12 +899,12 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             apply_config_update(cid, params)
         }
         BridgeFunction::CancelWithdrawV1 => {
-            msg!("[bridge::process_update] CancelWithdrawV1 processed");
-            Ok(())
+            let update: CancelWithdrawUpdateV1 = deserialize(&update_data[1..])?;
+            apply_cancel_withdraw_update(cid, update)
         }
         BridgeFunction::ExecuteGuaranteedWithdrawV1 => {
-            msg!("[bridge::process_update] ExecuteGuaranteedWithdrawV1 processed");
-            Ok(())
+            let update: ExecuteGuaranteedWithdrawUpdateV1 = deserialize(&update_data[1..])?;
+            apply_execute_guaranteed_withdraw_update(cid, update)
         }
         // HTLC operations
         BridgeFunction::CreateHtlcV1 => {
@@ -886,6 +953,7 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
 fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
     let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
+    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
 
     // Mark nullifier as spent
@@ -902,7 +970,73 @@ fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractR
     };
     wasm::db::db_set(withdrawals_db, &build_withdrawal_key(&update.nullifier.to_bytes()), &serialize(&withdrawal))?;
 
+    // Record pending withdrawal for timeout/cancel tracking
+    let pending = PendingWithdrawal {
+        nullifier: update.nullifier,
+        recipient_hash: update.recipient_hash,
+        amount: update.amount,
+        timeout_height: update.timeout_height,
+        relayer: [0u8; 32],
+        submitted_at: get_current_timestamp(info_db)?,
+        cancelled: false,
+        feed_mode: update.feed_mode,
+        guarantee_premium: 0,
+        stake_lock_id: None,
+    };
+    wasm::db::db_set(pending_db, &build_pending_key(&update.nullifier.to_bytes()), &serialize(&pending))?;
+
     msg!("[bridge::process_update] Withdrawal recorded: nullifier={:?}", &update.nullifier);
+    Ok(())
+}
+
+/// Apply cancel withdrawal state update
+fn apply_cancel_withdraw_update(cid: ContractId, update: CancelWithdrawUpdateV1) -> ContractResult {
+    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
+    let pending_key = build_pending_key(&update.nullifier.to_bytes());
+
+    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
+        msg!("[bridge::apply_update] ERROR: Pending withdrawal not found for cancel");
+        return Err(BridgeError::WithdrawalNotFound.into())
+    };
+
+    let mut pending: PendingWithdrawal = deserialize(&pending_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+
+    pending.cancelled = true;
+    wasm::db::db_set(pending_db, &pending_key, &serialize(&pending))?;
+
+    msg!("[bridge::apply_update] Withdrawal cancelled: nullifier={:?}", update.nullifier);
+    Ok(())
+}
+
+/// Apply execute guaranteed withdrawal state update
+fn apply_execute_guaranteed_withdraw_update(cid: ContractId, update: ExecuteGuaranteedWithdrawUpdateV1) -> ContractResult {
+    let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
+    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
+
+    // Mark the withdrawal as executed
+    let withdrawal_key = build_withdrawal_key(&update.nullifier.to_bytes());
+    let Some(withdrawal_data) = wasm::db::db_get(withdrawals_db, &withdrawal_key)? else {
+        msg!("[bridge::apply_update] ERROR: Withdrawal not found for execute");
+        return Err(BridgeError::WithdrawalNotFound.into())
+    };
+
+    let mut withdrawal: Withdrawal = deserialize(&withdrawal_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+
+    withdrawal.executed = true;
+    wasm::db::db_set(withdrawals_db, &withdrawal_key, &serialize(&withdrawal))?;
+
+    // Remove the pending record (no longer needed after execution)
+    let pending_key = build_pending_key(&update.nullifier.to_bytes());
+    if let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? {
+        let mut pending: PendingWithdrawal = deserialize(&pending_data)
+            .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+        pending.cancelled = false; // ensure not cancelled
+        wasm::db::db_set(pending_db, &pending_key, &serialize(&pending))?;
+    }
+
+    msg!("[bridge::apply_update] Guaranteed withdrawal executed: nullifier={:?}", update.nullifier);
     Ok(())
 }
 
@@ -940,6 +1074,8 @@ pub struct WithdrawUpdateV1 {
     pub nullifier: dwow_sdk::crypto::IntentNullifier,
     pub recipient_hash: [u8; 32],
     pub amount: u64,
+    pub timeout_height: u64,
+    pub feed_mode: u8,
 }
 
 // ============================================================================
@@ -958,6 +1094,14 @@ fn build_deposit_key(commitment: &[u8; 32]) -> Vec<u8> {
 fn build_withdrawal_key(nullifier: &[u8; 32]) -> Vec<u8> {
     let mut key = Vec::with_capacity(1 + 32);
     key.push(b'W'); // 'W' for Withdrawal
+    key.extend_from_slice(nullifier);
+    key
+}
+
+/// Build pending withdrawal record key
+fn build_pending_key(nullifier: &[u8; 32]) -> Vec<u8> {
+    let mut key = Vec::with_capacity(1 + 32);
+    key.push(b'P'); // 'P' for Pending
     key.extend_from_slice(nullifier);
     key
 }

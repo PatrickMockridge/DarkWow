@@ -89,6 +89,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.encode(&mut metadata)?;
             metadata
         }
+        RouletteFunction::SettleBetsV1 => {
+            let params: SettleBetsParamsV1 = deserialize(&self_.data[1..])?;
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::ROULETTE_CONTRACT_ZKAS_SETTLE_BET_NS_V1.to_string(),
+                vec![pallas::Base::from(params.payout)],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
         _ => vec![],
     };
 

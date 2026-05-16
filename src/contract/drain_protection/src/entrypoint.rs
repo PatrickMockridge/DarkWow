@@ -147,13 +147,17 @@ fn drain_protection_exit_get_metadata_v1(
     params: ExitParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    zk_public_inputs.push(("ExitProof".to_string(), vec![
-        params.fund_id,
-        params.member_pubkey.x(),
-        params.member_pubkey.y(),
-        pallas::Base::from(params.contribution_weight),
-        pallas::Base::from(params.current_block),
-    ]));
+    zk_public_inputs.push((
+        crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V1.to_string(),
+        vec![
+            params.fund_id,
+            params.member_pubkey.x(),
+            params.member_pubkey.y(),
+            params.dao_escrow_bulla,
+            params.dao_membership_note,
+            params.effective_weight,
+        ],
+    ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
     Ok(metadata)
