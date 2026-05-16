@@ -9,6 +9,7 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+pasta_curves = "0.5.1"
 blake3 = "1.8.2"
 bs58 = "0.5.1"
 dwow-sdk = { path = "../../sdk", features = ["wasm"] }

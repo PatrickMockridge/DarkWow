@@ -878,6 +878,8 @@ pub struct ClaimWinningsParamsV1 {
     pub position_id: pallas::Base,
     /// Market ID
     pub market_id: pallas::Base,
+    /// Winning outcome index (public input for ZK proof)
+    pub winning_outcome: u8,
     /// Owner public key (access control)
     pub owner: PublicKey,
     /// ZK proof of position ownership and winning outcome

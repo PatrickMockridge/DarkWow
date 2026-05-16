@@ -120,6 +120,7 @@ pub fn insurance_market_resolve_claim_process_instruction_v1(
         payout_amount: payout,
         slash_amount,
         resolved_at: current_block,
+        oracle_signature: params.oracle_signature,
     };
 
     msg!(
@@ -151,7 +152,7 @@ pub fn insurance_market_resolve_claim_process_update_v1(
         crate::model::ClaimState::Rejected
     };
     claim.attestation = vec![]; // Would be stored from params
-    claim.oracle_signature = dwow_sdk::pasta::pallas::Base::zero(); // Would be stored from params
+    claim.oracle_signature = update.oracle_signature;
     claim.resolved_at = update.resolved_at;
     wasm::db::db_set(
         claims_db,

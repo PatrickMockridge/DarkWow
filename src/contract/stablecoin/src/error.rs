@@ -102,6 +102,9 @@ pub enum StablecoinError {
 
     #[error("Invalid child call: expected money_v3::transfer_v1 (0x04)")]
     InvalidChildCall,
+
+    #[error("Invalid public input: failed to deserialize public key bytes")]
+    InvalidPublicInput,
 }
 
 impl From<StablecoinError> for ContractError {
@@ -133,6 +136,7 @@ impl From<StablecoinError> for ContractError {
             StablecoinError::ChildCallInputMismatch => Self::Custom(24),
             StablecoinError::InvalidChildrenIndexes => Self::Custom(25),
             StablecoinError::InvalidChildCall => Self::Custom(26),
+            StablecoinError::InvalidPublicInput => Self::Custom(27),
         }
     }
 }

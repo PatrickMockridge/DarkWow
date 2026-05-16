@@ -150,6 +150,8 @@ pub struct InitializeParamsV1 {
     pub house_edge_bp: u32,
     /// Risk profile (0=Low, 1=Medium, 2=High)
     pub risk_profile: u8,
+    /// Nonce for table_id derivation (public input for ZK proof)
+    pub nonce: pallas::Base,
     /// Signature from betting contract verifying these params
     pub signature: Signature,
 }
@@ -172,6 +174,10 @@ pub struct StakeParamsV1 {
     pub staker_pub: PublicKey,
     /// Amount to stake
     pub amount: u64,
+    /// Nonce for stake_id derivation (public input for ZK proof)
+    pub nonce: pallas::Base,
+    /// Value commitment point (public input for ZK proof)
+    pub value_commit: pallas::Point,
     /// Signature from staker
     pub signature: Signature,
     /// Spend hook FuncId for money_v3::transfer_v1 callback
@@ -238,6 +244,10 @@ pub struct UpdateRiskParamsV1 {
     pub payout_amount: u64,
     /// House's share of the payout (if any)
     pub house_share: u64,
+    /// Betting contract ID (public input for ZK proof)
+    pub betting_contract_id: pallas::Base,
+    /// Nonce for table_id derivation (public input for ZK proof)
+    pub nonce: pallas::Base,
 }
 
 /// Update produced by UpdateRiskV1

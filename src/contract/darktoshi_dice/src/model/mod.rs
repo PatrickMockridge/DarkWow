@@ -173,6 +173,7 @@ pub struct RevealRollUpdateV1 {
 pub struct SettleBetParamsV1 {
     pub bet_id: BetId,
     pub proof: Vec<u8>,
+    pub roll_hash: pallas::Base,
 }
 
 /// State update for `SettleBetV1`

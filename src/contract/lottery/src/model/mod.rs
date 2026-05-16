@@ -284,6 +284,8 @@ pub struct BuyTicketParamsV1 {
     pub token_id: pallas::Base,
     /// Value (ticket price)
     pub value: u64,
+    /// Value commitment point
+    pub value_commit: pallas::Point,
     /// Signature
     pub signature: pallas::Base,
 }
@@ -333,6 +335,10 @@ pub struct RevealTicketParamsV1 {
     pub numbers: Vec<u8>,
     /// Secret nonce used in commitment
     pub nonce: pallas::Base,
+    /// Revealed commitment (public input for ZK proof)
+    pub revealed_commitment: pallas::Base,
+    /// Number of matches (public input for ZK proof)
+    pub matches: u8,
 }
 
 /// Update produced by RevealTicketV1

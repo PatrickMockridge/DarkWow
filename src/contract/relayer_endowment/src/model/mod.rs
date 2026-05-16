@@ -103,6 +103,8 @@ pub struct DeployCapitalParamsV1 {
     pub backer_cut_bp: u32,
     /// Backer's public key (from transaction signature)
     pub signature_public: PublicKey,
+    /// Value commitment point (public input for ZK proof)
+    pub value_commit: pallas::Point,
 }
 
 /// Update returned after deploying capital
@@ -137,6 +139,12 @@ pub struct WithdrawDeploymentUpdateV1 {
 pub struct ClaimFeesParamsV1 {
     /// Deployment ID to claim fees for
     pub deployment_id: pallas::Base,
+    /// Backer's public key X coordinate
+    pub backer_pub_x: [u8; 32],
+    /// Backer's public key Y coordinate
+    pub backer_pub_y: [u8; 32],
+    /// Fee share allocated to this backer
+    pub fee_share: u64,
 }
 
 /// Update returned after claiming fees

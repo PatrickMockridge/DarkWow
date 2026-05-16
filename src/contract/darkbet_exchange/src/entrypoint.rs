@@ -29,7 +29,9 @@ use dwow_sdk::{
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
+use pasta_curves::group::Curve;
+use pasta_curves::arithmetic::CurveAffine;
 
 use crate::error::DarkbetError;
 use crate::model::{
@@ -104,8 +106,100 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 }
 
 /// Get metadata for verification
-fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
-    Ok(())
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = DarkbetFunction::try_from(self_.data[0])?;
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+
+    let metadata = match func {
+        DarkbetFunction::CreateMarketV1 => {
+            let params: CreateMarketParamsV1 = deserialize(&self_.data[1..])?;
+            let cx = params.creator_pub.x();
+            let cy = params.creator_pub.y();
+            let close_block = current_block + params.duration_blocks;
+            let market_id = poseidon_hash([
+                cx, cy,
+                pallas::Base::from(close_block),
+                pallas::Base::from(current_block),
+            ]);
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DARKBET_EXCHANGE_ZKAS_CREATE_MARKET_NS.to_string(),
+                vec![market_id],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
+        DarkbetFunction::AddLiquidityV1 => {
+            let params: AddLiquidityParamsV1 = deserialize(&self_.data[1..])?;
+            let px = params.provider.x();
+            let py = params.provider.y();
+            let lp_share_id = poseidon_hash([
+                params.market_id,
+                px, py,
+                pallas::Base::from(params.amount),
+                pallas::Base::from(current_block),
+            ]);
+            let vc_affine = params.value_commit.to_affine();
+            let vc_coords = vc_affine.coordinates().unwrap();
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DARKBET_EXCHANGE_ZKAS_ADD_LIQUIDITY_NS.to_string(),
+                vec![lp_share_id, *vc_coords.x(), *vc_coords.y()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
+        DarkbetFunction::BuyPositionV1 => {
+            let params: BuyPositionParamsV1 = deserialize(&self_.data[1..])?;
+            let ox = params.owner.x();
+            let oy = params.owner.y();
+            let position_id = poseidon_hash([
+                params.market_id,
+                ox, oy,
+                pallas::Base::from(params.outcome as u64),
+                pallas::Base::from(params.amount),
+                pallas::Base::from(current_block),
+            ]);
+            let vc_affine = params.value_commit.to_affine();
+            let vc_coords = vc_affine.coordinates().unwrap();
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DARKBET_EXCHANGE_ZKAS_BUY_POSITION_NS.to_string(),
+                vec![position_id, *vc_coords.x(), *vc_coords.y()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
+        DarkbetFunction::ClaimWinningsV1 => {
+            let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
+            let ox = params.owner.x();
+            let oy = params.owner.y();
+            let claim_id = poseidon_hash([
+                params.market_id,
+                params.position_id,
+                ox, oy,
+                pallas::Base::from(params.winning_outcome as u64),
+                pallas::Base::from(current_block),
+            ]);
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DARKBET_EXCHANGE_ZKAS_CLAIM_WINNINGS_NS.to_string(),
+                vec![claim_id],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
+        _ => vec![],
+    };
+
+    wasm::util::set_return_data(&metadata)
 }
 
 /// Process instruction

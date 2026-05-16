@@ -130,6 +130,14 @@ dwow_sdk::define_contract!(
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[atomic_swap::init_contract] Initializing atomic swap contract");
 
+    let create_swap_v1_bincode = include_bytes!("../../proof/create_swap_v1.zk.bin");
+    let claim_v1_bincode = include_bytes!("../../proof/claim_v1.zk.bin");
+    let refund_v1_bincode = include_bytes!("../../proof/refund_v1.zk.bin");
+
+    wasm::db::zkas_db_set(&create_swap_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&claim_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&refund_v1_bincode[..])?;
+
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, ATOMIC_SWAP_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(

@@ -394,6 +394,7 @@ pub struct FileClaimParamsV1 {
     pub buyer: PublicKey, // Access control: must match coverage.buyer
     pub amount: u64,
     pub evidence: Vec<u8>,
+    pub oracle_signature: pallas::Base,
 }
 
 /// State update for `FileClaimV1`
@@ -405,6 +406,7 @@ pub struct FileClaimUpdateV1 {
     pub amount: u64,
     pub state: ClaimState,
     pub created_at: u64,
+    pub oracle_signature: pallas::Base,
 }
 
 /// Parameters for `InsuranceMarket::ResolveClaimV1`
@@ -427,6 +429,7 @@ pub struct ResolveClaimUpdateV1 {
     pub payout_amount: u64,
     pub slash_amount: u64,
     pub resolved_at: u64,
+    pub oracle_signature: pallas::Base,
 }
 
 /// Parameters for `InsuranceMarket::WithdrawPremiumV1`
@@ -566,6 +569,7 @@ pub struct ResolveClaimWithCapabilityUpdateV1 {
     pub payout_amount: u64,
     pub slash_amount: u64,
     pub resolved_at: u64,
+    pub oracle_signature: pallas::Base,
 }
 
 // ============================================================================

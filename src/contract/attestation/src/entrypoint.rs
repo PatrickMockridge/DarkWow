@@ -560,9 +560,18 @@ fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> ContractResu
         32 => {
             let mut repr = [0u8; 32];
             repr.copy_from_slice(&claim.evidence_commitment);
-            pallas::Base::from_repr(repr).unwrap_or(pallas::Base::zero())
+            match pallas::Base::from_repr(repr).into() {
+                Some(val) => val,
+                None => {
+                    msg!("[attestation::verify_claim_v1] ERROR: Invalid claim evidence commitment bytes");
+                    return Err(ContractError::InvalidFunction.into())
+                }
+            }
         }
-        _ => pallas::Base::zero(),
+        _ => {
+            msg!("[attestation::verify_claim_v1] ERROR: Claim evidence commitment has invalid length");
+            return Err(ContractError::InvalidFunction.into())
+        }
     };
     if params.evidence_commitment != claim_commitment {
         msg!("[attestation::verify_claim_v1] ERROR: Evidence commitment mismatch");

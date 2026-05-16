@@ -24,7 +24,7 @@
 //! Relayer Endowment Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, PublicKey},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -32,6 +32,7 @@ use dwow_sdk::{
     wasm,
 };
 use dwow_serial::{deserialize, serialize, Encodable};
+use pasta_curves::{arithmetic::CurveAffine, group::Curve};
 
 use crate::error::RelayerEndowmentError;
 use crate::model::*;
@@ -141,10 +142,11 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
         pallas::Base::from(params.amount),
         nonce,
     ]);
-    // Note: value_commit coordinates are not available in params for v1
+    let vc_affine = params.value_commit.to_affine();
+    let vc_coords = vc_affine.coordinates().unwrap();
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1.to_string(),
-        vec![deployment_id, pallas::Base::zero(), pallas::Base::zero()],
+        vec![deployment_id, *vc_coords.x(), *vc_coords.y()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -157,12 +159,15 @@ fn relayer_endowment_claim_fees_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()? as u64);
-    // Compute claim_id from deployment_id + nonce (backer_pub/fee_share not in params for v1)
+    let backer_x = Option::from(pallas::Base::from_repr(params.backer_pub_x))
+        .ok_or(RelayerEndowmentError::InvalidParams("Invalid backer_pub_x".to_string()))?;
+    let backer_y = Option::from(pallas::Base::from_repr(params.backer_pub_y))
+        .ok_or(RelayerEndowmentError::InvalidParams("Invalid backer_pub_y".to_string()))?;
     let claim_id = poseidon_hash([
         params.deployment_id,
-        pallas::Base::zero(), // backer_pub_x placeholder
-        pallas::Base::zero(), // backer_pub_y placeholder
-        pallas::Base::zero(), // fee_share placeholder
+        backer_x,
+        backer_y,
+        pallas::Base::from(params.fee_share),
         nonce,
     ]);
     zk_public_inputs.push((

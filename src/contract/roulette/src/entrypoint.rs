@@ -29,7 +29,7 @@ use dwow_sdk::{
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::error::RouletteError;
 use crate::model::{
@@ -67,9 +67,32 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
-/// Get metadata for verification
-fn get_metadata(_cid: ContractId, _ix: &[u8]) -> ContractResult {
-    Ok(())
+/// Get metadata for ZK proof verification
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = RouletteFunction::try_from(self_.data[0]).map_err(|_| RouletteError::InvalidFunction)?;
+
+    let metadata = match func {
+        RouletteFunction::PlaceBetV1 => {
+            // PlaceBet_V1 circuit has no constrain_instance calls — it only
+            // verifies internal constraints (bet_id and nullifier derivation).
+            // Return namespace with empty public inputs so the host still
+            // verifies the proof.
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V1.to_string(),
+                vec![],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
+        _ => vec![],
+    };
+
+    wasm::util::set_return_data(&metadata)
 }
 
 /// Process instruction

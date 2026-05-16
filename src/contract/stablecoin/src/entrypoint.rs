@@ -254,6 +254,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         StablecoinFunction::UpdateConfigV1 => wasm::util::set_return_data(&vec![]),
         StablecoinFunction::GovernanceReportV1 => {
             let params: GovernanceReportParams = deserialize(&self_.data[1..])?;
+            let reporter_x = Option::from(pallas::Base::from_repr(params.reporter_pub_x))
+                .ok_or(StablecoinError::InvalidPublicInput)?;
+            let reporter_y = Option::from(pallas::Base::from_repr(params.reporter_pub_y))
+                .ok_or(StablecoinError::InvalidPublicInput)?;
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
@@ -264,10 +268,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     pallas::Base::from(params.collateral_ratio_bps),
                     pallas::Base::from(params.interest_accrued),
                     pallas::Base::from(params.report_timestamp),
-                    pallas::Base::from_repr(params.reporter_pub_x)
-                        .unwrap_or(pallas::Base::zero()),
-                    pallas::Base::from_repr(params.reporter_pub_y)
-                        .unwrap_or(pallas::Base::zero()),
+                    reporter_x,
+                    reporter_y,
                 ],
             ));
 
@@ -277,6 +279,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         StablecoinFunction::AccrueInterestV1 => {
             let params: AccrueInterestParams = deserialize(&self_.data[1..])?;
+            let acc_x = Option::from(pallas::Base::from_repr(params.accumulator_pub_x))
+                .ok_or(StablecoinError::InvalidPublicInput)?;
+            let acc_y = Option::from(pallas::Base::from_repr(params.accumulator_pub_y))
+                .ok_or(StablecoinError::InvalidPublicInput)?;
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
@@ -287,10 +293,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     pallas::Base::from(params.interest_amount),
                     pallas::Base::from(params.rate_per_second),
                     pallas::Base::from(params.time_elapsed),
-                    pallas::Base::from_repr(params.accumulator_pub_x)
-                        .unwrap_or(pallas::Base::zero()),
-                    pallas::Base::from_repr(params.accumulator_pub_y)
-                        .unwrap_or(pallas::Base::zero()),
+                    acc_x,
+                    acc_y,
                 ],
             ));
 

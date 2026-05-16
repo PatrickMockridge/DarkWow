@@ -23,7 +23,10 @@
 
 //! Attestation contract data structures
 
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::{
+    crypto::{pasta_prelude::PrimeField, poseidon_hash},
+    pasta::pallas,
+};
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Attestation unique identifier (hash of attestation data)
@@ -140,17 +143,24 @@ pub struct Attestation {
 
 impl Attestation {
     /// Derive the attestation ID from attestation parameters
-    #[allow(dead_code)]
-    #[deprecated(note = "Use zk电路 for proper derivation")]
     pub fn derive_id(
-        _attestor_pub_x: pallas::Base,
-        _attestor_pub_y: pallas::Base,
-        _claim_type: Predicate,
-        _claim_data: &[pallas::Base],
-        _attestor_secret: pallas::Base,
+        attestor_pub_x: pallas::Base,
+        attestor_pub_y: pallas::Base,
+        claim_type: Predicate,
+        claim_data: &[pallas::Base],
+        attestor_secret: pallas::Base,
     ) -> AttestationId {
-        // This is a placeholder. Proper implementation requires ZK circuits.
-        pallas::Base::zero()
+        // Fold claim_data into a single Base via iterative hashing
+        let data_hash = claim_data.iter().fold(pallas::Base::zero(), |acc, x| {
+            poseidon_hash([acc, *x])
+        });
+        poseidon_hash([
+            attestor_pub_x,
+            attestor_pub_y,
+            pallas::Base::from(claim_type as u64),
+            data_hash,
+            attestor_secret,
+        ])
     }
 }
 
@@ -185,18 +195,32 @@ pub struct Claim {
 
 impl Claim {
     /// Derive the claim ID from claim parameters
-    #[allow(dead_code)]
-    #[deprecated(note = "Use zk电路 for proper derivation")]
     pub fn derive_id(
-        _attestation_id: AttestationId,
-        _claimant_pub_x: pallas::Base,
-        _claimant_pub_y: pallas::Base,
-        _predicate: Predicate,
-        _evidence_commitment: &[u8],
-        _claimant_secret: pallas::Base,
+        attestation_id: AttestationId,
+        claimant_pub_x: pallas::Base,
+        claimant_pub_y: pallas::Base,
+        predicate: Predicate,
+        evidence_commitment: &[u8],
+        claimant_secret: pallas::Base,
     ) -> ClaimId {
-        // This is a placeholder. Proper implementation requires ZK circuits.
-        pallas::Base::zero()
+        // Convert evidence_commitment bytes to a Base via iterative hashing
+        let evidence_hash = evidence_commitment
+            .chunks(32)
+            .fold(pallas::Base::zero(), |acc, chunk| {
+                let mut repr = [0u8; 32];
+                let len = chunk.len().min(32);
+                repr[..len].copy_from_slice(&chunk[..len]);
+                let chunk_val = pallas::Base::from_repr(repr).unwrap_or(pallas::Base::zero());
+                poseidon_hash([acc, chunk_val])
+            });
+        poseidon_hash([
+            attestation_id,
+            claimant_pub_x,
+            claimant_pub_y,
+            pallas::Base::from(predicate as u64),
+            evidence_hash,
+            claimant_secret,
+        ])
     }
 }
 

@@ -122,9 +122,11 @@ fn underwrite_with_capability_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let (ux, uy) = params.underwriter.xy();
+    let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
+        .ok_or(InsuranceMarketError::InvalidCapability)?;
     zk_public_inputs.push((
         crate::INSURANCE_MARKET_ZKAS_UNDERWRITE_WITH_CAPABILITY_NS_V1.to_string(),
-        vec![ux, uy, pallas::Base::from_repr(params.capability_secret).unwrap_or(pallas::Base::zero())],
+        vec![ux, uy, cap],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -142,9 +144,11 @@ fn purchase_coverage_with_capability_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let (bx, by) = params.buyer.xy();
+    let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
+        .ok_or(InsuranceMarketError::InvalidCapability)?;
     zk_public_inputs.push((
         crate::INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_CAPABILITY_NS_V1.to_string(),
-        vec![bx, by, pallas::Base::from_repr(params.capability_secret).unwrap_or(pallas::Base::zero())],
+        vec![bx, by, cap],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
