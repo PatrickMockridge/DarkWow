@@ -63,7 +63,7 @@ pub fn insurance_market_update_premium_process_instruction_v1(
     // Look up the market
     let markets_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_MARKETS_TREE)?;
     let market_bytes =
-        wasm::db::db_get(markets_db, &serialize(&params.market_id))?.unwrap();
+        wasm::db::db_get(markets_db, &serialize(&params.market_id))?.ok_or(ContractError::DbGetEmpty)?;
     let market: crate::model::InsuranceMarket = deserialize(&market_bytes)?;
 
     if !market.active {
@@ -96,7 +96,7 @@ pub fn insurance_market_update_premium_process_update_v1(
 
     // Load and update market
     let market_bytes =
-        wasm::db::db_get(markets_db, &serialize(&update.market_id))?.unwrap();
+        wasm::db::db_get(markets_db, &serialize(&update.market_id))?.ok_or(ContractError::DbGetEmpty)?;
     let mut market: crate::model::InsuranceMarket = deserialize(&market_bytes)?;
     market.premium_rate = update.new_premium_rate;
 

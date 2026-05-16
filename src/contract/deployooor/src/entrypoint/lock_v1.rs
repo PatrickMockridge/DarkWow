@@ -78,7 +78,7 @@ pub(crate) fn lock_process_instruction_v1(
         return Err(DeployError::ContractNonExistent.into())
     }
 
-    let v = wasm::db::db_get(lock_db, &serialize(&contract_id))?.unwrap();
+    let v = wasm::db::db_get(lock_db, &serialize(&contract_id))?.ok_or(ContractError::DbGetEmpty)?;
     let locked: bool = deserialize(&v)?;
     if locked {
         msg!("[LockV1] Error: Contract already locked.");

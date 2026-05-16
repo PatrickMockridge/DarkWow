@@ -356,10 +356,12 @@ pub struct WithdrawUpdateV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct PlaceBetParamsV1 {
     pub room_id: RoomId,
+    pub pot_id: PotId,
     pub player: PublicKey,
     pub amount: u64,
     pub bet_type: BetType,
     pub nonce: pallas::Base,
+    pub block_height: pallas::Base,
 }
 
 /// State update for PlaceBetV1
@@ -452,6 +454,8 @@ pub struct SettlePotParamsV1 {
     pub pot_id: PotId,
     pub winners: Vec<(PublicKey, u64)>,
     pub signature: Vec<u8>,
+    pub nonce: pallas::Base,
+    pub pot_total: u64,
 }
 
 /// State update for SettlePotV1
@@ -496,6 +500,7 @@ pub struct ClaimParamsV1 {
     pub payout_amount: u64,
     /// ZK proof that the payout_amount is correct for this winner
     pub proof: Vec<u8>,
+    pub nonce: pallas::Base,
 }
 
 /// State update for ClaimV1

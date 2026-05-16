@@ -60,7 +60,7 @@ pub fn insurance_market_withdraw_premium_process_instruction_v1(
     // Look up the underwriter
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
     let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &serialize(&params.underwriter_id))?.unwrap();
+        wasm::db::db_get(underwriters_db, &serialize(&params.underwriter_id))?.ok_or(ContractError::DbGetEmpty)?;
     let underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
 
     // Verify the caller is the underwriter owner (access control)
@@ -104,7 +104,7 @@ pub fn insurance_market_withdraw_premium_process_update_v1(
 
     // Update underwriter's earned premiums
     let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &serialize(&update.underwriter_id))?.unwrap();
+        wasm::db::db_get(underwriters_db, &serialize(&update.underwriter_id))?.ok_or(ContractError::DbGetEmpty)?;
     let mut underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
     underwriter.earned_premiums = update.remaining_balance;
     wasm::db::db_set(

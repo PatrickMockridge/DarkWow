@@ -44,7 +44,7 @@ pub fn lottery_draw_winners_process_instruction_v1(
     // Get lottery state
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
     let lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&params.lottery_id))?.unwrap())?;
+        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&params.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
 
     // Verify lottery is in correct state
     if lottery.state != LotteryState::Initialized {
@@ -107,7 +107,7 @@ pub fn lottery_draw_winners_process_update_v1(
 
     // Get and update lottery
     let mut lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&update.lottery_id))?.unwrap())?;
+        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&update.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
 
     lottery.state = update.state;
     lottery.winning_numbers = Some(update.winning_numbers.clone());

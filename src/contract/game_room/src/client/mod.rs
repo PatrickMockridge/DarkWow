@@ -204,17 +204,19 @@ impl WithdrawV1Builder {
 /// Builder for place bet calls
 pub struct PlaceBetV1Builder {
     room_id: RoomId,
+    pot_id: PotId,
     player: PublicKey,
     amount: u64,
     bet_type: BetType,
     nonce: pallas::Base,
+    block_height: pallas::Base,
 }
 
 impl PlaceBetV1Builder {
     /// Create a new PlaceBetV1 builder
-    pub fn new(room_id: RoomId, player: PublicKey, amount: u64, bet_type: BetType) -> Self {
+    pub fn new(room_id: RoomId, pot_id: PotId, player: PublicKey, amount: u64, bet_type: BetType) -> Self {
         let secret = SecretKey::random(&mut rand::rngs::OsRng);
-        Self { room_id, player, amount, bet_type, nonce: secret.inner() }
+        Self { room_id, pot_id, player, amount, bet_type, nonce: secret.inner(), block_height: pallas::Base::zero() }
     }
 
     /// Set nonce (for reproducibility)
@@ -223,14 +225,22 @@ impl PlaceBetV1Builder {
         self
     }
 
+    /// Set block height (for ZK circuit witness)
+    pub fn block_height(mut self, height: pallas::Base) -> Self {
+        self.block_height = height;
+        self
+    }
+
     /// Build the place bet parameters
     pub fn build(&self) -> PlaceBetParamsV1 {
         PlaceBetParamsV1 {
             room_id: self.room_id,
+            pot_id: self.pot_id,
             player: self.player,
             amount: self.amount,
             bet_type: self.bet_type,
             nonce: self.nonce,
+            block_height: self.block_height,
         }
     }
 }
@@ -318,12 +328,26 @@ pub struct SettlePotV1Builder {
     room_id: RoomId,
     pot_id: PotId,
     winners: Vec<(PublicKey, u64)>,
+    nonce: pallas::Base,
+    pot_total: u64,
 }
 
 impl SettlePotV1Builder {
     /// Create a new SettlePotV1 builder
     pub fn new(room_id: RoomId, pot_id: PotId, winners: Vec<(PublicKey, u64)>) -> Self {
-        Self { caller: winners[0].0, room_id, pot_id, winners }
+        Self { caller: winners[0].0, room_id, pot_id, winners, nonce: pallas::Base::zero(), pot_total: 0 }
+    }
+
+    /// Set nonce (for ZK circuit witness)
+    pub fn nonce(mut self, nonce: pallas::Base) -> Self {
+        self.nonce = nonce;
+        self
+    }
+
+    /// Set pot total (for ZK circuit verification)
+    pub fn pot_total(mut self, total: u64) -> Self {
+        self.pot_total = total;
+        self
     }
 
     /// Build the settle pot parameters
@@ -334,6 +358,8 @@ impl SettlePotV1Builder {
             pot_id: self.pot_id,
             winners: self.winners.clone(),
             signature: vec![], // Filled by owner DAO
+            nonce: self.nonce,
+            pot_total: self.pot_total,
         }
     }
 }
@@ -377,12 +403,19 @@ pub struct ClaimV1Builder {
     pot_id: PotId,
     winner: PublicKey,
     payout_amount: u64,
+    nonce: pallas::Base,
 }
 
 impl ClaimV1Builder {
     /// Create a new ClaimV1 builder
     pub fn new(room_id: RoomId, pot_id: PotId, winner: PublicKey, payout_amount: u64) -> Self {
-        Self { room_id, pot_id, winner, payout_amount }
+        Self { room_id, pot_id, winner, payout_amount, nonce: pallas::Base::zero() }
+    }
+
+    /// Set nonce (for ZK circuit witness)
+    pub fn nonce(mut self, nonce: pallas::Base) -> Self {
+        self.nonce = nonce;
+        self
     }
 
     /// Build the claim parameters
@@ -393,6 +426,7 @@ impl ClaimV1Builder {
             winner: self.winner,
             payout_amount: self.payout_amount,
             proof: vec![], // Filled by ZK
+            nonce: self.nonce,
         }
     }
 }

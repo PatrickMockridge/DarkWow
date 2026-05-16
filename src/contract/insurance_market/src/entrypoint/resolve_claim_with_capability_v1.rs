@@ -56,7 +56,7 @@ pub fn insurance_market_resolve_claim_with_capability_process_instruction_v1(
 
     // Look up the claim
     let claims_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_CLAIMS_TREE)?;
-    let claim_bytes = wasm::db::db_get(claims_db, &serialize(&params.claim_id))?.unwrap();
+    let claim_bytes = wasm::db::db_get(claims_db, &serialize(&params.claim_id))?.ok_or(ContractError::DbGetEmpty)?;
     let claim: crate::model::Claim = deserialize(&claim_bytes)?;
 
     if claim.state != crate::model::ClaimState::Filed {
@@ -66,19 +66,19 @@ pub fn insurance_market_resolve_claim_with_capability_process_instruction_v1(
     // Look up the coverage
     let coverages_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_COVERAGES_TREE)?;
     let coverage_bytes =
-        wasm::db::db_get(coverages_db, &serialize(&claim.coverage_id))?.unwrap();
+        wasm::db::db_get(coverages_db, &serialize(&claim.coverage_id))?.ok_or(ContractError::DbGetEmpty)?;
     let coverage: crate::model::Coverage = deserialize(&coverage_bytes)?;
 
     // Look up the market to get deductible
     let markets_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_MARKETS_TREE)?;
     let market_bytes =
-        wasm::db::db_get(markets_db, &serialize(&coverage.market_id))?.unwrap();
+        wasm::db::db_get(markets_db, &serialize(&coverage.market_id))?.ok_or(ContractError::DbGetEmpty)?;
     let market: crate::model::InsuranceMarket = deserialize(&market_bytes)?;
 
     // Look up the underwriter
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
     let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &serialize(&coverage.underwriter_id))?.unwrap();
+        wasm::db::db_get(underwriters_db, &serialize(&coverage.underwriter_id))?.ok_or(ContractError::DbGetEmpty)?;
     let underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
 
     // Calculate payout (coverage amount minus deductible)
@@ -133,7 +133,7 @@ pub fn insurance_market_resolve_claim_with_capability_process_update_v1(
 
     // Update claim
     let claim_bytes =
-        wasm::db::db_get(claims_db, &serialize(&update.claim_id))?.unwrap();
+        wasm::db::db_get(claims_db, &serialize(&update.claim_id))?.ok_or(ContractError::DbGetEmpty)?;
     let mut claim: crate::model::Claim = deserialize(&claim_bytes)?;
     claim.payout = update.payout_amount;
     claim.state = if update.is_valid {
@@ -152,7 +152,7 @@ pub fn insurance_market_resolve_claim_with_capability_process_update_v1(
 
     // Update coverage state
     let coverage_bytes =
-        wasm::db::db_get(coverages_db, &serialize(&update.coverage_id))?.unwrap();
+        wasm::db::db_get(coverages_db, &serialize(&update.coverage_id))?.ok_or(ContractError::DbGetEmpty)?;
     let mut coverage: crate::model::Coverage = deserialize(&coverage_bytes)?;
     coverage.state = if update.is_valid {
         crate::model::CoverageState::Claimed
@@ -168,7 +168,7 @@ pub fn insurance_market_resolve_claim_with_capability_process_update_v1(
     // Update underwriter if slash occurred
     if update.slash_amount > 0 {
         let underwriter_bytes =
-            wasm::db::db_get(underwriters_db, &serialize(&coverage.underwriter_id))?.unwrap();
+            wasm::db::db_get(underwriters_db, &serialize(&coverage.underwriter_id))?.ok_or(ContractError::DbGetEmpty)?;
         let mut underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
 
         // Slash the bond

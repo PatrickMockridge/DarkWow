@@ -50,7 +50,7 @@ pub fn insurance_market_create_market_process_instruction_v1(
     // Verify risk type exists
     let risk_types_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_RISK_TYPES_TREE)?;
     let risk_type_bytes =
-        wasm::db::db_get(risk_types_db, &serialize(&params.risk_type_id))?.unwrap();
+        wasm::db::db_get(risk_types_db, &serialize(&params.risk_type_id))?.ok_or(ContractError::DbGetEmpty)?;
     let risk_type: crate::model::RiskType = deserialize(&risk_type_bytes)?;
 
     if !risk_type.active {

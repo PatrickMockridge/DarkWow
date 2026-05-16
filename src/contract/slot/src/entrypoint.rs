@@ -147,7 +147,8 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> GenericResult<()> {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = SlotFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = SlotFunction::try_from(func_byte)?;
 
     let update_data = match func {
         SlotFunction::InitializeV1 => {
@@ -159,7 +160,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> GenericResult<()> {
         SlotFunction::CancelSpinV1 => cancel_spin_process_instruction_v1(cid, call_idx, calls)?,
     };
 
-    wasm::util::set_return_data(&update_data)
+    wasm::util::set_return_data(&[&[func_byte], &update_data[..]].concat())
 }
 
 /// Process update

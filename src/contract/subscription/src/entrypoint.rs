@@ -156,8 +156,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: UpdateUsageParamsV1 = deserialize(&self_.data[1..])?;
             let derived_id = poseidon_hash([
                 params.subscription_id,
+                params.subscriber_pub_x,
+                params.subscriber_pub_y,
                 pallas::Base::from(params.current_block),
-                params.spent_nullifier,
+                params.nonce,
             ]);
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1.to_string(),
@@ -182,41 +184,44 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = SubscriptionFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = SubscriptionFunction::try_from(func_byte)?;
 
     msg!("[subscription::process_instruction] Processing function: {:?}", func);
 
-    match func {
+    let update_bytes = match func {
         SubscriptionFunction::SubscribeV1 => {
             let params: SubscribeParamsV1 = deserialize(&self_.data[1..])?;
-            subscribe_v1(cid, call_idx, calls, params)
+            subscribe_v1(cid, call_idx, calls, params)?
         }
         SubscriptionFunction::CancelV1 => {
             let params: CancelParamsV1 = deserialize(&self_.data[1..])?;
-            cancel_v1(cid, params)
+            cancel_v1(cid, params)?
         }
         SubscriptionFunction::RenewV1 => {
             let params: RenewParamsV1 = deserialize(&self_.data[1..])?;
-            renew_v1(cid, call_idx, calls, params)
+            renew_v1(cid, call_idx, calls, params)?
         }
         SubscriptionFunction::VerifyAccessV1 => {
             // No state update needed - just verification
             msg!("[subscription::process_instruction] VerifyAccessV1 has no state update");
-            wasm::util::set_return_data(&[])
+            vec![]
         }
         SubscriptionFunction::UpdateUsageV1 => {
             let params: UpdateUsageParamsV1 = deserialize(&self_.data[1..])?;
-            update_usage_v1(cid, params)
+            update_usage_v1(cid, params)?
         }
         SubscriptionFunction::DaoControlV1 => {
             let params: DaoControlParamsV1 = deserialize(&self_.data[1..])?;
-            dao_control_v1(cid, call_idx, calls, params)
+            dao_control_v1(cid, call_idx, calls, params)?
         }
         SubscriptionFunction::InitializeV1 => {
             msg!("[subscription::process_instruction] InitializeV1 has no update data");
-            wasm::util::set_return_data(&[])
+            vec![]
         }
-    }
+    };
+
+    wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
 }
 
 // ============================================================================
@@ -265,7 +270,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 // ============================================================================
 
 /// SubscribeV1 instruction - create a new subscription
-fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>, params: SubscribeParamsV1) -> ContractResult {
+fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>, params: SubscribeParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[subscription::subscribe_v1] Creating subscription for plan {}", params.plan_id);
 
     // Validate children_indexes for payment
@@ -325,7 +330,7 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
 
     let update = SubscribeUpdateV1 { subscription };
     msg!("[subscription::subscribe_v1] Subscription created: {:?}", update.subscription.id);
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// SubscribeV1 apply - store subscription
@@ -348,7 +353,7 @@ fn subscribe_apply_v1(cid: ContractId, update: SubscribeUpdateV1) -> ContractRes
 }
 
 /// CancelV1 instruction - cancel an existing subscription
-fn cancel_v1(cid: ContractId, params: CancelParamsV1) -> ContractResult {
+fn cancel_v1(cid: ContractId, params: CancelParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[subscription::cancel_v1] Cancelling subscription {:?}", params.subscription_id);
 
     // Look up the subscription
@@ -385,7 +390,7 @@ fn cancel_v1(cid: ContractId, params: CancelParamsV1) -> ContractResult {
     };
 
     msg!("[subscription::cancel_v1] Cancellation prepared for: {:?}", params.subscription_id);
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// CancelV1 apply - mark subscription cancelled and record nullifier
@@ -408,7 +413,7 @@ fn cancel_apply_v1(cid: ContractId, update: CancelUpdateV1) -> ContractResult {
 }
 
 /// RenewV1 instruction - renew an existing subscription
-fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>, params: RenewParamsV1) -> ContractResult {
+fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>, params: RenewParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[subscription::renew_v1] Renewing subscription {:?}", params.subscription_id);
 
     // Validate children_indexes for payment
@@ -484,7 +489,7 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     };
 
     msg!("[subscription::renew_v1] Renewal prepared for: {:?}", params.subscription_id);
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// RenewV1 apply - nullify old, create new subscription
@@ -507,7 +512,7 @@ fn renew_apply_v1(cid: ContractId, update: RenewUpdateV1) -> ContractResult {
 }
 
 /// UpdateUsageV1 instruction - record usage of a subscription
-fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> ContractResult {
+fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[subscription::update_usage_v1] Updating usage for: {:?}", params.subscription_id);
 
     // Look up the subscription
@@ -554,7 +559,7 @@ fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> ContractResu
     };
 
     msg!("[subscription::update_usage_v1] Usage update prepared for: {:?}", params.subscription_id);
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// UpdateUsageV1 apply - write updated usage to subscription
@@ -590,12 +595,7 @@ fn update_usage_apply_v1(cid: ContractId, update: UpdateUsageUpdateV1) -> Contra
 ///
 /// Money Integration: When executing `EndowmentWithdraw`, this function REQUIRES
 /// a money_v3::transfer_v1 child call to be bundled to transfer the endowment funds.
-fn dao_control_v1(
-    _cid: ContractId,
-    call_idx: usize,
-    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
-    params: DaoControlParamsV1,
-) -> ContractResult {
+fn dao_control_v1(_cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>, params: DaoControlParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[subscription::dao_control_v1] Executing DAO control action");
 
     // Validate children_indexes for EndowmentWithdraw
@@ -648,7 +648,7 @@ fn dao_control_v1(
     let update = DaoControlUpdateV1 { action };
 
     msg!("[subscription::dao_control_v1] DAO control action prepared");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// DaoControlV1 apply - execute DAO governance action

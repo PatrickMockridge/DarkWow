@@ -47,12 +47,12 @@ pub fn lottery_reveal_ticket_process_instruction_v1(
     // Get ticket first to find lottery_id
     let tickets_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_TICKETS_TREE)?;
     let ticket: crate::model::Ticket =
-        deserialize(&wasm::db::db_get(tickets_db, &serialize(&params.ticket_id))?.unwrap())?;
+        deserialize(&wasm::db::db_get(tickets_db, &serialize(&params.ticket_id))?.ok_or(ContractError::DbGetEmpty)?)?;
 
     // Get lottery state
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
     let lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&ticket.lottery_id))?.unwrap())?;
+        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&ticket.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
 
     // Verify lottery is in winners drawn state
     if lottery.state != crate::model::LotteryState::WinnersDrawn {

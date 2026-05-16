@@ -90,7 +90,7 @@ pub fn dice_commit_bet_process_instruction_v1(
 
     // Look up house edge
     let info_db = wasm::db::db_lookup(cid, DICE_CONTRACT_INFO_TREE)?;
-    let stored_house_edge_bytes = wasm::db::db_get(info_db, DICE_CONTRACT_HOUSE_EDGE)?.unwrap();
+    let stored_house_edge_bytes = wasm::db::db_get(info_db, DICE_CONTRACT_HOUSE_EDGE)?.ok_or(ContractError::DbGetEmpty)?;
     let stored_house_edge: u32 = deserialize(&stored_house_edge_bytes)?;
 
     let house_edge = if params.house_edge == 0 { stored_house_edge } else { params.house_edge };

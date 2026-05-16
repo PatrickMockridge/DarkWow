@@ -46,7 +46,7 @@ pub fn insurance_market_file_claim_process_instruction_v1(
     // Look up the coverage
     let coverages_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_COVERAGES_TREE)?;
     let coverage_bytes =
-        wasm::db::db_get(coverages_db, &serialize(&params.coverage_id))?.unwrap();
+        wasm::db::db_get(coverages_db, &serialize(&params.coverage_id))?.ok_or(ContractError::DbGetEmpty)?;
     let coverage: crate::model::Coverage = deserialize(&coverage_bytes)?;
 
     // Verify coverage is active
@@ -135,7 +135,7 @@ pub fn insurance_market_file_claim_process_update_v1(
 
     // Update coverage to mark claim in progress
     let coverage_bytes =
-        wasm::db::db_get(coverages_db, &serialize(&update.coverage_id))?.unwrap();
+        wasm::db::db_get(coverages_db, &serialize(&update.coverage_id))?.ok_or(ContractError::DbGetEmpty)?;
     let mut coverage: crate::model::Coverage = deserialize(&coverage_bytes)?;
     coverage.claim_id = Some(update.claim_id);
     wasm::db::db_set(

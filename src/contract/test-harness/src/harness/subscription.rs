@@ -36,9 +36,6 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_subscription_contract::client::{
-    rate_limit_v1::{
-        RateLimitCallData, RateLimitPublicInputs, create_rate_limit_proof,
-    },
     subscribe_v1::{
         SubscribeCallData, SubscribePublicInputs, create_subscribe_proof,
     },
@@ -63,10 +60,6 @@ pub struct SubscriptionHarness {
     verify_access_zkbin: ZkBinary,
     /// VerifyAccess_V1 ProvingKey
     verify_access_pk: ProvingKey,
-    /// RateLimit_V1 ZkBinary
-    rate_limit_zkbin: ZkBinary,
-    /// RateLimit_V1 ProvingKey
-    rate_limit_pk: ProvingKey,
     /// UpdateUsage_V1 ZkBinary
     update_usage_zkbin: ZkBinary,
     /// UpdateUsage_V1 ProvingKey
@@ -78,12 +71,10 @@ impl SubscriptionHarness {
     pub fn spawn() -> Self {
         let subscribe_bin = include_bytes!("../../../subscription/proof/subscribe_v1.zk.bin");
         let verify_bin = include_bytes!("../../../subscription/proof/verify_access_v1.zk.bin");
-        let rate_bin = include_bytes!("../../../subscription/proof/rate_limit_v1.zk.bin");
         let update_bin = include_bytes!("../../../subscription/proof/update_usage_v1.zk.bin");
 
         let subscribe_zkbin = ZkBinary::decode(subscribe_bin, false).unwrap();
         let verify_access_zkbin = ZkBinary::decode(verify_bin, false).unwrap();
-        let rate_limit_zkbin = ZkBinary::decode(rate_bin, false).unwrap();
         let update_usage_zkbin = ZkBinary::decode(update_bin, false).unwrap();
 
         let subscribe_circuit = ZkCircuit::new(
@@ -94,10 +85,6 @@ impl SubscriptionHarness {
             dwow::zk::empty_witnesses(&verify_access_zkbin).unwrap(),
             &verify_access_zkbin,
         );
-        let rate_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&rate_limit_zkbin).unwrap(),
-            &rate_limit_zkbin,
-        );
         let update_circuit = ZkCircuit::new(
             dwow::zk::empty_witnesses(&update_usage_zkbin).unwrap(),
             &update_usage_zkbin,
@@ -105,7 +92,6 @@ impl SubscriptionHarness {
 
         let subscribe_pk = ProvingKey::build(subscribe_zkbin.k, &subscribe_circuit);
         let verify_access_pk = ProvingKey::build(verify_access_zkbin.k, &verify_circuit);
-        let rate_limit_pk = ProvingKey::build(rate_limit_zkbin.k, &rate_circuit);
         let update_usage_pk = ProvingKey::build(update_usage_zkbin.k, &update_circuit);
 
         Self {
@@ -113,8 +99,6 @@ impl SubscriptionHarness {
             subscribe_pk,
             verify_access_zkbin,
             verify_access_pk,
-            rate_limit_zkbin,
-            rate_limit_pk,
             update_usage_zkbin,
             update_usage_pk,
         }
@@ -275,63 +259,6 @@ impl SubscriptionHarness {
         Ok(VerifyAccessResult { call_data, proof, public_inputs })
     }
 
-    /// Generate a rate limit proof (no contract call — used by service providers)
-    #[allow(clippy::too_many_arguments)]
-    pub fn rate_limit(
-        &self,
-        subscriber_secret: pallas::Base,
-        nonce: pallas::Base,
-        permissions_claimed: u8,
-        subscription_leaf_pos: u32,
-        subscription_path: Vec<MerkleNode>,
-        subscription_state: pallas::Base,
-        subscription_spent_nullifier: pallas::Base,
-        uses_remaining: u64,
-        expected_capability: pallas::Base,
-        subscription_id: pallas::Base,
-        current_block: u64,
-        subscriber_pub_x: pallas::Base,
-        subscriber_pub_y: pallas::Base,
-        plan_id: u32,
-        lock_until_block: u64,
-        uses_allowed: u64,
-        rate_period: u64,
-        period_uses: u64,
-        last_access_block: u64,
-        subscription_state_root: pallas::Base,
-    ) -> Result<RateLimitResult, Box<dyn std::error::Error>> {
-        let input = RateLimitCallData::new(
-            subscriber_secret,
-            nonce,
-            permissions_claimed,
-            subscription_leaf_pos,
-            subscription_path,
-            subscription_state,
-            subscription_spent_nullifier,
-            uses_remaining,
-            expected_capability,
-            subscription_id,
-            current_block,
-            subscriber_pub_x,
-            subscriber_pub_y,
-            plan_id,
-            lock_until_block,
-            uses_allowed,
-            rate_period,
-            period_uses,
-            last_access_block,
-            subscription_state_root,
-        );
-
-        let (proof, public_inputs) = create_rate_limit_proof(
-            &self.rate_limit_zkbin,
-            &self.rate_limit_pk,
-            &input,
-        )?;
-
-        Ok(RateLimitResult { proof, public_inputs })
-    }
-
     /// Update usage tracking for a subscription (function code 0x06)
     pub fn update_usage(
         &self,
@@ -380,14 +307,13 @@ impl super::ContractHarness for SubscriptionHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["SubscribeV1", "VerifyAccessV1", "RateLimitV1", "UpdateUsageV1"]
+        vec!["SubscribeV1", "VerifyAccessV1", "UpdateUsageV1"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "SubscribeV1" => Some(&self.subscribe_zkbin),
             "VerifyAccessV1" => Some(&self.verify_access_zkbin),
-            "RateLimitV1" => Some(&self.rate_limit_zkbin),
             "UpdateUsageV1" => Some(&self.update_usage_zkbin),
             _ => None,
         }
@@ -397,7 +323,6 @@ impl super::ContractHarness for SubscriptionHarness {
         match ns {
             "SubscribeV1" => Some(&self.subscribe_pk),
             "VerifyAccessV1" => Some(&self.verify_access_pk),
-            "RateLimitV1" => Some(&self.rate_limit_pk),
             "UpdateUsageV1" => Some(&self.update_usage_pk),
             _ => None,
         }
@@ -416,12 +341,6 @@ pub struct VerifyAccessResult {
     pub call_data: Vec<u8>,
     pub proof: dwow::zk::Proof,
     pub public_inputs: VerifyAccessPublicInputs,
-}
-
-/// Result of rate_limit
-pub struct RateLimitResult {
-    pub proof: dwow::zk::Proof,
-    pub public_inputs: RateLimitPublicInputs,
 }
 
 /// Result of update_usage

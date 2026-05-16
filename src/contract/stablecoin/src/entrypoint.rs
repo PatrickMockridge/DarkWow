@@ -297,21 +297,22 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = StablecoinFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = StablecoinFunction::try_from(func_byte)?;
 
-    match func {
+    let update_bytes = match func {
         StablecoinFunction::InitializeV1 => {
             msg!("[stablecoin::process_instruction] InitializeV1 has no update data");
-            wasm::util::set_return_data(&vec![])
+            vec![]
         }
-        StablecoinFunction::OpenPositionV1 => process_open_position_instruction(cid, call_idx, calls),
-        StablecoinFunction::AddCollateralV1 => process_add_collateral_instruction(cid, call_idx, calls),
+        StablecoinFunction::OpenPositionV1 => process_open_position_instruction(cid, call_idx, calls)?,
+        StablecoinFunction::AddCollateralV1 => process_add_collateral_instruction(cid, call_idx, calls)?,
         StablecoinFunction::RemoveCollateralV1 => {
-            process_remove_collateral_instruction(cid, call_idx, calls)
+            process_remove_collateral_instruction(cid, call_idx, calls)?
         }
-        StablecoinFunction::MintStableV1 => process_mint_stable_instruction(cid, call_idx, calls),
-        StablecoinFunction::RepayStableV1 => process_repay_stable_instruction(cid, call_idx, calls),
-        StablecoinFunction::LiquidateV1 => process_liquidate_instruction(cid, call_idx, calls),
+        StablecoinFunction::MintStableV1 => process_mint_stable_instruction(cid, call_idx, calls)?,
+        StablecoinFunction::RepayStableV1 => process_repay_stable_instruction(cid, call_idx, calls)?,
+        StablecoinFunction::LiquidateV1 => process_liquidate_instruction(cid, call_idx, calls)?,
         StablecoinFunction::UpdateConfigV1 => {
             let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
             msg!("[stablecoin::process_instruction] UpdateConfigV1 processed");
@@ -325,15 +326,17 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 twap_window: params.twap_window,
                 price_deviation_threshold: params.price_deviation_threshold,
             };
-            wasm::util::set_return_data(&serialize(&update))
+            serialize(&update)
         }
         StablecoinFunction::GovernanceReportV1 => {
-            process_governance_report_instruction(cid, call_idx, calls)
+            process_governance_report_instruction(cid, call_idx, calls)?
         }
         StablecoinFunction::AccrueInterestV1 => {
-            process_accrue_interest_instruction(cid, call_idx, calls)
+            process_accrue_interest_instruction(cid, call_idx, calls)?
         }
-    }
+    };
+
+    wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
 }
 
 /// Process open position instruction
@@ -342,7 +345,7 @@ fn process_open_position_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: DepositCollateralParams = deserialize(&self_.data[1..])?;
 
@@ -380,7 +383,7 @@ fn process_open_position_instruction(
         collateral_amount: params.collateral_amount,
     };
 
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 // ============================================================================
@@ -469,7 +472,7 @@ fn process_add_collateral_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: DepositCollateralParams = deserialize(&self_.data[1..])?;
 
@@ -520,7 +523,7 @@ fn process_add_collateral_instruction(
     // Store new total in config for update phase
     wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
 
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// Apply add collateral update
@@ -545,7 +548,7 @@ fn process_remove_collateral_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
     // Validate children_indexes for token payout
@@ -604,7 +607,7 @@ fn process_remove_collateral_instruction(
     // Store new total in config for update phase
     wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
 
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// Apply remove collateral update
@@ -634,7 +637,7 @@ fn process_mint_stable_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
     // Validate children_indexes for token payout
@@ -680,7 +683,7 @@ fn process_mint_stable_instruction(
     // Store new total in config for update phase
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &new_total_debt.to_le_bytes())?;
 
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// Apply mint stablecoin update
@@ -705,7 +708,7 @@ fn process_repay_stable_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: RepayStableParams = deserialize(&self_.data[1..])?;
 
@@ -759,7 +762,7 @@ fn process_repay_stable_instruction(
     // Store new total in config for update phase
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &new_total_debt.to_le_bytes())?;
 
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// Apply repay stablecoin update
@@ -782,7 +785,7 @@ fn process_liquidate_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let this_call = &calls[call_idx];
 
     // Validate children_indexes for collateral payout to liquidator
@@ -866,7 +869,7 @@ fn process_liquidate_instruction(
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &new_total_debt.to_le_bytes())?;
     wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
 
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// Apply liquidate update
@@ -890,7 +893,7 @@ fn process_governance_report_instruction(
     _cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: GovernanceReportParams = deserialize(&self_.data[1..])?;
 
@@ -909,7 +912,7 @@ fn process_governance_report_instruction(
         reporter_pub_y: params.reporter_pub_y,
     };
 
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// Apply governance report update
@@ -927,7 +930,7 @@ fn process_accrue_interest_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: AccrueInterestParams = deserialize(&self_.data[1..])?;
 
@@ -974,7 +977,7 @@ fn process_accrue_interest_instruction(
         accumulator_pub_y: params.accumulator_pub_y,
     };
 
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 /// Apply accrue interest update

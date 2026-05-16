@@ -82,14 +82,14 @@ pub fn lottery_buy_ticket_process_instruction_v1(
     // Get current lottery ID
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
     let current_lottery_id_bytes =
-        wasm::db::db_get(lotteries_db, LOTTERY_CONTRACT_CURRENT_LOTTERY)?.unwrap();
+        wasm::db::db_get(lotteries_db, LOTTERY_CONTRACT_CURRENT_LOTTERY)?.ok_or(ContractError::DbGetEmpty)?;
     let lottery_id: pallas::Base = deserialize(&current_lottery_id_bytes)?;
 
     msg!("[lottery::buy_ticket] lottery_id: {:?}", lottery_id);
 
     // Get lottery state
     let lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&lottery_id))?.unwrap())?;
+        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
 
     // Verify lottery is active
     let current_block = wasm::util::get_verifying_block_height()? as u64;
@@ -164,14 +164,14 @@ pub fn lottery_buy_ticket_process_update_v1(
 
     // Read the new Merkle root from the info database
     let new_merkle_root_bytes =
-        wasm::db::db_get(lotteries_db, LOTTERY_CONTRACT_LATEST_TICKET_ROOT)?.unwrap();
+        wasm::db::db_get(lotteries_db, LOTTERY_CONTRACT_LATEST_TICKET_ROOT)?.ok_or(ContractError::DbGetEmpty)?;
     let new_merkle_root: pallas::Base = deserialize(&new_merkle_root_bytes)?;
 
     msg!("[lottery::buy_ticket::update] Ticket SMT root: {:?}", new_merkle_root);
 
     // Get and update lottery
     let mut lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&update.lottery_id))?.unwrap())?;
+        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&update.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
 
     lottery.ticket_count = update.ticket_count;
     lottery.gross_pool = update.gross_pool;

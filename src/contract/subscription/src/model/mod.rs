@@ -332,10 +332,16 @@ pub struct VerifyAccessParamsV1 {
 pub struct UpdateUsageParamsV1 {
     /// Subscription ID
     pub subscription_id: SubscriptionId,
+    /// Subscriber's public key x-coordinate
+    pub subscriber_pub_x: pallas::Base,
+    /// Subscriber's public key y-coordinate
+    pub subscriber_pub_y: pallas::Base,
     /// Subscriber's secret (proves ownership)
     pub subscriber_secret: pallas::Base,
-    /// Current block height
+    /// Current block height (usage_timestamp in ZK circuit)
     pub current_block: u64,
+    /// Nonce for ZK circuit witness
+    pub nonce: pallas::Base,
     /// Spent nullifier for this subscription
     pub spent_nullifier: pallas::Base,
     /// Merkle proof of the subscription state

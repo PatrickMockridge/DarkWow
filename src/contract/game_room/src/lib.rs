@@ -265,20 +265,22 @@ fn deposit_get_metadata_v1(
 /// `get_metadata` for PlaceBetV1
 ///
 /// Circuit: constrain_instance(derived_bet_id), constrain_instance(derived_commitment)
+/// derived_bet_id = poseidon_hash(pot_id, player_pub_x, amount, block_height)
+/// derived_commitment = poseidon_hash(amount, nonce, block_height)
 fn place_bet_get_metadata_v1(
     params: model::PlaceBetParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
-    let (px, py) = params.player.xy();
+    let (px, _py) = params.player.xy();
     let derived_bet_id = poseidon_hash([
-        params.room_id,
+        params.pot_id,
         px,
-        py,
         pasta::pallas::Base::from(params.amount),
-        params.nonce,
+        params.block_height,
     ]);
     let derived_commitment = poseidon_hash([
         pasta::pallas::Base::from(params.amount),
         params.nonce,
+        params.block_height,
     ]);
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
@@ -295,12 +297,18 @@ fn place_bet_get_metadata_v1(
 /// `get_metadata` for SettlePotV1
 ///
 /// Circuit: constrain_instance(derived_room_id), constrain_instance(derived_pot_id)
+/// derived_room_id = poseidon_hash(house_pub_x, house_pub_y, nonce)
+/// derived_pot_id = poseidon_hash(room_id, pot_total, house_pub_x)
 fn settle_pot_get_metadata_v1(
     params: model::SettlePotParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let (cx, cy) = params.caller.xy();
-    let derived_room_id = poseidon_hash([params.room_id, cx, cy]);
-    let derived_pot_id = params.pot_id;
+    let derived_room_id = poseidon_hash([cx, cy, params.nonce]);
+    let derived_pot_id = poseidon_hash([
+        params.room_id,
+        pasta::pallas::Base::from(params.pot_total),
+        cx,
+    ]);
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
@@ -316,16 +324,17 @@ fn settle_pot_get_metadata_v1(
 /// `get_metadata` for ClaimV1
 ///
 /// Circuit: constrain_instance(derived_claim_id), constrain_instance(derived_winner_key)
+/// derived_claim_id = poseidon_hash(pot_id, winner_pub_x, payout_amount, nonce)
+/// derived_winner_key = poseidon_hash(winner_pub_x, winner_pub_y)
 fn claim_get_metadata_v1(
     params: model::ClaimParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let (wx, wy) = params.winner.xy();
     let derived_claim_id = poseidon_hash([
-        params.room_id,
         params.pot_id,
         wx,
-        wy,
         pasta::pallas::Base::from(params.payout_amount),
+        params.nonce,
     ]);
     let derived_winner_key = poseidon_hash([wx, wy]);
 

@@ -996,7 +996,7 @@ fn darkbet_buy_position_process_update_v1(
     wasm::db::db_set(positions_db, &serialize(&position.position_id), &serialize(&position))?;
 
     // Update market pool
-    let market_data = wasm::db::db_get(markets_db, &serialize(&update.market_id))?.unwrap();
+    let market_data = wasm::db::db_get(markets_db, &serialize(&update.market_id))?.ok_or(ContractError::DbGetEmpty)?;
     let mut market: Market = deserialize(&market_data)?;
     market.total_pool += update.amount;
     market.outcome_pools[update.outcome as usize] += update.amount;
@@ -1109,7 +1109,7 @@ fn darkbet_add_liquidity_process_update_v1(
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
     // Get market to calculate shares
-    let market_data = wasm::db::db_get(markets_db, &serialize(&update.market_id))?.unwrap();
+    let market_data = wasm::db::db_get(markets_db, &serialize(&update.market_id))?.ok_or(ContractError::DbGetEmpty)?;
     let mut market: Market = deserialize(&market_data)?;
 
     // Store LP share (shares_minted already calculated in instruction)

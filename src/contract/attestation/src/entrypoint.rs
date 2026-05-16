@@ -257,59 +257,62 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = AttestationFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = AttestationFunction::try_from(func_byte)?;
 
     msg!("[attestation::process_instruction] Processing function: {:?}", func);
 
-    match func {
+    let update_bytes = match func {
         AttestationFunction::CreateAttestationV1 => {
             let params: CreateAttestationParamsV1 = deserialize(&self_.data[1..])?;
-            create_attestation_v1(cid, params)
+            create_attestation_v1(cid, params)?
         }
         AttestationFunction::RevokeAttestationV1 => {
             let params: RevokeAttestationParamsV1 = deserialize(&self_.data[1..])?;
-            revoke_attestation_v1(cid, params)
+            revoke_attestation_v1(cid, params)?
         }
         AttestationFunction::ExpireAttestationV1 => {
             let params: ExpireAttestationParamsV1 = deserialize(&self_.data[1..])?;
-            expire_attestation_v1(cid, params)
+            expire_attestation_v1(cid, params)?
         }
         AttestationFunction::CreateClaimV1 => {
             let params: CreateClaimParamsV1 = deserialize(&self_.data[1..])?;
-            create_claim_v1(cid, params)
+            create_claim_v1(cid, params)?
         }
         AttestationFunction::VerifyClaimV1 => {
             let params: VerifyClaimParamsV1 = deserialize(&self_.data[1..])?;
-            verify_claim_v1(cid, params)
+            verify_claim_v1(cid, params)?
         }
         AttestationFunction::ConsumeClaimV1 => {
             let params: ConsumeClaimParamsV1 = deserialize(&self_.data[1..])?;
-            consume_claim_v1(cid, params)
+            consume_claim_v1(cid, params)?
         }
         AttestationFunction::ValidateClaimV1 => {
             let params: ValidateClaimParamsV1 = deserialize(&self_.data[1..])?;
-            validate_claim_v1(cid, params)
+            validate_claim_v1(cid, params)?
         }
         AttestationFunction::CheckNotRevokedV1 => {
             let params: CheckNotRevokedParamsV1 = deserialize(&self_.data[1..])?;
-            check_not_revoked_v1(cid, params)
+            check_not_revoked_v1(cid, params)?
         }
         AttestationFunction::DelegateAttestationV1 => {
             let params: DelegateAttestationParamsV1 = deserialize(&self_.data[1..])?;
-            delegate_attestation_v1(cid, params)
+            delegate_attestation_v1(cid, params)?
         }
         AttestationFunction::VerifyChainV1 => {
             let params: VerifyChainParamsV1 = deserialize(&self_.data[1..])?;
-            verify_chain_v1(cid, params)
+            verify_chain_v1(cid, params)?
         }
         AttestationFunction::UpdateDelegationV1 => {
             let params: UpdateDelegationParamsV1 = deserialize(&self_.data[1..])?;
-            update_delegation_v1(cid, params)
+            update_delegation_v1(cid, params)?
         }
-    }
+    };
+
+    wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
 }
 
-fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> ContractResult {
+fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::create_attestation_v1] Creating attestation: {:?}", params.attestation_id);
 
     let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
@@ -359,10 +362,10 @@ fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> 
     )?;
 
     msg!("[attestation::create_attestation_v1] Attestation created successfully");
-    Ok(())
+    Ok(serialize(&CreateAttestationUpdateV1 { attestation_id: params.attestation_id }))
 }
 
-fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> ContractResult {
+fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::revoke_attestation_v1] Revoking attestation: {:?}", params.attestation_id);
 
     let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
@@ -399,10 +402,10 @@ fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> 
     )?;
 
     msg!("[attestation::revoke_attestation_v1] Attestation revoked successfully");
-    Ok(())
+    Ok(serialize(&RevokeAttestationUpdateV1 { attestation_id: params.attestation_id }))
 }
 
-fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> ContractResult {
+fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::expire_attestation_v1] Expiring attestation: {:?}", params.attestation_id);
 
     let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
@@ -444,10 +447,10 @@ fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> 
     )?;
 
     msg!("[attestation::expire_attestation_v1] Attestation expired successfully");
-    Ok(())
+    Ok(serialize(&ExpireAttestationUpdateV1 { attestation_id: params.attestation_id }))
 }
 
-fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> ContractResult {
+fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::create_claim_v1] Creating claim: {:?}", params.claim_id);
 
     let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
@@ -547,10 +550,10 @@ fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> ContractResu
     wasm::db::db_set(rate_limit_db, &serialize(&rate_limit_key), &serialize(&current_block))?;
 
     msg!("[attestation::create_claim_v1] Claim created successfully");
-    Ok(())
+    Ok(serialize(&CreateClaimUpdateV1 { claim_id: params.claim_id }))
 }
 
-fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> ContractResult {
+fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::verify_claim_v1] Verifying claim: {:?}", params.claim_id);
 
     let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
@@ -649,13 +652,12 @@ fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> ContractResu
         claim_id: params.claim_id,
         verified,
     };
-    wasm::util::set_return_data(&serialize(&update))?;
 
     msg!("[attestation::verify_claim_v1] Claim verification result: {:?}", verified);
-    Ok(())
+    Ok(serialize(&update))
 }
 
-fn consume_claim_v1(cid: ContractId, params: ConsumeClaimParamsV1) -> ContractResult {
+fn consume_claim_v1(cid: ContractId, params: ConsumeClaimParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::consume_claim_v1] Consuming claim: {:?}", params.claim_id);
 
     let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
@@ -724,10 +726,10 @@ fn consume_claim_v1(cid: ContractId, params: ConsumeClaimParamsV1) -> ContractRe
     wasm::db::db_set(nullifiers_db, &serialize(&params.nullifier), &[])?;
 
     msg!("[attestation::consume_claim_v1] Claim consumed successfully");
-    Ok(())
+    Ok(serialize(&ConsumeClaimUpdateV1 { claim_id: params.claim_id }))
 }
 
-fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> ContractResult {
+fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::validate_claim_v1] Validating claim: {:?}", params.claim_id);
 
     let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
@@ -809,13 +811,10 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Contract
     };
 
     msg!("[attestation::validate_claim_v1] Validation result: {:?}", valid);
-    Ok(())
+    Ok(serialize(&ValidateClaimUpdateV1 { claim_id: params.claim_id, valid }))
 }
 
-fn check_not_revoked_v1(
-    cid: ContractId,
-    params: CheckNotRevokedParamsV1,
-) -> ContractResult {
+fn check_not_revoked_v1(cid: ContractId, params: CheckNotRevokedParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::check_not_revoked_v1] Checking nonce not revoked");
 
     // The ZK proof (verified at host level via get_metadata) proves:
@@ -838,13 +837,10 @@ fn check_not_revoked_v1(
     wasm::db::db_set(nullifiers_db, &serialize(&proof_hash), &[])?;
 
     msg!("[attestation::check_not_revoked_v1] Nonce {:?} is not revoked", params.nonce);
-    Ok(())
+    Ok(serialize(&CheckNotRevokedUpdateV1 { is_not_revoked: true }))
 }
 
-fn delegate_attestation_v1(
-    cid: ContractId,
-    params: DelegateAttestationParamsV1,
-) -> ContractResult {
+fn delegate_attestation_v1(cid: ContractId, params: DelegateAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::delegate_attestation_v1] Delegating attestation: {:?}", params.delegation_id);
 
     // The ZK proof (verified at host level) ensures:
@@ -875,10 +871,10 @@ fn delegate_attestation_v1(
     wasm::db::db_set(delegations_db, &serialize(&params.delegation_id), &serialize(&params))?;
 
     msg!("[attestation::delegate_attestation_v1] Delegation stored successfully");
-    Ok(())
+    Ok(serialize(&DelegateAttestationUpdateV1 { delegation_id: params.delegation_id, success: true }))
 }
 
-fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> ContractResult {
+fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::verify_chain_v1] Verifying delegation chain: {:?}", params.delegation_id);
 
     // The ZK proof (verified at host level) ensures:
@@ -906,10 +902,10 @@ fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> ContractResu
     }
 
     msg!("[attestation::verify_chain_v1] Chain verification passed");
-    Ok(())
+    Ok(serialize(&VerifyChainUpdateV1 { success: true }))
 }
 
-fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> ContractResult {
+fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[attestation::update_delegation_v1] Updating delegation: {:?}", params.original_attestation_id);
 
     // The ZK proof (verified at host level) ensures:
@@ -933,7 +929,7 @@ fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> Co
     wasm::db::db_set(delegations_db, &serialize(&params.original_attestation_id), &serialize(&params))?;
 
     msg!("[attestation::update_delegation_v1] Delegation updated successfully");
-    Ok(())
+    Ok(serialize(&UpdateDelegationUpdateV1 { success: true }))
 }
 
 // ============================================================================

@@ -61,7 +61,7 @@ pub fn insurance_market_purchase_coverage_with_capability_process_instruction_v1
 
     // Look up the market
     let markets_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_MARKETS_TREE)?;
-    let market_bytes = wasm::db::db_get(markets_db, &serialize(&params.market_id))?.unwrap();
+    let market_bytes = wasm::db::db_get(markets_db, &serialize(&params.market_id))?.ok_or(ContractError::DbGetEmpty)?;
     let market: crate::model::InsuranceMarket = deserialize(&market_bytes)?;
 
     if !market.active {
@@ -98,7 +98,7 @@ pub fn insurance_market_purchase_coverage_with_capability_process_instruction_v1
     // Look up the underwriter
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
     let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &serialize(&params.underwriter_id))?.unwrap();
+        wasm::db::db_get(underwriters_db, &serialize(&params.underwriter_id))?.ok_or(ContractError::DbGetEmpty)?;
     let underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
 
     if !underwriter.active {
@@ -191,7 +191,7 @@ pub fn insurance_market_purchase_coverage_with_capability_process_update_v1(
 
     // Update underwriter's earned premiums and coverage sold
     let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &serialize(&update.underwriter_id))?.unwrap();
+        wasm::db::db_get(underwriters_db, &serialize(&update.underwriter_id))?.ok_or(ContractError::DbGetEmpty)?;
     let mut underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
     underwriter.earned_premiums += update.premium_paid;
     underwriter.coverage_sold += update.amount; // Track coverage sold

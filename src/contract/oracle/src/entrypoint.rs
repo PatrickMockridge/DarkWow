@@ -180,35 +180,38 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = OracleFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = OracleFunction::try_from(func_byte)?;
 
     msg!("[oracle::process_instruction] Processing function: {:?}", func);
 
-    match func {
+    let update_bytes = match func {
         OracleFunction::RegisterOracleV1 => {
             let params: RegisterOracleParamsV1 = deserialize(&self_.data[1..])?;
-            register_oracle_v1(cid, params)
+            register_oracle_v1(cid, params)?
         }
         OracleFunction::PushValueV1 => {
             let params: PushValueParamsV1 = deserialize(&self_.data[1..])?;
-            push_value_v1(cid, params)
+            push_value_v1(cid, params)?
         }
         OracleFunction::AttestValueV1 => {
             let params: AttestValueParamsV1 = deserialize(&self_.data[1..])?;
-            attest_value_v1(cid, params)
+            attest_value_v1(cid, params)?
         }
         OracleFunction::PushValueCommitmentV1 => {
             let params: PushValueCommitmentParamsV1 = deserialize(&self_.data[1..])?;
-            push_value_commitment_v1(cid, params)
+            push_value_commitment_v1(cid, params)?
         }
         OracleFunction::AggregateV1 => {
             let params: AggregateParamsV1 = deserialize(&self_.data[1..])?;
-            aggregate_v1(cid, params)
+            aggregate_v1(cid, params)?
         }
-    }
+    };
+
+    wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
 }
 
-fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> ContractResult {
+fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[oracle::register_oracle_v1] Registering oracle: {:?}", params.oracle_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -241,10 +244,10 @@ fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> Contra
     wasm::db::db_set(oracles_db, &serialize(&params.oracle_id), &serialize(&oracle))?;
 
     msg!("[oracle::register_oracle_v1] Oracle registered successfully");
-    Ok(())
+    Ok(serialize(&RegisterOracleUpdateV1 { oracle_id: params.oracle_id }))
 }
 
-fn push_value_v1(cid: ContractId, params: PushValueParamsV1) -> ContractResult {
+fn push_value_v1(cid: ContractId, params: PushValueParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[oracle::push_value_v1] Pushing value for oracle: {:?}", params.oracle_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -276,10 +279,10 @@ fn push_value_v1(cid: ContractId, params: PushValueParamsV1) -> ContractResult {
     wasm::db::db_set(oracles_db, &serialize(&params.oracle_id), &serialize(&oracle))?;
 
     msg!("[oracle::push_value_v1] Value pushed successfully: {:?}", params.value);
-    Ok(())
+    Ok(serialize(&PushValueUpdateV1 { oracle_id: params.oracle_id, value: params.value }))
 }
 
-fn attest_value_v1(cid: ContractId, params: AttestValueParamsV1) -> ContractResult {
+fn attest_value_v1(cid: ContractId, params: AttestValueParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[oracle::attest_value_v1] Attesting value for oracle: {:?}", params.oracle_id);
 
     // Verify ZK proof
@@ -319,10 +322,10 @@ fn attest_value_v1(cid: ContractId, params: AttestValueParamsV1) -> ContractResu
         params.predicate,
         params.threshold
     );
-    Ok(())
+    Ok(serialize(&AttestValueUpdateV1 { oracle_id: params.oracle_id, attestation_id: params.attestation_id }))
 }
 
-fn push_value_commitment_v1(cid: ContractId, params: PushValueCommitmentParamsV1) -> ContractResult {
+fn push_value_commitment_v1(cid: ContractId, params: PushValueCommitmentParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[oracle::push_value_commitment_v1] Pushing commitment for oracle: {:?}", params.oracle_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -356,10 +359,10 @@ fn push_value_commitment_v1(cid: ContractId, params: PushValueCommitmentParamsV1
         "[oracle::push_value_commitment_v1] Commitment pushed successfully: {:?}",
         params.commitment
     );
-    Ok(())
+    Ok(serialize(&PushValueCommitmentUpdateV1 { oracle_id: params.oracle_id, commitment: params.commitment }))
 }
 
-fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> ContractResult {
+fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[oracle::aggregate_v1] Aggregating for oracle: {:?}", params.oracle_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -407,7 +410,7 @@ fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> ContractResult {
         params.min_result,
         params.max_result
     );
-    Ok(())
+    Ok(serialize(&AggregateUpdateV1 { oracle_id: params.oracle_id, result: params.result }))
 }
 
 // ============================================================================

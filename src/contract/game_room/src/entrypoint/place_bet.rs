@@ -122,25 +122,9 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
         return Err(GameRoomError::CallerNotPlayer.into())
     }
 
-    // Get or create current pot
+    // Use pot_id from params (verified by ZK circuit)
     let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
-    let pot_id = match room.current_pot_id {
-        Some(id) => id,
-        None => {
-            let new_pot_id = poseidon_hash([
-                params.room_id,
-                pallas::Base::from(wasm::util::get_verifying_block_height()? as u64),
-                caller.xy().0,
-            ]);
-            let new_pot = Pot::new(new_pot_id, params.room_id, wasm::util::get_verifying_block_height()? as u64);
-            wasm::db::db_set(
-                pots_db,
-                &dwow_serial::serialize(&new_pot_id),
-                &dwow_serial::serialize(&new_pot),
-            )?;
-            new_pot_id
-        }
-    };
+    let pot_id = params.pot_id;
 
     // Get pot
     let Some(pot_data) = wasm::db::db_get(pots_db, &dwow_serial::serialize(&pot_id))? else {
@@ -169,12 +153,12 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
     });
     let new_pot_total = pot.total;
 
-    // Create bet record
+    // Create bet record (hash matches ZK circuit constrain_instance)
     let bet_id = poseidon_hash([
         pot_id,
         caller.xy().0,
         pallas::Base::from(params.amount),
-        pallas::Base::from(wasm::util::get_verifying_block_height()? as u64),
+        params.block_height,
     ]);
     let bet = Bet::new(
         bet_id,

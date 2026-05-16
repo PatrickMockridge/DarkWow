@@ -424,52 +424,55 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = TenderFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = TenderFunction::try_from(func_byte)?;
 
     msg!("[tender::process_instruction] Processing function: {:?}", func);
 
-    match func {
+    let update_bytes = match func {
         TenderFunction::CreateTenderV1 => {
             let params: CreateTenderParamsV1 = deserialize(&self_.data[1..])?;
-            create_tender_v1(cid, params)
+            create_tender_v1(cid, params)?
         }
         TenderFunction::SubmitBidV1 => {
             let params: SubmitBidParamsV1 = deserialize(&self_.data[1..])?;
-            submit_bid_v1(cid, params)
+            submit_bid_v1(cid, params)?
         }
         TenderFunction::RevealBidV1 => {
             let params: RevealBidParamsV1 = deserialize(&self_.data[1..])?;
-            reveal_bid_v1(cid, params)
+            reveal_bid_v1(cid, params)?
         }
         TenderFunction::CloseTenderV1 => {
             let params: CloseTenderParamsV1 = deserialize(&self_.data[1..])?;
-            close_tender_v1(cid, params)
+            close_tender_v1(cid, params)?
         }
         TenderFunction::SelectWinnerV1 => {
             let params: SelectWinnerParamsV1 = deserialize(&self_.data[1..])?;
-            select_winner_v1(cid, params)
+            select_winner_v1(cid, params)?
         }
         TenderFunction::CancelTenderV1 => {
             let params: CancelTenderParamsV1 = deserialize(&self_.data[1..])?;
-            cancel_tender_v1(cid, params)
+            cancel_tender_v1(cid, params)?
         }
         TenderFunction::RejectBidV1 => {
             let params: RejectBidParamsV1 = deserialize(&self_.data[1..])?;
-            reject_bid_v1(cid, params)
+            reject_bid_v1(cid, params)?
         }
         // O-Cap enabled functions
         TenderFunction::CreateTenderWithCapabilityV1 => {
             let params: CreateTenderWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
-            create_tender_with_capability_v1(cid, params)
+            create_tender_with_capability_v1(cid, params)?
         }
         TenderFunction::SubmitBidWithCapabilityV1 => {
             let params: SubmitBidWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
-            submit_bid_with_capability_v1(cid, params)
+            submit_bid_with_capability_v1(cid, params)?
         }
-    }
+    };
+
+    wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat())
 }
 
-fn create_tender_v1(cid: ContractId, params: CreateTenderParamsV1) -> ContractResult {
+fn create_tender_v1(cid: ContractId, params: CreateTenderParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::create_tender_v1] Creating tender: {:?}", params.tender_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
@@ -508,10 +511,10 @@ fn create_tender_v1(cid: ContractId, params: CreateTenderParamsV1) -> ContractRe
     wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
 
     msg!("[tender::create_tender_v1] Tender created successfully");
-    Ok(())
+    Ok(serialize(&CreateTenderUpdateV1 { tender_id: params.tender_id }))
 }
 
-fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> ContractResult {
+fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::submit_bid_v1] Submitting bid: {:?}", params.bid_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
@@ -581,10 +584,10 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> ContractResult {
     wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
 
     msg!("[tender::submit_bid_v1] Bid submitted successfully");
-    Ok(())
+    Ok(serialize(&SubmitBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }))
 }
 
-fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> ContractResult {
+fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::reveal_bid_v1] Revealing bid: {:?}", params.bid_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
@@ -645,10 +648,10 @@ fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> ContractResult {
     wasm::db::db_set(nullifiers_db, &serialize(&reveal_nullifier), &[])?;
 
     msg!("[tender::reveal_bid_v1] Bid revealed successfully");
-    Ok(())
+    Ok(serialize(&RevealBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }))
 }
 
-fn close_tender_v1(cid: ContractId, params: CloseTenderParamsV1) -> ContractResult {
+fn close_tender_v1(cid: ContractId, params: CloseTenderParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::close_tender_v1] Closing tender: {:?}", params.tender_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
@@ -687,10 +690,10 @@ fn close_tender_v1(cid: ContractId, params: CloseTenderParamsV1) -> ContractResu
     wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
 
     msg!("[tender::close_tender_v1] Tender closed successfully");
-    Ok(())
+    Ok(serialize(&CloseTenderUpdateV1 { tender_id: params.tender_id }))
 }
 
-fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> ContractResult {
+fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::select_winner_v1] Selecting winner: {:?}", params.winner_bid_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
@@ -762,10 +765,10 @@ fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> ContractRe
     wasm::db::db_set(bids_db, &serialize(&params.winner_bid_id), &serialize(&winner_bid))?;
 
     msg!("[tender::select_winner_v1] Winner selected successfully");
-    Ok(())
+    Ok(serialize(&SelectWinnerUpdateV1 { tender_id: params.tender_id, winner_bid_id: params.winner_bid_id, labor_job_id: None }))
 }
 
-fn cancel_tender_v1(cid: ContractId, params: CancelTenderParamsV1) -> ContractResult {
+fn cancel_tender_v1(cid: ContractId, params: CancelTenderParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::cancel_tender_v1] Cancelling tender: {:?}", params.tender_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
@@ -797,10 +800,10 @@ fn cancel_tender_v1(cid: ContractId, params: CancelTenderParamsV1) -> ContractRe
     wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
 
     msg!("[tender::cancel_tender_v1] Tender cancelled successfully");
-    Ok(())
+    Ok(serialize(&CancelTenderUpdateV1 { tender_id: params.tender_id }))
 }
 
-fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> ContractResult {
+fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::reject_bid_v1] Rejecting bid: {:?}", params.bid_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
@@ -849,7 +852,7 @@ fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> ContractResult {
     wasm::db::db_set(bids_db, &serialize(&params.bid_id), &serialize(&bid))?;
 
     msg!("[tender::reject_bid_v1] Bid rejected successfully");
-    Ok(())
+    Ok(serialize(&RejectBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }))
 }
 
 // ============================================================================
@@ -859,7 +862,7 @@ fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> ContractResult {
 fn create_tender_with_capability_v1(
     cid: ContractId,
     params: CreateTenderWithCapabilityParamsV1,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::create_tender_with_capability_v1] Creating tender with capability: {:?}", params.tender_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
@@ -898,13 +901,13 @@ fn create_tender_with_capability_v1(
     wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
 
     msg!("[tender::create_tender_with_capability_v1] Tender created successfully");
-    Ok(())
+    Ok(serialize(&CreateTenderWithCapabilityUpdateV1 { tender_id: params.tender_id }))
 }
 
 fn submit_bid_with_capability_v1(
     cid: ContractId,
     params: SubmitBidWithCapabilityParamsV1,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     msg!("[tender::submit_bid_with_capability_v1] Submitting bid with capability: {:?}", params.bid_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
@@ -988,7 +991,7 @@ fn submit_bid_with_capability_v1(
     wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
 
     msg!("[tender::submit_bid_with_capability_v1] Bid submitted successfully");
-    Ok(())
+    Ok(serialize(&SubmitBidWithCapabilityUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }))
 }
 
 // ============================================================================

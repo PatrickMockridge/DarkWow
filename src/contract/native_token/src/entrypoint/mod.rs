@@ -788,7 +788,7 @@ fn apply_fee(cid: ContractId, update: FeeUpdateV1) -> ContractResult {
 
     // Update fee accumulator per block height
     let mut paid_fee: u64 =
-        deserialize(&wasm::db::db_get(fees_db, &serialize(&update.height))?.unwrap())?;
+        deserialize(&wasm::db::db_get(fees_db, &serialize(&update.height))?.ok_or(ContractError::DbGetEmpty)?)?;
     paid_fee += update.fee;
     wasm::db::db_set(fees_db, &serialize(&update.height), &serialize(&paid_fee))?;
 
