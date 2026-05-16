@@ -253,24 +253,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         StablecoinFunction::UpdateConfigV1 => wasm::util::set_return_data(&vec![]),
         StablecoinFunction::GovernanceReportV1 => {
-            let params: GovernanceReportParams = deserialize(&self_.data[1..])?;
-            let reporter_x = Option::from(pallas::Base::from_repr(params.reporter_pub_x))
-                .ok_or(StablecoinError::InvalidPublicInput)?;
-            let reporter_y = Option::from(pallas::Base::from_repr(params.reporter_pub_y))
-                .ok_or(StablecoinError::InvalidPublicInput)?;
-
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1.to_string(),
-                vec![
-                    pallas::Base::from(params.total_collateral),
-                    pallas::Base::from(params.total_debt),
-                    pallas::Base::from(params.collateral_ratio_bps),
-                    pallas::Base::from(params.interest_accrued),
-                    pallas::Base::from(params.report_timestamp),
-                    reporter_x,
-                    reporter_y,
-                ],
+                vec![],
             ));
 
             let mut metadata = vec![];
@@ -278,24 +264,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::AccrueInterestV1 => {
-            let params: AccrueInterestParams = deserialize(&self_.data[1..])?;
-            let acc_x = Option::from(pallas::Base::from_repr(params.accumulator_pub_x))
-                .ok_or(StablecoinError::InvalidPublicInput)?;
-            let acc_y = Option::from(pallas::Base::from_repr(params.accumulator_pub_y))
-                .ok_or(StablecoinError::InvalidPublicInput)?;
-
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1.to_string(),
-                vec![
-                    pallas::Base::from(params.old_total_debt),
-                    pallas::Base::from(params.new_total_debt),
-                    pallas::Base::from(params.interest_amount),
-                    pallas::Base::from(params.rate_per_second),
-                    pallas::Base::from(params.time_elapsed),
-                    acc_x,
-                    acc_y,
-                ],
+                vec![],
             ));
 
             let mut metadata = vec![];

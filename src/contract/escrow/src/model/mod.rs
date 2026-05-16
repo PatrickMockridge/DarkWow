@@ -217,6 +217,8 @@ pub struct RefundEscrowParamsV1 {
     pub spent_nullifier: pallas::Base,
     /// Current block height (proves timeout reached)
     pub current_block: u64,
+    /// Timeout block height (must match escrow timeout for ZK proof)
+    pub timeout: u64,
     /// Recipient public key for the refunded funds
     pub recipient_pubkey: PublicKey,
 }

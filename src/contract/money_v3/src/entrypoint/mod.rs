@@ -70,7 +70,8 @@ use crate::{
     MONEY_V3_CONTRACT_INFO_TREE, MONEY_V3_CONTRACT_LATEST_COIN_ROOT,
     MONEY_V3_CONTRACT_LATEST_NULLIFIER_ROOT, MONEY_V3_CONTRACT_NULLIFIERS_TREE,
     MONEY_V3_CONTRACT_NULLIFIER_ROOTS_TREE, MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1,
-    MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1, MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1,
+    MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1, MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1,
+    MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1,
     EMPTY_COINS_TREE_ROOT,
 };
 
@@ -283,7 +284,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
         signature_pubkeys.push(input.signature_public);
 
         zk_public_inputs.push((
-            "Burn_V1".to_string(),
+            MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
             vec![
                 input.nullifier.inner(),
                 input.value_commit,
@@ -314,7 +315,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         signature_pubkeys.push(input.signature_public);
 
         zk_public_inputs.push((
-            "Burn_V1".to_string(),
+            MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
             vec![
                 input.nullifier.inner(),
                 input.value_commit,
@@ -684,7 +685,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         signature_pubkeys.push(input.signature_public);
 
         zk_public_inputs.push((
-            "Burn_V1".to_string(),
+            MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
             vec![
                 input.nullifier.inner(),
                 input.value_commit,

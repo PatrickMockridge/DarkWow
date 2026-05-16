@@ -118,9 +118,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     match func {
         OracleFunction::RegisterOracleV1 => {
             let params: RegisterOracleParamsV1 = deserialize(&self_.data[1..])?;
+            // Circuit constrain_instance: oracle_pub_x, oracle_pub_y
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V1.to_string(),
-                vec![params.oracle_id],
+                vec![params.oracle_pub_x, params.oracle_pub_y],
             ));
         }
         OracleFunction::PushValueV1 => {
@@ -132,23 +133,36 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         OracleFunction::AttestValueV1 => {
             let params: AttestValueParamsV1 = deserialize(&self_.data[1..])?;
+            // Circuit constrain_instance: oracle_id, attestation_id, predicate, threshold
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V1.to_string(),
-                vec![params.oracle_id, params.attestation_id],
+                vec![
+                    params.oracle_id,
+                    params.attestation_id,
+                    Base::from(params.predicate as u64),
+                    params.threshold,
+                ],
             ));
         }
         OracleFunction::PushValueCommitmentV1 => {
             let params: PushValueCommitmentParamsV1 = deserialize(&self_.data[1..])?;
+            // Circuit constrain_instance: oracle_id, commitment, data_root
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1.to_string(),
-                vec![params.commitment, params.data_root],
+                vec![params.oracle_id, params.commitment, params.data_root],
             ));
         }
         OracleFunction::AggregateV1 => {
             let params: AggregateParamsV1 = deserialize(&self_.data[1..])?;
+            // Circuit constrain_instance: oracle_id, result, min_result, max_result
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1.to_string(),
-                vec![params.oracle_id, params.result],
+                vec![
+                    params.oracle_id,
+                    params.result,
+                    params.min_result,
+                    params.max_result,
+                ],
             ));
         }
     }

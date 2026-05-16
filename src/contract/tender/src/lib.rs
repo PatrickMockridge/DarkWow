@@ -81,5 +81,4 @@ pub const TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1: &str = "SubmitBid";
 pub const TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1: &str = "RevealBid";
 pub const TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V1: &str = "SelectWinner";
 // O-Cap circuit namespaces
-pub const TENDER_CONTRACT_ZKAS_CREATE_WITH_CAP_NS_V1: &str = "CreateTenderWithCapability";
 pub const TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V1: &str = "SubmitBidWithCapability";

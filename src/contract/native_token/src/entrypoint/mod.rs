@@ -62,6 +62,7 @@ use crate::{
     NATIVE_TOKEN_CONTRACT_INFO_TREE, NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
     NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE,
     NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
+    NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, EMPTY_COINS_TREE_ROOT,
 };
 
@@ -206,7 +207,7 @@ fn fee_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     let (sig_x, sig_y) = params.input.signature_public.xy();
 
     zk_public_inputs.push((
-        "Fee_V1".to_string(),
+        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1.to_string(),
         vec![
             params.input.nullifier.inner(),
             *input_value_coords.x(),
@@ -240,7 +241,7 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     zk_public_inputs.push((
-        "Mint_V1".to_string(),
+        NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
         vec![params.coin.inner()],
     ));
 
@@ -265,7 +266,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
         signature_pubkeys.push(input.signature_public);
 
         zk_public_inputs.push((
-            "Burn_V1".to_string(),
+            NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
             vec![
                 input.nullifier.inner(),
                 *value_coords.x(),
@@ -299,7 +300,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 
         let value_coords = input.value_commit.to_affine().coordinates().unwrap();
         zk_public_inputs.push((
-            "Burn_V1".to_string(),
+            NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
             vec![
                 input.nullifier.inner(),
                 *value_coords.x(),
@@ -316,7 +317,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     for output in &params.outputs {
         let value_coords = output.value_commit.to_affine().coordinates().unwrap();
         zk_public_inputs.push((
-            "Mint_V1".to_string(),
+            NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
             vec![
                 output.token_commit,
                 *value_coords.x(),
@@ -344,7 +345,7 @@ fn spend_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
     let (sig_x, sig_y) = params.input.signature_public.xy();
 
     zk_public_inputs.push((
-        "Burn_V1".to_string(),
+        NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
         vec![
             params.input.nullifier.inner(),
             *input_value_coords.x(),

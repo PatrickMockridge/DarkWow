@@ -246,6 +246,12 @@ pub struct RefundParamsV1 {
     pub employer_pub_x: pallas::Base,
     /// Employer's public key y coordinate
     pub employer_pub_y: pallas::Base,
+    /// Milestone count (for partial refund calculation)
+    pub milestone_count: u64,
+    /// Completed payment amount so far
+    pub completed_payment: u64,
+    /// Amount to be refunded
+    pub refund_amount: u64,
     /// Nullifier for refund authorization
     pub spent_nullifier: pallas::Base,
 }
@@ -397,6 +403,8 @@ pub struct AcceptJobWithCapabilityParamsV1 {
     pub worker_pub_x: pallas::Base,
     /// Worker's public key y coordinate
     pub worker_pub_y: pallas::Base,
+    /// Required capability ID (must match job's capability requirement)
+    pub required_capability_id: pallas::Base,
     /// Capability proof from Identity contract
     pub capability_proof: Vec<u8>,
     /// Capability secret (proves ownership)

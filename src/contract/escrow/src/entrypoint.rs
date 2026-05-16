@@ -171,25 +171,21 @@ fn escrow_create_get_metadata_v1(
     // Public inputs for CreateEscrow ZK proof
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
-    // CreateEscrow circuit expects:
-    // - buyer_pub_x, buyer_pub_y (already derived from secret in params)
-    // - seller_pub_x, seller_pub_y (already derived from secret in params)
-    // - commitment (the escrow ID)
+    // Circuit constrain_instance calls (2):
+    //   constrain_instance(C) — commitment = H(buyer_x, buyer_y, H(seller), value, token_id, timeout)
+    //   constrain_instance(seller_commitment) — H(seller_x, seller_y)
     let (buyer_x, buyer_y) = params.buyer_pubkey.xy();
     let (seller_x, seller_y) = params.seller_pubkey.xy();
+    let seller_commitment = poseidon_hash([seller_x, seller_y]);
+    let commitment = poseidon_hash([
+        buyer_x, buyer_y, seller_commitment,
+        pallas::Base::from(params.value), params.token_id,
+        pallas::Base::from(params.timeout),
+    ]);
 
     zk_public_inputs.push((
         ESCROW_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
-        vec![
-            buyer_x,
-            buyer_y,
-            seller_x,
-            seller_y,
-            pallas::Base::from(params.value),
-            params.token_id,
-            pallas::Base::from(params.timeout),
-            params.commitment,
-        ],
+        vec![commitment, seller_commitment],
     ));
 
     let mut metadata = vec![];
@@ -239,18 +235,18 @@ fn escrow_claim_get_metadata_v1(
     // Public inputs for ClaimEscrow ZK proof
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
-    // Claim circuit expects:
-    // - escrow_id
-    // - seller_pub_x, seller_pub_y (re-derived from secret)
-    // - spent_nullifier
+    // Circuit constrain_instance calls (3):
+    //   constrain_instance(escrow_id)
+    //   constrain_instance(escrow_seller_commitment) — H(seller_pub_x, seller_pub_y)
+    //   constrain_instance(spent_nullifier)
     let (seller_x, seller_y) = params.recipient_pubkey.xy();
+    let escrow_seller_commitment = poseidon_hash([seller_x, seller_y]);
 
     zk_public_inputs.push((
         ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1.to_string(),
         vec![
             params.escrow_id,
-            seller_x,
-            seller_y,
+            escrow_seller_commitment,
             params.spent_nullifier,
         ],
     ));
@@ -270,21 +266,24 @@ fn escrow_refund_get_metadata_v1(
     // Public inputs for RefundEscrow ZK proof
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
-    // Refund circuit expects:
-    // - escrow_id
-    // - buyer_pub_x, buyer_pub_y (re-derived from secret)
-    // - spent_nullifier
-    // - current_block (for timelock check)
+    // Circuit constrain_instance calls (6):
+    //   constrain_instance(escrow_id)
+    //   constrain_instance(timeout)
+    //   constrain_instance(current_block)
+    //   constrain_instance(input_buyer_pub_x)
+    //   constrain_instance(input_buyer_pub_y)
+    //   constrain_instance(spent_nullifier)
     let (buyer_x, buyer_y) = params.recipient_pubkey.xy();
 
     zk_public_inputs.push((
         ESCROW_CONTRACT_ZKAS_REFUND_NS_V1.to_string(),
         vec![
             params.escrow_id,
+            pallas::Base::from(params.timeout),
+            pallas::Base::from(params.current_block),
             buyer_x,
             buyer_y,
             params.spent_nullifier,
-            pallas::Base::from(params.current_block),
         ],
     ));
 

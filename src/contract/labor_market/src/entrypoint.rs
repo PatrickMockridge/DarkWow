@@ -140,16 +140,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let metadata = match func {
         LaborMarketFunction::CreateJobV1 => {
             let params: CreateJobParamsV1 = deserialize(&self_.data[1..])?;
+            // Circuit constrain_instance (3): employer_pub_x, employer_pub_y, attestation_id
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1.to_string(),
                 vec![
-                    params.job_id,
                     params.employer_pub_x,
                     params.employer_pub_y,
                     params.attestation_id,
-                    params.payment_token,
-                    params.payment_commit_x,
-                    params.payment_commit_y,
                 ],
             )];
             let mut metadata = vec![];
@@ -235,12 +232,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::RefundV1 => {
             let params: RefundParamsV1 = deserialize(&self_.data[1..])?;
+            // Circuit constrain_instance (7): job_id, employer_pub_x, employer_pub_y,
+            //   milestone_count, completed_payment, refund_amount, spent_nullifier
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_REFUND_NS_V1.to_string(),
                 vec![
                     params.job_id,
                     params.employer_pub_x,
                     params.employer_pub_y,
+                    pallas::Base::from(params.milestone_count),
+                    pallas::Base::from(params.completed_payment),
+                    pallas::Base::from(params.refund_amount),
                     params.spent_nullifier,
                 ],
             )];
@@ -254,16 +256,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::CreateJobWithMilestonesV1 => {
             let params: CreateJobWithMilestonesParamsV1 = deserialize(&self_.data[1..])?;
+            // Circuit constrain_instance (3): employer_pub_x, employer_pub_y, attestation_id
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1.to_string(),
                 vec![
-                    params.job_id,
                     params.employer_pub_x,
                     params.employer_pub_y,
                     params.attestation_id,
-                    params.payment_token,
-                    params.payment_commit_x,
-                    params.payment_commit_y,
                 ],
             )];
             let mut metadata = vec![];
@@ -319,31 +318,19 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         // O-Cap enabled functions
         LaborMarketFunction::CreateJobWithCapabilityV1 => {
-            let params: CreateJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
-            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_CAPABILITY_NS_V1.to_string(),
-                vec![
-                    params.job_id,
-                    params.employer_pub_x,
-                    params.employer_pub_y,
-                    params.attestation_id,
-                    params.payment_token,
-                    params.payment_commit_x,
-                    params.payment_commit_y,
-                ],
-            )];
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            metadata
+            // No circuit exists yet — deferred to v1.1
+            vec![]
         }
         LaborMarketFunction::AcceptJobWithCapabilityV1 => {
             let params: AcceptJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            // Circuit constrain_instance (4): job_id, worker_pub_x, worker_pub_y, required_capability_id
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1.to_string(),
                 vec![
                     params.job_id,
                     params.worker_pub_x,
                     params.worker_pub_y,
+                    params.required_capability_id,
                 ],
             )];
             let mut metadata = vec![];
@@ -351,22 +338,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::CreateJobWithMilestonesAndCapabilityV1 => {
-            let params: CreateJobWithMilestonesAndCapabilityParamsV1 = deserialize(&self_.data[1..])?;
-            let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_MILESTONES_AND_CAPABILITY_NS_V1.to_string(),
-                vec![
-                    params.job_id,
-                    params.employer_pub_x,
-                    params.employer_pub_y,
-                    params.attestation_id,
-                    params.payment_token,
-                    params.payment_commit_x,
-                    params.payment_commit_y,
-                ],
-            )];
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            metadata
+            // No circuit exists yet — deferred to v1.1
+            vec![]
         }
     };
 
