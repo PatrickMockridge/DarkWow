@@ -19,10 +19,23 @@ field = "pallas";
 #   - pos: Position in the delegation Merkle tree
 #   - path: Sparse Merkle path for delegation proof
 
+constant "VerifyChain" {
+}
+
 witness "VerifyChain" {
+    # Delegation ID being verified
+    Base delegation_id,
+    # Parent delegation ID
+    Base parent_id,
+    # Merkle root of the delegation chain
+    Base chain_root,
+    # Current depth in chain
+    Base current_depth,
+    # Maximum allowed depth
+    Base max_depth,
+
     # Position in the delegation Merkle tree
     Base pos,
-
     # Sparse Merkle path for delegation proof
     SparseMerklePath path,
 }
@@ -37,10 +50,13 @@ circuit "VerifyChain" {
     # Returns 1 if the leaf exists in the Merkle tree with the given root.
     # We verify: is_member == 1 (delegation IS in the chain)
 
+    # Constant witness for comparison
+    ONE = witness_base(1);
+
     is_in_chain = set_membership(pos, path, delegation_id, chain_root);
 
     # The result must be 1 (delegation IS in the chain)
-    constrain_equal_base(is_in_chain, Base(1));
+    constrain_equal_base(is_in_chain, ONE);
 
     # ==========================================================================
     # PHASE 2: Verify chain depth is within limits
@@ -50,7 +66,7 @@ circuit "VerifyChain" {
     # This prevents infinite delegation chains
 
     depth_within_limit = less_than_or_equal(current_depth, max_depth);
-    constrain_equal_base(depth_within_limit, Base(1));
+    constrain_equal_base(depth_within_limit, ONE);
 
     # ==========================================================================
     # PHASE 3: Expose public inputs
