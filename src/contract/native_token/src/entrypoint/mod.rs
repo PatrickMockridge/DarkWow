@@ -194,7 +194,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 fn fee_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
     // Skip first 9 bytes: function ID (1) + fee (8)
-    let params: FeeParamsV1 = deserialize(&self_.data[9..]).unwrap();
+    let params: FeeParamsV1 = match deserialize(&self_.data[9..]) { Ok(p) => p, Err(_) => return vec![] };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -233,7 +233,7 @@ fn fee_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
 /// Metadata for MintV1
 fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx];
-    let params: MintParamsV1 = deserialize(&self_.data.data[1..]).unwrap();
+    let params: MintParamsV1 = match deserialize(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     // Public inputs for the ZK proofs we have to verify
     let value_coords = params.value_commit.to_affine().coordinates().unwrap();
@@ -261,7 +261,7 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 /// Metadata for BurnV1
 fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: BurnParamsV1 = deserialize(&self_.data[1..]).unwrap();
+    let params: BurnParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -297,7 +297,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 /// Metadata for TransferV1
 fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: TransferParamsV1 = deserialize(&self_.data[1..]).unwrap();
+    let params: TransferParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let mut signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
@@ -345,7 +345,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 /// Metadata for SpendV1
 fn spend_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: SpendParamsV1 = deserialize(&self_.data[1..]).unwrap();
+    let params: SpendParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![params.input.signature_public];
@@ -636,7 +636,7 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
 
 fn pow_reward_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: PoWRewardParamsV1 = deserialize(&self_.data[1..]).unwrap();
+    let params: PoWRewardParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];

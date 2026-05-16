@@ -201,7 +201,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 /// Metadata for TokenMintV1
 fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx];
-    let params: TokenMintParamsV1 = deserialize(&self_.data.data[1..]).unwrap();
+    let params: TokenMintParamsV1 = match deserialize(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
@@ -210,9 +210,9 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
         MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1.to_string(),
         vec![
             params.token_id,
+            params.token_auth_parent,
             params.coin.inner(),
             params.value_commit,
-            params.token_commit,
         ],
     ));
 
@@ -225,7 +225,7 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 /// Metadata for AuthTokenMintV1
 fn auth_token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: AuthTokenMintParamsV1 = deserialize(&self_.data[1..]).unwrap();
+    let params: AuthTokenMintParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![params.mint_public];
@@ -248,7 +248,7 @@ fn auth_token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Da
 /// Metadata for MintV1
 fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: MintParamsV1 = deserialize(&self_.data[1..]).unwrap();
+    let params: MintParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
@@ -306,7 +306,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 /// Metadata for TransferV1 (atomic burn + mint)
 fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: TransferParamsV1 = deserialize(&self_.data[1..]).unwrap();
+    let params: TransferParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let mut signature_pubkeys: Vec<pallas::Base> = vec![];
@@ -671,7 +671,7 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
 /// Uses the same proof structure as TransferV1
 fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: OtcSwapParamsV1 = deserialize(&self_.data[1..]).unwrap();
+    let params: OtcSwapParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let mut signature_pubkeys: Vec<pallas::Base> = vec![];

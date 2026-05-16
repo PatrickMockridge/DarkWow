@@ -343,6 +343,8 @@ pub struct ExitUpdateV1 {
 /// Parameters for `DrainProtection::TransferV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct TransferParamsV1 {
+    /// Fund to transfer from
+    pub fund_id: FundId,
     /// Amount to transfer
     pub amount: u64,
     /// Recipient
@@ -366,6 +368,8 @@ pub struct TransferUpdateV1 {
 /// Parameters for `DrainProtection::LockV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct LockParamsV1 {
+    /// Fund to lock
+    pub fund_id: FundId,
     /// Lock duration in blocks
     pub duration_blocks: u64,
     /// Signature from spend authority
@@ -381,6 +385,8 @@ pub struct LockUpdateV1 {
 /// Parameters for `DrainProtection::UnlockV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct UnlockParamsV1 {
+    /// Fund to unlock
+    pub fund_id: FundId,
     /// Signature from spend authority
     pub signature: pallas::Base,
 }
@@ -394,6 +400,8 @@ pub struct UnlockUpdateV1 {
 /// Parameters for `DrainProtection::UpdateConfigV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct UpdateConfigParamsV1 {
+    /// Fund to update
+    pub fund_id: FundId,
     /// New rate limit (optional)
     pub rate_limit: Option<RateLimit>,
     /// New vote thresholds (optional)

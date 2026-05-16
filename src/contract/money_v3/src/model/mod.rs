@@ -220,6 +220,8 @@ pub struct TokenMintParamsV1 {
     pub value_commit: pallas::Base,
     /// Token ID (derived from auth_parent, user_data, blind)
     pub token_id: pallas::Base,
+    /// Token authorization parent (bound in ZK proof)
+    pub token_auth_parent: pallas::Base,
     /// Token ID commitment (hides token_id)
     pub token_commit: pallas::Base,
 }

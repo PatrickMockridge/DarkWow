@@ -224,10 +224,10 @@ fn submit_bid_get_metadata_v1(
     zk_public_inputs.push((
         TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1.to_string(),
         vec![
-            params.tender_id,
-            params.bid_id,
             params.bidder_pub_x,
             params.bidder_pub_y,
+            params.tender_id,
+            params.bid_id,
         ],
     ));
 
@@ -270,22 +270,22 @@ fn submit_bid_with_capability_get_metadata_v1(
         return Err(ContractError::InvalidFunction.into())
     }
 
-    let cap_id_fp = poseidon_hash([pasta::pallas::Base::from_raw([
+    let cap_id = pasta::pallas::Base::from_raw([
         u64::from_le_bytes(params.required_capability_id[0..8].try_into().unwrap()),
         u64::from_le_bytes(params.required_capability_id[8..16].try_into().unwrap()),
         u64::from_le_bytes(params.required_capability_id[16..24].try_into().unwrap()),
         u64::from_le_bytes(params.required_capability_id[24..32].try_into().unwrap()),
-    ])]);
+    ]);
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V1.to_string(),
         vec![
-            params.tender_id,
-            params.bid_id,
             params.bidder_pub_x,
             params.bidder_pub_y,
-            cap_id_fp,
+            params.tender_id,
+            params.bid_id,
+            cap_id,
         ],
     ));
 
@@ -996,56 +996,52 @@ fn submit_bid_with_capability_v1(
 // ============================================================================
 
 fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
-    match update_data[0] {
-        0 => {
+    let func = TenderFunction::try_from(update_data[0])?;
+    match func {
+        TenderFunction::CreateTenderV1 => {
             let update: CreateTenderUpdateV1 = deserialize(&update_data[1..])?;
             msg!("[tender::process_update] CreateTender: {:?}", update.tender_id);
             Ok(())
         }
-        1 => {
+        TenderFunction::SubmitBidV1 => {
             let update: SubmitBidUpdateV1 = deserialize(&update_data[1..])?;
             msg!("[tender::process_update] SubmitBid: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
         }
-        2 => {
+        TenderFunction::RevealBidV1 => {
             let update: RevealBidUpdateV1 = deserialize(&update_data[1..])?;
             msg!("[tender::process_update] RevealBid: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
         }
-        3 => {
+        TenderFunction::CloseTenderV1 => {
             let update: CloseTenderUpdateV1 = deserialize(&update_data[1..])?;
             msg!("[tender::process_update] CloseTender: {:?}", update.tender_id);
             Ok(())
         }
-        4 => {
+        TenderFunction::SelectWinnerV1 => {
             let update: SelectWinnerUpdateV1 = deserialize(&update_data[1..])?;
             msg!("[tender::process_update] SelectWinner: {:?} {:?}", update.tender_id, update.winner_bid_id);
             Ok(())
         }
-        5 => {
+        TenderFunction::CancelTenderV1 => {
             let update: CancelTenderUpdateV1 = deserialize(&update_data[1..])?;
             msg!("[tender::process_update] CancelTender: {:?}", update.tender_id);
             Ok(())
         }
-        6 => {
+        TenderFunction::RejectBidV1 => {
             let update: RejectBidUpdateV1 = deserialize(&update_data[1..])?;
             msg!("[tender::process_update] RejectBid: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
         }
-        // O-Cap enabled functions
-        7 => {
+        TenderFunction::CreateTenderWithCapabilityV1 => {
             let update: CreateTenderWithCapabilityUpdateV1 = deserialize(&update_data[1..])?;
             msg!("[tender::process_update] CreateTenderWithCapability: {:?}", update.tender_id);
             Ok(())
         }
-        8 => {
+        TenderFunction::SubmitBidWithCapabilityV1 => {
             let update: SubmitBidWithCapabilityUpdateV1 = deserialize(&update_data[1..])?;
             msg!("[tender::process_update] SubmitBidWithCapability: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
-        }
-        _ => {
-            msg!("[tender::process_update] ERROR: Unknown update type");
-            Err(ContractError::InvalidFunction.into())
         }
     }
 }

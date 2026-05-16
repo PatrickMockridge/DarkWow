@@ -499,9 +499,7 @@ fn transfer_process_instruction_v1(
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
     let transfers_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE)?;
 
-    // For now, use a hardcoded fund ID - in production this would be per-fund
-    let fund_id = pallas::Base::zero();
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&fund_id))?
+    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.fund_id))?
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let fund: ProtectedFund = deserialize(&fund_data)?;
 
@@ -557,8 +555,7 @@ fn lock_process_instruction_v1(
 
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
-    let fund_id = pallas::Base::zero();
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&fund_id))?
+    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.fund_id))?
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let mut fund: ProtectedFund = deserialize(&fund_data)?;
 
@@ -582,14 +579,13 @@ fn lock_process_instruction_v1(
 /// `process_instruction` for UnlockV1
 fn unlock_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
-    _params: UnlockParamsV1,
+    params: UnlockParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[UnlockV1] Unlocking funds");
 
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
-    let fund_id = pallas::Base::zero();
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&fund_id))?
+    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.fund_id))?
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let mut fund: ProtectedFund = deserialize(&fund_data)?;
 
@@ -621,8 +617,7 @@ fn update_config_process_instruction_v1(
 
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
-    let fund_id = pallas::Base::zero();
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&fund_id))?
+    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.fund_id))?
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let mut fund: ProtectedFund = deserialize(&fund_data)?;
 
@@ -702,7 +697,11 @@ fn check_rate_limit(
 // ============================================================================
 
 impl VoteAction {
-    /// Get the fund ID this action applies to
+    /// Get the fund ID this action applies to.
+    ///
+    /// NOTE: Current implementation assumes single-fund (returns zero).
+    /// When multi-fund support is added, each VoteAction variant should
+    /// carry its own fund_id field rather than using this default.
     fn fund_id(&self) -> pallas::Base {
         match self {
             VoteAction::LargeWithdrawal { .. } => pallas::Base::zero(),

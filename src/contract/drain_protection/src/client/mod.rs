@@ -488,13 +488,19 @@ pub struct TransferParams {
 ///
 /// Lock funds in emergency state.
 pub struct LockBuilder {
+    fund_id: FundId,
     duration_blocks: u64,
     signature: pallas::Base,
 }
 
 impl LockBuilder {
     pub fn new() -> Self {
-        Self { duration_blocks: 6000, signature: pallas::Base::zero() }
+        Self { fund_id: pallas::Base::zero(), duration_blocks: 6000, signature: pallas::Base::zero() }
+    }
+
+    pub fn fund_id(mut self, id: FundId) -> Self {
+        self.fund_id = id;
+        self
     }
 
     pub fn duration_blocks(mut self, blocks: u64) -> Self {
@@ -508,7 +514,7 @@ impl LockBuilder {
     }
 
     pub fn build(&self) -> Result<LockParamsV1, &'static str> {
-        Ok(LockParamsV1 { duration_blocks: self.duration_blocks, signature: self.signature })
+        Ok(LockParamsV1 { fund_id: self.fund_id, duration_blocks: self.duration_blocks, signature: self.signature })
     }
 }
 
@@ -516,12 +522,18 @@ impl LockBuilder {
 ///
 /// Unlock funds after timelock.
 pub struct UnlockBuilder {
+    fund_id: FundId,
     signature: pallas::Base,
 }
 
 impl UnlockBuilder {
     pub fn new() -> Self {
-        Self { signature: pallas::Base::zero() }
+        Self { fund_id: pallas::Base::zero(), signature: pallas::Base::zero() }
+    }
+
+    pub fn fund_id(mut self, id: FundId) -> Self {
+        self.fund_id = id;
+        self
     }
 
     pub fn signature(mut self, sig: pallas::Base) -> Self {
@@ -530,7 +542,7 @@ impl UnlockBuilder {
     }
 
     pub fn build(&self) -> Result<UnlockParamsV1, &'static str> {
-        Ok(UnlockParamsV1 { signature: self.signature })
+        Ok(UnlockParamsV1 { fund_id: self.fund_id, signature: self.signature })
     }
 }
 
@@ -538,6 +550,7 @@ impl UnlockBuilder {
 ///
 /// Update fund configuration parameters.
 pub struct UpdateConfigBuilder {
+    fund_id: FundId,
     rate_limit: Option<RateLimit>,
     thresholds: Option<VoteThresholds>,
     new_spend_authority: Option<PublicKey>,
@@ -545,7 +558,12 @@ pub struct UpdateConfigBuilder {
 
 impl UpdateConfigBuilder {
     pub fn new() -> Self {
-        Self { rate_limit: None, thresholds: None, new_spend_authority: None }
+        Self { fund_id: pallas::Base::zero(), rate_limit: None, thresholds: None, new_spend_authority: None }
+    }
+
+    pub fn fund_id(mut self, id: FundId) -> Self {
+        self.fund_id = id;
+        self
     }
 
     pub fn rate_limit(mut self, limit: RateLimit) -> Self {
@@ -565,6 +583,7 @@ impl UpdateConfigBuilder {
 
     pub fn build(&self) -> Result<UpdateConfigParamsV1, &'static str> {
         Ok(UpdateConfigParamsV1 {
+            fund_id: self.fund_id,
             rate_limit: self.rate_limit.clone(),
             thresholds: self.thresholds.clone(),
             new_spend_authority: self.new_spend_authority,

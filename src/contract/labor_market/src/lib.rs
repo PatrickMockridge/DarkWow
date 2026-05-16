@@ -95,5 +95,4 @@ pub const LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V1: &str = "SubmitGitDel
 pub const LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1: &str = "ConfirmDelivery";
 pub const LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1: &str = "Dispute";
 pub const LABOR_CONTRACT_ZKAS_REFUND_NS_V1: &str = "Refund";
-pub const LABOR_CONTRACT_ZKAS_MILESTONE_PAYMENT_NS_V1: &str = "MilestonePayment";
 pub const LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1: &str = "AcceptJobWithCapability";

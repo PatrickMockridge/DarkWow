@@ -186,7 +186,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: CheckNotRevokedParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V1.to_string(),
-                vec![params.nonce, params.revocation_root],
+                vec![params.revocation_root, params.nonce],
             ));
         }
         AttestationFunction::DelegateAttestationV1 => {
@@ -758,13 +758,6 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Contract
                 return Err(ContractError::InvalidFunction.into())
             }
         };
-        match wasm::db::db_get(claims_db, &serialize(&params.claim_id))? {
-            Some(c) => c,
-            None => {
-                msg!("[attestation::validate_claim_v1] ERROR: Claim not found");
-                return Err(ContractError::InvalidFunction.into())
-            }
-        };
 
     // Verify claim is for this attestation
     if claim.attestation_id != params.attestation_id {
@@ -979,7 +972,7 @@ fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: VerifyClaimUpdateV1 = deserialize(&update_data[1..])?;
             let claims_db = wasm::db::db_lookup(_cid, ATTESTATION_CONTRACT_CLAIMS_TREE)?;
             let claim_bytes =
-                wasm::db::db_get(claims_db, &serialize(&update.claim_id))?.unwrap();
+                wasm::db::db_get(claims_db, &serialize(&update.claim_id))?.ok_or(ContractError::IoError("claim not found".to_string()))?;
             let mut claim: Claim = deserialize(&claim_bytes)?;
             claim.state = if update.verified { ClaimState::Verified } else { ClaimState::Rejected };
             wasm::db::db_set(claims_db, &serialize(&update.claim_id), &serialize(&claim))?;

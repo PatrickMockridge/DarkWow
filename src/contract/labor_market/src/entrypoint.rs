@@ -112,8 +112,6 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&create_job_v1_bincode[..])?;
     let dispute_v1_bincode = include_bytes!("../proof/dispute_v1.zk.bin");
     wasm::db::zkas_db_set(&dispute_v1_bincode[..])?;
-    let milestone_payment_v1_bincode = include_bytes!("../proof/milestone_payment_v1.zk.bin");
-    wasm::db::zkas_db_set(&milestone_payment_v1_bincode[..])?;
     let refund_v1_bincode = include_bytes!("../proof/refund_v1.zk.bin");
     wasm::db::zkas_db_set(&refund_v1_bincode[..])?;
     let submit_deliverable_v1_bincode = include_bytes!("../proof/submit_deliverable_v1.zk.bin");
@@ -574,6 +572,13 @@ fn cancel_job_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
 // ============================================================================
 
 /// Process contract updates (state changes)
+///
+/// NOTE: Unlike other contracts that receive serialized update structs via
+/// set_return_data from process_instruction, labor_market re-parses the
+/// original transaction calls array. This is intentional: all validation
+/// happens in process_instruction, and process_update replays the params
+/// to apply state changes. A future refactor should migrate this to the
+/// standard two-phase pattern (instruction produces update, update applies it).
 fn process_update(cid: ContractId, update: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(update)?;

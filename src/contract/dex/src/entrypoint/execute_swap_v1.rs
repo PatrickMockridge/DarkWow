@@ -131,9 +131,9 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
     // The order must match the `constrain_instance` calls in execute_swap_v1.zk:
     // 1. alice_nullifier_check
     // 2. bob_nullifier_check
-    // 3. computed_swap_id
-    // 4. alice_otc_func_id (FuncRef for Alice's OtcSwapV1)
-    // 5. bob_otc_func_id (FuncRef for Bob's OtcSwapV1)
+    // 3. alice_otc_func_id (FuncRef for Alice's OtcSwapV1)
+    // 4. bob_otc_func_id (FuncRef for Bob's OtcSwapV1)
+    // 5. computed_swap_id
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
     // The prover computed the nullifiers externally and passed them in params.
@@ -146,15 +146,14 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
         None => return Err(ContractError::IoError("Invalid swap_id".to_string()).into()),
     };
 
-    // Include OtcSwapV1 FuncRefs for cross-contract atomic swap verification
     zk_public_inputs.push((
         DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1.to_string(),
         vec![
             alice_nullifier,
             bob_nullifier,
-            swap_id,
             child_func_ids[0], // Alice's OtcSwapV1 FuncRef
             child_func_ids[1], // Bob's OtcSwapV1 FuncRef
+            swap_id,
         ],
     ));
 

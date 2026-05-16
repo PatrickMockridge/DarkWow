@@ -193,7 +193,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 fn deposit_get_metadata(data: &[u8]) -> Vec<u8> {
     use dwow_sdk::pasta::pallas;
 
-    let _params: DepositParams = deserialize(data).unwrap();
+    let _params: DepositParams = match deserialize(data) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
@@ -218,12 +218,15 @@ fn withdraw_get_metadata(data: &[u8]) -> Vec<u8> {
     use dwow_sdk::crypto::poseidon_hash;
     use dwow_sdk::pasta::pallas;
 
-    let params: WithdrawParams = deserialize(data).unwrap();
+    let params: WithdrawParams = match deserialize(data) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
     let nullifier = params.nullifier.inner();
-    let recipient_base = pallas::Base::from_repr(params.recipient_hash).unwrap();
+    let recipient_base = match pallas::Base::from_repr(params.recipient_hash).into() {
+        Some(b) => b,
+        None => return vec![],
+    };
     let derived_recipient = poseidon_hash([recipient_base]);
 
     zk_public_inputs.push((
@@ -719,12 +722,11 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
 /// Process configuration update instruction
 fn process_config_instruction(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let _params: UpdateConfigParams = deserialize(&self_.data[1..])?;
+    let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
 
     msg!("[bridge::process_instruction] Configuration update processed");
 
-    // Configuration updates are applied directly in process_update
-    wasm::util::set_return_data(&vec![])
+    wasm::util::set_return_data(&serialize(&params))
 }
 
 /// Process cancel withdrawal instruction
