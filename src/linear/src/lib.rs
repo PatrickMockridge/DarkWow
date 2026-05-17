@@ -28,6 +28,7 @@
 
 mod block;
 mod blockchain;
+pub mod caribina;
 mod consensus;
 mod error;
 mod miner;

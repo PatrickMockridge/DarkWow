@@ -1,0 +1,1 @@
+"""Failure mode scenario definitions."""

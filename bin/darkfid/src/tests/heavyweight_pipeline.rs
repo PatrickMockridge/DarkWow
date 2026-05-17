@@ -3639,3 +3639,160 @@ async fn test_drain_protection_heavyweight_impl(
     info!("test_drain_protection_heavyweight PASSED");
     Ok(())
 }
+
+// ============================================================================
+// Relayer Lifecycle Test
+// ============================================================================
+
+/// Test the full relayer lifecycle: initialize → deposit → withdraw
+/// with real ZK proofs via BridgeHarness.
+#[test]
+fn test_relayer_lifecycle_heavyweight() -> Result<()> {
+    let ex = Arc::new(Executor::new());
+    let (signal, shutdown) = smol::channel::unbounded::<()>();
+
+    easy_parallel::Parallel::new()
+        .each(0..1, |_| smol::block_on(ex.run(shutdown.recv())))
+        .finish(|| {
+            smol::block_on(async {
+                test_relayer_lifecycle_heavyweight_impl(ex.clone()).await.unwrap();
+                drop(signal);
+            })
+        });
+
+    Ok(())
+}
+
+async fn test_relayer_lifecycle_heavyweight_impl(
+    ex: Arc<Executor<'static>>,
+) -> std::result::Result<(), HeavyweightError> {
+    use dwow_contract_test_harness::harness::{MoneyV3Harness, BridgeHarness};
+    use dwow::zk::halo2::Field;
+    use dwow_sdk::crypto::{MerkleNode, MerkleTree, poseidon_hash, pasta_prelude::PrimeField};
+    use dwow_sdk::pasta::pallas::Base;
+    use dwow_bridge_contract::model::ExternalChain;
+    use rand::rngs::OsRng;
+
+    // ---- Deploy money_v3 ----
+    let money_harness = MoneyV3Harness::spawn();
+    let money_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18710".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18711".to_string(),
+    };
+    let mut money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", money_config, ex.clone()).await?;
+    money_pipeline.generate_genesis_blocks(3).await?;
+    let money_wasm = read_wasm("money_v3").await?;
+    let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+    info!("[relayer-lifecycle] MoneyV3 deployed: {:?}", money_contract_id);
+
+    // ---- Deploy bridge ----
+    let bridge_harness = BridgeHarness::spawn();
+    let bridge_config = HarnessConfig {
+        pow_target: 20,
+        pow_fixed_difficulty: Some(dwow_sdk::num_traits::One::one()),
+        confirmation_threshold: 1,
+        max_forks: 8,
+        alice_url: "tcp+tls://127.0.0.1:18712".to_string(),
+        bob_url: "tcp+tls://127.0.0.1:18713".to_string(),
+    };
+    let mut bridge_pipeline = HeavyweightPipeline::new(bridge_harness, "bridge", bridge_config, ex).await?;
+    bridge_pipeline.generate_genesis_blocks(3).await?;
+    let bridge_wasm = read_wasm("bridge").await?;
+    let bridge_contract_id = bridge_pipeline.deploy(bridge_wasm).await?;
+    info!("[relayer-lifecycle] Bridge deployed: {:?}", bridge_contract_id);
+
+    // ---- Phase 1: Initialize bridge (0x00, no params, no ZK proof) ----
+    let init_data = vec![0x00u8];
+    let tx = bridge_pipeline.exec(0x00, init_data, vec![]).await?;
+    info!("[relayer-lifecycle] Bridge::InitializeV1 (tx: {:?})", tx.hash());
+
+    // ---- Phase 2: Deposit with ZK proof (0x01) + money_v3 child call ----
+    let harness = BridgeHarness::spawn();
+    let secret = Base::random(&mut OsRng);
+    let amount: u64 = 1_000_000;
+    let deposit_leaf = poseidon_hash([secret, Base::from(amount)]);
+
+    let mut merkle_tree = MerkleTree::new(1);
+    merkle_tree.append(MerkleNode::new(deposit_leaf));
+    let position = merkle_tree.mark().unwrap();
+    let root = merkle_tree.root(0).unwrap().inner();
+    let merkle_path = merkle_tree.witness(position, 0).unwrap();
+
+    let recipient_secret = Base::random(&mut OsRng);
+    let recipient_public = dwow_sdk::crypto::PublicKey::from_secret(
+        dwow_sdk::crypto::SecretKey::from_bytes(recipient_secret.to_repr()).unwrap()
+    );
+
+    let external_block_hash = Base::random(&mut OsRng);
+    let deposit_result = harness.deposit(
+        secret,
+        amount,
+        recipient_public,
+        1,          // bridge_nonce
+        external_block_hash,
+        root,       // merkle_root_input
+        0,          // leaf_pos
+        merkle_path,
+        ExternalChain::Ethereum,
+        0,          // fee
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("[relayer-lifecycle] Deposit proof: commitment={}", hex::encode(deposit_result.public_inputs.commitment.to_repr()));
+
+    let deposit_child = ContractCall { contract_id: money_contract_id, data: vec![0x04] };
+    let tx = bridge_pipeline.exec_with_children(
+        0x01, // DepositV1
+        deposit_result.call_data,
+        vec![deposit_result.proof],
+        vec![deposit_child],
+        vec![vec![]],
+    ).await?;
+    info!("[relayer-lifecycle] Bridge::DepositV1 (tx: {:?})", tx.hash());
+
+    // ---- Phase 3: Withdraw with ZK proof (0x02) + money_v3 child call ----
+    let harness = BridgeHarness::spawn();
+    let withdraw_secret = Base::random(&mut OsRng);
+    let withdraw_amount: u64 = 500_000;
+    let recipient_hash = Base::random(&mut OsRng);
+    let bridge_address = Base::random(&mut OsRng);
+
+    // Build fresh merkle tree for withdraw
+    let w_leaf = poseidon_hash([withdraw_secret, Base::from(withdraw_amount)]);
+    let mut w_tree = MerkleTree::new(1);
+    w_tree.append(MerkleNode::new(w_leaf));
+    let w_pos = w_tree.mark().unwrap();
+    let w_root = w_tree.root(0).unwrap().inner();
+    let w_path = w_tree.witness(w_pos, 0).unwrap();
+    let mut merkle_proof = [Base::zero(); 4];
+    for (i, node) in w_path.iter().take(4).enumerate() {
+        merkle_proof[i] = node.inner();
+    }
+
+    let withdraw_result = harness.withdraw(
+        withdraw_secret,
+        withdraw_amount,
+        recipient_hash,
+        bridge_address,
+        w_root,
+        merkle_proof,
+        0,          // leaf_index
+        0,          // fee
+    ).map_err(|e| HeavyweightError::ExecutionFailed(e.to_string()))?;
+    info!("[relayer-lifecycle] Withdraw proof: nullifier={}", hex::encode(withdraw_result.public_inputs.nullifier.to_repr()));
+
+    let withdraw_child = ContractCall { contract_id: money_contract_id, data: vec![0x04] };
+    let tx = bridge_pipeline.exec_with_children(
+        0x02, // WithdrawV1
+        withdraw_result.call_data,
+        vec![withdraw_result.proof],
+        vec![withdraw_child],
+        vec![vec![]],
+    ).await?;
+    info!("[relayer-lifecycle] Bridge::WithdrawV1 (tx: {:?})", tx.hash());
+
+    info!("test_relayer_lifecycle_heavyweight PASSED");
+    Ok(())
+}

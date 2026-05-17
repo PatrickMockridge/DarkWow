@@ -8,6 +8,7 @@
 #   ./test_pipeline.sh --mode native        # 3-node local devnet, native mining
 #   ./test_pipeline.sh --mode merge         # 3-node local devnet, merge mining
 #   ./test_pipeline.sh --mode native-p2pool # 3-node local devnet, adaptor pathway
+#   ./test_pipeline.sh --mode bridge        # 3-node + bridge-node, full bridge lifecycle
 #   ./test_pipeline.sh --mode join-native   # Single node joins public testnet, native
 #   ./test_pipeline.sh --mode join-merge    # Single node joins public testnet, merge
 #
@@ -48,6 +49,7 @@ Modes:
   native         3-node local devnet, native mining (xmrig → dwowd stratum)
   merge          3-node local devnet, merge mining (Monero aux PoW via p2pool)
   native-p2pool  3-node local devnet, adaptor pathway (p2pool → adaptor → dwowd)
+  bridge         3-node + bridge-node, full bridge deposit→withdraw→execute test
   join-native    Single node joining public testnet, native mining
   join-merge     Single node joining public testnet, merge mining
 
@@ -62,6 +64,17 @@ Phases (native, merge, native-p2pool):
   8.  Mining activity      Verify stratum/p2pool activity in logs
   9.  Block production     Wait for blocks to be mined
   10. Report               Print pass/fail summary
+
+Phases (bridge):
+  1-9. Shared with native mode (clean through block production)
+  10. Bridge Deploy        Deploy bridge + relayer_endowment contracts via RPC
+  10b. Bridge Initialize    Init bridge + endowment accounts
+  11. Register Relayer     Register test relayer with bridge contract
+  12. Simulate Deposit     Generate ZK deposit proof, submit DepositV1
+  13. Create Withdrawal    Generate ZK withdraw proof, submit WithdrawV1
+  14. Accept Withdrawal    Relayer accepts pending withdrawal
+  15. Execute Withdrawal   Execute guaranteed withdrawal
+  16. Verify Bridge        Check container health, relayer logs, block height
 
 Phases (join-native, join-merge):
   1.  Clean                Tear down previous join containers + fallback lilith
@@ -89,6 +102,7 @@ Environment:
 Examples:
   ./test_pipeline.sh                         # local devnet, native mining
   ./test_pipeline.sh --mode merge            # local devnet, merge mining
+  ./test_pipeline.sh --mode bridge           # local devnet, full bridge lifecycle
   ./test_pipeline.sh --mode join-native      # join public testnet, solo mining
   ./test_pipeline.sh --mode join-merge       # join public testnet, merge mining
 
@@ -108,13 +122,13 @@ while [ $# -gt 0 ]; do
         --help|-h) usage ;;
         *)
             echo "Unknown flag: $1"
-            echo "Usage: $0 --mode native|merge|native-p2pool|join-native|join-merge"
+            echo "Usage: $0 --mode native|merge|native-p2pool|bridge|join-native|join-merge"
             echo "       $0 --help"
             exit 1 ;;
     esac
 done
 
-VALID_MODES="native merge native-p2pool join-native join-merge"
+VALID_MODES="native merge native-p2pool bridge join-native join-merge"
 if ! echo "$VALID_MODES" | grep -qw "$MODE"; then
     echo "Invalid mode: $MODE"
     echo "Valid modes: $VALID_MODES"
@@ -204,6 +218,18 @@ is_join_mode() {
     [ "$MODE" = "join-native" ] || [ "$MODE" = "join-merge" ]
 }
 
+is_bridge_mode() {
+    [ "$MODE" = "bridge" ]
+}
+
+# Bridge-specific constants
+BRIDGE_CONTAINER="dwow-bridge-node"
+BRIDGE_TEST_HELPER="${REPO_ROOT}/target/release/bridge_test_helper"
+BRIDGE_TEST_HELPER_DEBUG="${REPO_ROOT}/target/debug/bridge_test_helper"
+WASM_BRIDGE="${REPO_ROOT}/src/contract/bridge/darkfi_bridge_contract.wasm"
+WASM_RELAYER_ENDOWMENT="${REPO_ROOT}/src/contract/relayer_endowment/darkfi_relayer_endowment_contract.wasm"
+WASM_DEPLOOOOR="${REPO_ROOT}/src/contract/deployooor/dwow_deployooor_contract.wasm"
+
 # ==============================================================================
 # Join-mode helpers
 # ==============================================================================
@@ -274,6 +300,9 @@ report() {
             echo "  docker compose --profile merge logs"
         elif [ "$MODE" = "native-p2pool" ]; then
             echo "  docker compose --profile native-p2pool logs"
+        elif [ "$MODE" = "bridge" ]; then
+            echo "  docker compose --profile bridge logs"
+            echo "  docker logs $BRIDGE_CONTAINER"
         elif [ "$MODE" = "join-native" ]; then
             echo "  docker logs $CONTAINER_NAME"
         elif [ "$MODE" = "join-merge" ]; then
@@ -287,6 +316,11 @@ report() {
     if is_join_mode; then
         echo "Join test passed. To join the public testnet for real:"
         echo "  ./contrib/docker/darkwow-testnet/join-testnet.sh --mode ${MODE#join-}"
+    elif is_bridge_mode; then
+        echo "Bridge pipeline passed."
+        echo ""
+        echo "Tear down:"
+        echo "  docker compose --profile bridge down -v"
     else
         echo "Run contract tests:"
         echo "  ./test-contracts.sh --mode $MODE"
@@ -337,6 +371,7 @@ phase_clean() {
         docker compose -f "$COMPOSE_FILE" --profile native --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile native-p2pool --remove-orphans down --rmi all -v 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true
         # Remove stale join containers and ALL dwow-* containers
         for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool; do
@@ -371,6 +406,7 @@ phase_clean() {
     docker compose --profile native --remove-orphans down --rmi all -v 2>/dev/null || true
     docker compose --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
     docker compose --profile native-p2pool --remove-orphans down --rmi all -v 2>/dev/null || true
+    docker compose --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
 
     # Remove any lingering dwow-* containers (defense in depth)
     STALE=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^dwow-" || true)
@@ -432,6 +468,35 @@ phase_prereqs() {
         [ -f "$SCRIPT_DIR/Dockerfile.xmrig" ] || error "Dockerfile.xmrig missing (needed for native-p2pool mode)"
         [ -f "$SCRIPT_DIR/entrypoint-adaptor.sh" ] || error "entrypoint-adaptor.sh missing"
         [ -f "$SCRIPT_DIR/entrypoint-p2pool-darkwow.sh" ] || error "entrypoint-p2pool-darkwow.sh missing"
+    fi
+
+    # Bridge mode: ensure bridge_test_helper binary exists
+    if is_bridge_mode; then
+        if [ -x "$BRIDGE_TEST_HELPER" ]; then
+            BRIDGE_HELPER="$BRIDGE_TEST_HELPER"
+        elif [ -x "$BRIDGE_TEST_HELPER_DEBUG" ]; then
+            BRIDGE_HELPER="$BRIDGE_TEST_HELPER_DEBUG"
+        else
+            info "Building bridge_test_helper..."
+            (cd "$REPO_ROOT" && RAYON_NUM_THREADS=10 cargo build -p bridge_test_helper --release 2>&1)
+            if [ -x "$BRIDGE_TEST_HELPER" ]; then
+                BRIDGE_HELPER="$BRIDGE_TEST_HELPER"
+            elif [ -x "$BRIDGE_TEST_HELPER_DEBUG" ]; then
+                BRIDGE_HELPER="$BRIDGE_TEST_HELPER_DEBUG"
+            else
+                fail "bridge_test_helper binary not found after build"
+                BRIDGE_HELPER=""  # prevent unbound variable errors
+            fi
+        fi
+        if [ -n "$BRIDGE_HELPER" ] && [ -x "$BRIDGE_HELPER" ]; then
+            info "Using bridge_test_helper: $BRIDGE_HELPER"
+            pass "bridge_test_helper present"
+        fi
+
+        # Check bridge-specific WASM files
+        [ -f "$WASM_BRIDGE" ] && pass "bridge WASM found" || fail "bridge WASM missing"
+        [ -f "$WASM_RELAYER_ENDOWMENT" ] && pass "relayer_endowment WASM found" || fail "relayer_endowment WASM missing"
+        [ -f "$WASM_DEPLOOOOR" ] && pass "deployooor WASM found" || fail "deployooor WASM missing"
     fi
 
     # Check dww
@@ -510,6 +575,13 @@ phase_build() {
     elif [ "$MODE" = "native-p2pool" ]; then
         docker compose --profile native-p2pool build 2>&1
         check $? "docker build (native-p2pool profile)"
+    elif [ "$MODE" = "bridge" ]; then
+        # Build native profile first (lilith + node0 + node1),
+        # then bridge profile (bridge-node on top).
+        docker compose --profile native build 2>&1
+        check $? "docker build (native profile)"
+        docker compose --profile bridge build 2>&1
+        check $? "docker build (bridge profile)"
     elif [ "$MODE" = "join-merge" ]; then
         docker compose --profile join-merge build 2>&1
         check $? "docker build (join-merge profile)"
@@ -546,6 +618,32 @@ phase_start() {
     elif [ "$MODE" = "native-p2pool" ]; then
         WALLET_ADDRESS="$WALLET_ADDRESS" \
             docker compose --profile native-p2pool up -d
+    elif [ "$MODE" = "bridge" ]; then
+        # Start native profile first — lilith + node0 + node1 must
+        # establish their P2P mesh before the bridge-node connects.
+        WALLET_ADDRESS="$WALLET_ADDRESS" \
+            docker compose --profile native up -d
+        info "native profile started, waiting for P2P mesh..."
+        sleep 10
+
+        # Verify native containers are healthy before starting bridge
+        EXITED=$(docker compose --profile native ps 2>/dev/null | grep "Exit" || true)
+        if [ -n "$EXITED" ]; then
+            echo "$EXITED"
+            error "Native container exited immediately — check logs"
+        fi
+
+        # Now start bridge-node on top of the established mesh
+        info "Starting bridge-node..."
+        WALLET_ADDRESS="$WALLET_ADDRESS" \
+            docker compose --profile bridge up -d
+        sleep 5
+
+        EXITED=$(docker compose --profile bridge ps 2>/dev/null | grep "Exit" || true)
+        if [ -n "$EXITED" ]; then
+            echo "$EXITED"
+            error "Bridge container exited immediately — check logs"
+        fi
     else
         WALLET_ADDRESS="$WALLET_ADDRESS" \
             docker compose --profile native up -d
@@ -553,19 +651,21 @@ phase_start() {
     # Shred temp secret file now that containers have read it
     rm -f "$SECRET_FILE"
 
-    sleep 5
+    if [ "$MODE" != "bridge" ]; then
+        sleep 5
 
-    # Check for immediate exits
-    if [ "$MODE" = "merge" ]; then
-        EXITED=$(docker compose --profile merge ps 2>/dev/null | grep "Exit" || true)
-    elif [ "$MODE" = "native-p2pool" ]; then
-        EXITED=$(docker compose --profile native-p2pool ps 2>/dev/null | grep "Exit" || true)
-    else
-        EXITED=$(docker compose --profile native ps 2>/dev/null | grep "Exit" || true)
-    fi
-    if [ -n "$EXITED" ]; then
-        echo "$EXITED"
-        error "Container exited immediately — check logs"
+        # Check for immediate exits
+        if [ "$MODE" = "merge" ]; then
+            EXITED=$(docker compose --profile merge ps 2>/dev/null | grep "Exit" || true)
+        elif [ "$MODE" = "native-p2pool" ]; then
+            EXITED=$(docker compose --profile native-p2pool ps 2>/dev/null | grep "Exit" || true)
+        else
+            EXITED=$(docker compose --profile native ps 2>/dev/null | grep "Exit" || true)
+        fi
+        if [ -n "$EXITED" ]; then
+            echo "$EXITED"
+            error "Container exited immediately — check logs"
+        fi
     fi
 
     pass "containers started"
@@ -733,6 +833,8 @@ phase_verify() {
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-monerod dwow-p2pool dwow-xmrig-merge)
     elif [ "$MODE" = "native-p2pool" ]; then
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool)
+    elif [ "$MODE" = "bridge" ]; then
+        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-bridge-node)
     else
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1)
     fi
@@ -1381,11 +1483,237 @@ phase_join_sync() {
 }
 
 # ==============================================================================
+# Bridge Phase 10: Deploy Contracts
+# ==============================================================================
+phase_bridge_deploy() {
+    info "Phase 10 (bridge): Deploying bridge and relayer_endowment contracts..."
+
+    info "Deploying bridge contracts via bridge_test_helper..."
+    BRIDGE_DEPLOY_OUTPUT=$("$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
+        --block-time 120 --timeout 300 \
+        deploy-bridge \
+        --bridge-wasm "$WASM_BRIDGE" \
+        --endowment-wasm "$WASM_RELAYER_ENDOWMENT" 2>&1)
+
+    if [ $? -ne 0 ]; then
+        echo "$BRIDGE_DEPLOY_OUTPUT"
+        fail "bridge contract deploy"
+        return 1
+    fi
+
+    BRIDGE_ID=$(echo "$BRIDGE_DEPLOY_OUTPUT" | grep "^bridge_contract_id:" | awk '{print $2}')
+    ENDOWMENT_ID=$(echo "$BRIDGE_DEPLOY_OUTPUT" | grep "^endowment_contract_id:" | awk '{print $2}')
+
+    if [ -z "$BRIDGE_ID" ] || [ -z "$ENDOWMENT_ID" ]; then
+        echo "$BRIDGE_DEPLOY_OUTPUT"
+        fail "bridge contract deploy (missing contract IDs)"
+        return 1
+    fi
+
+    pass "bridge contracts deployed"
+    info "  Bridge ID:     ${BRIDGE_ID:0:16}..."
+    info "  Endowment ID:  ${ENDOWMENT_ID:0:16}..."
+
+    # Generate relayer keypair
+    info "Generating relayer keypair..."
+    RELAYER_KEYPAIR=$("$BRIDGE_HELPER" generate-keypair 2>&1)
+    RELAYER_PUB=$(echo "$RELAYER_KEYPAIR" | grep "^public_key:" | awk '{print $2}')
+    RELAYER_SECRET=$(echo "$RELAYER_KEYPAIR" | grep "^secret_key:" | awk '{print $2}')
+
+    if [ -z "$RELAYER_PUB" ] || [ -z "$RELAYER_SECRET" ]; then
+        echo "$RELAYER_KEYPAIR"
+        fail "relayer keypair generation"
+        return 1
+    fi
+    pass "relayer keypair generated"
+    info "  Relayer pub:   ${RELAYER_PUB:0:16}..."
+}
+
+# ==============================================================================
+# Bridge Phase 10b: Initialize Contracts
+# ==============================================================================
+phase_bridge_init() {
+    info "Phase 10b (bridge): Initializing bridge and endowment contracts..."
+
+    # Initialize bridge (InitializeV1, no params)
+    info "Initializing bridge contract..."
+    "$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
+        --block-time 120 --timeout 300 \
+        init-bridge 2>&1
+    check $? "bridge InitializeV1"
+
+    # Initialize relayer endowment
+    info "Initializing relayer endowment..."
+    "$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
+        --block-time 120 --timeout 300 \
+        init-endowment --relayer-pub "$RELAYER_PUB" 2>&1
+    check $? "endowment InitializeV1"
+}
+
+# ==============================================================================
+# Bridge Phase 11: Register Relayer
+# ==============================================================================
+phase_bridge_register_relayer() {
+    info "Phase 11 (bridge): Registering relayer..."
+
+    "$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
+        --block-time 120 --timeout 300 \
+        register-relayer --relayer-pub "$RELAYER_PUB" 2>&1
+    check $? "RegisterRelayerV1"
+
+    pass "relayer registered"
+}
+
+# ==============================================================================
+# Bridge Phase 12: Simulate Deposit
+# ==============================================================================
+phase_bridge_deposit() {
+    info "Phase 12 (bridge): Simulating deposit with ZK proof..."
+
+    # Generate a deterministic secret
+    DEPOSIT_SECRET="0000000000000000000000000000000000000000000000000000000000000001"
+    DEPOSIT_AMOUNT=1000
+    # Use the relayer's public key as recipient for simplicity
+    DEPOSIT_RECIPIENT="$RELAYER_PUB"
+
+    DEPOSIT_OUTPUT=$("$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
+        --block-time 120 --timeout 300 \
+        simulate-deposit \
+        --secret "$DEPOSIT_SECRET" \
+        --amount "$DEPOSIT_AMOUNT" \
+        --recipient-pub "$DEPOSIT_RECIPIENT" 2>&1)
+
+    if [ $? -ne 0 ]; then
+        echo "$DEPOSIT_OUTPUT"
+        fail "SimulateDeposit"
+        return 1
+    fi
+
+    DEPOSIT_COMMITMENT=$(echo "$DEPOSIT_OUTPUT" | grep "^commitment:" | awk '{print $2}')
+    if [ -z "$DEPOSIT_COMMITMENT" ]; then
+        echo "$DEPOSIT_OUTPUT"
+        fail "SimulateDeposit (missing commitment)"
+        return 1
+    fi
+
+    pass "deposit submitted"
+    info "  Commitment:    ${DEPOSIT_COMMITMENT:0:16}..."
+}
+
+# ==============================================================================
+# Bridge Phase 13: Create Withdrawal
+# ==============================================================================
+phase_bridge_withdraw() {
+    info "Phase 13 (bridge): Creating withdrawal with ZK proof..."
+
+    WITHDRAW_SECRET="0000000000000000000000000000000000000000000000000000000000000002"
+    WITHDRAW_AMOUNT=500
+
+    WITHDRAW_OUTPUT=$("$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
+        --block-time 120 --timeout 300 \
+        simulate-withdraw \
+        --secret "$WITHDRAW_SECRET" \
+        --amount "$WITHDRAW_AMOUNT" 2>&1)
+
+    if [ $? -ne 0 ]; then
+        echo "$WITHDRAW_OUTPUT"
+        fail "SimulateWithdraw"
+        return 1
+    fi
+
+    WITHDRAW_NULLIFIER=$(echo "$WITHDRAW_OUTPUT" | grep "^nullifier:" | awk '{print $2}')
+    if [ -z "$WITHDRAW_NULLIFIER" ]; then
+        echo "$WITHDRAW_OUTPUT"
+        fail "SimulateWithdraw (missing nullifier)"
+        return 1
+    fi
+
+    pass "withdrawal submitted"
+    info "  Nullifier:     ${WITHDRAW_NULLIFIER:0:16}..."
+}
+
+# ==============================================================================
+# Bridge Phase 14: Accept Withdrawal
+# ==============================================================================
+phase_bridge_accept() {
+    info "Phase 14 (bridge): Accepting withdrawal as relayer..."
+
+    "$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
+        --block-time 120 --timeout 300 \
+        accept-withdrawal \
+        --nullifier "$WITHDRAW_NULLIFIER" \
+        --relayer-pub "$RELAYER_PUB" \
+        --max-fee-bp 500 2>&1
+    check $? "AcceptWithdrawalV1"
+
+    pass "withdrawal accepted"
+}
+
+# ==============================================================================
+# Bridge Phase 15: Execute Withdrawal
+# ==============================================================================
+phase_bridge_execute() {
+    info "Phase 15 (bridge): Executing guaranteed withdrawal..."
+
+    "$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
+        --block-time 120 --timeout 300 \
+        execute-withdrawal \
+        --nullifier "$WITHDRAW_NULLIFIER" 2>&1
+    check $? "ExecuteGuaranteedWithdrawV1"
+
+    pass "withdrawal executed"
+}
+
+# ==============================================================================
+# Bridge Phase 16: Verify Bridge
+# ==============================================================================
+phase_bridge_verify() {
+    info "Phase 16 (bridge): Verifying bridge-node health and logs..."
+
+    # Check bridge-node container is running
+    if docker ps --format '{{.Names}}' | grep -q "^${BRIDGE_CONTAINER}$"; then
+        pass "bridge-node container running"
+    else
+        fail "bridge-node container running"
+    fi
+
+    # Check bridge-node logs for activity
+    local bridge_logs
+    bridge_logs=$(docker logs "$BRIDGE_CONTAINER" 2>&1 || true)
+    if [ -n "$bridge_logs" ]; then
+        pass "bridge-node has log output"
+    else
+        fail "bridge-node has log output (empty)"
+    fi
+
+    # Show recent bridge-node activity
+    info "Bridge-node recent logs:"
+    echo "$bridge_logs" | tail -20
+
+    # Verify block height has progressed beyond genesis
+    for attempt in 1 2 3 4 5; do
+        BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.last_confirmed_block\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
+        sleep 2
+    done
+
+    BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '[0-9]\+' | head -1) || true
+    info "Final block height: $BLOCK_HEIGHT"
+
+    if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
+        pass "bridge mode block height >= 2 (height=$BLOCK_HEIGHT)"
+    else
+        fail "bridge mode block height >= 2 (height=$BLOCK_HEIGHT)"
+    fi
+}
+
+# ==============================================================================
 # Phase 10: Report (local) or Mining Verification (join)
 # ==============================================================================
 phase_report_or_mining() {
     if is_join_mode; then
         phase_join_mining
+    elif is_bridge_mode; then
+        report
     else
         report
     fi
@@ -1719,6 +2047,20 @@ phase_verify_or_lifecycle
 phase_rpc_or_fallback
 phase_mining_or_p2p
 phase_blocks_or_sync
+
+# Bridge-specific phases (10-16) run after the native chain is established.
+# Phases 1-9 are shared between native and bridge modes.
+if is_bridge_mode; then
+    phase_bridge_deploy
+    phase_bridge_init
+    phase_bridge_register_relayer
+    phase_bridge_deposit
+    phase_bridge_withdraw
+    phase_bridge_accept
+    phase_bridge_execute
+    phase_bridge_verify
+fi
+
 phase_report_or_mining
 phase_persistence
 

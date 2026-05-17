@@ -54,6 +54,9 @@ pub struct BlockHeader {
     pub coin_merkle_root: [u8; 32],
     /// Root of the nullifier Sparse Merkle Tree after this block
     pub nullifier_root: [u8; 32],
+    /// Caribina Arweave anchor TX ID (SHA-256 of ANS-104 DataItem signature).
+    /// [0u8; 32] means no anchor (genesis blocks, bootstrapping, or anchor failure).
+    pub anchor_tx_id: [u8; 32],
 }
 
 /// Uncle block - a block that was mined but not canonical
@@ -135,6 +138,8 @@ impl BlockHeader {
     ///   [merkle_root(32)][timestamp(8)][uncle_merkle_root(32)][total_reward(8)]
     ///   [randomx_key(32)][coin_merkle_root(32)][nullifier_root(32)]
     /// Nonce is at byte offset 40 (compatible with dww miner and xmrig).
+    /// anchor_tx_id is excluded — it is set after PoW is found and is not
+    /// covered by the mining hash.
     pub fn to_mining_blob(&self) -> Vec<u8> {
         let mut blob = Vec::with_capacity(225);
         blob.extend_from_slice(self.previous.as_bytes());       // 0..32
@@ -451,6 +456,7 @@ pub fn create_block_with_uncles(
             randomx_key: [0u8; 32], // Placeholder - miner sets actual key
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32], // No Caribina anchor (set by miner after anchoring)
         },
         transactions,
     }
@@ -491,6 +497,7 @@ mod tests {
             randomx_key: [0u8; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
         };
         let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
 
@@ -521,6 +528,7 @@ mod tests {
                 randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
             };
             uncles.push(UncleBlock { header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 });
         }
@@ -558,6 +566,7 @@ mod tests {
             randomx_key: [0u8; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
         };
         // Pin mechanism: pin_offered=true, pin_accepted=true means uncle accepts the pin
         // pin_reward at depth 1 = 50% = 50M
@@ -586,6 +595,7 @@ mod tests {
             randomx_key: [0u8; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
         };
         let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
 
@@ -688,5 +698,82 @@ mod tests {
         let expected = dwow_sdk::blockchain::expected_reward(42);
         assert_eq!(block.header.total_reward, expected);
         assert_eq!(block.header.height, 42);
+    }
+
+    /// Caribina: mining blob must exclude anchor_tx_id so PoW hash doesn't
+    /// change after anchoring.
+    #[test]
+    fn test_mining_blob_excludes_anchor() {
+        let mut header = BlockHeader {
+            version: 1,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: 1000,
+            difficulty_target: 0x0000_FFFF,
+            nonce: 42,
+            height: 1,
+            uncle_merkle_root: [0u8; 32],
+            total_reward: 100_000_000,
+            randomx_key: [0u8; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+        };
+
+        let blob1 = header.to_mining_blob();
+        assert_eq!(blob1.len(), 225);
+        assert_eq!(BlockHeader::MINING_BLOB_LEN, 225);
+
+        // Setting anchor_tx_id must not change the mining blob
+        header.anchor_tx_id = [0xAB; 32];
+        let blob2 = header.to_mining_blob();
+        assert_eq!(blob1, blob2);
+    }
+
+    /// Caribina: default anchor_tx_id is zero (no anchor).
+    #[test]
+    fn test_anchor_tx_id_default_is_zero() {
+        let header = BlockHeader {
+            version: 1,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: 1000,
+            difficulty_target: 0x0000_FFFF,
+            nonce: 0,
+            height: 0,
+            uncle_merkle_root: [0u8; 32],
+            total_reward: 0,
+            randomx_key: [0u8; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+        };
+        assert_eq!(header.anchor_tx_id, [0u8; 32]);
+    }
+
+    /// Caribina: serde roundtrip preserves anchor_tx_id.
+    #[test]
+    fn test_block_header_with_anchor_serde() {
+        let header = BlockHeader {
+            version: 1,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: 1000,
+            difficulty_target: 0x0000_FFFF,
+            nonce: 42,
+            height: 1,
+            uncle_merkle_root: [0u8; 32],
+            total_reward: 100_000_000,
+            randomx_key: [0xAA; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0xBB; 32],
+        };
+
+        let json = serde_json::to_string(&header).unwrap();
+        let deserialized: BlockHeader = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.anchor_tx_id, [0xBB; 32]);
+        assert_eq!(deserialized.nonce, 42);
+        assert_eq!(deserialized.height, 1);
     }
 }

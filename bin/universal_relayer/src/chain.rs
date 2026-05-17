@@ -203,3 +203,61 @@ impl BridgeChainHandler for DisabledExecutor {
         Err(dwow_sdk::error::ContractError::Custom(2))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_external_chain_from_u8_all_values() {
+        assert_eq!(ExternalChain::from_u8(0), Some(ExternalChain::Ethereum));
+        assert_eq!(ExternalChain::from_u8(1), Some(ExternalChain::Monero));
+        assert_eq!(ExternalChain::from_u8(2), Some(ExternalChain::Zcash));
+        assert_eq!(ExternalChain::from_u8(3), Some(ExternalChain::Aztec));
+        assert_eq!(ExternalChain::from_u8(4), Some(ExternalChain::Litecoin));
+    }
+
+    #[test]
+    fn test_external_chain_from_u8_invalid() {
+        assert_eq!(ExternalChain::from_u8(5), None);
+        assert_eq!(ExternalChain::from_u8(255), None);
+    }
+
+    #[test]
+    fn test_external_chain_as_u8_roundtrip() {
+        for v in 0u8..5 {
+            let chain = ExternalChain::from_u8(v).unwrap();
+            assert_eq!(chain.as_u8(), v);
+        }
+    }
+
+    #[test]
+    fn test_external_chain_name() {
+        assert_eq!(ExternalChain::Ethereum.name(), "Ethereum");
+        assert_eq!(ExternalChain::Monero.name(), "Monero");
+        assert_eq!(ExternalChain::Zcash.name(), "Zcash");
+        assert_eq!(ExternalChain::Aztec.name(), "Aztec");
+        assert_eq!(ExternalChain::Litecoin.name(), "Litecoin");
+    }
+
+    #[test]
+    fn test_external_chain_display() {
+        assert_eq!(format!("{}", ExternalChain::Ethereum), "Ethereum");
+        assert_eq!(format!("{}", ExternalChain::Monero), "Monero");
+    }
+
+    #[test]
+    fn test_disabled_executor_chain_executor_is_enabled() {
+        use crate::chain::ChainExecutor;
+        assert!(!ChainExecutor::is_enabled(&DisabledExecutor::new()));
+    }
+
+    #[test]
+    fn test_disabled_executor_new_and_default() {
+        let a = DisabledExecutor::new();
+        let b = DisabledExecutor::default();
+        // Both should be disabled
+        assert!(!ChainExecutor::is_enabled(&a));
+        assert!(!ChainExecutor::is_enabled(&b));
+    }
+}

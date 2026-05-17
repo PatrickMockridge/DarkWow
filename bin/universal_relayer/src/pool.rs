@@ -330,3 +330,231 @@ impl PoolManager {
         *self.member_coverage.get(relayer_id).unwrap_or(&0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::PoolConfig;
+    use crate::error::PendingWithdrawal;
+
+    fn enabled_config() -> PoolConfig {
+        PoolConfig {
+            enabled: true,
+            pool_id: Some("test_pool".to_string()),
+            min_pool_members: 1,
+            max_pool_coverage: 100_000,
+        }
+    }
+
+    fn test_member(id: &str, stake: u64) -> PoolMember {
+        PoolMember {
+            relayer_id: id.to_string(),
+            stake_amount: stake,
+            coverage_share_bp: 0,
+            is_relayer: true,
+        }
+    }
+
+    fn test_withdrawal(id: u8, amount: u64) -> PendingWithdrawal {
+        let mut w_id = [0u8; 32];
+        w_id[0] = id;
+        PendingWithdrawal {
+            withdrawal_id: w_id,
+            recipient_hash: [0u8; 32],
+            amount,
+            chain: 0,
+            request_height: 1,
+            timeout_height: 100,
+            relayer_fee: 0,
+            feed_mode: 0,
+            guarantee_premium: 0,
+        }
+    }
+
+    #[test]
+    fn test_new() {
+        let pool = PoolManager::new(enabled_config());
+        assert!(pool.is_enabled());
+        assert_eq!(pool.pool_id(), Some(&"test_pool".to_string()));
+        assert_eq!(pool.total_stake(), 0);
+        assert_eq!(pool.total_coverage(), 0);
+        assert_eq!(pool.member_count(), 0);
+    }
+
+    #[test]
+    fn test_new_disabled() {
+        let cfg = PoolConfig { enabled: false, ..Default::default() };
+        let pool = PoolManager::new(cfg);
+        assert!(!pool.is_enabled());
+    }
+
+    #[test]
+    fn test_add_member_success() {
+        let mut pool = PoolManager::new(enabled_config());
+        pool.add_member(test_member("relayer1", 10000)).unwrap();
+        assert_eq!(pool.member_count(), 1);
+        assert_eq!(pool.total_stake(), 10000);
+        // coverage = 10000 * 100000 / 100000 = 10000
+        assert_eq!(pool.total_coverage(), 10000);
+        assert!(pool.get_member("relayer1").is_some());
+    }
+
+    #[test]
+    fn test_add_member_duplicate() {
+        let mut pool = PoolManager::new(enabled_config());
+        pool.add_member(test_member("relayer1", 5000)).unwrap();
+        let err = pool.add_member(test_member("relayer1", 3000)).unwrap_err();
+        assert!(matches!(err, RelayerError::PoolError(_)));
+    }
+
+    #[test]
+    fn test_add_member_disabled() {
+        let cfg = PoolConfig { enabled: false, ..Default::default() };
+        let mut pool = PoolManager::new(cfg);
+        let err = pool.add_member(test_member("relayer1", 5000)).unwrap_err();
+        assert!(matches!(err, RelayerError::PoolError(_)));
+    }
+
+    #[test]
+    fn test_remove_member_success() {
+        let mut pool = PoolManager::new(enabled_config());
+        pool.add_member(test_member("relayer1", 10000)).unwrap();
+        pool.remove_member("relayer1").unwrap();
+        assert_eq!(pool.member_count(), 0);
+        assert_eq!(pool.total_stake(), 0);
+        assert_eq!(pool.total_coverage(), 0);
+    }
+
+    #[test]
+    fn test_remove_member_not_found() {
+        let mut pool = PoolManager::new(enabled_config());
+        let err = pool.remove_member("nobody").unwrap_err();
+        assert!(matches!(err, RelayerError::PoolError(_)));
+    }
+
+    #[test]
+    fn test_add_multiple_members_coverage_shares() {
+        let mut pool = PoolManager::new(enabled_config());
+        // Member 1: 10k stake -> 10k coverage
+        pool.add_member(test_member("relayer1", 10000)).unwrap();
+        // Member 2: 20k stake -> 20k coverage
+        pool.add_member(test_member("relayer2", 20000)).unwrap();
+
+        assert_eq!(pool.member_count(), 2);
+        assert_eq!(pool.total_stake(), 30000);
+        assert_eq!(pool.total_coverage(), 30000);
+
+        let m1 = pool.get_member("relayer1").unwrap();
+        let m2 = pool.get_member("relayer2").unwrap();
+        // First member added: share = 10000*10000/10000 = 10000
+        // Second member added: share = 20000*10000/30000 = 6666
+        // Note: rebalance_coverage_shares is only called on remove_member, not add_member
+        assert_eq!(m1.coverage_share_bp, 10000);
+        assert_eq!(m2.coverage_share_bp, 6666);
+    }
+
+    #[test]
+    fn test_allocate_coverage_success() {
+        let mut pool = PoolManager::new(enabled_config());
+        pool.add_member(test_member("relayer1", 10000)).unwrap();
+        pool.add_member(test_member("relayer2", 20000)).unwrap();
+
+        let w = test_withdrawal(1, 5000);
+        let alloc = pool.allocate_coverage(&w).unwrap();
+        assert_eq!(alloc.amount, 5000);
+        assert!(!alloc.contributing_members.is_empty());
+    }
+
+    #[test]
+    fn test_allocate_coverage_insufficient() {
+        let mut pool = PoolManager::new(enabled_config());
+        pool.add_member(test_member("relayer1", 1000)).unwrap();
+
+        let w = test_withdrawal(1, 5000);
+        let err = pool.allocate_coverage(&w).unwrap_err();
+        assert!(matches!(err, RelayerError::InsufficientStake { .. }));
+    }
+
+    #[test]
+    fn test_release_coverage_success() {
+        let mut pool = PoolManager::new(enabled_config());
+        pool.add_member(test_member("relayer1", 10000)).unwrap();
+
+        let w = test_withdrawal(1, 5000);
+        let alloc = pool.allocate_coverage(&w).unwrap();
+        let cov_before = pool.allocated_coverage();
+        assert!(cov_before > 0);
+
+        pool.release_coverage(&alloc.withdrawal_id).unwrap();
+        // After release, coverage restored to member but allocation removed
+        assert_eq!(pool.allocated_coverage(), 0);
+    }
+
+    #[test]
+    fn test_release_coverage_not_found() {
+        let mut pool = PoolManager::new(enabled_config());
+        let unknown = [0xFF; 32];
+        let err = pool.release_coverage(&unknown).unwrap_err();
+        assert!(matches!(err, RelayerError::PoolError(_)));
+    }
+
+    #[test]
+    fn test_slash_coverage() {
+        let mut pool = PoolManager::new(enabled_config());
+        pool.add_member(test_member("relayer1", 10000)).unwrap();
+
+        let w = test_withdrawal(1, 3000);
+        let alloc = pool.allocate_coverage(&w).unwrap();
+        let slashed = pool.slash_coverage(&alloc.withdrawal_id).unwrap();
+        assert_eq!(slashed, 3000);
+        assert_eq!(pool.allocated_coverage(), 0);
+        // Coverage is permanently removed (slashed), not restored
+    }
+
+    #[test]
+    fn test_slash_coverage_not_found() {
+        let mut pool = PoolManager::new(enabled_config());
+        let unknown = [0xFF; 32];
+        let err = pool.slash_coverage(&unknown).unwrap_err();
+        assert!(matches!(err, RelayerError::PoolError(_)));
+    }
+
+    #[test]
+    fn test_can_accept_enabled() {
+        let mut pool = PoolManager::new(enabled_config());
+        pool.add_member(test_member("relayer1", 10000)).unwrap();
+        assert!(pool.can_accept(1000));
+        assert!(pool.can_accept(10000));
+        assert!(!pool.can_accept(20000));
+    }
+
+    #[test]
+    fn test_can_accept_disabled() {
+        let cfg = PoolConfig { enabled: false, ..Default::default() };
+        let pool = PoolManager::new(cfg);
+        assert!(!pool.can_accept(1));
+    }
+
+    #[test]
+    fn test_allocated_coverage_tracks_active() {
+        let mut pool = PoolManager::new(enabled_config());
+        pool.add_member(test_member("relayer1", 50000)).unwrap();
+
+        let w1 = test_withdrawal(1, 5000);
+        let w2 = test_withdrawal(2, 3000);
+
+        pool.allocate_coverage(&w1).unwrap();
+        pool.allocate_coverage(&w2).unwrap();
+
+        assert_eq!(pool.allocated_coverage(), 8000);
+        assert_eq!(pool.available_coverage(), 50000 - 8000);
+    }
+
+    #[test]
+    fn test_get_member_coverage() {
+        let mut pool = PoolManager::new(enabled_config());
+        pool.add_member(test_member("relayer1", 10000)).unwrap();
+        assert!(pool.get_member_coverage("relayer1") > 0);
+        assert_eq!(pool.get_member_coverage("nobody"), 0);
+    }
+}

@@ -342,6 +342,7 @@ impl Darkfid {
                 randomx_key,
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
             };
 
             let genesis_block = Block { header, transactions: vec![genesis_tx] };

@@ -1,0 +1,23 @@
+{
+  "withdrawal_success_rate": 0.0,
+  "total_withdrawals_requested": 20,
+  "total_withdrawals_executed": 0,
+  "total_withdrawals_failed": 0,
+  "total_withdrawals_slashed": 0,
+  "total_withdrawals_cancelled": 0,
+  "avg_withdrawal_latency_blocks": 0.0,
+  "total_fees_collected": 0,
+  "total_fees_settled": 0,
+  "total_settlement_events": 0,
+  "total_stake_slashed": 0,
+  "slash_events": 0,
+  "total_capital_deployed": 12500000,
+  "total_backer_fees_earned": 0,
+  "avg_backer_roi": 0.0,
+  "relayer_uptime_pct": {
+    "relayer_0": 1.0,
+    "relayer_1": 1.0
+  },
+  "relayer_withdrawals_processed": {},
+  "relayer_slashes": {}
+}

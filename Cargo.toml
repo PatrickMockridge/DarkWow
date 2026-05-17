@@ -17,6 +17,7 @@ bench = false
 members = [
     "bin/zkas",
     "bin/darkfid",
+    "bin/bridge_test_helper",
     "bin/dwow-p2pool-adaptor",
     "bin/explorer",
     "bin/drk",

@@ -13,7 +13,7 @@
 
 services:
   lilith:
-    profiles: ["native", "merge", "native-p2pool"]
+    profiles: ["native", "merge", "native-p2pool", "bridge"]
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -41,7 +41,7 @@ services:
       retries: 3
 
   node0:
-    profiles: ["native", "merge", "native-p2pool"]
+    profiles: ["native", "merge", "native-p2pool", "bridge"]
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -90,7 +90,7 @@ services:
       retries: 3
 
   node1:
-    profiles: ["native", "merge", "native-p2pool"]
+    profiles: ["native", "merge", "native-p2pool", "bridge"]
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -135,6 +135,44 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
+  # ============================================================================
+  # Bridge Node Service (--profile bridge)
+  #
+  # Runs universal_relayer in relayer-only mode connected to node0 RPC.
+  # All external chain handlers are disabled — this is a test harness for
+  # verifying the bridge contract lifecycle end-to-end.
+  #
+  # Start with:  docker compose --profile bridge up -d
+  # Requires:    lilith + node0 + node1 (native profile) already running
+  # ============================================================================
+  bridge-node:
+    profiles: ["bridge"]
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/bridge-node/Dockerfile
+    container_name: dwow-bridge-node
+    hostname: bridge-node
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      - MODE=relayer-only
+      - NETWORK=darkwow-testnet
+      - DARKFID_URL=tcp://node0:31345
+      - POLL_INTERVAL_SECS=10
+      - MAGIC_BYTES=68,82,75,87
+      - ETH_ENABLED=false
+      - XMR_ENABLED=false
+      - ZEC_ENABLED=false
+      - AZT_ENABLED=false
+      - LTC_ENABLED=false
+    networks:
+      - dwow-local
+    depends_on:
+      lilith:
+        condition: service_started
+      node0:
+        condition: service_started
+    restart: unless-stopped
 
   # ============================================================================
   # Merge Mining Services (--profile merge)
@@ -405,6 +443,7 @@ volumes:
   lilith_data:
   node0_data:
   node1_data:
+  bridge_node_data:
   monerod_data:
   p2pool_data:
   p2pool_darkwow_data:

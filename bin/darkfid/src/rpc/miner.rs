@@ -47,6 +47,7 @@ use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 use tracing::{error, info};
 
+use dwow_linear::caribina::anchor_block;
 use crate::{proto::linear_broadcast::broadcast_block, DarkfiNode};
 
 impl DarkfiNode {
@@ -558,7 +559,7 @@ impl DarkfiNode {
         let consensus = dwow_linear::PoWConsensus::default();
         let miner = dwow_linear::Miner::new(std::sync::Arc::new(consensus));
 
-        let mined_block = match miner.mine(&vm, previous, height, all_txs, difficulty_target) {
+        let mut mined_block = match miner.mine(&vm, previous, height, all_txs, difficulty_target) {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "darkfid::rpc::miner", "Mining failed: {}", e);
@@ -566,6 +567,20 @@ impl DarkfiNode {
                     .into()
             }
         };
+
+        // Anchor the block to Arweave via Caribina (best-effort)
+        let block_hash = mined_block.hash(&vm);
+        let mut block_hash_bytes = [0u8; 32];
+        block_hash_bytes.copy_from_slice(block_hash.as_bytes());
+        match anchor_block(&block_hash_bytes, mined_block.header.timestamp, height) {
+            Some(tx_id) => {
+                mined_block.header.anchor_tx_id = tx_id;
+                info!(target: "darkfid::rpc::miner", "Anchored block {} to Arweave", block_hash);
+            }
+            None => {
+                info!(target: "darkfid::rpc::miner", "Arweave anchor skipped (network/turbo unavailable)");
+            }
+        }
 
         let block_hash = format!("{}", mined_block.hash(&vm));
 

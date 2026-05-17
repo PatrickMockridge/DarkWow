@@ -176,3 +176,77 @@ impl std::fmt::Display for TxHash {
         write!(f, "{}", hex::encode(self.hash))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chain::ExternalChain;
+
+    fn test_withdrawal(timeout: u64, chain: u8) -> PendingWithdrawal {
+        PendingWithdrawal {
+            withdrawal_id: [1u8; 32],
+            recipient_hash: [2u8; 32],
+            amount: 100,
+            chain,
+            request_height: 10,
+            timeout_height: timeout,
+            relayer_fee: 5,
+            feed_mode: 0,
+            guarantee_premium: 0,
+        }
+    }
+
+    #[test]
+    fn test_pending_withdrawal_is_timed_out() {
+        // timeout_height = 50, current = 50 => timed out
+        assert!(test_withdrawal(50, 0).is_timed_out(50));
+        // timeout_height = 50, current = 100 => timed out
+        assert!(test_withdrawal(50, 0).is_timed_out(100));
+    }
+
+    #[test]
+    fn test_pending_withdrawal_is_not_timed_out() {
+        // timeout_height = 50, current = 49 => not timed out
+        assert!(!test_withdrawal(50, 0).is_timed_out(49));
+        // timeout_height = 50, current = 0 => not timed out
+        assert!(!test_withdrawal(50, 0).is_timed_out(0));
+    }
+
+    #[test]
+    fn test_pending_withdrawal_get_chain_all() {
+        assert_eq!(test_withdrawal(100, 0).get_chain(), ExternalChain::Ethereum);
+        assert_eq!(test_withdrawal(100, 1).get_chain(), ExternalChain::Monero);
+        assert_eq!(test_withdrawal(100, 2).get_chain(), ExternalChain::Zcash);
+        assert_eq!(test_withdrawal(100, 3).get_chain(), ExternalChain::Aztec);
+        assert_eq!(test_withdrawal(100, 4).get_chain(), ExternalChain::Litecoin);
+    }
+
+    #[test]
+    fn test_pending_withdrawal_get_chain_unknown_defaults_to_eth() {
+        assert_eq!(test_withdrawal(100, 99).get_chain(), ExternalChain::Ethereum);
+    }
+
+    #[test]
+    fn test_tx_hash_display() {
+        let mut hash = [0u8; 32];
+        hash[0] = 0xAB;
+        hash[1] = 0xCD;
+        hash[31] = 0xEF;
+        let tx = TxHash { chain: 0, hash };
+        let display = format!("{}", tx);
+        assert!(display.starts_with("abcd"));
+        assert!(display.ends_with("ef"));
+        assert_eq!(display.len(), 64);
+    }
+
+    #[test]
+    fn test_relayer_error_display() {
+        let err = RelayerError::InsufficientStake { available: 100, required: 200 };
+        let msg = format!("{}", err);
+        assert!(msg.contains("100"));
+        assert!(msg.contains("200"));
+
+        let err2 = RelayerError::Config("bad config".to_string());
+        assert!(format!("{}", err2).contains("bad config"));
+    }
+}

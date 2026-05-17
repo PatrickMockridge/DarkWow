@@ -51,6 +51,9 @@ pub enum LinearError {
     #[error("Serialization error: {0}")]
     SerializationError(String),
 
+    #[error("Cannot replace anchored block")]
+    AnchoredBlockConflict,
+
     #[error("Genesis block already exists")]
     GenesisExists,
 

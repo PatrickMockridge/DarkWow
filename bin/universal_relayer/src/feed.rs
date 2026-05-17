@@ -106,3 +106,133 @@ impl PricedWithdrawal {
         self.withdrawal.amount + self.guarantee_premium
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::FeedMode;
+    use crate::error::PendingWithdrawal;
+
+    fn test_withdrawal(amount: u64) -> PendingWithdrawal {
+        let mut w_id = [0u8; 32];
+        w_id[0] = 1;
+        PendingWithdrawal {
+            withdrawal_id: w_id,
+            recipient_hash: [0u8; 32],
+            amount,
+            chain: 0,
+            request_height: 1,
+            timeout_height: 100,
+            relayer_fee: 0,
+            feed_mode: 0,
+            guarantee_premium: 0,
+        }
+    }
+
+    #[test]
+    fn test_price_withdrawal_standard() {
+        // fee_percentage = 100 = 1% (100/10000 = 1%)
+        let mgr = FeedManager::new(FeedMode::Standard, 100);
+        let w = test_withdrawal(1000);
+        let priced = mgr.price_withdrawal(&w).unwrap();
+        assert_eq!(priced.relayer_fee, 10);
+        assert_eq!(priced.lock_amount, 1010);
+        assert_eq!(priced.guarantee_premium, 0);
+        assert!(!priced.is_guaranteed());
+    }
+
+    #[test]
+    fn test_price_withdrawal_standard_zero_amount() {
+        let mgr = FeedManager::new(FeedMode::Standard, 100);
+        let w = test_withdrawal(0);
+        let priced = mgr.price_withdrawal(&w).unwrap();
+        assert_eq!(priced.relayer_fee, 0);
+        assert_eq!(priced.lock_amount, 0);
+        assert_eq!(priced.guarantee_premium, 0);
+    }
+
+    #[test]
+    fn test_price_withdrawal_standard_zero_fee() {
+        let mgr = FeedManager::new(FeedMode::Standard, 0);
+        let w = test_withdrawal(1000);
+        let priced = mgr.price_withdrawal(&w).unwrap();
+        assert_eq!(priced.relayer_fee, 0);
+        assert_eq!(priced.lock_amount, 1000);
+    }
+
+    #[test]
+    fn test_price_withdrawal_guaranteed() {
+        // fee_percentage = 200 = 2%, refund_premium_bp = 300 = 3%
+        let mgr = FeedManager::new(FeedMode::Guaranteed { refund_premium_bp: 300 }, 200);
+        let w = test_withdrawal(1000);
+        let priced = mgr.price_withdrawal(&w).unwrap();
+        assert_eq!(priced.relayer_fee, 20);
+        assert_eq!(priced.guarantee_premium, 30);
+        assert_eq!(priced.lock_amount, 1050);
+        assert!(priced.is_guaranteed());
+    }
+
+    #[test]
+    fn test_price_withdrawal_guaranteed_zero_premium() {
+        let mgr = FeedManager::new(FeedMode::Guaranteed { refund_premium_bp: 0 }, 100);
+        let w = test_withdrawal(1000);
+        let priced = mgr.price_withdrawal(&w).unwrap();
+        assert_eq!(priced.relayer_fee, 10);
+        assert_eq!(priced.guarantee_premium, 0);
+        assert_eq!(priced.lock_amount, 1010);
+    }
+
+    #[test]
+    fn test_priced_withdrawal_get_refund_amount() {
+        let mgr = FeedManager::new(FeedMode::Guaranteed { refund_premium_bp: 500 }, 100);
+        let w = test_withdrawal(1000);
+        let priced = mgr.price_withdrawal(&w).unwrap();
+        // refund = amount + premium = 1000 + 50 = 1050
+        assert_eq!(priced.get_refund_amount(), 1050);
+    }
+
+    #[test]
+    fn test_priced_withdrawal_get_refund_amount_standard() {
+        let mgr = FeedManager::new(FeedMode::Standard, 100);
+        let w = test_withdrawal(1000);
+        let priced = mgr.price_withdrawal(&w).unwrap();
+        // refund = amount + 0 = 1000 (no premium in standard mode)
+        assert_eq!(priced.get_refund_amount(), 1000);
+    }
+
+    #[test]
+    fn test_fee_percentage_accessor() {
+        let mgr = FeedManager::new(FeedMode::Standard, 150);
+        assert_eq!(mgr.fee_percentage(), 150);
+    }
+
+    #[test]
+    fn test_mode_accessor() {
+        let mgr = FeedManager::new(FeedMode::Standard, 100);
+        assert_eq!(mgr.mode(), FeedMode::Standard);
+
+        let mgr2 = FeedManager::new(FeedMode::Guaranteed { refund_premium_bp: 200 }, 100);
+        assert_eq!(mgr2.mode(), FeedMode::Guaranteed { refund_premium_bp: 200 });
+    }
+
+    #[test]
+    fn test_price_withdrawal_large_amount() {
+        let mgr = FeedManager::new(FeedMode::Standard, 100);
+        let w = test_withdrawal(1_000_000_000);
+        let priced = mgr.price_withdrawal(&w).unwrap();
+        assert_eq!(priced.relayer_fee, 10_000_000);
+        assert_eq!(priced.lock_amount, 1_010_000_000);
+    }
+
+    #[test]
+    fn test_price_withdrawal_rounding_down() {
+        // fee_percentage = 1 = 0.01% (1/10000)
+        let mgr = FeedManager::new(FeedMode::Standard, 1);
+        let w = test_withdrawal(500);
+        // 500 * 1 / 10000 = 0 (integer division truncates)
+        let priced = mgr.price_withdrawal(&w).unwrap();
+        assert_eq!(priced.relayer_fee, 0);
+        assert_eq!(priced.lock_amount, 500);
+        assert!(!priced.is_guaranteed());
+    }
+}

@@ -119,3 +119,139 @@ impl CapitalDeployer {
         (total_fees * self.config.deployer_cut_bp as u64) / 10000
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::CapitalDeployerConfig;
+
+    fn enabled_config() -> CapitalDeployerConfig {
+        CapitalDeployerConfig {
+            enabled: true,
+            min_deploy: 100,
+            max_deploy: 10000,
+            deployer_cut_bp: 1500,
+            ..Default::default()
+        }
+    }
+
+    fn test_deployment(backer: &str, amount: u64) -> Deployment {
+        Deployment {
+            backer: backer.to_string(),
+            amount,
+            relayer: "relayer1".to_string(),
+            backer_cut_bp: 1500,
+            deployed_at_block: 1,
+        }
+    }
+
+    #[test]
+    fn test_new() {
+        let deployer = CapitalDeployer::new(enabled_config());
+        assert!(deployer.is_enabled());
+        assert_eq!(deployer.total_deployed(), 0);
+        assert_eq!(deployer.deployment_count(), 0);
+    }
+
+    #[test]
+    fn test_new_disabled() {
+        let cfg = CapitalDeployerConfig { enabled: false, ..Default::default() };
+        let deployer = CapitalDeployer::new(cfg);
+        assert!(!deployer.is_enabled());
+    }
+
+    #[test]
+    fn test_add_deployment_success() {
+        let mut deployer = CapitalDeployer::new(enabled_config());
+        deployer.add_deployment(test_deployment("backer1", 500)).unwrap();
+        assert_eq!(deployer.total_deployed(), 500);
+        assert_eq!(deployer.deployment_count(), 1);
+    }
+
+    #[test]
+    fn test_add_deployment_below_min() {
+        let mut deployer = CapitalDeployer::new(enabled_config());
+        let err = deployer.add_deployment(test_deployment("backer1", 50)).unwrap_err();
+        assert!(matches!(err, RelayerError::DeployerError(_)));
+    }
+
+    #[test]
+    fn test_add_deployment_above_max() {
+        let mut deployer = CapitalDeployer::new(enabled_config());
+        let err = deployer.add_deployment(test_deployment("backer1", 20000)).unwrap_err();
+        assert!(matches!(err, RelayerError::DeployerError(_)));
+    }
+
+    #[test]
+    fn test_add_deployment_disabled() {
+        let cfg = CapitalDeployerConfig { enabled: false, ..Default::default() };
+        let mut deployer = CapitalDeployer::new(cfg);
+        let err = deployer.add_deployment(test_deployment("backer1", 500)).unwrap_err();
+        assert!(matches!(err, RelayerError::DeployerError(_)));
+    }
+
+    #[test]
+    fn test_add_deployment_at_min_boundary() {
+        let mut deployer = CapitalDeployer::new(enabled_config());
+        deployer.add_deployment(test_deployment("backer1", 100)).unwrap();
+        assert_eq!(deployer.total_deployed(), 100);
+    }
+
+    #[test]
+    fn test_add_deployment_at_max_boundary() {
+        let mut deployer = CapitalDeployer::new(enabled_config());
+        deployer.add_deployment(test_deployment("backer1", 10000)).unwrap();
+        assert_eq!(deployer.total_deployed(), 10000);
+    }
+
+    #[test]
+    fn test_add_multiple_deployments() {
+        let mut deployer = CapitalDeployer::new(enabled_config());
+        deployer.add_deployment(test_deployment("backer1", 200)).unwrap();
+        deployer.add_deployment(test_deployment("backer2", 300)).unwrap();
+        assert_eq!(deployer.total_deployed(), 500);
+        assert_eq!(deployer.deployment_count(), 2);
+    }
+
+    #[test]
+    fn test_remove_deployment_success() {
+        let mut deployer = CapitalDeployer::new(enabled_config());
+        deployer.add_deployment(test_deployment("backer1", 500)).unwrap();
+        let removed = deployer.remove_deployment("backer1", "relayer1").unwrap();
+        assert_eq!(removed, 500);
+        assert_eq!(deployer.total_deployed(), 0);
+        assert_eq!(deployer.deployment_count(), 0);
+    }
+
+    #[test]
+    fn test_remove_deployment_not_found() {
+        let mut deployer = CapitalDeployer::new(enabled_config());
+        let err = deployer.remove_deployment("nobody", "relayer1").unwrap_err();
+        assert!(matches!(err, RelayerError::DeployerError(_)));
+    }
+
+    #[test]
+    fn test_remove_deployment_wrong_relayer() {
+        let mut deployer = CapitalDeployer::new(enabled_config());
+        deployer.add_deployment(test_deployment("backer1", 500)).unwrap();
+        let err = deployer.remove_deployment("backer1", "other_relayer").unwrap_err();
+        assert!(matches!(err, RelayerError::DeployerError(_)));
+    }
+
+    #[test]
+    fn test_calculate_backer_share() {
+        let deployer = CapitalDeployer::new(enabled_config());
+        // deployer_cut_bp = 1500 = 15%
+        assert_eq!(deployer.calculate_backer_share(10000), 1500);
+        assert_eq!(deployer.calculate_backer_share(0), 0);
+        assert_eq!(deployer.calculate_backer_share(100), 15);
+    }
+
+    #[test]
+    fn test_calculate_backer_share_rounding() {
+        let cfg = CapitalDeployerConfig { deployer_cut_bp: 1, ..enabled_config() };
+        let deployer = CapitalDeployer::new(cfg);
+        // 1 bp = 0.01%, so 500 * 1 / 10000 = 0
+        assert_eq!(deployer.calculate_backer_share(500), 0);
+    }
+}

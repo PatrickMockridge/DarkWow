@@ -7,10 +7,10 @@ Models the three overlapping chains in merge mining:
   Chain 2: p2pool (sidechain, ~10s blocks, PPLNS, uncle-merkle)
   Chain 3: DarkWow (merge-mined, ~120s target, uncle-merkle consensus)
 
-DarkWow supports two consensus modes:
-  - NATIVE: Pure block_rank() competition (current behavior)
-  - ANCHOR: Blocks reference Monero blocks as anchors; fork choice
-            incorporates Monero cumulative difficulty
+DarkWow supports three consensus modes:
+  - NATIVE:   Pure block_rank() competition (no finality)
+  - ANCHOR:   Monero-anchored finality via p2pool merge mining
+  - CARIBINA: Arweave-anchored finality via ArDrive Turbo (no p2pool needed)
 
 Key source files this maps to:
   src/validator/utils.rs       — block_rank, best_fork_index, MAX_32_BYTES
@@ -105,6 +105,10 @@ DEFAULT_DIFFICULTY_RATIO: float = 1.0
 # Minimum number of Monero confirmations before a block can be used as anchor
 ANCHOR_MIN_CONFIRMATIONS: int = 3
 
+# Caribina (Arweave) anchoring — independent finality layer
+# Arweave block time is ~2 minutes, so an anchor settles after ~1 DarkWow block
+CARIBINA_SETTLE_BLOCKS: int = 1
+
 
 # ============================================================================
 # PowData enum — header_store.rs:44-49
@@ -120,8 +124,9 @@ class PowData(Enum):
 # ============================================================================
 
 class ConsensusMode(Enum):
-    NATIVE = "native"   # Pure block_rank() competition
-    ANCHOR = "anchor"   # Anchoring to Monero blocks
+    NATIVE = "native"       # Pure block_rank() competition
+    ANCHOR = "anchor"       # Anchoring to Monero blocks
+    CARIBINA = "caribina"   # Anchoring to Arweave via Caribina
 
 
 # ============================================================================
@@ -169,9 +174,12 @@ class DarkWowBlock:
     hash: bytes  # 32 bytes — simulated RandomX output
     miner_type: str  # "native" or "merge"
     reward_recipient: str = ""
-    # Anchor fields (Mode B)
+    # Anchor fields (Mode B — Monero)
     anchor_monero_height: Optional[int] = None
     anchor_monero_hash: Optional[bytes] = None
+    # Caribina fields (Mode C — Arweave)
+    caribina_tx_id: Optional[bytes] = None  # 32-byte Arweave TX ID
+    caribina_confirmed: bool = False  # True once Arweave block settles
 
     @property
     def hash_int(self) -> int:
@@ -180,6 +188,10 @@ class DarkWowBlock:
     @property
     def has_anchor(self) -> bool:
         return self.anchor_monero_height is not None
+
+    @property
+    def has_caribina(self) -> bool:
+        return self.caribina_tx_id is not None
 
 
 @dataclass
@@ -494,26 +506,28 @@ def p2pool_get_shares(
 # ============================================================================
 # Anchoring Finality Gadget — modular security overlay
 # ============================================================================
-# Anchoring does NOT modify fork choice. It adds a finality constraint:
-# once a DarkWow block's Monero anchor gets N confirmations, that block is
-# finalized and cannot be reorganized. This protects against 51% attacks
-# when DarkWow hashpower is low relative to Monero.
+# Finality does NOT modify fork choice. It adds a finality constraint:
+# once a DarkWow block's anchor gets enough confirmations, that block is
+# finalized and cannot be reorganized. This protects against 51% attacks.
+#
+# Two independent finality mechanisms:
+#   ANCHOR  — Monero cumulative-difficulty via p2pool merge mining
+#   CARIBINA — Arweave proof-of-storage via ArDrive Turbo (no p2pool needed)
 #
 # Normal fork choice (best_fork_index by targets_rank/hashes_rank) still
 # applies — but only among forks that respect finalized blocks.
 
 
-def get_finalized_blocks(
+def get_monero_finalized_blocks(
     canonical_chain: list[DarkWowBlock],
     monero_chain: dict[int, MoneroBlock],
     current_monero_height: int,
     min_confirmations: int = ANCHOR_MIN_CONFIRMATIONS,
 ) -> set[bytes]:
-    """Find all blocks in the canonical chain that are finalized.
+    """Find blocks finalized by Monero anchors.
 
     A block is finalized if its Monero anchor has `min_confirmations`
-    confirmations. All ancestors of a finalized block are also finalized
-    (they can't be reorganized without also reorganizing the finalized block).
+    confirmations. All ancestors of a finalized block are also finalized.
     """
     finalized: set[bytes] = set()
     finalized_ancestors: set[bytes] = set()
@@ -525,13 +539,63 @@ def get_finalized_blocks(
                     confirmations = current_monero_height - mblock.height
                     if confirmations >= min_confirmations:
                         finalized.add(block.hash)
-                        # All ancestors are transitively finalized
-                        # (walk back through prev_hash chain)
                         cursor = block.previous_hash
                         finalized_ancestors.add(cursor)
                     break
 
     return finalized | finalized_ancestors
+
+
+def get_caribina_finalized_blocks(
+    canonical_chain: list[DarkWowBlock],
+    current_height: int,
+    settle_blocks: int = CARIBINA_SETTLE_BLOCKS,
+) -> set[bytes]:
+    """Find blocks finalized by Caribina (Arweave) anchors.
+
+    A block is finalized if it has a Caribina anchor and the Arweave
+    block containing it has settled (current_height - block_height >=
+    settle_blocks). Caribina settlement is much faster than Monero —
+    typically 1 DarkWow block (~2 min) vs 3 Monero blocks (~6 min).
+
+    All ancestors of a finalized block are also finalized.
+    """
+    finalized: set[bytes] = set()
+    finalized_ancestors: set[bytes] = set()
+
+    for block in canonical_chain:
+        if block.has_caribina and block.caribina_tx_id is not None:
+            confirmations = current_height - block.height
+            if confirmations >= settle_blocks:
+                finalized.add(block.hash)
+                cursor = block.previous_hash
+                finalized_ancestors.add(cursor)
+
+    return finalized | finalized_ancestors
+
+
+def get_finalized_blocks(
+    canonical_chain: list[DarkWowBlock],
+    monero_chain: dict[int, MoneroBlock],
+    current_monero_height: int,
+    min_confirmations: int = ANCHOR_MIN_CONFIRMATIONS,
+    # Caribina params
+    caribina_enabled: bool = False,
+    current_darkwow_height: int = 0,
+    caribina_settle_blocks: int = CARIBINA_SETTLE_BLOCKS,
+) -> set[bytes]:
+    """Find all finalized blocks from both finality mechanisms.
+
+    Returns the union of Monero-anchored and Caribina-anchored finalized sets.
+    """
+    finalized = get_monero_finalized_blocks(
+        canonical_chain, monero_chain, current_monero_height, min_confirmations,
+    )
+    if caribina_enabled:
+        finalized |= get_caribina_finalized_blocks(
+            canonical_chain, current_darkwow_height, caribina_settle_blocks,
+        )
+    return finalized
 
 
 def fork_conflicts_with_finalized(
@@ -768,9 +832,13 @@ class SimulationConfig:
     # Uncle Merkle phase
     uncle_phase: str = "phase2"
 
-    # Anchoring params
+    # Anchoring params (Monero)
     difficulty_ratio: float = DEFAULT_DIFFICULTY_RATIO
     anchor_min_confirmations: int = ANCHOR_MIN_CONFIRMATIONS
+
+    # Caribina params (Arweave)
+    caribina_enabled: bool = False
+    caribina_settle_blocks: int = CARIBINA_SETTLE_BLOCKS
 
     # Dynamic difficulty adjustment
     adjust_difficulty: bool = False
@@ -797,6 +865,7 @@ class SlotResult:
     canonical_total: int = 0
     uncle_rewards: list[int] = field(default_factory=list)
     anchor_used: bool = False
+    caribina_used: bool = False
     # Reward tracking by recipient type
     merge_reward_this_slot: int = 0
     native_reward_this_slot: int = 0
@@ -816,6 +885,7 @@ class SimulationResult:
     total_merge_reward: int = 0
     total_native_reward: int = 0
     total_anchored_blocks: int = 0
+    total_caribina_blocks: int = 0
 
     # Monero stats
     monero_blocks_produced: int = 0
@@ -846,8 +916,9 @@ class ReorgResult:
     attacker_fork_blocks: list[DarkWowBlock] = field(default_factory=list)
     attacker_fork_accepted: bool = False
 
-    # Blocks protected by finality (only in ANCHOR mode)
+    # Blocks protected by finality
     finalized_blocks: set[bytes] = field(default_factory=set)
+    caribina_finalized: set[bytes] = field(default_factory=set)
     blocks_protected: list[int] = field(default_factory=list)  # heights protected
     blocks_replaced: list[int] = field(default_factory=list)   # heights replaced
 
@@ -983,6 +1054,14 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
                     merge_block.anchor_monero_height = anchor.height
                     merge_block.anchor_monero_hash = anchor.hash
 
+            # If Caribina is enabled, attach simulated Arweave anchor
+            if config.caribina_enabled or config.consensus_mode == ConsensusMode.CARIBINA:
+                # Simulated Arweave TX ID (random 32 bytes — in production
+                # this comes from ArDrive Turbo after POSTing the block data)
+                merge_block.caribina_tx_id = bytes(random.randint(0, 255) for _ in range(32))
+                # Mark Caribina anchor as "pending" — it settles after
+                # caribina_settle_blocks confirmations
+
             merge_blocks.append(merge_block)
 
         # -- Path B: Native blocks (independent DarkWow miners) --
@@ -1002,6 +1081,9 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
                 native_block.anchor_monero_height = anchor.height
                 native_block.anchor_monero_hash = anchor.hash
 
+        if config.caribina_enabled or config.consensus_mode == ConsensusMode.CARIBINA:
+            native_block.caribina_tx_id = bytes(random.randint(0, 255) for _ in range(32))
+
         # ---- Step 4: Fork choice ----
         all_candidates = merge_blocks + [native_block]
         forks: list[Fork] = []
@@ -1011,11 +1093,25 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             fork.append_block(candidate, rank)
             forks.append(fork)
 
-        # If anchoring is enabled, filter out forks that conflict with finalized blocks
-        if config.consensus_mode == ConsensusMode.ANCHOR:
+        # ---- Check Caribina confirmation for blocks in the canonical chain ----
+        # A Caribina anchor settles after caribina_settle_blocks DarkWow blocks.
+        # Walk back and mark anchors as confirmed once enough height has passed.
+        if config.caribina_enabled or config.consensus_mode == ConsensusMode.CARIBINA:
+            current_chain_height = len(canonical_chain)
+            for cb in canonical_chain:
+                if cb.has_caribina and not cb.caribina_confirmed:
+                    if current_chain_height - cb.height >= config.caribina_settle_blocks:
+                        cb.caribina_confirmed = True
+
+        # If finality is enabled (Monero or Caribina), filter out forks that
+        # conflict with finalized blocks.
+        if config.consensus_mode in (ConsensusMode.ANCHOR, ConsensusMode.CARIBINA):
             finalized = get_finalized_blocks(
                 canonical_chain, monero.blocks, monero.current_height,
                 config.anchor_min_confirmations,
+                caribina_enabled=(config.caribina_enabled or config.consensus_mode == ConsensusMode.CARIBINA),
+                current_darkwow_height=len(canonical_chain),
+                caribina_settle_blocks=config.caribina_settle_blocks,
             )
             valid_forks = get_valid_forks(forks, finalized, canonical_chain)
         else:
@@ -1041,6 +1137,10 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         if winner.has_anchor:
             result.total_anchored_blocks += 1
             slot_result.anchor_used = True
+
+        if winner.has_caribina:
+            result.total_caribina_blocks += 1
+            slot_result.caribina_used = True
 
         # ---- Step 6: Reward distribution ----
         emission_reward = expected_reward(height)
@@ -1134,6 +1234,7 @@ def simulate_reorg_attack(
     )
 
     # ---- Step 1: Build the canonical chain ----
+    caribina_enabled = (consensus_mode == ConsensusMode.CARIBINA)
     config = SimulationConfig(
         native_hashpower=native_hashpower,
         merge_hashpower=merge_hashpower,
@@ -1143,6 +1244,7 @@ def simulate_reorg_attack(
         target_block_time=120.0,
         uncle_phase="phase2",
         anchor_min_confirmations=anchor_min_confirmations,
+        caribina_enabled=caribina_enabled,
         seed=seed,
     )
     sim_result = run_simulation(config)
@@ -1174,11 +1276,13 @@ def simulate_reorg_attack(
     result.original_rewards = original_rewards
     result.total_issuance_before = sum(original_rewards.values())
 
-    # ---- Step 3: Compute finalized blocks (if anchoring) ----
-    if consensus_mode == ConsensusMode.ANCHOR:
+    # ---- Step 3: Compute finalized blocks ----
+    if consensus_mode in (ConsensusMode.ANCHOR, ConsensusMode.CARIBINA):
         finalized = get_finalized_blocks(
             canonical_chain, sim_result.monero_blocks, sim_result.monero_current_height,
             anchor_min_confirmations,
+            caribina_enabled=caribina_enabled,
+            current_darkwow_height=len(canonical_chain),
         )
         result.finalized_blocks = finalized
     else:
@@ -1227,9 +1331,9 @@ def simulate_reorg_attack(
         rank = block_rank(b, target, 255)
         attacker_fork.append_block(b, rank)
 
-    # Without anchoring: best fork by rank wins
+    # Without finality: best fork by rank wins
     native_forks = [canon_fork, attacker_fork]
-    if consensus_mode == ConsensusMode.ANCHOR:
+    if consensus_mode in (ConsensusMode.ANCHOR, ConsensusMode.CARIBINA):
         valid_forks = get_valid_forks(native_forks, finalized, canonical_chain)
     else:
         valid_forks = native_forks
@@ -1316,6 +1420,8 @@ def print_results(result: SimulationResult) -> None:
     if c.consensus_mode == ConsensusMode.ANCHOR:
         print(f"  Difficulty ratio:    {c.difficulty_ratio}")
         print(f"  Anchor confirmations:{c.anchor_min_confirmations}")
+    if c.caribina_enabled or c.consensus_mode == ConsensusMode.CARIBINA:
+        print(f"  Caribina enabled:    True (settle blocks: {c.caribina_settle_blocks})")
     print(f"  Seed:                {c.seed}")
     print()
 
@@ -1339,6 +1445,9 @@ def print_results(result: SimulationResult) -> None:
     if c.consensus_mode == ConsensusMode.ANCHOR:
         anchored_pct = result.total_anchored_blocks / total_slots * 100
         print(f"  Anchored blocks: {result.total_anchored_blocks:>6}  ({anchored_pct:5.1f}%)")
+    if c.caribina_enabled or c.consensus_mode == ConsensusMode.CARIBINA:
+        caribina_pct = result.total_caribina_blocks / total_slots * 100
+        print(f"  Caribina blocks: {result.total_caribina_blocks:>6}  ({caribina_pct:5.1f}%)")
     print()
 
     # Uncle stats
@@ -1368,6 +1477,8 @@ def print_results(result: SimulationResult) -> None:
     header = f"  {'Slot':>5} {'H':>6} {'Winner':>8} {'Loser':>8} {'Emission':>14} {'CanonTotal':>14} {'UncleRew':>14}"
     if c.consensus_mode == ConsensusMode.ANCHOR:
         header += f" {'Anchor':>8}"
+    if c.caribina_enabled or c.consensus_mode == ConsensusMode.CARIBINA:
+        header += f" {'Caribina':>9}"
     print(header)
     for sr in result.slots[:20]:
         _print_slot_row(sr, c)
@@ -1392,6 +1503,9 @@ def _print_slot_row(sr: SlotResult, c: SimulationConfig) -> None:
     if c.consensus_mode == ConsensusMode.ANCHOR:
         anchor_str = "Y" if sr.anchor_used else "-"
         row += f" {anchor_str:>8}"
+    if c.caribina_enabled or c.consensus_mode == ConsensusMode.CARIBINA:
+        caribina_str = "Y" if sr.caribina_used else "-"
+        row += f" {caribina_str:>9}"
     print(row)
 
 
@@ -1787,8 +1901,72 @@ def run_verification() -> bool:
     else:
         print(f"  PASS: Attacker fork rejected entirely (all targets finalized)")
 
-    # ---- Test 18: Reward conservation under reorg ----
-    print("--- Test 18: Reward conservation under reorg ---")
+    # ---- Test 18: Caribina finality — basic block finalization ----
+    print("--- Test 18: Caribina finality ---")
+    # Build a chain where every block has a Caribina anchor
+    gc_blocks = [DarkWowBlock(height=0, previous_hash=bytes(32), timestamp=0.0,
+                  nonce=0, pow_data=PowData.DARK_FI, hash=bytes(32), miner_type="genesis")]
+    for h in range(1, 6):
+        gc_blocks.append(DarkWowBlock(
+            height=h, previous_hash=gc_blocks[-1].hash, timestamp=h * 120.0,
+            nonce=h, pow_data=PowData.DARK_FI, hash=bytes([h]) * 32, miner_type="native",
+            caribina_tx_id=bytes([h + 100]) * 32,
+        ))
+    # At chain height 5, block 1 (height diff=4) should be finalized (settle_blocks=1)
+    # Block 4 (height diff=1) also finalized. Block 5 (height diff=0) not yet.
+    caribina_final = get_caribina_finalized_blocks(gc_blocks, 5, settle_blocks=1)
+    # Block 5 (height=5) has current_height - height = 5-5 = 0 < 1 → not finalized
+    # But its ancestor hash (parent of block 5 = block 4's hash) is in finalized_ancestors
+    assert gc_blocks[1].hash in caribina_final, "Block 1 should be Caribina-finalized (diff=4 >= 1)"
+    assert gc_blocks[4].hash in caribina_final, "Block 4 should be Caribina-finalized (diff=1 >= 1)"
+    assert gc_blocks[5].hash not in caribina_final, "Block 5 should NOT be finalized (diff=0 < 1)"
+    print(f"  PASS: Caribina finality — blocks 1,4 finalized; block 5 pending")
+
+    # ---- Test 19: Caribina finality blocks reorg ----
+    print("--- Test 19: Caribina reorg protection ---")
+    # Same chain, attacker tries to replace block 4 which is Caribina-finalized
+    attacker_caribina_fork = Fork()
+    attacker_block = DarkWowBlock(
+        height=4, previous_hash=gc_blocks[3].hash,
+        timestamp=480.0, nonce=999, pow_data=PowData.DARK_FI,
+        hash=bytes([99]) * 32, miner_type="native",
+    )
+    attacker_caribina_fork.append_block(attacker_block, BlockRanks(
+        difficulty=255, targets_rank=1000, hashes_rank=1000,
+    ))
+    # Attacker fork has better rank, but conflicts with finalized block 4
+    assert fork_conflicts_with_finalized(attacker_caribina_fork, caribina_final, gc_blocks) == True
+    valid_c = get_valid_forks([attacker_caribina_fork], caribina_final, gc_blocks)
+    assert len(valid_c) == 0, "Attacker fork should be rejected by Caribina finality"
+    print(f"  PASS: Caribina finality blocks reorg of finalized block")
+
+    # ---- Test 20: Caribina faster than Monero anchoring ----
+    print("--- Test 20: Caribina settlement speed ---")
+    # Monero needs ~3 blocks × 120s = 360s (min_confirmations=3)
+    # Caribina needs ~1 block  × 120s = 120s (settle_blocks=1)
+    # Build a minimal chain to compare settlement
+    settle_chain = [DarkWowBlock(height=0, previous_hash=bytes(32), timestamp=0.0,
+                    nonce=0, pow_data=PowData.DARK_FI, hash=bytes(32), miner_type="genesis")]
+    settle_chain.append(DarkWowBlock(
+        height=1, previous_hash=settle_chain[-1].hash, timestamp=120.0,
+        nonce=1, pow_data=PowData.DARK_FI, hash=bytes([1]) * 32, miner_type="native",
+        caribina_tx_id=bytes([200]) * 32,
+        # Monero anchor would need 3 more Monero blocks (~360s)
+        anchor_monero_height=1, anchor_monero_hash=bytes([200]) * 32,
+    ))
+    # At chain height 2, Caribina settles (diff=1 >= 1) but Monero may not
+    caribina_settled = get_caribina_finalized_blocks(settle_chain, 2, settle_blocks=1)
+    assert settle_chain[1].hash in caribina_settled, "Caribina: block 1 settled at height 2"
+    # Monero needs min_confirmations=3 Monero blocks at ~120s each
+    # If only 1-2 Monero blocks exist, Monero anchor won't be finalized yet
+    monero_blocks = {1: MoneroBlock(height=1, hash=bytes([200]) * 32, previous_hash=bytes(32),
+                                     timestamp=120.0, difficulty=1000, cumulative_difficulty=1000)}
+    monero_settled = get_monero_finalized_blocks(settle_chain, monero_blocks, 2, min_confirmations=3)
+    assert settle_chain[1].hash not in monero_settled, "Monero: block 1 NOT settled yet (only 1 confirmation)"
+    print(f"  PASS: Caribina settles at height 2 (1 block); Monero needs ~3 Monero blocks (~360s)")
+
+    # ---- Test 21: Reward conservation under reorg ----
+    print("--- Test 21: Reward conservation under reorg ---")
     assert reorg_native.total_issuance_before > 0, "Should have issuance before reorg"
     # The reorg redistributes rewards: original miners lose, attacker gains.
     # emission_reward per height is conserved (one per slot).
@@ -1807,9 +1985,62 @@ def run_verification() -> bool:
     print(f"  PASS: Rewards lost: native={reorg_native.rewards_lost.get('native', 0):,}, merge={reorg_native.rewards_lost.get('merge', 0):,}")
     print(f"  PASS: Rewards gained: merge={reorg_native.rewards_gained.get('merge', 0):,}")
 
+    # ---- Test 22: Multi-block reorg with Caribina ----
+    print("--- Test 22: Multi-block reorg with Caribina ---")
+    reorg_caribina = simulate_reorg_attack(
+        native_hashpower=500_000.0,
+        merge_hashpower=500_000.0,
+        chain_length=6,
+        reorg_from_height=2,
+        consensus_mode=ConsensusMode.CARIBINA,
+        attacker_hashpower=5_000_000.0,
+        seed=99,
+    )
+    assert len(reorg_caribina.finalized_blocks) > 0, \
+        "Caribina should have finalized blocks"
+    # Caribina settles after 1 block, so blocks at height <= chain_length-1
+    # should be finalized (can't be replaced). Only the tip block may not be
+    # finalized if it's the very last block.
+    assert len(reorg_caribina.blocks_protected) > 0, \
+        "Caribina should protect finalized blocks from reorg"
+    print(f"  PASS: Caribina finalized blocks: {len(reorg_caribina.finalized_blocks)}")
+    print(f"  PASS: Caribina blocks protected: {len(reorg_caribina.blocks_protected)} (heights {reorg_caribina.blocks_protected})")
+    print(f"  PASS: Caribina blocks replaced: {len(reorg_caribina.blocks_replaced)} (heights {reorg_caribina.blocks_replaced})")
+    if reorg_caribina.attacker_fork_accepted:
+        print(f"  INFO: Attacker replaced only unfinalized blocks")
+    else:
+        print(f"  PASS: Attacker fork rejected entirely by Caribina finality")
+
+    # ---- Test 23: Caribina protects native miners (no p2pool needed) ----
+    print("--- Test 23: Caribina protects native miners ---")
+    # Key advantage: native miners don't need p2pool to get finality.
+    # Build a purely native-miner chain with Caribina anchors.
+    native_caribina_chain = [
+        DarkWowBlock(height=0, previous_hash=bytes(32), timestamp=0.0,
+                     nonce=0, pow_data=PowData.DARK_FI, hash=bytes(32), miner_type="genesis"),
+        DarkWowBlock(height=1, previous_hash=bytes(32), timestamp=120.0,
+                     nonce=1, pow_data=PowData.DARK_FI, hash=bytes([1]) * 32,
+                     miner_type="native", caribina_tx_id=bytes([200]) * 32, caribina_confirmed=True),
+        DarkWowBlock(height=2, previous_hash=bytes([1]) * 32, timestamp=240.0,
+                     nonce=2, pow_data=PowData.DARK_FI, hash=bytes([2]) * 32,
+                     miner_type="native", caribina_tx_id=bytes([201]) * 32, caribina_confirmed=True),
+    ]
+    # Block 1 is Caribina-finalized
+    nc_finalized = get_caribina_finalized_blocks(native_caribina_chain, 3, settle_blocks=1)
+    assert native_caribina_chain[1].hash in nc_finalized, "Native block 1 should be Caribina-finalized"
+    # Attacker tries to replace block 1
+    nc_attacker = Fork()
+    nc_attacker.append_block(DarkWowBlock(
+        height=1, previous_hash=bytes(32), timestamp=120.0,
+        nonce=999, pow_data=PowData.DARK_FI, hash=bytes([99]) * 32, miner_type="native",
+    ), BlockRanks(difficulty=255, targets_rank=1000, hashes_rank=1000))
+    assert fork_conflicts_with_finalized(nc_attacker, nc_finalized, native_caribina_chain) == True
+    print(f"  PASS: Native miner block protected by Caribina (no p2pool/Monero needed)")
+    print(f"  PASS: Caribina provides finality independent of merge mining")
+
     print()
     print("=" * 72)
-    print("  All verification tests PASSED (18/18)")
+    print("  All verification tests PASSED (23/23)")
     print("=" * 72)
     return True
 
@@ -2018,6 +2249,109 @@ def main() -> None:
     print(f"  attacker. With anchoring, finalized blocks are immovable — the")
     print(f"  attacker cannot steal rewards from finalized blocks. The anchor")
     print(f"  borrows Monero's cumulative difficulty to secure DarkWow rewards.")
+    print()
+    print("=" * 72)
+    print()
+    print()
+
+    # ---- Scenario 8: Caribina finality, 1000:1 hashpower ----
+    print("=== Scenario 8: Caribina Finality (Arweave), 1000:1 Hashpower ===")
+    print("  Caribina provides finality via Arweave proof-of-storage.")
+    print("  Unlike Monero anchoring, Caribina works WITHOUT p2pool —")
+    print("  native miners get the same finality guarantees as merge miners.")
+    print("  Anchors settle after just 1 DarkWow block (~2 min vs ~6 min).")
+    print()
+    config8 = SimulationConfig(
+        native_hashpower=1_000.0,
+        merge_hashpower=1_000_000.0,
+        num_p2pools=1,
+        consensus_mode=ConsensusMode.CARIBINA,
+        num_slots=200,
+        target_block_time=120.0,
+        uncle_phase="phase2",
+        caribina_settle_blocks=1,
+        seed=42,
+    )
+    result8 = run_simulation(config8)
+    print_results(result8)
+
+    print()
+    print()
+
+    # ---- Scenario 9: Reorg attack — NATIVE vs ANCHOR vs CARIBINA ----
+    print("=== Scenario 9: Reorg Attack — Three-Way Finality Comparison ===")
+    print("  Same reorg scenario across all three consensus modes:")
+    print("  NATIVE:   Attacker can replace ALL blocks (no finality)")
+    print("  ANCHOR:   Monero-finalized blocks are protected (needs p2pool)")
+    print("  CARIBINA: Arweave-finalized blocks are protected (no p2pool needed)")
+    print("  Key difference: Caribina protects native miners who don't merge mine.")
+    print()
+
+    seed = 12345
+
+    # --- Native (no finality) ---
+    print("  --- NATIVE Consensus (no finality) ---")
+    reorg_native2 = simulate_reorg_attack(
+        native_hashpower=500_000.0,
+        merge_hashpower=500_000.0,
+        chain_length=6,
+        reorg_from_height=2,
+        consensus_mode=ConsensusMode.NATIVE,
+        attacker_hashpower=5_000_000.0,
+        seed=seed,
+    )
+    print(f"    Attacker fork accepted: {reorg_native2.attacker_fork_accepted}")
+    print(f"    Blocks replaced: {len(reorg_native2.blocks_replaced)} (heights {reorg_native2.blocks_replaced})")
+    print(f"    Blocks protected: {len(reorg_native2.blocks_protected)}")
+    print(f"    Rewards lost:     {reorg_native2.rewards_lost}")
+    print(f"    Rewards gained:   {reorg_native2.rewards_gained}")
+    print()
+
+    # --- ANCHOR (Monero finality) ---
+    print("  --- ANCHOR Consensus (Monero finality) ---")
+    reorg_anchor2 = simulate_reorg_attack(
+        native_hashpower=500_000.0,
+        merge_hashpower=500_000.0,
+        chain_length=6,
+        reorg_from_height=2,
+        consensus_mode=ConsensusMode.ANCHOR,
+        anchor_min_confirmations=2,
+        attacker_hashpower=5_000_000.0,
+        seed=seed,
+    )
+    print(f"    Attacker fork accepted: {reorg_anchor2.attacker_fork_accepted}")
+    print(f"    Finalized blocks: {len(reorg_anchor2.finalized_blocks)}")
+    print(f"    Blocks replaced: {len(reorg_anchor2.blocks_replaced)} (heights {reorg_anchor2.blocks_replaced})")
+    print(f"    Blocks protected: {len(reorg_anchor2.blocks_protected)} (heights {reorg_anchor2.blocks_protected})")
+    print(f"    Rewards lost:     {reorg_anchor2.rewards_lost}")
+    print(f"    Rewards gained:   {reorg_anchor2.rewards_gained}")
+    print()
+
+    # --- CARIBINA (Arweave finality) ---
+    print("  --- CARIBINA Consensus (Arweave finality) ---")
+    reorg_caribina2 = simulate_reorg_attack(
+        native_hashpower=500_000.0,
+        merge_hashpower=500_000.0,
+        chain_length=6,
+        reorg_from_height=2,
+        consensus_mode=ConsensusMode.CARIBINA,
+        attacker_hashpower=5_000_000.0,
+        seed=seed,
+    )
+    print(f"    Attacker fork accepted: {reorg_caribina2.attacker_fork_accepted}")
+    print(f"    Finalized blocks: {len(reorg_caribina2.finalized_blocks)}")
+    print(f"    Blocks replaced: {len(reorg_caribina2.blocks_replaced)} (heights {reorg_caribina2.blocks_replaced})")
+    print(f"    Blocks protected: {len(reorg_caribina2.blocks_protected)} (heights {reorg_caribina2.blocks_protected})")
+    print(f"    Rewards lost:     {reorg_caribina2.rewards_lost}")
+    print(f"    Rewards gained:   {reorg_caribina2.rewards_gained}")
+    print()
+
+    print(f"  Key insight: NATIVE mode gives zero protection — attacker replaces")
+    print(f"  everything. ANCHOR mode protects blocks backed by Monero cumulative")
+    print(f"  difficulty — but only merge-miners get this. CARIBINA mode protects")
+    print(f"  ALL blocks (native and merge) via Arweave, a completely independent")
+    print(f"  proof-of-storage consensus mechanism. No p2pool or Monero required.")
+    print(f"  This makes Caribina the universal finality layer for DarkWow.")
     print()
     print("=" * 72)
 

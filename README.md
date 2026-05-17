@@ -57,6 +57,47 @@ Verifier DOES NOT learn: Alice's public key, balance, or identity
 
 ---
 
+## Finality Architecture: Two Independent Security Layers
+
+DarkWow provides **two orthogonal finality mechanisms** that protect against
+51% attacks and chain reorganization — both operating as constraint overlays
+on top of PoW fork choice:
+
+### Monero Anchoring (p2pool merge mining)
+
+Blocks reference Monero blocks as anchors. Once a Monero anchor has enough
+confirmations, the DarkWow block is finalized — an attacker would need to
+reorganize Monero's chain (backed by its cumulative difficulty) to undo it.
+
+- Requires: p2pool + Monero node
+- Settlement: ~6 min (3 Monero blocks)
+- Protects: merge miners only
+
+### Caribina (Arweave proof-of-storage)
+
+Blocks are anchored to Arweave via ArDrive Turbo — free, no AR tokens required.
+Each block gets a verifiable timestamp on Arweave's proof-of-storage chain.
+An attacker who controls RandomX hashpower cannot forge Arweave timestamps.
+
+- Requires: nothing (HTTP POST to ArDrive Turbo)
+- Settlement: ~2 min (1 DarkWow block)
+- Protects: **all** miners — native and merge
+
+| Property | Monero Anchor | Caribina (Arweave) |
+|----------|--------------|---------------------|
+| Requires p2pool | Yes | **No** |
+| Protects native miners | No | **Yes** |
+| Settlement time | ~6 min | **~2 min** |
+| Consensus basis | PoW (RandomX) | Proof-of-Storage |
+| Under 51% attack | 4/5 blocks protected | **5/5 blocks protected** |
+
+See [Caribina — Arweave-Anchored Finality](doc/src/arch/caribina.md) for the
+full specification. See [Mining Tokenomics](doc/src/arch/mining-tokenomics.md#anchoring-finality-gadget)
+for the Monero anchoring gadget. Both mechanisms are modeled in the
+[merge mining toy model](contrib/docker/darkwow-testnet/merge_mining_model.py).
+
+---
+
 ## Smart Contracts
 
 ### Identity & Authorization
@@ -191,6 +232,8 @@ cargo run -p dwowd -- --network darkwow-testnet
 ### Architecture
 - [Architecture Overview](doc/src/arch/overview.md)
 - [Uncle Merkle Consensus](doc/src/arch/consensus/consensus.md)
+- [Caribina — Arweave-Anchored Finality](doc/src/arch/caribina.md)
+- [Monero Anchoring Finality](doc/src/arch/mining-tokenomics.md#anchoring-finality-gadget)
 - [O-Cap Authorization](doc/src/arch/ocap.md)
 - [Opcodes & Formal Verification](doc/src/arch/zk/opcodes.md)
 - [Security Analysis](doc/src/arch/security-analysis.md)

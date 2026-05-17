@@ -128,8 +128,24 @@ impl LinearBlockchain {
 
     /// Insert a block into the chain.
     /// Takes &self for thread-safe access via interior mutability.
+    ///
+    /// Rejects blocks that would replace an already-anchored block at the
+    /// same height — Caribina anchors make blocks final.
     pub fn insert_block(&self, block: &Block) -> Result<()> {
         let height = block.header.height;
+
+        // Finality check: don't replace an anchored block at the same height
+        if let Ok(existing) = self.store.get_block(height) {
+            if existing.header.anchor_tx_id != [0u8; 32] {
+                info!(
+                    target: "linear_blockchain",
+                    "Rejected block at height {} — existing block is anchored (tx_id: {:?})",
+                    height, existing.header.anchor_tx_id
+                );
+                return Err(LinearError::AnchoredBlockConflict);
+            }
+        }
+
         let mut current_height = self.height.lock().unwrap();
         self.store.insert_block(height, block)?;
         if height > *current_height {

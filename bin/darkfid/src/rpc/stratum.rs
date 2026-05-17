@@ -45,6 +45,7 @@ use dwow::{
     system::{Publisher, StoppableTaskPtr},
 };
 
+use dwow_linear::caribina::anchor_block;
 use crate::{
     error::{miner_status_response, server_error, RpcError},
     registry::model::{LinearMinerRewardsRecipientConfig, MinerRewardsRecipientConfig},
@@ -340,6 +341,7 @@ impl DarkfiNode {
             randomx_key,
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
         };
         let blob_data = mining_header.to_mining_blob();
         let blob = hex::encode(&blob_data);
@@ -681,6 +683,7 @@ impl DarkfiNode {
             randomx_key,
             coin_merkle_root,
             nullifier_root,
+            anchor_tx_id: [0u8; 32],
         };
 
         // Create coinbase transaction with ZK privacy data
@@ -696,7 +699,7 @@ impl DarkfiNode {
             coinbase,
         };
 
-        let block = dwow_linear::Block {
+        let mut block = dwow_linear::Block {
             header,
             transactions: vec![coinbase_tx],
         };
@@ -723,6 +726,30 @@ impl DarkfiNode {
                         submitted_height, e
                     );
                     return miner_status_response(id, "rejected");
+                }
+            }
+        }
+
+        // Anchor the block to Arweave via Caribina (best-effort)
+        {
+            let vm = linear_chain.get_vm(randomx_key);
+            let block_hash = block.hash(&vm);
+            let mut block_hash_bytes = [0u8; 32];
+            block_hash_bytes.copy_from_slice(block_hash.as_bytes());
+            match anchor_block(&block_hash_bytes, block.header.timestamp, block.header.height) {
+                Some(tx_id) => {
+                    block.header.anchor_tx_id = tx_id;
+                    info!(
+                        target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                        "[RPC-STRATUM] Anchored block {} to Arweave",
+                        block_hash
+                    );
+                }
+                None => {
+                    info!(
+                        target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                        "[RPC-STRATUM] Arweave anchor skipped (network/turbo unavailable)"
+                    );
                 }
             }
         }
@@ -789,6 +816,7 @@ impl DarkfiNode {
                                     randomx_key: new_randomx_key,
                                     coin_merkle_root: [0u8; 32],
                                     nullifier_root: [0u8; 32],
+                                    anchor_tx_id: [0u8; 32],
                                 };
                                 let new_blob_data = new_mining_header.to_mining_blob();
                                 let new_blob = hex::encode(&new_blob_data);

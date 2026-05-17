@@ -560,3 +560,381 @@ impl Config {
         self.aztec.is_valid()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---------- EthereumConfig ----------
+    #[test]
+    fn test_ethereum_config_is_valid() {
+        let cfg = EthereumConfig {
+            enabled: true,
+            node_url: "https://infura.io".to_string(),
+            relayer_private_key: "0xABCD".to_string(),
+            ..Default::default()
+        };
+        assert!(cfg.is_valid());
+    }
+
+    #[test]
+    fn test_ethereum_config_is_valid_disabled() {
+        let cfg = EthereumConfig { enabled: false, ..Default::default() };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_ethereum_config_is_valid_empty_url() {
+        let cfg = EthereumConfig {
+            enabled: true,
+            node_url: "".to_string(),
+            relayer_private_key: "0xABCD".to_string(),
+            ..Default::default()
+        };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_ethereum_config_is_valid_empty_key() {
+        let cfg = EthereumConfig {
+            enabled: true,
+            node_url: "https://infura.io".to_string(),
+            relayer_private_key: "".to_string(),
+            ..Default::default()
+        };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_ethereum_config_default() {
+        let cfg = EthereumConfig::default();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.max_gas_gwei, 50);
+        assert_eq!(cfg.max_gas, 21000);
+    }
+
+    // ---------- MoneroConfig ----------
+    #[test]
+    fn test_monero_config_is_valid() {
+        let cfg = MoneroConfig {
+            enabled: true,
+            wallet_rpc_url: "http://127.0.0.1:18083".to_string(),
+            node_rpc_url: "http://127.0.0.1:18081".to_string(),
+            fee_address: "addr".to_string(),
+            ..Default::default()
+        };
+        assert!(cfg.is_valid());
+    }
+
+    #[test]
+    fn test_monero_config_is_valid_disabled() {
+        let cfg = MoneroConfig { enabled: false, ..Default::default() };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_monero_config_is_valid_missing_fields() {
+        let cfg = MoneroConfig {
+            enabled: true,
+            wallet_rpc_url: "".to_string(),
+            node_rpc_url: "http://127.0.0.1:18081".to_string(),
+            fee_address: "addr".to_string(),
+            ..Default::default()
+        };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_monero_config_is_valid_no_fee_address() {
+        let cfg = MoneroConfig {
+            enabled: true,
+            wallet_rpc_url: "http://url".to_string(),
+            node_rpc_url: "http://url".to_string(),
+            fee_address: "".to_string(),
+            ..Default::default()
+        };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_monero_config_default() {
+        let cfg = MoneroConfig::default();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.min_confirmations, 10);
+    }
+
+    // ---------- ZcashConfig ----------
+    #[test]
+    fn test_zcash_config_is_valid() {
+        let cfg = ZcashConfig {
+            enabled: true,
+            node_rpc_url: "http://127.0.0.1:8232".to_string(),
+            ..Default::default()
+        };
+        assert!(cfg.is_valid());
+    }
+
+    #[test]
+    fn test_zcash_config_is_valid_disabled() {
+        let cfg = ZcashConfig { enabled: false, ..Default::default() };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_zcash_config_is_valid_empty_url() {
+        let cfg = ZcashConfig { enabled: true, node_rpc_url: "".to_string(), ..Default::default() };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_zcash_config_default() {
+        let cfg = ZcashConfig::default();
+        assert!(!cfg.enabled);
+        assert!(!cfg.shielded_pool);
+        assert_eq!(cfg.min_confirmations, 10);
+    }
+
+    // ---------- LitecoinConfig ----------
+    #[test]
+    fn test_litecoin_config_is_valid() {
+        let cfg = LitecoinConfig {
+            enabled: true,
+            node_rpc_url: "http://url".to_string(),
+            rpc_user: "user".to_string(),
+            ..Default::default()
+        };
+        assert!(cfg.is_valid());
+    }
+
+    #[test]
+    fn test_litecoin_config_is_valid_disabled() {
+        let cfg = LitecoinConfig { enabled: false, ..Default::default() };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_litecoin_config_is_valid_empty_user() {
+        let cfg = LitecoinConfig {
+            enabled: true,
+            node_rpc_url: "http://url".to_string(),
+            rpc_user: "".to_string(),
+            ..Default::default()
+        };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_litecoin_config_default() {
+        let cfg = LitecoinConfig::default();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.min_confirmations, 6);
+    }
+
+    // ---------- AztecConfig ----------
+    #[test]
+    fn test_aztec_config_is_valid() {
+        let cfg = AztecConfig {
+            enabled: true,
+            rollup_address: "0xRollup".to_string(),
+            sequencer_url: "https://aztec.network".to_string(),
+            ..Default::default()
+        };
+        assert!(cfg.is_valid());
+    }
+
+    #[test]
+    fn test_aztec_config_is_valid_disabled() {
+        let cfg = AztecConfig { enabled: false, ..Default::default() };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_aztec_config_is_valid_missing_fields() {
+        let cfg = AztecConfig {
+            enabled: true,
+            rollup_address: "".to_string(),
+            sequencer_url: "https://aztec.network".to_string(),
+            ..Default::default()
+        };
+        assert!(!cfg.is_valid());
+    }
+
+    #[test]
+    fn test_aztec_config_default() {
+        let cfg = AztecConfig::default();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.min_confirmations, 5);
+    }
+
+    // ---------- RelayerSettings ----------
+    #[test]
+    fn test_relayer_settings_default() {
+        let cfg = RelayerSettings::default();
+        assert_eq!(cfg.timeout_blocks, 100);
+        assert_eq!(cfg.fee_percentage, 1);
+        assert!(cfg.log_file.is_none());
+    }
+
+    // ---------- FeedMode ----------
+    #[test]
+    fn test_feed_mode_default() {
+        assert_eq!(FeedMode::default(), FeedMode::Standard);
+    }
+
+    #[test]
+    fn test_feed_mode_deserialize_standard() {
+        let toml_str = "type = \"standard\"";
+        let mode: FeedMode = toml::from_str(toml_str).unwrap();
+        assert_eq!(mode, FeedMode::Standard);
+    }
+
+    #[test]
+    fn test_feed_mode_deserialize_guaranteed() {
+        let toml_str = "type = \"guaranteed\"\nvalue = { refund_premium_bp = 500 }";
+        let mode: FeedMode = toml::from_str(toml_str).unwrap();
+        assert_eq!(mode, FeedMode::Guaranteed { refund_premium_bp: 500 });
+    }
+
+    // ---------- StakeConfig ----------
+    #[test]
+    fn test_stake_config_default() {
+        let cfg = StakeConfig::default();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.dai_amount, 0);
+        assert_eq!(cfg.nether_amount, 0);
+        assert_eq!(cfg.min_stake, 1000);
+        assert_eq!(cfg.max_withdrawal, 10000);
+    }
+
+    // ---------- PoolConfig ----------
+    #[test]
+    fn test_pool_config_default() {
+        let cfg = PoolConfig::default();
+        assert!(!cfg.enabled);
+        assert!(cfg.pool_id.is_none());
+        assert_eq!(cfg.min_pool_members, 1);
+        assert_eq!(cfg.max_pool_coverage, 100_000);
+    }
+
+    // ---------- CapitalDeployerConfig ----------
+    #[test]
+    fn test_capital_deployer_config_default() {
+        let cfg = CapitalDeployerConfig::default();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.min_deploy, 1000);
+        assert_eq!(cfg.max_deploy, 100_000);
+        assert_eq!(cfg.deployer_cut_bp, 1500);
+    }
+
+    // ---------- BettingConfig ----------
+    #[test]
+    fn test_betting_config_default() {
+        let cfg = BettingConfig::default();
+        assert!(!cfg.enabled);
+        assert!(cfg.accept_bets);
+        assert_eq!(cfg.max_bet_amount, 1000);
+    }
+
+    // ---------- DarkFiConfig ----------
+    #[test]
+    fn test_darkfi_config_default() {
+        let cfg = DarkFiConfig::default();
+        assert_eq!(cfg.darkfid_url, "http://127.0.0.1:8543");
+        assert_eq!(cfg.poll_interval_secs, 10);
+        assert_eq!(cfg.max_concurrent_withdrawals, 10);
+    }
+
+    // ---------- Config validate ----------
+    fn default_config() -> Config {
+        Config {
+            darkfi: DarkFiConfig::default(),
+            ethereum: EthereumConfig::default(),
+            monero: MoneroConfig::default(),
+            zcash: ZcashConfig::default(),
+            litecoin: LitecoinConfig::default(),
+            aztec: AztecConfig::default(),
+            relayer: RelayerSettings::default(),
+            stake: StakeConfig::default(),
+            feed: FeedMode::default(),
+            pool: PoolConfig::default(),
+            capital_deployer: CapitalDeployerConfig::default(),
+            betting: BettingConfig::default(),
+        }
+    }
+
+    #[test]
+    fn test_config_validate_no_chains_enabled() {
+        let cfg = default_config();
+        let errors = cfg.validate();
+        assert!(!errors.is_empty());
+        assert!(errors.iter().any(|e| e.to_lowercase().contains("at least one chain")));
+    }
+
+    #[test]
+    fn test_config_validate_one_chain_enabled() {
+        let mut cfg = default_config();
+        cfg.ethereum = EthereumConfig {
+            enabled: true,
+            node_url: "https://infura.io".to_string(),
+            relayer_private_key: "0xABCD".to_string(),
+            ..Default::default()
+        };
+        let errors = cfg.validate();
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_config_is_ethereum_enabled() {
+        let mut cfg = default_config();
+        assert!(!cfg.is_ethereum_enabled());
+
+        cfg.ethereum.enabled = true;
+        cfg.ethereum.node_url = "https://infura.io".to_string();
+        cfg.ethereum.relayer_private_key = "0xABCD".to_string();
+        assert!(cfg.is_ethereum_enabled());
+    }
+
+    #[test]
+    fn test_config_is_monero_enabled() {
+        let mut cfg = default_config();
+        assert!(!cfg.is_monero_enabled());
+
+        cfg.monero.enabled = true;
+        cfg.monero.wallet_rpc_url = "http://url".to_string();
+        cfg.monero.node_rpc_url = "http://url".to_string();
+        cfg.monero.fee_address = "addr".to_string();
+        assert!(cfg.is_monero_enabled());
+    }
+
+    #[test]
+    fn test_config_is_zcash_enabled() {
+        let mut cfg = default_config();
+        assert!(!cfg.is_zcash_enabled());
+
+        cfg.zcash.enabled = true;
+        cfg.zcash.node_rpc_url = "http://url".to_string();
+        assert!(cfg.is_zcash_enabled());
+    }
+
+    #[test]
+    fn test_config_is_litecoin_enabled() {
+        let mut cfg = default_config();
+        assert!(!cfg.is_litecoin_enabled());
+
+        cfg.litecoin.enabled = true;
+        cfg.litecoin.node_rpc_url = "http://url".to_string();
+        cfg.litecoin.rpc_user = "user".to_string();
+        assert!(cfg.is_litecoin_enabled());
+    }
+
+    #[test]
+    fn test_config_is_aztec_enabled() {
+        let mut cfg = default_config();
+        assert!(!cfg.is_aztec_enabled());
+
+        cfg.aztec.enabled = true;
+        cfg.aztec.rollup_address = "0xRollup".to_string();
+        cfg.aztec.sequencer_url = "https://aztec".to_string();
+        assert!(cfg.is_aztec_enabled());
+    }
+}

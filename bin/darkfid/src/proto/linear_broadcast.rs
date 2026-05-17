@@ -49,6 +49,7 @@ use dwow::{
     util::time::NanoTimestamp,
     Result,
 };
+use dwow_linear::caribina::verify_anchor;
 use dwow_linear::LinearBlockchain;
 use dwow_serial::{
     deserialize_async, serialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite,
@@ -254,6 +255,36 @@ async fn handle_receive_block(
         if !pow_valid {
             handler.send_action(channel, ProtocolGenericAction::Skip).await;
             continue;
+        }
+
+        // Verify Caribina anchor (if present)
+        let anchor = &msg.block.header.anchor_tx_id;
+        if *anchor != [0u8; 32] {
+            let mut hash_bytes = [0u8; 32];
+            hash_bytes.copy_from_slice(block_hash.as_bytes());
+            match verify_anchor(
+                anchor,
+                &hash_bytes,
+                msg.block.header.timestamp,
+                msg.block.header.height,
+            ) {
+                Ok(()) => {
+                    tracing::info!(
+                        target: "darkfid::proto::linear_broadcast",
+                        "Anchor verified for block {} at height {}",
+                        block_hash, block_height
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "darkfid::proto::linear_broadcast",
+                        "Anchor verification failed for block {} at height {}: {}",
+                        block_hash, block_height, e
+                    );
+                    handler.send_action(channel, ProtocolGenericAction::Skip).await;
+                    continue;
+                }
+            }
         }
 
         // Insert block into blockchain
