@@ -213,9 +213,9 @@ cargo run -p dwowd -- --network darkwow-testnet
 
 | Level | Scope | Command |
 |-------|-------|---------|
-| 1 — Lightweight | 113 unit tests (universal_relayer) | `cargo test -p universal_relayer` |
-| 2 — Heavyweight | Bridge lifecycle with ZK proofs | `cargo test --release -p dwowd test_relayer_lifecycle_heavyweight` |
-| 3 — Localnet | Multi-node Docker bridge pipeline | `test_pipeline.sh --mode bridge` |
+| 1 — Lightweight | 113 unit tests (universal_relayer) | `./bin/universal_relayer/test_relayer_lightweight.sh` |
+| 2 — Heavyweight | Bridge lifecycle with ZK proofs | `./bin/universal_relayer/test_relayer_heavyweight.sh` |
+| 3 — Localnet | Multi-node Docker bridge pipeline | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode bridge` |
 
 > **USE AT YOUR OWN RISK.** No third-party audit. May 2026 internal hardening
 > addressed 17 failure modes across state machine, economic, identity/attestation,
