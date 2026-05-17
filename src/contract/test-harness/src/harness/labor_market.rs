@@ -409,6 +409,9 @@ impl LaborMarketHarness {
             job_id: public_inputs.job_id,
             employer_pub_x: public_inputs.employer_pub_x,
             employer_pub_y: public_inputs.employer_pub_y,
+            milestone_count,
+            completed_payment,
+            refund_amount,
             spent_nullifier: public_inputs.spent_nullifier,
         };
 

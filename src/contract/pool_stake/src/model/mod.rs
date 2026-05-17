@@ -50,6 +50,10 @@ pub struct PoolStakeRegistry {
     pub operator_fee_bp: u32,
     /// Block when pool was created
     pub created_at: u64,
+    /// Total amount slashed from this pool
+    pub total_slashed: u64,
+    /// Number of slash events in this pool
+    pub pool_slash_count: u64,
     /// Whether pool is active
     pub is_active: bool,
 }
@@ -79,6 +83,8 @@ pub struct PoolMemberStake {
     pub created_at: u64,
     /// Block when leave was requested (if requested)
     pub leave_requested_at: Option<u64>,
+    /// Number of times this member has been slashed
+    pub slash_count: u64,
     /// Whether this stake is active
     pub is_active: bool,
 }
@@ -296,4 +302,25 @@ pub struct UpdatePoolConfigUpdateV1 {
     pub pool_id: pallas::Base,
     pub max_coverage_ratio: u32,
     pub operator_fee_bp: u32,
+}
+
+// ============================================================================
+// REBALANCE POOL SHARES (Phase 2d hardening)
+// ============================================================================
+
+/// Parameters for rebalancing pool member shares based on reputation
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RebalancePoolSharesParamsV1 {
+    /// Pool ID to rebalance
+    pub pool_id: pallas::Base,
+    /// Member stake IDs to rebalance (caller provides these since DB lacks iteration)
+    pub member_ids: Vec<pallas::Base>,
+}
+
+/// Update returned after rebalancing pool shares
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RebalancePoolSharesUpdateV1 {
+    pub pool_id: pallas::Base,
+    pub members_rebalanced: u64,
+    pub total_share_bp: u32,
 }

@@ -117,6 +117,8 @@
 //! | CreateClaimV1 | 0x03 | Generate claim from credential (Level 0 zk_only) |
 //! | CreateClaimV1L1 | 0x05 | Generate claim with public predicate result |
 //! | VerifyClaimV1 | 0x04 | Verify a claim (on-chain) |
+//! | RegisterIssuerV1 | 0x0e | Register a trusted credential issuer |
+//! | UpdateReputationV1 | 0x0f | Update a relayer's reputation score |
 //!
 //! ## Future Expansion
 //!
@@ -144,6 +146,8 @@ pub enum IdentityFunction {
     VerifyCapabilityV1 = 0x0b,
     RevokeCapabilityV1 = 0x0c,
     CreateClaimDAGV1 = 0x0d,
+    RegisterIssuerV1 = 0x0e,
+    UpdateReputationV1 = 0x0f,
 }
 
 impl TryFrom<u8> for IdentityFunction {
@@ -164,6 +168,8 @@ impl TryFrom<u8> for IdentityFunction {
             0x0b => Ok(Self::VerifyCapabilityV1),
             0x0c => Ok(Self::RevokeCapabilityV1),
             0x0d => Ok(Self::CreateClaimDAGV1),
+            0x0e => Ok(Self::RegisterIssuerV1),
+            0x0f => Ok(Self::UpdateReputationV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }
@@ -199,6 +205,8 @@ pub const IDENTITY_CONTRACT_CONFIG_TREE: &str = "config";
 pub const IDENTITY_CONTRACT_CAPABILITIES_TREE: &str = "capabilities";
 /// Tree for issued capability records (holder -> capability mapping)
 pub const IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE: &str = "capability_issuances";
+/// Tree for relayer reputation records
+pub const IDENTITY_CONTRACT_REPUTATIONS_TREE: &str = "reputations";
 
 // ============================================================================
 // KEYS

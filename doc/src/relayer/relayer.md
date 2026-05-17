@@ -109,13 +109,13 @@ See [Relayer Economics](relayer_economics.md) for the full economic model.
 5. Timeout handling (if relayer fails):
    ├── User waits for timeout (100 blocks)
    ├── User calls CancelWithdrawV1
-   ├── OR another relayer reassigns via ReassignWithdrawalV1 (0x09)
+   ├── OR another REGISTERED relayer reassigns via ReassignWithdrawalV1 (0x09)
    └── Funds returned to user's DarkWow wallet; original relayer partially slashed
 ```
 
 ## Hardening Summary (May 2026)
 
-The bridge and relayer_endowment contracts underwent a security hardening pass in May 2026. 14 of 17 identified failure modes have been fixed. Key improvements relevant to relayer operators:
+The bridge, relayer_endowment, identity, attestation, and pool_stake contracts underwent a security hardening pass in May 2026. All 17 identified failure modes have been fixed. Key improvements relevant to relayer operators:
 
 | Feature | What Changed | Impact |
 |---------|-------------|--------|
@@ -124,8 +124,13 @@ The bridge and relayer_endowment contracts underwent a security hardening pass i
 | **Withdrawal Reassignment** | Stuck withdrawals can be claimed by other relayers | Multi-relayer redundancy; original relayer partially slashed |
 | **Circuit Breaker** | `GUARANTEED_PENDING` capped at `MAX_GUARANTEED_TOTAL` | Prevents capital exhaustion |
 | **Force Settlement** | Backers can force fee settlement after 1000-block inactivity | Protects endowment backers from evasion |
+| **Relayer Registration** | `RegisterRelayerV1` — relayers register on-chain identity; `AcceptWithdrawalV1` — explicit withdrawal assignment | Prevents anonymous relayers; withdrawal commitment with fee binding |
+| **Per-Member Slash Tracking** | `PoolMemberStake.slash_count` incremented on each slash event; `RebalancePoolSharesV1` adjusts shares by performance | Good relayers gain pool share, bad relayers lose it — no more shared punishment |
+| **Reputation-Gated Capital** | `DeployCapitalV1` accepts `min_success_rate_bp` and `max_slash_count` thresholds | Backers only fund relayers with proven track records |
+| **Fee Schedule Commitments** | `CommitFeeScheduleV1` — relayers publish fees on-chain via attestation; `RegisterFeeScheduleV1` — bridge-side registration | Users discover relayer fees before committing funds |
+| **Slash Attestations** | `AttestSlashV1` ZK circuit records slash events as privacy-preserving attestations | Verifiable reputation without revealing specific withdrawal details |
 
-See [Security Audit](../contract/audit.md) for full findings and residual risks.
+See [Security Audit](../../contract/audit.md) for full findings and residual risks.
 
 ## Hardware Requirements
 
@@ -485,12 +490,16 @@ curl -X POST http://127.0.0.1:8543 -d '{
 │  ✗ CANNOT steal funds (no signing authority for deposits)      │
 │  ✗ CANNOT double-spend (nullifiers prevent this)                │
 │                                                                 │
-│  Economic Incentives (Updated May 2026):                           │
+│  Economic Incentives (May 2026 hardening):                          │
 │  • Earn fees on successful withdrawals                           │
 │  • Get proportionally slashed if withdrawal times out             │
 │  • Fee caps prevent monopoly pricing (MAX_FEE_BP = 10%)          │
 │  • Circuit breaker prevents over-acceptance of guaranteed txs    │
 │  • Stuck withdrawals can be reassigned to other relayers          │
+│  • On-chain registration prevents anonymous relayers              │
+│  • Per-member slash tracking incentivizes individual performance │
+│  • Reputation-gated capital deployment rewards strong track records│
+│  • Fee schedule commitments enable verifiable fee discovery      │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```

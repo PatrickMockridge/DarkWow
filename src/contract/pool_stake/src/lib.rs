@@ -78,6 +78,8 @@ pub enum PoolStakeFunction {
     ClaimFeesV1 = 0x06,
     /// Update pool configuration
     UpdatePoolConfigV1 = 0x07,
+    /// Rebalance pool member shares based on attested performance
+    RebalancePoolSharesV1 = 0x08,
 }
 
 impl TryFrom<u8> for PoolStakeFunction {
@@ -92,6 +94,7 @@ impl TryFrom<u8> for PoolStakeFunction {
             0x05 => Ok(Self::SlashCoverageV1),
             0x06 => Ok(Self::ClaimFeesV1),
             0x07 => Ok(Self::UpdatePoolConfigV1),
+            0x08 => Ok(Self::RebalancePoolSharesV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }

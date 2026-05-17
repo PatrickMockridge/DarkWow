@@ -1,0 +1,20 @@
+k = 11;
+field = "pallas";
+
+constant "CommitFeeSchedule" {
+}
+
+witness "CommitFeeSchedule" {
+    Base attestor_pub_x,
+    Base attestor_pub_y,
+    Base base_fee_bp,
+    Base guaranteed_premium_bp,
+    Base max_amount,
+    Base min_amount,
+    Base nonce,
+}
+
+circuit "CommitFeeSchedule" {
+    constrain_instance(attestor_pub_x);
+    constrain_instance(attestor_pub_y);
+}

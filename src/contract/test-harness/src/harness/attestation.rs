@@ -255,6 +255,8 @@ impl AttestationHarness {
             attestation_id,
             evidence_commitment: evidence,
             revealed_result: public_inputs.revealed_result,
+            attestation_data,
+            revocation_root,
         };
 
         let mut call_data = vec![0x03];
@@ -345,12 +347,15 @@ impl AttestationHarness {
         let params = DelegateAttestationParamsV1 {
             proof: proof.as_ref().to_vec(),
             delegation_id: public_inputs.delegation_id,
+            parent_id,
             delegator_pub_x: public_inputs.delegator_pub_x,
             delegator_pub_y: public_inputs.delegator_pub_y,
             delegatee_pub_x: public_inputs.delegatee_pub_x,
             delegatee_pub_y: public_inputs.delegatee_pub_y,
+            delegation_type,
             max_ratio: public_inputs.max_ratio,
             revocation_root: public_inputs.revocation_root,
+            chain_root,
             chain_depth: public_inputs.current_depth,
             max_depth: public_inputs.max_depth,
             delegator_stake: public_inputs.delegator_stake,

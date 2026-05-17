@@ -685,3 +685,73 @@ pub struct CreateClaimDAGUpdateV1 {
     pub path_index: u32,
     pub predicate_result: u8,
 }
+
+// ============================================================================
+// ISSUER REGISTRATION (Phase 2d hardening)
+// ============================================================================
+
+/// Register issuer parameters
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RegisterIssuerParams {
+    /// Issuer's public key
+    pub issuer_pub: [u8; 32],
+    /// Issuer name/label
+    pub name: Vec<u8>,
+    /// Authorized schema hashes (empty = all schemas allowed)
+    pub authorized_schemas: Vec<[u8; 32]>,
+}
+
+/// Register issuer update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RegisterIssuerUpdateV1 {
+    pub issuer_id: [u8; 32],
+    pub name: Vec<u8>,
+    pub authorized_schemas: Vec<[u8; 32]>,
+    pub registered_at: u64,
+}
+
+// ============================================================================
+// REPUTATION (Phase 2d hardening)
+// ============================================================================
+
+/// Update relayer reputation parameters
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct UpdateReputationParams {
+    /// Issuer's public key (must be a registered issuer)
+    pub issuer_pub: [u8; 32],
+    /// Relayer's public key
+    pub relayer_pub: [u8; 32],
+    /// Total slash count
+    pub slash_count: u64,
+    /// Total successful withdrawals
+    pub success_count: u64,
+    /// Total volume processed
+    pub total_volume: u64,
+    /// Settlement frequency (blocks between settlements, 0 = unknown)
+    pub settlement_frequency: u64,
+}
+
+/// Reputation record stored on-chain
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ReputationRecord {
+    pub relayer_pub: [u8; 32],
+    pub issuer_pub: [u8; 32],
+    pub slash_count: u64,
+    pub success_count: u64,
+    pub total_volume: u64,
+    pub settlement_frequency: u64,
+    pub last_updated: u64,
+}
+
+/// Update reputation update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct UpdateReputationUpdateV1 {
+    pub reputation_id: [u8; 32],
+    pub relayer_pub: [u8; 32],
+    pub issuer_pub: [u8; 32],
+    pub slash_count: u64,
+    pub success_count: u64,
+    pub total_volume: u64,
+    pub settlement_frequency: u64,
+    pub last_updated: u64,
+}

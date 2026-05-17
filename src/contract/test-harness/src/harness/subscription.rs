@@ -288,8 +288,11 @@ impl SubscriptionHarness {
 
         let params = UpdateUsageParamsV1 {
             subscription_id,
+            subscriber_pub_x,
+            subscriber_pub_y,
             subscriber_secret,
             current_block,
+            nonce,
             spent_nullifier,
             merkle_proof,
         };

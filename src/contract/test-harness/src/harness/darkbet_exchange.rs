@@ -227,6 +227,7 @@ impl DarkbetExchangeHarness {
         let params = ClaimWinningsParamsV1 {
             position_id,
             market_id,
+            winning_outcome,
             owner,
             proof: vec![],
         };

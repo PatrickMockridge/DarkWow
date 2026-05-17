@@ -207,7 +207,7 @@ impl DarkToshiDiceHarness {
             create_settle_bet_v1_proof(&self.settle_bet_zkbin, &self.settle_bet_pk, &input)?;
 
         // Build SettleBetParamsV1 for call_data
-        let params = SettleBetParamsV1 { bet_id, proof: vec![] };
+        let params = SettleBetParamsV1 { bet_id, proof: vec![], roll_hash: pallas::Base::zero() };
 
         let mut call_data = vec![];
         params.encode(&mut call_data)?;

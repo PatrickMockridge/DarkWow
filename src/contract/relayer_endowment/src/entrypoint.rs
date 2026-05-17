@@ -295,6 +295,8 @@ fn apply_initialize_update(cid: ContractId, update: InitializeUpdateV1) -> Contr
         last_settlement_height: update.created_at,
         total_collected_fees_log: 0,
         is_active: true,
+        total_slashed: 0,
+        total_successful: 0,
     };
 
     wasm::db::db_set(
@@ -347,6 +349,37 @@ fn process_deploy_capital_instruction(
             Some(data) => deserialize(&data)?,
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
         };
+
+    // Reputation check (Phase 2d hardening): backers can set minimum thresholds
+    if let Some(max_slash) = params.max_slash_count {
+        if account.total_slashed > max_slash {
+            msg!(
+                "[relayer_endowment::deploy] Reputation check failed: total_slashed {} > max_slash_count {}",
+                account.total_slashed, max_slash
+            );
+            return Err(RelayerEndowmentError::ReputationCheckFailed(
+                format!("total_slashed {} exceeds max {}", account.total_slashed, max_slash)
+            ).into());
+        }
+    }
+
+    if let Some(min_rate) = params.min_success_rate_bp {
+        let total_events = account.total_successful + account.total_slashed;
+        let success_rate = if total_events > 0 {
+            ((account.total_successful as u128 * 10000) / total_events as u128) as u64
+        } else {
+            10000 // No history yet, assume perfect
+        };
+        if success_rate < min_rate {
+            msg!(
+                "[relayer_endowment::deploy] Reputation check failed: success_rate {} < min_success_rate_bp {}",
+                success_rate, min_rate
+            );
+            return Err(RelayerEndowmentError::ReputationCheckFailed(
+                format!("success_rate {} below min {}", success_rate, min_rate)
+            ).into());
+        }
+    }
 
     // Generate deployment ID
     // Use signature_public from params as the backer's public key

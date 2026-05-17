@@ -94,6 +94,15 @@ pub enum BridgeError {
 
     #[error("Fee exceeds maximum allowed cap")]
     FeeExceedsCap,
+
+    #[error("Relayer already registered")]
+    RelayerAlreadyRegistered,
+
+    #[error("Relayer not registered")]
+    RelayerNotRegistered,
+
+    #[error("Fee schedule not found")]
+    FeeScheduleNotFound,
 }
 
 impl From<BridgeError> for ContractError {
@@ -122,6 +131,9 @@ impl From<BridgeError> for ContractError {
             BridgeError::WithdrawalNotFound => Self::Custom(21),
             BridgeError::InsufficientGuaranteeCoverage => Self::Custom(22),
             BridgeError::FeeExceedsCap => Self::Custom(23),
+            BridgeError::RelayerAlreadyRegistered => Self::Custom(24),
+            BridgeError::RelayerNotRegistered => Self::Custom(25),
+            BridgeError::FeeScheduleNotFound => Self::Custom(26),
         }
     }
 }

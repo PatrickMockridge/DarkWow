@@ -49,7 +49,9 @@ use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     model::{
+        AttestSlashParamsV1, AttestSlashUpdateV1,
         Attestation, AttestationState, Claim, ClaimState, Predicate,
+        CommitFeeScheduleParamsV1, CommitFeeScheduleUpdateV1,
         ConsumeClaimParamsV1, ConsumeClaimUpdateV1, CreateAttestationParamsV1,
         CreateAttestationUpdateV1, CreateClaimParamsV1, CreateClaimUpdateV1,
         ExpireAttestationParamsV1, ExpireAttestationUpdateV1, RevokeAttestationParamsV1,
@@ -63,6 +65,8 @@ use crate::{
     ATTESTATION_CONTRACT_CLAIMS_TREE, ATTESTATION_CONTRACT_DELEGATIONS_TREE,
     ATTESTATION_CONTRACT_INDEX_TREE,
     ATTESTATION_CONTRACT_NULLIFIERS_TREE, ATTESTATION_CONTRACT_RATE_LIMIT_TREE,
+    ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V1,
+    ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V1,
     ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1,
     ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1,
     ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1,
@@ -96,6 +100,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let update_delegation_v1_bincode = include_bytes!("../proof/update_delegation_v1.zk.bin");
     let verify_chain_v1_bincode = include_bytes!("../proof/verify_chain_v1.zk.bin");
     let verify_claim_v1_bincode = include_bytes!("../proof/verify_claim_v1.zk.bin");
+    let attest_slash_v1_bincode = include_bytes!("../proof/attest_slash_v1.zk.bin");
+    let commit_fee_schedule_v1_bincode = include_bytes!("../proof/commit_fee_schedule_v1.zk.bin");
 
     wasm::db::zkas_db_set(&check_not_revoked_v1_bincode[..])?;
     wasm::db::zkas_db_set(&consume_claim_v1_bincode[..])?;
@@ -105,6 +111,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&update_delegation_v1_bincode[..])?;
     wasm::db::zkas_db_set(&verify_chain_v1_bincode[..])?;
     wasm::db::zkas_db_set(&verify_claim_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&attest_slash_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&commit_fee_schedule_v1_bincode[..])?;
 
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
@@ -239,6 +247,20 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 ],
             ));
         }
+        AttestationFunction::AttestSlashV1 => {
+            let params: AttestSlashParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V1.to_string(),
+                vec![params.relayer_pub_x, params.relayer_pub_y],
+            ));
+        }
+        AttestationFunction::CommitFeeScheduleV1 => {
+            let params: CommitFeeScheduleParamsV1 = deserialize(&self_.data[1..])?;
+            zk_public_inputs.push((
+                ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V1.to_string(),
+                vec![params.attestor_pub_x, params.attestor_pub_y],
+            ));
+        }
         // RevokeAttestationV1, ExpireAttestationV1, ValidateClaimV1
         // have no ZK circuits; return empty metadata.
         _ => {}
@@ -306,6 +328,14 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         AttestationFunction::UpdateDelegationV1 => {
             let params: UpdateDelegationParamsV1 = deserialize(&self_.data[1..])?;
             update_delegation_v1(cid, params)?
+        }
+        AttestationFunction::AttestSlashV1 => {
+            let params: AttestSlashParamsV1 = deserialize(&self_.data[1..])?;
+            attest_slash_v1(cid, params)?
+        }
+        AttestationFunction::CommitFeeScheduleV1 => {
+            let params: CommitFeeScheduleParamsV1 = deserialize(&self_.data[1..])?;
+            commit_fee_schedule_v1(cid, params)?
         }
     };
 
@@ -933,6 +963,131 @@ fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> Re
 }
 
 // ============================================================================
+// ATTEST SLASH (Phase 2d hardening)
+// ============================================================================
+
+fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u8>, ContractError> {
+    msg!("[attestation::attest_slash_v1] Attesting slash event: amount={}, block={}", params.slash_amount, params.block_height);
+
+    // Compute attestation ID: poseidon_hash(relayer_x, relayer_y, slash_amount, withdrawal_id)
+    let attestation_id = poseidon_hash([
+        params.relayer_pub_x,
+        params.relayer_pub_y,
+        pallas::Base::from(params.slash_amount),
+        params.withdrawal_id,
+    ]);
+
+    // Check attestation doesn't already exist
+    let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
+    if wasm::db::db_contains_key(attestations_db, &serialize(&attestation_id))? {
+        msg!("[attestation::attest_slash_v1] Slash attestation already exists (idempotent)");
+        return Ok(serialize(&AttestSlashUpdateV1 {
+            attestation_id,
+            slash_amount: params.slash_amount,
+            withdrawal_id: params.withdrawal_id,
+            block_height: params.block_height,
+        }))
+    }
+
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+
+    // Create attestation record for the slash event
+    let attestation = Attestation {
+        id: attestation_id,
+        attestor_pub_x: params.relayer_pub_x,
+        attestor_pub_y: params.relayer_pub_y,
+        attestor_secret: pallas::Base::zero(),
+        claim_type: Predicate::Custom,
+        claim_data: vec![
+            pallas::Base::from(params.slash_amount),
+            params.withdrawal_id,
+        ],
+        metadata: vec![],
+        state: AttestationState::Active,
+        created_at: current_block,
+        expires_at: None,
+    };
+
+    // Store attestation
+    wasm::db::db_set(attestations_db, &serialize(&attestation_id), &serialize(&attestation))?;
+
+    // Index by claim type for efficient queries
+    let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
+    let index_key = serialize(&(Predicate::Custom, attestation_id));
+    wasm::db::db_set(index_db, &index_key, &[])?;
+
+    msg!("[attestation::attest_slash_v1] Slash attested: id={:?}", attestation_id);
+
+    Ok(serialize(&AttestSlashUpdateV1 {
+        attestation_id,
+        slash_amount: params.slash_amount,
+        withdrawal_id: params.withdrawal_id,
+        block_height: params.block_height,
+    }))
+}
+
+// ============================================================================
+// COMMIT FEE SCHEDULE (Phase 3 hardening)
+// ============================================================================
+
+fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) -> Result<Vec<u8>, ContractError> {
+    msg!("[attestation::commit_fee_schedule_v1] Committing fee schedule: base_fee_bp={}, premium_bp={}",
+        params.base_fee_bp, params.guaranteed_premium_bp);
+
+    // Compute attestation ID
+    let attestation_id = poseidon_hash([
+        params.attestor_pub_x,
+        params.attestor_pub_y,
+        pallas::Base::from(params.base_fee_bp),
+        pallas::Base::from(params.guaranteed_premium_bp),
+    ]);
+
+    // Check attestation doesn't already exist (update instead)
+    let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
+    if wasm::db::db_contains_key(attestations_db, &serialize(&attestation_id))? {
+        msg!("[attestation::commit_fee_schedule_v1] Fee schedule already committed — updating");
+    }
+
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+
+    let attestation = Attestation {
+        id: attestation_id,
+        attestor_pub_x: params.attestor_pub_x,
+        attestor_pub_y: params.attestor_pub_y,
+        attestor_secret: pallas::Base::zero(),
+        claim_type: Predicate::Custom,
+        claim_data: vec![
+            pallas::Base::from(params.base_fee_bp),
+            pallas::Base::from(params.guaranteed_premium_bp),
+            pallas::Base::from(params.max_amount),
+            pallas::Base::from(params.min_amount),
+        ],
+        metadata: params.metadata.clone(),
+        state: AttestationState::Active,
+        created_at: current_block,
+        expires_at: None,
+    };
+
+    // Store/update attestation
+    wasm::db::db_set(attestations_db, &serialize(&attestation_id), &serialize(&attestation))?;
+
+    // Index by claim type
+    let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
+    let index_key = serialize(&(Predicate::Custom, attestation_id));
+    wasm::db::db_set(index_db, &index_key, &[])?;
+
+    msg!("[attestation::commit_fee_schedule_v1] Fee schedule committed: id={:?}", attestation_id);
+
+    Ok(serialize(&CommitFeeScheduleUpdateV1 {
+        attestation_id,
+        base_fee_bp: params.base_fee_bp,
+        guaranteed_premium_bp: params.guaranteed_premium_bp,
+        max_amount: params.max_amount,
+        min_amount: params.min_amount,
+    }))
+}
+
+// ============================================================================
 // PROCESS UPDATE
 // ============================================================================
 
@@ -1020,6 +1175,22 @@ fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
             msg!(
                 "[attestation::process_update] UpdateDelegation: success={:?}",
                 update.success
+            );
+            Ok(())
+        }
+        AttestationFunction::AttestSlashV1 => {
+            let update: AttestSlashUpdateV1 = deserialize(&update_data[1..])?;
+            msg!(
+                "[attestation::process_update] AttestSlash: {:?}, amount={}",
+                update.attestation_id, update.slash_amount
+            );
+            Ok(())
+        }
+        AttestationFunction::CommitFeeScheduleV1 => {
+            let update: CommitFeeScheduleUpdateV1 = deserialize(&update_data[1..])?;
+            msg!(
+                "[attestation::process_update] CommitFeeSchedule: {:?}, base_fee_bp={}",
+                update.attestation_id, update.base_fee_bp
             );
             Ok(())
         }

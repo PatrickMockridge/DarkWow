@@ -521,15 +521,20 @@ The betting stake creates an additional economic layer:
 │                    On-Chain vs Off-Chain                               │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  ON-CHAIN (DarkWow Contract) — Updated May 2026:                     │
+│  ON-CHAIN (DarkWow Contract) — Updated May 2026 (Phase 2d):         │
 │  ├── Relayer registry (stake, status, reputation)                   │
+│  ├── Relayer identity registration (RegisterRelayerV1)              │
 │  ├── Stake locking/unlocking                                       │
 │  ├── Withdrawal state machine (with reassignment)                  │
 │  ├── Claim processing (proportional slashing)                      │
 │  ├── Fee cap enforcement (MAX_FEE_BP)                               │
 │  ├── Circuit breaker (GUARANTEED_PENDING counter)                   │
 │  ├── Force settlement (backer-initiated fee distribution)           │
-│  └── Pool management (reputation tracking planned)                  │
+│  ├── Pool management with per-member slash tracking                 │
+│  ├── Reputation-gated capital deployment (min_success_rate_bp,     │
+│  │   max_slash_count thresholds)                                    │
+│  ├── Fee schedule commitments via attestation (CommitFeeScheduleV1) │
+│  └── Slash attestations with ZK proofs (AttestSlashV1)             │
 │                                                                     │
 │  OFF-CHAIN (Relayer Operations):                                   │
 │  ├── Withdrawal execution (external chain)                         │
@@ -557,6 +562,14 @@ The betting stake creates an additional economic layer:
 │  ✓ BACKER PROTECTION — ForceSettleV1 after 1000-block timeout      │
 │  ✓ SLASH PROPORTIONALITY — Slash scales with withdrawal amount     │
 │  ✓ WITHDRAWAL REASSIGNMENT — ReassignWithdrawalV1 for stuck txs    │
+│  ✓ RELAYER IDENTITY — RegisterRelayerV1, register on-chain         │
+│  ✓ PER-MEMBER SLASH TRACKING — PoolMemberStake.slash_count,       │
+│    RebalancePoolSharesV1 adjusts shares by performance             │
+│  ✓ FEE DISCOVERY — CommitFeeScheduleV1 + RegisterFeeScheduleV1     │
+│  ✓ REPUTATION-GATED CAPITAL — DeployCapitalV1 accepts              │
+│    min_success_rate_bp and max_slash_count thresholds              │
+│  ✓ SLASH ATTESTATIONS — AttestSlashV1 ZK circuit for verifiable    │
+│    slash history with privacy protection                           │
 │                                                                     │
 │  STILL OPEN:                                                        │
 │                                                                     │
@@ -572,9 +585,9 @@ The betting stake creates an additional economic layer:
 │  4. POOL FORMATION                                                │
 │     How to prevent pool from being dominated by one actor?         │
 │                                                                     │
-│  5. REPUTATION WEIGHTING                                          │
-│     How much does past performance affect coverage limits?          │
-│     (Phase 2d planned — per-member reputation scoring)             │
+│  5. REPUTATION WEIGHTING (implemented, needs fine-tuning)          │
+│     Current formula: adjusted_bp = base_share / (1 + slash_count) │
+│     Future: integrate success_count, total_volume, frequency       │
 │                                                                     │
 │  6. MODE 2 PREMIUM CALCULATION                                     │
 │     Fixed premium or market-determined?                            │

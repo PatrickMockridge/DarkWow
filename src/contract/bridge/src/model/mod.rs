@@ -850,6 +850,101 @@ pub struct RelayerSlash {
     pub executed: bool,
 }
 
+// ============================================================================
+// RELAYER REGISTRY (Phase 2d hardening)
+// ============================================================================
+
+/// Parameters for registering a relayer with the bridge
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RegisterRelayerParams {
+    /// Relayer's public key
+    pub relayer_pub: [u8; 32],
+}
+
+/// Stored relayer info
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RelayerInfo {
+    pub pubkey: [u8; 32],
+    pub registered_at: u64,
+    pub total_slashed: u64,
+    pub total_withdrawals: u64,
+    pub total_successful: u64,
+    pub is_active: bool,
+    pub fee_schedule_id: Option<[u8; 32]>,
+}
+
+/// Register relayer update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RegisterRelayerUpdateV1 {
+    pub relayer_pub: [u8; 32],
+    pub registered_at: u64,
+}
+
+// ============================================================================
+// WITHDRAWAL ACCEPTANCE (Phase 2d hardening)
+// ============================================================================
+
+/// Parameters for a relayer accepting a pending withdrawal
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AcceptWithdrawalParams {
+    /// Nullifier of the withdrawal to accept
+    pub nullifier: IntentNullifier,
+    /// Relayer's public key
+    pub relayer_pub: [u8; 32],
+    /// Committed max fee in basis points (binding — exceeding = slashable)
+    pub max_fee_bp: u64,
+}
+
+/// Accept withdrawal update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AcceptWithdrawalUpdateV1 {
+    pub nullifier: IntentNullifier,
+    pub relayer_pub: [u8; 32],
+    pub max_fee_bp: u64,
+    pub accepted_at: u64,
+}
+
+// ============================================================================
+// REPUTATION VERIFICATION (Phase 2d hardening)
+// ============================================================================
+
+/// Parameters for verifying a relayer's reputation
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VerifyRelayerReputationParams {
+    /// Relayer's public key to check
+    pub relayer_pub: [u8; 32],
+}
+
+/// Reputation info returned to caller
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ReputationInfo {
+    pub slash_count: u64,
+    pub success_count: u64,
+    pub total_volume: u64,
+    pub settlement_frequency: u64,
+    pub is_registered: bool,
+}
+
+// ============================================================================
+// FEE SCHEDULE (Phase 3 hardening)
+// ============================================================================
+
+/// Parameters for registering a fee schedule
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RegisterFeeScheduleParams {
+    /// Relayer's public key
+    pub relayer_pub: [u8; 32],
+    /// Fee schedule attestation ID (from attestation contract)
+    pub fee_schedule_id: [u8; 32],
+}
+
+/// Register fee schedule update
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RegisterFeeScheduleUpdateV1 {
+    pub relayer_pub: [u8; 32],
+    pub fee_schedule_id: [u8; 32],
+}
+
 // ================================================================
 // OBJECT CAPABILITY SECURITY MODEL
 // ================================================================

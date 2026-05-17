@@ -45,7 +45,7 @@ use crate::{
     IDENTITY_CONTRACT_CREDENTIALS_TREE, IDENTITY_CONTRACT_NULLIFIERS_TREE,
     IDENTITY_CONTRACT_ISSUERS_TREE, IDENTITY_CONTRACT_CONFIG_TREE,
     IDENTITY_CONTRACT_CAPABILITIES_TREE, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE,
-    IDENTITY_CONTRACT_INFO_TREE,
+    IDENTITY_CONTRACT_REPUTATIONS_TREE, IDENTITY_CONTRACT_INFO_TREE,
     IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1,
     IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_DAG,
     IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1,
@@ -92,6 +92,9 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     }
     if wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE).is_err() {
         wasm::db::db_init(cid, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE)?;
+    }
+    if wasm::db::db_lookup(cid, IDENTITY_CONTRACT_REPUTATIONS_TREE).is_err() {
+        wasm::db::db_init(cid, IDENTITY_CONTRACT_REPUTATIONS_TREE)?;
     }
 
     let create_claim_v1_dag_bincode = include_bytes!("../proof/create_claim_v1_dag.zk.bin");
@@ -212,6 +215,8 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         IdentityFunction::VerifyCapabilityV1 => process_verify_capability_instruction(cid, call_idx, calls),
         IdentityFunction::RevokeCapabilityV1 => process_revoke_capability_instruction(cid, call_idx, calls),
         IdentityFunction::CreateClaimDAGV1 => process_create_claim_dag_instruction(cid, call_idx, calls),
+        IdentityFunction::RegisterIssuerV1 => process_register_issuer_instruction(cid, call_idx, calls),
+        IdentityFunction::UpdateReputationV1 => process_update_reputation_instruction(cid, call_idx, calls),
     }
 }
 
@@ -274,6 +279,14 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         IdentityFunction::CreateClaimDAGV1 => {
             let update: CreateClaimDAGUpdateV1 = deserialize(&update_data[1..])?;
             apply_create_claim_dag_update(cid, update)
+        }
+        IdentityFunction::RegisterIssuerV1 => {
+            let update: RegisterIssuerUpdateV1 = deserialize(&update_data[1..])?;
+            apply_register_issuer_update(cid, update)
+        }
+        IdentityFunction::UpdateReputationV1 => {
+            let update: UpdateReputationUpdateV1 = deserialize(&update_data[1..])?;
+            apply_update_reputation_update(cid, update)
         }
     }
 }
@@ -1009,4 +1022,134 @@ fn compute_issuance_key(capability_id: [u8; 32], holder_pub: [u8; 32]) -> Vec<u8
     let mut key = serialize(&capability_id);
     key.extend_from_slice(&serialize(&holder_pub));
     key
+}
+
+// ============================================================================
+// REGISTER ISSUER (Phase 2d hardening)
+// ============================================================================
+
+fn process_register_issuer_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: RegisterIssuerParams = deserialize(&self_.data[1..])?;
+
+    msg!("[identity::register_issuer] Registering issuer");
+
+    // Check if issuer already registered
+    let issuers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_ISSUERS_TREE)?;
+    let issuer_key = serialize(&params.issuer_pub);
+    let existing = wasm::db::db_get(issuers_db, &issuer_key)?;
+    if existing.is_some() {
+        msg!("[identity::register_issuer] ERROR: Issuer already registered");
+        return Err(IdentityError::IssuerAlreadyRegistered.into());
+    }
+
+    let update = RegisterIssuerUpdateV1 {
+        issuer_id: params.issuer_pub,
+        name: params.name.clone(),
+        authorized_schemas: params.authorized_schemas.clone(),
+        registered_at: wasm::util::get_verifying_block_height()? as u64,
+    };
+
+    msg!("[identity::register_issuer] Issuer registration prepared");
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1) -> ContractResult {
+    let issuers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_ISSUERS_TREE)?;
+
+    let issuer = Issuer {
+        pub_key: update.issuer_id,
+        name: update.name,
+        authorized_schemas: update.authorized_schemas,
+        trusted: true,
+    };
+
+    wasm::db::db_set(issuers_db, &serialize(&update.issuer_id), &serialize(&issuer))?;
+
+    msg!("[identity::register_issuer::update] Issuer stored");
+    Ok(())
+}
+
+// ============================================================================
+// UPDATE REPUTATION (Phase 2d hardening)
+// ============================================================================
+
+/// Compute reputation ID from issuer and relayer pubkeys
+fn compute_reputation_id(issuer_pub: &[u8; 32], relayer_pub: &[u8; 32]) -> [u8; 32] {
+    use dwow_sdk::crypto::poseidon_hash;
+    use dwow_sdk::pasta::group::ff::PrimeFieldBits;
+    let mut u64_bytes = [0u8; 8];
+    u64_bytes.copy_from_slice(&issuer_pub[..8]);
+    let issuer_val = u64::from_le_bytes(u64_bytes);
+    u64_bytes.copy_from_slice(&relayer_pub[..8]);
+    let relayer_val = u64::from_le_bytes(u64_bytes);
+    let hash = poseidon_hash([
+        dwow_sdk::pasta::pallas::Base::from(issuer_val),
+        dwow_sdk::pasta::pallas::Base::from(relayer_val),
+    ]);
+    let bits = hash.to_le_bits();
+    let mut result = [0u8; 32];
+    for (i, bit) in bits.iter().by_vals().take(256).enumerate() {
+        if bit {
+            result[i / 8] |= 1 << (i % 8);
+        }
+    }
+    result
+}
+
+fn process_update_reputation_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: UpdateReputationParams = deserialize(&self_.data[1..])?;
+
+    msg!("[identity::update_reputation] Updating relayer reputation");
+
+    // Verify issuer is registered
+    let issuers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_ISSUERS_TREE)?;
+    let issuer_key = serialize(&params.issuer_pub);
+    wasm::db::db_get(issuers_db, &issuer_key)?
+        .ok_or(IdentityError::IssuerNotTrusted)?;
+
+    let reputation_id = compute_reputation_id(&params.issuer_pub, &params.relayer_pub);
+    let current_height = wasm::util::get_verifying_block_height()? as u64;
+
+    let update = UpdateReputationUpdateV1 {
+        reputation_id,
+        relayer_pub: params.relayer_pub,
+        issuer_pub: params.issuer_pub,
+        slash_count: params.slash_count,
+        success_count: params.success_count,
+        total_volume: params.total_volume,
+        settlement_frequency: params.settlement_frequency,
+        last_updated: current_height,
+    };
+
+    msg!("[identity::update_reputation] Reputation update prepared");
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+fn apply_update_reputation_update(cid: ContractId, update: UpdateReputationUpdateV1) -> ContractResult {
+    let reputations_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_REPUTATIONS_TREE)?;
+
+    let record = ReputationRecord {
+        relayer_pub: update.relayer_pub,
+        issuer_pub: update.issuer_pub,
+        slash_count: update.slash_count,
+        success_count: update.success_count,
+        total_volume: update.total_volume,
+        settlement_frequency: update.settlement_frequency,
+        last_updated: update.last_updated,
+    };
+
+    wasm::db::db_set(reputations_db, &serialize(&update.reputation_id), &serialize(&record))?;
+
+    msg!("[identity::update_reputation::update] Reputation stored");
+    Ok(())
 }

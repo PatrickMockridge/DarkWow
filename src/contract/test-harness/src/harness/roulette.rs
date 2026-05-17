@@ -180,6 +180,7 @@ impl RouletteHarness {
         let params = SettleBetsParamsV1 {
             table_id,
             bet_ids: bet_ids.clone(),
+            payout: 0,
         };
 
         // For settle bet, we need a proof for each bet

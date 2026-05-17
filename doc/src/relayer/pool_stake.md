@@ -56,6 +56,8 @@ struct PoolStakeRegistry {
     total_stake: u64,              // Total capital staked
     available_coverage: u64,        // Coverage not yet allocated
     allocated_coverage: u64,        // Coverage currently in use
+    total_slashed: u64,            // Lifetime total slashed (May 2026)
+    pool_slash_count: u64,         // Total number of slash events (May 2026)
     member_count: u64,
     max_coverage_ratio: u32,       // Basis points (e.g., 8000 = 80%)
     created_at: u64,
@@ -75,6 +77,7 @@ struct PoolMemberStake {
     stake_amount: u64,
     coverage_contribution: u64,
     coverage_share_bp: u32,         // Basis points of pool coverage
+    slash_count: u64,              // Individual slash count (May 2026)
     accumulated_fees: u64,
     created_at: u64,
     unstake_requested_at: Option<u64>,
@@ -107,9 +110,33 @@ struct CoverageAllocation {
 | 0x02 | LeavePoolV1 | Leave pool (after cooldown) |
 | 0x03 | AllocateCoverageV1 | Allocate coverage for withdrawal |
 | 0x04 | ReleaseCoverageV1 | Release after successful execution |
-| 0x05 | SlashCoverageV1 | Slash for failed guaranteed withdrawal |
+| 0x05 | SlashCoverageV1 | Slash for failed guaranteed withdrawal (now records per-member slash count and increments pool-level `total_slashed`/`pool_slash_count`) |
 | 0x06 | ClaimFeesV1 | Claim accumulated relayer fees |
 | 0x07 | UpdatePoolConfigV1 | Update pool parameters |
+| 0x08 | RebalancePoolSharesV1 | Adjust member pool shares based on slash history: `adjusted_bp = pool_share_bp / (1 + slash_count)` (May 2026) |
+
+## Per-Member Slash Tracking (May 2026 Phase 2d)
+
+Each pool member carries an individual `slash_count` on their `PoolMemberStake`. When `SlashCoverageV1` is called, the contract:
+
+1. Slashes coverage proportionally from the pool
+2. Iterates `contributing_members` and increments each member's `slash_count`
+3. Updates pool-level `total_slashed` and `pool_slash_count`
+
+This enables **per-member accountability** — previously all members shared slash punishment equally regardless of which individual relayer failed.
+
+## RebalancePoolSharesV1 (May 2026 Phase 2d)
+
+`RebalancePoolSharesV1` (opcode `0x08`) adjusts member pool shares based on individual slash history:
+
+```
+adjusted_bp = pool_share_bp / (1 + slash_count)
+```
+
+- **Good relayers** (low `slash_count`): their share weight stays close to original allocation
+- **Bad relayers** (high `slash_count`): their share weight degrades proportionally
+
+Callable by the pool creator or after a cooldown period. Requires member IDs passed as input (`member_ids: Vec<pallas::Base>`) due to current WASM DB iteration limitations.
 
 ## Economic Model
 

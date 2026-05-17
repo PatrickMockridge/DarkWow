@@ -30,7 +30,7 @@ use dwow::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{PublicKey, poseidon_hash},
+    crypto::{pasta_prelude::Group, PublicKey, poseidon_hash},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -128,6 +128,7 @@ impl LotteryHarness {
             commitment,
             token_id,
             value: ticket_price,
+            value_commit: pallas::Point::identity(),
             signature,
         };
 
@@ -168,6 +169,8 @@ impl LotteryHarness {
             ticket_id,
             numbers,
             nonce: secret_nonce, // secret_nonce is the commitment nonce
+            revealed_commitment: pallas::Base::zero(),
+            matches: 0,
         };
 
         let mut call_data = vec![0x03]; // RevealTicketV1

@@ -66,6 +66,10 @@ define_contract_function!(BridgeFunction {
     ClaimHtlcV1 = 0x07,
     RefundHtlcV1 = 0x08,
     ReassignWithdrawalV1 = 0x09,  // Reassign stuck withdrawal to a new relayer
+    RegisterRelayerV1 = 0x0a,   // Register a relayer pubkey with the bridge
+    AcceptWithdrawalV1 = 0x0b,  // Accept a pending withdrawal as a relayer
+    VerifyRelayerReputationV1 = 0x0c, // Query relayer reputation on-chain
+    RegisterFeeScheduleV1 = 0x0d, // Register a fee schedule commitment
 });
 
 /// Internal contract errors
@@ -92,6 +96,7 @@ pub const BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE: &str = "pending_withdrawals"
 // HTLC trees for cross-chain atomic swaps
 pub const BRIDGE_CONTRACT_HTLCS_TREE: &str = "htlcs";
 pub const BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE: &str = "htlc_nullifiers";
+pub const BRIDGE_CONTRACT_RELAYERS_TREE: &str = "relayers";
 
 // These are keys inside the info tree
 pub const BRIDGE_CONTRACT_DB_VERSION: &[u8] = b"db_version";

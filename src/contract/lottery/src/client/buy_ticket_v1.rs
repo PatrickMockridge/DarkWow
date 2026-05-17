@@ -24,6 +24,7 @@
 //! BuyTicketV1 Client API
 
 use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+use pasta_curves::group::Group;
 
 use crate::model::{derive_ticket_id, BuyTicketParamsV1};
 
@@ -57,6 +58,7 @@ pub fn create_buy_ticket_tx(
         commitment,
         token_id,
         value,
+        value_commit: pallas::Point::identity(),
         signature,
     };
 

@@ -30,7 +30,7 @@ use dwow::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::PublicKey,
+    crypto::{pasta_prelude::Group, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -156,6 +156,9 @@ impl RelayerEndowmentHarness {
             amount: deploy_amount,
             backer_cut_bp,
             signature_public: backer_public,
+            value_commit: pallas::Point::identity(),
+            min_success_rate_bp: None,
+            max_slash_count: None,
         };
 
         let mut call_data = vec![];
@@ -180,7 +183,12 @@ impl RelayerEndowmentHarness {
             &input,
         )?;
 
-        let params = ClaimFeesParamsV1 { deployment_id };
+        let params = ClaimFeesParamsV1 {
+            deployment_id,
+            backer_pub_x: [0u8; 32],
+            backer_pub_y: [0u8; 32],
+            fee_share,
+        };
 
         let mut call_data = vec![];
         params.encode(&mut call_data)?;

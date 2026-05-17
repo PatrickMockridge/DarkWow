@@ -240,6 +240,7 @@ pub struct FileClaimV1Builder {
     buyer: PublicKey,
     amount: u64,
     evidence: Vec<u8>,
+    oracle_signature: pallas::Base,
 }
 
 impl FileClaimV1Builder {
@@ -251,6 +252,7 @@ impl FileClaimV1Builder {
             buyer,
             amount,
             evidence: vec![],
+            oracle_signature: pallas::Base::zero(),
         }
     }
 
@@ -268,6 +270,7 @@ impl FileClaimV1Builder {
             buyer: self.buyer,
             amount: self.amount,
             evidence: self.evidence,
+            oracle_signature: self.oracle_signature,
         }
     }
 }

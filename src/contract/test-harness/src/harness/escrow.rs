@@ -289,6 +289,7 @@ impl EscrowHarness {
             buyer_secret,
             spent_nullifier: public_inputs.spent_nullifier,
             current_block,
+            timeout,
             recipient_pubkey,
         };
 

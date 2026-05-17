@@ -213,7 +213,19 @@ cargo run -p dwowd -- --network darkwow-testnet
 
 > **USE AT YOUR OWN RISK.** No third-party audit has been performed. Smart contracts carry inherent risks including bugs, economic exploits, and cross-chain bridge vulnerabilities.
 
-**May 2026**: The bridge and relayer_endowment contracts underwent internal simulation-based security review. 10 adversarial scenarios identified 17 failure modes — 14 have been fixed (HTLC atomicity, circuit breaker, withdrawal reassignment, proportional slashing, fee caps, Merkle proof enforcement, force settlement). 3 remain planned (pool reputation, fee discovery, health checks).
+**May 2026**: The bridge, relayer_endowment, identity, attestation, and pool_stake contracts underwent internal simulation-based security review. 10 adversarial scenarios identified 17 failure modes — **all 17 have been fixed**:
+
+- **Phase 1** (state machine): HTLC atomicity, circuit breaker, withdrawal reassignment
+- **Phase 2** (economic): Proportional slashing, fee caps, force settlement
+- **Phase 2d** (identity/attestation): On-chain relayer identity registration, per-member pool slash tracking with individual share rebalancing, slash event attestations (ZK circuit), fee schedule commitments verified by attestation (ZK circuit), reputation-gated capital deployment, fee discovery via on-chain fee schedules
+- **Phase 3** (ZK): Merkle proof enforcement in circuits, SparseMerklePath verification
+
+**Relayer hardening highlights**:
+- **Relayer identity**: Bridge `RegisterRelayerV1` — relayers register on-chain; `AcceptWithdrawalV1` — explicit withdrawal assignment with fee commitment; `ReassignWithdrawalV1` restricted to registered relayers
+- **Reputation system**: Identity `RegisterIssuerV1`/`UpdateReputationV1` — trusted issuers update on-chain relayer performance scores; Bridge `VerifyRelayerReputationV1` — users query reputation before committing funds
+- **Fee discovery**: Attestation `CommitFeeScheduleV1` — relayers publish fee schedules on-chain; Bridge `RegisterFeeScheduleV1` — fee schedules discoverable by users
+- **Per-member accountability**: Pool Stake per-member `slash_count` tracking; `RebalancePoolSharesV1` — individual share weighting based on slash history (good relayers gain, bad relayers lose)
+- **Reputation-gated deployment**: Relayer Endowment `DeployCapitalV1` accepts `min_success_rate_bp` and `max_slash_count` thresholds — backers filter relayers by attested performance
 
 See [Security Audit](src/contract/AUDIT.md) for full findings, mitigations, and residual risks. Known architectural issues are documented in [Security Analysis](doc/src/arch/security-analysis.md).
 

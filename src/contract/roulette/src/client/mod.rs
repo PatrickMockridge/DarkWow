@@ -230,12 +230,13 @@ impl SpinWheelV1Builder {
 pub struct SettleBetsV1Builder {
     table_id: pallas::Base,
     bet_ids: Vec<pallas::Base>,
+    payout: u64,
 }
 
 impl SettleBetsV1Builder {
     /// Create a new SettleBetsV1 builder
     pub fn new(table_id: pallas::Base) -> Self {
-        Self { table_id, bet_ids: Vec::new() }
+        Self { table_id, bet_ids: Vec::new(), payout: 0 }
     }
 
     /// Add a bet ID to settle
@@ -252,7 +253,7 @@ impl SettleBetsV1Builder {
 
     /// Build the settle bets parameters
     pub fn build(&self) -> SettleBetsParamsV1 {
-        SettleBetsParamsV1 { table_id: self.table_id, bet_ids: self.bet_ids.clone() }
+        SettleBetsParamsV1 { table_id: self.table_id, bet_ids: self.bet_ids.clone(), payout: self.payout }
     }
 }
 

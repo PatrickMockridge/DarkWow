@@ -111,6 +111,12 @@ pub enum IdentityError {
 
     #[error("DAG path not satisfied")]
     DAGPathNotSatisfied,
+
+    #[error("Issuer already registered")]
+    IssuerAlreadyRegistered,
+
+    #[error("Reputation not found")]
+    ReputationNotFound,
 }
 
 impl From<IdentityError> for ContractError {
@@ -144,6 +150,8 @@ impl From<IdentityError> for ContractError {
             IdentityError::DAGNotFound => Self::Custom(26),
             IdentityError::InvalidDAGPath => Self::Custom(27),
             IdentityError::DAGPathNotSatisfied => Self::Custom(28),
+            IdentityError::IssuerAlreadyRegistered => Self::Custom(29),
+            IdentityError::ReputationNotFound => Self::Custom(30),
         }
     }
 }

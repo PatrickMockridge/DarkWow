@@ -1,0 +1,18 @@
+k = 11;
+field = "pallas";
+
+constant "AttestSlash" {
+}
+
+witness "AttestSlash" {
+    Base relayer_pub_x,
+    Base relayer_pub_y,
+    Base slash_amount,
+    Base withdrawal_id,
+    Base nonce,
+}
+
+circuit "AttestSlash" {
+    constrain_instance(relayer_pub_x);
+    constrain_instance(relayer_pub_y);
+}

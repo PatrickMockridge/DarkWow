@@ -32,7 +32,7 @@ use dwow::{
 };
 use dwow_sdk::{
     crypto::{
-        pasta_prelude::Field,
+        pasta_prelude::{Field, Group},
         schnorr::SchnorrSecret,
         PublicKey, SecretKey,
     },
@@ -136,6 +136,7 @@ impl BettingStakeHarness {
             betting_contract_id,
             house_edge_bp,
             risk_profile,
+            nonce: pallas::Base::from(nonce),
             signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
         };
 
@@ -178,6 +179,8 @@ impl BettingStakeHarness {
             table_id,
             staker_pub,
             amount,
+            nonce: pallas::Base::from(nonce),
+            value_commit: pallas::Point::identity(),
             signature,
             spend_hook,
             user_data,
@@ -219,6 +222,11 @@ impl BettingStakeHarness {
 
         let params = UnstakeParamsV1 {
             stake_id,
+            table_id: stake.table_id,
+            staker_pub: stake.staker_pub,
+            original_amount: stake.original_amount,
+            nonce: pallas::Base::from(stake.nonce),
+            value_commit: pallas::Point::identity(),
             signature,
             spend_hook,
             user_data,
@@ -257,6 +265,11 @@ impl BettingStakeHarness {
 
         let params = ClaimEarningsParamsV1 {
             stake_id,
+            table_id: stake.table_id,
+            staker_pub: stake.staker_pub,
+            current_amount: stake.current_amount,
+            nonce: pallas::Base::from(stake.nonce),
+            value_commit: pallas::Point::identity(),
             signature,
         };
 
@@ -293,6 +306,8 @@ impl BettingStakeHarness {
             table_id,
             payout_amount: 0,  // Not used in circuit, just for params
             house_share: 0,
+            betting_contract_id,
+            nonce: pallas::Base::from(nonce),
         };
 
         let mut call_data = vec![];

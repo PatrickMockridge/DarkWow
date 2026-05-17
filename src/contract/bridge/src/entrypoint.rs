@@ -61,12 +61,16 @@ use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable,
 use crate::{
     error::BridgeError,
     model::{
+        AcceptWithdrawalParams, AcceptWithdrawalUpdateV1,
         CancelWithdrawParams, CancelWithdrawUpdateV1, ClaimHtlcParams, ClaimHtlcUpdateV1,
         CreateHtlcParams, CreateHtlcUpdateV1, Deposit, DepositParams,
         ExecuteGuaranteedWithdrawParams, ExecuteGuaranteedWithdrawUpdateV1,
         ExternalChain, HtlcSwapInfo, HtlcSwapState, PendingWithdrawal,
         ReassignWithdrawalParamsV1, ReassignWithdrawalUpdateV1,
-        RefundHtlcParams, RefundHtlcUpdateV1, UpdateConfigParams, Withdrawal, WithdrawParams,
+        RefundHtlcParams, RefundHtlcUpdateV1, RegisterFeeScheduleParams,
+        RegisterFeeScheduleUpdateV1, RegisterRelayerParams, RegisterRelayerUpdateV1,
+        RelayerInfo, ReputationInfo, VerifyRelayerReputationParams,
+        UpdateConfigParams, Withdrawal, WithdrawParams,
         XmrDepositProof, ZcashDepositProof, AztecDepositProof, LitecoinDepositProof,
     },
     BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_INFO_TREE,
@@ -79,7 +83,7 @@ use crate::{
     BRIDGE_CONTRACT_MAX_GUARANTEED_TOTAL, BRIDGE_CONTRACT_GUARANTEED_PENDING,
     BRIDGE_CONTRACT_MIN_GUARANTEED_COVERAGE_RATIO, BRIDGE_CONTRACT_BP_PRECISION,
     BRIDGE_CONTRACT_MAX_FEE_BP,
-    BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS,
+    BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS, BRIDGE_CONTRACT_RELAYERS_TREE,
 };
 
 // ============================================================================
@@ -167,6 +171,9 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, BRIDGE_CONTRACT_HTLCS_TREE)?;
     wasm::db::db_init(cid, BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE)?;
 
+    // Initialize relayers tree (Phase 2d hardening)
+    wasm::db::db_init(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
+
     // Set initial configuration
     let config_db = wasm::db::db_init(cid, "config")?;
     wasm::db::db_set(config_db, BRIDGE_MIN_CONFIRMATIONS_KEY, &params.min_confirmations.to_le_bytes())?;
@@ -199,6 +206,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         BridgeFunction::ClaimHtlcV1 => vec![],
         BridgeFunction::RefundHtlcV1 => vec![],
         BridgeFunction::ReassignWithdrawalV1 => vec![],
+        BridgeFunction::RegisterRelayerV1 => vec![],
+        BridgeFunction::AcceptWithdrawalV1 => vec![],
+        BridgeFunction::VerifyRelayerReputationV1 => vec![],
+        BridgeFunction::RegisterFeeScheduleV1 => vec![],
     };
 
     wasm::util::set_return_data(&metadata)
@@ -294,6 +305,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         BridgeFunction::ClaimHtlcV1 => process_claim_htlc_instruction(cid, call_idx, calls),
         BridgeFunction::RefundHtlcV1 => process_refund_htlc_instruction(cid, call_idx, calls),
         BridgeFunction::ReassignWithdrawalV1 => process_reassign_withdrawal_instruction(cid, call_idx, calls),
+        BridgeFunction::RegisterRelayerV1 => process_register_relayer_instruction(cid, call_idx, calls),
+        BridgeFunction::AcceptWithdrawalV1 => process_accept_withdrawal_instruction(cid, call_idx, calls),
+        BridgeFunction::VerifyRelayerReputationV1 => process_verify_relayer_reputation_instruction(cid, call_idx, calls),
+        BridgeFunction::RegisterFeeScheduleV1 => process_register_fee_schedule_instruction(cid, call_idx, calls),
     }
 }
 
@@ -984,6 +999,14 @@ fn process_reassign_withdrawal_instruction(
         }
     }
 
+    // Verify the new relayer is registered
+    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
+    let relayer_key = serialize(&params.new_relayer);
+    if !wasm::db::db_contains_key(relayers_db, &relayer_key)? {
+        msg!("[bridge::ReassignWithdrawalV1] ERROR: New relayer not registered");
+        return Err(BridgeError::RelayerNotRegistered.into())
+    }
+
     // Verify the new relayer is different from the current one
     if pending.relayer == params.new_relayer {
         msg!("[bridge::ReassignWithdrawalV1] ERROR: New relayer same as current");
@@ -1048,6 +1071,22 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         BridgeFunction::ReassignWithdrawalV1 => {
             let update: ReassignWithdrawalUpdateV1 = deserialize(&update_data[1..])?;
             apply_reassign_withdrawal_update(cid, update)
+        }
+        BridgeFunction::RegisterRelayerV1 => {
+            let update: RegisterRelayerUpdateV1 = deserialize(&update_data[1..])?;
+            apply_register_relayer_update(cid, update)
+        }
+        BridgeFunction::AcceptWithdrawalV1 => {
+            let update: AcceptWithdrawalUpdateV1 = deserialize(&update_data[1..])?;
+            apply_accept_withdrawal_update(cid, update)
+        }
+        BridgeFunction::VerifyRelayerReputationV1 => {
+            msg!("[bridge::process_update] VerifyRelayerReputationV1 is read-only, no state change");
+            Ok(())
+        }
+        BridgeFunction::RegisterFeeScheduleV1 => {
+            let update: RegisterFeeScheduleUpdateV1 = deserialize(&update_data[1..])?;
+            apply_register_fee_schedule_update(cid, update)
         }
     }
 }
@@ -1531,5 +1570,250 @@ fn apply_refund_htlc_update(cid: ContractId, update: RefundHtlcUpdateV1) -> Cont
     wasm::db::db_set(htlc_nullifiers_db, &update.swap_id, &[])?;
 
     msg!("[bridge::apply_update] HTLC refunded: swap_id={:?}", update.swap_id);
+    Ok(())
+}
+
+// ============================================================================
+// RELAYER REGISTRATION (Phase 2d hardening)
+// ============================================================================
+
+/// Process RegisterRelayer instruction
+fn process_register_relayer_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: RegisterRelayerParams = deserialize(&self_.data[1..])?;
+
+    msg!("[bridge::RegisterRelayerV1] Registering relayer: {:?}", &params.relayer_pub);
+
+    // Check relayer is not already registered
+    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
+    let relayer_key = serialize(&params.relayer_pub);
+    if wasm::db::db_contains_key(relayers_db, &relayer_key)? {
+        msg!("[bridge::RegisterRelayerV1] ERROR: Relayer already registered");
+        return Err(BridgeError::RelayerAlreadyRegistered.into())
+    }
+
+    msg!("[bridge::RegisterRelayerV1] Relayer registration approved");
+
+    let update = RegisterRelayerUpdateV1 {
+        relayer_pub: params.relayer_pub,
+        registered_at: wasm::util::get_verifying_block_height()? as u64,
+    };
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+fn apply_register_relayer_update(cid: ContractId, update: RegisterRelayerUpdateV1) -> ContractResult {
+    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
+
+    let info = RelayerInfo {
+        pubkey: update.relayer_pub,
+        registered_at: update.registered_at,
+        total_slashed: 0,
+        total_withdrawals: 0,
+        total_successful: 0,
+        is_active: true,
+        fee_schedule_id: None,
+    };
+
+    wasm::db::db_set(relayers_db, &serialize(&update.relayer_pub), &serialize(&info))?;
+
+    msg!("[bridge::apply_update] Relayer registered: {:?}", update.relayer_pub);
+    Ok(())
+}
+
+// ============================================================================
+// WITHDRAWAL ACCEPTANCE (Phase 2d hardening)
+// ============================================================================
+
+/// Process AcceptWithdrawal instruction
+fn process_accept_withdrawal_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: AcceptWithdrawalParams = deserialize(&self_.data[1..])?;
+
+    msg!("[bridge::AcceptWithdrawalV1] Accepting withdrawal: nullifier={:?}, relayer={:?}",
+        &params.nullifier, &params.relayer_pub);
+
+    // Verify relayer is registered
+    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
+    let relayer_key = serialize(&params.relayer_pub);
+    if !wasm::db::db_contains_key(relayers_db, &relayer_key)? {
+        msg!("[bridge::AcceptWithdrawalV1] ERROR: Relayer not registered");
+        return Err(BridgeError::RelayerNotRegistered.into())
+    }
+
+    // Look up pending withdrawal
+    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
+    let pending_key = build_pending_key(&params.nullifier.to_bytes());
+    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
+        msg!("[bridge::AcceptWithdrawalV1] ERROR: Pending withdrawal not found");
+        return Err(BridgeError::WithdrawalNotFound.into())
+    };
+    let pending: PendingWithdrawal = deserialize(&pending_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+
+    // Check withdrawal is not already assigned to a relayer
+    // relayer is initialized to [0u8; 32]
+    let zero_key = [0u8; 32];
+    if pending.relayer != zero_key {
+        msg!("[bridge::AcceptWithdrawalV1] ERROR: Withdrawal already assigned to another relayer");
+        return Err(BridgeError::WithdrawalAlreadyProcessed.into())
+    }
+
+    // Verify fee cap is within protocol bounds
+    if params.max_fee_bp > BRIDGE_CONTRACT_MAX_FEE_BP {
+        msg!("[bridge::AcceptWithdrawalV1] ERROR: Fee cap exceeds max ({} > {})",
+            params.max_fee_bp, BRIDGE_CONTRACT_MAX_FEE_BP);
+        return Err(BridgeError::FeeExceedsCap.into())
+    }
+
+    let current_height = wasm::util::get_verifying_block_height()? as u64;
+
+    msg!("[bridge::AcceptWithdrawalV1] Withdrawal acceptance approved");
+
+    let update = AcceptWithdrawalUpdateV1 {
+        nullifier: params.nullifier,
+        relayer_pub: params.relayer_pub,
+        max_fee_bp: params.max_fee_bp,
+        accepted_at: current_height,
+    };
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+fn apply_accept_withdrawal_update(cid: ContractId, update: AcceptWithdrawalUpdateV1) -> ContractResult {
+    let pending_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE)?;
+
+    let pending_key = build_pending_key(&update.nullifier.to_bytes());
+    let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? else {
+        return Err(BridgeError::WithdrawalNotFound.into())
+    };
+
+    let mut pending: PendingWithdrawal = deserialize(&pending_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+
+    pending.relayer = update.relayer_pub;
+    pending.reassignable_after = Some(update.accepted_at.saturating_add(BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS));
+    pending.heartbeat_at = Some(update.accepted_at);
+
+    wasm::db::db_set(pending_db, &pending_key, &serialize(&pending))?;
+
+    // Increment relayer's total_withdrawals
+    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
+    let relayer_key = serialize(&update.relayer_pub);
+    if let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? {
+        let mut info: RelayerInfo = deserialize(&relayer_data)
+            .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+        info.total_withdrawals = info.total_withdrawals.saturating_add(1);
+        wasm::db::db_set(relayers_db, &relayer_key, &serialize(&info))?;
+    }
+
+    msg!("[bridge::apply_update] Withdrawal accepted: nullifier={:?}, relayer={:?}",
+        update.nullifier, update.relayer_pub);
+    Ok(())
+}
+
+// ============================================================================
+// REPUTATION VERIFICATION (Phase 2d hardening)
+// ============================================================================
+
+/// Process VerifyRelayerReputation instruction (read-only)
+fn process_verify_relayer_reputation_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: VerifyRelayerReputationParams = deserialize(&self_.data[1..])?;
+
+    msg!("[bridge::VerifyRelayerReputationV1] Querying reputation for {:?}", &params.relayer_pub);
+
+    // Query bridge-local relayer info
+    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
+    let relayer_key = serialize(&params.relayer_pub);
+
+    let reputation = match wasm::db::db_get(relayers_db, &relayer_key)? {
+        Some(data) => {
+            let info: RelayerInfo = deserialize(&data)
+                .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+            ReputationInfo {
+                slash_count: info.total_slashed,
+                success_count: info.total_successful,
+                total_volume: 0, // Populated when fee schedule is registered
+                settlement_frequency: 0, // Populated by endowment integration
+                is_registered: info.is_active,
+            }
+        }
+        None => ReputationInfo {
+            slash_count: 0,
+            success_count: 0,
+            total_volume: 0,
+            settlement_frequency: 0,
+            is_registered: false,
+        },
+    };
+
+    msg!("[bridge::VerifyRelayerReputationV1] Reputation: registered={}, slashes={}, successful={}",
+        reputation.is_registered, reputation.slash_count, reputation.success_count);
+
+    // Read-only — return data directly, no update struct needed
+    wasm::util::set_return_data(&serialize(&reputation))
+}
+
+// ============================================================================
+// FEE SCHEDULE REGISTRATION (Phase 3 hardening)
+// ============================================================================
+
+/// Process RegisterFeeSchedule instruction
+fn process_register_fee_schedule_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: RegisterFeeScheduleParams = deserialize(&self_.data[1..])?;
+
+    msg!("[bridge::RegisterFeeScheduleV1] Registering fee schedule for {:?}", &params.relayer_pub);
+
+    // Verify relayer is registered
+    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
+    let relayer_key = serialize(&params.relayer_pub);
+    let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? else {
+        msg!("[bridge::RegisterFeeScheduleV1] ERROR: Relayer not registered");
+        return Err(BridgeError::RelayerNotRegistered.into())
+    };
+
+    let _info: RelayerInfo = deserialize(&relayer_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+
+    msg!("[bridge::RegisterFeeScheduleV1] Fee schedule registration approved");
+
+    let update = RegisterFeeScheduleUpdateV1 {
+        relayer_pub: params.relayer_pub,
+        fee_schedule_id: params.fee_schedule_id,
+    };
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+fn apply_register_fee_schedule_update(cid: ContractId, update: RegisterFeeScheduleUpdateV1) -> ContractResult {
+    let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
+    let relayer_key = serialize(&update.relayer_pub);
+
+    let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? else {
+        return Err(BridgeError::RelayerNotRegistered.into())
+    };
+
+    let mut info: RelayerInfo = deserialize(&relayer_data)
+        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+
+    info.fee_schedule_id = Some(update.fee_schedule_id);
+    wasm::db::db_set(relayers_db, &relayer_key, &serialize(&info))?;
+
+    msg!("[bridge::apply_update] Fee schedule registered for {:?}", update.relayer_pub);
     Ok(())
 }

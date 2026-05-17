@@ -195,17 +195,18 @@ impl RevealSpinV1Builder {
 /// Builder for creating settle spin calls (house only)
 pub struct SettleSpinV1Builder {
     spin_id: SpinId,
+    payout: u64,
 }
 
 impl SettleSpinV1Builder {
     /// Create a new SettleSpinV1 builder
     pub fn new(spin_id: SpinId) -> Self {
-        Self { spin_id }
+        Self { spin_id, payout: 0 }
     }
 
     /// Build the settle spin parameters
     pub fn build(&self) -> SettleSpinParamsV1 {
-        SettleSpinParamsV1 { spin_id: self.spin_id }
+        SettleSpinParamsV1 { spin_id: self.spin_id, payout: self.payout }
     }
 }
 

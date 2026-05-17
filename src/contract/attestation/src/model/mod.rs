@@ -497,3 +497,64 @@ pub struct UpdateDelegationUpdateV1 {
     /// Whether the update was successful
     pub success: bool,
 }
+
+// ============================================================================
+// ATTEST SLASH (Phase 2d hardening)
+// ============================================================================
+
+/// Parameters for attesting a relayer slash event
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AttestSlashParamsV1 {
+    /// Relayer's public key (x coordinate)
+    pub relayer_pub_x: pallas::Base,
+    /// Relayer's public key (y coordinate)
+    pub relayer_pub_y: pallas::Base,
+    /// Amount slashed
+    pub slash_amount: u64,
+    /// Withdrawal ID that triggered the slash
+    pub withdrawal_id: pallas::Base,
+    /// Block height when slash occurred
+    pub block_height: u64,
+}
+
+/// Attestation ID derived from slash event
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct AttestSlashUpdateV1 {
+    pub attestation_id: pallas::Base,
+    pub slash_amount: u64,
+    pub withdrawal_id: pallas::Base,
+    pub block_height: u64,
+}
+
+// ============================================================================
+// COMMIT FEE SCHEDULE (Phase 3 hardening)
+// ============================================================================
+
+/// Parameters for committing a fee schedule
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CommitFeeScheduleParamsV1 {
+    /// Attestor/relayer public key (x coordinate)
+    pub attestor_pub_x: pallas::Base,
+    /// Attestor/relayer public key (y coordinate)
+    pub attestor_pub_y: pallas::Base,
+    /// Base fee in basis points
+    pub base_fee_bp: u64,
+    /// Guaranteed withdrawal premium in basis points
+    pub guaranteed_premium_bp: u64,
+    /// Maximum supported amount
+    pub max_amount: u64,
+    /// Minimum supported amount
+    pub min_amount: u64,
+    /// Metadata (supported tokens, etc.)
+    pub metadata: Vec<u8>,
+}
+
+/// Update for fee schedule commitment
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CommitFeeScheduleUpdateV1 {
+    pub attestation_id: pallas::Base,
+    pub base_fee_bp: u64,
+    pub guaranteed_premium_bp: u64,
+    pub max_amount: u64,
+    pub min_amount: u64,
+}

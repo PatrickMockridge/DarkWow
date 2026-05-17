@@ -66,6 +66,9 @@ pub enum RelayerEndowmentError {
 
     #[error("Settlement not yet due — timeout not elapsed")]
     SettlementNotDue,
+
+    #[error("Reputation check failed: {0}")]
+    ReputationCheckFailed(String),
 }
 
 impl From<RelayerEndowmentError> for dwow_sdk::error::ContractError {
@@ -84,6 +87,7 @@ impl From<RelayerEndowmentError> for dwow_sdk::error::ContractError {
             RelayerEndowmentError::InvalidChildCall => Self::Custom(11),
             RelayerEndowmentError::EndpointInactive => Self::Custom(12),
             RelayerEndowmentError::SettlementNotDue => Self::Custom(13),
+            RelayerEndowmentError::ReputationCheckFailed(_) => Self::Custom(14),
         }
     }
 }

@@ -163,9 +163,13 @@ impl BridgeHarness {
         let params = WithdrawParams {
             nullifier,
             recipient_hash: public_inputs.recipient_hash.to_repr(),
+            deposit_leaf: pallas::Base::zero(),
             amount,
             proof: proof.as_ref().to_vec(),
             fee,
+            timeout_height: 0,
+            feed_mode: 0,
+            max_fee_bp: None,
         };
 
         let mut call_data = vec![0x02];

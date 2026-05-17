@@ -59,6 +59,8 @@ define_contract_function!(AttestationFunction {
     DelegateAttestationV1 = 0x08,
     VerifyChainV1 = 0x09,
     UpdateDelegationV1 = 0x0a,
+    AttestSlashV1 = 0x0b,
+    CommitFeeScheduleV1 = 0x0c,
 });
 
 /// Internal contract errors
@@ -95,3 +97,5 @@ pub const ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V1: &str = "CheckNotRev
 pub const ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1: &str = "DelegateAttestation";
 pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1: &str = "VerifyChain";
 pub const ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1: &str = "UpdateDelegation";
+pub const ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V1: &str = "AttestSlashV1";
+pub const ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V1: &str = "CommitFeeScheduleV1";

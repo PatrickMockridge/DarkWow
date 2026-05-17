@@ -161,6 +161,7 @@ impl TokenMintCallBuilder {
                 coin,
                 value_commit,
                 token_id,
+                token_auth_parent: self.input.token_auth_parent,
                 token_commit,
             },
             proofs: vec![proof],

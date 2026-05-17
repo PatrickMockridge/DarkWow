@@ -8,8 +8,11 @@
 |----------|---------|------------|---------|
 | Bridge (`src/contract/bridge/`) | v1 (May 2026 hardening) | 2026-05-16 | Internal — simulation-based |
 | Relayer Endowment (`src/contract/relayer_endowment/`) | v1 (May 2026 hardening) | 2026-05-16 | Internal — simulation-based |
+| Identity (`src/contract/identity/`) | v1 (May 2026 hardening) | 2026-05-17 | Internal — Phase 2d integration |
+| Attestation (`src/contract/attestation/`) | v1 (May 2026 hardening) | 2026-05-17 | Internal — Phase 2d integration |
+| Pool Stake (`src/contract/pool_stake/`) | v1 (May 2026 hardening) | 2026-05-17 | Internal — Phase 2d integration |
 
-**Out of scope**: universal_relayer binary, pool_stake contract, all other 26 contracts in this repository, ZK circuit soundness proofs, external chain integration code.
+**Out of scope**: universal_relayer binary, all other 23 contracts in this repository, ZK circuit soundness proofs, external chain integration code.
 
 ## Methodology
 
@@ -33,15 +36,15 @@ The audit combined three approaches:
 | 4 | **HIGH** | Capital | Total relayer stake < 10% of user deposit capacity — sudden withdrawal surge exhausts coverage | Bridge | FIXED |
 | 5 | **HIGH** | Liveness | No withdrawal reassignment during network partition — stuck until timeout | Bridge | FIXED |
 | 6 | **HIGH** | Economic | No fee cap — monopoly relayer can charge extortionate rates | Bridge | FIXED |
-| 7 | **HIGH** | Economic | Pool slashes degrade all members equally — no per-member accountability | Pool (relayer binary) | PLANNED |
+| 7 | **HIGH** | Economic | Pool slashes degrade all members equally — no per-member accountability | Pool Stake | FIXED |
 | 8 | **MEDIUM** | Capital | Pending withdrawals exceed total relayer stake — coverage ratio violated at system level | Bridge | FIXED |
 | 9 | **MEDIUM** | Economic | Backer ROI zero or negative — no fee settlement detection | Relayer Endowment | FIXED |
 | 10 | **MEDIUM** | Economic | No mechanism to detect fee evasion early | Relayer Endowment | FIXED |
 | 11 | **MEDIUM** | Economic | No auto-withdraw from dishonest relayers | Relayer Endowment | FIXED |
 | 12 | **MEDIUM** | Economic | Only 0/11 guaranteed withdrawals received slash refunds — flat slash too small | Bridge | FIXED |
 | 13 | **MEDIUM** | Economic | Total slashed < 1% of guaranteed withdrawal volume — slash doesn't scale | Bridge | FIXED |
-| 14 | **MEDIUM** | UX | No fee discovery — users cannot query relayer fees before committing | Relayer Binary | PLANNED |
-| 15 | **MEDIUM** | Economic | Adverse selection — good relayers leave pools due to shared slashing | Pool (relayer binary) | PLANNED |
+| 14 | **MEDIUM** | UX | No fee discovery — users cannot query relayer fees before committing | Attestation | FIXED |
+| 15 | **MEDIUM** | Economic | Adverse selection — good relayers leave pools due to shared slashing | Pool Stake | FIXED |
 | 16 | **LOW** | ZK Soundness | ZK circuit assumed Merkle verification but didn't enforce it in constraints | Bridge ZK | FIXED |
 | 17 | **LOW** | Atomicity | HTLC race condition — claim + refund can both succeed in same block | Bridge | FIXED |
 
@@ -92,6 +95,42 @@ The audit combined three approaches:
 - Added `computed_root = sparse_merkle_root(leaf_index, merkle_path, deposit_leaf)` + `constrain_equal_base(computed_root, merkle_root)`
 - Replaced hardcoded `witness_base(100_000_000)` dust threshold with `token_minimum: Base` public input
 
+### Phase 2d/3: Identity & Attestation Integration (May 2026)
+
+**Identity Contract — Relayer Registration** (findings #7, #15):
+- New `RegisterIssuerV1` (0x0e): Allows trusted entities to register as credential issuers, establishing a bootstrapped trust root for the identity system
+- New `UpdateReputationV1` (0x0f): Issuers update relayer reputation scores on-chain — slash_count, success_count, total_volume, settlement_frequency — stored in a new `reputations` tree keyed by `poseidon_hash(issuer_pub, relayer_pub)`
+
+**Bridge Contract — Relayer Identity & Discovery** (findings #7, #14):
+- New `RegisterRelayerV1` (0x0a): Relayers register their pubkey with the bridge, stored in a new `relayers` tree with `RelayerInfo` (pubkey, registered_at, total_slashed, total_withdrawals, total_successful, is_active, fee_schedule_id)
+- New `AcceptWithdrawalV1` (0x0b): Relayer explicitly accepts a withdrawal — sets `PendingWithdrawal.relayer` from `[0u8;32]` to actual pubkey, records `accepted_at` block, binds `max_fee_bp` commitment
+- Modified `ReassignWithdrawalV1`: Now restricts reassignment to registered relayers only
+- New `VerifyRelayerReputationV1` (0x0c): Read-only query returning `ReputationInfo` (slash_count, success_count, total_volume, settlement_frequency, is_registered) from bridge-local relayer data
+- New `RegisterFeeScheduleV1` (0x0d): Bridge-side endpoint to register fee schedule attestations
+
+**Attestation Contract — Slash & Fee Schedule Attestation** (findings #7, #14):
+- New `AttestSlashV1` (0x0b): Creates an on-chain attestation for relayer slash events with `claim_type = Predicate::Custom`, recording `poseidon_hash(relayer_x, relayer_y, slash_amount, withdrawal_id)` — enables privacy-preserving reputation queries
+- New `CommitFeeScheduleV1` (0x0c): Relayers commit fee schedules on-chain as attestations with fee parameters (base_fee_bp, guaranteed_premium_bp, max_amount, min_amount) — addresses fee discovery
+- **New ZK circuits**: `attest_slash_v1.zk` (k=11) constrains relayer pubkey coordinates as public inputs; `commit_fee_schedule_v1.zk` (k=11) constrains attestor pubkey coordinates as public inputs — both compiled and embedded in contract init
+
+**Pool Stake Contract — Per-Member Slash Tracking & Rebalancing** (findings #7, #15):
+- Added `slash_count: u64` to `PoolMemberStake` and `total_slashed: u64` + `pool_slash_count: u64` to `PoolStakeRegistry` for per-member accountability
+- Modified `SlashCoverageV1`: After slashing coverage, iterates `contributing_members` and increments each member's `slash_count`; updates pool-level `total_slashed` and `pool_slash_count`
+- New `RebalancePoolSharesV1` (0x08): Adjusts member pool shares based on slash history — `new_weight = base_share / (1 + slash_count)` — good relayers gain weight, bad relayers lose it
+
+**Relayer Endowment — Reputation-Gated Deployment** (findings #7, #15):
+- Added `total_slashed: u64` and `total_successful: u64` to `RelayerEndowmentAccount` for per-relayer reputation tracking
+- Modified `DeployCapitalParamsV1` with `min_success_rate_bp: Option<u64>` and `max_slash_count: Option<u64>` — backers can set minimum reputation thresholds
+- Modified `DeployCapitalV1`: Rejects capital deployment if relayer's slash count exceeds threshold or success rate falls below minimum — prevents adverse selection
+- New `ReputationCheckFailed` error (Custom(14))
+
+**Failure Mode Coverage Summary**:
+| Finding | Addressed By | Mechanism |
+|---------|-------------|-----------|
+| #7 (pool slashes degrade all) | Pool Stake `RebalancePoolSharesV1` + per-member slash tracking | Individual share weighting based on slash history |
+| #14 (no fee discovery) | Attestation `CommitFeeScheduleV1` + Bridge `RegisterFeeScheduleV1` | On-chain fee schedule commitments verified by attestation |
+| #15 (adverse selection) | Relayer Endowment reputation thresholds + Identity reputation credentials | Backers filter relayers by attested slash/success history |
+
 ## Residual Risks
 
 The following risks remain after hardening. **Users and operators should understand these before depositing funds.**
@@ -105,7 +144,8 @@ The following risks remain after hardening. **Users and operators should underst
 | No deposit finality guarantee | **MEDIUM** | The circuit proves a deposit EXISTS, not that it's FINAL. Chain reorganizations could revert deposits after proof submission. |
 | Implementation bugs | **MEDIUM** | The contract code has not been formally verified. Bugs in `process_instruction` or `process_update` could cause fund loss. |
 | Relayer theft (HTLC path) | **LOW** | In HTLC withdrawals, secret is revealed to the relayer. A malicious relayer could front-run on the external chain. Mitigated by fresh addresses per deposit. |
-| Pool reputation not yet implemented | **MEDIUM** | Until Phase 2d is deployed, shared staking pools remain vulnerable to one reckless member degrading coverage for all. |
+| Pool reputation tracking | **LOW** | Per-member slash tracking, `RebalancePoolSharesV1`, and reputation-gated capital deployment (Phase 2d) mitigate shared pool degradation. Individual member accountability is enforced but the system has not yet been battle-tested at scale. |
+| Per-member slash enforcement | **LOW** | `PoolMemberStake.slash_count` is incremented on each slash event in `SlashCoverageV1`. The `RebalancePoolSharesV1` function adjusts share weights accordingly. Full pool rebalancing requires off-chain member ID tracking until DB iteration is available in WASM. |
 
 ### Privacy Risk
 
@@ -119,7 +159,7 @@ The following risks remain after hardening. **Users and operators should underst
 
 | Risk | Severity | Details |
 |------|----------|---------|
-| Relayer centralization | **MEDIUM** | If only one relayer operates, they have a monopoly on withdrawal execution. Fee caps protect against pricing abuse but not censorship. |
+| Relayer centralization | **LOW** | `RegisterRelayerV1` establishes a registered relayer set enabling multi-relayer marketplace. `AcceptWithdrawalV1` prevents withdrawal monopolization. Fee caps protect against pricing abuse. Reputation transparency incentivizes competition. |
 | No automated relayer restart | **MEDIUM** | Until Phase 3 (health check + watchdog) is deployed, relayer crashes require manual intervention. |
 | Guaranteed withdrawal circuit breaker | **LOW** | When `GUARANTEED_PENDING` reaches `MAX_GUARANTEED_TOTAL`, new guaranteed withdrawals are rejected. Users fall back to standard mode. |
 
@@ -127,8 +167,8 @@ The following risks remain after hardening. **Users and operators should underst
 
 | Risk | Severity | Details |
 |------|----------|---------|
-| Backer capital at relayer's operational risk | **MEDIUM** | Backers' deployed capital is exposed to relayer slashing events. Force settlement protects fee distribution but not principal. |
-| No slashing for pool members | **MEDIUM** | Pool reputation tracking (Phase 2d) is not yet deployed. One reckless pool member affects all. |
+| Backer capital at relayer's operational risk | **LOW** | Backers can set `min_success_rate_bp` and `max_slash_count` thresholds in `DeployCapitalV1`. Reputation-gated deployment (Phase 2d) prevents capital from flowing to poorly-performing relayers. Force settlement protects fee distribution. |
+| Pool member slashing | **LOW** | Per-member slash tracking is deployed in `SlashCoverageV1` and `PoolStakeRegistry`. Individual members' `slash_count` is incremented on each slash event. `RebalancePoolSharesV1` adjusts share weights accordingly. |
 | Bridge contract upgrade risk | **LOW** | Contract upgrades require governance. A malicious upgrade could introduce vulnerabilities. |
 
 ## ZK Circuit Safety

@@ -31,10 +31,11 @@ use dwow_sdk::{
     crypto::{
         poseidon_hash,
         schnorr::{SchnorrSecret, Signature},
-        PublicKey, SecretKey,
+        Keypair, PublicKey, SecretKey,
     },
     pasta::pallas,
 };
+use pasta_curves::group::Group;
 use dwow_serial::serialize;
 
 use crate::model::{
@@ -64,12 +65,13 @@ pub struct InitializeV1Builder {
     betting_contract_id: pallas::Base,
     house_edge_bp: u32,
     risk_profile: u8,
+    nonce: pallas::Base,
 }
 
 impl InitializeV1Builder {
     /// Create a new InitializeV1 builder
     pub fn new(betting_contract_id: pallas::Base, house_edge_bp: u32, risk_profile: u8) -> Self {
-        Self { betting_contract_id, house_edge_bp, risk_profile }
+        Self { betting_contract_id, house_edge_bp, risk_profile, nonce: pallas::Base::zero() }
     }
 
     /// Build the initialize parameters
@@ -78,6 +80,7 @@ impl InitializeV1Builder {
             betting_contract_id: self.betting_contract_id,
             house_edge_bp: self.house_edge_bp,
             risk_profile: self.risk_profile,
+            nonce: self.nonce,
             signature: Signature::dummy(), // Filled by house wallet
         }
     }
@@ -91,6 +94,8 @@ pub struct StakeV1Builder {
     amount: u64,
     spend_hook: pallas::Base,
     user_data: pallas::Base,
+    nonce: pallas::Base,
+    value_commit: pallas::Point,
 }
 
 impl StakeV1Builder {
@@ -103,7 +108,7 @@ impl StakeV1Builder {
         spend_hook: pallas::Base,
         user_data: pallas::Base,
     ) -> Self {
-        Self { table_id, staker_pub, staker_secret, amount, spend_hook, user_data }
+        Self { table_id, staker_pub, staker_secret, amount, spend_hook, user_data, nonce: pallas::Base::zero(), value_commit: pallas::Point::identity() }
     }
 
     /// Build the stake parameters and note
@@ -116,6 +121,8 @@ impl StakeV1Builder {
             table_id: self.table_id,
             staker_pub: self.staker_pub,
             amount: self.amount,
+            nonce: self.nonce,
+            value_commit: self.value_commit,
             signature,
             spend_hook: self.spend_hook,
             user_data: self.user_data,
@@ -150,12 +157,17 @@ pub struct UnstakeV1Builder {
     staker_secret: SecretKey,
     spend_hook: pallas::Base,
     user_data: pallas::Base,
+    table_id: pallas::Base,
+    staker_pub: PublicKey,
+    original_amount: u64,
+    nonce: pallas::Base,
+    value_commit: pallas::Point,
 }
 
 impl UnstakeV1Builder {
     /// Create a new UnstakeV1 builder
     pub fn new(stake_id: pallas::Base, staker_secret: SecretKey, spend_hook: pallas::Base, user_data: pallas::Base) -> Self {
-        Self { stake_id, staker_secret, spend_hook, user_data }
+        Self { stake_id, staker_secret, spend_hook, user_data, table_id: pallas::Base::zero(), staker_pub: Keypair::default().public, original_amount: 0, nonce: pallas::Base::zero(), value_commit: pallas::Point::identity() }
     }
 
     /// Build the unstake parameters
@@ -166,6 +178,11 @@ impl UnstakeV1Builder {
 
         UnstakeParamsV1 {
             stake_id: self.stake_id,
+            table_id: self.table_id,
+            staker_pub: self.staker_pub,
+            original_amount: self.original_amount,
+            nonce: self.nonce,
+            value_commit: self.value_commit,
             signature,
             spend_hook: self.spend_hook,
             user_data: self.user_data,
@@ -177,12 +194,17 @@ impl UnstakeV1Builder {
 pub struct ClaimEarningsV1Builder {
     stake_id: pallas::Base,
     staker_secret: SecretKey,
+    table_id: pallas::Base,
+    staker_pub: PublicKey,
+    current_amount: u64,
+    nonce: pallas::Base,
+    value_commit: pallas::Point,
 }
 
 impl ClaimEarningsV1Builder {
     /// Create a new ClaimEarningsV1 builder
     pub fn new(stake_id: pallas::Base, staker_secret: SecretKey) -> Self {
-        Self { stake_id, staker_secret }
+        Self { stake_id, staker_secret, table_id: pallas::Base::zero(), staker_pub: Keypair::default().public, current_amount: 0, nonce: pallas::Base::zero(), value_commit: pallas::Point::identity() }
     }
 
     /// Build the claim earnings parameters
@@ -193,6 +215,11 @@ impl ClaimEarningsV1Builder {
 
         ClaimEarningsParamsV1 {
             stake_id: self.stake_id,
+            table_id: self.table_id,
+            staker_pub: self.staker_pub,
+            current_amount: self.current_amount,
+            nonce: self.nonce,
+            value_commit: self.value_commit,
             signature,
         }
     }
@@ -203,12 +230,14 @@ pub struct UpdateRiskV1Builder {
     table_id: pallas::Base,
     payout_amount: u64,
     house_share: u64,
+    betting_contract_id: pallas::Base,
+    nonce: pallas::Base,
 }
 
 impl UpdateRiskV1Builder {
     /// Create a new UpdateRiskV1 builder
     pub fn new(table_id: pallas::Base, payout_amount: u64, house_share: u64) -> Self {
-        Self { table_id, payout_amount, house_share }
+        Self { table_id, payout_amount, house_share, betting_contract_id: pallas::Base::zero(), nonce: pallas::Base::zero() }
     }
 
     /// Build the update risk parameters
@@ -217,6 +246,8 @@ impl UpdateRiskV1Builder {
             table_id: self.table_id,
             payout_amount: self.payout_amount,
             house_share: self.house_share,
+            betting_contract_id: self.betting_contract_id,
+            nonce: self.nonce,
         }
     }
 }

@@ -50,6 +50,10 @@ pub struct RelayerEndowmentAccount {
     pub total_collected_fees_log: u64,
     /// Whether account is active
     pub is_active: bool,
+    /// Total amount slashed from this relayer (Phase 2d hardening)
+    pub total_slashed: u64,
+    /// Total successful withdrawals processed (Phase 2d hardening)
+    pub total_successful: u64,
 }
 
 /// Individual deployment from a backer to a relayer
@@ -109,6 +113,10 @@ pub struct DeployCapitalParamsV1 {
     pub signature_public: PublicKey,
     /// Value commitment point (public input for ZK proof)
     pub value_commit: pallas::Point,
+    /// Optional minimum success rate threshold (basis points, e.g. 8000 = 80%)
+    pub min_success_rate_bp: Option<u64>,
+    /// Optional maximum slash count threshold
+    pub max_slash_count: Option<u64>,
 }
 
 /// Update returned after deploying capital
