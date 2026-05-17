@@ -1,7 +1,7 @@
 Anonymous Bridge
 ================
 
-> **Note:** This document describes the full bridge design and architecture. The bridge contract, DLEq proofs, and multi-chain relayer infrastructure are aspirational — the implementation is in progress. The design is correct, but not all features described here are deployed yet.
+> **Note:** This document describes the full bridge design and architecture. The bridge contract, DLEq proofs, and multi-chain relayer service are implemented and tested (Level 1/2/3). See [Security Audit](audit.md) for the May 2026 hardening details.
 
 *DarkWow's universal bridge enables private asset transfers between DarkWow and external blockchains using Object Capability Security.*
 

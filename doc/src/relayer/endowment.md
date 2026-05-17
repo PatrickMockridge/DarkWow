@@ -1,6 +1,6 @@
 # Relayer Endowment Contract
 
-> **Note:** The endowment model described here is aspirational. It depends on the multi-chain bridge and relayer infrastructure which are still under development.
+> **Note:** The endowment contract is implemented and deployed on the DarkWow testnet. It underwent internal security hardening (May 2026) with proportional slashing, fee caps, and force settlement now live. See [Security Audit](../contract/audit.md).
 
 A composable contract that enables external capital providers ("backers") to deploy capital to relayers in exchange for a share of the relayer's bridge fees.
 

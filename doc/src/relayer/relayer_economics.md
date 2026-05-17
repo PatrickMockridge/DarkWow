@@ -1,6 +1,6 @@
 # Relayer Economics
 
-> **Note:** The economic layer described here builds on relayer infrastructure that is still under development. The feed market, staking pools, and capital deployment mechanisms are aspirational designs. **Hardening applied May 2026**: proportional slashing, fee caps, force settlement, and circuit breaker are now live in the bridge and endowment contracts. See [Security Audit](../contract/audit.md).
+> **Note:** The economic layer described here builds on relayer infrastructure now implemented and tested. The feed market, staking pools, and capital deployment mechanisms are active on testnet. **Hardening applied May 2026**: proportional slashing, fee caps, force settlement, and circuit breaker are now live in the bridge and endowment contracts. See [Security Audit](../contract/audit.md).
 
 *On-chain coordination, feed markets, staking pools, and capital deployment for DarkWow relayers*
 

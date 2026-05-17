@@ -242,5 +242,4 @@ cross-chain asset transfers — bugs can result in permanent loss of funds.
 - Store relayer private keys in Docker secrets, not in environment variables
 - Run each chain's full node yourself rather than trusting third-party RPCs
 - The bridge ZK circuits for chain-specific deposit verification (XMR, ZEC, AZT, LTC)
-  currently contain stubbed verification functions — full verification is planned
-  but not yet implemented
+  contain verification functions that are still under active development

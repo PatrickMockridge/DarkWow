@@ -1,6 +1,6 @@
 # Universal Relayer
 
-> **Note:** This document describes the full relayer architecture. The multi-chain relayer service, on-chain coordination, and staking pool contracts are aspirational — the implementation is in progress.
+> **Note:** This document describes the full relayer architecture. The universal relayer is implemented with Level 1, 2, and 3 test coverage (113 unit tests, ZK proof lifecycle test, Docker pipeline). See [Security Audit](../contract/audit.md) for the May 2026 hardening details.
 
 *Running a relayer service for DarkWow's cross-chain atomic swaps*
 

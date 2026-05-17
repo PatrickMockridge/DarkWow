@@ -107,8 +107,11 @@ on real machines across networks.
 |-----------|------|
 | Contract unit/integration tests | `src/contract/<name>/tests/` |
 | Test harness crate (28 contracts) | `src/contract/test-harness/` |
+| Relayer unit tests (Level 1) | `bin/universal_relayer/src/` |
 | Daemon integration tests | `bin/darkfid/src/tests/` |
+| Bridge lifecycle test (Level 2) | `bin/darkfid/src/tests/heavyweight_pipeline.rs` |
 | Docker localnet (3-container) | `contrib/docker/darkwow-testnet/` |
+| Bridge Docker image + pipeline (Level 3) | `contrib/docker/bridge-node/` |
 | Docker devnet (3-container, fast iteration) | `contrib/docker/dwow-devnet/` |
 | Docker devnet node (single-container) | `contrib/docker/dwow-devnet/` |
 | Manual localnet scripts | `contrib/localnet/` |
