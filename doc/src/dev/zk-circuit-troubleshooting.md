@@ -43,7 +43,7 @@ Each contract with ZK circuits has a `Makefile` that handles binary generation:
 
 ```bash
 # Navigate to the contract directory
-cd src/contract/money_v2
+cd src/contract/money_v3
 
 # Clean existing binaries
 make clean
@@ -118,14 +118,15 @@ This issue tends to recur during the test lifecycle because:
 
 ## Money Contract Specific Notes
 
-The money_v2 contract has these circuits:
+The money_v3 contract has these circuits (Poseidon-only, no EC operations):
 
 | Binary | Namespace | Used By |
 |--------|-----------|---------|
-| `mint_v1.zk.bin` | `Mint_V2` | genesis mint, PoW reward |
-| `fee_v1.zk.bin` | `Fee_V2` | transaction fees |
-| `burn_v1.zk.bin` | `Burn_V2` | token burning |
-| `token_mint_v1.zk.bin` | `TokenMint_V1` | token minting |
-| `auth_token_mint_v1.zk.bin` | `AuthTokenMint_V1` | auth token minting |
+| `token_mint_v1.zk.bin` | `TokenMint_V1` | Create new token types |
+| `auth_token_mint_v1.zk.bin` | `AuthTokenMint_V1` | Authorize token minting |
+| `mint_v1.zk.bin` | `Mint_V1` | Mint tokens |
+| `burn_v1.zk.bin` | `Burn_V1` | Burn tokens (nullifier) |
+
+TransferV1 and OtcSwapV1 reuse Burn_V1 + Mint_V1 circuits.
 
 Note: The filename pattern (`_v1.zk.bin`) does NOT necessarily mean it's a "v1" circuit. The namespace inside the file determines the actual version.

@@ -34,16 +34,18 @@ The `dev` branch contains additional contracts not yet in official DarkWow maste
 
 ---
 
-## Money V2 (Standard for This Fork)
+## Money V3 (Standard for This Fork)
 
-**money_v2** is our standard money contract featuring improved circuit design with self-contained ZK proofs.
+**money_v3** is our standard DeFi token contract — Poseidon-only, zero EC operations, 100% fungibility with hidden token IDs.
 
 | Contract | Description | Standard |
 |----------|-------------|----------|
-| **money** | Original DarkWow money (v1) - upstream legacy | No |
-| **money_v2** | Our secure version with constrain_equal_base | **Yes** |
+| **money** | Original DarkFi money (v1) - upstream legacy | No |
+| **money_v2** | Deprecated — EC heap bugs (directory removed) | No |
+| **money_v3** | Current — Privacy-first DeFi token contract | **Yes** |
+| **native_token** | Consensus-native token (PoW rewards, fees) | **Yes** |
 
-See [money_v2/README.md](money_v2/README.md) for full details.
+See [money_v3/README.md](money_v3/README.md) for full details.
 
 ---
 
@@ -298,7 +300,6 @@ Local READMEs exist for each contract in this folder:
 - [labor_market/README.md](labor_market/README.md) - Job/labor market
 - [lottery/README.md](lottery/README.md) - Configurable lottery
 - [money_v3/README.md](money_v3/README.md) - Privacy-first DeFi token (STANDARD)
-- [money_v2/README.md](money_v2/README.md) - Secure money contract
 - [auction/README.md](auction/README.md) - Privacy-preserving auction
 - [oracle/README.md](oracle/README.md) - Push-model oracle
 - [roulette/README.md](roulette/README.md) - Privacy-preserving roulette

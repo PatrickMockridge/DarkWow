@@ -80,19 +80,14 @@ The linear blockchain's consensus model is **ideal for testing**:
 
 Example test harness behavior:
 ```rust
-// Create 5-node localnet
-let harness = LinearFiveNodeHarness::new()?;
+// Run Level 1 lightweight tests (deterministic, no network)
+cargo test -p dwowd test_linear
 
-// Deploy contracts
-harness.deploy_genesis_contracts()?;
+// Run Level 3 multi-node Docker testnet
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native
 
-// Alice mines genesis, broadcast to all
-let genesis_block = harness.alice_create_genesis();
-harness.broadcast_block(&genesis_block)?;
-
-// Alice mines blocks, each broadcast to all
-// All nodes verify sync
-harness.verify_sync()?;
+// Run full mining + contract test suite
+./contrib/docker/darkwow-testnet/test-contracts.sh
 ```
 
 ### Comparison to Upstream Consensus
@@ -110,13 +105,12 @@ harness.verify_sync()?;
 ## Current State (May 2026)
 
 Both consensus implementations are active. The network name in `dwowd_config.toml`
-determines which one is used at startup (`bin/darkfid/src/main.rs:188-189`):
+determines which one is used at startup (`bin/darkfid/src/main.rs:170-180`):
 
 | Network | Consensus | Location | Status |
 |---------|-----------|----------|--------|
 | `testnet` | Fork/overlay (DAG) | `src/validator/consensus.rs` | Legacy — maintained, no new features |
-| `dwow-devnet` | Uncle Merkle (linear) | `src/linear/` | Local devnet — fast iteration, fixed difficulty |
-| `linear-testnet` (legacy name) | Uncle Merkle (linear) | `src/linear/` | Still valid in code, prefer `dwow-devnet` for new setups |
+| `linear-testnet` | Uncle Merkle (linear) | `src/linear/` | Local devnet — fast iteration, fixed difficulty |
 | `darkwow-testnet` | Uncle Merkle (linear) | `src/linear/` | Public testnet — mining, contracts, merge mining |
 
 **In the fork-based validator**, uncle Merkle verification is a placeholder
@@ -126,7 +120,7 @@ uncle root is accepted — no actual uncle blocks are validated or rewarded.
 **In the linear blockchain**, uncle structures and verification are implemented
 in `src/linear/src/block.rs`. The `runtime` integration (WASM contract execution
 during block validation) is partially complete — marked TODO at
-`src/linear/src/blockchain.rs:192-193`.
+`src/linear/src/blockchain.rs:211`.
 
 All new feature development (contract testing, merge mining, p2pool adaptor,
 anchoring finality) targets the linear blockchain. The fork-based validator is

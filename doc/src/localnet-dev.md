@@ -661,20 +661,19 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
 
 ---
 
-## Money V1 and Money V2 are DEPRECATED
+## Money Contracts: Current Status
 
-**Money V1 is deprecated. Money V2 is deprecated. Native Token is the current standard.**
-
-- **`money` (v1)**: DEPRECATED - Original DarkWow money contract
-- **`money_v2`**: DEPRECATED - Replaced by Native Token
-- **`native_token`**: CURRENT - Consensus-first native token contract
+- **`money` (v1)**: DEPRECATED — Original DarkFi money contract
+- **`money_v2`**: DEPRECATED — Replaced by money_v3 (EC heap bugs)
+- **`money_v3`**: CURRENT — DeFi token contract (ERC-20, stablecoins, wrapped tokens)
+- **`native_token`**: CURRENT — Consensus-native token (PoW rewards, fees)
 
 ### Migration Path
 
 | Old Contract | Status | Replacement |
 |-------------|--------|-------------|
-| Money V1 | DEPRECATED | Native Token |
-| Money V2 | DEPRECATED | Native Token |
+| Money V1 | DEPRECATED | money_v3 (DeFi) or Native Token (consensus) |
+| Money V2 | DEPRECATED | money_v3 (DeFi) or Native Token (consensus) |
 
 Native Token provides:
 - Consensus-first design (fees, rewards work reliably)

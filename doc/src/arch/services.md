@@ -6,7 +6,7 @@ running components that may communicate with each other.
 The standard signature for a service is of the form:
 
 ```rust
-use darkfi::ExecutorPtr;
+use dwow_system::ExecutorPtr;
 
 pub struct Service {
     // ...

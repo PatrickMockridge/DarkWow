@@ -257,7 +257,7 @@ Create `universal_relayer_config.toml`:
 
 ```toml
 [darkfi]
-dwowd_url = "http://127.0.0.1:8543"
+darkfid_url = "http://127.0.0.1:8543"
 poll_interval_secs = 10
 max_concurrent_withdrawals = 10
 
@@ -298,10 +298,6 @@ min_confirmations = 6
 [relayer]
 timeout_blocks = 100
 fee_percentage = 1
-
-[fee_limits]
-max_fee_bp = 1000    # 10% cap enforced by bridge
-min_fee = 100        # minimum fee floor
 ```
 
 ### Configuration Fields Explained
@@ -310,7 +306,7 @@ min_fee = 100        # minimum fee floor
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `dwowd_url` | `http://127.0.0.1:8543` | DarkWow node JSON-RPC endpoint |
+| `darkfid_url` | `http://127.0.0.1:8543` | DarkWow node JSON-RPC endpoint |
 | `poll_interval_secs` | 10 | How often to check for new withdrawals |
 | `max_concurrent_withdrawals` | 10 | Max simultaneous withdrawal executions |
 

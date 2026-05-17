@@ -7,14 +7,14 @@ start building `dchat` by creating a daemon that we call `dchatd`.
 To do this, we'll make use of a DarkWow macro called
 [async_daemonize](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/util/cli.rs).
 
-`async_daemonize`is the standard way of daemonizing darkfi binaries. It
+`async_daemonize` is the standard way of daemonizing DarkWow binaries. It
 implements TOML config file configuration, argument parsing and a
 multithreaded async executor that can be passed into the given function.
 
 We use `async_daemonize` as follows:
 
 ```rust
-use darkfi::{async_daemonize, cli_desc, Result};
+use dwow_util::{async_daemonize, cli_desc, Result};
 use smol::stream::StreamExt;
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 

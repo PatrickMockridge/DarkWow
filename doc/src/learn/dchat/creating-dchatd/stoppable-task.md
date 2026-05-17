@@ -42,7 +42,7 @@ to ensure thread safety.
 ```rust
 //...
 
-use darkfi::system::{StoppableTask, StoppableTaskPrc};
+use dwow_system::{StoppableTask, StoppableTaskPrc};
 
 //...
 

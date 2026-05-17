@@ -87,6 +87,7 @@ Prevents double-spending by breaking the link between mint and burn.
 | MintV1 | 0x02 | Mint tokens of existing type |
 | BurnV1 | 0x03 | Burn tokens with nullifier |
 | TransferV1 | 0x04 | Atomic burn+mint transfer |
+| OtcSwapV1 | 0x05 | Atomic OTC token swap |
 
 ### TokenMintV1 (0x00)
 
@@ -98,6 +99,7 @@ struct TokenMintParamsV1 {
     coin: Coin,              // Initial coin commitment
     value_commit: Base,      // poseidon_hash(value, value_blind)
     token_id: Base,          // poseidon_hash(auth_parent, user_data, blind)
+    token_auth_parent: Base, // Authorization parent (bound in ZK proof)
     token_commit: Base,      // poseidon_hash(token_id, token_blind)
 }
 ```
@@ -137,26 +139,26 @@ Mints new tokens of an existing authorized type.
 **Parameters:**
 ```rust
 struct MintParamsV1 {
-    auth_nullifier: Nullifier,       // From AuthTokenMintV1
-    auth_mint_public: pallas::Base,   // Authority public key
-    token_leaf_pos: u32,              // Merkle tree position
-    token_path: MerklePath,          // Merkle proof
-    coin_public: pallas::Base,       // Recipient
-    coin_value: u64,
-    coin_token_id: pallas::Base,     // Token type
-    coin_spend_hook: pallas::Base,
-    coin_user_data: pallas::Base,
-    coin_blind: pallas::Base,
-    value_blind: pallas::Base,
+    auth_proof: AuthProof,   // Authorization proof from AuthTokenMintV1
+    coin: Coin,              // The newly minted coin
+    value_commit: Base,      // Value commitment (Poseidon hash)
+    token_id: Base,          // Token ID being minted
+}
+
+/// Authorization proof from AuthTokenMintV1
+struct AuthProof {
+    nullifier: Nullifier,           // From auth call (prevents replay)
+    mint_public: pallas::Base,       // Public key of the authority
+    token_registry_root: MerkleNode, // Proves token_id is authorized
 }
 ```
 
 **ZK Circuit:** `mint_v1.zk`
 
 **Validation:**
-- Token exists in registry (Merkle proof)
-- Auth nullifier not already spent
-- Auth public key matches authorization
+- AuthProof nullifier not already spent
+- AuthProof mint_public matches authorization
+- Token exists in registry (via token_registry_root)
 - Range check on value
 
 ### BurnV1 (0x03)
@@ -304,7 +306,7 @@ This enables:
 | **Fungibility** | Partial | Partial | **Full** |
 | **EC Operations** | 4 buggy | 3 | **0** |
 | **Circuits** | 5 | 3 | 4 |
-| **Functions** | 9 | 6 | 5 |
+| **Functions** | 9 | 6 | 6 |
 | **Heap Bug** | YES | YES | **NO** |
 | **Token Minting** | Yes | No | **Yes** |
 | **Authorization** | ACL | None | **Merkle** |
@@ -312,14 +314,15 @@ This enables:
 ## Database Trees
 
 ```
-MONEY_CONTRACT_COINS_TREE              - coin commitment -> ()
-MONEY_CONTRACT_NULLIFIERS_TREE         - nullifier -> spent
-MONEY_CONTRACT_COIN_ROOTS_TREE         - historical Merkle roots
-MONEY_CONTRACT_NULLIFIER_ROOTS_TREE    - historical nullifier roots
-MONEY_CONTRACT_INFO_TREE               - contract metadata
-MONEY_CONTRACT_TOKEN_REGISTRY_TREE     - token_id -> token info
-MONEY_CONTRACT_AUTH_NULLIFIERS_TREE    - auth nullifier -> spent
+MONEY_V3_CONTRACT_COINS_TREE              - coin commitment -> ()
+MONEY_V3_CONTRACT_NULLIFIERS_TREE         - nullifier -> spent
+MONEY_V3_CONTRACT_MERKLE_TREE             - Merkle tree of all coins
+MONEY_V3_CONTRACT_INFO_TREE               - contract metadata
+MONEY_V3_CONTRACT_COIN_ROOTS_TREE         - historical Merkle roots
+MONEY_V3_CONTRACT_NULLIFIER_ROOTS_TREE    - historical nullifier roots
 ```
+
+Note: a token registry tree and auth nullifiers tree are planned but not yet implemented (see code comments in `src/contract/money_v3/src/entrypoint/mod.rs`).
 
 ## Files
 

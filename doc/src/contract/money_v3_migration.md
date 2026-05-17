@@ -191,6 +191,7 @@ Purpose: Privacy-first DeFi tokens
 - Token minting (MintV1)
 - Token burning (BurnV1)
 - Private transfers (TransferV1)
+- Atomic OTC swaps (OtcSwapV1)
 
 **Key Properties:**
 - Token IDs are hidden commitments

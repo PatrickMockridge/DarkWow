@@ -8,19 +8,18 @@ A spend hook allows Contract A to call a function in Contract B, authorizing the
 
 ## Pattern
 
-In money_v3 operations (`MintV1`, `TransferV1`, `OtcSwapV1`), the `spend_hook` and `user_data` fields specify what to call after tokens are transferred:
+In money_v3 operations that spend coins (`BurnV1`, `TransferV1`, `OtcSwapV1`), the `spend_hook` and `user_data` fields are carried on `Input` structs (`src/contract/money_v3/src/model/mod.rs:184-185`). These fields are also present in `CoinAttributes` (lines 141-142) and `Output` (passed via AEAD-encrypted note).
 
-```rust
-pub struct SpendHook {
-    pub spend_hook: pallas::Base,   // Function ID to invoke
-    pub user_data: pallas::Base,    // Data passed to the hook
-}
-```
+The `spend_hook` field is a `pallas::Base` value — typically a contract function ID — included as a public input in the ZK proof metadata. The `user_data` field carries opaque data for the receiving contract.
+
+There is no standalone `SpendHook` struct; the two fields live inline on `Input`, `Output`, and `CoinAttributes`.
 
 When a money_v3 function executes with a non-zero `spend_hook`:
-1. Token transfer is verified (proof checked)
-2. Child call is made to `spend_hook` with `user_data`
-3. Child call result determines if the main transaction succeeds
+1. Token transfer is verified (ZK proof checked)
+2. The `spend_hook` value is exposed in the proof's public inputs
+3. The calling contract (e.g. DEX, Stablecoin) validates the `spend_hook` value matches expected function IDs
+
+Note: the actual child-call dispatch is a host-layer mechanism — the money_v3 entrypoint exposes `spend_hook` in metadata but does not itself execute the target contract.
 
 ## Usage in Contracts
 

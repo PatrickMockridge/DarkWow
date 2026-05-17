@@ -12,7 +12,7 @@ lines to `main()`:
 
 ```rust
 use crate::dchat_error::ErrorMissingSpecifier;
-use darkfi::net::Settings;
+use dwow_net::Settings;
 
 {{#include ../../../../../example/dchat/src/main.rs:error}}
 

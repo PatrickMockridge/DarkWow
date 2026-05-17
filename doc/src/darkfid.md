@@ -38,7 +38,7 @@ dwowd ships with three **native contracts** compiled directly into the binary:
 
 Native contracts are deployed at startup via `deploy_native_contracts()` and have verification keys (VKs) injected at genesis.
 
-**WASM contracts** (MoneyV2, Stablecoin, Identity, DEX, etc.) are deployed dynamically via the Deployooor contract after the node starts.
+**WASM contracts** (money_v3, Stablecoin, Identity, DEX, etc.) are deployed dynamically via the Deployooor contract after the node starts.
 
 ## Startup Sequence
 

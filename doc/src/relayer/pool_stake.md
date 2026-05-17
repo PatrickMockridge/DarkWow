@@ -56,11 +56,13 @@ struct PoolStakeRegistry {
     total_stake: u64,              // Total capital staked
     available_coverage: u64,        // Coverage not yet allocated
     allocated_coverage: u64,        // Coverage currently in use
+    member_count: u64,
+    max_coverage_ratio: u32,       // Basis points (e.g., 10000 = 1:1)
+    operator_fee_bp: u32,          // Fee percentage for pool operator
+    created_at: u64,
     total_slashed: u64,            // Lifetime total slashed (May 2026)
     pool_slash_count: u64,         // Total number of slash events (May 2026)
-    member_count: u64,
-    max_coverage_ratio: u32,       // Basis points (e.g., 8000 = 80%)
-    created_at: u64,
+    is_active: bool,               // Whether pool is active
 }
 ```
 
@@ -74,13 +76,14 @@ struct PoolMemberStake {
     pool_id: pallas::Base,
     member_pub: PublicKey,
     relayer_id: [u8; 32],          // Target relayer
-    stake_amount: u64,
+    original_amount: u64,           // Original stake amount
+    current_amount: u64,            // Current stake amount (after losses)
     coverage_contribution: u64,
-    coverage_share_bp: u32,         // Basis points of pool coverage
-    slash_count: u64,              // Individual slash count (May 2026)
+    pool_share_bp: u32,             // Basis points of pool coverage
     accumulated_fees: u64,
     created_at: u64,
-    unstake_requested_at: Option<u64>,
+    leave_requested_at: Option<u64>,
+    slash_count: u64,              // Individual slash count (May 2026)
     is_active: bool,
 }
 ```
@@ -93,11 +96,13 @@ Active coverage for a withdrawal:
 struct CoverageAllocation {
     allocation_id: pallas::Base,
     pool_id: pallas::Base,
-    withdrawal_nullifier: IntentNullifier,
+    withdrawal_nullifier: [u8; 32],
     amount: u64,
-    contributing_members: Vec<[u8; 32]>,
+    contributing_members: Vec<pallas::Base>,
     created_at: u64,
     timeout_height: u64,
+    executed: bool,                // Successful execution
+    slashed: bool,                 // Failed execution (slashed)
 }
 ```
 

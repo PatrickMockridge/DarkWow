@@ -1475,14 +1475,14 @@ Several issues affect the ability to develop, test, and deploy smart contracts o
 
 **Impact**: Cannot build `dwowd`, `dww`, or integration tests from source when using Rust 1.90+.
 
-**Root cause**: The `darkfi-serial/async` feature enables async-serialization which triggers a lifetime bug in `async-trait` 0.1.x.
+**Root cause**: The `dwow-serial/async` feature enables async-serialization which triggers a lifetime bug in `async-trait` 0.1.x.
 
 **Feature chain**:
 ```
 dwowd/validator
   └── dwowd/tx
         └── dwowd/async-serial
-              └── darkfi-serial/async
+              └── dwow-serial/async
                     └── async-trait 0.1.x  (buggy on Rust 1.90+)
 ```
 

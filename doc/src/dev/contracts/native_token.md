@@ -99,7 +99,7 @@ Nullifiers prevent double-spending by hashing the spending key with the coin has
 | Function | Opcode | Purpose | Priority |
 |----------|--------|---------|----------|
 | FeeV1 | 0x00 | Pay network fees | CONSENSUS |
-| MintV1 | 0x01 | Create new coins | CONSENSUS |
+| MintV1 | 0x01 | Create new coins | PRIVACY |
 | BurnV1 | 0x02 | Destroy coins with nullifier | PRIVACY |
 | TransferV1 | 0x03 | Private transfers | PRIVACY |
 | SpendV1 | 0x04 | Spend coins with change output | PRIVACY |
@@ -167,7 +167,7 @@ struct BurnParamsV1 {
 
 **ZK Circuit:** `burn_v1.zk`
 
-**Current Status:** Contract-side logic implemented. Client API stubbed pending Merkle proof infrastructure.
+**Current Status:** Contract-side logic and client API (`BurnCallBuilder` in `src/contract/native_token/src/client/burn_v1.rs`) fully implemented.
 
 ### TransferV1 (0x03)
 

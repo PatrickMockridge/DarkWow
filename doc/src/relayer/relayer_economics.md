@@ -1,6 +1,10 @@
 # Relayer Economics
 
-> **Note:** The economic layer described here builds on relayer infrastructure now implemented and tested. The feed market, staking pools, and capital deployment mechanisms are active on testnet. **Hardening applied May 2026**: proportional slashing, fee caps, force settlement, and circuit breaker are now live in the bridge and endowment contracts. See [Security Audit](../contract/audit.md).
+> **Design Document — Economic Layer Specification**
+>
+> The structs and mechanisms described here (`OnChainRelayer`, `StakePool`, `CombinedStakeProof`) are design concepts for planned on-chain relayer coordination. The current relayer implementation uses off-chain modules: `StakeManager` (`bin/universal_relayer/src/stake.rs`), `FeedManager` (`bin/universal_relayer/src/feed.rs`), `PoolManager` (`bin/universal_relayer/src/pool.rs`), and `CapitalDeployer` (`bin/universal_relayer/src/deployer.rs`).
+>
+> **Hardening applied May 2026**: proportional slashing, fee caps, force settlement, and circuit breaker are now live in the bridge and endowment contracts. See [Security Audit](../contract/audit.md).
 
 *On-chain coordination, feed markets, staking pools, and capital deployment for DarkWow relayers*
 

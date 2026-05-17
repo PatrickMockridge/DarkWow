@@ -325,7 +325,7 @@ proofs/lean/
 └── src/
     ├── Main.lean          # Executable verification tests
     │                        Run with: lean --run src/Main.lean
-    └── DarkWow/
+    └── DarkFi/
         ├── Field.lean     # Field arithmetic formalization
         │                    - PALLAS_PRIME definition
         │                    - Field operations (add, sub, mul, inv)

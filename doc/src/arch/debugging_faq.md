@@ -167,21 +167,19 @@ Use `&mut` to pass a mutable reference:
 .is_eq_with_output(&mut layouter.namespace(|| "is_equal_base"), lhs, rhs)?;
 ```
 
-### MoneyV2 Contract Compilation Errors
+### MoneyV3 Contract Compilation
 
-The `darkfi_money_v2_contract` had several pre-existing issues preventing compilation:
+The `darkfi_money_v3_contract` is the current DeFi token contract. If you encounter compilation issues:
 
-**Error 1: Unresolved import `nullifier`**
+**Common issue: Missing ZK circuit binaries**
 ```
-error[E0432]: unresolved import `nullifier`
+error: failed to read circuit binary
 ```
 
-**Cause:** Module declared as `pub mod nullifier;` but re-exported incorrectly.
-
-**Solution:** Use `self::` prefix for re-exports:
-```rust
-pub mod nullifier;
-pub use self::nullifier::Nullifier;
+**Solution:** Regenerate circuit binaries:
+```bash
+cd src/contract/money_v3
+make clean && make all
 ```
 
 **Error 2: Cannot find function `poseidon_hash`**

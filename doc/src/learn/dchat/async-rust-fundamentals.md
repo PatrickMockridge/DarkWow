@@ -255,7 +255,7 @@ shutdown. It uses a `watch` channel to signal tasks cooperatively,
 avoiding the risks of forceful cancellation:
 
 ```rust
-use darkfi::system::StoppableTask;
+use dwow_system::StoppableTask;
 
 let task = StoppableTask::new();
 task.clone().start(
