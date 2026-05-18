@@ -51,18 +51,24 @@ pub struct BlockHeader {
     /// RandomX key for PoW mining (key used to create VM for this block)
     pub randomx_key: [u8; 32],
     /// Root of the coin commitment Merkle tree after this block
+    #[serde(default)]
     pub coin_merkle_root: [u8; 32],
     /// Root of the nullifier Sparse Merkle Tree after this block
+    #[serde(default)]
     pub nullifier_root: [u8; 32],
     /// Caribina Arweave anchor TX ID (SHA-256 of ANS-104 DataItem signature).
     /// [0u8; 32] means no anchor (genesis blocks, bootstrapping, or anchor failure).
+    #[serde(default)]
     pub anchor_tx_id: [u8; 32],
     /// Monero p2pool anchor block height (0 = no anchor)
+    #[serde(default)]
     pub anchor_monero_height: u64,
     /// Monero p2pool anchor block hash ([0u8; 32] = no anchor)
+    #[serde(default)]
     pub anchor_monero_hash: [u8; 32],
     /// Finality signaling flags bitfield:
     ///   0x01 = FINALITY_CARIBNIA, 0x02 = FINALITY_MONERO, 0x04 = FINALITY_SIGNALED
+    #[serde(default)]
     pub finality_flags: u8,
 }
 
@@ -807,5 +813,56 @@ mod tests {
         assert_eq!(deserialized.anchor_tx_id, [0xBB; 32]);
         assert_eq!(deserialized.nonce, 42);
         assert_eq!(deserialized.height, 1);
+    }
+
+    /// Backward-compatible deserialization: old blocks without the new fields
+    /// (coin_merkle_root, nullifier_root, anchor_tx_id, anchor_monero_height,
+    /// anchor_monero_hash, finality_flags) must still deserialize with defaults.
+    #[test]
+    fn test_block_header_deserialize_old_format() {
+        // Build a header, serialize it, then remove the new fields from the JSON
+        let header = BlockHeader {
+            version: 1,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: 1000,
+            difficulty_target: 0x0000_FFFF,
+            nonce: 42,
+            height: 1,
+            uncle_merkle_root: [0u8; 32],
+            total_reward: 100_000_000,
+            randomx_key: [0xAA; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+        };
+
+        let full_json = serde_json::to_string(&header).unwrap();
+
+        // Parse, remove the new fields, and re-serialize to get "old format" JSON
+        let mut val: serde_json::Value = serde_json::from_str(&full_json).unwrap();
+        let obj = val.as_object_mut().unwrap();
+        obj.remove("coin_merkle_root");
+        obj.remove("nullifier_root");
+        obj.remove("anchor_tx_id");
+        obj.remove("anchor_monero_height");
+        obj.remove("anchor_monero_hash");
+        obj.remove("finality_flags");
+        let old_json = serde_json::to_string(&obj).unwrap();
+
+        // Deserialize the old format — must succeed with defaults
+        let deserialized: BlockHeader = serde_json::from_str(&old_json).unwrap();
+        assert_eq!(deserialized.version, 1);
+        assert_eq!(deserialized.nonce, 42);
+        assert_eq!(deserialized.height, 1);
+        assert_eq!(deserialized.coin_merkle_root, [0u8; 32]);
+        assert_eq!(deserialized.nullifier_root, [0u8; 32]);
+        assert_eq!(deserialized.anchor_tx_id, [0u8; 32]);
+        assert_eq!(deserialized.anchor_monero_height, 0);
+        assert_eq!(deserialized.anchor_monero_hash, [0u8; 32]);
+        assert_eq!(deserialized.finality_flags, 0);
     }
 }
