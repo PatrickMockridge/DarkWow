@@ -365,6 +365,7 @@ impl DarkfiNode {
                 ("target".to_string(), JsonValue::from(target)),
                 ("algo".to_string(), JsonValue::from(String::from("rx/0"))),
                 ("seed_hash".to_string(), JsonValue::from(seed_hash)),
+                ("reserved_offset".to_string(), JsonValue::from(40_f64)),
             ]))),
             ("status".to_string(), JsonValue::from(String::from("OK"))),
         ]));
@@ -859,6 +860,10 @@ impl DarkfiNode {
                                         (
                                             "seed_hash".to_string(),
                                             JsonValue::from(new_seed_hash),
+                                        ),
+                                        (
+                                            "reserved_offset".to_string(),
+                                            JsonValue::from(40_f64),
                                         ),
                                     ]));
 
