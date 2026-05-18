@@ -29,31 +29,18 @@ use tracing::{debug, error, info};
 
 use dwow::{
     async_daemonize,
-    blockchain::BlockInfo,
     cli_desc,
     net::settings::SettingsOpt,
     rpc::settings::{RpcSettings, RpcSettingsOpt},
-    util::{
-        encoding::base64,
-        path::{expand_path, get_config_path},
-    },
-    validator::{Validator, ValidatorConfig},
+    util::path::{expand_path, get_config_path},
     Error, Result,
 };
 use dwow_sdk::crypto::keypair::Network;
-use dwow_serial::deserialize_async;
 
-use dwowd::{task::consensus::ConsensusInitTaskConfig, Darkfid};
+use dwowd::{task::ConsensusInitTaskConfig, Darkfid};
 
 const CONFIG_FILE: &str = "dwowd_config.toml";
 const CONFIG_FILE_CONTENTS: &str = include_str!("../dwowd_config.toml");
-/// Note:
-/// If you change these don't forget to remove their corresponding database folder,
-/// since if it already has a genesis block, provided one is ignored.
-const GENESIS_BLOCK_LOCALNET: &str = include_str!("../genesis_block_localnet");
-const GENESIS_BLOCK_TESTNET: &str = include_str!("../genesis_block_testnet");
-const GENESIS_BLOCK_MAINNET: &str = include_str!("../genesis_block_mainnet");
-const GENESIS_BLOCK_LINEAR_TESTNET: &str = include_str!("../genesis_block_linear_testnet");
 
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]
 #[serde(default)]
@@ -68,28 +55,24 @@ struct Args {
     network: String,
 
     #[structopt(short, long)]
-    /// Reset validator state to given block height
-    reset: Option<u32>,
-
-    #[structopt(short, long)]
-    /// Purge pending sync headers
-    purge_sync: bool,
-
-    #[structopt(long)]
-    /// Fully validates existing blockchain state
-    validate: bool,
-
-    #[structopt(long)]
-    /// Fully rebuild the difficulties database based on existing blockchain state
-    rebuild_difficulties: bool,
-
-    #[structopt(short, long)]
     /// Set log file to ouput into
     log: Option<String>,
 
     #[structopt(short, parse(from_occurrences))]
     /// Increase verbosity (-vvv supported)
     verbose: u8,
+
+    #[structopt(long)]
+    /// Finality enforcement mode: "always" (default), "native", or "signaled".
+    /// Overrides the [finality] TOML section if set.
+    /// - always: Anchor every mined block to Arweave and enforce anchors on received blocks
+    /// - native: Trust PoW only — ignore all anchors
+    /// - signaled: Only enforce finality when a block signals it requires it
+    finality_mode: Option<String>,
+
+    #[structopt(long)]
+    /// Disable Caribina Arweave anchoring entirely
+    finality_disable_caribina: bool,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
@@ -97,33 +80,13 @@ struct Args {
 /// Defines a blockchain network configuration.
 /// Default values correspond to a local network.
 pub struct BlockchainNetwork {
-    #[structopt(long, default_value = "~/.local/share/dwow/darkfid/localnet")]
+    #[structopt(long, default_value = "~/.local/share/dwow/darkfid/linear-testnet")]
     /// Path to blockchain database
     database: String,
-
-    #[structopt(long, default_value = "3")]
-    /// Confirmation threshold, denominated by number of blocks
-    threshold: usize,
-
-    #[structopt(long, default_value = "8")]
-    /// Max in-memory forks to maintain
-    max_forks: usize,
-
-    #[structopt(long, default_value = "120")]
-    /// PoW block production target, in seconds
-    pow_target: u32,
-
-    #[structopt(long)]
-    /// Optional fixed PoW difficulty, used for testing
-    pow_fixed_difficulty: Option<usize>,
 
     #[structopt(long)]
     /// Skip syncing process and start node right away
     skip_sync: bool,
-
-    #[structopt(long)]
-    /// Disable transaction's fee verification, used for testing
-    skip_fees: bool,
 
     #[structopt(long)]
     /// Optional sync checkpoint height
@@ -156,6 +119,10 @@ pub struct BlockchainNetwork {
     #[structopt(skip)]
     /// Merge mining server JSON-RPC settings (optional)
     mm_rpc: Option<RpcSettingsOpt>,
+
+    #[structopt(skip)]
+    /// Finality configuration (parsed from TOML, overridden by --finality-mode CLI flag)
+    finality: Option<dwow_linear::FinalityConfig>,
 }
 
 async_daemonize!(realmain);
@@ -163,21 +130,9 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     info!(target: "dwowd", "Initializing DarkWow node...");
 
     // Grab blockchain network configuration
-    let ((network, blockchain_config), genesis_block) = match args.network.as_str() {
-        "localnet" => {
-            (parse_blockchain_config(args.config, "localnet").await?, GENESIS_BLOCK_LOCALNET)
-        }
-        "testnet" => {
-            (parse_blockchain_config(args.config, "testnet").await?, GENESIS_BLOCK_TESTNET)
-        }
-        "mainnet" => {
-            (parse_blockchain_config(args.config, "mainnet").await?, GENESIS_BLOCK_MAINNET)
-        }
-        "linear-testnet" => {
-            (parse_blockchain_config(args.config, "linear-testnet").await?, GENESIS_BLOCK_LINEAR_TESTNET)
-        }
-        "darkwow-testnet" => {
-            (parse_blockchain_config(args.config, "darkwow-testnet").await?, GENESIS_BLOCK_LINEAR_TESTNET)
+    let (network, mut blockchain_config) = match args.network.as_str() {
+        "linear-testnet" | "darkwow-testnet" | "dwow-devnet" => {
+            parse_blockchain_config(args.config, args.network.as_str()).await?
         }
         _ => {
             error!("Unsupported chain `{}`", args.network);
@@ -185,145 +140,54 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         }
     };
 
-    // Handle linear-testnet separately since it uses LinearBlockchain instead of Validator
-    if args.network == "linear-testnet" || args.network == "darkwow-testnet" {
-        info!(target: "dwowd", "Starting DarkWow node in linear-testnet mode...");
+    // Apply --finality-mode and --finality-disable-caribina CLI overrides
+    if args.finality_mode.is_some() || args.finality_disable_caribina {
+        let mut fc = blockchain_config.finality.unwrap_or_default();
 
-        // Initialize or open sled database
-        let db_path = expand_path(&blockchain_config.database)?;
-        let sled_db = sled::open(&db_path)?;
+        if let Some(ref mode_str) = args.finality_mode {
+            fc.mode = match mode_str.as_str() {
+                "native" => dwow_linear::FinalityMode::Native,
+                "always" => dwow_linear::FinalityMode::Always,
+                "signaled" => dwow_linear::FinalityMode::Signaled,
+                other => {
+                    error!(target: "dwowd", "Invalid finality mode: {other}. Must be one of: native, always, signaled");
+                    return Err(Error::ParseFailed("Invalid finality mode"))
+                }
+            };
+            info!(target: "dwowd", "Finality mode set via CLI: {mode_str}");
+        }
 
-        // Setup P2P settings
-        let p2p_settings: dwow::net::Settings =
-            (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
+        if args.finality_disable_caribina {
+            fc.caribina_enabled = false;
+            info!(target: "dwowd", "Caribina anchoring disabled via CLI");
+        }
 
-        // Initialize the daemon using LinearBlockchain
-        let daemon = Darkfid::init_linear(
-            network,
-            &sled_db,
-            &db_path,
-            &p2p_settings,
-            &blockchain_config.txs_batch_size,
-            &ex,
-        )
-        .await?;
-
-        // Start the daemon with consensus config
-        let config = ConsensusInitTaskConfig {
-            skip_sync: blockchain_config.skip_sync,
-            checkpoint_height: blockchain_config.checkpoint_height,
-            checkpoint: blockchain_config.checkpoint,
-        };
-        daemon
-            .start(
-                &ex,
-                &blockchain_config.rpc.into(),
-                &RpcSettings::default(),
-                &blockchain_config.stratum_rpc.map(|stratum_rpc_opts| stratum_rpc_opts.into()),
-                &blockchain_config.mm_rpc.map(|mm_rpc_opts| mm_rpc_opts.into()),
-                &config,
-                true, // is_linear: bypass overlay consensus for linear-testnet
-            )
-            .await?;
-
-        // Signal handling for graceful termination.
-        let (signals_handler, signals_task) = SignalHandler::new(ex)?;
-        signals_handler.wait_termination(signals_task).await?;
-        info!(target: "dwowd", "Caught termination signal, cleaning up and exiting...");
-
-        daemon.stop().await?;
-
-        info!(target: "dwowd", "Shut down successfully");
-
-        return Ok(());
+        blockchain_config.finality = Some(fc);
     }
 
-    // Parse the genesis block
-    let bytes = base64::decode(genesis_block.trim()).unwrap();
-    let genesis_block: BlockInfo = deserialize_async(&bytes).await?;
+    info!(target: "dwowd", "Starting DarkWow node in linear-testnet mode...");
 
     // Initialize or open sled database
     let db_path = expand_path(&blockchain_config.database)?;
     let sled_db = sled::open(&db_path)?;
 
-    // Initialize validator configuration
-    let pow_fixed_difficulty = if let Some(diff) = blockchain_config.pow_fixed_difficulty {
-        info!(target: "dwowd", "Node is configured to run with fixed PoW difficulty: {diff}");
-        Some(diff.into())
-    } else {
-        None
-    };
-
-    let config = ValidatorConfig {
-        confirmation_threshold: blockchain_config.threshold,
-        max_forks: blockchain_config.max_forks,
-        pow_target: blockchain_config.pow_target,
-        pow_fixed_difficulty,
-        genesis_block: Some(genesis_block),
-        verify_fees: !blockchain_config.skip_fees,
-    };
-
-    // Check if reset was requested
-    if let Some(height) = args.reset {
-        info!(target: "dwowd", "Node will reset validator state to height: {height}");
-        let validator = Validator::new(&sled_db, &config).await?;
-        validator.write().await.reset_to_height(height).await?;
-        info!(target: "dwowd", "Validator state reset successfully!");
-        return Ok(())
-    }
-
-    // Check if sync headers purge was requested
-    if args.purge_sync {
-        info!(target: "dwowd", "Node will purge all pending sync headers.");
-        let validator = Validator::new(&sled_db, &config).await?;
-        validator.read().await.blockchain.headers.remove_all_sync()?;
-        info!(target: "dwowd", "Validator pending sync headers purged successfully!");
-        return Ok(())
-    }
-
-    // Check if validate was requested
-    if args.validate {
-        info!(target: "dwowd", "Node will validate existing blockchain state.");
-        let validator = Validator::new(&sled_db, &config).await?;
-        validator
-            .read()
-            .await
-            .validate_blockchain(config.pow_target, config.pow_fixed_difficulty)
-            .await?;
-        info!(target: "dwowd", "Validator blockchain state validated successfully!");
-        return Ok(())
-    }
-
-    // Check if rebuild difficulties was requested
-    if args.rebuild_difficulties {
-        info!(target: "dwowd", "Node will rebuild difficulties of existing blockchain state.");
-        let validator = Validator::new(&sled_db, &config).await?;
-        validator
-            .read()
-            .await
-            .rebuild_block_difficulties(config.pow_target, config.pow_fixed_difficulty)
-            .await?;
-        info!(target: "dwowd", "Validator difficulties rebuilt successfully!");
-        return Ok(())
-    }
-
+    // Setup P2P settings
     let p2p_settings: dwow::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
 
-    // Generate the daemon
-    let is_localnet = args.network == "localnet";
-    let daemon = Darkfid::init(
+    // Initialize the daemon using LinearBlockchain
+    let daemon = Darkfid::init_linear(
         network,
         &sled_db,
-        &config,
+        &db_path,
         &p2p_settings,
         &blockchain_config.txs_batch_size,
         &ex,
-        is_localnet,
+        blockchain_config.finality,
     )
     .await?;
 
-    // Start the daemon
+    // Start the daemon with consensus config
     let config = ConsensusInitTaskConfig {
         skip_sync: blockchain_config.skip_sync,
         checkpoint_height: blockchain_config.checkpoint_height,
@@ -337,7 +201,6 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
             &blockchain_config.stratum_rpc.map(|stratum_rpc_opts| stratum_rpc_opts.into()),
             &blockchain_config.mm_rpc.map(|mm_rpc_opts| mm_rpc_opts.into()),
             &config,
-            false, // is_linear: false for regular networks
         )
         .await?;
 
@@ -361,8 +224,7 @@ pub async fn parse_blockchain_config(
 ) -> Result<(Network, BlockchainNetwork)> {
     // Grab network prefix
     let used_net = match network {
-        "mainnet" | "localnet" => Network::Mainnet,
-        "testnet" | "linear-testnet" | "darkwow-testnet" => Network::Testnet,
+        "linear-testnet" | "darkwow-testnet" | "dwow-devnet" => Network::Testnet,
         _ => return Err(Error::ParseFailed("Invalid blockchain network")),
     };
 
@@ -391,15 +253,30 @@ pub async fn parse_blockchain_config(
     let Some(network_config) = network_configs.get(network) else {
         return Err(Error::ParseFailed("TOML does not contain requested network configuration"))
     };
-    let network_config = toml::to_string(&network_config).unwrap();
-    let network_config =
-        match BlockchainNetwork::from_iter_with_toml::<Vec<String>>(&network_config, vec![]) {
+    // Parse optional [finality] subsection from the network config
+    let finality_config: Option<dwow_linear::FinalityConfig> =
+        if let Some(finality_section) = network_config.get("finality") {
+            match finality_section.clone().try_into() {
+                Ok(fc) => Some(fc),
+                Err(e) => {
+                    error!(target: "dwowd", "Failed parsing finality config: {e}");
+                    return Err(Error::ParseFailed("Failed parsing finality config"))
+                }
+            }
+        } else {
+            None
+        };
+
+    let network_config_str = toml::to_string(&network_config).unwrap();
+    let mut network_config =
+        match BlockchainNetwork::from_iter_with_toml::<Vec<String>>(&network_config_str, vec![]) {
             Ok(v) => v,
             Err(e) => {
                 error!(target: "dwowd", "Failed parsing requested network configuration: {e}");
                 return Err(Error::ParseFailed("Failed parsing requested network configuration"))
             }
         };
+    network_config.finality = finality_config;
     debug!(target: "dwowd", "Parsed network configuration: {network_config:?}");
 
     Ok((used_net, network_config))

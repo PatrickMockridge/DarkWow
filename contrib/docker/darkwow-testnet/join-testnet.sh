@@ -49,6 +49,8 @@ MONERO_OFFLINE="${MONERO_OFFLINE:-false}"
 MONERO_NETWORK="${MONERO_NETWORK:-testnet}"
 MONERO_ADD_PEERS="${MONERO_ADD_PEERS:-125.229.105.12:28081,37.187.74.171:28089}"
 MONERO_FIXED_DIFFICULTY="${MONERO_FIXED_DIFFICULTY:-20000}"
+FINALITY_MODE="${FINALITY_MODE:-always}"
+FINALITY_DISABLE_CARIBINA="${FINALITY_DISABLE_CARIBINA:-false}"
 
 # --- Usage ---
 usage() {
@@ -79,11 +81,15 @@ Options:
   --data-dir DIR          Host path for dwowd blockchain data (default: ./data/dwowd)
   --monero-data-dir DIR   Host path for monerod data (default: ./data/monerod)
   --no-host-net           Use bridge networking instead of host (not recommended)
+  --finality-mode MODE    Finality mode: "always" (default), "native", or "signaled"
+  --finality-disable-caribina
+                          Disable Caribina Arweave anchoring entirely
   --help                  Show this help
 
 Environment variables: IMAGE, P2P_PORT, RPC_PORT, STRATUM_PORT, EXTERNAL_ADDR,
   MINING_THREADS, WALLET_ADDRESS, WALLET_SECRET_FILE, MONERO_WALLET_ADDRESS,
-  DATA_DIR, MONERO_DATA_DIR, SEED_ADDR, MAGIC_BYTES
+  DATA_DIR, MONERO_DATA_DIR, SEED_ADDR, MAGIC_BYTES,
+  FINALITY_MODE, FINALITY_DISABLE_CARIBINA
 
 Examples:
   # Native mining with host networking
@@ -127,6 +133,10 @@ while [[ $# -gt 0 ]]; do
             MONERO_DATA_DIR="$2"; shift 2 ;;
         --no-host-net)
             USE_HOST_NET="false"; shift ;;
+        --finality-mode)
+            FINALITY_MODE="$2"; shift 2 ;;
+        --finality-disable-caribina)
+            FINALITY_DISABLE_CARIBINA="true"; shift ;;
         --help)
             usage ;;
         *)
@@ -308,6 +318,8 @@ run_native() {
         -e LOCALNET=false \
         -e MINING_ENABLED=true \
         -e RANDOMX_MAX_THREADS=0 \
+        -e FINALITY_MODE="$FINALITY_MODE" \
+        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
         -e EXTERNAL_ADDR="$EXTERNAL_ADDR" \
         -e WALLET_ADDRESS="$WALLET_ADDRESS" \
         -e WALLET_SECRET_FILE=/run/secrets/mining_secret \
@@ -378,6 +390,7 @@ run_merge() {
     export WALLET_ADDRESS WALLET_SECRET_FILE MONERO_WALLET_ADDRESS
     export DATA_DIR MONERO_DATA_DIR P2POOL_DATA_DIR
     export MONERO_OFFLINE MONERO_NETWORK MONERO_ADD_PEERS MONERO_FIXED_DIFFICULTY
+    export FINALITY_MODE FINALITY_DISABLE_CARIBINA
     export USE_HOST_NET
     export COMPOSE_FILE
 

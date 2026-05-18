@@ -129,6 +129,9 @@ impl AsyncEncodable for BlockHeader {
         len += self.coin_merkle_root.encode_async(s).await?;
         len += self.nullifier_root.encode_async(s).await?;
         len += self.anchor_tx_id.encode_async(s).await?;
+        len += self.anchor_monero_height.encode_async(s).await?;
+        len += self.anchor_monero_hash.encode_async(s).await?;
+        len += self.finality_flags.encode_async(s).await?;
         Ok(len)
     }
 }
@@ -149,6 +152,9 @@ impl AsyncDecodable for BlockHeader {
         let coin_merkle_root = AsyncDecodable::decode_async(d).await?;
         let nullifier_root = AsyncDecodable::decode_async(d).await?;
         let anchor_tx_id = AsyncDecodable::decode_async(d).await?;
+        let anchor_monero_height = AsyncDecodable::decode_async(d).await?;
+        let anchor_monero_hash = AsyncDecodable::decode_async(d).await?;
+        let finality_flags = AsyncDecodable::decode_async(d).await?;
         Ok(Self {
             version,
             previous,
@@ -163,6 +169,9 @@ impl AsyncDecodable for BlockHeader {
             coin_merkle_root,
             nullifier_root,
             anchor_tx_id,
+            anchor_monero_height,
+            anchor_monero_hash,
+            finality_flags,
         })
     }
 }

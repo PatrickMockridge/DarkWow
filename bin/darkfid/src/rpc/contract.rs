@@ -57,7 +57,7 @@ impl DarkfiNode {
         let params_obj = match params.get::<std::collections::HashMap<String, JsonValue>>() {
             Some(p) => p,
             None => {
-                error!(target: "darkfid::rpc::contract", "Params must be an object");
+                error!(target: "dwowd::rpc::contract", "Params must be an object");
                 return JsonError::new(InvalidParams, Some("Params must be an object".to_string()), id).into();
             }
         };
@@ -66,12 +66,12 @@ impl DarkfiNode {
             Some(v) => match v.get::<String>() {
                 Some(s) => s.clone(),
                 None => {
-                    error!(target: "darkfid::rpc::contract", "contract_id must be a string");
+                    error!(target: "dwowd::rpc::contract", "contract_id must be a string");
                     return JsonError::new(InvalidParams, Some("contract_id must be a string".to_string()), id).into();
                 }
             },
             None => {
-                error!(target: "darkfid::rpc::contract", "Missing contract_id");
+                error!(target: "dwowd::rpc::contract", "Missing contract_id");
                 return JsonError::new(InvalidParams, Some("Missing contract_id".to_string()), id).into();
             }
         };
@@ -80,12 +80,12 @@ impl DarkfiNode {
             Some(v) => match v.get::<String>() {
                 Some(s) => s.clone(),
                 None => {
-                    error!(target: "darkfid::rpc::contract", "function must be a string");
+                    error!(target: "dwowd::rpc::contract", "function must be a string");
                     return JsonError::new(InvalidParams, Some("function must be a string".to_string()), id).into();
                 }
             },
             None => {
-                error!(target: "darkfid::rpc::contract", "Missing function");
+                error!(target: "dwowd::rpc::contract", "Missing function");
                 return JsonError::new(InvalidParams, Some("Missing function".to_string()), id).into();
             }
         };
@@ -95,7 +95,7 @@ impl DarkfiNode {
         let dry_run = params_obj.get("dry_run").and_then(|v| v.get::<bool>()).unwrap_or(&false);
 
         info!(
-            target: "darkfid::rpc::contract",
+            target: "dwowd::rpc::contract",
             "contract_invoke: contract={}, function={}, dry_run={}",
             contract_id,
             function,
@@ -110,7 +110,7 @@ impl DarkfiNode {
             Some(h) => h,
             None => {
                 error!(
-                    target: "darkfid::rpc::contract",
+                    target: "dwowd::rpc::contract",
                     "Contract not found: {}",
                     contract_id
                 );
@@ -128,7 +128,7 @@ impl DarkfiNode {
             Some(s) => s,
             None => {
                 error!(
-                    target: "darkfid::rpc::contract",
+                    target: "dwowd::rpc::contract",
                     "Function not found: {}",
                     function
                 );
@@ -149,14 +149,14 @@ impl DarkfiNode {
         let params_str = match function_params.stringify() {
             Ok(s) => s,
             Err(e) => {
-                error!(target: "darkfid::rpc::contract", "Failed to stringify params: {}", e);
+                error!(target: "dwowd::rpc::contract", "Failed to stringify params: {}", e);
                 return JsonError::new(InvalidParams, Some(format!("Invalid params JSON: {}", e)), id).into();
             }
         };
         let params_value: serde_json::Value = match serde_json::from_str(&params_str) {
             Ok(v) => v,
             Err(e) => {
-                error!(target: "darkfid::rpc::contract", "Failed to parse params: {}", e);
+                error!(target: "dwowd::rpc::contract", "Failed to parse params: {}", e);
                 return JsonError::new(InvalidParams, Some(format!("Invalid params: {}", e)), id).into();
             }
         };
@@ -165,7 +165,7 @@ impl DarkfiNode {
         let calldata = match handler.build_params(&function, params_value) {
             Ok(data) => data,
             Err(e) => {
-                error!(target: "darkfid::rpc::contract", "Failed to build params: {}", e);
+                error!(target: "dwowd::rpc::contract", "Failed to build params: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to build params: {}", e)),
@@ -219,7 +219,7 @@ impl DarkfiNode {
         let params_obj = match params.get::<std::collections::HashMap<String, JsonValue>>() {
             Some(p) => p,
             None => {
-                error!(target: "darkfid::rpc::contract", "Params must be an object");
+                error!(target: "dwowd::rpc::contract", "Params must be an object");
                 return JsonError::new(InvalidParams, Some("Params must be an object".to_string()), id).into();
             }
         };
@@ -229,12 +229,12 @@ impl DarkfiNode {
             Some(v) => match v.get::<String>() {
                 Some(s) => s.clone(),
                 None => {
-                    error!(target: "darkfid::rpc::contract", "wasm must be a base64 string");
+                    error!(target: "dwowd::rpc::contract", "wasm must be a base64 string");
                     return JsonError::new(InvalidParams, Some("wasm must be a string".to_string()), id).into();
                 }
             },
             None => {
-                error!(target: "darkfid::rpc::contract", "Missing wasm");
+                error!(target: "dwowd::rpc::contract", "Missing wasm");
                 return JsonError::new(InvalidParams, Some("Missing wasm".to_string()), id).into();
             }
         };
@@ -244,12 +244,12 @@ impl DarkfiNode {
             Some(v) => match v.get::<String>() {
                 Some(s) => s.clone(),
                 None => {
-                    error!(target: "darkfid::rpc::contract", "contract_id must be a string");
+                    error!(target: "dwowd::rpc::contract", "contract_id must be a string");
                     return JsonError::new(InvalidParams, Some("contract_id must be a string".to_string()), id).into();
                 }
             },
             None => {
-                error!(target: "darkfid::rpc::contract", "Missing contract_id");
+                error!(target: "dwowd::rpc::contract", "Missing contract_id");
                 return JsonError::new(InvalidParams, Some("Missing contract_id".to_string()), id).into();
             }
         };
@@ -258,7 +258,7 @@ impl DarkfiNode {
         let wasm_bytes = match base64::decode(&wasm_b64) {
             Some(b) => b,
             None => {
-                error!(target: "darkfid::rpc::contract", "Failed to decode wasm");
+                error!(target: "dwowd::rpc::contract", "Failed to decode wasm");
                 return JsonError::new(InvalidParams, Some("Invalid base64 encoding".to_string()), id).into();
             }
         };
@@ -267,7 +267,7 @@ impl DarkfiNode {
         let contract_id = match ContractId::from_str(&contract_id_str) {
             Ok(cid) => cid,
             Err(e) => {
-                error!(target: "darkfid::rpc::contract", "Invalid contract_id: {}", e);
+                error!(target: "dwowd::rpc::contract", "Invalid contract_id: {}", e);
                 return JsonError::new(InvalidParams, Some(format!("Invalid contract_id: {}", e)), id).into();
             }
         };
@@ -276,7 +276,7 @@ impl DarkfiNode {
         let linear_blockchain = match &self.linear_blockchain {
             Some(lb) => lb.clone(),
             None => {
-                error!(target: "darkfid::rpc::contract", "contract.deploy is only available in linear-testnet mode");
+                error!(target: "dwowd::rpc::contract", "contract.deploy is only available in linear-testnet mode");
                 return JsonError::new(
                     InternalError,
                     Some("contract.deploy is only available in linear-testnet mode".to_string()),
@@ -287,7 +287,7 @@ impl DarkfiNode {
         };
 
         info!(
-            target: "darkfid::rpc::contract",
+            target: "dwowd::rpc::contract",
             "Deploying contract {} with {} bytes",
             contract_id,
             wasm_bytes.len()
@@ -296,7 +296,7 @@ impl DarkfiNode {
         // Deploy to linear blockchain
         match linear_blockchain.deploy_contract(&wasm_bytes, contract_id) {
             Ok(()) => {
-                info!(target: "darkfid::rpc::contract", "Contract deployed successfully");
+                info!(target: "dwowd::rpc::contract", "Contract deployed successfully");
                 let result = JsonValue::from(std::collections::HashMap::from([
                     ("contract_id".to_string(), JsonValue::String(contract_id_str)),
                     ("wasm_size".to_string(), JsonValue::Number(wasm_bytes.len() as f64)),
@@ -305,7 +305,7 @@ impl DarkfiNode {
                 JsonResponse::new(result, id).into()
             }
             Err(e) => {
-                error!(target: "darkfid::rpc::contract", "Failed to deploy contract: {}", e);
+                error!(target: "dwowd::rpc::contract", "Failed to deploy contract: {}", e);
                 JsonError::new(InternalError, Some(format!("Failed to deploy: {}", e)), id).into()
             }
         }

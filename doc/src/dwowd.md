@@ -41,6 +41,12 @@ rpc_listen = "tcp://127.0.0.1:31345"
 [network_config."darkwow-testnet".stratum_rpc]
 rpc_listen = "tcp://127.0.0.1:31347"
 
+[network_config."darkwow-testnet".finality]
+# Finality mode: "always" (default) | "native" | "signaled"
+# mode = "always"
+# Enable Caribina Arweave anchoring (default: true)
+# caribina_enabled = true
+
 [network_config."darkwow-testnet".net]
 localnet = false
 inbound = ["tcp+tls://0.0.0.0:31342"]

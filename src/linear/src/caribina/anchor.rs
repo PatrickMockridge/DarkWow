@@ -102,11 +102,13 @@ fn post_to_turbo(data: &[u8]) -> Option<TurboUploadResponse> {
 
 /// Decode a base64url string to a 32-byte array.
 fn base64url_to_bytes(s: &str) -> Option<[u8; 32]> {
-    // base64url → standard base64
-    let std_base64 = s.replace('-', "+").replace('_', "/");
+    // base64url → standard base64 with padding
+    let mut std_base64 = s.replace('-', "+").replace('_', "/");
+    let pad = (4 - (std_base64.len() % 4)) % 4;
+    std_base64.push_str(&"=".repeat(pad));
     let bytes = base64::Engine::decode(
         &base64::engine::general_purpose::STANDARD,
-        std_base64,
+        &std_base64,
     )
     .ok()?;
     if bytes.len() != 32 {

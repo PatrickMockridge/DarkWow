@@ -4,7 +4,7 @@ version = "0.5.0"
 homepage = "https://darkwow.org"
 description = "DarkWow: pure PoW, Uncle Merkle consensus, Lean4-verified ZK opcodes, no premine."
 authors = ["Dyne.org foundation <foundation@dyne.org>"]
-repository = "https://codeberg.org/darkrenaissance/darkfi"
+repository = "https://codeberg.org/darkrenaissance/darkwow"
 license = "AGPL-3.0-only"
 edition = "2021"
 
@@ -129,7 +129,7 @@ toml = {version = "0.9.8", optional = true}
 # Utilities
 dwow-serial = {path = "src/serial", optional = true}
 
-lazy_static = {version = "1.5.0", optional = true}
+
 num-bigint = {version = "0.4.6", optional = true}
 url = {version = "2.5.7", features = ["serde"], optional = true}
 
@@ -141,7 +141,7 @@ nu-ansi-term = {version = "0.50.3", optional = true}
 # Crypto
 rand = {version = "0.8.5", optional = true}
 blake3 = {version = "1.8.2", features = ["rayon"], optional = true}
-crypto_api_chachapoly = {version = "0.5.0", optional = true}
+
 halo2_proofs = {version = "0.3.2", features = ["circuit-params"], optional = true}
 halo2_gadgets = {version = "0.4.0", features = ["circuit-params"], optional = true}
 sha2 = {version = "0.10.9", optional = true}
@@ -199,9 +199,7 @@ blockchain = [
 ]
 
 validator = [
-    "crypto_api_chachapoly",
     "hex",
-    "lazy_static",
     "monero",
     "randomx",
     "smol",

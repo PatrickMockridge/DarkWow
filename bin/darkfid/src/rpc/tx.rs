@@ -55,7 +55,7 @@ impl DarkfiNode {
 
         let mut validator = self.validator.write().await;
         if !validator.synced {
-            error!(target: "darkfid::rpc::tx_simulate", "Blockchain is not synced");
+            error!(target: "dwowd::rpc::tx_simulate", "Blockchain is not synced");
             return server_error(RpcError::NotSynced, id, None)
         }
 
@@ -64,7 +64,7 @@ impl DarkfiNode {
         let tx_bytes = match base64::decode(tx_enc) {
             Some(v) => v,
             None => {
-                error!(target: "darkfid::rpc::tx_simulate", "Failed decoding base64 transaction");
+                error!(target: "dwowd::rpc::tx_simulate", "Failed decoding base64 transaction");
                 return server_error(RpcError::ParseError, id, None)
             }
         };
@@ -72,14 +72,14 @@ impl DarkfiNode {
         let tx: Transaction = match deserialize_async(&tx_bytes).await {
             Ok(v) => v,
             Err(e) => {
-                error!(target: "darkfid::rpc::tx_simulate", "Failed deserializing bytes into Transaction: {e}");
+                error!(target: "dwowd::rpc::tx_simulate", "Failed deserializing bytes into Transaction: {e}");
                 return server_error(RpcError::ParseError, id, None)
             }
         };
 
         // Simulate state transition
         if let Err(e) = validator.append_tx(&tx, false).await {
-            error!(target: "darkfid::rpc::tx_simulate", "Failed to validate state transition: {e}");
+            error!(target: "dwowd::rpc::tx_simulate", "Failed to validate state transition: {e}");
             return server_error(RpcError::TxSimulationFail, id, None)
         };
 
@@ -105,7 +105,7 @@ impl DarkfiNode {
 
         let mut validator = self.validator.write().await;
         if !validator.synced {
-            error!(target: "darkfid::rpc::tx_broadcast", "Blockchain is not synced");
+            error!(target: "dwowd::rpc::tx_broadcast", "Blockchain is not synced");
             return server_error(RpcError::NotSynced, id, None)
         }
 
@@ -114,7 +114,7 @@ impl DarkfiNode {
         let tx_bytes = match base64::decode(tx_enc) {
             Some(v) => v,
             None => {
-                error!(target: "darkfid::rpc::tx_broadcast", "Failed decoding base64 transaction");
+                error!(target: "dwowd::rpc::tx_broadcast", "Failed decoding base64 transaction");
                 return server_error(RpcError::ParseError, id, None)
             }
         };
@@ -122,20 +122,20 @@ impl DarkfiNode {
         let tx: Transaction = match deserialize_async(&tx_bytes).await {
             Ok(v) => v,
             Err(e) => {
-                error!(target: "darkfid::rpc::tx_broadcast", "Failed deserializing bytes into Transaction: {e}");
+                error!(target: "dwowd::rpc::tx_broadcast", "Failed deserializing bytes into Transaction: {e}");
                 return server_error(RpcError::ParseError, id, None)
             }
         };
 
         // We'll perform the state transition check here.
         if let Err(e) = validator.append_tx(&tx, true).await {
-            error!(target: "darkfid::rpc::tx_broadcast", "Failed to append transaction to mempool: {e}");
+            error!(target: "dwowd::rpc::tx_broadcast", "Failed to append transaction to mempool: {e}");
             return server_error(RpcError::TxSimulationFail, id, None)
         };
 
         self.p2p_handler.p2p.broadcast(&tx).await;
         if !self.p2p_handler.p2p.is_connected() {
-            warn!(target: "darkfid::rpc::tx_broadcast", "No connected channels to broadcast tx");
+            warn!(target: "dwowd::rpc::tx_broadcast", "No connected channels to broadcast tx");
         }
 
         let tx_hash = tx.hash().to_string();
@@ -158,14 +158,14 @@ impl DarkfiNode {
 
         let validator = self.validator.read().await;
         if !validator.synced {
-            error!(target: "darkfid::rpc::tx_pending", "Blockchain is not synced");
+            error!(target: "dwowd::rpc::tx_pending", "Blockchain is not synced");
             return server_error(RpcError::NotSynced, id, None)
         }
 
         let pending_txs = match validator.blockchain.get_pending_txs() {
             Ok(v) => v,
             Err(e) => {
-                error!(target: "darkfid::rpc::tx_pending", "Failed fetching pending txs: {e}");
+                error!(target: "dwowd::rpc::tx_pending", "Failed fetching pending txs: {e}");
                 return JsonError::new(InternalError, None, id).into()
             }
         };
@@ -194,7 +194,7 @@ impl DarkfiNode {
 
         let mut validator = self.validator.write().await;
         if !validator.synced {
-            error!(target: "darkfid::rpc::tx_clean_pending", "Blockchain is not synced");
+            error!(target: "dwowd::rpc::tx_clean_pending", "Blockchain is not synced");
             return server_error(RpcError::NotSynced, id, None)
         }
 
@@ -203,7 +203,7 @@ impl DarkfiNode {
 
         // Purge all unproposed pending transactions from the database
         if let Err(e) = validator.consensus.purge_unproposed_pending_txs(registry_txs).await {
-            error!(target: "darkfid::rpc::tx_clean_pending", "Failed removing pending txs: {e}");
+            error!(target: "dwowd::rpc::tx_clean_pending", "Failed removing pending txs: {e}");
             return JsonError::new(InternalError, None, id).into()
         };
 
@@ -227,7 +227,7 @@ impl DarkfiNode {
 
         let validator = self.validator.read().await;
         if !validator.synced {
-            error!(target: "darkfid::rpc::tx_calculate_fee", "Blockchain is not synced");
+            error!(target: "dwowd::rpc::tx_calculate_fee", "Blockchain is not synced");
             return server_error(RpcError::NotSynced, id, None)
         }
 
@@ -236,7 +236,7 @@ impl DarkfiNode {
         let tx_bytes = match base64::decode(tx_enc) {
             Some(v) => v,
             None => {
-                error!(target: "darkfid::rpc::tx_calculate_fee", "Failed decoding base64 transaction");
+                error!(target: "dwowd::rpc::tx_calculate_fee", "Failed decoding base64 transaction");
                 return server_error(RpcError::ParseError, id, None)
             }
         };
@@ -244,7 +244,7 @@ impl DarkfiNode {
         let tx: Transaction = match deserialize_async(&tx_bytes).await {
             Ok(v) => v,
             Err(e) => {
-                error!(target: "darkfid::rpc::tx_calculate_fee", "Failed deserializing bytes into Transaction: {e}");
+                error!(target: "dwowd::rpc::tx_calculate_fee", "Failed deserializing bytes into Transaction: {e}");
                 return server_error(RpcError::ParseError, id, None)
             }
         };
@@ -256,7 +256,7 @@ impl DarkfiNode {
         let result = validator.calculate_fee(&tx, *include_fee).await;
         if result.is_err() {
             error!(
-                target: "darkfid::rpc::tx_calculate_fee", "Failed to validate state transition: {}",
+                target: "dwowd::rpc::tx_calculate_fee", "Failed to validate state transition: {}",
                 result.err().unwrap()
             );
             return server_error(RpcError::TxGasCalculationFail, id, None)
@@ -283,7 +283,7 @@ impl DarkfiNode {
         let mempool = match &self.mempool {
             Some(mp) => mp.clone(),
             None => {
-                error!(target: "darkfid::rpc::tx_submit_linear", "tx.submit_linear is only available in linear-testnet mode");
+                error!(target: "dwowd::rpc::tx_submit_linear", "tx.submit_linear is only available in linear-testnet mode");
                 return JsonError::new(
                     InternalError,
                     Some("tx.submit_linear is only available in linear-testnet mode".to_string()),
@@ -298,7 +298,7 @@ impl DarkfiNode {
         let tx_bytes = match base64::decode(tx_enc) {
             Some(v) => v,
             None => {
-                error!(target: "darkfid::rpc::tx_submit_linear", "Failed decoding base64 transaction");
+                error!(target: "dwowd::rpc::tx_submit_linear", "Failed decoding base64 transaction");
                 return JsonError::new(InvalidParams, Some("Invalid base64 encoding".to_string()), id).into()
             }
         };
@@ -306,7 +306,7 @@ impl DarkfiNode {
         let tx: dwow_linear::Transaction = match serde_json::from_slice(&tx_bytes) {
             Ok(v) => v,
             Err(e) => {
-                error!(target: "darkfid::rpc::tx_submit_linear", "Failed deserializing bytes into Transaction: {}", e);
+                error!(target: "dwowd::rpc::tx_submit_linear", "Failed deserializing bytes into Transaction: {}", e);
                 return JsonError::new(InvalidParams, Some(format!("Invalid transaction format: {}", e)), id).into()
             }
         };
@@ -315,11 +315,11 @@ impl DarkfiNode {
 
         // Add to mempool
         if let Err(e) = mempool.add(tx).await {
-            error!(target: "darkfid::rpc::tx_submit_linear", "Failed to add transaction to mempool: {}", e);
+            error!(target: "dwowd::rpc::tx_submit_linear", "Failed to add transaction to mempool: {}", e);
             return JsonError::new(InternalError, Some(format!("Failed to add to mempool: {}", e)), id).into()
         };
 
-        info!(target: "darkfid::rpc::tx_submit_linear", "Transaction {} added to mempool", tx_hash);
+        info!(target: "dwowd::rpc::tx_submit_linear", "Transaction {} added to mempool", tx_hash);
         JsonResponse::new(JsonValue::String(tx_hash), id).into()
     }
 }

@@ -62,7 +62,7 @@ pub struct StratumRpcHandler;
 #[rustfmt::skip]
 impl RequestHandler<StratumRpcHandler> for DarkfiNode {
 	async fn handle_request(&self, req: JsonRequest) -> JsonResult {
-		debug!(target: "darkfid::rpc::stratum_rpc", "--> {}", req.stringify().unwrap());
+		debug!(target: "dwowd::rpc::stratum_rpc", "--> {}", req.stringify().unwrap());
 
 		match req.method.as_str() {
 			// ======================
@@ -189,7 +189,7 @@ impl DarkfiNode {
 
         // Register the new miner
         info!(
-            target: "darkfid::rpc::rpc_stratum::stratum_login",
+            target: "dwowd::rpc::rpc_stratum::stratum_login",
             "[RPC-STRATUM] Got login from {wallet} ({agent})",
         );
 
@@ -225,7 +225,7 @@ impl DarkfiNode {
             Ok(p) => p,
             Err(e) => {
                 error!(
-                    target: "darkfid::rpc::rpc_stratum::stratum_login",
+                    target: "dwowd::rpc::rpc_stratum::stratum_login",
                     "[RPC-STRATUM] Failed to register miner: {e}",
                 );
                 return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
@@ -234,7 +234,7 @@ impl DarkfiNode {
 
         // Now we have the new job, we ship it to RPC
         info!(
-            target: "darkfid::rpc::rpc_stratum::stratum_login",
+            target: "dwowd::rpc::rpc_stratum::stratum_login",
             "[RPC-STRATUM] Created new mining job for client {client_id}: {job_id}"
         );
         let response = JsonValue::from(HashMap::from([
@@ -274,7 +274,7 @@ impl DarkfiNode {
                     Ok(zk) => *zk_lock = Some(zk),
                     Err(e) => {
                         tracing::warn!(
-                            target: "darkfid::rpc::rpc_stratum::stratum_login_linear",
+                            target: "dwowd::rpc::rpc_stratum::stratum_login_linear",
                             "[RPC-STRATUM] Failed to init ZK: {e}, using transparent coinbase",
                         );
                     }
@@ -291,7 +291,7 @@ impl DarkfiNode {
             Ok(t) => t,
             Err(e) => {
                 error!(
-                    target: "darkfid::rpc::rpc_stratum::stratum_login_linear",
+                    target: "dwowd::rpc::rpc_stratum::stratum_login_linear",
                     "[RPC-STRATUM] Failed to generate linear block template: {e}",
                 );
                 return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
@@ -342,6 +342,9 @@ impl DarkfiNode {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
         };
         let blob_data = mining_header.to_mining_blob();
         let blob = hex::encode(&blob_data);
@@ -351,7 +354,7 @@ impl DarkfiNode {
         let target = format!("{:016x}", template.difficulty_target as u64);
 
         info!(
-            target: "darkfid::rpc::rpc_stratum::stratum_login_linear",
+            target: "dwowd::rpc::rpc_stratum::stratum_login_linear",
             "[RPC-STRATUM] Created linear mining job for client {client_id}: height={}, job_id={job_id}",
             template.height,
         );
@@ -484,7 +487,7 @@ impl DarkfiNode {
         };
 
         info!(
-            target: "darkfid::rpc::rpc_stratum::stratum_submit",
+            target: "dwowd::rpc::rpc_stratum::stratum_submit",
             "[RPC-STRATUM] Got solution submission from client {client_id} for job: {job_id}",
         );
 
@@ -502,14 +505,14 @@ impl DarkfiNode {
             registry.submit(&mut validator, &self.subscribers, &self.p2p_handler, block).await
         {
             error!(
-                target: "darkfid::rpc::rpc_stratum::stratum_submit",
+                target: "dwowd::rpc::rpc_stratum::stratum_submit",
                 "[RPC-STRATUM] Error submitting new block: {e}",
             );
 
             // Try to refresh the jobs before returning error
             if let Err(e) = registry.refresh(&validator).await {
                 error!(
-                    target: "darkfid::rpc::rpc_stratum::stratum_submit",
+                    target: "dwowd::rpc::rpc_stratum::stratum_submit",
                     "[RPC-STRATUM] Error refreshing registry jobs: {e}",
                 );
             }
@@ -531,7 +534,7 @@ impl DarkfiNode {
         use crate::registry::model::generate_linear_block_template;
 
         info!(
-            target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+            target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
             "[RPC-STRATUM] stratum_submit_linear called id={}",
             id,
         );
@@ -581,7 +584,7 @@ impl DarkfiNode {
         let _result = params.get("result").and_then(|r| r.get::<String>());
 
         info!(
-            target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+            target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
             "[RPC-STRATUM] Got solution from client {client_id} for job: {job_id}",
         );
 
@@ -598,7 +601,7 @@ impl DarkfiNode {
         let last_time = self.last_block_time.load(Ordering::SeqCst);
         if last_time > 0 && now.saturating_sub(last_time) < self.min_block_interval {
             info!(
-                target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
                 "[RPC-STRATUM] Rate-limited: {}s since last block (min {})",
                 now.saturating_sub(last_time), self.min_block_interval
             );
@@ -614,7 +617,7 @@ impl DarkfiNode {
 
         if submitted_height != current_height + 1 {
             info!(
-                target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
                 "[RPC-STRATUM] Stale: submitted height {} != expected {}",
                 submitted_height, current_height + 1
             );
@@ -684,6 +687,9 @@ impl DarkfiNode {
             coin_merkle_root,
             nullifier_root,
             anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
         };
 
         // Create coinbase transaction with ZK privacy data
@@ -713,7 +719,7 @@ impl DarkfiNode {
                 Ok(true) => {}
                 Ok(false) => {
                     info!(
-                        target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                        target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
                         "[RPC-STRATUM] Block at height {} rejected: PoW verification failed",
                         submitted_height
                     );
@@ -721,7 +727,7 @@ impl DarkfiNode {
                 }
                 Err(e) => {
                     info!(
-                        target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                        target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
                         "[RPC-STRATUM] Block at height {} rejected: PoW error: {}",
                         submitted_height, e
                     );
@@ -730,26 +736,30 @@ impl DarkfiNode {
             }
         }
 
-        // Anchor the block to Arweave via Caribina (best-effort)
+        // Anchor the block to Arweave via Caribina (best-effort, configurable)
         {
-            let vm = linear_chain.get_vm(randomx_key);
-            let block_hash = block.hash(&vm);
-            let mut block_hash_bytes = [0u8; 32];
-            block_hash_bytes.copy_from_slice(block_hash.as_bytes());
-            match anchor_block(&block_hash_bytes, block.header.timestamp, block.header.height) {
-                Some(tx_id) => {
-                    block.header.anchor_tx_id = tx_id;
-                    info!(
-                        target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
-                        "[RPC-STRATUM] Anchored block {} to Arweave",
-                        block_hash
-                    );
-                }
-                None => {
-                    info!(
-                        target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
-                        "[RPC-STRATUM] Arweave anchor skipped (network/turbo unavailable)"
-                    );
+            let fc = &linear_chain.finality_config;
+            if fc.should_anchor() {
+                let vm = linear_chain.get_vm(randomx_key);
+                let block_hash = block.hash(&vm);
+                let mut block_hash_bytes = [0u8; 32];
+                block_hash_bytes.copy_from_slice(block_hash.as_bytes());
+                match anchor_block(&block_hash_bytes, block.header.timestamp, block.header.height) {
+                    Some(tx_id) => {
+                        block.header.anchor_tx_id = tx_id;
+                        block.header.finality_flags = fc.mine_flags();
+                        info!(
+                            target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                            "[RPC-STRATUM] Anchored block {} to Arweave",
+                            block_hash
+                        );
+                    }
+                    None => {
+                        info!(
+                            target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                            "[RPC-STRATUM] Arweave anchor skipped (network/turbo unavailable)"
+                        );
+                    }
                 }
             }
         }
@@ -767,7 +777,7 @@ impl DarkfiNode {
                 self.last_block_time.store(now, Ordering::SeqCst);
 
                 info!(
-                    target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                    target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
                     "[RPC-STRATUM] Block at height {} accepted!",
                     submitted_height
                 );
@@ -817,6 +827,9 @@ impl DarkfiNode {
                                     coin_merkle_root: [0u8; 32],
                                     nullifier_root: [0u8; 32],
                                     anchor_tx_id: [0u8; 32],
+                                    anchor_monero_height: 0,
+                                    anchor_monero_hash: [0u8; 32],
+                                    finality_flags: 0,
                                 };
                                 let new_blob_data = new_mining_header.to_mining_blob();
                                 let new_blob = hex::encode(&new_blob_data);
@@ -862,14 +875,14 @@ impl DarkfiNode {
                                 publisher.notify(notification).await;
 
                                 info!(
-                                    target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                                    target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
                                     "[RPC-STRATUM] Pushed new mining job to miners: height={}",
                                     new_height,
                                 );
                             }
                             Err(e) => {
                                 error!(
-                                    target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                                    target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
                                     "[RPC-STRATUM] Failed to generate new block template: {e}",
                                 );
                             }
@@ -881,7 +894,7 @@ impl DarkfiNode {
             }
             Err(e) => {
                 error!(
-                    target: "darkfid::rpc::rpc_stratum::stratum_submit_linear",
+                    target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
                     "[RPC-STRATUM] Block rejected: {e}",
                 );
                 miner_status_response(id, "rejected")

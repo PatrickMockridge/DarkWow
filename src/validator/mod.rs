@@ -55,9 +55,6 @@ use pow::PoWModule;
 pub mod randomx_factory;
 pub use randomx_factory::RandomXFactory;
 
-/// Clean sync module
-pub mod sync;
-
 /// Verification functions
 pub mod verification;
 use verification::{

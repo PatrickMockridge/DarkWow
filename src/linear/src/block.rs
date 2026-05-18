@@ -57,6 +57,13 @@ pub struct BlockHeader {
     /// Caribina Arweave anchor TX ID (SHA-256 of ANS-104 DataItem signature).
     /// [0u8; 32] means no anchor (genesis blocks, bootstrapping, or anchor failure).
     pub anchor_tx_id: [u8; 32],
+    /// Monero p2pool anchor block height (0 = no anchor)
+    pub anchor_monero_height: u64,
+    /// Monero p2pool anchor block hash ([0u8; 32] = no anchor)
+    pub anchor_monero_hash: [u8; 32],
+    /// Finality signaling flags bitfield:
+    ///   0x01 = FINALITY_CARIBNIA, 0x02 = FINALITY_MONERO, 0x04 = FINALITY_SIGNALED
+    pub finality_flags: u8,
 }
 
 /// Uncle block - a block that was mined but not canonical
@@ -138,8 +145,9 @@ impl BlockHeader {
     ///   [merkle_root(32)][timestamp(8)][uncle_merkle_root(32)][total_reward(8)]
     ///   [randomx_key(32)][coin_merkle_root(32)][nullifier_root(32)]
     /// Nonce is at byte offset 40 (compatible with dww miner and xmrig).
-    /// anchor_tx_id is excluded — it is set after PoW is found and is not
-    /// covered by the mining hash.
+    /// anchor_tx_id, anchor_monero_height, anchor_monero_hash, and finality_flags
+    /// are excluded — they are set after PoW is found and are not covered by the
+    /// mining hash.
     pub fn to_mining_blob(&self) -> Vec<u8> {
         let mut blob = Vec::with_capacity(225);
         blob.extend_from_slice(self.previous.as_bytes());       // 0..32
@@ -457,6 +465,9 @@ pub fn create_block_with_uncles(
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32], // No Caribina anchor (set by miner after anchoring)
+            anchor_monero_height: 0, // No Monero anchor (set by miner after anchoring)
+            anchor_monero_hash: [0u8; 32], // No Monero anchor
+            finality_flags: 0, // Set by miner after anchoring
         },
         transactions,
     }
@@ -498,6 +509,9 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
         };
         let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
 
@@ -529,6 +543,9 @@ mod tests {
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
+                anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
             };
             uncles.push(UncleBlock { header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 });
         }
@@ -567,6 +584,9 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
         };
         // Pin mechanism: pin_offered=true, pin_accepted=true means uncle accepts the pin
         // pin_reward at depth 1 = 50% = 50M
@@ -596,6 +616,9 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
         };
         let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
 
@@ -718,6 +741,9 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
         };
 
         let blob1 = header.to_mining_blob();
@@ -747,6 +773,9 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
         };
         assert_eq!(header.anchor_tx_id, [0u8; 32]);
     }
@@ -768,6 +797,9 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0xBB; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
         };
 
         let json = serde_json::to_string(&header).unwrap();

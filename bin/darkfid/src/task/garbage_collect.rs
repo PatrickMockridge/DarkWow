@@ -29,7 +29,7 @@ use crate::DarkfiNodePtr;
 
 /// Async task used for purging erroneous pending transactions from the nodes mempool.
 pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
-    info!(target: "darkfid::task::garbage_collect_task", "Starting garbage collection task...");
+    info!(target: "dwowd::task::garbage_collect_task", "Starting garbage collection task...");
 
     // Grab all current unproposed transactions.  We verify them in batches,
     // to not load them all in memory.
@@ -39,7 +39,7 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
             Ok(pair) => pair,
             Err(e) => {
                 error!(
-                    target: "darkfid::task::garbage_collect_task",
+                    target: "dwowd::task::garbage_collect_task",
                     "Uproposed transactions retrieval failed: {e}"
                 );
                 return Ok(())
@@ -48,7 +48,7 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
 
     // Check if we have transactions to process
     if txs.is_empty() {
-        info!(target: "darkfid::task::garbage_collect_task", "Garbage collection finished successfully!");
+        info!(target: "dwowd::task::garbage_collect_task", "Garbage collection finished successfully!");
         return Ok(())
     }
 
@@ -73,7 +73,7 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
                     Ok(o) => o,
                     Err(e) => {
                         error!(
-                            target: "darkfid::task::garbage_collect_task",
+                            target: "dwowd::task::garbage_collect_task",
                             "Overlay full clone creation failed: {e}"
                         );
                         return Err(e)
@@ -86,7 +86,7 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
                         Ok(txs) => txs,
                         Err(e) => {
                             error!(
-                                target: "darkfid::task::garbage_collect_task",
+                                target: "dwowd::task::garbage_collect_task",
                                 "Proposal transactions retrieval failed: {e}"
                             );
                             return Err(e)
@@ -103,7 +103,7 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
                     Ok(h) => h,
                     Err(e) => {
                         error!(
-                            target: "darkfid::task::garbage_collect_task",
+                            target: "dwowd::task::garbage_collect_task",
                             "Next fork block height retrieval failed: {e}"
                         );
                         return Err(e)
@@ -131,7 +131,7 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
                     }
                     Err(e) => {
                         error!(
-                            target: "darkfid::task::garbage_collect_task",
+                            target: "dwowd::task::garbage_collect_task",
                             "Verifying transaction {tx_hash} failed: {e}"
                         );
                         return Err(e)
@@ -141,10 +141,10 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
 
             // Remove transaction if its invalid for all the forks
             if !valid {
-                debug!(target: "darkfid::task::garbage_collect_task", "Removing invalid transaction: {tx_hash}");
+                debug!(target: "dwowd::task::garbage_collect_task", "Removing invalid transaction: {tx_hash}");
                 if let Err(e) = validator.blockchain.remove_pending_txs_hashes(&[tx_hash]) {
                     error!(
-                        target: "darkfid::task::garbage_collect_task",
+                        target: "dwowd::task::garbage_collect_task",
                         "Removing invalid transaction {tx_hash} failed: {e}"
                     );
                 };
@@ -163,7 +163,7 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
             Ok(pair) => pair,
             Err(e) => {
                 error!(
-                    target: "darkfid::task::garbage_collect_task",
+                    target: "dwowd::task::garbage_collect_task",
                     "Uproposed transactions next batch retrieval failed: {e}"
                 );
                 break
@@ -171,6 +171,6 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
         };
     }
 
-    info!(target: "darkfid::task::garbage_collect_task", "Garbage collection finished successfully!");
+    info!(target: "dwowd::task::garbage_collect_task", "Garbage collection finished successfully!");
     Ok(())
 }

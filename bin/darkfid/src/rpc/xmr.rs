@@ -98,7 +98,7 @@ pub struct MmRpcHandler;
 #[rustfmt::skip]
 impl RequestHandler<MmRpcHandler> for DarkfiNode {
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
-        debug!(target: "darkfid::rpc::rpc_xmr", "--> {}", req.stringify().unwrap());
+        debug!(target: "dwowd::rpc::rpc_xmr", "--> {}", req.stringify().unwrap());
 
         match req.method.as_str() {
             // ================================================
@@ -148,7 +148,7 @@ impl DarkfiNode {
                 Ok(v) => v.1,
                 Err(e) => {
                     error!(
-                        target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_get_chain_id",
+                        target: "dwowd::rpc::rpc_xmr::xmr_merge_mining_get_chain_id",
                         "[RPC-XMR] Error fetching genesis block hash: {e}"
                     );
                     return JsonError::new(ErrorCode::InternalError, None, id).into()
@@ -281,7 +281,7 @@ impl DarkfiNode {
                 Ok(p) => p,
                 Err(e) => {
                     error!(
-                        target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_get_aux_block",
+                        target: "dwowd::rpc::rpc_xmr::xmr_merge_mining_get_aux_block",
                         "[RPC-XMR] Failed to register merge miner: {e}",
                     );
                     return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
@@ -290,7 +290,7 @@ impl DarkfiNode {
 
         // Now we have the new job, we ship it to RPC
         info!(
-            target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_get_aux_block",
+            target: "dwowd::rpc::rpc_xmr::xmr_merge_mining_get_aux_block",
             "[RPC-XMR] Created new merge mining job: aux_hash={job_id}, height={height}, prev_id={prev_id}"
         );
         let response = JsonValue::from(HashMap::from([
@@ -454,7 +454,7 @@ impl DarkfiNode {
         };
 
         info!(
-            target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
+            target: "dwowd::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
             "[RPC-XMR] Got solution submission: aux_hash={aux_hash}",
         );
 
@@ -466,7 +466,7 @@ impl DarkfiNode {
             Ok(v) => v,
             Err(e) => {
                 error!(
-                    target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
+                    target: "dwowd::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
                     "[RPC-XMR] Failed constructing MoneroPowData: {e}",
                 );
                 return server_error(RpcError::MinerMoneroPowDataConstructionFailed, id, None)
@@ -478,7 +478,7 @@ impl DarkfiNode {
             extract_merge_mining_params_and_root(&block.miner_tx.prefix.extra).unwrap_or(None)
         else {
             error!(
-                target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
+                target: "dwowd::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
                 "[RPC-XMR] No merge mining tag found in coinbase tx",
             );
             return miner_status_response(id, "rejected")
@@ -500,7 +500,7 @@ impl DarkfiNode {
             genesis_hash,
         ) {
             error!(
-                target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
+                target: "dwowd::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
                 "[RPC-XMR] Aux chain merkle proof validation failed",
             );
             return miner_status_response(id, "rejected")
@@ -520,14 +520,14 @@ impl DarkfiNode {
             registry.submit(&mut validator, &self.subscribers, &self.p2p_handler, block).await
         {
             error!(
-                target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
+                target: "dwowd::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
                 "[RPC-XMR] Error submitting new block: {e}",
             );
 
             // Try to refresh the jobs before returning error
             if let Err(e) = registry.refresh(&validator).await {
                 error!(
-                    target: "darkfid::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
+                    target: "dwowd::rpc::rpc_xmr::xmr_merge_mining_submit_solution",
                     "[RPC-XMR] Error refreshing registry jobs: {e}",
                 );
             }

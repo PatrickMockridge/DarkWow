@@ -47,7 +47,7 @@ pub struct LinearFiveNodeHarness {
     pub david: LinearNode,
     pub eve: LinearNode,
     /// RandomX VM for block hashing (used in mining)
-    vm: Arc<RandomXVM>,
+    pub vm: Arc<RandomXVM>,
 }
 
 impl LinearFiveNodeHarness {

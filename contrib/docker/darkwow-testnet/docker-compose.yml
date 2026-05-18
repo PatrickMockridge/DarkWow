@@ -68,6 +68,8 @@ services:
       - EXTERNAL_ADDR=node0:31342
       - MERGE_MINING=${MERGE_MINING:-false}
       - MM_RPC_PORT=31348
+      - FINALITY_MODE=${FINALITY_MODE:-always}
+      - FINALITY_DISABLE_CARIBINA=${FINALITY_DISABLE_CARIBINA:-false}
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret
     ports:
@@ -115,6 +117,8 @@ services:
       - SKIP_FEES=false
       - LOCALNET=false
       - EXTERNAL_ADDR=node1:31343
+      - FINALITY_MODE=${FINALITY_MODE:-always}
+      - FINALITY_DISABLE_CARIBINA=${FINALITY_DISABLE_CARIBINA:-false}
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret
     ports:
@@ -366,6 +370,8 @@ services:
       - EXTERNAL_ADDR=${EXTERNAL_ADDR:-}
       - MERGE_MINING=true
       - MM_RPC_PORT=${MM_RPC_PORT:-31348}
+      - FINALITY_MODE=${FINALITY_MODE:-always}
+      - FINALITY_DISABLE_CARIBINA=${FINALITY_DISABLE_CARIBINA:-false}
       - MINING_ENABLED=false
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret

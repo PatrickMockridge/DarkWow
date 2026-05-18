@@ -21,14 +21,11 @@ P2P_PORT="${P2P_PORT:-31342}"
 RPC_PORT="${RPC_PORT:-31345}"
 STRATUM_PORT="${STRATUM_PORT:-31347}"
 MANAGEMENT_PORT="${MANAGEMENT_PORT:-31346}"
-FIXED_DIFFICULTY="${FIXED_DIFFICULTY:-1}"
 TARGET_BLOCK_TIME="${TARGET_BLOCK_TIME:-120}"
 MINING_ENABLED="${MINING_ENABLED:-true}"
 MINING_THREADS="${MINING_THREADS:-1}"
 RANDOMX_MAX_THREADS="${RANDOMX_MAX_THREADS:-0}"
-THRESHOLD="${THRESHOLD:-1}"
 SKIP_SYNC="${SKIP_SYNC:-true}"
-SKIP_FEES="${SKIP_FEES:-true}"
 LOCALNET="${LOCALNET:-false}"
 WALLET_ADDRESS="${WALLET_ADDRESS:-}"
 WALLET_SECRET="${WALLET_SECRET:-}"
@@ -137,27 +134,8 @@ network = "${NETWORK_NAME}"
 
 [network_config."${NETWORK_NAME}"]
 database = "${DATADIR}"
-threshold = ${THRESHOLD}
-max_forks = 8
-pow_target = ${TARGET_BLOCK_TIME}
 skip_sync = ${SKIP_SYNC}
-skip_fees = ${SKIP_FEES}
 txs_batch_size = 50
-
-[network_config."${NETWORK_NAME}".pow]
-target_block_time = ${TARGET_BLOCK_TIME}
-initial_difficulty = 255
-min_difficulty = 1
-max_difficulty = 4294967295
-min_block_interval = 10
-randomx_max_threads = ${RANDOMX_MAX_THREADS:-0}
-DWOWEOF
-
-if [ -n "$FIXED_DIFFICULTY" ]; then
-    echo "pow_fixed_difficulty = ${FIXED_DIFFICULTY}" >> "$CONFIGFILE"
-fi
-
-cat >> "$CONFIGFILE" << DWOWEOF
 
 [network_config."${NETWORK_NAME}".rpc]
 rpc_listen = "tcp://0.0.0.0:${RPC_PORT}"
@@ -174,6 +152,14 @@ active_profiles = ["tcp+tls"]
 inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
 magic_bytes = [${MAGIC_BYTES}]
 hostlist = "${DATADIR}/hostlist.tsv"
+
+[network_config."${NETWORK_NAME}".net.pow]
+target_block_time = ${TARGET_BLOCK_TIME}
+initial_difficulty = 255
+min_difficulty = 1
+max_difficulty = 4294967295
+min_block_interval = 10
+randomx_max_threads = ${RANDOMX_MAX_THREADS:-0}
 DWOWEOF
 
 if [ -n "$SEEDS_LINE" ]; then

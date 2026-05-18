@@ -61,6 +61,12 @@ rpc_listen = "tcp://127.0.0.1:31345"
 [network_config."darkwow-testnet".stratum_rpc]
 rpc_listen = "tcp://127.0.0.1:31347"
 
+[network_config."darkwow-testnet".finality]
+# Finality mode: "always" (default) | "native" | "signaled"
+# mode = "always"
+# Enable Caribina Arweave anchoring (default: true)
+# caribina_enabled = true
+
 [network_config."darkwow-testnet".net]
 localnet = false
 active_profiles = ["tcp+tls"]
@@ -72,6 +78,11 @@ outbound_connections = 8
 ```
 
 Replace `recipient` with your wallet address from Step 1.
+
+The `[finality]` section enables Caribina Arweave anchoring by default —
+every mined block is timestamped on Arweave and cannot be reorganized.
+Set `mode = "native"` or pass `--finality-mode native` to disable all
+finality (useful for local testing where Arweave HTTP calls add latency).
 
 ## Step 3: Create dww Wallet Config
 

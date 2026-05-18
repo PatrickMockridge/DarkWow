@@ -98,6 +98,13 @@ Sequential determinism:
 Environment:
   RAYON_NUM_THREADS         Cargo build parallelism (default: 10)
   MONERO_WALLET_ADDRESS     Monero testnet wallet for merge mining rewards
+  FINALITY_MODE             Finality enforcement mode: always (default), native, signaled
+  FINALITY_DISABLE_CARIBINA Set to "true" to disable Caribina Arweave anchoring
+
+Options:
+  --finality-mode MODE      Finality mode: "always" (default), "native", or "signaled"
+  --finality-disable-caribina
+                            Disable Caribina Arweave anchoring entirely
 
 Examples:
   ./test_pipeline.sh                         # local devnet, native mining
@@ -115,10 +122,15 @@ EOF
 
 # --- Parse flags ---
 MODE="native"
+FINALITY_MODE="${FINALITY_MODE:-always}"
+FINALITY_DISABLE_CARIBINA="${FINALITY_DISABLE_CARIBINA:-false}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
         --mode=*) MODE="${1#*=}"; shift ;;
+        --finality-mode) FINALITY_MODE="$2"; shift 2 ;;
+        --finality-mode=*) FINALITY_MODE="${1#*=}"; shift ;;
+        --finality-disable-caribina) FINALITY_DISABLE_CARIBINA="true"; shift ;;
         --help|-h) usage ;;
         *)
             echo "Unknown flag: $1"
@@ -614,14 +626,17 @@ phase_start() {
 
     if [ "$MODE" = "merge" ]; then
         MERGE_MINING=true WALLET_ADDRESS="$WALLET_ADDRESS" \
+            FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
             docker compose --profile merge up -d
     elif [ "$MODE" = "native-p2pool" ]; then
         WALLET_ADDRESS="$WALLET_ADDRESS" \
+            FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
             docker compose --profile native-p2pool up -d
     elif [ "$MODE" = "bridge" ]; then
         # Start native profile first — lilith + node0 + node1 must
         # establish their P2P mesh before the bridge-node connects.
         WALLET_ADDRESS="$WALLET_ADDRESS" \
+            FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
             docker compose --profile native up -d
         info "native profile started, waiting for P2P mesh..."
         sleep 10
@@ -636,6 +651,7 @@ phase_start() {
         # Now start bridge-node on top of the established mesh
         info "Starting bridge-node..."
         WALLET_ADDRESS="$WALLET_ADDRESS" \
+            FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
             docker compose --profile bridge up -d
         sleep 5
 
@@ -646,6 +662,7 @@ phase_start() {
         fi
     else
         WALLET_ADDRESS="$WALLET_ADDRESS" \
+            FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
             docker compose --profile native up -d
     fi
     # Shred temp secret file now that containers have read it
@@ -697,6 +714,8 @@ phase_join_config() {
         -e SKIP_SYNC=false \
         -e SKIP_FEES=false \
         -e LOCALNET=false \
+        -e FINALITY_MODE="$FINALITY_MODE" \
+        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
         -e MINING_ENABLED=true \
         -e MINING_THREADS=1 \
         -e RANDOMX_MAX_THREADS=0 \
@@ -878,6 +897,8 @@ phase_join_lifecycle() {
         -e SKIP_SYNC=false \
         -e SKIP_FEES=false \
         -e LOCALNET=false \
+        -e FINALITY_MODE="$FINALITY_MODE" \
+        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
         -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 
@@ -1050,6 +1071,8 @@ phase_join_fallback() {
         -e SKIP_SYNC=false \
         -e SKIP_FEES=false \
         -e LOCALNET=false \
+        -e FINALITY_MODE="$FINALITY_MODE" \
+        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
         -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 
@@ -1172,6 +1195,8 @@ phase_join_fallback() {
         -e SKIP_SYNC=false \
         -e SKIP_FEES=false \
         -e LOCALNET=false \
+        -e FINALITY_MODE="$FINALITY_MODE" \
+        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
         -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 
@@ -1424,6 +1449,37 @@ phase_blocks() {
             pass "block 1 fetched successfully"
         else
             fail "block 1 fetch"
+        fi
+
+        # Verify Caribina anchor presence/absence based on finality config
+        info "Inspecting block 1 for Caribina anchor..."
+        ANCHOR_TX_ID=$(echo "$BLOCK_DATA" | grep -o '"anchor_tx_id":"[^"]*"' | cut -d'"' -f4 || echo "")
+        if [ -z "$ANCHOR_TX_ID" ]; then
+            # Try to detect anchor as a hex/base58 field if JSON format differs
+            ANCHOR_TX_ID=$(echo "$BLOCK_DATA" | grep -o 'anchor_tx_id[^,}]*' | head -1 || echo "")
+        fi
+
+        if [ "$FINALITY_DISABLE_CARIBINA" = "true" ]; then
+            # Caribina disabled — anchor should be zero/absent
+            if echo "$ANCHOR_TX_ID" | grep -qE '^[0]+$|^\s*$|^AAAAAAAAAAAAAAAA'; then
+                pass "anchor_tx_id is zero (caribina disabled)"
+            elif [ -z "$ANCHOR_TX_ID" ]; then
+                pass "anchor_tx_id absent (caribina disabled)"
+            else
+                fail "anchor_tx_id should be zero (caribina disabled) but got: $ANCHOR_TX_ID"
+            fi
+        else
+            # Caribina enabled (default) — anchor should be non-zero
+            if [ -n "$ANCHOR_TX_ID" ] && ! echo "$ANCHOR_TX_ID" | grep -qE '^[0]+$|^AAAAAAAAAAAAAAAA'; then
+                pass "anchor_tx_id present (caribina enabled): ${ANCHOR_TX_ID:0:16}..."
+            else
+                echo "  WARNING: anchor_tx_id is zero or absent (caribina enabled)"
+                echo "  This is acceptable if ArDrive Turbo was unreachable —"
+                echo "  anchoring is best-effort and mining proceeds without it."
+                echo "  Raw block data excerpt:"
+                echo "$BLOCK_DATA" | grep -o 'anchor[^,}]*' | head -3 || echo "  (no anchor fields found)"
+                fail "anchor_tx_id should be non-zero (caribina enabled)"
+            fi
         fi
     fi
 }
@@ -1962,6 +2018,8 @@ phase_persistence() {
         -e SKIP_SYNC=false \
         -e SKIP_FEES=false \
         -e LOCALNET=false \
+        -e FINALITY_MODE="$FINALITY_MODE" \
+        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
         -v "$persist_dir:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 
@@ -2012,6 +2070,8 @@ phase_persistence() {
         -e SKIP_SYNC=false \
         -e SKIP_FEES=false \
         -e LOCALNET=false \
+        -e FINALITY_MODE="$FINALITY_MODE" \
+        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
         -v "$persist_dir:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 

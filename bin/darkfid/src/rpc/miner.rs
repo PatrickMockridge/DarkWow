@@ -72,11 +72,11 @@ impl DarkfiNode {
 
         let recipient = params[0].get::<String>().unwrap();
 
-        info!(target: "darkfid::rpc::miner", "miner.mine called for recipient {}", recipient);
+        info!(target: "dwowd::rpc::miner", "miner.mine called for recipient {}", recipient);
 
         // Check that we're in localnet mode
         if !self.is_localnet() {
-            error!(target: "darkfid::rpc::miner", "miner.mine is only available in localnet mode");
+            error!(target: "dwowd::rpc::miner", "miner.mine is only available in localnet mode");
             return JsonError::new(
                 InternalError,
                 Some("miner.mine is only available in localnet mode".to_string()),
@@ -89,7 +89,7 @@ impl DarkfiNode {
         let recipient_bytes = match bs58::decode(recipient).with_check(None).into_vec() {
             Ok(v) => v,
             Err(_) => {
-                error!(target: "darkfid::rpc::miner", "Invalid recipient base58");
+                error!(target: "dwowd::rpc::miner", "Invalid recipient base58");
                 return JsonError::new(
                     InternalError,
                     Some("Invalid recipient address".to_string()),
@@ -102,7 +102,7 @@ impl DarkfiNode {
         // DarkWow address format: [prefix(1)][public_key(32)][checksum(4)] = 37 bytes
         if recipient_bytes.len() != 37 {
             error!(
-                target: "darkfid::rpc::miner",
+                target: "dwowd::rpc::miner",
                 "Invalid address length: {}",
                 recipient_bytes.len()
             );
@@ -125,7 +125,7 @@ impl DarkfiNode {
         ) {
             Ok(z) => z.0,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to get zkas: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to get zkas: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to get zkas: {}", e)),
@@ -142,7 +142,7 @@ impl DarkfiNode {
         let fork = match validator.consensus.forks.first_mut() {
             Some(f) => f,
             None => {
-                error!(target: "darkfid::rpc::miner", "No fork available");
+                error!(target: "dwowd::rpc::miner", "No fork available");
                 return JsonError::new(InternalError, Some("No fork available".to_string()), id)
                     .into()
             }
@@ -151,7 +151,7 @@ impl DarkfiNode {
         let previous = match fork.overlay.lock().unwrap().last_block() {
             Ok(p) => p,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to get last block: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to get last block: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to get last block: {}", e)),
@@ -166,7 +166,7 @@ impl DarkfiNode {
         let witnesses = match empty_witnesses(&zkbin) {
             Ok(w) => w,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to create circuit: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to create circuit: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to create circuit: {}", e)),
@@ -199,7 +199,7 @@ impl DarkfiNode {
         {
             Ok(d) => d,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to build PoWReward: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to build PoWReward: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to build PoWReward: {}", e)),
@@ -211,7 +211,7 @@ impl DarkfiNode {
 
         let mut data = vec![NativeTokenFunction::PoWRewardV1 as u8];
         if let Err(e) = debris.params.encode(&mut data) {
-            error!(target: "darkfid::rpc::miner", "Failed to encode params: {}", e);
+            error!(target: "dwowd::rpc::miner", "Failed to encode params: {}", e);
             return JsonError::new(InternalError, Some(format!("Failed to encode: {}", e)), id)
                 .into()
         }
@@ -224,7 +224,7 @@ impl DarkfiNode {
         ) {
             Ok(t) => t,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to create tx builder: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to create tx builder: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to create tx builder: {}", e)),
@@ -237,7 +237,7 @@ impl DarkfiNode {
         let mut tx = match tx_builder.build() {
             Ok(t) => t,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to build tx: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to build tx: {}", e);
                 return JsonError::new(InternalError, Some(format!("Failed to build tx: {}", e)), id)
                     .into()
             }
@@ -246,7 +246,7 @@ impl DarkfiNode {
         let sigs = match tx.create_sigs(&[block_signing_keypair.secret]) {
             Ok(s) => s,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to create signatures: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to create signatures: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to create signatures: {}", e)),
@@ -261,7 +261,7 @@ impl DarkfiNode {
         let timestamp = match previous.header.timestamp.checked_add(1.into()) {
             Ok(t) => t,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to increment timestamp: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to increment timestamp: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to increment timestamp: {}", e)),
@@ -283,7 +283,7 @@ impl DarkfiNode {
         let overlay = match fork.overlay.lock().unwrap().full_clone() {
             Ok(o) => o,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to clone overlay: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to clone overlay: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to clone overlay: {}", e)),
@@ -304,7 +304,7 @@ impl DarkfiNode {
         {
             Ok(o) => o,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to apply producer tx: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to apply producer tx: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to apply producer tx: {}", e)),
@@ -317,7 +317,7 @@ impl DarkfiNode {
         let diff = match overlay.lock().unwrap().overlay.lock().unwrap().diff(&fork.diffs) {
             Ok(d) => d,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to get diff: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to get diff: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to get diff: {}", e)),
@@ -335,7 +335,7 @@ impl DarkfiNode {
         {
             Ok(s) => s,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to update state monotree: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to update state monotree: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to update state monotree: {}", e)),
@@ -364,14 +364,14 @@ impl DarkfiNode {
         )
         .await
         {
-            error!(target: "darkfid::rpc::miner", "Failed to verify block: {}", e);
+            error!(target: "dwowd::rpc::miner", "Failed to verify block: {}", e);
             return JsonError::new(InternalError, Some(format!("Failed to verify block: {}", e)), id)
                 .into()
         }
 
         // Append to fork
         if let Err(e) = fork.append_proposal(&proposal).await {
-            error!(target: "darkfid::rpc::miner", "Failed to append proposal: {}", e);
+            error!(target: "dwowd::rpc::miner", "Failed to append proposal: {}", e);
             return JsonError::new(
                 InternalError,
                 Some(format!("Failed to append proposal: {}", e)),
@@ -381,7 +381,7 @@ impl DarkfiNode {
         }
 
         let tx_hash = tx.hash().to_string();
-        info!(target: "darkfid::rpc::miner", "Mined block with reward tx: {}", tx_hash);
+        info!(target: "dwowd::rpc::miner", "Mined block with reward tx: {}", tx_hash);
 
         // Export the block signing secret key so wallet can spend the coins
         // The note is encrypted to the output public key, and the memo contains
@@ -422,13 +422,13 @@ impl DarkfiNode {
         let recipient = params[0].get::<String>().unwrap();
         let reward_value = *params[1].get::<f64>().unwrap() as u64;
 
-        info!(target: "darkfid::rpc::miner", "miner.mine_linear called for recipient {} with reward {}", recipient, reward_value);
+        info!(target: "dwowd::rpc::miner", "miner.mine_linear called for recipient {} with reward {}", recipient, reward_value);
 
         // Check that we're in linear-testnet mode (linear_blockchain is set)
         let linear_blockchain = match &self.linear_blockchain {
             Some(lb) => lb.clone(),
             None => {
-                error!(target: "darkfid::rpc::miner", "miner.mine_linear is only available in linear-testnet mode");
+                error!(target: "dwowd::rpc::miner", "miner.mine_linear is only available in linear-testnet mode");
                 return JsonError::new(
                     InternalError,
                     Some("miner.mine_linear is only available in linear-testnet mode".to_string()),
@@ -442,7 +442,7 @@ impl DarkfiNode {
         let recipient_bytes = match bs58::decode(recipient).with_check(None).into_vec() {
             Ok(v) => v,
             Err(_) => {
-                error!(target: "darkfid::rpc::miner", "Invalid recipient base58");
+                error!(target: "dwowd::rpc::miner", "Invalid recipient base58");
                 return JsonError::new(
                     InternalError,
                     Some("Invalid recipient address".to_string()),
@@ -455,7 +455,7 @@ impl DarkfiNode {
         // DarkWow address format: [prefix(1)][public_key(32)][checksum(4)] = 37 bytes
         if recipient_bytes.len() != 37 {
             error!(
-                target: "darkfid::rpc::miner",
+                target: "dwowd::rpc::miner",
                 "Invalid address length: {}",
                 recipient_bytes.len()
             );
@@ -469,7 +469,7 @@ impl DarkfiNode {
         let public_key = match PublicKey::from_bytes(public_key_bytes) {
             Ok(pk) => pk,
             Err(_) => {
-                error!(target: "darkfid::rpc::miner", "Invalid public key in address");
+                error!(target: "dwowd::rpc::miner", "Invalid public key in address");
                 return JsonError::new(InternalError, Some("Invalid public key".to_string()), id)
                     .into()
             }
@@ -479,7 +479,7 @@ impl DarkfiNode {
         let latest_block = match linear_blockchain.get_latest_block() {
             Ok(block) => block,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to get latest block: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to get latest block: {}", e);
                 return JsonError::new(InternalError, Some(format!("Failed to get latest block: {}", e)), id)
                     .into()
             }
@@ -502,7 +502,7 @@ impl DarkfiNode {
                 {
                     Ok(zk) => *zk_lock = Some(zk),
                     Err(e) => {
-                        error!(target: "darkfid::rpc::miner", "Failed to init linear ZK: {}", e);
+                        error!(target: "dwowd::rpc::miner", "Failed to init linear ZK: {}", e);
                         return JsonError::new(
                             InternalError,
                             Some(format!("Failed to init linear ZK: {}", e)),
@@ -525,7 +525,7 @@ impl DarkfiNode {
         {
             Ok(cb) => cb,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to build ZK coinbase: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to build ZK coinbase: {}", e);
                 return JsonError::new(
                     InternalError,
                     Some(format!("Failed to build ZK coinbase: {}", e)),
@@ -562,23 +562,27 @@ impl DarkfiNode {
         let mut mined_block = match miner.mine(&vm, previous, height, all_txs, difficulty_target) {
             Ok(block) => block,
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Mining failed: {}", e);
+                error!(target: "dwowd::rpc::miner", "Mining failed: {}", e);
                 return JsonError::new(InternalError, Some(format!("Mining failed: {}", e)), id)
                     .into()
             }
         };
 
-        // Anchor the block to Arweave via Caribina (best-effort)
-        let block_hash = mined_block.hash(&vm);
-        let mut block_hash_bytes = [0u8; 32];
-        block_hash_bytes.copy_from_slice(block_hash.as_bytes());
-        match anchor_block(&block_hash_bytes, mined_block.header.timestamp, height) {
-            Some(tx_id) => {
-                mined_block.header.anchor_tx_id = tx_id;
-                info!(target: "darkfid::rpc::miner", "Anchored block {} to Arweave", block_hash);
-            }
-            None => {
-                info!(target: "darkfid::rpc::miner", "Arweave anchor skipped (network/turbo unavailable)");
+        // Anchor the block to Arweave via Caribina (best-effort, configurable)
+        let fc = &linear_blockchain.finality_config;
+        if fc.should_anchor() {
+            let block_hash = mined_block.hash(&vm);
+            let mut block_hash_bytes = [0u8; 32];
+            block_hash_bytes.copy_from_slice(block_hash.as_bytes());
+            match anchor_block(&block_hash_bytes, mined_block.header.timestamp, height) {
+                Some(tx_id) => {
+                    mined_block.header.anchor_tx_id = tx_id;
+                    mined_block.header.finality_flags = fc.mine_flags();
+                    info!(target: "dwowd::rpc::miner", "Anchored block {} to Arweave", block_hash);
+                }
+                None => {
+                    info!(target: "dwowd::rpc::miner", "Arweave anchor skipped (network/turbo unavailable)");
+                }
             }
         }
 
@@ -587,10 +591,10 @@ impl DarkfiNode {
         // Apply the mined block to the blockchain
         match linear_blockchain.apply_block(&mined_block).await {
             Ok(()) => {
-                info!(target: "darkfid::rpc::miner", "Mined and applied block {} at height {}", block_hash, height);
+                info!(target: "dwowd::rpc::miner", "Mined and applied block {} at height {}", block_hash, height);
             }
             Err(e) => {
-                error!(target: "darkfid::rpc::miner", "Failed to apply block: {}", e);
+                error!(target: "dwowd::rpc::miner", "Failed to apply block: {}", e);
                 return JsonError::new(InternalError, Some(format!("Failed to apply block: {}", e)), id)
                     .into()
             }

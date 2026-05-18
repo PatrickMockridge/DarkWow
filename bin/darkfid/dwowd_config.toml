@@ -606,6 +606,17 @@ txs_batch_size = 50
 # Default 1 for local dev safety.
 #randomx_max_threads = 1
 
+## Linear-testnet finality settings
+[network_config."linear-testnet".finality]
+# Mode: "native" | "always" | "signaled"
+#mode = "always"
+# Enable Caribina Arweave anchoring (default: true)
+#caribina_enabled = true
+# Enable Monero anchoring via p2pool (default: false)
+#monero_enabled = false
+# Monero confirmations before finality (default: 3)
+#monero_min_confirmations = 3
+
 ## Linear-testnet JSON-RPC settings
 [network_config."linear-testnet".rpc]
 # JSON-RPC listen URL
@@ -668,6 +679,17 @@ min_block_interval = 10
 # Capped by build-time DARKFI_RANDOMX_MAX_THREADS (default 10).
 # Public testnet defaults to 0 (all cores); set to 1 for local dev.
 #randomx_max_threads = 0
+
+## DarkWow-testnet finality settings
+[network_config."darkwow-testnet".finality]
+# Mode: "native" | "always" | "signaled"
+#mode = "always"
+# Enable Caribina Arweave anchoring (default: true)
+#caribina_enabled = true
+# Enable Monero anchoring via p2pool (default: false)
+#monero_enabled = false
+# Monero confirmations before finality (default: 3)
+#monero_min_confirmations = 3
 
 ## DarkWow-testnet JSON-RPC settings
 [network_config."darkwow-testnet".rpc]
@@ -743,21 +765,8 @@ seeds = [
 #
 #[network_config."dwow-devnet"]
 #database = "~/.local/share/dwow/dwowd/dwow-devnet"
-#threshold = 1
-#max_forks = 8
-#pow_target = 120
-#pow_fixed_difficulty = 1
 #skip_sync = true
-#skip_fees = true
 #txs_batch_size = 50
-#
-#[network_config."dwow-devnet".pow]
-#target_block_time = 120
-#initial_difficulty = 255
-#min_difficulty = 1
-#max_difficulty = 4294967295
-#min_block_interval = 10
-#randomx_max_threads = 0
 #
 #[network_config."dwow-devnet".rpc]
 #rpc_listen = "tcp://0.0.0.0:31345"
@@ -778,6 +787,14 @@ seeds = [
 ## seeds = ["tcp+tls://<seed-ip>:31342"]
 ## If this is the seed and internet-facing, uncomment:
 ## external_addrs = ["tcp+tls://<public-ip>:31342"]
+#
+#[network_config."dwow-devnet".net.pow]
+#target_block_time = 120
+#initial_difficulty = 255
+#min_difficulty = 1
+#max_difficulty = 4294967295
+#min_block_interval = 10
+#randomx_max_threads = 0
 #
 #[network_config."dwow-devnet".net.profiles."tcp+tls"]
 #inbound = ["tcp+tls://0.0.0.0:31342"]

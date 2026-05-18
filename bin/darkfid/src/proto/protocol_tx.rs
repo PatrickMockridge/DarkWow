@@ -57,7 +57,7 @@ impl ProtocolTxHandler {
     /// and registers it to the provided P2P network, using the default session flag.
     pub async fn init(p2p: &P2pPtr) -> ProtocolTxHandlerPtr {
         debug!(
-            target: "darkfid::proto::protocol_tx::init",
+            target: "dwowd::proto::protocol_tx::init",
             "Adding ProtocolTx to the protocol registry"
         );
 
@@ -74,7 +74,7 @@ impl ProtocolTxHandler {
         subscriber: JsonSubscriber,
     ) -> Result<()> {
         debug!(
-            target: "darkfid::proto::protocol_tx::start",
+            target: "dwowd::proto::protocol_tx::start",
             "Starting ProtocolTx handler task..."
         );
 
@@ -83,7 +83,7 @@ impl ProtocolTxHandler {
             |res| async move {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => { /* Do nothing */ }
-                    Err(e) => error!(target: "darkfid::proto::protocol_tx::start", "Failed starting ProtocolTx handler task: {e}"),
+                    Err(e) => error!(target: "dwowd::proto::protocol_tx::start", "Failed starting ProtocolTx handler task: {e}"),
                 }
             },
             Error::DetachedTaskStopped,
@@ -91,7 +91,7 @@ impl ProtocolTxHandler {
         );
 
         debug!(
-            target: "darkfid::proto::protocol_tx::start",
+            target: "dwowd::proto::protocol_tx::start",
             "ProtocolTx handler task started!"
         );
 
@@ -100,9 +100,9 @@ impl ProtocolTxHandler {
 
     /// Stop the `ProtocolTx` background task.
     pub async fn stop(&self) {
-        debug!(target: "darkfid::proto::protocol_tx::stop", "Terminating ProtocolTx handler task...");
+        debug!(target: "dwowd::proto::protocol_tx::stop", "Terminating ProtocolTx handler task...");
         self.handler.task.stop().await;
-        debug!(target: "darkfid::proto::protocol_tx::stop", "ProtocolTx handler task terminated!");
+        debug!(target: "dwowd::proto::protocol_tx::stop", "ProtocolTx handler task terminated!");
     }
 }
 
@@ -112,14 +112,14 @@ async fn handle_receive_tx(
     validator: ValidatorPtr,
     subscriber: JsonSubscriber,
 ) -> Result<()> {
-    debug!(target: "darkfid::proto::protocol_tx::handle_receive_tx", "START");
+    debug!(target: "dwowd::proto::protocol_tx::handle_receive_tx", "START");
     loop {
         // Wait for a new transaction message
         let (channel, tx) = match handler.receiver.recv().await {
             Ok(r) => r,
             Err(e) => {
                 debug!(
-                    target: "darkfid::proto::protocol_tx::handle_receive_tx",
+                    target: "dwowd::proto::protocol_tx::handle_receive_tx",
                     "recv fail: {e}"
                 );
                 continue
@@ -130,7 +130,7 @@ async fn handle_receive_tx(
         let mut validator = validator.write().await;
         if !validator.synced {
             debug!(
-                target: "darkfid::proto::protocol_tx::handle_receive_tx",
+                target: "dwowd::proto::protocol_tx::handle_receive_tx",
                 "Node still syncing blockchain, skipping..."
             );
             handler.send_action(channel, ProtocolGenericAction::Skip).await;
@@ -140,7 +140,7 @@ async fn handle_receive_tx(
         // Append transaction
         if let Err(e) = validator.append_tx(&tx, true).await {
             debug!(
-                target: "darkfid::proto::protocol_tx::handle_receive_tx",
+                target: "dwowd::proto::protocol_tx::handle_receive_tx",
                 "append_tx fail: {e}"
             );
             handler.send_action(channel, ProtocolGenericAction::Skip).await;

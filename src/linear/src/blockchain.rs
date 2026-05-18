@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex};
 use randomx::{RandomXFlags, RandomXVM};
 use tracing::{debug, error, info};
 
-use super::{Block, LinearError, LinearStore, PoWConsensus, Result};
+use super::{Block, FinalityConfig, LinearError, LinearStore, PoWConsensus, Result};
 
 /// LinearBlockchain provides a full linear blockchain with WASM runtime support.
 /// Thread-safe via Arc<Mutex<>> wrapping for interior mutability.
@@ -40,6 +40,8 @@ pub struct LinearBlockchain {
     pub store: Arc<LinearStore>,
     /// PoW consensus
     pub consensus: PoWConsensus,
+    /// Finality configuration
+    pub finality_config: FinalityConfig,
     /// Current chain height - protected by mutex for interior mutability
     height: Mutex<u64>,
     /// RandomX VM cache (for PoW verification) - protected by mutex for interior mutability
@@ -51,6 +53,11 @@ pub struct LinearBlockchain {
 impl LinearBlockchain {
     /// Create a new LinearBlockchain with the given sled database
     pub fn new(db: Arc<sled::Db>) -> Result<Self> {
+        Self::with_finality(db, FinalityConfig::default())
+    }
+
+    /// Create a new LinearBlockchain with custom finality configuration
+    pub fn with_finality(db: Arc<sled::Db>, finality_config: FinalityConfig) -> Result<Self> {
         let store = LinearStore::new(db)?;
         let consensus = PoWConsensus::default();
         let height = store.get_height().unwrap_or(0);
@@ -62,6 +69,7 @@ impl LinearBlockchain {
         Ok(Self {
             store: Arc::new(store),
             consensus,
+            finality_config,
             height: Mutex::new(height),
             vm: Mutex::new(Some(vm)),
             randomx_key: Mutex::new(randomx_key),
@@ -130,13 +138,15 @@ impl LinearBlockchain {
     /// Takes &self for thread-safe access via interior mutability.
     ///
     /// Rejects blocks that would replace an already-anchored block at the
-    /// same height — Caribina anchors make blocks final.
+    /// same height when finality enforcement is enabled.
     pub fn insert_block(&self, block: &Block) -> Result<()> {
         let height = block.header.height;
 
-        // Finality check: don't replace an anchored block at the same height
+        // Finality check: mode-aware anchor enforcement
         if let Ok(existing) = self.store.get_block(height) {
-            if existing.header.anchor_tx_id != [0u8; 32] {
+            if self.finality_config.should_enforce(existing.header.finality_flags)
+                && existing.header.anchor_tx_id != [0u8; 32]
+            {
                 info!(
                     target: "linear_blockchain",
                     "Rejected block at height {} — existing block is anchored (tx_id: {:?})",

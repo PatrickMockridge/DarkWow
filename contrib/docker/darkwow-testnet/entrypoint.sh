@@ -35,6 +35,8 @@ WALLET_SECRET="${WALLET_SECRET:-}"
 WALLET_SECRET_FILE="${WALLET_SECRET_FILE:-}"
 MERGE_MINING="${MERGE_MINING:-false}"
 MM_RPC_PORT="${MM_RPC_PORT:-31348}"
+FINALITY_MODE="${FINALITY_MODE:-always}"
+FINALITY_DISABLE_CARIBINA="${FINALITY_DISABLE_CARIBINA:-false}"
 DATADIR="${DATADIR:-/root/.local/share/dwow/dwowd/${NETWORK}}"
 LILITH_DATADIR="${LILITH_DATADIR:-/root/.local/share/dwow/lilith/${NETWORK}}"
 
@@ -219,6 +221,19 @@ rpc_listen = "tcp://0.0.0.0:${MM_RPC_PORT}"
 DWOWEOF
     echo "  Merge mining RPC: tcp://0.0.0.0:${MM_RPC_PORT} (raw TCP JSON-RPC for p2pool)"
 fi
+
+# --- Finality config ---
+FINALITY_CARIBINA_ENABLED="true"
+if [ "$FINALITY_DISABLE_CARIBINA" = "true" ]; then
+    FINALITY_CARIBINA_ENABLED="false"
+fi
+cat >> "$CONFIGFILE" << DWOWEOF
+
+[network_config."${NETWORK}".finality]
+mode = "${FINALITY_MODE}"
+caribina_enabled = ${FINALITY_CARIBINA_ENABLED}
+DWOWEOF
+echo "  Finality: mode=${FINALITY_MODE} caribina_enabled=${FINALITY_CARIBINA_ENABLED}"
 
 echo "  Config written to $CONFIGFILE"
 

@@ -47,7 +47,7 @@ pub struct ManagementRpcHandler;
 #[rustfmt::skip]
 impl RequestHandler<ManagementRpcHandler> for DarkfiNode {
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
-        debug!(target: "darkfid::rpc::management_rpc", "--> {}", req.stringify().unwrap());
+        debug!(target: "dwowd::rpc::management_rpc", "--> {}", req.stringify().unwrap());
 
         match req.method.as_str() {
             // =======================

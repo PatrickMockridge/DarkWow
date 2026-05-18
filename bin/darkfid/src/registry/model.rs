@@ -241,7 +241,7 @@ pub struct PowRewardV1Zk {
 impl PowRewardV1Zk {
     pub async fn new(validator: &ValidatorPtr) -> Result<Self> {
         info!(
-            target: "darkfid::registry::model::PowRewardV1Zk::new",
+            target: "dwowd::registry::model::PowRewardV1Zk::new",
             "Generating PowRewardV1 ZkCircuit and ProvingKey...",
         );
 
@@ -438,7 +438,7 @@ pub struct LinearPowRewardZk {
 impl LinearPowRewardZk {
     pub async fn new(_linear_blockchain: Arc<crate::blockchain::LinearBlockchain>) -> Result<Self> {
         info!(
-            target: "darkfid::registry::model::LinearPowRewardZk::new",
+            target: "dwowd::registry::model::LinearPowRewardZk::new",
             "Initializing linear ZK mining data...",
         );
 
@@ -449,7 +449,7 @@ impl LinearPowRewardZk {
         let provingkey = ProvingKey::build(zkbin.k, &circuit);
 
         info!(
-            target: "darkfid::registry::model::LinearPowRewardZk::new",
+            target: "dwowd::registry::model::LinearPowRewardZk::new",
             "Mint_V1 ZK circuit loaded (k={})", zkbin.k,
         );
 

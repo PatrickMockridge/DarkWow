@@ -16,3 +16,6 @@ pub use anchor::anchor_block;
 pub use data_item::{DataItem, Tag};
 pub use verify::verify_anchor;
 pub use wallet::CaribinaWallet;
+
+#[cfg(test)]
+mod integration_tests;

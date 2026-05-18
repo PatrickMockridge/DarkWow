@@ -36,7 +36,7 @@ use randomx::{RandomXFlags, RandomXVM};
 use dwow::runtime::vm_runtime::{BlockchainAccess, ContractStoreAccess, SimpleDbAccess};
 use dwow::Error;
 use dwow::Result;
-use dwow_linear::{build_uncle_merkle, verify_uncle_proof, UncleBlock, Block, LinearStore, PoWConsensus};
+use dwow_linear::{build_uncle_merkle, verify_uncle_proof, FinalityConfig, UncleBlock, Block, LinearStore, PoWConsensus};
 use dwow_sdk::crypto::ContractId;
 use tracing::{error, info};
 
@@ -77,6 +77,8 @@ pub struct LinearBlockchain {
     pub consensus: Mutex<PoWConsensus>,
     /// ZK verifier
     pub zk_verifier: ZkVerifier,
+    /// Finality configuration
+    pub finality_config: FinalityConfig,
     /// Current chain height
     height: AtomicU64,
     /// RandomX VM for PoW (protected by mutex for interior mutability)
@@ -92,11 +94,11 @@ pub struct LinearBlockchain {
 impl LinearBlockchain {
     /// Create a new LinearBlockchain with the given sled database and default PoW
     pub fn new(store: Arc<LinearStore>) -> Self {
-        Self::with_pow_config(store, LinearPoWConfig::default())
+        Self::with_pow_config(store, LinearPoWConfig::default(), FinalityConfig::default())
     }
 
-    /// Create a new LinearBlockchain with custom PoW configuration
-    pub fn with_pow_config(store: Arc<LinearStore>, config: LinearPoWConfig) -> Self {
+    /// Create a new LinearBlockchain with custom PoW and finality configuration
+    pub fn with_pow_config(store: Arc<LinearStore>, config: LinearPoWConfig, finality_config: FinalityConfig) -> Self {
         let consensus = PoWConsensus::with_config(
             config.target_block_time,
             config.initial_difficulty,
@@ -120,6 +122,7 @@ impl LinearBlockchain {
             state_db: Arc::new(state_db),
             consensus: Mutex::new(consensus),
             zk_verifier,
+            finality_config,
             height,
             vm: Mutex::new(vm),
             randomx_key: Mutex::new(randomx_key),
@@ -182,6 +185,20 @@ impl LinearBlockchain {
     /// Insert a block into the chain, tracking coins and nullifiers from transactions.
     pub fn insert_block(&self, block: &Block) -> Result<()> {
         let height = block.header.height;
+
+        // Finality check: mode-aware anchor enforcement
+        if let Ok(existing) = self.store.get_block(height) {
+            if self.finality_config.should_enforce(existing.header.finality_flags)
+                && existing.header.anchor_tx_id != [0u8; 32]
+            {
+                info!(
+                    target: "linear_blockchain",
+                    "Rejected block at height {} — existing block is anchored (tx_id: {:?})",
+                    height, existing.header.anchor_tx_id
+                );
+                return Err(Error::Custom("AnchoredBlockConflict".to_string()));
+            }
+        }
 
         // Record timestamp and difficulty for dynamic adjustment
         {
@@ -462,6 +479,7 @@ impl Clone for LinearBlockchain {
             state_db: self.state_db.clone(),
             consensus: Mutex::new(PoWConsensus::default()), // consensus is stateless, recreate it
             zk_verifier: ZkVerifier,
+            finality_config: self.finality_config.clone(),
             height: AtomicU64::new(self.height.load(Ordering::SeqCst)),
             vm: Mutex::new(self.vm.lock().unwrap().clone()),
             randomx_key: Mutex::new(*self.randomx_key.lock().unwrap()),

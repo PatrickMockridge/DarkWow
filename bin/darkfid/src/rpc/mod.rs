@@ -68,7 +68,7 @@ pub struct DefaultRpcHandler;
 #[rustfmt::skip]
 impl RequestHandler<DefaultRpcHandler> for DarkfiNode {
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
-        debug!(target: "darkfid::rpc", "--> {}", req.stringify().unwrap());
+        debug!(target: "dwowd::rpc", "--> {}", req.stringify().unwrap());
 
         match req.method.as_str() {
             // =====================

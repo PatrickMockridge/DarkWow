@@ -21,17 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-pub mod consensus;
-pub use consensus::consensus_init_task;
-
 pub mod consensus_linear;
-pub use consensus_linear::consensus_linear_init_task;
-
-pub mod sync;
-pub use sync::sync_task;
-
-pub mod unknown_proposal;
-pub use unknown_proposal::handle_unknown_proposals;
+pub use consensus_linear::{consensus_linear_init_task, ConsensusInitTaskConfig};
 
 pub mod garbage_collect;
 pub use garbage_collect::garbage_collect_task;

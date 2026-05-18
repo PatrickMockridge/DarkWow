@@ -90,6 +90,10 @@ pub fn deserialize_header(data: &[u8]) -> Option<BlockHeader> {
         randomx_key,
         coin_merkle_root,
         nullifier_root,
+        anchor_tx_id: [0u8; 32],
+        anchor_monero_height: 0,
+        anchor_monero_hash: [0u8; 32],
+        finality_flags: 0,
     })
 }
 
@@ -134,6 +138,10 @@ mod tests {
             randomx_key: [0xDD; 32],
             coin_merkle_root: [0xEE; 32],
             nullifier_root: [0xFF; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
         }
     }
 

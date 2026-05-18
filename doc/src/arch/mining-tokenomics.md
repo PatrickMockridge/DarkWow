@@ -323,15 +323,13 @@ ratios, uncle phases, and slot counts.
 
 ### Anchoring Finality Gadget
 
-> **Status: Specified and simulated, not yet implemented in the Rust validator.**
-> The anchoring finality logic exists in the Python simulation
-> (`contrib/docker/darkwow-testnet/merge_mining_model.py`) which implements the
-> full finality filter, reorg attack scenarios, and `ANCHOR_MIN_CONFIRMATIONS`
-> parameter. The Rust validator implements merge mining PoW verification
-> (`PowData::Monero`, `src/validator/pow.rs`) but does not yet include anchor
-> fields on block headers, Monero chain state tracking, or finality fork
-> filtering. The simulation serves as the canonical specification for the
-> planned implementation.
+> **Status: Caribina (Arweave) anchoring is implemented and live.**
+> Monero/p2pool anchoring is specified and simulated — the anchor fields
+> (`anchor_monero_height`, `anchor_monero_hash`) exist on BlockHeader and
+> the `FINALITY_MONERO` flag bit is reserved, but the Monero verification
+> path is not yet implemented in Rust. See
+> [Caribina Finality](caribina.md) for the active implementation and
+> configuration guide.
 
 Merge mining introduces a security asymmetry: Monero's hashrate dwarfs DarkWow's.
 At a 1000:1 ratio, a dominant merge miner could reorg the chain at will, orphaning

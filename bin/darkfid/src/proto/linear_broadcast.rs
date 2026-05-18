@@ -134,7 +134,7 @@ impl LinearBroadcastHandler {
     /// Initialize the broadcast handler
     pub async fn init(p2p: &P2pPtr, blockchain: Arc<LinearBlockchain>) -> LinearBroadcastHandlerPtr {
         info!(
-            target: "darkfid::proto::linear_broadcast::init",
+            target: "dwowd::proto::linear_broadcast::init",
             "Initializing linear broadcast handler"
         );
 
@@ -145,7 +145,7 @@ impl LinearBroadcastHandler {
     /// Start the handler - spawns receive loop
     pub async fn start(&self, executor: &ExecutorPtr) -> Result<()> {
         info!(
-            target: "darkfid::proto::linear_broadcast::start",
+            target: "dwowd::proto::linear_broadcast::start",
             "Starting linear broadcast handler"
         );
 
@@ -157,7 +157,7 @@ impl LinearBroadcastHandler {
                     Ok(()) | Err(dwow::Error::DetachedTaskStopped) => {}
                     Err(e) => {
                         tracing::error!(
-                            target: "darkfid::proto::linear_broadcast",
+                            target: "dwowd::proto::linear_broadcast",
                             "Failed starting LinearBroadcast handler: {e}"
                         )
                     }
@@ -174,7 +174,7 @@ impl LinearBroadcastHandler {
     #[allow(dead_code)]
     pub async fn stop(&self) {
         info!(
-            target: "darkfid::proto::linear_broadcast::stop",
+            target: "dwowd::proto::linear_broadcast::stop",
             "Stopping linear broadcast handler"
         );
         self.handler.task.stop().await;
@@ -189,7 +189,7 @@ impl LinearBroadcastHandler {
 pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_linear::Block) {
     let msg = BlockBroadcast { block };
     tracing::debug!(
-        target: "darkfid::proto::linear_broadcast",
+        target: "dwowd::proto::linear_broadcast",
         "Broadcasting block at height {} to peers",
         msg.block.header.height
     );
@@ -210,7 +210,7 @@ async fn handle_receive_block(
             Ok(r) => r,
             Err(e) => {
                 tracing::debug!(
-                    target: "darkfid::proto::linear_broadcast::handle_receive_block",
+                    target: "dwowd::proto::linear_broadcast::handle_receive_block",
                     "recv fail: {e}"
                 );
                 continue
@@ -218,7 +218,7 @@ async fn handle_receive_block(
         };
 
         tracing::info!(
-            target: "darkfid::proto::linear_broadcast",
+            target: "dwowd::proto::linear_broadcast",
             "Received block at height {} from P2P",
             msg.block.header.height
         );
@@ -235,7 +235,7 @@ async fn handle_receive_block(
                 Ok(true) => true,
                 Ok(false) => {
                     tracing::warn!(
-                        target: "darkfid::proto::linear_broadcast",
+                        target: "dwowd::proto::linear_broadcast",
                         "Block at height {} failed PoW verification",
                         block_height
                     );
@@ -243,7 +243,7 @@ async fn handle_receive_block(
                 }
                 Err(e) => {
                     tracing::warn!(
-                        target: "darkfid::proto::linear_broadcast",
+                        target: "dwowd::proto::linear_broadcast",
                         "Block at height {} PoW error: {e}",
                         block_height
                     );
@@ -257,9 +257,11 @@ async fn handle_receive_block(
             continue;
         }
 
-        // Verify Caribina anchor (if present)
+        // Verify Caribina anchor (if present and finality enforcement is enabled)
         let anchor = &msg.block.header.anchor_tx_id;
-        if *anchor != [0u8; 32] {
+        if *anchor != [0u8; 32]
+            && blockchain.finality_config.should_verify_anchor(msg.block.header.finality_flags)
+        {
             let mut hash_bytes = [0u8; 32];
             hash_bytes.copy_from_slice(block_hash.as_bytes());
             match verify_anchor(
@@ -270,14 +272,14 @@ async fn handle_receive_block(
             ) {
                 Ok(()) => {
                     tracing::info!(
-                        target: "darkfid::proto::linear_broadcast",
+                        target: "dwowd::proto::linear_broadcast",
                         "Anchor verified for block {} at height {}",
                         block_hash, block_height
                     );
                 }
                 Err(e) => {
                     tracing::warn!(
-                        target: "darkfid::proto::linear_broadcast",
+                        target: "dwowd::proto::linear_broadcast",
                         "Anchor verification failed for block {} at height {}: {}",
                         block_hash, block_height, e
                     );
@@ -291,14 +293,14 @@ async fn handle_receive_block(
         match blockchain.insert_block(&msg.block) {
             Ok(()) => {
                 tracing::info!(
-                    target: "darkfid::proto::linear_broadcast",
+                    target: "dwowd::proto::linear_broadcast",
                     "Block {} at height {} inserted from P2P",
                     block_hash, block_height
                 );
             }
             Err(e) => {
                 tracing::debug!(
-                    target: "darkfid::proto::linear_broadcast",
+                    target: "dwowd::proto::linear_broadcast",
                     "Failed to insert block: {e}"
                 );
             }

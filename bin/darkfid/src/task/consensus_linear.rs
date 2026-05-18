@@ -31,7 +31,18 @@ use std::sync::Arc;
 use smol::Executor;
 use tracing::info;
 
-use crate::{task::consensus::ConsensusInitTaskConfig, DarkfiNodePtr, Result};
+use crate::{DarkfiNodePtr, Result};
+
+/// Auxiliary structure representing node consensus init task configuration.
+#[derive(Clone)]
+pub struct ConsensusInitTaskConfig {
+    /// Skip syncing process and start node right away
+    pub skip_sync: bool,
+    /// Optional sync checkpoint height
+    pub checkpoint_height: Option<u32>,
+    /// Optional sync checkpoint hash
+    pub checkpoint: Option<String>,
+}
 
 /// Async task to initialize consensus for linear-testnet mode.
 ///
@@ -47,7 +58,7 @@ pub async fn consensus_linear_init_task(
     // Mark the node as synced immediately since linear-testnet doesn't need sync
     node.validator.write().await.synced = true;
 
-    info!(target: "darkfid::task::consensus_linear_init_task", "Linear-testnet consensus initialized (synced=true)");
+    info!(target: "dwowd::task::consensus_linear_init_task", "Linear-testnet consensus initialized (synced=true)");
 
     // For linear-testnet, we don't need the full consensus task since
     // mining is done via the miner.mine_linear RPC endpoint.

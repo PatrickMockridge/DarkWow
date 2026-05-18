@@ -90,6 +90,7 @@
   - [Uncle Merkle](arch/consensus/uncle_merkle.md)
   - [Linear Blockchain](arch/consensus/linear_blockchain.md)
   - [Linear zkVM](arch/consensus/linear_zkvm.md)
+  - [Caribina Finality](arch/caribina.md)
 
 ## ZK Primitives
   - [Spend Hooks](arch/zk/spend_hook.md)

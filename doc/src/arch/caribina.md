@@ -126,6 +126,127 @@ if existing.header.anchor_tx_id != [0u8; 32] {
 The `anchor_tx_id` field is **excluded from the mining blob** — it is set after
 PoW is found, so the block hash does not change after anchoring.
 
+## Finality Flow
+
+```mermaid
+sequenceDiagram
+    participant Miner
+    participant dwowd
+    participant ArDrive as ArDrive Turbo
+    participant Arweave as Arweave Gateway
+    participant Peer as P2P Peer
+
+    Miner->>dwowd: Submit PoW solution
+    dwowd->>dwowd: Verify PoW, assemble block
+    dwowd->>ArDrive: POST ANS-104 DataItem (hash || timestamp || height)
+    ArDrive-->>dwowd: TX ID (32 bytes)
+    dwowd->>dwowd: Set anchor_tx_id in header
+    dwowd->>dwowd: Set finality_flags |= CARIBNIA
+    dwowd->>Peer: Broadcast block
+    Peer->>Arweave: GET /{anchor_tx_id}
+    Arweave-->>Peer: DataItem + signature
+    Peer->>Peer: Verify deepHash signature
+    Peer->>Peer: Verify payload matches block
+    Peer->>Peer: insert_block() — enforce if mode=Always
+```
+
+## Fork Choice with Finality Filter
+
+```mermaid
+flowchart TD
+    A[Incoming Forks] --> B{Finality Filter}
+    B -->|"Conflicts with anchored block?"| C[Drop Fork]
+    B -->|"No conflict"| D[Valid Forks]
+    D --> E["best_fork_index()"]
+    E --> F["Canonical Chain"]
+```
+
+## Mode Decision Flow
+
+```mermaid
+flowchart TD
+    Q["finality.mode?"]
+    Q -->|"native"| N[Native:<br/>Skip anchoring<br/>Skip verification<br/>Trust PoW only]
+    Q -->|"always"| A[Always:<br/>Anchor every block<br/>Verify all anchors<br/>Enforce all anchors]
+    Q -->|"signaled"| S[Signaled:<br/>Anchor + set SIGNALED flag<br/>Verify signaled blocks<br/>Enforce signaled blocks]
+```
+
+## Configuration
+
+Finality is configured per-network in `dwowd_config.toml`, with CLI flags
+available to override.
+
+### TOML Configuration
+
+```toml
+[network_config."darkwow-testnet".finality]
+# Mode: "always" (default) | "native" | "signaled"
+mode = "always"
+
+# Enable Caribina Arweave anchoring (default: true)
+caribina_enabled = true
+
+# Enable Monero anchoring via p2pool (default: false)
+monero_enabled = false
+
+# Monero confirmations before finality (default: 3)
+monero_min_confirmations = 3
+```
+
+### CLI Flags
+
+All TOML settings can be overridden from the command line:
+
+```
+--finality-mode <MODE>
+    Finality enforcement mode: "always" (default), "native", or "signaled"
+    - always: Anchor every mined block to Arweave and enforce anchors on received blocks
+    - native: Trust PoW only — ignore all anchors
+    - signaled: Only enforce finality when a block signals it requires it
+
+--finality-disable-caribina
+    Disable Caribina Arweave anchoring entirely
+```
+
+CLI flags take precedence over TOML. Example:
+
+```bash
+# Run with native mode (no finality) — useful for testing
+dwowd --network darkwow-testnet --finality-mode native
+
+# Disable only Caribina anchoring, keep enforcement
+dwowd --network darkwow-testnet --finality-disable-caribina
+```
+
+### Mode Reference
+
+| Mode | Mine with anchor? | Verify on receive? | Enforce on conflict? |
+|------|:---:|:---:|:---:|
+| **native** | No | No | No — trust PoW only |
+| **always** (default) | Yes | Yes | Yes — all anchored blocks |
+| **signaled** | Yes + flag | Only signaled | Only signaled |
+
+### Default Behavior
+
+By default, nodes run in **always** mode with **Caribina enabled**. This means:
+
+- Every mined block is anchored to Arweave
+- Every received block with a non-zero `anchor_tx_id` is verified
+- Anchored blocks cannot be replaced (enforced at `insert_block()`)
+- No configuration required — maximum resilience out of the box
+
+To disable finality entirely (e.g. for local testing where Arweave HTTP calls
+are unwanted latency):
+
+```bash
+dwowd --finality-mode native
+```
+
+The `signaled` mode is designed for gradual adoption: miners opt in per-block
+by setting the `FINALITY_SIGNALED` flag. Nodes in signaled mode only enforce
+finality on blocks that carry the flag — un-signaled blocks follow normal PoW
+fork choice.
+
 ## Comparison with Monero Anchoring
 
 | Property | Monero Anchor (p2pool) | Caribina (Arweave) |

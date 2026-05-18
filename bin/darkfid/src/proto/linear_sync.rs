@@ -264,7 +264,7 @@ impl LinearSyncHandler {
     /// Initialize the linear sync protocol handlers
     pub async fn init(p2p: &P2pPtr, blockchain: Arc<LinearBlockchain>) -> LinearSyncHandlerPtr {
         debug!(
-            target: "darkfid::proto::linear_sync::init",
+            target: "dwowd::proto::linear_sync::init",
             "Adding linear sync protocols to the protocol registry"
         );
 
@@ -280,7 +280,7 @@ impl LinearSyncHandler {
     /// Start all linear sync background tasks
     pub async fn start(&self, executor: &ExecutorPtr) -> Result<()> {
         debug!(
-            target: "darkfid::proto::linear_sync::start",
+            target: "dwowd::proto::linear_sync::start",
             "Starting linear sync protocol handlers..."
         );
 
@@ -291,7 +291,7 @@ impl LinearSyncHandler {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
                     Err(e) => error!(
-                        target: "darkfid::proto::linear_sync::start",
+                        target: "dwowd::proto::linear_sync::start",
                         "Failed starting LinearSyncBlocks handler: {e}"
                     ),
                 }
@@ -307,7 +307,7 @@ impl LinearSyncHandler {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
                     Err(e) => error!(
-                        target: "darkfid::proto::linear_sync::start",
+                        target: "dwowd::proto::linear_sync::start",
                         "Failed starting LinearSyncBlock handler: {e}"
                     ),
                 }
@@ -323,7 +323,7 @@ impl LinearSyncHandler {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
                     Err(e) => error!(
-                        target: "darkfid::proto::linear_sync::start",
+                        target: "dwowd::proto::linear_sync::start",
                         "Failed starting LinearSyncTip handler: {e}"
                     ),
                 }
@@ -333,7 +333,7 @@ impl LinearSyncHandler {
         );
 
         info!(
-            target: "darkfid::proto::linear_sync::start",
+            target: "dwowd::proto::linear_sync::start",
             "Linear sync protocol handlers started"
         );
         Ok(())
@@ -350,7 +350,7 @@ async fn handle_get_blocks(
             Ok(r) => r,
             Err(e) => {
                 debug!(
-                    target: "darkfid::proto::linear_sync::handle_get_blocks",
+                    target: "dwowd::proto::linear_sync::handle_get_blocks",
                     "recv fail: {e}"
                 );
                 continue;
@@ -358,7 +358,7 @@ async fn handle_get_blocks(
         };
 
         debug!(
-            target: "darkfid::proto::linear_sync",
+            target: "dwowd::proto::linear_sync",
             "Received GetBlocks request for height {}, count {} from {:?}",
             request.start_height, request.count, channel
         );
@@ -389,7 +389,7 @@ async fn handle_get_block(
             Ok(r) => r,
             Err(e) => {
                 debug!(
-                    target: "darkfid::proto::linear_sync::handle_get_block",
+                    target: "dwowd::proto::linear_sync::handle_get_block",
                     "recv fail: {e}"
                 );
                 continue;
@@ -397,7 +397,7 @@ async fn handle_get_block(
         };
 
         debug!(
-            target: "darkfid::proto::linear_sync",
+            target: "dwowd::proto::linear_sync",
             "Received GetBlock request for height {} from {:?}",
             request.height, channel
         );
@@ -422,7 +422,7 @@ async fn handle_get_tip(
             Ok(r) => r,
             Err(e) => {
                 debug!(
-                    target: "darkfid::proto::linear_sync::handle_get_tip",
+                    target: "dwowd::proto::linear_sync::handle_get_tip",
                     "recv fail: {e}"
                 );
                 continue;
@@ -430,7 +430,7 @@ async fn handle_get_tip(
         };
 
         debug!(
-            target: "darkfid::proto::linear_sync",
+            target: "dwowd::proto::linear_sync",
             "Received GetTip request from {:?}", channel
         );
 

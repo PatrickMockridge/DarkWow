@@ -92,4 +92,12 @@ mod tests {
         let sig = w1.sign(b"message");
         assert!(!CaribinaWallet::verify(&w2.public_key(), b"message", &sig));
     }
+
+    #[test]
+    fn test_public_key_is_32_bytes() {
+        for _ in 0..10 {
+            let wallet = CaribinaWallet::generate();
+            assert_eq!(wallet.public_key().len(), 32);
+        }
+    }
 }

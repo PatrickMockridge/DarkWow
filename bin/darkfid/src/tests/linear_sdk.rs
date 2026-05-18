@@ -58,23 +58,18 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
-use dwow::{
-    tx::{ContractCallLeaf, TransactionBuilder},
-    Result,
-};
-use dwow_linear::{Block, LinearStore, PoWConsensus};
+use dwow_linear::{Block, PoWConsensus, Transaction};
 use dwow_sdk::{
-    crypto::{keypair::Keypair, DEPLOYOOOR_CONTRACT_ID, SecretKey},
+    crypto::{keypair::Keypair, PublicKey, SecretKey},
     pasta::pallas,
-    ContractCall,
 };
-use dwow_serial::Encodable;
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use rand::rngs::OsRng;
-use sled::Config;
 
-use crate::blockchain::LinearBlockchain;
+use crate::tests::linear_five_node::LinearFiveNodeHarness;
+
+use crate::tests::linear_five_node::LinearNode;
 
 // ============================================================================
 // Named Wallet Configuration
@@ -108,7 +103,7 @@ impl NamedWallet {
     }
 
     /// Get the public key
-    pub fn public_key(&self) -> pallas::Point {
+    pub fn public_key(&self) -> PublicKey {
         self.keypair().public
     }
 }
@@ -194,13 +189,6 @@ impl DevWalletConfig {
 // Linear Testnet SDK
 // ============================================================================
 
-/// Linear blockchain node for the SDK
-#[derive(Clone)]
-pub struct SdkNode {
-    pub blockchain: Arc<LinearBlockchain>,
-    pub store: Arc<LinearStore>,
-}
-
 /// 5-Node Linear Testnet SDK
 ///
 /// Provides a simple interface for starting a local linear-testnet with:
@@ -217,7 +205,30 @@ pub struct LinearTestnetSdk {
     /// Base reward per block (in smallest unit, default 1 DARK = 100_000_000)
     base_reward: u64,
     /// Deployed contracts (contract_id -> wasm bytes)
-    deployed_contracts: HashMap<dwow_sdk::crypto::ContractId, Vec<u8>>,
+    deployed_contracts: HashMap<SdkNodeId, Vec<u8>>,
+}
+
+/// Type-safe contract ID key for the deployed contracts map.
+/// Wraps dwow_sdk::crypto::ContractId with Hash + Eq via byte representation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SdkNodeId(pallas::Base);
+
+impl std::hash::Hash for SdkNodeId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.to_repr().as_ref().hash(state);
+    }
+}
+
+impl From<dwow_sdk::crypto::ContractId> for SdkNodeId {
+    fn from(c: dwow_sdk::crypto::ContractId) -> Self {
+        Self(c.inner())
+    }
+}
+
+impl From<SdkNodeId> for dwow_sdk::crypto::ContractId {
+    fn from(s: SdkNodeId) -> Self {
+        dwow_sdk::crypto::ContractId::from(s.0)
+    }
 }
 
 impl LinearTestnetSdk {
@@ -238,7 +249,7 @@ impl LinearTestnetSdk {
     }
 
     /// Create a new SDK with multiple named wallets
-    pub fn with_wallets(wallets: Vec<NamedWallet>, default: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn with_wallets(wallets: Vec<NamedWallet>, default: &str) -> std::result::Result<Self, Box<dyn std::error::Error>> {
         let wallet_registry = WalletRegistry::new(wallets, default);
         let mining_recipient = wallet_registry.default_wallet().keypair();
 
@@ -252,7 +263,7 @@ impl LinearTestnetSdk {
     }
 
     /// Create SDK with all 5 standard wallets (dev, bob, charlie, david, eve)
-    pub fn with_five_wallets() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn with_five_wallets() -> std::result::Result<Self, Box<dyn std::error::Error>> {
         let wallets = vec![
             NamedWallet::new_random("dev", 100_000_000_000),
             NamedWallet::new_random("bob", 0),
@@ -279,12 +290,12 @@ impl LinearTestnetSdk {
     }
 
     /// Get the dev wallet's public key (for backwards compatibility)
-    pub fn dev_pubkey(&self) -> pallas::Point {
+    pub fn dev_pubkey(&self) -> PublicKey {
         self.wallet_registry.get_or_panic("dev").public_key()
     }
 
     /// Get the mining recipient's public key
-    pub fn mining_recipient_pubkey(&self) -> pallas::Point {
+    pub fn mining_recipient_pubkey(&self) -> PublicKey {
         self.mining_recipient.public
     }
 
@@ -311,22 +322,22 @@ impl LinearTestnetSdk {
 
     /// Check if a contract is deployed
     pub fn has_contract(&self, contract_id: &dwow_sdk::crypto::ContractId) -> bool {
-        self.deployed_contracts.contains_key(contract_id)
+        self.deployed_contracts.contains_key(&SdkNodeId::from(*contract_id))
     }
 
     /// Get deployed contract WASM
     pub fn get_contract_wasm(&self, contract_id: &dwow_sdk::crypto::ContractId) -> Option<&Vec<u8>> {
-        self.deployed_contracts.get(contract_id)
+        self.deployed_contracts.get(&SdkNodeId::from(*contract_id))
     }
 
     /// Start the testnet - deploys genesis contracts and creates genesis block
-    pub fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn start(&self) -> std::result::Result<(), Box<dyn std::error::Error>> {
         // Deploy genesis contracts (Deployooor + NativeToken)
         self.harness.deploy_genesis_contracts()?;
 
         // Create genesis block (alice mines it)
         let genesis_block = self.alice_create_genesis();
-        let genesis_hash = genesis_block.hash();
+        let _genesis_hash = genesis_block.hash(&*self.harness.vm);
 
         // Broadcast genesis to all nodes
         self.harness.broadcast_block(&genesis_block)?;
@@ -344,7 +355,7 @@ impl LinearTestnetSdk {
     }
 
     /// Get all 5 nodes
-    pub fn all_nodes(&self) -> [&SdkNode; 5] {
+    pub fn all_nodes(&self) -> [&LinearNode; 5] {
         self.harness.all_nodes()
     }
 
@@ -356,11 +367,11 @@ impl LinearTestnetSdk {
 
         // For genesis, we don't include any txs - just the coinbase
         // The dev wallet gets funded via initial_balance in the first mined blocks
-        let transactions: Vec<dwow::tx::Transaction> = vec![];
+        let transactions: Vec<Transaction> = vec![];
         let mut block = self.create_block_with_txs(previous, 0, transactions, difficulty_target);
 
         let consensus = PoWConsensus::new(60, difficulty_target);
-        while !consensus.check_difficulty(&block.hash()) {
+        while !consensus.check_difficulty(&block.hash(&*self.harness.vm)) {
             block.header.nonce += 1;
         }
         block
@@ -371,7 +382,7 @@ impl LinearTestnetSdk {
         &self,
         previous: blake3::Hash,
         height: u64,
-        transactions: Vec<dwow::tx::Transaction>,
+        transactions: Vec<Transaction>,
         difficulty_target: u32,
     ) -> Block {
         // Calculate merkle root for transactions
@@ -415,6 +426,12 @@ impl LinearTestnetSdk {
                 uncle_merkle_root,
                 total_reward,
                 randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
             },
             transactions,
         }
@@ -423,27 +440,27 @@ impl LinearTestnetSdk {
     /// Alice mines a block on top of the given previous hash
     pub fn alice_mine_block(&self, height: u64, previous: blake3::Hash) -> Block {
         let difficulty_target = 0x0000_FFFF;
-        let transactions: Vec<dwow::tx::Transaction> = vec![];
+        let transactions: Vec<Transaction> = vec![];
         let mut block = self.create_block_with_txs(previous, height, transactions, difficulty_target);
 
         let consensus = PoWConsensus::new(60, difficulty_target);
-        while !consensus.check_difficulty(&block.hash()) {
+        while !consensus.check_difficulty(&block.hash(&*self.harness.vm)) {
             block.header.nonce += 1;
         }
         block
     }
 
     /// Mine multiple blocks and broadcast to all nodes
-    pub fn mine_blocks(&self, count: u64) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn mine_blocks(&self, count: u64) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let mut previous = if let Some(block) = self.get_last_block()? {
-            block.hash()
+            block.hash(&*self.harness.vm)
         } else {
             blake3::hash(&[])
         };
 
         for height in 1..=count {
             let block = self.alice_mine_block(height, previous);
-            previous = block.hash();
+            previous = block.hash(&*self.harness.vm);
             self.harness.broadcast_block(&block)?;
         }
 
@@ -452,23 +469,23 @@ impl LinearTestnetSdk {
     }
 
     /// Mine blocks to a specific wallet (changes mining recipient temporarily)
-    pub fn mine_blocks_to(&self, count: u64, wallet_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn mine_blocks_to(&self, count: u64, wallet_name: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
         // Save current mining recipient
-        let original_recipient = self.mining_recipient.clone();
+        let _original_recipient = self.mining_recipient.clone();
 
         // Set new recipient
         let wallet = self.wallet_registry.get_or_panic(wallet_name);
         let mining_recipient = wallet.keypair();
 
         let mut previous = if let Some(block) = self.get_last_block()? {
-            block.hash()
+            block.hash(&*self.harness.vm)
         } else {
             blake3::hash(&[])
         };
 
         for height in 1..=count {
             let block = self.alice_mine_block_with_recipient(height, previous, &mining_recipient);
-            previous = block.hash();
+            previous = block.hash(&*self.harness.vm);
             self.harness.broadcast_block(&block)?;
         }
 
@@ -477,44 +494,43 @@ impl LinearTestnetSdk {
     }
 
     /// Alice mines a block with a specific recipient
-    fn alice_mine_block_with_recipient(&self, height: u64, previous: blake3::Hash, recipient: &Keypair) -> Block {
+    fn alice_mine_block_with_recipient(&self, height: u64, previous: blake3::Hash, _recipient: &Keypair) -> Block {
         let difficulty_target = 0x0000_FFFF;
-        let transactions: Vec<dwow::tx::Transaction> = vec![];
+        let transactions: Vec<Transaction> = vec![];
         let mut block = self.create_block_with_txs(previous, height, transactions, difficulty_target);
 
         let consensus = PoWConsensus::new(60, difficulty_target);
-        while !consensus.check_difficulty(&block.hash()) {
+        while !consensus.check_difficulty(&block.hash(&*self.harness.vm)) {
             block.header.nonce += 1;
         }
         block
     }
 
     /// Get the last block from alice's chain
-    pub fn get_last_block(&self) -> Result<Option<Block>, Box<dyn std::error::Error>> {
+    pub fn get_last_block(&self) -> std::result::Result<Option<Block>, Box<dyn std::error::Error>> {
         let height = self.harness.alice.blockchain.get_height();
         if height == 0 {
             return Ok(None);
         }
-        // For simplicity, just get from store
-        let hash = self.harness.alice.blockchain.get_block_hash(height)?;
-        self.harness.alice.blockchain.get_block(&hash)
+        let block = self.harness.alice.blockchain.get_block(height)?;
+        Ok(Some(block))
     }
 
     /// Broadcast a block to all nodes
-    pub fn broadcast_block(&self, block: &Block) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn broadcast_block(&self, block: &Block) -> std::result::Result<(), Box<dyn std::error::Error>> {
         self.harness.broadcast_block(block)
     }
 
     /// Verify all nodes are in sync
-    pub fn verify_sync(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn verify_sync(&self) -> std::result::Result<(), Box<dyn std::error::Error>> {
         self.harness.verify_sync()
     }
 
     /// Get balance for a wallet by querying the blockchain state
     /// Note: This requires the wallet to have received funds via mining or transfers
-    pub fn get_balance(&self, wallet_name: &str) -> Result<u64, Box<dyn std::error::Error>> {
+    pub fn get_balance(&self, wallet_name: &str) -> std::result::Result<u64, Box<dyn std::error::Error>> {
         let wallet = self.wallet_registry.get_or_panic(wallet_name);
-        let pubkey = wallet.public_key();
+        let _pubkey = wallet.public_key();
 
         // For now, return initial balance + (height * base_reward) as approximation
         // Full implementation would query the blockchain for actual coin balances
@@ -526,9 +542,9 @@ impl LinearTestnetSdk {
     }
 
     /// Deploy a WASM contract
-    pub fn deploy_contract(&mut self, wasm: &[u8], sender: &str) -> Result<dwow_sdk::crypto::ContractId, Box<dyn std::error::Error>> {
+    pub fn deploy_contract(&mut self, wasm: &[u8], sender: &str) -> std::result::Result<dwow_sdk::crypto::ContractId, Box<dyn std::error::Error>> {
         let wallet = self.wallet_registry.get_or_panic(sender);
-        let sender_pubkey = wallet.public_key();
+        let _sender_pubkey = wallet.public_key();
 
         // Generate a deterministic contract ID based on sender and nonce
         let nonce = self.deployed_contracts.len() as u64;
@@ -540,7 +556,7 @@ impl LinearTestnetSdk {
         }
 
         // Store the WASM
-        self.deployed_contracts.insert(contract_id, wasm.to_vec());
+        self.deployed_contracts.insert(SdkNodeId::from(contract_id), wasm.to_vec());
 
         tracing::info!(
             "Deployed contract {} by {} (height {})",
@@ -553,19 +569,6 @@ impl LinearTestnetSdk {
 
 impl Default for LinearTestnetSdk {
     fn default() -> Self {
-        Self::new().expect("Failed to create LinearTestnetSdk")
+        Self::new()
     }
 }
-
-// ============================================================================
-// Helper Structs (reusing existing)
-// ============================================================================
-
-use crate::tests::linear_five_node::LinearFiveNodeHarness;
-
-// ============================================================================
-// SDK Node (wrapper around LinearNode)
-// ============================================================================
-
-// Note: The old From<LinearFiveNodeHarness> impl was removed as it used
-// deprecated field names. Use LinearTestnetSdk::new() or with_wallets() instead.

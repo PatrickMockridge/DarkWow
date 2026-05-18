@@ -9,7 +9,7 @@ use std::io::Read;
 use super::data_item::DataItem;
 
 /// Default Arweave gateway for verification.
-pub const ARWEAVE_GATEWAY: &str = "https://arweave.net";
+pub const ARWEAVE_GATEWAY: &str = "https://ardrive.net";
 
 /// Tolerance window for timestamp verification (minutes).
 /// The Arweave block timestamp should be within this window of the
@@ -46,16 +46,11 @@ pub fn verify_anchor(
     let tx_id_b64 = bytes_to_base64url(tx_id);
     let url = format!("{}/{}", ARWEAVE_GATEWAY, tx_id_b64);
 
-    let response = ureq::get(&url)
-        .call()
-        .map_err(|e| VerifyError::Http(e.to_string()))?;
-
-    let status = response.status().as_u16();
-    match status {
-        200 => {}
-        404 => return Err(VerifyError::NotFound),
-        s => return Err(VerifyError::Http(format!("HTTP {}", s))),
-    }
+    let response = match ureq::get(&url).call() {
+        Ok(r) => r,
+        Err(ureq::Error::StatusCode(404)) => return Err(VerifyError::NotFound),
+        Err(e) => return Err(VerifyError::Http(e.to_string())),
+    };
 
     let mut binary = Vec::new();
     response
@@ -165,5 +160,56 @@ mod tests {
         assert!(!encoded.contains('+'));
         assert!(!encoded.contains('/'));
         assert!(!encoded.ends_with('='));
+    }
+
+    #[test]
+    fn test_payload_verify_height_mismatch() {
+        let hash = [1u8; 32];
+        let ts: u64 = 1000;
+        let height: u64 = 42;
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&hash);
+        payload.extend_from_slice(&ts.to_le_bytes());
+        payload.extend_from_slice(&height.to_le_bytes());
+        // Wrong expected height
+        assert!(verify_payload(&payload, &hash, ts, 99).is_err());
+    }
+
+    #[test]
+    fn test_payload_verify_timestamp_within_tolerance() {
+        let hash = [1u8; 32];
+        let ts: u64 = 1000;
+        let height: u64 = 42;
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&hash);
+        // 29 minutes later (1740 seconds) — within 30 min tolerance
+        let stored_ts = ts + 29 * 60;
+        payload.extend_from_slice(&stored_ts.to_le_bytes());
+        payload.extend_from_slice(&height.to_le_bytes());
+        assert!(verify_payload(&payload, &hash, ts, height).is_ok());
+    }
+
+    #[test]
+    fn test_payload_verify_timestamp_exceeds_tolerance() {
+        let hash = [1u8; 32];
+        let ts: u64 = 1000;
+        let height: u64 = 42;
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&hash);
+        // 31 minutes later (1860 seconds) — exceeds 30 min tolerance
+        let stored_ts = ts + 31 * 60;
+        payload.extend_from_slice(&stored_ts.to_le_bytes());
+        payload.extend_from_slice(&height.to_le_bytes());
+        assert!(verify_payload(&payload, &hash, ts, height).is_err());
+    }
+
+    #[test]
+    fn test_base64url_encoding_known_vector() {
+        // All zeros should produce a predictable base64url output
+        let id = [0u8; 32];
+        let encoded = bytes_to_base64url(&id);
+        // 32 zero bytes → 43 base64 'A' chars (no padding in base64url)
+        assert_eq!(encoded.len(), 43);
+        assert!(encoded.chars().all(|c| c == 'A'));
     }
 }

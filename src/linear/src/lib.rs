@@ -31,6 +31,7 @@ mod blockchain;
 pub mod caribina;
 mod consensus;
 mod error;
+pub mod finality;
 mod miner;
 mod store;
 mod transaction;
@@ -45,6 +46,7 @@ pub use block::{
 pub use blockchain::LinearBlockchain;
 pub use consensus::PoWConsensus;
 pub use error::LinearError;
+pub use finality::{FinalityConfig, FinalityMode};
 pub use miner::Miner;
 pub use store::LinearStore;
 pub use transaction::{CoinbaseTransaction, Input, Output, Transaction, ContractCall};
