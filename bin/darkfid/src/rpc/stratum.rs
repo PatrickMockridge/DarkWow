@@ -329,10 +329,7 @@ impl DarkfiNode {
             version: 1,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: blake3::hash(&[]),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            timestamp: template.timestamp,
             difficulty_target: template.difficulty_target,
             nonce: 0, // placeholder - miner will find this
             height: template.height,
@@ -645,8 +642,10 @@ impl DarkfiNode {
             }
         };
 
-        // Load stored template to get the ZK coinbase data
+        // Load stored template to get the ZK coinbase data and timestamp.
+        // Timestamp MUST match the mining blob that xmrig hashed — PoW will fail otherwise.
         let template = self.current_linear_template.lock().await.take();
+        let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
         let (coinbase, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
             if !tmpl.zk_proof.is_empty() {
                 let cb = dwow_linear::CoinbaseTransaction {
@@ -677,7 +676,7 @@ impl DarkfiNode {
             version: 1,
             previous: previous_hash,
             merkle_root: blake3::hash(&[]),
-            timestamp: now,
+            timestamp: template_timestamp,
             difficulty_target,
             nonce,
             height: submitted_height,
@@ -814,10 +813,7 @@ impl DarkfiNode {
                                         new_template.previous,
                                     ),
                                     merkle_root: blake3::hash(&[]),
-                                    timestamp: std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap()
-                                        .as_secs(),
+                                    timestamp: new_template.timestamp,
                                     difficulty_target: new_template.difficulty_target,
                                     nonce: 0,
                                     height: new_height,

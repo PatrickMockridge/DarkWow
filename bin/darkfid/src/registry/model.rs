@@ -309,6 +309,8 @@ pub struct LinearBlockTemplate {
     pub height: u64,
     /// Difficulty target
     pub difficulty_target: u32,
+    /// Unix timestamp (seconds) — captured once and reused for mining blob + verification
+    pub timestamp: u64,
     /// Coinbase reward value
     pub value: u64,
     /// ZK proof for the coinbase transaction
@@ -491,6 +493,12 @@ pub async fn generate_linear_block_template(
     use dwow_sdk::blockchain::expected_reward;
     let reward = expected_reward(height as u32);
 
+    // Capture timestamp once so mining blob and submit verification use the same value
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     // Build ZK coinbase if ZK materials are available
     if let Some(zk) = linear_zk {
         let (coinbase, public_inputs) = build_linear_coinbase(
@@ -503,6 +511,7 @@ pub async fn generate_linear_block_template(
             previous: previous_hash,
             height,
             difficulty_target,
+            timestamp,
             value: reward,
             zk_proof: coinbase.proof,
             zk_public_inputs: public_inputs,
@@ -519,6 +528,7 @@ pub async fn generate_linear_block_template(
         previous: previous_hash,
         height,
         difficulty_target,
+        timestamp,
         value: reward,
         zk_proof: vec![],
         zk_public_inputs: [[0u8; 32]; 4],
