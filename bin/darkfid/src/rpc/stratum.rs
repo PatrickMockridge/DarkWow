@@ -350,9 +350,12 @@ impl DarkfiNode {
             "[RPC-STRATUM] Login blob (to xmrig): {blob}",
         );
 
-        // Target: u32 difficulty sent as 8 hex chars (Monero stratum convention).
-        // The consensus check compares u32::from_le_bytes(hash[0..4]) <= difficulty_target.
-        let target = format!("{:08x}", template.difficulty_target);
+        // Target: Monero pool difficulty as decimal. xmrig parses the target
+        // field via strtoull(..., 10) — a decimal difficulty number, NOT hex.
+        // xmrig then computes effective_target = 0xFFFFFFFF / difficulty,
+        // which must match our hash_u32 <= difficulty_target check.
+        let pool_diff = 0xFFFFFFFFu64 / template.difficulty_target as u64;
+        let target = format!("{}", pool_diff);
 
         info!(
             target: "dwowd::rpc::rpc_stratum::stratum_login_linear",
@@ -846,10 +849,8 @@ impl DarkfiNode {
                                     target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
                                     "[RPC-STRATUM] Push blob (to xmrig): {new_blob}",
                                 );
-                                let new_target = format!(
-                                    "{:08x}",
-                                    new_template.difficulty_target
-                                );
+                                let new_pool_diff = 0xFFFFFFFFu64 / new_template.difficulty_target as u64;
+                                let new_target = format!("{}", new_pool_diff);
 
                                 let job_params =
                                     JsonValue::from(HashMap::from([
