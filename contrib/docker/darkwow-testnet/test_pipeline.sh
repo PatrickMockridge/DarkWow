@@ -576,8 +576,6 @@ phase_wallet() {
 # ==============================================================================
 phase_build() {
     info "Phase 4: Building images..."
-    # Build one service at a time — parallel release builds exhaust RAM (OOM).
-    export COMPOSE_PARALLEL_LIMIT=1
 
     # --no-cache ensures the RUN git clone step always fetches the latest
     # code from origin. Docker's RUN cache is keyed by instruction text,
