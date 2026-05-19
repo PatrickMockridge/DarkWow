@@ -724,7 +724,7 @@ impl DarkfiNode {
                 nonce,
                 hex::encode(&submit_blob),
                 hex::encode(daemon_hash.as_bytes()),
-                xmrig_result.as_deref().unwrap_or("none"),
+                xmrig_result.as_ref().map(|s| s.as_str()).unwrap_or("none"),
             );
             match linear_chain.consensus.lock().unwrap().verify_proof(&block, &vm) {
                 Ok(true) => {}
