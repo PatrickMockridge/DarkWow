@@ -345,6 +345,10 @@ impl DarkfiNode {
         };
         let blob_data = mining_header.to_mining_blob();
         let blob = hex::encode(&blob_data);
+        info!(
+            target: "dwowd::rpc::rpc_stratum::stratum_login_linear",
+            "[RPC-STRATUM] Login blob (to xmrig): {blob}",
+        );
 
         // Target: u32 difficulty sent as 8 hex bytes (for stratum compatibility).
         // The consensus check compares u32::from_le_bytes(hash[0..4]) <= difficulty_target.
@@ -711,6 +715,12 @@ impl DarkfiNode {
         // nonces (e.g. from adaptor blob layout mismatches) before they
         // corrupt chain state.
         {
+            let submit_blob = block.header.to_mining_blob();
+            info!(
+                target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                "[RPC-STRATUM] Submit blob (verify): {}",
+                hex::encode(&submit_blob)
+            );
             let vm = linear_chain.get_vm(randomx_key);
             match linear_chain.consensus.lock().unwrap().verify_proof(&block, &vm) {
                 Ok(true) => {}
@@ -827,6 +837,10 @@ impl DarkfiNode {
                                 };
                                 let new_blob_data = new_mining_header.to_mining_blob();
                                 let new_blob = hex::encode(&new_blob_data);
+                                info!(
+                                    target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                                    "[RPC-STRATUM] Push blob (to xmrig): {new_blob}",
+                                );
                                 let new_target = format!(
                                     "{:016x}",
                                     new_template.difficulty_target as u64
