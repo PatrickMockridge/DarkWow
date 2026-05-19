@@ -577,33 +577,32 @@ phase_wallet() {
 phase_build() {
     info "Phase 4: Building images..."
 
-    # Determinism: the clean phase removes old images before builder prune,
-    # so stale COPY layers are evicted. Docker's layer cache is content-
-    # addressed — same file content produces the same layer digest every
-    # time. No --no-cache needed.
+    # --no-cache ensures the RUN git clone step always fetches the latest
+    # code from origin. Docker's RUN cache is keyed by instruction text,
+    # not by remote state, so stale layers persist even after builder prune.
     if [ "$MODE" = "merge" ]; then
-        docker compose --profile merge build 2>&1
+        docker compose --profile merge build --no-cache 2>&1
         check $? "docker build (merge profile)"
     elif [ "$MODE" = "native-p2pool" ]; then
-        docker compose --profile native-p2pool build 2>&1
+        docker compose --profile native-p2pool build --no-cache 2>&1
         check $? "docker build (native-p2pool profile)"
     elif [ "$MODE" = "bridge" ]; then
         # Build native profile first (lilith + node0 + node1),
         # then bridge profile (bridge-node on top).
-        docker compose --profile native build 2>&1
+        docker compose --profile native build --no-cache 2>&1
         check $? "docker build (native profile)"
-        docker compose --profile bridge build 2>&1
+        docker compose --profile bridge build --no-cache 2>&1
         check $? "docker build (bridge profile)"
     elif [ "$MODE" = "join-merge" ]; then
-        docker compose --profile join-merge build 2>&1
+        docker compose --profile join-merge build --no-cache 2>&1
         check $? "docker build (join-merge profile)"
-        docker compose --profile native build lilith 2>&1
+        docker compose --profile native build --no-cache lilith 2>&1
         check $? "docker build (lilith image for join phases)"
     elif [ "$MODE" = "join-native" ]; then
-        docker compose --profile native build lilith 2>&1
+        docker compose --profile native build --no-cache lilith 2>&1
         check $? "docker build (lilith image for join phases)"
     else
-        docker compose --profile native build 2>&1
+        docker compose --profile native build --no-cache 2>&1
         check $? "docker build"
     fi
 
