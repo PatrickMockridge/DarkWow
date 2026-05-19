@@ -146,36 +146,38 @@ pub struct UncleProof {
 
 impl BlockHeader {
     /// Serialize the header to a compact binary blob for mining and hashing.
-    /// Format (225 bytes total):
-    ///   [previous(32)][height(8)][nonce(4)][difficulty_target(4)][version(1)]
-    ///   [merkle_root(32)][timestamp(8)][uncle_merkle_root(32)][total_reward(8)]
-    ///   [randomx_key(32)][coin_merkle_root(32)][nullifier_root(32)]
-    /// Nonce is at byte offset 40 (compatible with dww miner and xmrig).
+    /// Format (227 bytes total):
+    ///   [previous(32)][version(1)][difficulty_target(4)][reserved(2)][nonce(4)]
+    ///   [height(8)][merkle_root(32)][timestamp(8)][uncle_merkle_root(32)]
+    ///   [total_reward(8)][randomx_key(32)][coin_merkle_root(32)][nullifier_root(32)]
+    /// Nonce is at byte offset 39 (matches xmrig's hardcoded Monero rx/0 offset).
     /// anchor_tx_id, anchor_monero_height, anchor_monero_hash, and finality_flags
     /// are excluded — they are set after PoW is found and are not covered by the
     /// mining hash.
     pub fn to_mining_blob(&self) -> Vec<u8> {
-        let mut blob = Vec::with_capacity(225);
-        blob.extend_from_slice(self.previous.as_bytes());       // 0..32
-        blob.extend_from_slice(&self.height.to_le_bytes());     // 32..40
-        blob.extend_from_slice(&self.nonce.to_le_bytes());       // 40..44 (nonce)
-        blob.extend_from_slice(&self.difficulty_target.to_le_bytes()); // 44..48
-        blob.push(self.version);                                  // 48
-        blob.extend_from_slice(self.merkle_root.as_bytes());      // 49..81
-        blob.extend_from_slice(&self.timestamp.to_le_bytes());    // 81..89
-        blob.extend_from_slice(&self.uncle_merkle_root);          // 89..121
-        blob.extend_from_slice(&self.total_reward.to_le_bytes()); // 121..129
-        blob.extend_from_slice(&self.randomx_key);                // 129..161
-        blob.extend_from_slice(&self.coin_merkle_root);           // 161..193
-        blob.extend_from_slice(&self.nullifier_root);             // 193..225
+        let mut blob = Vec::with_capacity(227);
+        blob.extend_from_slice(self.previous.as_bytes());            // 0..32
+        blob.push(self.version);                                     // 32
+        blob.extend_from_slice(&self.difficulty_target.to_le_bytes()); // 33..37
+        blob.extend_from_slice(&[0u8; 2]);                           // 37..39 (reserved)
+        blob.extend_from_slice(&self.nonce.to_le_bytes());           // 39..43 (nonce)
+        blob.extend_from_slice(&self.height.to_le_bytes());          // 43..51
+        blob.extend_from_slice(self.merkle_root.as_bytes());         // 51..83
+        blob.extend_from_slice(&self.timestamp.to_le_bytes());       // 83..91
+        blob.extend_from_slice(&self.uncle_merkle_root);             // 91..123
+        blob.extend_from_slice(&self.total_reward.to_le_bytes());    // 123..131
+        blob.extend_from_slice(&self.randomx_key);                   // 131..163
+        blob.extend_from_slice(&self.coin_merkle_root);              // 163..195
+        blob.extend_from_slice(&self.nullifier_root);                // 195..227
         blob
     }
 
-    /// The byte offset of the nonce within the mining blob (bytes 40..43).
-    pub const NONCE_OFFSET: usize = 40;
+    /// The byte offset of the nonce within the mining blob (bytes 39..42).
+    /// Matches xmrig's hardcoded Monero rx/0 nonce offset.
+    pub const NONCE_OFFSET: usize = 39;
 
     /// The expected length of the mining blob.
-    pub const MINING_BLOB_LEN: usize = 225;
+    pub const MINING_BLOB_LEN: usize = 227;
 }
 
 /// Block - a single block in the linear chain
@@ -753,8 +755,8 @@ mod tests {
         };
 
         let blob1 = header.to_mining_blob();
-        assert_eq!(blob1.len(), 225);
-        assert_eq!(BlockHeader::MINING_BLOB_LEN, 225);
+        assert_eq!(blob1.len(), 227);
+        assert_eq!(BlockHeader::MINING_BLOB_LEN, 227);
 
         // Setting anchor_tx_id must not change the mining blob
         header.anchor_tx_id = [0xAB; 32];

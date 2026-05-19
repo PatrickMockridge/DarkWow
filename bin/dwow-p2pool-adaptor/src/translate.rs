@@ -10,47 +10,49 @@
 /// ```text
 /// Offset  Size  Field
 /// 0       32    previous (blake3::Hash)
-/// 32      8     height (u64, LE)
-/// 40      4     nonce (u32, LE)  ← miners modify this
-/// 44      4     difficulty_target (u32, LE)
-/// 48      1     version (u8)
-/// 49      32    merkle_root (blake3::Hash)
-/// 81      8     timestamp (u64, LE)
-/// 89      32    uncle_merkle_root ([u8; 32])
-/// 121     8     total_reward (u64, LE)
-/// 129     32    randomx_key ([u8; 32])
-/// 161     32    coin_merkle_root ([u8; 32])
-/// 193     32    nullifier_root ([u8; 32])
+/// 32      1     version (u8)
+/// 33      4     difficulty_target (u32, LE)
+/// 37      2     reserved (zero-pad)
+/// 39      4     nonce (u32, LE)  ← miners modify this
+/// 43      8     height (u64, LE)
+/// 51      32    merkle_root (blake3::Hash)
+/// 83      8     timestamp (u64, LE)
+/// 91      32    uncle_merkle_root ([u8; 32])
+/// 123     8     total_reward (u64, LE)
+/// 131     32    randomx_key ([u8; 32])
+/// 163     32    coin_merkle_root ([u8; 32])
+/// 195     32    nullifier_root ([u8; 32])
 /// ─────────────────────────────────────────
-/// 225     TOTAL
+/// 227     TOTAL
 /// ```
 
 use dwow_linear::BlockHeader;
 
-/// Fixed size of the serialized DarkWow block header (225 bytes).
-pub const HEADER_SERIALIZED_SIZE: usize = 225;
+/// Fixed size of the serialized DarkWow block header (227 bytes).
+pub const HEADER_SERIALIZED_SIZE: usize = 227;
 
 /// Offset of the nonce field in the serialized header.
 /// Must match `BlockHeader::NONCE_OFFSET` (src/linear/src/block.rs).
-pub const NONCE_OFFSET: usize = 40;
+pub const NONCE_OFFSET: usize = 39;
 
 /// Serialize a DarkWow BlockHeader into a fixed-size byte array.
 /// Layout matches `BlockHeader::to_mining_blob()` (src/linear/src/block.rs:138).
 pub fn serialize_header(header: &BlockHeader) -> Vec<u8> {
     let mut buf = Vec::with_capacity(HEADER_SERIALIZED_SIZE);
 
-    buf.extend_from_slice(header.previous.as_bytes());              // 0..32
-    buf.extend_from_slice(&header.height.to_le_bytes());            // 32..40
-    buf.extend_from_slice(&header.nonce.to_le_bytes());              // 40..44 (nonce)
-    buf.extend_from_slice(&header.difficulty_target.to_le_bytes()); // 44..48
-    buf.push(header.version);                                        // 48
-    buf.extend_from_slice(header.merkle_root.as_bytes());            // 49..81
-    buf.extend_from_slice(&header.timestamp.to_le_bytes());          // 81..89
-    buf.extend_from_slice(&header.uncle_merkle_root);                // 89..121
-    buf.extend_from_slice(&header.total_reward.to_le_bytes());       // 121..129
-    buf.extend_from_slice(&header.randomx_key);                      // 129..161
-    buf.extend_from_slice(&header.coin_merkle_root);                 // 161..193
-    buf.extend_from_slice(&header.nullifier_root);                   // 193..225
+    buf.extend_from_slice(header.previous.as_bytes());               // 0..32
+    buf.push(header.version);                                        // 32
+    buf.extend_from_slice(&header.difficulty_target.to_le_bytes());  // 33..37
+    buf.extend_from_slice(&[0u8; 2]);                                // 37..39 (reserved)
+    buf.extend_from_slice(&header.nonce.to_le_bytes());              // 39..43 (nonce)
+    buf.extend_from_slice(&header.height.to_le_bytes());             // 43..51
+    buf.extend_from_slice(header.merkle_root.as_bytes());            // 51..83
+    buf.extend_from_slice(&header.timestamp.to_le_bytes());          // 83..91
+    buf.extend_from_slice(&header.uncle_merkle_root);                // 91..123
+    buf.extend_from_slice(&header.total_reward.to_le_bytes());       // 123..131
+    buf.extend_from_slice(&header.randomx_key);                      // 131..163
+    buf.extend_from_slice(&header.coin_merkle_root);                 // 163..195
+    buf.extend_from_slice(&header.nullifier_root);                   // 195..227
 
     debug_assert_eq!(buf.len(), HEADER_SERIALIZED_SIZE);
 
@@ -65,17 +67,18 @@ pub fn deserialize_header(data: &[u8]) -> Option<BlockHeader> {
     }
 
     let previous = blake3::Hash::from_bytes(data[0..32].try_into().ok()?);
-    let height = u64::from_le_bytes(data[32..40].try_into().ok()?);
-    let nonce = u32::from_le_bytes(data[40..44].try_into().ok()?);
-    let difficulty_target = u32::from_le_bytes(data[44..48].try_into().ok()?);
-    let version = data[48];
-    let merkle_root = blake3::Hash::from_bytes(data[49..81].try_into().ok()?);
-    let timestamp = u64::from_le_bytes(data[81..89].try_into().ok()?);
-    let uncle_merkle_root: [u8; 32] = data[89..121].try_into().ok()?;
-    let total_reward = u64::from_le_bytes(data[121..129].try_into().ok()?);
-    let randomx_key: [u8; 32] = data[129..161].try_into().ok()?;
-    let coin_merkle_root: [u8; 32] = data[161..193].try_into().ok()?;
-    let nullifier_root: [u8; 32] = data[193..225].try_into().ok()?;
+    let version = data[32];
+    let difficulty_target = u32::from_le_bytes(data[33..37].try_into().ok()?);
+    // bytes 37..39 are reserved (zero-pad)
+    let nonce = u32::from_le_bytes(data[39..43].try_into().ok()?);
+    let height = u64::from_le_bytes(data[43..51].try_into().ok()?);
+    let merkle_root = blake3::Hash::from_bytes(data[51..83].try_into().ok()?);
+    let timestamp = u64::from_le_bytes(data[83..91].try_into().ok()?);
+    let uncle_merkle_root: [u8; 32] = data[91..123].try_into().ok()?;
+    let total_reward = u64::from_le_bytes(data[123..131].try_into().ok()?);
+    let randomx_key: [u8; 32] = data[131..163].try_into().ok()?;
+    let coin_merkle_root: [u8; 32] = data[163..195].try_into().ok()?;
+    let nullifier_root: [u8; 32] = data[195..227].try_into().ok()?;
 
     Some(BlockHeader {
         version,
