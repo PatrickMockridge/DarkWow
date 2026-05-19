@@ -350,9 +350,9 @@ impl DarkfiNode {
             "[RPC-STRATUM] Login blob (to xmrig): {blob}",
         );
 
-        // Target: u32 difficulty sent as 8 hex bytes (for stratum compatibility).
+        // Target: u32 difficulty sent as 8 hex chars (Monero stratum convention).
         // The consensus check compares u32::from_le_bytes(hash[0..4]) <= difficulty_target.
-        let target = format!("{:016x}", template.difficulty_target as u64);
+        let target = format!("{:08x}", template.difficulty_target);
 
         info!(
             target: "dwowd::rpc::rpc_stratum::stratum_login_linear",
@@ -649,7 +649,8 @@ impl DarkfiNode {
 
         // Load stored template to get the ZK coinbase data and timestamp.
         // Timestamp MUST match the mining blob that xmrig hashed — PoW will fail otherwise.
-        let template = self.current_linear_template.lock().await.take();
+        // Clone (not take) so the template survives failed submits.
+        let template = self.current_linear_template.lock().await.clone();
         let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
         let (coinbase, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
             if !tmpl.zk_proof.is_empty() {
@@ -846,8 +847,8 @@ impl DarkfiNode {
                                     "[RPC-STRATUM] Push blob (to xmrig): {new_blob}",
                                 );
                                 let new_target = format!(
-                                    "{:016x}",
-                                    new_template.difficulty_target as u64
+                                    "{:08x}",
+                                    new_template.difficulty_target
                                 );
 
                                 let job_params =
