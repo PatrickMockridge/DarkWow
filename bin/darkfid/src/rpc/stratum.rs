@@ -718,12 +718,13 @@ impl DarkfiNode {
             let submit_blob = block.header.to_mining_blob();
             let vm = linear_chain.get_vm(randomx_key);
             let daemon_hash = block.hash(&vm);
-            let xmrig_hash_str = xmrig_result.clone().unwrap_or_else(|| "none".to_string());
             info!(
                 target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
-                "[RPC-STRATUM] Submit — nonce={nonce}, blob={}, daemon_hash={}, xmrig_hash={xmrig_hash_str}",
+                "[RPC-STRATUM] Submit — nonce={}, blob={}, daemon_hash={}, xmrig_hash={}",
+                nonce,
                 hex::encode(&submit_blob),
                 hex::encode(daemon_hash.as_bytes()),
+                xmrig_result.as_deref().unwrap_or("none"),
             );
             match linear_chain.consensus.lock().unwrap().verify_proof(&block, &vm) {
                 Ok(true) => {}
