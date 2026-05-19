@@ -336,8 +336,8 @@ impl DarkfiNode {
             uncle_merkle_root: [0u8; 32],
             total_reward: template.value,
             randomx_key,
-            coin_merkle_root: [0u8; 32],
-            nullifier_root: [0u8; 32],
+            coin_merkle_root: template.coin_merkle_root,
+            nullifier_root: template.nullifier_root,
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
@@ -658,10 +658,7 @@ impl DarkfiNode {
                     token_commit: tmpl.token_commit,
                     encrypted_note: tmpl.encrypted_note.clone(),
                 };
-                // Compute updated coin/nullifier roots after adding this coin
-                let coin_root = linear_chain.compute_root_including_coin(&tmpl.coin);
-                let nullifier_root = linear_chain.compute_nullifier_root();
-                (Some(cb), coin_root, nullifier_root)
+                (Some(cb), tmpl.coin_merkle_root, tmpl.nullifier_root)
             } else {
                 (None, [0u8; 32], [0u8; 32])
             }
@@ -821,8 +818,8 @@ impl DarkfiNode {
                                     uncle_merkle_root: [0u8; 32],
                                     total_reward: new_template.value,
                                     randomx_key: new_randomx_key,
-                                    coin_merkle_root: [0u8; 32],
-                                    nullifier_root: [0u8; 32],
+                                    coin_merkle_root: new_template.coin_merkle_root,
+                                    nullifier_root: new_template.nullifier_root,
                                     anchor_tx_id: [0u8; 32],
                                     anchor_monero_height: 0,
                                     anchor_monero_hash: [0u8; 32],

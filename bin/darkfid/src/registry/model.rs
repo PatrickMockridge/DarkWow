@@ -327,6 +327,10 @@ pub struct LinearBlockTemplate {
     pub token_commit: [u8; 32],
     /// AEAD encrypted note (contains coin blinds, value, token_id for recipient)
     pub encrypted_note: Vec<u8>,
+    /// Coin merkle root after including this block's coinbase coin
+    pub coin_merkle_root: [u8; 32],
+    /// Nullifier root (all spent nullifiers)
+    pub nullifier_root: [u8; 32],
 }
 
 impl LinearBlockTemplate {
@@ -507,6 +511,9 @@ pub async fn generate_linear_block_template(
             zk,
         ).await?;
 
+        let coin_merkle_root = linear_blockchain.compute_root_including_coin(&coinbase.coin);
+        let nullifier_root = linear_blockchain.compute_nullifier_root();
+
         return Ok(LinearBlockTemplate {
             previous: previous_hash,
             height,
@@ -520,6 +527,8 @@ pub async fn generate_linear_block_template(
             value_commit_y: coinbase.value_commit_y,
             token_commit: coinbase.token_commit,
             encrypted_note: coinbase.encrypted_note,
+            coin_merkle_root,
+            nullifier_root,
         });
     }
 
@@ -537,6 +546,8 @@ pub async fn generate_linear_block_template(
         value_commit_y: [0u8; 32],
         token_commit: [0u8; 32],
         encrypted_note: vec![],
+        coin_merkle_root: [0u8; 32],
+        nullifier_root: [0u8; 32],
     })
 }
 
