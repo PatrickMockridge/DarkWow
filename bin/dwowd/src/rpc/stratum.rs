@@ -229,9 +229,10 @@ impl DwowNode {
             "[RPC-STRATUM] Login blob (to xmrig): {blob}",
         );
 
-        // Pool difficulty as decimal string (xmrig parses with strtoull base 10)
-        let pool_diff = 0xFFFFFFFFu64 / template.difficulty_target as u64;
-        let target = format!("{}", pool_diff);
+        // Pool difficulty as 32-bit little-endian hex (xmrig Job::setTarget
+        // decodes via Cvt::fromHex and reinterprets as uint32_t).
+        let pool_diff = (0xFFFFFFFFu64 / template.difficulty_target as u64) as u32;
+        let target = hex::encode(&pool_diff.to_le_bytes());
 
         info!(
             target: "dwowd::rpc::rpc_stratum::stratum_login",
@@ -574,9 +575,9 @@ impl DwowNode {
                                     target: "dwowd::rpc::rpc_stratum::stratum_submit",
                                     "[RPC-STRATUM] Push blob (to xmrig): {new_blob}",
                                 );
-                                let new_pool_diff = 0xFFFFFFFFu64
-                                    / new_template.difficulty_target as u64;
-                                let new_target = format!("{}", new_pool_diff);
+                                let new_pool_diff = (0xFFFFFFFFu64
+                                    / new_template.difficulty_target as u64) as u32;
+                                let new_target = hex::encode(&new_pool_diff.to_le_bytes());
 
                                 let job_params =
                                     JsonValue::from(HashMap::from([
