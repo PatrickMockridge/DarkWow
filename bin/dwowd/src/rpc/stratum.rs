@@ -229,10 +229,12 @@ impl DwowNode {
             "[RPC-STRATUM] Login blob (to xmrig): {blob}",
         );
 
-        // Pool difficulty as 32-bit little-endian hex (xmrig Job::setTarget
-        // decodes via Cvt::fromHex and reinterprets as uint32_t).
-        let pool_diff = (0xFFFFFFFFu64 / template.difficulty_target as u64) as u32;
-        let target = hex::encode(&pool_diff.to_le_bytes());
+        // Target encoding bridge (32-bit daemon check ↔ 64-bit xmrig check):
+        // - Daemon: u32_le(hash[0..4]) <= difficulty_target
+        // - xmrig:  u64_le(hash[0..8]) <= strtoull(target_hex)
+        // Upper 32 bits = 0xFFFFFFFF so xmrig ignores bytes[4..7] (any u32
+        // value fits); lower 32 bits = difficulty_target for the precise check.
+        let target = format!("FFFFFFFF{:08x}", template.difficulty_target);
 
         info!(
             target: "dwowd::rpc::rpc_stratum::stratum_login",
@@ -575,9 +577,7 @@ impl DwowNode {
                                     target: "dwowd::rpc::rpc_stratum::stratum_submit",
                                     "[RPC-STRATUM] Push blob (to xmrig): {new_blob}",
                                 );
-                                let new_pool_diff = (0xFFFFFFFFu64
-                                    / new_template.difficulty_target as u64) as u32;
-                                let new_target = hex::encode(&new_pool_diff.to_le_bytes());
+                                let new_target = format!("FFFFFFFF{:08x}", new_template.difficulty_target);
 
                                 let job_params =
                                     JsonValue::from(HashMap::from([

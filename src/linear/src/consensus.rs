@@ -142,6 +142,9 @@ impl PoWConsensus {
     }
 
     /// Check whether a pre-computed hash meets the difficulty target.
+    ///
+    /// This 32-bit comparison is canonical. Stratum bridges it to xmrig's
+    /// 64-bit check — see `stratum.rs` target encoding comment.
     pub fn check_difficulty(&self, hash: &Blake3Hash) -> bool {
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
         hash_u32 <= self.difficulty_target
