@@ -1,0 +1,32 @@
+# DarkWow Base Image — pre-baked system dependencies + Rust toolchain
+#
+# Every DarkWow Docker image inherits from this. All build and runtime
+# dependencies across all build profiles live here so per-commit Dockerfiles
+# are pure git clone + cargo build with zero apt-get overhead.
+#
+# Build:
+#   docker build -t darkwow-base:24.04 -f contrib/docker/darkwow-testnet/Dockerfile.base .
+#
+# Push (optional, for CI):
+#   docker tag darkwow-base:24.04 codeberg.org/darkrenaissance/darkfi/darkwow-base:24.04
+#   docker push codeberg.org/darkrenaissance/darkfi/darkwow-base:24.04
+
+FROM ubuntu:24.04
+
+# All build + runtime dependencies for every Dockerfile in the repo.
+# One install line so Docker caches it as a single layer.
+RUN apt-get update && apt-get install -y \
+    build-essential gcc g++ make cmake curl git wget openssl bzip2 \
+    libssl-dev pkg-config tcl-dev clang libsqlite3-dev libasound2-dev libsqlcipher-dev \
+    libuv1-dev libhwloc-dev xz-utils \
+    libboost-filesystem1.83 libboost-thread1.83 libboost-program-options1.83.0 \
+    libzmq5 libsodium23 libunbound8 libhidapi-libusb0 libreadline8t64 libuv1t64 libcurl4t64 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Rust toolchain (pinned to match rust-toolchain.toml)
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y \
+    --default-toolchain nightly-2025-04-10
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+ENV LIBCLANG_PATH="/usr/lib/x86_64-linux-gnu"
+ENV RUST_MIN_STACK=67108864

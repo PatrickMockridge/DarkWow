@@ -4,12 +4,7 @@
 # Build from repo root:
 #   docker build -t darkwow-p2pool -f contrib/docker/darkwow-testnet/Dockerfile.p2pool .
 
-FROM ubuntu:24.04
-
-# Runtime dependencies for p2pool pre-built binary
-RUN apt-get update && apt-get install -y \
-    curl libzmq5 libsodium23 libuv1t64 libssl3 libcurl4t64 && \
-    rm -rf /var/lib/apt/lists/*
+FROM darkwow-base:24.04
 
 WORKDIR /app
 

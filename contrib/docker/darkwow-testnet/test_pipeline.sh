@@ -572,10 +572,20 @@ phase_wallet() {
 }
 
 # ==============================================================================
+# ==============================================================================
 # Phase 4: Build
 # ==============================================================================
 phase_build() {
     info "Phase 4: Building images..."
+
+    # Build base image if missing — survives --no-cache / compose down --rmi all
+    if ! docker image inspect darkwow-base:24.04 >/dev/null 2>&1; then
+        info "  Base image not found, building darkwow-base:24.04..."
+        docker build -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
+        pass "base image built"
+    else
+        info "  Using existing darkwow-base:24.04"
+    fi
 
     # --no-cache ensures the RUN git clone step always fetches the latest
     # code from origin. Docker's RUN cache is keyed by instruction text,

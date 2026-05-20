@@ -12,18 +12,8 @@
 # ============================================================================
 # Stage 1: Rust Builder
 # ============================================================================
-FROM ubuntu:24.04 AS builder
+FROM darkwow-base:24.04 AS builder
 
-RUN apt-get update && apt-get install -y \
-    build-essential gcc g++ make cmake curl git \
-    libssl-dev pkg-config tcl-dev clang libsqlite3-dev libasound2-dev libsqlcipher3-dev
-
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y \
-    --default-toolchain nightly-2025-04-10
-
-ENV PATH="/root/.cargo/bin:${PATH}"
-ENV LIBCLANG_PATH="/usr/lib/x86_64-linux-gnu"
-ENV RUST_MIN_STACK=67108864
 ENV CARGO_BUILD_JOBS=2
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
@@ -60,9 +50,7 @@ RUN cp target/release/dwowd /app/dwowd && \
 # ============================================================================
 # Stage 2: Binary Downloader
 # ============================================================================
-FROM ubuntu:24.04 AS downloader
-
-RUN apt-get update && apt-get install -y curl wget xz-utils
+FROM darkwow-base:24.04 AS downloader
 
 # monerod — pre-built Monero daemon for merge mining
 RUN wget -q https://downloads.getmonero.org/cli/linux64 -O monero-cli.tar.bz2 && \
@@ -86,12 +74,7 @@ RUN wget -q https://github.com/xmrig/xmrig/releases/download/v6.22.2/xmrig-6.22.
 # ============================================================================
 # Stage 3: Runtime
 # ============================================================================
-FROM ubuntu:24.04
-
-RUN apt-get update && apt-get install -y \
-    libssl3 libsqlite3-0 liblzma5 libstdc++6 curl bash openssl \
-    libboost-filesystem1.83.0 libboost-thread1.83.0 libboost-program-options1.83.0 \
-    libzmq5 libsodium23 libunbound8 libhidapi-libusb0 libreadline8t64 libuv1t64 libcurl4t64
+FROM darkwow-base:24.04
 
 WORKDIR /app
 
