@@ -21,6 +21,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+// QUARANTINED: old DAG PoW module — slated for deletion.
+// This file is dead code from the pre-linear architecture.
+// Only `src/linear/src/consensus.rs` (PoWConsensus) is active.
+
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},

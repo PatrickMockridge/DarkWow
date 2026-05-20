@@ -370,7 +370,7 @@ impl LinearTestnetSdk {
         let transactions: Vec<Transaction> = vec![];
         let mut block = self.create_block_with_txs(previous, 0, transactions, difficulty_target);
 
-        let consensus = PoWConsensus::new(60, difficulty_target);
+        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
         while !consensus.check_difficulty(&block.hash(&*self.harness.vm)) {
             block.header.nonce += 1;
         }
@@ -443,7 +443,7 @@ impl LinearTestnetSdk {
         let transactions: Vec<Transaction> = vec![];
         let mut block = self.create_block_with_txs(previous, height, transactions, difficulty_target);
 
-        let consensus = PoWConsensus::new(60, difficulty_target);
+        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
         while !consensus.check_difficulty(&block.hash(&*self.harness.vm)) {
             block.header.nonce += 1;
         }
@@ -499,7 +499,7 @@ impl LinearTestnetSdk {
         let transactions: Vec<Transaction> = vec![];
         let mut block = self.create_block_with_txs(previous, height, transactions, difficulty_target);
 
-        let consensus = PoWConsensus::new(60, difficulty_target);
+        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
         while !consensus.check_difficulty(&block.hash(&*self.harness.vm)) {
             block.header.nonce += 1;
         }

@@ -782,13 +782,7 @@ impl DarkfiNode {
         // Insert the validated block into the chain
         match linear_chain.insert_block(&block) {
             Ok(_) => {
-                // Trigger difficulty adjustment
-                {
-                    let mut consensus = linear_chain.consensus.lock().unwrap();
-                    consensus.record_block(now, difficulty_target);
-                    consensus.adjust_difficulty();
-                }
-
+                // Block inserted (insert_block handles consensus recording + difficulty adjustment)
                 self.last_block_time.store(now, Ordering::SeqCst);
 
                 info!(

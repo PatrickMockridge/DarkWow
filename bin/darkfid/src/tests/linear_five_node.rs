@@ -111,7 +111,7 @@ impl LinearFiveNodeHarness {
         let previous = blake3::hash(&[]);
         let mut block = create_block(previous, 0, vec![], difficulty_target, &*self.vm);
 
-        let consensus = PoWConsensus::new(60, difficulty_target);
+        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
         while !consensus.check_difficulty(&block.hash(&*self.vm)) {
             block.header.nonce += 1;
         }
@@ -123,7 +123,7 @@ impl LinearFiveNodeHarness {
         let difficulty_target = 0x0000_FFFF;
         let mut block = create_block(previous, height, vec![], difficulty_target, &*self.vm);
 
-        let consensus = PoWConsensus::new(60, difficulty_target);
+        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
         while !consensus.check_difficulty(&block.hash(&*self.vm)) {
             block.header.nonce += 1;
         }
@@ -251,7 +251,7 @@ mod tests {
             create_block_with_uncles(canonical_hash, 2, vec![], difficulty_target, &[uncle.clone()], vm);
 
         // Mine the canonical block so it satisfies PoW
-        let consensus = PoWConsensus::new(60, difficulty_target);
+        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
         while !consensus.check_difficulty(&canonical_block2.hash(vm)) {
             canonical_block2.header.nonce += 1;
         }
@@ -310,7 +310,7 @@ mod tests {
             create_block_with_uncles(canonical_hash, 2, vec![], difficulty_target, &[uncle.clone()], vm);
 
         // Mine the canonical block so it satisfies PoW
-        let consensus = PoWConsensus::new(60, difficulty_target);
+        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
         while !consensus.check_difficulty(&canonical_block2.hash(vm)) {
             canonical_block2.header.nonce += 1;
         }

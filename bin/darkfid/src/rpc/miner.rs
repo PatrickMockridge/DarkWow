@@ -489,7 +489,7 @@ impl DarkfiNode {
         let randomx_key = dwow_linear::Miner::derive_key_from_height(height);
         let vm = linear_blockchain.get_vm(randomx_key);
         let previous = latest_block.hash(&vm);
-        let difficulty_target = latest_block.header.difficulty_target;
+        let difficulty_target = linear_blockchain.consensus.lock().unwrap().difficulty_target();
 
         // Lazily initialize ZK proving materials for coinbase privacy
         let linear_zk = {
@@ -556,7 +556,7 @@ impl DarkfiNode {
         all_txs.push(coinbase_tx);
 
         // Create miner and mine a block
-        let consensus = dwow_linear::PoWConsensus::default();
+        let consensus = dwow_linear::PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
         let miner = dwow_linear::Miner::new(std::sync::Arc::new(consensus));
 
         let mut mined_block = match miner.mine(&vm, previous, height, all_txs, difficulty_target) {

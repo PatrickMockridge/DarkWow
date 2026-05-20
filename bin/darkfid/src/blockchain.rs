@@ -99,7 +99,7 @@ impl LinearBlockchain {
 
     /// Create a new LinearBlockchain with custom PoW and finality configuration
     pub fn with_pow_config(store: Arc<LinearStore>, config: LinearPoWConfig, finality_config: FinalityConfig) -> Self {
-        let consensus = PoWConsensus::with_config(
+        let consensus = PoWConsensus::new(
             config.target_block_time,
             config.initial_difficulty,
             config.min_difficulty,
@@ -200,10 +200,11 @@ impl LinearBlockchain {
             }
         }
 
-        // Record timestamp and difficulty for dynamic adjustment
+        // Record timestamp and adjust difficulty
         {
             let mut consensus = self.consensus.lock().unwrap();
-            consensus.record_block(block.header.timestamp, block.header.difficulty_target);
+            consensus.record_block(block.header.timestamp);
+            consensus.adjust_difficulty();
         }
 
         // Track coins and nullifiers from coinbase transactions
