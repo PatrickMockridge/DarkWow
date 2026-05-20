@@ -24,7 +24,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{
-        atomic::{AtomicBool, AtomicU64},
+        atomic::AtomicU64,
         Arc,
     },
 };
@@ -127,17 +127,13 @@ pub struct DwowNode {
     /// ZK proving materials for linear-testnet coinbase (lazy initialized)
     linear_zk: Mutex<Option<crate::registry::model::LinearPowRewardZk>>,
     /// Stored block template for the current mining round (linear-testnet)
-    current_linear_template: Arc<Mutex<Option<crate::registry::model::LinearBlockTemplate>>>,
+    current_linear_template: Mutex<Option<crate::registry::model::LinearBlockTemplate>>,
     /// Publisher for pushing stratum job notifications to miners (linear-testnet)
     linear_stratum_publisher: Mutex<Option<PublisherPtr<JsonNotification>>>,
     /// Stored recipient config for generating new block templates on submit (linear-testnet)
     linear_recipient_config: Mutex<Option<LinearMinerRewardsRecipientConfig>>,
     /// Serializes block submission to prevent concurrent RandomX VM access
     linear_submit_lock: Mutex<()>,
-    /// Whether the stratum job keepalive task is running
-    stratum_keepalive_active: AtomicBool,
-    /// Executor for spawning background tasks (stratum keepalive)
-    ex: ExecutorPtr,
     /// Genesis block hash for linear-testnet mm_rpc (validator.genesis() is
     /// empty because genesis lives in linear_blockchain, not the validator).
     linear_genesis_hash: Mutex<Option<HeaderHash>>,
@@ -154,7 +150,6 @@ impl DwowNode {
         subscribers: HashMap<&'static str, JsonSubscriber>,
         is_localnet: bool,
         min_block_interval: u64,
-        ex: ExecutorPtr,
     ) -> Result<DwowNodePtr> {
         Ok(Arc::new(Self {
             validator,
@@ -170,12 +165,10 @@ impl DwowNode {
             last_block_time: AtomicU64::new(0),
             min_block_interval,
             linear_zk: Mutex::new(None),
-            current_linear_template: Arc::new(Mutex::new(None)),
+            current_linear_template: Mutex::new(None),
             linear_stratum_publisher: Mutex::new(None),
             linear_recipient_config: Mutex::new(None),
             linear_submit_lock: Mutex::new(()),
-            stratum_keepalive_active: AtomicBool::new(false),
-            ex,
             linear_genesis_hash: Mutex::new(None),
         }))
     }
@@ -390,7 +383,6 @@ impl Dwowd {
             subscribers,
             false,
             min_block_interval,
-            ex.clone(),
         ).await?;
 
         // Store genesis hash for mm_rpc (validator.genesis() is empty in

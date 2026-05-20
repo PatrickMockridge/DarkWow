@@ -220,6 +220,11 @@ impl RpcClient {
                 let e = JsonError::new(ErrorCode::InvalidReply, None, req_id);
                 Err(Error::JsonRpcError((e.error.code, e.error.message)))
             }
+
+            JsonResult::StratumReply(_, _) => {
+                let e = JsonError::new(ErrorCode::InvalidReply, None, req_id);
+                Err(Error::JsonRpcError((e.error.code, e.error.message)))
+            }
         }
     }
 
@@ -287,6 +292,11 @@ impl RpcClient {
 
                 JsonResult::Subscriber(_) => {
                     // When?
+                    let e = JsonError::new(ErrorCode::InvalidReply, None, req_id);
+                    return Err(Error::JsonRpcError((e.error.code, e.error.message)))
+                }
+
+                JsonResult::StratumReply(_, _) => {
                     let e = JsonError::new(ErrorCode::InvalidReply, None, req_id);
                     return Err(Error::JsonRpcError((e.error.code, e.error.message)))
                 }
@@ -457,6 +467,11 @@ impl RpcChadClient {
 
                 JsonResult::Subscriber(_) => {
                     // When?
+                    let e = JsonError::new(ErrorCode::InvalidReply, None, req_id);
+                    return Err(Error::JsonRpcError((e.error.code, e.error.message)))
+                }
+
+                JsonResult::StratumReply(_, _) => {
                     let e = JsonError::new(ErrorCode::InvalidReply, None, req_id);
                     return Err(Error::JsonRpcError((e.error.code, e.error.message)))
                 }

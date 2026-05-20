@@ -25,7 +25,7 @@ use std::{collections::HashSet, io::ErrorKind, sync::Arc};
 
 use async_trait::async_trait;
 use smol::{
-    io::{BufReader, ReadHalf, WriteHalf},
+    io::{AsyncWriteExt, BufReader, ReadHalf, WriteHalf},
     lock::{Mutex, MutexGuard},
 };
 use tinyjson::JsonValue;
@@ -185,6 +185,63 @@ async fn handle_request<T>(
                         let notification = subscription.receive().await;
 
                         // Push notification
+                        debug!(target: "rpc::server", "{addr_} <-- {}", notification.stringify().unwrap());
+                        let notification = JsonResult::Notification(notification);
+
+                        let mut writer_lock = writer_.lock().await;
+                        #[allow(clippy::collapsible_else_if)]
+                        if settings.use_http() {
+                            if let Err(e) = http_write_to_stream(&mut writer_lock, &notification).await {
+                                subscription.unsubscribe().await;
+                                drop(writer_lock);
+                                return Err(e.into())
+                            }
+                        } else {
+                            if let Err(e) = write_to_stream(&mut writer_lock, &notification).await {
+                                subscription.unsubscribe().await;
+                                drop(writer_lock);
+                                return Err(e.into())
+                            }
+                        }
+                        drop(writer_lock);
+                    }
+                },
+                move |_| async move {
+                    debug!(
+                        target: "rpc::server",
+                        "Removing background task {} from map", task_.task_id,
+                    );
+                    tasks_.lock().await.remove(&task_);
+                },
+                Error::DetachedTaskStopped,
+                ex.clone(),
+            );
+
+            debug!(target: "rpc::server", "Adding background task {} to map", task.task_id);
+            tasks.lock().await.insert(task);
+        }
+
+        // Stratum writes raw bytes directly to the stream. Do not add
+        // JSON-RPC wrapping — stratum is a custom protocol that happens
+        // to use JSON syntax but is not JSON-RPC.
+        JsonResult::StratumReply(bytes, subscriber) => {
+            let mut writer_lock = writer.lock().await;
+            writer_lock.write_all(&bytes).await?;
+            writer_lock.write_all(b"\r\n").await?;
+            writer_lock.flush().await?;
+            drop(writer_lock);
+
+            let task = StoppableTask::new();
+            let task_ = task.clone();
+            let addr_ = addr.clone();
+            let tasks_ = tasks.clone();
+            let writer_ = writer.clone();
+
+            task.clone().start(
+                async move {
+                    let subscription = subscriber.publisher.subscribe().await;
+                    loop {
+                        let notification = subscription.receive().await;
                         debug!(target: "rpc::server", "{addr_} <-- {}", notification.stringify().unwrap());
                         let notification = JsonResult::Notification(notification);
 

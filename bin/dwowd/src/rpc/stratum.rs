@@ -24,7 +24,6 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::atomic::Ordering,
-    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -200,60 +199,6 @@ impl DwowNode {
             lock.as_ref().unwrap().clone()
         };
 
-        // Spawn keepalive to prevent xmrig disconnects.
-        // xmrig reconnects after ~6s of TCP silence, resetting mining progress.
-        // Pushing the current job every 5s keeps the connection alive while
-        // xmrig searches for a valid nonce.
-        let was_active = self.stratum_keepalive_active.swap(true, Ordering::SeqCst);
-        if !was_active {
-            let kp_publisher = publisher.clone();
-            let kp_template = self.current_linear_template.clone();
-            self.ex.spawn(async move {
-                loop {
-                    smol::Timer::after(Duration::from_secs(5)).await;
-                    let tmpl = kp_template.lock().await;
-                    if let Some(ref t) = *tmpl {
-                        let kp_header = dwow_linear::BlockHeader {
-                            version: 1,
-                            previous: blake3::Hash::from_bytes(t.previous),
-                            merkle_root: blake3::hash(&[]),
-                            timestamp: t.timestamp,
-                            difficulty_target: t.difficulty_target,
-                            nonce: 0,
-                            height: t.height,
-                            uncle_merkle_root: [0u8; 32],
-                            total_reward: t.value,
-                            randomx_key: dwow_linear::Miner::derive_key_from_height(t.height),
-                            coin_merkle_root: t.coin_merkle_root,
-                            nullifier_root: t.nullifier_root,
-                            anchor_tx_id: [0u8; 32],
-                            anchor_monero_height: 0,
-                            anchor_monero_hash: [0u8; 32],
-                            finality_flags: 0,
-                        };
-                        let kp_blob = hex::encode(&kp_header.to_mining_blob());
-                        let kp_pool_diff =
-                            0xFFFFFFFFu64 / t.difficulty_target as u64;
-                        let kp_job_id = format!("linear-job-{}", t.height);
-                        let kp_seed_hash = hex::encode(kp_header.randomx_key);
-                        let kp_params = JsonValue::from(HashMap::from([
-                            ("blob".to_string(), JsonValue::from(kp_blob)),
-                            ("job_id".to_string(), JsonValue::from(kp_job_id)),
-                            ("height".to_string(), JsonValue::from(t.height as f64)),
-                            ("target".to_string(), JsonValue::from(format!("{}", kp_pool_diff))),
-                            ("algo".to_string(), JsonValue::from(String::from("rx/0"))),
-                            ("seed_hash".to_string(), JsonValue::from(kp_seed_hash)),
-                            ("reserved_offset".to_string(), JsonValue::from(39_f64)),
-                        ]));
-                        let kp_notif =
-                            dwow::rpc::jsonrpc::JsonNotification::new("job", kp_params);
-                        kp_publisher.notify(kp_notif).await;
-                    }
-                }
-            })
-            .detach();
-        }
-
         let job_id = format!("linear-job-{}", template.height);
         let randomx_key = dwow_linear::Miner::derive_key_from_height(template.height);
         let seed_hash = hex::encode(randomx_key);
@@ -294,25 +239,42 @@ impl DwowNode {
             template.height,
         );
 
-        let response = JsonValue::from(HashMap::from([
-            ("id".to_string(), JsonValue::from(client_id.clone())),
-            ("job".to_string(), JsonValue::from(HashMap::from([
-                ("blob".to_string(), JsonValue::from(blob)),
-                ("job_id".to_string(), JsonValue::from(job_id)),
-                ("height".to_string(), JsonValue::from(template.height as f64)),
-                ("target".to_string(), JsonValue::from(target)),
-                ("algo".to_string(), JsonValue::from(String::from("rx/0"))),
-                ("seed_hash".to_string(), JsonValue::from(seed_hash)),
-                ("reserved_offset".to_string(), JsonValue::from(39_f64)),
-            ]))),
-            ("status".to_string(), JsonValue::from(String::from("OK"))),
-        ]));
+        // --- Stratum login response ---
+        //
+        // xmrig's StratumClient::onLoginResponse checks:
+        //   1. response["error"] is absent or null            → "error":null
+        //   2. response["result"] exists                      → "result":{...}
+        //   3. response["result"]["id"] exists and is string   → "id":"client-id"
+        //   4. response["result"]["job"] exists                → "job":{...}
+        //   5. response["result"]["status"] == "OK"            → "status":"OK"
+        //
+        // All integer fields use raw format (no ".0" suffix) because rapidjson
+        // GetUint64/GetInt on a float value triggers an assertion or returns 0.
+        //
+        // The JSON-RPC id field wraps the stratum result. xmrig 6.22.2
+        // accepts this because it routes responses by method, not by id.
+        let raw_json = format!(
+            concat!(
+                r#"{{"jsonrpc":"2.0","id":{},"#,
+                r#""result":{{"id":"{}","job":{{"blob":"{}","job_id":"{}","#,
+                r#""target":"{}","algo":"rx/0","seed_hash":"{}","#,
+                r#""height":{},"reserved_offset":39}},"status":"OK"}},"#,
+                r#""error":null}}"#,
+            ),
+            id,         // JSON-RPC request id (u16 → integer)
+            client_id,  // stratum client id (string)
+            blob,       // hex-encoded 227-byte mining blob (string)
+            job_id,     // "linear-job-{height}" (string)
+            target,     // pool difficulty (decimal string)
+            seed_hash,  // hex-encoded RandomX key (string)
+            template.height, // block height (u64 → integer)
+        );
 
         let subscriber = JsonSubscriber {
             method: "job",
             publisher,
         };
-        (subscriber, JsonResponse::new(response, id)).into()
+        JsonResult::StratumReply(raw_json.into_bytes(), subscriber)
     }
 
     /// Stratum submit — linear-only path.

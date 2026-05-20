@@ -98,6 +98,13 @@ pub enum JsonResult {
     /// Subscriber is a special object that yields a channel
     Subscriber(JsonSubscriber),
     SubscriberWithReply(JsonSubscriber, JsonResponse),
+    /// Stratum protocol response: raw JSON bytes written directly to the
+    /// TCP stream without JSON-RPC envelope wrapping, plus a subscriber
+    /// for push notifications. This variant exists because stratum is NOT
+    /// JSON-RPC — it's a custom protocol that xmrig speaks. Do not route
+    /// stratum responses through the JSON-RPC envelope path. Raw bytes go
+    /// directly to the wire.
+    StratumReply(Vec<u8>, JsonSubscriber),
     Request(JsonRequest),
 }
 
@@ -146,6 +153,12 @@ impl From<JsonSubscriber> for JsonResult {
 impl From<(JsonSubscriber, JsonResponse)> for JsonResult {
     fn from(tuple: (JsonSubscriber, JsonResponse)) -> Self {
         Self::SubscriberWithReply(tuple.0, tuple.1)
+    }
+}
+
+impl From<(Vec<u8>, JsonSubscriber)> for JsonResult {
+    fn from(tuple: (Vec<u8>, JsonSubscriber)) -> Self {
+        Self::StratumReply(tuple.0, tuple.1)
     }
 }
 
