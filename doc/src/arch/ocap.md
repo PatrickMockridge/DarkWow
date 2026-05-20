@@ -1146,15 +1146,50 @@ O-Cap capabilities provide privacy for workers by hiding identity during job app
 - Salary negotiation is neutralized (actual salary not revealed)
 - Workers compete on capability, not identity
 
-### Case Study: The Complete O-Cap Pipeline - Workers to Executives
+### Case Study: The Complete O-Cap Pipeline — DAO Governance to Insurance
 
-This case study demonstrates how O-Cap capabilities flow through the entire DarkWow ecosystem, from supply chain workers proving qualifications via Identity, to executives securing contracts via Tender, to underwriters providing coverage via Insurance Market.
+This case study demonstrates how O-Cap capabilities flow through the entire DarkWow ecosystem: from DAO-governed treasury funding, to supply chain workers proving qualifications via Identity, to executives securing contracts via Tender, to workers executing via Labor Market, to dispute resolution via DAO-Escrow, and finally to underwriters providing coverage via Insurance Market. Every step is capability-gated, identity-hidden, and composable.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│              COMPLETE O-CAP PIPELINE: IDENTITY → TENDER → LABOR MARKET → INSURANCE      │
+│      COMPLETE O-CAP PIPELINE: DAO-ESCROW → IDENTITY → TENDER → LABOR MARKET → DISPUTE → INSURANCE      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
+│  ╔═══════════════════════════════════════════════════════════════════════╗  │
+│  ║                    DAO-ESCROW GOVERNANCE                                ║  │
+│  ║              (DAO-Escrow Contract - O-Cap 0x07-0x0e)                   ║  │
+│  ╠═══════════════════════════════════════════════════════════════════════╣  │
+│  ║                                                                       ║  │
+│  ║  DAO MEMBERS (token holders, premium payers)                          ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  PayPremiumV1(value, token_id) → membership note               ║  │
+│  ║     │    - Fee split: 70% → Treasury, 30% → Endowment                 ║  │
+│  ║     │    - Membership note = ZK commitment (identity hidden)         ║  │
+│  ║     │                                                                  ║  │
+│  ║  IDENTITY CONTRACT ISSUES CAPABILITIES:                               ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  RegisterCapability("member_vote")                              ║  │
+│  ║     │  RegisterCapability("board_treasury")                            ║  │
+│  ║     │  IssueCapability(member, "member_vote")                         ║  │
+│  ║     │    - Proves: valid membership credential                        ║  │
+│  ║     │    - Hides: identity, contribution amount                       ║  │
+│  ║     │                                                                  ║  │
+│  ║  TREASURY FUNDS A PROJECT:                                             ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  ProposeClaimV1(ClaimType::Treasury, "Security Audit", 50000)  ║  │
+│  ║     │    capability_proof: ZK(VerifyCapability("member_vote"))        ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  VoteClaimV1(proposal_id, Approve)                              ║  │
+│  ║     │    capability_proof: ZK(VerifyCapability("member_vote"))        ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  ExecuteClaimV1(proposal_id) → 50000 DRK escrowed for project  ║  │
+│  ║     │                                                                  ║  │
+│  ║  RESULT: DAO treasury funds a 50000 DRK bounty for security audit.    ║  │
+│  ║          Members voted WITHOUT revealing identity or vote direction.  ║  │
+│  ║          Treasury funds now escrowed, awaiting tender completion.      ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════╝  │
+│                                    │                                        │
+│                                    ▼                                        │
 │  ╔═══════════════════════════════════════════════════════════════════════╗  │
 │  ║                        SUPPLY CHAIN WORKERS                             ║  │
 │  ║                   (Identity Contract - O-Cap 0x09-0x0d)                 ║  │
@@ -1187,12 +1222,13 @@ This case study demonstrates how O-Cap capabilities flow through the entire Dark
 │  ║                   (Tender Contract - O-Cap 0x07-0x08)                   ║  │
 │  ╠═══════════════════════════════════════════════════════════════════════╣  │
 │  ║                                                                       ║  │
-│  ║  EXECUTIVE (Project Owner)                                            ║  │
+│  ║  EXECUTIVE (Project Owner, funded by DAO treasury)                    ║  │
 │  ║     │                                                                  ║  │
 │  ║     │  CreateTenderWithCapability(                                   ║  │
 │  ║     │    title: "DeFi Protocol Security Audit"                       ║  │
 │  ║     │    required_capability: "verified_smart_contract_auditor",    ║  │
-│  ║     │    required_dag_id: Some("senior_engineer")                    ║  │
+│  ║     │    required_dag_id: Some("senior_engineer"),                   ║  │
+│  ║     │    funding_source: dao_escrow_treasury,                         ║  │
 │  ║     │  )                                                              ║  │
 │  ║     │                                                                  ║  │
 │  ║  ALICE SUBMITS BID:                                                   ║  │
@@ -1234,7 +1270,7 @@ This case study demonstrates how O-Cap capabilities flow through the entire Dark
 │  ║     │    client: project_owner,                                      ║  │
 │  ║     │    worker: alice (via capability),                              ║  │
 │  ║     │    required_capability: "verified_smart_contract_auditor",     ║  │
-│  ║     │    payment: 50000                                               ║  │
+│  ║     │    payment: 50000,          // funded by DAO treasury          ║  │
 │  ║     │  )                                                              ║  │
 │  ║     │                                                                  ║  │
 │  ║  ALICE ACCEPTS JOB:                                                   ║  │
@@ -1250,6 +1286,45 @@ This case study demonstrates how O-Cap capabilities flow through the entire Dark
 │  ║     │  SubmitDeliverable(claim_id: Z)                                ║  │
 │  ║     │    - Attestation verifies work completion                      ║  │
 │  ║     │    - Payment released via Money contract                       ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════╝  │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ╔═══════════════════════════════════════════════════════════════════════╗  │
+│  ║                 DAO-ESCROW DISPUTE RESOLUTION                          ║  │
+│  ║              (DAO-Escrow Contract - O-Cap 0x0c)                       ║  │
+│  ╠═══════════════════════════════════════════════════════════════════════╣  │
+│  ║                                                                       ║  │
+│  ║  DISPUTE (if deliverable fails attestation verification):             ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  Labor Market → DisputeV1 → job enters Disputed state         ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  Oracle(s) push values:                                         ║  │
+│  ║     │    oracle_1: PushValue("audit_complete", true)                  ║  │
+│  ║     │    oracle_2: PushValue("audit_complete", true)                  ║  │
+│  ║     │    oracle_3: PushValue("audit_complete", true)                  ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  Oracle(s) create attestations                                   ║  │
+│  ║     │                                                                  ║  │
+│  ║  ARBITRATOR RESOLVES:                                                 ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  ResolveDisputeV1(                                             ║  │
+│  ║     │    attestations: [oracle_1, oracle_2, oracle_3],               ║  │
+│  ║     │    capability_proof: ZK(VerifyCapability(                      ║  │
+│  ║     │      "dispute_arbitrator")),                                   ║  │
+│  ║     │    payout: 50000,                                               ║  │
+│  ║     │    recipient: alice,                                            ║  │
+│  ║     │  )                                                              ║  │
+│  ║     │                                                                  ║  │
+│  ║  CONTRACT VERIFIES (in single transaction):                           ║  │
+│  ║     │                                                                  ║  │
+│  ║     │  a. Identity::VerifyCapabilityV1("dispute_arbitrator") → ✓    ║  │
+│  ║     │  b. Attestation::VerifyClaimV1 for each oracle → 3/5 ✓        ║  │
+│  ║     │  c. Consumes all 3 attestations (replay prevention)             ║  │
+│  ║     │  d. money_v3::transfer(escrow → alice, 50000)                  ║  │
+│  ║     │                                                                  ║  │
+│  ║  RESULT: Dispute resolved. Alice paid from escrow.                     ║  │
+│  ║          Multi-oracle attestation threshold met (3 of 5).             ║  │
+│  ║          No single oracle had unilateral payout authority.            ║  │
 │  ╚═══════════════════════════════════════════════════════════════════════╝  │
 │                                    │                                        │
 │                                    ▼                                        │
@@ -1293,18 +1368,24 @@ This case study demonstrates how O-Cap capabilities flow through the entire Dark
 │  │                    THE ELEGANT WEAVE                                      │  │
 │  ├─────────────────────────────────────────────────────────────────────────┤  │
 │  │                                                                         │  │
-│  │  WORKER (alice) flows through entire system WITHOUT revealing identity: │  │
+│  │  FULL BUSINESS LIFECYCLE ON-CHAIN (no identity revealed anywhere):     │  │
 │  │                                                                         │  │
-│  │  1. Proves "verified_smart_contract_auditor" via Identity              │  │
-│  │  2. Proves "senior_engineer" DAG via Identity                          │  │
-│  │  3. Submits bid to Tender WITHOUT revealing employer/salary            │  │
-│  │  4. Wins tender, job created in Labor Market                           │  │
-│  │  5. Accepts job via capability (same one from Identity)              │  │
-│  │  6. Delivers work, receives payment via Money                          │  │
-│  │  7. Later acts as underwriter via Insurance Market                      │  │
+│  │  1. DAO votes to fund project from treasury (member_vote capability)  │  │
+│  │  2. Project owner creates tender with capability requirements          │  │
+│  │  3. Alice proves "verified_smart_contract_auditor" via Identity       │  │
+│  │  4. Alice proves "senior_engineer" DAG via Identity                   │  │
+│  │  5. Alice submits bid to Tender WITHOUT revealing employer/salary     │  │
+│  │  6. Alice wins tender, job created in Labor Market                    │  │
+│  │  7. Alice accepts job via capability (same one from Identity)        │  │
+│  │  8. Alice delivers work, attestation verifies completion              │  │
+│  │  9. Payment released from DAO treasury escrow via Money                │  │
+│  │ 10. If disputed: multi-oracle attestation → arbitrator resolves       │  │
+│  │     via dao_escrow::ResolveDisputeV1 (dispute_arbitrator capability)  │  │
+│  │ 11. Alice later acts as underwriter via Insurance Market               │  │
 │  │     (proves "auditor_bond" capability)                                │  │
 │  │                                                                         │  │
 │  │  THE CAPABILITY FOLLOWS ALICE EVERYWHERE - IDENTITY NEVER REVEALED    │  │
+│  │  DAO-ESCROW BOOKENDS THE ENTIRE LIFECYCLE (FUNDING → DISPUTE)         │  │
 │  │                                                                         │  │
 │  └─────────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
@@ -1313,18 +1394,23 @@ This case study demonstrates how O-Cap capabilities flow through the entire Dark
 
 **Key Insights from the Complete Pipeline:**
 
-1. **Single Capability, Multiple Uses**: Alice's "verified_smart_contract_auditor" capability works across Identity, Tender, Labor Market, and Insurance - she never re-proves her identity, only reuses the same capability proof.
+1. **DAO-Escrow Bookends the Lifecycle**: The DAO governs funding at the start (propose/vote/execute from treasury) AND provides dispute resolution at the end (multi-oracle attestation). Every business function on-chain flows through dao_escrow governance at some point.
 
-2. **Identity Hidden at Every Step**: From job application to contract execution to underwriter bonding, Alice's identity remains hidden. Only her capabilities are revealed.
+2. **Single Capability, Multiple Uses**: Alice's "verified_smart_contract_auditor" capability works across Identity, Tender, Labor Market, and Insurance — she never re-proves her identity, only reuses the same capability proof. The DAO's `member_vote` capability is used for both treasury proposals and endowment claims.
 
-3. **DAGs Enable Flexible Qualification**: The "senior_engineer" DAG allows multiple qualification paths - Alice could have taken PATH A or PATH B, but the verifier only learns she qualified, not which path.
+3. **Identity Hidden at Every Step**: From DAO voting to job application to contract execution to dispute resolution, identity remains hidden. Only capabilities are revealed. Even the arbitrator resolving a dispute only proves `dispute_arbitrator` — not who they are.
 
-4. **Composability is Simple**: Each contract only needs to call `verify_capability()` on the Identity contract - no complex cross-contract state sharing needed.
+4. **DAGs Enable Flexible Qualification**: The "senior_engineer" DAG allows multiple qualification paths — Alice could have taken PATH A or PATH B, but the verifier only learns she qualified, not which path.
 
-5. **Supply Chain to Executive Pipeline**: 
+5. **Composability is Simple**: Each contract only needs to call `verify_capability()` on the Identity contract — no complex cross-contract state sharing needed. dao_escrow's `ResolveDisputeV1` composes Identity (capability check), Attestation (claim verification), and Money (fund transfer) in a single transaction.
+
+6. **Full Business Lifecycle On-Chain**: 
+   - **DAO governance** allocates treasury funds via propose/vote/execute (0x07-0x09 in dao_escrow)
    - **Supply chain workers** prove capabilities via Identity (0x09-0x0d)
    - **Executives/Project owners** create tenders requiring capabilities (0x07-0x08 in Tender)
    - **Workers flow to Labor Market** for execution (0x0d in Labor Market)
+   - **Attestation** verifies deliverables independently
+   - **Dispute resolution** via dao_escrow with multi-oracle attestation (0x0c in dao_escrow)
    - **Insurance** provides risk coverage (0x09-0x0c in Insurance Market)
 
 ### Case Study: Subscription + DAO-Escrow + Atomic Swap
