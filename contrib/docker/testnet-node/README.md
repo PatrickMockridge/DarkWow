@@ -107,6 +107,16 @@ Standalone P2P seed node. For operators contributing to testnet infrastructure.
 | `XMERGE_THREADS` | `2` | xmrig thread count for merge |
 | `MONERO_WALLET_ADDRESS` | (dummy) | Monero wallet for XMR rewards |
 
+## Base Image
+
+This image inherits from `darkwow-base:24.04` — a pre-baked Ubuntu 24.04 image
+with every apt dependency and Rust toolchain across all build profiles. Build
+the base image once; all subsequent builds skip system package installation.
+
+```bash
+./contrib/docker/darkwow-testnet/build-base.sh
+```
+
 ## Building from Source
 
 ```bash

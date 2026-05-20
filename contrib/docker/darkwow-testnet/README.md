@@ -190,10 +190,34 @@ to persist the hostlist and blockchain data.
 | `MM_RPC_PORT` | `31348` | Merge mining JSON-RPC port (p2pool protocol) |
 | `DATADIR` | `~/.local/share/dwow/dwowd/<network>` | Blockchain data directory |
 
+## Base Image
+
+All DarkWow Docker images inherit from `darkwow-base:24.04` — a pre-baked
+Ubuntu 24.04 image with every apt dependency and Rust toolchain across all
+build profiles (dwowd, xmrig, monerod, p2pool, bridge-node, testnet-node).
+This base image is built once and reused, saving 5–10 minutes of apt-get +
+Rust installation per pipeline run. The test pipeline builds it automatically
+if missing.
+
+```bash
+# Build the base image once:
+./contrib/docker/darkwow-testnet/build-base.sh
+
+# Or build and push to a registry:
+REGISTRY=docker.io/myuser/ ./contrib/docker/darkwow-testnet/build-base.sh
+
+# Inspect to verify:
+docker image inspect darkwow-base:24.04
+```
+
+All per-profile Dockerfiles are pure git clone + cargo build with zero
+apt-get overhead. Adding new system dependencies to any Dockerfile should
+be done in `Dockerfile.base`, then all Dockerfiles pick them up for free.
+
 ## Building from Source
 
-The build takes 30-60 minutes on a typical machine (8GB RAM, 4 cores). Ensure
-sufficient disk space (~15GB for build artifacts).
+With the base image present, building takes 30–60 minutes on a typical machine
+(8 GB RAM, 4 cores). Ensure sufficient disk space (~15 GB for build artifacts).
 
 ```bash
 # From the repo root:
@@ -529,9 +553,14 @@ If you need bridge networking for multi-machine, map ports and set
 
 ## Docker Images
 
+All images inherit from `darkwow-base:24.04` (the pre-baked system dependency
+layer). No Dockerfile runs `apt-get install` — every package is already in the
+base image.
+
 | Image | Source | Build Method | Description | Profiles |
 |-------|--------|-------------|-------------|----------|
-| `darkwow-testnet-lilith` | `Dockerfile` | Source (multi-stage: git clone → cargo build → xmrig download) | Main image: dwowd + lilith + p2pool-adaptor + xmrig binary | native, merge, native-p2pool |
+| `darkwow-base:24.04` | `Dockerfile.base` | Pre-baked (apt + Rust, built once) | System dependencies + Rust toolchain for all profiles | All (build-time dependency) |
+| `darkwow-testnet-lilith` | `Dockerfile` | Source (git clone → cargo build → xmrig download) | Main image: dwowd + lilith + p2pool-adaptor + xmrig binary | native, merge, native-p2pool |
 | `darkwow-testnet-node0` | `Dockerfile` | Same as lilith, tagged per service by compose | Duplicate image for node0 (compose requires per-service tags) | native, merge, native-p2pool |
 | `darkwow-testnet-node1` | `Dockerfile` | Same as lilith, tagged per service by compose | Duplicate image for node1 | native, merge, native-p2pool |
 | `darkwow-testnet-dwowd-join` | `Dockerfile` | Same as lilith, tagged for join service | Main image for the `dwowd-join` service | join-merge |
@@ -539,11 +568,11 @@ If you need bridge networking for multi-machine, map ports and set
 | `darkwow-testnet-p2pool-join` | `Dockerfile.p2pool` | Pre-built binary from p2pool GitHub releases (v4.14) | p2pool sidechain node with entrypoint scripts for merge and native modes | merge, native-p2pool, join-merge |
 | `darkwow-testnet-xmrig-join` | `Dockerfile.xmrig` | Built from source (cmake, no hwloc) | Standalone xmrig miner for pool mining | merge, native-p2pool, join-merge |
 
-All images share the same Ubuntu 24.04 base. The main `Dockerfile` builds three
-Rust binaries (`dwowd`, `lilith`, `dwow-p2pool-adaptor`), four WASM contracts
-(`deployooor`, `native_token`, `money_v3`, `baccarat`), and downloads a static
-xmrig v6.22.2 binary. Lilith, node0, and node1 images are identical (same
-Dockerfile); compose tags them separately for service isolation.
+The main `Dockerfile` builds three Rust binaries (`dwowd`, `lilith`,
+`dwow-p2pool-adaptor`), four WASM contracts (`deployooor`, `native_token`,
+`money_v3`, `baccarat`), and downloads a static xmrig v6.22.2 binary. Lilith,
+node0, and node1 images are identical (same Dockerfile); compose tags them
+separately for service isolation.
 
 ## Compose Profiles
 
@@ -565,10 +594,12 @@ The `join-native` mode does not use compose — it runs a single container via
 
 | File | Purpose |
 |------|----------|
-| `Dockerfile` | Multi-stage build from source (dwowd + lilith + WASM contracts + xmrig) |
-| `Dockerfile.monero` | Monero daemon image using pre-built binary from getmonero.org |
-| `Dockerfile.p2pool` | p2pool image using pre-built binary (v4.14), with entrypoints for merge and native modes |
-| `Dockerfile.xmrig` | Standalone xmrig miner built from source (cmake, no hwloc) |
+| `Dockerfile.base` | **Base image** — all apt packages + Rust toolchain. Built once, inherited by all other Dockerfiles |
+| `build-base.sh` | Build and optionally push the base image |
+| `Dockerfile` | Multi-stage build from base (git clone + cargo build: dwowd + lilith + WASM + xmrig) |
+| `Dockerfile.monero` | Monero daemon image using pre-built binary from getmonero.org. Inherits from base |
+| `Dockerfile.p2pool` | p2pool image using pre-built binary (v4.14), with entrypoints for merge and native modes. Inherits from base |
+| `Dockerfile.xmrig` | Standalone xmrig miner built from source (cmake, no hwloc). Inherits from base |
 | `docker-compose.yml` | Service orchestration with 4 profiles (native, merge, native-p2pool, join-merge) |
 | `entrypoint.sh` | Dynamic TOML config generation for lilith and dwowd roles; spawns xmrig for native mining |
 | `entrypoint-adaptor.sh` | Start dwow-p2pool-adaptor (merge mining protocol bridge) |
@@ -577,6 +608,6 @@ The `join-native` mode does not use compose — it runs a single container via
 | `entrypoint-monero.sh` | Start monerod for merge mining (offline or connected mode) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
 | `join-testnet.sh` | Join the public DarkWow testnet as a mining node (native or merge) |
-| `test_pipeline.sh` | Single entry point — clean → build → verify across 5 modes, 10-12 phases each |
+| `test_pipeline.sh` | Single entry point — clean → build → verify across 5 modes, 10-12 phases each. Auto-builds base image if missing |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |

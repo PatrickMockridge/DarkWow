@@ -242,10 +242,26 @@ the host. Ideal for single-machine development.
 shares the host's network stack. P2P peers see the host's real IP address
 (essential for LAN discovery). No port mapping needed.
 
+## Base Image
+
+This image inherits from `darkwow-base:24.04` — a pre-baked Ubuntu 24.04 image
+with every apt dependency and Rust toolchain across all profiles. The base image
+is built once and reused by all DarkWow Dockerfiles, so per-commit builds only
+pay for git clone + cargo compile. The test pipeline builds it automatically if
+missing.
+
+```bash
+# Build the base image once:
+./contrib/docker/darkwow-testnet/build-base.sh
+
+# Verify:
+docker image inspect darkwow-base:24.04
+```
+
 ## Building from Source
 
-The build takes 30-60 minutes on a typical machine (8GB RAM, 4 cores). Ensure
-sufficient disk space (~15GB for build artifacts).
+With the base image present, building takes 30–60 minutes on a typical machine
+(8 GB RAM, 4 cores). Ensure sufficient disk space (~15 GB for build artifacts).
 
 ```bash
 # From the repo root:
@@ -278,10 +294,13 @@ docker run --network=host \
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Multi-stage build: zkas + WASM contracts + dwowd + lilith + xmrig |
+| `Dockerfile` | Multi-stage build from base (COPY local source + cargo: zkas + WASM + dwowd + lilith + xmrig) |
 | `docker-compose.yml` | Bridge (3-node) and host (multi-machine) deployment profiles |
 | `entrypoint.sh` | Dynamic config generation for lilith and dwowd roles |
 | `build-and-push.sh` | Build and optionally push image to a registry |
-| `test_pipeline.sh` | Clean → validate → build → start → health-check pipeline |
+| `test_pipeline.sh` | Clean → validate → build → start → health-check pipeline. Auto-builds base image if missing |
 | `contract_test.sh` | Single-contract deploy + transfer test |
 | `test-contracts.sh` | Multi-contract test (money_v3, DEX, dao_escrow) |
+
+The base image `darkwow-base:24.04` lives in `contrib/docker/darkwow-testnet/Dockerfile.base`
+and is shared by this devnet image and all other DarkWow Docker images.

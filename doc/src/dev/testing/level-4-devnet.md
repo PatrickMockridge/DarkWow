@@ -147,9 +147,20 @@ docker compose -f contrib/docker/dwow-devnet/docker-compose.yml --profile host u
 docker compose -f contrib/docker/dwow-devnet/docker-compose.yml --profile host up miner
 ```
 
+## Base Image
+
+This image inherits from `darkwow-base:24.04` — a pre-baked Ubuntu 24.04 image
+with every apt dependency and Rust toolchain across all build profiles. Build
+the base image once; all subsequent Docker builds skip apt-get and Rust install.
+
+```shell
+./contrib/docker/darkwow-testnet/build-base.sh
+```
+
 ## Building from Source
 
-The build takes 30-60 minutes. Pre-built images are preferred.
+With the base image present, building takes 30–60 minutes. Pre-built images are
+preferred for deployment.
 
 ```shell
 # From the repo root:
@@ -181,6 +192,7 @@ REGISTRY=docker.io/youruser/ ./contrib/docker/dwow-devnet/build-and-push.sh
 
 | Component | Path |
 |-----------|------|
+| Base image | `contrib/docker/darkwow-testnet/Dockerfile.base` |
 | Dockerfile | `contrib/docker/dwow-devnet/Dockerfile` |
 | Entrypoint script | `contrib/docker/dwow-devnet/entrypoint.sh` |
 | Docker Compose template | `contrib/docker/dwow-devnet/docker-compose.yml` |

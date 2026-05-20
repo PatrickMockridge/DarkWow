@@ -4,7 +4,19 @@ Single container image for running a cross-chain bridge relayer with capital
 endowment. Combines dwowd fullnode, bridge/endowment contract deployment, and
 universal_relayer into one image with three runtime modes.
 
+## Base Image
+
+This image inherits from `darkwow-base:24.04` — a pre-baked Ubuntu 24.04 image
+with every apt dependency and Rust toolchain across all build profiles. Build
+the base image once; all subsequent Docker builds skip system package installation.
+
+```bash
+./contrib/docker/darkwow-testnet/build-base.sh
+```
+
 ## Quick Start
+
+With the base image present:
 
 ```bash
 # Build the image

@@ -140,14 +140,28 @@ with relaxed parameters for rapid local iteration:
 Use `dwow-devnet` for fast local contract testing. Use `darkwow-testnet` when
 you need parameters matching the public testnet.
 
+## Base Image
+
+All Docker images in this testnet inherit from `darkwow-base:24.04` — a
+pre-baked Ubuntu 24.04 image containing every apt dependency and the Rust
+toolchain across all build profiles. The base image is built once (reused
+indefinitely), so per-commit Docker builds only pay for git clone + cargo
+compile. The test pipeline builds it automatically if missing.
+
+```bash
+./contrib/docker/darkwow-testnet/build-base.sh
+```
+
 ## File Overview
 
 | File | Purpose |
 |------|----------|
-| `Dockerfile` | Multi-stage build: zkas → WASM contracts → dwowd + lilith + adaptor + xmrig |
-| `Dockerfile.monero` | Monero daemon image using pre-built binary (merge mining) |
-| `Dockerfile.p2pool` | p2pool image using pre-built binary (v4.14), with merge and native entrypoints |
-| `Dockerfile.xmrig` | Standalone xmrig miner built from source (cmake, no hwloc) |
+| `Dockerfile.base` | **Base image** — all apt packages + Rust toolchain. Built once, inherited by all other Dockerfiles |
+| `build-base.sh` | Build and optionally push the base image |
+| `Dockerfile` | Multi-stage build from base (git clone + cargo: zkas → WASM → dwowd + lilith + adaptor + xmrig) |
+| `Dockerfile.monero` | Monero daemon image using pre-built binary (merge mining). Inherits from base |
+| `Dockerfile.p2pool` | p2pool image using pre-built binary (v4.14), with merge and native entrypoints. Inherits from base |
+| `Dockerfile.xmrig` | Standalone xmrig miner built from source (cmake, no hwloc). Inherits from base |
 | `docker-compose.yml` | Service orchestration with 4 profiles: native, merge, native-p2pool, join-merge |
 | `entrypoint.sh` | Dynamic TOML config generation for lilith and dwowd roles; spawns xmrig for native mining |
 | `entrypoint-adaptor.sh` | Start dwow-p2pool-adaptor (protocol bridge for native-p2pool mode) |
@@ -156,7 +170,7 @@ you need parameters matching the public testnet.
 | `entrypoint-monero.sh` | Start monerod for merge mining (offline or connected mode) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
 | `join-testnet.sh` | Launch a single node joining the public DarkWow testnet (native or merge) |
-| `test_pipeline.sh` | Single entry point: 5 modes (native, merge, native-p2pool, join-native, join-merge), 10-12 phases each |
+| `test_pipeline.sh` | Single entry point: 5 modes (native, merge, native-p2pool, join-native, join-merge), 10-12 phases each. Auto-builds base image if missing |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
 

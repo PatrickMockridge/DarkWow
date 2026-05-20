@@ -112,6 +112,7 @@ on real machines across networks.
 | Daemon integration tests | `bin/dwowd/src/tests/` |
 | Bridge lifecycle test (Level 2) | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |
 | Relayer heavyweight test runner | `bin/universal_relayer/test_relayer_heavyweight.sh` |
+| Docker base image (shared by all images) | `contrib/docker/darkwow-testnet/Dockerfile.base` |
 | Docker localnet (3-container) | `contrib/docker/darkwow-testnet/` |
 | Bridge Docker image + pipeline (Level 3) | `contrib/docker/bridge-node/` |
 | Docker devnet (3-container, fast iteration) | `contrib/docker/dwow-devnet/` |
