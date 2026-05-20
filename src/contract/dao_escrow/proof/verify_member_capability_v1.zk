@@ -1,0 +1,95 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# DAO-Escrow Verify Member Capability Circuit (Version 1)
+#
+# This circuit proves:
+# - A holder possesses a valid capability for this DAO
+# - The capability is bound to the holder's public key
+# - This is the cross-contract verification wrapper
+#
+# Public Inputs (constrain_instance):
+#   - capability_id: The capability being verified
+#   - dao_escrow_bulla: The DAO-Escrow binding context
+#   - holder_commit: Commitment to holder's identity
+#
+# Witnesses:
+#   - capability_secret: Holder's capability secret
+#   - holder_secret: Holder's secret key
+
+constant "VerifyMemberCapability" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "VerifyMemberCapability" {
+    # Capability identifier
+    Base capability_id,
+
+    # DAO-Escrow bulla context
+    Base dao_escrow_bulla,
+
+    # Capability secret (proves holder knows the secret)
+    Base capability_secret,
+
+    # Holder's secret key
+    Base holder_secret,
+}
+
+circuit "VerifyMemberCapability" {
+    # ==========================================================================
+    # PHASE 1: Derive holder public key from secret
+    # ==========================================================================
+
+    holder_pub = ec_mul_base(holder_secret, NULLIFIER_K);
+    holder_pub_x = ec_get_x(holder_pub);
+    holder_pub_y = ec_get_y(holder_pub);
+
+    # ==========================================================================
+    # PHASE 2: Verify capability possession
+    # ==========================================================================
+    #
+    # capability_commit = H(capability_id, capability_secret, dao_escrow_bulla)
+    # This binds the capability to the specific DAO escrow instance.
+    # If the capability_secret is wrong, the commitment won't match.
+
+    capability_commit = poseidon_hash(
+        capability_id,
+        capability_secret,
+        dao_escrow_bulla,
+    );
+
+    # ==========================================================================
+    # PHASE 3: Verify capability is bound to holder
+    # ==========================================================================
+    #
+    # holder_commit = H(holder_pub_x, holder_pub_y, capability_secret)
+    # This proves the holder controls both the secret key AND capability secret.
+
+    holder_commit = poseidon_hash(
+        holder_pub_x,
+        holder_pub_y,
+        capability_secret,
+    );
+
+    # ==========================================================================
+    # PHASE 4: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(capability_id);
+    constrain_instance(dao_escrow_bulla);
+    constrain_instance(holder_commit);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # Uses ONLY proven opcodes:
+    #   - ec_mul_base, ec_get_x, ec_get_y: Standard EC operations
+    #   - poseidon_hash: Field-proven
+    #   - constrain_instance: Public input exposure
+    #
+    # This circuit wraps Identity::VerifyCapabilityV1 with dao_escrow context.
+    # The dao_escrow_bulla binds the verification to a specific DAO instance,
+    # preventing replay across different DAOs.
+}

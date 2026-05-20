@@ -35,7 +35,7 @@ use dwow_dao_escrow_contract::{
 };
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::{
-    crypto::{pasta_prelude::Group, BaseBlind, PublicKey, SecretKey},
+    crypto::{pasta_prelude::Group, BaseBlind, PublicKey, ScalarBlind, SecretKey},
     pasta::pallas,
 };
 
@@ -59,12 +59,20 @@ fn test_dao_escrow_function_enum_valid() {
     assert!(DaoEscrowFunction::try_from(0x04).is_ok()); // EndowmentWithdrawV1
     assert!(DaoEscrowFunction::try_from(0x05).is_ok()); // TreasurySpendV1
     assert!(DaoEscrowFunction::try_from(0x06).is_ok()); // EnableDrainProtectionV1
+    assert!(DaoEscrowFunction::try_from(0x07).is_ok()); // ProposeClaimV1
+    assert!(DaoEscrowFunction::try_from(0x08).is_ok()); // VoteClaimV1
+    assert!(DaoEscrowFunction::try_from(0x09).is_ok()); // ExecuteClaimV1
+    assert!(DaoEscrowFunction::try_from(0x0a).is_ok()); // RegisterCapabilityRequirementV1
+    assert!(DaoEscrowFunction::try_from(0x0b).is_ok()); // VerifyMemberCapabilityV1
+    assert!(DaoEscrowFunction::try_from(0x0c).is_ok()); // ResolveDisputeV1
+    assert!(DaoEscrowFunction::try_from(0x0d).is_ok()); // CancelClaimV1
+    assert!(DaoEscrowFunction::try_from(0x0e).is_ok()); // SetGovernanceConfigV1
 }
 
 #[test]
 fn test_dao_escrow_function_enum_invalid() {
     assert!(DaoEscrowFunction::try_from(0xFF).is_err());
-    assert!(DaoEscrowFunction::try_from(0x07).is_err());
+    assert!(DaoEscrowFunction::try_from(0x0f).is_err());
     assert!(DaoEscrowFunction::try_from(0x10).is_err());
 }
 
@@ -201,6 +209,7 @@ fn test_dao_escrow_encoding() {
         paused: false,
         drain_protection_enabled: true,
         drain_protection_bulla: Some(pallas::Base::from(2)),
+        governance_config: None,
     };
 
     let encoded = serialize(&escrow);
@@ -296,7 +305,7 @@ fn test_pay_premium_params_encoding() {
         token_id: pallas::Base::one(),
         expiry: 100000,
         membership_blind: make_blind(42),
-        value_blind: make_blind(43),
+        value_blind: ScalarBlind::from(43u64),
         member_pubkey: make_pubkey(1),
     };
 
@@ -338,6 +347,7 @@ fn test_withdraw_params_encoding() {
         dao_escrow_bulla: pallas::Base::from(1),
         value: 500,
         recipient_pubkey: make_pubkey(1),
+        capability_proof: None,
     };
 
     let encoded = serialize(&params);

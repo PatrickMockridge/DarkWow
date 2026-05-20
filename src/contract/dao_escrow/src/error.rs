@@ -127,6 +127,59 @@ pub enum DaoEscrowError {
 
     #[error("Invalid child call: expected money_v3::transfer_v1")]
     InvalidChildCall,
+
+    // --- OCap-based governance errors (35-51) ---
+
+    #[error("Capability requirement not registered: {0}")]
+    CapabilityRequirementNotRegistered(String),
+
+    #[error("Capability verification failed")]
+    CapabilityVerificationFailed,
+
+    #[error("Proposal not found: {0}")]
+    ProposalNotFound(String),
+
+    #[error("Proposal not in pending state")]
+    ProposalNotPending,
+
+    #[error("Voting window expired")]
+    VotingWindowExpired,
+
+    #[error("Voting window not yet ended")]
+    VotingWindowNotEnded,
+
+    #[error("Quorum not met: required {required}, got {actual}")]
+    QuorumNotMet { required: u64, actual: u64 },
+
+    #[error("Approval ratio not met")]
+    ApprovalRatioNotMet,
+
+    #[error("Governance not active")]
+    GovernanceNotActive,
+
+    #[error("Invalid capability for this action")]
+    InvalidCapabilityForAction,
+
+    #[error("Oracle threshold not met: {0}/{1}")]
+    OracleThresholdNotMet(u64, u64),
+
+    #[error("Attestation already consumed")]
+    AttestationAlreadyConsumed,
+
+    #[error("Invalid attestation reference")]
+    InvalidAttestationRef,
+
+    #[error("Dispute not found: {0}")]
+    DisputeNotFound(String),
+
+    #[error("Dispute already resolved")]
+    DisputeAlreadyResolved,
+
+    #[error("Proposal already executed")]
+    ProposalAlreadyExecuted,
+
+    #[error("Capability expired")]
+    CapabilityExpired,
 }
 
 impl From<DaoEscrowError> for ContractError {
@@ -166,6 +219,23 @@ impl From<DaoEscrowError> for ContractError {
             DaoEscrowError::InvalidSignature => Self::Custom(32),
             DaoEscrowError::InvalidChildrenIndexes => Self::Custom(33),
             DaoEscrowError::InvalidChildCall => Self::Custom(34),
+            DaoEscrowError::CapabilityRequirementNotRegistered(_) => Self::Custom(35),
+            DaoEscrowError::CapabilityVerificationFailed => Self::Custom(36),
+            DaoEscrowError::ProposalNotFound(_) => Self::Custom(37),
+            DaoEscrowError::ProposalNotPending => Self::Custom(38),
+            DaoEscrowError::VotingWindowExpired => Self::Custom(39),
+            DaoEscrowError::VotingWindowNotEnded => Self::Custom(40),
+            DaoEscrowError::QuorumNotMet { .. } => Self::Custom(41),
+            DaoEscrowError::ApprovalRatioNotMet => Self::Custom(42),
+            DaoEscrowError::GovernanceNotActive => Self::Custom(43),
+            DaoEscrowError::InvalidCapabilityForAction => Self::Custom(44),
+            DaoEscrowError::OracleThresholdNotMet(..) => Self::Custom(45),
+            DaoEscrowError::AttestationAlreadyConsumed => Self::Custom(46),
+            DaoEscrowError::InvalidAttestationRef => Self::Custom(47),
+            DaoEscrowError::DisputeNotFound(_) => Self::Custom(48),
+            DaoEscrowError::DisputeAlreadyResolved => Self::Custom(49),
+            DaoEscrowError::ProposalAlreadyExecuted => Self::Custom(50),
+            DaoEscrowError::CapabilityExpired => Self::Custom(51),
         }
     }
 }

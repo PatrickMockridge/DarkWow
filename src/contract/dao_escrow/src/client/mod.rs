@@ -64,6 +64,10 @@
 
 pub mod init_v1;
 pub mod pay_premium_v1;
+pub mod propose_claim_v1;
+pub mod resolve_dispute_v1;
+pub mod verify_member_capability_v1;
+pub mod vote_claim_v1;
 
 use dwow_sdk::{
     crypto::{PublicKey, SecretKey},
@@ -72,7 +76,11 @@ use dwow_sdk::{
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{
-    ClaimId, DaoEscrowBulla, ProposeClaimParamsV1, VoteClaimParamsV1, VoteType,
+    CancelClaimParamsV1, CapabilityProof, ClaimId, ClaimType, DaoEscrowBulla,
+    ExecuteClaimParamsV1, GovernanceConfig, ProposeClaimParamsV1, ProposalId,
+    RegisterCapabilityRequirementParamsV1, ResolveDisputeParamsV1,
+    SetGovernanceConfigParamsV1, TreasurySpendParamsV1, VerifyMemberCapabilityParamsV1,
+    VoteClaimParamsV1, VoteType,
 };
 
 // ============================================================================
@@ -273,7 +281,7 @@ pub struct PayPremiumParams {
 
 /// Builder for `DaoEscrow::ProposeClaimV1`
 ///
-/// Members propose claims against the endowment.
+/// Members propose claims against the endowment, treasury, or for dispute resolution.
 pub struct ProposeClaimBuilder {
     dao_escrow_bulla: DaoEscrowBulla,
     claim_id: ClaimId,
@@ -281,6 +289,8 @@ pub struct ProposeClaimBuilder {
     description_hash: pallas::Base,
     recipient_pubkey: PublicKey,
     proposer_pubkey: PublicKey,
+    claim_type: ClaimType,
+    capability_proof: CapabilityProof,
 }
 
 impl ProposeClaimBuilder {
@@ -292,6 +302,15 @@ impl ProposeClaimBuilder {
             description_hash: pallas::Base::zero(),
             recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
             proposer_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            claim_type: ClaimType::Endowment,
+            capability_proof: CapabilityProof {
+                capability_id: [0u8; 32],
+                capability_secret: [0u8; 32],
+                nullifier: pallas::Base::zero(),
+                issuer_pub: [0u8; 32],
+                predicate_result: [0u8; 32],
+                proof: vec![],
+            },
         }
     }
 
@@ -325,6 +344,16 @@ impl ProposeClaimBuilder {
         self
     }
 
+    pub fn claim_type(mut self, ct: ClaimType) -> Self {
+        self.claim_type = ct;
+        self
+    }
+
+    pub fn capability_proof(mut self, proof: CapabilityProof) -> Self {
+        self.capability_proof = proof;
+        self
+    }
+
     pub fn build(&self) -> Result<ProposeClaimParamsV1, &'static str> {
         Ok(ProposeClaimParamsV1 {
             dao_escrow_bulla: self.dao_escrow_bulla,
@@ -333,18 +362,21 @@ impl ProposeClaimBuilder {
             description_hash: self.description_hash,
             recipient_pubkey: self.recipient_pubkey,
             proposer_pubkey: self.proposer_pubkey,
+            claim_type: self.claim_type,
+            capability_proof: self.capability_proof.clone(),
         })
     }
 }
 
 /// Builder for `DaoEscrow::VoteClaimV1`
 ///
-/// DAO members vote on pending claims.
+/// DAO members vote on pending claims with capability-based authorization.
 pub struct VoteClaimBuilder {
     dao_escrow_bulla: DaoEscrowBulla,
     claim_id: ClaimId,
     vote: VoteType,
     voter_pubkey: PublicKey,
+    capability_proof: CapabilityProof,
 }
 
 impl VoteClaimBuilder {
@@ -354,6 +386,14 @@ impl VoteClaimBuilder {
             claim_id: pallas::Base::zero(),
             vote: VoteType::Yes,
             voter_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            capability_proof: CapabilityProof {
+                capability_id: [0u8; 32],
+                capability_secret: [0u8; 32],
+                nullifier: pallas::Base::zero(),
+                issuer_pub: [0u8; 32],
+                predicate_result: [0u8; 32],
+                proof: vec![],
+            },
         }
     }
 
@@ -377,6 +417,11 @@ impl VoteClaimBuilder {
         self
     }
 
+    pub fn capability_proof(mut self, proof: CapabilityProof) -> Self {
+        self.capability_proof = proof;
+        self
+    }
+
     pub fn yes(mut self) -> Self {
         self.vote = VoteType::Yes;
         self
@@ -393,51 +438,82 @@ impl VoteClaimBuilder {
             claim_id: self.claim_id,
             vote: self.vote,
             voter_pubkey: self.voter_pubkey,
+            capability_proof: self.capability_proof.clone(),
         })
     }
 }
 
 /// Builder for `DaoEscrow::ExecuteClaimV1`
 ///
-/// Execute an approved claim, releasing endowment funds.
+/// Execute an approved claim, releasing endowment or treasury funds.
 pub struct ExecuteClaimBuilder {
-    claim_id: ClaimId,
+    dao_escrow_bulla: DaoEscrowBulla,
+    proposal_id: ProposalId,
+    recipient_pubkey: PublicKey,
+    value: u64,
 }
 
 impl ExecuteClaimBuilder {
     pub fn new() -> Self {
-        Self { claim_id: pallas::Base::zero() }
+        Self {
+            dao_escrow_bulla: pallas::Base::zero(),
+            proposal_id: pallas::Base::zero(),
+            recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            value: 0,
+        }
     }
 
-    pub fn claim_id(mut self, id: ClaimId) -> Self {
-        self.claim_id = id;
+    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
+        self.dao_escrow_bulla = bulla;
         self
     }
 
-    pub fn build(&self) -> Result<ExecuteClaimParams, &'static str> {
-        Ok(ExecuteClaimParams { claim_id: self.claim_id })
+    pub fn proposal_id(mut self, id: ProposalId) -> Self {
+        self.proposal_id = id;
+        self
     }
-}
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ExecuteClaimParams {
-    pub claim_id: ClaimId,
+    pub fn recipient_pubkey(mut self, key: PublicKey) -> Self {
+        self.recipient_pubkey = key;
+        self
+    }
+
+    pub fn value(mut self, value: u64) -> Self {
+        self.value = value;
+        self
+    }
+
+    pub fn build(&self) -> Result<ExecuteClaimParamsV1, &'static str> {
+        Ok(ExecuteClaimParamsV1 {
+            dao_escrow_bulla: self.dao_escrow_bulla,
+            proposal_id: self.proposal_id,
+            recipient_pubkey: self.recipient_pubkey,
+            value: self.value,
+        })
+    }
 }
 
 /// Builder for `DaoEscrow::CancelClaimV1`
 ///
 /// Proposer cancels their pending claim.
 pub struct CancelClaimBuilder {
+    dao_escrow_bulla: DaoEscrowBulla,
     claim_id: ClaimId,
-    proposer_secret: SecretKey,
+    proposer_pubkey: PublicKey,
 }
 
 impl CancelClaimBuilder {
     pub fn new() -> Self {
         Self {
+            dao_escrow_bulla: pallas::Base::zero(),
             claim_id: pallas::Base::zero(),
-            proposer_secret: SecretKey::random(&mut rand::rngs::OsRng),
+            proposer_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
         }
+    }
+
+    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
+        self.dao_escrow_bulla = bulla;
+        self
     }
 
     pub fn claim_id(mut self, id: ClaimId) -> Self {
@@ -445,28 +521,28 @@ impl CancelClaimBuilder {
         self
     }
 
-    pub fn proposer_secret(mut self, secret: SecretKey) -> Self {
-        self.proposer_secret = secret;
+    pub fn proposer_pubkey(mut self, key: PublicKey) -> Self {
+        self.proposer_pubkey = key;
         self
     }
 
-    pub fn build(&self) -> Result<CancelClaimParams, &'static str> {
-        Ok(CancelClaimParams { claim_id: self.claim_id })
+    pub fn build(&self) -> Result<CancelClaimParamsV1, &'static str> {
+        Ok(CancelClaimParamsV1 {
+            dao_escrow_bulla: self.dao_escrow_bulla,
+            claim_id: self.claim_id,
+            proposer_pubkey: self.proposer_pubkey,
+        })
     }
-}
-
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct CancelClaimParams {
-    pub claim_id: ClaimId,
 }
 
 /// Builder for `DaoEscrow::WithdrawV1`
 ///
-/// Owner withdraws from endowment (fees, etc.).
+/// Withdraw from endowment with optional capability-based governance authorization.
 pub struct WithdrawBuilder {
     dao_escrow_bulla: DaoEscrowBulla,
     value: u64,
     recipient_pubkey: PublicKey,
+    capability_proof: Option<CapabilityProof>,
 }
 
 impl WithdrawBuilder {
@@ -475,6 +551,7 @@ impl WithdrawBuilder {
             dao_escrow_bulla: pallas::Base::zero(),
             value: 0,
             recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            capability_proof: None,
         }
     }
 
@@ -493,18 +570,383 @@ impl WithdrawBuilder {
         self
     }
 
-    pub fn build(&self) -> Result<WithdrawParams, &'static str> {
-        Ok(WithdrawParams {
+    pub fn capability_proof(mut self, proof: CapabilityProof) -> Self {
+        self.capability_proof = Some(proof);
+        self
+    }
+
+    pub fn build(&self) -> Result<crate::model::WithdrawParamsV1, &'static str> {
+        Ok(crate::model::WithdrawParamsV1 {
             dao_escrow_bulla: self.dao_escrow_bulla,
             value: self.value,
             recipient_pubkey: self.recipient_pubkey,
+            capability_proof: self.capability_proof.clone(),
         })
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct WithdrawParams {
-    pub dao_escrow_bulla: DaoEscrowBulla,
-    pub value: u64,
-    pub recipient_pubkey: PublicKey,
+/// Builder for `DaoEscrow::EndowmentWithdrawV1`
+///
+/// Withdraw from the endowment pool, either via approved proposal or capability proof.
+pub struct EndowmentWithdrawBuilder {
+    dao_escrow_bulla: DaoEscrowBulla,
+    claim_id: ClaimId,
+    recipient_pubkey: PublicKey,
+    value: u64,
+    capability_proof: Option<CapabilityProof>,
+    proposal_id: Option<ProposalId>,
+}
+
+impl EndowmentWithdrawBuilder {
+    pub fn new() -> Self {
+        Self {
+            dao_escrow_bulla: pallas::Base::zero(),
+            claim_id: pallas::Base::zero(),
+            recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            value: 0,
+            capability_proof: None,
+            proposal_id: None,
+        }
+    }
+
+    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
+        self.dao_escrow_bulla = bulla;
+        self
+    }
+
+    pub fn claim_id(mut self, id: ClaimId) -> Self {
+        self.claim_id = id;
+        self
+    }
+
+    pub fn recipient_pubkey(mut self, key: PublicKey) -> Self {
+        self.recipient_pubkey = key;
+        self
+    }
+
+    pub fn value(mut self, value: u64) -> Self {
+        self.value = value;
+        self
+    }
+
+    pub fn capability_proof(mut self, proof: CapabilityProof) -> Self {
+        self.capability_proof = Some(proof);
+        self
+    }
+
+    pub fn proposal_id(mut self, id: ProposalId) -> Self {
+        self.proposal_id = Some(id);
+        self
+    }
+
+    pub fn build(&self) -> Result<crate::model::EndowmentWithdrawParamsV1, &'static str> {
+        Ok(crate::model::EndowmentWithdrawParamsV1 {
+            dao_escrow_bulla: self.dao_escrow_bulla,
+            claim_id: self.claim_id,
+            recipient_pubkey: self.recipient_pubkey,
+            value: self.value,
+            capability_proof: self.capability_proof.clone(),
+            proposal_id: self.proposal_id,
+        })
+    }
+}
+
+/// Builder for `DaoEscrow::TreasurySpendV1`
+///
+/// Execute an approved treasury spend, with governance authorization.
+pub struct TreasurySpendBuilder {
+    dao_escrow_bulla: DaoEscrowBulla,
+    proposal_id: ProposalId,
+    recipient_pubkey: PublicKey,
+    value: u64,
+    capability_proof: Option<CapabilityProof>,
+}
+
+impl TreasurySpendBuilder {
+    pub fn new() -> Self {
+        Self {
+            dao_escrow_bulla: pallas::Base::zero(),
+            proposal_id: pallas::Base::zero(),
+            recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+            value: 0,
+            capability_proof: None,
+        }
+    }
+
+    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
+        self.dao_escrow_bulla = bulla;
+        self
+    }
+
+    pub fn proposal_id(mut self, id: ProposalId) -> Self {
+        self.proposal_id = id;
+        self
+    }
+
+    pub fn recipient_pubkey(mut self, key: PublicKey) -> Self {
+        self.recipient_pubkey = key;
+        self
+    }
+
+    pub fn value(mut self, value: u64) -> Self {
+        self.value = value;
+        self
+    }
+
+    pub fn capability_proof(mut self, proof: CapabilityProof) -> Self {
+        self.capability_proof = Some(proof);
+        self
+    }
+
+    pub fn build(&self) -> Result<TreasurySpendParamsV1, &'static str> {
+        Ok(TreasurySpendParamsV1 {
+            dao_escrow_bulla: self.dao_escrow_bulla,
+            proposal_id: self.proposal_id,
+            recipient_pubkey: self.recipient_pubkey,
+            value: self.value,
+            capability_proof: self.capability_proof.clone(),
+        })
+    }
+}
+
+/// Builder for `DaoEscrow::RegisterCapabilityRequirementV1`
+///
+/// Register a capability requirement that maps a DAO role to an Identity contract capability.
+pub struct RegisterCapabilityRequirementBuilder {
+    dao_escrow_bulla: DaoEscrowBulla,
+    role: Vec<u8>,
+    capability_id: [u8; 32],
+    identity_contract_bulla: pallas::Base,
+}
+
+impl RegisterCapabilityRequirementBuilder {
+    pub fn new() -> Self {
+        Self {
+            dao_escrow_bulla: pallas::Base::zero(),
+            role: vec![],
+            capability_id: [0u8; 32],
+            identity_contract_bulla: pallas::Base::zero(),
+        }
+    }
+
+    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
+        self.dao_escrow_bulla = bulla;
+        self
+    }
+
+    pub fn role(mut self, role: Vec<u8>) -> Self {
+        self.role = role;
+        self
+    }
+
+    pub fn capability_id(mut self, id: [u8; 32]) -> Self {
+        self.capability_id = id;
+        self
+    }
+
+    pub fn identity_contract_bulla(mut self, bulla: pallas::Base) -> Self {
+        self.identity_contract_bulla = bulla;
+        self
+    }
+
+    pub fn build(&self) -> Result<RegisterCapabilityRequirementParamsV1, &'static str> {
+        Ok(RegisterCapabilityRequirementParamsV1 {
+            dao_escrow_bulla: self.dao_escrow_bulla,
+            role: self.role.clone(),
+            capability_id: self.capability_id,
+            identity_contract_bulla: self.identity_contract_bulla,
+        })
+    }
+}
+
+/// Builder for `DaoEscrow::VerifyMemberCapabilityV1`
+///
+/// Verify that a holder possesses a valid capability for this DAO.
+pub struct VerifyMemberCapabilityBuilder {
+    dao_escrow_bulla: DaoEscrowBulla,
+    capability_proof: CapabilityProof,
+    holder_pubkey: PublicKey,
+}
+
+impl VerifyMemberCapabilityBuilder {
+    pub fn new() -> Self {
+        Self {
+            dao_escrow_bulla: pallas::Base::zero(),
+            capability_proof: CapabilityProof {
+                capability_id: [0u8; 32],
+                capability_secret: [0u8; 32],
+                nullifier: pallas::Base::zero(),
+                issuer_pub: [0u8; 32],
+                predicate_result: [0u8; 32],
+                proof: vec![],
+            },
+            holder_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+        }
+    }
+
+    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
+        self.dao_escrow_bulla = bulla;
+        self
+    }
+
+    pub fn capability_proof(mut self, proof: CapabilityProof) -> Self {
+        self.capability_proof = proof;
+        self
+    }
+
+    pub fn holder_pubkey(mut self, key: PublicKey) -> Self {
+        self.holder_pubkey = key;
+        self
+    }
+
+    pub fn build(&self) -> Result<VerifyMemberCapabilityParamsV1, &'static str> {
+        Ok(VerifyMemberCapabilityParamsV1 {
+            dao_escrow_bulla: self.dao_escrow_bulla,
+            capability_proof: self.capability_proof.clone(),
+            holder_pubkey: self.holder_pubkey,
+        })
+    }
+}
+
+/// Builder for `DaoEscrow::ResolveDisputeV1`
+///
+/// Resolve a dispute using oracle attestations and arbitrator capability.
+pub struct ResolveDisputeBuilder {
+    dao_escrow_bulla: DaoEscrowBulla,
+    proposal_id: ProposalId,
+    attestations: Vec<crate::model::OracleAttestationRef>,
+    capability_proof: CapabilityProof,
+    payout_amount: u64,
+    payout_recipient: PublicKey,
+}
+
+impl ResolveDisputeBuilder {
+    pub fn new() -> Self {
+        Self {
+            dao_escrow_bulla: pallas::Base::zero(),
+            proposal_id: pallas::Base::zero(),
+            attestations: vec![],
+            capability_proof: CapabilityProof {
+                capability_id: [0u8; 32],
+                capability_secret: [0u8; 32],
+                nullifier: pallas::Base::zero(),
+                issuer_pub: [0u8; 32],
+                predicate_result: [0u8; 32],
+                proof: vec![],
+            },
+            payout_amount: 0,
+            payout_recipient: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
+        }
+    }
+
+    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
+        self.dao_escrow_bulla = bulla;
+        self
+    }
+
+    pub fn proposal_id(mut self, id: ProposalId) -> Self {
+        self.proposal_id = id;
+        self
+    }
+
+    pub fn attestations(mut self, attestations: Vec<crate::model::OracleAttestationRef>) -> Self {
+        self.attestations = attestations;
+        self
+    }
+
+    pub fn capability_proof(mut self, proof: CapabilityProof) -> Self {
+        self.capability_proof = proof;
+        self
+    }
+
+    pub fn payout_amount(mut self, amount: u64) -> Self {
+        self.payout_amount = amount;
+        self
+    }
+
+    pub fn payout_recipient(mut self, key: PublicKey) -> Self {
+        self.payout_recipient = key;
+        self
+    }
+
+    pub fn build(&self) -> Result<ResolveDisputeParamsV1, &'static str> {
+        Ok(ResolveDisputeParamsV1 {
+            dao_escrow_bulla: self.dao_escrow_bulla,
+            proposal_id: self.proposal_id,
+            attestations: self.attestations.clone(),
+            capability_proof: self.capability_proof.clone(),
+            payout_amount: self.payout_amount,
+            payout_recipient: self.payout_recipient,
+        })
+    }
+}
+
+/// Builder for `DaoEscrow::SetGovernanceConfigV1`
+///
+/// Update the governance configuration for a DAO-Escrow instance.
+pub struct SetGovernanceConfigBuilder {
+    dao_escrow_bulla: DaoEscrowBulla,
+    config: GovernanceConfig,
+    capability_proof: CapabilityProof,
+}
+
+impl SetGovernanceConfigBuilder {
+    pub fn new() -> Self {
+        Self {
+            dao_escrow_bulla: pallas::Base::zero(),
+            config: GovernanceConfig {
+                gov_token_id: pallas::Base::zero(),
+                proposer_limit: 1000,
+                quorum: 5000,
+                early_exec_quorum: 8000,
+                approval_ratio_quot: 51,
+                approval_ratio_base: 100,
+                premium_rate_quot: 1,
+                premium_rate_base: 100,
+                max_claim_ratio_quot: 10,
+                max_claim_ratio_base: 100,
+                claim_voting_window: 1000,
+                claim_execution_window: 500,
+                oracle_threshold_numerator: 3,
+                oracle_threshold_denominator: 5,
+                governance_active: true,
+            },
+            capability_proof: CapabilityProof {
+                capability_id: [0u8; 32],
+                capability_secret: [0u8; 32],
+                nullifier: pallas::Base::zero(),
+                issuer_pub: [0u8; 32],
+                predicate_result: [0u8; 32],
+                proof: vec![],
+            },
+        }
+    }
+
+    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
+        self.dao_escrow_bulla = bulla;
+        self
+    }
+
+    pub fn config(mut self, config: GovernanceConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    pub fn capability_proof(mut self, proof: CapabilityProof) -> Self {
+        self.capability_proof = proof;
+        self
+    }
+
+    pub fn governance_active(mut self, active: bool) -> Self {
+        self.config.governance_active = active;
+        self
+    }
+
+    pub fn build(&self) -> Result<SetGovernanceConfigParamsV1, &'static str> {
+        Ok(SetGovernanceConfigParamsV1 {
+            dao_escrow_bulla: self.dao_escrow_bulla,
+            config: self.config.clone(),
+            capability_proof: self.capability_proof.clone(),
+        })
+    }
 }

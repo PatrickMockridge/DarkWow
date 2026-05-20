@@ -51,7 +51,7 @@
 //!
 //! ### Integration Pattern
 //!
-//! ```
+//! ```text
 //! ┌─────────────────────────────────────────────────────────────────────────┐
 //! │                    DAO-Escrow + DrainProtection                           │
 //! ├─────────────────────────────────────────────────────────────────────────┤
@@ -127,6 +127,14 @@ define_contract_function!(DaoEscrowFunction {
     EndowmentWithdrawV1 = 0x04,
     TreasurySpendV1 = 0x05,
     EnableDrainProtectionV1 = 0x06,
+    ProposeClaimV1 = 0x07,
+    VoteClaimV1 = 0x08,
+    ExecuteClaimV1 = 0x09,
+    RegisterCapabilityRequirementV1 = 0x0a,
+    VerifyMemberCapabilityV1 = 0x0b,
+    ResolveDisputeV1 = 0x0c,
+    CancelClaimV1 = 0x0d,
+    SetGovernanceConfigV1 = 0x0e,
 });
 
 /// Internal contract errors
@@ -155,6 +163,18 @@ pub const DAO_ESCROW_CONTRACT_BULLAS_TREE: &str = "bullas";
 pub const DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE: &str = "membership";
 /// Endowment pool tree (actual funds)
 pub const DAO_ESCROW_CONTRACT_ENDOWMENT_TREE: &str = "endowment";
+/// Proposals tree (governance proposals/claims)
+pub const DAO_ESCROW_CONTRACT_PROPOSALS_TREE: &str = "proposals";
+/// Votes tree (vote records per proposal)
+pub const DAO_ESCROW_CONTRACT_VOTES_TREE: &str = "votes";
+/// Capability requirements tree (required capability IDs per role)
+pub const DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE: &str = "capability_requirements";
+/// Disputes tree (dispute resolution records)
+pub const DAO_ESCROW_CONTRACT_DISPUTES_TREE: &str = "disputes";
+/// Nullifiers tree (prevents double-vote, double-propose)
+pub const DAO_ESCROW_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
+/// Governance config tree (separate from endowment for clean separation)
+pub const DAO_ESCROW_CONTRACT_GOVERNANCE_TREE: &str = "governance";
 
 // ============================================================================
 // KEYS
@@ -175,6 +195,14 @@ pub const DAO_ESCROW_LATEST_ROOT: &[u8] = b"last_root";
 pub const DAO_ESCROW_ZKAS_INIT_NS: &str = "Init";
 /// ZKAS namespace for premium payment
 pub const DAO_ESCROW_ZKAS_PREMIUM_NS: &str = "PayPremium";
+/// ZKAS namespace for claim proposal
+pub const DAO_ESCROW_ZKAS_PROPOSE_CLAIM_NS: &str = "ProposeClaim";
+/// ZKAS namespace for claim voting
+pub const DAO_ESCROW_ZKAS_VOTE_CLAIM_NS: &str = "VoteClaim";
+/// ZKAS namespace for member capability verification
+pub const DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_NS: &str = "VerifyMemberCapability";
+/// ZKAS namespace for dispute resolution
+pub const DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS: &str = "ResolveDispute";
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
@@ -184,6 +212,13 @@ pub const DAO_ESCROW_ZKAS_PREMIUM_NS: &str = "PayPremium";
 pub const DAO_ESCROW_ZKAS_INIT_V1_BIN: &[u8] = include_bytes!("../proof/init_v1.zk.bin");
 /// PayPremium_V1 zkas circuit binary
 pub const DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN: &[u8] = include_bytes!("../proof/pay_premium_v1.zk.bin");
+// Circuit binaries for new governance functions.
+// These are compiled from the .zk source files in proof/ via `zkas compile`.
+// Until compiled, the WASM entrypoint loads them as empty (governance functions
+// will return CircuitNotCompiled errors until binaries are available).
+// To compile: cd proof && for f in propose_claim_v1 vote_claim_v1
+//   verify_member_capability_v1 resolve_dispute_v1; do
+//   zkas $f.zk -o $f.zk.bin; done
 
 // ============================================================================
 // DRAIN PROTECTION INTEGRATION

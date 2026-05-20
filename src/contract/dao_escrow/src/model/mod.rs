@@ -71,7 +71,7 @@
 //! to the single pool.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, BaseBlind, PublicKey, ScalarBlind},
+    crypto::{poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -123,6 +123,41 @@ pub struct FeeConfig {
     pub endowment_share: u32,
 }
 
+/// Governance configuration for a DAO-Escrow instance
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct GovernanceConfig {
+    /// Token ID required for governance (membership token)
+    pub gov_token_id: pallas::Base,
+    /// Minimum stake required to create proposals
+    pub proposer_limit: u64,
+    /// Quorum required in basis points (e.g., 5000 = 50%)
+    pub quorum: u64,
+    /// Early execution quorum (higher threshold)
+    pub early_exec_quorum: u64,
+    /// Approval ratio numerator (e.g., 51)
+    pub approval_ratio_quot: u64,
+    /// Approval ratio denominator (e.g., 100 = 51%)
+    pub approval_ratio_base: u64,
+    /// Premium rate numerator
+    pub premium_rate_quot: u64,
+    /// Premium rate denominator
+    pub premium_rate_base: u64,
+    /// Maximum claim ratio numerator
+    pub max_claim_ratio_quot: u64,
+    /// Maximum claim ratio denominator
+    pub max_claim_ratio_base: u64,
+    /// Voting window in blocks
+    pub claim_voting_window: u64,
+    /// Execution window in blocks after vote passes
+    pub claim_execution_window: u64,
+    /// Number of oracles needed to attest for dispute resolution
+    pub oracle_threshold_numerator: u64,
+    /// Total number of registered oracles
+    pub oracle_threshold_denominator: u64,
+    /// Whether governance via capabilities is active
+    pub governance_active: bool,
+}
+
 /// Represents a DAO-Escrow instance
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DaoEscrow {
@@ -158,6 +193,8 @@ pub struct DaoEscrow {
     pub drain_protection_enabled: bool,
     /// Associated DrainProtection bulla (if enabled)
     pub drain_protection_bulla: Option<DaoEscrowBulla>,
+    /// Governance configuration (None = governance not active)
+    pub governance_config: Option<GovernanceConfig>,
 }
 
 impl DaoEscrow {
@@ -330,6 +367,8 @@ pub struct WithdrawParamsV1 {
     pub value: u64,
     /// Recipient
     pub recipient_pubkey: PublicKey,
+    /// Optional capability proof for governance-based withdrawal
+    pub capability_proof: Option<CapabilityProof>,
 }
 
 /// State update for `DaoEscrow::WithdrawV1`
@@ -393,7 +432,7 @@ impl TryFrom<u8> for VoteType {
     }
 }
 
-/// Parameters for proposing an endowment withdrawal (claim)
+/// Parameters for proposing a claim (endowment, treasury, or dispute)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ProposeClaimParamsV1 {
     /// DAO-Escrow bulla
@@ -408,6 +447,10 @@ pub struct ProposeClaimParamsV1 {
     pub recipient_pubkey: PublicKey,
     /// Proposer public key
     pub proposer_pubkey: PublicKey,
+    /// Claim type (endowment, treasury, dispute)
+    pub claim_type: ClaimType,
+    /// Capability proof for member_vote
+    pub capability_proof: CapabilityProof,
 }
 
 /// State update for `ProposeClaimV1`
@@ -419,6 +462,18 @@ pub struct ProposeClaimUpdateV1 {
     pub claim_id: ClaimId,
     /// Amount being claimed
     pub value: u64,
+    /// Voting deadline
+    pub voting_ends_at: u64,
+    /// Execution deadline
+    pub execution_deadline: u64,
+    /// Proposer public key
+    pub proposer_pubkey: PublicKey,
+    /// Recipient public key
+    pub recipient_pubkey: PublicKey,
+    /// Claim type
+    pub claim_type: ClaimType,
+    /// Description hash
+    pub description_hash: pallas::Base,
 }
 
 /// Parameters for voting on a claim
@@ -432,6 +487,8 @@ pub struct VoteClaimParamsV1 {
     pub vote: VoteType,
     /// Voter's public key
     pub voter_pubkey: PublicKey,
+    /// Capability proof for member_vote
+    pub capability_proof: CapabilityProof,
 }
 
 /// State update for `VoteClaimV1`
@@ -444,6 +501,8 @@ pub struct VoteClaimUpdateV1 {
     /// Updated vote tally
     pub yes_votes: u64,
     pub no_votes: u64,
+    /// Whether proposal passed (met quorum and approval ratio)
+    pub passed: bool,
 }
 
 // ============================================================================
@@ -461,6 +520,10 @@ pub struct EndowmentWithdrawParamsV1 {
     pub recipient_pubkey: PublicKey,
     /// Amount to withdraw
     pub value: u64,
+    /// Optional capability proof for governance-based withdrawal
+    pub capability_proof: Option<CapabilityProof>,
+    /// Optional proposal ID (if approved by governance vote)
+    pub proposal_id: Option<pallas::Base>,
 }
 
 /// State update for `EndowmentWithdrawV1`
@@ -491,6 +554,8 @@ pub struct TreasurySpendParamsV1 {
     pub recipient_pubkey: PublicKey,
     /// Amount to spend
     pub value: u64,
+    /// Optional capability proof for governance-based spending
+    pub capability_proof: Option<CapabilityProof>,
 }
 
 /// State update for `TreasurySpendV1`
@@ -504,4 +569,350 @@ pub struct TreasurySpendUpdateV1 {
     pub value: u64,
     /// Updated total treasury
     pub total_treasury: u64,
+}
+
+// ============================================================================
+// CAPABILITY PROOF (cross-contract reference to Identity contract)
+// ============================================================================
+
+/// A capability proof from the Identity contract.
+/// Referenced by dao_escrow to verify capability-based authorization.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CapabilityProof {
+    /// Capability identifier (from Identity contract)
+    pub capability_id: [u8; 32],
+    /// Holder's capability secret
+    pub capability_secret: [u8; 32],
+    /// Nullifier to prevent replay
+    pub nullifier: IntentNullifier,
+    /// Issuer's public key
+    pub issuer_pub: [u8; 32],
+    /// Predicate result from ZK circuit
+    pub predicate_result: [u8; 32],
+    /// ZK proof bytes
+    pub proof: Vec<u8>,
+}
+
+// ============================================================================
+// CAPABILITY REQUIREMENT (maps DAO role to required capability)
+// ============================================================================
+
+/// Maps a DAO role to a required capability ID from the Identity contract
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CapabilityRequirement {
+    /// Role name (e.g., "member_vote", "board_treasury")
+    pub role: Vec<u8>,
+    /// Required capability ID from the Identity contract
+    pub capability_id: [u8; 32],
+    /// The Identity contract bulla (for cross-contract verification)
+    pub identity_contract_bulla: pallas::Base,
+    /// Whether this requirement is currently active
+    pub active: bool,
+}
+
+// ============================================================================
+// CLAIM TYPE
+// ============================================================================
+
+/// Type of claim or proposal
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+pub enum ClaimType {
+    /// Claim against endowment (insurance)
+    Endowment = 0,
+    /// Treasury spend proposal
+    Treasury = 1,
+    /// Dispute resolution via oracle
+    Dispute = 2,
+}
+
+// ============================================================================
+// PROPOSAL STATE
+// ============================================================================
+
+/// Proposal lifecycle states
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+pub enum ProposalState {
+    /// Voting is open
+    Pending = 0,
+    /// Vote passed
+    Approved = 1,
+    /// Vote failed
+    Rejected = 2,
+    /// Claim has been executed
+    Executed = 3,
+    /// Proposer cancelled
+    Cancelled = 4,
+    /// Voting/execution window expired
+    Expired = 5,
+}
+
+// ============================================================================
+// PROPOSAL
+// ============================================================================
+
+/// Proposal identifier type
+pub type ProposalId = pallas::Base;
+
+/// A governance proposal (claim against endowment or treasury spend)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct Proposal {
+    /// Unique proposal identifier
+    pub id: ProposalId,
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Proposer's public key
+    pub proposer_pubkey: PublicKey,
+    /// Type of claim
+    pub claim_type: ClaimType,
+    /// Value requested
+    pub value: u64,
+    /// Hash of the claim description
+    pub description_hash: pallas::Base,
+    /// Recipient public key
+    pub recipient_pubkey: PublicKey,
+    /// Number of yes votes
+    pub yes_votes: u64,
+    /// Number of no votes
+    pub no_votes: u64,
+    /// Current proposal state
+    pub state: ProposalState,
+    /// Block height when created
+    pub created_at: u64,
+    /// Block height when voting ends
+    pub voting_ends_at: u64,
+    /// Block height when execution window expires
+    pub execution_deadline: u64,
+}
+
+// ============================================================================
+// VOTE RECORD
+// ============================================================================
+
+/// A vote record (prevents double-voting via nullifier)
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VoteRecord {
+    /// Proposal being voted on
+    pub proposal_id: ProposalId,
+    /// Voter's public key
+    pub voter_pubkey: PublicKey,
+    /// Vote direction
+    pub vote: VoteType,
+    /// Block height when voted
+    pub voted_at: u64,
+    /// Vote nullifier (prevents double-vote: H(capability_secret, proposal_id))
+    pub vote_nullifier: pallas::Base,
+}
+
+// ============================================================================
+// ORACLE ATTESTATION REFERENCE
+// ============================================================================
+
+/// Reference to an oracle attestation used for dispute resolution
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct OracleAttestationRef {
+    /// Attestation ID from the attestation contract
+    pub attestation_id: pallas::Base,
+    /// Oracle ID from the oracle contract
+    pub oracle_id: pallas::Base,
+    /// The attested value
+    pub attested_value: pallas::Base,
+    /// Block height when attested
+    pub attested_at: u64,
+}
+
+// ============================================================================
+// DISPUTE RESOLUTION
+// ============================================================================
+
+/// Dispute resolution record
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DisputeResolution {
+    /// Unique dispute identifier
+    pub id: pallas::Base,
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Associated proposal ID
+    pub proposal_id: ProposalId,
+    /// Oracle attestations used for resolution
+    pub attestations: Vec<OracleAttestationRef>,
+    /// Resolution result (true = payout approved)
+    pub resolution_result: bool,
+    /// Payout amount
+    pub payout_amount: u64,
+    /// Payout recipient
+    pub payout_recipient: PublicKey,
+    /// Block height when resolved
+    pub resolved_at: u64,
+    /// Whether the payout has been executed
+    pub executed: bool,
+}
+
+// ============================================================================
+// EXECUTE CLAIM V1
+// ============================================================================
+
+/// Parameters for `ExecuteClaimV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ExecuteClaimParamsV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Proposal ID to execute
+    pub proposal_id: ProposalId,
+    /// Recipient of the funds
+    pub recipient_pubkey: PublicKey,
+    /// Amount to transfer
+    pub value: u64,
+}
+
+/// State update for `ExecuteClaimV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ExecuteClaimUpdateV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Proposal ID
+    pub proposal_id: ProposalId,
+    /// Amount executed
+    pub value: u64,
+    /// Updated state
+    pub state: ProposalState,
+}
+
+// ============================================================================
+// REGISTER CAPABILITY REQUIREMENT V1
+// ============================================================================
+
+/// Parameters for `RegisterCapabilityRequirementV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RegisterCapabilityRequirementParamsV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Role name
+    pub role: Vec<u8>,
+    /// Required capability ID
+    pub capability_id: [u8; 32],
+    /// Identity contract bulla reference
+    pub identity_contract_bulla: pallas::Base,
+}
+
+/// State update for `RegisterCapabilityRequirementV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RegisterCapabilityRequirementUpdateV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Role name
+    pub role: Vec<u8>,
+    /// Registered capability requirement
+    pub requirement: CapabilityRequirement,
+}
+
+// ============================================================================
+// VERIFY MEMBER CAPABILITY V1
+// ============================================================================
+
+/// Parameters for `VerifyMemberCapabilityV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VerifyMemberCapabilityParamsV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Capability proof to verify
+    pub capability_proof: CapabilityProof,
+    /// Holder's public key
+    pub holder_pubkey: PublicKey,
+}
+
+/// State update for `VerifyMemberCapabilityV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VerifyMemberCapabilityUpdateV1 {
+    /// Capability ID that was verified
+    pub capability_id: [u8; 32],
+    /// Whether verification passed
+    pub verified: bool,
+}
+
+// ============================================================================
+// RESOLVE DISPUTE V1
+// ============================================================================
+
+/// Parameters for `ResolveDisputeV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ResolveDisputeParamsV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Associated proposal ID
+    pub proposal_id: ProposalId,
+    /// Oracle attestations for resolution
+    pub attestations: Vec<OracleAttestationRef>,
+    /// Arbitrator's capability proof (dispute_arbitrator)
+    pub capability_proof: CapabilityProof,
+    /// Payout amount
+    pub payout_amount: u64,
+    /// Payout recipient
+    pub payout_recipient: PublicKey,
+}
+
+/// State update for `ResolveDisputeV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ResolveDisputeUpdateV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Dispute ID
+    pub dispute_id: pallas::Base,
+    /// Proposal ID
+    pub proposal_id: ProposalId,
+    /// Whether payout was approved
+    pub approved: bool,
+    /// Payout amount
+    pub payout_amount: u64,
+    /// Attestation IDs consumed (prevents replay)
+    pub consumed_attestation_ids: Vec<pallas::Base>,
+}
+
+// ============================================================================
+// CANCEL CLAIM V1
+// ============================================================================
+
+/// Parameters for `CancelClaimV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CancelClaimParamsV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Claim identifier
+    pub claim_id: ClaimId,
+    /// Proposer's public key (must match original proposer)
+    pub proposer_pubkey: PublicKey,
+}
+
+/// State update for `CancelClaimV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CancelClaimUpdateV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Claim identifier
+    pub claim_id: ClaimId,
+    /// Updated state
+    pub state: ProposalState,
+}
+
+// ============================================================================
+// SET GOVERNANCE CONFIG V1
+// ============================================================================
+
+/// Parameters for `SetGovernanceConfigV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SetGovernanceConfigParamsV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// New governance configuration
+    pub config: GovernanceConfig,
+    /// Capability proof for board_treasury
+    pub capability_proof: CapabilityProof,
+}
+
+/// State update for `SetGovernanceConfigV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SetGovernanceConfigUpdateV1 {
+    /// DAO-Escrow bulla
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    /// Updated governance config
+    pub config: GovernanceConfig,
 }

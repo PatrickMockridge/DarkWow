@@ -76,24 +76,38 @@ A flexible contract supporting three operating modes: **Escrow-Only**, **Treasur
 
 ## Implementation Status
 
-### ZK Circuits ✅
-- `init_v1.zk` - ✅ Working
-- `pay_premium_v1.zk` - ✅ Working
+### ZK Circuits
+- `init_v1.zk` — ✅ Working
+- `pay_premium_v1.zk` — ✅ Working
+- `propose_claim_v1.zk` — ✅ Source complete (needs zkas compilation)
+- `vote_claim_v1.zk` — ✅ Source complete (needs zkas compilation)
+- `verify_member_capability_v1.zk` — ✅ Source complete (needs zkas compilation)
+- `resolve_dispute_v1.zk` — ✅ Source complete (needs zkas compilation)
 
-### Entrypoints
+### Entrypoints (all 15 implemented)
+
 | Function | Opcode | Status |
 |----------|--------|--------|
 | `InitializeV1` | `0x00` | ✅ Implemented |
 | `UpdateV1` | `0x01` | ✅ Implemented |
 | `PayPremiumV1` | `0x02` | ✅ Implemented |
-| `WithdrawV1` | `0x03` | ✅ Implemented |
-| `EndowmentWithdrawV1` | `0x04` | ✅ Implemented |
-| `TreasurySpendV1` | `0x05` | ✅ Implemented |
+| `WithdrawV1` | `0x03` | ✅ Implemented (capability-gated) |
+| `EndowmentWithdrawV1` | `0x04` | ✅ Implemented (capability-gated) |
+| `TreasurySpendV1` | `0x05` | ✅ Implemented (capability-gated) |
 | `EnableDrainProtectionV1` | `0x06` | ✅ Implemented |
+| `ProposeClaimV1` | `0x07` | ✅ Implemented (OCap: member_vote) |
+| `VoteClaimV1` | `0x08` | ✅ Implemented (OCap: member_vote) |
+| `ExecuteClaimV1` | `0x09` | ✅ Implemented |
+| `RegisterCapabilityRequirementV1` | `0x0a` | ✅ Implemented (OCap: board_treasury) |
+| `VerifyMemberCapabilityV1` | `0x0b` | ✅ Implemented (cross-contract OCap) |
+| `ResolveDisputeV1` | `0x0c` | ✅ Implemented (OCap: dispute_arbitrator) |
+| `CancelClaimV1` | `0x0d` | ✅ Implemented |
+| `SetGovernanceConfigV1` | `0x0e` | ✅ Implemented (OCap: board_treasury) |
 
 ### Test Status
 - Heavyweight pipeline test: ✅ PASSING
-- Integration tests: ✅ PASSING
+- Integration tests: ✅ 20/20 PASSING (encoding roundtrips, function enum validation)
+- Build: ✅ Clean (zero warnings)
 
 ## Initialize
 
@@ -132,22 +146,41 @@ let full = InitializeBuilder::new()
 
 ## Entrypoints
 
+### Core Functions
+
 | Function | Opcode | Description |
 |----------|--------|-------------|
 | `InitializeV1` | `0x00` | Create new DAO-Escrow (mode selected) |
 | `UpdateV1` | `0x01` | Update parameters |
 | `PayPremiumV1` | `0x02` | Pay premium, get membership note |
-| `WithdrawV1` | `0x03` | Withdraw from treasury |
-| `EndowmentWithdrawV1` | `0x04` | Withdraw from endowment (insurance) |
-| `TreasurySpendV1` | `0x05` | Treasury spending (standard governance) |
+| `WithdrawV1` | `0x03` | Withdraw with capability-gated authorization |
+| `EndowmentWithdrawV1` | `0x04` | Endowment withdrawal (capability or proposal) |
+| `TreasurySpendV1` | `0x05` | Treasury spending (capability or proposal) |
 | `EnableDrainProtectionV1` | `0x06` | Enable DrainProtection on existing DAO-Escrow |
+
+### OCap Governance Functions (0x07-0x0e)
+
+| Function | Opcode | Capability Required | Description |
+|----------|--------|--------------------|-------------|
+| `ProposeClaimV1` | `0x07` | `member_vote` | Propose claim against endowment/treasury |
+| `VoteClaimV1` | `0x08` | `member_vote` | Vote on a pending proposal |
+| `ExecuteClaimV1` | `0x09` | None (quorum is authority) | Execute an approved proposal |
+| `RegisterCapabilityRequirementV1` | `0x0a` | `board_treasury` | Map DAO role to Identity contract capability |
+| `VerifyMemberCapabilityV1` | `0x0b` | None (this IS verification) | Verify a holder possesses a capability |
+| `ResolveDisputeV1` | `0x0c` | `dispute_arbitrator` | Resolve dispute with multi-oracle attestation |
+| `CancelClaimV1` | `0x0d` | Proposer identity match | Cancel a pending claim |
+| `SetGovernanceConfigV1` | `0x0e` | `board_treasury` | Update governance configuration |
 
 ## ZK Circuits
 
 | Circuit | Public Inputs | Status |
 |---------|--------------|--------|
-| `init_v1.zk` | `dao_bulla`, `endowment_bulla` | ✅ Implemented |
-| `pay_premium_v1.zk` | `dao_escrow_bulla`, `membership_note`, `value_commit.x`, `value_commit.y` | ✅ Implemented |
+| `init_v1.zk` | `dao_bulla`, `endowment_bulla` | ✅ Compiled |
+| `pay_premium_v1.zk` | `dao_escrow_bulla`, `membership_note`, `value_commit.x`, `value_commit.y` | ✅ Compiled |
+| `propose_claim_v1.zk` | `dao_escrow_bulla`, `claim_id`, `capability_id`, `proposal_nullifier`, `claim_commit` | Source complete |
+| `vote_claim_v1.zk` | `proposal_id`, `capability_id`, `vote_nullifier`, `vote_commit.x`, `vote_commit.y` | Source complete |
+| `verify_member_capability_v1.zk` | `capability_id`, `dao_escrow_bulla`, `holder_commit` | Source complete |
+| `resolve_dispute_v1.zk` | `capability_id`, `dao_escrow_bulla`, `dispute_id`, `attestation_root`, `resolution_commit`, `dispute_nullifier` | Source complete |
 
 ### InitV1 Circuit
 
@@ -420,8 +453,38 @@ let proof = SubscribeBuilder::new()
     .build()?;
 ```
 
+## OCap Governance
+
+DAO-Escrow uses **capability-based governance** via the [Identity contract](../identity/README.md). Instead of ACLs ("who has access"), members prove capabilities ("I hold member_vote").
+
+### Capability Types
+
+| Capability | Purpose | Required For |
+|-----------|---------|-------------|
+| `member_vote` | Basic voting rights | ProposeClaim, VoteClaim |
+| `board_treasury` | Treasury release control | Withdraw, TreasurySpend, RegisterCapabilityRequirement, SetGovernanceConfig |
+| `board_endowment` | Endowment release control | EndowmentWithdraw |
+| `dispute_arbitrator` | Dispute resolution via oracle attestation | ResolveDispute |
+
+### Governance Flow
+
+```
+1. Identity contract issues capabilities to holders
+2. dao_escrow registers capability requirements (opcode 0x0a)
+3. Holder proposes claim with member_vote capability (0x07)
+4. Members vote with member_vote capability (0x08)
+5. When quorum + approval ratio met → execute (0x09)
+6. Disputes resolved by arbitrator with multi-oracle attestation (0x0c)
+```
+
+### Backward Compatibility
+
+A `governance_active: bool` flag in `GovernanceConfig` controls whether capability checks are enforced. When `false`, existing owner-pubkey behavior is preserved, allowing gradual per-escrow migration.
+
 ## See Also
 
-- [DAO-Escrow Architecture Doc](../../doc/src/arch/dao_escrow.md)
+- [DAO-Escrow Architecture Doc](../../doc/src/architecture/dao_escrow.md)
+- [DAO-Escrow Contract Doc](../../doc/src/contract/dao_escrow.md)
+- [Identity Contract README](../identity/README.md)
+- [O-Cap Architecture](../../doc/src/arch/ocap.md)
 - [Subscription Contract](../subscription/README.md)
-- [DarkWow DAO Contract](../../doc/src/arch/dao.md)

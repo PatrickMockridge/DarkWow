@@ -566,14 +566,17 @@ identity::verify_capability(params, REQUIRED_CAPABILITY)?
 
 ### Example Integrations
 
-| Contract | O-Cap Usage | Capability |
-|----------|-------------|------------|
-| DAO | Submit proposal | `can_propose` |
-| DAO | Vote on proposal | `can_vote` |
-| Labor Market | Submit bid | `verified_contractor` |
-| Tender | Submit sealed bid | `qualified_provider` |
-| Insurance | Purchase coverage | `low_risk_profile` |
-| Bridge | Cross-chain transfer | `authorized_signer` |
+| Contract | O-Cap Usage | Capability | Status |
+|----------|-------------|------------|--------|
+| **dao_escrow** | Propose claim | `member_vote` | Implemented |
+| **dao_escrow** | Vote on proposal | `member_vote` | Implemented |
+| **dao_escrow** | Treasury release | `board_treasury` | Implemented |
+| **dao_escrow** | Endowment release | `board_endowment` | Implemented |
+| **dao_escrow** | Dispute resolution | `dispute_arbitrator` | Implemented |
+| **tender** | Submit sealed bid | `qualified_provider` | Implemented |
+| Labor Market | Submit bid | `verified_contractor` | Designed |
+| Insurance | Purchase coverage | `low_risk_profile` | Designed |
+| Bridge | Cross-chain transfer | `authorized_signer` | Designed |
 
 ### Why O-Cap Works Across Contracts
 
@@ -764,18 +767,20 @@ constrain_equal_base(is_lte, predicate_result);
 ## Roadmap
 
 ```
-Level 0 (MVP - NOW)
-├── O-Cap authorization (REGISTERED)
+Level 0 (COMPLETE — May 2026)
+├── O-Cap authorization (Register/Issue/Verify/Revoke)
 ├── Issuer-Holder-Verifier model
 ├── Single issuer credentials
 ├── Basic predicates (>=, ==, etc.)
 ├── On-chain verification
 └── ZK proofs for attribute hiding
 
-Level 1 (NOW)
-├── Competency DAG structure ✓
+Level 1 (COMPLETE — May 2026)
+├── Competency DAG structure
 ├── Derived competencies (prerequisite chains)
 ├── Multiple issuer support
+├── Multi-credential AND claims (0x07)
+├── Ratio-based predicates (0x08)
 └── Credential chaining
 
 Level 2 (Future)
