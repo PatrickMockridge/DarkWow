@@ -24,6 +24,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::atomic::Ordering,
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -198,6 +199,60 @@ impl DwowNode {
             }
             lock.as_ref().unwrap().clone()
         };
+
+        // Spawn keepalive to prevent xmrig disconnects.
+        // xmrig reconnects after ~6s of TCP silence, resetting mining progress.
+        // Pushing the current job every 5s keeps the connection alive while
+        // xmrig searches for a valid nonce.
+        let was_active = self.stratum_keepalive_active.swap(true, Ordering::SeqCst);
+        if !was_active {
+            let kp_publisher = publisher.clone();
+            let kp_template = self.current_linear_template.clone();
+            self.ex.spawn(async move {
+                loop {
+                    smol::Timer::after(Duration::from_secs(5)).await;
+                    let tmpl = kp_template.lock().await;
+                    if let Some(ref t) = *tmpl {
+                        let kp_header = dwow_linear::BlockHeader {
+                            version: 1,
+                            previous: blake3::Hash::from_bytes(t.previous),
+                            merkle_root: blake3::hash(&[]),
+                            timestamp: t.timestamp,
+                            difficulty_target: t.difficulty_target,
+                            nonce: 0,
+                            height: t.height,
+                            uncle_merkle_root: [0u8; 32],
+                            total_reward: t.value,
+                            randomx_key: dwow_linear::Miner::derive_key_from_height(t.height),
+                            coin_merkle_root: t.coin_merkle_root,
+                            nullifier_root: t.nullifier_root,
+                            anchor_tx_id: [0u8; 32],
+                            anchor_monero_height: 0,
+                            anchor_monero_hash: [0u8; 32],
+                            finality_flags: 0,
+                        };
+                        let kp_blob = hex::encode(&kp_header.to_mining_blob());
+                        let kp_pool_diff =
+                            0xFFFFFFFFu64 / t.difficulty_target as u64;
+                        let kp_job_id = format!("linear-job-{}", t.height);
+                        let kp_seed_hash = hex::encode(kp_header.randomx_key);
+                        let kp_params = JsonValue::from(HashMap::from([
+                            ("blob".to_string(), JsonValue::from(kp_blob)),
+                            ("job_id".to_string(), JsonValue::from(kp_job_id)),
+                            ("height".to_string(), JsonValue::from(t.height as f64)),
+                            ("target".to_string(), JsonValue::from(format!("{}", kp_pool_diff))),
+                            ("algo".to_string(), JsonValue::from(String::from("rx/0"))),
+                            ("seed_hash".to_string(), JsonValue::from(kp_seed_hash)),
+                            ("reserved_offset".to_string(), JsonValue::from(39_f64)),
+                        ]));
+                        let kp_notif =
+                            dwow::rpc::jsonrpc::JsonNotification::new("job", kp_params);
+                        kp_publisher.notify(kp_notif).await;
+                    }
+                }
+            })
+            .detach();
+        }
 
         let job_id = format!("linear-job-{}", template.height);
         let randomx_key = dwow_linear::Miner::derive_key_from_height(template.height);
