@@ -8,8 +8,8 @@ Local tests that run in seconds. No ZK proofs, no P2P networking, no Docker.
 |-----------|----------|-----------------|
 | ZK circuit compilation | `src/contract/<name>/tests/zk_circuit_test.sh` | `.zk` files compile to `.zk.bin` via zkas |
 | Contract integration | `src/contract/<name>/tests/integration.rs` | Serialization, enums, constants, derive determinism |
-| GenesisHarness | `bin/darkfid/src/tests/genesis.rs` | Baseline chain: NativeToken + Deployooor |
-| Lightweight pipeline | `bin/darkfid/src/tests/pipeline.rs` | Contract deployment (no ZK proofs) |
+| GenesisHarness | `bin/dwowd/src/tests/genesis.rs` | Baseline chain: NativeToken + Deployooor |
+| Lightweight pipeline | `bin/dwowd/src/tests/pipeline.rs` | Contract deployment (no ZK proofs) |
 
 ## ZK Circuit Tests
 
@@ -158,7 +158,7 @@ GenesisHarness provides a reusable baseline chain with the two mandatory
 consensus contracts: NativeToken and Deployooor. It does NOT deploy WASM
 contracts — use ContractTestingPipeline for that.
 
-**Location:** `bin/darkfid/src/tests/genesis.rs`
+**Location:** `bin/dwowd/src/tests/genesis.rs`
 
 ### Quick Start
 
@@ -212,7 +212,7 @@ Native Contracts (pre-deployed at genesis):
 The lightweight pipeline handles the full build chain (ZK binaries, WASM
 compilation, genesis setup, deployment) without generating ZK proofs.
 
-**Location:** `bin/darkfid/src/tests/pipeline.rs`
+**Location:** `bin/dwowd/src/tests/pipeline.rs`
 
 ### One-Shot Usage
 
@@ -333,9 +333,9 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
 | Component | Path |
 |-----------|------|
-| GenesisHarness | `bin/darkfid/src/tests/genesis.rs` |
-| ContractTestingPipeline | `bin/darkfid/src/tests/pipeline.rs` |
-| Harness (2-node base) | `bin/darkfid/src/tests/harness.rs` |
+| GenesisHarness | `bin/dwowd/src/tests/genesis.rs` |
+| ContractTestingPipeline | `bin/dwowd/src/tests/pipeline.rs` |
+| Harness (2-node base) | `bin/dwowd/src/tests/harness.rs` |
 | ZK circuit tests | `src/contract/<name>/tests/zk_circuit_test.sh` |
 | Integration tests | `src/contract/<name>/tests/integration.rs` |
 | Contract proof sources | `src/contract/<name>/proof/*.zk` |

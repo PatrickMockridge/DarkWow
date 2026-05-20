@@ -27,7 +27,7 @@ use tinyjson::JsonValue;
 
 use dwow::rpc::jsonrpc::{ErrorCode::ServerError, JsonError, JsonResponse, JsonResult};
 
-/// Custom RPC errors available for darkfid.
+/// Custom RPC errors available for dwowd.
 /// Please sort them sensefully.
 pub enum RpcError {
     // Transaction-related errors

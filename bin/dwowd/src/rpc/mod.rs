@@ -35,7 +35,7 @@ use dwow::{
     system::StoppableTaskPtr,
 };
 
-use crate::DarkfiNode;
+use crate::DwowNode;
 
 /// Blockchain related methods
 mod blockchain;
@@ -66,7 +66,7 @@ pub struct DefaultRpcHandler;
 
 #[async_trait]
 #[rustfmt::skip]
-impl RequestHandler<DefaultRpcHandler> for DarkfiNode {
+impl RequestHandler<DefaultRpcHandler> for DwowNode {
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
         debug!(target: "dwowd::rpc", "--> {}", req.stringify().unwrap());
 
@@ -74,7 +74,7 @@ impl RequestHandler<DefaultRpcHandler> for DarkfiNode {
             // =====================
             // Miscellaneous methods
             // =====================
-            "ping" => <DarkfiNode as RequestHandler<DefaultRpcHandler>>::pong(self, req.id, req.params).await,
+            "ping" => <DwowNode as RequestHandler<DefaultRpcHandler>>::pong(self, req.id, req.params).await,
             "clock" => self.clock(req.id, req.params).await,
 
             // ==================

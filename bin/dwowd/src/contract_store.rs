@@ -21,9 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! ContractStore - Bridge LinearStore to darkfi's contract storage interface
+//! ContractStore - Bridge LinearStore to dwow's contract storage interface
 //!
-//! This module provides a bridge that allows darkfi's Runtime to use LinearStore
+//! This module provides a bridge that allows dwow's Runtime to use LinearStore
 //! for contract storage during deployment.
 //!
 //! Runtime::deploy() uses the blockchain overlay to:

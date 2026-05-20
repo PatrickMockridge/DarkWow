@@ -26,6 +26,8 @@
 //! WARNING: These methods are ONLY available in localnet mode and should
 //! NEVER be deployed to mainnet or testnet.
 
+// QUARANTINED: DAG-era code. Not used in linear-testnet mode. Pending deletion.
+//
 use std::collections::HashMap;
 
 use dwow::{
@@ -48,9 +50,9 @@ use rand::rngs::OsRng;
 use tracing::{error, info};
 
 use dwow_linear::caribina::anchor_block;
-use crate::{proto::linear_broadcast::broadcast_block, DarkfiNode};
+use crate::{proto::linear_broadcast::broadcast_block, DwowNode};
 
-impl DarkfiNode {
+impl DwowNode {
     // RPCAPI:
     // Mine a block and send PoW reward to a recipient (LOCALNET ONLY).
     //
@@ -115,7 +117,7 @@ impl DarkfiNode {
         // The block signing secret key is exported in the tx_hash response.
 
         // Get validator state
-        let mut validator = self.validator.write().await;
+        let mut validator = self.validator.as_ref().unwrap().write().await;
 
         // Get ZK proving keys (needs validator immutable borrow)
         let zkbin = match validator.blockchain.contracts.get_zkas(

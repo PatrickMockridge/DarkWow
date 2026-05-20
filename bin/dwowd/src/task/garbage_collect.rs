@@ -21,19 +21,21 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+// QUARANTINED: DAG-era code. Not used in linear-testnet mode. Pending deletion.
+//
 use dwow::{error::TxVerifyFailed, validator::verification::verify_transactions, Error, Result};
 use dwow_sdk::crypto::MerkleTree;
 use tracing::{debug, error, info};
 
-use crate::DarkfiNodePtr;
+use crate::DwowNodePtr;
 
 /// Async task used for purging erroneous pending transactions from the nodes mempool.
-pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
+pub async fn garbage_collect_task(node: DwowNodePtr) -> Result<()> {
     info!(target: "dwowd::task::garbage_collect_task", "Starting garbage collection task...");
 
     // Grab all current unproposed transactions.  We verify them in batches,
     // to not load them all in memory.
-    let validator = node.validator.read().await;
+    let validator = node.validator.as_ref().unwrap().read().await;
     let (mut last_checked, mut txs) =
         match validator.blockchain.transactions.get_after_pending(0, node.txs_batch_size) {
             Ok(pair) => pair,
@@ -64,7 +66,7 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
             let mut valid = false;
 
             // Grab a lock over current consensus forks state
-            let mut validator = node.validator.write().await;
+            let mut validator = node.validator.as_ref().unwrap().write().await;
 
             // Iterate over them to verify transaction validity in their overlays
             for fork in validator.consensus.forks.iter_mut() {
@@ -153,7 +155,7 @@ pub async fn garbage_collect_task(node: DarkfiNodePtr) -> Result<()> {
 
         // Grab next batch
         (last_checked, txs) = match node
-            .validator
+            .validator.as_ref().unwrap()
             .read()
             .await
             .blockchain

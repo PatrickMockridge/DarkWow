@@ -23,7 +23,7 @@
 
 //! Runtime integration for linear blockchain
 //!
-//! This module provides a wrapper around darkfi's Runtime for use
+//! This module provides a wrapper around dwow's Runtime for use
 //! with LinearBlockchain.
 
 use std::sync::Arc;
@@ -42,10 +42,10 @@ use crate::{blockchain::LinearBlockchain, contract_store::LinearContractStore, l
 
 /// Runtime executor for linear blockchain
 ///
-/// Wraps darkfi's Runtime with LinearStore-based adapters.
+/// Wraps dwow's Runtime with LinearStore-based adapters.
 #[allow(dead_code)]
 pub struct LinearRuntime {
-    /// Inner darkfi Runtime
+    /// Inner dwow Runtime
     inner: Runtime,
     /// Contract store adapter
     contract_store: Arc<LinearContractStore>,

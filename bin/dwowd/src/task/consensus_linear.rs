@@ -31,7 +31,7 @@ use std::sync::Arc;
 use smol::Executor;
 use tracing::info;
 
-use crate::{DarkfiNodePtr, Result};
+use crate::{DwowNodePtr, Result};
 
 /// Auxiliary structure representing node consensus init task configuration.
 #[derive(Clone)]
@@ -51,12 +51,14 @@ pub struct ConsensusInitTaskConfig {
 /// - Marks the node as synced immediately
 /// - Does not run the full consensus protocol (linear uses simple PoW mining via RPC)
 pub async fn consensus_linear_init_task(
-    node: DarkfiNodePtr,
+    node: DwowNodePtr,
     _config: ConsensusInitTaskConfig,
     _ex: Arc<Executor<'static>>,
 ) -> Result<()> {
-    // Mark the node as synced immediately since linear-testnet doesn't need sync
-    node.validator.write().await.synced = true;
+    // Mark the node as synced if using DAG validator (linear mode has no validator)
+    if let Some(ref validator) = node.validator {
+        validator.write().await.synced = true;
+    }
 
     info!(target: "dwowd::task::consensus_linear_init_task", "Linear-testnet consensus initialized (synced=true)");
 

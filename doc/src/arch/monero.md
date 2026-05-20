@@ -122,7 +122,7 @@ architecture handles everything correctly.
 #### Call Chain: p2pool Submission → P2P Propagation
 
 ```
-1. p2pool POST merge_mining_submit_solution → bin/darkfid/src/rpc/xmr.rs
+1. p2pool POST merge_mining_submit_solution → bin/dwowd/src/rpc/xmr.rs
 2. MmRpcHandler: MoneroPowData::new, check_aux_chains, block.sign
 3. registry.submit(&mut validator, &subscribers, &p2p, block)
 4. validator.append_proposal → Consensus::append_proposal

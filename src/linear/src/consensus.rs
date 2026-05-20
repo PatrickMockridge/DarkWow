@@ -40,6 +40,7 @@ use super::{Block, UncleBlock, Result};
 const TIMESTAMP_WINDOW: usize = 20;
 
 /// Proof-of-Work consensus engine with dynamic difficulty adjustment.
+#[derive(Clone)]
 pub struct PoWConsensus {
     /// Current difficulty target — `hash_u32 <= difficulty_target` is valid.
     difficulty_target: u32,

@@ -16,7 +16,7 @@ bench = false
 [workspace]
 members = [
     "bin/zkas",
-    "bin/darkfid",
+    "bin/dwowd",
     "bin/bridge_test_helper",
     "bin/dwow-p2pool-adaptor",
     "bin/explorer",

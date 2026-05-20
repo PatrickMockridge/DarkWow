@@ -105,7 +105,7 @@ cargo test -p dwowd test_linear
 ## Current State (May 2026)
 
 Both consensus implementations are active. The network name in `dwowd_config.toml`
-determines which one is used at startup (`bin/darkfid/src/main.rs:170-180`):
+determines which one is used at startup (`bin/dwowd/src/main.rs:170-180`):
 
 | Network | Consensus | Location | Status |
 |---------|-----------|----------|--------|

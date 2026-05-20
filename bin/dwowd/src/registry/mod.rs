@@ -50,9 +50,9 @@ use dwow_sdk::{
 use dwow_serial::serialize_async;
 
 use crate::{
-    proto::DarkfidP2pHandlerPtr,
+    proto::DwowP2pHandlerPtr,
     rpc::{stratum::StratumRpcHandler, xmr::MmRpcHandler},
-    DarkfiNode, DarkfiNodePtr,
+    DwowNode, DwowNodePtr,
 };
 
 /// Block related structures
@@ -63,10 +63,10 @@ use model::{
 };
 
 /// Atomic pointer to the DarkWow node miners registry state.
-pub type DarkfiMinersRegistryStatePtr = Arc<RwLock<DarkfiMinersRegistryState>>;
+pub type DwowMinersRegistryStatePtr = Arc<RwLock<DwowMinersRegistryState>>;
 
 /// DarkWow node miners registry state.
-pub struct DarkfiMinersRegistryState {
+pub struct DwowMinersRegistryState {
     /// PowRewardV1 ZK data (None for linear-testnet mode)
     pub powrewardv1_zk: Option<PowRewardV1Zk>,
     /// Mining block templates of each wallet config
@@ -84,8 +84,8 @@ pub struct DarkfiMinersRegistryState {
     pub linear_blockchain: Option<Arc<crate::blockchain::LinearBlockchain>>,
 }
 
-impl DarkfiMinersRegistryState {
-    pub async fn new(validator: &ValidatorPtr) -> Result<DarkfiMinersRegistryStatePtr> {
+impl DwowMinersRegistryState {
+    pub async fn new(validator: &ValidatorPtr) -> Result<DwowMinersRegistryStatePtr> {
         // Generate the PowRewardV1 ZK data
         let powrewardv1_zk = Some(PowRewardV1Zk::new(validator).await?);
 
@@ -101,7 +101,7 @@ impl DarkfiMinersRegistryState {
     /// Create a new registry state for linear-testnet mode
     pub async fn new_linear(
         linear_blockchain: Arc<crate::blockchain::LinearBlockchain>,
-    ) -> Result<DarkfiMinersRegistryStatePtr> {
+    ) -> Result<DwowMinersRegistryStatePtr> {
         // For linear mode, we use simple UTXO rewards without ZK proofs
         let powrewardv1_zk = None;
 
@@ -157,7 +157,7 @@ impl DarkfiMinersRegistryState {
             Some(user_data) => bs58::encode(user_data.to_repr()).into_string(),
             None => String::from("-"),
         };
-        info!(target: "dwowd::registry::mod::DarkfiMinersRegistry::create_template",
+        info!(target: "dwowd::registry::mod::DwowMinersRegistry::create_template",
             "Created new block template for wallet: address={recipient_str}, spend_hook={spend_hook_str}, user_data={user_data_str}",
         );
 
@@ -212,14 +212,14 @@ impl DarkfiMinersRegistryState {
         &self,
         validator: &mut Validator,
         subscribers: &HashMap<&'static str, JsonSubscriber>,
-        _p2p_handler: &DarkfidP2pHandlerPtr,
+        _p2p_handler: &DwowP2pHandlerPtr,
         block: BlockInfo,
     ) -> Result<()> {
         let proposal = Proposal::new(block.clone());
         validator.append_proposal(&proposal).await?;
 
         info!(
-            target: "dwowd::registry::mod::DarkfiMinersRegistry::submit",
+            target: "dwowd::registry::mod::DwowMinersRegistry::submit",
             "Proposing new block to network",
         );
 
@@ -228,7 +228,7 @@ impl DarkfiMinersRegistryState {
         proposals_sub.notify(vec![enc_prop].into()).await;
 
         info!(
-            target: "dwowd::registry::mod::DarkfiMinersRegistry::submit",
+            target: "dwowd::registry::mod::DwowMinersRegistry::submit",
             "Block proposal registered (legacy DAG path)",
         );
 
@@ -317,7 +317,7 @@ impl DarkfiMinersRegistryState {
             *block_template = match result {
                 Ok(b) => b,
                 Err(e) => {
-                    error!(target: "dwowd::registry::mod::DarkfiMinersRegistry::create_template",
+                    error!(target: "dwowd::registry::mod::DwowMinersRegistry::create_template",
                         "Updating block template for job {job_id} failed: {e}",
                     );
                     // Mark block template as not submitted so the
@@ -337,7 +337,7 @@ impl DarkfiMinersRegistryState {
                 Some(user_data) => bs58::encode(user_data.to_repr()).into_string(),
                 None => String::from("-"),
             };
-            info!(target: "dwowd::registry::mod::DarkfiMinersRegistry::create_template",
+            info!(target: "dwowd::registry::mod::DwowMinersRegistry::create_template",
                 "Updated block template for wallet: address={recipient_str}, spend_hook={spend_hook_str}, user_data={user_data_str}",
             );
 
@@ -380,14 +380,14 @@ impl DarkfiMinersRegistryState {
 }
 
 /// Atomic pointer to the DarkWow node miners registry.
-pub type DarkfiMinersRegistryPtr = Arc<DarkfiMinersRegistry>;
+pub type DwowMinersRegistryPtr = Arc<DwowMinersRegistry>;
 
 /// DarkWow node miners registry.
-pub struct DarkfiMinersRegistry {
+pub struct DwowMinersRegistry {
     /// Blockchain network
     pub network: Network,
     /// Registry state
-    pub state: DarkfiMinersRegistryStatePtr,
+    pub state: DwowMinersRegistryStatePtr,
     /// Stratum JSON-RPC background task
     stratum_rpc_task: StoppableTaskPtr,
     /// Stratum JSON-RPC connection tracker
@@ -398,19 +398,19 @@ pub struct DarkfiMinersRegistry {
     pub mm_rpc_connections: Mutex<HashSet<StoppableTaskPtr>>,
 }
 
-impl DarkfiMinersRegistry {
+impl DwowMinersRegistry {
     /// Initialize a DarkWow node miners registry.
     pub async fn init(
         network: Network,
         validator: &ValidatorPtr,
-    ) -> Result<DarkfiMinersRegistryPtr> {
+    ) -> Result<DwowMinersRegistryPtr> {
         info!(
-            target: "dwowd::registry::mod::DarkfiMinersRegistry::init",
-            "Initializing a new DarkFi node miners registry..."
+            target: "dwowd::registry::mod::DwowMinersRegistry::init",
+            "Initializing a new DarkWow node miners registry..."
         );
 
         // Generate the registry state
-        let state = DarkfiMinersRegistryState::new(validator).await?;
+        let state = DwowMinersRegistryState::new(validator).await?;
 
         // Generate the stratum JSON-RPC background task and its
         // connections tracker.
@@ -423,8 +423,8 @@ impl DarkfiMinersRegistry {
         let mm_rpc_connections = Mutex::new(HashSet::new());
 
         info!(
-            target: "dwowd::registry::mod::DarkfiMinersRegistry::init",
-            "DarkFi node miners registry generated successfully!"
+            target: "dwowd::registry::mod::DwowMinersRegistry::init",
+            "DarkWow node miners registry generated successfully!"
         );
 
         Ok(Arc::new(Self {
@@ -441,14 +441,14 @@ impl DarkfiMinersRegistry {
     pub async fn init_linear(
         network: Network,
         linear_blockchain: Arc<crate::blockchain::LinearBlockchain>,
-    ) -> Result<DarkfiMinersRegistryPtr> {
+    ) -> Result<DwowMinersRegistryPtr> {
         info!(
-            target: "dwowd::registry::mod::DarkfiMinersRegistry::init_linear",
-            "Initializing a new DarkFi node miners registry for linear-testnet..."
+            target: "dwowd::registry::mod::DwowMinersRegistry::init_linear",
+            "Initializing a new DarkWow node miners registry for linear-testnet..."
         );
 
         // Generate the registry state (placeholder - needs to be adapted for linear)
-        let state = DarkfiMinersRegistryState::new_linear(linear_blockchain).await?;
+        let state = DwowMinersRegistryState::new_linear(linear_blockchain).await?;
 
         // Generate the stratum JSON-RPC background task and its
         // connections tracker.
@@ -461,8 +461,8 @@ impl DarkfiMinersRegistry {
         let mm_rpc_connections = Mutex::new(HashSet::new());
 
         info!(
-            target: "dwowd::registry::mod::DarkfiMinersRegistry::init_linear",
-            "DarkFi node miners registry for linear-testnet generated successfully!"
+            target: "dwowd::registry::mod::DwowMinersRegistry::init_linear",
+            "DarkWow node miners registry for linear-testnet generated successfully!"
         );
 
         Ok(Arc::new(Self {
@@ -480,13 +480,13 @@ impl DarkfiMinersRegistry {
     pub fn start(
         &self,
         executor: &ExecutorPtr,
-        node: &DarkfiNodePtr,
+        node: &DwowNodePtr,
         stratum_rpc_settings: &Option<RpcSettings>,
         mm_rpc_settings: &Option<RpcSettings>,
     ) -> Result<()> {
         info!(
-            target: "dwowd::registry::mod::DarkfiMinersRegistry::start",
-            "Starting the DarkFi node miners registry..."
+            target: "dwowd::registry::mod::DwowMinersRegistry::start",
+            "Starting the DarkWow node miners registry..."
         );
 
         // Enforce local-only binding for stratum and mm_rpc. These are local
@@ -496,7 +496,7 @@ impl DarkfiMinersRegistry {
         if let Some(ref stratum_rpc) = stratum_rpc_settings {
             if !stratum_rpc.is_localhost() && !stratum_rpc.is_wildcard() {
                 error!(
-                    target: "dwowd::registry::mod::DarkfiMinersRegistry::start",
+                    target: "dwowd::registry::mod::DwowMinersRegistry::start",
                     "Stratum RPC is configured to bind to '{}', which is not a local address. \
                      Stratum is a local coordination channel. Bind to 127.0.0.1, ::1, or 0.0.0.0.",
                     stratum_rpc.listen,
@@ -507,7 +507,7 @@ impl DarkfiMinersRegistry {
             }
             if stratum_rpc.is_wildcard() {
                 info!(
-                    target: "dwowd::registry::mod::DarkfiMinersRegistry::start",
+                    target: "dwowd::registry::mod::DwowMinersRegistry::start",
                     "Stratum RPC binding to 0.0.0.0 (all-interfaces — Docker devnet mode)",
                 );
             }
@@ -515,7 +515,7 @@ impl DarkfiMinersRegistry {
         if let Some(ref mm_rpc) = mm_rpc_settings {
             if !mm_rpc.is_localhost() && !mm_rpc.is_wildcard() {
                 error!(
-                    target: "dwowd::registry::mod::DarkfiMinersRegistry::start",
+                    target: "dwowd::registry::mod::DwowMinersRegistry::start",
                     "mm_rpc is configured to bind to '{}', which is not a local address. \
                      mm_rpc is a local coordination channel. Bind to 127.0.0.1, ::1, or 0.0.0.0.",
                     mm_rpc.listen,
@@ -526,7 +526,7 @@ impl DarkfiMinersRegistry {
             }
             if mm_rpc.is_wildcard() {
                 info!(
-                    target: "dwowd::registry::mod::DarkfiMinersRegistry::start",
+                    target: "dwowd::registry::mod::DwowMinersRegistry::start",
                     "mm_rpc binding to 0.0.0.0 (all-interfaces — Docker devnet mode)",
                 );
             }
@@ -534,14 +534,14 @@ impl DarkfiMinersRegistry {
 
         // Start the stratum server JSON-RPC task
         if let Some(stratum_rpc) = stratum_rpc_settings {
-            info!(target: "dwowd::registry::mod::DarkfiMinersRegistry::start", "Starting Stratum JSON-RPC server");
+            info!(target: "dwowd::registry::mod::DwowMinersRegistry::start", "Starting Stratum JSON-RPC server");
             let node_ = node.clone();
             self.stratum_rpc_task.clone().start(
                 listen_and_serve::<StratumRpcHandler>(stratum_rpc.clone(), node.clone(), None, executor.clone()),
                 |res| async move {
                     match res {
-                        Ok(()) | Err(Error::RpcServerStopped) => <DarkfiNode as RequestHandler<StratumRpcHandler>>::stop_connections(&node_).await,
-                        Err(e) => error!(target: "dwowd::registry::mod::DarkfiMinersRegistry::start", "Failed starting Stratum JSON-RPC server: {e}"),
+                        Ok(()) | Err(Error::RpcServerStopped) => <DwowNode as RequestHandler<StratumRpcHandler>>::stop_connections(&node_).await,
+                        Err(e) => error!(target: "dwowd::registry::mod::DwowMinersRegistry::start", "Failed starting Stratum JSON-RPC server: {e}"),
                     }
                 },
                 Error::RpcServerStopped,
@@ -559,14 +559,14 @@ impl DarkfiMinersRegistry {
 
         // Start the merge mining JSON-RPC task
         if let Some(mm_rpc) = mm_rpc_settings {
-            info!(target: "dwowd::registry::mod::DarkfiMinersRegistry::start", "Starting merge mining JSON-RPC server");
+            info!(target: "dwowd::registry::mod::DwowMinersRegistry::start", "Starting merge mining JSON-RPC server");
             let node_ = node.clone();
             self.mm_rpc_task.clone().start(
                 listen_and_serve::<MmRpcHandler>(mm_rpc.clone(), node.clone(), None, executor.clone()),
                 |res| async move {
                     match res {
-                        Ok(()) | Err(Error::RpcServerStopped) => <DarkfiNode as RequestHandler<MmRpcHandler>>::stop_connections(&node_).await,
-                        Err(e) => error!(target: "dwowd::registry::mod::DarkfiMinersRegistry::start", "Failed starting merge mining JSON-RPC server: {e}"),
+                        Ok(()) | Err(Error::RpcServerStopped) => <DwowNode as RequestHandler<MmRpcHandler>>::stop_connections(&node_).await,
+                        Err(e) => error!(target: "dwowd::registry::mod::DwowMinersRegistry::start", "Failed starting merge mining JSON-RPC server: {e}"),
                     }
                 },
                 Error::RpcServerStopped,
@@ -583,8 +583,8 @@ impl DarkfiMinersRegistry {
         }
 
         info!(
-            target: "dwowd::registry::mod::DarkfiMinersRegistry::start",
-            "DarkFi node miners registry started successfully!"
+            target: "dwowd::registry::mod::DwowMinersRegistry::start",
+            "DarkWow node miners registry started successfully!"
         );
 
         Ok(())
@@ -592,16 +592,16 @@ impl DarkfiMinersRegistry {
 
     /// Stop the DarkWow node miners registry.
     pub async fn stop(&self) {
-        info!(target: "dwowd::registry::mod::DarkfiMinersRegistry::stop", "Terminating DarkFi node miners registry...");
+        info!(target: "dwowd::registry::mod::DwowMinersRegistry::stop", "Terminating DarkWow node miners registry...");
 
         // Stop the Stratum JSON-RPC task
-        info!(target: "dwowd::registry::mod::DarkfiMinersRegistry::stop", "Stopping Stratum JSON-RPC server...");
+        info!(target: "dwowd::registry::mod::DwowMinersRegistry::stop", "Stopping Stratum JSON-RPC server...");
         self.stratum_rpc_task.stop().await;
 
         // Stop the merge mining JSON-RPC task
-        info!(target: "dwowd::registry::mod::DarkfiMinersRegistry::stop", "Stopping merge mining JSON-RPC server...");
+        info!(target: "dwowd::registry::mod::DwowMinersRegistry::stop", "Stopping merge mining JSON-RPC server...");
         self.mm_rpc_task.stop().await;
 
-        info!(target: "dwowd::registry::mod::DarkfiMinersRegistry::stop", "DarkFi node miners registry terminated successfully!");
+        info!(target: "dwowd::registry::mod::DwowMinersRegistry::stop", "DarkWow node miners registry terminated successfully!");
     }
 }

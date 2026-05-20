@@ -30,7 +30,7 @@ use dwow::{
 };
 use tracing::info;
 
-use crate::DarkfiNodePtr;
+use crate::DwowNodePtr;
 
 /// Transaction broadcast protocol
 mod protocol_tx;
@@ -44,11 +44,11 @@ pub use linear_sync::{LinearSyncHandler, LinearSyncHandlerPtr};
 pub mod linear_broadcast;
 pub use linear_broadcast::{LinearBroadcastHandler, LinearBroadcastHandlerPtr};
 
-/// Atomic pointer to the Darkfid P2P protocols handler.
-pub type DarkfidP2pHandlerPtr = Arc<DarkfidP2pHandler>;
+/// Atomic pointer to the Dwowd P2P protocols handler.
+pub type DwowP2pHandlerPtr = Arc<DwowP2pHandler>;
 
-/// Darkfid P2P protocols handler.
-pub struct DarkfidP2pHandler {
+/// Dwowd P2P protocols handler.
+pub struct DwowP2pHandler {
     /// P2P network pointer
     pub p2p: P2pPtr,
     /// `ProtocolTx` messages handler
@@ -59,8 +59,8 @@ pub struct DarkfidP2pHandler {
     linear_broadcast: Option<LinearBroadcastHandlerPtr>,
 }
 
-impl DarkfidP2pHandler {
-    /// Initialize a Darkfid P2P protocols handler.
+impl DwowP2pHandler {
+    /// Initialize a Dwowd P2P protocols handler.
     ///
     /// A new P2P instance is generated using provided settings and all
     /// corresponding protocols are registered.
@@ -68,10 +68,10 @@ impl DarkfidP2pHandler {
         settings: &Settings,
         executor: &ExecutorPtr,
         linear_blockchain: Option<Arc<dwow_linear::LinearBlockchain>>,
-    ) -> Result<DarkfidP2pHandlerPtr> {
+    ) -> Result<DwowP2pHandlerPtr> {
         info!(
-            target: "dwowd::proto::mod::DarkfidP2pHandler::init",
-            "Initializing a new Darkfid P2P handler..."
+            target: "dwowd::proto::mod::DwowP2pHandler::init",
+            "Initializing a new Dwowd P2P handler..."
         );
 
         // Generate a new P2P instance
@@ -94,23 +94,25 @@ impl DarkfidP2pHandler {
         };
 
         info!(
-            target: "dwowd::proto::mod::DarkfidP2pHandler::init",
-            "Darkfid P2P handler generated successfully!"
+            target: "dwowd::proto::mod::DwowP2pHandler::init",
+            "Dwowd P2P handler generated successfully!"
         );
 
         Ok(Arc::new(Self { p2p, txs, linear_sync, linear_broadcast }))
     }
 
-    /// Start the Darkfid P2P protocols handler for provided node.
-    pub async fn start(&self, executor: &ExecutorPtr, node: &DarkfiNodePtr) -> Result<()> {
+    /// Start the Dwowd P2P protocols handler for provided node.
+    pub async fn start(&self, executor: &ExecutorPtr, node: &DwowNodePtr) -> Result<()> {
         info!(
-            target: "dwowd::proto::mod::DarkfidP2pHandler::start",
-            "Starting the Darkfid P2P handler..."
+            target: "dwowd::proto::mod::DwowP2pHandler::start",
+            "Starting the Dwowd P2P handler..."
         );
 
-        // Start the `ProtocolTx` messages handler
-        let subscriber = node.subscribers.get("txs").unwrap().clone();
-        self.txs.start(executor, &node.validator, subscriber).await?;
+        // Start the `ProtocolTx` messages handler (DAG mode only)
+        if let Some(ref validator) = node.validator {
+            let subscriber = node.subscribers.get("txs").unwrap().clone();
+            self.txs.start(executor, validator, subscriber).await?;
+        }
 
         // Start the `LinearSync` messages handler (linear-testnet mode)
         if let Some(ref linear_sync) = self.linear_sync {
@@ -129,16 +131,16 @@ impl DarkfidP2pHandler {
         self.p2p.clone().seed().await;
 
         info!(
-            target: "dwowd::proto::mod::DarkfidP2pHandler::start",
-            "Darkfid P2P handler started successfully!"
+            target: "dwowd::proto::mod::DwowP2pHandler::start",
+            "Dwowd P2P handler started successfully!"
         );
 
         Ok(())
     }
 
-    /// Stop the Darkfid P2P protocols handler.
+    /// Stop the Dwowd P2P protocols handler.
     pub async fn stop(&self) {
-        info!(target: "dwowd::proto::mod::DarkfidP2pHandler::stop", "Terminating Darkfid P2P handler...");
+        info!(target: "dwowd::proto::mod::DwowP2pHandler::stop", "Terminating Dwowd P2P handler...");
 
         // Stop the P2P instance
         self.p2p.stop().await;
@@ -146,6 +148,6 @@ impl DarkfidP2pHandler {
         // Start the `ProtocolTx` messages handler
         self.txs.stop().await;
 
-        info!(target: "dwowd::proto::mod::DarkfidP2pHandler::stop", "Darkfid P2P handler terminated successfully!");
+        info!(target: "dwowd::proto::mod::DwowP2pHandler::stop", "Dwowd P2P handler terminated successfully!");
     }
 }

@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+// QUARANTINED: DAG-era code. Not used in linear-testnet mode. Pending deletion.
+//
 use std::str::FromStr;
 
 use bs58;
@@ -40,9 +42,9 @@ use dwow::{
     util::encoding::base64,
 };
 
-use crate::{server_error, DarkfiNode, RpcError};
+use crate::{server_error, DwowNode, RpcError};
 
-impl DarkfiNode {
+impl DwowNode {
     // RPCAPI:
     // Queries the blockchain database for a block in the given height.
     // Returns a readable block upon success.
@@ -70,7 +72,7 @@ impl DarkfiNode {
         let block_height = *params[0].get::<f64>().unwrap() as u32;
 
         let blocks = match self
-            .validator
+            .validator.as_ref().unwrap()
             .read()
             .await
             .blockchain
@@ -121,7 +123,7 @@ impl DarkfiNode {
             Err(_) => return JsonError::new(ParseError, None, id).into(),
         };
 
-        let txs = match self.validator.read().await.blockchain.transactions.get(&[tx_hash], true) {
+        let txs = match self.validator.as_ref().unwrap().read().await.blockchain.transactions.get(&[tx_hash], true) {
             Ok(txs) => txs,
             Err(e) => {
                 error!(target: "dwowd::rpc::blockchain_get_tx", "Failed fetching tx by hash: {e}");
@@ -165,7 +167,7 @@ impl DarkfiNode {
         }
 
         let Ok(diff) =
-            self.validator.read().await.blockchain.blocks.get_difficulty(&[height], true)
+            self.validator.as_ref().unwrap().read().await.blockchain.blocks.get_difficulty(&[height], true)
         else {
             return server_error(RpcError::UnknownBlockHeight, id, None)
         };
@@ -299,7 +301,7 @@ impl DarkfiNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let Ok((height, hash)) = self.validator.read().await.blockchain.last() else {
+        let Ok((height, hash)) = self.validator.as_ref().unwrap().read().await.blockchain.last() else {
             return JsonError::new(InternalError, None, id).into()
         };
 
@@ -332,7 +334,7 @@ impl DarkfiNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let block_target = self.validator.read().await.consensus.module.target;
+        let block_target = self.validator.as_ref().unwrap().read().await.consensus.module.target;
 
         JsonResponse::new(JsonValue::Number(block_target as f64), id).into()
     }
@@ -340,7 +342,7 @@ impl DarkfiNode {
     // RPCAPI:
     // Initializes a subscription to new incoming blocks.
     //
-    // Once a subscription is established, `darkfid` will send JSON-RPC notifications of
+    // Once a subscription is established, `dwowd` will send JSON-RPC notifications of
     // new incoming blocks to the subscriber.
     //
     // The notifications contain base64-encoded `BlockInfo` structs.
@@ -365,7 +367,7 @@ impl DarkfiNode {
     // RPCAPI:
     // Initializes a subscription to new incoming transactions.
     //
-    // Once a subscription is established, `darkfid` will send JSON-RPC notifications of
+    // Once a subscription is established, `dwowd` will send JSON-RPC notifications of
     // new incoming transactions to the subscriber.
     //
     // The notifications contain hex-encoded transaction hashes.
@@ -385,7 +387,7 @@ impl DarkfiNode {
 
     // RPCAPI:
     // Initializes a subscription to new incoming proposals. Once a subscription is established,
-    // `darkfid` will send JSON-RPC notifications of new incoming proposals to the subscriber.
+    // `dwowd` will send JSON-RPC notifications of new incoming proposals to the subscriber.
     //
     // The notifications contain base64-encoded `BlockInfo` structs.
     //
@@ -440,7 +442,7 @@ impl DarkfiNode {
             }
         };
 
-        let validator = self.validator.read().await;
+        let validator = self.validator.as_ref().unwrap().read().await;
         let Ok(zkas_db) = validator.blockchain.contracts.lookup(
             &validator.blockchain.sled_db,
             &contract_id,
@@ -504,7 +506,7 @@ impl DarkfiNode {
             return server_error(RpcError::ParseError, id, None)
         };
 
-        let Ok(bincode) = self.validator.read().await.blockchain.contracts.get(contract_id) else {
+        let Ok(bincode) = self.validator.as_ref().unwrap().read().await.blockchain.contracts.get(contract_id) else {
             return server_error(RpcError::ContractWasmNotFound, id, None)
         };
 
@@ -539,7 +541,7 @@ impl DarkfiNode {
             return server_error(RpcError::ParseError, id, None)
         };
 
-        let validator = self.validator.read().await;
+        let validator = self.validator.as_ref().unwrap().read().await;
 
         // Get WASM binary
         let Ok(wasm_bin) = validator.blockchain.contracts.get(contract_id) else {
@@ -618,7 +620,7 @@ impl DarkfiNode {
 
         let tree_name = params[1].get::<String>().unwrap();
 
-        let validator = self.validator.read().await;
+        let validator = self.validator.as_ref().unwrap().read().await;
         match validator.blockchain.contracts.get_state_tree_records(
             &validator.blockchain.sled_db,
             &contract_id,
@@ -683,7 +685,7 @@ impl DarkfiNode {
             return server_error(RpcError::ParseError, id, None)
         };
 
-        let validator = self.validator.read().await;
+        let validator = self.validator.as_ref().unwrap().read().await;
         match validator.blockchain.contracts.get_state_tree_value(
             &validator.blockchain.sled_db,
             &contract_id,

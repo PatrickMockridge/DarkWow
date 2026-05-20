@@ -13,7 +13,7 @@ step-by-step below for manual runs.
 - **Build dependencies** (clang, openssl, pkg-config, cmake)
 - **xmrig** (RandomX CPU miner) — [xmrig.com/download](https://xmrig.com/download)
 - **Built binaries:** `make` from the repo root
-- **Config:** `bin/darkfid/dwowd_config.toml` with stratum enabled and `tcp+tls`
+- **Config:** `bin/dwowd/dwowd_config.toml` with stratum enabled and `tcp+tls`
   in `active_profiles`
 
 Check your config before starting:

@@ -37,7 +37,7 @@ use dwow::{
 };
 use dwow_sdk::crypto::keypair::Network;
 
-use dwowd::{task::ConsensusInitTaskConfig, Darkfid};
+use dwowd::{task::ConsensusInitTaskConfig, Dwowd};
 
 const CONFIG_FILE: &str = "dwowd_config.toml";
 const CONFIG_FILE_CONTENTS: &str = include_str!("../dwowd_config.toml");
@@ -80,7 +80,7 @@ struct Args {
 /// Defines a blockchain network configuration.
 /// Default values correspond to a local network.
 pub struct BlockchainNetwork {
-    #[structopt(long, default_value = "~/.local/share/dwow/darkfid/linear-testnet")]
+    #[structopt(long, default_value = "~/.local/share/dwow/dwowd/linear-testnet")]
     /// Path to blockchain database
     database: String,
 
@@ -176,7 +176,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
 
     // Initialize the daemon using LinearBlockchain
-    let daemon = Darkfid::init_linear(
+    let daemon = Dwowd::init_linear(
         network,
         &sled_db,
         &db_path,
@@ -216,7 +216,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     Ok(())
 }
 
-/// Auxiliary function to parse darkfid configuration file and extract requested
+/// Auxiliary function to parse dwowd configuration file and extract requested
 /// blockchain network config.
 pub async fn parse_blockchain_config(
     config: Option<String>,

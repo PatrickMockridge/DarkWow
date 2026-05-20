@@ -109,8 +109,8 @@ on real machines across networks.
 | Test harness crate (28 contracts) | `src/contract/test-harness/` |
 | Relayer unit tests (Level 1) | `bin/universal_relayer/src/` |
 | Relayer lightweight test runner | `bin/universal_relayer/test_relayer_lightweight.sh` |
-| Daemon integration tests | `bin/darkfid/src/tests/` |
-| Bridge lifecycle test (Level 2) | `bin/darkfid/src/tests/heavyweight_pipeline.rs` |
+| Daemon integration tests | `bin/dwowd/src/tests/` |
+| Bridge lifecycle test (Level 2) | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |
 | Relayer heavyweight test runner | `bin/universal_relayer/test_relayer_heavyweight.sh` |
 | Docker localnet (3-container) | `contrib/docker/darkwow-testnet/` |
 | Bridge Docker image + pipeline (Level 3) | `contrib/docker/bridge-node/` |

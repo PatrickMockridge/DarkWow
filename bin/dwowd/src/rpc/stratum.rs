@@ -23,10 +23,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::{
-        atomic::Ordering,
-        Arc,
-    },
+    sync::atomic::Ordering,
 };
 
 use async_trait::async_trait;
@@ -45,11 +42,10 @@ use dwow::{
     system::{Publisher, StoppableTaskPtr},
 };
 
-use dwow_linear::caribina::anchor_block;
 use crate::{
     error::{miner_status_response, server_error, RpcError},
-    registry::model::{LinearMinerRewardsRecipientConfig, MinerRewardsRecipientConfig},
-    DarkfiNode,
+    registry::model::LinearMinerRewardsRecipientConfig,
+    DwowNode,
 };
 
 // https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM.md
@@ -59,87 +55,38 @@ use crate::{
 pub struct StratumRpcHandler;
 
 #[async_trait]
-#[rustfmt::skip]
-impl RequestHandler<StratumRpcHandler> for DarkfiNode {
-	async fn handle_request(&self, req: JsonRequest) -> JsonResult {
-		debug!(target: "dwowd::rpc::stratum_rpc", "--> {}", req.stringify().unwrap());
+impl RequestHandler<StratumRpcHandler> for DwowNode {
+    async fn handle_request(&self, req: JsonRequest) -> JsonResult {
+        debug!(target: "dwowd::rpc::stratum_rpc", "--> {}", req.stringify().unwrap());
 
-		match req.method.as_str() {
-			// ======================
-			// Stratum mining methods
-			// ======================
-			"login" => self.stratum_login(req.id, req.params).await,
-			"submit" => self.stratum_submit(req.id, req.params).await,
-			"keepalived" => self.stratum_keepalived(req.id, req.params).await,
-			_ => JsonError::new(ErrorCode::MethodNotFound, None, req.id).into(),
-		}
-	}
+        match req.method.as_str() {
+            "login" => self.stratum_login(req.id, req.params).await,
+            "submit" => self.stratum_submit(req.id, req.params).await,
+            _ => JsonError::new(ErrorCode::MethodNotFound, None, req.id).into(),
+        }
+    }
 
     async fn connections_mut(&self) -> MutexGuard<'life0, HashSet<StoppableTaskPtr>> {
         self.registry.stratum_rpc_connections.lock().await
     }
 }
 
-impl DarkfiNode {
-    // RPCAPI:
-    // Register a new mining client to the registry and generate a new
-    // job.
-    //
-    // **Request:**
-    // * `login` : A wallet address or its base-64 encoded mining configuration
-    // * `pass`  : Unused client password field
-    // * `agent` : Client agent description
-    // * `algo`  : Client supported mining algorithms
-    //
-    // **Response:**
-    // * `id`     : Registry client ID
-    // * `job`    : The generated mining job
-    // * `status` : Response status
-    //
-    // The generated mining job map consists of the following fields:
-    // * `blob`      : The hex encoded block hashing blob of the job block
-    // * `job_id`    : Registry mining job ID
-    // * `height`    : The job block height
-    // * `target`    : Current mining target
-    // * `algo`      : The mining algorithm - RandomX
-    // * `seed_hash` : Current RandomX key
-    // * `next_seed_hash`: (optional) Next RandomX key if it is known
-    //
-    // --> {
-    //       "jsonrpc": "2.0",
-    //       "method": "login",
-    //       "params": {
-    //         "login": "WALLET_ADDRESS",
-    //         "pass": "x",
-    //         "agent": "XMRig",
-    //         "algo": ["rx/0"]
-    //       },
-    //       "id": 1
-    //     }
-    // <-- {
-    //       "jsonrpc": "2.0",
-    //       "result": {
-    //         "id": "unique_connection-id",
-    //         "job": {
-    //           "blob": "abcdef...001234",
-    //           "job_id": "unique_job-id",
-    //           "height": 1234,
-    //           "target": "abcd1234",
-    //           "algo": "rx/0",
-    //           "seed_hash": "deadbeef...0234",
-    //           "next_seed_hash": "c0fefe...1243"
-    //         },
-    //         "status": "OK"
-    //       },
-    //       "id": 1
-    //     }
+impl DwowNode {
+    /// Stratum login — linear-only path.
+    ///
+    /// Parses xmrig login request, generates a block template, and returns
+    /// a mining job. The response is a flat stratum JSON object written inside
+    /// the JSON-RPC response envelope.
     pub async fn stratum_login(&self, id: u16, params: JsonValue) -> JsonResult {
+        use crate::registry::model::generate_linear_block_template;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
         // Parse request params
         let Some(params) = params.get::<HashMap<String, JsonValue>>() else {
             return JsonError::new(InvalidParams, None, id).into()
         };
 
-        // Parse login
+        // Parse login (wallet address)
         let Some(wallet) = params.get("login") else {
             return server_error(RpcError::MinerMissingLogin, id, None)
         };
@@ -147,7 +94,7 @@ impl DarkfiNode {
             return server_error(RpcError::MinerInvalidLogin, id, None)
         };
 
-        // Parse password
+        // Parse password (unused but required by protocol)
         let Some(pass) = params.get("pass") else {
             return server_error(RpcError::MinerMissingPassword, id, None)
         };
@@ -163,16 +110,13 @@ impl DarkfiNode {
             return server_error(RpcError::MinerInvalidAgent, id, None)
         };
 
-        // Parse algo
+        // Parse algo — must support rx/0 (RandomX)
         let Some(algo) = params.get("algo") else {
             return server_error(RpcError::MinerMissingAlgo, id, None)
         };
         let Some(algo) = algo.get::<Vec<JsonValue>>() else {
             return server_error(RpcError::MinerInvalidAlgo, id, None)
         };
-
-        // Iterate through `algo` to see if "rx/0" is supported.
-        // rx/0 is RandomX.
         let mut found_rx0 = false;
         for i in algo {
             let Some(algo) = i.get::<String>() else {
@@ -187,77 +131,22 @@ impl DarkfiNode {
             return server_error(RpcError::MinerRandomXNotSupported, id, None)
         }
 
-        // Register the new miner
         info!(
             target: "dwowd::rpc::rpc_stratum::stratum_login",
             "[RPC-STRATUM] Got login from {wallet} ({agent})",
         );
 
-        // Linear-testnet path: uses LinearBlockchain, no DAG validator needed
-        if let Some(linear_chain) = self.linear_blockchain.as_ref() {
-            let linear_config = match LinearMinerRewardsRecipientConfig::from_str(wallet).await {
-                Ok(c) => c,
-                Err(e) => return server_error(e, id, None),
-            };
-            return self.stratum_login_linear(id, linear_chain, linear_config, agent.to_string()).await;
-        }
-
-        // DAG path: check if node is synced before responding
-        let validator = self.validator.read().await;
-        if !validator.synced {
-            return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
-        }
-
-        let config =
-            match MinerRewardsRecipientConfig::from_str(&self.registry.network, wallet).await {
-                Ok(c) => c,
-                Err(e) => return server_error(e, id, None),
-            };
-
-        let (client_id, job_id, job, publisher) = match self
-            .registry
-            .state
-            .write()
-            .await
-            .register_miner(&validator, wallet, &config)
-            .await
-        {
-            Ok(p) => p,
-            Err(e) => {
-                error!(
-                    target: "dwowd::rpc::rpc_stratum::stratum_login",
-                    "[RPC-STRATUM] Failed to register miner: {e}",
-                );
-                return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
-            }
+        let linear_chain = match self.linear_blockchain.as_ref() {
+            Some(c) => c,
+            None => return server_error(RpcError::MinerMissingPassword, id, None),
         };
 
-        // Now we have the new job, we ship it to RPC
-        info!(
-            target: "dwowd::rpc::rpc_stratum::stratum_login",
-            "[RPC-STRATUM] Created new mining job for client {client_id}: {job_id}"
-        );
-        let response = JsonValue::from(HashMap::from([
-            ("id".to_string(), JsonValue::from(client_id)),
-            ("job".to_string(), job),
-            ("status".to_string(), JsonValue::from(String::from("OK"))),
-        ]));
-        (publisher, JsonResponse::new(response, id)).into()
-    }
+        let config = match LinearMinerRewardsRecipientConfig::from_str(wallet).await {
+            Ok(c) => c,
+            Err(e) => return server_error(e, id, None),
+        };
 
-    /// Linear-testnet stratum login - uses LinearBlockchain instead of Validator
-    async fn stratum_login_linear(
-        &self,
-        id: u16,
-        linear_blockchain: &Arc<crate::blockchain::LinearBlockchain>,
-        config: LinearMinerRewardsRecipientConfig,
-        agent: String,
-    ) -> JsonResult {
-        use crate::registry::model::generate_linear_block_template;
-        
-        use std::time::{SystemTime, UNIX_EPOCH};
-
-        // Generate a unique client ID based on timestamp and random bytes
+        // Generate unique client ID
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -269,41 +158,39 @@ impl DarkfiNode {
             let mut zk_lock = self.linear_zk.lock().await;
             if zk_lock.is_none() {
                 match crate::registry::model::LinearPowRewardZk::new(
-                    linear_blockchain.clone(),
+                    linear_chain.clone(),
                 ).await {
                     Ok(zk) => *zk_lock = Some(zk),
                     Err(e) => {
                         tracing::warn!(
-                            target: "dwowd::rpc::rpc_stratum::stratum_login_linear",
+                            target: "dwowd::rpc::rpc_stratum::stratum_login",
                             "[RPC-STRATUM] Failed to init ZK: {e}, using transparent coinbase",
                         );
                     }
                 }
             }
-            // Clone out of the lock
             zk_lock.clone()
         };
 
-        // Generate block template using LinearBlockchain with ZK coinbase
+        // Generate block template
         let template = match generate_linear_block_template(
-            linear_blockchain, &config, linear_zk.as_ref(),
+            linear_chain, &config, linear_zk.as_ref(),
         ).await {
             Ok(t) => t,
             Err(e) => {
                 error!(
-                    target: "dwowd::rpc::rpc_stratum::stratum_login_linear",
+                    target: "dwowd::rpc::rpc_stratum::stratum_login",
                     "[RPC-STRATUM] Failed to generate linear block template: {e}",
                 );
                 return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
             }
         };
 
-        // Store template for use in stratum_submit_linear
+        // Store template and config for submit handler
         *self.current_linear_template.lock().await = Some(template.clone());
+        *self.linear_recipient_config.lock().await = Some(config);
 
-        // Create or reuse a shared publisher for push notifications.
-        // All stratum connections share one publisher so that when a block
-        // is accepted, every connected miner gets the new job.
+        // Create or reuse shared publisher for push notifications
         let publisher = {
             let mut lock = self.linear_stratum_publisher.lock().await;
             if lock.is_none() {
@@ -311,27 +198,19 @@ impl DarkfiNode {
             }
             lock.as_ref().unwrap().clone()
         };
-        // Store recipient config for generating new block templates on submit
-        *self.linear_recipient_config.lock().await = Some(config);
 
-        // Create job ID
         let job_id = format!("linear-job-{}", template.height);
-
-        // Get RandomX seed hash for this height
         let randomx_key = dwow_linear::Miner::derive_key_from_height(template.height);
         let seed_hash = hex::encode(randomx_key);
 
-        // Build the mining blob using the standard compact header format.
-        // This is the same format used by Block::hash() so the miner's hash
-        // matches the block validation hash.
-        // Create a temporary header with nonce=0 for the mining blob.
+        // Build mining blob from block header (nonce=0 placeholder)
         let mining_header = dwow_linear::BlockHeader {
             version: 1,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: blake3::hash(&[]),
             timestamp: template.timestamp,
             difficulty_target: template.difficulty_target,
-            nonce: 0, // placeholder - miner will find this
+            nonce: 0,
             height: template.height,
             uncle_merkle_root: [0u8; 32],
             total_reward: template.value,
@@ -346,20 +225,17 @@ impl DarkfiNode {
         let blob_data = mining_header.to_mining_blob();
         let blob = hex::encode(&blob_data);
         info!(
-            target: "dwowd::rpc::rpc_stratum::stratum_login_linear",
+            target: "dwowd::rpc::rpc_stratum::stratum_login",
             "[RPC-STRATUM] Login blob (to xmrig): {blob}",
         );
 
-        // Target: Monero pool difficulty as decimal. xmrig parses the target
-        // field via strtoull(..., 10) — a decimal difficulty number, NOT hex.
-        // xmrig then computes effective_target = 0xFFFFFFFF / difficulty,
-        // which must match our hash_u32 <= difficulty_target check.
+        // Pool difficulty as decimal string (xmrig parses with strtoull base 10)
         let pool_diff = 0xFFFFFFFFu64 / template.difficulty_target as u64;
         let target = format!("{}", pool_diff);
 
         info!(
-            target: "dwowd::rpc::rpc_stratum::stratum_login_linear",
-            "[RPC-STRATUM] Created linear mining job for client {client_id}: height={}, job_id={job_id}",
+            target: "dwowd::rpc::rpc_stratum::stratum_login",
+            "[RPC-STRATUM] Created mining job for {client_id}: height={}, job_id={job_id}",
             template.height,
         );
 
@@ -377,8 +253,6 @@ impl DarkfiNode {
             ("status".to_string(), JsonValue::from(String::from("OK"))),
         ]));
 
-        // Return SubscriberWithReply so the RPC server spawns a background task
-        // that pushes JsonNotification messages to this client via the publisher.
         let subscriber = JsonSubscriber {
             method: "job",
             publisher,
@@ -386,167 +260,21 @@ impl DarkfiNode {
         (subscriber, JsonResponse::new(response, id)).into()
     }
 
-    // RPCAPI:
-    // Miner submits a job solution.
-    //
-    // **Request:**
-    // * `id`     : Registry client ID
-    // * `job_id` : Registry mining job ID
-    // * `nonce`  : The hex encoded solution header nonce.
-    // * `result` : RandomX calculated hash
-    //
-    // **Response:**
-    // * `status`: Block submit status
-    //
-    // --> {
-    //       "jsonrpc": "2.0",
-    //       "method": "submit",
-    //       "params": {
-    //         "id": "unique_connection-id",
-    //         "job_id": "unique_job-id",
-    //         "nonce": "d0030040",
-    //         "result": "e1364b8782719d7683e2ccd3d8f724bc59dfa780a9e960e7c0e0046acdb40100"
-    //       },
-    //       "id": 1
-    //     }
-    // <-- {"jsonrpc": "2.0", "result": {"status": "OK"}, "id": 1}
+    /// Stratum submit — linear-only path.
+    ///
+    /// Parses xmrig solution, reconstructs the block with the found nonce,
+    /// verifies PoW via the RandomX VM, and inserts the block if valid.
     pub async fn stratum_submit(&self, id: u16, params: JsonValue) -> JsonResult {
-        // Check if this is a linear-testnet submission
-        if self.linear_blockchain.is_some() {
-            return self.stratum_submit_linear(id, params).await;
-        }
-
-        // Check if node is synced before responding
-        let mut validator = self.validator.write().await;
-        if !validator.synced {
-            return miner_status_response(id, "rejected")
-        }
-
-        // Parse request params
-        let Some(params) = params.get::<HashMap<String, JsonValue>>() else {
-            return JsonError::new(InvalidParams, None, id).into()
-        };
-
-        // Parse client id
-        let Some(client_id) = params.get("id") else {
-            return server_error(RpcError::MinerMissingClientId, id, None)
-        };
-        let Some(client_id) = client_id.get::<String>() else {
-            return server_error(RpcError::MinerInvalidClientId, id, None)
-        };
-
-        // If we don't know about this client, we can just abort here
-        let mut registry = self.registry.state.write().await;
-        let Some(client) = registry.jobs.get(client_id) else {
-            return miner_status_response(id, "rejected")
-        };
-
-        // Parse job id
-        let Some(job_id) = params.get("job_id") else {
-            return server_error(RpcError::MinerMissingJobId, id, None)
-        };
-        let Some(job_id) = job_id.get::<String>() else {
-            return server_error(RpcError::MinerInvalidJobId, id, None)
-        };
-
-        // If this job doesn't match the client one, we can just abort
-        // here.
-        if &client.job != job_id {
-            return miner_status_response(id, "rejected")
-        }
-        let wallet = client.wallet.clone();
-
-        // If this client job wallet template doesn't exist, we can
-        // just abort here.
-        let Some(block_template) = registry.block_templates.get(&wallet) else {
-            return miner_status_response(id, "rejected")
-        };
-
-        // If this template has been already submitted, reject this
-        // submission.
-        if block_template.submitted {
-            return miner_status_response(id, "rejected")
-        }
-
-        // Parse nonce
-        let Some(nonce) = params.get("nonce") else {
-            return server_error(RpcError::MinerMissingNonce, id, None)
-        };
-        let Some(nonce) = nonce.get::<String>() else {
-            return server_error(RpcError::MinerInvalidNonce, id, None)
-        };
-        let Ok(nonce_bytes) = hex::decode(nonce) else {
-            return server_error(RpcError::MinerInvalidNonce, id, None)
-        };
-        if nonce_bytes.len() != 4 {
-            return server_error(RpcError::MinerInvalidNonce, id, None)
-        }
-        let nonce = u32::from_le_bytes(nonce_bytes.try_into().unwrap());
-
-        // Parse result
-        let Some(result) = params.get("result") else {
-            return server_error(RpcError::MinerMissingResult, id, None)
-        };
-        let Some(_result) = result.get::<String>() else {
-            return server_error(RpcError::MinerInvalidResult, id, None)
-        };
+        use crate::registry::model::generate_linear_block_template;
+        use dwow_linear::caribina::anchor_block;
 
         info!(
             target: "dwowd::rpc::rpc_stratum::stratum_submit",
-            "[RPC-STRATUM] Got solution submission from client {client_id} for job: {job_id}",
-        );
-
-        // Update the block nonce and sign it
-        let mut block = block_template.block.clone();
-        block.header.nonce = nonce;
-        block.sign(&block_template.secret);
-
-        // Keep the template in memory so we can safely refernce the
-        // registry.
-        let mut block_template = block_template.clone();
-
-        // Submit the new block through the registry
-        if let Err(e) =
-            registry.submit(&mut validator, &self.subscribers, &self.p2p_handler, block).await
-        {
-            error!(
-                target: "dwowd::rpc::rpc_stratum::stratum_submit",
-                "[RPC-STRATUM] Error submitting new block: {e}",
-            );
-
-            // Try to refresh the jobs before returning error
-            if let Err(e) = registry.refresh(&validator).await {
-                error!(
-                    target: "dwowd::rpc::rpc_stratum::stratum_submit",
-                    "[RPC-STRATUM] Error refreshing registry jobs: {e}",
-                );
-            }
-
-            return miner_status_response(id, "rejected")
-        }
-
-        // Mark block as submitted
-        block_template.submitted = true;
-        registry.block_templates.insert(wallet, block_template);
-
-        miner_status_response(id, "OK")
-    }
-
-    /// Linear-testnet stratum submit - handles block submissions for linear blockchain.
-    /// Reconstructs the block from stored template, applies ZK coinbase, and validates
-    /// via apply_block() (which verifies PoW, merkle roots, ZK proofs, and nullifiers).
-    async fn stratum_submit_linear(&self, id: u16, params: JsonValue) -> JsonResult {
-        use crate::registry::model::generate_linear_block_template;
-
-        info!(
-            target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
-            "[RPC-STRATUM] stratum_submit_linear called id={}",
+            "[RPC-STRATUM] stratum_submit called id={}",
             id,
         );
 
-        // Serialize submissions to prevent concurrent access to the
-        // RandomX VM (which is not thread-safe) from multiple XMRig
-        // solutions arriving in rapid succession.
+        // Serialize submissions to prevent concurrent RandomX VM access
         let _submit_guard = self.linear_submit_lock.lock().await;
 
         // Parse request params
@@ -589,16 +317,16 @@ impl DarkfiNode {
         let xmrig_result = params.get("result").and_then(|r| r.get::<String>());
 
         info!(
-            target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+            target: "dwowd::rpc::rpc_stratum::stratum_submit",
             "[RPC-STRATUM] Got solution from client {client_id} for job: {job_id}",
         );
 
-        // Get linear blockchain
-        let Some(linear_chain) = self.linear_blockchain.as_ref() else {
-            return miner_status_response(id, "rejected")
+        let linear_chain = match self.linear_blockchain.as_ref() {
+            Some(c) => c,
+            None => return miner_status_response(id, "rejected"),
         };
 
-        // Check block rate limiting
+        // Rate limit blocks
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -606,14 +334,14 @@ impl DarkfiNode {
         let last_time = self.last_block_time.load(Ordering::SeqCst);
         if last_time > 0 && now.saturating_sub(last_time) < self.min_block_interval {
             info!(
-                target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                target: "dwowd::rpc::rpc_stratum::stratum_submit",
                 "[RPC-STRATUM] Rate-limited: {}s since last block (min {})",
                 now.saturating_sub(last_time), self.min_block_interval
             );
             return miner_status_response(id, "stale")
         }
 
-        // Get current height and validate job height
+        // Validate job height
         let current_height = linear_chain.get_height();
         let submitted_height: u64 = job_id
             .trim_start_matches("linear-job-")
@@ -622,7 +350,7 @@ impl DarkfiNode {
 
         if submitted_height != current_height + 1 {
             info!(
-                target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                target: "dwowd::rpc::rpc_stratum::stratum_submit",
                 "[RPC-STRATUM] Stale: submitted height {} != expected {}",
                 submitted_height, current_height + 1
             );
@@ -635,8 +363,7 @@ impl DarkfiNode {
             consensus.difficulty_target()
         };
 
-        // Build previous hash using the previous block's own RandomX key,
-        // not the current block's key.
+        // Build previous hash using previous block's RandomX key
         let previous_hash = if submitted_height == 1 {
             blake3::Hash::from_bytes([0u8; 32])
         } else {
@@ -650,9 +377,8 @@ impl DarkfiNode {
             }
         };
 
-        // Load stored template to get the ZK coinbase data and timestamp.
-        // Timestamp MUST match the mining blob that xmrig hashed — PoW will fail otherwise.
-        // Clone (not take) so the template survives failed submits.
+        // Load stored template for ZK coinbase data and timestamp.
+        // Timestamp MUST match the mining blob that xmrig hashed.
         let template = self.current_linear_template.lock().await.clone();
         let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
         let (coinbase, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
@@ -674,10 +400,8 @@ impl DarkfiNode {
             (None, [0u8; 32], [0u8; 32])
         };
 
-        // Compute block reward from the exponential-decay emission schedule
         let reward = dwow_sdk::blockchain::expected_reward(submitted_height as u32);
 
-        // Build block header with privacy fields
         let header = dwow_linear::BlockHeader {
             version: 1,
             previous: previous_hash,
@@ -697,7 +421,6 @@ impl DarkfiNode {
             finality_flags: 0,
         };
 
-        // Create coinbase transaction with ZK privacy data
         let coinbase_tx = dwow_linear::Transaction {
             version: 1,
             inputs: vec![],
@@ -715,15 +438,13 @@ impl DarkfiNode {
             transactions: vec![coinbase_tx],
         };
 
-        // Verify PoW before inserting the block. This catches invalid
-        // nonces (e.g. from adaptor blob layout mismatches) before they
-        // corrupt chain state.
+        // Verify PoW before inserting
         {
             let submit_blob = block.header.to_mining_blob();
             let vm = linear_chain.get_vm(randomx_key);
             let daemon_hash = block.hash(&vm);
             info!(
-                target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                target: "dwowd::rpc::rpc_stratum::stratum_submit",
                 "[RPC-STRATUM] Submit — nonce={}, blob={}, daemon_hash={}, xmrig_hash={}",
                 nonce,
                 hex::encode(&submit_blob),
@@ -734,7 +455,7 @@ impl DarkfiNode {
                 Ok(true) => {}
                 Ok(false) => {
                     info!(
-                        target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                        target: "dwowd::rpc::rpc_stratum::stratum_submit",
                         "[RPC-STRATUM] Block at height {} rejected: PoW verification failed",
                         submitted_height
                     );
@@ -742,7 +463,7 @@ impl DarkfiNode {
                 }
                 Err(e) => {
                     info!(
-                        target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                        target: "dwowd::rpc::rpc_stratum::stratum_submit",
                         "[RPC-STRATUM] Block at height {} rejected: PoW error: {}",
                         submitted_height, e
                     );
@@ -751,7 +472,7 @@ impl DarkfiNode {
             }
         }
 
-        // Anchor the block to Arweave via Caribina (best-effort, configurable)
+        // Anchor to Arweave via Caribina (best-effort)
         {
             let fc = &linear_chain.finality_config;
             if fc.should_anchor() {
@@ -764,14 +485,14 @@ impl DarkfiNode {
                         block.header.anchor_tx_id = tx_id;
                         block.header.finality_flags = fc.mine_flags();
                         info!(
-                            target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                            target: "dwowd::rpc::rpc_stratum::stratum_submit",
                             "[RPC-STRATUM] Anchored block {} to Arweave",
                             block_hash
                         );
                     }
                     None => {
                         info!(
-                            target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                            target: "dwowd::rpc::rpc_stratum::stratum_submit",
                             "[RPC-STRATUM] Arweave anchor skipped (network/turbo unavailable)"
                         );
                     }
@@ -779,20 +500,18 @@ impl DarkfiNode {
             }
         }
 
-        // Insert the validated block into the chain
-        match linear_chain.insert_block(&block) {
+        // Insert validated block
+        match linear_chain.insert_validated_block(&block) {
             Ok(_) => {
-                // Block inserted (insert_block handles consensus recording + difficulty adjustment)
                 self.last_block_time.store(now, Ordering::SeqCst);
 
                 info!(
-                    target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                    target: "dwowd::rpc::rpc_stratum::stratum_submit",
                     "[RPC-STRATUM] Block at height {} accepted!",
                     submitted_height
                 );
 
-                // Generate and push new mining job to all connected miners
-                // so they can start mining the next block immediately.
+                // Push new mining job to all connected miners
                 if let Some(ref publisher) = *self.linear_stratum_publisher.lock().await {
                     if let Some(ref recipient_config) = *self.linear_recipient_config.lock().await {
                         let linear_zk = {
@@ -809,19 +528,14 @@ impl DarkfiNode {
                         {
                             Ok(new_template) => {
                                 let new_height = new_template.height;
-                                let new_job_id =
-                                    format!("linear-job-{}", new_height);
+                                let new_job_id = format!("linear-job-{}", new_height);
                                 let new_randomx_key =
-                                    dwow_linear::Miner::derive_key_from_height(
-                                        new_height,
-                                    );
+                                    dwow_linear::Miner::derive_key_from_height(new_height);
                                 let new_seed_hash = hex::encode(new_randomx_key);
 
                                 let new_mining_header = dwow_linear::BlockHeader {
                                     version: 1,
-                                    previous: blake3::Hash::from_bytes(
-                                        new_template.previous,
-                                    ),
+                                    previous: blake3::Hash::from_bytes(new_template.previous),
                                     merkle_root: blake3::hash(&[]),
                                     timestamp: new_template.timestamp,
                                     difficulty_target: new_template.difficulty_target,
@@ -840,10 +554,11 @@ impl DarkfiNode {
                                 let new_blob_data = new_mining_header.to_mining_blob();
                                 let new_blob = hex::encode(&new_blob_data);
                                 info!(
-                                    target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                                    target: "dwowd::rpc::rpc_stratum::stratum_submit",
                                     "[RPC-STRATUM] Push blob (to xmrig): {new_blob}",
                                 );
-                                let new_pool_diff = 0xFFFFFFFFu64 / new_template.difficulty_target as u64;
+                                let new_pool_diff = 0xFFFFFFFFu64
+                                    / new_template.difficulty_target as u64;
                                 let new_target = format!("{}", new_pool_diff);
 
                                 let job_params =
@@ -878,23 +593,23 @@ impl DarkfiNode {
                                         ),
                                     ]));
 
-                                // Store template for the next submit call
                                 *self.current_linear_template.lock().await =
                                     Some(new_template);
 
-                                // Push notification to all subscribed miners
-                                let notification = dwow::rpc::jsonrpc::JsonNotification::new("job", job_params);
+                                let notification = dwow::rpc::jsonrpc::JsonNotification::new(
+                                    "job", job_params,
+                                );
                                 publisher.notify(notification).await;
 
                                 info!(
-                                    target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
-                                    "[RPC-STRATUM] Pushed new mining job to miners: height={}",
+                                    target: "dwowd::rpc::rpc_stratum::stratum_submit",
+                                    "[RPC-STRATUM] Pushed new mining job: height={}",
                                     new_height,
                                 );
                             }
                             Err(e) => {
                                 error!(
-                                    target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                                    target: "dwowd::rpc::rpc_stratum::stratum_submit",
                                     "[RPC-STRATUM] Failed to generate new block template: {e}",
                                 );
                             }
@@ -906,45 +621,11 @@ impl DarkfiNode {
             }
             Err(e) => {
                 error!(
-                    target: "dwowd::rpc::rpc_stratum::stratum_submit_linear",
+                    target: "dwowd::rpc::rpc_stratum::stratum_submit",
                     "[RPC-STRATUM] Block rejected: {e}",
                 );
                 miner_status_response(id, "rejected")
             }
         }
-    }
-
-    // RPCAPI:
-    // Miner sends `keepalived` to prevent connection timeout.
-    //
-    // **Request:**
-    // * `id` : Registry client ID
-    //
-    // **Response:**
-    // * `status`: Response status
-    //
-    // --> {"jsonrpc": "2.0", "method": "keepalived", "params": {"id": "foo"}, "id": 1}
-    // <-- {"jsonrpc": "2.0", "result": {"status": "KEEPALIVED"}, "id": 1}
-    pub async fn stratum_keepalived(&self, id: u16, params: JsonValue) -> JsonResult {
-        // Parse request params
-        let Some(params) = params.get::<HashMap<String, JsonValue>>() else {
-            return JsonError::new(InvalidParams, None, id).into()
-        };
-
-        // Parse client id
-        let Some(client_id) = params.get("id") else {
-            return server_error(RpcError::MinerMissingClientId, id, None)
-        };
-        let Some(client_id) = client_id.get::<String>() else {
-            return server_error(RpcError::MinerInvalidClientId, id, None)
-        };
-
-        // If we don't know about this client job, we can just abort here
-        if !self.registry.state.read().await.jobs.contains_key(client_id) {
-            return server_error(RpcError::MinerUnknownClient, id, None)
-        };
-
-        // Respond with keepalived message
-        miner_status_response(id, "KEEPALIVED")
     }
 }

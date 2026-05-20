@@ -24,7 +24,7 @@
 //! LinearSimpleDb - Bridge LinearStore to SimpleDb interface
 //!
 //! This module provides a SimpleDb-compatible wrapper around LinearStore
-//! for use with darkfi's Runtime during contract execution.
+//! for use with dwow's Runtime during contract execution.
 //!
 //! LinearStore uses hardcoded trees (blocks, transactions, contracts).
 //! This adapter uses the contracts tree to store arbitrary key-value pairs

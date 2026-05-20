@@ -7,7 +7,7 @@ mode or increased stack size due to halo2 proving key intensity.
 
 | Component | Location | What It Verifies |
 |-----------|----------|-----------------|
-| HeavyweightPipeline | `bin/darkfid/src/tests/heavyweight_pipeline.rs` | Full contract execution with ZK proofs |
+| HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` | Full contract execution with ZK proofs |
 | ContractHarness trait | `src/contract/test-harness/src/harness.rs` | Per-contract ZK circuit access |
 | Contract harness modules (28) | `src/contract/test-harness/src/harness/` | Proof generation for each contract |
 
@@ -201,7 +201,7 @@ dwow_<contract>_contract = { path = "../<contract>", features = ["client", "no-e
 
 | Component | Path |
 |-----------|------|
-| HeavyweightPipeline | `bin/darkfid/src/tests/heavyweight_pipeline.rs` |
+| HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |
 | ContractHarness trait | `src/contract/test-harness/src/harness.rs` |
 | Contract harness modules (28) | `src/contract/test-harness/src/harness/` |
 | VK injection | `src/contract/test-harness/src/vks.rs` |

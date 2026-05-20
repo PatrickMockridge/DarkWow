@@ -205,7 +205,7 @@ This separation ensures ZK circuits remain minimal while complex business logic 
 
 Two pipelines for contract testing at different levels:
 
-### Lightweight Pipeline (`bin/darkfid/src/tests/pipeline.rs`)
+### Lightweight Pipeline (`bin/dwowd/src/tests/pipeline.rs`)
 
 For deployment verification without ZK proof generation. Fast CI/CD checks.
 
@@ -216,7 +216,7 @@ CONTRACT_NAME=money_v3 cargo test --package darkfid test_pipeline
 CONTRACT_NAME=stablecoin cargo test --package darkfid test_pipeline
 ```
 
-### Heavyweight Pipeline (`bin/darkfid/src/tests/heavyweight_pipeline.rs`)
+### Heavyweight Pipeline (`bin/dwowd/src/tests/heavyweight_pipeline.rs`)
 
 For full contract execution testing with real ZK proofs. Uses `ContractHarness` trait for generic ZK circuit access.
 

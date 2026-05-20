@@ -28,9 +28,9 @@ use dwow::{
     util::time::Timestamp,
 };
 
-use crate::DarkfiNode;
+use crate::DwowNode;
 
-impl DarkfiNode {
+impl DwowNode {
     // RPCAPI:
     // Returns current system clock as a UNIX timestamp.
     //

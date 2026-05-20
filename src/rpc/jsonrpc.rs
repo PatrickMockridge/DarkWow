@@ -378,6 +378,7 @@ impl From<&JsonResponse> for JsonValue {
             ("jsonrpc".to_string(), JsonValue::String(rep.jsonrpc.to_string())),
             ("id".to_string(), JsonValue::Number(rep.id.into())),
             ("result".to_string(), rep.result.clone()),
+            ("error".to_string(), JsonValue::Null),
         ]))
     }
 }

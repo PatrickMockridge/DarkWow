@@ -13,7 +13,7 @@ fi
 
 DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/dwow}"
 DARKFID_HOME="$DWOW_HOME/darkfid"
-CONFIG_FILE="$DARKFID_HOME/darkfid_config.toml"
+CONFIG_FILE="$DARKFID_HOME/dwowd_config.toml"
 PID_FILE="$DARKFID_HOME/testnet.pid"
 LOG_FILE="$DARKFID_HOME/testnet.log"
 

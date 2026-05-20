@@ -189,7 +189,7 @@ REGISTRY=docker.io/youruser/ ./contrib/docker/dwow-devnet/build-and-push.sh
 | test_pipeline.sh | `contrib/docker/dwow-devnet/test_pipeline.sh` |
 | contract_test.sh | `contrib/docker/dwow-devnet/contract_test.sh` |
 | test-contracts.sh | `contrib/docker/dwow-devnet/test-contracts.sh` |
-| Config reference | `bin/darkfid/dwowd_config.toml` (`dwow-devnet` section) |
+| Config reference | `bin/dwowd/dwowd_config.toml` (`dwow-devnet` section) |
 
 ## Public Testnet Node
 

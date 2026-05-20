@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+// QUARANTINED: DAG-era code. Not used in linear-testnet mode. Pending deletion.
+//
 use dwow_serial::deserialize_async;
 use tinyjson::JsonValue;
 use tracing::{error, info, warn};
@@ -34,10 +36,10 @@ use dwow::{
     util::encoding::base64,
 };
 
-use super::DarkfiNode;
+use super::DwowNode;
 use crate::{server_error, RpcError};
 
-impl DarkfiNode {
+impl DwowNode {
     // RPCAPI:
     // Simulate a network state transition with the given transaction.
     // Returns `true` if the transaction is valid, otherwise, a corresponding
@@ -53,7 +55,7 @@ impl DarkfiNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let mut validator = self.validator.write().await;
+        let mut validator = self.validator.as_ref().unwrap().write().await;
         if !validator.synced {
             error!(target: "dwowd::rpc::tx_simulate", "Blockchain is not synced");
             return server_error(RpcError::NotSynced, id, None)
@@ -103,7 +105,7 @@ impl DarkfiNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let mut validator = self.validator.write().await;
+        let mut validator = self.validator.as_ref().unwrap().write().await;
         if !validator.synced {
             error!(target: "dwowd::rpc::tx_broadcast", "Blockchain is not synced");
             return server_error(RpcError::NotSynced, id, None)
@@ -156,7 +158,7 @@ impl DarkfiNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let validator = self.validator.read().await;
+        let validator = self.validator.as_ref().unwrap().read().await;
         if !validator.synced {
             error!(target: "dwowd::rpc::tx_pending", "Blockchain is not synced");
             return server_error(RpcError::NotSynced, id, None)
@@ -192,7 +194,7 @@ impl DarkfiNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let mut validator = self.validator.write().await;
+        let mut validator = self.validator.as_ref().unwrap().write().await;
         if !validator.synced {
             error!(target: "dwowd::rpc::tx_clean_pending", "Blockchain is not synced");
             return server_error(RpcError::NotSynced, id, None)
@@ -225,7 +227,7 @@ impl DarkfiNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let validator = self.validator.read().await;
+        let validator = self.validator.as_ref().unwrap().read().await;
         if !validator.synced {
             error!(target: "dwowd::rpc::tx_calculate_fee", "Blockchain is not synced");
             return server_error(RpcError::NotSynced, id, None)

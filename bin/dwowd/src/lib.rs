@@ -41,7 +41,7 @@ use dwow::{
         settings::RpcSettings,
     },
     system::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
-    validator::{Validator, ValidatorConfig, ValidatorPtr},
+    validator::ValidatorPtr,
     Error, Result,
 };
 use dwow_linear::LinearBlockchain as LinearBlockchainCore;
@@ -68,11 +68,11 @@ use task::{consensus_linear_init_task, ConsensusInitTaskConfig};
 
 /// P2P net protocols
 mod proto;
-use proto::{DarkfidP2pHandler, DarkfidP2pHandlerPtr};
+use proto::{DwowP2pHandler, DwowP2pHandlerPtr};
 
 /// Miners registry
 mod registry;
-use registry::{DarkfiMinersRegistry, DarkfiMinersRegistryPtr};
+use registry::{DwowMinersRegistry, DwowMinersRegistryPtr};
 use crate::registry::model::LinearMinerRewardsRecipientConfig;
 
 /// Linear blockchain for localnet
@@ -96,20 +96,20 @@ pub use mempool::{create_mempool, Mempool, MempoolPtr};
 mod zk;
 
 /// Atomic pointer to the DarkWow node
-pub type DarkfiNodePtr = Arc<DarkfiNode>;
+pub type DwowNodePtr = Arc<DwowNode>;
 
 /// Structure representing a DarkWow node
-pub struct DarkfiNode {
-    /// Validator(node) pointer
-    validator: ValidatorPtr,
+pub struct DwowNode {
+    /// Validator(node) pointer (None in linear-testnet mode)
+    validator: Option<ValidatorPtr>,
     /// Linear blockchain (only set when running in linear-testnet mode)
     linear_blockchain: Option<Arc<LinearBlockchain>>,
     /// Mempool for linear blockchain (only set in linear-testnet mode)
     mempool: Option<MempoolPtr>,
     /// P2P network protocols handler
-    p2p_handler: DarkfidP2pHandlerPtr,
+    p2p_handler: DwowP2pHandlerPtr,
     /// Node miners registry pointer
-    registry: DarkfiMinersRegistryPtr,
+    registry: DwowMinersRegistryPtr,
     /// Garbage collection task transactions batch size
     txs_batch_size: usize,
     /// A map of various subscribers exporting live info from the blockchain
@@ -139,18 +139,18 @@ pub struct DarkfiNode {
     linear_genesis_hash: Mutex<Option<HeaderHash>>,
 }
 
-impl DarkfiNode {
+impl DwowNode {
     pub async fn new(
-        validator: ValidatorPtr,
+        validator: Option<ValidatorPtr>,
         linear_blockchain: Option<Arc<LinearBlockchain>>,
         mempool: Option<MempoolPtr>,
-        p2p_handler: DarkfidP2pHandlerPtr,
-        registry: DarkfiMinersRegistryPtr,
+        p2p_handler: DwowP2pHandlerPtr,
+        registry: DwowMinersRegistryPtr,
         txs_batch_size: usize,
         subscribers: HashMap<&'static str, JsonSubscriber>,
         is_localnet: bool,
         min_block_interval: u64,
-    ) -> Result<DarkfiNodePtr> {
+    ) -> Result<DwowNodePtr> {
         Ok(Arc::new(Self {
             validator,
             linear_blockchain,
@@ -185,12 +185,12 @@ impl DarkfiNode {
 }
 
 /// Atomic pointer to the DarkWow daemon
-pub type DarkfidPtr = Arc<Darkfid>;
+pub type DwowdPtr = Arc<Dwowd>;
 
 /// Structure representing a DarkWow daemon
-pub struct Darkfid {
-    /// Darkfi node instance
-    node: DarkfiNodePtr,
+pub struct Dwowd {
+    /// DarkWow node instance
+    node: DwowNodePtr,
     /// `dnet` background task
     dnet_task: StoppableTaskPtr,
     /// Main JSON-RPC background task
@@ -201,7 +201,7 @@ pub struct Darkfid {
     consensus_task: StoppableTaskPtr,
 }
 
-impl Darkfid {
+impl Dwowd {
     /// Initialize a DarkWow daemon for linear-testnet mode.
     ///
     /// Uses LinearBlockchain instead of Validator for consensus.
@@ -213,18 +213,18 @@ impl Darkfid {
         txs_batch_size: &Option<usize>,
         ex: &ExecutorPtr,
         finality_config: Option<dwow_linear::FinalityConfig>,
-    ) -> Result<DarkfidPtr> {
-        info!(target: "dwowd::Darkfid::init_linear", "Initializing a Darkfi daemon for linear-testnet...");
+    ) -> Result<DwowdPtr> {
+        info!(target: "dwowd::Dwowd::init_linear", "Initializing a DarkWow daemon for linear-testnet...");
 
         let finality_config = finality_config.unwrap_or_default();
-        info!(target: "dwowd::Darkfid::init_linear", "Finality mode: {:?}, caribina_enabled: {}", finality_config.mode, finality_config.caribina_enabled);
+        info!(target: "dwowd::Dwowd::init_linear", "Finality mode: {:?}, caribina_enabled: {}", finality_config.mode, finality_config.caribina_enabled);
 
         // Initialize linear blockchain (dwow_linear for P2P)
         let linear_blockchain_p2p = Arc::new(LinearBlockchainCore::with_finality(
             Arc::new(sled_db.clone()), finality_config.clone(),
         ).map_err(|e| Error::Custom(e.to_string()))?);
 
-        // Initialize darkfid's blockchain wrapper (uses dwow_linear store)
+        // Initialize dwowd's blockchain wrapper (uses dwow_linear store)
         let store = linear_blockchain_p2p.store.clone();
 
         // Create PoW config from network settings
@@ -237,14 +237,14 @@ impl Darkfid {
         let linear_blockchain = Arc::new(LinearBlockchain::with_pow_config(store, pow_config, finality_config.clone()));
 
         // Deploy native contracts to linear blockchain
-        info!(target: "dwowd::Darkfid::init_linear", "Deploying native contracts to linear blockchain...");
+        info!(target: "dwowd::Dwowd::init_linear", "Deploying native contracts to linear blockchain...");
         let deployooor_wasm = include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm").to_vec();
         linear_blockchain.deploy_contract(&deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID)?;
-        info!(target: "dwowd::Darkfid::init_linear", "Deployooor contract deployed");
+        info!(target: "dwowd::Dwowd::init_linear", "Deployooor contract deployed");
 
         let native_token_wasm = include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm").to_vec();
         linear_blockchain.deploy_contract(&native_token_wasm, *NATIVE_TOKEN_CONTRACT_ID)?;
-        info!(target: "dwowd::Darkfid::init_linear", "NativeToken contract deployed");
+        info!(target: "dwowd::Dwowd::init_linear", "NativeToken contract deployed");
 
         // Create genesis block at height 1 with a valid RandomX hash.
         // Uses max difficulty so any nonce passes (instant genesis).
@@ -299,11 +299,11 @@ impl Darkfid {
             let genesis_block = Block { header, transactions: vec![genesis_tx] };
             let genesis_hash = genesis_block.hash(&vm);
 
-            linear_blockchain.insert_block(&genesis_block)
+            linear_blockchain.insert_validated_block(&genesis_block)
                 .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
 
             info!(
-                target: "dwowd::Darkfid::init_linear",
+                target: "dwowd::Dwowd::init_linear",
                 "Genesis block created at height 1: {}",
                 genesis_hash,
             );
@@ -313,10 +313,10 @@ impl Darkfid {
         };
 
         // Initialize P2P network (linear P2P handlers use dwow_linear types)
-        let p2p_handler = DarkfidP2pHandler::init(net_settings, ex, Some(linear_blockchain_p2p.clone())).await?;
+        let p2p_handler = DwowP2pHandler::init(net_settings, ex, Some(linear_blockchain_p2p.clone())).await?;
 
         // Initialize the miners registry (placeholder for now)
-        let registry = DarkfiMinersRegistry::init_linear(network, linear_blockchain.clone()).await?;
+        let registry = DwowMinersRegistry::init_linear(network, linear_blockchain.clone()).await?;
 
         // Auto-generate mining keypair if one does not exist.
         // The address is persisted for the Docker entrypoint/xmrig to consume.
@@ -333,7 +333,7 @@ impl Darkfid {
                 let addr_str = fs::read_to_string(&miner_address_path)
                     .map_err(|e| Error::Custom(format!("Failed to read mining address: {}", e)))?;
                 info!(
-                    target: "dwowd::Darkfid::init_linear",
+                    target: "dwowd::Dwowd::init_linear",
                     "Loaded persisted mining address: {}",
                     addr_str.trim(),
                 );
@@ -351,7 +351,7 @@ impl Darkfid {
                     .map_err(|e| Error::Custom(format!("Failed to persist mining secret: {}", e)))?;
 
                 info!(
-                    target: "dwowd::Darkfid::init_linear",
+                    target: "dwowd::Dwowd::init_linear",
                     "Generated new mining keypair. Address: {}",
                     addr_str,
                 );
@@ -371,23 +371,10 @@ impl Darkfid {
         subscribers.insert("proposals", JsonSubscriber::new("blockchain.subscribe_proposals"));
         subscribers.insert("dnet", JsonSubscriber::new("dnet.subscribe_events"));
 
-        // Initialize node with linear blockchain
-        // NOTE: A minimal Validator is still created because DarkfiNode requires it.
-        // The validator is unused for consensus in linear mode (stratum delegates to
-        // linear_blockchain before touching the validator), but its sled_db is the
-        // same database used by the linear blockchain, so flush works correctly.
-        let validator = Validator::new(&sled_db, &ValidatorConfig {
-            confirmation_threshold: 3,
-            max_forks: 8,
-            pow_target: 120,
-            pow_fixed_difficulty: None,
-            genesis_block: None,
-            verify_fees: true,
-        }).await?;
-
+        // Initialize node with linear blockchain (no DAG validator needed)
         let min_block_interval = net_settings.pow.min_block_interval.unwrap_or(10);
-        let node = DarkfiNode::new(
-            validator,
+        let node = DwowNode::new(
+            None, // No DAG validator in linear mode
             Some(linear_blockchain),
             Some(create_mempool()),
             p2p_handler,
@@ -408,7 +395,7 @@ impl Darkfid {
         let management_rpc_task = StoppableTask::new();
         let consensus_task = StoppableTask::new();
 
-        info!(target: "dwowd::Darkfid::init_linear", "Darkfi daemon for linear-testnet initialized successfully!");
+        info!(target: "dwowd::Dwowd::init_linear", "DarkWow daemon for linear-testnet initialized successfully!");
 
         Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task }))
     }
@@ -425,10 +412,10 @@ impl Darkfid {
         mm_rpc_settings: &Option<RpcSettings>,
         config: &ConsensusInitTaskConfig,
     ) -> Result<()> {
-        info!(target: "dwowd::Darkfid::start", "Starting Darkfi daemon...");
+        info!(target: "dwowd::Dwowd::start", "Starting DarkWow daemon...");
 
         // Start the `dnet` task
-        info!(target: "dwowd::Darkfid::start", "Starting dnet subs task");
+        info!(target: "dwowd::Dwowd::start", "Starting dnet subs task");
         let dnet_sub_ = self.node.subscribers.get("dnet").unwrap().clone();
         let p2p_ = self.node.p2p_handler.p2p.clone();
         self.dnet_task.clone().start(
@@ -436,14 +423,14 @@ impl Darkfid {
                 let dnet_sub = p2p_.dnet_subscribe().await;
                 loop {
                     let event = dnet_sub.receive().await;
-                    debug!(target: "dwowd::Darkfid::dnet_task", "Got dnet event: {event:?}");
+                    debug!(target: "dwowd::Dwowd::dnet_task", "Got dnet event: {event:?}");
                     dnet_sub_.notify(vec![event.into()].into()).await;
                 }
             },
             |res| async {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => { /* Do nothing */ }
-                    Err(e) => error!(target: "dwowd::Darkfid::start", "Failed starting dnet subs task: {e}"),
+                    Err(e) => error!(target: "dwowd::Dwowd::start", "Failed starting dnet subs task: {e}"),
                 }
             },
             Error::DetachedTaskStopped,
@@ -451,14 +438,14 @@ impl Darkfid {
         );
 
         // Start the main JSON-RPC task
-        info!(target: "dwowd::Darkfid::start", "Starting main JSON-RPC server");
+        info!(target: "dwowd::Dwowd::start", "Starting main JSON-RPC server");
         let node_ = self.node.clone();
         self.rpc_task.clone().start(
             listen_and_serve::<DefaultRpcHandler>(rpc_settings.clone(), self.node.clone(), None, executor.clone()),
             |res| async move {
                 match res {
-                    Ok(()) | Err(Error::RpcServerStopped) => <DarkfiNode as RequestHandler<DefaultRpcHandler>>::stop_connections(&node_).await,
-                    Err(e) => error!(target: "dwowd::Darkfid::start", "Failed starting main JSON-RPC server: {e}"),
+                    Ok(()) | Err(Error::RpcServerStopped) => <DwowNode as RequestHandler<DefaultRpcHandler>>::stop_connections(&node_).await,
+                    Err(e) => error!(target: "dwowd::Dwowd::start", "Failed starting main JSON-RPC server: {e}"),
                 }
             },
             Error::RpcServerStopped,
@@ -466,14 +453,14 @@ impl Darkfid {
         );
 
         // Start the management JSON-RPC task
-        info!(target: "dwowd::Darkfid::start", "Starting management JSON-RPC server");
+        info!(target: "dwowd::Dwowd::start", "Starting management JSON-RPC server");
         let node_ = self.node.clone();
         self.management_rpc_task.clone().start(
             listen_and_serve::<ManagementRpcHandler>(management_rpc_settings.clone(), self.node.clone(), None, executor.clone()),
             |res| async move {
                 match res {
-                    Ok(()) | Err(Error::RpcServerStopped) => <DarkfiNode as RequestHandler<ManagementRpcHandler>>::stop_connections(&node_).await,
-                    Err(e) => error!(target: "dwowd::Darkfid::start", "Failed starting management JSON-RPC server: {e}"),
+                    Ok(()) | Err(Error::RpcServerStopped) => <DwowNode as RequestHandler<ManagementRpcHandler>>::stop_connections(&node_).await,
+                    Err(e) => error!(target: "dwowd::Dwowd::start", "Failed starting management JSON-RPC server: {e}"),
                 }
             },
             Error::RpcServerStopped,
@@ -481,15 +468,15 @@ impl Darkfid {
         );
 
         // Start the miners registry
-        info!(target: "dwowd::Darkfid::start", "Starting miners registry");
+        info!(target: "dwowd::Dwowd::start", "Starting miners registry");
         self.node.registry.start(executor, &self.node, stratum_rpc_settings, mm_rpc_settings)?;
 
         // Start the P2P network
-        info!(target: "dwowd::Darkfid::start", "Starting P2P network");
+        info!(target: "dwowd::Dwowd::start", "Starting P2P network");
         self.node.p2p_handler.start(executor, &self.node).await?;
 
         // Start the consensus protocol (linear mode)
-        info!(target: "dwowd::Darkfid::start", "Starting consensus protocol task");
+        info!(target: "dwowd::Dwowd::start", "Starting consensus protocol task");
         self.consensus_task.clone().start(
             consensus_linear_init_task(
                 self.node.clone(),
@@ -499,52 +486,56 @@ impl Darkfid {
             |res| async move {
                 match res {
                     Ok(()) | Err(Error::ConsensusTaskStopped) | Err(Error::MinerTaskStopped) => { /* Do nothing */ }
-                    Err(e) => error!(target: "dwowd::Darkfid::start", "Failed starting consensus initialization task: {e}"),
+                    Err(e) => error!(target: "dwowd::Dwowd::start", "Failed starting consensus initialization task: {e}"),
                 }
             },
             Error::ConsensusTaskStopped,
             executor.clone(),
         );
 
-        info!(target: "dwowd::Darkfid::start", "Darkfi daemon started successfully!");
+        info!(target: "dwowd::Dwowd::start", "DarkWow daemon started successfully!");
         Ok(())
     }
 
     /// Stop the DarkWow daemon.
     pub async fn stop(&self) -> Result<()> {
-        info!(target: "dwowd::Darkfid::stop", "Terminating Darkfi daemon...");
+        info!(target: "dwowd::Dwowd::stop", "Terminating DarkWow daemon...");
 
         // Stop the `dnet` node
-        info!(target: "dwowd::Darkfid::stop", "Stopping dnet subs task...");
+        info!(target: "dwowd::Dwowd::stop", "Stopping dnet subs task...");
         self.dnet_task.stop().await;
 
         // Stop the main JSON-RPC task
-        info!(target: "dwowd::Darkfid::stop", "Stopping main JSON-RPC server...");
+        info!(target: "dwowd::Dwowd::stop", "Stopping main JSON-RPC server...");
         self.rpc_task.stop().await;
 
         // Stop the management JSON-RPC task
-        info!(target: "dwowd::Darkfid::stop", "Stopping management JSON-RPC server...");
+        info!(target: "dwowd::Dwowd::stop", "Stopping management JSON-RPC server...");
         self.management_rpc_task.stop().await;
 
         // Stop the miners registry
-        info!(target: "dwowd::Darkfid::stop", "Stopping miners registry...");
+        info!(target: "dwowd::Dwowd::stop", "Stopping miners registry...");
         self.node.registry.stop().await;
 
         // Stop the P2P network
-        info!(target: "dwowd::Darkfid::stop", "Stopping P2P network protocols handler...");
+        info!(target: "dwowd::Dwowd::stop", "Stopping P2P network protocols handler...");
         self.node.p2p_handler.stop().await;
 
         // Stop the consensus task
-        info!(target: "dwowd::Darkfid::stop", "Stopping consensus task...");
+        info!(target: "dwowd::Dwowd::stop", "Stopping consensus task...");
         self.consensus_task.stop().await;
 
         // Flush sled database data
-        info!(target: "dwowd::Darkfid::stop", "Flushing sled database...");
-        let flushed_bytes =
-            self.node.validator.read().await.blockchain.sled_db.flush_async().await?;
-        info!(target: "dwowd::Darkfid::stop", "Flushed {flushed_bytes} bytes");
+        info!(target: "dwowd::Dwowd::stop", "Flushing sled database...");
+        if let Some(ref validator) = self.node.validator {
+            let flushed_bytes = validator.read().await.blockchain.sled_db.flush_async().await?;
+            info!(target: "dwowd::Dwowd::stop", "Flushed {flushed_bytes} bytes");
+        } else if let Some(ref chain) = self.node.linear_blockchain {
+            let _ = chain.store.flush();
+            info!(target: "dwowd::Dwowd::stop", "Flushed linear blockchain store");
+        }
 
-        info!(target: "dwowd::Darkfid::stop", "Darkfi daemon terminated successfully!");
+        info!(target: "dwowd::Dwowd::stop", "DarkWow daemon terminated successfully!");
         Ok(())
     }
 }

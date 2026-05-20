@@ -23,7 +23,7 @@
 
 //! ZK proof verification wrapper for linear blockchain
 //!
-//! This module provides a wrapper around darkfi's ZK verification
+//! This module provides a wrapper around dwow's ZK verification
 //! infrastructure for use with the linear blockchain.
 
 use dwow::zk::Proof;

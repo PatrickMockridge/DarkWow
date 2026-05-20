@@ -7,7 +7,7 @@ set -e
 DWOW_HOME="${DWOW_HOME:-$HOME/.local/share/dwow}"
 DARKFID_HOME="$DWOW_HOME/darkfid"
 CONFIG_DIR="$DARKFID_HOME"
-CONFIG_FILE="$CONFIG_DIR/darkfid_config.toml"
+CONFIG_FILE="$CONFIG_DIR/dwowd_config.toml"
 NETWORK="testnet"
 
 # Colors
@@ -53,13 +53,13 @@ if [ -f "$CONFIG_FILE" ]; then
     fi
 else
     echo "  No config found, copying default..."
-    if [ -f "$(dirname $0)/../bin/darkfid/darkfid_config.toml" ]; then
-        cp "$(dirname $0)/../bin/darkfid/darkfid_config.toml" "$CONFIG_FILE"
-    elif [ -f "$HOME/dwow/bin/darkfid/darkfid_config.toml" ]; then
-        cp "$HOME/dwow/bin/darkfid/darkfid_config.toml" "$CONFIG_FILE"
+    if [ -f "$(dirname $0)/../bin/dwowd/dwowd_config.toml" ]; then
+        cp "$(dirname $0)/../bin/dwowd/dwowd_config.toml" "$CONFIG_FILE"
+    elif [ -f "$HOME/dwow/bin/dwowd/dwowd_config.toml" ]; then
+        cp "$HOME/dwow/bin/dwowd/dwowd_config.toml" "$CONFIG_FILE"
     else
         echo -e "${RED}ERROR: Could not find default config to copy${NC}"
-        echo "Please copy your darkfid_config.toml to $CONFIG_FILE"
+        echo "Please copy your dwowd_config.toml to $CONFIG_FILE"
         exit 1
     fi
     echo -e "${GREEN}  Config created${NC}"

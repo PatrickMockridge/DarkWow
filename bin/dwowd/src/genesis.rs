@@ -24,7 +24,7 @@
 //! Genesis Builder Module
 //!
 //! Provides a shared function for building genesis ValidatorConfig
-//! used by both the daemon (darkfid) and testing pipeline.
+//! used by both the daemon (dwowd) and testing pipeline.
 //!
 //! This ensures identical genesis initialization across all environments.
 

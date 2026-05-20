@@ -24,7 +24,7 @@
 //! Linear blockchain for localnet
 //!
 //! This module provides a LinearBlockchain that combines dwow_linear's
-//! LinearStore with darkfi's Runtime and ZK verification for contract execution.
+//! LinearStore with dwow's Runtime and ZK verification for contract execution.
 
 use std::collections::HashSet;
 use std::sync::{
@@ -116,7 +116,7 @@ impl LinearBlockchain {
         let randomx_key = [0u8; 32];
         let vm = Self::create_vm(&randomx_key).expect("Failed to create RandomX VM");
 
-        Self {
+        let blockchain = Self {
             store,
             contract_store: Arc::new(contract_store),
             state_db: Arc::new(state_db),
@@ -128,7 +128,9 @@ impl LinearBlockchain {
             randomx_key: Mutex::new(randomx_key),
             coin_set: Mutex::new(HashSet::new()),
             nullifier_set: Mutex::new(HashSet::new()),
-        }
+        };
+        blockchain.rehydrate_sets();
+        blockchain
     }
 
     /// Create a new RandomX VM with the given key
@@ -182,8 +184,28 @@ impl LinearBlockchain {
         self.store.get_block(height).map_err(|e| Error::Custom(e.to_string()))
     }
 
-    /// Insert a block into the chain, tracking coins and nullifiers from transactions.
-    pub fn insert_block(&self, block: &Block) -> Result<()> {
+    /// Rebuild coin_set and nullifier_set from all stored blocks.
+    /// Best-effort: log errors but don't fail construction.
+    pub fn rehydrate_sets(&self) {
+        let height = self.height.load(Ordering::SeqCst);
+        let mut coin_set = self.coin_set.lock().unwrap();
+        for h in 1..=height {
+            if let Ok(block) = self.store.get_block(h) {
+                for tx in &block.transactions {
+                    if let Some(ref coinbase) = tx.coinbase {
+                        coin_set.insert(coinbase.coin);
+                    }
+                }
+            }
+        }
+        if !coin_set.is_empty() {
+            info!(target: "linear_blockchain", "Rehydrated {} coins from {} blocks", coin_set.len(), height);
+        }
+    }
+
+    /// Insert a validated block into the chain. Callers must verify PoW,
+    /// merkle roots, and consensus rules before calling this method.
+    pub fn insert_validated_block(&self, block: &Block) -> Result<()> {
         let height = block.header.height;
 
         // Finality check: mode-aware anchor enforcement
@@ -207,14 +229,13 @@ impl LinearBlockchain {
             consensus.adjust_difficulty();
         }
 
-        // Track coins and nullifiers from coinbase transactions
+        // Track coins from coinbase transactions
         for tx in &block.transactions {
             if let Some(ref coinbase) = tx.coinbase {
                 let mut coin_set = self.coin_set.lock().unwrap();
-                let _nullifier_set = self.nullifier_set.lock().unwrap();
                 coin_set.insert(coinbase.coin);
-                // Mint transactions don't create nullifiers, but check for future use
-                // Spends would add nullifiers here
+                // Mint transactions don't create nullifiers.
+                // Spends would add nullifiers here via nullifier_set.
             }
         }
 
@@ -333,9 +354,9 @@ impl LinearBlockchain {
             return Err(Error::Custom("UncleMerkleRootMismatch".to_string()))
         }
 
-        // Verify each uncle's PoW
+        // Verify each uncle's PoW and merkle proof
         let consensus = self.consensus.lock().unwrap();
-        for uncle in uncles {
+        for (i, uncle) in uncles.iter().enumerate() {
             match consensus.verify_uncle_pow(uncle, &vm) {
                 Ok(true) => {}
                 Ok(false) => {
@@ -348,8 +369,8 @@ impl LinearBlockchain {
                 }
             }
 
-            // Verify uncle proof
-            if !verify_uncle_proof(&proofs[0], &block.header.uncle_merkle_root, &vm, block.header.difficulty_target) {
+            // Verify uncle proof with the correct proof for this uncle
+            if !verify_uncle_proof(&proofs[i], &block.header.uncle_merkle_root, &vm, block.header.difficulty_target) {
                 error!(target: "linear_blockchain", "Uncle {} failed merkle proof verification", uncle.hash(&vm));
                 return Err(Error::Custom("UncleProofVerificationFailed".to_string()))
             }
@@ -442,7 +463,7 @@ impl LinearBlockchain {
         }
 
         // Insert block
-        self.insert_block(block)?;
+        self.insert_validated_block(block)?;
 
         // Store uncles
         for uncle in uncles {
@@ -478,7 +499,7 @@ impl Clone for LinearBlockchain {
             store: self.store.clone(),
             contract_store: self.contract_store.clone(),
             state_db: self.state_db.clone(),
-            consensus: Mutex::new(PoWConsensus::default()), // consensus is stateless, recreate it
+            consensus: Mutex::new(self.consensus.lock().unwrap().clone()),
             zk_verifier: ZkVerifier,
             finality_config: self.finality_config.clone(),
             height: AtomicU64::new(self.height.load(Ordering::SeqCst)),

@@ -117,9 +117,9 @@ if existing.header.anchor_tx_id != [0u8; 32] {
 
 | Component | What it does |
 |-----------|-------------|
-| **Miner** (`bin/darkfid/src/rpc/miner.rs`) | Anchors after PoW, before broadcast |
-| **Stratum** (`bin/darkfid/src/rpc/stratum.rs`) | Anchors after PoW verification, before insert |
-| **P2P Handler** (`bin/darkfid/src/proto/linear_broadcast.rs`) | Verifies anchors on received blocks, rejects invalid |
+| **Miner** (`bin/dwowd/src/rpc/miner.rs`) | Anchors after PoW, before broadcast |
+| **Stratum** (`bin/dwowd/src/rpc/stratum.rs`) | Anchors after PoW verification, before insert |
+| **P2P Handler** (`bin/dwowd/src/proto/linear_broadcast.rs`) | Verifies anchors on received blocks, rejects invalid |
 | **Blockchain** (`src/linear/src/blockchain.rs`) | Rejects insertion of blocks replacing anchored ones |
 | **BlockHeader** (`src/linear/src/block.rs`) | Carries `anchor_tx_id: [u8; 32]` (zero = no anchor) |
 
@@ -287,9 +287,9 @@ blocks are protected from the first confirmation onward.
 | `src/linear/src/block.rs` | `anchor_tx_id` field in BlockHeader |
 | `src/linear/src/blockchain.rs` | Finality constraint in `insert_block()` |
 | `src/linear/src/consensus.rs` | PoW consensus (unchanged — Caribina is a constraint overlay) |
-| `bin/darkfid/src/rpc/miner.rs` | Mining integration |
-| `bin/darkfid/src/rpc/stratum.rs` | Stratum integration |
-| `bin/darkfid/src/proto/linear_broadcast.rs` | P2P verification |
+| `bin/dwowd/src/rpc/miner.rs` | Mining integration |
+| `bin/dwowd/src/rpc/stratum.rs` | Stratum integration |
+| `bin/dwowd/src/proto/linear_broadcast.rs` | P2P verification |
 
 ## See Also
 

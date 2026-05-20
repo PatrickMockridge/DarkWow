@@ -53,6 +53,8 @@
 //!   to have at least one active P2P peer (via `p2p.is_connected()`). Without P2P
 //!   connectivity, found blocks cannot be broadcast.
 
+// QUARANTINED: DAG-era code. Not used in linear-testnet mode. Pending deletion.
+//
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -86,7 +88,7 @@ use dwow_sdk::crypto::keypair::Network;
 use crate::{
     error::{miner_status_response, server_error, RpcError},
     registry::model::MinerRewardsRecipientConfig,
-    DarkfiNode,
+    DwowNode,
 };
 
 // https://github.com/SChernykh/p2pool/blob/master/docs/MERGE_MINING.MD
@@ -96,7 +98,7 @@ pub struct MmRpcHandler;
 
 #[async_trait]
 #[rustfmt::skip]
-impl RequestHandler<MmRpcHandler> for DarkfiNode {
+impl RequestHandler<MmRpcHandler> for DwowNode {
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
         debug!(target: "dwowd::rpc::rpc_xmr", "--> {}", req.stringify().unwrap());
 
@@ -116,7 +118,7 @@ impl RequestHandler<MmRpcHandler> for DarkfiNode {
     }
 }
 
-impl DarkfiNode {
+impl DwowNode {
     // RPCAPI:
     // Gets a unique ID that identifies this merge mined chain and
     // separates it from other chains.
@@ -124,7 +126,7 @@ impl DarkfiNode {
     // * `chain_id`: A unique 32-byte hash that identifies this merge
     //   mined chain.
     //
-    // darkfid will send the hash:
+    // dwowd will send the hash:
     //  H(genesis_hash || network || hard_fork_height)
     //
     // --> {"jsonrpc": "2.0", "method": "merge_mining_get_chain_id", "id": 1}
@@ -144,7 +146,7 @@ impl DarkfiNode {
         let genesis_hash = if let Some(hash) = self.linear_genesis_hash.lock().await.as_ref() {
             *hash
         } else {
-            match self.validator.read().await.blockchain.genesis() {
+            match self.validator.as_ref().unwrap().read().await.blockchain.genesis() {
                 Ok(v) => v.1,
                 Err(e) => {
                     error!(
@@ -214,7 +216,7 @@ impl DarkfiNode {
         }
 
         // Check if node is synced before responding to p2pool
-        let validator = self.validator.read().await;
+        let validator = self.validator.as_ref().unwrap().read().await;
         if !validator.synced {
             return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
         }
@@ -344,7 +346,7 @@ impl DarkfiNode {
         }
 
         // Check if node is synced before responding to p2pool
-        let mut validator = self.validator.write().await;
+        let mut validator = self.validator.as_ref().unwrap().write().await;
         if !validator.synced {
             return miner_status_response(id, "rejected")
         }
@@ -488,7 +490,7 @@ impl DarkfiNode {
         let Ok(dwow_hash) = HeaderHash::from_str(aux_hash) else {
             return miner_status_response(id, "rejected")
         };
-        let genesis_hash = match self.validator.read().await.blockchain.genesis() {
+        let genesis_hash = match self.validator.as_ref().unwrap().read().await.blockchain.genesis() {
             Ok(v) => v.1,
             Err(_) => return miner_status_response(id, "rejected"),
         };

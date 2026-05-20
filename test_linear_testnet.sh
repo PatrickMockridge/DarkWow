@@ -7,7 +7,7 @@ set -e
 BIN="./target/debug/dwowd"
 RPC_PORT="${RPC_PORT:-28345}"
 NETWORK="linear-testnet"
-CONFIG="bin/darkfid/dwowd_config.toml"
+CONFIG="bin/dwowd/dwowd_config.toml"
 
 echo "=== Linear-Testnet Test Script ==="
 

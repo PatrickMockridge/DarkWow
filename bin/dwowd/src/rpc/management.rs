@@ -38,14 +38,14 @@ use dwow::{
     system::StoppableTaskPtr,
 };
 
-use crate::DarkfiNode;
+use crate::DwowNode;
 
 /// JSON-RPC `RequestHandler` for node management
 pub struct ManagementRpcHandler;
 
 #[async_trait]
 #[rustfmt::skip]
-impl RequestHandler<ManagementRpcHandler> for DarkfiNode {
+impl RequestHandler<ManagementRpcHandler> for DwowNode {
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
         debug!(target: "dwowd::rpc::management_rpc", "--> {}", req.stringify().unwrap());
 
@@ -53,7 +53,7 @@ impl RequestHandler<ManagementRpcHandler> for DarkfiNode {
             // =======================
             // Node management methods
             // =======================
-            "ping" => <DarkfiNode as RequestHandler<ManagementRpcHandler>>::pong(self, req.id, req.params).await,
+            "ping" => <DwowNode as RequestHandler<ManagementRpcHandler>>::pong(self, req.id, req.params).await,
             "dnet.switch" => self.dnet_switch(req.id, req.params).await,
             "dnet.subscribe_events" => self.dnet_subscribe_events(req.id, req.params).await,
             "p2p.get_info" => self.p2p_get_info(req.id, req.params).await,
@@ -66,13 +66,13 @@ impl RequestHandler<ManagementRpcHandler> for DarkfiNode {
     }
 }
 
-impl HandlerP2p for DarkfiNode {
+impl HandlerP2p for DwowNode {
     fn p2p(&self) -> P2pPtr {
         self.p2p_handler.p2p.clone()
     }
 }
 
-impl DarkfiNode {
+impl DwowNode {
     // RPCAPI:
     // Activate or deactivate dnet in the P2P stack.
     // By sending `true`, dnet will be activated, and by sending `false` dnet
@@ -103,7 +103,7 @@ impl DarkfiNode {
 
     // RPCAPI:
     // Initializes a subscription to P2P dnet events.
-    // Once a subscription is established, `darkfid` will send JSON-RPC
+    // Once a subscription is established, `dwowd` will send JSON-RPC
     // notifications of new network events to the subscriber.
     //
     // --> {

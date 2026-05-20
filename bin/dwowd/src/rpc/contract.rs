@@ -37,10 +37,10 @@ use dwow::{
     util::encoding::base64,
 };
 
-use super::DarkfiNode;
+use super::DwowNode;
 use crate::contract_registry::ContractRegistry;
 
-impl DarkfiNode {
+impl DwowNode {
     // RPCAPI:
     // Generalized contract invocation endpoint.
     // Invokes any contract function without requiring a specific RPC method.
