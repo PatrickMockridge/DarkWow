@@ -141,6 +141,9 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
+        Witness::Base(Value::known(secret.inner())),
+        Witness::Base(Value::known(signature_public.x())),
+        Witness::Base(Value::known(signature_public.y())),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

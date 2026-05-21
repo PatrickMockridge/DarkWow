@@ -149,6 +149,7 @@ pub fn create_fee_proof(
     // Derive public key from secret using EC (Schnorr-style)
     let public_key = PublicKey::from_secret(input.secret);
     let signature_public = PublicKey::from_secret(input.signature_secret);
+    let sig_coords = signature_public.inner().to_affine().coordinates().unwrap();
 
     // Create input coin attributes
     let input_coin_attrs = CoinAttributes {
@@ -216,18 +217,20 @@ pub fn create_fee_proof(
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
         Witness::Base(Value::known(input.signature_secret.inner())),
+        Witness::Base(Value::known(*sig_coords.x())),
+        Witness::Base(Value::known(*sig_coords.y())),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
         Witness::Scalar(Value::known(input_value_blind.inner())),
-        Witness::Base(Value::known(input.token_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
-        Witness::Base(Value::known(pallas::Base::zero())), // user_data_blind = 0 for input
+        Witness::Base(Value::known(pallas::Base::zero())),
         Witness::Base(Value::known(pallas::Base::from(output.value))),
         Witness::Base(Value::known(output_spend_hook)),
         Witness::Base(Value::known(output_user_data)),
         Witness::Scalar(Value::known(output_value_blind.inner())),
         Witness::Base(Value::known(output_coin_blind)),
+        Witness::Base(Value::known(input.token_id)),
         Witness::Base(Value::known(token_blind.inner())),
     ];
 

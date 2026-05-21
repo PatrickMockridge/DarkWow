@@ -66,15 +66,23 @@ impl TransferBurnRevealed {
 
 /// Public inputs revealed after mint proof (part of transfer)
 pub struct TransferMintRevealed {
+    pub token_root: MerkleNode,
+    pub auth_nullifier: pallas::Base,
+    pub auth_mint_public: pallas::Base,
     pub coin: Coin,
     pub value_commit: pallas::Base,
+    pub coin_token_id: pallas::Base,
 }
 
 impl TransferMintRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
+            self.token_root.inner(),
+            self.auth_nullifier,
+            self.auth_mint_public,
             self.coin.inner(),
             self.value_commit,
+            self.coin_token_id,
         ]
     }
 }
@@ -117,6 +125,14 @@ pub struct TransferCallOutput {
     pub user_data: pallas::Base,
     /// Coin blind
     pub coin_blind: pallas::Base,
+    /// Auth nullifier for token authorization
+    pub auth_nullifier: pallas::Base,
+    /// Auth mint public for token authorization
+    pub auth_mint_public: pallas::Base,
+    /// Token leaf position in registry Merkle tree
+    pub token_leaf_pos: u64,
+    /// Token Merkle path in registry
+    pub token_path: Vec<MerkleNode>,
 }
 
 /// Debris produced by building a Transfer call
@@ -340,12 +356,35 @@ fn create_transfer_mint_proof(
     // Value commitment
     let value_commit = poseidon_hash([pallas::Base::from(output.value), value_blind.inner()]);
 
+    // Token registry Merkle root
+    let token_root = {
+        let position: u64 = output.token_leaf_pos.into();
+        let mut current = MerkleNode::from(output.token_id);
+        for (level, sibling) in output.token_path.iter().enumerate() {
+            let level = level as u8;
+            current = if position & (1 << level) == 0 {
+                MerkleNode::combine(level.into(), &current, sibling)
+            } else {
+                MerkleNode::combine(level.into(), sibling, &current)
+            };
+        }
+        current
+    };
+
     let public_inputs = TransferMintRevealed {
+        token_root,
+        auth_nullifier: output.auth_nullifier,
+        auth_mint_public: output.auth_mint_public,
         coin,
         value_commit,
+        coin_token_id: output.token_id,
     };
 
     let prover_witnesses = vec![
+        Witness::Base(Value::known(output.auth_nullifier)),
+        Witness::Base(Value::known(output.auth_mint_public)),
+        Witness::Uint32(Value::known(u64::from(output.token_leaf_pos).try_into().unwrap())),
+        Witness::MerklePath(Value::known(output.token_path.clone().try_into().unwrap())),
         Witness::Base(Value::known(output.recipient)),
         Witness::Base(Value::known(pallas::Base::from(output.value))),
         Witness::Base(Value::known(output.token_id)),

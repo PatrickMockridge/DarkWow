@@ -29,7 +29,7 @@ use dwow::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -82,24 +82,31 @@ impl CommitTicketV1CallData {
         let ticket_id = poseidon_hash([
             self.player_pub_x,
             self.player_pub_y,
-            self.ticket_price,
             self.secret_nonce,
-            self.blind,
             self.token_id,
+            self.ticket_price,
         ]);
         CommitTicketV1PublicInputs { ticket_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero() }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        let ticket_id = poseidon_hash([
+            self.player_pub_x,
+            self.player_pub_y,
+            self.secret_nonce,
+            self.token_id,
+            self.ticket_price,
+        ]);
+        let blind_bytes = self.blind.to_repr();
+        let value_blind = pallas::Scalar::from_repr(blind_bytes).unwrap_or(pallas::Scalar::zero());
         vec![
-            // Public inputs as witnesses
             Witness::Base(Value::known(self.player_pub_x)),
             Witness::Base(Value::known(self.player_pub_y)),
-            Witness::Base(Value::known(self.ticket_price)),
-            Witness::Base(Value::known(self.token_id)),
-            // Private inputs
+            Witness::Base(Value::known(ticket_id)),
             Witness::Base(Value::known(self.secret_nonce)),
-            Witness::Base(Value::known(self.blind)),
+            Witness::Base(Value::known(self.token_id)),
+            Witness::Base(Value::known(self.ticket_price)),
+            Witness::Scalar(Value::known(value_blind)),
         ]
     }
 }
