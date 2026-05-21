@@ -380,46 +380,51 @@ implementation, including reorg attack scenarios with and without anchoring.
 
 ---
 
-## Difficulty Adjustment
+## Target Adjustment
+
+The Proof-of-Work consensus maintains a **target** — the maximum valid hash value
+(`hash_u32 <= target`). Higher target = easier mining (more hashes pass).
+Conventional difficulty (higher = harder) is derived as `difficulty = u32::MAX / target`.
 
 Dynamic adjustment with delta clamping:
 
 ```
 ratio = clamp( target_block_time / avg_interval, 0.5, 2.0 )
 delta = clamp( ratio - 1.0, -0.1, 0.1 )
-new_difficulty = difficulty × (1.0 + delta)
+adjustment = 1.0 + delta
+new_target = target / adjustment
 ```
 
-- **Target**: 120-second block time
-- **Window**: Rolling average of recent block intervals
-- **Delta cap**: ±10% per adjustment window
+- **Target block time**: 120 seconds
+- **Window**: Rolling average of last 10 block intervals (up to 20 timestamps stored)
+- **Delta cap**: ±10% per adjustment step
 - **Ratio bound**: [0.5, 2.0] — prevents divergence under extreme hashrate changes
-- **Bounds**: [1, u32::MAX]
+- **Target bounds**: [min_target, max_target] — default [1, u32::MAX]
 
-Each adjustment is limited to a 10% change from current difficulty in either
-direction. The broader [0.5, 2.0] ratio bound ensures the system stays within
-sane limits even under extreme conditions, but typical operation never hits it.
+When blocks arrive too fast (ratio > 1), the target decreases (harder). When blocks
+arrive too slow (ratio < 1), the target increases (easier). Division (not multiplication)
+provides stable negative feedback — the system converges toward the target block time.
 
 ---
 
 ## Mining Flow
 
 1. `dwowd` generates a RandomX key for the next block template
-2. Miner receives 225-byte blob (header with zeroed nonce) + difficulty target
+2. Miner receives 227-byte blob (header with zeroed nonce) + target
 3. Miner initializes RandomX VM with the key, hashes the blob with different nonces
-4. If hash meets difficulty target, miner submits solved header to stratum
+4. If hash meets target (`hash_u32 <= target`), miner submits solved header to stratum
 5. `dwowd` verifies the proof-of-work and assembles the block
 6. Coinbase reward = `expected_reward(height)` paid via NativeToken::PoWRewardV1
 7. If uncle, partial reward via pin mechanism
 
-RandomX configuration:
+Target configuration:
 
 ```toml
 [network_config."darkwow-testnet".pow]
 target_block_time = 120       # seconds
-initial_difficulty = 255      # starting difficulty
-min_difficulty = 1
-max_difficulty = 4294967295   # u32 max
+initial_target = 16777215     # 0x00FFFFFF, easy first block (~1/256 hashes)
+min_target = 1                # hardest possible
+max_target = 4294967295       # u32::MAX, easiest possible
 min_block_interval = 10       # seconds between blocks
 ```
 

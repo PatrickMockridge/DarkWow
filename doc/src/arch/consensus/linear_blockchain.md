@@ -93,7 +93,7 @@ When verifying an `UncleProof`:
 
 1. **PoW Hash Verification**: Re-compute the RandomX PoW hash from the proof's header using the header's `randomx_key`. Compare against the stored `pow_hash`.
 
-2. **Difficulty Check**: Verify the PoW hash meets the difficulty target (lower values = more difficulty).
+2. **Target Check**: Verify the PoW hash meets the target (`hash_u32 <= target`). Higher target = easier mining.
 
 3. **Merkle Proof**: Verify the header is included in the uncle merkle tree rooted at the canonical block's `uncle_merkle_root`.
 
@@ -102,7 +102,7 @@ pub fn verify_uncle_proof(
     uncle: &UncleProof,
     merkle_root: &[u8; 32],
     _vm: &randomx::RandomXVM,
-    difficulty_target: u32,
+    target: u32,
 ) -> bool {
     // Step 1: Verify pow_hash matches re-computed hash from header
     // We create a VM with the uncle's specific randomx_key
@@ -116,10 +116,10 @@ pub fn verify_uncle_proof(
         return false;  // PoW hash mismatch
     }
 
-    // Step 2: Verify pow_hash meets difficulty target
+    // Step 2: Verify pow_hash meets target (hash_u32 <= target)
     let hash_u32 = u32::from_le_bytes(computed_pow_hash[0..4].try_into().unwrap());
-    if hash_u32 > difficulty_target {
-        return false;  // Difficulty not met
+    if hash_u32 > target {
+        return false;  // Target not met
     }
 
     // Step 3: Verify merkle proof against uncle_merkle_root
