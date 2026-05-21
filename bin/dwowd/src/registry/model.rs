@@ -308,7 +308,7 @@ pub struct LinearBlockTemplate {
     /// Block height
     pub height: u64,
     /// Difficulty target
-    pub difficulty_target: u32,
+    pub target: u32,
     /// Unix timestamp (seconds) — captured once and reused for mining blob + verification
     pub timestamp: u64,
     /// Coinbase reward value
@@ -488,9 +488,9 @@ pub async fn generate_linear_block_template(
     // Difficulty target - always use consensus, even for blocks after genesis.
     // Reading from the previous block would propagate the genesis block's
     // u32::MAX difficulty to subsequent blocks, breaking PoW.
-    let difficulty_target = {
+    let target = {
         let consensus = linear_blockchain.consensus.lock().unwrap();
-        consensus.difficulty_target()
+        consensus.target()
     };
 
     // Compute block reward from the exponential-decay emission schedule.
@@ -517,7 +517,7 @@ pub async fn generate_linear_block_template(
         return Ok(LinearBlockTemplate {
             previous: previous_hash,
             height,
-            difficulty_target,
+            target,
             timestamp,
             value: reward,
             zk_proof: coinbase.proof,
@@ -536,7 +536,7 @@ pub async fn generate_linear_block_template(
     Ok(LinearBlockTemplate {
         previous: previous_hash,
         height,
-        difficulty_target,
+        target,
         timestamp,
         value: reward,
         zk_proof: vec![],

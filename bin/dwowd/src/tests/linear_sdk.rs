@@ -362,16 +362,16 @@ impl LinearTestnetSdk {
     /// Create a genesis block (alice mines)
     /// Uses dev wallet for any initial minting in the genesis
     fn alice_create_genesis(&self) -> Block {
-        let difficulty_target = 0x0000_FFFF;
+        let target = 0x0000_FFFF;
         let previous = blake3::hash(&[]);
 
         // For genesis, we don't include any txs - just the coinbase
         // The dev wallet gets funded via initial_balance in the first mined blocks
         let transactions: Vec<Transaction> = vec![];
-        let mut block = self.create_block_with_txs(previous, 0, transactions, difficulty_target);
+        let mut block = self.create_block_with_txs(previous, 0, transactions, target);
 
-        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
-        while !consensus.check_difficulty(&block.hash(&*self.harness.vm)) {
+        let consensus = PoWConsensus::new(60, target, 1, u32::MAX);
+        while !consensus.check_pow(&block.hash(&*self.harness.vm)) {
             block.header.nonce += 1;
         }
         block
@@ -383,7 +383,7 @@ impl LinearTestnetSdk {
         previous: blake3::Hash,
         height: u64,
         transactions: Vec<Transaction>,
-        difficulty_target: u32,
+        target: u32,
     ) -> Block {
         // Calculate merkle root for transactions
         let tx_hashes: Vec<blake3::Hash> = transactions.iter().map(|tx| tx.hash()).collect();
@@ -420,7 +420,7 @@ impl LinearTestnetSdk {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_secs(),
-                difficulty_target,
+                target,
                 nonce: 0,
                 height,
                 uncle_merkle_root,
@@ -439,12 +439,12 @@ impl LinearTestnetSdk {
 
     /// Alice mines a block on top of the given previous hash
     pub fn alice_mine_block(&self, height: u64, previous: blake3::Hash) -> Block {
-        let difficulty_target = 0x0000_FFFF;
+        let target = 0x0000_FFFF;
         let transactions: Vec<Transaction> = vec![];
-        let mut block = self.create_block_with_txs(previous, height, transactions, difficulty_target);
+        let mut block = self.create_block_with_txs(previous, height, transactions, target);
 
-        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
-        while !consensus.check_difficulty(&block.hash(&*self.harness.vm)) {
+        let consensus = PoWConsensus::new(60, target, 1, u32::MAX);
+        while !consensus.check_pow(&block.hash(&*self.harness.vm)) {
             block.header.nonce += 1;
         }
         block
@@ -495,12 +495,12 @@ impl LinearTestnetSdk {
 
     /// Alice mines a block with a specific recipient
     fn alice_mine_block_with_recipient(&self, height: u64, previous: blake3::Hash, _recipient: &Keypair) -> Block {
-        let difficulty_target = 0x0000_FFFF;
+        let target = 0x0000_FFFF;
         let transactions: Vec<Transaction> = vec![];
-        let mut block = self.create_block_with_txs(previous, height, transactions, difficulty_target);
+        let mut block = self.create_block_with_txs(previous, height, transactions, target);
 
-        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
-        while !consensus.check_difficulty(&block.hash(&*self.harness.vm)) {
+        let consensus = PoWConsensus::new(60, target, 1, u32::MAX);
+        while !consensus.check_pow(&block.hash(&*self.harness.vm)) {
             block.header.nonce += 1;
         }
         block

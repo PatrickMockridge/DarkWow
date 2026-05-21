@@ -166,9 +166,9 @@ txs_batch_size = 50
 
 [network_config."${NETWORK}".pow]
 target_block_time = ${TARGET_BLOCK_TIME}
-initial_difficulty = 255
-min_difficulty = 1
-max_difficulty = 4294967295
+initial_target = 16777215
+min_target = 1
+max_target = 4294967295
 min_block_interval = 10
 randomx_max_threads = ${RANDOMX_MAX_THREADS:-0}
 DWOWEOF

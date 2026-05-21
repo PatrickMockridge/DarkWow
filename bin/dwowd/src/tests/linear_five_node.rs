@@ -107,12 +107,12 @@ impl LinearFiveNodeHarness {
 
     /// Alice mines genesis block
     pub fn alice_create_genesis(&self) -> Block {
-        let difficulty_target = 0x0000_FFFF;
+        let target = 0x0000_FFFF;
         let previous = blake3::hash(&[]);
-        let mut block = create_block(previous, 0, vec![], difficulty_target, &*self.vm);
+        let mut block = create_block(previous, 0, vec![], target, &*self.vm);
 
-        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
-        while !consensus.check_difficulty(&block.hash(&*self.vm)) {
+        let consensus = PoWConsensus::new(60, target, 1, u32::MAX);
+        while !consensus.check_pow(&block.hash(&*self.vm)) {
             block.header.nonce += 1;
         }
         block
@@ -120,11 +120,11 @@ impl LinearFiveNodeHarness {
 
     /// Alice mines a block on top of the given previous hash
     pub fn alice_mine_block(&self, height: u64, previous: blake3::Hash) -> Block {
-        let difficulty_target = 0x0000_FFFF;
-        let mut block = create_block(previous, height, vec![], difficulty_target, &*self.vm);
+        let target = 0x0000_FFFF;
+        let mut block = create_block(previous, height, vec![], target, &*self.vm);
 
-        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
-        while !consensus.check_difficulty(&block.hash(&*self.vm)) {
+        let consensus = PoWConsensus::new(60, target, 1, u32::MAX);
+        while !consensus.check_pow(&block.hash(&*self.vm)) {
             block.header.nonce += 1;
         }
         block
@@ -220,7 +220,7 @@ mod tests {
         let blockchain = &harness.alice.blockchain;
 
         // Mine canonical block at height 1 (this extends genesis)
-        let difficulty_target = 0x0000_FFFF;
+        let target = 0x0000_FFFF;
         let canonical_block = harness.alice_mine_block(1, genesis_hash);
 
         // Apply canonical block
@@ -248,11 +248,11 @@ mod tests {
         // Create canonical block at height 2 that includes the uncle
         let canonical_hash = canonical_block.hash(vm);
         let mut canonical_block2 =
-            create_block_with_uncles(canonical_hash, 2, vec![], difficulty_target, &[uncle.clone()], vm);
+            create_block_with_uncles(canonical_hash, 2, vec![], target, &[uncle.clone()], vm);
 
         // Mine the canonical block so it satisfies PoW
-        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
-        while !consensus.check_difficulty(&canonical_block2.hash(vm)) {
+        let consensus = PoWConsensus::new(60, target, 1, u32::MAX);
+        while !consensus.check_pow(&canonical_block2.hash(vm)) {
             canonical_block2.header.nonce += 1;
         }
 
@@ -288,7 +288,7 @@ mod tests {
         let blockchain = &harness.alice.blockchain;
 
         // Mine canonical block at height 1
-        let difficulty_target = 0x0000_FFFF;
+        let target = 0x0000_FFFF;
         let canonical_block = harness.alice_mine_block(1, genesis_hash);
         smol::block_on(async {
             blockchain.apply_block(&canonical_block).await
@@ -307,11 +307,11 @@ mod tests {
         // Create canonical block at height 2 that includes the uncle
         let canonical_hash = canonical_block.hash(vm);
         let mut canonical_block2 =
-            create_block_with_uncles(canonical_hash, 2, vec![], difficulty_target, &[uncle.clone()], vm);
+            create_block_with_uncles(canonical_hash, 2, vec![], target, &[uncle.clone()], vm);
 
         // Mine the canonical block so it satisfies PoW
-        let consensus = PoWConsensus::new(60, difficulty_target, 1, u32::MAX);
-        while !consensus.check_difficulty(&canonical_block2.hash(vm)) {
+        let consensus = PoWConsensus::new(60, target, 1, u32::MAX);
+        while !consensus.check_pow(&canonical_block2.hash(vm)) {
             canonical_block2.header.nonce += 1;
         }
 

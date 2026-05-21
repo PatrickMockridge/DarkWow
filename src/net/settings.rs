@@ -146,12 +146,12 @@ pub struct Settings {
 pub struct PowSettings {
     /// Target block time in seconds
     pub target_block_time: Option<u64>,
-    /// Initial difficulty (first block)
-    pub initial_difficulty: Option<u32>,
-    /// Minimum difficulty
-    pub min_difficulty: Option<u32>,
-    /// Maximum difficulty
-    pub max_difficulty: Option<u32>,
+    /// Initial target (first block). Higher = easier.
+    pub initial_target: Option<u32>,
+    /// Minimum target (hardest). Lower = harder.
+    pub min_target: Option<u32>,
+    /// Maximum target (easiest). Higher = easier.
+    pub max_target: Option<u32>,
     /// Minimum interval between blocks in seconds
     pub min_block_interval: Option<u64>,
     /// Max RandomX mining threads (0 = use all available cores, 1+ = exact count).
@@ -412,20 +412,20 @@ pub struct PowSettingsOpt {
     #[structopt(long = "pow-target-block-time")]
     pub target_block_time: Option<u64>,
 
-    /// Initial difficulty (first block)
+    /// Initial target (first block). Higher = easier.
     #[serde(default)]
-    #[structopt(long = "pow-initial-difficulty")]
-    pub initial_difficulty: Option<u32>,
+    #[structopt(long = "pow-initial-target")]
+    pub initial_target: Option<u32>,
 
-    /// Minimum difficulty
+    /// Minimum target (hardest). Lower = harder.
     #[serde(default)]
-    #[structopt(long = "pow-min-difficulty")]
-    pub min_difficulty: Option<u32>,
+    #[structopt(long = "pow-min-target")]
+    pub min_target: Option<u32>,
 
-    /// Maximum difficulty
+    /// Maximum target (easiest). Higher = easier.
     #[serde(default)]
-    #[structopt(long = "pow-max-difficulty")]
-    pub max_difficulty: Option<u32>,
+    #[structopt(long = "pow-max-target")]
+    pub max_target: Option<u32>,
 
     /// Minimum interval between blocks in seconds
     #[serde(default)]
@@ -516,9 +516,9 @@ impl TryFrom<(&str, &str, SettingsOpt)> for Settings {
             profiles,
             pow: PowSettings {
                 target_block_time: opt.pow.target_block_time,
-                initial_difficulty: opt.pow.initial_difficulty,
-                min_difficulty: opt.pow.min_difficulty,
-                max_difficulty: opt.pow.max_difficulty,
+                initial_target: opt.pow.initial_target,
+                min_target: opt.pow.min_target,
+                max_target: opt.pow.max_target,
                 min_block_interval: opt.pow.min_block_interval,
                 randomx_max_threads: opt.pow.randomx_max_threads,
             },

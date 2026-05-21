@@ -11,7 +11,7 @@
 /// Offset  Size  Field
 /// 0       32    previous (blake3::Hash)
 /// 32      1     version (u8)
-/// 33      4     difficulty_target (u32, LE)
+/// 33      4     target (u32, LE)
 /// 37      2     reserved (zero-pad)
 /// 39      4     nonce (u32, LE)  ← miners modify this
 /// 43      8     height (u64, LE)
@@ -42,7 +42,7 @@ pub fn serialize_header(header: &BlockHeader) -> Vec<u8> {
 
     buf.extend_from_slice(header.previous.as_bytes());               // 0..32
     buf.push(header.version);                                        // 32
-    buf.extend_from_slice(&header.difficulty_target.to_le_bytes());  // 33..37
+    buf.extend_from_slice(&header.target.to_le_bytes());  // 33..37
     buf.extend_from_slice(&[0u8; 2]);                                // 37..39 (reserved)
     buf.extend_from_slice(&header.nonce.to_le_bytes());              // 39..43 (nonce)
     buf.extend_from_slice(&header.height.to_le_bytes());             // 43..51
@@ -68,7 +68,7 @@ pub fn deserialize_header(data: &[u8]) -> Option<BlockHeader> {
 
     let previous = blake3::Hash::from_bytes(data[0..32].try_into().ok()?);
     let version = data[32];
-    let difficulty_target = u32::from_le_bytes(data[33..37].try_into().ok()?);
+    let target = u32::from_le_bytes(data[33..37].try_into().ok()?);
     // bytes 37..39 are reserved (zero-pad)
     let nonce = u32::from_le_bytes(data[39..43].try_into().ok()?);
     let height = u64::from_le_bytes(data[43..51].try_into().ok()?);
@@ -85,7 +85,7 @@ pub fn deserialize_header(data: &[u8]) -> Option<BlockHeader> {
         previous,
         merkle_root,
         timestamp,
-        difficulty_target,
+        target,
         nonce,
         height,
         uncle_merkle_root,
@@ -133,7 +133,7 @@ mod tests {
             previous: blake3::Hash::from_bytes([0xAA; 32]),
             merkle_root: blake3::Hash::from_bytes([0xBB; 32]),
             timestamp: 1234567890,
-            difficulty_target: 0x00FFFFFF,
+            target: 0x00FFFFFF,
             nonce: 0,
             height: 42,
             uncle_merkle_root: [0xCC; 32],
@@ -158,7 +158,7 @@ mod tests {
         assert_eq!(deserialized.version, header.version);
         assert_eq!(deserialized.previous, header.previous);
         assert_eq!(deserialized.timestamp, header.timestamp);
-        assert_eq!(deserialized.difficulty_target, header.difficulty_target);
+        assert_eq!(deserialized.target, header.target);
         assert_eq!(deserialized.nonce, header.nonce);
         assert_eq!(deserialized.height, header.height);
         assert_eq!(deserialized.uncle_merkle_root, header.uncle_merkle_root);

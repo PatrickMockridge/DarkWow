@@ -38,8 +38,8 @@ pub struct BlockHeader {
     pub merkle_root: blake3::Hash,
     /// Block timestamp
     pub timestamp: u64,
-    /// Difficulty target for PoW
-    pub difficulty_target: u32,
+    /// PoW target — `hash_u32 <= target` is valid. Higher = easier.
+    pub target: u32,
     /// Nonce for PoW mining
     pub nonce: u32,
     /// Block height in chain
@@ -147,7 +147,7 @@ pub struct UncleProof {
 impl BlockHeader {
     /// Serialize the header to a compact binary blob for mining and hashing.
     /// Format (227 bytes total):
-    ///   [previous(32)][version(1)][difficulty_target(4)][reserved(2)][nonce(4)]
+    ///   [previous(32)][version(1)][target(4)][reserved(2)][nonce(4)]
     ///   [height(8)][merkle_root(32)][timestamp(8)][uncle_merkle_root(32)]
     ///   [total_reward(8)][randomx_key(32)][coin_merkle_root(32)][nullifier_root(32)]
     /// Nonce is at byte offset 39 (matches xmrig's hardcoded Monero rx/0 offset).
@@ -158,7 +158,7 @@ impl BlockHeader {
         let mut blob = Vec::with_capacity(227);
         blob.extend_from_slice(self.previous.as_bytes());            // 0..32
         blob.push(self.version);                                     // 32
-        blob.extend_from_slice(&self.difficulty_target.to_le_bytes()); // 33..37
+        blob.extend_from_slice(&self.target.to_le_bytes()); // 33..37
         blob.extend_from_slice(&[0u8; 2]);                           // 37..39 (reserved)
         blob.extend_from_slice(&self.nonce.to_le_bytes());           // 39..43 (nonce)
         blob.extend_from_slice(&self.height.to_le_bytes());          // 43..51
@@ -242,7 +242,7 @@ pub fn verify_uncle_proof(
     uncle: &UncleProof,
     merkle_root: &[u8; 32],
     _vm: &randomx::RandomXVM,
-    difficulty_target: u32,
+    target: u32,
 ) -> bool {
     // Step 1: Verify the pow_hash matches re-computed hash from header
     // We must create a VM with the uncle's specific randomx_key
@@ -269,7 +269,7 @@ pub fn verify_uncle_proof(
 
     // Step 2: Verify pow_hash meets difficulty target
     let hash_u32 = u32::from_le_bytes(computed_pow_hash[0..4].try_into().unwrap());
-    if hash_u32 > difficulty_target {
+    if hash_u32 > target {
         return false;
     }
 
@@ -411,10 +411,10 @@ pub fn create_block(
     previous: blake3::Hash,
     height: u64,
     transactions: Vec<Transaction>,
-    difficulty_target: u32,
+    target: u32,
     vm: &randomx::RandomXVM,
 ) -> Block {
-    create_block_with_uncles(previous, height, transactions, difficulty_target, &[], vm)
+    create_block_with_uncles(previous, height, transactions, target, &[], vm)
 }
 
 /// Create a new block with uncle blocks
@@ -424,7 +424,7 @@ pub fn create_block_with_uncles(
     previous: blake3::Hash,
     height: u64,
     transactions: Vec<Transaction>,
-    difficulty_target: u32,
+    target: u32,
     uncles: &[UncleBlock],
     vm: &randomx::RandomXVM,
 ) -> Block {
@@ -464,7 +464,7 @@ pub fn create_block_with_uncles(
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
-            difficulty_target,
+            target,
             nonce: 0,
             height,
             uncle_merkle_root,
@@ -508,7 +508,7 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 0,
-            difficulty_target: 0x0000_FFFF,
+            target: 0x0000_FFFF,
             nonce: 0,
             height: 10,
             uncle_merkle_root: [0u8; 32],
@@ -542,7 +542,7 @@ mod tests {
                 previous: blake3::hash(&[i]),
                 merkle_root: blake3::hash(&[i]),
                 timestamp: i as u64,
-                difficulty_target: 0x0000_FFFF,
+                target: 0x0000_FFFF,
                 nonce: i as u32,
                 height: 10 + i as u64,
                 uncle_merkle_root: [0u8; 32],
@@ -583,7 +583,7 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 0,
-            difficulty_target: 0x0000_FFFF,
+            target: 0x0000_FFFF,
             nonce: 0,
             height: 10,
             uncle_merkle_root: [0u8; 32],
@@ -615,7 +615,7 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 0,
-            difficulty_target: 0x0000_FFFF,
+            target: 0x0000_FFFF,
             nonce: 42,
             height: 10,
             uncle_merkle_root: [0u8; 32],
@@ -740,7 +740,7 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 1000,
-            difficulty_target: 0x0000_FFFF,
+            target: 0x0000_FFFF,
             nonce: 42,
             height: 1,
             uncle_merkle_root: [0u8; 32],
@@ -772,7 +772,7 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 1000,
-            difficulty_target: 0x0000_FFFF,
+            target: 0x0000_FFFF,
             nonce: 0,
             height: 0,
             uncle_merkle_root: [0u8; 32],
@@ -796,7 +796,7 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 1000,
-            difficulty_target: 0x0000_FFFF,
+            target: 0x0000_FFFF,
             nonce: 42,
             height: 1,
             uncle_merkle_root: [0u8; 32],
@@ -828,7 +828,7 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 1000,
-            difficulty_target: 0x0000_FFFF,
+            target: 0x0000_FFFF,
             nonce: 42,
             height: 1,
             uncle_merkle_root: [0u8; 32],

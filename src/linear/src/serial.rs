@@ -120,7 +120,7 @@ impl AsyncEncodable for BlockHeader {
         len += self.previous.encode_async(s).await?;
         len += self.merkle_root.encode_async(s).await?;
         len += self.timestamp.encode_async(s).await?;
-        len += self.difficulty_target.encode_async(s).await?;
+        len += self.target.encode_async(s).await?;
         len += self.nonce.encode_async(s).await?;
         len += self.height.encode_async(s).await?;
         len += self.uncle_merkle_root.encode_async(s).await?;
@@ -143,7 +143,7 @@ impl AsyncDecodable for BlockHeader {
         let previous = AsyncDecodable::decode_async(d).await?;
         let merkle_root = AsyncDecodable::decode_async(d).await?;
         let timestamp = AsyncDecodable::decode_async(d).await?;
-        let difficulty_target = AsyncDecodable::decode_async(d).await?;
+        let target = AsyncDecodable::decode_async(d).await?;
         let nonce = AsyncDecodable::decode_async(d).await?;
         let height = AsyncDecodable::decode_async(d).await?;
         let uncle_merkle_root = AsyncDecodable::decode_async(d).await?;
@@ -160,7 +160,7 @@ impl AsyncDecodable for BlockHeader {
             previous,
             merkle_root,
             timestamp,
-            difficulty_target,
+            target,
             nonce,
             height,
             uncle_merkle_root,

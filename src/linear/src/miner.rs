@@ -52,7 +52,7 @@ impl Miner {
         previous: Blake3Hash,
         height: u64,
         txs: Vec<Transaction>,
-        difficulty_target: u32,
+        target: u32,
     ) -> super::Result<Block> {
         self.running.store(true, Ordering::SeqCst);
         let mut rng = rand::thread_rng();
@@ -61,7 +61,7 @@ impl Miner {
         while self.running.load(Ordering::SeqCst) {
             let nonce = atomic_nonce.fetch_add(1, Ordering::SeqCst);
 
-            let mut block = create_block(previous, height, txs.clone(), difficulty_target, vm);
+            let mut block = create_block(previous, height, txs.clone(), target, vm);
             block.header.nonce = nonce;
             block.header.randomx_key = Self::derive_key_from_height(height);
 

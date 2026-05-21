@@ -209,7 +209,7 @@ impl DwowNode {
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: blake3::hash(&[]),
             timestamp: template.timestamp,
-            difficulty_target: template.difficulty_target,
+            target: template.target,
             nonce: 0,
             height: template.height,
             uncle_merkle_root: [0u8; 32],
@@ -230,11 +230,11 @@ impl DwowNode {
         );
 
         // Target encoding bridge (32-bit daemon check ↔ 64-bit xmrig check):
-        // - Daemon: u32_le(hash[0..4]) <= difficulty_target
+        // - Daemon: u32_le(hash[0..4]) <= target
         // - xmrig:  u64_le(hash[0..8]) <= strtoull(target_hex)
         // Upper 32 bits = 0xFFFFFFFF so xmrig ignores bytes[4..7] (any u32
-        // value fits); lower 32 bits = difficulty_target for the precise check.
-        let target = format!("FFFFFFFF{:08x}", template.difficulty_target);
+        // value fits); lower 32 bits = target for the precise check.
+        let target = format!("FFFFFFFF{:08x}", template.target);
 
         info!(
             target: "dwowd::rpc::rpc_stratum::stratum_login",
@@ -378,9 +378,9 @@ impl DwowNode {
         }
 
         let randomx_key = dwow_linear::Miner::derive_key_from_height(submitted_height);
-        let difficulty_target = {
+        let target = {
             let consensus = linear_chain.consensus.lock().unwrap();
-            consensus.difficulty_target()
+            consensus.target()
         };
 
         // Build previous hash using previous block's RandomX key
@@ -427,7 +427,7 @@ impl DwowNode {
             previous: previous_hash,
             merkle_root: blake3::hash(&[]),
             timestamp: template_timestamp,
-            difficulty_target,
+            target,
             nonce,
             height: submitted_height,
             uncle_merkle_root: [0u8; 32],
@@ -558,7 +558,7 @@ impl DwowNode {
                                     previous: blake3::Hash::from_bytes(new_template.previous),
                                     merkle_root: blake3::hash(&[]),
                                     timestamp: new_template.timestamp,
-                                    difficulty_target: new_template.difficulty_target,
+                                    target: new_template.target,
                                     nonce: 0,
                                     height: new_height,
                                     uncle_merkle_root: [0u8; 32],
@@ -577,7 +577,7 @@ impl DwowNode {
                                     target: "dwowd::rpc::rpc_stratum::stratum_submit",
                                     "[RPC-STRATUM] Push blob (to xmrig): {new_blob}",
                                 );
-                                let new_target = format!("FFFFFFFF{:08x}", new_template.difficulty_target);
+                                let new_target = format!("FFFFFFFF{:08x}", new_template.target);
 
                                 let job_params =
                                     JsonValue::from(HashMap::from([

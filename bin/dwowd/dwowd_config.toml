@@ -671,9 +671,9 @@ txs_batch_size = 50
 ## DarkWow-testnet PoW settings
 [network_config."darkwow-testnet".pow]
 target_block_time = 120
-initial_difficulty = 255
-min_difficulty = 1
-max_difficulty = 4294967295
+initial_target = 16777215     # 0x00FFFFFF, easy first block for testnet
+min_target = 1               # hardest possible
+max_target = 4294967295      # u32::MAX, easiest possible
 min_block_interval = 10
 # Max RandomX mining threads: 0 = use all available cores, 1+ = exact count.
 # Capped by build-time DARKFI_RANDOMX_MAX_THREADS (default 10).
@@ -790,9 +790,9 @@ seeds = [
 #
 #[network_config."dwow-devnet".net.pow]
 #target_block_time = 120
-#initial_difficulty = 255
-#min_difficulty = 1
-#max_difficulty = 4294967295
+#initial_target = 16777215
+#min_target = 1
+#max_target = 4294967295
 #min_block_interval = 10
 #randomx_max_threads = 0
 #

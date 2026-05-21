@@ -181,17 +181,17 @@ impl DwowNode {
     }
 
     // RPCAPI:
-    // Returns the current PoW difficulty target for linear-testnet.
+    // Returns the current PoW target for linear-testnet.
     //
     // **Params:**
     // * Empty
     //
     // **Returns:**
-    // * `difficulty_target`: u32 difficulty target
+    // * `target`: u32 target (higher = easier)
     //
-    // --> {"jsonrpc": "2.0", "method": "blockchain.get_difficulty_linear", "params": [], "id": 1}
-    // <-- {"jsonrpc": "2.0", "result": {"difficulty_target": 65535}, "id": 1}
-    pub async fn blockchain_get_difficulty_linear(&self, id: u16, params: JsonValue) -> JsonResult {
+    // --> {"jsonrpc": "2.0", "method": "blockchain.get_target", "params": [], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": {"target": 65535}, "id": 1}
+    pub async fn blockchain_get_target(&self, id: u16, params: JsonValue) -> JsonResult {
         let Some(params) = params.get::<Vec<JsonValue>>() else {
             return JsonError::new(InvalidParams, None, id).into()
         };
@@ -211,10 +211,10 @@ impl DwowNode {
             }
         };
 
-        let difficulty_target = linear_blockchain.consensus.lock().unwrap().difficulty_target();
+        let target = linear_blockchain.consensus.lock().unwrap().target();
 
         let result = JsonValue::from(std::collections::HashMap::from([
-            ("difficulty_target".to_string(), JsonValue::Number(difficulty_target as f64)),
+            ("target".to_string(), JsonValue::Number(target as f64)),
         ]));
 
         JsonResponse::new(result, id).into()

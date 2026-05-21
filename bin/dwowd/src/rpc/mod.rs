@@ -83,7 +83,7 @@ impl RequestHandler<DefaultRpcHandler> for DwowNode {
             "blockchain.get_block" => self.blockchain_get_block(req.id, req.params).await,
             "blockchain.get_tx" => self.blockchain_get_tx(req.id, req.params).await,
             "blockchain.get_difficulty" => self.blockchain_get_difficulty(req.id, req.params).await,
-            "blockchain.get_difficulty_linear" => self.blockchain_get_difficulty_linear(req.id, req.params).await,
+            "blockchain.get_target" => self.blockchain_get_target(req.id, req.params).await,
             "blockchain.get_block_linear" => self.blockchain_get_block_linear(req.id, req.params).await,
             "blockchain.last_confirmed_block" => self.blockchain_last_confirmed_block(req.id, req.params).await,
             "blockchain.block_target" => self.blockchain_block_target(req.id, req.params).await,

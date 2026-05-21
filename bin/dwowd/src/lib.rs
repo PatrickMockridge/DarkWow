@@ -230,9 +230,9 @@ impl Dwowd {
         // Create PoW config from network settings
         let pow_config = crate::blockchain::LinearPoWConfig {
             target_block_time: net_settings.pow.target_block_time.unwrap_or(120),
-            initial_difficulty: net_settings.pow.initial_difficulty.unwrap_or(0x0000FFFF) as u32,
-            min_difficulty: net_settings.pow.min_difficulty.unwrap_or(1) as u32,
-            max_difficulty: net_settings.pow.max_difficulty.unwrap_or(u32::MAX) as u32,
+            initial_target: net_settings.pow.initial_target.unwrap_or(0x0000FFFF) as u32,
+            min_target: net_settings.pow.min_target.unwrap_or(1) as u32,
+            max_target: net_settings.pow.max_target.unwrap_or(u32::MAX) as u32,
         };
         let linear_blockchain = Arc::new(LinearBlockchain::with_pow_config(store, pow_config, finality_config.clone()));
 
@@ -260,7 +260,7 @@ impl Dwowd {
             let randomx_key = Miner::derive_key_from_height(genesis_height);
             let vm = linear_blockchain.get_vm(randomx_key);
 
-            let difficulty_target = u32::MAX;
+            let target = u32::MAX;
             let timestamp = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
@@ -282,7 +282,7 @@ impl Dwowd {
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::hash(&[]),
                 timestamp,
-                difficulty_target,
+                target,
                 nonce: 0,
                 height: genesis_height,
                 uncle_merkle_root: [0u8; 32],

@@ -47,20 +47,20 @@ pub struct LinearPoWConfig {
     /// Target block time in seconds
     pub target_block_time: u64,
     /// Initial difficulty
-    pub initial_difficulty: u32,
+    pub initial_target: u32,
     /// Minimum difficulty
-    pub min_difficulty: u32,
+    pub min_target: u32,
     /// Maximum difficulty
-    pub max_difficulty: u32,
+    pub max_target: u32,
 }
 
 impl Default for LinearPoWConfig {
     fn default() -> Self {
         Self {
             target_block_time: 60,
-            initial_difficulty: 0x0000FFFF,
-            min_difficulty: 1,
-            max_difficulty: u32::MAX,
+            initial_target: 0x0000FFFF,
+            min_target: 1,
+            max_target: u32::MAX,
         }
     }
 }
@@ -101,9 +101,9 @@ impl LinearBlockchain {
     pub fn with_pow_config(store: Arc<LinearStore>, config: LinearPoWConfig, finality_config: FinalityConfig) -> Self {
         let consensus = PoWConsensus::new(
             config.target_block_time,
-            config.initial_difficulty,
-            config.min_difficulty,
-            config.max_difficulty,
+            config.initial_target,
+            config.min_target,
+            config.max_target,
         );
         let zk_verifier = ZkVerifier;
         let height = AtomicU64::new(store.get_height().unwrap_or(0));
@@ -226,7 +226,7 @@ impl LinearBlockchain {
         {
             let mut consensus = self.consensus.lock().unwrap();
             consensus.record_block(block.header.timestamp);
-            consensus.adjust_difficulty();
+            consensus.adjust_target();
         }
 
         // Track coins from coinbase transactions
@@ -370,7 +370,7 @@ impl LinearBlockchain {
             }
 
             // Verify uncle proof with the correct proof for this uncle
-            if !verify_uncle_proof(&proofs[i], &block.header.uncle_merkle_root, &vm, block.header.difficulty_target) {
+            if !verify_uncle_proof(&proofs[i], &block.header.uncle_merkle_root, &vm, block.header.target) {
                 error!(target: "linear_blockchain", "Uncle {} failed merkle proof verification", uncle.hash(&vm));
                 return Err(Error::Custom("UncleProofVerificationFailed".to_string()))
             }
@@ -409,7 +409,7 @@ impl LinearBlockchain {
                 let tx_hash_bytes = dwow_sdk::tx::TransactionHash(*tx_hash.as_bytes());
                 let difficulty = {
                     let consensus = self.consensus.lock().unwrap();
-                    consensus.difficulty_target()
+                    consensus.target()
                 };
                 let mut runtime = match dwow::runtime::vm_runtime::Runtime::new(
                     &wasm_bytes,
