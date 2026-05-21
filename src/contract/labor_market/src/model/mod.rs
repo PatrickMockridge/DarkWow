@@ -300,6 +300,8 @@ pub struct CreateJobWithMilestonesParamsV1 {
     pub deadline_block: u64,
     /// Number of milestones
     pub milestone_count: u32,
+    /// Milestone definitions (payment amounts, deadlines)
+    pub milestones: Vec<Milestone>,
 }
 
 /// Parameters for submitting a deliverable for a specific milestone
@@ -438,6 +440,8 @@ pub struct CreateJobWithMilestonesAndCapabilityParamsV1 {
     pub deadline_block: u64,
     /// Number of milestones
     pub milestone_count: u32,
+    /// Milestone definitions (payment amounts, deadlines)
+    pub milestones: Vec<Milestone>,
     /// Required capability ID for workers
     pub required_capability_id: [u8; 32],
     /// Required DAG ID (None if just capability required)

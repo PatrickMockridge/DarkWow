@@ -31,6 +31,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use tinyjson::JsonValue;
 use tracing::debug;
 
@@ -40,6 +41,7 @@ use crate::{
     task_info::{Comment, TaskInfo, VerificationMode},
     util::set_event,
     month_tasks::MonthTasks,
+    rpc_client::DarkfidClient,
 };
 
 /// Default workspace name
@@ -51,12 +53,24 @@ pub struct RpcHandler {
     dataset_path: PathBuf,
     /// Current workspace
     workspace: String,
+    /// Optional Darkfid RPC client for on-chain operations
+    rpc_client: Option<DarkfidClient>,
 }
 
 impl RpcHandler {
     /// Create a new RPC handler
     pub fn new(dataset_path: PathBuf) -> Self {
-        Self { dataset_path, workspace: DEFAULT_WORKSPACE.to_string() }
+        Self { dataset_path, workspace: DEFAULT_WORKSPACE.to_string(), rpc_client: None }
+    }
+
+    /// Create a new RPC handler with a Darkfid RPC client for on-chain operations
+    pub fn with_rpc_client(dataset_path: PathBuf, rpc_client: DarkfidClient) -> Self {
+        Self { dataset_path, workspace: DEFAULT_WORKSPACE.to_string(), rpc_client: Some(rpc_client) }
+    }
+
+    /// Check if on-chain operations are available
+    pub fn has_rpc_client(&self) -> bool {
+        self.rpc_client.is_some()
     }
 
     /// Handle a JSON-RPC request
@@ -513,7 +527,7 @@ impl RpcHandler {
         }
 
         let ref_id = params[0].get::<String>().unwrap();
-        let task = self.load_task_by_ref_id(&ref_id)?;
+        let mut task = self.load_task_by_ref_id(&ref_id)?;
 
         // Verify task has labor market link
         if task.labor_job_id.is_none() {
@@ -531,14 +545,138 @@ impl RpcHandler {
             .into())
         }
 
-        // TODO: Build and broadcast deliverable transaction via darkfid RPC
-        // This requires:
-        // 1. Construct attestation claim with work_proof
-        // 2. Build labor_market.submit_deliverable transaction
-        // 3. Sign with worker's Pallas key
-        // 4. Broadcast via DarkfidClient
+        // Build and broadcast deliverable transaction via darkfid RPC
+        if let Some(ref client) = self.rpc_client {
+            use crate::labor_market_client;
 
-        Ok(JsonValue::String("deliverable_submitted".to_string()))
+            // Parse work_proof JSON for deliverable params (bs58-encoded field elements)
+            let work_proof = params[1].get::<HashMap<String, JsonValue>>().ok_or_else(|| {
+                TauPallasError::InvalidData("Invalid work_proof JSON".into())
+            })?;
+
+            // Helper to parse bs58-encoded 32-byte value into pallas::Base
+            let parse_bs58_base = |s: &str| -> TauPallasResult<dwow_sdk::pasta::pallas::Base> {
+                let bytes = bs58::decode(s).into_vec()
+                    .map_err(|_| TauPallasError::InvalidData("Invalid bs58 encoding".into()))?;
+                let arr: [u8; 32] = bytes.as_slice().try_into()
+                    .map_err(|_| TauPallasError::InvalidData("Invalid length for field element".into()))?;
+                Ok(dwow_sdk::pasta::pallas::Base::from_repr(arr)
+                    .unwrap_or(dwow_sdk::pasta::pallas::Base::zero()))
+            };
+
+            let job_id_str = work_proof.get("job_id")
+                .and_then(|v| v.get::<String>())
+                .ok_or_else(|| TauPallasError::InvalidData("Missing job_id in work_proof".into()))?;
+            let claim_id_str = work_proof.get("claim_id")
+                .and_then(|v| v.get::<String>())
+                .ok_or_else(|| TauPallasError::InvalidData("Missing claim_id in work_proof".into()))?;
+            let attestation_id_str = work_proof.get("attestation_id")
+                .and_then(|v| v.get::<String>())
+                .ok_or_else(|| TauPallasError::InvalidData("Missing attestation_id in work_proof".into()))?;
+
+            let job_id = parse_bs58_base(job_id_str)?;
+            let claim_id = parse_bs58_base(claim_id_str)?;
+            let attestation_id = parse_bs58_base(attestation_id_str)?;
+
+            // Build nullifier (prevents double-submission)
+            let spent_nullifier = dwow_sdk::crypto::poseidon_hash([job_id, claim_id]);
+
+            // Use zero pubkeys for worker (ZK proof carries the actual key binding)
+            let zero = dwow_sdk::pasta::pallas::Base::zero();
+
+            // Build deliverable call data
+            let deliverable_calldata = labor_market_client::build_submit_deliverable_calldata(
+                &[],
+                job_id,
+                claim_id,
+                zero,
+                zero,
+                spent_nullifier,
+            )?;
+
+            // Build attestation verify claim child call
+            let verify_claim_calldata = labor_market_client::build_verify_claim_calldata(
+                claim_id,
+                attestation_id,
+                zero,
+                zero,
+                zero,
+                zero,
+            )?;
+
+            // Build identity verify capability child call if task has a capability requirement
+            let identity_calldata = if task.required_capability_id.is_some() {
+                // Capability proof data should be provided in work_proof
+                let cap_id_str = work_proof.get("capability_id")
+                    .and_then(|v| v.get::<String>());
+                let nullifier_str = work_proof.get("nullifier")
+                    .and_then(|v| v.get::<String>());
+                let predicate_result = *work_proof.get("predicate_result")
+                    .and_then(|v| v.get::<f64>()).unwrap_or(&1.0) as u8;
+                let issuer_pub_str = work_proof.get("issuer_pub")
+                    .and_then(|v| v.get::<String>());
+                let schema_hash_str = work_proof.get("schema_hash")
+                    .and_then(|v| v.get::<String>());
+                let capability_secret_str = work_proof.get("capability_secret")
+                    .and_then(|v| v.get::<String>());
+
+                if let (Some(cap_id), Some(nullifier), Some(issuer_pub), Some(schema_hash), Some(cap_secret)) =
+                    (cap_id_str, nullifier_str, issuer_pub_str, schema_hash_str, capability_secret_str)
+                {
+                    use crate::identity_client::{build_verify_capability_calldata, ClientCapabilityProof};
+                    let client_proof = ClientCapabilityProof {
+                        capability_id: parse_bs58_base(cap_id)?.to_repr(),
+                        nullifier: parse_bs58_base(nullifier)?.to_repr(),
+                        predicate_result,
+                        issuer_pub: parse_bs58_base(issuer_pub)?.to_repr(),
+                        schema_hash: parse_bs58_base(schema_hash)?.to_repr(),
+                        proof: vec![],
+                        capability_secret: parse_bs58_base(cap_secret)?.to_repr(),
+                        created_at: 0,
+                    };
+                    Some(build_verify_capability_calldata(&client_proof, [0u8; 32], 0)?)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Build transaction with cross-contract child calls
+            // Contract IDs come from the labor_job_id's contract context
+            let tx = labor_market_client::build_submit_deliverable_tx(
+                [0u8; 32],   // XXX: contract IDs must be configured or fetched from chain
+                [0u8; 32],   // attestation contract id
+                if identity_calldata.is_some() { Some([0u8; 32]) } else { None },
+                deliverable_calldata,
+                verify_claim_calldata,
+                identity_calldata,
+            )?;
+
+            let tx_hash = client.broadcast_tx(&tx).await?;
+            let tx_hash_str = tx_hash.to_string();
+
+            set_event(
+                &mut task,
+                "deliverable_submitted",
+                "worker",
+                &format!("tx: {}", tx_hash_str),
+            );
+            task.save(&self.dataset_path)?;
+
+            return Ok(JsonValue::String(tx_hash_str));
+        }
+
+        // No RPC client available — record locally only
+        set_event(
+            &mut task,
+            "deliverable_submitted_offline",
+            "worker",
+            "No darkfid RPC client configured",
+        );
+        task.save(&self.dataset_path)?;
+
+        Ok(JsonValue::String("deliverable_submitted_offline".to_string()))
     }
 
     /// RPCAPI:

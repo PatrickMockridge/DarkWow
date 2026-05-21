@@ -143,21 +143,45 @@ A `governance_active: bool` flag acts as a feature toggle:
 
 ## Dispute Resolution Flow
 
-Disputes are resolved via multi-oracle attestation with an arbitrator:
+Disputes are resolved via multi-oracle attestation with an arbitrator. Labor Market disputes escalate here via a child call to `ProposeClaimV1 (0x07)`:
 
 ```
 1. Off-chain event → Oracle(s) push values (Oracle::PushValueV1)
 2. Oracle(s) create attestations (Attestation::CreateAttestationV1)
-3. Arbitrator calls ResolveDisputeV1 with:
+3. Labor Market escalates dispute:
+   labor_market::DisputeV1 (0x05) → dao_escrow::ProposeClaimV1 (0x07) [child call]
+4. DAO members vote: ProposeClaimV1 (0x07) + VoteClaimV1 (0x08)
+5. Arbitrator calls ResolveDisputeV1 (0x0c) with:
    - Multiple oracle attestation references
    - dispute_arbitrator capability proof (ZK)
    - Payout amount + recipient
-4. Contract verifies:
-   a. Arbitrator capability via Identity::VerifyCapabilityV1 (child call)
-   b. Multi-oracle threshold met (e.g., 3/5 oracles attested)
+6. Contract verifies:
+   a. Multi-oracle threshold met (e.g., 3/5 oracles attested)
+   b. Each oracle attestation validated via Attestation::VerifyClaimV1 (0x04) [child call]
    c. Consumes attestations to prevent replay
-   d. Transfers funds via money_v3::transfer_v1 (child call)
+   d. Transfers funds via money_v3::TransferV1 (0x04) [child call]
+7. Anti-replay: db_contains_key(disputes_db, dispute_id) check prevents double-resolution
 ```
+
+### ResolveDisputeV1 Anti-Replay Protection
+
+`resolve_dispute_apply_v1` checks `db_contains_key(disputes_db, dispute_id)` before storing a resolution record. The `dispute_id` is derived as `poseidon_hash(proposal_id, attestation_count, payout_recipient)` — unique per resolution attempt. This prevents the same dispute from being resolved twice, even if multiple arbitrators attempt to process it.
+
+### Cross-Contract Child Calls
+
+DAO-Escrow uses cross-contract child calls for capability verification, payment, and attestation validation. For the complete mechanism, see [Composability](composability.md).
+
+**VerifyMemberCapabilityV1 (0x0b → Identity 0x0b):**
+
+`VerifyMemberCapabilityV1` validates a child call to `Identity::VerifyCapabilityV1 (0x0b)`. This is a double-check pattern: the ZK proof in params proves the capability, and the child call provides on-chain verification that the Identity contract recognizes the capability as non-revoked. The child call must be the first child in the DarkTree; if absent or using the wrong function code, the call fails with `InvalidChildCall`.
+
+**PayPremiumV1 (0x02 → money_v3 0x04):**
+
+`PayPremiumV1` validates a child call to `money_v3::TransferV1 (0x04)` for the premium payment.
+
+**ResolveDisputeV1 (0x0c → Attestation + money_v3):**
+
+`ResolveDisputeV1` expects multiple child calls: one or more `Attestation::VerifyClaimV1 (0x04)` calls for oracle attestations, plus a `money_v3::TransferV1 (0x04)` for the payout. It validates `!children_indexes.is_empty()` rather than checking for a specific count, since the number of oracle attestations varies per dispute.
 
 ## Case Study: Community Insurance Fund
 
@@ -592,5 +616,7 @@ Circuits: 2 compiled, 4 source complete (needs zkas compilation)
 - [Identity Contract README](../../src/contract/identity/README.md)
 - [O-Cap Architecture](../arch/ocap.md)
 - [Identity Architecture](../arch/identity.md)
+- [Composability](composability.md) — cross-contract child call mechanism
+- [Recruitment Pipeline Case Study](recruitment_pipeline.md) — end-to-end DAO hiring walkthrough
 - [Subscription Contract](subscription.md)
 - [DrainProtection Contract](drain_protection.md)

@@ -118,6 +118,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&submit_deliverable_v1_bincode[..])?;
     let submit_git_deliverable_v1_bincode = include_bytes!("../proof/submit_git_deliverable_v1.zk.bin");
     wasm::db::zkas_db_set(&submit_git_deliverable_v1_bincode[..])?;
+    let milestone_payment_v1_bincode = include_bytes!("../proof/milestone_payment_v1.zk.bin");
+    wasm::db::zkas_db_set(&milestone_payment_v1_bincode[..])?;
 
     Ok(())
 }
@@ -368,11 +370,11 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::SubmitDeliverableV1 => {
             let params: SubmitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
-            submit_deliverable_v1(cid, params)
+            submit_deliverable_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::SubmitGitDeliverableV1 => {
             let params: SubmitGitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
-            submit_git_deliverable_v1(cid, params)
+            submit_git_deliverable_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::ConfirmDeliveryV1 => {
             let params: ConfirmDeliveryParamsV1 = deserialize(&self_.data[1..])?;
@@ -380,7 +382,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::DisputeV1 => {
             let params: DisputeParamsV1 = deserialize(&self_.data[1..])?;
-            dispute_v1(cid, params)
+            dispute_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::RefundV1 => {
             let params: RefundParamsV1 = deserialize(&self_.data[1..])?;
@@ -404,7 +406,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::InitiateDisputeV1 => {
             let params: InitiateDisputeParamsV1 = deserialize(&self_.data[1..])?;
-            initiate_dispute_v1(cid, params)
+            initiate_dispute_v1(cid, call_idx, calls, params)
         }
         // O-Cap enabled functions
         LaborMarketFunction::CreateJobWithCapabilityV1 => {
@@ -413,7 +415,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         LaborMarketFunction::AcceptJobWithCapabilityV1 => {
             let params: AcceptJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
-            accept_job_with_capability_v1(cid, params)
+            accept_job_with_capability_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::CreateJobWithMilestonesAndCapabilityV1 => {
             let params: CreateJobWithMilestonesAndCapabilityParamsV1 = deserialize(&self_.data[1..])?;
@@ -461,8 +463,23 @@ fn accept_job_v1(_cid: ContractId, params: AcceptJobParamsV1) -> ContractResult 
 }
 
 /// SubmitDeliverableV1 instruction
-fn submit_deliverable_v1(_cid: ContractId, params: SubmitDeliverableParamsV1) -> ContractResult {
+fn submit_deliverable_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: SubmitDeliverableParamsV1) -> ContractResult {
     msg!("[labor_market::submit_deliverable_v1] Submitting deliverable for job: {:?}", params.job_id);
+
+    // Validate child call to Attestation::VerifyClaimV1 (0x04) for on-chain attestation verification
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[submit_deliverable_v1] Error: Expected 1 child call (Attestation::VerifyClaimV1), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[submit_deliverable_v1] Error: Expected Attestation::VerifyClaimV1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1)
@@ -472,8 +489,23 @@ fn submit_deliverable_v1(_cid: ContractId, params: SubmitDeliverableParamsV1) ->
 }
 
 /// SubmitGitDeliverableV1 instruction
-fn submit_git_deliverable_v1(_cid: ContractId, params: SubmitGitDeliverableParamsV1) -> ContractResult {
+fn submit_git_deliverable_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: SubmitGitDeliverableParamsV1) -> ContractResult {
     msg!("[labor_market::submit_git_deliverable_v1] Submitting git deliverable for job: {:?}", params.job_id);
+
+    // Validate child call to Attestation::VerifyClaimV1 (0x04) for on-chain attestation verification
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[submit_git_deliverable_v1] Error: Expected 1 child call (Attestation::VerifyClaimV1), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
+        msg!("[submit_git_deliverable_v1] Error: Expected Attestation::VerifyClaimV1 (0x04), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V1)
@@ -509,8 +541,23 @@ fn confirm_delivery_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 }
 
 /// DisputeV1 instruction
-fn dispute_v1(_cid: ContractId, params: DisputeParamsV1) -> ContractResult {
+fn dispute_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: DisputeParamsV1) -> ContractResult {
     msg!("[labor_market::dispute_v1] Creating dispute for job: {:?}", params.job_id);
+
+    // Validate child call to DAO Escrow::ProposeClaimV1 (0x07) for dispute escalation
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[dispute_v1] Error: Expected 1 child call (DAO-Escrow::ProposeClaimV1), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x07 {
+        msg!("[dispute_v1] Error: Expected DAO-Escrow::ProposeClaimV1 (0x07), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1)
@@ -1034,8 +1081,23 @@ fn confirm_milestone_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<C
 }
 
 /// InitiateDisputeV1 instruction
-fn initiate_dispute_v1(_cid: ContractId, params: InitiateDisputeParamsV1) -> ContractResult {
+fn initiate_dispute_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: InitiateDisputeParamsV1) -> ContractResult {
     msg!("[labor_market::initiate_dispute_v1] Initiating dispute for job: {:?}", params.job_id);
+
+    // Validate child call to DAO Escrow::ProposeClaimV1 (0x07) for dispute escalation
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[initiate_dispute_v1] Error: Expected 1 child call (DAO-Escrow::ProposeClaimV1), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x07 {
+        msg!("[initiate_dispute_v1] Error: Expected DAO-Escrow::ProposeClaimV1 (0x07), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1)
@@ -1067,9 +1129,8 @@ fn create_job_with_milestones_apply_v1(cid: ContractId, params: CreateJobWithMil
         }
     };
 
-    // Create milestones array (empty for now, filled by contract caller)
-    // In a full implementation, the milestones would be passed as parameters
-    let milestones: Vec<Milestone> = vec![];
+    // Use milestones from params (validated in process_instruction)
+    let milestones = params.milestones;
 
     // Create new job with milestones
     let job = Job {
@@ -1287,8 +1348,23 @@ fn initiate_dispute_apply_v1(cid: ContractId, params: InitiateDisputeParamsV1) -
 // ============================================================================
 
 /// AcceptJobWithCapabilityV1 instruction
-fn accept_job_with_capability_v1(_cid: ContractId, params: AcceptJobWithCapabilityParamsV1) -> ContractResult {
+fn accept_job_with_capability_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: AcceptJobWithCapabilityParamsV1) -> ContractResult {
     msg!("[labor_market::accept_job_with_capability_v1] Accepting job with capability: {:?}", params.job_id);
+
+    // Validate child call to Identity::VerifyCapabilityV1 (0x0b) for on-chain capability check
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[accept_job_with_capability_v1] Error: Expected 1 child call (Identity::VerifyCapabilityV1), got {}",
+             this_call.children_indexes.len());
+        return Err(LaborMarketError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x0b {
+        msg!("[accept_job_with_capability_v1] Error: Expected Identity::VerifyCapabilityV1 (0x0b), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1)
@@ -1451,7 +1527,7 @@ fn create_job_with_milestones_and_capability_apply_v1(cid: ContractId, params: C
         }
     };
 
-    let milestones: Vec<Milestone> = vec![];
+    let milestones = params.milestones;
 
     let job = Job {
         id: params.job_id,

@@ -89,6 +89,21 @@ The Identity contract serves as the authorization backbone for the entire DarkWo
 | **labor_market** | `verified_contractor` |
 | **insurance_market** | `auditor_bond`, `institutional_inv`, `oracle_resolution` |
 
+### Cross-Contract Call Patterns
+
+`VerifyCapabilityV1 (0x0b)` is the primary entrypoint called by other contracts via cross-contract child calls. Each calling contract validates the child call's function code in its instruction phase (before any state mutation):
+
+| Calling Contract | Calling Function | Validates |
+|---|---|---|
+| **labor_market** | `AcceptJobWithCapabilityV1` (0x0d) | `child.data[0] != 0x0b` |
+| **dao_escrow** | `VerifyMemberCapabilityV1` (0x0b) | `child.data[0] != 0x0b` |
+
+Both follow the same pattern: a ZK proof in the calling contract's params proves the capability predicate, and the child call to Identity provides on-chain verification that the capability exists and has not been revoked.
+
+Note: `tender` and `insurance_market` are listed in the composability table above but their child call wiring to Identity is not yet implemented (future work).
+
+For the complete cross-contract call mechanism, see [Composability](../../contract/composability.md).
+
 ## The Privacy Gradient
 
 | Level | Name | What Verifier Sees |

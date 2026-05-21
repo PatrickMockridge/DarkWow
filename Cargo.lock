@@ -8075,6 +8075,7 @@ dependencies = [
  "dwow-serial",
  "easy-parallel",
  "futures",
+ "hex",
  "libc",
  "rand 0.8.6",
  "serde",

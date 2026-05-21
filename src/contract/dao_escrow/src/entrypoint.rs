@@ -268,7 +268,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DaoEscrowFunction::VerifyMemberCapabilityV1 => {
             let params: model::VerifyMemberCapabilityParamsV1 = deserialize(&self_.data[1..])?;
-            verify_member_capability_v1(cid, params)
+            verify_member_capability_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::ResolveDisputeV1 => {
             let params: model::ResolveDisputeParamsV1 = deserialize(&self_.data[1..])?;
@@ -1440,9 +1440,26 @@ fn register_capability_requirement_apply_v1(
 /// VerifyMemberCapabilityV1 instruction - verifies a member holds a valid capability for this DAO
 fn verify_member_capability_v1(
     cid: ContractId,
+    call_idx: usize,
+    calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>,
     params: model::VerifyMemberCapabilityParamsV1,
 ) -> ContractResult {
     msg!("[dao_escrow::verify_member_capability_v1] Verifying member capability");
+
+    // Validate child call to Identity::VerifyCapabilityV1 (0x0b) for on-chain capability verification
+    let self_ = &calls[call_idx];
+    if self_.children_indexes.len() != 1 {
+        msg!("[verify_member_capability_v1] Error: Expected 1 child call (Identity::VerifyCapabilityV1), got {}",
+             self_.children_indexes.len());
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into());
+    }
+    let child_idx = self_.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x0b {
+        msg!("[verify_member_capability_v1] Error: Expected Identity::VerifyCapabilityV1 (0x0b), got 0x{:02x}",
+             child_call.data[0]);
+        return Err(DaoEscrowError::InvalidChildCall.into());
+    }
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
@@ -1549,6 +1566,12 @@ fn resolve_dispute_v1(
 /// ResolveDisputeV1 apply - store dispute resolution record
 fn resolve_dispute_apply_v1(cid: ContractId, update: model::ResolveDisputeUpdateV1) -> ContractResult {
     let disputes_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_DISPUTES_TREE)?;
+
+    // Prevent double-resolution: check if dispute_id already exists
+    if wasm::db::db_contains_key(disputes_db, &update.dispute_id.to_repr())? {
+        msg!("[dao_escrow::resolve_dispute_apply_v1] ERROR: Dispute already resolved");
+        return Err(DaoEscrowError::InvalidNullifier.into());
+    }
 
     // Store minimal resolution record keyed by dispute_id
     let resolution_data = serialize(&update);

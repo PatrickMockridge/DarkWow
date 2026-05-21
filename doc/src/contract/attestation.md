@@ -100,35 +100,47 @@ Pending ──[Verify:valid]──> Verified ──[Consume]──> Consumed
 
 ### Labor Market Integration
 
-Employer attests to a deliverable hash, worker claims completion:
+Employer attests to a deliverable hash, worker claims completion. Labor Market submits the claim verification as a cross-contract child call:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                  Labor Market + Attestation Flow                      │
+│                  Labor Market + Attestation Flow                 │
 ├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  Employer                                                       │
-│     │                                                           │
-│     │ CreateAttestation(deliverable_hash)                       │
-│     ▼                                                           │
-│  Attestation(Active) ──────────────────────────────────────────┐ │
-│                                                                   │
-│                                              Worker              │ │
-│                                                 │               │ │
-│                                                 │ CreateClaim() │ │
-│                                                 ▼               │ │
-│                                              Claim(Pending)     │ │
-│                                                                   │ │
-│                                                 │ VerifyClaim() │ │
-│                                                 ▼               │ │
-│                                              Claim(Verified)    │ │
-│                                                                   │ │
-│                                                 │ ConsumeClaim()│ │
-│                                                 ▼               │ │
-│                                              Claim(Consumed)    │ │
-│                                                                   │ │
-└───────────────────────────────────────────────────────────────────┘
+│                                                                  │
+│  Employer                                                        │
+│     │                                                            │
+│     │ CreateAttestation(deliverable_hash)                        │
+│     ▼                                                            │
+│  Attestation(Active) ──────────────────────────────────────────┐│
+│                                                                  │
+│                                              Worker              │
+│                                                 │               │
+│                                                 │ CreateClaim() │
+│                                                 ▼               │
+│                                              Claim(Pending)     │
+│                                                 │               │
+│  labor_market::SubmitDeliverableV1 (0x02)       │               │
+│     │                                           │               │
+│     └── child call → attestation::VerifyClaimV1 (0x04)          │
+│                      Verifies claim on-chain,                   │
+│                      checks evidence_commitment                 │
+│                                                 │               │
+│  labor_market::SubmitGitDeliverableV1 (0x03)    │               │
+│     └── child call → attestation::VerifyClaimV1 (0x04)          │
+│                                                                  │
+│  Claim consumed, prevents replay                                 │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
 ```
+
+### Cross-Contract Call Verification
+
+`VerifyClaimV1 (0x04)` is the primary function called by other contracts as a child call. It provides on-chain attestation verification without requiring the calling contract to understand the attestation's internal state:
+
+- **Labor Market**: `SubmitDeliverableV1 (0x02)` and `SubmitGitDeliverableV1 (0x03)` both require a child call to `VerifyClaimV1 (0x04)`. The calling contract validates `child_call.data[0] != 0x04`.
+- **DAO-Escrow**: `ResolveDisputeV1 (0x0c)` includes multiple `VerifyClaimV1` child calls for oracle attestation validation.
+
+For the complete cross-contract call map, see [Composability](composability.md).
 
 ### Tender Integration
 

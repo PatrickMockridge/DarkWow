@@ -37,6 +37,7 @@ rand = "0.8.5"
 # Encoding and parsing
 bs58 = "0.5.1"
 base64 = "0.22"
+hex = "0.4.3"
 toml = "0.9.8"
 
 # Misc

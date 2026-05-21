@@ -96,3 +96,6 @@ pub const LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1: &str = "ConfirmDelivery";
 pub const LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1: &str = "Dispute";
 pub const LABOR_CONTRACT_ZKAS_REFUND_NS_V1: &str = "Refund";
 pub const LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1: &str = "AcceptJobWithCapability";
+pub const LABOR_CONTRACT_ZKAS_MILESTONE_PAYMENT_NS_V1: &str = "MilestonePayment";
+pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_MILESTONES_NS_V1: &str = "CreateJobWithMilestones";
+pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_MILESTONES_AND_CAPABILITY_NS_V1: &str = "CreateJobWithMilestonesAndCapability";

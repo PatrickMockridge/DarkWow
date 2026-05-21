@@ -12,36 +12,65 @@ A job/labor market built on DarkWow primitives: escrow for payments, DAO for dis
 
 ## Composability
 
+Labor Market composes with four other contracts via cross-contract child calls in a single DarkTree transaction. For a detailed explanation of the child call mechanism, see [Composability](composability.md).
+
+### Wired Cross-Contract Calls
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    Labor Market Composability                              │
+│              Labor Market Cross-Contract Child Calls                      │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  ┌──────────────────────┐         ┌──────────────────────┐              │
-│  │     DAO-Escrow       │         │      Escrow          │              │
-│  │                      │         │                       │              │
-│  │  - Dispute resolution│         │  - Payment held      │              │
-│  │  - Organization      │◄────────│  - Timeout refund     │              │
-│  │  - Treasury          │  uses    │  - Release on confirm│              │
-│  └──────────────────────┘         └──────────────────────┘              │
+│  labor_market::AcceptJobWithCapabilityV1 (0x0d)                         │
+│      │                                                                   │
+│      ├── child[0] → identity::VerifyCapabilityV1 (0x0b)                 │
+│      │              Validates worker holds required capability on-chain  │
+│      │                                                                   │
+│      └── child[1] → money_v3::TransferV1 (0x04)                         │
+│                     Escrow deposit from worker                           │
 │                                                                          │
-│  ┌──────────────────────┐         ┌──────────────────────┐              │
-│  │   Labor Market      │         │    Subscription       │              │
-│  │                      │         │                       │              │
-│  │  - Job posting       │────────►│  - Recurring wages    │              │
-│  │  - Delivery types    │         │  - Ongoing employment │              │
-│  │  - Worker selection  │         │                       │              │
-│  └──────────────────────┘         └──────────────────────┘              │
+│  labor_market::SubmitDeliverableV1 (0x02)                               │
+│  labor_market::SubmitGitDeliverableV1 (0x03)                            │
+│      │                                                                   │
+│      └── child[0] → attestation::VerifyClaimV1 (0x04)                   │
+│                     Verifies deliverable matches pre-committed hash      │
 │                                                                          │
-│  ┌──────────────────────┐                                                  │
-│  │    Attestation       │                                                  │
-│  │                      │                                                  │
-│  │  - Deliverable verify│◄────────│  - Worker claims completion           │
-│  │  - Reusable attest   │  uses    │  - Employer attests expected hash    │
-│  └──────────────────────┘                                                  │
+│  labor_market::DisputeV1 (0x05)                                         │
+│  labor_market::InitiateDisputeV1 (0x0b)                                 │
+│      │                                                                   │
+│      └── child[0] → dao_escrow::ProposeClaimV1 (0x07)                   │
+│                     Escalates dispute to DAO governance                  │
+│                                                                          │
+│  labor_market::CreateJobV1 (0x00)                                       │
+│  labor_market::AcceptJobV1 (0x01)                                       │
+│  labor_market::ConfirmDeliveryV1 (0x04)                                 │
+│  labor_market::RefundV1 (0x06)                                          │
+│  labor_market::CancelV1 (0x07)                                          │
+│  labor_market::CreateJobWithMilestonesV1 (0x08)                         │
+│  labor_market::CreateJobWithCapabilityV1 (0x0c)                         │
+│      │                                                                   │
+│      └── child[0] → money_v3::TransferV1 (0x04)                         │
+│                     Payment escrow / transfer / refund                   │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Validation Pattern
+
+Every function that accepts child calls validates them in the `instruction` phase (before any state mutation):
+
+```rust
+let this_call = &calls[call_idx];
+if this_call.children_indexes.len() != 1 {
+    return Err(LaborMarketError::InvalidChildrenIndexes.into())
+}
+let child_call = &calls[this_call.children_indexes[0]].data;
+if child_call.data[0] != EXPECTED_FUNCTION_CODE {
+    return Err(LaborMarketError::InvalidChildCall.into())
+}
+```
+
+If the child call has the wrong function code, the entire transaction is rejected atomically — no state is mutated.
 
 ## Attestation Integration
 
@@ -195,7 +224,7 @@ No grey-market opcodes (`LessThanOrEqual`, `IsEqualBase`).
 
 ## Future Improvements
 
-1. **Milestone payments**: Split job into multiple deliverables with partial payments
+1. **Milestone payments**: Implemented via `CreateJobWithMilestonesV1` (0x08), `SubmitMilestoneV1` (0x09), `ConfirmMilestoneV1` (0x0a). The `milestone_payment_v1.zk` circuit is compiled and registered. Milestones are now populated from params (fixed bug: previously `create_job_with_milestones_apply_v1` used empty `vec![]` instead of `params.milestones`).
 2. **Reputation system**: Track worker performance across jobs
 3. **Escrow tiers**: Different trust levels for different payment amounts
 4. **Time tracking**: For ongoing hourly work, integrate with subscription
@@ -278,6 +307,8 @@ The circuit verifies:
 - Worker's public key is correctly derived
 - Capability predicate result is 1 (satisfied)
 
+In addition to the ZK proof, the on-chain instruction phase validates a child call to `Identity::VerifyCapabilityV1 (0x0b)`. This cross-contract call provides on-chain verification that the Identity contract recognizes the capability as valid and non-revoked — the ZK proof proves the predicate, the child call proves the capability exists on-chain.
+
 ```zk
 worker_pub = ec_mul_base(worker_secret, NULLIFIER_K);
 derived_pub_x = ec_get_x(worker_pub);
@@ -294,3 +325,31 @@ constrain_equal_base(capability_predicate_result, ONE);
 2. **Skill filtering**: Jobs can require specific qualifications without discrimination
 3. **DAG composition**: Multiple credential paths allow flexible qualification requirements
 4. **Revocation**: If capability is revoked (credential expires), job acceptance fails
+
+## Cross-Contract Child Calls
+
+Labor Market uses cross-contract child calls to delegate authorization, verification, and payment to specialized contracts. For the complete cross-contract call map and mechanism, see [Composability](composability.md).
+
+### Identity Verification (0x0d → 0x0b)
+
+`AcceptJobWithCapabilityV1` requires a child call to `Identity::VerifyCapabilityV1 (0x0b)`. The Identity contract verifies on-chain that the worker's capability exists and has not been revoked. This is a defense-in-depth pattern: the ZK proof verifies the predicate, and the child call verifies the capability's on-chain state.
+
+### Attestation Verification (0x02, 0x03 → 0x04)
+
+`SubmitDeliverableV1` and `SubmitGitDeliverableV1` require a child call to `Attestation::VerifyClaimV1 (0x04)`. The Attestation contract checks `evidence_commitment == attestation.claim_data[0]` — proving the worker's deliverable matches the employer's pre-committed expectation.
+
+### DAO Dispute Escalation (0x05, 0x0b → 0x07)
+
+`DisputeV1` and `InitiateDisputeV1` require a child call to `DAO-Escrow::ProposeClaimV1 (0x07)`. This creates a governance proposal so DAO members can vote on the dispute outcome (release payment, refund, or split).
+
+### Money Transfer (multiple → 0x04)
+
+`CreateJobV1`, `AcceptJobV1`, `ConfirmDeliveryV1`, `RefundV1`, `CancelV1`, `CreateJobWithMilestonesV1`, and `CreateJobWithCapabilityV1` all require a child call to `money_v3::TransferV1 (0x04)` for payment escrow and release.
+
+## See Also
+
+- [Composability](composability.md) — child call mechanism and full call map
+- [Recruitment Pipeline Case Study](recruitment_pipeline.md) — end-to-end walkthrough of all four contracts
+- [DAO-Escrow Contract](dao_escrow.md) — dispute resolution destination
+- [Attestation Contract](attestation.md) — deliverable verification destination
+- [Labor Market Contract README](../../src/contract/labor_market/README.md)

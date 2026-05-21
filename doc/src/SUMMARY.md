@@ -48,6 +48,8 @@
 - [Escrow](contract/escrow.md)
 - [Subscription](contract/subscription.md)
 - [Attestation](contract/attestation.md)
+    - [Composability](contract/composability.md)
+      - [Recruitment Pipeline Case Study](contract/recruitment_pipeline.md)
 - [Oracle](contract/oracle.md)
 - [Drain Protection](contract/drain_protection.md)
 - [Tau Task Delegation](contract/tau.md)
