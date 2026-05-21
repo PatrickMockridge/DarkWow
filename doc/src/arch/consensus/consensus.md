@@ -102,6 +102,189 @@ cargo test -p dwowd test_linear
 | Testing | Flaky, timing-dependent | Deterministic, isolated |
 | Complexity | High | Low |
 
+## Fork Choice Rule
+
+The linear blockchain uses **strict longest-chain by height** — the simplest
+possible fork choice. There is no cumulative difficulty comparison, no chain
+weight computation, and no reorg handling.
+
+```
+Rule: The valid chain with the highest block height wins.
+      At equal height, the first block received wins permanently.
+```
+
+### Implications
+
+- **Single parent pointer**: Each block references exactly one parent via
+  `header.previous` (a `blake3::Hash`). No DAG, no multiple parents.
+- **No reorg handling**: Once a block is inserted at height N, no block can
+  replace it. The `insert_validated_block()` function rejects blocks at
+  already-occupied heights if the existing block carries a finality anchor
+  (`anchor_tx_id != [0u8; 32]`). In practice this means the first block
+  received at height N wins.
+- **First-seen wins**: At equal height, network latency determines which
+  block propagates first. There is no tie-breaking by hash or target.
+- **Design rationale**: The Uncle Merkle mechanism makes this safe. A miner
+  who loses the race at height N can still earn partial reward as an uncle
+  at height N+1. There is no wasted work.
+
+### Why No Cumulative Difficulty
+
+Bitcoin and Monero use "chain with most accumulated work" as the fork
+criterion to allow chain tips to compete. This requires tracking cumulative
+difficulty per chain tip and comparing across forks. The linear blockchain
+doesn't need this because:
+
+1. Uncle Merkle eliminates the all-or-nothing incentive for fork competition
+2. Linear chain structure means only one valid tip at any height
+3. Anchored finality (Caribina) makes reorgs impossible for finalized blocks
+
+Source: [`src/linear/src/consensus.rs`](../../../src/linear/src/consensus.rs),
+[`bin/dwowd/src/blockchain.rs`](../../../bin/dwowd/src/blockchain.rs).
+
+## Target Adjustment Algorithm
+
+The Proof-of-Work target adjusts each time a block is inserted using a
+**proportional controller** with a sliding window and ±10% single-step clamp.
+
+Source: [`src/linear/src/consensus.rs`](../../../src/linear/src/consensus.rs).
+
+### Parameters
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `target_block_time` | 120 seconds | Desired interval between blocks |
+| `TIMESTAMP_WINDOW` | 20 | Max timestamps stored (sliding window) |
+| Clamp ratio | ±10% | Max single-step target change |
+| Ratio bounds | [0.5, 2.0] | Prevents divergence under extreme hashrate changes |
+| `min_target` | 1 | Hardest possible target |
+| `max_target` | u32::MAX | Easiest possible target |
+
+### Algorithm
+
+1. **Record timestamp**: `record_block(timestamp)` pushes the new block's
+   timestamp into the sliding window (max 20 entries, oldest evicted first).
+
+2. **Compute average interval**: Sum intervals between the last 10 timestamps
+   in the window, divide by count.
+
+3. **Compute ratio**: `ratio = target_block_time / avg_interval` clamped to
+   `[0.5, 2.0]`.
+   - `ratio > 1.0`: blocks are arriving **too fast** → target decreases (harder)
+   - `ratio < 1.0`: blocks are arriving **too slow** → target increases (easier)
+
+4. **Apply clamp**: `adjustment = 1.0 ± min(|ratio - 1.0|, 0.10)`.
+   The adjustment is bounded to `[0.90, 1.10]`.
+
+5. **Apply adjustment**: `new_target = old_target / adjustment`, clamped to
+   `[min_target, max_target]`.
+
+### Formula
+
+```
+avg_interval = sum(last_10_intervals) / (n - 1)
+ratio = clamp(target_block_time / avg_interval, 0.5, 2.0)
+delta = clamp(ratio - 1.0, -0.10, +0.10)
+new_target = clamp(target / (1.0 + delta), min_target, max_target)
+```
+
+### Edge Cases
+
+- **Genesis / first block**: `timestamps.len() < 2` → no adjustment, target
+  remains at `initial_target`.
+- **Instant blocks** (`avg_interval == 0`): ratio clamped to 0.9 (maximum
+  difficulty increase of 10%).
+- **Window not full** (`< 20 timestamps`): Uses up to 10 most recent
+  intervals from whatever timestamps are available.
+
+### Conventional Difficulty
+
+The target is a 32-bit value where `hash_u32 <= target` is valid. Higher
+target = easier mining. Conventional difficulty (higher = harder) is derived:
+
+```
+difficulty = u32::MAX / target
+```
+
+### Configuration
+
+```toml
+[network_config."darkwow-testnet".pow]
+target_block_time = 120       # seconds
+initial_target = 16777215     # 0x00FFFFFF, easy first block
+min_target = 1                # hardest possible
+max_target = 4294967295       # u32::MAX, easiest possible
+```
+
+Default `initial_target` was recently increased from `0x0000FFFF` to
+`0x00FFFFFF` to make the first few blocks trivially mineable (~1/256
+hashes pass vs ~1/65536).
+
+## Finality Layers
+
+DarkWow supports modular finality on top of PoW consensus. Three modes
+control how nodes handle finality anchors.
+
+Source: [`src/linear/src/finality.rs`](../../../src/linear/src/finality.rs).
+
+### Modes
+
+| Mode | Behavior | Use Case |
+|------|----------|----------|
+| **Native** | Trust PoW only. Ignore all anchors. | Pure PoW chains, development |
+| **Always** | Enforce anchors on all blocks that carry them. | Production (default) |
+| **Signaled** | Only enforce when a block's `finality_flags` has `FINALITY_SIGNALED` set. | Gradual rollout |
+
+### Flag Bits
+
+Block header field `finality_flags` (u8) at offset 145:
+
+| Bit | Constant | Meaning |
+|-----|----------|---------|
+| 0x01 | `FINALITY_CARIBNIA` | Block carries a Caribina (Arweave) anchor |
+| 0x02 | `FINALITY_MONERO` | Block carries a Monero (p2pool) anchor |
+| 0x04 | `FINALITY_SIGNALED` | Block requires finality enforcement |
+
+### Caribina (Arweave) Anchoring
+
+**Status: Implemented and live.** When Caribina is enabled (`caribina_enabled:
+true`) and mode is not Native, each mined block is anchored to Arweave via the
+ANS-104 DataItem protocol. The Arweave transaction ID is stored in
+`header.anchor_tx_id`. Anchoring is best-effort — if the Arweave network or
+turbo service is unavailable, the block is still valid but carries no anchor.
+
+### Monero (p2pool) Anchoring
+
+**Status: Specified, not yet implemented in Rust.** Reserved flag bit
+`FINALITY_MONERO` (0x02) and `anchor_monero_height`/`anchor_monero_hash`
+fields exist on `BlockHeader`. The verification path is not yet implemented.
+
+### Configuration
+
+```toml
+[network_config."darkwow-testnet".finality]
+mode = "always"               # "always" | "native" | "signaled"
+caribina_enabled = true       # Enable Arweave anchoring
+monero_enabled = false        # Enable Monero anchoring (future)
+monero_min_confirmations = 3  # Monero confirmations before finality
+```
+
+CLI overrides: `--finality-mode native|always|signaled`,
+`--finality-disable-caribina`.
+
+### How Anchoring Provides Finality
+
+1. Miner produces a block with PoW
+2. Miner (or daemon) submits the block hash to Arweave as an ANS-104 DataItem
+3. The Arweave transaction ID is stored in `block.header.anchor_tx_id`
+4. Once the Arweave transaction is confirmed, the DarkWow block is **finalized**
+5. Any fork that conflicts with a finalized block is rejected by nodes running
+   `mode = Always`
+
+To reorganize a finalized block, an attacker would need to reorganize
+Arweave — whose cumulative difficulty dwarfs DarkWow's by orders of
+magnitude.
+
 ## Current State (May 2026)
 
 Both consensus implementations are active. The network name in `dwowd_config.toml`

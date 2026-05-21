@@ -1,5 +1,10 @@
 # DarkWow Daemon (dwowd)
 
+> **DEPRECATED**: This document describes the legacy `darkfid` daemon
+> architecture (original fork/overlay consensus). The current daemon is
+> `dwowd`. See [DarkWow Daemon (dwowd)](dwowd.md) for the current
+> architecture documentation.
+
 ## Overview
 
 dwowd is the DarkWow blockchain node software - the daemon that runs the full DarkWow network. It handles consensus, transaction validation, smart contract execution, and P2P networking.
@@ -105,6 +110,7 @@ stratum_port = 48347
 
 ## Related Documentation
 
+- [DarkWow Daemon (dwowd)](dwowd.md) — Current daemon architecture (replaces this doc)
 - [Contract Deployment Pipeline](./arch/dwowd_contract_pipeline.md) - How contracts are deployed and VKs injected
 - [Testing Overview](./dev/testing/overview.md) - Four-level testing taxonomy
 - [JSON-RPC API](../clients/dwowd_jsonrpc.md) - Wallet API reference

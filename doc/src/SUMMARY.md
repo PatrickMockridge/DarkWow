@@ -87,6 +87,7 @@
 
 ## Consensus
   - [Consensus](arch/consensus/consensus.md)
+  - [Stratum Protocol](arch/consensus/stratum.md)
   - [Uncle Merkle](arch/consensus/uncle_merkle.md)
   - [Linear Blockchain](arch/consensus/linear_blockchain.md)
   - [Linear zkVM](arch/consensus/linear_zkvm.md)
