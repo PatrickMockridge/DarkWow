@@ -58,7 +58,7 @@ impl Default for LinearPoWConfig {
     fn default() -> Self {
         Self {
             target_block_time: 60,
-            initial_target: 0x0000FFFF,
+            initial_target: 0x00FFFFFF,
             min_target: 1,
             max_target: u32::MAX,
         }

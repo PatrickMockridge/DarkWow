@@ -176,7 +176,7 @@ impl Default for PoWConsensus {
     fn default() -> Self {
         Self::new(
             120,            // 2-minute target block time
-            0x0000_FFFF,    // initial target (1 in ~65k chance per hash)
+            0x00FF_FFFF,    // initial target (~1 in 256 chance per hash)
             1,              // min target (hardest)
             u32::MAX,       // max target (easiest)
         )
