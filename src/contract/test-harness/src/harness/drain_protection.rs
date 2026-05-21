@@ -24,10 +24,15 @@
 //! DrainProtection Test Harness
 //!
 //! Provides isolated testing for DrainProtection contract.
+//!
+//! Note: drain_protection has an exit_v1 ZK circuit loaded, but the client proof
+//! generation module is not yet implemented. This harness exposes the circuit and
+//! proving key via the ContractHarness trait for direct use in tests.
 
 use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
+    Result,
 };
 
 /// DrainProtection Harness for isolated testing
@@ -56,6 +61,32 @@ impl DrainProtectionHarness {
             exit_zkbin,
             exit_pk,
         }
+    }
+
+    /// Build exit call data
+    ///
+    /// Client proof module not yet implemented — the ExitParamsV1 model type
+    /// must be constructed directly from `dwow_drain_protection_contract::model`.
+    /// The ZK circuit and proving key are available via the ContractHarness trait.
+    pub fn build_exit_call_data(
+        &self,
+        params: &dwow_drain_protection_contract::model::ExitParamsV1,
+    ) -> Result<Vec<u8>> {
+        use dwow_serial::Encodable;
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+        Ok(call_data)
+    }
+
+    /// Build initialize call data
+    pub fn build_initialize_call_data(
+        &self,
+        params: &dwow_drain_protection_contract::model::InitializeParamsV1,
+    ) -> Result<Vec<u8>> {
+        use dwow_serial::Encodable;
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+        Ok(call_data)
     }
 }
 

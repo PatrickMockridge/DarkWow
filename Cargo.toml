@@ -184,29 +184,11 @@ async-sdk = [
 ]
 
 blockchain = [
-    "sled-overlay",
-    "monero",
-    "num-bigint",
-    "primitive-types",
-    "sha2",
-    "tiny-keccak",
-
-    "dwow-serial/num-bigint",
-    "dwow-serial/sled-overlay",
+    "bs58",
+    "dwow-serial",
 
     "tx",
     "util",
-]
-
-validator = [
-    "hex",
-    "monero",
-    "randomx",
-    "smol",
-
-    "blockchain",
-    "system",
-    "wasm-runtime",
 ]
 
 geode = [
@@ -214,21 +196,6 @@ geode = [
     "bs58",
     "futures",
     "smol",
-]
-
-event-graph = [
-    "blake3",
-    "num-bigint",
-    "sled-overlay",
-    "smol",
-    "tinyjson",
-    "bs58",
-
-    "dwow-serial",
-    "dwow-serial/collections",
-    "dwow-serial/hash",
-    
-    "net",
 ]
 
 p2p-nym = []
@@ -325,6 +292,9 @@ wasm-runtime = [
     "wasmer",
     "wasmer-compiler-singlepass",
     "wasmer-middlewares",
+    "hex",
+    "num-bigint",
+    "sha2",
 
     "dwow-sdk/wasm",
 

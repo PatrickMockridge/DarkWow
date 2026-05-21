@@ -48,7 +48,7 @@ use wasmer_middlewares::{
 };
 
 use super::{import, import::db::DbHandle, memory::MemoryManipulation};
-use crate::{blockchain::{Blockchain, BlockchainOverlayPtr, SimpleDb}, Error, Result};
+use crate::{blockchain::SimpleDb, Error, Result};
 
 /// Trait for contract storage operations used during deploy().
 /// This abstraction allows different storage backends (overlay, LinearStore, etc.)
@@ -80,28 +80,6 @@ pub trait BlockchainAccess: Send + Sync {
     fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>>;
 }
 
-// Implement ContractStoreAccess for BlockchainOverlayPtr
-impl ContractStoreAccess for BlockchainOverlayPtr {
-    fn lookup(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
-        let overlay = self.lock().unwrap();
-        overlay.contracts.lookup(cid, tree_name)
-    }
-
-    fn init(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
-        let overlay = self.lock().unwrap();
-        overlay.contracts.init(cid, tree_name)
-    }
-
-    fn insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> Result<()> {
-        let overlay = self.lock().unwrap();
-        overlay.contracts.insert(cid, bincode)
-    }
-
-    fn get_bincode(&self, cid: &ContractId) -> Result<Vec<u8>> {
-        let overlay = self.lock().unwrap();
-        overlay.contracts.get(*cid)
-    }
-}
 
 // Implement SimpleDbAccess for Arc<SimpleDb>
 impl SimpleDbAccess for Arc<SimpleDb> {
@@ -141,128 +119,6 @@ impl SimpleDbAccess for SimpleDb {
     }
 }
 
-// Implement BlockchainAccess for BlockchainOverlayPtr
-impl BlockchainAccess for BlockchainOverlayPtr {
-    fn last_block_timestamp(&self) -> Result<Vec<u8>> {
-        let overlay = self.lock().unwrap();
-        let ts = overlay.last_block_timestamp()?;
-        Ok(serialize(&ts))
-    }
-
-    fn last_block_height(&self) -> Result<u32> {
-        let overlay = self.lock().unwrap();
-        overlay.last_block_height()
-    }
-
-    fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
-        let overlay = self.lock().unwrap();
-        overlay.transactions.get_raw(hash)
-    }
-
-    fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
-        let overlay = self.lock().unwrap();
-        overlay.transactions.get_location_raw(hash)
-    }
-
-    fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>> {
-        let overlay = self.lock().unwrap();
-        Ok(overlay.get_block_hash_by_height(height)?.map(|h| h.0.to_vec()))
-    }
-}
-
-// Implement BlockchainAccess for Arc<Blockchain>
-impl BlockchainAccess for Arc<Blockchain> {
-    fn last_block_timestamp(&self) -> Result<Vec<u8>> {
-        // Get last block info and extract timestamp
-        let blockchain = &**self;
-        let block_info = blockchain.last_block()?;
-        let ts = block_info.header.timestamp;
-        Ok(serialize(&ts))
-    }
-
-    fn last_block_height(&self) -> Result<u32> {
-        let blockchain = &**self;
-        let (height, _) = blockchain.last()?;
-        Ok(height)
-    }
-
-    fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
-        let blockchain = &**self;
-        if let Some(found) = blockchain.transactions.main.get(hash)? {
-            return Ok(Some(found.to_vec()))
-        }
-        Ok(None)
-    }
-
-    fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
-        let blockchain = &**self;
-        if let Some(found) = blockchain.transactions.location.get(hash)? {
-            return Ok(Some(found.to_vec()))
-        }
-        Ok(None)
-    }
-
-    fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>> {
-        let blockchain = &**self;
-        Ok(blockchain.get_block_hash_by_height(height)?.map(|h| h.0.to_vec()))
-    }
-}
-
-/// Adapter to use BlockchainOverlayPtr as ContractStoreAccess
-pub struct ContractStoreAccessAdapter(pub BlockchainOverlayPtr);
-
-impl ContractStoreAccess for ContractStoreAccessAdapter {
-    fn lookup(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
-        let overlay = self.0.lock().unwrap();
-        overlay.contracts.lookup(cid, tree_name)
-    }
-
-    fn init(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
-        let overlay = self.0.lock().unwrap();
-        overlay.contracts.init(cid, tree_name)
-    }
-
-    fn insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> Result<()> {
-        let overlay = self.0.lock().unwrap();
-        overlay.contracts.insert(cid, bincode)
-    }
-
-    fn get_bincode(&self, cid: &ContractId) -> Result<Vec<u8>> {
-        let overlay = self.0.lock().unwrap();
-        overlay.contracts.get(*cid)
-    }
-}
-
-/// Adapter to use BlockchainOverlayPtr as BlockchainAccess
-pub struct BlockchainAccessAdapter(pub BlockchainOverlayPtr);
-
-impl BlockchainAccess for BlockchainAccessAdapter {
-    fn last_block_timestamp(&self) -> Result<Vec<u8>> {
-        let overlay = self.0.lock().unwrap();
-        let ts = overlay.last_block_timestamp()?;
-        Ok(serialize(&ts))
-    }
-
-    fn last_block_height(&self) -> Result<u32> {
-        let overlay = self.0.lock().unwrap();
-        overlay.last_block_height()
-    }
-
-    fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
-        let overlay = self.0.lock().unwrap();
-        overlay.transactions.get_raw(hash)
-    }
-
-    fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
-        let overlay = self.0.lock().unwrap();
-        overlay.transactions.get_location_raw(hash)
-    }
-
-    fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>> {
-        let overlay = self.0.lock().unwrap();
-        Ok(overlay.get_block_hash_by_height(height)?.map(|h| h.0.to_vec()))
-    }
-}
 
 /// Name of the wasm linear memory in our guest module
 const MEMORY: &str = "memory";

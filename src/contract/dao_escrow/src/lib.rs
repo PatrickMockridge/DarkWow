@@ -212,13 +212,18 @@ pub const DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS: &str = "ResolveDispute";
 pub const DAO_ESCROW_ZKAS_INIT_V1_BIN: &[u8] = include_bytes!("../proof/init_v1.zk.bin");
 /// PayPremium_V1 zkas circuit binary
 pub const DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN: &[u8] = include_bytes!("../proof/pay_premium_v1.zk.bin");
-// Circuit binaries for new governance functions.
-// These are compiled from the .zk source files in proof/ via `zkas compile`.
-// Until compiled, the WASM entrypoint loads them as empty (governance functions
-// will return CircuitNotCompiled errors until binaries are available).
-// To compile: cd proof && for f in propose_claim_v1 vote_claim_v1
-//   verify_member_capability_v1 resolve_dispute_v1; do
-//   zkas $f.zk -o $f.zk.bin; done
+	/// ProposeClaim_V1 zkas circuit binary
+	pub const DAO_ESCROW_ZKAS_PROPOSE_CLAIM_V1_BIN: &[u8] =
+	    include_bytes!("../proof/propose_claim_v1.zk.bin");
+	/// VoteClaim_V1 zkas circuit binary
+	pub const DAO_ESCROW_ZKAS_VOTE_CLAIM_V1_BIN: &[u8] =
+	    include_bytes!("../proof/vote_claim_v1.zk.bin");
+	/// VerifyMemberCapability_V1 zkas circuit binary
+	pub const DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_V1_BIN: &[u8] =
+	    include_bytes!("../proof/verify_member_capability_v1.zk.bin");
+	/// ResolveDispute_V1 zkas circuit binary
+	pub const DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_V1_BIN: &[u8] =
+	    include_bytes!("../proof/resolve_dispute_v1.zk.bin");
 
 // ============================================================================
 // DRAIN PROTECTION INTEGRATION

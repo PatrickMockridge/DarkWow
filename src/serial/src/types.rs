@@ -43,6 +43,3 @@ mod semver;
 
 #[cfg(feature = "num-bigint")]
 mod bigint;
-
-#[cfg(feature = "sled-overlay")]
-mod sled_overlay;

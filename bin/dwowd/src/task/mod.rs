@@ -23,6 +23,3 @@
 
 pub mod consensus_linear;
 pub use consensus_linear::{consensus_linear_init_task, ConsensusInitTaskConfig};
-
-pub mod garbage_collect;
-pub use garbage_collect::garbage_collect_task;

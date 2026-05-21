@@ -28,7 +28,11 @@
 //! Note: Deployooor has NO ZK circuits - it's a pure WASM contract that validates
 //! and deploys other WASM contracts. This harness only tests the client API.
 
-use dwow::Result;
+use dwow::{
+    zk::ProvingKey,
+    zkas::ZkBinary,
+    Result,
+};
 use dwow_sdk::crypto::Keypair;
 
 use dwow_deployooor_contract::client::{
@@ -50,13 +54,6 @@ impl DeployooorHarness {
         Self {}
     }
 
-    /// Get circuit namespaces
-    ///
-    /// Deployooor has no ZK circuits.
-    pub fn circuits(&self) -> Vec<&'static str> {
-        vec![]
-    }
-
     /// Build a deploy call
     ///
     /// Creates a DeployV1 call to deploy a WASM contract.
@@ -76,6 +73,24 @@ impl DeployooorHarness {
     pub fn build_lock_call(&self, deploy_keypair: Keypair) -> Result<LockCallDebris> {
         let builder = LockCallBuilder { deploy_keypair };
         builder.build()
+    }
+}
+
+impl super::ContractHarness for DeployooorHarness {
+    fn name(&self) -> &str {
+        "deployooor"
+    }
+
+    fn circuits(&self) -> Vec<&'static str> {
+        vec![]
+    }
+
+    fn get_zkbin(&self, _ns: &str) -> Option<&ZkBinary> {
+        None
+    }
+
+    fn get_pk(&self, _ns: &str) -> Option<&ProvingKey> {
+        None
     }
 }
 

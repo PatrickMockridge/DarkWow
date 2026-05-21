@@ -96,10 +96,6 @@ pub struct BlockchainNetwork {
     /// Optional sync checkpoint hash
     checkpoint: Option<String>,
 
-    #[structopt(long)]
-    /// Garbage collection task transactions batch size
-    txs_batch_size: Option<usize>,
-
     #[structopt(flatten)]
     /// P2P network settings
     net: SettingsOpt,
@@ -181,7 +177,6 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         &sled_db,
         &db_path,
         &p2p_settings,
-        &blockchain_config.txs_batch_size,
         &ex,
         blockchain_config.finality,
     )

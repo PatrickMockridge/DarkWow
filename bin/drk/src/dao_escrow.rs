@@ -229,13 +229,9 @@ impl Drk {
 
         let membership_blind = pallas::Base::from_repr(membership_blind_bytes).unwrap();
         let value_blind = pallas::Scalar::from_repr(value_blind_bytes).unwrap();
-        let mpc_secret_1 = pallas::Scalar::from_repr(mpc1_bytes).unwrap();
-        let mpc_secret_2 = pallas::Scalar::from_repr(mpc2_bytes).unwrap();
-        let mpc_secret_3 = pallas::Scalar::from_repr(mpc3_bytes).unwrap();
-
-        // Max membership blocks (roughly 1 year at 5min blocks)
-        let max_membership_blocks: u64 = 525600;
-        let max_expiry = current_block + max_membership_blocks;
+        let mpc_secret_1 = pallas::Base::from_repr(mpc1_bytes).unwrap();
+        let mpc_secret_2 = pallas::Base::from_repr(mpc2_bytes).unwrap();
+        let mpc_secret_3 = pallas::Base::from_repr(mpc3_bytes).unwrap();
 
         // Load PayPremium ZK binary
         let premium_zkbin =
@@ -261,8 +257,6 @@ impl Drk {
             mpc_secret_1,
             mpc_secret_2,
             mpc_secret_3,
-            max_membership_blocks,
-            max_expiry,
         );
 
         // Generate ZK proof

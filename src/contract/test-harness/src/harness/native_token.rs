@@ -94,11 +94,6 @@ impl NativeTokenHarness {
         }
     }
 
-    /// Get circuit namespaces
-    pub fn circuits(&self) -> Vec<&'static str> {
-        vec!["Mint_V1", "Burn_V1", "Fee_V1"]
-    }
-
     /// Build a PoW reward call (mint native tokens to miner)
     pub fn mint_pow_reward(
         &self,

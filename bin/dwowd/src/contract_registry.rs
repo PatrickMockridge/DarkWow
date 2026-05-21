@@ -118,7 +118,6 @@ impl Default for ContractRegistry {
 #[allow(dead_code)]
 pub async fn resolve_contract_id(
     contract_id_str: &str,
-    _validator: &dwow::validator::Validator,
 ) -> HandlerResult<ContractId> {
     match contract_id_str {
         "native_token" => Ok(*dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID),

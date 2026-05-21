@@ -306,7 +306,7 @@ impl ProposeClaimBuilder {
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
                 capability_secret: [0u8; 32],
-                nullifier: pallas::Base::zero(),
+                nullifier: pallas::Base::zero().into(),
                 issuer_pub: [0u8; 32],
                 predicate_result: [0u8; 32],
                 proof: vec![],
@@ -389,7 +389,7 @@ impl VoteClaimBuilder {
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
                 capability_secret: [0u8; 32],
-                nullifier: pallas::Base::zero(),
+                nullifier: pallas::Base::zero().into(),
                 issuer_pub: [0u8; 32],
                 predicate_result: [0u8; 32],
                 proof: vec![],
@@ -775,7 +775,7 @@ impl VerifyMemberCapabilityBuilder {
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
                 capability_secret: [0u8; 32],
-                nullifier: pallas::Base::zero(),
+                nullifier: pallas::Base::zero().into(),
                 issuer_pub: [0u8; 32],
                 predicate_result: [0u8; 32],
                 proof: vec![],
@@ -829,7 +829,7 @@ impl ResolveDisputeBuilder {
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
                 capability_secret: [0u8; 32],
-                nullifier: pallas::Base::zero(),
+                nullifier: pallas::Base::zero().into(),
                 issuer_pub: [0u8; 32],
                 predicate_result: [0u8; 32],
                 proof: vec![],
@@ -914,7 +914,7 @@ impl SetGovernanceConfigBuilder {
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
                 capability_secret: [0u8; 32],
-                nullifier: pallas::Base::zero(),
+                nullifier: pallas::Base::zero().into(),
                 issuer_pub: [0u8; 32],
                 predicate_result: [0u8; 32],
                 proof: vec![],

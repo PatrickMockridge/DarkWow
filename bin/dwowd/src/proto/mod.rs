@@ -102,17 +102,15 @@ impl DwowP2pHandler {
     }
 
     /// Start the Dwowd P2P protocols handler for provided node.
-    pub async fn start(&self, executor: &ExecutorPtr, node: &DwowNodePtr) -> Result<()> {
+    pub async fn start(&self, executor: &ExecutorPtr, _node: &DwowNodePtr) -> Result<()> {
         info!(
             target: "dwowd::proto::mod::DwowP2pHandler::start",
             "Starting the Dwowd P2P handler..."
         );
 
-        // Start the `ProtocolTx` messages handler (DAG mode only)
-        if let Some(ref validator) = node.validator {
-            let subscriber = node.subscribers.get("txs").unwrap().clone();
-            self.txs.start(executor, validator, subscriber).await?;
-        }
+        // Start the `ProtocolTx` messages handler (linear-testnet mode)
+        // ProtocolTx is kept for forward compatibility but currently a no-op
+        self.txs.start(executor).await?;
 
         // Start the `LinearSync` messages handler (linear-testnet mode)
         if let Some(ref linear_sync) = self.linear_sync {

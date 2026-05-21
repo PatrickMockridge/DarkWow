@@ -10,7 +10,7 @@ edition = "2021"
 
 [dependencies]
 # Darkfi
-dwow = {path = "../../", features = ["async-daemonize", "bs58", "validator", "net", "rpc"]}
+dwow = {path = "../../", features = ["async-daemonize", "blockchain", "bs58", "net", "rpc", "tx", "wasm-runtime"]}
 dwow_linear = {path = "../../src/linear", features = ["async"]}
 dwow_money_v3_contract = {path = "../../src/contract/money_v3", features = ["client", "no-entrypoint"]}
 dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["client"]}
@@ -26,7 +26,6 @@ randomx = {git = "https://codeberg.org/darkrenaissance/RandomX", rev = "0e31d5a"
 thiserror = "2.0"
 bs58 = "0.5.1"
 tracing = "0.1.44"
-num-bigint = "0.4.6"
 rand = "0.8.5"
 sled = "0.34"
 toml = "0.9.8"
@@ -36,8 +35,6 @@ async-trait = "0.1.89"
 tinyjson = "2.5.1"
 url = "2.5.7"
 
-# Monero
-monero = "0.21.0"
 hex = "0.4.3"
 
 # Daemon
@@ -62,6 +59,8 @@ dwow_lottery_contract = {path = "../../src/contract/lottery", features = ["clien
 dwow_tender_contract = {path = "../../src/contract/tender", features = ["client", "no-entrypoint"]}
 dwow_auction_contract = {path = "../../src/contract/auction", features = ["client", "no-entrypoint"]}
 dwow_pool_stake_contract = {path = "../../src/contract/pool_stake", features = ["client", "no-entrypoint"]}
+dwow_dao_escrow_contract = {path = "../../src/contract/dao_escrow", features = ["client", "no-entrypoint"]}
+dwow_identity_contract = {path = "../../src/contract/identity", features = ["client", "no-entrypoint"]}
 
 [lints]
 workspace = true

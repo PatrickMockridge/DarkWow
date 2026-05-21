@@ -216,8 +216,8 @@ impl BaccaratHarness {
         bet_id: BetId,
         house_secret: SecretKey,
         house_pub: PublicKey,
+        current_block: u64,
     ) -> Result<HouseCloseResult, Box<dyn std::error::Error>> {
-        let current_block = 1000u64; // Placeholder - would be set from blockchain state
 
         // Create signature over (bet_id, current_block)
         let signature_msg = {

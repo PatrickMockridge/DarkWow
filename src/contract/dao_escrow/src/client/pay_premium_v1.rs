@@ -66,11 +66,9 @@ pub struct PayPremiumV1CallData {
     pub expiry: u64,
     pub membership_blind: pallas::Base,
     pub value_blind: pallas::Scalar,
-    pub mpc_secret_1: pallas::Scalar,
-    pub mpc_secret_2: pallas::Scalar,
-    pub mpc_secret_3: pallas::Scalar,
-    pub max_membership_blocks: u64,
-    pub max_expiry: u64,
+    pub mpc_secret_1: pallas::Base,
+    pub mpc_secret_2: pallas::Base,
+    pub mpc_secret_3: pallas::Base,
     pub member_pub_x: pallas::Base,
     pub member_pub_y: pallas::Base,
 }
@@ -86,11 +84,9 @@ impl PayPremiumV1CallData {
         expiry: u64,
         membership_blind: pallas::Base,
         value_blind: pallas::Scalar,
-        mpc_secret_1: pallas::Scalar,
-        mpc_secret_2: pallas::Scalar,
-        mpc_secret_3: pallas::Scalar,
-        max_membership_blocks: u64,
-        max_expiry: u64,
+        mpc_secret_1: pallas::Base,
+        mpc_secret_2: pallas::Base,
+        mpc_secret_3: pallas::Base,
     ) -> Self {
         // Derive member public key from secret
         let member_pub = PublicKey::from_secret(
@@ -110,8 +106,6 @@ impl PayPremiumV1CallData {
             mpc_secret_1,
             mpc_secret_2,
             mpc_secret_3,
-            max_membership_blocks,
-            max_expiry,
             member_pub_x: mx,
             member_pub_y: my,
         }
@@ -148,6 +142,7 @@ impl PayPremiumV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             // nullifier_k is a CONSTANT in circuit - do NOT pass as witness
+            // max_membership_blocks/max_expiry are INTERNAL to circuit (witness_base, base_add)
             // member_pub_x/y are DERIVED inside circuit from member_secret and NULLIFIER_K
             Witness::Base(Value::known(self.dao_escrow_bulla)),
             Witness::Base(Value::known(pallas::Base::from(self.current_block))),
@@ -157,12 +152,10 @@ impl PayPremiumV1CallData {
             Witness::Base(Value::known(pallas::Base::from(self.expiry))),
             Witness::Base(Value::known(self.membership_blind)),
             Witness::Scalar(Value::known(self.value_blind)),
-            Witness::Scalar(Value::known(self.mpc_secret_1)),
-            Witness::Scalar(Value::known(self.mpc_secret_2)),
-            Witness::Scalar(Value::known(self.mpc_secret_3)),
-            Witness::Base(Value::known(pallas::Base::from(self.max_membership_blocks))),
-            Witness::Base(Value::known(pallas::Base::from(self.max_expiry))),
-            // member_pub_x/y derived inside circuit - do NOT pass as witnesses
+            // mpc_secret_* are declared as Base in the circuit
+            Witness::Base(Value::known(self.mpc_secret_1)),
+            Witness::Base(Value::known(self.mpc_secret_2)),
+            Witness::Base(Value::known(self.mpc_secret_3)),
         ]
     }
 }

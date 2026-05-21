@@ -41,7 +41,6 @@ use dwow::{
         settings::RpcSettings,
     },
     system::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
-    validator::ValidatorPtr,
     Error, Result,
 };
 use dwow_linear::LinearBlockchain as LinearBlockchainCore;
@@ -100,9 +99,7 @@ pub type DwowNodePtr = Arc<DwowNode>;
 
 /// Structure representing a DarkWow node
 pub struct DwowNode {
-    /// Validator(node) pointer (None in linear-testnet mode)
-    validator: Option<ValidatorPtr>,
-    /// Linear blockchain (only set when running in linear-testnet mode)
+    /// Linear blockchain
     linear_blockchain: Option<Arc<LinearBlockchain>>,
     /// Mempool for linear blockchain (only set in linear-testnet mode)
     mempool: Option<MempoolPtr>,
@@ -110,8 +107,6 @@ pub struct DwowNode {
     p2p_handler: DwowP2pHandlerPtr,
     /// Node miners registry pointer
     registry: DwowMinersRegistryPtr,
-    /// Garbage collection task transactions batch size
-    txs_batch_size: usize,
     /// A map of various subscribers exporting live info from the blockchain
     subscribers: HashMap<&'static str, JsonSubscriber>,
     /// Main JSON-RPC connection tracker
@@ -130,34 +125,29 @@ pub struct DwowNode {
     current_linear_template: Mutex<Option<crate::registry::model::LinearBlockTemplate>>,
     /// Publisher for pushing stratum job notifications to miners (linear-testnet)
     linear_stratum_publisher: Mutex<Option<PublisherPtr<JsonNotification>>>,
-    /// Stored recipient config for generating new block templates on submit (linear-testnet)
+    /// Stored recipient config for generating new block templates on submit
     linear_recipient_config: Mutex<Option<LinearMinerRewardsRecipientConfig>>,
     /// Serializes block submission to prevent concurrent RandomX VM access
     linear_submit_lock: Mutex<()>,
-    /// Genesis block hash for linear-testnet mm_rpc (validator.genesis() is
-    /// empty because genesis lives in linear_blockchain, not the validator).
+    /// Linear genesis hash for mm_rpc
     linear_genesis_hash: Mutex<Option<HeaderHash>>,
 }
 
 impl DwowNode {
     pub async fn new(
-        validator: Option<ValidatorPtr>,
         linear_blockchain: Option<Arc<LinearBlockchain>>,
         mempool: Option<MempoolPtr>,
         p2p_handler: DwowP2pHandlerPtr,
         registry: DwowMinersRegistryPtr,
-        txs_batch_size: usize,
         subscribers: HashMap<&'static str, JsonSubscriber>,
         is_localnet: bool,
         min_block_interval: u64,
     ) -> Result<DwowNodePtr> {
         Ok(Arc::new(Self {
-            validator,
             linear_blockchain,
             mempool,
             p2p_handler,
             registry,
-            txs_batch_size,
             subscribers,
             rpc_connections: Mutex::new(HashSet::new()),
             management_rpc_connections: Mutex::new(HashSet::new()),
@@ -210,7 +200,6 @@ impl Dwowd {
         sled_db: &sled::Db,
         db_path: &std::path::Path,
         net_settings: &Settings,
-        txs_batch_size: &Option<usize>,
         ex: &ExecutorPtr,
         finality_config: Option<dwow_linear::FinalityConfig>,
     ) -> Result<DwowdPtr> {
@@ -358,12 +347,6 @@ impl Dwowd {
             }
         }
 
-        // Grab blockchain network configured transactions batch size for garbage collection
-        let txs_batch_size = match txs_batch_size {
-            Some(b) => if *b > 0 { *b } else { 50 },
-            None => 50,
-        };
-
         // Here we initialize various subscribers that can export live blockchain/consensus data.
         let mut subscribers = HashMap::new();
         subscribers.insert("blocks", JsonSubscriber::new("blockchain.subscribe_blocks"));
@@ -371,22 +354,18 @@ impl Dwowd {
         subscribers.insert("proposals", JsonSubscriber::new("blockchain.subscribe_proposals"));
         subscribers.insert("dnet", JsonSubscriber::new("dnet.subscribe_events"));
 
-        // Initialize node with linear blockchain (no DAG validator needed)
         let min_block_interval = net_settings.pow.min_block_interval.unwrap_or(10);
         let node = DwowNode::new(
-            None, // No DAG validator in linear mode
             Some(linear_blockchain),
             Some(create_mempool()),
             p2p_handler,
             registry,
-            txs_batch_size,
             subscribers,
             false,
             min_block_interval,
         ).await?;
 
-        // Store genesis hash for mm_rpc (validator.genesis() is empty in
-        // linear mode because genesis lives in linear_blockchain).
+        // Store genesis hash for mm_rpc
         node.linear_genesis_hash.lock().await.replace(linear_genesis_hash);
 
         // Generate the background tasks
@@ -525,12 +504,9 @@ impl Dwowd {
         info!(target: "dwowd::Dwowd::stop", "Stopping consensus task...");
         self.consensus_task.stop().await;
 
-        // Flush sled database data
+        // Flush linear blockchain store
         info!(target: "dwowd::Dwowd::stop", "Flushing sled database...");
-        if let Some(ref validator) = self.node.validator {
-            let flushed_bytes = validator.read().await.blockchain.sled_db.flush_async().await?;
-            info!(target: "dwowd::Dwowd::stop", "Flushed {flushed_bytes} bytes");
-        } else if let Some(ref chain) = self.node.linear_blockchain {
+        if let Some(ref chain) = self.node.linear_blockchain {
             let _ = chain.store.flush();
             info!(target: "dwowd::Dwowd::stop", "Flushed linear blockchain store");
         }

@@ -11,7 +11,7 @@ repository = "https://codeberg.org/darkrenaissance/darkfi"
 [dependencies]
 genevd = {path = "../genevd"}
 
-dwow = {path = "../../../", features = ["event-graph", "rpc", "bs58"]}
+dwow = {path = "../../../", features = ["rpc", "bs58"]}
 dwow-serial = {path = "../../../src/serial"}
 
 smol = "2.0.2"

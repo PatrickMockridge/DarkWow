@@ -23,6 +23,4 @@
 
 pub mod linear_genesis;
 
-pub mod linear_five_node;
-
-pub mod linear_sdk;
+pub mod linear_heavyweight;

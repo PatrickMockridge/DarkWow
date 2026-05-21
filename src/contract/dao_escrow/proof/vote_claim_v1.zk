@@ -23,8 +23,8 @@ field = "pallas";
 
 constant "VoteClaim" {
     EcFixedPointBase NULLIFIER_K,
-    EcFixedPointShort VOTE_COMMIT_VALUE,
-    EcFixedPoint VOTE_COMMIT_RANDOM,
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
 witness "VoteClaim" {
@@ -85,8 +85,8 @@ circuit "VoteClaim" {
     # Pedersen commitment hides the vote direction.
     # vote_type is constrained to be 0 (No) or 1 (Yes).
 
-    vcv = ec_mul_short(vote_type, VOTE_COMMIT_VALUE);
-    vcr = ec_mul(vote_blind, VOTE_COMMIT_RANDOM);
+    vcv = ec_mul_short(vote_type, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(vote_blind, VALUE_COMMIT_RANDOM);
     vote_commit = ec_add(vcv, vcr);
 
     # ==========================================================================

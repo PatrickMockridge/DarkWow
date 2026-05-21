@@ -82,6 +82,11 @@ pub struct DexHarness {
 }
 
 impl DexHarness {
+    /// Spawn a new DEX harness (alias for new())
+    pub fn spawn() -> Self {
+        Self::new()
+    }
+
     /// Create a new DEX harness with pre-loaded circuits
     pub fn new() -> Self {
         // Load circuit binaries
@@ -128,16 +133,6 @@ impl DexHarness {
             cancel_swap_zkbin,
             cancel_swap_pk,
         }
-    }
-
-    /// Get circuit namespaces
-    pub fn circuits(&self) -> Vec<&'static str> {
-        vec![
-            "CreateSwap_V1",
-            "AcceptSwap_V1",
-            "ExecuteSwap_V1",
-            "CancelSwap_V1",
-        ]
     }
 
     /// Create a swap proposal with ZK proof and return encoded call data

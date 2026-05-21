@@ -28,6 +28,7 @@
 use dwow::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
+    Result,
 };
 
 /// InsuranceMarket Harness for isolated testing
@@ -72,6 +73,28 @@ impl InsuranceMarketHarness {
             purchase_coverage_zkbin,
             purchase_coverage_pk,
         }
+    }
+
+    /// Build underwrite call data
+    pub fn build_underwrite_call_data(
+        &self,
+        params: &dwow_insurance_market_contract::model::UnderwriteParamsV1,
+    ) -> Result<Vec<u8>> {
+        use dwow_serial::Encodable;
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+        Ok(call_data)
+    }
+
+    /// Build purchase coverage call data
+    pub fn build_purchase_coverage_call_data(
+        &self,
+        params: &dwow_insurance_market_contract::model::PurchaseCoverageParamsV1,
+    ) -> Result<Vec<u8>> {
+        use dwow_serial::Encodable;
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+        Ok(call_data)
     }
 }
 

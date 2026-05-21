@@ -333,8 +333,8 @@ impl StablecoinHarness {
         total_debt: u64,
         rate_per_second: u64,
         time_elapsed: u64,
+        report_timestamp: u64,
     ) -> Result<GovernanceReportResult, Box<dyn std::error::Error>> {
-        let report_timestamp = 0u64; // placeholder
         let input = GovernanceReportCallData::new(
             reporter_secret,
             total_collateral,
@@ -423,6 +423,42 @@ impl StablecoinHarness {
             proof,
             public_inputs,
         })
+    }
+
+    /// Build add collateral call data
+    ///
+    /// Client proof module not yet implemented for AddCollateralV1.
+    /// Construct `DepositCollateralParams` from `dwow_stablecoin_contract::model`.
+    pub fn build_add_collateral_call_data(
+        &self,
+        params: &dwow_stablecoin_contract::model::DepositCollateralParams,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        use dwow_serial::Encodable;
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+        Ok(call_data)
+    }
+
+    /// Build remove collateral call data
+    pub fn build_remove_collateral_call_data(
+        &self,
+        params: &dwow_stablecoin_contract::model::WithdrawCollateralParams,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        use dwow_serial::Encodable;
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+        Ok(call_data)
+    }
+
+    /// Build repay stable call data
+    pub fn build_repay_stable_call_data(
+        &self,
+        params: &dwow_stablecoin_contract::model::RepayStableParams,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        use dwow_serial::Encodable;
+        let mut call_data = vec![];
+        params.encode(&mut call_data)?;
+        Ok(call_data)
     }
 }
 

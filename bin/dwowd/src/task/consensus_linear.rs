@@ -51,15 +51,10 @@ pub struct ConsensusInitTaskConfig {
 /// - Marks the node as synced immediately
 /// - Does not run the full consensus protocol (linear uses simple PoW mining via RPC)
 pub async fn consensus_linear_init_task(
-    node: DwowNodePtr,
+    _node: DwowNodePtr,
     _config: ConsensusInitTaskConfig,
     _ex: Arc<Executor<'static>>,
 ) -> Result<()> {
-    // Mark the node as synced if using DAG validator (linear mode has no validator)
-    if let Some(ref validator) = node.validator {
-        validator.write().await.synced = true;
-    }
-
     info!(target: "dwowd::task::consensus_linear_init_task", "Linear-testnet consensus initialized (synced=true)");
 
     // For linear-testnet, we don't need the full consensus task since

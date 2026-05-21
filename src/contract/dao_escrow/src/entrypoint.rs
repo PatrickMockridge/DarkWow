@@ -87,9 +87,17 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     let init_v1_bincode = include_bytes!("../proof/init_v1.zk.bin");
     let pay_premium_v1_bincode = include_bytes!("../proof/pay_premium_v1.zk.bin");
+    let propose_claim_v1_bincode = include_bytes!("../proof/propose_claim_v1.zk.bin");
+    let vote_claim_v1_bincode = include_bytes!("../proof/vote_claim_v1.zk.bin");
+    let verify_member_cap_v1_bincode = include_bytes!("../proof/verify_member_capability_v1.zk.bin");
+    let resolve_dispute_v1_bincode = include_bytes!("../proof/resolve_dispute_v1.zk.bin");
 
     wasm::db::zkas_db_set(&init_v1_bincode[..])?;
     wasm::db::zkas_db_set(&pay_premium_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&propose_claim_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&vote_claim_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&verify_member_cap_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&resolve_dispute_v1_bincode[..])?;
 
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;

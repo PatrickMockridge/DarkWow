@@ -123,16 +123,6 @@ impl MoneyV3Harness {
         )
     }
 
-    /// Get circuit namespaces
-    pub fn circuits(&self) -> Vec<&'static str> {
-        vec![
-            "TokenMint_V1",
-            "AuthTokenMint_V1",
-            "Mint_V1",
-            "Burn_V1",
-        ]
-    }
-
     /// Create a new token type
     ///
     /// Returns token creation result with auth_nullifier and auth_mint_public for subsequent minting

@@ -134,11 +134,9 @@ fn run_pay_premium(args: &[String]) {
         expiry,
         pallas::Base::zero(), // membership_blind
         pallas::Scalar::zero(), // value_blind
-        pallas::Scalar::zero(), // mpc_secret_1
-        pallas::Scalar::zero(), // mpc_secret_2
-        pallas::Scalar::zero(), // mpc_secret_3
-        1000, // max_membership_blocks
-        1000000, // max_expiry
+        pallas::Base::zero(), // mpc_secret_1
+        pallas::Base::zero(), // mpc_secret_2
+        pallas::Base::zero(), // mpc_secret_3
     );
 
     let (proof, public_inputs) =

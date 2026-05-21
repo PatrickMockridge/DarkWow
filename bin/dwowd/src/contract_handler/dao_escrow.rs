@@ -32,6 +32,14 @@
 //! - EndowmentWithdrawV1 = 0x04
 //! - TreasurySpendV1 = 0x05
 //! - EnableDrainProtectionV1 = 0x06
+//! - ProposeClaimV1 = 0x07
+//! - VoteClaimV1 = 0x08
+//! - ExecuteClaimV1 = 0x09
+//! - RegisterCapabilityRequirementV1 = 0x0a
+//! - VerifyMemberCapabilityV1 = 0x0b
+//! - ResolveDisputeV1 = 0x0c
+//! - CancelClaimV1 = 0x0d
+//! - SetGovernanceConfigV1 = 0x0e
 //!
 //! Full calldata building and ZK proof generation requires wallet integration.
 
@@ -47,6 +55,14 @@ const SELECTOR_WITHDRAW_V1: u8 = 0x03;
 const SELECTOR_ENDOWMENT_WITHDRAW_V1: u8 = 0x04;
 const SELECTOR_TREASURY_SPEND_V1: u8 = 0x05;
 const SELECTOR_ENABLE_DRAIN_PROTECTION_V1: u8 = 0x06;
+const SELECTOR_PROPOSE_CLAIM_V1: u8 = 0x07;
+const SELECTOR_VOTE_CLAIM_V1: u8 = 0x08;
+const SELECTOR_EXECUTE_CLAIM_V1: u8 = 0x09;
+const SELECTOR_REGISTER_CAPABILITY_REQUIREMENT_V1: u8 = 0x0a;
+const SELECTOR_VERIFY_MEMBER_CAPABILITY_V1: u8 = 0x0b;
+const SELECTOR_RESOLVE_DISPUTE_V1: u8 = 0x0c;
+const SELECTOR_CANCEL_CLAIM_V1: u8 = 0x0d;
+const SELECTOR_SET_GOVERNANCE_CONFIG_V1: u8 = 0x0e;
 
 /// Handler for DAO-Escrow contract functions.
 pub struct DaoEscrowContractHandler;
@@ -77,6 +93,14 @@ impl ContractHandler for DaoEscrowContractHandler {
             "EndowmentWithdrawV1" => Some(SELECTOR_ENDOWMENT_WITHDRAW_V1),
             "TreasurySpendV1" => Some(SELECTOR_TREASURY_SPEND_V1),
             "EnableDrainProtectionV1" => Some(SELECTOR_ENABLE_DRAIN_PROTECTION_V1),
+            "ProposeClaimV1" => Some(SELECTOR_PROPOSE_CLAIM_V1),
+            "VoteClaimV1" => Some(SELECTOR_VOTE_CLAIM_V1),
+            "ExecuteClaimV1" => Some(SELECTOR_EXECUTE_CLAIM_V1),
+            "RegisterCapabilityRequirementV1" => Some(SELECTOR_REGISTER_CAPABILITY_REQUIREMENT_V1),
+            "VerifyMemberCapabilityV1" => Some(SELECTOR_VERIFY_MEMBER_CAPABILITY_V1),
+            "ResolveDisputeV1" => Some(SELECTOR_RESOLVE_DISPUTE_V1),
+            "CancelClaimV1" => Some(SELECTOR_CANCEL_CLAIM_V1),
+            "SetGovernanceConfigV1" => Some(SELECTOR_SET_GOVERNANCE_CONFIG_V1),
             _ => None,
         }
     }
@@ -106,6 +130,14 @@ impl ContractHandler for DaoEscrowContractHandler {
             "EndowmentWithdrawV1",
             "TreasurySpendV1",
             "EnableDrainProtectionV1",
+            "ProposeClaimV1",
+            "VoteClaimV1",
+            "ExecuteClaimV1",
+            "RegisterCapabilityRequirementV1",
+            "VerifyMemberCapabilityV1",
+            "ResolveDisputeV1",
+            "CancelClaimV1",
+            "SetGovernanceConfigV1",
         ]
     }
 }

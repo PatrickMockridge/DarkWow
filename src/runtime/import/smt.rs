@@ -40,13 +40,6 @@ use wasmer::{FunctionEnvMut, WasmPtr};
 use super::acl::acl_allow;
 use crate::runtime::vm_runtime::{ContractSection, Env, SimpleDbAccess};
 
-/// An SMT adapter for sled overlay storage. Compatible with the WasmDb SMT adapter
-#[allow(dead_code)]
-pub struct SledStorage<'a> {
-    overlay: &'a mut sled_overlay::SledDbOverlay,
-    tree_key: &'a [u8],
-}
-
 /// An SMT adapter for SimpleDb storage. Deterministic, no overlay/diffs.
 pub struct SimpleDbStorage<'a> {
     simple_db: &'a dyn SimpleDbAccess,
@@ -95,56 +88,6 @@ impl StorageAdapter for SimpleDbStorage<'_> {
             );
             return Err(ContractError::SmtDelFailed)
         }
-        Ok(())
-    }
-}
-
-impl StorageAdapter for SledStorage<'_> {
-    type Value = pallas::Base;
-
-    fn put(&mut self, key: BigUint, value: pallas::Base) -> ContractResult {
-        if let Err(e) = self.overlay.insert(self.tree_key, &key.to_bytes_le(), &value.to_repr()) {
-            error!(
-                target: "runtime::smt::SledStorage::put",
-                "[WASM] SledStorage::put(): inserting key {key:?}, value {value:?} into DB tree: {:?}: {e}",
-                self.tree_key
-            );
-            return Err(ContractError::SmtPutFailed)
-        }
-
-        Ok(())
-    }
-
-    fn get(&self, key: &BigUint) -> Option<pallas::Base> {
-        let value = match self.overlay.get(self.tree_key, &key.to_bytes_le()) {
-            Ok(v) => v,
-            Err(e) => {
-                error!(
-                    target: "runtime::smt::SledStorage::get",
-                    "[WASM] SledStorage::get(): Fetching key {key:?} from DB tree: {:?}: {e}",
-                    self.tree_key
-                );
-                return None
-            }
-        };
-
-        let value = value?;
-        let mut repr = [0; 32];
-        repr.copy_from_slice(&value);
-
-        pallas::Base::from_repr(repr).into()
-    }
-
-    fn del(&mut self, key: &BigUint) -> ContractResult {
-        if let Err(e) = self.overlay.remove(self.tree_key, &key.to_bytes_le()) {
-            error!(
-                target: "runtime::smt::SledStorage::del",
-                "[WASM] SledStorage::del(): Removing key {key:?} from DB tree: {:?}: {e}",
-                self.tree_key
-            );
-            return Err(ContractError::SmtDelFailed)
-        }
-
         Ok(())
     }
 }

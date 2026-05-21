@@ -368,13 +368,11 @@ pub enum Error {
     #[error("Database error: {0}")]
     DatabaseError(String),
 
-    #[cfg(feature = "sled-overlay")]
     #[error(transparent)]
-    SledError(#[from] sled_overlay::sled::Error),
+    SledError(#[from] sled::Error),
 
-    #[cfg(feature = "sled-overlay")]
     #[error(transparent)]
-    SledTransactionError(#[from] sled_overlay::sled::transaction::TransactionError),
+    SledTransactionError(#[from] sled::transaction::TransactionError),
 
     #[error("Transaction {0} not found in database")]
     TransactionNotFound(String),

@@ -30,29 +30,11 @@ use dwow::rpc::jsonrpc::{ErrorCode::ServerError, JsonError, JsonResponse, JsonRe
 /// Custom RPC errors available for dwowd.
 /// Please sort them sensefully.
 pub enum RpcError {
-    // Transaction-related errors
-    TxSimulationFail = -32110,
-    TxGasCalculationFail = -32111,
-
-    // State-related errors,
-    NotSynced = -32120,
-    UnknownBlockHeight = -32121,
-
-    // Parsing errors
-    ParseError = -32190,
-
     // Contract-related errors
-    ContractZkasDbNotFound = -32200,
     ContractStateNotFound = -32201,
-    ContractStateKeyNotFound = -32202,
-    ContractWasmNotFound = -32203,
 
     // Miner configuration errors
-    MinerInvalidWalletConfig = -32301,
-    MinerInvalidRecipient = -32302,
     MinerInvalidRecipientPrefix = -32303,
-    MinerInvalidSpendHook = -32304,
-    MinerInvalidUserData = -32305,
 
     // Stratum errors
     MinerMissingLogin = -32306,
@@ -66,64 +48,22 @@ pub enum RpcError {
     MinerRandomXNotSupported = -32314,
     MinerMissingClientId = -32315,
     MinerInvalidClientId = -32316,
-    MinerUnknownClient = -32317,
     MinerMissingJobId = -32318,
     MinerInvalidJobId = -32319,
     MinerMissingNonce = -32320,
     MinerInvalidNonce = -32321,
-    MinerMissingResult = -32322,
-    MinerInvalidResult = -32323,
 
-    // Merge mining errors
-    MinerMissingAddress = -32324,
-    MinerInvalidAddress = -32325,
-    MinerMissingAuxHash = -32326,
-    MinerInvalidAuxHash = -32327,
-    MinerMissingHeight = -32328,
-    MinerInvalidHeight = -32329,
-    MinerMissingPrevId = -32330,
-    MinerInvalidPrevId = -32331,
-    MinerMissingAuxBlob = -32332,
-    MinerInvalidAuxBlob = -32333,
-    MinerMissingBlob = -32334,
-    MinerInvalidBlob = -32335,
-    MinerMissingMerkleProof = -32336,
-    MinerInvalidMerkleProof = -32337,
-    MinerMissingPath = -32338,
-    MinerInvalidPath = -32339,
-    MinerMissingSeedHash = -32340,
-    MinerInvalidSeedHash = -32341,
-    MinerMerkleProofConstructionFailed = -32342,
-    MinerMoneroPowDataConstructionFailed = -32343,
 }
 
 fn to_tuple(e: RpcError) -> (i32, String) {
     let msg = match e {
-        // Transaction-related errors
-        RpcError::TxSimulationFail => "Failed simulating transaction state change",
-        RpcError::TxGasCalculationFail => "Failed to calculate transaction's gas",
-
-        // State-related errors
-        RpcError::NotSynced => "Blockchain is not synced",
-        RpcError::UnknownBlockHeight => "Did not find block height",
-
-        // Parsing errors
-        RpcError::ParseError => "Parse error",
-
         // Contract-related errors
-        RpcError::ContractZkasDbNotFound => "zkas database not found for given contract",
         RpcError::ContractStateNotFound => "Records not found for given contract state",
-        RpcError::ContractStateKeyNotFound => "Value not found for given contract state key",
-        RpcError::ContractWasmNotFound => "wasm bincode not found for given contract",
 
         // Miner configuration errors
-        RpcError::MinerInvalidWalletConfig => "Request wallet configuration is invalid",
-        RpcError::MinerInvalidRecipient => "Request recipient wallet address is invalid",
         RpcError::MinerInvalidRecipientPrefix => {
             "Request recipient wallet address prefix is invalid"
         }
-        RpcError::MinerInvalidSpendHook => "Request spend hook is invalid",
-        RpcError::MinerInvalidUserData => "Request user data is invalid",
 
         // Stratum errors
         RpcError::MinerMissingLogin => "Request is missing the login",
@@ -137,41 +77,11 @@ fn to_tuple(e: RpcError) -> (i32, String) {
         RpcError::MinerRandomXNotSupported => "Request doesn't support rx/0",
         RpcError::MinerMissingClientId => "Request is missing the client ID",
         RpcError::MinerInvalidClientId => "Request client ID is invalid",
-        RpcError::MinerUnknownClient => "Request client is unknown",
         RpcError::MinerMissingJobId => "Request is missing the job ID",
         RpcError::MinerInvalidJobId => "Request job ID is invalid",
         RpcError::MinerMissingNonce => "Request is missing the nonce",
         RpcError::MinerInvalidNonce => "Request nonce is invalid",
-        RpcError::MinerMissingResult => "Request is missing the result",
-        RpcError::MinerInvalidResult => "Request nonce is result",
 
-        // Merge mining errors
-        RpcError::MinerMissingAddress => {
-            "Request is missing the recipient wallet address configuration"
-        }
-        RpcError::MinerInvalidAddress => {
-            "Request recipient wallet address configuration is invalid"
-        }
-        RpcError::MinerMissingAuxHash => "Request is missing the merge mining job (aux_hash)",
-        RpcError::MinerInvalidAuxHash => "Request merge mining job (aux_hash) is invalid",
-        RpcError::MinerMissingHeight => "Request is missing the Monero height",
-        RpcError::MinerInvalidHeight => "Request Monero height is invalid",
-        RpcError::MinerMissingPrevId => "Request is missing the hash of the previous Monero block",
-        RpcError::MinerInvalidPrevId => "Request hash of the previous Monero block is invalid",
-        RpcError::MinerMissingAuxBlob => "Request is missing the merge mining blob",
-        RpcError::MinerInvalidAuxBlob => "Request merge mining bob is invalid",
-        RpcError::MinerMissingBlob => "Request is missing the Monero block template",
-        RpcError::MinerInvalidBlob => "Request Monero block template is invalid",
-        RpcError::MinerMissingMerkleProof => "Request is missing the Merkle proof",
-        RpcError::MinerInvalidMerkleProof => "Request Merkle proof is invalid",
-        RpcError::MinerMissingPath => "Request is missing the Merkle proof path",
-        RpcError::MinerInvalidPath => "Request Merkle proof path is invalid",
-        RpcError::MinerMissingSeedHash => "Request is missing the RandomX seed key",
-        RpcError::MinerInvalidSeedHash => "Request RandomX seed key is invalid",
-        RpcError::MinerMerkleProofConstructionFailed => {
-            "failed constructing aux chain Merkle proof"
-        }
-        RpcError::MinerMoneroPowDataConstructionFailed => "Failed constructing Monero PoW data",
     };
 
     (e as i32, msg.to_string())

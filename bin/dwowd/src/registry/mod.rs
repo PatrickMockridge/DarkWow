@@ -22,360 +22,52 @@
  */
 
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::HashSet,
     sync::Arc,
 };
 
-use sled::IVec;
 use smol::lock::{Mutex, RwLock};
-use tinyjson::JsonValue;
 use tracing::{error, info};
 
 use dwow::{
-    blockchain::BlockInfo,
     rpc::{
-        jsonrpc::JsonSubscriber,
         server::{listen_and_serve, RequestHandler},
         settings::RpcSettings,
     },
     system::{ExecutorPtr, StoppableTask, StoppableTaskPtr},
-    util::encoding::base64,
-    validator::{consensus::Proposal, Validator, ValidatorPtr},
     Error, Result,
 };
-use dwow_sdk::{
-    crypto::{keypair::Network, pasta_prelude::PrimeField},
-    tx::TransactionHash,
-};
-use dwow_serial::serialize_async;
+use dwow_sdk::crypto::keypair::Network;
 
 use crate::{
-    proto::DwowP2pHandlerPtr,
-    rpc::{stratum::StratumRpcHandler, xmr::MmRpcHandler},
+    rpc::stratum::StratumRpcHandler,
     DwowNode, DwowNodePtr,
 };
 
 /// Block related structures
 pub mod model;
-use model::{
-    generate_next_block_template, BlockTemplate, MinerClient, MinerRewardsRecipientConfig,
-    PowRewardV1Zk,
-};
+use model::LinearPowRewardZk;
 
 /// Atomic pointer to the DarkWow node miners registry state.
 pub type DwowMinersRegistryStatePtr = Arc<RwLock<DwowMinersRegistryState>>;
 
 /// DarkWow node miners registry state.
 pub struct DwowMinersRegistryState {
-    /// PowRewardV1 ZK data (None for linear-testnet mode)
-    pub powrewardv1_zk: Option<PowRewardV1Zk>,
-    /// Mining block templates of each wallet config
-    pub block_templates: HashMap<String, BlockTemplate>,
-    /// Active native clients mapped to their job information.
-    /// This client information includes their wallet template key,
-    /// recipient configuration, current mining job key(job id) and
-    /// its connection publisher. For native jobs the job key is the
-    /// hex encoded header hash.
-    pub jobs: HashMap<String, MinerClient>,
-    /// Active merge mining jobs mapped to the wallet template they
-    /// represent. The key(job id) is the the header template hash.
-    pub mm_jobs: HashMap<String, String>,
+    /// Linear PoW reward ZK data (None for linear-testnet mode)
+    pub powrewardv1_zk: Option<LinearPowRewardZk>,
     /// Linear blockchain state (only set in linear-testnet mode)
     pub linear_blockchain: Option<Arc<crate::blockchain::LinearBlockchain>>,
 }
 
 impl DwowMinersRegistryState {
-    pub async fn new(validator: &ValidatorPtr) -> Result<DwowMinersRegistryStatePtr> {
-        // Generate the PowRewardV1 ZK data
-        let powrewardv1_zk = Some(PowRewardV1Zk::new(validator).await?);
-
-        Ok(Arc::new(RwLock::new(Self {
-            powrewardv1_zk,
-            block_templates: HashMap::new(),
-            jobs: HashMap::new(),
-            mm_jobs: HashMap::new(),
-            linear_blockchain: None,
-        })))
-    }
-
     /// Create a new registry state for linear-testnet mode
     pub async fn new_linear(
         linear_blockchain: Arc<crate::blockchain::LinearBlockchain>,
     ) -> Result<DwowMinersRegistryStatePtr> {
-        // For linear mode, we use simple UTXO rewards without ZK proofs
-        let powrewardv1_zk = None;
-
         Ok(Arc::new(RwLock::new(Self {
-            powrewardv1_zk,
-            block_templates: HashMap::new(),
-            jobs: HashMap::new(),
-            mm_jobs: HashMap::new(),
+            powrewardv1_zk: None,
             linear_blockchain: Some(linear_blockchain),
         })))
-    }
-
-    /// Create a registry record for provided wallet config. If the
-    /// record already exists return its template, otherwise create its
-    /// current template based on provided validator state.
-    ///
-    /// Note: Always remember to purge new trees from the database if
-    /// not needed.
-    async fn create_template(
-        &mut self,
-        validator: &Validator,
-        wallet: &String,
-        config: &MinerRewardsRecipientConfig,
-    ) -> Result<BlockTemplate> {
-        // Check if a template already exists for this wallet
-        if let Some(block_template) = self.block_templates.get(wallet) {
-            return Ok(block_template.clone())
-        }
-
-        // Grab validator best current fork
-        let mut extended_fork = validator.best_current_fork().await?;
-
-        // Generate the next block template
-        let block_template = generate_next_block_template(
-            &mut extended_fork,
-            config,
-            &self.powrewardv1_zk.as_ref().unwrap().zkbin,
-            &self.powrewardv1_zk.as_ref().unwrap().provingkey,
-            validator.verify_fees,
-        )
-        .await?;
-
-        // Create the new registry record
-        self.block_templates.insert(wallet.clone(), block_template.clone());
-
-        // Print the new template wallet information
-        let recipient_str = format!("{}", config.recipient);
-        let spend_hook_str = match config.spend_hook {
-            Some(spend_hook) => format!("{spend_hook}"),
-            None => String::from("-"),
-        };
-        let user_data_str = match config.user_data {
-            Some(user_data) => bs58::encode(user_data.to_repr()).into_string(),
-            None => String::from("-"),
-        };
-        info!(target: "dwowd::registry::mod::DwowMinersRegistry::create_template",
-            "Created new block template for wallet: address={recipient_str}, spend_hook={spend_hook_str}, user_data={user_data_str}",
-        );
-
-        Ok(block_template)
-    }
-
-    /// Register a new miner and create its job.
-    pub async fn register_miner(
-        &mut self,
-        validator: &Validator,
-        wallet: &String,
-        config: &MinerRewardsRecipientConfig,
-    ) -> Result<(String, String, JsonValue, JsonSubscriber)> {
-        // Create wallet template
-        let block_template = self.create_template(validator, wallet, config).await?;
-
-        // Grab the hex encoded block hash and create the client job record
-        let (job_id, job) = block_template.job_notification();
-        let (client_id, client) = MinerClient::new(wallet, config, &job_id);
-        let publisher = client.publisher.clone();
-        self.jobs.insert(client_id.clone(), client);
-
-        Ok((client_id, job_id, job, publisher))
-    }
-
-    /// Register a new merge miner and create its job.
-    pub async fn register_merge_miner(
-        &mut self,
-        validator: &Validator,
-        wallet: &String,
-        config: &MinerRewardsRecipientConfig,
-    ) -> Result<(String, f64)> {
-        // Create wallet template
-        let block_template = self.create_template(validator, wallet, config).await?;
-
-        // Grab the block template hash and its difficulty, and then
-        // create the job record.
-        let block_template_hash = block_template.block.header.template_hash().as_string();
-        let difficulty = block_template.difficulty;
-        self.mm_jobs.insert(block_template_hash.clone(), wallet.clone());
-
-        Ok((block_template_hash, difficulty))
-    }
-
-    /// Submit provided block to the provided node.
-    ///
-    /// This is the architectural enforcement point: all blocks (native-stratum and
-    /// merge-mined via mm_rpc) enter the P2P network through this same path.
-    /// `p2p_handler.p2p.broadcast()` sends the block to all lilith P2P peers,
-    /// ensuring every block is propagated through the mandatory P2P layer.
-    pub async fn submit(
-        &self,
-        validator: &mut Validator,
-        subscribers: &HashMap<&'static str, JsonSubscriber>,
-        _p2p_handler: &DwowP2pHandlerPtr,
-        block: BlockInfo,
-    ) -> Result<()> {
-        let proposal = Proposal::new(block.clone());
-        validator.append_proposal(&proposal).await?;
-
-        info!(
-            target: "dwowd::registry::mod::DwowMinersRegistry::submit",
-            "Proposing new block to network",
-        );
-
-        let proposals_sub = subscribers.get("proposals").unwrap();
-        let enc_prop = JsonValue::String(base64::encode(&serialize_async(&proposal).await));
-        proposals_sub.notify(vec![enc_prop].into()).await;
-
-        info!(
-            target: "dwowd::registry::mod::DwowMinersRegistry::submit",
-            "Block proposal registered (legacy DAG path)",
-        );
-
-        Ok(())
-    }
-
-    /// Refresh outdated jobs in the registry based on provided
-    /// validator state.
-    pub async fn refresh(&mut self, validator: &Validator) -> Result<()> {
-        // Find inactive native jobs and drop them
-        let mut dropped_jobs = vec![];
-        let mut active_templates = HashSet::new();
-        for (client_id, client) in self.jobs.iter() {
-            // Clear inactive client publisher subscribers. If none
-            // exists afterwards, the client is considered inactive so
-            // we mark it for drop.
-            if client.publisher.publisher.clear_inactive().await {
-                dropped_jobs.push(client_id.clone());
-                continue
-            }
-
-            // Mark client block template as active
-            active_templates.insert(client.wallet.clone());
-        }
-        self.jobs.retain(|client_id, _| !dropped_jobs.contains(client_id));
-
-        // Grab validator best current fork and its last proposal for
-        // checks.
-        let extended_fork = validator.best_current_fork().await?;
-        let last_proposal = extended_fork.last_proposal()?.hash;
-
-        // Find mm jobs not extending the best current fork and drop
-        // them.
-        let mut dropped_mm_jobs = vec![];
-        for (job_id, wallet) in self.mm_jobs.iter() {
-            // Grab its wallet template. Its safe to unwrap here since
-            // we know the job exists.
-            let block_template = self.block_templates.get(wallet).unwrap();
-
-            // Check if it extends current best fork
-            if block_template.block.header.previous == last_proposal {
-                active_templates.insert(wallet.clone());
-                continue
-            }
-
-            // This mm job doesn't extend current best fork so we mark
-            // it for drop.
-            dropped_mm_jobs.push(job_id.clone());
-        }
-        self.mm_jobs.retain(|job_id, _| !dropped_mm_jobs.contains(job_id));
-
-        // Drop inactive templates. Merge miners will create a new
-        // template and job on next poll.
-        self.block_templates.retain(|wallet, _| active_templates.contains(wallet));
-
-        // Return if no wallets templates exists.
-        if self.block_templates.is_empty() {
-            return Ok(())
-        }
-
-        // Iterate over active clients to refresh their jobs, if needed
-        for (job_id, client) in self.jobs.iter_mut() {
-            // Grab its wallet template. Its safe to unwrap here since
-            // we know the job exists.
-            let block_template = self.block_templates.get_mut(&client.wallet).unwrap();
-
-            // Check if it extends current best fork
-            if block_template.block.header.previous == last_proposal {
-                continue
-            }
-
-            // Clone the fork so each client generates over a new one
-            let mut extended_fork = extended_fork.full_clone()?;
-
-            // Generate the next block template
-            let result = generate_next_block_template(
-                &mut extended_fork,
-                &client.config,
-                &self.powrewardv1_zk.as_ref().unwrap().zkbin,
-                &self.powrewardv1_zk.as_ref().unwrap().provingkey,
-                validator.verify_fees,
-            )
-            .await;
-
-            // Check result
-            *block_template = match result {
-                Ok(b) => b,
-                Err(e) => {
-                    error!(target: "dwowd::registry::mod::DwowMinersRegistry::create_template",
-                        "Updating block template for job {job_id} failed: {e}",
-                    );
-                    // Mark block template as not submitted so the
-                    // miner can submit another one and don't get stuck
-                    block_template.submitted = false;
-                    continue;
-                }
-            };
-
-            // Print the updated template wallet information
-            let recipient_str = format!("{}", client.config.recipient);
-            let spend_hook_str = match client.config.spend_hook {
-                Some(spend_hook) => format!("{spend_hook}"),
-                None => String::from("-"),
-            };
-            let user_data_str = match client.config.user_data {
-                Some(user_data) => bs58::encode(user_data.to_repr()).into_string(),
-                None => String::from("-"),
-            };
-            info!(target: "dwowd::registry::mod::DwowMinersRegistry::create_template",
-                "Updated block template for wallet: address={recipient_str}, spend_hook={spend_hook_str}, user_data={user_data_str}",
-            );
-
-            // Create the new job notification
-            let (job, notification) = block_template.job_notification();
-
-            // Update the client record
-            client.job = job;
-
-            // Push job notification to subscriber
-            client.publisher.notify(notification).await;
-        }
-
-        Ok(())
-    }
-
-    /// Auxilliary function to retrieve all current block templates
-    /// newly opened trees.
-    pub fn new_trees(&self) -> BTreeSet<IVec> {
-        let mut new_trees = BTreeSet::new();
-        for block_template in self.block_templates.values() {
-            for new_tree in &block_template.new_trees {
-                new_trees.insert(new_tree.clone());
-            }
-        }
-        new_trees
-    }
-
-    /// Auxilliary function to retrieve all current block templates
-    /// transactions hashes.
-    pub fn proposed_transactions(&self) -> HashSet<TransactionHash> {
-        let mut proposed_txs = HashSet::new();
-        for block_template in self.block_templates.values() {
-            for tx in &block_template.block.txs {
-                proposed_txs.insert(tx.hash());
-            }
-        }
-        proposed_txs
     }
 }
 
@@ -399,44 +91,6 @@ pub struct DwowMinersRegistry {
 }
 
 impl DwowMinersRegistry {
-    /// Initialize a DarkWow node miners registry.
-    pub async fn init(
-        network: Network,
-        validator: &ValidatorPtr,
-    ) -> Result<DwowMinersRegistryPtr> {
-        info!(
-            target: "dwowd::registry::mod::DwowMinersRegistry::init",
-            "Initializing a new DarkWow node miners registry..."
-        );
-
-        // Generate the registry state
-        let state = DwowMinersRegistryState::new(validator).await?;
-
-        // Generate the stratum JSON-RPC background task and its
-        // connections tracker.
-        let stratum_rpc_task = StoppableTask::new();
-        let stratum_rpc_connections = Mutex::new(HashSet::new());
-
-        // Generate the HTTP JSON-RPC background task and its
-        // connections tracker.
-        let mm_rpc_task = StoppableTask::new();
-        let mm_rpc_connections = Mutex::new(HashSet::new());
-
-        info!(
-            target: "dwowd::registry::mod::DwowMinersRegistry::init",
-            "DarkWow node miners registry generated successfully!"
-        );
-
-        Ok(Arc::new(Self {
-            network,
-            state,
-            stratum_rpc_task,
-            stratum_rpc_connections,
-            mm_rpc_task,
-            mm_rpc_connections,
-        }))
-    }
-
     /// Initialize a DarkWow node miners registry for linear-testnet mode.
     pub async fn init_linear(
         network: Network,
@@ -447,16 +101,11 @@ impl DwowMinersRegistry {
             "Initializing a new DarkWow node miners registry for linear-testnet..."
         );
 
-        // Generate the registry state (placeholder - needs to be adapted for linear)
         let state = DwowMinersRegistryState::new_linear(linear_blockchain).await?;
 
-        // Generate the stratum JSON-RPC background task and its
-        // connections tracker.
         let stratum_rpc_task = StoppableTask::new();
         let stratum_rpc_connections = Mutex::new(HashSet::new());
 
-        // Generate the HTTP JSON-RPC background task and its
-        // connections tracker.
         let mm_rpc_task = StoppableTask::new();
         let mm_rpc_connections = Mutex::new(HashSet::new());
 
@@ -489,10 +138,6 @@ impl DwowMinersRegistry {
             "Starting the DarkWow node miners registry..."
         );
 
-        // Enforce local-only binding for stratum and mm_rpc. These are local
-        // coordination channels (xmrig/p2pool <-> dwowd), not replacements for
-        // lilith P2P. 0.0.0.0 is accepted for Docker devnet where the adaptor
-        // or p2pool runs in a separate container on the same bridge network.
         if let Some(ref stratum_rpc) = stratum_rpc_settings {
             if !stratum_rpc.is_localhost() && !stratum_rpc.is_wildcard() {
                 error!(
@@ -548,7 +193,6 @@ impl DwowMinersRegistry {
                 executor.clone(),
             );
         } else {
-            // Create a dummy task
             self.stratum_rpc_task.clone().start(
                 async { Ok(()) },
                 |_| async { /* Do nothing */ },
@@ -557,30 +201,13 @@ impl DwowMinersRegistry {
             );
         }
 
-        // Start the merge mining JSON-RPC task
-        if let Some(mm_rpc) = mm_rpc_settings {
-            info!(target: "dwowd::registry::mod::DwowMinersRegistry::start", "Starting merge mining JSON-RPC server");
-            let node_ = node.clone();
-            self.mm_rpc_task.clone().start(
-                listen_and_serve::<MmRpcHandler>(mm_rpc.clone(), node.clone(), None, executor.clone()),
-                |res| async move {
-                    match res {
-                        Ok(()) | Err(Error::RpcServerStopped) => <DwowNode as RequestHandler<MmRpcHandler>>::stop_connections(&node_).await,
-                        Err(e) => error!(target: "dwowd::registry::mod::DwowMinersRegistry::start", "Failed starting merge mining JSON-RPC server: {e}"),
-                    }
-                },
-                Error::RpcServerStopped,
-                executor.clone(),
-            );
-        } else {
-            // Create a dummy task
-            self.mm_rpc_task.clone().start(
-                async { Ok(()) },
-                |_| async { /* Do nothing */ },
-                Error::RpcServerStopped,
-                executor.clone(),
-            );
-        }
+        // Start the merge mining JSON-RPC task (placeholder — mm_rpc deleted)
+        self.mm_rpc_task.clone().start(
+            async { Ok(()) },
+            |_| async { /* Do nothing */ },
+            Error::RpcServerStopped,
+            executor.clone(),
+        );
 
         info!(
             target: "dwowd::registry::mod::DwowMinersRegistry::start",
@@ -594,11 +221,9 @@ impl DwowMinersRegistry {
     pub async fn stop(&self) {
         info!(target: "dwowd::registry::mod::DwowMinersRegistry::stop", "Terminating DarkWow node miners registry...");
 
-        // Stop the Stratum JSON-RPC task
         info!(target: "dwowd::registry::mod::DwowMinersRegistry::stop", "Stopping Stratum JSON-RPC server...");
         self.stratum_rpc_task.stop().await;
 
-        // Stop the merge mining JSON-RPC task
         info!(target: "dwowd::registry::mod::DwowMinersRegistry::stop", "Stopping merge mining JSON-RPC server...");
         self.mm_rpc_task.stop().await;
 
