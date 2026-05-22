@@ -119,4 +119,96 @@ mod tests {
         assert!(verify_monero_anchor(MAX_PLAUSIBLE_MONERO_HEIGHT, &hash, 0, None, 3).is_ok());
         assert!(verify_monero_anchor(MAX_PLAUSIBLE_MONERO_HEIGHT + 1, &hash, 0, None, 3).is_err());
     }
+
+    // --- Phase 4b tests: monerod RPC verification with mock HTTP server ---
+
+    #[test]
+    fn test_success_with_url() {
+        let hash_hex = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let hash_bytes: [u8; 32] = hex::decode(hash_hex).unwrap().try_into().unwrap();
+        let get_block = Box::leak(
+            format!(
+                r#"{{"result":{{"block_header":{{"hash":"{}","height":3000000}}}}}}"#,
+                hash_hex
+            )
+            .into_boxed_str(),
+        );
+        let get_count = Box::leak(
+            "{\"result\":{\"count\":3000005}}"
+                .to_string()
+                .into_boxed_str(),
+        );
+
+        let url = crate::monero::rpc::test_helpers::serve_sequence(vec![get_block, get_count]);
+        assert!(verify_monero_anchor(3000000, &hash_bytes, 0, Some(&url), 3).is_ok());
+    }
+
+    #[test]
+    fn test_hash_mismatch_with_url() {
+        let claimed_hash: [u8; 32] =
+            hex::decode("1111111111111111111111111111111111111111111111111111111111111111")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let response = Box::leak(
+            r#"{"result":{"block_header":{"hash":"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","height":3000000}}}"#
+                .to_string()
+                .into_boxed_str(),
+        );
+
+        let url = crate::monero::rpc::test_helpers::serve_once(response);
+        let err =
+            verify_monero_anchor(3000000, &claimed_hash, 0, Some(&url), 3).unwrap_err();
+        assert!(matches!(err, MoneroVerifyError::HashMismatch(..)));
+    }
+
+    #[test]
+    fn test_insufficient_confirmations_with_url() {
+        let hash_hex = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let hash_bytes: [u8; 32] = hex::decode(hash_hex).unwrap().try_into().unwrap();
+        let get_block = Box::leak(
+            format!(
+                r#"{{"result":{{"block_header":{{"hash":"{}","height":3000000}}}}}}"#,
+                hash_hex
+            )
+            .into_boxed_str(),
+        );
+        let get_count = Box::leak(
+            "{\"result\":{\"count\":3000001}}"
+                .to_string()
+                .into_boxed_str(),
+        );
+
+        let url = crate::monero::rpc::test_helpers::serve_sequence(vec![get_block, get_count]);
+        let err =
+            verify_monero_anchor(3000000, &hash_bytes, 0, Some(&url), 3).unwrap_err();
+        assert!(matches!(
+            err,
+            MoneroVerifyError::InsufficientConfirmations { .. }
+        ));
+    }
+
+    #[test]
+    fn test_block_not_found_with_url() {
+        let hash_bytes = [0xAB; 32];
+        let response = Box::leak(
+            r#"{"result":{"block_header":{"hash":"","height":3000000}}}"#
+                .to_string()
+                .into_boxed_str(),
+        );
+
+        let url = crate::monero::rpc::test_helpers::serve_once(response);
+        let err =
+            verify_monero_anchor(3000000, &hash_bytes, 0, Some(&url), 3).unwrap_err();
+        assert!(matches!(err, MoneroVerifyError::BlockNotFound(3000000)));
+    }
+
+    #[test]
+    fn test_connection_error_with_url() {
+        let hash_bytes = [0xAB; 32];
+        let url = "http://127.0.0.1:19999/json_rpc";
+        let err =
+            verify_monero_anchor(3000000, &hash_bytes, 0, Some(url), 3).unwrap_err();
+        assert!(matches!(err, MoneroVerifyError::BlockNotFound(_)));
+    }
 }

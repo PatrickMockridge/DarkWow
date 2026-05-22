@@ -105,3 +105,116 @@ pub fn get_block_count(url: &str) -> Result<u64, MonerodError> {
 
     Ok(envelope.result.count)
 }
+
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    //! Mock monerod HTTP server helpers for unit tests.
+    //! Spawn a TCP listener on a random port, serve canned JSON-RPC responses,
+    //! and return the URL for the client to connect to.
+
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
+    /// Serve a single canned JSON-RPC response, then exit.
+    /// Returns the URL the server is listening on.
+    pub fn serve_once(json_body: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let url = format!("http://127.0.0.1:{}/json_rpc", port);
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 8192];
+                let _ = stream.read(&mut buf);
+                let body = format!(
+                    "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    json_body.len(),
+                    json_body,
+                );
+                let _ = stream.write_all(body.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        url
+    }
+
+    /// Serve a sequence of canned JSON-RPC responses, one per request, then exit.
+    /// Returns the URL the server is listening on.
+    pub fn serve_sequence(responses: Vec<&'static str>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let url = format!("http://127.0.0.1:{}/json_rpc", port);
+        thread::spawn(move || {
+            for json_body in responses {
+                if let Ok((mut stream, _)) = listener.accept() {
+                    let mut buf = [0u8; 8192];
+                    let _ = stream.read(&mut buf);
+                    let body = format!(
+                        "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        json_body.len(),
+                        json_body,
+                    );
+                    let _ = stream.write_all(body.as_bytes());
+                    let _ = stream.flush();
+                }
+            }
+        });
+        url
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_block_by_height_success() {
+        let response = r#"{"result":{"block_header":{"hash":"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","height":3000000}}}"#;
+        let url = test_helpers::serve_once(response);
+        let (height, hash) = get_block_by_height(&url, 3000000).unwrap();
+        assert_eq!(height, 3000000);
+        let expected =
+            hex::decode("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
+                .unwrap();
+        assert_eq!(hash, expected.as_slice());
+    }
+
+    #[test]
+    fn test_get_block_by_height_empty_hash() {
+        let response = r#"{"result":{"block_header":{"hash":"","height":3000000}}}"#;
+        let url = test_helpers::serve_once(response);
+        let err = get_block_by_height(&url, 3000000).unwrap_err();
+        assert!(matches!(err, MonerodError::BlockNotFound(3000000)));
+    }
+
+    #[test]
+    fn test_get_block_by_height_malformed_json() {
+        let response = "not json at all";
+        let url = test_helpers::serve_once(response);
+        let err = get_block_by_height(&url, 3000000).unwrap_err();
+        assert!(matches!(err, MonerodError::JsonRpc(_)));
+    }
+
+    #[test]
+    fn test_get_block_by_height_connection_refused() {
+        let url = "http://127.0.0.1:19999/json_rpc";
+        let err = get_block_by_height(url, 3000000).unwrap_err();
+        assert!(matches!(err, MonerodError::Http(_)));
+    }
+
+    #[test]
+    fn test_get_block_count_success() {
+        let response = r#"{"result":{"count":3500000}}"#;
+        let url = test_helpers::serve_once(response);
+        let count = get_block_count(&url).unwrap();
+        assert_eq!(count, 3500000);
+    }
+
+    #[test]
+    fn test_get_block_count_jsonrpc_error() {
+        let response = r#"{"error":{"code":-32601,"message":"Method not found"}}"#;
+        let url = test_helpers::serve_once(response);
+        let err = get_block_count(&url).unwrap_err();
+        assert!(matches!(err, MonerodError::JsonRpc(_)));
+    }
+}

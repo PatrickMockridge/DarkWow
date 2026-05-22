@@ -100,11 +100,20 @@ Environment:
   MONERO_WALLET_ADDRESS     Monero testnet wallet for merge mining rewards
   FINALITY_MODE             Finality enforcement mode: always (default), native, signaled
   FINALITY_DISABLE_CARIBINA Set to "true" to disable Caribina Arweave anchoring
+  FINALITY_ENABLE_MONERO    Set "true" to enable Monero anchor verification
+  MONERO_MIN_CONFIRMATIONS  Minimum Monero block confirmations (default: 3)
+  MONEROD_RPC_URL           monerod JSON-RPC URL for anchor verification
 
 Options:
   --finality-mode MODE      Finality mode: "always" (default), "native", or "signaled"
   --finality-disable-caribina
                             Disable Caribina Arweave anchoring entirely
+  --finality-enable-monero  Enable Monero p2pool anchor verification
+  --monero-min-confirmations N
+                            Monero minimum confirmations (default: 3)
+  --monerod-rpc-url URL     monerod JSON-RPC URL for anchor verification
+  --no-cache                Pass --no-cache to docker compose build
+  --fresh                   Aggressive clean: builder prune, image rm, volume prune
 
 Examples:
   ./test_pipeline.sh                         # local devnet, native mining
@@ -124,6 +133,11 @@ EOF
 MODE="native"
 FINALITY_MODE="${FINALITY_MODE:-always}"
 FINALITY_DISABLE_CARIBINA="${FINALITY_DISABLE_CARIBINA:-false}"
+FINALITY_ENABLE_MONERO="${FINALITY_ENABLE_MONERO:-false}"
+MONERO_MIN_CONFIRMATIONS="${MONERO_MIN_CONFIRMATIONS:-3}"
+MONEROD_RPC_URL="${MONEROD_RPC_URL:-}"
+NO_CACHE="${NO_CACHE:-false}"
+FRESH="${FRESH:-false}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
@@ -131,6 +145,13 @@ while [ $# -gt 0 ]; do
         --finality-mode) FINALITY_MODE="$2"; shift 2 ;;
         --finality-mode=*) FINALITY_MODE="${1#*=}"; shift ;;
         --finality-disable-caribina) FINALITY_DISABLE_CARIBINA="true"; shift ;;
+        --finality-enable-monero) FINALITY_ENABLE_MONERO="true"; shift ;;
+        --monero-min-confirmations) MONERO_MIN_CONFIRMATIONS="$2"; shift 2 ;;
+        --monero-min-confirmations=*) MONERO_MIN_CONFIRMATIONS="${1#*=}"; shift ;;
+        --monerod-rpc-url) MONEROD_RPC_URL="$2"; shift 2 ;;
+        --monerod-rpc-url=*) MONEROD_RPC_URL="${1#*=}"; shift ;;
+        --no-cache) NO_CACHE="true"; shift ;;
+        --fresh) FRESH="true"; shift ;;
         --help|-h) usage ;;
         *)
             echo "Unknown flag: $1"
@@ -146,6 +167,13 @@ if ! echo "$VALID_MODES" | grep -qw "$MODE"; then
     echo "Valid modes: $VALID_MODES"
     echo "Run '$0 --help' for full documentation."
     exit 1
+fi
+
+# In merge mining modes, enable Monero finality by default since merge
+# mining is the only source of Monero anchors in this pipeline.
+if [ "$MODE" = "merge" ] || [ "$MODE" = "join-merge" ]; then
+    FINALITY_ENABLE_MONERO="${FINALITY_ENABLE_MONERO:-true}"
+    MONEROD_RPC_URL="${MONEROD_RPC_URL:-http://monerod:28081/json_rpc}"
 fi
 
 # --- Locate dww binary ---
@@ -395,17 +423,19 @@ phase_clean() {
             warn "Removing stale containers..."
             echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
         fi
-        # Remove old images first — builder prune skips layers still
-        # referenced by existing images, so stale COPY caches survive.
-        for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet" || true); do
-            docker rmi -f "$img" 2>/dev/null || true
-        done
-        # Clear all build cache — ensures fresh builds on next run
-        docker builder prune -a -f 2>/dev/null || true
-        for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
-            docker buildx prune -a -f --builder "$b" 2>/dev/null || true
-        done
-        docker volume prune -f 2>/dev/null || true
+        if [ "$FRESH" = "true" ]; then
+            # Remove old images first — builder prune skips layers still
+            # referenced by existing images, so stale COPY caches survive.
+            for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet" || true); do
+                docker rmi -f "$img" 2>/dev/null || true
+            done
+            # Clear all build cache — ensures fresh builds on next run
+            docker builder prune -a -f 2>/dev/null || true
+            for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
+                docker buildx prune -a -f --builder "$b" 2>/dev/null || true
+            done
+            docker volume prune -f 2>/dev/null || true
+        fi
         clean_data_dir "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL" \
                "$JOIN_TEST_FALLBACK" "$JOIN_TEST_PERSIST"
         pass "clean (join mode)"
@@ -427,21 +457,23 @@ phase_clean() {
         echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
     fi
 
-    # Remove darkwow testnet images explicitly (docker compose --rmi misses
-    # images that were built with different profile combinations)
-    for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet-" || true); do
-        docker rmi -f "$img" 2>/dev/null || true
-    done
+    if [ "$FRESH" = "true" ]; then
+        # Remove darkwow testnet images explicitly (docker compose --rmi misses
+        # images that were built with different profile combinations)
+        for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet-" || true); do
+            docker rmi -f "$img" 2>/dev/null || true
+        done
 
-    # Remove orphan volumes not captured by compose down -v
-    docker volume prune -f 2>/dev/null || true
+        # Remove orphan volumes not captured by compose down -v
+        docker volume prune -f 2>/dev/null || true
 
-    # Clear all build cache — ensures fresh git clones on next build.
-    # Prune default builder and all non-default buildx builders.
-    docker builder prune -a -f 2>/dev/null || true
-    for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
-        docker buildx prune -a -f --builder "$b" 2>/dev/null || true
-    done
+        # Clear all build cache — ensures fresh git clones on next build.
+        # Prune default builder and all non-default buildx builders.
+        docker builder prune -a -f 2>/dev/null || true
+        for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
+            docker buildx prune -a -f --builder "$b" 2>/dev/null || true
+        done
+    fi
     pass "clean"
 }
 
@@ -587,32 +619,37 @@ phase_build() {
         info "  Using existing darkwow-base:24.04"
     fi
 
+    BUILD_ARGS=""
+    if [ "$NO_CACHE" = "true" ]; then
+        BUILD_ARGS="--no-cache"
+    fi
+
     # --no-cache ensures the RUN git clone step always fetches the latest
     # code from origin. Docker's RUN cache is keyed by instruction text,
     # not by remote state, so stale layers persist even after builder prune.
     if [ "$MODE" = "merge" ]; then
-        docker compose --profile merge build --no-cache 2>&1
+        docker compose --profile merge build $BUILD_ARGS 2>&1
         check $? "docker build (merge profile)"
     elif [ "$MODE" = "native-p2pool" ]; then
-        docker compose --profile native-p2pool build --no-cache 2>&1
+        docker compose --profile native-p2pool build $BUILD_ARGS 2>&1
         check $? "docker build (native-p2pool profile)"
     elif [ "$MODE" = "bridge" ]; then
         # Build native profile first (lilith + node0 + node1),
         # then bridge profile (bridge-node on top).
-        docker compose --profile native build --no-cache 2>&1
+        docker compose --profile native build $BUILD_ARGS 2>&1
         check $? "docker build (native profile)"
-        docker compose --profile bridge build --no-cache 2>&1
+        docker compose --profile bridge build $BUILD_ARGS 2>&1
         check $? "docker build (bridge profile)"
     elif [ "$MODE" = "join-merge" ]; then
-        docker compose --profile join-merge build --no-cache 2>&1
+        docker compose --profile join-merge build $BUILD_ARGS 2>&1
         check $? "docker build (join-merge profile)"
-        docker compose --profile native build --no-cache lilith 2>&1
+        docker compose --profile native build $BUILD_ARGS lilith 2>&1
         check $? "docker build (lilith image for join phases)"
     elif [ "$MODE" = "join-native" ]; then
-        docker compose --profile native build --no-cache lilith 2>&1
+        docker compose --profile native build $BUILD_ARGS lilith 2>&1
         check $? "docker build (lilith image for join phases)"
     else
-        docker compose --profile native build --no-cache 2>&1
+        docker compose --profile native build $BUILD_ARGS 2>&1
         check $? "docker build"
     fi
 
@@ -636,16 +673,25 @@ phase_start() {
     if [ "$MODE" = "merge" ]; then
         MERGE_MINING=true WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+            FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
+            MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
+            MONEROD_RPC_URL="$MONEROD_RPC_URL" \
             docker compose --profile merge up -d
     elif [ "$MODE" = "native-p2pool" ]; then
         WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+            FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
+            MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
+            MONEROD_RPC_URL="$MONEROD_RPC_URL" \
             docker compose --profile native-p2pool up -d
     elif [ "$MODE" = "bridge" ]; then
         # Start native profile first — lilith + node0 + node1 must
         # establish their P2P mesh before the bridge-node connects.
         WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+            FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
+            MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
+            MONEROD_RPC_URL="$MONEROD_RPC_URL" \
             docker compose --profile native up -d
         info "native profile started, waiting for P2P mesh..."
         sleep 10
@@ -661,6 +707,9 @@ phase_start() {
         info "Starting bridge-node..."
         WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+            FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
+            MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
+            MONEROD_RPC_URL="$MONEROD_RPC_URL" \
             docker compose --profile bridge up -d
         sleep 5
 
@@ -672,6 +721,9 @@ phase_start() {
     else
         WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+            FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
+            MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
+            MONEROD_RPC_URL="$MONEROD_RPC_URL" \
             docker compose --profile native up -d
     fi
     # Shred temp secret file now that containers have read it
@@ -1491,6 +1543,46 @@ phase_blocks() {
             fi
         fi
     fi
+
+    # Verify Monero anchor presence/absence based on finality config
+    info "Inspecting block 1 for Monero anchor..."
+    ANCHOR_MONERO_HEIGHT=$(echo "$BLOCK_DATA" | grep -o '"anchor_monero_height":[0-9]*' | grep -o '[0-9]*$' || echo "0")
+    ANCHOR_MONERO_HASH=$(echo "$BLOCK_DATA" | grep -o '"anchor_monero_hash":"[^"]*"' | cut -d'"' -f4 || echo "")
+
+    if [ "$FINALITY_ENABLE_MONERO" = "true" ]; then
+        if [ -n "$ANCHOR_MONERO_HEIGHT" ] && [ "$ANCHOR_MONERO_HEIGHT" -gt 0 ]; then
+            pass "anchor_monero_height non-zero (monero anchoring): $ANCHOR_MONERO_HEIGHT"
+        else
+            fail "anchor_monero_height is zero (expected non-zero with Monero anchoring enabled)"
+        fi
+
+        if [ -n "$ANCHOR_MONERO_HASH" ] && \
+           [ "$ANCHOR_MONERO_HASH" != "0000000000000000000000000000000000000000000000000000000000000000" ]; then
+            pass "anchor_monero_hash non-zero: ${ANCHOR_MONERO_HASH:0:16}..."
+        else
+            fail "anchor_monero_hash is zero (expected non-zero with Monero anchoring enabled)"
+        fi
+
+        # Verify node1 also sees Monero anchors via P2P propagation
+        info "Verifying node1 P2P propagation of Monero anchor..."
+        for attempt in 1 2 3 4 5; do
+            NODE1_BLOCK=$(docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>/dev/null) && break
+            sleep 2
+        done
+        N1_ANCHOR_HEIGHT=$(echo "$NODE1_BLOCK" | grep -o '"anchor_monero_height":[0-9]*' | grep -o '[0-9]*$' || echo "0")
+        if [ -n "$N1_ANCHOR_HEIGHT" ] && [ "$N1_ANCHOR_HEIGHT" -gt 0 ]; then
+            pass "node1 sees Monero anchor at height $N1_ANCHOR_HEIGHT (P2P verification)"
+        else
+            fail "node1 Monero anchor missing (P2P sync may be incomplete)"
+        fi
+    else
+        if [ "$ANCHOR_MONERO_HEIGHT" = "0" ] || [ -z "$ANCHOR_MONERO_HEIGHT" ]; then
+            pass "anchor_monero_height is zero (monero anchoring disabled)"
+        else
+            warn "anchor_monero_height is non-zero ($ANCHOR_MONERO_HEIGHT) but Monero anchoring is disabled"
+            pass "anchor_monero_height present (monero anchoring disabled — not enforced)"
+        fi
+    fi
 }
 
 # ==============================================================================
@@ -1905,7 +1997,10 @@ phase_join_merge_mining() {
     done
 
     cd "$REPO_ROOT"
-    docker compose -f "$COMPOSE_FILE" --profile join-merge up -d 2>&1
+    FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
+        MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
+        MONEROD_RPC_URL="$MONEROD_RPC_URL" \
+        docker compose -f "$COMPOSE_FILE" --profile join-merge up -d 2>&1
 
     echo "  Waiting for containers to initialize (30s)..."
     sleep 30

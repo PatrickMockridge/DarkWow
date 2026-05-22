@@ -37,6 +37,9 @@ MERGE_MINING="${MERGE_MINING:-false}"
 MM_RPC_PORT="${MM_RPC_PORT:-31348}"
 FINALITY_MODE="${FINALITY_MODE:-always}"
 FINALITY_DISABLE_CARIBINA="${FINALITY_DISABLE_CARIBINA:-false}"
+FINALITY_ENABLE_MONERO="${FINALITY_ENABLE_MONERO:-false}"
+MONERO_MIN_CONFIRMATIONS="${MONERO_MIN_CONFIRMATIONS:-3}"
+MONEROD_RPC_URL="${MONEROD_RPC_URL:-}"
 DATADIR="${DATADIR:-/root/.local/share/dwow/dwowd/${NETWORK}}"
 LILITH_DATADIR="${LILITH_DATADIR:-/root/.local/share/dwow/lilith/${NETWORK}}"
 
@@ -222,6 +225,13 @@ DWOWEOF
     echo "  Merge mining RPC: tcp://0.0.0.0:${MM_RPC_PORT} (raw TCP JSON-RPC for p2pool)"
 fi
 
+# In merge mining mode, default Monero finality to true since merge
+# mining is the only source of Monero anchors.
+if [ "$MERGE_MINING" = "true" ]; then
+    FINALITY_ENABLE_MONERO="${FINALITY_ENABLE_MONERO:-true}"
+    MONEROD_RPC_URL="${MONEROD_RPC_URL:-http://monerod:28081/json_rpc}"
+fi
+
 # --- Finality config ---
 FINALITY_CARIBINA_ENABLED="true"
 if [ "$FINALITY_DISABLE_CARIBINA" = "true" ]; then
@@ -232,8 +242,13 @@ cat >> "$CONFIGFILE" << DWOWEOF
 [network_config."${NETWORK}".finality]
 mode = "${FINALITY_MODE}"
 caribina_enabled = ${FINALITY_CARIBINA_ENABLED}
+monero_enabled = ${FINALITY_ENABLE_MONERO}
+monero_min_confirmations = ${MONERO_MIN_CONFIRMATIONS}
 DWOWEOF
-echo "  Finality: mode=${FINALITY_MODE} caribina_enabled=${FINALITY_CARIBINA_ENABLED}"
+if [ -n "$MONEROD_RPC_URL" ]; then
+    echo "monerod_url = \"${MONEROD_RPC_URL}\"" >> "$CONFIGFILE"
+fi
+echo "  Finality: mode=${FINALITY_MODE} caribina_enabled=${FINALITY_CARIBINA_ENABLED} monero_enabled=${FINALITY_ENABLE_MONERO}"
 
 echo "  Config written to $CONFIGFILE"
 
