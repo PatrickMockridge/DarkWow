@@ -121,7 +121,7 @@ txs_batch_size = 50
 
 [network_config."${NETWORK}".pow]
 target_block_time = ${TARGET_BLOCK_TIME}
-initial_target = 16777215
+initial_target = 268435455
 min_target = 1
 max_target = 4294967295
 min_block_interval = 10
