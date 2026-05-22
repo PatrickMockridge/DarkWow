@@ -25,14 +25,15 @@ ARGS="--non-interactive --no-igd --data-dir /root/.bitmonero --log-level 1 --hid
 ARGS="$ARGS --zmq-pub tcp://0.0.0.0:${ZMQ_PORT}"
 ARGS="$ARGS --rpc-bind-ip 0.0.0.0 --rpc-bind-port ${RPC_PORT} --confirm-external-bind"
 
+if [ "$MONERO_NETWORK" = "testnet" ]; then
+    ARGS="$ARGS --testnet"
+fi
+
 if [ "$OFFLINE" = "true" ]; then
     echo "  Mode: offline (fixed difficulty $FIXED_DIFFICULTY)"
     ARGS="$ARGS --offline --fixed-difficulty ${FIXED_DIFFICULTY} --disable-rpc-ban"
 else
     echo "  Mode: online — syncing Monero $MONERO_NETWORK"
-    if [ "$MONERO_NETWORK" = "testnet" ]; then
-        ARGS="$ARGS --testnet"
-    fi
     # Add bootstrap peers for faster sync
     if [ -n "$MONERO_ADD_PEERS" ]; then
         IFS=',' read -ra PEERS <<< "$MONERO_ADD_PEERS"
