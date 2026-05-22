@@ -727,7 +727,7 @@ phase_start() {
             docker compose --profile native up -d
     fi
     # Shred temp secret file now that containers have read it
-    rm -f "$SECRET_FILE"
+    rm -rf "$SECRET_FILE"
 
     if [ "$MODE" != "bridge" ]; then
         sleep 5
