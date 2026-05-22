@@ -1293,7 +1293,7 @@ phase_mining_activity() {
         P2POOL_READY=false
         for i in $(seq 1 30); do
             P2POOL_LOGS=$(docker logs dwow-p2pool 2>&1 || true)
-            if echo "$P2POOL_LOGS" | grep -qi "sidechain\|merge min\|stratum\|p2pool v\|new template\|get_chain_id\|mining"; then
+            if echo "$P2POOL_LOGS" | grep -qi "sidechain\|stratum.*listen\|p2pool v\|new template\|mining\|StratumServer"; then
                 info "p2pool active (attempt $i)"
                 P2POOL_READY=true
                 break
@@ -1310,7 +1310,7 @@ phase_mining_activity() {
 
         info "Checking node0 for merge mining activity..."
         NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-        if echo "$NODE0_LOGS" | grep -qi "monero\|merge\|aux"; then
+        if echo "$NODE0_LOGS" | grep -q "\[RPC-MM\]"; then
             pass "node0 merge mining activity"
         else
             warn "node0 logs don't show merge activity yet"
