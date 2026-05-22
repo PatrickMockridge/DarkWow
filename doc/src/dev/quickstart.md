@@ -254,6 +254,7 @@ the full pipeline.
 
 ## Next Steps
 
+- [AI-Assisted Development](ai-assisted-development.md) — Why DarkWow is safe for AI-generated code and how to use the test pipeline as a vibe-coding safety net
 - [Testing Overview](testing/overview.md) — Full four-level taxonomy with file map
 - [Level 1: Lightweight Tests](testing/level-1-lightweight.md) — GenesisHarness, ContractTestingPipeline, debug tips
 - [Level 2: Heavyweight Tests](testing/level-2-heavyweight.md) — ContractHarness trait, proving keys, cross-contract composition

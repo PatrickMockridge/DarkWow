@@ -151,6 +151,32 @@ proof verification. No blockchain required for Level 1 and 2 testing.
 
 For a goal-oriented entry point, see the [Developer Quick Start Guide](doc/src/dev/quickstart.md).
 
+### AI-Friendly Design: Vibe-Code-Safe Architecture
+
+DarkWow is designed to make AI-assisted development safe by construction:
+
+- **O-Cap containment**: AI-generated contract code holds only the capabilities
+  explicitly passed to it. No ambient authority — a vibe-coded contract cannot
+  access tokens, state, or operations it wasn't granted. Bugs are contained.
+
+- **Deterministic consensus**: Uncle Merkle produces identical results for
+  identical inputs. No timing-dependent state, no speculative rollbacks.
+  AI-generated code is tested under reproducible conditions — same code, same
+  block, same result, every time.
+
+- **Four-level safety net**: The test pipeline (Level 1-4) catches compilation,
+  ZK proof, networking, and deployment errors before mainnet. When used
+  completely with no gaps, contracts achieve a basic level of audit superior
+  to most of the industry — not because any single test is magic, but because
+  the pipeline verifies failure modes that traditional audits never reach.
+
+**The compact**: The architecture cannot save you from not using it. Run the
+full pipeline. Skip nothing. Your responsibility is to leave no gaps — the
+infrastructure will catch what you feed it.
+
+See [AI-Assisted Development](doc/src/dev/ai-assisted-development.md) for
+the full workflow and philosophy.
+
 ### Docker Devnets
 
 - **darkwow-testnet** — 3-container local devnet (lilith seed + 2 mining nodes)
@@ -223,6 +249,7 @@ cargo run -p dwowd -- --network darkwow-testnet
 - [Native Mining + Contract Workflow](doc/src/dev/native-workflow.md) — Run a node, mine DRKW, deploy contracts (no Docker)
 
 ### Testing Infrastructure
+- [AI-Assisted Development](doc/src/dev/ai-assisted-development.md) — Vibe-coding guide, AI safety architecture, pipeline audit philosophy
 - [Testing Overview](doc/src/dev/testing/overview.md) — Full four-level taxonomy with file map
 - [Level 1: Lightweight Tests](doc/src/dev/testing/level-1-lightweight.md) — Unit/integration, no ZK overhead
 - [Level 2: Heavyweight Tests](doc/src/dev/testing/level-2-heavyweight.md) — Full ZK proofs, contract execution

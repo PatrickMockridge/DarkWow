@@ -101,6 +101,22 @@ serializes correctly. Level 2 verifies ZK proofs and business logic. Level 3
 verifies P2P networking works between containers. Level 4 makes it deployable
 on real machines across networks.
 
+## AI Safety Connection
+
+The sequential, deterministic nature of this pipeline makes it uniquely
+suited for AI-assisted development. AI-generated code can be tested through
+all four levels with reproducible results — Uncle Merkle consensus
+guarantees the same block always produces the same state, and O-Cap
+authorization guarantees AI-written contracts cannot escape their
+capability boundaries. When a developer runs the full pipeline with no
+gaps, the resulting contract has been verified against compilation,
+serialization, ZK proof, multi-node networking, and deployment failure
+modes — a broader surface area than most industry smart contract audits
+cover.
+
+See [AI-Assisted Development](../ai-assisted-development.md) for the full
+philosophy and workflow.
+
 ## File Map
 
 | Component | Path |

@@ -12,6 +12,8 @@ DarkWow's ideology is inseparable from its technical architecture. See the [Phil
 
 4. **O-Cap Authorization**: Object capabilities replace access control lists. A holder of a capability token can exercise it without asking permission.
 
+5. **AI-Assisted Development as Design Principle**: DarkWow's architecture is intentionally AI-friendly. O-Cap authorization means AI-generated contracts cannot violate capability boundaries. Deterministic Uncle Merkle consensus means tests are reproducible — same code, same result, every time. The four-level test pipeline provides a safety net that catches AI-generated errors before mainnet. Complex smart contracts can be vibe-coded because the architecture constrains what can go wrong.
+
 ## Further Reading
 
 - [DarkWow Philosophy](philosophy.md) — The full philosophical framework

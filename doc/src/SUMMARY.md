@@ -83,6 +83,7 @@
 - [Contributing & Developer Guide](dev/contrib/contrib.md)
   - [Contract Overview](dev/contracts.md)
   - [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md)
+- [AI-Assisted Development](dev/ai-assisted-development.md)
 - [Architecture](arch/README.md)
   - [DarkWow Daemon](dwowd.md)
   - [Overview](arch/overview.md)
