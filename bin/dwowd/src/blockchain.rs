@@ -211,7 +211,8 @@ impl LinearBlockchain {
         // Finality check: mode-aware anchor enforcement
         if let Ok(existing) = self.store.get_block(height) {
             if self.finality_config.should_enforce(existing.header.finality_flags)
-                && existing.header.anchor_tx_id != [0u8; 32]
+                && (existing.header.anchor_tx_id != [0u8; 32]
+                    || existing.header.anchor_monero_height != 0)
             {
                 info!(
                     target: "linear_blockchain",

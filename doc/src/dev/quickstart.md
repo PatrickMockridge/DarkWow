@@ -230,6 +230,19 @@ docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile na
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native
 ```
 
+**Finality flags for merge mining.** When testing with Monero merge mining,
+enable the Monero finality anchor with `--finality-enable-monero` and
+optionally configure a monerod RPC endpoint for full anchor verification:
+
+```bash
+dwowd --network darkwow-testnet --finality-enable-monero \
+    --monerod-rpc-url http://127.0.0.1:18081/json_rpc
+```
+
+See [Monero Integration](../arch/monero.md) for the full dual-finality
+architecture and [Caribina Finality](../arch/caribina.md) for the
+Arweave anchoring layer.
+
 Every contract is self-contained in `src/contract/<name>/` with its own `proof/`
 directory (ZK circuits), `tests/` directory (integration tests), and a harness
 module in `src/contract/test-harness/src/harness/`. Copy a contract directory as

@@ -289,6 +289,42 @@ async fn handle_receive_block(
             }
         }
 
+        // Verify Monero anchor (if present and finality enforcement is enabled)
+        if msg.block.header.anchor_monero_height != 0
+            && blockchain
+                .finality_config
+                .should_verify_monero_anchor(msg.block.header.finality_flags)
+        {
+            match dwow_linear::verify_monero_anchor(
+                msg.block.header.anchor_monero_height,
+                &msg.block.header.anchor_monero_hash,
+                msg.block.header.timestamp,
+                blockchain.finality_config.monerod_url.as_deref(),
+                blockchain.finality_config.monero_min_confirmations,
+            ) {
+                Ok(()) => {
+                    tracing::info!(
+                        target: "dwowd::proto::linear_broadcast",
+                        "Monero anchor verified for block {} at height {} (monero_height={})",
+                        block_hash,
+                        block_height,
+                        msg.block.header.anchor_monero_height,
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "dwowd::proto::linear_broadcast",
+                        "Monero anchor verification failed for block {} at height {}: {}",
+                        block_hash,
+                        block_height,
+                        e,
+                    );
+                    handler.send_action(channel, ProtocolGenericAction::Skip).await;
+                    continue;
+                }
+            }
+        }
+
         // Insert block into blockchain
         match blockchain.insert_block(&msg.block) {
             Ok(()) => {

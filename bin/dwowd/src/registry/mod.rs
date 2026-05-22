@@ -40,7 +40,7 @@ use dwow::{
 use dwow_sdk::crypto::keypair::Network;
 
 use crate::{
-    rpc::stratum::StratumRpcHandler,
+    rpc::{mm_rpc::MergeMiningRpcHandler, stratum::StratumRpcHandler},
     DwowNode, DwowNodePtr,
 };
 
@@ -201,13 +201,29 @@ impl DwowMinersRegistry {
             );
         }
 
-        // Start the merge mining JSON-RPC task (placeholder — mm_rpc deleted)
-        self.mm_rpc_task.clone().start(
-            async { Ok(()) },
-            |_| async { /* Do nothing */ },
-            Error::RpcServerStopped,
-            executor.clone(),
-        );
+        // Start the merge mining JSON-RPC task
+        if let Some(mm_rpc) = mm_rpc_settings {
+            info!(target: "dwowd::registry::mod::DwowMinersRegistry::start", "Starting merge mining JSON-RPC server");
+            let node_ = node.clone();
+            self.mm_rpc_task.clone().start(
+                listen_and_serve::<MergeMiningRpcHandler>(mm_rpc.clone(), node.clone(), None, executor.clone()),
+                |res| async move {
+                    match res {
+                        Ok(()) | Err(Error::RpcServerStopped) => <DwowNode as RequestHandler<MergeMiningRpcHandler>>::stop_connections(&node_).await,
+                        Err(e) => error!(target: "dwowd::registry::mod::DwowMinersRegistry::start", "Failed starting merge mining JSON-RPC server: {e}"),
+                    }
+                },
+                Error::RpcServerStopped,
+                executor.clone(),
+            );
+        } else {
+            self.mm_rpc_task.clone().start(
+                async { Ok(()) },
+                |_| async { /* Do nothing */ },
+                Error::RpcServerStopped,
+                executor.clone(),
+            );
+        }
 
         info!(
             target: "dwowd::registry::mod::DwowMinersRegistry::start",

@@ -33,6 +33,7 @@ mod consensus;
 mod error;
 pub mod finality;
 mod miner;
+pub mod monero;
 mod store;
 mod transaction;
 
@@ -48,6 +49,7 @@ pub use consensus::PoWConsensus;
 pub use error::LinearError;
 pub use finality::{FinalityConfig, FinalityMode};
 pub use miner::Miner;
+pub use monero::{get_block_by_height, get_block_count, verify_monero_anchor, MonerodError, MoneroVerifyError};
 pub use store::LinearStore;
 pub use transaction::{CoinbaseTransaction, Input, Output, Transaction, ContractCall};
 

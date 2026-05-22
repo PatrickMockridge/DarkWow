@@ -73,6 +73,18 @@ struct Args {
     #[structopt(long)]
     /// Disable Caribina Arweave anchoring entirely
     finality_disable_caribina: bool,
+
+    #[structopt(long)]
+    /// Enable Monero p2pool anchoring (default: disabled)
+    finality_enable_monero: bool,
+
+    #[structopt(long)]
+    /// Monero minimum confirmations before finality (default: 3)
+    monero_min_confirmations: Option<u32>,
+
+    #[structopt(long)]
+    /// monerod JSON-RPC URL for anchor verification (e.g. http://127.0.0.1:18081/json_rpc)
+    monerod_rpc_url: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
@@ -136,8 +148,13 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         }
     };
 
-    // Apply --finality-mode and --finality-disable-caribina CLI overrides
-    if args.finality_mode.is_some() || args.finality_disable_caribina {
+    // Apply finality CLI overrides
+    if args.finality_mode.is_some()
+        || args.finality_disable_caribina
+        || args.finality_enable_monero
+        || args.monero_min_confirmations.is_some()
+        || args.monerod_rpc_url.is_some()
+    {
         let mut fc = blockchain_config.finality.unwrap_or_default();
 
         if let Some(ref mode_str) = args.finality_mode {
@@ -156,6 +173,21 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         if args.finality_disable_caribina {
             fc.caribina_enabled = false;
             info!(target: "dwowd", "Caribina anchoring disabled via CLI");
+        }
+
+        if args.finality_enable_monero {
+            fc.monero_enabled = true;
+            info!(target: "dwowd", "Monero anchoring enabled via CLI");
+        }
+
+        if let Some(confirmations) = args.monero_min_confirmations {
+            fc.monero_min_confirmations = confirmations;
+            info!(target: "dwowd", "Monero min confirmations set via CLI: {confirmations}");
+        }
+
+        if let Some(ref url) = args.monerod_rpc_url {
+            fc.monerod_url = Some(url.clone());
+            info!(target: "dwowd", "Monero RPC URL set via CLI: {url}");
         }
 
         blockchain_config.finality = Some(fc);

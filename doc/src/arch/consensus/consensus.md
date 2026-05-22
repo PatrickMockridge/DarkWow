@@ -255,9 +255,15 @@ turbo service is unavailable, the block is still valid but carries no anchor.
 
 ### Monero (p2pool) Anchoring
 
-**Status: Specified, not yet implemented in Rust.** Reserved flag bit
-`FINALITY_MONERO` (0x02) and `anchor_monero_height`/`anchor_monero_hash`
-fields exist on `BlockHeader`. The verification path is not yet implemented.
+**Status: Implemented.** Anchors a DarkWow block to a Monero block via p2pool
+merge mining. When a Monero block containing DarkWow aux data is found, the
+Monero block height and hash are stored in `header.anchor_monero_height` and
+`header.anchor_monero_hash`. Verification supports two modes:
+- **Lightweight plausibility** (default): accepts any block with non-zero
+  anchor fields up to `MAX_PLAUSIBLE_MONERO_HEIGHT` (5M blocks).
+- **Full monerod verification**: queries a monerod JSON-RPC endpoint to verify
+  the anchor hash matches the actual Monero block and that sufficient
+  confirmations have elapsed. Requires `--monerod-rpc-url` to be set.
 
 ### Configuration
 
@@ -265,12 +271,14 @@ fields exist on `BlockHeader`. The verification path is not yet implemented.
 [network_config."darkwow-testnet".finality]
 mode = "always"               # "always" | "native" | "signaled"
 caribina_enabled = true       # Enable Arweave anchoring
-monero_enabled = false        # Enable Monero anchoring (future)
+monero_enabled = false        # Enable Monero anchoring (requires p2pool)
 monero_min_confirmations = 3  # Monero confirmations before finality
+monerod_url = "http://127.0.0.1:18081/json_rpc"  # monerod JSON-RPC endpoint (optional)
 ```
 
 CLI overrides: `--finality-mode native|always|signaled`,
-`--finality-disable-caribina`.
+`--finality-disable-caribina`, `--finality-enable-monero`,
+`--monero-min-confirmations <N>`, `--monerod-rpc-url <URL>`.
 
 ### How Anchoring Provides Finality
 

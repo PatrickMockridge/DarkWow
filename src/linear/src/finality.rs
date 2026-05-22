@@ -73,6 +73,9 @@ pub struct FinalityConfig {
     /// Monero minimum confirmations before finality
     #[serde(default = "default_monero_confirmations")]
     pub monero_min_confirmations: u32,
+    /// monerod JSON-RPC URL for anchor verification (e.g. http://127.0.0.1:18081/json_rpc)
+    #[serde(default)]
+    pub monerod_url: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -90,6 +93,7 @@ impl Default for FinalityConfig {
             caribina_enabled: true,
             monero_enabled: false,
             monero_min_confirmations: 3,
+            monerod_url: None,
         }
     }
 }
@@ -98,6 +102,11 @@ impl FinalityConfig {
     /// Returns true if the node should attempt anchoring blocks
     pub fn should_anchor(&self) -> bool {
         self.mode != FinalityMode::Native && self.caribina_enabled
+    }
+
+    /// Returns true if the node should attempt Monero anchoring (p2pool context)
+    pub fn should_anchor_monero(&self) -> bool {
+        self.mode != FinalityMode::Native && self.monero_enabled
     }
 
     /// Returns true if the node should enforce anchors on received blocks
@@ -112,6 +121,20 @@ impl FinalityConfig {
     /// Returns true if the node should verify anchor proofs on received blocks
     pub fn should_verify_anchor(&self, block_flags: u8) -> bool {
         if !self.caribina_enabled {
+            return false;
+        }
+        if self.mode == FinalityMode::Native {
+            return false;
+        }
+        if self.mode == FinalityMode::Signaled {
+            return block_flags & flags::FINALITY_SIGNALED != 0;
+        }
+        true
+    }
+
+    /// Returns true if the node should verify Monero anchors on received blocks
+    pub fn should_verify_monero_anchor(&self, block_flags: u8) -> bool {
+        if !self.monero_enabled {
             return false;
         }
         if self.mode == FinalityMode::Native {
@@ -150,6 +173,7 @@ mod tests {
         assert!(cfg.caribina_enabled);
         assert!(!cfg.monero_enabled);
         assert_eq!(cfg.monero_min_confirmations, 3);
+        assert!(cfg.monerod_url.is_none());
     }
 
     #[test]
@@ -344,9 +368,88 @@ mod tests {
             caribina_enabled: false,
             monero_enabled: true,
             monero_min_confirmations: 7,
+            monerod_url: Some("http://127.0.0.1:18081/json_rpc".to_string()),
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let parsed: FinalityConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, cfg);
+    }
+
+    #[test]
+    fn test_should_anchor_monero() {
+        // Always mode + monero enabled = true
+        let cfg = FinalityConfig {
+            mode: FinalityMode::Always,
+            monero_enabled: true,
+            ..Default::default()
+        };
+        assert!(cfg.should_anchor_monero());
+
+        // Always mode + monero disabled = false (default)
+        let cfg = FinalityConfig::default();
+        assert!(!cfg.should_anchor_monero());
+
+        // Native mode + monero enabled = false
+        let cfg = FinalityConfig {
+            mode: FinalityMode::Native,
+            monero_enabled: true,
+            ..Default::default()
+        };
+        assert!(!cfg.should_anchor_monero());
+
+        // Signaled mode + monero enabled = true
+        let cfg = FinalityConfig {
+            mode: FinalityMode::Signaled,
+            monero_enabled: true,
+            ..Default::default()
+        };
+        assert!(cfg.should_anchor_monero());
+
+        // Signaled mode + monero disabled = false
+        let cfg = FinalityConfig {
+            mode: FinalityMode::Signaled,
+            monero_enabled: false,
+            ..Default::default()
+        };
+        assert!(!cfg.should_anchor_monero());
+    }
+
+    #[test]
+    fn test_should_verify_monero_anchor() {
+        // monero disabled -> always false regardless of mode
+        let cfg = FinalityConfig {
+            mode: FinalityMode::Always,
+            monero_enabled: false,
+            ..Default::default()
+        };
+        assert!(!cfg.should_verify_monero_anchor(flags::FINALITY_MONERO));
+
+        // Native mode -> always false
+        let cfg = FinalityConfig {
+            mode: FinalityMode::Native,
+            monero_enabled: true,
+            ..Default::default()
+        };
+        assert!(!cfg.should_verify_monero_anchor(flags::FINALITY_MONERO));
+
+        // Always mode + monero enabled -> true
+        let cfg = FinalityConfig {
+            mode: FinalityMode::Always,
+            monero_enabled: true,
+            ..Default::default()
+        };
+        assert!(cfg.should_verify_monero_anchor(flags::FINALITY_MONERO));
+        assert!(cfg.should_verify_monero_anchor(0)); // Always ignores flags
+
+        // Signaled mode -> only when SIGNALED bit set
+        let cfg = FinalityConfig {
+            mode: FinalityMode::Signaled,
+            monero_enabled: true,
+            ..Default::default()
+        };
+        assert!(!cfg.should_verify_monero_anchor(0));
+        assert!(!cfg.should_verify_monero_anchor(flags::FINALITY_MONERO));
+        assert!(cfg.should_verify_monero_anchor(flags::FINALITY_SIGNALED));
+        assert!(cfg.should_verify_monero_anchor(flags::FINALITY_MONERO | flags::FINALITY_SIGNALED));
     }
 }

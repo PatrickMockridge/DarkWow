@@ -66,6 +66,12 @@ rpc_listen = "tcp://127.0.0.1:31347"
 # mode = "always"
 # Enable Caribina Arweave anchoring (default: true)
 # caribina_enabled = true
+# Enable Monero p2pool anchoring (default: false, requires p2pool)
+# monero_enabled = false
+# Monero confirmations required before finality (default: 3)
+# monero_min_confirmations = 3
+# monerod JSON-RPC URL for full anchor verification (optional)
+# monerod_url = "http://127.0.0.1:18081/json_rpc"
 
 [network_config."darkwow-testnet".net]
 localnet = false
@@ -83,6 +89,8 @@ The `[finality]` section enables Caribina Arweave anchoring by default —
 every mined block is timestamped on Arweave and cannot be reorganized.
 Set `mode = "native"` or pass `--finality-mode native` to disable all
 finality (useful for local testing where Arweave HTTP calls add latency).
+Monero p2pool anchoring can be enabled with `monero_enabled = true` or
+`--finality-enable-monero` for merge mining setups.
 
 ## Step 3: Create dww Wallet Config
 

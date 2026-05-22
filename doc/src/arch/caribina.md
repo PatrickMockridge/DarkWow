@@ -191,6 +191,9 @@ monero_enabled = false
 
 # Monero confirmations before finality (default: 3)
 monero_min_confirmations = 3
+
+# monerod JSON-RPC URL for full anchor verification (optional)
+# monerod_url = "http://127.0.0.1:18081/json_rpc"
 ```
 
 ### CLI Flags
@@ -206,6 +209,16 @@ All TOML settings can be overridden from the command line:
 
 --finality-disable-caribina
     Disable Caribina Arweave anchoring entirely
+
+--finality-enable-monero
+    Enable Monero p2pool anchoring (default: false)
+
+--monero-min-confirmations <N>
+    Monero confirmations required before finality (default: 3)
+
+--monerod-rpc-url <URL>
+    monerod JSON-RPC endpoint for full anchor verification
+    (e.g. http://127.0.0.1:18081/json_rpc)
 ```
 
 CLI flags take precedence over TOML. Example:
@@ -216,6 +229,10 @@ dwowd --network darkwow-testnet --finality-mode native
 
 # Disable only Caribina anchoring, keep enforcement
 dwowd --network darkwow-testnet --finality-disable-caribina
+
+# Enable Monero p2pool anchoring with full monerod verification
+dwowd --network darkwow-testnet --finality-enable-monero \
+    --monerod-rpc-url http://127.0.0.1:18081/json_rpc
 ```
 
 ### Mode Reference
@@ -223,7 +240,7 @@ dwowd --network darkwow-testnet --finality-disable-caribina
 | Mode | Mine with anchor? | Verify on receive? | Enforce on conflict? |
 |------|:---:|:---:|:---:|
 | **native** | No | No | No — trust PoW only |
-| **always** (default) | Yes | Yes | Yes — all anchored blocks |
+| **always** (default) | Yes (Caribina + Monero if enabled) | Yes | Yes — all anchored blocks |
 | **signaled** | Yes + flag | Only signaled | Only signaled |
 
 ### Default Behavior
@@ -251,14 +268,16 @@ fork choice.
 
 | Property | Monero Anchor (p2pool) | Caribina (Arweave) |
 |----------|----------------------|---------------------|
+| Status | Implemented | Implemented |
 | Requires p2pool | Yes | No |
-| Requires Monero node | Yes | No |
+| Requires Monero node | Yes (for full verification) | No |
 | Requires funding | No (merge mining) | No (ArDrive free tier) |
 | Settlement time | ~6 min (3 Monero blocks) | ~2 min (1 DarkWow block) |
 | Consensus mechanism | RandomX PoW | Proof-of-Storage |
 | Key management | Monero wallet | Per-block Ed25519 cycle |
 | Protects native miners | No | Yes |
 | Protects merge miners | Yes | Yes |
+| Verification | monerod RPC or plausibility | Arweave gateway HTTP |
 
 ## Toy Model Results
 

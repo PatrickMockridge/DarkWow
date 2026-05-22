@@ -867,4 +867,67 @@ mod tests {
         assert_eq!(deserialized.anchor_monero_hash, [0u8; 32]);
         assert_eq!(deserialized.finality_flags, 0);
     }
+
+    /// Monero anchor fields must be excluded from mining blob for dual-finality.
+    #[test]
+    fn test_mining_blob_excludes_monero_anchor() {
+        let mut header = BlockHeader {
+            version: 1,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: 1000,
+            target: 0x0000_FFFF,
+            nonce: 42,
+            height: 1,
+            uncle_merkle_root: [0u8; 32],
+            total_reward: 100_000_000,
+            randomx_key: [0u8; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+        };
+
+        let blob1 = header.to_mining_blob();
+
+        // Setting Monero anchor fields must not change the mining blob
+        header.anchor_monero_height = 3_500_000;
+        header.anchor_monero_hash = [0xCD; 32];
+        header.finality_flags = 0xFF;
+        let blob2 = header.to_mining_blob();
+        assert_eq!(blob1, blob2);
+    }
+
+    /// Monero anchor fields survive serde roundtrip.
+    #[test]
+    fn test_monero_anchor_serde_roundtrip() {
+        let header = BlockHeader {
+            version: 1,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: 1000,
+            target: 0x0000_FFFF,
+            nonce: 42,
+            height: 1,
+            uncle_merkle_root: [0u8; 32],
+            total_reward: 100_000_000,
+            randomx_key: [0xAA; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0xBB; 32],
+            anchor_monero_height: 3_500_000,
+            anchor_monero_hash: [0xCC; 32],
+            finality_flags: 0x02, // FINALITY_MONERO
+        };
+
+        let json = serde_json::to_string(&header).unwrap();
+        let deserialized: BlockHeader = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.anchor_monero_height, 3_500_000);
+        assert_eq!(deserialized.anchor_monero_hash, [0xCC; 32]);
+        assert_eq!(deserialized.finality_flags, 0x02);
+        assert_eq!(deserialized.anchor_tx_id, [0xBB; 32]);
+        assert_eq!(deserialized.nonce, 42);
+    }
 }

@@ -230,6 +230,9 @@ outbound_connections = 8
 | `-v` / `--verbose` | Increase verbosity (`-vvv` supported) |
 | `--finality-mode` | Override finality mode: `native`, `always`, `signaled` |
 | `--finality-disable-caribina` | Disable Caribina Arweave anchoring |
+| `--finality-enable-monero` | Enable Monero p2pool anchoring (default: false) |
+| `--monero-min-confirmations` | Monero confirmations before finality (default: 3) |
+| `--monerod-rpc-url` | monerod JSON-RPC URL for anchor verification |
 
 ## Shutdown Sequence
 

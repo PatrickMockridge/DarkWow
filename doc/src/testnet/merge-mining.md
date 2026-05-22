@@ -49,6 +49,31 @@ re-ordering attacks. This is a modular security overlay that does not replace
 PoW fork choice. See [Anchoring Finality Gadget](../arch/mining-tokenomics.md#anchoring-finality-gadget)
 for the full design.
 
+### Enabling Monero Finality
+
+To enable Monero finality verification, add these settings to your
+`dwowd_config.toml` or pass them as CLI flags:
+
+```toml
+[network_config."darkwow-testnet".finality]
+monero_enabled = true
+monero_min_confirmations = 3
+# Optional: full verification against a monerod node
+monerod_url = "http://127.0.0.1:18081/json_rpc"
+```
+
+CLI equivalents:
+
+```bash
+dwowd --network darkwow-testnet --finality-enable-monero \
+    --monerod-rpc-url http://127.0.0.1:18081/json_rpc
+```
+
+Without `monerod_url`, the daemon falls back to lightweight plausibility checks
+(accepts any anchor height up to 5M). With `monerod_url` set, the daemon
+queries monerod via JSON-RPC to verify the anchor hash matches the actual
+Monero block and that `monero_min_confirmations` have elapsed.
+
 The full economic model is documented in [Mining Tokenomics](../arch/mining-tokenomics.md#merge-mining-competition).
 A Python simulation matching the Rust consensus 1:1 is available at
 `contrib/docker/darkwow-testnet/merge_mining_model.py` — run it to explore

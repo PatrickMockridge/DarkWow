@@ -49,6 +49,9 @@ mod contract;
 /// Stratum JSON-RPC related methods for native mining
 pub mod stratum;
 
+/// Merge mining JSON-RPC related methods for p2pool merge mining
+pub mod mm_rpc;
+
 /// Misc JSON-RPC methods
 pub mod misc;
 

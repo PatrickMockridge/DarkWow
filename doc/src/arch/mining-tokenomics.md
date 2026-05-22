@@ -339,13 +339,14 @@ ratios, uncle phases, and slot counts.
 
 ### Anchoring Finality Gadget
 
-> **Status: Caribina (Arweave) anchoring is implemented and live.**
-> Monero/p2pool anchoring is specified and simulated — the anchor fields
-> (`anchor_monero_height`, `anchor_monero_hash`) exist on BlockHeader and
-> the `FINALITY_MONERO` flag bit is reserved, but the Monero verification
-> path is not yet implemented in Rust. See
-> [Caribina Finality](caribina.md) for the active implementation and
-> configuration guide.
+> **Status: Both finality layers are implemented.** Caribina (Arweave) anchoring
+> is live and enabled by default. Monero/p2pool anchoring is implemented with
+> dual-mode verification: lightweight plausibility checks by default, or full
+> monerod JSON-RPC verification when `--monerod-rpc-url` is configured. The
+> anchor fields (`anchor_monero_height`, `anchor_monero_hash`) and `FINALITY_MONERO`
+> flag bit are populated during merge mining and verified during P2P block
+> propagation. See [Caribina Finality](caribina.md) and
+> [Monero Integration](monero.md).
 
 Merge mining introduces a security asymmetry: Monero's hashrate dwarfs DarkWow's.
 At a 1000:1 ratio, a dominant merge miner could reorg the chain at will, orphaning
