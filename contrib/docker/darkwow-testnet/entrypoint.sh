@@ -183,10 +183,10 @@ fi
 cat >> "$CONFIGFILE" << DWOWEOF
 
 [network_config."${NETWORK}".rpc]
-rpc_listen = "tcp://0.0.0.0:${RPC_PORT}"
+rpc_listen = "http+tcp://0.0.0.0:${RPC_PORT}"
 
 [network_config."${NETWORK}".stratum_rpc]
-rpc_listen = "tcp://0.0.0.0:${STRATUM_PORT}"
+rpc_listen = "http+tcp://0.0.0.0:${STRATUM_PORT}"
 
 [network_config."${NETWORK}".management_rpc]
 rpc_listen = "tcp://127.0.0.1:${MANAGEMENT_PORT}"
@@ -220,9 +220,9 @@ if [ "$MERGE_MINING" = "true" ]; then
     cat >> "$CONFIGFILE" << DWOWEOF
 
 [network_config."${NETWORK}".mm_rpc]
-rpc_listen = "tcp://0.0.0.0:${MM_RPC_PORT}"
+rpc_listen = "http+tcp://0.0.0.0:${MM_RPC_PORT}"
 DWOWEOF
-    echo "  Merge mining RPC: tcp://0.0.0.0:${MM_RPC_PORT} (raw TCP JSON-RPC for p2pool)"
+    echo "  Merge mining RPC: http+tcp://0.0.0.0:${MM_RPC_PORT} (HTTP JSON-RPC for p2pool)"
 fi
 
 # In merge mining mode, default Monero finality to true since merge
