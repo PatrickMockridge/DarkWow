@@ -60,6 +60,9 @@ pub struct MergeMiningRpcHandler;
 impl RequestHandler<MergeMiningRpcHandler> for DwowNode {
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
         match req.method.as_str() {
+            "merge_mining_get_chain_id" => {
+                self.mm_get_chain_id(req.id, req.params).await
+            }
             "merge_mining_get_aux_block" => {
                 self.mm_get_aux_block(req.id, req.params).await
             }
@@ -76,6 +79,35 @@ impl RequestHandler<MergeMiningRpcHandler> for DwowNode {
 }
 
 impl DwowNode {
+    /// Handle `merge_mining_get_chain_id` — p2pool discovers the aux chain identity.
+    ///
+    /// This is the FIRST method p2pool calls during merge mining setup.
+    /// Without a successful response, p2pool will never call `get_aux_block`
+    /// and the stratum server will not start.
+    pub async fn mm_get_chain_id(&self, id: u16, _params: JsonValue) -> JsonResult {
+        let hash = self.linear_genesis_hash.lock().await;
+        let chain_id = match &*hash {
+            Some(h) => hex::encode(h.0),
+            None => return JsonError::new(
+                ErrorCode::InternalError,
+                Some("Genesis hash not yet initialized".to_string()),
+                id,
+            ).into(),
+        };
+
+        info!(
+            target: "dwowd::rpc::mm_rpc::mm_get_chain_id",
+            "[RPC-MM] get_chain_id: {}",
+            chain_id,
+        );
+
+        let result = JsonValue::from(HashMap::from([
+            ("chain_id".to_string(), JsonValue::String(chain_id)),
+        ]));
+
+        JsonResponse::new(result, id).into()
+    }
+
     /// Handle `merge_mining_get_aux_block` — p2pool requests aux chain data.
     ///
     /// p2pool calls this to get the DarkWow block template that miners should
@@ -199,9 +231,13 @@ impl DwowNode {
         // Store template for submit validation
         *self.current_linear_template.lock().await = Some(template);
 
+        // p2pool expects aux_diff as a decimal number (difficulty = MAX/target)
+        let aux_difficulty = u32::MAX as u64 / template.target as u64;
+
         let result = JsonValue::from(HashMap::from([
             ("aux_blob".to_string(), JsonValue::String(blob)),
             ("aux_hash".to_string(), JsonValue::String(aux_hash_hex)),
+            ("aux_diff".to_string(), JsonValue::Number(aux_difficulty as f64)),
             ("aux_target".to_string(), JsonValue::String(aux_target)),
             ("aux_height".to_string(), JsonValue::Number(template_height as f64)),
             ("aux_prev_hash".to_string(), JsonValue::String(prev_hash_hex)),
