@@ -43,7 +43,7 @@ fi
 
 NETWORK_FLAG=""
 if [ "$MONERO_NETWORK" = "testnet" ]; then
-    NETWORK_FLAG="--testnet --mini"
+    NETWORK_FLAG="--mini"
 fi
 
 exec p2pool \
