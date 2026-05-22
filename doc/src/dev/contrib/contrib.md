@@ -23,7 +23,12 @@
    ```
 
 4. **Explore the codebase**: See the [Developer Quick Start Guide](../quickstart.md)
-   for the full four-level testing taxonomy and architecture tour.
+   for the full four-level testing taxonomy and architecture tour. See the
+   [AI-Assisted Development Guide](../ai-assisted-development.md) for the
+   vibe-coding workflow, AI safety architecture, and pipeline audit philosophy.
+   For multi-node Docker devnet details, see the
+   [darkwow-testnet pipeline](../../../contrib/docker/darkwow-testnet/README.md)
+   and [Level 3: Containerized Localnet](../testing/level-3-localnet.md).
 
 Minimum Rust version: **1.87.0**. Builds on Linux (x86_64, aarch64) and macOS.
 
