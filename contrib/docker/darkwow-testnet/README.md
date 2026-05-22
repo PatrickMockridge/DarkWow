@@ -454,14 +454,37 @@ phases. Every check reports PASS or FAIL — there are no skipped or silent chec
 No background tasks, no parallel operations. One machine, one thing at a time.
 This guarantees reproducible results across different machines.
 
+### Build Options
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--no-cache` | off | Pass `--no-cache` to every `docker compose build` — all layers rebuilt from scratch |
+| `--fresh` | off | Aggressive Phase 1 clean: `docker builder prune -a -f`, `docker rmi -f` for stale images, `docker buildx prune`, `docker volume prune -f` |
+
+The flags are independent — combine them for a fully deterministic rebuild:
+
+```bash
+# Fast incremental (default) — reuses Docker build cache
+./test_pipeline.sh --mode merge
+
+# No-cache rebuild without full clean
+./test_pipeline.sh --mode merge --no-cache
+
+# Full clean but cached build
+./test_pipeline.sh --mode merge --fresh
+
+# Deterministic: no-cache + full clean
+./test_pipeline.sh --mode merge --no-cache --fresh
+```
+
 ### Devnet Phases (native, merge, native-p2pool)
 
 | # | Phase | What It Validates |
 |---|-------|-------------------|
-| 1 | Clean | Docker prune (containers, images, volumes, build cache), kill stale cargo/rustc processes, remove wallet secret |
+| 1 | Clean | Container/volume teardown, kill stale cargo/rustc processes, remove wallet secret. With `--fresh`: also prunes all Docker build cache, images, and buildx builders. |
 | 2 | Prerequisites | `dww` binary exists, WASM contracts present (money_v3, DEX, dao_escrow), mode-specific files (Dockerfile.monero, Dockerfile.p2pool, entrypoint scripts) |
 | 3 | Wallet | Generate keypair via `dww wallet keygen`, write secret to `/tmp/dwow_mining_secret` |
-| 4 | Build | `docker compose --profile <mode> build` for all services in the profile |
+| 4 | Build | `docker compose --profile <mode> build` for all services in the profile. With `--no-cache`: rebuilds all layers from scratch (ensures `git clone` fetches latest). |
 | 5 | Start | `docker compose --profile <mode> up -d`, verify no containers exit immediately |
 | 6 | Verify containers | Every expected container is running (3 for native, 6 for merge/native-p2pool) |
 | 7 | RPC health | TCP JSON-RPC ping to node0 (port 31345) and node1 (31346); plus adaptor RPC (28081) for native-p2pool or monerod RPC (28081) for merge |

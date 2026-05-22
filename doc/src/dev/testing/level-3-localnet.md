@@ -56,6 +56,11 @@ cd contrib/docker/darkwow-testnet
 ./test_pipeline.sh --mode join-native   # Single node joining public testnet
 ./test_pipeline.sh --mode join-merge    # Single merge-mining node, public testnet
 
+# Build options
+#   --no-cache    Rebuild all Docker layers from scratch (default: use cache)
+#   --fresh       Aggressive clean: prune images, build cache, buildx (default: off)
+./test_pipeline.sh --mode merge --no-cache --fresh  # Deterministic full rebuild
+
 # Or manually (requires --profile since all services use profiles):
 docker compose --profile native up -d    # Start the 3-node stack (native)
 docker compose --profile merge up -d     # Start with merge mining
