@@ -149,7 +149,7 @@ impl Drk {
     ) -> Result<Self> {
         // Initialize blockchain cache database
         let db_path = expand_path(&cache_path)?;
-        let sled_db = sled_overlay::sled::open(&db_path)?;
+        let sled_db = sled::open(&db_path)?;
         let Ok(cache) = Cache::new(&sled_db) else {
             return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
         };

@@ -24,9 +24,7 @@
 use dwow_serial::deserialize;
 
 use crate::{
-    cache::CacheOverlay,
     error::{WalletDbError, WalletDbResult},
-    money::SLED_MERKLE_TREES_MONEY,
     Drk,
 };
 
@@ -93,9 +91,10 @@ impl Drk {
                 .push(format!("[reset_scanned_blocks] Resetting scanned blocks tree failed: {e}"));
             return Err(WalletDbError::GenericError)
         }
-        if let Err(e) = self.cache.state_inverse_diff.clear() {
+        // Clear the money SMT tree — all nullifiers are tied to scanned blocks
+        if let Err(e) = self.cache.money_smt.clear() {
             output.push(format!(
-                "[reset_scanned_blocks] Resetting state inverse diffs tree failed: {e}"
+                "[reset_scanned_blocks] Resetting money SMT tree failed: {e}"
             ));
             return Err(WalletDbError::GenericError)
         }
@@ -106,6 +105,11 @@ impl Drk {
 
     /// Reset state to provided block height.
     /// If genesis block height(0) was provided, perform a full reset.
+    ///
+    /// DarkWow uses linear architecture — no overlay/diff/inverse-diff.
+    /// Rollback clears records above the target height. The caller
+    /// (scan_blocks) will re-scan from target+1, rebuilding merkle
+    /// trees and SMT state deterministically.
     pub async fn reset_to_height(
         &self,
         height: u32,
@@ -130,71 +134,21 @@ impl Drk {
             return Ok(())
         }
 
-        // Grab our current merkle trees
-        let mut money_tree = match self.get_money_tree().await {
-            Ok(t) => t,
-            Err(e) => {
-                output.push(format!("[reset_to_height] Money merkle tree retrieval failed: {e}"));
-                return Err(WalletDbError::GenericError)
-            }
-        };
-
-        // Create an overlay to apply the reverse diffs
-        let mut overlay = match CacheOverlay::new(&self.cache) {
-            Ok(o) => o,
-            Err(e) => {
-                output.push(format!("[reset_to_height] Creating cache overlay failed: {e}"));
-                return Err(WalletDbError::GenericError)
-            }
-        };
-
-        // Grab all state inverse diffs until requested height,
-        // going backwards.
-        for height in (height + 1..=last).rev() {
-            let inverse_diff = match self.cache.get_state_inverse_diff(&height) {
-                Ok(d) => d,
-                Err(e) => {
+        // Clear scanned blocks above target height
+        for h in (height + 1)..=last {
+            self.cache.scanned_blocks.remove(h.to_be_bytes())
+                .map_err(|e| {
                     output.push(format!(
-                        "[reset_to_height] Retrieving state inverse diff from cache failed: {e}"
+                        "[reset_to_height] Removing scanned block {h} failed: {e}"
                     ));
-                    return Err(WalletDbError::GenericError)
-                }
-            };
+                    WalletDbError::GenericError
+                })?;
+        }
 
-            // Apply it
-            if let Err(e) = overlay.0.add_diff(&inverse_diff) {
-                output.push(format!(
-                    "[reset_to_height] Adding state inverse diff to the cache overlay failed: {e}"
-                ));
-                return Err(WalletDbError::GenericError)
-            }
-            if let Err(e) = overlay.0.apply_diff(&inverse_diff) {
-                output.push(format!("[reset_to_height] Applying state inverse diff to the cache overlay failed: {e}"));
-                return Err(WalletDbError::GenericError)
-            }
-
-            // Remove it
-            if let Err(e) = self.cache.state_inverse_diff.remove(height.to_be_bytes()) {
-                output.push(format!(
-                    "[reset_to_height] Removing state inverse diff from the cache failed: {e}"
-                ));
-                return Err(WalletDbError::GenericError)
-            }
-
-            // Rewind and update the merkle trees
-            money_tree.rewind();
-            if let Err(e) = self.cache.insert_merkle_trees(&[
-                (SLED_MERKLE_TREES_MONEY.as_bytes(), &money_tree),
-            ]) {
-                output.push(format!("[reset_to_height] Updating merkle trees failed: {e}"));
-                return Err(WalletDbError::GenericError)
-            };
-
-            // Flush sled
-            if let Err(e) = self.cache.sled_db.flush() {
-                output.push(format!("[reset_to_height] Flushing cache sled database failed: {e}"));
-                return Err(WalletDbError::GenericError)
-            }
+        // Flush sled after clearing records
+        if let Err(e) = self.cache.db.flush() {
+            output.push(format!("[reset_to_height] Flushing cache sled database failed: {e}"));
+            return Err(WalletDbError::GenericError)
         }
 
         // Remove all wallet coins created after the reset height

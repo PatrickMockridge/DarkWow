@@ -33,7 +33,7 @@ use smol::net::TcpStream;
 use url::Url;
 
 use dwow::{
-    blockchain::{BlockInfo, HeaderHash},
+    blockchain::HeaderHash,
     rpc::{
         client::RpcClient,
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResult},
@@ -42,7 +42,6 @@ use dwow::{
     system::{ExecutorPtr, Publisher, StoppableTaskPtr},
     tx::Transaction,
     util::encoding::base64,
-    zk::verifier::{verify_zkp, ZkVerifyResult},
     Error, Result,
 };
 use crate::contract_imports::money::TokenId;
@@ -52,9 +51,9 @@ use dwow_sdk::{
         keypair::Network,
         poseidon_hash,
         smt::{PoseidonFp, EMPTY_NODES_FP},
-        ContractId, MerkleTree, PublicKey, SecretKey, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
+        ContractId, MerkleTree, PublicKey, SecretKey, NATIVE_TOKEN_CONTRACT_ID,
     },
-    pasta::{pallas, group::ff::PrimeField},
+    pasta::group::ff::PrimeField,
     dark_tree::DarkLeaf,
     tx::{ContractCall, TransactionHash},
 };
@@ -67,7 +66,7 @@ use dwow_serial::Decodable;
 use dwow_serial::{deserialize_async, serialize_async};
 
 use crate::{
-    cache::{CacheOverlay, CacheSmt, CacheSmtStorage, SLED_MONEY_SMT_TREE},
+    cache::{BlockScanner, CacheSmt, MoneySmtStorage},
     cli_util::append_or_print,
     contract_imports::MONEY_V3_CONTRACT_ID,
     error::{WalletDbError, WalletDbResult},
@@ -138,89 +137,14 @@ impl ScanCache {
     }
 }
 
-// =============================================================================
-// ZK Proof Verification
-// =============================================================================
-
-/// Verify ZK proofs for a transaction using block's zkbin_data.
-///
-/// This function verifies all ZK proofs in a transaction before processing,
-/// ensuring that the wallet only processes transactions with valid proofs.
-fn verify_tx_zkps(
-    tx: &Transaction,
-    zkbin_data: &[(ContractId, String, Vec<u8>, Vec<pallas::Base>)],
-    log: &mut Vec<String>,
-) {
-    if tx.proofs.is_empty() || tx.calls.is_empty() {
-        return;
-    }
-
-    log.push(format!(
-        "[verify_tx_zkps] Verifying ZK proofs for tx ({} calls, {} proof sets)",
-        tx.calls.len(),
-        tx.proofs.len()
-    ));
-
-    // Build a map of contract_id -> zkbin entries using BTreeMap
-    // (ContractId doesn't implement Hash, so we use bytes as key)
-    let zkbin_by_contract: std::collections::BTreeMap<_, Vec<_>> = zkbin_data
-        .iter()
-        .fold(std::collections::BTreeMap::new(), |mut acc, (cid, ns, bytes, instances)| {
-            let key = cid.to_bytes();
-            acc.entry(key).or_insert_with(Vec::new).push((ns.clone(), bytes.clone(), instances.clone()));
-            acc
-        });
-
-    for (call_idx, call_leaf) in tx.calls.iter().enumerate() {
-        let contract_id_bytes = call_leaf.data.contract_id.to_bytes();
-        let function_code = call_leaf.data.data.first().copied().unwrap_or(0);
-
-        // Get proofs for this call
-        let proofs = match tx.proofs.get(call_idx) {
-            Some(p) => p,
-            None => continue,
-        };
-
-        // Get zkbin entries for this contract
-        let entries = match zkbin_by_contract.get(&contract_id_bytes) {
-            Some(e) => e,
-            None => continue,
-        };
-
-        for (proof_idx, proof) in proofs.iter().enumerate() {
-            // Find matching zkbin entry
-            let zkbin_entry = entries.get(proof_idx.min(entries.len().saturating_sub(1)));
-
-            if let Some((_, zkbin_bytes, instances)) = zkbin_entry {
-                match verify_zkp(proof, zkbin_bytes, instances) {
-                    ZkVerifyResult::Ok => {
-                        log.push(format!(
-                            "[verify_tx_zkps] Verified ZK proof {}-{} ({:02x})",
-                            call_idx, proof_idx, function_code
-                        ));
-                    }
-                    ZkVerifyResult::InvalidProof | ZkVerifyResult::InvalidVk => {
-                        log.push(format!(
-                            "[verify_tx_zkps] WARNING: ZK proof {}-{} failed verification",
-                            call_idx, proof_idx
-                        ));
-                    }
-                }
-            }
-        }
-    }
-}
-
 impl Drk {
     /// Auxiliary function to generate a new [`ScanCache`] for the
     /// wallet.
     pub async fn scan_cache(&self) -> Result<ScanCache> {
         let money_tree = self.get_money_tree().await?;
 
-        // Create SMT storage and tree
-        let overlay = CacheOverlay::new(&self.cache)
-            .map_err(|e| Error::Custom(format!("Failed to create cache overlay: {:?}", e)))?;
-        let smt_store = CacheSmtStorage::new(overlay, SLED_MONEY_SMT_TREE);
+        // Create SMT storage and tree directly — no overlay
+        let smt_store = MoneySmtStorage::new(self.cache.money_smt.clone());
         let money_smt = CacheSmt::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
         // Get our secrets
@@ -251,288 +175,10 @@ impl Drk {
         })
     }
 
-    /// `scan_block` will go over over transactions in a block and handle their calls
-    /// based on the called contract.
-    async fn scan_block(&self, scan_cache: &mut ScanCache, block: &BlockInfo) -> Result<()> {
-        // Keep track of our wallet transactions.
-        let mut wallet_txs = vec![];
-
-        // Checkpoint the merkle trees
-        scan_cache.money_tree.checkpoint(block.header.height as usize);
-
-        // Scan the block
-        scan_cache.log(String::from("======================================="));
-        scan_cache.log(format!("{}", block.header));
-        scan_cache.log(String::from("======================================="));
-        scan_cache.log(format!("[scan_block] Iterating over {} transactions", block.txs.len()));
-        let mut block_signing_key = None;
-        for tx in block.txs.iter() {
-            let tx_hash = tx.hash();
-            let tx_hash_string = tx_hash.to_string();
-            let mut wallet_tx = false;
-
-            // ============================================================
-            // ZK Proof Verification
-            // Verify all proofs in this transaction before processing.
-            // ============================================================
-            verify_tx_zkps(tx, &block.zkbin_data, &mut scan_cache.messages_buffer);
-            // ============================================================
-            // End ZK Proof Verification
-            // ============================================================
-
-            scan_cache.log(format!("[scan_block] Processing transaction: {tx_hash_string}"));
-            for (i, call) in tx.calls.iter().enumerate() {
-                if call.data.contract_id == *MONEY_V3_CONTRACT_ID.get().unwrap() {
-                    scan_cache.log(format!("[scan_block] Found Money contract in call {i}"));
-                    let (is_wallet_tx, signing_key) = self
-                        .apply_tx_money_data(
-                            scan_cache,
-                            &i,
-                            &tx.calls,
-                            &tx_hash_string,
-                            &block.header.height,
-                        )
-                        .await?;
-                    if is_wallet_tx {
-                        wallet_tx = true;
-                        // Only one block signing key exists per block
-                        if signing_key.is_some() {
-                            block_signing_key = signing_key;
-                        }
-                    }
-                    continue
-                }
-
-                if call.data.contract_id == *DEPLOYOOOR_CONTRACT_ID {
-                    scan_cache.log(format!("[scan_block] Found DeployoOor contract in call {i}"));
-                    if self
-                        .apply_tx_deploy_data(
-                            scan_cache,
-                            &call.data.data,
-                            &tx_hash,
-                            &block.header.height,
-                        )
-                        .await?
-                    {
-                        wallet_tx = true;
-                    }
-                    continue
-                }
-
-                if call.data.contract_id == *NATIVE_TOKEN_CONTRACT_ID {
-                    scan_cache.log(format!("[scan_block] Found Native Token contract in call {i}"));
-                    if self
-                        .apply_tx_native_token_data(
-                            scan_cache,
-                            &call.data.data,
-                            &block.header.height,
-                        )
-                        .await?
-                    {
-                        wallet_tx = true;
-                    }
-                    continue
-                }
-
-                // TODO: For now we skip non-native contract calls
-                scan_cache
-                    .log(format!("[scan_block] Found non-native contract in call {i}, skipping."));
-            }
-
-            // If this is our wallet tx we mark it for update
-            if wallet_tx {
-                wallet_txs.push(tx);
-            }
-        }
-
-        // Insert the block record
-        scan_cache.money_smt.store.overlay.insert_scanned_block(
-            &block.header.height,
-            &block.header.hash(),
-            &block_signing_key,
-        )?;
-
-        // Grab the overlay current diff
-        let diff = scan_cache.money_smt.store.overlay.0.diff(&[])?;
-
-        // Apply the overlay current changes
-        scan_cache.money_smt.store.overlay.0.apply_diff(&diff)?;
-
-        // Insert the state inverse diff record
-        self.cache.insert_state_inverse_diff(&block.header.height, &diff.inverse())?;
-
-        // Update the merkle trees
-        self.cache.insert_merkle_trees(&[
-            (SLED_MERKLE_TREES_MONEY.as_bytes(), &scan_cache.money_tree),
-        ])?;
-
-        // Flush sled
-        self.cache.sled_db.flush()?;
-
-        // Update wallet transactions records
-        if let Err(e) =
-            self.put_tx_history_records(&wallet_txs, "Confirmed", Some(block.header.height)).await
-        {
-            return Err(Error::DatabaseError(format!(
-                "[scan_block] Inserting transaction history records failed: {e}"
-            )))
-        }
-
-        Ok(())
-    }
-
-    /// Scans the blockchain for wallet relevant transactions,
+    /// Scans the linear blockchain for wallet relevant transactions,
     /// starting from the last scanned block. If a reorg has happened,
     /// we revert to its previous height and then scan from there.
     pub async fn scan_blocks(
-        &self,
-        output: &mut Vec<String>,
-        sender: Option<&Sender<Vec<String>>>,
-        print: &bool,
-    ) -> WalletDbResult<()> {
-        // Detect linear-testnet mode by checking if RPC client is configured for testnet
-        let is_linear = {
-            let Some(ref rpc_client) = self.rpc_client else {
-                return Err(WalletDbError::GenericError)
-            };
-            let lock = rpc_client.read().await;
-            lock.is_linear_testnet()
-        };
-
-        // Grab last scanned block height
-        let (mut height, hash) = self.get_last_scanned_block()?;
-
-        // For linear-testnet, use the linear block fetching path
-        if is_linear {
-            return self.scan_blocks_linear(output, sender, print).await;
-        }
-
-        // Grab our last scanned block from darkfid
-        let block = match self.get_block_by_height(height).await {
-            Ok(b) => Some(b),
-            // Check if block was found
-            Err(Error::JsonRpcError((-32121, _))) => None,
-            Err(e) => {
-                append_or_print(
-                    output,
-                    sender,
-                    print,
-                    vec![format!("[scan_blocks] RPC client request failed: {e}")],
-                )
-                .await;
-                return Err(WalletDbError::GenericError)
-            }
-        };
-
-        // Check if a reorg has happened
-        if block.is_none() || hash != block.unwrap().hash().to_string() {
-            // Find the exact block height the reorg happened
-            let mut buf =
-                vec![String::from("A reorg has happened, finding last known common block...")];
-            height = height.saturating_sub(1);
-            while height != 0 {
-                // Grab our scanned block hash for that height
-                let (scanned_block_hash, _) = self.get_scanned_block(&height)?;
-
-                // Grab the block from darkfid for that height
-                let block = match self.get_block_by_height(height).await {
-                    Ok(b) => Some(b),
-                    // Check if block was found
-                    Err(Error::JsonRpcError((-32121, _))) => None,
-                    Err(e) => {
-                        buf.push(format!("[scan_blocks] RPC client request failed: {e}"));
-                        append_or_print(output, sender, print, buf).await;
-                        return Err(WalletDbError::GenericError)
-                    }
-                };
-
-                // Continue to previous one if they don't match
-                if block.is_none() || scanned_block_hash != block.unwrap().hash().to_string() {
-                    height = height.saturating_sub(1);
-                    continue
-                }
-
-                // Reset to its height
-                buf.push(format!("Last common block found: {height} - {scanned_block_hash}"));
-                self.reset_to_height(height, &mut buf).await?;
-                append_or_print(output, sender, print, buf).await;
-                break
-            }
-        }
-
-        // If last scanned block is genesis(0) we reset,
-        // otherwise continue with the next block height.
-        if height == 0 {
-            let mut buf = vec![];
-            self.reset(&mut buf)?;
-            append_or_print(output, sender, print, buf).await;
-        } else {
-            height += 1;
-        }
-
-        // Generate a new scan cache
-        let mut scan_cache = match self.scan_cache().await {
-            Ok(c) => c,
-            Err(e) => {
-                append_or_print(
-                    output,
-                    sender,
-                    print,
-                    vec![format!("[scan_blocks] Generating scan cache failed: {e}")],
-                )
-                .await;
-                return Err(WalletDbError::GenericError)
-            }
-        };
-
-        loop {
-            // Grab last confirmed block
-            let mut buf = vec![format!("Requested to scan from block number: {height}")];
-            let (last_height, last_hash) = match self.get_last_confirmed_block().await {
-                Ok(last) => last,
-                Err(e) => {
-                    buf.push(format!("[scan_blocks] RPC client request failed: {e}"));
-                    append_or_print(output, sender, print, buf).await;
-                    return Err(WalletDbError::GenericError)
-                }
-            };
-            buf.push(format!(
-                "Last confirmed block reported by darkfid: {last_height} - {last_hash}"
-            ));
-            append_or_print(output, sender, print, buf).await;
-
-            // Already scanned last confirmed block
-            if height > last_height {
-                return Ok(())
-            }
-
-            while height <= last_height {
-                let mut buf = vec![format!("Requesting block {height}...")];
-                let block = match self.get_block_by_height(height).await {
-                    Ok(b) => b,
-                    Err(e) => {
-                        buf.push(format!("[scan_blocks] RPC client request failed: {e}"));
-                        append_or_print(output, sender, print, buf).await;
-                        return Err(WalletDbError::GenericError)
-                    }
-                };
-                buf.push(format!("Block {height} received! Scanning block..."));
-                if let Err(e) = self.scan_block(&mut scan_cache, &block).await {
-                    buf.push(format!("[scan_blocks] Scan block failed: {e}"));
-                    append_or_print(output, sender, print, buf).await;
-                    return Err(WalletDbError::GenericError)
-                };
-                for msg in scan_cache.flush_messages() {
-                    buf.push(msg);
-                }
-                append_or_print(output, sender, print, buf).await;
-                height += 1;
-            }
-        }
-    }
-
-    /// Linear-testnet version of scan_blocks using dwow_linear::Block directly
-    async fn scan_blocks_linear(
         &self,
         output: &mut Vec<String>,
         sender: Option<&Sender<Vec<String>>>,
@@ -557,7 +203,7 @@ impl Drk {
                     output,
                     sender,
                     print,
-                    vec![format!("[scan_blocks_linear] Generating scan cache failed: {e}")],
+                    vec![format!("[scan_blocks] Generating scan cache failed: {e}")],
                 )
                 .await;
                 return Err(WalletDbError::GenericError)
@@ -570,7 +216,7 @@ impl Drk {
             let (last_height_u32, last_hash) = match self.get_last_confirmed_block().await {
                 Ok(last) => last,
                 Err(e) => {
-                    buf.push(format!("[scan_blocks_linear] RPC client request failed: {e}"));
+                    buf.push(format!("[scan_blocks] RPC client request failed: {e}"));
                     append_or_print(output, sender, print, buf).await;
                     return Err(WalletDbError::GenericError)
                 }
@@ -591,14 +237,14 @@ impl Drk {
                 let block = match self.get_block_by_height_linear(height).await {
                     Ok(b) => b,
                     Err(e) => {
-                        buf.push(format!("[scan_blocks_linear] RPC client request failed: {e}"));
+                        buf.push(format!("[scan_blocks] RPC client request failed: {e}"));
                         append_or_print(output, sender, print, buf).await;
                         return Err(WalletDbError::GenericError)
                     }
                 };
                 buf.push(format!("Block {height} received! Scanning block..."));
                 if let Err(e) = self.scan_block_linear(&mut scan_cache, &block).await {
-                    buf.push(format!("[scan_blocks_linear] Scan block failed: {e}"));
+                    buf.push(format!("[scan_blocks] Scan block failed: {e}"));
                     append_or_print(output, sender, print, buf).await;
                     return Err(WalletDbError::GenericError)
                 };
@@ -760,21 +406,13 @@ impl Drk {
             }
         }
 
-        // Insert the block record
-        scan_cache.money_smt.store.overlay.insert_scanned_block(
+        // Insert the block record — direct sled write, no overlay
+        let block_scanner = BlockScanner::new(&self.cache);
+        block_scanner.insert_scanned_block(
             &height_u32,
-            &HeaderHash::new(*block.header.previous.as_bytes()),
+            &HeaderHash(*block.header.previous.as_bytes()),
             &None,
         )?;
-
-        // Grab the overlay current diff
-        let diff = scan_cache.money_smt.store.overlay.0.diff(&[])?;
-
-        // Apply the overlay current changes
-        scan_cache.money_smt.store.overlay.0.apply_diff(&diff)?;
-
-        // Insert the state inverse diff record
-        self.cache.insert_state_inverse_diff(&height_u32, &diff.inverse())?;
 
         // Update the merkle trees
         self.cache.insert_merkle_trees(&[
@@ -782,7 +420,7 @@ impl Drk {
         ])?;
 
         // Flush sled
-        self.cache.sled_db.flush()?;
+        self.cache.db.flush()?;
 
         Ok(())
     }
@@ -797,20 +435,6 @@ impl Drk {
         let hash = params[1].get::<String>().unwrap().clone();
 
         Ok((height, hash))
-    }
-
-    // Queries darkfid for a block with given height.
-    async fn get_block_by_height(&self, height: u32) -> Result<BlockInfo> {
-        let params = self
-            .darkfid_daemon_request(
-                "blockchain.get_block",
-                &JsonValue::Array(vec![JsonValue::Number(height as f64)]),
-            )
-            .await?;
-        let param = params.get::<String>().unwrap();
-        let bytes = base64::decode(param).unwrap();
-        let block = deserialize_async(&bytes).await?;
-        Ok(block)
     }
 
     // Queries darkfid for a linear blockchain block with given height.
@@ -1699,16 +1323,19 @@ pub async fn subscribe_blocks(
 
                 for param in params {
                     let param = param.get::<String>().unwrap();
-                    let bytes = base64::decode(param).unwrap();
 
-                    let block: BlockInfo = deserialize_async(&bytes).await?;
+                    // Linear blocks are sent as JSON strings
+                    let block: dwow_linear::Block = serde_json::from_str(&param)
+                        .map_err(|e| Error::Custom(format!(
+                            "[subscribe_blocks] Failed to parse linear block: {e}"
+                        )))?;
                     shell_message
                         .push(String::from("Deserialized successfully. Scanning block..."));
 
                     // Check if a reorg block was received, to reset to its previous
                     let lock = drk.read().await;
-                    if block.header.height <= last_scanned_height {
-                        let reset_height = block.header.height.saturating_sub(1);
+                    if (block.header.height as u32) <= last_scanned_height {
+                        let reset_height = (block.header.height as u32).saturating_sub(1);
                         if let Err(e) = lock.reset_to_height(reset_height, &mut shell_message).await
                         {
                             shell_sender.send(shell_message).await?;
@@ -1719,7 +1346,7 @@ pub async fn subscribe_blocks(
 
                         // Scan genesis again if needed
                         if reset_height == 0 {
-                            let genesis = match lock.get_block_by_height(reset_height).await {
+                            let genesis = match lock.get_block_by_height_linear(0).await {
                                 Ok(b) => b,
                                 Err(e) => {
                                     shell_sender.send(shell_message).await?;
@@ -1729,7 +1356,7 @@ pub async fn subscribe_blocks(
                                 }
                             };
                             let mut scan_cache = lock.scan_cache().await?;
-                            if let Err(e) = lock.scan_block(&mut scan_cache, &genesis).await {
+                            if let Err(e) = lock.scan_block_linear(&mut scan_cache, &genesis).await {
                                 shell_sender.send(shell_message).await?;
                                 break 'outer Error::Custom(format!(
                                     "[subscribe_blocks] Scanning block failed: {e}"
@@ -1742,7 +1369,7 @@ pub async fn subscribe_blocks(
                     }
 
                     let mut scan_cache = lock.scan_cache().await?;
-                    if let Err(e) = lock.scan_block(&mut scan_cache, &block).await {
+                    if let Err(e) = lock.scan_block_linear(&mut scan_cache, &block).await {
                         shell_sender.send(shell_message).await?;
                         break 'outer Error::Custom(format!(
                             "[subscribe_blocks] Scanning block failed: {e}"
@@ -1754,7 +1381,7 @@ pub async fn subscribe_blocks(
                     shell_sender.send(shell_message.clone()).await?;
 
                     // Set new last scanned block height
-                    last_scanned_height = block.header.height;
+                    last_scanned_height = block.header.height as u32;
                 }
             }
 

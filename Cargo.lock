@@ -3229,7 +3229,7 @@ dependencies = [
  "serde_json",
  "signal-hook",
  "signal-hook-async-std",
- "sled-overlay",
+ "sled",
  "smol",
  "structopt",
  "structopt-toml",

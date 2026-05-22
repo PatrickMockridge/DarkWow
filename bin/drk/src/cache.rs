@@ -35,54 +35,42 @@ use dwow_sdk::{
 };
 use dwow_serial::{deserialize, serialize};
 use num_bigint::BigUint;
-use sled_overlay::{sled, SledDbOverlay, SledDbOverlayStateDiff};
+use sled;
 use tracing::error;
 
 pub const SLED_SCANNED_BLOCKS_TREE: &[u8] = b"_scanned_blocks";
-pub const SLED_STATE_INVERSE_DIFF_TREE: &[u8] = b"_state_inverse_diff";
 pub const SLED_MERKLE_TREES_TREE: &[u8] = b"_merkle_trees";
 pub const SLED_MONEY_SMT_TREE: &[u8] = b"_money_smt";
 
 /// Structure holding all sled trees that define the blockchain cache.
+/// Uses plain sled — no overlay/diff mechanism. DarkWow's linear
+/// architecture is forward-only and deterministic; rollback is handled
+/// by re-scanning from the target height.
 #[derive(Clone)]
 pub struct Cache {
     /// Main pointer to the sled db connection
-    pub sled_db: sled::Db,
+    pub db: sled::Db,
     /// The `sled` tree storing the scanned blocks from the blockchain,
     /// where the key is the height number, and the value is the blocks'
     /// hash.
     pub scanned_blocks: sled::Tree,
-    /// The `sled` tree storing each blocks' full database state inverse
-    /// changes, where the key is the block height number, and the value
-    /// is the serialized database inverse diff.
-    pub state_inverse_diff: sled::Tree,
     /// The `sled` tree storing the merkle trees of the blockchain,
     /// where the key is the tree name, and the value is the serialized
     /// merkle tree itself.
     pub merkle_trees: sled::Tree,
     /// The `sled` tree storing the Sparse Merkle Tree of the Money
     /// contract.
-    // TODO: this could be a map of trees so more contracts can open
-    // SMTs if needed
     pub money_smt: sled::Tree,
-    // TODO: Perhaps we should also move transactions history here
 }
 
 impl Cache {
     /// Instantiate a new `Cache` with the given `sled` database.
     pub fn new(db: &sled::Db) -> Result<Self> {
         let scanned_blocks = db.open_tree(SLED_SCANNED_BLOCKS_TREE)?;
-        let state_inverse_diff = db.open_tree(SLED_STATE_INVERSE_DIFF_TREE)?;
         let merkle_trees = db.open_tree(SLED_MERKLE_TREES_TREE)?;
         let money_smt = db.open_tree(SLED_MONEY_SMT_TREE)?;
 
-        Ok(Self {
-            sled_db: db.clone(),
-            scanned_blocks,
-            state_inverse_diff,
-            merkle_trees,
-            money_smt,
-        })
+        Ok(Self { db: db.clone(), scanned_blocks, merkle_trees, money_smt })
     }
 
     /// Execute an atomic sled batch corresponding to inserts to the
@@ -102,60 +90,22 @@ impl Cache {
         let tree_bytes = self.merkle_trees.get(name).ok()??;
         deserialize(&tree_bytes).ok()
     }
-
-    /// Insert a `u32` and a block inverse diff into store's inverse
-    /// diffs tree. The block height is used as the key, and the
-    /// serialized database inverse diff is used as value.
-    pub fn insert_state_inverse_diff(
-        &self,
-        height: &u32,
-        diff: &SledDbOverlayStateDiff,
-    ) -> Result<()> {
-        self.state_inverse_diff.insert(height.to_be_bytes(), serialize(diff))?;
-        Ok(())
-    }
-
-    /// Fetch given block height number from the store's state inverse
-    /// diffs tree. The function will fail if the block height number
-    /// was not found.
-    pub fn get_state_inverse_diff(&self, height: &u32) -> Result<SledDbOverlayStateDiff> {
-        match self.state_inverse_diff.get(height.to_be_bytes())? {
-            Some(found) => Ok(deserialize(&found)?),
-            None => Err(Error::BlockStateInverseDiffNotFound(*height)),
-        }
-    }
 }
 
-/// Overlay structure over a [`Cache`] instance.
-pub struct CacheOverlay(pub SledDbOverlay);
+/// Simple block scanner that writes directly to sled — no overlay.
+pub struct BlockScanner {
+    tree: sled::Tree,
+}
 
-impl CacheOverlay {
-    /// Instantiate a new `CacheOverlay` over the given [`Cache`] instance.
-    pub fn new(cache: &Cache) -> Result<CacheOverlay> {
-        // Here we configure all our cache sled trees to be protected in the overlay
-        let protected_trees = vec![
-            SLED_SCANNED_BLOCKS_TREE,
-            SLED_STATE_INVERSE_DIFF_TREE,
-            SLED_MERKLE_TREES_TREE,
-            SLED_MONEY_SMT_TREE,
-        ];
-        let mut overlay = SledDbOverlay::new(&cache.sled_db, protected_trees);
-
-        // Open all our cache sled trees in the overlay
-        overlay.open_tree(SLED_SCANNED_BLOCKS_TREE, true)?;
-        overlay.open_tree(SLED_STATE_INVERSE_DIFF_TREE, true)?;
-        overlay.open_tree(SLED_MERKLE_TREES_TREE, true)?;
-        overlay.open_tree(SLED_MONEY_SMT_TREE, true)?;
-
-        Ok(Self(overlay))
+impl BlockScanner {
+    /// Create a new block scanner writing to the scanned_blocks tree.
+    pub fn new(cache: &Cache) -> Self {
+        Self { tree: cache.scanned_blocks.clone() }
     }
 
-    /// Insert a `u32`, a block hash and an optional signing key into
-    /// overlay's scanned blocks tree. The block height is used as the
-    /// key, while the serialized blockhash and key strings are used as
-    /// the value.
+    /// Insert a scanned block record directly into the sled tree.
     pub fn insert_scanned_block(
-        &mut self,
+        &self,
         height: &u32,
         hash: &HeaderHash,
         signing_key: &Option<SecretKey>,
@@ -164,10 +114,9 @@ impl CacheOverlay {
             Some(key) => key.to_string(),
             None => String::from("-"),
         };
-        self.0.insert(
-            SLED_SCANNED_BLOCKS_TREE,
-            &height.to_be_bytes(),
-            &serialize(&(hash.to_string(), block_signing_key)),
+        self.tree.insert(
+            height.to_be_bytes(),
+            serialize(&(hash.to_string(), block_signing_key)),
         )?;
         Ok(())
     }
@@ -179,28 +128,28 @@ pub type CacheSmt = SparseMerkleTree<
     { SMT_FP_DEPTH + 1 },
     pallas::Base,
     PoseidonFp,
-    CacheSmtStorage,
+    MoneySmtStorage,
 >;
 
-pub struct CacheSmtStorage {
-    pub overlay: CacheOverlay,
-    tree: Vec<u8>,
+/// Sparse Merkle Tree storage backed directly by a sled tree — no overlay.
+pub struct MoneySmtStorage {
+    tree: sled::Tree,
 }
 
-impl CacheSmtStorage {
-    pub fn new(overlay: CacheOverlay, tree: &[u8]) -> Self {
-        Self { overlay, tree: tree.to_vec() }
+impl MoneySmtStorage {
+    pub fn new(tree: sled::Tree) -> Self {
+        Self { tree }
     }
 
     pub fn snapshot(&self) -> Result<HashMap<BigUint, pallas::Base>> {
         let mut smt = HashMap::new();
-        for record in self.overlay.0.iter(&self.tree)? {
+        for record in self.tree.iter() {
             let (key, value) = record?;
             let mut repr = [0; 32];
             repr.copy_from_slice(&value);
             let Some(value) = pallas::Base::from_repr(repr).into() else {
                 return Err(Error::ParseFailed(
-                    "[cache::CacheSmtStorage::snapshot] Value conversion failed",
+                    "[cache::MoneySmtStorage::snapshot] Value conversion failed",
                 ))
             };
             smt.insert(BigUint::from_bytes_le(&key), value);
@@ -209,11 +158,11 @@ impl CacheSmtStorage {
     }
 }
 
-impl StorageAdapter for CacheSmtStorage {
+impl StorageAdapter for MoneySmtStorage {
     type Value = pallas::Base;
 
     fn put(&mut self, key: BigUint, value: pallas::Base) -> ContractResult {
-        if let Err(e) = self.overlay.0.insert(&self.tree, &key.to_bytes_le(), &value.to_repr()) {
+        if let Err(e) = self.tree.insert(key.to_bytes_le(), &value.to_repr()) {
             error!(target: "cache::StorageAdapter::put", "Inserting key {key:?}, value {value:?} into DB failed: {e}");
             return Err(ContractError::SmtPutFailed)
         }
@@ -221,7 +170,7 @@ impl StorageAdapter for CacheSmtStorage {
     }
 
     fn get(&self, key: &BigUint) -> Option<pallas::Base> {
-        let value = match self.overlay.0.get(&self.tree, &key.to_bytes_le()) {
+        let value = match self.tree.get(key.to_bytes_le()) {
             Ok(v) => v,
             Err(e) => {
                 error!(target: "cache::StorageAdapter::get", "Fetching key {key:?} from DB failed: {e}");
@@ -238,7 +187,7 @@ impl StorageAdapter for CacheSmtStorage {
     }
 
     fn del(&mut self, key: &BigUint) -> ContractResult {
-        if let Err(e) = self.overlay.0.remove(&self.tree, &key.to_bytes_le()) {
+        if let Err(e) = self.tree.remove(key.to_bytes_le()) {
             error!(target: "cache::StorageAdapter::del", "Removing key {key:?} from DB failed: {e}");
             return Err(ContractError::SmtDelFailed)
         }
@@ -254,23 +203,21 @@ mod tests {
         pasta::pallas,
     };
     use rand::rngs::OsRng;
-    use sled_overlay::sled;
+    use sled;
 
-    use crate::cache::{Cache, CacheOverlay, CacheSmtStorage, SLED_MONEY_SMT_TREE};
+    use crate::cache::{Cache, MoneySmtStorage};
 
     #[test]
     fn test_cache_smt() -> Result<()> {
-        // Setup cache and its overlay
         let sled_db = sled::Config::new().temporary(true).open()?;
         let cache = Cache::new(&sled_db)?;
-        let overlay = CacheOverlay::new(&cache)?;
 
-        // Setup SMT
+        // Setup SMT backed directly by the sled tree
         const HEIGHT: usize = 3;
         let hasher = PoseidonFp::new();
         let empty_leaf = pallas::Base::ZERO;
         let empty_nodes = gen_empty_nodes::<{ HEIGHT + 1 }, _, _>(&hasher, empty_leaf);
-        let store = CacheSmtStorage::new(overlay, SLED_MONEY_SMT_TREE);
+        let store = MoneySmtStorage::new(cache.money_smt.clone());
         let mut smt = SparseMerkleTree::<HEIGHT, { HEIGHT + 1 }, _, _, _>::new(
             store,
             hasher.clone(),
@@ -313,20 +260,8 @@ mod tests {
 
         assert!(path.verify(&root, &hash3, &pos));
 
-        // Grab the overlay diff
-        let diff = smt.store.overlay.0.diff(&[])?;
-
-        // Apply the overlay
-        smt.store.overlay.0.apply_diff(&diff)?;
-
-        // Verify database contains keys
+        // Verify database contains keys (direct sled writes, no overlay)
         assert!(!cache.money_smt.is_empty());
-
-        // We are now going to rollback the changes
-        smt.store.overlay.0.apply_diff(&diff.inverse())?;
-
-        // Verify database is empty again
-        assert!(cache.money_smt.is_empty());
 
         Ok(())
     }

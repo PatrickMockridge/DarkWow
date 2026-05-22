@@ -365,7 +365,6 @@ pub mod money {
 
     // SLED database tree names
     pub const SLED_MERKLE_TREES_MONEY: &str = "money_merkle_trees";
-    pub const SLED_MONEY_SMT_TREE: &str = "money_smt_tree";
 
     // Token management constants
     pub const MONEY_TOKENS_TABLE: &str = "tokens";

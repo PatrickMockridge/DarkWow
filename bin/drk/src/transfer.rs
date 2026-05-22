@@ -230,6 +230,10 @@ impl Drk {
             spend_hook: spend_hook_out,
             user_data: user_data_out,
             coin_blind: output_coin_blind.inner(),
+            auth_mint_public: pallas::Base::zero(),
+            auth_nullifier: pallas::Base::zero(),
+            token_leaf_pos: 0,
+            token_path: vec![],
         };
 
         // Create change output if there's change and half_split is false
@@ -244,6 +248,10 @@ impl Drk {
                     spend_hook: pallas::Base::zero(),
                     user_data: pallas::Base::zero(),
                     coin_blind: change_coin_blind.inner(),
+                    auth_mint_public: pallas::Base::zero(),
+                    auth_nullifier: pallas::Base::zero(),
+                    token_leaf_pos: 0,
+                    token_path: vec![],
                 },
             ]
         } else {
