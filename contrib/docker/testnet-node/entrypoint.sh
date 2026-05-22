@@ -128,10 +128,10 @@ min_block_interval = 10
 randomx_max_threads = ${RANDOMX_MAX_THREADS:-0}
 
 [network_config."${NETWORK}".rpc]
-rpc_listen = "http+tcp://0.0.0.0:${RPC_PORT}"
+rpc_listen = "tcp://0.0.0.0:${RPC_PORT}"
 
 [network_config."${NETWORK}".stratum_rpc]
-rpc_listen = "http+tcp://0.0.0.0:${STRATUM_PORT}"
+rpc_listen = "tcp://0.0.0.0:${STRATUM_PORT}"
 
 [network_config."${NETWORK}".management_rpc]
 rpc_listen = "tcp://127.0.0.1:${MANAGEMENT_PORT}"
