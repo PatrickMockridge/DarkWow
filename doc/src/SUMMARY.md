@@ -239,11 +239,13 @@
 # Legacy Architecture
 
 > **ARCHIVED**: The following documents describe the original overlay-DAG
-> architecture. The current consensus mechanism is Uncle Merkle.
+> blockchain consensus, which has been replaced by [Uncle Merkle](arch/consensus/uncle_merkle.md).
+> **Exception:** The [Event Graph](arch/legacy/event_graph.md) is still active —
+> it is the P2P messaging DAG used by darkirc, not blockchain consensus.
 
 - [Consensus (Original DAG)](arch/legacy/consensus_dag.md)
-- [Event Graph](arch/legacy/event_graph.md)
-  - [Event Graph Network Protocol](arch/legacy/event_graph_network_protocol.md)
+- [Event Graph](arch/legacy/event_graph.md) *(active — P2P messaging layer)*
+  - [Event Graph Network Protocol](arch/legacy/event_graph_network_protocol.md) *(active)*
 - [Transaction Lifetime (DAG)](arch/legacy/tx_lifetime.md)
 - [Wallet (Original Design)](arch/legacy/wallet.md)
 - [Money Version Bridge (Historical)](arch/legacy/money-version-bridge.md)

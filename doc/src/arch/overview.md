@@ -80,7 +80,32 @@ Start with the [Developer Quick Start Guide](../dev/quickstart.md) for a
 goal-oriented entry point ("I want to X — what do I run?"). For full details,
 see [Testing Overview](../dev/testing/overview.md).
 
-## Genesis Contracts
+## P2P Messaging Layer
+
+DarkWow maintains a separate P2P messaging layer for decentralized
+communication applications:
+
+- **[darkirc](../misc/darkirc/darkirc.md)**: P2P IRC daemon for
+  decentralized chat (rooms, DMs, contacts)
+- **[Event Graph](legacy/event_graph.md)**: P2P message DAG providing
+  synchronization, ordering, and replay for chat events
+
+### Storage quarantine: sled-overlay
+
+The event graph uses `sled-overlay` for batched DAG writes. This crate
+introduces non-determinism (overlay/diff/inverse-diff semantics) and is
+**strictly quarantined** from the blockchain execution layer.
+
+| Layer | Storage | Determinism |
+|-------|---------|-------------|
+| Blockchain execution (`dwowd`, `dwow_linear`) | Plain `sled` | Strictly deterministic |
+| P2P messaging (`darkirc`, `evgrd`) | `sled-overlay` | Non-deterministic (acceptable for messaging) |
+
+The quarantine is enforced via Rust's feature-gate system — `sled-overlay`
+is only enabled by the `event-graph` Cargo feature. No blockchain feature
+(`blockchain`, `linear`) or binary (`dwowd`) pulls it in. See the
+[Event Graph](legacy/event_graph.md) documentation for the full
+rationale.
 
 Only two contracts exist at genesis (Satoshi-style minimalism):
 

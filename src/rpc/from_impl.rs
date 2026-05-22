@@ -22,6 +22,10 @@
  */
 
 use super::util::*;
+
+#[cfg(feature = "event-graph")]
+use crate::event_graph;
+
 use crate::net;
 
 #[cfg(feature = "net")]
@@ -167,6 +171,45 @@ impl From<net::dnet::DnetEvent> for JsonValue {
             }
             net::dnet::DnetEvent::DirectPeerDiscovery(info) => {
                 json_map([("event", json_str("direct_peer_discovery")), ("info", info.into())])
+            }
+        }
+    }
+}
+
+#[cfg(feature = "event-graph")]
+impl From<event_graph::Event> for JsonValue {
+    fn from(event: event_graph::Event) -> JsonValue {
+        let parents =
+            event.parents.into_iter().map(|id| JsonStr(id.to_string())).collect::<Vec<_>>();
+        json_map([
+            ("timestamp", JsonNum(event.timestamp as f64)),
+            ("content", JsonStr(bs58::encode(event.content()).into_string())),
+            ("parents", JsonArray(parents)),
+            ("layer", JsonNum(event.layer as f64)),
+        ])
+    }
+}
+
+#[cfg(feature = "event-graph")]
+impl From<event_graph::deg::MessageInfo> for JsonValue {
+    fn from(info: event_graph::deg::MessageInfo) -> JsonValue {
+        json_map([
+            ("info", JsonArray(info.info.into_iter().map(JsonStr).collect())),
+            ("cmd", JsonStr(info.cmd)),
+            ("time", JsonStr(info.time.0.to_string())),
+        ])
+    }
+}
+
+#[cfg(feature = "event-graph")]
+impl From<event_graph::deg::DegEvent> for JsonValue {
+    fn from(event: event_graph::deg::DegEvent) -> JsonValue {
+        match event {
+            event_graph::deg::DegEvent::SendMessage(info) => {
+                json_map([("event", json_str("send")), ("info", info.into())])
+            }
+            event_graph::deg::DegEvent::RecvMessage(info) => {
+                json_map([("event", json_str("recv")), ("info", info.into())])
             }
         }
     }

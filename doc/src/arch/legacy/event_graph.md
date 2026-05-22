@@ -1,6 +1,12 @@
-> **ARCHIVED**: This documents the original overlay-DAG architecture. The current consensus mechanism is [Uncle Merkle](../uncle_merkle.md).
-
 # Event Graph
+
+> **Status: Active.** The event graph is the P2P messaging DAG used by
+> [darkirc](../../misc/darkirc/darkirc.md) for decentralized chat and by
+> [evgrd](../../../../script/evgrd/src/lib.rs) as a standalone event graph
+> daemon. It is **not** part of the legacy DAG blockchain consensus — that
+> was replaced by [Uncle Merkle consensus](../consensus/uncle_merkle.md).
+> The event graph is an independent P2P primitive for message passing and
+> has no dependency on the blockchain execution layer.
 
 Event graph is a syncing mechanism between nodes working asynchronously.
 
@@ -81,4 +87,28 @@ event.
 All nodes start with a single hardcoded genesis event in their graph. 
 The application layer should ignore this event. This serves as the 
 origin event for synchronization.
+
+## Storage: sled-overlay quarantine
+
+The event graph stores events using `sled-overlay` (overlay/diff/inverse-diff
+semantics on top of sled). This introduces non-determinism in DAG operations
+(batched writes via overlays can produce different intermediate states).
+
+**This is acceptable here because:**
+- The event graph is a P2P messaging layer, not a blockchain execution layer
+- Non-determinism in message ordering/arrival is inherent to P2P networks
+- Events are idempotent (keyed by blake3 hash) — replay heals any inconsistency
+- No consensus or state-machine replication depends on the event graph
+
+**Quarantine boundary:** `sled-overlay` is gated behind the `event-graph`
+Cargo feature flag. It must **never** be enabled by any blockchain
+execution-layer feature (`blockchain`, `linear`) or binary (`dwowd`).
+The execution layer follows a strictly deterministic design philosophy:
+plain `sled` trees with direct writes, no overlays, no speculative state,
+no rollback. Same input = same result every time.
+
+This boundary is enforced in:
+- `Cargo.toml` — the `event-graph` feature is the only feature that enables `sled-overlay`
+- `src/lib.rs` — the `event_graph` module is the only consumer, with a quarantine doc comment
+- `src/rpc/from_impl.rs` — JSON serialization impls are gated on `event-graph`
 
