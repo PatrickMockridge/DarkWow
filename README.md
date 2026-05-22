@@ -234,7 +234,7 @@ Minimum Rust version: **1.87.0**.
 
 ```bash
 # Local development (single node)
-cargo run -p dwowd -- --network linear-testnet
+cargo run -p dwowd -- --network darkwow-testnet
 
 # DarkWow public testnet
 cargo run -p dwowd -- --network darkwow-testnet
@@ -283,9 +283,9 @@ cargo run -p dwowd -- --network darkwow-testnet
 
 | Level | Scope | Command |
 |-------|-------|---------|
-| 1 — Lightweight | 113 unit tests (universal_relayer) | `./bin/universal_relayer/test_relayer_lightweight.sh` |
-| 2 — Heavyweight | Bridge lifecycle with ZK proofs | `./bin/universal_relayer/test_relayer_heavyweight.sh` |
-| 3 — Localnet | Multi-node Docker bridge pipeline | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode bridge` |
+| 1 — Lightweight | Fast contract deploy checks (no ZK) | `cargo test -p dwowd test_pipeline` |
+| 2 — Heavyweight | Full ZK proof contract execution | `RAYON_NUM_THREADS=10 cargo test --release -p dwowd test_heavyweight` |
+| 3 — Localnet | Multi-node Docker mining + contracts | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` |
 
 > **USE AT YOUR OWN RISK.** No third-party audit. May 2026 internal hardening
 > addressed 17 failure modes across state machine, economic, identity/attestation,

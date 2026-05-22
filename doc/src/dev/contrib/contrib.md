@@ -1,30 +1,48 @@
-# Contributing
+# Contributing Developer Guide
 
-## How to get started
+## Fastest way to get started
 
-Join the dev chat, and attend a dev meeting. Make yourself known. Express an
-interest in which areas of the code you want to work on. Get mentored by
-existing members of the community.
+1. **Clone and build** (5 minutes):
+   ```
+   git clone https://codeberg.org/PatrickM123/darkwow
+   cd darkwow
+   rustup target add wasm32-unknown-unknown
+   make
+   ```
 
-Every monday 14:00 UTC (DST) or 15:00 UTC (ST), there is our main dev
-meeting on [our chat](../../misc/darkirc/darkirc.md).  Feel free to join
-and discuss with other darkfi devs.
+2. **Run the lightweight test pipeline** (30 seconds):
+   ```
+   cargo test -p dwowd test_pipeline
+   ```
 
-In general, the best way to get started is to explore the codebase thoroughly and
-identify issues and areas of improvement.
+3. **Run a local devnet** (requires Docker, 2 minutes):
+   ```
+   cd contrib/docker/darkwow-testnet
+   docker compose up -d
+   docker compose logs -f
+   ```
+
+4. **Explore the codebase**: See the [Developer Quick Start Guide](../quickstart.md)
+   for the full four-level testing taxonomy and architecture tour.
+
+Minimum Rust version: **1.87.0**. Builds on Linux (x86_64, aarch64) and macOS.
+
+## Community
+
+Every Monday 14:00 UTC (DST) or 15:00 UTC (ST), there is a dev
+meeting on [DarkIRC](../../misc/darkirc/darkirc.md). Feel free to join
+and discuss with other DarkWow devs.
 
 Contribute according to your own interests, skills, and topics in which you would
-like to become more knowledgable. Take initiative. Other darkfi devs can help you
-as mentors: see [the Methodology section of the Study Guide](../philosophy/learn.md#methodology).
+like to become more knowledgeable. Take initiative. Other DarkWow devs can help you
+as mentors: see [the Methodology section of the Study Guide](../../philosophy/learn.md#methodology).
 
 Few people are able be an expert in all domains. Choose a topic and specialize.
-Example specializations are described [here](../philosophy/learn.md#branches).
+Example specializations are described [here](../../philosophy/learn.md#branches).
 Don't make the mistake that you must become an expert in all areas before getting started.
 It's best to just jump in.
 
 ## Finding specific tasks
-
-Check the tau task manager. There are a ton of tasks on there.
 
 Tasks are usually noted in-line using code comments. All of these tasks should be resolved
 and can be considered a priority.
@@ -39,13 +57,7 @@ $ git grep -E 'TODO|FIXME'
 There are several areas of work that are either undergoing maintenance 
 or need to be maintained:
 
-* **Documentation:** general documentation and code docs (cargo doc). This is a very 
-  important work for example [overview](../../arch/overview.md) 
-  page is out of date.
-    * We need a tutorial on writing smart contracts. The tutorial could show
-      how to make an anon ZK credential for a service like a forum.
-    * Continuing on, it could show how to use the p2p network
-      to build an anonymous service like a forum.
+* **Documentation:** general documentation and code docs (cargo doc).
 * **TODO** and **FIXME** are throughout the codebase. Find your favourite one and begin hacking.
 * **Tooling:** Creating new tools or improving existing ones.
     * Improve the ZK tooling. For example tools to work with txs, smart contracts and ZK proofs.
@@ -196,8 +208,8 @@ Inside the container:
 # rustup-init --default-toolchain stable -y
 # source ~/.cargo/env
 # rustup target add wasm32-unknown-unknown --toolchain stable
-# git clone https://codeberg.org/PatrickM123/darkwow -b master --depth 1
-# cd dwow
+# git clone https://codeberg.org/PatrickM123/darkwow -b linear-master --depth 1
+# cd darkwow
 # make darkirc
 ```
 
