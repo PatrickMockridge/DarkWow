@@ -44,6 +44,77 @@ layer adds consensus (`PoWConsensus` with `Mutex`), RandomX VM management,
 contract execution via the WASM runtime, and state rehydration from stored
 blocks.
 
+### State Atomicity
+
+Block execution in `apply_block_with_uncles()` is **atomic**: all contract
+state changes within a block either commit together or not at all. This is
+achieved via the [`sled-overlay`](https://docs.rs/sled-overlay/latest/sled_overlay/)
+crate — the same atomicity mechanism used in upstream DarkFi's fork-aware
+consensus.
+
+**How it works:**
+
+1. **`SledTreeOverlay`** wraps the contracts sled tree. All `db_insert`,
+   `db_get`, `db_remove`, `db_contains_key`, `contract_lookup`, `contract_init`,
+   `contract_insert_bincode`, and `contract_get_bincode` calls go through an
+   in-memory BTreeMap — nothing touches sled during execution.
+
+2. **`AtomicBackend`** implements `RuntimeBackend` and routes state operations
+   through the overlay. Chain queries (`last_block_height`, `get_tx`, etc.)
+   bypass the overlay and read directly from the real `LinearBlockchain` clone.
+
+3. **Per-call checkpoint/rollback**: Before each contract call,
+   `overlay.checkpoint()` snapshots the current state. If `metadata()`,
+   `exec()`, or `apply()` fails, `revert_to_checkpoint()` rolls back only that
+   call's writes — prior successful calls in the same block are preserved.
+
+4. **Atomic commit**: When all calls succeed, `overlay.aggregate()` produces a
+   `sled::Batch` and `apply_batch()` writes it to the contracts tree as a
+   single atomic operation. If the process crashes mid-block, nothing has
+   been written to sled.
+
+```
+apply_block_with_uncles()
+ ├── Create SledTreeOverlay on contracts tree
+ ├── Create AtomicBackend(overlay, chain=self.clone())
+ ├── For each call (block + uncles):
+ │    ├── overlay.checkpoint()
+ │    ├── Runtime::new(wasm, backend.clone(), ...)
+ │    ├── runtime.metadata(&call_data)   ← reads/writes go to overlay
+ │    ├── runtime.exec(&call_data)       ← ZK verification, circuit logic
+ │    ├── runtime.apply(&[])             ← state changes staged in overlay
+ │    ├── On failure: revert_to_checkpoint() — only this call undone
+ │    └── On success: state stays in overlay, gas accumulated
+ ├── overlay.aggregate() → sled::Batch
+ ├── contracts_tree.apply_batch(batch)  ← single atomic sled write
+ ├── insert_validated_block(block)
+ └── store uncles
+```
+
+### WASM Runtime
+
+Contract execution uses the [`wasmer`](https://wasmer.io/) WebAssembly runtime
+with the **Cranelift** compiler backend. Cranelift provides 3-10x faster WASM
+execution compared to the previous Singlepass compiler, at the cost of slightly
+higher compilation time. The compilation cost is amortized by the
+**module cache** — compiled WASM modules are cached keyed by contract ID, so
+each unique contract is compiled only once per node lifetime.
+
+| Aspect | Detail |
+|--------|--------|
+| Compiler | Cranelift (was `Singlepass`) |
+| Module cache | `WASM_MODULE_CACHE`: `Mutex<HashMap<[u8; 32], Module>>` |
+| Stack requirement | `RUST_MIN_STACK=67108864` (64 MiB) — required to avoid Wasmer stack overflow |
+| Block gas limit | `BLOCK_GAS_LIMIT = 100_000_000_000` (250× per-call `GAS_LIMIT` of 400M) |
+| Max calls per block | `MAX_CALLS_PER_BLOCK = 10` — enforced at template generation |
+
+The `singlepass-compiler` feature flag is available as a compile-time fallback:
+```toml
+wasmer = { version = "6.1.0", features = ["cranelift"] }
+wasmer-compiler-cranelift = { version = "6.1.0", optional = true }
+wasmer-compiler-singlepass = { version = "6.1.0", optional = true }
+```
+
 ## Startup Sequence
 
 ```
@@ -253,7 +324,7 @@ Dwowd::stop()
 |------|---------|
 | `bin/dwowd/src/main.rs` | CLI parsing, config, entrypoint |
 | `bin/dwowd/src/lib.rs` | DwowNode, Dwowd, init_linear, start, stop |
-| `bin/dwowd/src/blockchain.rs` | Daemon LinearBlockchain wrapper |
+| `bin/dwowd/src/blockchain.rs` | Daemon LinearBlockchain wrapper, AtomicBackend, atomic apply |
 | `bin/dwowd/src/mempool.rs` | Mempool (Vec<Transaction>) |
 | `bin/dwowd/src/rpc/stratum.rs` | Stratum protocol (login, submit) |
 | `bin/dwowd/src/rpc/miner.rs` | Dev mining RPC (mine_linear) |
@@ -261,10 +332,13 @@ Dwowd::stop()
 | `bin/dwowd/src/proto/linear_sync.rs` | P2P sync protocol |
 | `bin/dwowd/src/proto/linear_broadcast.rs` | P2P block broadcast |
 | `bin/dwowd/src/task/consensus_linear.rs` | Consensus task (placeholder) |
+| `src/runtime/vm_runtime.rs` | WASM VM runtime (Cranelift compiler, module cache) |
+| `src/runtime/import/db.rs` | WASM host functions: db_set, db_get, db_remove, db_contains_key |
 | `src/linear/src/block.rs` | BlockHeader, Block, UncleBlock, mining blob |
 | `src/linear/src/consensus.rs` | PoWConsensus (target adjustment, proof check) |
 | `src/linear/src/finality.rs` | FinalityConfig, three modes |
 | `src/linear/src/blockchain.rs` | Core LinearBlockchain (sled-backed) |
+| `src/linear/src/store.rs` | LinearStore (sled trees: blocks, txs, contracts, uncles) |
 | `src/sdk/src/blockchain.rs` | Emission schedule, expected_reward() |
 
 ## Related Documentation
