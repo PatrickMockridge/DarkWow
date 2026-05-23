@@ -4,6 +4,51 @@ DarkWow x Monero Merge Mining using p2pool and xmrig
 This document provides a way to set up a Monero testnet that is
 able to merge-mine DarkWow using `p2pool` and `xmrig`.
 
+## Current Status
+
+The merge mining test at `contrib/docker/darkwow-testnet/test_merge_mining_p2pool.sh`
+runs the full pathway end-to-end:
+
+```
+xmrig --> p2pool --[merge-mine]--> dwowd (mm_rpc)
+                 \--[monerod RPC]--> monerod (offline, fixed-difficulty)
+```
+
+The test has one pass condition: dwowd log shows `merge_mining_submit_solution`
+or `BLOCK ACCEPTED` — proving a merge mined DarkWow block was produced.
+
+**What's been verified (13/14 checks in previous test iterations):**
+
+| Check | Status |
+|---|---|
+| dwowd starts, contracts deploy | Pass |
+| mm_rpc responds to `merge_mining_get_chain_id` | Pass |
+| p2pool starts stratum server | Pass |
+| xmrig connects and receives jobs | Pass |
+| p2pool calls mm_rpc `get_aux_block` (handshake active) | Pass |
+| Merge mined block produced (submission + acceptance) | Requires synced monerod |
+
+**Prerequisite:** monerod must be synced from public testnet once
+(~1M blocks/hour with `--fast-block-sync=1`). The synced data dir
+persists and is reused for all subsequent test runs in offline mode.
+
+To run the test:
+```bash
+# Sync monerod once (per "Monero setup" section below)
+# Then:
+./contrib/docker/darkwow-testnet/test_merge_mining_p2pool.sh --no-build
+```
+
+The test fails fast with the exact sync command if monerod isn't synced.
+
+**mm_rpc methods implemented** (see [dwowd JSON-RPC](../clients/dwowd_jsonrpc.md#merge-mining-xmr)):
+- `merge_mining_get_chain_id` — returns chain ID for aux chain discovery
+- `merge_mining_get_aux_block` — returns aux blob, difficulty, hash
+- `merge_mining_submit_solution` — accepts solved aux block, verifies PoW, applies block
+
+**Production pathway** (adaptor): Used in the Docker `native-p2pool` profile.
+See [native-p2pool.md](native-p2pool.md) for the adaptor architecture and setup.
+
 ## Architecture
 
 DarkWow merge mining operates in three layers. Every computer on the network
@@ -103,7 +148,11 @@ docker compose --profile merge \
     -f contrib/docker/darkwow-testnet/docker-compose.yml down
 ```
 
-By default, `monerod` runs in offline mode (no Monero testnet sync needed).
+By default, `monerod` runs in offline mode — which **requires a synced data dir**
+from a previous online sync (see "Monero setup" below). On first run, set
+`MONERO_OFFLINE=false` to sync from the live Monero testnet, or sync monerod
+manually before starting the Docker stack.
+
 To connect to the live Monero testnet, set `MONERO_OFFLINE=false`.
 
 See the [darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md)
@@ -362,6 +411,87 @@ And `xmrig`:
 ```shell
 $ ./xmrig -u x+1 20000 -o 127.0.0.1:3333 -t 1
 ```
+
+## Verification
+
+After running the merge mining test or setting up manually, verify the pathway
+worked by checking dwowd's log for merge mining activity:
+
+```shell
+grep "RPC-MM" /tmp/dwow_merge_test/dwowd.log
+```
+
+A successful merge mining cycle shows these events in order:
+
+| Log entry | What it proves |
+|---|---|
+| `RPC-MM.*merge_mining_get_chain_id` | p2pool discovered the aux chain |
+| `RPC-MM.*merge_mining_get_aux_block` | p2pool requested a block template |
+| `RPC-MM.*merge_mining_submit_solution` | p2pool submitted a solved block |
+| `BLOCK ACCEPTED` | dwowd verified PoW and applied the block |
+
+A `merge_mining_submit_solution` event followed by `BLOCK ACCEPTED` is the
+definitive proof that merge mining produced a valid DarkWow block.
+
+To check p2pool's side of the handshake:
+
+```shell
+grep -i "merge.mine\|aux.chain\|sidechain block\|found share" /tmp/dwow_merge_test/p2pool.log
+```
+
+To check monerod block production:
+
+```shell
+curl -s -X POST http://127.0.0.1:28081/json_rpc \
+    -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"get_info","id":1}' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['height'])"
+```
+
+## Troubleshooting
+
+### "monerod is not synchronized" in p2pool log
+
+p2pool requires monerod to report `synchronized: true` before starting its
+stratum server. In offline mode, this requires a previously synced data dir.
+To fix:
+
+1. Sync monerod from public testnet once:
+   ```shell
+   monerod --testnet --no-igd --data-dir $HOME/.cache/dwow_merge_testnet_monero \
+     --log-level 0 --hide-my-port \
+     --add-peer 125.229.105.12:28081 --add-peer 37.187.74.171:28089 \
+     --fast-block-sync=1 --zmq-pub tcp://127.0.0.1:28083 \
+     --rpc-bind-ip 127.0.0.1 --rpc-bind-port 28081 \
+     --confirm-external-bind --non-interactive
+   ```
+2. Wait for `"You are now synchronized with the network"` in the log.
+3. Stop monerod. The data dir now has the full chain.
+4. Subsequent runs use `--offline --fixed-difficulty 20000` and start instantly.
+
+`--fast-block-sync=1` uses embedded checkpoint hashes to skip full validation
+of historical blocks, syncing at ~1M blocks/hour on modern hardware.
+
+### mm_rpc endpoint not responding
+
+```shell
+curl -s -X POST http://127.0.0.1:31348 \
+    -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"merge_mining_get_chain_id","params":[],"id":1}'
+```
+
+If this returns nothing, check that `mm_rpc` is configured in `dwowd_config.toml`:
+```toml
+[network_config."linear-testnet".mm_rpc]
+rpc_listen = "http+tcp://127.0.0.1:31348"
+```
+
+### xmrig connects but no shares found
+
+- Verify p2pool stratum is running: `grep -i "StratumServer" p2pool.log`
+- Check xmrig is receiving jobs: `grep "new job" xmrig.log`
+- With `--fixed-difficulty 20000` and 1 thread, shares can take several minutes
+- Increase mining threads (`-t 4`) for faster results in testing
 
 ## Localnet merge mining testing
 
