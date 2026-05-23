@@ -38,11 +38,11 @@ use tracing::{debug, error};
 use wasmer::{FunctionEnvMut, WasmPtr};
 
 use super::acl::acl_allow;
-use crate::runtime::vm_runtime::{ContractSection, Env, SimpleDbAccess};
+use crate::runtime::vm_runtime::{ContractSection, Env, RuntimeBackend};
 
-/// An SMT adapter for SimpleDb storage. Deterministic, no overlay/diffs.
+/// An SMT adapter for runtime backend storage. Deterministic, no overlay/diffs.
 pub struct SimpleDbStorage<'a> {
-    simple_db: &'a dyn SimpleDbAccess,
+    backend: &'a dyn RuntimeBackend,
     tree_key: &'a [u8],
 }
 
@@ -50,7 +50,7 @@ impl StorageAdapter for SimpleDbStorage<'_> {
     type Value = pallas::Base;
 
     fn put(&mut self, key: BigUint, value: pallas::Base) -> ContractResult {
-        if let Err(e) = self.simple_db.insert(self.tree_key, &key.to_bytes_le(), &value.to_repr()) {
+        if let Err(e) = self.backend.db_insert(self.tree_key, &key.to_bytes_le(), &value.to_repr()) {
             error!(
                 target: "runtime::smt::SimpleDbStorage::put",
                 "[WASM] SimpleDbStorage::put(): inserting key {key:?}, value {value:?} into DB tree: {:?}: {e}",
@@ -62,7 +62,7 @@ impl StorageAdapter for SimpleDbStorage<'_> {
     }
 
     fn get(&self, key: &BigUint) -> Option<pallas::Base> {
-        let value = match self.simple_db.get(self.tree_key, &key.to_bytes_le()) {
+        let value = match self.backend.db_get(self.tree_key, &key.to_bytes_le()) {
             Ok(v) => v,
             Err(e) => {
                 error!(
@@ -80,7 +80,7 @@ impl StorageAdapter for SimpleDbStorage<'_> {
     }
 
     fn del(&mut self, key: &BigUint) -> ContractResult {
-        if let Err(e) = self.simple_db.remove(self.tree_key, &key.to_bytes_le()) {
+        if let Err(e) = self.backend.db_remove(self.tree_key, &key.to_bytes_le()) {
             error!(
                 target: "runtime::smt::SimpleDbStorage::del",
                 "[WASM] SimpleDbStorage::del(): Removing key {key:?} from DB tree: {:?}: {e}",
@@ -240,7 +240,7 @@ pub(crate) fn sparse_merkle_insert_batch(
 
     // Generate the SimpleDbStorage SMT
     let hasher = PoseidonFp::new();
-    let smt_store = SimpleDbStorage { simple_db: env.state_db.as_ref(), tree_key: &db_smt.tree };
+    let smt_store = SimpleDbStorage { backend: env.backend.as_ref(), tree_key: &db_smt.tree };
     let mut smt = SparseMerkleTree::<
         SMT_FP_DEPTH,
         { SMT_FP_DEPTH + 1 },
@@ -301,7 +301,7 @@ pub(crate) fn sparse_merkle_insert_batch(
     }
 
     // Retrieve snapshot root data set
-    let root_value_data_set = match env.state_db.get(&db_roots.tree, &latest_root_data) {
+    let root_value_data_set = match env.backend.db_get(&db_roots.tree, &latest_root_data) {
         Ok(data) => data,
         Err(e) => {
             error!(
@@ -341,7 +341,7 @@ pub(crate) fn sparse_merkle_insert_batch(
         target: "runtime::smt::sparse_merkle_insert_batch",
         "[WASM] [{cid}] sparse_merkle_insert_batch(): Appending SMT root to db: {latest_root:?}"
     );
-    if let Err(e) = env.state_db.insert(&db_roots.tree, &latest_root_data, &serialize(&root_value_data_set)) {
+    if let Err(e) = env.backend.db_insert(&db_roots.tree, &latest_root_data, &serialize(&root_value_data_set)) {
         error!(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): insert to db_roots failed tree={:?} err={:?}",
@@ -356,7 +356,7 @@ pub(crate) fn sparse_merkle_insert_batch(
         target: "runtime::smt::sparse_merkle_insert_batch",
         "[WASM] [{cid}] sparse_merkle_insert_batch(): Replacing latest SMT root pointer"
     );
-    if let Err(e) = env.state_db.insert(&db_info.tree, &root_key, &latest_root_data) {
+    if let Err(e) = env.backend.db_insert(&db_info.tree, &root_key, &latest_root_data) {
         error!(
             target: "runtime::smt::sparse_merkle_insert_batch",
             "[WASM] [{cid}] sparse_merkle_insert_batch(): insert to db_info failed tree={:?} root_key={:?} err={:?}",

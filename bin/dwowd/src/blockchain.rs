@@ -33,7 +33,7 @@ use std::sync::{
 };
 
 use randomx::{RandomXFlags, RandomXVM};
-use dwow::runtime::vm_runtime::{BlockchainAccess, ContractStoreAccess, SimpleDbAccess};
+use dwow::runtime::vm_runtime::RuntimeBackend;
 use dwow::Error;
 use dwow::Result;
 use dwow_linear::{build_uncle_merkle, verify_uncle_proof, FinalityConfig, UncleBlock, Block, LinearStore, PoWConsensus};
@@ -69,10 +69,6 @@ impl Default for LinearPoWConfig {
 pub struct LinearBlockchain {
     /// Storage backend (dwow_linear)
     pub store: Arc<LinearStore>,
-    /// Contract store adapter for Runtime
-    contract_store: Arc<dyn ContractStoreAccess>,
-    /// State db adapter for Runtime
-    state_db: Arc<dyn SimpleDbAccess>,
     /// PoW consensus (protected by mutex for difficulty updates)
     pub consensus: Mutex<PoWConsensus>,
     /// ZK verifier
@@ -108,18 +104,12 @@ impl LinearBlockchain {
         let zk_verifier = ZkVerifier;
         let height = AtomicU64::new(store.get_height().unwrap_or(0));
 
-        // Create the adapters for Runtime
-        let contract_store = crate::contract_store::LinearContractStore::new(store.clone());
-        let state_db = crate::linear_simple_db::LinearSimpleDb::new(store.clone());
-
         // Initialize RandomX VM with default key
         let randomx_key = [0u8; 32];
         let vm = Self::create_vm(&randomx_key).expect("Failed to create RandomX VM");
 
         let blockchain = Self {
             store,
-            contract_store: Arc::new(contract_store),
-            state_db: Arc::new(state_db),
             consensus: Mutex::new(consensus),
             zk_verifier,
             finality_config,
@@ -414,8 +404,6 @@ impl LinearBlockchain {
                 };
                 let mut runtime = match dwow::runtime::vm_runtime::Runtime::new(
                     &wasm_bytes,
-                    self.contract_store.clone(),
-                    self.state_db.clone(),
                     Arc::new(self.clone()),
                     contract_id,
                     current_height as u32,
@@ -463,6 +451,89 @@ impl LinearBlockchain {
             info!(target: "linear_blockchain", "Block {} executed {} contract calls successfully", block_hash, calls_executed);
         }
 
+        // Execute uncle transactions — bonus throughput.
+        // Uncle miners already earned pin rewards via PoW; these transactions
+        // are extra work the canonical miner performs for network throughput.
+        let mut uncle_calls_executed = 0u64;
+        let mut uncle_calls_failed = 0u64;
+        for uncle in uncles.iter() {
+            let uncle_hash = uncle.hash(&vm);
+            for tx in &uncle.transactions {
+                for (call_idx, call) in tx.contract_calls.iter().enumerate() {
+                    let contract_id = match ContractId::from_bytes(call.contract_id) {
+                        Ok(cid) => cid,
+                        Err(e) => {
+                            error!(target: "linear_blockchain", "Uncle {} tx {}: invalid contract ID: {}", uncle_hash, tx.hash(), e);
+                            uncle_calls_failed += 1;
+                            continue;
+                        }
+                    };
+                    let wasm_bytes = match self.store.get_contract_data(&call.contract_id) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            error!(target: "linear_blockchain", "Uncle {} tx {}: failed to get contract data: {}", uncle_hash, tx.hash(), e);
+                            uncle_calls_failed += 1;
+                            continue;
+                        }
+                    };
+                    if wasm_bytes.is_empty() {
+                        error!(target: "linear_blockchain", "Uncle {} tx {}: contract not found", uncle_hash, tx.hash());
+                        uncle_calls_failed += 1;
+                        continue;
+                    }
+
+                    let tx_hash = tx.hash();
+                    let tx_hash_bytes = dwow_sdk::tx::TransactionHash(*tx_hash.as_bytes());
+                    let difficulty = {
+                        let consensus = self.consensus.lock().unwrap();
+                        consensus.target()
+                    };
+                    let mut runtime = match dwow::runtime::vm_runtime::Runtime::new(
+                        &wasm_bytes,
+                        Arc::new(self.clone()),
+                        contract_id,
+                        current_height as u32,
+                        difficulty,
+                        tx_hash_bytes,
+                        call_idx as u8,
+                    ) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            error!(target: "linear_blockchain", "Uncle {} tx {}: failed to create runtime: {}", uncle_hash, tx.hash(), e);
+                            uncle_calls_failed += 1;
+                            continue;
+                        }
+                    };
+
+                    if let Err(e) = runtime.metadata(&call.data) {
+                        error!(target: "linear_blockchain", "Uncle {} tx {}: metadata() failed: {}", uncle_hash, tx.hash(), e);
+                        uncle_calls_failed += 1;
+                        continue;
+                    }
+                    if let Err(e) = runtime.exec(&call.data) {
+                        error!(target: "linear_blockchain", "Uncle {} tx {}: exec() failed: {}", uncle_hash, tx.hash(), e);
+                        uncle_calls_failed += 1;
+                        continue;
+                    }
+                    if let Err(e) = runtime.apply(&[]) {
+                        error!(target: "linear_blockchain", "Uncle {} tx {}: apply() failed: {}", uncle_hash, tx.hash(), e);
+                        uncle_calls_failed += 1;
+                        continue;
+                    }
+
+                    info!(target: "linear_blockchain", "Uncle {} tx {} call_idx={}: executed successfully", uncle_hash, tx.hash(), call_idx);
+                    uncle_calls_executed += 1;
+                }
+            }
+        }
+
+        if uncle_calls_failed > 0 {
+            error!(target: "linear_blockchain", "Uncles had {} failed calls out of {}", uncle_calls_failed, uncle_calls_executed + uncle_calls_failed);
+        }
+        if uncle_calls_executed > 0 {
+            info!(target: "linear_blockchain", "Uncles executed {} contract calls across {} uncle blocks", uncle_calls_executed, uncles.len());
+        }
+
         // Insert block
         self.insert_validated_block(block)?;
 
@@ -476,9 +547,34 @@ impl LinearBlockchain {
     }
 
     /// Deploy a WASM contract
+    ///
+    /// Stores the WASM bytes and calls `__initialize` on the contract so that
+    /// its database trees (coins, nullifiers, merkle, etc.) are created before
+    /// any transactions execute against it.
     pub fn deploy_contract(&self, wasm: &[u8], contract_id: ContractId) -> Result<()> {
         info!(target: "linear_blockchain", "Deploying contract {:?}", contract_id);
-        self.store.set_contract_data(&contract_id.to_bytes(), wasm).map_err(|e| Error::Custom(e.to_string()))?;
+
+        // Store WASM bytes in LinearStore so apply_block_with_uncles() can find them
+        self.store.set_contract_data(&contract_id.to_bytes(), wasm)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+
+        // Call __initialize to create the contract's database trees.
+        // This follows the same Runtime::new() pattern as apply_block_with_uncles().
+        let difficulty = {
+            let consensus = self.consensus.lock().unwrap();
+            consensus.target()
+        };
+        let mut runtime = dwow::runtime::vm_runtime::Runtime::new(
+            wasm,
+            Arc::new(self.clone()),
+            contract_id,
+            self.get_height() as u32,
+            difficulty,
+            dwow_sdk::tx::TransactionHash::none(),
+            0,
+        )?;
+        runtime.deploy(&[])?;
+
         info!(target: "linear_blockchain", "Contract {:?} deployed successfully", contract_id);
         Ok(())
     }
@@ -498,8 +594,6 @@ impl Clone for LinearBlockchain {
     fn clone(&self) -> Self {
         Self {
             store: self.store.clone(),
-            contract_store: self.contract_store.clone(),
-            state_db: self.state_db.clone(),
             consensus: Mutex::new(self.consensus.lock().unwrap().clone()),
             zk_verifier: ZkVerifier,
             finality_config: self.finality_config.clone(),
@@ -512,8 +606,90 @@ impl Clone for LinearBlockchain {
     }
 }
 
-// Implement BlockchainAccess for LinearBlockchain
-impl BlockchainAccess for LinearBlockchain {
+// Implement RuntimeBackend for LinearBlockchain — merges contract storage,
+// state DB, and blockchain queries into a single concrete impl. Matches
+// upstream darkfi's BlockchainOverlayPtr pattern.
+impl RuntimeBackend for LinearBlockchain {
+    // --- Contract storage (from LinearContractStore) ---
+
+    fn contract_lookup(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
+        let handle = cid.hash_state_id(tree_name);
+        let handle_str = format!("{:?}", handle);
+        let data = self.store.get_contract_data(handle_str.as_bytes())
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        if data.is_empty() {
+            return Err(Error::ContractStateNotFound)
+        }
+        Ok(handle)
+    }
+
+    fn contract_init(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
+        let handle = cid.hash_state_id(tree_name);
+        let handle_str = format!("{:?}", handle);
+        self.store.set_contract_data(handle_str.as_bytes(), tree_name.as_bytes())
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(handle)
+    }
+
+    fn contract_insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> Result<()> {
+        self.store.set_contract_data(&cid.to_bytes(), bincode)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(())
+    }
+
+    fn contract_get_bincode(&self, cid: &ContractId) -> Result<Vec<u8>> {
+        let data = self.store.get_contract_data(&cid.to_bytes())
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        if data.is_empty() {
+            return Err(Error::ContractStateNotFound)
+        }
+        Ok(data)
+    }
+
+    // --- State DB (from LinearSimpleDb) ---
+
+    fn db_insert(&self, tree: &[u8], key: &[u8], value: &[u8]) -> Result<()> {
+        let mut composite_key = Vec::with_capacity(tree.len() + key.len());
+        composite_key.extend(tree);
+        composite_key.extend(key);
+        self.store.set_contract_data(&composite_key, value)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(())
+    }
+
+    fn db_get(&self, tree: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let mut composite_key = Vec::with_capacity(tree.len() + key.len());
+        composite_key.extend(tree);
+        composite_key.extend(key);
+        let data = self.store.get_contract_data(&composite_key)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        if data.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(data))
+        }
+    }
+
+    fn db_remove(&self, tree: &[u8], key: &[u8]) -> Result<()> {
+        let mut composite_key = Vec::with_capacity(tree.len() + key.len());
+        composite_key.extend(tree);
+        composite_key.extend(key);
+        self.store.set_contract_data(&composite_key, &[])
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(())
+    }
+
+    fn db_contains_key(&self, tree: &[u8], key: &[u8]) -> Result<bool> {
+        let mut composite_key = Vec::with_capacity(tree.len() + key.len());
+        composite_key.extend(tree);
+        composite_key.extend(key);
+        let data = self.store.get_contract_data(&composite_key)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(!data.is_empty())
+    }
+
+    // --- Blockchain queries (from BlockchainAccess impl) ---
+
     fn last_block_timestamp(&self) -> Result<Vec<u8>> {
         let height = self.height.load(Ordering::SeqCst);
         if height == 0 {
@@ -535,7 +711,6 @@ impl BlockchainAccess for LinearBlockchain {
                 Ok(Some(data))
             }
             Err(e) => {
-                // Transaction not found is not an error - return None
                 if e.to_string().contains("TransactionNotFound") {
                     Ok(None)
                 } else {
@@ -546,9 +721,6 @@ impl BlockchainAccess for LinearBlockchain {
     }
 
     fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
-        // For linear chain, we need to find which block contains this tx
-        // LinearStore doesn't have an index, so we scan blocks
-        // This is inefficient but works for linear's simple use case
         let height = self.height.load(Ordering::SeqCst);
         for h in 1..=height {
             if let Ok(block) = self.store.get_block(h) {
@@ -567,7 +739,6 @@ impl BlockchainAccess for LinearBlockchain {
         match self.store.get_block(height as u64) {
             Ok(block) => Ok(Some(block.hash(&vm).as_bytes().to_vec())),
             Err(e) => {
-                // Block not found is not an error - return None
                 if e.to_string().contains("BlockNotFound") {
                     Ok(None)
                 } else {

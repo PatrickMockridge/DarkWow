@@ -446,7 +446,7 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
 
     // Insert key-value pair into the database corresponding to this contract
     // Use simple_db for deterministic direct sled access
-    if let Err(e) = env.state_db.insert(&db_handle.tree, &key, &value) {
+    if let Err(e) = env.backend.db_insert(&db_handle.tree, &key, &value) {
         error!(
             target: "runtime::db::db_set",
             "[WASM] [{cid}] db_set(): insert failed tree={:?} key={:?} value_len={} err={:?}",
@@ -561,7 +561,7 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     }
 
     // Remove key-value pair from the database corresponding to this contract
-    if let Err(e) = env.state_db.remove(&db_handle.tree, &key) {
+    if let Err(e) = env.backend.db_remove(&db_handle.tree, &key) {
         error!(
             target: "runtime::db::db_del",
             "[WASM] [{cid}] db_del(): Couldn't remove key from db_handle tree: {e}"
@@ -669,7 +669,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     let db_handle = &db_handles[db_handle_index];
 
     // Retrieve data using the `key`
-    let ret = match env.state_db.get(&db_handle.tree, &key) {
+    let ret = match env.backend.db_get(&db_handle.tree, &key) {
             Ok(v) => v,
             Err(e) => {
                 error!(
@@ -805,7 +805,7 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
     let db_handle = &db_handles[db_handle_index];
 
     // Lookup key parameter in the database
-    match env.state_db.contains_key(&db_handle.tree, &key) {
+    match env.backend.db_contains_key(&db_handle.tree, &key) {
         Ok(v) => i64::from(v), // <- 0=false, 1=true. Convert bool to i64.
         Err(e) => {
             error!(
@@ -901,7 +901,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
     // Check if there is existing bincode and compare it. Return DB_SUCCESS if
     // they're the same. The assumption should be that VerifyingKey was generated
     // already so we can skip things after this guard.
-    match env.state_db.get(&db_handle.tree, &serialize(&zkbin.namespace)) {
+    match env.backend.db_get(&db_handle.tree, &serialize(&zkbin.namespace)) {
         Ok(v) => {
             if let Some(bytes) = v {
                 // We allow a panic here because this db should never be corrupted in this way.
@@ -959,7 +959,7 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
     // Insert the key-value pair into the database.
     let key = serialize(&zkbin.namespace);
     let value = serialize(&(zkbin_bytes, vk_buf));
-    if let Err(e) = env.state_db.insert(&db_handle.tree, &key, &value) {
+    if let Err(e) = env.backend.db_insert(&db_handle.tree, &key, &value) {
         error!(
             target: "runtime::db::zkas_db_set",
             "[WASM] [{cid}] zkas_db_set(): Couldn't insert to db_handle tree: {e}"
@@ -972,4 +972,553 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
     env.subtract_gas(&mut store, (key.len() + value.len()) as u64);
 
     wasm::entrypoint::SUCCESS
+}
+
+/// Lookup a database handle from its name (local/ephemeral).
+/// Same as db_lookup but pushes to local_db_handles instead of db_handles.
+///
+/// Permissions: deploy, metadata, exec, update
+pub(crate) fn db_lookup_local(
+    mut ctx: FunctionEnvMut<Env>,
+    ptr: WasmPtr<u8>,
+    ptr_len: u32,
+) -> i64 {
+    let (env, mut store) = ctx.data_and_store_mut();
+    let cid = env.contract_id;
+
+    if let Err(e) = acl_allow(
+        env,
+        &[
+            ContractSection::Deploy,
+            ContractSection::Metadata,
+            ContractSection::Exec,
+            ContractSection::Update,
+        ],
+    ) {
+        error!(
+            target: "runtime::db::db_lookup_local",
+            "[WASM] [{cid}] db_lookup_local() called in unauthorized section: {e}"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    env.subtract_gas(&mut store, 1);
+
+    let memory_view = env.memory_view(&store);
+    let Ok(mem_slice) = ptr.slice(&memory_view, ptr_len) else {
+        error!(
+            target: "runtime::db::db_lookup_local",
+            "[WASM] [{cid}] db_lookup_local(): Failed to make slice from ptr."
+        );
+        return dwow_sdk::error::DB_LOOKUP_FAILED
+    };
+
+    let mut buf = vec![0_u8; ptr_len as usize];
+    if let Err(e) = mem_slice.read_slice(&mut buf) {
+        error!(
+            target: "runtime::db::db_lookup_local",
+            "[WASM] [{cid}] db_lookup_local(): Failed to read from memory slice: {e}"
+        );
+        return dwow_sdk::error::DB_LOOKUP_FAILED
+    };
+
+    let mut buf_reader = Cursor::new(buf);
+
+    let cid: ContractId = match Decodable::decode(&mut buf_reader) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                target: "runtime::db::db_lookup_local",
+                "[WASM] [{cid}] db_lookup_local(): Failed to decode ContractId: {e}"
+            );
+            return dwow_sdk::error::DB_LOOKUP_FAILED
+        }
+    };
+
+    let db_name: String = match Decodable::decode(&mut buf_reader) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                target: "runtime::db::db_lookup_local",
+                "[WASM] [{cid}] db_lookup_local(): Failed to decode db_name: {e}"
+            );
+            return dwow_sdk::error::DB_LOOKUP_FAILED
+        }
+    };
+
+    if buf_reader.position() != ptr_len as u64 {
+        error!(
+            target: "runtime::db::db_lookup_local",
+            "[WASM] [{cid}] db_lookup_local(), Trailing bytes in argument stream"
+        );
+        return dwow_sdk::error::DB_LOOKUP_FAILED
+    }
+
+    if db_name == SMART_CONTRACT_ZKAS_DB_NAME {
+        error!(
+            target: "runtime::db::db_lookup_local",
+            "[WASM] [{cid}] db_lookup_local(): Attempted to lookup zkas db"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    if db_name == SMART_CONTRACT_MONOTREE_DB_NAME {
+        error!(
+            target: "runtime::db::db_lookup_local",
+            "[WASM] [{cid}] db_lookup_local(): Attempted to lookup monotree db"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    let tree_handle = cid.hash_state_id(&db_name);
+    let db_handle = DbHandle::new(cid, tree_handle);
+    let mut local_db_handles = env.local_db_handles.borrow_mut();
+
+    if let Some(index) = local_db_handles.iter().position(|x| x == &db_handle) {
+        return index as i64
+    }
+
+    match local_db_handles.len().try_into() {
+        Ok(db_handle_idx) => {
+            local_db_handles.push(db_handle);
+            db_handle_idx
+        }
+        Err(_) => {
+            error!(
+                target: "runtime::db::db_lookup_local",
+                "[WASM] [{cid}] db_lookup_local(): Too many open DbHandles"
+            );
+            dwow_sdk::error::DB_LOOKUP_FAILED
+        }
+    }
+}
+
+/// Set a value within the transaction-local (ephemeral) state.
+/// Never committed to the blockchain.
+///
+/// Permissions: deploy, update
+pub(crate) fn db_set_local(
+    mut ctx: FunctionEnvMut<Env>,
+    ptr: WasmPtr<u8>,
+    ptr_len: u32,
+) -> i64 {
+    let (env, mut store) = ctx.data_and_store_mut();
+    let cid = env.contract_id;
+
+    if let Err(e) = acl_allow(env, &[ContractSection::Deploy, ContractSection::Update]) {
+        error!(
+            target: "runtime::db::db_set_local",
+            "[WASM] [{cid}] db_set_local(): Called in unauthorized section: {e}"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    env.subtract_gas(&mut store, ptr_len as u64);
+
+    let memory_view = env.memory_view(&store);
+    let Ok(mem_slice) = ptr.slice(&memory_view, ptr_len) else {
+        error!(
+            target: "runtime::db::db_set_local",
+            "[WASM] [{cid}] db_set_local(): Failed to make slice from ptr"
+        );
+        return dwow_sdk::error::DB_SET_FAILED
+    };
+
+    let mut buf = vec![0_u8; ptr_len as usize];
+    if let Err(e) = mem_slice.read_slice(&mut buf) {
+        error!(
+            target: "runtime::db::db_set_local",
+            "[WASM] [{cid}] db_set_local(): Failed to read from memory slice: {e}"
+        );
+        return dwow_sdk::error::DB_SET_FAILED
+    };
+
+    let mut buf_reader = Cursor::new(buf);
+
+    let db_handle_index: u32 = match Decodable::decode(&mut buf_reader) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                target: "runtime::db::db_set_local",
+                "[WASM] [{cid}] db_set_local(): Failed to decode DbHandle: {e}"
+            );
+            return dwow_sdk::error::DB_SET_FAILED
+        }
+    };
+    let db_handle_index = db_handle_index as usize;
+
+    let key: Vec<u8> = match Decodable::decode(&mut buf_reader) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                target: "runtime::db::db_set_local",
+                "[WASM] [{cid}] db_set_local(): Failed to decode key vec: {e}"
+            );
+            return dwow_sdk::error::DB_SET_FAILED
+        }
+    };
+
+    let value: Vec<u8> = match Decodable::decode(&mut buf_reader) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                target: "runtime::db::db_set_local",
+                "[WASM] [{cid}] db_set_local(): Failed to decode value vec: {e}"
+            );
+            return dwow_sdk::error::DB_SET_FAILED
+        }
+    };
+
+    if buf_reader.position() != ptr_len as u64 {
+        error!(
+            target: "runtime::db::db_set_local",
+            "[WASM] [{cid}] db_set_local(): Trailing bytes in argument stream"
+        );
+        return dwow_sdk::error::DB_SET_FAILED
+    }
+
+    let local_db_handles = env.local_db_handles.borrow();
+    if local_db_handles.len() <= db_handle_index {
+        error!(
+            target: "runtime::db::db_set_local",
+            "[WASM] [{cid}] db_set_local(): Requested DbHandle that is out of bounds"
+        );
+        return dwow_sdk::error::DB_SET_FAILED
+    }
+
+    let db_handle = &local_db_handles[db_handle_index];
+    if db_handle.contract_id != env.contract_id {
+        error!(
+            target: "runtime::db::db_set_local",
+            "[WASM] [{cid}] db_set_local(): Unauthorized to write to DbHandle"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    // Write to tx_local BTreeMap (ephemeral, never committed)
+    let mut tx_local = env.tx_local.lock().unwrap();
+    tx_local
+        .entry(cid)
+        .or_default()
+        .entry(db_handle.tree)
+        .or_default()
+        .insert(key, value);
+
+    wasm::entrypoint::SUCCESS
+}
+
+/// Get a value from the transaction-local (ephemeral) state.
+///
+/// Permissions: deploy, metadata, exec
+pub(crate) fn db_get_local(
+    mut ctx: FunctionEnvMut<Env>,
+    ptr: WasmPtr<u8>,
+    ptr_len: u32,
+) -> i64 {
+    let (env, mut store) = ctx.data_and_store_mut();
+    let cid = env.contract_id;
+
+    if let Err(e) =
+        acl_allow(env, &[ContractSection::Deploy, ContractSection::Metadata, ContractSection::Exec])
+    {
+        error!(
+            target: "runtime::db::db_get_local",
+            "[WASM] [{cid}] db_get_local(): Called in unauthorized section: {e}"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    env.subtract_gas(&mut store, 1);
+
+    let memory_view = env.memory_view(&store);
+    let Ok(mem_slice) = ptr.slice(&memory_view, ptr_len) else {
+        error!(
+            target: "runtime::db::db_get_local",
+            "[WASM] [{cid}] db_get_local(): Failed to make slice from ptr"
+        );
+        return dwow_sdk::error::DB_GET_FAILED
+    };
+
+    let mut buf = vec![0_u8; ptr_len as usize];
+    if let Err(e) = mem_slice.read_slice(&mut buf) {
+        error!(
+            target: "runtime::db::db_get_local",
+            "[WASM] [{cid}] db_get_local(): Failed to read from memory slice: {e}"
+        );
+        return dwow_sdk::error::DB_GET_FAILED
+    };
+
+    let mut buf_reader = Cursor::new(buf);
+
+    let db_handle_index: u32 = match Decodable::decode(&mut buf_reader) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                target: "runtime::db::db_get_local",
+                "[WASM] [{cid}] db_get_local(): Failed to decode DbHandle: {e}"
+            );
+            return dwow_sdk::error::DB_GET_FAILED
+        }
+    };
+    let db_handle_index = db_handle_index as usize;
+
+    let key: Vec<u8> = match Decodable::decode(&mut buf_reader) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                target: "runtime::db::db_get_local",
+                "[WASM] [{cid}] db_get_local(): Failed to decode key from vec: {e}"
+            );
+            return dwow_sdk::error::DB_GET_FAILED
+        }
+    };
+
+    if buf_reader.position() != ptr_len as u64 {
+        error!(
+            target: "runtime::db::db_get_local",
+            "[WASM] [{cid}] db_get_local(): Trailing bytes in argument stream"
+        );
+        return dwow_sdk::error::DB_GET_FAILED
+    }
+
+    let local_db_handles = env.local_db_handles.borrow();
+    if local_db_handles.len() <= db_handle_index {
+        error!(
+            target: "runtime::db::db_get_local",
+            "[WASM] [{cid}] db_get_local(): Requested DbHandle that is out of bounds"
+        );
+        return dwow_sdk::error::DB_GET_FAILED
+    }
+
+    let db_handle = &local_db_handles[db_handle_index];
+
+    // Read from tx_local BTreeMap
+    let tx_local = env.tx_local.lock().unwrap();
+    let return_data = tx_local
+        .get(&cid)
+        .and_then(|trees| trees.get(&db_handle.tree))
+        .and_then(|kv| kv.get(&key))
+        .cloned();
+
+    drop(tx_local);
+    drop(local_db_handles);
+
+    let Some(return_data) = return_data else {
+        debug!(
+            target: "runtime::db::db_get_local",
+            "[WASM] [{cid}] db_get_local(): Return data is empty"
+        );
+        return dwow_sdk::error::DB_GET_EMPTY
+    };
+
+    if return_data.len() > u32::MAX as usize {
+        return dwow_sdk::error::DATA_TOO_LARGE
+    }
+
+    env.subtract_gas(&mut store, return_data.len() as u64);
+
+    let mut objects = env.objects.borrow_mut();
+    if objects.len() == u32::MAX as usize {
+        return dwow_sdk::error::DATA_TOO_LARGE
+    }
+
+    objects.push(return_data.to_vec());
+    (objects.len() - 1) as i64
+}
+
+/// Delete a key from the transaction-local (ephemeral) state.
+///
+/// Permissions: deploy, update
+pub(crate) fn db_del_local(
+    mut ctx: FunctionEnvMut<Env>,
+    ptr: WasmPtr<u8>,
+    ptr_len: u32,
+) -> i64 {
+    let (env, mut store) = ctx.data_and_store_mut();
+    let cid = env.contract_id;
+
+    if let Err(e) = acl_allow(env, &[ContractSection::Deploy, ContractSection::Update]) {
+        error!(
+            target: "runtime::db::db_del_local",
+            "[WASM] [{cid}] db_del_local(): Called in unauthorized section: {e}"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    env.subtract_gas(&mut store, 1);
+
+    let memory_view = env.memory_view(&store);
+    let Ok(mem_slice) = ptr.slice(&memory_view, ptr_len) else {
+        error!(
+            target: "runtime::db::db_del_local",
+            "[WASM] [{cid}] db_del_local(): Failed to make slice from ptr"
+        );
+        return dwow_sdk::error::DB_DEL_FAILED
+    };
+
+    let mut buf = vec![0_u8; ptr_len as usize];
+    if let Err(e) = mem_slice.read_slice(&mut buf) {
+        error!(
+            target: "runtime::db::db_del_local",
+            "[WASM] [{cid}] db_del_local(): Failed to read from memory slice: {e}"
+        );
+        return dwow_sdk::error::DB_DEL_FAILED
+    };
+
+    let mut buf_reader = Cursor::new(buf);
+
+    let db_handle_index: u32 = match Decodable::decode(&mut buf_reader) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                target: "runtime::db::db_del_local",
+                "[WASM] [{cid}] db_del_local(): Failed to decode DbHandle: {e}"
+            );
+            return dwow_sdk::error::DB_DEL_FAILED
+        }
+    };
+    let db_handle_index = db_handle_index as usize;
+
+    let key: Vec<u8> = match Decodable::decode(&mut buf_reader) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                target: "runtime::db::db_del_local",
+                "[WASM] [{cid}] db_del_local(): Failed to decode key vec: {e}"
+            );
+            return dwow_sdk::error::DB_DEL_FAILED
+        }
+    };
+
+    if buf_reader.position() != ptr_len as u64 {
+        error!(
+            target: "runtime::db::db_del_local",
+            "[WASM] [{cid}] db_del_local(): Trailing bytes in argument stream"
+        );
+        return dwow_sdk::error::DB_DEL_FAILED
+    }
+
+    let local_db_handles = env.local_db_handles.borrow();
+    if local_db_handles.len() <= db_handle_index {
+        error!(
+            target: "runtime::db::db_del_local",
+            "[WASM] [{cid}] db_del_local(): Requested DbHandle that is out of bounds"
+        );
+        return dwow_sdk::error::DB_DEL_FAILED
+    }
+
+    let db_handle = &local_db_handles[db_handle_index];
+    if db_handle.contract_id != cid {
+        error!(
+            target: "runtime::db::db_del_local",
+            "[WASM] [{cid}] db_del_local(): Unauthorized to write to DbHandle"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    // Remove from tx_local BTreeMap
+    let mut tx_local = env.tx_local.lock().unwrap();
+    if let Some(trees) = tx_local.get_mut(&cid) {
+        if let Some(kv) = trees.get_mut(&db_handle.tree) {
+            kv.remove(&key);
+        }
+    }
+
+    wasm::entrypoint::SUCCESS
+}
+
+/// Check if a key exists in the transaction-local (ephemeral) state.
+///
+/// Permissions: deploy, metadata, exec
+pub(crate) fn db_contains_key_local(
+    mut ctx: FunctionEnvMut<Env>,
+    ptr: WasmPtr<u8>,
+    ptr_len: u32,
+) -> i64 {
+    let (env, mut store) = ctx.data_and_store_mut();
+    let cid = env.contract_id;
+
+    if let Err(e) =
+        acl_allow(env, &[ContractSection::Deploy, ContractSection::Metadata, ContractSection::Exec])
+    {
+        error!(
+            target: "runtime::db::db_contains_key_local",
+            "[WASM] [{cid}] db_contains_key_local(): Called in unauthorized section: {e}"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    env.subtract_gas(&mut store, 1);
+
+    let memory_view = env.memory_view(&store);
+    let Ok(mem_slice) = ptr.slice(&memory_view, ptr_len) else {
+        error!(
+            target: "runtime::db::db_contains_key_local",
+            "[WASM] [{cid}] db_contains_key_local(): Failed to make slice from ptr"
+        );
+        return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
+    };
+
+    let mut buf = vec![0_u8; ptr_len as usize];
+    if let Err(e) = mem_slice.read_slice(&mut buf) {
+        error!(
+            target: "runtime::db::db_contains_key_local",
+            "[WASM] [{cid}] db_contains_key_local(): Failed to read from memory slice: {e}"
+        );
+        return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
+    };
+
+    let mut buf_reader = Cursor::new(buf);
+
+    let db_handle_index: u32 = match Decodable::decode(&mut buf_reader) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                target: "runtime::db::db_contains_key_local",
+                "[WASM] [{cid}] db_contains_key_local(): Failed to decode DbHandle: {e}"
+            );
+            return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
+        }
+    };
+    let db_handle_index = db_handle_index as usize;
+
+    let key: Vec<u8> = match Decodable::decode(&mut buf_reader) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                target: "runtime::db::db_contains_key_local",
+                "[WASM] [{cid}] db_contains_key_local(): Failed to decode key vec: {e}"
+            );
+            return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
+        }
+    };
+
+    if buf_reader.position() != ptr_len as u64 {
+        error!(
+            target: "runtime::db::db_contains_key_local",
+            "[WASM] [{cid}] db_contains_key_local(): Trailing bytes in argument stream"
+        );
+        return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
+    }
+
+    let local_db_handles = env.local_db_handles.borrow();
+    if local_db_handles.len() <= db_handle_index {
+        error!(
+            target: "runtime::db::db_contains_key_local",
+            "[WASM] [{cid}] db_contains_key_local(): Requested DbHandle that is out of bounds"
+        );
+        return dwow_sdk::error::DB_CONTAINS_KEY_FAILED
+    }
+
+    let db_handle = &local_db_handles[db_handle_index];
+
+    // Check in tx_local BTreeMap
+    let tx_local = env.tx_local.lock().unwrap();
+    let found = tx_local
+        .get(&cid)
+        .and_then(|trees| trees.get(&db_handle.tree))
+        .map(|kv| kv.contains_key(&key))
+        .unwrap_or(false);
+
+    i64::from(found)
 }

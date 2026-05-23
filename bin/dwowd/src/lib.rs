@@ -78,15 +78,6 @@ use crate::registry::model::LinearMinerRewardsRecipientConfig;
 mod blockchain;
 pub use blockchain::LinearBlockchain;
 
-/// Runtime integration for linear blockchain
-mod runtime_integration;
-
-/// LinearSimpleDb bridge adapter
-mod linear_simple_db;
-
-/// LinearContractStore bridge adapter
-mod contract_store;
-
 /// Mempool for pending transactions
 mod mempool;
 pub use mempool::{create_mempool, Mempool, MempoolPtr};

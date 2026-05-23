@@ -317,7 +317,7 @@ pub(crate) fn get_blockchain_time(mut ctx: FunctionEnvMut<Env>) -> i64 {
     }
 
     // Grab current last block
-    let timestamp = match env.blockchain.last_block_timestamp() {
+    let timestamp = match env.backend.last_block_timestamp() {
         Ok(b) => b,
         Err(e) => {
             error!(
@@ -369,7 +369,7 @@ pub(crate) fn get_last_block_height(mut ctx: FunctionEnvMut<Env>) -> i64 {
     }
 
     // Grab current last block height
-    let height = match env.blockchain.last_block_height() {
+    let height = match env.backend.last_block_height() {
         Ok(b) => b,
         Err(e) => {
             error!(
@@ -467,7 +467,7 @@ pub(crate) fn get_tx(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) -> i64 {
     }
 
     // Retrieve transaction using the `hash`
-    let ret = match env.blockchain.get_tx(&hash) {
+    let ret = match env.backend.get_tx(&hash) {
         Ok(v) => v,
         Err(e) => {
             error!(
@@ -575,7 +575,7 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
     }
 
     // Retrieve transaction using the `hash`
-    let ret = match env.blockchain.get_tx_location(&hash) {
+    let ret = match env.backend.get_tx_location(&hash) {
         Ok(v) => v,
         Err(e) => {
             error!(
@@ -642,7 +642,7 @@ pub(crate) fn get_block_hash_(mut ctx: FunctionEnvMut<Env>, height: i64) -> i64 
 
     // Grab block hash by height
     let block_hash =
-        match env.blockchain.get_block_hash_by_height(height as u32) {
+        match env.backend.get_block_hash_by_height(height as u32) {
             Ok(Some(hash)) => hash,
             Ok(None) => {
                 debug!(
