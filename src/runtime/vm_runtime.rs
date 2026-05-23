@@ -42,7 +42,10 @@ use wasmer::{
     FunctionEnv, Instance, Memory, MemoryType, MemoryView, Module, Pages, Store, Value,
     WASM_PAGE_SIZE,
 };
-use wasmer_compiler_singlepass::Singlepass;
+#[cfg(not(feature = "singlepass-compiler"))]
+use wasmer_compiler_cranelift::Cranelift as Compiler;
+#[cfg(feature = "singlepass-compiler")]
+use wasmer_compiler_singlepass::Singlepass as Compiler;
 use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
@@ -100,9 +103,11 @@ const MEMORY: &str = "memory";
 pub const GAS_LIMIT: u64 = 400_000_000;
 
 /// Process-global cache of compiled WASM modules, keyed by SHA256 of the WASM bytes.
-/// Singlepass compilation is deterministic — same bytes always produce the same module.
+/// Compilation is deterministic — same bytes always produce the same module.
 /// The cache eliminates repeated compilation of the same contract (e.g. NativeToken,
 /// Deployooor, or any contract invoked multiple times in one block).
+/// Uses Cranelift by default (3-10× faster execution); Singlepass available via
+/// the `singlepass-compiler` feature flag.
 static WASM_MODULE_CACHE: Mutex<Option<HashMap<[u8; 32], Module>>> = Mutex::new(None);
 
 fn get_cached_module(wasm_hash: &[u8; 32]) -> Option<Module> {
@@ -257,13 +262,13 @@ impl Runtime {
         // initialized from the module's global initializers.
         let cost_function = |_operator: &Operator| -> u64 { 1 };
         let metering = Arc::new(Metering::new(GAS_LIMIT, cost_function));
-        let mut compiler_config = Singlepass::new();
+        let mut compiler_config = Compiler::new();
         compiler_config.push_middleware(metering);
 
         // Single Store for compilation AND execution — matching upstream darkfi.
         let mut store = Store::new(compiler_config);
 
-        // Check module cache — skip Singlepass compilation on hit
+        // Check module cache — skip compilation on hit
         let module = if let Some(cached) = get_cached_module(&wasm_hash) {
             info!(target: "runtime::vm_runtime", "[WASM] Module cache hit (sha256={})", hex::encode(wasm_hash));
             cached

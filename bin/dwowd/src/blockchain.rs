@@ -42,6 +42,11 @@ use tracing::{error, info};
 
 use crate::zk::ZkVerifier;
 
+/// Maximum gas per block (10× per-call GAS_LIMIT of 400M).
+/// Blocks exceeding this are rejected during validation. Template generation
+/// should stop pulling from the mempool when cumulative gas approaches this.
+pub const BLOCK_GAS_LIMIT: u64 = 4_000_000_000;
+
 /// Configuration for LinearBlockchain PoW
 pub struct LinearPoWConfig {
     /// Target block time in seconds
@@ -378,11 +383,18 @@ impl LinearBlockchain {
             }
         }
 
-        // Execute contract calls in transactions using WASM runtime
+        // Execute contract calls in transactions using WASM runtime.
+        // Enforce BLOCK_GAS_LIMIT: skip calls that would exceed the block budget.
+        let mut cumulative_gas: u64 = 0;
         let mut calls_executed = 0;
         let mut calls_failed = 0;
         for tx in &block.transactions {
             for (call_idx, call) in tx.contract_calls.iter().enumerate() {
+                // Check block gas limit before executing this call
+                if cumulative_gas >= BLOCK_GAS_LIMIT {
+                    error!(target: "linear_blockchain", "Block {} exceeds BLOCK_GAS_LIMIT ({}) — rejecting remaining calls", block_hash, BLOCK_GAS_LIMIT);
+                    return Err(Error::Custom("BlockGasLimitExceeded".to_string()))
+                }
                 // Get contract WASM from store
                 let contract_id = ContractId::from_bytes(call.contract_id)
                     .map_err(|e| Error::Custom(format!("Invalid contract ID: {}", e)))?;
@@ -440,7 +452,8 @@ impl LinearBlockchain {
                     continue;
                 }
 
-                info!(target: "linear_blockchain", "Contract call executed successfully: contract_id={:?} call_idx={}", contract_id, call_idx);
+                cumulative_gas += runtime.gas_used();
+                info!(target: "linear_blockchain", "Contract call executed successfully: contract_id={:?} call_idx={} gas_used={}", contract_id, call_idx, runtime.gas_used());
                 calls_executed += 1;
             }
         }
@@ -454,12 +467,18 @@ impl LinearBlockchain {
         // Execute uncle transactions — bonus throughput.
         // Uncle miners already earned pin rewards via PoW; these transactions
         // are extra work the canonical miner performs for network throughput.
+        // Also constrained by BLOCK_GAS_LIMIT (cumulative, same budget).
         let mut uncle_calls_executed = 0u64;
         let mut uncle_calls_failed = 0u64;
         for uncle in uncles.iter() {
             let uncle_hash = uncle.hash(&vm);
             for tx in &uncle.transactions {
                 for (call_idx, call) in tx.contract_calls.iter().enumerate() {
+                    // Check block gas limit for uncle calls too (same budget)
+                    if cumulative_gas >= BLOCK_GAS_LIMIT {
+                        error!(target: "linear_blockchain", "Block {} exceeds BLOCK_GAS_LIMIT during uncle execution — rejecting remaining calls", block_hash);
+                        return Err(Error::Custom("BlockGasLimitExceeded".to_string()))
+                    }
                     let contract_id = match ContractId::from_bytes(call.contract_id) {
                         Ok(cid) => cid,
                         Err(e) => {
@@ -521,6 +540,7 @@ impl LinearBlockchain {
                         continue;
                     }
 
+                    cumulative_gas += runtime.gas_used();
                     info!(target: "linear_blockchain", "Uncle {} tx {} call_idx={}: executed successfully", uncle_hash, tx.hash(), call_idx);
                     uncle_calls_executed += 1;
                 }

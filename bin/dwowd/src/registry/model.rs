@@ -33,6 +33,7 @@ use dwow::{
     zkas::ZkBinary,
     Error, Result,
 };
+use blake3::Hash as Blake3Hash;
 use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN;
 use dwow_sdk::crypto::{
     keypair::Keypair,
@@ -42,6 +43,11 @@ use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
 use crate::error::RpcError;
+
+/// Maximum contract calls per block, derived from BLOCK_GAS_LIMIT / GAS_LIMIT.
+/// Template generation truncates the mempool drain to this many calls so the
+/// mining blob's merkle root stays within the block gas budget.
+const MAX_CALLS_PER_BLOCK: usize = 10;
 
 /// Linear blockchain miner rewards recipient configuration.
 /// Reward value is computed from `dwow_sdk::blockchain::expected_reward(height)`,
@@ -102,6 +108,10 @@ pub struct LinearBlockTemplate {
     pub coin_merkle_root: [u8; 32],
     /// Nullifier root (all spent nullifiers)
     pub nullifier_root: [u8; 32],
+    /// Transactions included in this block template (drained from mempool at generation time)
+    pub transactions: Vec<dwow_linear::Transaction>,
+    /// Merkle root of the transactions (included in mining blob)
+    pub merkle_root: Blake3Hash,
 }
 
 impl LinearBlockTemplate {
@@ -225,11 +235,31 @@ impl LinearPowRewardZk {
 /// Generate next block template for linear blockchain.
 /// When `linear_zk` is provided, creates a privacy-preserving ZK coinbase.
 /// Otherwise falls back to a transparent coinbase (for development/testing).
+/// `transactions` are drained from the mempool at template generation time
+/// so the merkle root (included in the mining blob) remains fixed.
 pub async fn generate_linear_block_template(
     linear_blockchain: &crate::blockchain::LinearBlockchain,
     recipient_config: &LinearMinerRewardsRecipientConfig,
     linear_zk: Option<&LinearPowRewardZk>,
+    transactions: Vec<dwow_linear::Transaction>,
 ) -> Result<LinearBlockTemplate> {
+    // Cap transactions at MAX_CALLS_PER_BLOCK so the merkle root (included
+    // in the mining blob) stays within the block gas budget. Remaining txs
+    // stay in the mempool for the next block.
+    let transactions: Vec<dwow_linear::Transaction> = {
+        let mut capped = Vec::new();
+        let mut call_count = 0usize;
+        for tx in transactions {
+            let calls = tx.contract_calls.len();
+            if call_count + calls > MAX_CALLS_PER_BLOCK {
+                break; // stop here; remainder stays in mempool
+            }
+            call_count += calls;
+            capped.push(tx);
+        }
+        capped
+    };
+
     let height = linear_blockchain.get_height() + 1;
 
     let previous_hash: [u8; 32] = if height == 1 {
@@ -254,6 +284,31 @@ pub async fn generate_linear_block_template(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
+
+    // Compute transaction merkle root (included in mining blob).
+    // Must be deterministic and match verify_merkle_root() in block.rs.
+    let merkle_root = {
+        let tx_hashes: Vec<Blake3Hash> = transactions.iter().map(|tx| tx.hash()).collect();
+        if tx_hashes.is_empty() {
+            blake3::hash(&[])
+        } else {
+            let mut layer = tx_hashes.clone();
+            while layer.len() > 1 {
+                if layer.len() % 2 != 0 {
+                    layer.push(*layer.last().unwrap());
+                }
+                layer = layer
+                    .chunks(2)
+                    .map(|pair| {
+                        let mut combined = pair[0].as_bytes().to_vec();
+                        combined.extend_from_slice(pair[1].as_bytes());
+                        blake3::hash(&combined)
+                    })
+                    .collect();
+            }
+            layer[0]
+        }
+    };
 
     if let Some(zk) = linear_zk {
         let (coinbase, public_inputs) = build_linear_coinbase(
@@ -280,6 +335,8 @@ pub async fn generate_linear_block_template(
             encrypted_note: coinbase.encrypted_note,
             coin_merkle_root,
             nullifier_root,
+            transactions,
+            merkle_root,
         });
     }
 
@@ -299,5 +356,7 @@ pub async fn generate_linear_block_template(
         encrypted_note: vec![],
         coin_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
+        transactions,
+        merkle_root,
     })
 }

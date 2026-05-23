@@ -28,6 +28,9 @@
 //! - Deterministic: same inputs always produce same output
 //! - Separated: independent from sync, consensus, and block production
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use dwow_sdk::pasta::pallas;
 
 use crate::{zk::ZkCircuit, zk::empty_witnesses, zk::Proof, zk::VerifyingKey, zkas::ZkBinary};
@@ -43,31 +46,60 @@ pub enum ZkVerifyResult {
     InvalidVk,
 }
 
+/// Process-global cache of VerifyingKeys, keyed by the ZKAS binary bytes.
+///
+/// VK derivation (`keygen_vk`) is O(k * 2^k) — several hundred milliseconds
+/// for k=14+. The VK is purely deterministic (same circuit bytes → same VK),
+/// so caching eliminates this cost on every proof verification after the first.
+/// Most nodes see O(10) unique circuits, so a Vec-keyed HashMap is fine.
+static VK_CACHE: Mutex<Option<HashMap<Vec<u8>, VerifyingKey>>> = Mutex::new(None);
+
 /// Verify a ZK proof given the circuit bytes and public instances.
 ///
 /// This is a pure function - same inputs always produce same output.
 /// No sled, no WASM, no side effects.
+///
+/// VK derivation is cached: the first call for a given circuit pays the full
+/// `keygen_vk` cost; subsequent calls hit the cache (~0.1ms vs ~200ms).
 pub fn verify_zkp(
     proof: &Proof,
     zkbin_bytes: &[u8],
     instances: &[pallas::Base],
 ) -> ZkVerifyResult {
-    // 1. Decode ZkBinary from bytes
+    // 1. Check VK cache
+    {
+        let cache = VK_CACHE.lock().unwrap();
+        if let Some(ref map) = *cache {
+            if let Some(vk) = map.get(zkbin_bytes) {
+                return match proof.verify(vk, instances) {
+                    Ok(()) => ZkVerifyResult::Ok,
+                    Err(_) => ZkVerifyResult::InvalidProof,
+                };
+            }
+        }
+    }
+
+    // 2. Cache miss — decode circuit and derive VK
     let Ok(zkbin) = ZkBinary::decode(zkbin_bytes, false) else {
         return ZkVerifyResult::InvalidVk
     };
 
-    // 2. Create circuit with empty witnesses (for VK derivation only)
     let witnesses = match empty_witnesses(&zkbin) {
         Ok(w) => w,
         Err(_) => return ZkVerifyResult::InvalidVk,
     };
     let circuit = ZkCircuit::new(witnesses, &zkbin);
 
-    // 3. Derive VK from circuit
     let vk = VerifyingKey::build(zkbin.k, &circuit);
 
-    // 4. Verify proof with derived VK
+    // 3. Store in cache and verify
+    {
+        let mut cache = VK_CACHE.lock().unwrap();
+        cache
+            .get_or_insert_with(HashMap::new)
+            .insert(zkbin_bytes.to_vec(), vk.clone());
+    }
+
     match proof.verify(&vk, instances) {
         Ok(()) => ZkVerifyResult::Ok,
         Err(_) => ZkVerifyResult::InvalidProof,
