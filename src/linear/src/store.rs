@@ -114,6 +114,11 @@ impl LinearStore {
         Ok(())
     }
 
+    /// Access the underlying contracts sled tree.
+    pub fn contracts_tree(&self) -> &sled::Tree {
+        &self.contracts
+    }
+
     /// Set contract data (WASM binary) for a contract ID
     pub fn set_contract_data(&self, contract_id: &[u8], data: &[u8]) -> Result<(), LinearError> {
         self.contracts.insert(contract_id, data).map_err(|e| LinearError::StorageError(e.to_string()))?;

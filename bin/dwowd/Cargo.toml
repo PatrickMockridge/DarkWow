@@ -18,6 +18,7 @@ dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = [
 dwow_baccarat_contract = {path = "../../src/contract/baccarat", features = ["client", "no-entrypoint"]}
 dwow-sdk = {path = "../../src/sdk"}
 dwow-serial = {path = "../../src/serial"}
+sled-overlay = "0.1.20"
 
 # Misc
 blake3 = "1.8.2"
