@@ -208,6 +208,7 @@ impl DwowNode {
 
         let template_height = template.height;
         let template_previous = template.previous;
+        let template_target = template.target;
 
         // Compute aux_hash = hash of the block template (used by p2pool to
         // detect when the aux chain work changes).
@@ -232,7 +233,7 @@ impl DwowNode {
         *self.current_linear_template.lock().await = Some(template);
 
         // p2pool expects aux_diff as a decimal number (difficulty = MAX/target)
-        let aux_difficulty = u32::MAX as u64 / template.target as u64;
+        let aux_difficulty = u32::MAX as u64 / template_target as u64;
 
         let result = JsonValue::from(HashMap::from([
             ("aux_blob".to_string(), JsonValue::String(blob)),
