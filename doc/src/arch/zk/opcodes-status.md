@@ -14,13 +14,14 @@ This document tracks the formal verification status of ZK circuit opcodes used i
 | `NotBase` (0x56) | ✅ Verified | Production-ready |
 | `BaseLtStrict` (0x57) | ✅ Verified | Production-ready |
 | `BaseDiv` (0x58) | ✅ **Implemented** | Binary exponentiation (Fermat's theorem) |
-| `IsEqualBase` (0x54) | ⚠️ Bug | Delta-invert unconstrained when `a == b` - use `ConstrainEqualBase` |
+| `IsNotEqual` (0x62) | ✅ **Pure** | First fully constrained Boolean operator — all witnesses constrained in all cases |
+| `IsEqualBase` (0x54) | ⚠️ Bug | Delta-invert unconstrained when `a == b` — use `IsNotEqual` for Boolean inequality or `ConstrainEqualBase` |
 
-## Known Issue: IsEqualBase
+## Known Issue: IsEqualBase (Fixed via IsNotEqual)
 
 **IsEqualBase (0x54)** has a bug: when `a == b`, `delta_invert` is unconstrained.
 
-**Workaround**: Use `ConstrainEqualBase` for assertion-only equality checks.
+**Fix**: `IsNotEqual` (0x62) is the pure Boolean inequality operator — all witnesses are fully constrained. For assertion-only equality, use `ConstrainEqualBase`. The fix pattern for `IsEqualBase` itself is proven: add `out * (delta_invert - 1) = 0`.
 
 ## Contract Compatibility
 

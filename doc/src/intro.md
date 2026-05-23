@@ -197,13 +197,14 @@ doc/src/
 
 ### Opcode Status
 
-`LessThanOrEqual` (0x55) and `BaseDiv` (0x58) are **DarkWow additions** to the zkVM — they do not exist in upstream DarkWow. Both were formally verified in Lean4 on this fork (`proofs/lean/`). `LessThanOrEqual` enables conditional logic and O-Cap predicate evaluation in circuits; `BaseDiv` enables precise field division for cold-circuit governance operations.
+`LessThanOrEqual` (0x55), `IsNotEqual` (0x62), and `BaseDiv` (0x58) are **DarkWow additions** to the zkVM — they do not exist in upstream DarkWow. All three were formally verified in Lean4 on this fork (`proofs/lean/`). `LessThanOrEqual` enables conditional logic and O-Cap predicate evaluation in circuits; `IsNotEqual` is the first fully constrained pure Boolean operator in the zkVM; `BaseDiv` enables precise field division for cold-circuit governance operations.
 
 | Opcode | Status |
 |--------|--------|
 | `LessThanOrEqual` (0x55) | ✅ Verified Sound — DarkWow addition |
+| `IsNotEqual` (0x62) | ✅ Pure — First fully constrained Boolean operator |
 | `BaseDiv` (0x58) | ✅ Implemented — DarkWow addition |
-| `IsEqualBase` (0x54) | ⚠️ Use `ConstrainEqualBase` instead |
+| `IsEqualBase` (0x54) | ⚠️ Use `IsNotEqual` or `ConstrainEqualBase` instead |
 
 See [Opcodes and Formal Verification](arch/zk/opcodes.md) for full analysis.
 

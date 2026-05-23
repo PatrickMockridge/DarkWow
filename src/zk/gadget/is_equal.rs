@@ -201,3 +201,107 @@ impl<F: WithSmallOrderMulGroup<3> + Ord> AssertEqualChip<F> {
         Ok(())
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct IsNotEqualConfig<F: WithSmallOrderMulGroup<3> + Ord> {
+    s_is_not_eq: Selector,
+    advices: [Column<Advice>; NUM_OF_UTILITY_ADVICE_COLUMNS],
+    _marker: PhantomData<F>,
+}
+
+pub struct IsNotEqualChip<F: WithSmallOrderMulGroup<3> + Ord> {
+    config: IsNotEqualConfig<F>,
+}
+
+impl<F: WithSmallOrderMulGroup<3> + Ord> Chip<F> for IsNotEqualChip<F> {
+    type Config = IsNotEqualConfig<F>;
+    type Loaded = ();
+
+    fn config(&self) -> &Self::Config {
+        &self.config
+    }
+
+    fn loaded(&self) -> &Self::Loaded {
+        &()
+    }
+}
+
+impl<F: WithSmallOrderMulGroup<3> + Ord> IsNotEqualChip<F> {
+    pub fn construct(config: <Self as Chip<F>>::Config) -> Self {
+        Self { config }
+    }
+
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        advices: [Column<Advice>; NUM_OF_UTILITY_ADVICE_COLUMNS],
+    ) -> <Self as Chip<F>>::Config {
+        let s_is_not_eq = meta.selector();
+        meta.create_gate("is_not_eq", |meta| {
+            let lhs = meta.query_advice(advices[0], Rotation::cur());
+            let rhs = meta.query_advice(advices[1], Rotation::cur());
+            let out = meta.query_advice(advices[2], Rotation::cur());
+            let delta_invert = meta.query_advice(advices[3], Rotation::cur());
+            let s_is_not_eq = meta.query_selector(s_is_not_eq);
+            let one = Expression::Constant(F::ONE);
+
+            vec![
+                // out is 0 or 1
+                s_is_not_eq.clone() * (out.clone() * (one.clone() - out.clone())),
+                // if a != b then (a - b) * inverse(a - b) == out
+                // if a == b then 0 == out so out == 0
+                s_is_not_eq.clone() *
+                    ((lhs.clone() - rhs.clone()) * delta_invert.clone() - out.clone()),
+                // constrain delta_invert: (a - b) * inverse(a - b) must be 1
+                s_is_not_eq.clone() *
+                    (lhs.clone() - rhs.clone()) * ((lhs.clone() - rhs.clone()) * delta_invert.clone() - one.clone()),
+                // PURITY: when out == 0 (i.e. a == b), force delta_invert == 1
+                s_is_not_eq * (one.clone() - out) * (delta_invert - one),
+            ]
+        });
+
+        IsNotEqualConfig { s_is_not_eq, advices, _marker: PhantomData }
+    }
+
+    pub fn is_not_eq_with_output(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        a: AssignedCell<F, F>,
+        b: AssignedCell<F, F>,
+    ) -> Result<AssignedCell<F, F>, plonk::Error> {
+        let config = self.config();
+
+        let out = layouter.assign_region(
+            || "is_not_eq",
+            |mut region: Region<'_, F>| {
+                config.s_is_not_eq.enable(&mut region, 0)?;
+
+                a.copy_advice(|| "copy a", &mut region, config.advices[0], 0)?;
+                b.copy_advice(|| "copy b", &mut region, config.advices[1], 0)?;
+
+                let delta_invert = a.value().copied().to_field().zip(b.value()).map(|(a, b)| {
+                    if a == b.into() {
+                        F::ONE.into()
+                    } else {
+                        let delta = a - *b;
+                        delta.invert()
+                    }
+                });
+
+                region.assign_advice(|| "delta invert", config.advices[3], 0, || delta_invert)?;
+
+                let is_not_eq = a.value_field().evaluate().zip(b.value_field().evaluate()).map(|(lhs, rhs)| {
+                    if lhs != rhs {
+                        F::ONE
+                    } else {
+                        F::ZERO
+                    }
+                });
+
+                let cell = region.assign_advice(|| "is_not_eq", config.advices[2], 0, || is_not_eq)?;
+                Ok(cell)
+            },
+        )?;
+
+        Ok(out)
+    }
+}

@@ -196,6 +196,10 @@ define_opcodes! {
     IsEqualBase = 0x54, "is_equal_base",
         (VarType::Base), (VarType::Base, VarType::Base);
 
+    /// Compare two Base field elements and return 1 if not equal, 0 otherwise
+    IsNotEqualBase = 0x62, "is_not_equal",
+        (VarType::Base), (VarType::Base, VarType::Base);
+
     /// Compare two Base field elements and return 1 if lhs <= rhs, 0 otherwise
     LessThanOrEqual = 0x55, "less_than_or_equal",
         (VarType::Base), (VarType::Base, VarType::Base);

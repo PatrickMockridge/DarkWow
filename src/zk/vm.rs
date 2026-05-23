@@ -66,7 +66,7 @@ use super::{
     gadget::{
         arithmetic::{ArithChip, ArithConfig, ArithInstruction},
         cond_select::{ConditionalSelectChip, ConditionalSelectConfig},
-        is_equal::{IsEqualChip, IsEqualConfig},
+        is_equal::{IsEqualChip, IsEqualConfig, IsNotEqualChip, IsNotEqualConfig},
         less_than::{LessThanChip, LessThanConfig},
         native_range_check::{NativeRangeCheckChip, NativeRangeCheckConfig},
         small_range_check::{SmallRangeCheckChip, SmallRangeCheckConfig},
@@ -126,6 +126,9 @@ enum VmChip {
 
     /// Base-field equality check that outputs a boolean
     IsEqual(IsEqualConfig<pallas::Base>),
+
+    /// Base-field not-equal check that outputs a boolean (pure: all witnesses fully constrained)
+    IsNotEqual(IsNotEqualConfig<pallas::Base>),
 
     /// Conditional selection
     CondSelect(ConditionalSelectConfig<pallas::Base>),
@@ -279,6 +282,16 @@ impl VmConfig {
 
         Some(IsEqualChip::construct(isequal_config.clone()))
     }
+
+    fn isnotequal_chip(&self) -> Option<IsNotEqualChip<pallas::Base>> {
+        let Some(VmChip::IsNotEqual(isnotequal_config)) =
+            self.chips.iter().find(|&c| matches!(c, VmChip::IsNotEqual(_)))
+        else {
+            return None
+        };
+
+        Some(IsNotEqualChip::construct(isnotequal_config.clone()))
+    }
 }
 
 /// Configuration parameters for the circuit.
@@ -294,6 +307,7 @@ pub struct ZkParams {
     init_lessthan: bool,
     init_boolcheck: bool,
     init_isequal: bool,
+    init_isnotequal: bool,
     init_condselect: bool,
     init_zerocond: bool,
 }
@@ -403,6 +417,9 @@ impl Circuit<pallas::Base> for ZkCircuit {
         // Conditions on which we enable the base-field equality check chip
         let init_isequal = opcodes.contains(&Opcode::IsEqualBase);
 
+        // Conditions on which we enable the base-field not-equal check chip
+        let init_isnotequal = opcodes.contains(&Opcode::IsNotEqualBase);
+
         // Conditions on which we enable the conditional selection chip
         let init_condselect = opcodes.contains(&Opcode::CondSelect);
 
@@ -418,6 +435,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
             init_lessthan,
             init_boolcheck,
             init_isequal,
+            init_isnotequal,
             init_condselect,
             init_zerocond,
         }
@@ -554,6 +572,10 @@ impl Circuit<pallas::Base> for ZkCircuit {
         // Configuration for the base-field equality check chip
         let is_equal_config = IsEqualChip::configure(meta, advices[1..5].try_into().unwrap());
 
+        // Configuration for the base-field not-equal check chip
+        let is_not_equal_config =
+            IsNotEqualChip::configure(meta, advices[1..5].try_into().unwrap());
+
         // Configuration for the conditional selection chip
         let condselect_config =
             ConditionalSelectChip::configure(meta, advices[1..5].try_into().unwrap());
@@ -574,6 +596,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
             VmChip::LessThan(lessthan_config),
             VmChip::BoolCheck(boolcheck_config),
             VmChip::IsEqual(is_equal_config),
+            VmChip::IsNotEqual(is_not_equal_config),
             VmChip::CondSelect(condselect_config),
             VmChip::ZeroCond(zerocond_config),
         ];
@@ -659,6 +682,9 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
         // Construct the base-field equality check chip.
         let isequal_chip = config.isequal_chip();
+
+        // Construct the base-field not-equal check chip.
+        let isnotequal_chip = config.isnotequal_chip();
 
         // Construct the conditional selection chip
         let condselect_chip = config.condselect_chip();
@@ -1368,6 +1394,23 @@ impl Circuit<pallas::Base> for ZkCircuit {
                         .as_ref()
                         .unwrap()
                         .is_eq_with_output(&mut layouter.namespace(|| "is_equal_base"), lhs, rhs)?;
+
+                    trace!(target: "zk::vm", "Pushing assignment to heap address {}", heap.len());
+                    self.tracer.push_base(&out);
+                    heap.push(HeapVar::Base(out));
+                }
+
+                Opcode::IsNotEqualBase => {
+                    trace!(target: "zk::vm", "Executing `IsNotEqualBase{:?}` opcode", opcode.1);
+                    let args = &opcode.1;
+
+                    let lhs: AssignedCell<Fp, Fp> = heap[args[0].1].clone().try_into()?;
+                    let rhs: AssignedCell<Fp, Fp> = heap[args[1].1].clone().try_into()?;
+
+                    let out: AssignedCell<Fp, Fp> = isnotequal_chip
+                        .as_ref()
+                        .unwrap()
+                        .is_not_eq_with_output(&mut layouter.namespace(|| "is_not_equal"), lhs, rhs)?;
 
                     trace!(target: "zk::vm", "Pushing assignment to heap address {}", heap.len());
                     self.tracer.push_base(&out);

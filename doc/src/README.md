@@ -1,6 +1,6 @@
 # DarkWow
 
-A DarkWow fork rebuilt around four rejections of upstream: no governance DAO (pure PoW, no token-holder voting), no overlay/diff consensus (deterministic Uncle Merkle with stateless verification), LessThanOrEqual and BaseDiv opcodes built and proven sound in Lean4 on this fork (additions to upstream's zkVM — not inherited), and no premine (every coin mined). Zero vendor lock-in. Hard forks are a feature, not a threat.
+A DarkWow fork rebuilt around four rejections of upstream: no governance DAO (pure PoW, no token-holder voting), no overlay/diff consensus (deterministic Uncle Merkle with stateless verification), LessThanOrEqual, IsNotEqual, and BaseDiv opcodes built and proven sound in Lean4 on this fork (additions to upstream's zkVM — not inherited), and no premine (every coin mined). Zero vendor lock-in. Hard forks are a feature, not a threat.
 
 ## Quick Navigation
 
