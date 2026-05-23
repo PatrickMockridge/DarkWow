@@ -203,7 +203,7 @@ cargo test -p dwowd test_pipeline
 # Level 2: Full ZK proof tests (minutes)
 RAYON_NUM_THREADS=10 cargo test --release -p dwowd test_heavyweight
 
-# Level 3: Full test pipeline — 5 modes (clean → build → verify)
+# Level 3: Containerized localnet — multi-node Docker mining + contract tests
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native
 
 # Level 3: Multi-node Docker testnet with live mining + contract tests
@@ -272,9 +272,8 @@ cargo run -p dwowd -- --network darkwow-testnet
 
 ### Operations
 - [Contributing & Developer Guide](doc/src/dev/contrib/contrib.md)
-- [darkwow-testnet Pipeline](contrib/docker/darkwow-testnet/README.md) — 5-mode test pipeline, Docker images, compose profiles
+- [DarkWow Devnets](doc/src/darkwow-testnet.md) — Range of containerized devnet options (local, LAN, public testnet)
 - [Public Testnet Node](contrib/docker/testnet-node/README.md) — Docker Hub image, native/merge mining, wallet setup
-- [dwow-devnet Node](contrib/docker/dwow-devnet/README.md) — Multi-machine shared devnet
 - [Bridge Node](contrib/docker/bridge-node/README.md) — Cross-chain bridge relayer with capital endowment
 
 ---
