@@ -21,13 +21,9 @@ circuit "VerifyClaim" {
     attestation_hash = poseidon_hash(attestation_data);
     constrain_equal_base(evidence_hash, attestation_hash);
 
-    is_gte = less_than_or_equal(attestation_data, evidence);
-    is_lte = less_than_or_equal(evidence, attestation_data);
-
     leaf = poseidon_hash(nonce);
     is_in_revocation_list = set_membership(pos, path, leaf, revocation_root);
-    ONE = witness_base(1);
-    is_not_revoked = base_sub(ONE, is_in_revocation_list);
+    is_not_revoked = not_base(is_in_revocation_list);
 
     constrain_instance(claim_id);
     constrain_instance(revealed_result);

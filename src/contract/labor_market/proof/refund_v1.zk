@@ -95,26 +95,24 @@ circuit "Refund" {
     # For non-milestone jobs (milestone_count == 0):
     #   refund = total_payment
 
-    # Check if this is a milestone job
-    is_milestone = is_equal_base(milestone_count, ZERO);
-    is_not_milestone = not_base(is_milestone);
+    # Check if this job has milestones (milestone_count != 0)
+    has_milestones = is_not_equal(milestone_count, ZERO);
 
     # Calculate: total_payment - completed_payment
     payment_remaining = base_sub(total_payment, completed_payment);
 
     # For milestone jobs: refund = total_payment - completed_payment
     # For non-milestone jobs: refund = total_payment
-    # We select based on is_not_milestone
-    expected_refund = cond_select(payment_remaining, total_payment, is_milestone);
+    expected_refund = cond_select(payment_remaining, total_payment, has_milestones);
 
     # Verify the refund amount is correct
     refund_match = is_equal_base(expected_refund, refund_amount);
 
     # For milestone jobs, refund must match calculated amount
-    milestone_refund_valid = base_mul(is_not_milestone, refund_match);
+    milestone_refund_valid = base_mul(has_milestones, refund_match);
 
     # The refund check should pass for milestone jobs
-    refund_check_ok = is_equal_base(milestone_refund_valid, is_not_milestone);
+    refund_check_ok = is_equal_base(milestone_refund_valid, has_milestones);
     constrain_equal_base(refund_check_ok, ONE);
 
     # ==========================================================================
@@ -146,8 +144,8 @@ circuit "Refund" {
     #   - ec_mul_base: standard EC operations
     #   - ec_get_x, ec_get_y: standard EC operations
     #   - less_than_strict: constrain-only comparison (SOUND)
+    #   - is_not_equal: pure boolean inequality (first fully constrained Boolean op)
     #   - is_equal_base: equality check
-    #   - not_base: boolean NOT
     #   - cond_select: conditional selection
     #   - base_sub: field subtraction
     #   - base_mul: field multiplication

@@ -55,15 +55,10 @@ circuit "CheckNotRevoked" {
     # For NOT revoked, we need: is_member == 0
     # This means the nonce is NOT in the revocation list.
 
-    # Constant witness for comparison
-    ONE = witness_base(1);
-
     is_in_revocation_list = set_membership(pos, path, leaf, revocation_root);
 
-    # Invert the result: 1 - is_in_revocation_list
-    # If is_in_revocation_list == 1 (IN the list), then is_not_revoked == 0
-    # If is_in_revocation_list == 0 (NOT in the list), then is_not_revoked == 1
-    is_not_revoked = base_sub(ONE, is_in_revocation_list);
+    # Invert the result via not_base (includes implicit bool_check on input)
+    is_not_revoked = not_base(is_in_revocation_list);
 
     # The result must be 1 (nonce is NOT in revocation list)
     # This constraint ensures the proof fails if the nonce IS revoked

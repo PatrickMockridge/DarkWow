@@ -117,8 +117,6 @@ circuit "DelegateAttestation" {
     # base_div(a, b) = a * inverse(b) mod p gives field elements, NOT integers.
 
     # Determine delegation type
-    is_none = is_equal_base(delegation_type, DELEGATION_TYPE_NONE);
-    is_full = is_equal_base(delegation_type, DELEGATION_TYPE_FULL);
     is_restricted = is_equal_base(delegation_type, DELEGATION_TYPE_RESTRICTED);
 
     # First ensure delegatee_stake is non-zero (division by zero prevention)
@@ -168,7 +166,7 @@ circuit "DelegateAttestation" {
 
     delegatee_leaf = poseidon_hash(delegatee_pub_x, delegatee_pub_y);
     is_in_revocation_list = set_membership(pos, path, delegatee_leaf, revocation_root);
-    is_not_revoked = base_sub(ONE, is_in_revocation_list);
+    is_not_revoked = not_base(is_in_revocation_list);
 
     # The result must be 1 (delegatee is NOT revoked)
     constrain_equal_base(is_not_revoked, ONE);

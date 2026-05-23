@@ -56,8 +56,6 @@ circuit "UpdateDelegation" {
     # We use equality checks to detect if delegation_type == RESTRICTED
     # This allows us to conditionally enforce ratio verification
 
-    is_none = is_equal_base(delegation_type, DELEGATION_TYPE_NONE);
-    is_full = is_equal_base(delegation_type, DELEGATION_TYPE_FULL);
     is_restricted = is_equal_base(delegation_type, DELEGATION_TYPE_RESTRICTED);
 
     # For non-Restricted types, we set ratio_check to 1 (trivially satisfied)

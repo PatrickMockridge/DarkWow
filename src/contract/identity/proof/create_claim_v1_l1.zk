@@ -66,8 +66,7 @@ circuit "CreateClaimV1L1" {
 
     # Compute the right-hand side of the bounded equation
     # RHS = attribute_value + (1 - predicate_result) * 2^64
-    ONE = witness_base(1);
-    one_minus_result = base_sub(ONE, predicate_result);
+    one_minus_result = not_base(predicate_result);
     result_term = base_mul(one_minus_result, TWO_POW_64);
     rhs = base_add(attribute_value, result_term);
 

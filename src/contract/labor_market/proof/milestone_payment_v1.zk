@@ -78,10 +78,7 @@ circuit "MilestonePayment" {
     ONE = witness_base(1);
 
     deadline_reached = less_than_or_equal(current_block, deadline_block);
-
-    # The result should be 1 (deadline reached)
-    is_one = is_equal_base(deadline_reached, ONE);
-    constrain_equal_base(is_one, ONE);
+    constrain_equal_base(deadline_reached, ONE);
 
     # ==========================================================================
     # PHASE 3: Calculate elapsed blocks
@@ -109,8 +106,7 @@ circuit "MilestonePayment" {
     # This is important for partial payment calculations
 
     elapsed_lte_total = less_than_or_equal(elapsed, total);
-    is_one_2 = is_equal_base(elapsed_lte_total, ONE);
-    constrain_equal_base(is_one_2, ONE);
+    constrain_equal_base(elapsed_lte_total, ONE);
 
     # ==========================================================================
     # PHASE 6: Calculate time-weighted payment
