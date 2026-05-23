@@ -218,15 +218,12 @@ services:
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile.p2pool
     container_name: dwow-p2pool
     hostname: p2pool
-    entrypoint: ["/app/entrypoint-p2pool.sh"]
+    entrypoint: ["/app/entrypoint-p2pool-darkwow.sh"]
     environment:
-      - MONERO_HOST=monerod
+      - MONERO_HOST=adaptor
       - MONERO_RPC_PORT=28081
-      - MONERO_ZMQ_PORT=28083
-      - DWOWD_MM_RPC=node0:31348
       - STRATUM_PORT=3333
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
-      - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
     ports:
       - "3333:3333"
     volumes:
@@ -234,8 +231,7 @@ services:
     networks:
       - dwow-local
     depends_on:
-      - monerod
-      - node0
+      - adaptor
     restart: unless-stopped
 
   xmrig-merge:
@@ -273,7 +269,7 @@ services:
   # Start with:  docker compose --profile native-p2pool up -d
   # ============================================================================
   adaptor:
-    profiles: ["native-p2pool"]
+    profiles: ["native-p2pool", "merge"]
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile

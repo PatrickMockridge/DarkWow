@@ -910,7 +910,7 @@ phase_verify() {
     info "Phase 6: Verifying containers..."
 
     if [ "$MODE" = "merge" ]; then
-        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-monerod dwow-p2pool dwow-xmrig-merge)
+        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-monerod dwow-adaptor dwow-p2pool dwow-xmrig-merge)
     elif [ "$MODE" = "native-p2pool" ]; then
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool)
     elif [ "$MODE" = "bridge" ]; then
@@ -1040,8 +1040,8 @@ phase_rpc_health() {
     done
     pass "node1 RPC healthy"
 
-    # adaptor RPC (native-p2pool only)
-    if [ "$MODE" = "native-p2pool" ]; then
+    # adaptor RPC (native-p2pool and merge)
+    if [ "$MODE" = "native-p2pool" ] || [ "$MODE" = "merge" ]; then
         info "Waiting for adaptor RPC (port 28081)..."
         for i in $(seq 1 60); do
             if docker exec dwow-adaptor bash -c 'exec 3<>/dev/tcp/127.0.0.1/28081; echo -e "POST /json_rpc HTTP/1.0\r\nContent-Type: application/json\r\nContent-Length: 44\r\n\r\n{\"jsonrpc\":\"2.0\",\"method\":\"get_info\",\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "OK"' 2>/dev/null; then
@@ -1289,11 +1289,21 @@ phase_mining_activity() {
     info "Phase 8: Verifying mining activity..."
 
     if [ "$MODE" = "merge" ]; then
+        info "Checking adaptor activity..."
+        ADAPTOR_LOGS=$(docker logs dwow-adaptor 2>&1 || true)
+        if echo "$ADAPTOR_LOGS" | grep -qi "listening\|rpc\|connected"; then
+            pass "adaptor active"
+        else
+            warn "adaptor logs don't show expected activity"
+            docker logs dwow-adaptor 2>&1 | tail -20
+            fail "adaptor active"
+        fi
+
         info "Checking p2pool connectivity..."
         P2POOL_READY=false
         for i in $(seq 1 30); do
             P2POOL_LOGS=$(docker logs dwow-p2pool 2>&1 || true)
-            if echo "$P2POOL_LOGS" | grep -qi "sidechain\|stratum.*listen\|p2pool v\|new template\|mining\|StratumServer"; then
+            if echo "$P2POOL_LOGS" | grep -qi "stratum\|p2pool v\|new template\|mining\|sidechain"; then
                 info "p2pool active (attempt $i)"
                 P2POOL_READY=true
                 break
@@ -1308,13 +1318,13 @@ phase_mining_activity() {
             fail "p2pool connected"
         fi
 
-        info "Checking node0 for merge mining activity..."
+        info "Checking node0 for block production..."
         NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-        if echo "$NODE0_LOGS" | grep -q "\[RPC-MM\]"; then
-            pass "node0 merge mining activity"
+        if echo "$NODE0_LOGS" | grep -qi "block\|mining\|stratum\|new job\|accepted"; then
+            pass "node0 block production activity"
         else
-            warn "node0 logs don't show merge activity yet"
-            fail "node0 merge mining activity"
+            warn "node0 logs don't show clear mining activity"
+            fail "node0 block production activity"
         fi
     elif [ "$MODE" = "native-p2pool" ]; then
         info "Checking adaptor activity..."
