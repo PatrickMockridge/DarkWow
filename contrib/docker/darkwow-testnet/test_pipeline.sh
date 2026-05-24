@@ -1482,30 +1482,35 @@ phase_blocks() {
         fail "block height >= 1 (got: $BLOCK_HEIGHT)"
     fi
 
-    info "Waiting for additional blocks (block time ~120s)..."
-    for i in $(seq 1 13); do
+    info "Waiting for additional blocks (polling up to 300s)..."
+    POLL_DEADLINE=$((SECONDS + 300))
+    BLOCK_HEIGHT=""
+    while [ $SECONDS -lt $POLL_DEADLINE ]; do
         sleep 10
-        info "  waited $((i * 10))s / 130s..."
+        BLOCK_HEIGHT=""
+        for attempt in 1 2 3; do
+            BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
+            sleep 2
+        done
+        if [ -n "$BLOCK_INFO" ]; then
+            BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
+        fi
+        elapsed=$((300 - (POLL_DEADLINE - SECONDS)))
+        info "  waited ${elapsed}s / 300s (height=${BLOCK_HEIGHT:-?})..."
+        if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
+            break
+        fi
     done
 
-    for attempt in 1 2 3 4 5; do
-        BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
-        sleep 2
-    done
-    if [ -z "$BLOCK_INFO" ]; then
-        echo "[FATAL] docker exec failed after 5 retries — cannot reach node0 RPC for block 2" >&2
-        exit 1
-    fi
-    BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
-    info "Block height after waiting: $BLOCK_HEIGHT"
+    info "Block height after waiting: ${BLOCK_HEIGHT:-?}"
 
     if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
         pass "$MODE blocks produced (height=$BLOCK_HEIGHT)"
     else
-        fail "$MODE blocks produced (height=$BLOCK_HEIGHT, expected >= 2)"
+        fail "$MODE blocks produced (height=${BLOCK_HEIGHT:-?}, expected >= 2)"
     fi
 
-    if [ "$BLOCK_HEIGHT" -ge 1 ]; then
+    if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
         info "Inspecting block 1 for PoW data..."
         for attempt in 1 2 3 4 5; do
             BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break

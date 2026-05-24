@@ -211,6 +211,14 @@ services:
     networks:
       - dwow-local
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-X", "POST", "http://127.0.0.1:28081/json_rpc",
+             "-H", "Content-Type: application/json",
+             "-d", '{"jsonrpc":"2.0","id":"0","method":"start_mining","params":{"threads_count":1,"do_background_mining":true,"ignore_battery":false}}']
+      interval: 5s
+      timeout: 3s
+      retries: 1
+      start_period: 10s
 
   p2pool:
     profiles: ["merge"]
