@@ -21,7 +21,7 @@ MONERO_ADD_PEERS="${MONERO_ADD_PEERS:-}"
 echo "=== Monero Node ==="
 echo "  OFFLINE=$OFFLINE  NETWORK=$MONERO_NETWORK  RPC=$RPC_PORT  ZMQ=$ZMQ_PORT"
 
-ARGS="--non-interactive --no-igd --data-dir /root/.bitmonero --log-level 1 --hide-my-port"
+ARGS="--non-interactive --no-igd --data-dir /root/.bitmonero --log-level 1"
 ARGS="$ARGS --zmq-pub tcp://0.0.0.0:${ZMQ_PORT}"
 ARGS="$ARGS --rpc-bind-ip 0.0.0.0 --rpc-bind-port ${RPC_PORT} --confirm-external-bind"
 
