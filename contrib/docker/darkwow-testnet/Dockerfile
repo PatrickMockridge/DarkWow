@@ -17,7 +17,10 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 WORKDIR /app
 
 # Clone from origin on linear-master branch — deterministic source
-RUN git clone https://codeberg.org/PatrickM123/darkwow.git /app && \
+# Retry on transient CDN errors (Codeberg sometimes returns 504)
+RUN for i in 1 2 3 4 5; do \
+        git clone https://codeberg.org/PatrickM123/darkwow.git /app && break || sleep 10; \
+    done && \
     git -C /app checkout linear-master
 
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
