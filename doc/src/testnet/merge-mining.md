@@ -50,11 +50,21 @@ containing an `"error"` field — even `"error": null`. The successful
 response serialization in `src/rpc/jsonrpc.rs` must omit the `"error"`
 field entirely (matching JSON-RPC 2.0 spec).
 
-To run the test:
+Two scripts are available:
+
+**Full test** (`test_merge_mining_p2pool.sh`) — auto-downloads binaries, validates
+prerequisites, smoke-tests xmrig, detailed progress output. Use for CI or first run.
+
+**Minimal reproduce** (`reproduce_merge_mining.sh`) — 133 lines, no checks or
+auto-download. Assumes binaries are built and monerod is synced. Quick iteration
+for development.
+
 ```bash
-# Sync monerod once (per "Monero setup" section below)
-# Then:
+# Full test (auto-downloads missing binaries, checks prerequisites):
 ./contrib/docker/darkwow-testnet/test_merge_mining_p2pool.sh --no-build
+
+# Minimal reproduce (binaries must already exist):
+./contrib/docker/darkwow-testnet/reproduce_merge_mining.sh
 ```
 
 The test fails fast with the exact sync command if monerod isn't synced.
