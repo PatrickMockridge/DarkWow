@@ -9,7 +9,7 @@ able to merge-mine DarkWow using `p2pool` and `xmrig`.
 ## Current Status
 
 The merge mining test at `contrib/docker/darkwow-testnet/test_merge_mining_p2pool.sh`
-runs the full pathway end-to-end:
+runs the full pathway end-to-end and passes:
 
 ```
 xmrig --> p2pool --[merge-mine]--> dwowd (mm_rpc)
@@ -19,7 +19,7 @@ xmrig --> p2pool --[merge-mine]--> dwowd (mm_rpc)
 The test has one pass condition: dwowd log shows `merge_mining_submit_solution`
 or `BLOCK ACCEPTED` — proving a merge mined DarkWow block was produced.
 
-**What's been verified (13/14 checks in previous test iterations):**
+**Test result (2026-05-24):**
 
 | Check | Status |
 |---|---|
@@ -28,11 +28,27 @@ or `BLOCK ACCEPTED` — proving a merge mined DarkWow block was produced.
 | p2pool starts stratum server | Pass |
 | xmrig connects and receives jobs | Pass |
 | p2pool calls mm_rpc `get_aux_block` (handshake active) | Pass |
-| Merge mined block produced (submission + acceptance) | Requires synced monerod |
+| Merge mined block submitted via `merge_mining_submit_solution` | **Pass** |
 
-**Prerequisite:** monerod must be synced from public testnet once
-(~1M blocks/hour with `--fast-block-sync=1`). The synced data dir
-persists and is reused for all subsequent test runs in offline mode.
+Full cycle: p2pool discovered the chain, got block templates, miners found a
+RandomX share, and p2pool submitted the solved aux block to dwowd.
+
+### Requirements
+
+**monerod sync.** monerod must be synced from public testnet once (~1M
+blocks/hour with `--fast-block-sync=1`). The synced data dir persists at
+`$HOME/.cache/dwow_merge_testnet_monero/` and is reused for all subsequent
+test runs in offline mode.
+
+**xmrig >= 6.22.2.** xmrig 6.21.1 has a RandomX buffer overflow bug
+(glibc `_FORTIFY_SOURCE` abort during dataset init) that prevents it from
+running on some Linux systems. The test script auto-downloads 6.22.2 if the
+installed version is older.
+
+**JSON-RPC compliance.** p2pool's JSON-RPC parser rejects any response
+containing an `"error"` field — even `"error": null`. The successful
+response serialization in `src/rpc/jsonrpc.rs` must omit the `"error"`
+field entirely (matching JSON-RPC 2.0 spec).
 
 To run the test:
 ```bash
@@ -408,10 +424,10 @@ Now start `p2pool`:
 $ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:31348 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
 
-And `xmrig`:
+And `xmrig` (requires >= 6.22.2, see [Current Status](#current-status)):
 
 ```shell
-$ ./xmrig -u x+1 20000 -o 127.0.0.1:3333 -t 1
+$ ./xmrig -o 127.0.0.1:3333 -u x -p 20000 -a rx/0 -t 1 --keepalive
 ```
 
 ## Verification
