@@ -16,12 +16,14 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 WORKDIR /app
 
-# Clone from origin on linear-master branch — deterministic source
-# Retry on transient CDN errors (Codeberg sometimes returns 504)
+# Shallow clone (--depth 1) from origin on linear-master branch.
+# Full clone is ~200MB and hits Codeberg CDN 504 timeouts; shallow clone
+# transfers <10MB and completes in seconds.
+# Retry on transient CDN errors (Codeberg sometimes returns 504).
 RUN for i in 1 2 3 4 5; do \
-        git clone https://codeberg.org/PatrickM123/darkwow.git /app && break || sleep 10; \
-    done && \
-    git -C /app checkout linear-master
+        git clone --depth 1 --single-branch --branch linear-master \
+            https://codeberg.org/PatrickM123/darkwow.git /app && break || sleep 10; \
+    done
 
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
 RUN cargo build --release -p zkas
