@@ -203,8 +203,9 @@ services:
       - FIXED_DIFFICULTY=${MONERO_FIXED_DIFFICULTY:-20000}
       - ZMQ_PORT=28083
       - RPC_PORT=28081
-    ports:
-      - "28081:28081"
+    expose:
+      - "28081"
+      - "28083"
     volumes:
       - monerod_data:/root/.bitmonero
     networks:
