@@ -233,6 +233,6 @@ pub async fn handle_get_miner_data(state: &AdaptorStatePtr) -> serde_json::Value
         "seed_hash": seed_hash,
         "median_weight": 300000,
         "already_generated_coins": 0,
-        "difficulty": 1,
+        "difficulty": "1",
     })
 }

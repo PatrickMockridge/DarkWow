@@ -113,7 +113,7 @@ pub fn build_template_response(
     serde_json::json!({
         "blocktemplate_blob": blob_hex,
         "blockhashing_blob": blob_hex,
-        "difficulty": difficulty,
+        "difficulty": format!("{difficulty}"),
         "expected_reward": 0,
         "height": height,
         "prev_hash": prev_hash,
@@ -201,7 +201,7 @@ mod tests {
 
         assert_eq!(template["status"], "OK");
         assert_eq!(template["height"], 42);
-        assert_eq!(template["difficulty"], 1000);
+        assert_eq!(template["difficulty"], "1000");
         assert_eq!(template["blocktemplate_blob"], "abcd1234");
         assert_eq!(template["blockhashing_blob"], "abcd1234");
         assert_eq!(template["prev_hash"], "deadbeef00000000000000000000000000000000000000000000000000000000");
