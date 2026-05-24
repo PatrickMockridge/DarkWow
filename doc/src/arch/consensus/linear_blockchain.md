@@ -154,6 +154,64 @@ Rewards are distributed between canonical miner and uncle miners:
 
 The `total_reward` in the canonical block header accounts for all rewards (canonical + uncle shares).
 
+## Transaction-First Block Construction
+
+The linear blockchain is built around a fundamental design principle: **the
+individual transaction is the primitive unit of execution.** Blocks and
+uncle-merkle side chains are constructed *from* transaction results, not the
+other way around.
+
+### Architecture
+
+```
+TxBackend (per-transaction state access)
+├── overlay: SledTreeOverlay     ← in-memory buffer, no sled writes during execution
+└── store: Arc<LinearStore>      ← read-only contract data lookups
+
+LinearBlockchain (pure coordinator — never enters execution path)
+├── Validates PoW, merkle roots, uncle proofs
+├── Dispatches transactions sequentially through TxBackend
+├── Merges per-tx diffs deterministically (sort by tx hash, canonical-first)
+└── Commits atomically via single sled::Batch
+```
+
+### Key principles
+
+1. **Transaction is the fundamental primitive.** Each contract call executes with
+   its own `TxBackend` — a minimal struct containing only a `SledTreeOverlay`
+   (in-memory state buffer) and an `Arc<LinearStore>` (read-only contract data).
+   The `LinearBlockchain` coordinator never enters the WASM execution path.
+
+2. **`sled_overlay` is an atomicity device, not a parallelism mechanism.**
+   `SledTreeOverlay::checkpoint()` and `revert_to_checkpoint()` ensure per-call
+   atomicity — either all state writes from a contract call commit, or none do.
+   All state changes are buffered in-memory and committed in a single
+   `sled::Batch` at the end of block execution.
+
+3. **Block as lightweight wrapper.** Blocks are assembled *after* execution:
+   transaction results → merkle tree → block header. The block is confirmation +
+   broadcast + acceptance metadata — not an execution primitive.
+
+4. **Uncle-merkle cascades naturally.** Uncle blocks are alternative merkle trees
+   of transactions. Each uncle's transactions execute with the same overlay
+   isolation as canonical transactions. After all results are collected,
+   canonical writes take precedence on key conflicts (uncle diffs subtract the
+   canonical total before merging).
+
+5. **Deterministic merge.** Results are sorted by transaction hash bytes.
+   Canonical results are applied first, then uncle results (with canonical
+   conflicts subtracted). This guarantees deterministic state regardless of
+   execution order.
+
+### Execution model
+
+Transactions execute sequentially on the calling thread, matching upstream
+DarkFi's proven pattern. The architecture supports parallelism — each
+transaction has independent state scope via its own `TxBackend` — but wasmer's
+current concurrency model (cross-Engine `Module` reuse) is not safe for
+concurrent instantiation. When wasmer matures, parallelism is a one-line change:
+wrap the execution loop in `thread::spawn`.
+
 ## WASM Contract Model
 
 The linear blockchain executes smart contracts written in WebAssembly (WASM).

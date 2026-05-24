@@ -37,7 +37,7 @@ use dwow::runtime::vm_runtime::RuntimeBackend;
 use dwow::Error;
 use dwow::Result;
 use dwow_linear::{build_uncle_merkle, verify_uncle_proof, FinalityConfig, UncleBlock, Block, LinearStore, PoWConsensus};
-use sled_overlay::SledTreeOverlay;
+use sled_overlay::{SledTreeOverlay, SledTreeOverlayStateDiff};
 use dwow_sdk::crypto::ContractId;
 use tracing::{error, info};
 
@@ -56,13 +56,17 @@ pub const BLOCK_GAS_LIMIT: u64 = 100_000_000_000;
 /// tree. On failure the overlay is dropped — nothing reaches sled.
 ///
 /// Chain queries (block height, timestamps, tx lookups) bypass the overlay
-/// and read directly from the real chain via the inner backend.
-struct AtomicBackend {
-    pub overlay: std::sync::Mutex<SledTreeOverlay>,
-    chain: LinearBlockchain,
+/// and read directly from the store. This struct is intentionally minimal —
+/// only `store`, `height`, and `vm` are needed. The `LinearBlockchain` monolith
+/// (consensus, coin_set, nullifier_set, etc.) is NOT passed to threads.
+struct TxBackend {
+    pub overlay: Mutex<SledTreeOverlay>,
+    store: Arc<LinearStore>,
+    height: u64,
+    vm: Arc<RandomXVM>,
 }
 
-impl AtomicBackend {
+impl TxBackend {
     fn composite_key(tree: &[u8], key: &[u8]) -> Vec<u8> {
         let mut ck = Vec::with_capacity(tree.len() + key.len());
         ck.extend_from_slice(tree);
@@ -71,7 +75,7 @@ impl AtomicBackend {
     }
 }
 
-impl RuntimeBackend for AtomicBackend {
+impl RuntimeBackend for TxBackend {
     fn contract_lookup(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
         let handle = cid.hash_state_id(tree_name);
         let handle_str = format!("{:?}", handle);
@@ -83,7 +87,12 @@ impl RuntimeBackend for AtomicBackend {
             Err(e) => return Err(Error::Custom(e.to_string())),
         }
         drop(ov);
-        self.chain.contract_lookup(cid, tree_name)
+        let data = self.store.get_contract_data(handle_str.as_bytes())
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        if data.is_empty() {
+            return Err(Error::ContractStateNotFound)
+        }
+        Ok(handle)
     }
 
     fn contract_init(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
@@ -111,7 +120,12 @@ impl RuntimeBackend for AtomicBackend {
             return Ok(iv.to_vec());
         }
         drop(ov);
-        self.chain.contract_get_bincode(cid)
+        let data = self.store.get_contract_data(&cid.to_bytes())
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        if data.is_empty() {
+            return Err(Error::ContractStateNotFound)
+        }
+        Ok(data)
     }
 
     fn db_insert(&self, tree: &[u8], key: &[u8], value: &[u8]) -> Result<()> {
@@ -127,16 +141,16 @@ impl RuntimeBackend for AtomicBackend {
         let ov = self.overlay.lock().unwrap();
         match ov.get(&ck) {
             Ok(Some(iv)) => {
-                if iv.is_empty() {
-                    return Ok(None);
-                }
+                if iv.is_empty() { return Ok(None); }
                 return Ok(Some(iv.to_vec()));
             }
             Ok(None) => {}
             Err(e) => return Err(Error::Custom(e.to_string())),
         }
         drop(ov);
-        self.chain.db_get(tree, key)
+        let data = self.store.get_contract_data(&ck)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        if data.is_empty() { Ok(None) } else { Ok(Some(data)) }
     }
 
     fn db_remove(&self, tree: &[u8], key: &[u8]) -> Result<()> {
@@ -156,23 +170,63 @@ impl RuntimeBackend for AtomicBackend {
             Err(e) => return Err(Error::Custom(e.to_string())),
         }
         drop(ov);
-        self.chain.db_contains_key(tree, key)
+        let data = self.store.get_contract_data(&ck)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(!data.is_empty())
     }
 
     fn last_block_timestamp(&self) -> Result<Vec<u8>> {
-        self.chain.last_block_timestamp()
+        if self.height == 0 {
+            return Ok(0u64.to_le_bytes().to_vec())
+        }
+        let block = self.store.get_block(self.height).map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(block.header.timestamp.to_le_bytes().to_vec())
     }
+
     fn last_block_height(&self) -> Result<u32> {
-        self.chain.last_block_height()
+        Ok(self.height as u32)
     }
+
     fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
-        self.chain.get_tx(hash)
+        match self.store.get_transaction(hash) {
+            Ok(tx) => {
+                let data = serde_json::to_vec(&tx).map_err(|e| Error::Custom(e.to_string()))?;
+                Ok(Some(data))
+            }
+            Err(e) => {
+                if e.to_string().contains("TransactionNotFound") {
+                    Ok(None)
+                } else {
+                    Err(Error::Custom(e.to_string()))
+                }
+            }
+        }
     }
+
     fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
-        self.chain.get_tx_location(hash)
+        for h in 1..=self.height {
+            if let Ok(block) = self.store.get_block(h) {
+                for tx in &block.transactions {
+                    if tx.hash().as_bytes() == hash {
+                        return Ok(Some((h as u32).to_le_bytes().to_vec()))
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
+
     fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>> {
-        self.chain.get_block_hash_by_height(height)
+        match self.store.get_block(height as u64) {
+            Ok(block) => Ok(Some(block.hash(&self.vm).as_bytes().to_vec())),
+            Err(e) => {
+                if e.to_string().contains("BlockNotFound") {
+                    Ok(None)
+                } else {
+                    Err(Error::Custom(e.to_string()))
+                }
+            }
+        }
     }
 }
 
@@ -279,12 +333,6 @@ impl LinearBlockchain {
             *vm = Self::create_vm(&key).expect("Failed to create RandomX VM");
         }
         vm.clone()
-    }
-
-    /// Get current RandomX VM (for blockchain access)
-    fn get_current_vm(&self) -> Arc<RandomXVM> {
-        let key = *self.randomx_key.lock().unwrap();
-        self.get_vm(key)
     }
 
     /// Get current chain height
@@ -502,7 +550,14 @@ impl LinearBlockchain {
         }
         drop(consensus);
 
-        // Verify previous hash
+        // Verify previous hash (canonical block only).
+        //
+        // Uncles do NOT need previous-hash validation: they are committed
+        // via the uncle_merkle_root in the canonical header. The merkle
+        // proof against that root is sufficient — the canonical miner
+        // attests to having seen the uncle at this height. An uncle from
+        // a different height or parent would have a different header hash
+        // and would fail the merkle proof check above.
         let current_height = self.height.load(Ordering::SeqCst);
         if current_height > 0 {
             let previous = self.store.get_block(current_height).map_err(|e| Error::Custom(e.to_string()))?;
@@ -512,172 +567,201 @@ impl LinearBlockchain {
             }
         }
 
-        // Create atomic overlay on the contracts tree.
-        // All contract state writes are staged in-memory and committed
-        // atomically via sled::Batch on success. On failure the overlay is
-        // simply dropped — nothing reaches sled.
-        let overlay = SledTreeOverlay::new(self.store.contracts_tree());
-        let backend = Arc::new(AtomicBackend {
-            overlay: std::sync::Mutex::new(overlay),
-            chain: self.clone(),
-        });
+        // --- Collect all contract calls into a flat work list ---
+        // Each call gets its own overlay clone from the same pre-block base
+        // state. After execution, per-call diffs are merged deterministically:
+        // canonical calls first (sorted by tx_hash), then uncle calls (each
+        // with canonical writes subtracted so canonicals win on conflicts).
+        let contracts_tree = self.store.contracts_tree().clone();
+        let base_overlay = SledTreeOverlay::new(&contracts_tree);
+        let store = self.store.clone();
+        let difficulty = {
+            let consensus = self.consensus.lock().unwrap();
+            consensus.target()
+        };
+        let current_height = self.height.load(Ordering::SeqCst);
 
-        // --- Execute block transactions ---
-        let mut cumulative_gas: u64 = 0;
-        let mut calls_executed = 0;
-        let mut calls_failed = 0;
+        struct CallJob {
+            tx_hash: blake3::Hash,
+            is_canonical: bool,
+            overlay: SledTreeOverlay,
+            wasm_bytes: Vec<u8>,
+            contract_id: ContractId,
+            call_data: Vec<u8>,
+            call_idx: u8,
+        }
+
+        let mut jobs: Vec<CallJob> = Vec::new();
+        let mut early_fail = 0u64;
+
+        // Canonical transactions
         for tx in &block.transactions {
+            let tx_hash = tx.hash();
             for (call_idx, call) in tx.contract_calls.iter().enumerate() {
-                if cumulative_gas >= BLOCK_GAS_LIMIT {
-                    error!(target: "linear_blockchain", "Block {} exceeds BLOCK_GAS_LIMIT ({}) — rejecting remaining calls", block_hash, BLOCK_GAS_LIMIT);
-                    return Err(Error::Custom("BlockGasLimitExceeded".to_string()))
-                }
-                let contract_id = ContractId::from_bytes(call.contract_id)
-                    .map_err(|e| Error::Custom(format!("Invalid contract ID: {}", e)))?;
-                let wasm_bytes = self.store.get_contract_data(&call.contract_id)
-                    .map_err(|e| Error::Custom(e.to_string()))?;
-
-                if wasm_bytes.is_empty() {
-                    error!(target: "linear_blockchain", "Contract not found for call in tx {}", tx.hash());
-                    calls_failed += 1;
-                    continue;
-                }
-
-                // Checkpoint before each call — if this call fails, we
-                // revert only its writes while keeping prior successes.
-                backend.overlay.lock().unwrap().checkpoint();
-
-                let tx_hash = tx.hash();
-                let tx_hash_bytes = dwow_sdk::tx::TransactionHash(*tx_hash.as_bytes());
-                let difficulty = {
-                    let consensus = self.consensus.lock().unwrap();
-                    consensus.target()
+                let contract_id = match ContractId::from_bytes(call.contract_id) {
+                    Ok(cid) => cid,
+                    Err(_) => { early_fail += 1; continue; }
                 };
-                let mut runtime = match dwow::runtime::vm_runtime::Runtime::new(
-                    &wasm_bytes,
-                    backend.clone(),
+                let wasm_bytes = match self.store.get_contract_data(&call.contract_id) {
+                    Ok(b) => b,
+                    Err(_) => { early_fail += 1; continue; }
+                };
+                if wasm_bytes.is_empty() { early_fail += 1; continue; }
+                jobs.push(CallJob {
+                    tx_hash,
+                    is_canonical: true,
+                    overlay: base_overlay.clone(),
+                    wasm_bytes,
                     contract_id,
-                    current_height as u32,
-                    difficulty,
-                    tx_hash_bytes,
-                    call_idx as u8,
-                ) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        error!(target: "linear_blockchain", "Failed to create runtime for contract {:?}: {}", contract_id, e);
-                        calls_failed += 1;
-                        backend.overlay.lock().unwrap().revert_to_checkpoint();
-                        continue
-                    }
-                };
-
-                if let Err(e) = runtime.metadata(&call.data) {
-                    error!(target: "linear_blockchain", "metadata() failed for contract {:?}: {}", contract_id, e);
-                    calls_failed += 1;
-                    backend.overlay.lock().unwrap().revert_to_checkpoint();
-                    continue;
-                }
-                if let Err(e) = runtime.exec(&call.data) {
-                    error!(target: "linear_blockchain", "exec() failed for contract {:?}: {}", contract_id, e);
-                    calls_failed += 1;
-                    backend.overlay.lock().unwrap().revert_to_checkpoint();
-                    continue;
-                }
-                if let Err(e) = runtime.apply(&[]) {
-                    error!(target: "linear_blockchain", "apply() failed for contract {:?}: {}", contract_id, e);
-                    calls_failed += 1;
-                    backend.overlay.lock().unwrap().revert_to_checkpoint();
-                    continue;
-                }
-
-                cumulative_gas += runtime.gas_used();
-                info!(target: "linear_blockchain", "Contract call executed successfully: contract_id={:?} call_idx={} gas_used={}", contract_id, call_idx, runtime.gas_used());
-                calls_executed += 1;
+                    call_data: call.data.clone(),
+                    call_idx: call_idx as u8,
+                });
             }
         }
 
-        // --- Execute uncle transactions ---
-        let mut uncle_calls_executed = 0u64;
-        let mut uncle_calls_failed = 0u64;
+        // Uncle transactions
         for uncle in uncles.iter() {
-            let uncle_hash = uncle.hash(&vm);
             for tx in &uncle.transactions {
+                let tx_hash = tx.hash();
                 for (call_idx, call) in tx.contract_calls.iter().enumerate() {
-                    if cumulative_gas >= BLOCK_GAS_LIMIT {
-                        error!(target: "linear_blockchain", "Block {} exceeds BLOCK_GAS_LIMIT during uncle execution — rejecting remaining calls", block_hash);
-                        return Err(Error::Custom("BlockGasLimitExceeded".to_string()))
-                    }
                     let contract_id = match ContractId::from_bytes(call.contract_id) {
                         Ok(cid) => cid,
-                        Err(e) => {
-                            error!(target: "linear_blockchain", "Uncle {} tx {}: invalid contract ID: {}", uncle_hash, tx.hash(), e);
-                            uncle_calls_failed += 1;
-                            continue;
-                        }
+                        Err(_) => { early_fail += 1; continue; }
                     };
                     let wasm_bytes = match self.store.get_contract_data(&call.contract_id) {
                         Ok(b) => b,
-                        Err(e) => {
-                            error!(target: "linear_blockchain", "Uncle {} tx {}: failed to get contract data: {}", uncle_hash, tx.hash(), e);
-                            uncle_calls_failed += 1;
-                            continue;
-                        }
+                        Err(_) => { early_fail += 1; continue; }
                     };
-                    if wasm_bytes.is_empty() {
-                        error!(target: "linear_blockchain", "Uncle {} tx {}: contract not found", uncle_hash, tx.hash());
-                        uncle_calls_failed += 1;
-                        continue;
-                    }
-
-                    backend.overlay.lock().unwrap().checkpoint();
-
-                    let tx_hash = tx.hash();
-                    let tx_hash_bytes = dwow_sdk::tx::TransactionHash(*tx_hash.as_bytes());
-                    let difficulty = {
-                        let consensus = self.consensus.lock().unwrap();
-                        consensus.target()
-                    };
-                    let mut runtime = match dwow::runtime::vm_runtime::Runtime::new(
-                        &wasm_bytes,
-                        backend.clone(),
+                    if wasm_bytes.is_empty() { early_fail += 1; continue; }
+                    jobs.push(CallJob {
+                        tx_hash,
+                        is_canonical: false,
+                        overlay: base_overlay.clone(),
+                        wasm_bytes,
                         contract_id,
-                        current_height as u32,
-                        difficulty,
-                        tx_hash_bytes,
-                        call_idx as u8,
-                    ) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            error!(target: "linear_blockchain", "Uncle {} tx {}: failed to create runtime: {}", uncle_hash, tx.hash(), e);
-                            uncle_calls_failed += 1;
-                            backend.overlay.lock().unwrap().revert_to_checkpoint();
-                            continue;
-                        }
-                    };
-
-                    if let Err(e) = runtime.metadata(&call.data) {
-                        error!(target: "linear_blockchain", "Uncle {} tx {}: metadata() failed: {}", uncle_hash, tx.hash(), e);
-                        uncle_calls_failed += 1;
-                        backend.overlay.lock().unwrap().revert_to_checkpoint();
-                        continue;
-                    }
-                    if let Err(e) = runtime.exec(&call.data) {
-                        error!(target: "linear_blockchain", "Uncle {} tx {}: exec() failed: {}", uncle_hash, tx.hash(), e);
-                        uncle_calls_failed += 1;
-                        backend.overlay.lock().unwrap().revert_to_checkpoint();
-                        continue;
-                    }
-                    if let Err(e) = runtime.apply(&[]) {
-                        error!(target: "linear_blockchain", "Uncle {} tx {}: apply() failed: {}", uncle_hash, tx.hash(), e);
-                        uncle_calls_failed += 1;
-                        backend.overlay.lock().unwrap().revert_to_checkpoint();
-                        continue;
-                    }
-
-                    cumulative_gas += runtime.gas_used();
-                    info!(target: "linear_blockchain", "Uncle {} tx {} call_idx={}: executed successfully", uncle_hash, tx.hash(), call_idx);
-                    uncle_calls_executed += 1;
+                        call_data: call.data.clone(),
+                        call_idx: call_idx as u8,
+                    });
                 }
+            }
+        }
+
+        // --- Execute all calls sequentially ---
+        // wasmer does not support concurrent instantiation or execution across
+        // OS threads. Each call still gets its own TxBackend with a cloned
+        // overlay for state isolation; checkpoint/revert provides per-call
+        // atomicity. The architecture supports parallelism — when wasmer is
+        // safe for concurrent use, wrapping each iteration in thread::spawn
+        // is a one-line change.
+        struct CallResult {
+            tx_hash: blake3::Hash,
+            is_canonical: bool,
+            success: bool,
+            gas: u64,
+            diff: Option<SledTreeOverlayStateDiff>,
+        }
+
+        let mut results: Vec<CallResult> = Vec::with_capacity(jobs.len());
+
+        for job in jobs {
+            let is_canonical = job.is_canonical;
+            let tx_hash = job.tx_hash;
+            let backend = Arc::new(TxBackend {
+                overlay: Mutex::new(job.overlay),
+                store: store.clone(),
+                height: current_height,
+                vm: vm.clone(),
+            });
+
+            backend.overlay.lock().unwrap().checkpoint();
+
+            let tx_hash_bytes = dwow_sdk::tx::TransactionHash(*tx_hash.as_bytes());
+            let mut runtime = match dwow::runtime::vm_runtime::Runtime::new(
+                &job.wasm_bytes,
+                backend.clone(),
+                job.contract_id,
+                current_height as u32,
+                difficulty,
+                tx_hash_bytes,
+                job.call_idx,
+            ) {
+                Ok(r) => r,
+                Err(_) => {
+                    backend.overlay.lock().unwrap().revert_to_checkpoint();
+                    results.push(CallResult { tx_hash, is_canonical, success: false, gas: 0, diff: None });
+                    continue;
+                }
+            };
+
+            if runtime.metadata(&job.call_data).is_err()
+                || runtime.exec(&job.call_data).is_err()
+                || runtime.apply(&[]).is_err()
+            {
+                backend.overlay.lock().unwrap().revert_to_checkpoint();
+                results.push(CallResult { tx_hash, is_canonical, success: false, gas: 0, diff: None });
+                continue;
+            }
+
+            let gas = runtime.gas_used();
+            let diff = SledTreeOverlayStateDiff::new(
+                &contracts_tree,
+                &backend.overlay.lock().unwrap().state,
+            ).ok();
+            results.push(CallResult { tx_hash, is_canonical, success: true, gas, diff });
+        }
+
+        // --- Merge results in deterministic order ---
+        // Sort by tx hash bytes, then process canonical-first. Canonical
+        // writes take precedence — uncle diffs subtract the canonical total
+        // before merging so conflicting keys retain canonical values.
+        results.sort_by(|a, b| a.tx_hash.as_bytes().cmp(b.tx_hash.as_bytes()));
+
+        let mut main_overlay = base_overlay;
+        let mut cumulative_gas: u64 = 0;
+        let mut calls_executed = 0u64;
+        let mut calls_failed = early_fail;
+        let mut uncle_calls_executed = 0u64;
+        let mut uncle_calls_failed = 0u64;
+
+        // Process canonical results first
+        for r in results.iter().filter(|r| r.is_canonical) {
+            if r.success {
+                calls_executed += 1;
+                cumulative_gas += r.gas;
+                if cumulative_gas >= BLOCK_GAS_LIMIT {
+                    error!(target: "linear_blockchain", "Block {} exceeds BLOCK_GAS_LIMIT", block_hash);
+                    return Err(Error::Custom("BlockGasLimitExceeded".to_string()))
+                }
+                if let Some(ref diff) = r.diff {
+                    main_overlay.add_diff(diff);
+                }
+            } else {
+                calls_failed += 1;
+            }
+        }
+
+        // Snapshot the total canonical diff for uncle subtraction
+        let canonical_total = SledTreeOverlayStateDiff::new(
+            &contracts_tree,
+            &main_overlay.state,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+
+        // Process uncle results
+        for r in results.iter().filter(|r| !r.is_canonical) {
+            if r.success {
+                uncle_calls_executed += 1;
+                cumulative_gas += r.gas;
+                if cumulative_gas >= BLOCK_GAS_LIMIT {
+                    error!(target: "linear_blockchain", "Block {} exceeds BLOCK_GAS_LIMIT", block_hash);
+                    return Err(Error::Custom("BlockGasLimitExceeded".to_string()))
+                }
+                let mut diff = r.diff.clone();
+                if let Some(ref mut d) = diff {
+                    d.remove_diff(&canonical_total);
+                    main_overlay.add_diff(d);
+                }
+            } else {
+                uncle_calls_failed += 1;
             }
         }
 
@@ -694,7 +778,7 @@ impl LinearBlockchain {
         }
 
         // Atomically commit all contract state changes to the contracts tree.
-        if let Some(batch) = backend.overlay.lock().unwrap().aggregate() {
+        if let Some(batch) = main_overlay.aggregate() {
             self.store.contracts_tree()
                 .apply_batch(batch)
                 .map_err(|e| Error::Custom(e.to_string()))?;
@@ -717,6 +801,10 @@ impl LinearBlockchain {
     /// Stores the WASM bytes and calls `__initialize` on the contract so that
     /// its database trees (coins, nullifiers, merkle, etc.) are created before
     /// any transactions execute against it.
+    ///
+    /// Executes inline on the calling thread — matches upstream's sequential
+    /// WASM execution model. wasmer does not support concurrent instantiation
+    /// across threads safely.
     pub fn deploy_contract(&self, wasm: &[u8], contract_id: ContractId) -> Result<()> {
         info!(target: "linear_blockchain", "Deploying contract {:?}", contract_id);
 
@@ -724,22 +812,40 @@ impl LinearBlockchain {
         self.store.set_contract_data(&contract_id.to_bytes(), wasm)
             .map_err(|e| Error::Custom(e.to_string()))?;
 
-        // Call __initialize to create the contract's database trees.
-        // This follows the same Runtime::new() pattern as apply_block_with_uncles().
         let difficulty = {
             let consensus = self.consensus.lock().unwrap();
             consensus.target()
         };
+        let height = self.get_height();
+        let vm = self.get_vm(self.get_randomx_key());
+
+        let overlay = Mutex::new(SledTreeOverlay::new(self.store.contracts_tree()));
+        let backend = Arc::new(TxBackend {
+            overlay,
+            store: self.store.clone(),
+            height,
+            vm,
+        });
         let mut runtime = dwow::runtime::vm_runtime::Runtime::new(
             wasm,
-            Arc::new(self.clone()),
+            backend.clone(),
             contract_id,
-            self.get_height() as u32,
+            height as u32,
             difficulty,
             dwow_sdk::tx::TransactionHash::none(),
             0,
-        )?;
-        runtime.deploy(&[])?;
+        ).map_err(|e| Error::Custom(format!("deploy runtime: {}", e)))?;
+        runtime.deploy(&[]).map_err(|e| Error::Custom(format!("deploy exec: {}", e)))?;
+        drop(runtime);
+
+        let overlay = Arc::try_unwrap(backend)
+            .map_err(|_| Error::Custom("backend still referenced after deploy".to_string()))?
+            .overlay.into_inner().unwrap();
+        if let Some(batch) = overlay.aggregate() {
+            self.store.contracts_tree()
+                .apply_batch(batch)
+                .map_err(|e| Error::Custom(e.to_string()))?;
+        }
 
         info!(target: "linear_blockchain", "Contract {:?} deployed successfully", contract_id);
         Ok(())
@@ -772,145 +878,3 @@ impl Clone for LinearBlockchain {
     }
 }
 
-// Implement RuntimeBackend for LinearBlockchain — merges contract storage,
-// state DB, and blockchain queries into a single concrete impl. Matches
-// upstream darkfi's BlockchainOverlayPtr pattern.
-impl RuntimeBackend for LinearBlockchain {
-    // --- Contract storage (from LinearContractStore) ---
-
-    fn contract_lookup(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
-        let handle = cid.hash_state_id(tree_name);
-        let handle_str = format!("{:?}", handle);
-        let data = self.store.get_contract_data(handle_str.as_bytes())
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        if data.is_empty() {
-            return Err(Error::ContractStateNotFound)
-        }
-        Ok(handle)
-    }
-
-    fn contract_init(&self, cid: &ContractId, tree_name: &str) -> Result<[u8; 32]> {
-        let handle = cid.hash_state_id(tree_name);
-        let handle_str = format!("{:?}", handle);
-        self.store.set_contract_data(handle_str.as_bytes(), tree_name.as_bytes())
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        Ok(handle)
-    }
-
-    fn contract_insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> Result<()> {
-        self.store.set_contract_data(&cid.to_bytes(), bincode)
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        Ok(())
-    }
-
-    fn contract_get_bincode(&self, cid: &ContractId) -> Result<Vec<u8>> {
-        let data = self.store.get_contract_data(&cid.to_bytes())
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        if data.is_empty() {
-            return Err(Error::ContractStateNotFound)
-        }
-        Ok(data)
-    }
-
-    // --- State DB (from LinearSimpleDb) ---
-
-    fn db_insert(&self, tree: &[u8], key: &[u8], value: &[u8]) -> Result<()> {
-        let mut composite_key = Vec::with_capacity(tree.len() + key.len());
-        composite_key.extend(tree);
-        composite_key.extend(key);
-        self.store.set_contract_data(&composite_key, value)
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        Ok(())
-    }
-
-    fn db_get(&self, tree: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let mut composite_key = Vec::with_capacity(tree.len() + key.len());
-        composite_key.extend(tree);
-        composite_key.extend(key);
-        let data = self.store.get_contract_data(&composite_key)
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        if data.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(data))
-        }
-    }
-
-    fn db_remove(&self, tree: &[u8], key: &[u8]) -> Result<()> {
-        let mut composite_key = Vec::with_capacity(tree.len() + key.len());
-        composite_key.extend(tree);
-        composite_key.extend(key);
-        self.store.set_contract_data(&composite_key, &[])
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        Ok(())
-    }
-
-    fn db_contains_key(&self, tree: &[u8], key: &[u8]) -> Result<bool> {
-        let mut composite_key = Vec::with_capacity(tree.len() + key.len());
-        composite_key.extend(tree);
-        composite_key.extend(key);
-        let data = self.store.get_contract_data(&composite_key)
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        Ok(!data.is_empty())
-    }
-
-    // --- Blockchain queries (from BlockchainAccess impl) ---
-
-    fn last_block_timestamp(&self) -> Result<Vec<u8>> {
-        let height = self.height.load(Ordering::SeqCst);
-        if height == 0 {
-            return Ok(0u64.to_le_bytes().to_vec())
-        }
-        let block = self.store.get_block(height).map_err(|e| Error::Custom(e.to_string()))?;
-        Ok(block.header.timestamp.to_le_bytes().to_vec())
-    }
-
-    fn last_block_height(&self) -> Result<u32> {
-        let height = self.height.load(Ordering::SeqCst);
-        Ok(height as u32)
-    }
-
-    fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
-        match self.store.get_transaction(hash) {
-            Ok(tx) => {
-                let data = serde_json::to_vec(&tx).map_err(|e| Error::Custom(e.to_string()))?;
-                Ok(Some(data))
-            }
-            Err(e) => {
-                if e.to_string().contains("TransactionNotFound") {
-                    Ok(None)
-                } else {
-                    Err(Error::Custom(e.to_string()))
-                }
-            }
-        }
-    }
-
-    fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>> {
-        let height = self.height.load(Ordering::SeqCst);
-        for h in 1..=height {
-            if let Ok(block) = self.store.get_block(h) {
-                for tx in &block.transactions {
-                    if tx.hash().as_bytes() == hash {
-                        return Ok(Some((h as u32).to_le_bytes().to_vec()))
-                    }
-                }
-            }
-        }
-        Ok(None)
-    }
-
-    fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>> {
-        let vm = self.get_current_vm();
-        match self.store.get_block(height as u64) {
-            Ok(block) => Ok(Some(block.hash(&vm).as_bytes().to_vec())),
-            Err(e) => {
-                if e.to_string().contains("BlockNotFound") {
-                    Ok(None)
-                } else {
-                    Err(Error::Custom(e.to_string()))
-                }
-            }
-        }
-    }
-}

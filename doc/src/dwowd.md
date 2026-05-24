@@ -10,12 +10,13 @@ for wallets and miners.
 
 ```
 DwowNode (top-level node state)
-├── LinearBlockchain (sled-backed, height-indexed)
+├── LinearBlockchain (sled-backed, height-indexed, pure coordinator)
 │   ├── LinearStore (sled tree)
 │   ├── PoWConsensus (target adjustment, proof verification)
 │   ├── FinalityConfig (anchoring mode + Caribina)
 │   ├── coin_set / nullifier_set (double-mint / double-spend protection)
 │   └── RandomX VM cache (keyed per-block)
+├── TxBackend (per-transaction state access — overlay + store, never LinearBlockchain)
 ├── Mempool (Vec<Transaction> behind Arc<Mutex>)
 ├── DwowMinersRegistry (stratum server + mm_rpc server)
 ├── P2P handler (linear_sync + linear_broadcast)
@@ -59,9 +60,11 @@ consensus.
    `contract_insert_bincode`, and `contract_get_bincode` calls go through an
    in-memory BTreeMap — nothing touches sled during execution.
 
-2. **`AtomicBackend`** implements `RuntimeBackend` and routes state operations
-   through the overlay. Chain queries (`last_block_height`, `get_tx`, etc.)
-   bypass the overlay and read directly from the real `LinearBlockchain` clone.
+2. **`TxBackend`** implements `RuntimeBackend` and routes state operations
+   through the overlay. It holds only `Arc<LinearStore>` (for read-only
+   contract data lookups) — the `LinearBlockchain` coordinator is never in
+   the execution path. Chain queries (`last_block_height`, `get_tx`, etc.)
+   go through the store.
 
 3. **Per-call checkpoint/rollback**: Before each contract call,
    `overlay.checkpoint()` snapshots the current state. If `metadata()`,
@@ -75,16 +78,18 @@ consensus.
 
 ```
 apply_block_with_uncles()
- ├── Create SledTreeOverlay on contracts tree
- ├── Create AtomicBackend(overlay, chain=self.clone())
- ├── For each call (block + uncles):
+ ├── Create base SledTreeOverlay on contracts tree
+ ├── For each call (block + uncles, executed sequentially):
+ │    ├── Clone overlay from base → TxBackend { overlay, store }
  │    ├── overlay.checkpoint()
- │    ├── Runtime::new(wasm, backend.clone(), ...)
+ │    ├── Runtime::new(wasm, backend, ...)
  │    ├── runtime.metadata(&call_data)   ← reads/writes go to overlay
  │    ├── runtime.exec(&call_data)       ← ZK verification, circuit logic
  │    ├── runtime.apply(&[])             ← state changes staged in overlay
  │    ├── On failure: revert_to_checkpoint() — only this call undone
- │    └── On success: state stays in overlay, gas accumulated
+ │    └── On success: compute diff, keep state in overlay
+ ├── Merge diffs deterministically (sort by tx hash, canonical-first)
+ ├── Canonical diffs applied, then uncle diffs (subtract canonical total)
  ├── overlay.aggregate() → sled::Batch
  ├── contracts_tree.apply_batch(batch)  ← single atomic sled write
  ├── insert_validated_block(block)
@@ -94,25 +99,40 @@ apply_block_with_uncles()
 ### WASM Runtime
 
 Contract execution uses the [`wasmer`](https://wasmer.io/) WebAssembly runtime
-with the **Cranelift** compiler backend. Cranelift provides 3-10x faster WASM
-execution compared to the previous Singlepass compiler, at the cost of slightly
-higher compilation time. The compilation cost is amortized by the
-**module cache** — compiled WASM modules are cached keyed by contract ID, so
-each unique contract is compiled only once per node lifetime.
+with the **Singlepass** compiler backend by default. Singlepass provides fast
+compilation and predictable stack usage, matching upstream DarkFi's proven
+configuration.
+
+**Cranelift is available as an opt-in performance enhancer** via the
+`cranelift-compiler` Cargo feature flag. Cranelift provides 3-10× faster WASM
+execution but comes with deeper native stack frames and larger memory
+requirements. It is not the default because stability and determinism take
+precedence over raw execution speed. When wasmer's concurrency model matures,
+Cranelift will be re-evaluated alongside other performance approaches:
+
+- **Batch compilation**: Dedicated compilation threads with compiled artifact
+  caching (requires wasmer Engine-per-thread safety)
+- **Thread pools**: WASM instances in thread pools with Engine-per-thread
+  isolation
+- **Alternative runtimes**: wasmtime or other WASM runtimes with better
+  concurrency support
 
 | Aspect | Detail |
 |--------|--------|
-| Compiler | Cranelift (was `Singlepass`) |
-| Module cache | `WASM_MODULE_CACHE`: `Mutex<HashMap<[u8; 32], Module>>` |
-| Stack requirement | `RUST_MIN_STACK=67108864` (64 MiB) — required to avoid Wasmer stack overflow |
+| Compiler | Singlepass (default); Cranelift via `cranelift-compiler` feature |
+| Module cache | None — always recompile (avoids cross-Engine corruption) |
+| Stack requirement | Default OS stack (8 MB) — no special configuration needed |
 | Block gas limit | `BLOCK_GAS_LIMIT = 100_000_000_000` (250× per-call `GAS_LIMIT` of 400M) |
 | Max calls per block | `MAX_CALLS_PER_BLOCK = 10` — enforced at template generation |
 
-The `singlepass-compiler` feature flag is available as a compile-time fallback:
+The `cranelift-compiler` feature flag is available as a compile-time opt-in:
 ```toml
-wasmer = { version = "6.1.0", features = ["cranelift"] }
+# Default: Singlepass (stable, predictable stacks)
+wasmer = { version = "6.1.0", features = ["singlepass"] }
+wasmer-compiler-singlepass = { version = "6.1.0" }
+
+# Opt-in: Cranelift (3-10× faster, deeper stacks)
 wasmer-compiler-cranelift = { version = "6.1.0", optional = true }
-wasmer-compiler-singlepass = { version = "6.1.0", optional = true }
 ```
 
 ## Startup Sequence
@@ -324,7 +344,7 @@ Dwowd::stop()
 |------|---------|
 | `bin/dwowd/src/main.rs` | CLI parsing, config, entrypoint |
 | `bin/dwowd/src/lib.rs` | DwowNode, Dwowd, init_linear, start, stop |
-| `bin/dwowd/src/blockchain.rs` | Daemon LinearBlockchain wrapper, AtomicBackend, atomic apply |
+| `bin/dwowd/src/blockchain.rs` | Daemon LinearBlockchain wrapper, TxBackend, atomic apply |
 | `bin/dwowd/src/mempool.rs` | Mempool (Vec<Transaction>) |
 | `bin/dwowd/src/rpc/stratum.rs` | Stratum protocol (login, submit) |
 | `bin/dwowd/src/rpc/miner.rs` | Dev mining RPC (mine_linear) |
@@ -332,7 +352,7 @@ Dwowd::stop()
 | `bin/dwowd/src/proto/linear_sync.rs` | P2P sync protocol |
 | `bin/dwowd/src/proto/linear_broadcast.rs` | P2P block broadcast |
 | `bin/dwowd/src/task/consensus_linear.rs` | Consensus task (placeholder) |
-| `src/runtime/vm_runtime.rs` | WASM VM runtime (Cranelift compiler, module cache) |
+| `src/runtime/vm_runtime.rs` | WASM VM runtime (Singlepass compiler, no module cache) |
 | `src/runtime/import/db.rs` | WASM host functions: db_set, db_get, db_remove, db_contains_key |
 | `src/linear/src/block.rs` | BlockHeader, Block, UncleBlock, mining blob |
 | `src/linear/src/consensus.rs` | PoWConsensus (target adjustment, proof check) |

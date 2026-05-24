@@ -62,7 +62,15 @@ impl GenesisHarness {
             .map_err(|e| dwow::Error::Custom(format!("Failed to create LinearStore: {}", e)))?;
         let store = Arc::new(store);
 
-        let pow_config = LinearPoWConfig::default();
+        // Use max target so any nonce passes PoW — instant blocks for tests.
+        // The production path (stratum, mm_rpc, local miner) is the identical
+        // `apply_block_with_uncles()` call — only the target differs.
+        let pow_config = LinearPoWConfig {
+            target_block_time: 120,
+            initial_target: u32::MAX,
+            min_target: 1,
+            max_target: u32::MAX,
+        };
         let finality_config = FinalityConfig::default();
         let blockchain =
             LinearBlockchain::with_pow_config(store.clone(), pow_config, finality_config);

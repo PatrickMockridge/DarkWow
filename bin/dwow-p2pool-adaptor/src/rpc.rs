@@ -163,6 +163,13 @@ pub async fn handle_submit_block(
 }
 
 /// Handle `get_info` — returns DarkWow chain state in a Monero-compatible format.
+///
+/// p2pool's `parse_get_info_rpc` requires these boolean fields in the response:
+///   - `busy_syncing` (false for synced nodes)
+///   - `synchronized` (true for synced nodes)
+///   - `mainnet`, `testnet`, `stagenet` (exactly one must be true)
+/// Without them, p2pool logs "get_info RPC response is invalid" and retries
+/// indefinitely.
 pub async fn handle_get_info(state: &AdaptorStatePtr) -> serde_json::Value {
     match state.dwowd.get_last_block_info().await {
         Ok((height, hash, _timestamp)) => {
@@ -173,6 +180,11 @@ pub async fn handle_get_info(state: &AdaptorStatePtr) -> serde_json::Value {
                 "difficulty": 1,
                 "status": "OK",
                 "untrusted": false,
+                "busy_syncing": false,
+                "synchronized": true,
+                "mainnet": false,
+                "testnet": true,
+                "stagenet": false,
             })
         }
         Err(e) => {
@@ -183,4 +195,37 @@ pub async fn handle_get_info(state: &AdaptorStatePtr) -> serde_json::Value {
             })
         }
     }
+}
+
+/// Handle `get_version` — returns a monerod-compatible version response.
+///
+/// p2pool calls this after `get_info` succeeds. The response requires:
+///   - `status`: "OK"
+///   - `version`: uint64 (must be >= 3.10, i.e. 0x3000A = 196618)
+pub async fn handle_get_version() -> serde_json::Value {
+    serde_json::json!({
+        "status": "OK",
+        "version": 196618,
+    })
+}
+
+/// Handle `get_miner_data` — returns Monero-compatible miner data.
+///
+/// p2pool calls this after `get_version` to get chain metadata for mining.
+/// Required fields: `major_version`, `height`, `prev_id`, `seed_hash`,
+/// `median_weight`, `already_generated_coins`, `difficulty`.
+pub async fn handle_get_miner_data(state: &AdaptorStatePtr) -> serde_json::Value {
+    let (height, prev_id, _ts) = state.dwowd.get_last_block_info().await.unwrap_or((0, String::new(), 0));
+    let job = state.dwowd.current_job().await;
+    let seed_hash = job.map(|j| j.seed_hash.clone()).unwrap_or_default();
+
+    serde_json::json!({
+        "major_version": 16,
+        "height": height,
+        "prev_id": prev_id,
+        "seed_hash": seed_hash,
+        "median_weight": 300000,
+        "already_generated_coins": 0,
+        "difficulty": 1,
+    })
 }

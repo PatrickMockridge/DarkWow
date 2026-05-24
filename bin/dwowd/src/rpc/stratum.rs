@@ -172,9 +172,15 @@ impl DwowNode {
             zk_lock.clone()
         };
 
+        // Drain mempool for transaction inclusion in this block template
+        let mempool_txs = match &self.mempool {
+            Some(mp) => mp.take_all().await,
+            None => vec![],
+        };
+
         // Generate block template
         let template = match generate_linear_block_template(
-            linear_chain, &config, linear_zk.as_ref(),
+            linear_chain, &config, linear_zk.as_ref(), mempool_txs,
         ).await {
             Ok(t) => t,
             Err(e) => {
@@ -422,10 +428,15 @@ impl DwowNode {
 
         let reward = dwow_sdk::blockchain::expected_reward(submitted_height as u32);
 
+        // Use template's merkle root and transactions (frozen at login time)
+        let (merkle_root, template_txs) = template.as_ref()
+            .map(|t| (t.merkle_root, t.transactions.clone()))
+            .unwrap_or_else(|| (blake3::hash(&[]), vec![]));
+
         let header = dwow_linear::BlockHeader {
             version: 1,
             previous: previous_hash,
-            merkle_root: blake3::hash(&[]),
+            merkle_root,
             timestamp: template_timestamp,
             target,
             nonce,
@@ -453,9 +464,13 @@ impl DwowNode {
             coinbase,
         };
 
+        // Combine template transactions with coinbase
+        let mut all_txs = template_txs;
+        all_txs.push(coinbase_tx);
+
         let mut block = dwow_linear::Block {
             header,
-            transactions: vec![coinbase_tx],
+            transactions: all_txs,
         };
 
         // Verify PoW before inserting
@@ -520,9 +535,9 @@ impl DwowNode {
             }
         }
 
-        // Insert validated block
-        match linear_chain.insert_validated_block(&block) {
-            Ok(_) => {
+        // Apply block (executes WASM, then inserts)
+        match linear_chain.apply_block(&block).await {
+            Ok(()) => {
                 self.last_block_time.store(now, Ordering::SeqCst);
 
                 info!(
@@ -539,10 +554,17 @@ impl DwowNode {
                             zk_lock.clone()
                         };
 
+                        // Drain mempool for the next block template
+                        let next_mempool_txs = match &self.mempool {
+                            Some(mp) => mp.take_all().await,
+                            None => vec![],
+                        };
+
                         match generate_linear_block_template(
                             linear_chain,
                             recipient_config,
                             linear_zk.as_ref(),
+                            next_mempool_txs,
                         )
                         .await
                         {
@@ -556,7 +578,7 @@ impl DwowNode {
                                 let new_mining_header = dwow_linear::BlockHeader {
                                     version: 1,
                                     previous: blake3::Hash::from_bytes(new_template.previous),
-                                    merkle_root: blake3::hash(&[]),
+                                    merkle_root: new_template.merkle_root,
                                     timestamp: new_template.timestamp,
                                     target: new_template.target,
                                     nonce: 0,

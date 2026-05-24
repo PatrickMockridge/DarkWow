@@ -161,10 +161,17 @@ impl DwowNode {
             zk_lock.clone()
         };
 
+        // Drain mempool for transaction inclusion
+        let mempool_txs = match &self.mempool {
+            Some(mp) => mp.take_all().await,
+            None => vec![],
+        };
+
         let template = match generate_linear_block_template(
             linear_chain,
             &recipient_config,
             linear_zk.as_ref(),
+            mempool_txs,
         )
         .await
         {
@@ -188,7 +195,7 @@ impl DwowNode {
         let mining_header = dwow_linear::BlockHeader {
             version: 1,
             previous: blake3::Hash::from_bytes(template.previous),
-            merkle_root: blake3::hash(&[]),
+            merkle_root: template.merkle_root,
             timestamp: template.timestamp,
             target: template.target,
             nonce: 0,
@@ -417,6 +424,11 @@ impl DwowNode {
         header.coin_merkle_root = coin_merkle_root;
         header.nullifier_root = nullifier_root;
 
+        // Use template's transactions (frozen at get_aux_block time)
+        let template_txs = template.as_ref()
+            .map(|t| t.transactions.clone())
+            .unwrap_or_default();
+
         let coinbase_tx = dwow_linear::Transaction {
             version: 1,
             inputs: vec![],
@@ -429,9 +441,12 @@ impl DwowNode {
             coinbase,
         };
 
+        let mut all_txs = template_txs;
+        all_txs.push(coinbase_tx);
+
         let mut block = dwow_linear::Block {
             header,
-            transactions: vec![coinbase_tx],
+            transactions: all_txs,
         };
 
         // Verify RandomX PoW before inserting
@@ -526,9 +541,9 @@ impl DwowNode {
         // --- Set finality_flags unconditionally (not gated on anchor success) ---
         block.header.finality_flags = linear_chain.finality_config.mine_flags();
 
-        // Insert validated block
-        match linear_chain.insert_validated_block(&block) {
-            Ok(_) => {
+        // Apply block (executes WASM, then inserts)
+        match linear_chain.apply_block(&block).await {
+            Ok(()) => {
                 self.last_block_time.store(now, Ordering::SeqCst);
 
                 info!(
@@ -544,10 +559,17 @@ impl DwowNode {
                         zk_lock.clone()
                     };
 
+                    // Drain mempool for the next block template
+                    let next_mempool_txs = match &self.mempool {
+                        Some(mp) => mp.take_all().await,
+                        None => vec![],
+                    };
+
                     match generate_linear_block_template(
                         linear_chain,
                         recipient_config,
                         linear_zk.as_ref(),
+                        next_mempool_txs,
                     )
                     .await
                     {

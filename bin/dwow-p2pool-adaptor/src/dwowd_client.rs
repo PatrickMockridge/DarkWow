@@ -123,8 +123,12 @@ impl DwowdClient {
         let parsed: serde_json::Value =
             serde_json::from_str(&response).map_err(|e| format!("login parse: {e}"))?;
 
+        // The stratum response always includes "error":null. Only reject if
+        // there's a non-null error object (an actual protocol-level failure).
         if let Some(err) = parsed.get("error") {
-            return Err(format!("Stratum login rejected: {err}"));
+            if !err.is_null() {
+                return Err(format!("Stratum login rejected: {err}"));
+            }
         }
 
         let result = parsed.get("result").ok_or("login: no result field")?;

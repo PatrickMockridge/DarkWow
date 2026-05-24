@@ -277,6 +277,30 @@ fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &RandomXVM) -> ([u8; 32], Vec<
 }
 ```
 
+## Uncle Transactions and Block Construction
+
+### Transaction-First Model
+
+Uncle blocks participate in block execution the same way canonical transactions do:
+each contract call (canonical and uncle) executes with its own `TxBackend` — a
+minimal per-transaction state backend with an independent `SledTreeOverlay` clone.
+This means uncle transactions have the same state isolation guarantees as canonical
+transactions.
+
+### Deterministic Merge
+
+After execution, results are merged deterministically:
+
+1. All results sorted by transaction hash bytes
+2. Canonical diffs applied first (they "win" on key conflicts)
+3. Uncle diffs subtract the canonical total before merging — conflicting keys
+   retain canonical values
+4. Single `sled::Batch` atomic commit
+
+This naturally fits the uncle-merkle structure: uncle blocks are alternative merkle
+trees of transactions, and the tx merkle tree cascades through blocks regardless of
+whether the transactions are canonical or uncle.
+
 ## Comparison with Original Design
 
 | Aspect | Original (Fork/Overlay) | Uncle Merkle |

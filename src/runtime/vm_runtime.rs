@@ -23,7 +23,7 @@
 
 use std::{
     cell::{Cell, RefCell},
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     sync::{Arc, Mutex},
 };
 
@@ -34,7 +34,6 @@ use dwow_sdk::{
     tx::TransactionHash,
     wasm, AsHex,
 };
-use sha2::{Digest, Sha256};
 use dwow_serial::serialize;
 use tracing::{debug, error, info};
 use wasmer::{
@@ -42,10 +41,10 @@ use wasmer::{
     FunctionEnv, Instance, Memory, MemoryType, MemoryView, Module, Pages, Store, Value,
     WASM_PAGE_SIZE,
 };
-#[cfg(not(feature = "singlepass-compiler"))]
-use wasmer_compiler_cranelift::Cranelift as Compiler;
-#[cfg(feature = "singlepass-compiler")]
+#[cfg(not(feature = "cranelift-compiler"))]
 use wasmer_compiler_singlepass::Singlepass as Compiler;
+#[cfg(feature = "cranelift-compiler")]
+use wasmer_compiler_cranelift::Cranelift as Compiler;
 use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
@@ -101,24 +100,6 @@ const MEMORY: &str = "memory";
 
 /// Gas limit for a single contract call (Single WASM instance)
 pub const GAS_LIMIT: u64 = 400_000_000;
-
-/// Process-global cache of compiled WASM modules, keyed by SHA256 of the WASM bytes.
-/// Compilation is deterministic — same bytes always produce the same module.
-/// The cache eliminates repeated compilation of the same contract (e.g. NativeToken,
-/// Deployooor, or any contract invoked multiple times in one block).
-/// Uses Cranelift by default (3-10× faster execution); Singlepass available via
-/// the `singlepass-compiler` feature flag.
-static WASM_MODULE_CACHE: Mutex<Option<HashMap<[u8; 32], Module>>> = Mutex::new(None);
-
-fn get_cached_module(wasm_hash: &[u8; 32]) -> Option<Module> {
-    let cache = WASM_MODULE_CACHE.lock().unwrap();
-    cache.as_ref().and_then(|map| map.get(wasm_hash).cloned())
-}
-
-fn store_cached_module(wasm_hash: [u8; 32], module: Module) {
-    let mut cache = WASM_MODULE_CACHE.lock().unwrap();
-    cache.get_or_insert_with(HashMap::new).insert(wasm_hash, module);
-}
 
 // ANCHOR: contract-section
 #[derive(Clone, Copy, PartialEq)]
@@ -244,40 +225,14 @@ impl Runtime {
         call_idx: u8,
     ) -> Result<Self> {
         info!(target: "runtime::vm_runtime", "[WASM] Instantiating a new runtime");
-        // Log WASM binary identity for determinism (full SHA256 hash)
-        let wasm_digest = Sha256::digest(wasm_bytes);
-        let wasm_hash: [u8; 32] = wasm_digest.into();
-        info!(
-            target: "runtime::vm_runtime",
-            "[WASM] Binary identity: {} bytes, sha256={}",
-            wasm_bytes.len(),
-            hex::encode(wasm_hash)
-        );
 
-        // Configure metering: every WASM opcode costs 1 gas unit.
-        // Metering is a compiler middleware — it instruments the compiled native
-        // code with global counter checks. The middleware must be present in the
-        // Store used for Instance::new() so the metering globals
-        // (wasmer_metering_remaining_points / points_exhausted) are properly
-        // initialized from the module's global initializers.
         let cost_function = |_operator: &Operator| -> u64 { 1 };
         let metering = Arc::new(Metering::new(GAS_LIMIT, cost_function));
         let mut compiler_config = Compiler::new();
         compiler_config.push_middleware(metering);
-
-        // Single Store for compilation AND execution — matching upstream darkfi.
         let mut store = Store::new(compiler_config);
+        let module = Module::new(&store, wasm_bytes)?;
 
-        // Check module cache — skip compilation on hit
-        let module = if let Some(cached) = get_cached_module(&wasm_hash) {
-            info!(target: "runtime::vm_runtime", "[WASM] Module cache hit (sha256={})", hex::encode(wasm_hash));
-            cached
-        } else {
-            debug!(target: "runtime::vm_runtime", "Compiling module (cache miss)");
-            let compiled = Module::new(&store, wasm_bytes)?;
-            store_cached_module(wasm_hash, compiled.clone());
-            compiled
-        };
 
         // Create a larger Memory for the instance
         let memory_type = MemoryType::new(

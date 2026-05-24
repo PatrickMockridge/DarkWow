@@ -86,6 +86,11 @@ pub struct UncleBlock {
     /// Uncle chain accepted the pin (use it or lose it - one time decision)
     pub pin_accepted: bool,
     /// Pin reward amount if accepted (computed from depth: 50% at d1, 25% at d2...)
+    ///
+    /// NOTE: `pin_accepted` is always `false` in the current test suite.
+    /// The `compute_reward()` function has the pin-acceptance branch but
+    /// it is never exercised by tests. Pin acceptance is a future feature
+    /// that allows uncle miners to claim their share of the block reward.
     pub pin_reward: u64,
 }
 

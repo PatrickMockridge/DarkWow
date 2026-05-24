@@ -944,7 +944,9 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
         }
     };
 
-    // Construct the circuit and build the VerifyingKey
+    // Construct the circuit and build the VerifyingKey.
+    // Isolation is handled internally by VerifyingKey::build which spawns
+    // a dedicated large-stack thread for halo2 polynomial arithmetic.
     let circuit = ZkCircuit::new(witnesses, &zkbin);
     let vk = VerifyingKey::build(zkbin.k, &circuit);
     let mut vk_buf = vec![];

@@ -274,6 +274,14 @@ async fn handle_rpc(state: &Arc<AdaptorState>, req: &JsonRpcRequest) -> JsonRpcR
             let info = rpc::handle_get_info(state).await;
             Some(info)
         }
+        "get_version" => {
+            let version = rpc::handle_get_version().await;
+            Some(version)
+        }
+        "get_miner_data" => {
+            let data = rpc::handle_get_miner_data(state).await;
+            Some(data)
+        }
         _ => {
             warn!(target: "adaptor", "Unknown method: {}", req.method);
             None

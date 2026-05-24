@@ -44,11 +44,6 @@ use rand::rngs::OsRng;
 
 use crate::error::RpcError;
 
-/// Maximum contract calls per block, derived from BLOCK_GAS_LIMIT / GAS_LIMIT.
-/// Template generation truncates the mempool drain to this many calls so the
-/// mining blob's merkle root stays within the block gas budget.
-const MAX_CALLS_PER_BLOCK: usize = 10;
-
 /// Linear blockchain miner rewards recipient configuration.
 /// Reward value is computed from `dwow_sdk::blockchain::expected_reward(height)`,
 /// not configured statically.
@@ -243,18 +238,21 @@ pub async fn generate_linear_block_template(
     linear_zk: Option<&LinearPowRewardZk>,
     transactions: Vec<dwow_linear::Transaction>,
 ) -> Result<LinearBlockTemplate> {
-    // Cap transactions at MAX_CALLS_PER_BLOCK so the merkle root (included
-    // in the mining blob) stays within the block gas budget. Remaining txs
-    // stay in the mempool for the next block.
+    // Cap transactions so the merkle root (included in the mining blob)
+    // stays within the block gas budget. Each call is assumed to use its
+    // full GAS_LIMIT budget (conservative — actual usage may be lower).
+    // Remaining txs stay in the mempool for the next block.
+    let gas_limit = dwow::runtime::vm_runtime::GAS_LIMIT;
+    let block_gas_limit = crate::blockchain::BLOCK_GAS_LIMIT;
     let transactions: Vec<dwow_linear::Transaction> = {
         let mut capped = Vec::new();
-        let mut call_count = 0usize;
+        let mut estimated_gas: u64 = 0;
         for tx in transactions {
-            let calls = tx.contract_calls.len();
-            if call_count + calls > MAX_CALLS_PER_BLOCK {
+            let call_gas = tx.contract_calls.len() as u64 * gas_limit;
+            if estimated_gas + call_gas > block_gas_limit {
                 break; // stop here; remainder stays in mempool
             }
-            call_count += calls;
+            estimated_gas += call_gas;
             capped.push(tx);
         }
         capped
