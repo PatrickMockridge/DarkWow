@@ -219,6 +219,13 @@ pub async fn handle_get_miner_data(state: &AdaptorStatePtr) -> serde_json::Value
     let job = state.dwowd.current_job().await;
     let seed_hash = job.map(|j| j.seed_hash.clone()).unwrap_or_default();
 
+    // p2pool requires prev_id and seed_hash to be exactly 64 hex chars.
+    // Empty strings or wrong-length hashes cause "get_miner_data RPC response
+    // failed to parse" and p2pool never starts its stratum server.
+    let zero_hash = "0000000000000000000000000000000000000000000000000000000000000000";
+    let prev_id = if prev_id.len() == 64 { prev_id } else { zero_hash.to_string() };
+    let seed_hash = if seed_hash.len() == 64 { seed_hash } else { zero_hash.to_string() };
+
     serde_json::json!({
         "major_version": 16,
         "height": height,
