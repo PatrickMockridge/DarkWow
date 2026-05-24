@@ -4,27 +4,7 @@ DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work for new netwo
 
 ## Why Uncle Merkle Was Chosen Over the Overlay/Diff Architecture
 
-The upstream DarkWow consensus uses a speculative overlay/diff system with sled-overlay for transactional state management. This architecture exists primarily to support the "under one tent" DAO governance model: a complex fork-deciding mechanism is required because the DAO must adjudicate which fork is canonical, preventing natural chain splits.
-
-This fork rejects that entire design stack for several reasons:
-
-**1. Engineering complexity from governance requirements**
-
-The overlay/diff system exists because upstream's DAO governance requires a mechanism to decide between competing forks. This creates a cascade of complexity: speculative state verification, overlay checkpoints, diff logging for rollback, and implicit fork competition. None of this is necessary in a pure PoW system where the canonical chain is simply the one with the most work — and where hard forks are a natural, healthy part of the ecosystem.
-
-**2. Non-deterministic behavior breaks testing**
-
-The upstream consensus uses speculative verification where state can be committed, rolled back, or left in limbo. `diff()` computation depends on sequence history — the same code produces different results depending on timing. This makes deterministic testing impossible. Race conditions and timing-dependent state create flaky tests that erode confidence in the entire contract system.
-
-**3. The overlay adds complexity without benefit**
-
-The sled-overlay system provides transactional state with automatic rollback. On this fork, there is no DAO deciding between forks — so there is nothing to roll back. Plain sled is simpler, faster, and predictable. Every state change is final.
-
-**4. Pure PoW means forks are a feature, not a bug**
-
-Without a governance DAO motivated to keep everything under one tent, chain splits are handled the Bitcoin way: miners follow the chain with the most work. If a contentious hard fork occurs, both sides can coexist (like BTC/BCH). The Uncle Merkle mechanism makes this Pareto efficient — competing miners still get partial reward rather than zero.
-
-The old upstream overlay-DAG consensus specification is preserved for reference at [legacy/consensus_dag.md](../legacy/consensus_dag.md).
+This fork rejects the upstream overlay/DAG architecture in favor of deterministic Uncle Merkle consensus. See [What's Different from Upstream](../about/differences_from_upstream.md) for the full comparison and rationale. The old upstream overlay-DAG consensus specification is preserved for reference at [legacy/consensus_dag.md](../legacy/consensus_dag.md).
 
 ## Current Design: Uncle Merkle with Pin Mechanism
 

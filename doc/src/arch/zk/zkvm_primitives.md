@@ -1,6 +1,6 @@
 # zkVM Primitive Layer: Opcode Reasoning
 
-> **Note:** The core zkVM opcode layer (constraint system, bincode format, WASM execution model) is inherited from upstream DarkWow and tracks upstream. The opcode roadmap, contract integration patterns, and DarkWow-specific opcodes (LessThanOrEqual, BaseDiv) described here are DarkWow divergences.
+> **Note:** The core zkVM opcode layer (constraint system, bincode format, WASM execution model) is inherited from upstream DarkFi. DarkWow-specific additions (LessThanOrEqual, BaseDiv, IsNotEqual) are documented in [What's Different from Upstream](../about/differences_from_upstream.md).
 
 > **Prerequisite reading**: Before this document, read [Field Arithmetic Constraints](field_arithmetic.md). It explains why every operation in a ZK circuit must be re-expressed in finite field arithmetic — and why that re-expression is the primary difficulty in ZK circuit design. The examples in this document assume you understand field vs. integer ordering and modular arithmetic.
 
@@ -101,86 +101,12 @@ less_than_range_check(d + 2^253);  # Shifted so equality fails the check
 
 ---
 
-### How `LessThanOrEqual` Works: Combining Equality and Ordering
+### LessThanOrEqual
 
-`LessThanOrEqual(a, b)` returns `1` if `a ≤ b`, `0` otherwise. This can be decomposed as:
+`LessThanOrEqual(a, b)` returns `1` if `a ≤ b`, `0` otherwise. It combines range checks on `a - b` and `b - a` with a gate constraint that produces a `Base` output usable in subsequent computation.
 
-```
-LessThanOrEqual(a, b) = IsEqual(a, b) OR LessThanLoose(a, b)
-```
+`IsEqualBase` uses a delta-invert approach with a known soundness issue (`delta_invert` unconstrained when `a == b`). For the full formal verification of these comparison gates — including the delta-invert attack, gate soundness analysis, Lean4 machine-checkable proofs, and the `IsNotEqual` pure Boolean gate — see [Opcodes and Formal Verification](opcodes.md).
 
-In field arithmetic:
-```
-IsEqual(a, b) = 1 - less_than_loose(a, b) - less_than_loose(b, a)
-```
-
-The gadget computes both `a - b` and `b - a`, runs the range check on each, and combines the results. The output is a `Base` value (0 or 1) usable in subsequent computation — unlike the `constrain`-only versions.
-
----
-
-### `IsEqualBase`: The Delta-Invert Approach
-
-`IsEqualBase(a, b)` returns `1` if `a == b`, `0` otherwise. The gadget computes `delta = a - b` and its field inverse `delta_invert = delta^(-1)`:
-
-```
-delta = base_sub(a, b)
-delta_invert = field_inverse(delta)
-
-# Constraint: delta * delta_invert == 1  (when delta != 0)
-# When a == b: delta = 0, and delta_invert is set to 1 by convention
-```
-
-**The soundness issue**: When `a == b`, `delta = 0`. The constraint `delta * inv == 1` becomes `0 * 1 == 1`, which is unsatisfiable in a field. However, a selector gate makes this constraint only active when `a != b`. When `a == b`, only the second constraint `delta * inv + (out - 1) == 0` is evaluated, which becomes `0 + 0 == 0` — always satisfied, regardless of what `delta_invert` is assigned.
-
-**Consequence**: A malicious prover can assign any value to `delta_invert` when `a == b` without detection. The fix would require an explicit `is_zero` gadget that correctly constrains `delta_invert` when `delta = 0`, rather than relying on the selector gate to disable the problematic constraint.
-
----
-
-### Gate Soundness: LessThanOrEqual with Output
-
-The `LessThanOrEqual` gate encodes the result as an offset value:
-
-```zk
-# Gate constraint:
-a_offset = out * (b - a) + (1 - out) * (a - b - 1)
-out * (1 - out) = 0  # out must be 0 or 1
-
-# Where:
-# - out = 1 means a <= b
-# - out = 0 means a > b
-```
-
-`a_offset` is then range-checked to `[0, 2^253)`. The concern: a malicious prover could assign `out = 0` and `a_offset = a - b - 1` (where `a > b`), producing an `a_offset` value that satisfies both the gate constraint and the range check. This would incorrectly pass verification even though the comparison result was flipped.
-
-The range check limits feasible incorrect assignments, but the interaction between the gate constraint and range check has not been formally analyzed. For production use, this deserves a proper security reduction.
-
----
-
-### Why This Is Hard: Summary of Challenges
-
-| Challenge | Why It's Hard |
-|-----------|--------------|
-| **Field vs integer ordering** | Near `p`, field wraparound inverts integer ordering; requires range constraints on inputs |
-| **Delta-invert for IsEqualBase** | Cannot invert zero; convention-based fix creates a prover-controlled assignment with no constraint |
-| **Gate soundness for LessThanOrEqual** | Prover controls witness assignment; range check limits but doesn't eliminate incorrect assignments |
-| **No upgrade path** | Once deployed, buggy comparison results cannot be corrected without a hard fork |
-| **Composability untested** | Chaining comparison outputs into `CondSelect` or other opcodes has not been tested |
-
----
-
-### What This Means for Contract Authors
-
-For most use cases — threshold predicates, collateralization bounds, reward limits — the current implementation is sufficient. The gadgets work correctly for honest provers and the range constraints keep inputs in the safe zone.
-
-However, before using these opcodes in a production contract that guards significant value, consider:
-
-1. **Input range validation**: Add explicit `range_check(253, a)` and `range_check(253, b)` before comparison to eliminate boundary cases
-2. **Redundant checks**: For high-value operations, add a redundant `LessThanStrict` constraint alongside `LessThanOrEqual` as a sanity check
-3. **Formal audit**: The delta-invert issue in `IsEqualBase` should be fixed with an explicit `is_zero` gadget before production deployment
-
-**See also**: `src/zk/gadget/less_than.rs` for the actual Halo2 implementation, and `dao/exec.zk` for a working example of cross-multiplication ratio checks that avoid these comparison issues entirely.
-
----
 
 ## Case Study: Reasoning About a Missing Opcode
 

@@ -2,7 +2,7 @@
 
 **O-Cap (Object Capability) Authorization**: Prove you have access without revealing who you are.
 
-A paradigm shift from ACLs ("who has access") to capabilities ("can you prove you have access").
+See the [O-Cap & Composable Privacy](../../doc/src/arch/ocap.md) chapter for the full paradigm and the [Identity Contract](../../doc/src/arch/identity.md) for ZK circuit design and deployment roadmap.
 
 ## The Paradigm Shift: ACLs vs O-Cap
 

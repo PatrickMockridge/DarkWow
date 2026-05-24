@@ -1,5 +1,4 @@
-Compiling and Running a Node
-=========================
+# Compiling and Running a Node
 
 > **See also:** [Level 4: Containerized Devnet Node](../dev/testing/level-4-devnet.md)
 > for running a Docker-based devnet node across multiple machines on LAN or internet.

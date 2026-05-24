@@ -523,28 +523,7 @@ This composability means a single Identity contract can serve multiple dao_escro
 
 ## Fee Split (TreasuryEndowment Mode)
 
-When members pay premiums:
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                        Premium Payment                        │
-│                        (e.g., 1000)                           │
-└──────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              │                               │
-    treasury_share (70%)             endowment_share (30%)
-              │                               │
-              ▼                               ▼
-    ┌─────────────────────┐         ┌─────────────────────┐
-    │      Treasury       │         │      Endowment      │
-    │  (operational)      │         │    (insurance)      │
-    │                     │         │                     │
-    │  - Grants           │         │  - Refunds          │
-    │  - Development      │         │  - Claims           │
-    │  - Operations       │         │  - Emergency        │
-    └─────────────────────┘         └─────────────────────┘
-```
+Fee split follows the same flow shown in [Premium Payment Phase](#premium-payment-phase) above. The `treasury_share` and `endowment_share` parameters control the split ratio, configured per DAO instance.
 
 ## ZK Circuits
 

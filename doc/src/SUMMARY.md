@@ -4,6 +4,7 @@
 
 - [Development Fork Info](intro.md)
 - [DarkWow](README.md)
+- [What's Different from Upstream](about/differences_from_upstream.md)
 - [DarkWow for Dummies](about/for-dummies.md)
 - [Start Here](start-here.md)
 - [Philosophy](philosophy/philosophy.md)
@@ -112,7 +113,7 @@
   - [Contract Deployment Pipeline](arch/dwowd_contract_pipeline.md)
   - [Anonymous assets](arch/anonymous_assets.md)
   - [O-Cap & Composable Privacy](arch/ocap.md)
-  - [Identity](arch/identity.md)
+    - [Identity Contract](arch/identity.md)
 
 ## Developer Tooling
   - [Security Analysis](arch/security-analysis.md)
@@ -131,6 +132,7 @@
   - [Slashing & Economic Security](arch/slashing.md)
 
 ## Economics
+  - [Merge Mining](arch/merge-mining.md)
   - [Mining Tokenomics](arch/mining-tokenomics.md)
 
 - [Contract Implementations]()
@@ -231,8 +233,6 @@
 - [darkIRC Specification](misc/darkirc/specification.md)
 - [tau](misc/tau.md)
 - [dnetview](misc/dnetview.md)
-- [Zero2darkfi](zero2darkfi/zero2darkfi.md)
-  - [darkmap](zero2darkfi/darkmap.md)
 - [FAQ](misc/faq.md)
 - [Glossary](glossary/glossary.md)
 
@@ -246,8 +246,4 @@
 - [Consensus (Original DAG)](arch/legacy/consensus_dag.md)
 - [Event Graph](arch/legacy/event_graph.md) *(active — P2P messaging layer)*
   - [Event Graph Network Protocol](arch/legacy/event_graph_network_protocol.md) *(active)*
-- [Transaction Lifetime (DAG)](arch/legacy/tx_lifetime.md)
 - [Wallet (Original Design)](arch/legacy/wallet.md)
-- [Money Version Bridge (Historical)](arch/legacy/money-version-bridge.md)
-- [Contract Deployment Pipeline (DAG)](arch/legacy/darkfid_contract_pipeline.md)
-- [Money Vulnerability Analysis](arch/legacy/money-vulnerability-analysis.md)

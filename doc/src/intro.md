@@ -77,55 +77,9 @@ All contracts are **EXPERIMENTAL** and **UNAUDITED**.
 
 ## Relationship to Upstream
 
-This project is a fork of [DarkFi](https://codeberg.org/darkrenaissance/darkfi). It inherits the core zkVM, ZKAS circuit language, P2P networking stack, and WASM contract runtime. The fork makes different design choices in four areas:
+This project is a fork of [DarkFi](https://codeberg.org/darkrenaissance/darkfi). It inherits the core zkVM, ZKAS circuit language, P2P networking stack, and WASM contract runtime.
 
-### What's Inherited (From Upstream)
-
-| Component | Description |
-|-----------|-------------|
-| **zkVM** | ZK virtual machine for proof generation and verification |
-| **ZKAS** | Circuit language and compiler |
-| **P2P stack** | Peer discovery, session management, protocol negotiation |
-| **WASM runtime** | In-node WASM execution for smart contracts |
-| **Halo2** | Proof system backend (Poseidon/Pallas) |
-
-### Design Changes (This Fork)
-
-#### 1. Native Token — No Governance Coupling
-
-Upstream's architecture ties the native token to DAO governance. Token holders can vote on operations including native token minting — the same token that pays block rewards and fees. This is a design choice that supports on-chain coordination through token-weighted voting.
-
-This fork decouples them. [NativeToken](dev/contracts/native_token.md) has no governance surface — no DAO can freeze, restrict, or modify its operation. Block rewards and fee payment are consensus-critical functions; keeping them outside governance scope means miners and validators can't be voted out of their income. The governance use case is served separately by [DAO Escrow](contract/dao_escrow.md), which uses ZK predicates rather than token-weighted ACLs.
-
-#### 2. Privacy — ZK Predicates Instead of ACLs
-
-Upstream uses ACL-based voting where participants reveal their public key and token balance to prove eligibility. This is the standard approach — simple to implement, straightforward to audit — but it exposes voter identity and wealth.
-
-This fork uses ZK predicates: a voter proves they meet a condition (e.g., "holds >= 1000 tokens") without revealing their public key, exact balance, or any other identifying information. The verifier learns only the boolean result. This trades implementation simplicity for stronger privacy guarantees.
-
-#### 3. Token Distribution — Pure PoW, No Premine
-
-Upstream's launch included token distributions to early contributors, investors, and SAFT participants — a common model for bootstrapping development funding.
-
-This fork has zero premine. Every token in circulation was mined. This is the Bitcoin model: the only way to acquire the native token is to contribute proof-of-work. It trades early funding certainty for distribution fairness.
-
-#### 4. Consensus — Uncle Merkle Instead of Overlay/DAG
-
-Upstream uses an overlay-diff architecture: a DAG of events where blocks are verified speculatively against an in-memory overlay that can be committed or rolled back. This provides sophisticated fork arbitration — the overlay tracks competing forks and their state implications, then decides which to accept. It allows a unified governance model to adjudicate between forks.
-
-This fork uses Uncle Merkle consensus: the canonical chain (most accumulated work) is obligated to offer competing uncle chains a one-time pin reward — a share of the block reward rather than zero. This achieves the same Pareto benefit (miners aren't punished for producing non-canonical blocks) through a simpler mechanism: uncle references live in the canonical block header, and pin rewards follow a geometric schedule. No overlay, no speculative state, no rollback — every state change is final. Both approaches prevent wasted miner work; this fork trades fork-arbitration flexibility for deterministic, testable state.
-
-### Summary
-
-| Concern | Upstream | This Fork |
-|---------|----------|-----------|
-| Native token control | DAO-governed | No governance surface |
-| Privacy model | ACL-based (identity revealed) | ZK predicates (boolean only) |
-| Token distribution | Contributor allocations | Pure PoW mining |
-| Governance mechanism | Token-weighted voting | ZK predicate (DAO Escrow) |
-| Consensus | Overlay-DAG (fork arbitration) | Uncle Merkle (obligated pin rewards) |
-
-For a detailed analysis of circuit design standards, see [Contract Standards](dev/contracts/standards.md).
+For a complete comparison of design differences — native token governance, privacy model, token distribution, consensus, and opcodes — see [What's Different from Upstream](about/differences_from_upstream.md).
 
 ### Privacy Architecture
 
@@ -151,17 +105,9 @@ For ZK circuit security, see [ZK Circuit Troubleshooting](dev/zk-circuit-trouble
 
 ## Getting Started
 
-### Developer Quick Start
-
-If you're a developer who wants to build, test, or customize DarkWow contracts,
-start with the [Developer Quick Start Guide](dev/quickstart.md). It covers the
-four-level testing taxonomy, 28 contract test harnesses, Docker devnet setups,
-and the "fork and build" workflow. This is the fastest path to a working
-development environment.
-
-### Running a Node
-
-See [Running a Node](testnet/node.md) for setup instructions.
+- **Users**: Start with [Start Here](start-here.md) for project overview and community joining.
+- **Developers**: Start with the [Developer Quick Start Guide](dev/quickstart.md) for building, testing, and customizing contracts.
+- **Node Operators**: See [Running a Node](testnet/node.md).
 
 ### Building from Source
 

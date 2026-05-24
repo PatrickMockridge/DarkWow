@@ -25,9 +25,7 @@ DarkWow loosely follows the standardized Unix directory structure.
 
 ### Developer Quick Start
 
-New developers should begin with the [Developer Quick Start Guide](dev/quickstart.md),
-which covers the four-level testing taxonomy, contract test harnesses, and Docker
-devnet setups. This is the fastest way to get a working development environment.
+New developers should begin with the [Developer Quick Start Guide](dev/quickstart.md).
 
 Refer to the main [README](../index.html) file for instructions on how
 to install Rust and necessary dependencies. Then proceed to the

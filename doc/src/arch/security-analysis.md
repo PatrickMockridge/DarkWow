@@ -823,7 +823,7 @@ circuit "Example" {
 
 **Note on Severity**: The transaction layer may provide additional verification that mitigates this issue. However, clean circuit design dictates that circuits should be self-contained and provably correct in isolation. Defense in depth suggests fixing the circuit regardless of transaction layer protection.
 
-**Why Fork**: We fork the money contract for clean, self-contained circuit design—not because we're under active attack. See [Money Vulnerability Analysis](./money-vulnerability-analysis.md) for the full reasoning.
+**Why Fork**: We fork the money contract for clean, self-contained circuit design—not because we're under active attack. See [Money V3 Migration](../contract/money_v3_migration.md) for the fork rationale.
 
 **Circuits Fixed** (this audit session):
 | Contract | Circuit | Status |
@@ -954,202 +954,20 @@ Several circuits reference other contracts (Subscription → DAO-Escrow, Atomic 
 
 ### Issue 15: Opcode Soundness Tradeoffs — Formal Analysis of Injection Attacks
 
-The circuits avoid `IsEqualBase` due to known soundness bug. `LessThanOrEqual` is now **verified sound** ✅ via Lean 4 exhaustive testing. This section provides a formal characterization of the underlying vulnerability class.
+The circuits avoid `IsEqualBase` due to known soundness bugs. `LessThanOrEqual` is now **verified sound** ✅ via Lean 4 formal verification. The vulnerability class is **injection** — the prover can inject arbitrary values into underconstrained witness variables, altering comparison gate outputs.
 
-#### Formal Model of a ZK Circuit
+For the full formal verification (gate constraints, delta-invert analysis, Lean4 machine-checkable proofs), see [Opcodes and Formal Verification](zk/opcodes.md). The `less_than_strict` opcode used throughout contracts avoids these issues because it is **constrain-only** — no usable output value, only a boolean constraint, which eliminates the underdetermined variable problem.
 
-Let a circuit be defined over a finite field `F`. It has:
+**Counterexample — `IsNotEqual` (0x62)**: Unlike `IsEqualBase`, the `IsNotEqual` opcode was designed from the start as a fully constrained pure Boolean operator. It has no delta-invert vulnerability because it uses a distinct gate design that treats the equality/inequality cases symmetrically — both branches are fully constrained, leaving no unconstrained witness variables for the prover to exploit. `IsNotEqual` is the third Lean4-verified opcode (alongside `LessThanOrEqual` and `BaseDiv`). See [Opcodes and Formal Verification](zk/opcodes.md) for the verification results.
 
-- **Public inputs** `x ∈ F^m` (known to verifier)
-- **Witness inputs** `w ∈ F^n` (provided by prover, kept secret)
-- **Auxiliary variables** `v ∈ F^r` (internal wires)
-- **Constraints** `C_1, ..., C_k`, each a polynomial equation in `x, w, v` that must hold in `F`
-- **Public outputs** `y ∈ F^ℓ`, computed as a deterministic function of `x, w, v`
+**Summary of key risks kept here for reference:**
+- `IsEqualBase` delta-invert bug: `delta_invert` unconstrained when `a == b`
+- `IsNotEqual` (0x62): ✅ No injection vulnerability — fully constrained symmetric gate design
+- `LessThanOrEqual`: prover controls `out` and `a_offset` simultaneously — range checks are necessary but not sufficient
+- No upgrade path: once deployed, buggy comparison results cannot be corrected without a hard fork
+- For contract authors: add explicit `range_check(253, a)` before comparisons, use redundant `LessThanStrict` as sanity check for high-value operations
 
-The intended semantic relation is:
-
-```
-R(x, w, y) = 1  iff  the prover knows a witness satisfying the constraints and yielding output y
-```
-
-A **soundness violation** occurs if there exists a prover strategy that, given `x`, can produce `w, v, y` such that all constraints `C_i` hold, but the intended relation `R` is false.
-
-#### Injection Attack Definition
-
-An **injection attack** is a soundness violation where the prover, by choosing specific witness values, forces the circuit to accept an output `y` that does not correspond to the intended function of the inputs, even though all constraints are satisfied.
-
-Formally, let `F: F^m × F^n → F^ℓ` be the intended function that the circuit should compute (e.g., `LessThanOrEqual(a, b)`). The constraints `C_i` are meant to enforce that for all `x, w` satisfying them, `y = F(x, w)`.
-
-An injection attack exists if there exist `x, w, v, y` with:
-
-1. `C_i(x, w, v) = 0` for all `i` (constraints satisfied)
-2. `y ≠ F(x, w)` (output does not match intended function)
-3. The prover can compute such a tuple
-
-Equivalently: the constraint system is **underdetermined** with respect to the output — the output `y` is not fully constrained by `x` and the constraints; there is residual freedom for the prover to manipulate it.
-
-#### Concrete Instantiation: LessThanOrEqual Gate Soundness
-
-The gate is implemented as:
-
-```
-a_offset = out * (b - a) + (1 - out) * (a - b - 1)
-out * (1 - out) = 0  # out must be 0 or 1
-a_offset ∈ [0, 2^253)  # range check
-```
-
-The intended function: `LTE(a, b) = 1` if `a ≤ b`, else `0`.
-
-**The attack**: The prover can choose `out` and `a_offset` arbitrarily as long as the equations hold. When `a ≤ b`, the prover sets `out = 0` and `a_offset = a - b - 1`. The gate equation becomes:
-
-```
-a_offset = 0 * (b - a) + 1 * (a - b - 1) = a - b - 1
-```
-
-Since `a ≤ b`, `a - b - 1` is negative or zero. The range check `[0, 2^253)` is applied to the field element's integer representative. If the value falls within the range (after potential wrapping), both constraints are satisfied — but `out = 0` incorrectly indicates `a > b`.
-
-**Result**: The circuit accepts `out = 0` even when `a ≤ b`, violating the intended semantics.
-
-#### Concrete Instantiation: IsEqualBase Delta-Invert
-
-The gate:
-
-```
-δ = a - b
-δ_inv = field_inverse(δ)
-δ * δ_inv = 1  (if δ ≠ 0)
-```
-
-A selector gate disables the multiplication constraint when `δ = 0`. In that case, `δ_inv` is **unconstrained**.
-
-The intended function: `EQ(a, b) = 1` iff `a = b`.
-
-**The attack**: When `a = b`, the prover can set `δ_inv` to any value. If the circuit later uses `δ_inv` in a way that influences the output, the prover can inject arbitrary behavior. The delta-invert is free when `a = b`, allowing manipulation of dependent computations.
-
-#### Generalizing: The Injection Class
-
-These attacks share a common pattern:
-
-| Pattern | Description |
-|---------|-------------|
-| **Edge-Case Gap** | A constraint that should cover all cases has a branch where the constraint is skipped (e.g., when a divisor would be zero) |
-| **Unconstrained Variable** | In the skipped branch, a variable that participates in later constraints is left free |
-| **Output Influence** | The free variable affects the final output or a subsequent constraint |
-| **Prover Control** | The prover can choose any value for that free variable |
-
-In SQL injection, the attacker injects code that alters the query's logical structure. Here, the attacker injects values into underconstrained witness variables, altering the circuit's logical outcome.
-
-#### Formal Characterization
-
-Let `C(x, w, v, y) = 0` be the constraint system. Let `S(x)` be the set of all `(w, v, y)` satisfying `C`. The circuit is said to implement function `F` if:
-
-```
-∀x, ∀(w, v, y) ∈ S(x), y = F(x, w)
-```
-
-An injection attack exists iff there exists `x` and two distinct tuples `(w, v, y), (w', v', y') ∈ S(x)` with `y ≠ y'`. The solution set is not single-valued in `y` for given `x` — the prover can choose which output to produce.
-
-#### Prevention
-
-To prevent injection attacks:
-
-1. **Every variable must be uniquely determined** by the inputs or by earlier constraints
-2. **Edge cases must be handled by constraints** that also determine the variable's value, not by skipping constraints
-3. **The output must be a function of the inputs only** — no residual degrees of freedom in the solution space
-
-In practice:
-- Use explicit `is_zero` gadgets that correctly constrain the inverse even when input is zero
-- For comparisons, design the gate so the output is uniquely determined by the arithmetic relation
-- Add redundant checks for high-value operations
-
-#### Formal Security Definition
-
-Let the circuit implement an intended function `f: F^m → F^ℓ` over finite field `F`. The circuit has:
-
-- **Public inputs** `x ∈ F^m`
-- **Witness inputs** `w ∈ F^n` (prover chooses)
-- **Auxiliary variables** `v ∈ F^r`
-- **Constraints** `C_j(x, w, v) = 0` for `j = 1, ..., k`
-- **Output** `y ∈ F^ℓ`
-
-**Definition 1 (Secure circuit)**: The circuit is secure if for every public input `x`, the set of possible outputs `y` that can be produced by a prover who satisfies all constraints is exactly the singleton `{f(x)}`.
-
-More formally:
-
-| Property | Requirement |
-|----------|-------------|
-| **Correctness** | For every honest witness `w` that corresponds to the intended function, there exists `v` such that all constraints hold and `y = f(x)` |
-| **Soundness** | For any assignment `(w, v, y)` satisfying all constraints, it must hold that `y = f(x)` |
-
-An injection attack exists when soundness fails: there exists `(w, v, y)` satisfying constraints but with `y ≠ f(x)`.
-
-#### What Must Be Tested to Prove Security
-
-To prove soundness, verify that the constraint system uniquely determines the output from public inputs and intended witness relation.
-
-**Formal Verification of Determinism**: The core is showing that constraints imply a functional relationship `y = g(x, w)` where `g` equals `f` over all legitimate witnesses. For each constraint `C_j`, analyze its algebraic structure and ensure no variable influencing `y` remains free. For edge cases where a divisor would be zero, constraints must still determine output uniquely.
-
-**Methodology**:
-- **Algebraic proof**: Express constraints as polynomial equations and solve for `y`. If the solution set is a single value for all possible free variables, the circuit is sound
-- **SMT/SAT solving**: Encode constraints and check that for any assignment satisfying them, output matches intended function
-
-**Edge-Case Analysis**: Attack surfaces often exist at boundaries:
-
-| Edge Case | Example |
-|-----------|---------|
-| `a = b` | IsEqualBase, LessThanOrEqual |
-| Field modulus boundary | Values near `p` causing wraparound |
-
-Testing must systematically cover:
-- `a = b`
-- `a = b + 1` and `b = a + 1`
-- Values where `a - b` is a small negative number (field element near `p`)
-- Values where `a` or `b` are `0`, `1`, `p - 1`
-
-For each test case, attempt to construct a witness satisfying constraints but giving wrong output.
-
-**Fuzzing with Adversarial Witnesses**:
-- For LessThanOrEqual: fix `a, b`, try all assignments of `out` and `a_off` that satisfy gate equation. If any passes range check and yields wrong `out`, circuit is broken
-- For IsEqualBase: fix `a = b`, try arbitrary values for `delta_inv`; if circuit uses `delta_inv` to influence output, it may accept false result
-
-**Formal Verification of Range Check**: The range check on `a_off` must be proven to correctly enforce integer representative in `[0, 2^253)`. The attack exploited a subtlety: even when integer value is negative, its field representation may lie in range after modular reduction.
-
-#### Testing Framework for Opcode Security
-
-A robust testing suite should include:
-
-| Test Type | Description |
-|-----------|-------------|
-| **Unit Tests** | Test all edge cases (0, 1, large values, boundaries) with honest and adversarial witness assignments |
-| **Randomized Fuzzing** | Generate millions of random inputs; for each, try to construct a witness violating soundness |
-| **Formal Proofs** | Prove constraint system is deterministic; prove range checks are correct |
-| **Edge-Case Exploitation Tests** | Write explicit adversarial scripts attempting to inject false outputs |
-
-**Proof of Uniqueness for Edge Cases**: For IsEqualBase, the delta-invert approach is inherently problematic because the inverse is undefined at zero. A secure implementation must replace the selector with an `is_zero` gadget that forces `delta_inv` to a harmless value (e.g., `0`) when `delta = 0`.
-
-The formal requirement: **output must be deterministically computed from inputs without any branch that leaves a variable free**. This often requires using the algebraic identity `is_equal = 1 - less_than(a,b) - less_than(b,a)` or a dedicated `is_zero` gate.
-
-#### What "Secure" Means in This Context
-
-A ZK gadget is secure (sound) if:
-
-| Property | Description |
-|----------|-------------|
-| **No false positive** | No witness satisfies constraints but yields output contradicting intended function |
-| **No undetermined output** | For every public input, all accepting witnesses produce the same output |
-| **Resistance to injection** | Prover cannot influence output by choosing arbitrary values for unconstrained variables |
-
-These properties must be proved for **all possible inputs**, not just those in a safe range, unless the circuit is explicitly limited to a subset where inputs are range-checked before the gadget.
-
-The LessThanOrEqual implementation **fails property 1** because the output is not uniquely determined. The IsEqualBase implementation **fails properties 1 and 3** because it leaves `delta_inv` free when `a = b`.
-
-#### Conclusion
-
-The vulnerability class is **injection**: the prover can inject arbitrary values into underconstrained parts of the circuit, altering the output. These are not "minor soundness issues" but fundamental gaps that must be fixed for production use.
-
-The `less_than_strict` opcode used throughout DarkWow's contracts avoids these issues because it is **constrain-only** — it does not produce a usable output value, only a boolean constraint. This eliminates the underdetermined variable problem entirely.
-
----
+**See also:** [Field Arithmetic](zk/field_arithmetic.md) for field-level constraints, [zkVM Primitive Layer](zk/zkvm_primitives.md) for contract integration patterns, and `proofs/lean/` for the machine-checkable proofs.
 
 ## Summary Table
 

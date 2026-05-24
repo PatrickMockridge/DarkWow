@@ -235,6 +235,18 @@ pub enum ContractSection {
 3. **`__entrypoint`** (Exec phase): Verifies state transition and returns update buffer
 4. **`__update`**: Applies state changes to persist modifications
 
+### init_contract Convention
+
+`deploy_contract()` in the daemon passes an empty payload (`&[]`) when
+deploying contracts outside the Deployooor flow (e.g., during tests and
+genesis initialization). Contracts MUST handle an empty `ix` byte slice in
+`init_contract()` by falling back to sensible defaults derived from the
+contract's own constants. When `ix` is non-empty, decode and use the
+provided parameters as normal (the production Deployooor path).
+
+25 of 28 contracts already follow this convention. The contract author
+should verify any new `init_contract` against the survey below.
+
 ### Host Functions
 
 WASM contracts can access these host functions:

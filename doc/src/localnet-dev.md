@@ -727,7 +727,7 @@ The identity contract needs to be refactored to use the **current SDK API patter
 
 This is a **significant refactoring effort** - the contract's architecture would need to be adapted to match the current SDK design.
 
-See: [Money Version Bridge Decision](../../arch/money-version-bridge.md)
+See: [Money V3 Migration](../contract/money_v3_migration.md)
 
 ---
 

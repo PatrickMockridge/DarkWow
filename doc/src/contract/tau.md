@@ -58,7 +58,7 @@ In traditional task management systems (Asana, Linear, Jira, etc.):
 
 ### O-Cap Solution: Authorization Inversion
 
-Tau applies the **Authorization Inversion** principle from O-Cap:
+Tau applies the **Authorization Inversion** principle from [O-Cap Authorization](../arch/ocap.md):
 
 | Traditional | O-Cap Tau |
 |-------------|-----------|

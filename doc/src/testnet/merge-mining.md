@@ -1,6 +1,8 @@
 DarkWow x Monero Merge Mining using p2pool and xmrig
 ===================================================
 
+> **Note:** For the complete merge mining reference — architecture, protocol, economics, and finality — see [Merge Mining](../arch/merge-mining.md). This document covers setup instructions.
+
 This document provides a way to set up a Monero testnet that is
 able to merge-mine DarkWow using `p2pool` and `xmrig`.
 

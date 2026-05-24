@@ -14,6 +14,8 @@ O-Cap is **not a feature** or an extension - it is the **central paradigm** for 
 
 **The key insight:** Authorization should be based on **what you can prove**, not **who you are**.
 
+> **Implementation note:** For the Identity contract's data structures (Capability, CredentialRequirement, CapabilityProof), ZK circuit design, deployment roadmap, and privacy analysis, see [Identity Contract](identity.md).
+
 ## The Ambient Authority Problem
 
 Traditional systems have **ambient authority** - your identity and permissions exist in the environment (OS, database, session) and ANY operation can potentially access them.
@@ -255,6 +257,8 @@ This bounded disclosure is **guaranteed** by the ZK proof construction — not b
 ### LTE Gate: Formal Verification of Threshold Predicates
 
 The LessThanOrEqual (LTE) operation is central to O-Cap predicates, enabling threshold comparisons like `role >= senior_engineer`. `LessThanOrEqual` is a **DarkWow addition to the zkVM** — it does not exist in upstream DarkWow. Both the implementation and the Lean4 formal verification were completed on this fork.
+
+`IsNotEqual` (0x62) complements LTE for O-Cap predicates — it enables **inequality-based capability checks** such as `role != banned_user` or `status != revoked`, where the authorization condition is that a credential attribute does NOT match a specific excluded value. Like LTE, `IsNotEqual` is Lean4-verified and is a DarkWow addition.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐

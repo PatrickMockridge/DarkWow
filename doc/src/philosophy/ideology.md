@@ -10,7 +10,7 @@ DarkWow's ideology is inseparable from its technical architecture. See the [Phil
 
 3. **Sovereignty Through Cryptography**: ZK proofs provide the technical substrate for sovereignty — the ability to prove a statement is true without revealing the underlying information.
 
-4. **O-Cap Authorization**: Object capabilities replace access control lists. A holder of a capability token can exercise it without asking permission.
+4. **O-Cap Authorization**: Object capabilities replace access control lists. See [O-Cap & Composable Privacy](../arch/ocap.md).
 
 5. **AI-Assisted Development as Design Principle**: DarkWow's architecture is intentionally AI-friendly. O-Cap authorization means AI-generated contracts cannot violate capability boundaries. Deterministic Uncle Merkle consensus means tests are reproducible — same code, same result, every time. The four-level test pipeline provides a safety net that catches AI-generated errors before mainnet. Complex smart contracts can be vibe-coded because the architecture constrains what can go wrong.
 
@@ -18,4 +18,5 @@ DarkWow's ideology is inseparable from its technical architecture. See the [Phil
 
 - [DarkWow Philosophy](philosophy.md) — The full philosophical framework
 - [Four Refutations of Upstream](../../README.md) — What DarkWow rejects and why
+- [What's Different from Upstream](../about/differences_from_upstream.md) — Full comparison table
 - [UN Declaration on the Rights of Indigenous Peoples](https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf)

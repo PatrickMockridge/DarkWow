@@ -17,29 +17,11 @@ Development occurs on the **`linear-master`** branch.
 
 ## Four Refutations in Detail
 
+See [What's Different from Upstream DarkFi](doc/src/about/differences_from_upstream.md) for the complete comparison table and detailed explanations of the four design divergences.
+
 ### 1. No Governance DAO — Pure PoW
 
-Upstream DarkFi's DAO can freeze the native token through token-holder voting. If governance can restrict minting, miners may not get paid and PoW consensus becomes attackable by wealthy token holders. DarkWow removes all governance control over the native token. There is no DAO that can freeze consensus-critical functions.
-
-### 2. Uncle Merkle Consensus — No Overlay/Diff
-
-Upstream's overlay/diff consensus uses speculative state (checkpoint → commit → rollback), where `diff()` computation depends on sequence history — the same code produces different results depending on timing. This makes deterministic testing effectively impossible.
-
-DarkWow replaces this entirely with **Uncle Merkle consensus**: the canonical chain with the most accumulated work obligates offering uncle chains a one-time option to form a side chain and share the PoW reward. Stateless verification via pure merkle proof — no overlay needed. Same block always produces the same result.
-
-See [Uncle Merkle Consensus](doc/src/arch/consensus/uncle_merkle.md) for the full specification.
-
-### 3. ZK Opcodes — Built and Formally Verified in Lean4
-
-Upstream's zkVM has no `LessThanOrEqual`, `IsNotEqual`, or `BaseDiv` opcodes. These were built on this fork — `LessThanOrEqual` (0x55) enables conditional logic and O-Cap predicate evaluation in circuits; `IsNotEqual` (0x62) is the first fully constrained pure Boolean operator in the zkVM (all witness values fully constrained in all cases); `BaseDiv` (0x58) enables precise field division for cold-circuit governance operations (stablecoin interest accrual, governance ratio checks). All three have been formally proven sound using the Lean4 proof assistant, with machine-checkable proofs of correctness living in this repository (`proofs/lean/`).
-
-See [Opcodes and Formal Verification](doc/src/arch/zk/opcodes.md) for the full verification analysis.
-
-### 4. No Premine — Every Coin Mined
-
-Upstream DarkFi distributed tokens at genesis to early investors, team members, and SAFT participants — creating concentrated whale dominance. DarkWow has zero pre-mined tokens. Every unit of the native token is earned through RandomX Proof-of-Work mining, following a continuous exponential decay schedule with a permanent 1% tail emission, converging asymptotically toward a 21 million supply cap.
-
-See [Blockchain Rewards](src/sdk/src/blockchain.rs) for the reward schedule constants.
+DarkWow removes all governance control over the native token.
 
 ---
 

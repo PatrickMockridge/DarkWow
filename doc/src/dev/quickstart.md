@@ -26,63 +26,24 @@ testing infrastructure is the platform that makes this possible.
 
 ## The Four Testing Levels
 
-### Level 1 — Lightweight (Local, Seconds)
+DarkWow ships with a four-level testing infrastructure. See the [Testing Overview](testing/overview.md) for the complete taxonomy, per-level detail pages, and when to use each level.
 
-Fast unit and integration tests with **no ZK proof overhead**. Tests model code,
-serialization, WASM binary validity, and deployment plumbing.
+| I want to... | Level | Command | Time |
+|---|---|---|---|
+| Test contract model/serialization code | 1 | `cargo test -p dwow_<contract> --test integration` | seconds |
+| Deploy all contracts (no ZK proofs) | 1 | `cargo test -p dwowd test_pipeline -- --nocapture` | ~2 min |
+| Run full contract execution with ZK proofs | 2 | `cargo test --release -p dwowd test_<contract>_heavyweight` | 30-120s |
+| Run the test pipeline (5 modes) | 3 | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` | ~5 min |
+| Run a multi-node blockchain locally | 3 | `docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d` | persistent |
+| Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true dwow-devnet` | persistent |
+| Join the public testnet as a miner | 4 | `docker run --network=host -e MODE=native darkwow-node/testnet` | persistent |
+| Run native mining + deploy contracts | N/A | `./contrib/docker/testnet-node/native-workflow.sh` | ~10 min |
+| Run the full contract test suite | 3 | `./contrib/docker/darkwow-testnet/test-contracts.sh` | ~5 min |
+| Run a bridge relayer with endowment | 4 | `docker run --network=host -e MODE=full darkwow-node/bridge` | persistent |
 
-```bash
-# Run a single contract's integration tests
-cargo test -p dwow_money_v3_contract --test integration
+### Level 3 — Containerized Localnet (test_pipeline.sh)
 
-# Run all lightweight contract deployment tests
-cargo test -p dwowd test_pipeline -- --nocapture
-```
-
-**What it covers:** Data model correctness, serialization round-trips, type
-conversions, contract deployment without proofs.
-
-**What it doesn't cover:** ZK proof generation, business logic under real proofs,
-P2P networking.
-
-→ [Level 1: Lightweight Tests](testing/level-1-lightweight.md)
-
-### Level 2 — Heavyweight (Local, Minutes)
-
-Full ZK proof generation and contract execution. Exercises real proving keys,
-state transitions, and cross-contract calls. Requires `--release` mode or
-increased stack size.
-
-```bash
-# Single contract heavyweight test
-RAYON_NUM_THREADS=10 cargo test --release -p dwowd \
-    test_money_v3_heavyweight -- --nocapture
-
-# All heavyweight tests (28+ contracts)
-RAYON_NUM_THREADS=10 cargo test --release -p dwowd \
-    test_heavyweight -- --nocapture
-```
-
-**What it covers:** Full ZK proof generation and verification, contract execution,
-state transitions, cross-contract composition, multi-holder workflows.
-
-→ [Level 2: Heavyweight Tests](testing/level-2-heavyweight.md)
-
-### Level 3 — Containerized Localnet (Local, Persistent)
-
-A 3-container Docker stack: **lilith** (P2P seed) + **node0** and **node1**
-(mining fullnodes with xmrig). Tests P2P networking, block propagation, and
-RandomX mining with realistic parameters.
-
-The test pipeline (`test_pipeline.sh`) supports five modes — three local devnet
-modes plus two join modes for connecting to the public testnet as an external
-participant. Each mode builds Docker images, starts the stack, and runs 10-12
-sequential verification phases (clean, prereqs, wallet, build, start, container
-verification, RPC health, mining activity, block production, report, plus
-persistence and seed fallback for join modes). Every check reports PASS or FAIL.
-
-See the [darkwow-testnet README] for the full modes comparison table, Docker
-image catalog, compose profile reference, and current pass/fail counts.
+The test pipeline supports five modes — three local devnet modes plus two join modes for connecting to the public testnet as an external participant. Each mode builds Docker images, starts the stack, and runs 10-12 sequential verification phases (clean, prereqs, wallet, build, start, container verification, RPC health, mining activity, block production, report, plus persistence and seed fallback for join modes).
 
 ```bash
 # Full pipeline — 5 modes (clean → build → verify)
@@ -90,34 +51,17 @@ image catalog, compose profile reference, and current pass/fail counts.
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode merge
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-native
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-merge
-
-# Or manually start the testnet
-docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d
-
-# Check RPC health (dwowd uses raw TCP JSON-RPC, not HTTP)
-docker exec dwow-node0 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3'
-
-# Run contract deploy + transfer test
-./contrib/docker/darkwow-testnet/contract_test.sh
-
-# Run full multi-contract test suite
-./contrib/docker/darkwow-testnet/test-contracts.sh
-
-# Tear down
-docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml down -v
 ```
 
-[darkwow-testnet README]: https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/darkwow-testnet/README.md
+See the [darkwow-testnet README] for the full modes comparison table, Docker image catalog, and compose profile reference.
 
-**What it covers:** 3-container stack (seed + 2 miners), P2P gossip, block
-production, RandomX mining via xmrig, RPC endpoint interaction.
+[darkwow-testnet README]: https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/darkwow-testnet/README.md
 
 → [Level 3: Containerized Localnet](testing/level-3-localnet.md)
 
 ### Level 4 — Containerized Devnet (LAN/Internet, Persistent)
 
-A single-container mining node for **multi-machine shared devnets**. Deploy a seed
-on one machine, miners on others — all connected over LAN or the public internet.
+A single-container mining node for **multi-machine shared devnets**. Deploy a seed on one machine, miners on others — all connected over LAN or the public internet.
 
 ```bash
 # Seed machine
@@ -141,16 +85,13 @@ docker run --rm --network=host \
     darkwow-testnet:latest
 ```
 
-**What it covers:** Multi-machine P2P, host networking for LAN discovery,
-env-var-driven configuration, xmrig auto-mining, seed/miner role selection.
+→ [Level 4: Containerized Devnet Node](testing/level-4-devnet.md)
 
 ### Public Testnet Node (Docker Hub)
 
-A single-image, dual-mode container for joining the **public DarkWow testnet**
-as a mining node. One `docker pull`, two modes:
+A single-image, dual-mode container for joining the **public DarkWow testnet** as a mining node.
 
 ```bash
-# Pull from Docker Hub
 docker pull darkwow-node/testnet:latest
 
 # Native RandomX mining (solo)
@@ -169,9 +110,6 @@ docker run --network=host \
     -v /path/to/data:/root/.local/share/dwow/dwowd \
     darkwow-node/testnet:latest
 ```
-
-**What it covers:** Public testnet participation, native and merge mining,
-wallet-persistent configuration, host networking for P2P peer discovery.
 
 → [Public Testnet Node README](https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/testnet-node/README.md)
 

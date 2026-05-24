@@ -1,5 +1,7 @@
 # The Complete Mathematical Universe of DarkWow Opcodes
 
+> **Note:** This document provides theoretical background on the full opcode space. For the current implementation status and formal verification of DarkWow opcodes, see [Opcode Status](opcodes-status.md) and [Opcodes and Formal Verification](opcodes.md).
+
 > **Abstract**: DarkWow's zkVM provides a Turing-complete zero-knowledge computation framework built on elliptic curve cryptography and finite field arithmetic. This document analyzes the complete opcode space required to express all possible DeFi applications, identifies critical gaps in the current implementation, and provides mathematical reasoning for field arithmetic challenges that determine what smart contracts can and cannot securely express.
 
 ---
@@ -129,10 +131,11 @@ This is sound but ** bloats circuits** — a 2-opcode check becomes 3-4x more ex
 | `LessThanLoose` | No | ✅ | ✅ Production |
 | `IsEqualBase` | Yes | ❌ | ⚠️ Bug (delta_invert unconstrained when a==b) |
 | `LessThanOrEqual` | Yes | ✅ | ✅ **Verified Sound** (Lean 4) |
+| `IsNotEqual` | Yes | ✅ | ✅ **Verified Sound** (Lean 4) |
 | `BaseLtStrict` | Yes | ✅ | ✅ Verified |
 | `NotBase` | Yes | ✅ | ✅ Verified |
 
-**Comparison Opcode Status**: `LessThanStrict` and `LessThanLoose` are **constrain-only** (no return value). `LessThanOrEqual` is **verified sound** via Lean 4 exhaustive testing. `IsEqualBase` has a known bug.
+**Comparison Opcode Status**: `LessThanStrict` and `LessThanLoose` are **constrain-only** (no return value). `LessThanOrEqual` and `IsNotEqual` are **verified sound** via Lean 4 exhaustive testing. `IsEqualBase` has a known bug.
 
 **IsEqualBase bug** (known issue):
 ```zk
@@ -498,10 +501,11 @@ return t;
 
 ### Note on Comparison Opcodes: Safemath vs Native Opcode
 
-`LessThanOrEqual` is **verified sound** ✅, `BaseDiv` is **implemented** ✅. `IsEqualBase` has a known bug.
+`LessThanOrEqual` and `IsNotEqual` are **verified sound** ✅, `BaseDiv` is **implemented** ✅. `IsEqualBase` has a known bug.
 
 **Formal Verification Results** (see [Opcodes and Formal Verification](opcodes.md)):
 - `LessThanOrEqual` (0x55): ✅ **Verified Sound** via Lean 4
+- `IsNotEqual` (0x62): ✅ **Verified Sound** via Lean 4
 - `IsEqualBase` (0x54): ❌ **Bug Confirmed** - delta_invert unconstrained when `a == b`
 - `NotBase` (0x56): ✅ **Verified Sound**
 - `BaseLtStrict` (0x57): ✅ **Verified Sound**
@@ -523,7 +527,7 @@ return t;
 - ✅ Public key derivation (ECDSA on Jubjub)
 - ✅ Poseidon-based Merkle trees (fixed depth 32)
 - ✅ Arbitrary field arithmetic circuits
-- ✅ Boolean comparison logic (`LessThanOrEqual`, `BaseLtStrict` — formally verified sound)
+- ✅ Boolean comparison logic (`LessThanOrEqual`, `IsNotEqual`, `BaseLtStrict` — formally verified sound)
 - ✅ Field division (`BaseDiv` opcode 0x58 — implemented via binary exponentiation)
 - ✅ Object capability permissions (basic)
 - ✅ Single-asset confidential transfers (via ec_mul/ec_add workaround)

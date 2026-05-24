@@ -81,8 +81,10 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 ## Legacy
 
 Historical documents in [./legacy/](.legacy/):
-- [money-vulnerability-analysis.md](./legacy/money-vulnerability-analysis.md) - Fork decision rationale (2024)
-- [money-version-bridge.md](./legacy/money-version-bridge.md) - Fork vs bridge explanation (2024)
+- [wallet.md](./legacy/wallet.md) - Wallet architecture and key management
+- [consensus_dag.md](./legacy/consensus_dag.md) - Original overlay-DAG consensus
+- [event_graph.md](./legacy/event_graph.md) *(active)* - P2P messaging DAG used by darkirc
+  - [event_graph_network_protocol.md](./legacy/event_graph_network_protocol.md) *(active)*
 
 ## Directory Structure
 
@@ -116,8 +118,10 @@ doc/src/arch/
 │   ├── safemath.md
 │   └── merkle_depth.md
 ├── legacy/                      # Historical documents
-│   ├── money-vulnerability-analysis.md
-│   └── money-version-bridge.md
+│   ├── wallet.md
+│   ├── consensus_dag.md
+│   ├── event_graph.md           # *(active)*
+│   └── event_graph_network_protocol.md  # *(active)*
 ├── net/                         # P2P network docs
 │   └── p2p-network.md
 └── sc/                          # Smart contract docs

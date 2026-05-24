@@ -45,16 +45,7 @@ timing artifact.
 
 ## The Test Pipeline as AI Safety Net
 
-DarkWow's four-level testing infrastructure catches different classes of
-bugs at each layer. When used as the feedback loop for AI-assisted
-development, every iteration tightens the net:
-
-| Level | Name | What It Catches | AI Feedback Loop |
-|-------|------|-----------------|------------------|
-| 1 | Lightweight | Compilation errors, serialization bugs, WASM binary validity | Seconds — immediate |
-| 2 | Heavyweight | ZK proof failures, business logic errors, cross-contract state bugs | Minutes — per iteration |
-| 3 | Containerized Localnet | P2P networking bugs, block propagation, mining integration, multi-node consensus | ~20 min — full pipeline |
-| 4 | Containerized Devnet | Multi-machine deployment, connectivity, public network conditions | Variable — deployment testing |
+DarkWow's [four-level testing infrastructure](testing/overview.md) catches different classes of bugs at each layer. When used as the feedback loop for AI-assisted development, every iteration tightens the net. See the [Testing Overview](testing/overview.md) for the complete level descriptions and commands.
 
 Each level catches what the previous level physically cannot. Level 1
 won't catch a ZK circuit bug. Level 2 won't catch a P2P gossip failure.

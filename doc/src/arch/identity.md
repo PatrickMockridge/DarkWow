@@ -1,54 +1,7 @@
 # Identity Contract: O-Cap (Object Capability) Authorization
 
-*This document describes O-Cap authorization - a paradigm shift from identity-based ACLs to capability-based authorization. O-Cap enables proving "what you can do" without revealing "who you are".*
+> **Note:** For the conceptual foundations of O-Cap — the ambient authority problem, privacy rules, authorization inversion, and the full opcode reference — see the definitive [O-Cap & Composable Privacy](ocap.md) chapter. This document covers the Identity contract implementation: data structures, ZK circuit design, composability patterns, and deployment roadmap.
 
-## O-Cap: The Central Paradigm
-
-O-Cap is **not a feature** or an extension - it is the **central paradigm** for authorization in DarkWow.
-
-**The fundamental question:**
-- ACL: "WHO has access to X?"
-- O-Cap: "Can you prove you have access to X?"
-
-**The key insight:** Authorization should be based on **what you can prove**, not **who you are**.
-
-O-Cap shifts authorization from identity-based to capability-based:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    O-Cap Authorization Model                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ACL (Traditional):           O-Cap (DarkWow):                   │
-│  ┌──────────────────┐         ┌──────────────────┐               │
-│  │ Identity-based   │         │ Capability-based  │               │
-│  │ Access Control   │         │ Authorization     │               │
-│  ├──────────────────┤         ├──────────────────┤               │
-│  │ alice@co → repo  │         │ prove(role>=Y)  │               │
-│  │ bob@co → repo    │         │ → ACCESS GRANTED │               │
-│  │ charlie@co → admin│         │ (identity hidden)│               │
-│  └──────────────────┘         └──────────────────┘               │
-│                                                                   │
-│  PROBLEM:                  SOLUTION:                             │
-│  WHO has access?            CAN you prove you have access?        │
-│  Identity revealed          Identity never revealed                │
-│  Every action traced        Only capability used                   │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### O-Cap is NOT a Privacy Level
-
-O-Cap is sometimes described as a "privacy level" alongside zk_only and selective disclosure.
-This framing is misleading. O-Cap is a **paradigm** that works at all privacy levels:
-
-| Privacy Level | O-Cap Behavior |
-|---------------|----------------|
-| `zk_only` | Prove capability without revealing result |
-| `selective` | Prove capability, reveal only pass/fail |
-| `attested` | Prove capability with issuer confirmation |
-
-O-Cap is about **what you're proving** (a capability), not **how much you're revealing**.
 
 ## The Fundamental Shift: ACL to O-Cap
 
@@ -438,6 +391,8 @@ O-Cap provides strong privacy guarantees:
 
 ### How O-Caps Compose with Each Other
 
+> **See also:** [How O-Caps Compose](ocap.md#how-o-caps-compose) in the O-Cap chapter for the general paradigm.
+
 Capabilities compose through **accumulation of requirements** - never amplification of authority:
 
 ```
@@ -475,6 +430,8 @@ Capabilities compose through **accumulation of requirements** - never amplificat
 ```
 
 ### How O-Caps Reduce Attack Surface
+
+> **See also:** [How O-Caps Reduce Attack Surface](ocap.md#o-caps-reduce-attack-surface-dramatically) in the O-Cap chapter.
 
 O-Caps dramatically reduce the attack surface by bounding authority:
 

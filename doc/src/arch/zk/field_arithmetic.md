@@ -1,6 +1,6 @@
 # Base Field Arithmetic: The Invisible Wall
 
-> **Note:** Pallas base field arithmetic constraints are a property of the Halo2 proving system inherited from upstream DarkFi — they apply identically to both DarkFi and DarkWow. The `LessThanOrEqual` and `BaseDiv` opcodes discussed here are additions beyond what upstream currently provides in the zkVM. Both were formally verified in Lean4 on this fork.
+> **Note:** Pallas base field arithmetic constraints are a property of the Halo2 proving system inherited from upstream DarkFi — they apply identically to both DarkFi and DarkWow. For the canonical reference on `LessThanOrEqual` and `BaseDiv` opcode implementation and Lean4 formal verification, see [Opcodes and Formal Verification](opcodes.md).
 
 This document is about the fundamental constraint that shapes everything DarkWow's smart contracts can and cannot do: **the base field arithmetic wall**.
 
