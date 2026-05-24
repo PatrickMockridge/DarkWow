@@ -2,14 +2,34 @@
 
 Local tests that run in seconds. No ZK proofs, no P2P networking, no Docker.
 
+**Primary purpose:** Test contract deployment through the **Deployooor contract** —
+the real production path. This is the key difference from Level 2 (Heavyweight)
+which tests contract functions and endpoints.
+
+## Demarcation from Level 2 (Heavyweight)
+
+| Concern | Level 1 — Lightweight | Level 2 — Heavyweight |
+|---------|----------------------|----------------------|
+| Deployment path | **Deployooor** (real production flow) | Direct `deploy_contract()` (setup convenience) |
+| ContractId origin | Derived from deploy keypair (`ContractId::derive_public`) | Deterministic hash of contract name |
+| Init params | Real serialized params via `DeployParamsV1.ix` | Empty `ix` (contract defaults) |
+| ZK proofs | None | Required for all calls |
+| Contract functions | Not tested | Every endpoint exercised |
+| Uncle-merkle blocks | Not tested | Multi-uncle, depth, mixed exec |
+
+**Both are required.** Level 1 verifies the Deployooor deployment pipeline works
+end-to-end. Level 2 verifies contract functions, state transitions, and
+uncle-merkle block execution using the direct deploy path for test setup
+convenience.
+
 ## What's Covered
 
 | Test Type | Location | What It Verifies |
 |-----------|----------|-----------------|
 | ZK circuit compilation | `src/contract/<name>/tests/zk_circuit_test.sh` | `.zk` files compile to `.zk.bin` via zkas |
 | Contract integration | `src/contract/<name>/tests/integration.rs` | Serialization, enums, constants, derive determinism |
-| GenesisHarness | `bin/dwowd/src/tests/genesis.rs` | Baseline chain: NativeToken + Deployooor |
-| Lightweight pipeline | `bin/dwowd/src/tests/pipeline.rs` | Contract deployment (no ZK proofs) |
+| GenesisHarness | `bin/dwowd/src/tests/genesis.rs` | Baseline chain: NativeToken + Deployooor pre-deployed |
+| Lightweight pipeline | `bin/dwowd/src/tests/pipeline.rs` | **Deployooor-based deployment** (real production path) |
 
 ## ZK Circuit Tests
 
@@ -155,8 +175,8 @@ use dwow_<name>_contract::{
 ## GenesisHarness
 
 GenesisHarness provides a reusable baseline chain with the two mandatory
-consensus contracts: NativeToken and Deployooor. It does NOT deploy WASM
-contracts — use ContractTestingPipeline for that.
+native contracts: NativeToken and Deployooor. Creates a temp sled database,
+LinearStore, and LinearBlockchain with instant-PoW target (`u32::MAX`).
 
 **Location:** `bin/dwowd/src/tests/genesis.rs`
 
@@ -165,144 +185,132 @@ contracts — use ContractTestingPipeline for that.
 ```rust
 use crate::tests::genesis::GenesisHarness;
 
-let config = HarnessConfig {
-    pow_target: 20,
-    pow_fixed_difficulty: Some(BigUint::one()),
-    confirmation_threshold: 1,
-    max_forks: 8,
-    alice_url: "tcp+tls://127.0.0.1:18440".to_string(),
-    bob_url: "tcp+tls://127.0.0.1:18441".to_string(),
-};
-
-let mut genesis = GenesisHarness::new(config, &ex).await?;
-genesis.generate_genesis_blocks(3).await?;
-// Chain is ready with NativeToken + Deployooor
+let genesis = GenesisHarness::new()?;
+// Chain is ready with NativeToken + Deployooor pre-deployed via deploy_contract()
+// PoW target is u32::MAX so any nonce passes — instant blocks for tests.
 ```
 
 ### API
 
 | Method | Purpose |
 |--------|---------|
-| `GenesisHarness::new(config, ex)` | Initialize harness with alice/bob nodes and fork |
-| `generate_genesis_blocks(n)` | Produce `n` blocks with NativeToken PoW rewards |
-| `deploy_contract(wasm, name)` | Deploy a WASM contract via Deployooor, returns `ContractId` |
-| `verify_and_apply(block)` | Verify a block via sync module and apply to fork |
+| `GenesisHarness::new()` | Create temp sled DB, LinearStore, LinearBlockchain; deploy NativeToken + Deployooor |
+| `deploy_contract(wasm, contract_id, ix)` | Deploy WASM directly (bypasses Deployooor — used by heavyweight tests) |
 | `block_height()` | Get current block height |
 
 ### GenesisHarness Architecture
 
 ```
 GenesisHarness
-  ├── harness: Harness
-  │     ├── alice: DarkfiNodePtr  (validator + p2p)
-  │     └── bob: DarkfiNodePtr
-  ├── fork: Fork
-  │     ├── overlay: BlockchainOverlay
-  │     └── diffs: Vec<StateDiff>
-  ├── keypair: Keypair
-  └── deployed_contracts: Vec<ContractId>
+  ├── db: Arc<sled::Db>             — temp sled database
+  ├── store: Arc<LinearStore>       — WASM + block + uncle storage
+  └── blockchain: LinearBlockchain  — PoW consensus + WASM runtime
 
-Native Contracts (pre-deployed at genesis):
-  NATIVE_TOKEN_CONTRACT_ID  — block rewards, fees, burns
-  DEPLOYOOOR_CONTRACT_ID    — WASM contract deployment
+Native Contracts (pre-deployed at construction):
+  DEPLOYOOOR_CONTRACT_ID    — hardcoded ContractId, zero x-coordinate
+  NATIVE_TOKEN_CONTRACT_ID  — hardcoded ContractId, zero x-coordinate
 ```
 
 ## ContractTestingPipeline (Lightweight)
 
-The lightweight pipeline handles the full build chain (ZK binaries, WASM
-compilation, genesis setup, deployment) without generating ZK proofs.
+The lightweight pipeline tests contract deployment through the **Deployooor
+contract** — the real production path. It builds a `DeployV1` transaction with
+`DeployParamsV1` (WASM bincode, public key, init params), submits it through
+`apply_block_with_uncles()`, and verifies the contract is deployed and
+initialized correctly.
 
 **Location:** `bin/dwowd/src/tests/pipeline.rs`
+
+### Deployment Flow
+
+```
+1. Load pre-built WASM via include_bytes!
+       ↓
+2. Generate deploy keypair (fresh SecretKey)
+       ↓
+3. Derive ContractId from public key (ContractId::derive_public)
+       ↓
+4. Build DeployV1 call data: [0x00] + encode(DeployParamsV1 { wasm_bincode, public_key, ix })
+       ↓
+5. Build transaction targeting DEPLOYOOOR_CONTRACT_ID
+       ↓
+6. Submit via apply_block_with_uncles() — the production code path
+       ↓
+7. Deployooor validates WASM exports, checks lock status, records contract_id
+       ↓
+8. Post-processing hook stores WASM and calls __initialize(ix)
+```
 
 ### One-Shot Usage
 
 ```rust
-let config = HarnessConfig { /* ... */ };
-let mut pipeline = ContractTestingPipeline::new("dex", config, &ex).await?;
+let mut pipeline = ContractTestingPipeline::new("dex").await?;
 let contract_id = pipeline.ensure_ready_and_deploy().await?;
 ```
 
 This automatically:
-1. Builds zkas compiler
-2. Builds ZK binaries
-3. Builds WASM
-4. Runs genesis (NativeToken + Deployooor)
-5. Deploys the contract (and its dependencies)
-
-### Step-by-Step Usage
-
-```rust
-let mut pipeline = ContractTestingPipeline::new("dex", config, &ex).await?;
-
-// Check status of everything
-let report = pipeline.status_report().await;
-info!("WASM: {:?}", report.wasm_status);
-info!("Genesis: {:?}", report.genesis_status);
-
-// Build only what's needed
-if matches!(report.wasm_status, BinaryStatus::Missing) {
-    pipeline.build_contract().await?;
-}
-
-pipeline.ensure_genesis().await?;
-let contract_id = pipeline.deploy().await?;
-```
+1. Creates GenesisHarness (NativeToken + Deployooor pre-deployed)
+2. Loads the contract's pre-built WASM
+3. Generates a deploy keypair and derives the ContractId
+4. Builds and submits a DeployV1 transaction through `apply_block_with_uncles()`
+5. Deployooor validates the WASM, records the contract, and triggers `__initialize`
 
 ### Running Pipeline Tests
 
 ```bash
 # Test a specific contract (default: dex)
-cargo test --package dwowd test_pipeline
+cargo test -p dwowd test_pipeline
 
 # Test via env var
-CONTRACT_NAME=money_v3 cargo test --package dwowd test_pipeline
-CONTRACT_NAME=stablecoin cargo test --package dwowd test_pipeline
-CONTRACT_NAME=dao_escrow cargo test --package dwowd test_pipeline
+CONTRACT_NAME=money_v3 cargo test -p dwowd test_pipeline
+CONTRACT_NAME=stablecoin cargo test -p dwowd test_pipeline
 
-# Batch deploy all 25+ contracts
-cargo test --package dwowd test_all_contracts_deploy
+# Batch deploy all 21 contracts through Deployooor
+cargo test -p dwowd test_all_contracts_deploy
 ```
+
+### Available Contracts
+
+21 deployable contracts (all have `dwow_*.wasm`):
+
+```
+attestation, auction, bridge, dao_escrow, deployooor, dex,
+drain_protection, escrow, game_room, identity, insurance_market,
+labor_market, money_v3, native_token, oracle, pool_stake,
+relayer_endowment, slot, stablecoin, subscription, tender
+```
+
+7 contracts (atomic_swap, baccarat, betting_stake, darkbet_exchange,
+darktoshi_dice, lottery, roulette) have `darkfi_*.wasm` only — their
+`dwow_*.wasm` has not yet been built. These are tested via heavyweight
+harness proof generation only.
 
 ## Build Chain
 
-The pipeline handles the build dependency chain automatically:
+WASM binaries are pre-built and loaded via `include_bytes!`. The build chain:
 
 ```
-1. zkas compiler (target/release/zkas)
+1. proof/*.zk  ──zkas──►  proof/*.zk.bin
        ↓
-2. proof/*.zk  ──zkas──►  proof/*.zk.bin
+2. cargo build --release --target wasm32-unknown-unknown -p dwow_{contract}_contract
        ↓
-3. cargo build --release -p dwow_{contract}_contract
+3. dwow_{contract}_contract.wasm  ──copy──►  src/contract/<name>/
        ↓
-4. dwow_{contract}_contract.wasm
+4. include_bytes! in pipeline.rs loads at compile time
        ↓
-5. cp .wasm → contract src dir (for include_bytes!)
-       ↓
-6. Contract deployed via Deployooor at runtime
+5. DeployV1 transaction submits WASM through Deployooor at test runtime
 ```
 
 ZK binaries must be built BEFORE WASM because the WASM compiler embeds the
-circuit parameters. The pipeline's `build_contract()` handles this chain.
-
-## Dependency Resolution
-
-Contracts declare dependencies for topological deployment ordering. The
-pipeline resolves these at deploy time so base contracts are deployed first.
-
-```
-dex ──depends on──► money_v3
-
-pipeline.deploy("dex") deploys in order:
-  1. money_v3 (base contract)
-  2. dex (depends on money_v3)
-```
+circuit parameters. WASM files are gitignored — each developer builds them
+locally.
 
 ## Debugging
 
 ### Library vs Test Issues
 
 ```bash
-cargo build -p dwow_<name>_contract          # If this succeeds, issue is in tests
+cargo build -p dwow_<name>_contract --target wasm32-unknown-unknown
 cargo test -p dwow_<name>_contract --test integration
 ```
 

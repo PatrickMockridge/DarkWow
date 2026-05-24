@@ -78,19 +78,19 @@ impl GenesisHarness {
         let deployooor_wasm = include_bytes!(
             "../../../../src/contract/deployooor/dwow_deployooor_contract.wasm"
         );
-        blockchain.deploy_contract(deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID)?;
+        blockchain.deploy_contract(deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID, &[])?;
 
         let native_token_wasm = include_bytes!(
             "../../../../src/contract/native_token/dwow_native_token_contract.wasm"
         );
-        blockchain.deploy_contract(native_token_wasm, *NATIVE_TOKEN_CONTRACT_ID)?;
+        blockchain.deploy_contract(native_token_wasm, *NATIVE_TOKEN_CONTRACT_ID, &[])?;
 
         Ok(Self { db, store, blockchain })
     }
 
     /// Deploy a WASM contract to the chain.
-    pub fn deploy_contract(&self, wasm: &[u8], contract_id: ContractId) -> Result<()> {
-        self.blockchain.deploy_contract(wasm, contract_id)
+    pub fn deploy_contract(&self, wasm: &[u8], contract_id: ContractId, ix: &[u8]) -> Result<()> {
+        self.blockchain.deploy_contract(wasm, contract_id, ix)
     }
 
     /// Get current block height.

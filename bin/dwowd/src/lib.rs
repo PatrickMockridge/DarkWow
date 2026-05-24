@@ -219,11 +219,11 @@ impl Dwowd {
         // Deploy native contracts to linear blockchain
         info!(target: "dwowd::Dwowd::init_linear", "Deploying native contracts to linear blockchain...");
         let deployooor_wasm = include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm").to_vec();
-        linear_blockchain.deploy_contract(&deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID)?;
+        linear_blockchain.deploy_contract(&deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID, &[])?;
         info!(target: "dwowd::Dwowd::init_linear", "Deployooor contract deployed");
 
         let native_token_wasm = include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm").to_vec();
-        linear_blockchain.deploy_contract(&native_token_wasm, *NATIVE_TOKEN_CONTRACT_ID)?;
+        linear_blockchain.deploy_contract(&native_token_wasm, *NATIVE_TOKEN_CONTRACT_ID, &[])?;
         info!(target: "dwowd::Dwowd::init_linear", "NativeToken contract deployed");
 
         // Create genesis block at height 1 with a valid RandomX hash.

@@ -294,7 +294,7 @@ impl DwowNode {
         );
 
         // Deploy to linear blockchain
-        match linear_blockchain.deploy_contract(&wasm_bytes, contract_id) {
+        match linear_blockchain.deploy_contract(&wasm_bytes, contract_id, &[]) {
             Ok(()) => {
                 info!(target: "dwowd::rpc::contract", "Contract deployed successfully");
                 let result = JsonValue::from(std::collections::HashMap::from([

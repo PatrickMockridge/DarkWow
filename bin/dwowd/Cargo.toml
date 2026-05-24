@@ -63,6 +63,7 @@ dwow_pool_stake_contract = {path = "../../src/contract/pool_stake", features = [
 dwow_dao_escrow_contract = {path = "../../src/contract/dao_escrow", features = ["client", "no-entrypoint"]}
 dwow_identity_contract = {path = "../../src/contract/identity", features = ["client", "no-entrypoint"]}
 dwow_stablecoin_contract = {path = "../../src/contract/stablecoin", features = ["client", "no-entrypoint"]}
+dwow_dex_contract = {path = "../../src/contract/dex", features = ["client", "no-entrypoint"]}
 dwow_drain_protection_contract = {path = "../../src/contract/drain_protection", features = ["client", "no-entrypoint"]}
 dwow_insurance_market_contract = {path = "../../src/contract/insurance_market", features = ["client", "no-entrypoint"]}
 

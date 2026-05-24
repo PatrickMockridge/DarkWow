@@ -23,8 +23,26 @@
 
 //! ContractTestingPipeline — Lightweight deployment pipeline (Level 1).
 //!
-//! Pure deploy test: builds ZK binaries, WASM, genesis, and deploys a contract.
+//! Tests contract deployment through the **Deployooor contract** — the real
+//! production path. Builds a `DeployV1` transaction with `DeployParamsV1`,
+//! submits it through `apply_block_with_uncles()`, and verifies the deployed
+//! contract is recorded in Deployooor's lock tree and initialized correctly.
 //! No ZK proofs are generated.
+//!
+//! ## Demarcation from Heavyweight Tests
+//!
+//! | Concern | Lightweight (here) | Heavyweight |
+//! |---------|-------------------|-------------|
+//! | Deployment path | **Deployooor** (real production flow) | Direct `deploy_contract()` (setup convenience) |
+//! | ContractId origin | Derived from deploy keypair (`ContractId::derive_public`) | Deterministic hash of contract name |
+//! | Init params | Real serialized params via `DeployParamsV1.ix` | Empty `ix` (contract defaults) |
+//! | ZK proofs | None | Required for all calls |
+//! | Tests | Deployment correctness | Function/endpoint behavior, uncle-merkle stress |
+//!
+//! **Both are required.** Lightweight tests verify the Deployooor deployment
+//! pipeline works end-to-end. Heavyweight tests verify contract functions,
+//! state transitions, and uncle-merkle block execution using the direct
+//! deploy path for test setup convenience.
 //!
 //! ## Running
 //!
@@ -37,9 +55,13 @@
 use std::env;
 
 use dwow::Result;
-use dwow_sdk::crypto::ContractId;
+use dwow_sdk::crypto::{ContractId, Keypair, SecretKey, DEPLOYOOOR_CONTRACT_ID};
+use dwow_sdk::deploy::DeployParamsV1;
+use dwow_serial::Encodable;
+use rand::rngs::OsRng;
 
 use super::genesis::GenesisHarness;
+use super::harness::{build_coinbase_tx, build_contract_tx, build_test_block};
 
 /// Build status for a pipeline component.
 #[derive(Debug, Clone, PartialEq)]
@@ -108,13 +130,121 @@ impl ContractTestingPipeline {
         Ok(())
     }
 
-    /// Deploy the contract WASM to the chain.
-    /// Uses include_bytes! to load pre-built WASM from the contract directory.
+    /// Deploy the contract WASM through the Deployooor contract.
+    ///
+    /// This is the real production deployment path:
+    /// 1. Generate a deploy keypair and derive the ContractId from it
+    /// 2. Build a DeployV1 transaction targeting the Deployooor contract
+    /// 3. Submit through `apply_block_with_uncles()` which:
+    ///    a. Routes the call to Deployooor's WASM (validates, records in lock tree)
+    ///    b. Triggers post-processing hook (stores WASM, calls `__initialize`)
+    ///
+    /// This differs from the direct `deploy_contract()` path used by heavyweight
+    /// tests, which bypasses Deployooor entirely.
     pub async fn deploy(&self) -> Result<ContractId> {
         let wasm = self.load_contract_wasm()?;
-        let contract_id = self.derive_contract_id();
-        self.genesis.deploy_contract(&wasm, contract_id)?;
+
+        // Generate a deploy keypair and derive the ContractId from the public key.
+        // This matches production where the deployer creates a fresh keypair.
+        let deploy_keypair = Keypair::new(SecretKey::random(&mut OsRng));
+        let contract_id = ContractId::derive_public(deploy_keypair.public);
+
+        // Build DeployV1 call data: function byte 0x00 + encoded DeployParamsV1
+        let ix = self.build_init_params()?;
+        let deploy_params = DeployParamsV1 {
+            wasm_bincode: wasm,
+            public_key: deploy_keypair.public,
+            ix,
+        };
+        let mut call_data = vec![0x00u8]; // DeployFunction::DeployV1
+        deploy_params.encode(&mut call_data)?;
+
+        // Build a transaction targeting the Deployooor contract
+        let deployooor_bytes = DEPLOYOOOR_CONTRACT_ID.to_bytes();
+        let contract_tx = build_contract_tx(deployooor_bytes, call_data);
+
+        // Build a coinbase transaction for the block reward
+        let height = self.genesis.block_height();
+        let reward = dwow_sdk::blockchain::expected_reward((height + 1) as u32);
+        let coinbase = build_coinbase_tx(reward);
+
+        let block = build_test_block(
+            &self.genesis.blockchain,
+            height + 1,
+            vec![contract_tx, coinbase],
+        );
+
+        // Submit via apply_block_with_uncles — this is the same production code
+        // path that miners and the stratum protocol use.
+        self.genesis.blockchain.apply_block_with_uncles(&block, &[]).await?;
+
         Ok(contract_id)
+    }
+
+    /// Build initialization params (ix) for the contract's __initialize call.
+    /// Returns empty vec for contracts that ignore the payload (25 of 28).
+    /// For the 3 contracts with initialization params (dex, stablecoin, bridge),
+    /// returns serialized default params so the full Deployooor path is exercised.
+    fn build_init_params(&self) -> Result<Vec<u8>> {
+        let ix: Vec<u8> = match self.contract_name.as_str() {
+            "dex" => {
+                // Use defaults matching init_contract empty-payload fallback
+                use dwow_dex_contract::model::{InitializeParams, TransparencyConfig};
+                let params = InitializeParams {
+                    timeout: 100,
+                    fee: 0,
+                    trusted_money_merkle_root: [0u8; 32],
+                    transparency_config: TransparencyConfig::default(),
+                };
+                dwow_serial::serialize(&params)
+            }
+            "stablecoin" => {
+                use dwow_stablecoin_contract::model::{InitializeParams, StablecoinModel,
+                    DeadManSwitchConfig, DeadManAction};
+                use dwow_stablecoin_contract::{
+                    CDP_MIN_COLLATERALIZATION_RATIO, CDP_LIQUIDATION_THRESHOLD,
+                    CDP_LIQUIDATION_PENALTY, CDP_BASE_RATE, CDP_PI_KP, CDP_PI_KI,
+                    CDP_PRICE_FEED_TWAP_WINDOW, CDP_PRICE_DEVIATION_THRESHOLD,
+                };
+                let params = InitializeParams {
+                    model: StablecoinModel::PooledDebt,
+                    min_collateralization_ratio: CDP_MIN_COLLATERALIZATION_RATIO,
+                    liquidation_threshold: CDP_LIQUIDATION_THRESHOLD,
+                    liquidation_penalty: CDP_LIQUIDATION_PENALTY,
+                    base_rate: CDP_BASE_RATE,
+                    pi_kp: CDP_PI_KP,
+                    pi_ki: CDP_PI_KI,
+                    twap_window: CDP_PRICE_FEED_TWAP_WINDOW,
+                    price_deviation_threshold: CDP_PRICE_DEVIATION_THRESHOLD,
+                    collateral_params: vec![],
+                    dead_man_switch: DeadManSwitchConfig {
+                        enabled: false,
+                        timeout_blocks: 0,
+                        action: DeadManAction::DisableMinting,
+                        last_action_block: 0,
+                    },
+                    token_authority_pub: [0u8; 32],
+                    create_token: false,
+                    token_symbol: [0u8; 32],
+                    deployer_auth: dwow_sdk::pasta::pallas::Base::zero(),
+                };
+                dwow_serial::serialize(&params)
+            }
+            "bridge" => {
+                use dwow_bridge_contract::model::UpdateConfigParams;
+                use dwow_bridge_contract::BRIDGE_CONTRACT_XMR_CONFIRMATIONS;
+                let params = UpdateConfigParams {
+                    deposit_fee: 0,
+                    withdrawal_fee: 0,
+                    min_confirmations: BRIDGE_CONTRACT_XMR_CONFIRMATIONS as u32,
+                    max_deposit: u64::MAX,
+                    max_withdrawal: u64::MAX,
+                };
+                dwow_serial::serialize(&params)
+            }
+            _ => vec![],
+        };
+        Ok(ix)
     }
 
     /// Load pre-built WASM bytes for the contract.
@@ -190,16 +320,6 @@ impl ContractTestingPipeline {
         }
     }
 
-    /// Derive a deterministic ContractId for testing.
-    fn derive_contract_id(&self) -> ContractId {
-        use dwow_sdk::pasta::pallas;
-        // Simple deterministic ID based on contract name hash
-        let mut hash = 0u64;
-        for b in self.contract_name.as_bytes() {
-            hash = hash.wrapping_mul(31).wrapping_add(*b as u64);
-        }
-        ContractId::from(pallas::Base::from(hash))
-    }
 }
 
 // ============================================================================

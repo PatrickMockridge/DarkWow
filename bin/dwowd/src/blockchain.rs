@@ -27,6 +27,7 @@
 //! LinearStore with dwow's Runtime and ZK verification for contract execution.
 
 use std::collections::HashSet;
+use std::io::Cursor;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, Mutex,
@@ -38,7 +39,9 @@ use dwow::Error;
 use dwow::Result;
 use dwow_linear::{build_uncle_merkle, verify_uncle_proof, FinalityConfig, UncleBlock, Block, LinearStore, PoWConsensus};
 use sled_overlay::{SledTreeOverlay, SledTreeOverlayStateDiff};
-use dwow_sdk::crypto::ContractId;
+use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID};
+use dwow_sdk::deploy::DeployParamsV1;
+use dwow_serial::Decodable;
 use tracing::{error, info};
 
 use crate::zk::ZkVerifier;
@@ -663,6 +666,7 @@ impl LinearBlockchain {
         }
 
         let mut results: Vec<CallResult> = Vec::with_capacity(jobs.len());
+        let mut pending_deployments: Vec<(Vec<u8>, ContractId, Vec<u8>)> = Vec::new();
 
         for job in jobs {
             let is_canonical = job.is_canonical;
@@ -709,6 +713,23 @@ impl LinearBlockchain {
                 &backend.overlay.lock().unwrap().state,
             ).ok();
             results.push(CallResult { tx_hash, is_canonical, success: true, gas, diff });
+
+            // If this was a Deployooor DeployV1 call, collect it for post-processing.
+            // job.call_data is the serialized Vec<DarkLeaf<ContractCall>> (WASM format).
+            // We must deserialize to reach the inner ContractCall.data[0] function byte.
+            if is_canonical && job.contract_id == *DEPLOYOOOR_CONTRACT_ID {
+                if let Ok(calls) = dwow_serial::deserialize::<Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::tx::ContractCall>>>(&job.call_data) {
+                    if (job.call_idx as usize) < calls.len() {
+                        let inner = &calls[job.call_idx as usize].data;
+                        if inner.data.len() > 1 && inner.data[0] == 0x00 {
+                            if let Ok(params) = DeployParamsV1::decode(&mut Cursor::new(&inner.data[1..])) {
+                                let deployed_id = ContractId::derive_public(params.public_key);
+                                pending_deployments.push((params.wasm_bincode, deployed_id, params.ix));
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // --- Merge results in deterministic order ---
@@ -778,6 +799,53 @@ impl LinearBlockchain {
             info!(target: "linear_blockchain", "Uncles executed {} contract calls across {} uncle blocks", uncle_calls_executed, uncles.len());
         }
 
+        // --- Deployooor post-processing: deploy contracts from successful DeployV1 calls ---
+        for (wasm, contract_id, ix) in &pending_deployments {
+            info!(target: "linear_blockchain", "Deploying contract {:?} via Deployooor", contract_id);
+
+            // Store WASM directly in contracts tree (same as deploy_contract)
+            self.store.set_contract_data(&contract_id.to_bytes(), wasm)
+                .map_err(|e| Error::Custom(format!("DeployV1 WASM storage: {}", e)))?;
+
+            // Run __initialize within the main overlay so its state changes
+            // (tree creation, config) are part of the same atomic batch as
+            // Deployooor's lock-tree update.
+            let deploy_overlay = Mutex::new(main_overlay.clone());
+            let backend = Arc::new(TxBackend {
+                overlay: deploy_overlay,
+                store: store.clone(),
+                height: current_height,
+                vm: vm.clone(),
+            });
+            let mut runtime = match dwow::runtime::vm_runtime::Runtime::new(
+                wasm,
+                backend.clone(),
+                *contract_id,
+                current_height as u32,
+                difficulty,
+                dwow_sdk::tx::TransactionHash::none(),
+                0,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    error!(target: "linear_blockchain", "DeployV1 runtime creation failed for {:?}: {}", contract_id, e);
+                    return Err(Error::Custom(format!("DeployV1 runtime: {}", e)))
+                }
+            };
+            if let Err(e) = runtime.deploy(ix) {
+                error!(target: "linear_blockchain", "DeployV1 __initialize failed for {:?}: {}", contract_id, e);
+                return Err(Error::Custom(format!("DeployV1 init: {}", e)))
+            }
+            drop(runtime);
+
+            let deploy_overlay = Arc::try_unwrap(backend)
+                .map_err(|_| Error::Custom("backend still referenced after DeployV1 deploy".to_string()))?
+                .overlay.into_inner().unwrap();
+            main_overlay = deploy_overlay;
+
+            info!(target: "linear_blockchain", "Contract {:?} deployed via Deployooor successfully", contract_id);
+        }
+
         // Atomically commit all contract state changes to the contracts tree.
         if let Some(batch) = main_overlay.aggregate() {
             self.store.contracts_tree()
@@ -806,7 +874,7 @@ impl LinearBlockchain {
     /// Executes inline on the calling thread — matches upstream's sequential
     /// WASM execution model. wasmer does not support concurrent instantiation
     /// across threads safely.
-    pub fn deploy_contract(&self, wasm: &[u8], contract_id: ContractId) -> Result<()> {
+    pub fn deploy_contract(&self, wasm: &[u8], contract_id: ContractId, ix: &[u8]) -> Result<()> {
         info!(target: "linear_blockchain", "Deploying contract {:?}", contract_id);
 
         // Store WASM bytes in LinearStore so apply_block_with_uncles() can find them
@@ -836,7 +904,7 @@ impl LinearBlockchain {
             dwow_sdk::tx::TransactionHash::none(),
             0,
         ).map_err(|e| Error::Custom(format!("deploy runtime: {}", e)))?;
-        runtime.deploy(&[]).map_err(|e| Error::Custom(format!("deploy exec: {}", e)))?;
+        runtime.deploy(ix).map_err(|e| Error::Custom(format!("deploy exec: {}", e)))?;
         drop(runtime);
 
         let overlay = Arc::try_unwrap(backend)

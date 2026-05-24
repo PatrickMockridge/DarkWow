@@ -17,8 +17,8 @@ public-facing (LAN/internet).
 
 | Level | Name | Scope | Runtime | Commands |
 |-------|------|-------|---------|----------|
-| 1 | Lightweight | Unit tests, integration tests, contract deployment (no ZK proofs) | Seconds | `cargo test`, `cargo test -p dwowd test_pipeline` |
-| 2 | Heavyweight | ZK proof generation, full harness, RPC endpoints | Minutes | `cargo test --release -p dwowd test_<contract>_heavyweight` |
+| 1 | Lightweight | Unit tests, integration tests, **Deployooor-based deployment** (real production path, no ZK) | Seconds | `cargo test`, `cargo test -p dwowd test_pipeline` |
+| 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** (deployment not tested — uses direct path for setup) | Minutes | `cargo test --release -p dwowd test_<contract>_heavyweight` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX mining | Persistent | `docker-compose up` in `contrib/docker/darkwow-testnet/` |
 | 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true dwow-devnet` |
 
@@ -29,14 +29,15 @@ public-facing (LAN/internet).
 Use when you are:
 - Writing or modifying contract model/serialization code
 - Adding a new function enum variant
-- Checking that a contract deploys without errors
+- Testing that contracts deploy correctly through the **Deployooor contract** (the real production path)
 - Running fast CI checks (no ZK proof overhead)
 
-**What it covers:** Data model correctness, serialization round-trips, type
-conversions, WASM binary validity, deployment plumbing.
+**What it covers:** Deployooor-based deployment (DeployV1 → WASM validation →
+lock tree → __initialize), data model correctness, serialization round-trips,
+type conversions, WASM binary validity.
 
-**What it does NOT cover:** ZK proof generation, business logic under real
-proofs, state transitions with ZK verification.
+**What it does NOT cover:** ZK proof generation, contract function behavior,
+state transitions with ZK verification, uncle-merkle block execution.
 
 See [Level 1: Lightweight Tests](level-1-lightweight.md).
 
@@ -45,14 +46,21 @@ See [Level 1: Lightweight Tests](level-1-lightweight.md).
 Use when you are:
 - Writing ZK circuit code or proof generation logic
 - Testing full contract business logic with real ZK proofs
-- Verifying cross-contract interactions (e.g., DEX calling MoneyV3)
+- Verifying cross-contract interactions (e.g., recruitment pipeline)
 - Testing state transitions that depend on ZK verification
+- Testing uncle-merkle block formation (multi-uncle, depth, mixed exec)
 
 **What it covers:** Full ZK proof generation and verification, contract
-execution, state transitions, multi-holder workflows, cross-contract calls.
+function execution, state transitions, multi-holder workflows, cross-contract
+calls, uncle-merkle block stress (canonical/uncle/mixed/multi-uncle/depth),
+gas limit tracking.
 
-**Caveats:** Requires `--release` mode or increased stack size (halo2 proving
-keys are computationally intensive). Each heavyweight test takes 30-120 seconds.
+**What it does NOT cover:** Deployment correctness — this is tested by
+Level 1 through the Deployooor contract. Level 2 uses the direct
+`deploy_contract()` path solely for test setup convenience.
+
+**Caveats:** Requires `--release` mode and `RUST_MIN_STACK=67108864` (64MB)
+for halo2 proving keys. All 36 tests complete in ~450 seconds.
 
 See [Level 2: Heavyweight Tests](level-2-heavyweight.md).
 

@@ -1,13 +1,32 @@
 # Level 2: Heavyweight Tests
 
-Local tests with real ZK proof generation and execution. Requires `--release`
-mode or increased stack size due to halo2 proving key intensity.
+Local tests with real ZK proof generation and on-chain execution. Tests contract
+**functions, state transitions, and uncle-merkle block execution.** Requires
+`--release` mode and increased stack size due to halo2 proving key intensity.
+
+**Deployment is NOT tested here.** Contracts are deployed via the direct
+`deploy_contract()` path for setup convenience. Deployment correctness is
+tested separately by Level 1 (Lightweight) through the Deployooor contract.
+
+## Demarcation from Level 1 (Lightweight)
+
+| Concern | Level 1 — Lightweight | Level 2 — Heavyweight |
+|---------|----------------------|----------------------|
+| Deployment path | **Deployooor** (real production flow) | Direct `deploy_contract()` (setup convenience) |
+| ZK proofs | None | Required for all calls |
+| Contract functions | Not tested | Every endpoint exercised |
+| State transitions | Not tested | Verified via `apply_block_with_uncles()` |
+| Uncle-merkle blocks | Not tested | Multi-uncle, depth, mixed exec, invalid proof rejection |
+| Block gas limits | Not tested | Cumulative gas tracking across calls |
+| Cross-contract calls | Not tested | Multi-contract integration (recruitment pipeline) |
+
+**Both are required.**
 
 ## What's Covered
 
 | Component | Location | What It Verifies |
 |-----------|----------|-----------------|
-| HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` | Full contract execution with ZK proofs |
+| HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` | Contract functions, ZK proofs, state transitions, uncle-merkle execution |
 | ContractHarness trait | `src/contract/test-harness/src/harness.rs` | Per-contract ZK circuit access |
 | Contract harness modules (28) | `src/contract/test-harness/src/harness/` | Proof generation for each contract |
 
@@ -34,8 +53,9 @@ implements the trait.
 ## HeavyweightPipeline
 
 The `HeavyweightPipeline<H: ContractHarness>` provides full ZK-aware contract
-testing. It owns a `GenesisHarness` directly and provides `exec()` and
-`exec_with_children()` for on-chain contract calls with real proofs.
+function/endpoint testing. It owns a `GenesisHarness` directly and provides
+`exec()`, `exec_as_uncle()`, `exec_mixed()`, and `exec_multi_uncle()` for
+on-chain contract calls with real proofs and uncle-merkle block formation.
 
 ### Usage
 
@@ -43,52 +63,42 @@ testing. It owns a `GenesisHarness` directly and provides `exec()` and
 use dwow_contract_test_harness::harness::{DexHarness, ContractHarness};
 
 let harness = DexHarness::new();
-let mut pipeline = HeavyweightPipeline::new(harness, "dex", config, ex).await?;
+let mut pipeline = HeavyweightPipeline::new(harness, "dex").await?;
 
-// Generate genesis blocks
-pipeline.generate_genesis_blocks(3).await?;
-
-// Deploy contract
-let wasm = read_wasm("dex");
+// Deploy contract via direct path (setup convenience — not testing deployment)
+let wasm = include_bytes!("../../../../src/contract/dex/dwow_dex_contract.wasm");
 let contract_id = pipeline.deploy(wasm).await?;
 
-// Execute contract calls with ZK proofs
-pipeline.exec(function_id, call_data, proofs).await?;
+// Execute contract calls with ZK proofs through apply_block_with_uncles()
+let result = harness.create_swap(/* params */)?;
+pipeline.exec(&result.call_data).await?;
 ```
 
-### Cross-Contract FuncId Binding
-
-When a contract makes child calls (e.g., DEX calling money_v3), FuncIds must
-be computed from the deployed contract's real ContractId:
+### Block Execution Modes
 
 ```rust
-// Deploy dependency first
-let money_pipeline = HeavyweightPipeline::new(money_harness, "money_v3", config, ex).await?;
-let money_contract_id = money_pipeline.deploy(money_wasm).await?;
+// Canonical block execution
+pipeline.exec(&call_data).await?;
 
-// Compute real FuncIds for cross-contract calls
-let alice_otc_func_id = compute_func_id(money_contract_id, 0x05);
+// Execute as an uncle block
+pipeline.exec_as_uncle(&call_data).await?;
 
-// Generate proof with real FuncIds
-let execute_result = harness.execute_swap(..., alice_otc_func_id, bob_otc_func_id)?;
+// Mixed canonical + uncle in one block
+pipeline.exec_mixed(&canonical_data, &uncle_data).await?;
 
-// Execute with child calls (empty proofs for child calls are placeholders)
-pipeline.exec_with_children(0x03, call_data, vec![proof],
-    vec![child_call_0, child_call_1], vec![vec![], vec![]]).await?;
+// Multiple uncles in one block
+pipeline.exec_multi_uncle(&canonical_data, &[uncle1, uncle2, uncle3]).await?;
 ```
 
 ### Running Heavyweight Tests
 
-**Option 1: Release mode (recommended):**
 ```bash
-cargo test --package dwowd --release test_dex_heavyweight
-cargo test --package dwowd --release test_money_v3_heavyweight
-```
+# All 36 heavyweight tests (requires --release for halo2 proving keys)
+RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd -- test_heavyweight_
 
-**Option 2: Increased stack size:**
-```bash
-export RUST_MIN_STACK=16777216  # 16MB
-cargo test --package dwowd test_dex_heavyweight
+# Individual tests
+cargo test --release -p dwowd -- test_heavyweight_dao_escrow
+cargo test --release -p dwowd -- test_heavyweight_identity
 ```
 
 ### Why Stack Overflow Occurs
@@ -96,17 +106,26 @@ cargo test --package dwowd test_dex_heavyweight
 halo2 proof generation uses deep recursion for polynomial arithmetic. When
 building multiple proving keys simultaneously, stack usage exceeds the default
 ~8MB limit. Release mode optimizes this away; alternatively, increase
-`RUST_MIN_STACK`.
+`RUST_MIN_STACK`. The recommended value of `67108864` (64MB) has been tested
+through hundreds of consecutive runs with zero SIGSEGV.
+
+### Test Coverage
+
+36 tests total: 28 contract-specific tests (21 with WASM deploy + 7
+harness-only for non-WASM contracts) + 1 cross-contract integration test
+(recruitment_pipeline) + 7 block-execution infrastructure tests (canonical,
+uncle, mixed, multi-uncle, depth, empty-uncle, invalid-uncle-proof).
 
 ## Lightweight vs Heavyweight
 
 | Aspect | Level 1 (Lightweight) | Level 2 (Heavyweight) |
 |--------|----------------------|----------------------|
-| Purpose | Deployment verification | Full contract execution |
+| Purpose | **Deployooor-based deployment** (real production path) | **Contract functions + ZK proofs + uncle-merkle** |
+| Deployment | DeployV1 → Deployooor → hook → __initialize | Direct `deploy_contract()` (setup convenience) |
+| ContractId | Derived from deploy keypair | Deterministic hash of contract name |
 | ZK Proofs | None | Required for all calls |
-| GenesisHarness | Via pipeline | Owned directly by HeavyweightPipeline |
 | Runtime | Seconds | 30-120 seconds per test |
-| Mode | Debug or release | Release (or debug with 16MB stack) |
+| Mode | Debug or release | Release (or debug with 64MB stack) |
 
 ## Contract Harness List
 

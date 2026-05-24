@@ -21,19 +21,38 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! HeavyweightPipeline — Deploy + test endpoints with real ZK proofs (Level 2).
+//! HeavyweightPipeline — Contract function/endpoint testing with real ZK proofs (Level 2).
+//!
+//! Tests contract functions, state transitions, and uncle-merkle block execution
+//! with full ZK proof generation and verification. Uses the direct `deploy_contract()`
+//! path for setup convenience — deployment correctness is tested separately by the
+//! lightweight pipeline ([super::pipeline]).
+//!
+//! ## Demarcation from Lightweight Tests
+//!
+//! | Concern | Lightweight | Heavyweight (here) |
+//! |---------|-------------|-------------------|
+//! | Deployment | Deployooor-based (real production path) | Direct `deploy_contract()` (setup only) |
+//! | Contract functions | Not tested | Every endpoint exercised |
+//! | ZK proofs | None | Required for all calls |
+//! | State transitions | Not tested | Verified via `apply_block_with_uncles()` |
+//! | Uncle-merkle blocks | Not tested | Multi-uncle, depth, mixed exec |
+//! | Block gas limits | Not tested | Cumulative gas tracking |
+//!
+//! **Both are required.** See [super::pipeline] for deployment testing.
 //!
 //! Each test function:
-//! 1. Creates a HeavyweightPipeline with the contract's harness
-//! 2. Deploys the contract WASM (if available)
+//! 1. Creates a HeavyweightPipeline with the contract's harness (ZK circuits + proving keys)
+//! 2. Deploys the contract WASM via direct path (setup convenience — not testing deployment)
 //! 3. Exercises every endpoint via harness methods, verifying proofs + call_data
+//! 4. Executes on-chain through `apply_block_with_uncles()` (the production code path)
 //!
 //! ## Running
 //!
 //! ```bash
 //! cargo test --release -p dwowd test_heavyweight_dao_escrow
 //! cargo test --release -p dwowd test_heavyweight_identity
-//! RAYON_NUM_THREADS=20 cargo test --release -p dwowd test_heavyweight
+//! RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight
 //! ```
 
 use dwow::{zk::Proof, Result};
@@ -43,11 +62,15 @@ use dwow_contract_test_harness::harness::ContractHarness;
 
 use super::genesis::GenesisHarness;
 
-/// Full ZK-aware contract testing pipeline.
+/// Full ZK-aware contract function/endpoint testing pipeline.
 ///
 /// Generic over any `ContractHarness` implementation. Owns a `GenesisHarness`
-/// for the baseline chain and provides methods for deploying contracts and
-/// executing endpoint tests with real ZK proofs.
+/// for the baseline chain (NativeToken + Deployooor pre-deployed).
+///
+/// Deploys contracts via the direct `deploy_contract()` path for setup
+/// convenience — deployment correctness is tested separately by the
+/// lightweight pipeline. Focus is on contract function behavior, state
+/// transitions, ZK proof generation, and uncle-merkle block execution.
 pub struct HeavyweightPipeline<H: ContractHarness> {
     /// Baseline chain with NativeToken + Deployooor
     pub genesis: GenesisHarness,
@@ -69,7 +92,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
     /// Deploy the contract WASM and store its ContractId.
     pub async fn deploy(&mut self, wasm: &[u8]) -> Result<ContractId> {
         let contract_id = self.derive_contract_id();
-        self.genesis.deploy_contract(wasm, contract_id)?;
+        self.genesis.deploy_contract(wasm, contract_id, &[])?;
         self.contract_id = Some(contract_id);
         Ok(contract_id)
     }

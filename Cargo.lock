@@ -3132,6 +3132,7 @@ dependencies = [
  "dwow_bridge_contract",
  "dwow_dao_escrow_contract",
  "dwow_deployooor_contract",
+ "dwow_dex_contract",
  "dwow_drain_protection_contract",
  "dwow_identity_contract",
  "dwow_insurance_market_contract",

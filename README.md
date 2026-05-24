@@ -122,14 +122,22 @@ customized, and built on.
 
 | Level | Name | Scope | Command |
 |-------|------|-------|---------|
-| 1 | Lightweight | Unit/integration tests, no ZK overhead | `cargo test` |
-| 2 | Heavyweight | Full ZK proofs, contract execution | `cargo test --release` |
+| 1 | Lightweight | Deployooor-based deployment (real production path, no ZK) | `cargo test` |
+| 2 | Heavyweight | Contract functions, ZK proofs, uncle-merkle block execution | `cargo test --release` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + miners) | `docker compose up` |
 | 4 | Containerized Devnet | LAN/internet shared devnet node | `docker run --network=host` |
 
 Every contract ships with a **test harness** implementing the `ContractHarness`
 trait — compile-time ZK circuit loading, typed call builders, and automated
 proof verification. No blockchain required for Level 1 and 2 testing.
+
+**Clear demarcation:** Level 1 tests deployment through the Deployooor contract
+(the real production flow — validates WASM exports, checks lock status,
+derives ContractId from deploy keypair). Level 2 tests contract functions,
+state transitions, ZK proof verification, and uncle-merkle block execution
+(multi-uncle, depth, mixed canonical/uncle, gas limits). Both are required —
+deployment correctness is not tested in Level 2, and function behavior is not
+tested in Level 1.
 
 For a goal-oriented entry point, see the [Developer Quick Start Guide](doc/src/dev/quickstart.md).
 
@@ -179,11 +187,14 @@ the full workflow and philosophy.
 ### Contract Testing
 
 ```bash
-# Level 1: Fast deployment checks (seconds)
+# Level 1: Deployooor-based deployment (real production path, no ZK — seconds)
 cargo test -p dwowd test_pipeline
 
-# Level 2: Full ZK proof tests (minutes)
-RAYON_NUM_THREADS=10 cargo test --release -p dwowd test_heavyweight
+# Level 1: Batch deploy all 21 contracts through Deployooor
+cargo test -p dwowd test_all_contracts_deploy
+
+# Level 2: Contract functions, ZK proofs, uncle-merkle block execution (minutes)
+RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight
 
 # Level 3: Containerized localnet — multi-node Docker mining + contract tests
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native
@@ -264,8 +275,8 @@ cargo run -p dwowd -- --network darkwow-testnet
 
 | Level | Scope | Command |
 |-------|-------|---------|
-| 1 — Lightweight | Fast contract deploy checks (no ZK) | `cargo test -p dwowd test_pipeline` |
-| 2 — Heavyweight | Full ZK proof contract execution | `RAYON_NUM_THREADS=10 cargo test --release -p dwowd test_heavyweight` |
+| 1 — Lightweight | Deployooor-based deployment (21 contracts, no ZK) | `cargo test -p dwowd test_all_contracts_deploy` |
+| 2 — Heavyweight | Contract functions, ZK proofs, uncle-merkle stress (36 tests) | `RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight` |
 | 3 — Localnet | Multi-node Docker mining + contracts | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` |
 
 > **USE AT YOUR OWN RISK.** No third-party audit. May 2026 internal hardening
