@@ -167,9 +167,17 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[dex::init_contract] Initializing DEX contract");
 
-    // Parse initialization parameters
-    let params = InitializeParams::decode(&mut std::io::Cursor::new(ix))
-        .map_err(|_| dwow_sdk::error::ContractError::IoError("Decode error".to_string()))?;
+    // Parse initialization parameters. Empty ix means we're being deployed via
+    // deploy_contract() in tests (bypassing Deployooor) — use sensible defaults.
+    let params = if ix.is_empty() {
+        InitializeParams {
+            timeout: 100, fee: 0, trusted_money_merkle_root: [0u8; 32],
+            transparency_config: Default::default(),
+        }
+    } else {
+        InitializeParams::decode(&mut std::io::Cursor::new(ix))
+            .map_err(|_| dwow_sdk::error::ContractError::IoError("Decode error".to_string()))?
+    };
 
     msg!(
         "[dex::init_contract] Trusted money Merkle root: {:?}",

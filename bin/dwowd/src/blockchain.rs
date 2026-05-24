@@ -561,7 +561,8 @@ impl LinearBlockchain {
         let current_height = self.height.load(Ordering::SeqCst);
         if current_height > 0 {
             let previous = self.store.get_block(current_height).map_err(|e| Error::Custom(e.to_string()))?;
-            if block.header.previous != previous.hash(&vm) {
+            let previous_vm = self.get_vm(previous.header.randomx_key);
+            if block.header.previous != previous.hash(&previous_vm) {
                 error!(target: "linear_blockchain", "Block {} has invalid previous hash", block_hash);
                 return Err(Error::Custom("InvalidPreviousHash".to_string()))
             }

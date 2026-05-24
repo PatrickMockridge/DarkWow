@@ -51,10 +51,11 @@ use crate::{
     error::StablecoinError,
     model::{
         AddCollateralUpdateV1, AccrueInterestParams, AccrueInterestUpdateV1, CollateralType,
-        DepositCollateralParams, GovernanceReportParams, GovernanceReportUpdateV1,
-        InitializeParams, LiquidateParams, LiquidateUpdateV1, MintStableParams,
-        MintStableUpdateV1, RemoveCollateralUpdateV1, RepayStableParams, RepayStableUpdateV1,
-        UpdateConfigParams, UpdateConfigUpdateV1, WithdrawCollateralParams,
+        DeadManAction, DeadManSwitchConfig, DepositCollateralParams, GovernanceReportParams,
+        GovernanceReportUpdateV1, InitializeParams, LiquidateParams, LiquidateUpdateV1,
+        MintStableParams, MintStableUpdateV1, RemoveCollateralUpdateV1, RepayStableParams,
+        RepayStableUpdateV1, StablecoinModel, UpdateConfigParams, UpdateConfigUpdateV1,
+        WithdrawCollateralParams,
     },
     StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
     STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
@@ -65,6 +66,9 @@ use crate::{
     STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1, STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1,
+    CDP_MIN_COLLATERALIZATION_RATIO, CDP_LIQUIDATION_THRESHOLD, CDP_LIQUIDATION_PENALTY,
+    CDP_BASE_RATE, CDP_PI_KP, CDP_PI_KI, CDP_PRICE_FEED_TWAP_WINDOW,
+    CDP_PRICE_DEVIATION_THRESHOLD,
 };
 
 // ============================================================================
@@ -97,10 +101,35 @@ dwow_sdk::define_contract!(
 
 /// Initialize the CDP engine
 pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
-    let params = InitializeParams::decode(&mut std::io::Cursor::new(ix))
-        .map_err(|_| ContractError::IoError("Decode error".to_string()))?;
-
-    msg!("[stablecoin::init_contract] Initializing CDP engine");
+    // Parse initialization parameters. Empty ix means we're being deployed via
+    // deploy_contract() in tests (bypassing Deployooor) — use sensible defaults.
+    let params = if ix.is_empty() {
+        InitializeParams {
+            model: StablecoinModel::PooledDebt,
+            min_collateralization_ratio: CDP_MIN_COLLATERALIZATION_RATIO,
+            liquidation_threshold: CDP_LIQUIDATION_THRESHOLD,
+            liquidation_penalty: CDP_LIQUIDATION_PENALTY,
+            base_rate: CDP_BASE_RATE,
+            pi_kp: CDP_PI_KP,
+            pi_ki: CDP_PI_KI,
+            twap_window: CDP_PRICE_FEED_TWAP_WINDOW,
+            price_deviation_threshold: CDP_PRICE_DEVIATION_THRESHOLD,
+            collateral_params: vec![],
+            dead_man_switch: DeadManSwitchConfig {
+                enabled: false,
+                timeout_blocks: 0,
+                action: DeadManAction::DisableMinting,
+                last_action_block: 0,
+            },
+            token_authority_pub: [0u8; 32],
+            create_token: false,
+            token_symbol: [0u8; 32],
+            deployer_auth: pallas::Base::zero(),
+        }
+    } else {
+        InitializeParams::decode(&mut std::io::Cursor::new(ix))
+            .map_err(|_| ContractError::IoError("Decode error".to_string()))?
+    };
 
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, STABLECOIN_CONTRACT_INFO_TREE)?;

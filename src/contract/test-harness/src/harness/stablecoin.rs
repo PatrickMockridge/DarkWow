@@ -209,7 +209,7 @@ impl StablecoinHarness {
             zk_public_inputs: public_inputs.to_vec(),
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x01]; // OpenPositionV1
         params.encode(&mut call_data)?;
 
         Ok(OpenPositionResult {
@@ -261,7 +261,7 @@ impl StablecoinHarness {
             zk_public_inputs: public_inputs.to_vec(),
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x04]; // MintStableV1
         params.encode(&mut call_data)?;
 
         Ok(MintStableResult {
@@ -315,7 +315,7 @@ impl StablecoinHarness {
             zk_public_inputs: public_inputs.to_vec(),
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x06]; // LiquidateV1
         params.encode(&mut call_data)?;
 
         Ok(LiquidateResult {
@@ -367,7 +367,7 @@ impl StablecoinHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x08]; // GovernanceReportV1
         params.encode(&mut call_data)?;
 
         Ok(GovernanceReportResult {
@@ -415,7 +415,7 @@ impl StablecoinHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x09]; // AccrueInterestV1
         params.encode(&mut call_data)?;
 
         Ok(AccrueInterestResult {
@@ -434,7 +434,7 @@ impl StablecoinHarness {
         params: &dwow_stablecoin_contract::model::DepositCollateralParams,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         use dwow_serial::Encodable;
-        let mut call_data = vec![];
+        let mut call_data = vec![0x02]; // AddCollateralV1
         params.encode(&mut call_data)?;
         Ok(call_data)
     }
@@ -445,7 +445,7 @@ impl StablecoinHarness {
         params: &dwow_stablecoin_contract::model::WithdrawCollateralParams,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         use dwow_serial::Encodable;
-        let mut call_data = vec![];
+        let mut call_data = vec![0x03]; // RemoveCollateralV1
         params.encode(&mut call_data)?;
         Ok(call_data)
     }
@@ -456,7 +456,7 @@ impl StablecoinHarness {
         params: &dwow_stablecoin_contract::model::RepayStableParams,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         use dwow_serial::Encodable;
-        let mut call_data = vec![];
+        let mut call_data = vec![0x05]; // RepayStableV1
         params.encode(&mut call_data)?;
         Ok(call_data)
     }

@@ -130,10 +130,20 @@ dwow_sdk::define_contract!(
 /// - Nullifier tree for spent deposits
 /// - Configuration parameters
 pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
-    let params = UpdateConfigParams::decode(&mut std::io::Cursor::new(ix))
-        .map_err(|_| ContractError::IoError("Decode error".to_string()))?;
-
-    msg!("[bridge::init_contract] Initializing bridge contract");
+    // Parse initialization parameters. Empty ix means we're being deployed via
+    // deploy_contract() in tests (bypassing Deployooor) — use sensible defaults.
+    let params = if ix.is_empty() {
+        UpdateConfigParams {
+            deposit_fee: 0,
+            withdrawal_fee: 0,
+            min_confirmations: BRIDGE_CONTRACT_XMR_CONFIRMATIONS as u32,
+            max_deposit: u64::MAX,
+            max_withdrawal: u64::MAX,
+        }
+    } else {
+        UpdateConfigParams::decode(&mut std::io::Cursor::new(ix))
+            .map_err(|_| ContractError::IoError("Decode error".to_string()))?
+    };
 
     let deposit_v1_bincode = include_bytes!("../proof/deposit_v1.zk.bin");
     let withdraw_v1_bincode = include_bytes!("../proof/withdraw_v1.zk.bin");

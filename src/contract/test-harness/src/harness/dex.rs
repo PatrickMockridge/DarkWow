@@ -175,8 +175,7 @@ impl DexHarness {
             open_execution: false,
         };
 
-        // Encode call data (function_id will be added by pipeline.exec())
-        let mut call_data = vec![];
+        let mut call_data = vec![0x01]; // CreateSwapV1
         params.encode(&mut call_data)?;
 
         Ok(CreateSwapResult {
@@ -222,8 +221,7 @@ impl DexHarness {
             immediate_execute: false,
         };
 
-        // Encode call data (function_id will be added by pipeline.exec())
-        let mut call_data = vec![];
+        let mut call_data = vec![0x02]; // AcceptSwapV1
         params.encode(&mut call_data)?;
 
         Ok(AcceptSwapResult {
@@ -284,8 +282,7 @@ impl DexHarness {
             fee: 0,
         };
 
-        // Encode call data (function_id will be added by pipeline.exec())
-        let mut call_data = vec![];
+        let mut call_data = vec![0x03]; // ExecuteSwapV1
         params.encode(&mut call_data)?;
 
         Ok(ExecuteSwapResult {
@@ -327,8 +324,7 @@ impl DexHarness {
             fee: 0,
         };
 
-        // Encode call data (function_id will be added by pipeline.exec())
-        let mut call_data = vec![];
+        let mut call_data = vec![0x04]; // CancelSwapV1
         params.encode(&mut call_data)?;
 
         Ok(CancelSwapResult {
