@@ -224,65 +224,137 @@ When the test fails, check in order:
 
 ## Containerized Setup (Docker)
 
-The Docker Compose `merge` profile runs the full merge mining stack in containers:
+Two Docker Compose profiles provide containerized merge mining for local development
+and public testnet participation. Both use the same code paths as the bare-metal test
+— only the TOML configuration differs.
+
+### Architecture
 
 ```
-xmrig --[stratum]--> p2pool --[merge_mining_submit_solution]--> dwowd mm_rpc :31348
-                           \--[monerod RPC]--> monerod :28081 (ZMQ :28083)
+                      ┌─────────────┐
+                      │   lilith    │  P2P seed (same as native Docker setup)
+                      └──────┬──────┘
+                             │
+                ┌────────────┼────────────┐
+                ▼            │            ▼
+           ┌─────────┐       │       ┌─────────┐
+           │  node0  │◄──────┼──────►│  node1  │  DarkWow fullnodes (mm_rpc on node0)
+           └────┬────┘       │       └─────────┘
+                │            │
+                │ mm_rpc     │
+                ▼            │
+           ┌─────────┐       │
+           │ p2pool  │       │
+           └───┬──┬──┘       │
+               │  │          │
+      stratum  │  │ RPC+ZMQ  │
+           ┌───┘  │          │
+           ▼      ▼          │
+      ┌────────┐ ┌──────────┐│
+      │ xmrig  │ │ monerod  ││  Standalone Monero miner
+      │ merge  │ │ (mining) ││  Produces blocks irrespective
+      └────────┘ └──────────┘│  of DarkWow
 ```
+
+**monerod** mines its own blocks in offline mode (fixed difficulty 1000, dedicated
+mining thread via `start_mining` RPC). It does not depend on DarkWow in any way.
+
+**p2pool** connects to monerod for block templates (RPC:28081) and real-time
+notifications (ZMQ:28083). It provides a stratum server for xmrig on port 3333.
+
+**xmrig-merge** hashes Monero block headers via p2pool stratum (1 thread). When a
+share meets DarkWow's difficulty, p2pool calls `merge_mining_submit_solution` on
+node0's mm_rpc endpoint (port 31348).
+
+**node0 and node1** are DarkWow fullnodes that handshake via lilith (same P2P mesh
+as the native Docker setup). Node0 runs the mm_rpc HTTP JSON-RPC server. Merge-mined
+blocks are assembled on node0 and propagated to node1 via P2P. Neither node runs
+native xmrig in merge mode — all hashing is external via p2pool.
 
 No adaptor — p2pool connects directly to monerod and dwowd's mm_rpc endpoint.
+
+### Profiles
+
+| Profile | Use case | Network | monerod mode | Compose command |
+|---------|----------|---------|-------------|-----------------|
+| `merge` | Local 3-node devnet | Bridge (`dwow-local`) | Offline, fixed difficulty 1000 | `--profile merge` |
+| `join-merge` | Single node joins public testnet | Host | Online, syncs real Monero testnet | `--profile join-merge` |
+
+The `merge` profile is for local iteration — no Monero sync needed, blocks appear
+in ~15 seconds. The `join-merge` profile is for public testnet participation.
+
+### Pipeline Verification
+
+`test_pipeline.sh --mode merge` is the single entry point. It runs 10 sequential
+phases that verify every layer:
+
+| Phase | What it checks |
+|-------|---------------|
+| 5 — Start | Passes `MONERO_FIXED_DIFFICULTY=1000`, `MERGE_MINING=true` |
+| 6 — Containers | 6 containers: lilith, node0, node1, monerod, p2pool, xmrig-merge |
+| 7 — RPC health | monerod `get_info`, node0/node1 JSON-RPC ping |
+| 8 — Mining activity | monerod RPC health, dwowd `merge_mining_get_chain_id`, p2pool merge mining activity, node0 block production |
+| 9 — Block production | Block height ≥ 2 after ~15s wait, Monero anchor + Caribina anchor in block 1 |
+| 9 — Crypto receipts | All 3 receipts verified via `[RPC-MM]` log patterns (see below) |
+
+The crypto receipt verification greps node0 logs for four `[RPC-MM]` prefixed
+messages from `bin/dwowd/src/rpc/mm_rpc.rs`:
+
+| Check | Log pattern |
+|-------|-------------|
+| Solution received | `[RPC-MM] Got solution submission: aux_hash=...` |
+| Aux merkle proof | `[RPC-MM] Aux merkle proof verified: aux_hash committed in Monero coinbase` |
+| Coinbase merkle proof | `[RPC-MM] Coinbase merkle proof verified -- MoneroPowData is valid` |
+| Block accepted | `[RPC-MM] Merge-mined block at height N accepted!` |
+
+### Container Thread Budget
+
+Every miner runs on 1 thread:
+
+| Container | Threads | Config |
+|-----------|---------|--------|
+| monerod | 1 | `MONERO_MINING_THREADS=1`, `start_mining` (offline only) |
+| xmrig-merge | 1 | `XMERGE_THREADS=1` |
+| p2pool | ~1-2 | Default |
+| dwowd (node0/node1) | ~1-3 | Node + mm_rpc |
+| lilith | ~1 | Seed P2P only |
+
+**Total: ~8 threads** — safe for any machine.
+
+### monerod Entrypoint
+
+`entrypoint-monero.sh` starts monerod with two distinct modes:
+
+- **Offline (`OFFLINE=true`, default for `merge` profile):** monerod runs with
+  `--offline --fixed-difficulty 1000`. After RPC is ready, the entrypoint calls
+  `start_mining` with `MONERO_MINING_THREADS` (default 1). monerod generates its
+  own blocks — no Monero testnet sync needed.
+
+- **Online (`OFFLINE=false`, default for `join-merge` profile):** monerod connects
+  to the real Monero testnet via bootstrap peers. It syncs the chain and provides
+  real block templates to p2pool. No `start_mining` call — blocks come from the
+  Monero network.
+
+### Key Files
+
+| File | Role |
+|------|------|
+| `contrib/docker/darkwow-testnet/docker-compose.yml` | Service definitions (`merge`, `join-merge` profiles) |
+| `contrib/docker/darkwow-testnet/entrypoint-p2pool.sh` | p2pool startup with `--merge-mine "${DWOWD_MM_RPC}"` |
+| `contrib/docker/darkwow-testnet/entrypoint-monero.sh` | monerod startup with offline/online mode + mining |
+| `contrib/docker/darkwow-testnet/entrypoint.sh` | dwowd/lilith TOML config generation + mm_rpc section |
+| `contrib/docker/darkwow-testnet/test_pipeline.sh` | E2E pipeline (sole entry point for all testing) |
+| `contrib/docker/darkwow-testnet/test_merge_mining_p2pool.sh` | Bare-metal E2E test (fast feedback loop) |
 
 ### Quick Start
 
 ```bash
-# Full pipeline (build + start + verify):
-cd contrib/docker/darkwow-testnet
-RAYON_NUM_THREADS=10 bash test_pipeline.sh --mode merge
-
-# Or directly with docker compose:
-WALLET_ADDRESS=<darkwow-address> docker compose --profile merge up -d
-```
-
-### Architecture
-
-| Container | Role | Ports |
-|-----------|------|-------|
-| dwow-lilith | P2P seed | 31340 |
-| dwow-node0 | Mining fullnode + mm_rpc | 31342, 31345, 31347, 31348 |
-| dwow-node1 | Mining fullnode | 31343, 31346 |
-| dwow-monerod | Monero testnet daemon | 28081, 28083 |
-| dwow-p2pool | p2pool sidechain node | 3333 |
-| dwow-xmrig-merge | xmrig miner | — |
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MERGE_MINING` | `true` | Enable merge mining (set by profile) |
-| `MM_RPC_PORT` | `31348` | dwowd merge mining RPC port |
-| `MONERO_OFFLINE` | `true` | Run monerod offline (fixed difficulty) |
-| `MONERO_FIXED_DIFFICULTY` | `1000` | Fixed difficulty when offline |
-| `WALLET_ADDRESS` | — | DarkWow wallet for aux chain rewards |
-| `MONERO_WALLET_ADDRESS` | — | Monero wallet for p2pool rewards |
-| `XMERGE_THREADS` | `1` | xmrig-merge thread count |
-
-### Thread Budget
-
-| Service | Threads | Notes |
-|---------|---------|-------|
-| xmrig-merge | 1 (`XMERGE_THREADS`) | Single-threaded mining at difficulty 1000 |
-| monerod | ~2 | Offline, fixed-difficulty |
-| p2pool | ~1-2 | Default |
-| dwowd | ~1-3 | Node + mm_rpc |
-
-**Total: ~8 threads max** — safe for any machine.
-
-### Pipeline Test
-
-```bash
+# Full pipeline (build + start + 10 verification phases):
 cd contrib/docker/darkwow-testnet
 RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 bash test_pipeline.sh --mode merge
+
+# Or directly with docker compose:
+WALLET_ADDRESS=<darkwow-address> MERGE_MINING=true docker compose --profile merge up -d
 ```
 
 ### Relationship to Bare-Metal Test
