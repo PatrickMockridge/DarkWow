@@ -56,6 +56,7 @@ p2pool \
     --wallet "${MONERO_WALLET_ADDRESS}" \
     --stratum "0.0.0.0:${STRATUM_PORT}" \
     --data-dir /root/.p2pool \
+    --no-randomx \
     --no-igd \
     $NETWORK_FLAG \
     --merge-mine "${DWOWD_MM_RPC}" "${WALLET_ADDRESS}" \
