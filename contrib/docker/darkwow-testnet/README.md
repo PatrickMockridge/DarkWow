@@ -262,7 +262,7 @@ to persist the hostlist and blockchain data.
 | `FIXED_DIFFICULTY` | (empty) | Fixed PoW difficulty (unset for auto-adjusting) |
 | `TARGET_BLOCK_TIME` | `120` | Block time target in seconds |
 | `MINING_ENABLED` | `true` | Auto-start xmrig mining |
-| `MINING_THREADS` | `1` | xmrig thread count |
+| `MINING_THREADS` | `2` | xmrig thread count |
 | `RANDOMX_MAX_THREADS` | `0` | Maximum RandomX VM threads (0 = unlimited) |
 | `THRESHOLD` | `3` | Confirmation threshold in blocks |
 | `SKIP_SYNC` | `false` | Skip blockchain sync on startup |
@@ -282,11 +282,10 @@ to persist the hostlist and blockchain data.
 ## Base Image
 
 All DarkWow Docker images inherit from `darkwow-base:24.04` — a pre-baked
-Ubuntu 24.04 image with every apt dependency and Rust toolchain across all
-build profiles (dwowd, xmrig, monerod, p2pool, bridge-node, testnet-node).
-This base image is built once and reused, saving 5–10 minutes of apt-get +
-Rust installation per pipeline run. The test pipeline builds it automatically
-if missing.
+Ubuntu 24.04 image with every apt dependency, Rust toolchain, xmrig v6.22.2,
+and b3sum installed. This base image is built once and reused, saving 5–10
+minutes of apt-get + Rust installation per pipeline run. The test pipeline
+builds it automatically if missing.
 
 ```bash
 # Build the base image once:
@@ -551,6 +550,9 @@ Blockchain data is stored in named Docker volumes by default:
 - `lilith_data` — lilith hostlist and datastore
 - `node0_data` — node0 blockchain and mining address
 - `node1_data` — node1 blockchain and mining address
+- `monerod_data` — Monero blockchain (merge mining)
+- `p2pool_data` — p2pool sidechain data (merge mining)
+- `bridge_node_data` — bridge node state (bridge profile)
 
 To persist data outside Docker volumes, mount host directories in
 `docker-compose.yml` or use `-v` with `docker run`.
@@ -593,19 +595,16 @@ base image.
 
 | Image | Source | Build Method | Description | Profiles |
 |-------|--------|-------------|-------------|----------|
-| `darkwow-base:24.04` | `Dockerfile.base` | Pre-baked (apt + Rust, built once) | System dependencies + Rust toolchain for all profiles | All (build-time dependency) |
-| `darkwow-testnet-lilith` | `Dockerfile` | Source (git clone → cargo build → xmrig download) | Main image: dwowd + lilith + xmrig binary | native, merge |
-| `darkwow-testnet-node0` | `Dockerfile` | Same as lilith, tagged per service by compose | Duplicate image for node0 (compose requires per-service tags) | native, merge |
-| `darkwow-testnet-node1` | `Dockerfile` | Same as lilith, tagged per service by compose | Duplicate image for node1 | native, merge |
-| `darkwow-testnet-dwowd-join` | `Dockerfile` | Same as lilith, tagged for join service | Main image for the `dwowd-join` service | join-merge |
-| `darkwow-testnet-monerod-join` | `Dockerfile.monero` | Pre-built binary from getmonero.org | Monero daemon (offline mode by default for local devnet; public testnet for join) | merge, join-merge |
-| `darkwow-testnet-p2pool-join` | `Dockerfile.p2pool` | Pre-built binary from p2pool GitHub releases (v4.14) | p2pool sidechain node with xmrig bundled internally | merge, join-merge |
+| `darkwow-base:24.04` | `Dockerfile.base` | Pre-baked once (apt + Rust + xmrig + b3sum) | System dependencies, Rust toolchain, xmrig v6.22.2, b3sum | All (build-time dependency) |
+| `darkwow-testnet` | `Dockerfile` | Source (git clone → cargo build) | dwowd + lilith + 4 WASM contracts | native, merge, join-merge |
+| `darkwow-monerod` | `Dockerfile.monero` | Pre-built binary from getmonero.org (v0.18.5.0, checksum-verified) | Monero daemon | merge, join-merge |
+| `darkwow-p2pool` | `Dockerfile.p2pool` | Pre-built binary from p2pool GitHub releases (v4.14, checksum-verified) | p2pool sidechain node | merge, join-merge |
 
-The main `Dockerfile` builds two Rust binaries (`dwowd`, `lilith`),
-four WASM contracts (`deployooor`, `native_token`,
-`money_v3`, `baccarat`), and downloads a static xmrig v6.22.2 binary. Lilith,
-node0, and node1 images are identical (same Dockerfile); compose tags them
-separately for service isolation.
+The main `Dockerfile` builds two Rust binaries (`dwowd`, `lilith`) and four
+WASM contracts (`deployooor`, `native_token`, `money_v3`, `baccarat`). xmrig
+is inherited from the base image. Compose tags a per-service copy of each image
+for service isolation (e.g. `darkwow-testnet:latest` for `lilith`, `node0`,
+`node1`, and `dwowd-join`).
 
 ## Compose Profiles
 
@@ -613,7 +612,7 @@ separately for service isolation.
 |---------|----------|------------|----------|
 | `native` | lilith, node0, node1 | Bridge (`dwow-local`) | 3-node local devnet with native RandomX mining (xmrig → dwowd stratum) |
 | `merge` | native + monerod, p2pool | Bridge (`dwow-local`) | 3-node local devnet with Monero merge mining via p2pool |
-| `join-merge` | dwowd-join, monerod-join, p2pool-join, xmrig-join | Host | Single-node merge mining stack joining the public DarkWow testnet |
+| `join-merge` | dwowd-join, monerod-join, p2pool-join | Host | Single-node merge mining stack joining the public DarkWow testnet |
 
 Services without a `profiles` key in `docker-compose.yml` are always active.
 Services with profiles only start when the matching `--profile` flag is passed.
@@ -628,7 +627,7 @@ The `join-native` mode does not use compose — it runs a single container via
 |------|----------|
 | `Dockerfile.base` | **Base image** — all apt packages + Rust toolchain. Built once, inherited by all other Dockerfiles |
 | `build-base.sh` | Build and optionally push the base image |
-| `Dockerfile` | Multi-stage build from base (git clone + cargo build: dwowd + lilith + WASM + xmrig) |
+| `Dockerfile` | Multi-stage build from base (git clone + cargo build: dwowd + lilith + WASM) |
 | `Dockerfile.monero` | Monero daemon image using pre-built binary from getmonero.org. Inherits from base |
 | `Dockerfile.p2pool` | p2pool + xmrig image using pre-built binaries. Inherits from base |
 | `docker-compose.yml` | Service orchestration with 3 profiles (native, merge, join-merge) |
@@ -637,6 +636,6 @@ The `join-native` mode does not use compose — it runs a single container via
 | `entrypoint-monero.sh` | Start monerod for merge mining (offline or connected mode) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
 | `join-testnet.sh` | Join the public DarkWow testnet as a mining node (native or merge) |
-| `test_pipeline.sh` | Single entry point — clean → build → verify across 5 modes, 10-12 phases each. Auto-builds base image if missing |
+| `test_pipeline.sh` | Single entry point — clean → build → verify across 4 modes, 10-12 phases each. Auto-builds base image if missing |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |

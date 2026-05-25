@@ -209,14 +209,12 @@ the full workflow and philosophy.
 
 - **darkwow-testnet** — 3-container local devnet (lilith seed + 2 mining nodes)
   for P2P, block propagation, and mining tests. `docker compose up` and mine.
+  Also serves as the public testnet node image — `docker pull` + `docker run`
+  and join the live DarkWow testnet with native RandomX or Monero merge mining.
   See [darkwow-testnet README](contrib/docker/darkwow-testnet/README.md).
 - **dwow-devnet** — Single-container devnet node for multi-machine LAN/internet
   deployment. Turn any Linux machine into a seed or miner.
   See [dwow-devnet README](contrib/docker/dwow-devnet/README.md).
-- **testnet-node** — Single-image, dual-mode container for joining the **public
-  DarkWow testnet** as a mining node. `docker pull` and mine with native RandomX
-  or Monero merge mining via p2pool.
-  See [testnet-node README](contrib/docker/testnet-node/README.md).
 - **bridge-node** — Single-image container for running a cross-chain bridge
   relayer with capital endowment. Combines dwowd, bridge/endowment contracts,
   and universal_relayer. Three modes: full, relayer-only, lilith.
@@ -240,8 +238,8 @@ RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_
 # Level 3: Multi-node Docker testnet with live mining + contract tests
 ./contrib/docker/darkwow-testnet/test-contracts.sh
 
-# Native (no Docker): mine on public testnet, deploy contracts, send transfers
-./contrib/docker/testnet-node/native-workflow.sh
+# Native (no Docker): join public testnet, mine, deploy contracts, send transfers
+./contrib/docker/darkwow-testnet/join-testnet.sh --mode native
 ```
 
 **Fork, build, customize.** Every contract in `src/contract/<name>/` is
@@ -312,7 +310,7 @@ cargo run -p dwowd -- --network darkwow-testnet
 ### Operations
 - [Contributing & Developer Guide](doc/src/dev/contrib/contrib.md)
 - [DarkWow Devnets](doc/src/darkwow-testnet.md) — Range of containerized devnet options (local, LAN, public testnet)
-- [Public Testnet Node](contrib/docker/testnet-node/README.md) — Docker Hub image, native/merge mining, wallet setup
+- [Public Testnet Node](contrib/docker/darkwow-testnet/README.md) — Docker Hub image, native/merge mining, wallet setup
 - [Bridge Node](contrib/docker/bridge-node/README.md) — Cross-chain bridge relayer with capital endowment
 
 ---

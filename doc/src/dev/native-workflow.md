@@ -193,7 +193,7 @@ All 28 repo contracts are recognized by the wallet. Commands:
 | `NETWORK` | `darkwow-testnet` | Blockchain network |
 | `RPC_PORT` | `31345` | dwowd JSON-RPC port |
 | `STRATUM_PORT` | `31347` | Stratum mining port |
-| `MINING_THREADS` | `1` | xmrig thread count |
+| `MINING_THREADS` | `2` | xmrig thread count |
 | `TARGET_HEIGHT` | `10` | Target block height for sync |
 | `SKIP_XMRIG` | `false` | Skip xmrig start |
 | `TIMEOUT` | `600` | Max seconds per wait loop |
