@@ -1,221 +1,291 @@
 # Level 4: Containerized Devnet Node
 
-A self-contained Docker image that turns any Linux machine into a DarkWow
-devnet mining node. Run a shared devnet across idle machines on your LAN,
-optionally open it to internet participants.
+A set of self-contained Docker images that turn any Linux machine into a DarkWow
+devnet mining node. Pre-built images are published to Docker Hub — `docker pull`
++ `docker run` and you're mining within minutes, with zero local build
+requirements.
 
-**Location:** `contrib/docker/dwow-devnet/`
+**Location:** `contrib/docker/darkwow-testnet/`
 
-## What It Is
+## Image Architecture
 
-Unlike Level 3 (which runs a fixed 3-container topology on one machine),
-Level 4 is a single-container node designed for multi-machine deployment.
-Each machine runs one container. One machine acts as the seed; others join
-by pointing to it.
+Four images, all inheriting from a shared base:
 
-Uses **host networking** so P2P peers see the host's real IP address —
-essential for LAN discovery and external connectivity.
-
-## Quick Start
-
-### Start a Fresh Devnet (Seed Node)
-
-```shell
-docker run --rm --network=host \
-  -e IS_SEED=true \
-  -e NETWORK_NAME=our-devnet \
-  dwow-devnet:latest
+```
+darkwow-base:24.04
+├── darkwow-testnet:latest     (dwowd + lilith + xmrig)
+├── darkwow-monerod:latest     (monerod)
+└── darkwow-p2pool:latest      (p2pool + xmrig)
 ```
 
-This starts a single-node devnet with mining enabled. Blocks mine instantly
-(`FIXED_DIFFICULTY=1`). RPC on port 31345, stratum mining on 31347.
+| Image | Contents | Build method |
+|-------|----------|-------------|
+| `darkwow-base:24.04` | Ubuntu 24.04 + apt deps + Rust nightly + xmrig + b3sum | Pre-baked once, inherited by all others |
+| `darkwow-testnet` | dwowd fullnode, lilith seed, 4 WASM contracts (deployooor, native_token, money_v3, baccarat) | Source: git clone → cargo build |
+| `darkwow-monerod` | monerod v0.18.5.0 | Pre-built binary (checksum-verified) |
+| `darkwow-p2pool` | p2pool v4.14 | Pre-built binary (checksum-verified) |
 
-### Join an Existing Devnet (Miner Node)
+All pre-built binaries are SHA-256 checksum-verified at build time for
+reproducibility.
 
-```shell
-docker run --rm --network=host \
-  -e SEED_ADDR=<seed-lan-ip>:31342 \
-  -e NETWORK_NAME=our-devnet \
-  dwow-devnet:latest
+## Public Testnet Quick Start
+
+The Docker image runs the **node** (dwowd). The **wallet** (`dww`) is a separate
+native binary you run on your host — it scans the blockchain, decrypts coinbase
+notes, and shows your balance.
+
+### Step 1: Build the wallet binary (host, one-time)
+
+```bash
+git clone https://codeberg.org/PatrickM123/darkwow.git
+cd darkwow
+cargo build -p dww --release
+DRK="./target/release/dww"
+NETWORK="darkwow-testnet"
 ```
 
-Replace `<seed-lan-ip>` with the seed node's LAN IP (e.g., `192.168.1.10`).
+### Step 2: Generate a keypair
 
-### Verify It Works
-
-From any machine with the `dww` CLI wallet:
-
-```shell
-dww -n dwow-devnet -c tcp://127.0.0.1:31345 info
+```bash
+$DRK -n $NETWORK wallet keygen
+# Output: Address (bs58) and Secret (hex)
 ```
 
-## Multi-Machine LAN Deployment
+### Step 3: Write the secret to a secure file
 
-Each machine runs one container with host networking. The seed must be
-reachable from all other machines.
+```bash
+echo -n "<hex-secret>" > /tmp/dwow_mining_secret
+chmod 600 /tmp/dwow_mining_secret
+```
 
-| Machine | Role | Key Env Var |
-|---------|------|-------------|
-| Any | Seed | `IS_SEED=true` — no `SEED_ADDR` needed |
-| Any | Miner | `SEED_ADDR=<seed-ip>:31342` |
-| Any | More miners | Same as above |
+### Step 4: Start the node
 
-All nodes must use the same `NETWORK_NAME` — this controls P2P magic bytes
-(derived via blake3 hash) so nodes can find each other. **Pick a unique name
-per devnet** to avoid collisions on shared networks.
+```bash
+docker pull darkrenaissance/darkwow-testnet:latest
+docker run -d --name dwow-node --network=host \
+  -e ROLE=dwowd \
+  -e WALLET_ADDRESS="<bs58-address>" \
+  -e WALLET_SECRET_FILE=/run/secrets/mining_secret \
+  -e SEED_ADDR=lilith0.dark.fi:31340,lilith1.dark.fi:31340 \
+  -e MAGIC_BYTES=68,82,75,87 \
+  -v /data/dwowd:/root/.local/share/dwow/dwowd \
+  -v /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro \
+  darkrenaissance/darkwow-testnet:latest
 
-## Environment Variables
+rm -f /tmp/dwow_mining_secret
+```
+
+### Step 5: Wait for blocks, then collect rewards
+
+```bash
+curl -s http://127.0.0.1:31345 -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"blockchain.info","params":[],"id":1}'
+
+$DRK -n $NETWORK scan
+$DRK -n $NETWORK wallet balance
+```
+
+### Merge mining variant
+
+Add merge mining via Monero testnet + p2pool:
+
+```bash
+# Build/pull all three images, then:
+docker compose --profile join-merge up -d
+```
+
+See the [darkwow-testnet README] for the full join-testnet.sh flow,
+environment variable reference, and merge mining configuration.
+
+[darkwow-testnet README]: https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md
+
+## Network Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| Network name | `darkwow-testnet` |
+| Magic bytes | `[68, 82, 75, 87]` ("DRKW") |
+| Block time | 120 seconds |
+| Initial difficulty | 255 (auto-adjusting) |
+| PoW algorithm | RandomX (rx/0) |
+| Consensus threshold | 3 |
+| `localnet` | `false` (full TLS cert validation) |
+| `skip_fees` | `false` |
+| P2P seed nodes | `lilith0.dark.fi:31340`, `lilith1.dark.fi:31340` |
+
+## Mining
+
+xmrig mines RandomX via the local stratum server. `MINING_THREADS` defaults to `2`
+(~0.5–1 kH/s on modern hardware). xmrig will saturate every thread you give it —
+a machine running at full core count will become unresponsive.
+
+| Setting | Threads | Use case |
+|---------|---------|----------|
+| Default | `2` | Background mining, ~0.5–1 kH/s |
+| Recommended | `4` | Dedicated mining without risking lockup |
+| Maximum | all physical cores | Dedicated miner, expect UI freezes |
+
+Block reward follows an exponential-decay emission schedule starting at ~13.84 DRKW
+at height 1, with a tail emission floor of ~0.80 DRKW. Total supply cap is
+21,000,000 DRKW.
+
+## Key Environment Variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `NETWORK_NAME` | `dwow-devnet` | Unique devnet name (determines P2P isolation) |
-| `IS_SEED` | `false` | First node in a fresh devnet |
-| `SEED_ADDR` | (empty) | `host:port` of seed to join an existing devnet |
-| `EXTERNAL_ADDR` | (empty) | Public `host:port` for internet-facing nodes |
-| `MAGIC_BYTES` | auto | 4 comma-separated bytes for P2P isolation |
+| `ROLE` | `dwowd` | `lilith` (P2P seed) or `dwowd` (fullnode) |
+| `NETWORK` | `darkwow-testnet` | Network name (determines P2P isolation) |
 | `P2P_PORT` | `31342` | P2P inbound listen port |
 | `RPC_PORT` | `31345` | JSON-RPC port |
 | `STRATUM_PORT` | `31347` | Stratum mining port |
-| `MANAGEMENT_PORT` | `31346` | Management RPC port |
-| `FIXED_DIFFICULTY` | `1` | Fixed PoW difficulty (unset for dynamic) |
+| `SEED_ADDR` | (empty) | Comma-separated seed `host:port` for P2P bootstrap |
+| `EXTERNAL_ADDR` | (empty) | Public `host:port` for internet-facing nodes |
+| `MAGIC_BYTES` | auto | 4 comma-separated bytes (auto-derived from NETWORK if unset) |
+| `MINING_THREADS` | `2` | xmrig thread count |
 | `TARGET_BLOCK_TIME` | `120` | Block time target in seconds |
-| `MINING_ENABLED` | `true` | Auto-start xmrig mining |
-| `MINING_THREADS` | `1` | xmrig thread count |
-| `THRESHOLD` | `1` | Confirmation threshold in blocks |
-| `SKIP_SYNC` | `true` | Skip blockchain sync on startup |
-| `SKIP_FEES` | `true` | Disable fee verification |
+| `THRESHOLD` | `3` | Confirmation threshold in blocks |
+| `LOCALNET` | `false` | P2P localnet flag |
 | `WALLET_ADDRESS` | auto | Mining payout address (auto-generated if unset) |
 | `WALLET_SECRET_FILE` | (empty) | Path to file containing hex-encoded secret key (preferred) |
-| `WALLET_SECRET` | auto | Hex-encoded secret key (deprecated — use WALLET_SECRET_FILE) |
+| `MERGE_MINING` | `false` | Enable merge mining via Monero p2pool |
+| `MM_RPC_PORT` | `31348` | Merge mining JSON-RPC port |
+| `FINALITY_MODE` | `always` | Finality mode: `always`, `never`, or `auto` |
+| `FINALITY_ENABLE_MONERO` | `false` | Enable Monero finality anchors (auto-enabled with merge mining) |
+| `MONEROD_RPC_URL` | (empty) | Monero daemon JSON-RPC URL for finality verification |
+| `MONERO_MIN_CONFIRMATIONS` | `3` | Minimum Monero confirmations before accepting anchor |
 
-## Opening to the Internet
+## Compose Profiles
 
-1. **On the seed machine**: set up port forwarding on your router for the P2P
-   port (default 31342).
-2. **Set `EXTERNAL_ADDR`** on the seed:
-   ```shell
-   docker run --network=host \
-     -e IS_SEED=true \
-     -e EXTERNAL_ADDR=<your-public-ip>:31342 \
-     dwow-devnet:latest
-   ```
-3. **External participants** join with:
-   ```shell
-   docker run --network=host \
-     -e SEED_ADDR=<your-public-ip>:31342 \
-     dwow-devnet:latest
-   ```
+For local devnet testing, the docker-compose.yml provides three profiles:
 
-## Networking
+| Profile | Services | Use case |
+|---------|----------|----------|
+| `native` | lilith, node0, node1 | 3-node local devnet with native RandomX mining |
+| `merge` | native + monerod, p2pool | 3-node local devnet with Monero merge mining |
+| `join-merge` | dwowd-join, monerod-join, p2pool-join | Single-node merge mining stack joining public testnet |
 
-The container uses **host networking** (`--network=host`):
-- Container shares the host's network stack
-- P2P peers see the host's real IP (essential for LAN discovery)
-- No port mapping needed (ports bind directly on the host)
+```bash
+# Local 3-node devnet
+docker compose --profile native up -d
 
-If you need bridge networking instead, map ports and set `EXTERNAL_ADDR` to
-the host's IP with mapped ports.
+# Local 3-node with merge mining
+docker compose --profile merge up -d
+```
 
 ## Data Persistence
 
-Blockchain data is stored in `~/.local/share/dwow/dwowd/<network-name>/` inside
-the container. Mount a volume to persist across restarts:
+Blockchain data is stored inside the container. Mount a host volume to persist
+across restarts:
 
-```shell
+```bash
 docker run --network=host \
-  -v /data/dwow-devnet:/root/.local/share/dwow/dwowd \
-  -e IS_SEED=true \
-  dwow-devnet:latest
+  -v /data/dwowd:/root/.local/share/dwow/dwowd \
+  ... \
+  darkrenaissance/darkwow-testnet:latest
 ```
 
-## Docker Compose Template
+The hostlist file at `/data/dwowd/darkwow-testnet/hostlist.tsv` persists peer
+addresses across restarts, so the node remembers peers it has connected to.
 
-A [docker-compose.yml](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/dwow-devnet/docker-compose.yml)
-template is provided with seed + miner services.
+## Multi-Machine LAN Deployment
 
-**Single-machine test:**
-```shell
-docker compose -f contrib/docker/dwow-devnet/docker-compose.yml up
-```
+Each machine runs one container with host networking. The seed must be reachable
+from all other machines.
 
-**Multi-machine (one service per machine, host networking):**
-```shell
-# Machine 1
-docker compose -f contrib/docker/dwow-devnet/docker-compose.yml --profile host up seed
+| Machine | Role | Key env vars |
+|---------|------|-------------|
+| Any | Seed | `ROLE=lilith`, `EXTERNAL_ADDR=<ip>:31340` |
+| Any | Miner | `ROLE=dwowd`, `SEED_ADDR=<seed-ip>:31340` |
+| Any | More miners | Same as above |
 
-# Machine 2 (after editing SEED_ADDR in compose file)
-docker compose -f contrib/docker/dwow-devnet/docker-compose.yml --profile host up miner
-```
+All nodes must use the same `MAGIC_BYTES` so they discover each other on the P2P
+network.
 
-## Base Image
+## Opening to the Internet
 
-This image inherits from `darkwow-base:24.04` — a pre-baked Ubuntu 24.04 image
-with every apt dependency and Rust toolchain across all build profiles. Build
-the base image once; all subsequent Docker builds skip apt-get and Rust install.
+1. **Set up port forwarding** on your router for the P2P port (default 31342)
+2. **Set `EXTERNAL_ADDR`** to your public IP:
+   ```bash
+   docker run --network=host \
+     -e ROLE=dwowd \
+     -e EXTERNAL_ADDR=<your-public-ip>:31342 \
+     darkrenaissance/darkwow-testnet:latest
+   ```
+3. **External participants** join by pointing `SEED_ADDR` to your public IP
 
-```shell
-./contrib/docker/darkwow-testnet/build-base.sh
-```
+The recommended approach for external participants is the `join-testnet.sh` script,
+which auto-detects the public IP and sets sensible defaults. See the
+[darkwow-testnet README] for details.
 
 ## Building from Source
 
-With the base image present, building takes 30–60 minutes. Pre-built images are
-preferred for deployment.
+Pre-built images are preferred for deployment. To build from source:
 
-```shell
-# From the repo root:
-docker build -t dwow-devnet . -f contrib/docker/dwow-devnet/Dockerfile
+```bash
+# Build the base image once
+./contrib/docker/darkwow-testnet/build-base.sh
 
-# Or use the build script:
-./contrib/docker/dwow-devnet/build-and-push.sh
-```
+# Build the main image (30–60 min)
+docker build -t darkwow-testnet:latest \
+  -f contrib/docker/darkwow-testnet/Dockerfile .
 
-To push to a registry for other machines to pull:
-
-```shell
-REGISTRY=docker.io/youruser/ ./contrib/docker/dwow-devnet/build-and-push.sh
+# Or use the build script
+./contrib/docker/darkwow-testnet/build-and-push.sh
 ```
 
 ## Differences from Level 3
 
 | Aspect | Level 3 (Localnet) | Level 4 (Devnet) |
 |--------|-------------------|-----------------|
-| Topology | Fixed 3-container | Single container per machine |
+| Topology | Fixed 3-container on one machine | Single container per machine |
 | Networking | Bridge (`dwow-local`) | Host (`--network=host`) |
-| Config | Hardcoded node0/node1 | Env-var-driven (any topology) |
 | Scale | 1 machine, 3 containers | N machines, 1 container each |
 | Discovery | Internal bridge DNS | Real LAN IPs |
 | Internet access | Not designed for | Built-in via `EXTERNAL_ADDR` |
-| Use case | Local testing | Shared devnet across machines |
+| Use case | Local testing | Multi-machine LAN, public testnet joining |
+| Image source | Same Dockerfile as Level 4 | Pre-built or source-built |
+| Compose profiles | `native`, `merge`, `bridge` | `native`, `merge`, `join-merge` |
+
+## Dwow-Devnet Variant
+
+A lighter variant lives at `contrib/docker/dwow-devnet/` with relaxed parameters
+for rapid local iteration:
+
+| Feature | `darkwow-testnet` | `dwow-devnet` |
+|---------|-------------------|---------------|
+| `localnet` | `false` | `false` |
+| Magic bytes | `[68, 82, 75, 87]` | auto-derived |
+| Threshold | 3 | 1 |
+| `pow_target` | 120 | 120 |
+| `fixed_difficulty` | auto-adjusting | 1 (instant blocks) |
+| `skip_fees` | `false` | `true` |
+| `skip_sync` | `false` | `true` |
+
+Use `dwow-devnet` for fast local contract testing. Use `darkwow-testnet` when
+you need parameters matching the public testnet.
 
 ## File Locations
 
 | Component | Path |
 |-----------|------|
 | Base image | `contrib/docker/darkwow-testnet/Dockerfile.base` |
-| Dockerfile | `contrib/docker/dwow-devnet/Dockerfile` |
-| Entrypoint script | `contrib/docker/dwow-devnet/entrypoint.sh` |
-| Docker Compose template | `contrib/docker/dwow-devnet/docker-compose.yml` |
-| Build/push script | `contrib/docker/dwow-devnet/build-and-push.sh` |
-| README | `contrib/docker/dwow-devnet/README.md` |
-| test_pipeline.sh | `contrib/docker/dwow-devnet/test_pipeline.sh` |
-| contract_test.sh | `contrib/docker/dwow-devnet/contract_test.sh` |
-| test-contracts.sh | `contrib/docker/dwow-devnet/test-contracts.sh` |
-| Config reference | `bin/dwowd/dwowd_config.toml` (`dwow-devnet` section) |
+| Main Dockerfile | `contrib/docker/darkwow-testnet/Dockerfile` |
+| Monerod Dockerfile | `contrib/docker/darkwow-testnet/Dockerfile.monero` |
+| p2pool Dockerfile | `contrib/docker/darkwow-testnet/Dockerfile.p2pool` |
+| Entrypoint (dwowd/lilith) | `contrib/docker/darkwow-testnet/entrypoint.sh` |
+| Entrypoint (monerod) | `contrib/docker/darkwow-testnet/entrypoint-monero.sh` |
+| Entrypoint (p2pool) | `contrib/docker/darkwow-testnet/entrypoint-p2pool.sh` |
+| Docker Compose | `contrib/docker/darkwow-testnet/docker-compose.yml` |
+| Build/push script | `contrib/docker/darkwow-testnet/build-and-push.sh` |
+| Base build script | `contrib/docker/darkwow-testnet/build-base.sh` |
+| Join testnet script | `contrib/docker/darkwow-testnet/join-testnet.sh` |
+| Test pipeline | `contrib/docker/darkwow-testnet/test_pipeline.sh` |
+| README | `contrib/docker/darkwow-testnet/README.md` |
 
-## Public Testnet Node
+## See Also
 
-A separate image, `darkwow-node/testnet`, provides a one-command entry point
-for joining the **public DarkWow testnet** as a mining node. Unlike the LAN
-devnet image above, this connects to public seed infrastructure.
-
-Two mining modes:
-- `MODE=native` — solo RandomX mining (dwowd + xmrig)
-- `MODE=merge` — Monero merge mining via p2pool (monerod + dwowd + p2pool + xmrig)
-
-```bash
-docker pull darkwow-node/testnet:latest
-docker run --network=host -e MODE=native darkwow-node/testnet:latest
-```
-
-→ [Public Testnet Node README](https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/testnet-node/README.md)
+- [Level 3: Containerized Localnet](level-3-localnet.md) — Docker localnet architecture
+- [Bootstrapping Plan](../../testnet/bootstrapping.md) — Multi-phase testnet deployment
+- [DarkWow Testnet README](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md) — Full env var reference and pipeline docs
+- [Merge Mining](../../testnet/merge-mining.md) — Monero merge mining guide
