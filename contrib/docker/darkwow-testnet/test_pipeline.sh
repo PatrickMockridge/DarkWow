@@ -1041,8 +1041,8 @@ phase_rpc_health() {
     done
     pass "node1 RPC healthy"
 
-    # adaptor RPC (native-p2pool and merge)
-    if [ "$MODE" = "native-p2pool" ] || [ "$MODE" = "merge" ]; then
+    # adaptor RPC (native-p2pool only)
+    if [ "$MODE" = "native-p2pool" ]; then
         info "Waiting for adaptor RPC (port 28081)..."
         for i in $(seq 1 60); do
             if docker exec dwow-adaptor bash -c 'exec 3<>/dev/tcp/127.0.0.1/28081; echo -e "POST /json_rpc HTTP/1.0\r\nContent-Type: application/json\r\nContent-Length: 44\r\n\r\n{\"jsonrpc\":\"2.0\",\"method\":\"get_info\",\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "OK"' 2>/dev/null; then
