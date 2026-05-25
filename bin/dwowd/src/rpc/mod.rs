@@ -81,6 +81,7 @@ impl RequestHandler<DefaultRpcHandler> for DwowNode {
             // Blockchain methods
             // ==================
             "blockchain.get_target" => self.blockchain_get_target(req.id, req.params).await,
+            "blockchain.get_height" => self.blockchain_get_height(req.id, req.params).await,
             "blockchain.get_block_linear" => self.blockchain_get_block_linear(req.id, req.params).await,
             "blockchain.get_contract_state_linear" => self.blockchain_get_contract_state_linear(req.id, req.params).await,
 

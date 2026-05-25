@@ -65,14 +65,14 @@ impl DwowNode {
 
         info!(target: "dwowd::rpc::miner", "miner.mine_linear called for recipient {} with reward {}", recipient, reward_value);
 
-        // Check that we're in linear-testnet mode (linear_blockchain is set)
+        // Check that we're in darkwow-devnet mode (linear_blockchain is set)
         let linear_blockchain = match &self.linear_blockchain {
             Some(lb) => lb.clone(),
             None => {
-                error!(target: "dwowd::rpc::miner", "miner.mine_linear is only available in linear-testnet mode");
+                error!(target: "dwowd::rpc::miner", "miner.mine_linear is only available in darkwow-devnet mode");
                 return JsonError::new(
                     InternalError,
-                    Some("miner.mine_linear is only available in linear-testnet mode".to_string()),
+                    Some("miner.mine_linear is only available in darkwow-devnet mode".to_string()),
                     id,
                 )
                 .into();

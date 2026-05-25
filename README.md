@@ -47,13 +47,38 @@ on top of PoW fork choice:
 
 ### Monero Anchoring (p2pool merge mining)
 
-Blocks reference Monero blocks as anchors. Once a Monero anchor has enough
-confirmations, the DarkWow block is finalized — an attacker would need to
-reorganize Monero's chain (backed by its cumulative difficulty) to undo it.
+DarkWow blocks can be merged-mined with Monero via the p2pool protocol.
+An `xmrig` miner hashes the Monero block (RandomX); when a share meets
+DarkWow's difficulty, p2pool submits the solution to dwowd's `mm_rpc`
+JSON-RPC endpoint alongside three cryptographic proofs:
 
-- Requires: p2pool + Monero node
+1. **Merge mining tag** — `extract_aux_merkle_root_from_block()` verifies the
+   Monero coinbase `tx_extra` contains a merge mining tag with an aux merkle root
+2. **Aux merkle proof** — `MerkleProof::calculate_root()` verifies the solution's
+   `aux_hash` is a leaf in the merkle tree rooted at that tag
+3. **Coinbase merkle proof** — `is_coinbase_valid_merkle_root()` verifies the
+   coinbase transaction is in the Monero block's transaction tree
+
+All three proofs are packaged into `PowSource::Monero(MoneroPowData)` and
+stored on-chain. Native PoW verification is skipped for merge-mined blocks
+(xmrig hashes the Monero block, not the DarkWow header).
+
+**Architecture:** `xmrig → p2pool → dwowd (mm_rpc HTTP JSON-RPC)` — no adaptor.
+
+**Mining blob format:** 228 bytes (227-byte DarkWow header + 1-byte
+`pow_source` discriminator: `0x00` = Native, `0x01` = Monero).
+
+- Requires: p2pool + monerod (testnet, synced)
 - Settlement: ~6 min (3 Monero blocks)
 - Protects: merge miners only
+
+**E2E test:**
+```bash
+RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 \
+  bash contrib/docker/darkwow-testnet/test_merge_mining_p2pool.sh
+```
+
+Full specification: [Monero Merge Mining](docs/monero-merge-mining.md)
 
 ### Caribina (Arweave proof-of-storage)
 
@@ -226,12 +251,18 @@ Minimum Rust version: **1.87.0**.
 ### Running a Node
 
 ```bash
-# Local development (single node)
-cargo run -p dwowd -- --network darkwow-testnet
+# Local development (single node, skip sync, 28xxx ports)
+cargo run -p dwowd -- --network darkwow-devnet
 
-# DarkWow public testnet
+# DarkWow public testnet (DRKW magic, 31xxx ports, P2P seeds)
 cargo run -p dwowd -- --network darkwow-testnet
 ```
+
+| Network | Magic | Ports | Sync | Difficulty | Purpose |
+|---------|-------|-------|------|------------|---------|
+| `darkwow-devnet` | (none) | 28xxx | skip_sync, localnet | Fixed | Local dev iteration |
+| `darkwow-testnet` | DRKW | 31xxx | Full P2P sync | Variable | Public coordination |
+| `mainnet` | (TBD) | (TBD) | Full P2P sync | Variable | Production |
 
 ---
 
@@ -253,6 +284,8 @@ cargo run -p dwowd -- --network darkwow-testnet
 - [Architecture Overview](doc/src/arch/overview.md)
 - [Uncle Merkle Consensus](doc/src/arch/consensus/consensus.md)
 - [Caribina — Arweave-Anchored Finality](doc/src/arch/caribina.md)
+- [Monero Merge Mining](docs/monero-merge-mining.md) — Full p2pool protocol specification
+- [Network Types](docs/network-types.md) — darkwow-devnet vs darkwow-testnet vs mainnet
 - [Monero Anchoring Finality](doc/src/arch/mining-tokenomics.md#anchoring-finality-gadget)
 - [O-Cap Authorization](doc/src/arch/ocap.md)
 - [Opcodes & Formal Verification](doc/src/arch/zk/opcodes.md)

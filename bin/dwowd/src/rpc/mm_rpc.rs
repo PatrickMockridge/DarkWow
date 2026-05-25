@@ -189,7 +189,7 @@ impl DwowNode {
             None => {
                 return JsonError::new(
                     ErrorCode::InternalError,
-                    Some("linear-testnet mode only".to_string()),
+                    Some("darkwow-devnet mode only".to_string()),
                     id,
                 )
                 .into()
@@ -507,7 +507,7 @@ impl DwowNode {
             (None, [0u8; 32], [0u8; 32])
         };
 
-        let header = dwow_linear::BlockHeader {
+        let mut header = dwow_linear::BlockHeader {
             version: 1,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: template.merkle_root,
@@ -541,6 +541,30 @@ impl DwowNode {
 
         let mut all_txs = template.transactions.clone();
         all_txs.push(coinbase_tx);
+
+        // Recompute merkle root to include the coinbase transaction.
+        // The template merkle_root only covers mempool transactions.
+        let tx_hashes: Vec<blake3::Hash> = all_txs.iter().map(|tx| tx.hash()).collect();
+        let merkle_root = if tx_hashes.is_empty() {
+            blake3::hash(&[])
+        } else {
+            let mut layer = tx_hashes.clone();
+            while layer.len() > 1 {
+                if layer.len() % 2 != 0 {
+                    layer.push(*layer.last().unwrap());
+                }
+                layer = layer
+                    .chunks(2)
+                    .map(|pair| {
+                        let mut combined = pair[0].as_bytes().to_vec();
+                        combined.extend_from_slice(pair[1].as_bytes());
+                        blake3::hash(&combined)
+                    })
+                    .collect();
+            }
+            layer[0]
+        };
+        header.merkle_root = merkle_root;
 
         let mut block = dwow_linear::Block {
             header,

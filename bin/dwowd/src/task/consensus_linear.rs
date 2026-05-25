@@ -23,7 +23,7 @@
 
 //! Linear-testnet consensus initialization task
 //!
-//! This module provides a simplified consensus init for linear-testnet mode,
+//! This module provides a simplified consensus init for darkwow-devnet mode,
 //! which bypasses the overlay/diff system used by the standard consensus.
 
 use std::sync::Arc;
@@ -44,7 +44,7 @@ pub struct ConsensusInitTaskConfig {
     pub checkpoint: Option<String>,
 }
 
-/// Async task to initialize consensus for linear-testnet mode.
+/// Async task to initialize consensus for darkwow-devnet mode.
 ///
 /// Unlike the standard consensus_init_task, this function:
 /// - Skips overlay-based genesis verification
@@ -57,7 +57,7 @@ pub async fn consensus_linear_init_task(
 ) -> Result<()> {
     info!(target: "dwowd::task::consensus_linear_init_task", "Linear-testnet consensus initialized (synced=true)");
 
-    // For linear-testnet, we don't need the full consensus task since
+    // For darkwow-devnet, we don't need the full consensus task since
     // mining is done via the miner.mine_linear RPC endpoint.
     // We just wait forever (the stop() will terminate us)
     std::future::pending().await

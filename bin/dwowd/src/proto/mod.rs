@@ -53,9 +53,9 @@ pub struct DwowP2pHandler {
     pub p2p: P2pPtr,
     /// `ProtocolTx` messages handler
     txs: ProtocolTxHandlerPtr,
-    /// `LinearSync` messages handler (for linear-testnet mode)
+    /// `LinearSync` messages handler (for darkwow-devnet mode)
     linear_sync: Option<LinearSyncHandlerPtr>,
-    /// `LinearBroadcast` messages handler (for linear-testnet mode)
+    /// `LinearBroadcast` messages handler (for darkwow-devnet mode)
     linear_broadcast: Option<LinearBroadcastHandlerPtr>,
 }
 
@@ -108,16 +108,16 @@ impl DwowP2pHandler {
             "Starting the Dwowd P2P handler..."
         );
 
-        // Start the `ProtocolTx` messages handler (linear-testnet mode)
+        // Start the `ProtocolTx` messages handler (darkwow-devnet mode)
         // ProtocolTx is kept for forward compatibility but currently a no-op
         self.txs.start(executor).await?;
 
-        // Start the `LinearSync` messages handler (linear-testnet mode)
+        // Start the `LinearSync` messages handler (darkwow-devnet mode)
         if let Some(ref linear_sync) = self.linear_sync {
             linear_sync.start(executor).await?;
         }
 
-        // Start the `LinearBroadcast` messages handler (linear-testnet mode)
+        // Start the `LinearBroadcast` messages handler (darkwow-devnet mode)
         if let Some(ref linear_broadcast) = self.linear_broadcast {
             linear_broadcast.start(executor).await?;
         }

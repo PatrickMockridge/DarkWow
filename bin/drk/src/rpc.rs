@@ -84,7 +84,7 @@ pub struct DarkfidRpcClient {
     endpoint: Url,
     ex: ExecutorPtr,
     client: Option<RpcClient>,
-    /// Network indicator (used to detect linear-testnet mode)
+    /// Network indicator (used to detect darkwow-devnet mode)
     pub network: Network,
 }
 
@@ -101,8 +101,8 @@ impl DarkfidRpcClient {
         }
     }
 
-    /// Check if this client is configured for linear-testnet mode
-    pub fn is_linear_testnet(&self) -> bool {
+    /// Check if this client is configured for darkwow-devnet mode
+    pub fn is_darkwow_devnet(&self) -> bool {
         self.network == Network::Testnet
     }
 }
@@ -438,7 +438,7 @@ impl Drk {
     }
 
     // Queries darkfid for a linear blockchain block with given height.
-    // Returns LinearBlockAdapter (wallet-compatible format for linear-testnet)
+    // Returns LinearBlockAdapter (wallet-compatible format for darkwow-devnet)
     async fn get_block_by_height_linear(&self, height: u64) -> Result<dwow_linear::Block> {
         let params = self
             .darkfid_daemon_request(
@@ -1010,7 +1010,7 @@ impl Drk {
 
     /// Apply native token transaction data from linear blockchain (without full note decryption params)
     ///
-    /// For linear-testnet, mining rewards are directly sent to the wallet's public key
+    /// For darkwow-devnet, mining rewards are directly sent to the wallet's public key
     async fn apply_tx_native_token_data_linear(
         &self,
         scan_cache: &mut ScanCache,

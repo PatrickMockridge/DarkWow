@@ -36,7 +36,47 @@ use crate::DwowNode;
 
 impl DwowNode {
     // RPCAPI:
-    // Returns the current PoW target for linear-testnet.
+    // Returns the current blockchain height.
+    //
+    // **Params:**
+    // * Empty
+    //
+    // **Returns:**
+    // * `height`: u64 block height
+    //
+    // --> {"jsonrpc": "2.0", "method": "blockchain.get_height", "params": [], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": {"height": 42}, "id": 1}
+    pub async fn blockchain_get_height(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+        if !params.is_empty() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        let linear_blockchain = match &self.linear_blockchain {
+            Some(lb) => lb.clone(),
+            None => {
+                return JsonError::new(
+                    InternalError,
+                    Some("darkwow-devnet mode only".to_string()),
+                    id,
+                )
+                .into()
+            }
+        };
+
+        let height = linear_blockchain.get_height();
+
+        let result = JsonValue::from(std::collections::HashMap::from([
+            ("height".to_string(), JsonValue::Number(height as f64)),
+        ]));
+
+        JsonResponse::new(result, id).into()
+    }
+
+    // RPCAPI:
+    // Returns the current PoW target for darkwow-devnet.
     //
     // **Params:**
     // * Empty
@@ -59,7 +99,7 @@ impl DwowNode {
             None => {
                 return JsonError::new(
                     InternalError,
-                    Some("linear-testnet mode only".to_string()),
+                    Some("darkwow-devnet mode only".to_string()),
                     id,
                 )
                 .into()
@@ -102,7 +142,7 @@ impl DwowNode {
             None => {
                 return JsonError::new(
                     InternalError,
-                    Some("linear-testnet mode only".to_string()),
+                    Some("darkwow-devnet mode only".to_string()),
                     id,
                 )
                 .into()
@@ -160,10 +200,10 @@ impl DwowNode {
         let linear_blockchain = match &self.linear_blockchain {
             Some(lb) => lb.clone(),
             None => {
-                error!(target: "dwowd::rpc::blockchain_get_contract_state_linear", "linear-testnet mode only");
+                error!(target: "dwowd::rpc::blockchain_get_contract_state_linear", "darkwow-devnet mode only");
                 return JsonError::new(
                     InternalError,
-                    Some("blockchain.get_contract_state_linear is only available in linear-testnet mode".to_string()),
+                    Some("blockchain.get_contract_state_linear is only available in darkwow-devnet mode".to_string()),
                     id,
                 )
                 .into()

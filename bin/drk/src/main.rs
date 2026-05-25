@@ -83,7 +83,7 @@ struct Args {
     /// Configuration file to use
     config: Option<String>,
 
-    #[structopt(short, long, default_value = "linear-testnet")]
+    #[structopt(short, long, default_value = "darkwow-devnet")]
     /// Blockchain network to use
     network: String,
 
@@ -541,7 +541,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
     let (network, blockchain_config) = match args.network.as_str() {
         "localnet" => parse_blockchain_config(args.config, "localnet", CONFIG_FILE).await?,
         "testnet" => parse_blockchain_config(args.config, "testnet", CONFIG_FILE).await?,
-        "linear-testnet" => parse_blockchain_config(args.config, "linear-testnet", CONFIG_FILE).await?,
+        "darkwow-devnet" => parse_blockchain_config(args.config, "darkwow-devnet", CONFIG_FILE).await?,
         "darkwow-testnet" => parse_blockchain_config(args.config, "darkwow-testnet", CONFIG_FILE).await?,
         "mainnet" => parse_blockchain_config(args.config, "mainnet", CONFIG_FILE).await?,
         _ => {

@@ -225,7 +225,7 @@ impl Drk {
         match self.cache.get_merkle_tree(b"money_merkle_trees") {
             Some(tree) => Ok(tree),
             None => {
-                // Create an empty Merkle tree for linear-testnet (no previous state)
+                // Create an empty Merkle tree for darkwow-devnet (no previous state)
                 let tree = MerkleTree::new(1);
                 Ok(tree)
             }
@@ -651,7 +651,7 @@ impl Drk {
     /// Initialize money functionality
     pub async fn initialize_money(&self, output: &mut Vec<String>) -> Result<()> {
         // Wallet database is already initialized with tables via initialize_wallet()
-        // For linear-testnet, we don't need special money initialization
+        // For darkwow-devnet, we don't need special money initialization
         output.push("Money V3 initialized".to_string());
         Ok(())
     }

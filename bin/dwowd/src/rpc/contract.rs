@@ -207,7 +207,7 @@ impl DwowNode {
 
     // RPCAPI:
     // Deploy a WASM contract to the linear blockchain.
-    // This endpoint is only available in linear-testnet mode.
+    // This endpoint is only available in darkwow-devnet mode.
     //
     // --> {"jsonrpc": "2.0", "method": "contract.deploy",
     //      "params": {
@@ -272,14 +272,14 @@ impl DwowNode {
             }
         };
 
-        // Check we're in linear-testnet mode
+        // Check we're in darkwow-devnet mode
         let linear_blockchain = match &self.linear_blockchain {
             Some(lb) => lb.clone(),
             None => {
-                error!(target: "dwowd::rpc::contract", "contract.deploy is only available in linear-testnet mode");
+                error!(target: "dwowd::rpc::contract", "contract.deploy is only available in darkwow-devnet mode");
                 return JsonError::new(
                     InternalError,
-                    Some("contract.deploy is only available in linear-testnet mode".to_string()),
+                    Some("contract.deploy is only available in darkwow-devnet mode".to_string()),
                     id,
                 )
                 .into();

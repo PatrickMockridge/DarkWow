@@ -50,7 +50,7 @@ struct Args {
     /// Configuration file to use
     config: Option<String>,
 
-    #[structopt(short, long, default_value = "linear-testnet")]
+    #[structopt(short, long, default_value = "darkwow-devnet")]
     /// Blockchain network to use
     network: String,
 
@@ -92,7 +92,7 @@ struct Args {
 /// Defines a blockchain network configuration.
 /// Default values correspond to a local network.
 pub struct BlockchainNetwork {
-    #[structopt(long, default_value = "~/.local/share/dwow/dwowd/linear-testnet")]
+    #[structopt(long, default_value = "~/.local/share/dwow/dwowd/darkwow-devnet")]
     /// Path to blockchain database
     database: String,
 
@@ -117,7 +117,7 @@ pub struct BlockchainNetwork {
     rpc: RpcSettingsOpt,
 
     #[structopt(skip)]
-    /// Management server JSON-RPC settings (not used in linear-testnet)
+    /// Management server JSON-RPC settings (not used in darkwow-devnet)
     management_rpc: Option<RpcSettingsOpt>,
 
     #[structopt(skip)]
@@ -139,7 +139,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
 
     // Grab blockchain network configuration
     let (network, mut blockchain_config) = match args.network.as_str() {
-        "linear-testnet" | "darkwow-testnet" | "dwow-devnet" => {
+        "darkwow-devnet" | "darkwow-testnet" => {
             parse_blockchain_config(args.config, args.network.as_str()).await?
         }
         _ => {
@@ -193,7 +193,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         blockchain_config.finality = Some(fc);
     }
 
-    info!(target: "dwowd", "Starting DarkWow node in linear-testnet mode...");
+    info!(target: "dwowd", "Starting DarkWow node...");
 
     // Initialize or open sled database
     let db_path = expand_path(&blockchain_config.database)?;
@@ -251,7 +251,7 @@ pub async fn parse_blockchain_config(
 ) -> Result<(Network, BlockchainNetwork)> {
     // Grab network prefix
     let used_net = match network {
-        "linear-testnet" | "darkwow-testnet" | "dwow-devnet" => Network::Testnet,
+        "darkwow-devnet" | "darkwow-testnet" => Network::Testnet,
         _ => return Err(Error::ParseFailed("Invalid blockchain network")),
     };
 

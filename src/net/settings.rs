@@ -140,7 +140,7 @@ pub struct Settings {
     pub pow: PowSettings,
 }
 
-/// PoW settings for linear-testnet
+/// PoW settings for darkwow-devnet
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct PowSettings {

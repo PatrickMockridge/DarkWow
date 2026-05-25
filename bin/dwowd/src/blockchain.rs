@@ -37,7 +37,7 @@ use randomx::{RandomXFlags, RandomXVM};
 use dwow::runtime::vm_runtime::RuntimeBackend;
 use dwow::Error;
 use dwow::Result;
-use dwow_linear::{build_uncle_merkle, verify_uncle_proof, FinalityConfig, UncleBlock, Block, LinearStore, PoWConsensus};
+use dwow_linear::{build_uncle_merkle, verify_uncle_proof, FinalityConfig, UncleBlock, Block, LinearStore, PoWConsensus, PowSource};
 use sled_overlay::{SledTreeOverlay, SledTreeOverlayStateDiff};
 use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID};
 use dwow_sdk::deploy::DeployParamsV1;
@@ -508,13 +508,20 @@ impl LinearBlockchain {
         info!(target: "linear_blockchain", "Applying block at height {}", block.header.height);
 
         // Verify PoW
-        let proof_ok = {
-            let consensus = self.consensus.lock().unwrap();
-            consensus.verify_proof(block, &vm).map_err(|e| Error::Custom(e.to_string()))?
-        };
-        if !proof_ok {
-            error!(target: "linear_blockchain", "Block {} failed PoW verification", block_hash);
-            return Err(Error::BlockIsInvalid(block_hash.to_string()))
+        // For Monero merge-mined blocks, PoW is verified cryptographically
+        // in mm_submit_solution via aux merkle proof + coinbase merkle proof.
+        // The native PoW check uses the DarkWow header hash which is
+        // irrelevant for merge-mined blocks (xmrig hashes the Monero block,
+        // not the DarkWow header).
+        if !matches!(block.header.pow_source, PowSource::Monero(_)) {
+            let proof_ok = {
+                let consensus = self.consensus.lock().unwrap();
+                consensus.verify_proof(block, &vm).map_err(|e| Error::Custom(e.to_string()))?
+            };
+            if !proof_ok {
+                error!(target: "linear_blockchain", "Block {} failed PoW verification", block_hash);
+                return Err(Error::BlockIsInvalid(block_hash.to_string()))
+            }
         }
 
         // Verify merkle root

@@ -53,14 +53,14 @@ pub type DwowMinersRegistryStatePtr = Arc<RwLock<DwowMinersRegistryState>>;
 
 /// DarkWow node miners registry state.
 pub struct DwowMinersRegistryState {
-    /// Linear PoW reward ZK data (None for linear-testnet mode)
+    /// Linear PoW reward ZK data (None for darkwow-devnet mode)
     pub powrewardv1_zk: Option<LinearPowRewardZk>,
-    /// Linear blockchain state (only set in linear-testnet mode)
+    /// Linear blockchain state (only set in darkwow-devnet mode)
     pub linear_blockchain: Option<Arc<crate::blockchain::LinearBlockchain>>,
 }
 
 impl DwowMinersRegistryState {
-    /// Create a new registry state for linear-testnet mode
+    /// Create a new registry state for darkwow-devnet mode
     pub async fn new_linear(
         linear_blockchain: Arc<crate::blockchain::LinearBlockchain>,
     ) -> Result<DwowMinersRegistryStatePtr> {
@@ -91,14 +91,14 @@ pub struct DwowMinersRegistry {
 }
 
 impl DwowMinersRegistry {
-    /// Initialize a DarkWow node miners registry for linear-testnet mode.
+    /// Initialize a DarkWow node miners registry for darkwow-devnet mode.
     pub async fn init_linear(
         network: Network,
         linear_blockchain: Arc<crate::blockchain::LinearBlockchain>,
     ) -> Result<DwowMinersRegistryPtr> {
         info!(
             target: "dwowd::registry::mod::DwowMinersRegistry::init_linear",
-            "Initializing a new DarkWow node miners registry for linear-testnet..."
+            "Initializing a new DarkWow node miners registry for darkwow-devnet..."
         );
 
         let state = DwowMinersRegistryState::new_linear(linear_blockchain).await?;
@@ -111,7 +111,7 @@ impl DwowMinersRegistry {
 
         info!(
             target: "dwowd::registry::mod::DwowMinersRegistry::init_linear",
-            "DarkWow node miners registry for linear-testnet generated successfully!"
+            "DarkWow node miners registry for darkwow-devnet generated successfully!"
         );
 
         Ok(Arc::new(Self {

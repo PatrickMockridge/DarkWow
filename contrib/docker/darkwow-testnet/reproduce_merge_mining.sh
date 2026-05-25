@@ -50,11 +50,11 @@ mkdir -p "$(dirname "$CONFIG_FILE")"
 # Inject mm_rpc
 cat >> "$CONFIG_FILE" << 'EOF'
 
-[network_config."linear-testnet".mm_rpc]
+[network_config."darkwow-devnet".mm_rpc]
 rpc_listen = "http+tcp://127.0.0.1:31348"
 EOF
 
-sed -i "s|~/.local/share/dwow/dwowd/linear-testnet|$TEST_DIR/data|g" "$CONFIG_FILE"
+sed -i "s|~/.local/share/dwow/dwowd/darkwow-devnet|$TEST_DIR/data|g" "$CONFIG_FILE"
 
 # ---- Start monerod (offline) ----
 "$MONEROD_BIN" \

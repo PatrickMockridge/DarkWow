@@ -36,7 +36,7 @@ use crate::DwowNode;
 
 impl DwowNode {
     // RPCAPI:
-    // Submit a transaction with contract calls to the linear-testnet mempool.
+    // Submit a transaction with contract calls to the darkwow-devnet mempool.
     // Returns the transaction hash on success.
     //
     // --> {"jsonrpc": "2.0", "method": "tx.submit_linear", "params": ["base64encodedTX"], "id": 1}
@@ -49,14 +49,14 @@ impl DwowNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        // Check we're in linear-testnet mode
+        // Check we're in darkwow-devnet mode
         let mempool = match &self.mempool {
             Some(mp) => mp.clone(),
             None => {
-                error!(target: "dwowd::rpc::tx_submit_linear", "tx.submit_linear is only available in linear-testnet mode");
+                error!(target: "dwowd::rpc::tx_submit_linear", "tx.submit_linear is only available in darkwow-devnet mode");
                 return JsonError::new(
                     InternalError,
-                    Some("tx.submit_linear is only available in linear-testnet mode".to_string()),
+                    Some("tx.submit_linear is only available in darkwow-devnet mode".to_string()),
                     id,
                 )
                 .into()

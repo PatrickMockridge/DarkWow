@@ -7,7 +7,7 @@
 ## uncommenting, or by using the command-line.
 
 # Blockchain network to use
-network = "linear-testnet"
+network = "darkwow-testnet"
 
 ## =====================
 ## TESTNET CONFIGURATION
@@ -574,9 +574,9 @@ localnet = true
 ## LINEAR-TESTNET CONFIGURATION
 ## ======================
 # Linear-testnet blockchain network configuration
-[network_config."linear-testnet"]
+[network_config."darkwow-devnet"]
 # Path to the blockchain database directory
-database = "~/.local/share/dwow/dwowd/linear-testnet"
+database = "~/.local/share/dwow/dwowd/darkwow-devnet"
 
 # Confirmation threshold, denominated by number of blocks
 threshold = 1
@@ -600,14 +600,14 @@ skip_fees = true
 txs_batch_size = 50
 
 ## Linear-testnet PoW settings
-[network_config."linear-testnet".pow]
+[network_config."darkwow-devnet".pow]
 # Max RandomX mining threads: 0 = use all available cores, 1+ = exact count.
 # Capped by build-time DARKFI_RANDOMX_MAX_THREADS (default 10).
 # Default 1 for local dev safety.
 #randomx_max_threads = 1
 
 ## Linear-testnet finality settings
-[network_config."linear-testnet".finality]
+[network_config."darkwow-devnet".finality]
 # Mode: "native" | "always" | "signaled"
 #mode = "always"
 # Enable Caribina Arweave anchoring (default: true)
@@ -618,25 +618,41 @@ txs_batch_size = 50
 #monero_min_confirmations = 3
 
 ## Linear-testnet JSON-RPC settings
-[network_config."linear-testnet".rpc]
+[network_config."darkwow-devnet".rpc]
 # JSON-RPC listen URL
 rpc_listen = "tcp://127.0.0.1:28345"
 
 ## Linear-testnet management JSON-RPC settings
-[network_config."linear-testnet".management_rpc]
+[network_config."darkwow-devnet".management_rpc]
 # JSON-RPC listen URL
 rpc_listen = "tcp://127.0.0.1:28346"
 
+## Linear-testnet JSON-RPC settings for stratum mining requests (optional)
+#[network_config."darkwow-devnet".stratum_rpc]
+# JSON-RPC listen URL (stratum mining)
+#rpc_listen = "tcp://127.0.0.1:28347"
+
+# Disabled RPC methods (stratum mining)
+#rpc_disabled_methods = []
+
+## Linear-testnet JSON-RPC settings for p2pool merge mining requests (optional)
+[network_config."darkwow-devnet".mm_rpc]
+# JSON-RPC listen URL (merge mining)
+rpc_listen = "http+tcp://127.0.0.1:28348"
+
+# Disabled RPC methods (merge mining)
+#rpc_disabled_methods = []
+
 ## Linear-testnet P2P network settings
-[network_config."linear-testnet".net]
+[network_config."darkwow-devnet".net]
 # Magic Bytes to distinguish the p2p network
 magic_bytes = [241, 227, 197, 179]
 
 # Path to the P2P datastore
-p2p_datastore = "~/.local/share/dwow/dwowd/linear-testnet"
+p2p_datastore = "~/.local/share/dwow/dwowd/darkwow-devnet"
 
 # Path to a configured hostlist for saving known peers
-hostlist = "~/.local/share/dwow/dwowd/linear-testnet/p2p_hostlist.tsv"
+hostlist = "~/.local/share/dwow/dwowd/darkwow-devnet/p2p_hostlist.tsv"
 
 # Allow localnet hosts
 localnet = true

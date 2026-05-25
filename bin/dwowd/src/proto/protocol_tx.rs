@@ -62,7 +62,7 @@ impl ProtocolTxHandler {
     }
 
     /// Start the `ProtocolTx` background task.
-    /// In linear-testnet mode, this is a no-op (kept for forward compatibility).
+    /// In darkwow-devnet mode, this is a no-op (kept for forward compatibility).
     pub async fn start(
         &self,
         executor: &ExecutorPtr,

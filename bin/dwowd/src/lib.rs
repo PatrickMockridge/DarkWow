@@ -92,7 +92,7 @@ pub type DwowNodePtr = Arc<DwowNode>;
 pub struct DwowNode {
     /// Linear blockchain
     linear_blockchain: Option<Arc<LinearBlockchain>>,
-    /// Mempool for linear blockchain (only set in linear-testnet mode)
+    /// Mempool for linear blockchain (only set in darkwow-devnet mode)
     mempool: Option<MempoolPtr>,
     /// P2P network protocols handler
     p2p_handler: DwowP2pHandlerPtr,
@@ -106,15 +106,15 @@ pub struct DwowNode {
     management_rpc_connections: Mutex<HashSet<StoppableTaskPtr>>,
     /// Whether node is running in localnet mode
     is_localnet: bool,
-    /// Last block timestamp for rate limiting (linear-testnet)
+    /// Last block timestamp for rate limiting (darkwow-devnet)
     last_block_time: AtomicU64,
-    /// Minimum interval between blocks in seconds (linear-testnet)
+    /// Minimum interval between blocks in seconds (darkwow-devnet)
     min_block_interval: u64,
-    /// ZK proving materials for linear-testnet coinbase (lazy initialized)
+    /// ZK proving materials for darkwow-devnet coinbase (lazy initialized)
     linear_zk: Mutex<Option<crate::registry::model::LinearPowRewardZk>>,
-    /// Stored block template for the current mining round (linear-testnet)
+    /// Stored block template for the current mining round (darkwow-devnet)
     current_linear_template: Mutex<Option<crate::registry::model::LinearBlockTemplate>>,
-    /// Publisher for pushing stratum job notifications to miners (linear-testnet)
+    /// Publisher for pushing stratum job notifications to miners (darkwow-devnet)
     linear_stratum_publisher: Mutex<Option<PublisherPtr<JsonNotification>>>,
     /// Stored recipient config for generating new block templates on submit
     linear_recipient_config: Mutex<Option<LinearMinerRewardsRecipientConfig>>,
@@ -165,7 +165,7 @@ impl DwowNode {
         self.is_localnet
     }
 
-    /// Returns the mempool if running in linear-testnet mode
+    /// Returns the mempool if running in darkwow-devnet mode
     pub fn mempool(&self) -> Option<MempoolPtr> {
         self.mempool.clone()
     }
@@ -189,7 +189,7 @@ pub struct Dwowd {
 }
 
 impl Dwowd {
-    /// Initialize a DarkWow daemon for linear-testnet mode.
+    /// Initialize a DarkWow daemon for darkwow-devnet mode.
     ///
     /// Uses LinearBlockchain instead of Validator for consensus.
     pub async fn init_linear(
@@ -200,7 +200,7 @@ impl Dwowd {
         ex: &ExecutorPtr,
         finality_config: Option<dwow_linear::FinalityConfig>,
     ) -> Result<DwowdPtr> {
-        info!(target: "dwowd::Dwowd::init_linear", "Initializing a DarkWow daemon for linear-testnet...");
+        info!(target: "dwowd::Dwowd::init_linear", "Initializing a DarkWow daemon for darkwow-devnet...");
 
         let finality_config = finality_config.unwrap_or_default();
         info!(target: "dwowd::Dwowd::init_linear", "Finality mode: {:?}, caribina_enabled: {}", finality_config.mode, finality_config.caribina_enabled);
@@ -372,7 +372,7 @@ impl Dwowd {
         let management_rpc_task = StoppableTask::new();
         let consensus_task = StoppableTask::new();
 
-        info!(target: "dwowd::Dwowd::init_linear", "DarkWow daemon for linear-testnet initialized successfully!");
+        info!(target: "dwowd::Dwowd::init_linear", "DarkWow daemon for darkwow-devnet initialized successfully!");
 
         Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task }))
     }

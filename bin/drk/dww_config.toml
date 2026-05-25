@@ -7,7 +7,7 @@
 ## uncommenting, or by using the command-line.
 
 # Blockchain network to use
-network = "linear-testnet"
+network = "darkwow-devnet"
 
 # Flag indicating whether you want some fun in your life
 fun = true
@@ -47,12 +47,12 @@ endpoint = "tcp://127.0.0.1:18345"
 history_path = "~/.local/share/dwow/dww/testnet/history.txt"
 
 # Linear-testnet blockchain network configuration
-[network_config."linear-testnet"]
+[network_config."darkwow-devnet"]
 # Path to blockchain cache database
-cache_path = "~/.local/share/dwow/dww/linear-testnet/cache"
+cache_path = "~/.local/share/dwow/dww/darkwow-devnet/cache"
 
 # Path to wallet database
-wallet_path = "~/.local/share/dwow/dww/linear-testnet/wallet.db"
+wallet_path = "~/.local/share/dwow/dww/darkwow-devnet/wallet.db"
 
 # Password for the wallet database
 wallet_pass = "testpassword123"
@@ -61,7 +61,7 @@ wallet_pass = "testpassword123"
 endpoint = "tcp://127.0.0.1:28345"
 
 # Path to interactive shell history file
-history_path = "~/.local/share/dwow/dww/linear-testnet/history.txt"
+history_path = "~/.local/share/dwow/dww/darkwow-devnet/history.txt"
 
 # DarkWow Testnet blockchain network configuration
 [network_config."darkwow-testnet"]
