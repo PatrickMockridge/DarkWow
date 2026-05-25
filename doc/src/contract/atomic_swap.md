@@ -1,5 +1,11 @@
 # Atomic Swap Contract
 
+> **DEPRECATED**: The standalone atomic_swap contract is deprecated in favor of
+> the [bridge](bridge.md) contract's HTLC functions (CreateHtlcV1=0x06,
+> ClaimHtlcV1=0x07, RefundHtlcV1=0x08). The ZK circuits are still compiled and
+> the harness is maintained for reference, but `dwow_atomic_swap.wasm` is not
+> being built. Use the bridge contract for all new cross-chain swap functionality.
+
 Cross-chain atomic swaps via Hashed Timelock Contract (HTLC) pattern.
 
 ## Cross-Chain Hash Verification
@@ -203,14 +209,19 @@ nullifier_check = poseidon_hash(swap_id, secret);
 constrain_equal_base(nullifier_check, nullifier);
 ```
 
-## MVP Status
+## Implementation Status (Historical)
+
+> All ZK circuits are compiled and functional. This contract is **deprecated**
+> in favor of the [bridge](bridge.md) contract's HTLC functions. Kept for
+> reference; ZK circuits and harness maintained.
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| CreateSwap circuit | ✅ Complete | External hash accepted |
-| Claim circuit | ✅ Complete | Secret revealed |
-| Refund circuit | 🆕 TODO | Timelock verification needed |
-| Hash verification | 🆕 TODO | SHA256 in-circuit |
+| CreateSwap circuit | Compiled | `create_swap_v1.zk.bin` — commitment + hash binding |
+| Claim circuit | Compiled | `claim_v1.zk.bin` — secret proof + nullifier derivation |
+| Refund circuit | Compiled | `refund_v1.zk.bin` — timelock verification |
+| Poseidon hash verification | Complete | poseidon_hash in-circuit |
+| SHA256 in-circuit | Not implemented | Required for trustless cross-chain hash binding |
 
 ## Limitations
 
@@ -224,8 +235,9 @@ constrain_equal_base(nullifier_check, nullifier);
 
 ## See Also
 
+- [Bridge Contract](bridge.md) — **Replacement**: HTLC functions 0x06-0x08
 - [Atomic Swap Contract](../../src/contract/atomic_swap/README.md)
 - [Subscription Contract](subscription.md)
 - [DAO-Escrow Contract](dao_escrow.md)
-- [Opcodes Reference](opcodes.md)
-- [Opcode Universe](opcode_universe.md)
+- [Opcodes Reference](../arch/zk/opcodes.md)
+- [Opcode Universe](../arch/zk/opcode_universe.md)

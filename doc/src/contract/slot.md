@@ -203,4 +203,4 @@ src/contract/slot/
 
 - [Baccarat Contract](baccarat.md) — Same composability pattern for card games
 - [Casino Architecture](baccarat.md) — Entropy module for provable randomness
-- [Opcodes Reference](opcodes.md) — Analysis of ZK circuit limitations
+- [Opcodes Reference](../arch/zk/opcodes.md) — Analysis of ZK circuit limitations

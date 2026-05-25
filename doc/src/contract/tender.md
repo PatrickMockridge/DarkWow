@@ -290,6 +290,8 @@ less_than_strict(current_block, reveal_deadline);
 | `SelectWinnerV1` | 0x04 | Select winning bid |
 | `CancelTenderV1` | 0x05 | Cancel tender |
 | `RejectBidV1` | 0x06 | Reject a bid |
+| `CreateTenderWithCapabilityV1` | 0x07 | Create tender requiring O-Cap proof |
+| `SubmitBidWithCapabilityV1` | 0x08 | Submit bid with O-Cap proof |
 
 ## Privacy Properties
 
@@ -438,4 +440,4 @@ src/contract/tender/
 
 - [Attestation Contract](./attestation.md) - Generalized attestation and claims
 - [Labor Market Contract](./labor_market.md) - Job execution after tender award
-- [Tau Task Manager](../../misc/tau.md)
+- [Tau Task Manager](../misc/tau.md)

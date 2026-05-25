@@ -161,7 +161,7 @@ The `refund_v1.zk` circuit uses `less_than_strict(timeout, current_block)` which
 **Why it's sufficient here**:
 The refund circuit only needs to verify `current_block > timeout`. It doesn't need to compute or return how much time remains. The `LessThanStrict` opcode constrains the relation without producing an output — exactly what we need.
 
-**See also**: [zkVM Primitive Layer](./zkvm_primitives.md) for the full mathematical reasoning behind comparison opcodes.
+**See also**: [zkVM Primitive Layer](../arch/zk/zkvm_primitives.md) for the full mathematical reasoning behind comparison opcodes.
 
 ## Use Cases
 
@@ -296,32 +296,28 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 | Counterparty risk | High (escrow hack) | Zero | Zero |
 | Auditability | Limited | Full | Partial (ZK-verified) |
 
-## MVP Status
+## Implementation Status
 
-**Partial MVP** — Core structure exists, ZK circuits are placeholder stubs.
+**Full MVP** — All 6 functions and 4 ZK circuits implemented, compiled, and functional.
 
-| Circuit | Status | Notes |
-|---------|--------|-------|
-| `create_escrow_v1.zk` | Placeholder | Uses existing opcodes, needs full implementation |
-| `fund_v1.zk` | Placeholder | Pedersen commitment, needs merkle integration |
-| `claim_v1.zk` | Placeholder | Key derivation + nullifier, needs full ZK wiring |
-| `refund_v1.zk` | Placeholder | LessThanStrict + key derivation, needs full ZK wiring |
+| Circuit | Binary | Status |
+|---------|--------|--------|
+| `create_escrow_v1.zk` | `create_escrow_v1.zk.bin` | Compiled — commitment formation verified in-circuit |
+| `fund_v1.zk` | `fund_v1.zk.bin` | Compiled — Pedersen value commitment verified |
+| `claim_v1.zk` | `claim_v1.zk.bin` | Compiled — seller secret proof + nullifier derivation |
+| `refund_v1.zk` | `refund_v1.zk.bin` | Compiled — timeout check + buyer secret proof + nullifier |
 
-### What It Needs
+### What's Done
 
-1. **ZK Circuit Compilation**: Convert `.zk` files to `.zk.bin` using zkas
-2. **Entry Point Implementation**: Wire ZK proof verification into `get_metadata()`
-3. **State Management**: Implement actual escrow state transitions in `process_update()`
-4. **Money Integration**: Phase 2 spend_hook integration
-
-### No Blockers
-
-Unlike other contracts, escrow has **no opcode blockers**. All required functionality (`poseidon_hash`, `ec_mul_base`, `less_than_strict`) already exists in the zkVM.
+1. **ZK Circuit Compilation**: All 4 circuits compiled to `.zk.bin` via zkas
+2. **Entry Point Implementation**: Full `get_metadata()` + `process_instruction()` wired with ZK proof verification
+3. **State Management**: 5-state state machine (Created → Funded → Claimed/Refunded/Cancelled) with 30 error variants
+4. **Money Integration**: Phase 1 standalone value pool; Phase 2 spend_hook integration for money_v3
 
 ## References
 
 - [DarkWow Escrow README](../../src/contract/escrow/README.md)
-- [DarkWow DAO Contract](./dao.md)
+- [DarkWow DAO Escrow Contract](./dao_escrow.md)
 - [DarkWow Money Contract](../spec/contract/money/money.md)
-- [zkVM Primitive Layer](./zkvm_primitives.md)
-- [Field Arithmetic Constraints](./field_arithmetic.md)
+- [zkVM Primitive Layer](../arch/zk/zkvm_primitives.md)
+- [Field Arithmetic Constraints](../arch/zk/field_arithmetic.md)

@@ -209,6 +209,18 @@ pub const GAME_ROOM_NULLIFIERS_TREE: &str = "game_room_nullifiers";
 pub const GAME_ROOM_ENTROPY_TREE: &str = "game_room_entropy";     // trusted setup
 ```
 
+## ZK Circuits
+
+All 5 circuits compiled to `.zk.bin`:
+
+| Circuit | Purpose |
+|---------|---------|
+| `create_room_v1.zk` | Prove room creation with owner authorization |
+| `deposit_v1.zk` | Prove stake deposit with account derivation |
+| `place_bet_v1.zk` | Prove bet placement with commitment binding |
+| `settle_pot_v1.zk` | Prove DAO-authorized pot settlement |
+| `claim_v1.zk` | Prove winner claim with payout verification |
+
 ## Security Considerations
 
 1. **Player identification**: All functions take `player: PublicKey` in params (verified by ZK proof/signature at app layer)

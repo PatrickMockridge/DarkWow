@@ -1,7 +1,14 @@
 # Vesting
 
+> [!WARNING]
+> **DEPRECATED**: Vesting is not used on this fork. The contract source
+> (`src/contract/vesting/`) was replaced. This spec is kept for reference
+> only; it does not correspond to any active code on the `linear-master` branch.
+>
+> DarkWow has zero premine and no vesting schedules. All tokens are mined.
+
 ```
-status: draft
+status: deprecated
 ```
 
 ## Abstract

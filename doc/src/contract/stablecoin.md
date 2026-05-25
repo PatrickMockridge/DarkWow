@@ -41,6 +41,37 @@ The stablecoin deployer selects the model at initialization:
 | **Fractional** | 80% | Mixed | Partial algorithmic |
 | **IndividualCDP** | 150% | Per-position | Per-asset |
 
+## Contract Functions
+
+| Function | Opcode | Description |
+|----------|--------|-------------|
+| `InitializeV1` | `0x00` | Initialize stablecoin with model and parameters |
+| `OpenPositionV1` | `0x01` | Open a new CDP position |
+| `AddCollateralV1` | `0x02` | Add collateral to existing position |
+| `RemoveCollateralV1` | `0x03` | Remove collateral (subject to ratio check) |
+| `MintStableV1` | `0x04` | Mint stablecoin against collateral |
+| `RepayStableV1` | `0x05` | Repay stablecoin debt |
+| `LiquidateV1` | `0x06` | Liquidate undercollateralized position |
+| `UpdateConfigV1` | `0x07` | Update configuration parameters |
+| `GovernanceReportV1` | `0x08` | Precise collateral/debt ratio (BaseDiv, cold) |
+| `AccrueInterestV1` | `0x09` | Precise interest accrual (BaseDiv, cold) |
+
+## ZK Circuits
+
+All 9 circuits compiled to `.zk.bin`:
+
+| Circuit | Purpose |
+|---------|---------|
+| `init_v1.zk` | Prove initialization parameters |
+| `open_position_v1.zk` | Prove CDP position creation |
+| `add_collateral_v1.zk` | Prove collateral addition |
+| `remove_collateral_v1.zk` | Prove collateral removal with ratio check |
+| `mint_stable_v1.zk` | Prove stablecoin minting within limits |
+| `repay_stable_v1.zk` | Prove debt repayment |
+| `liquidate_v1.zk` | Prove liquidation conditions met |
+| `governance_report_v1.zk` | Prove precise ratio report (BaseDiv) |
+| `accrue_interest_v1.zk` | Prove precise interest calculation (BaseDiv) |
+
 ## Multi-Collateral Support
 
 Collateral types and risk parameters:
@@ -167,6 +198,6 @@ Staking tokens to the stablecoin for governance weight is configured at the **DA
 
 - [Stablecoin Contract](../../src/contract/stablecoin/)
 - [Bridge](./bridge.md)
-- [Opcodes](./opcodes.md)
-- [Safemath](./safemath.md)
+- [Opcodes](../arch/zk/opcodes.md)
+- [Safemath](../arch/zk/safemath.md)
 - [DrainProtection](./drain_protection.md)

@@ -112,11 +112,13 @@ If the service fails or is malicious, the DAO can authorize refunds from the end
 
 | Function | Opcode | Description |
 |----------|--------|-------------|
+| `InitializeV1` | `0x00` | Initialize contract with DAO parameters |
 | `SubscribeV1` | `0x01` | Create new subscription |
 | `CancelV1` | `0x02` | User cancels, refund at lock |
 | `RenewV1` | `0x03` | Extend subscription period |
 | `VerifyAccessV1` | `0x04` | ZK proof of valid subscription |
 | `DaoControlV1` | `0x05` | DAO governance actions |
+| `UpdateUsageV1` | `0x06` | Update usage counters (rate limiting) |
 
 ## Composability: Subscription + DAO-Escrow
 
@@ -358,6 +360,6 @@ See [Atomic Swap Contract](atomic_swap.md) for full HTLC details.
 - [Object Capability Model](https://en.wikipedia.org/wiki/Object_capability_model)
 - [DAO Contract](dao.md)
 - [DAO-Escrow Contract](dao_escrow.md)
-- [Opcodes Reference](opcodes.md)
-- [Complete Opcode Universe](opcode_universe.md)
+- [Opcodes Reference](../arch/zk/opcodes.md)
+- [Complete Opcode Universe](../arch/zk/opcode_universe.md)
 - [Escrow Contract](escrow.md)

@@ -6,11 +6,11 @@ A composable module providing provably fair randomness generation using block ha
 
 The entropy module (`dwow_sdk::crypto::entropy`) provides a unified API for randomness that was previously copy-pasted across multiple contracts:
 
-- **Roulette**: Single number drawing (0 to wheel_size-1)
-- **Lottery**: Multiple unique numbers from a range
 - **DarkToshi Dice**: Cumulative PoW entropy with confirmation depth
 - **Baccarat**: Card dealing from multiple block hashes
-- **Block Height Prediction**: Resolution from cumulative entropy
+- **Lottery**: Multiple unique numbers from a range
+- **Slot**: Manual extraction from 32-byte block hash into 4 × u64
+- **Roulette**: Uses own `draw_winning_number()` — does NOT use SDK entropy module
 
 ## Security Model
 
@@ -94,11 +94,21 @@ let base = tx_hash_to_base(&tx_hash_bytes);
 ## Usage in Contracts
 
 ### Roulette
-```rust
-use dwow_sdk::crypto::entropy::draw_single;
 
-// In spin_wheel instruction
-let winning_number = draw_single(block_hash, nonce, table.wheel_size);
+Roulette uses its own `draw_winning_number()` implementation in
+`src/contract/roulette/src/model/mod.rs`. It extracts entropy manually
+from block hash via `wasm::util::get_block_hash()` rather than using the
+SDK entropy module.
+
+```rust
+// In spin_wheel instruction (actual implementation):
+let block_hash = wasm::util::get_block_hash(current_block as u32)?;
+let winning_number = draw_winning_number(
+    &block_hash.0,
+    table.spin_count,
+    nonce,
+    table.wheel_size as u64,
+);
 ```
 
 ### Lottery
@@ -120,14 +130,21 @@ let roll_entropy = mix_entropy(block_entropy, &[bet_id, secret_nonce]);
 
 ### Baccarat
 ```rust
-use dwow_sdk::crypto::{tx_hash_to_base, mix_entropy};
+// In draw_cards instruction (deal_cards function in model/mod.rs)
+// Uses wasm::util::get_block_hash() via WASM runtime, not SDK entropy module
+fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId)
+    -> (Hand, Hand, Option<Card>, Option<Card>) { ... }
+```
 
-// In draw_cards instruction
-let mut entropy = bet_id;
-for (i, hash) in block_hashes.iter().enumerate() {
-    let block_entropy = tx_hash_to_base(&hash.0);
-    entropy = mix_entropy(entropy, &[block_entropy, pallas::Base::from(i as u64)]);
-}
+### Slot
+```rust
+// In spin instruction (entrypoint.rs)
+// Extracts from block hash manually via wasm::util::get_block_hash()
+let block_hash = wasm::util::get_block_hash(wasm::util::get_verifying_block_height()?)?.0;
+let a = u64::from_le_bytes(block_hash[0..8].try_into().unwrap());
+let b = u64::from_le_bytes(block_hash[8..16].try_into().unwrap());
+let c = u64::from_le_bytes(block_hash[16..24].try_into().unwrap());
+let d = u64::from_le_bytes(block_hash[24..32].try_into().unwrap());
 ```
 
 ## Design Principles

@@ -89,12 +89,18 @@ Pending ──[Verify:valid]──> Verified ──[Consume]──> Consumed
 | Function | Opcode | Description |
 |----------|--------|-------------|
 | `CreateAttestationV1` | 0x00 | Attestor creates an attestation |
-| `RevokeAttestationV1` | 0x01 | Attestor revokes |
-| `ExpireAttestationV1` | 0x02 | Mark as expired |
+| `RevokeAttestationV1` | 0x01 | Attestor revokes an attestation |
+| `ExpireAttestationV1` | 0x02 | Mark attestation as expired |
 | `CreateClaimV1` | 0x03 | Claimant creates a claim |
 | `VerifyClaimV1` | 0x04 | Verify claim (ZK + on-chain) |
-| `ConsumeClaimV1` | 0x05 | Mark claim as used (prevents replay) |
+| `ConsumeClaimV1` | 0x05 | Mark claim as consumed (prevents replay) |
 | `ValidateClaimV1` | 0x06 | Fast path: verify without consuming |
+| `CheckNotRevokedV1` | 0x07 | Verify credential not revoked (Identity contract integration) |
+| `DelegateAttestationV1` | 0x08 | Delegate attestation authority |
+| `VerifyChainV1` | 0x09 | Multi-step attestation chain verification |
+| `UpdateDelegationV1` | 0x0a | Update delegation parameters |
+| `AttestSlashV1` | 0x0b | Slash attestor for false attestation |
+| `CommitFeeScheduleV1` | 0x0c | Commit to fee schedule for attestation services |
 
 ## Integration Patterns
 
@@ -200,19 +206,31 @@ Attestor (oracle) attests to external data (push model):
 
 ## ZK Circuits
 
+All 10 circuits compiled to `.zk.bin`:
+
 | Circuit | Purpose |
 |---------|---------|
-| `create_attestation_v1.zk` | Proves attestor knows secret key |
-| `create_claim_v1.zk` | Proves claimant knows secret, attestation exists |
-| `verify_claim_v1.zk` | Proves predicate satisfied |
-| `consume_claim_v1.zk` | Proves claim consumed with nullifier |
+| `create_attestation_v1.zk` | Prove attestor knows secret key; commitment correctly formed |
+| `create_claim_v1.zk` | Prove claimant knows secret, attestation exists |
+| `verify_claim_v1.zk` | Prove predicate satisfied against attestation data |
+| `consume_claim_v1.zk` | Prove claim consumed with nullifier (prevents replay) |
+| `check_not_revoked_v1.zk` | Prove credential not revoked (Identity contract integration) |
+| `delegate_attestation_v1.zk` | Prove valid delegation of attestation authority |
+| `verify_chain_v1.zk` | Prove multi-step attestation chain valid |
+| `update_delegation_v1.zk` | Prove delegation update authorized |
+| `attest_slash_v1.zk` | Prove attestor submitted false attestation |
+| `commit_fee_schedule_v1.zk` | Prove fee schedule commitment correctly formed |
 
 ## Database Trees
 
-- `attestations`: Attestation structs keyed by ID
-- `claims`: Claim structs keyed by ID
-- `nullifiers`: Spent claims to prevent replay
-- `attestation_index`: Index by attestor for lookup
+| Tree | Purpose |
+|------|---------|
+| `attestations` | Attestation structs keyed by ID |
+| `claims` | Claim structs keyed by ID |
+| `nullifiers` | Spent claims to prevent replay |
+| `attestation_index` | Index by attestor for lookup |
+| `claim_rate_limits` | Rate limiting for claim operations |
+| `delegations` | Delegation records for delegated attestation authority |
 
 ## Benefits
 

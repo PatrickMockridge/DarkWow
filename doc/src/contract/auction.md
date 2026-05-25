@@ -102,7 +102,29 @@ pub struct Bid {
 }
 ```
 
+## Contract Functions
+
+| Function | Opcode | Description |
+|----------|--------|-------------|
+| `CreateAuctionV1` | `0x00` | Create new auction with item commitment |
+| `PlaceBidV1` | `0x01` | Place a bid (deposit held in escrow) |
+| `CloseAuctionV1` | `0x02` | Close bidding period |
+| `ClaimWinningsV1` | `0x03` | Winner claims the auctioned item |
+| `SettleAuctionV1` | `0x04` | Settle auction, transfer payment to seller |
+| `RefundBidV1` | `0x05` | Refund outbid deposits |
+
 ## ZK Circuits
+
+All 6 circuits compiled to `.zk.bin`:
+
+| Circuit | Purpose |
+|---------|---------|
+| `create_auction_v1.zk` | Prove auction commitment is valid |
+| `place_bid_v1.zk` | Prove bid is valid and exceeds current highest |
+| `close_auction_v1.zk` | Prove auction deadline reached |
+| `claim_winnings_v1.zk` | Prove winner authorization |
+| `settle_auction_v1.zk` | Prove seller receives payment |
+| `refund_bid_v1.zk` | Prove outbid bidder receives refund |
 
 ### create_auction_v1.zk
 

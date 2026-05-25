@@ -228,4 +228,4 @@ This contract establishes useful primitives for other games:
 
 - [Provable Randomness](provable_randomness.md) - Deep dive into randomness sources and security
 - [DarkToshi Dice](darktoshi_dice.md) - Commit-reveal pattern reference
-- [Money Contract](money.md) - Value transfer integration
+- [Money Contract](../spec/contract/money/money.md) - Value transfer integration

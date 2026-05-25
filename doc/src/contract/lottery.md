@@ -187,7 +187,7 @@ Lottery sits **between** BettingStake and Insurance in the DarkWow risk capital 
 | Aspect | BettingStake | Lottery | Insurance |
 |--------|--------------|---------|----------|
 | Odds | Fixed (e.g., 35:1) | Pool-based (variable) | Event-based |
-| Max payout | Known pre-event | Exceeds pool possible |理论上无上限 |
+| Max payout | Known pre-event | Exceeds pool possible | Theoretically unlimited |
 | Capital need | Bounded (max × odds) | Bounded + buffer | Catastrophe modeling |
 | Risk profile | Low-medium | Medium-high | High/catastrophic |
 
@@ -250,7 +250,7 @@ See [Insurance Market Contract](./insurance_market.md) for underwriter infrastru
 ## Status
 
 - [x] Contract implementation (6 functions)
-- [x] ZK circuits (placeholder, need full implementation)
+- [x] ZK circuits (compiled and functional; basic commitment/nulling verified)
 - [x] Standard lottery presets
 - [x] Custom configuration support
 - [ ] Full ZK proof verification for reveal

@@ -102,25 +102,23 @@ final_value = Hash(reveal_hash, commit)
 ### Roll Calculation
 
 ```rust
-// Using dwow_sdk::crypto::entropy module
+// From src/contract/darktoshi_dice/src/model/mod.rs
 
-use dwow_sdk::crypto::entropy::{tx_hash_to_base, mix_entropy};
-
-// Modern implementation using SDK entropy module
+/// Deprecated: Use calculate_roll_with_depth for production gambling.
+#[deprecated(since = "0.1.0", note = "Use calculate_roll_with_depth with adjustable confirmation depth")]
 pub fn calculate_roll(tx_hash_bytes: [u8; 32], bet_id: BetId, secret_nonce: pallas::Base) -> u8 {
-    let block_hash = tx_hash_to_base(&tx_hash_bytes);
-    let roll_input = mix_entropy(block_hash, &[bet_id, secret_nonce]);
-    let bytes = roll_input.to_repr();
-    ((bytes[0] as u64) % (ROLL_RANGE as u64)) as u8
+    // ... legacy single-block roll
 }
 
-// High-security version with multiple block confirmations
-pub fn calculate_roll_with_depth(block_hashes: &[pallas::Base], bet_id: BetId, secret_nonce: pallas::Base) -> u8 {
-    use dwow_sdk::crypto::entropy::{combine_block_hashes, draw_with_depth};
-    let entropy = combine_block_hashes(block_hashes);
-    let final_entropy = mix_entropy(entropy, &[bet_id, secret_nonce]);
-    let bytes = final_entropy.to_repr();
-    ((bytes[0] as u64) % (ROLL_RANGE as u64)) as u8
+/// Production implementation with adjustable confirmation depth.
+/// Collects K consecutive block hashes for cumulative PoW entropy.
+pub fn calculate_roll_with_depth(
+    block_hashes: &[pallas::Base],
+    bet_id: BetId,
+    secret_nonce: pallas::Base,
+) -> u8 {
+    // Combines cumulative block hash entropy with bet_id + secret_nonce
+    // Secure: attacker must control K consecutive blocks to manipulate
 }
 ```
 
@@ -135,8 +133,10 @@ See [Entropy Module](entropy.md) for the composable randomness API.
    - Value is locked via Money::Burn + spend_hook
 
 2. Reveal Phase (when tx is included in block):
-   - tx_hash is determined by block inclusion
-   - roll = calculate_roll(tx_hash, bet_id, secret_nonce)
+   - tx_hash is determined by block inclusion (wasm::util::get_tx_hash())
+   - K consecutive block hashes collected from verifying block height
+   - roll = calculate_roll_with_depth(&block_hashes, bet_id, secret_nonce)
+   - The tx_hash is split into 4 field elements and passed as Vec<pallas::Base>
    - If roll < target: player wins
 
 3. Settlement Phase:
@@ -366,26 +366,51 @@ DarkWow implements ECVRF (Elliptic Curve Verifiable Random Function) based on [d
 ```rust
 // From src/sdk/src/crypto/ecvrf.rs
 
+pub struct VrfProof {
+    gamma: pallas::Point,
+    c: blake3::Hash,
+    s: pallas::Scalar,
+}
+
 impl VrfProof {
-    /// Generate VRF proof
-    pub fn prove(secret_key: SecretKey, alpha_string: &[u8]) -> Self {
-        let Y = PublicKey::from_secret(secret_key);
-        let H = pallas::Point::hash_to_curve(VRF_DOMAIN)(&[Y.to_bytes(), alpha_string].concat());
-        let gamma = H * fp_mod_fv(secret_key.inner());
+    /// Execute the VRF function and create a proof given a SecretKey
+    /// and a seed input `alpha_string`.
+    pub fn prove(x: SecretKey, alpha_string: &[u8]) -> Self {
+        let Y = PublicKey::from_secret(x);
 
-        // Generate proof components...
-        // Returns: VrfProof { gamma, c, s }
+        // Hash public key + alpha_string to curve
+        let mut message = vec![];
+        message.extend_from_slice(&Y.to_bytes());
+        message.extend_from_slice(alpha_string);
+        let H = pallas::Point::hash_to_curve(VRF_DOMAIN)(&message);
+
+        // gamma = H * x
+        let gamma = H * fp_mod_fv(x.inner());
+
+        // Generate deterministic nonce k
+        let k = hash_to_scalar(VRF_DOMAIN.as_bytes(), &[
+            &x.inner().to_repr(), &H.to_bytes()
+        ]);
+
+        // Fiat-Shamir challenge
+        let c = hash_challenge(&H, &gamma, &k);
+        let c_scalar = to_scalar(c);
+        let s = k + c_scalar * fp_mod_fv(x.inner());
+
+        Self { gamma, c, s }
     }
 
-    /// Verify VRF proof
-    pub fn verify(&self, public_key: PublicKey, alpha_string: &[u8]) -> bool {
-        // Verify the proof is valid
-        // Returns true if verified
+    /// Verify a VrfProof given a PublicKey and seed input `alpha_string`.
+    /// Returns true if the proof is valid.
+    pub fn verify(&self, Y: PublicKey, alpha_string: &[u8]) -> bool {
+        // Recompute H, c_scalar, U, V
+        // Verify: hash(H, gamma, U, V) == self.c
     }
 
-    /// Get VRF output (call AFTER verify!)
+    /// Returns the VRF output.
+    /// CRITICAL: Call verify() first to trust this output.
     pub fn hash_output(&self) -> blake3::Hash {
-        // Returns domain-separated hash of gamma
+        // Domain-separated hash of gamma
     }
 }
 ```
@@ -486,393 +511,45 @@ If miner controls 33% of hash rate:
 | PoW + VRF + Commit | ~256+ | Hybrid | Recommended |
 
 ---
-
-## Case Study: Block Height Prediction Market
-
-### Concept
-
-A prediction market where participants bet on the **next canonical DarkWow block height** at a specific time. Unlike traditional prediction markets that resolve on subjective events, this market leverages DarkWow's PoW blockchain as a **trustless, verifiable randomness source**.
-
-**Core Question**: "What will be the canonical block height at timestamp T?"
-
-### Why This Is Interesting
-
-| Property | Description |
-|----------|-------------|
-| **Natural Randomness** | Block arrival time (~120s target) is inherently probabilistic due to PoW mining |
-| **Observable** | Current block height is public information |
-| **Verifiable** | Block hashes provide cryptographic proof of work done |
-| **Predictable Variance** | Block time follows an exponential distribution - predictable in aggregate but random individually |
-| **Practical Use Cases** | Scheduled lotteries, time-locked reveals, smart contract randomness |
-
-### DarkWow Consensus Deep Dive
-
-Before designing the prediction market, we must understand how DarkWow determines the **canonical block**:
-
-#### Fork Resolution Algorithm
-
-DarkWow does **NOT** use simple longest-chain rule. Instead it uses a **rank-based system** (`src/validator/utils.rs`):
-
-```rust
-// Each block has a "rank" computed from two components:
-// 1. target_distance_sq: Squared distance from mining target to MAX_32_BYTES
-// 2. hash_distance_sq: Squared distance from RandomX output hash to MAX_32_BYTES
-
-// MAX_32_BYTES = 2^256 - 1 (all 0xFF bytes)
-// This is essentially the "closest to infinity" metric
-```
-
-#### Canonical Chain Selection
-
-Forks are ranked by:
-1. **Primary**: Sum of `targets_rank` across all blocks (higher is better)
-2. **Tiebreaker**: Sum of `hashes_rank` across all blocks (higher is better)
-
-```
-Fork A: blocks [100, 101, 102] with ranks [R1, R2, R3]
-Fork B: blocks [100, 101, 102'] with ranks [R1, R2, R3']
-
-Winner = argmax(sum(R1+R2+R3), sum(R1+R2+R3'))
-```
-
-#### Critical: When Forks Are Equal
-
-**When competing forks have equal `targets_rank` AND equal `hashes_rank`:**
-- Confirmation is **BLOCKED** - no canonical chain switch occurs
-- The network waits until one fork accumulates strictly more work
-- This creates genuine uncertainty during fork races
-
-#### RandomX PoW
-
-DarkWow uses **RandomX** for PoW - an ASIC-resistant, CPU-friendly algorithm:
-- Block hash = `RandomX_VM(hashing_blob)`
-- Hashing blob = serialized block header (prev_hash, height, timestamp, txs_merkle_root, nonce)
-- The VM execution is opaque - even knowing all inputs, predicting output is infeasible
-
-#### Difficulty Calculation
-
-```rust
-// Sliding window of 720 blocks (600 used after trimming outliers)
-// target = MAX_32_BYTES / difficulty
-// next_difficulty = (cumulative_work * target + time_span - 1) / time_span
-```
-
-### Contract Design
-
-The Block Height Prediction Market extends the existing `prediction_market` contract with specialized resolution logic:
-
-```rust
-/// BlockHeightMarket extends base Market
-struct BlockHeightMarket {
-    // Base prediction market fields
-    market_id: MarketId,
-    creator: PublicKey,
-    question: Vec<u8>,           // e.g., "Block height at 2026-04-01 12:00:00 UTC?"
-    resolve_time: u64,           // Target timestamp for resolution
-    betting_closes: u64,         // When betting stops
-
-    // Block-height specific fields
-    base_block_height: u64,      // Block height at market creation
-    target_block: Option<u64>,   // Resolved block height (set by oracle)
-    confirmation_depth: u8,      // PoW confirmation depth for resolution
-    resolution_data: Vec<u8>,    // Oracle attestation or ZK proof
-}
-
-/// Position includes predicted height range
-struct BlockHeightPosition {
-    position_id: PositionId,
-    market_id: MarketId,
-    owner: PublicKey,
-    outcome: u8,                  // 0 = BELOW, 1 = EXACT, 2 = ABOVE
-    predicted_height: u64,        // Exact predicted height
-    height_range: u8,            // +/- tolerance for "close" payouts
-    amount: u64,
-    potential_payout: u64,
-    claimed: bool,
-    created_at: u64,
-}
-```
-
-### Resolution Mechanisms
-
-#### Option 1: Oracle Attestation (Current)
-
-```
-1. At resolve_time, oracle observes canonical block height H
-2. Oracle signs: "At time T, block height was H"
-3. Oracle submits attestation to contract
-4. Contract verifies signature, resolves market
-```
-
-**Limitation**: Requires trusted oracle (see [Oracle Contract](oracle.md))
-
-#### Option 2: PoW-Backed Resolution (Recommended)
-
-Uses DarkWow's PoW with adjustable confirmation depth. The key insight is that **block hashes are unpredictable** due to RandomX, making them suitable for randomness generation:
-
-```rust
-/// Resolve using cumulative PoW hash
-/// Key property: RandomX output is unpredictable even to miners
-fn resolve_with_pow(
-    market: BlockHeightMarket,
-    current_block: u64,
-) -> Result<u64, Error> {
-    // Wait until we have enough confirmations past resolve_time
-    let confirmations_needed = market.confirmation_depth as u64;
-    let min_resolve_block = get_block_at_time(market.resolve_time)?;
-    let resolve_block = min_resolve_block + confirmations_needed;
-
-    // CRITICAL: Use block hash from K blocks AFTER resolve_time
-    // This ensures:
-    // 1. Block at resolve_time is already mined (not withholding)
-    // 2. K confirmation blocks add PoW entropy
-    let resolution_hash = cumulative_pow_hash(
-        resolve_block,
-        confirmations_needed
-    );
-
-    // Derive resolved height from PoW entropy
-    // The randomness comes from RandomX, NOT from block timing
-    let resolved_height = derive_height_from_hash(
-        resolution_hash,
-        market.base_block_height,
-        market.resolve_time
-    );
-
-    Ok(resolved_height)
-}
-
-/// Cumulative PoW hash for strong randomness
-/// Security: K blocks = attacker needs K consecutive blocks
-fn cumulative_pow_hash(start_block: u64, depth: u8) -> pallas::Base {
-    let mut combined = pallas::Base::zero();
-    for i in 0..depth {
-        let block_hash = get_block_hash(start_block + u64::from(i))?;
-        combined = poseidon_hash([combined, block_hash]);
-    }
-    combined
-}
-
-/// Derive height using PoW entropy
-/// Key insight: RandomX hash is the randomness source, NOT block timing
-fn derive_height_from_hash(
-    pow_hash: pallas::Base,
-    base_height: u64,
-    target_time: u64,
-) -> u64 {
-    // Expected blocks since creation
-    let elapsed = target_time - creation_time;
-    let expected_blocks = elapsed / 120; // ~120 second block time
-
-    // Use RandomX hash (not time) for variance
-    // This is secure because RandomX output cannot be predicted
-    let hash_bytes = pow_hash.to_repr();
-    let variance: i64 = (hash_bytes[0] as i64) % 50 - 25; // +/- 25 blocks variance
-
-    (expected_blocks as i64 + variance).max(0) as u64 + base_height
-}
-```
-
-#### Option 3: Hybrid (PoW + Oracle Tiebreaker)
-
-```
-1. Primary: Use PoW hash from K blocks after resolve_time
-2. If fork race with equal ranks: Oracle provides tiebreaker attestation
-3. ZK proof verifies PoW computation in circuit
-```
-
-**Note**: Given DarkWow's fork resolution, during a **rank tie** the oracle's attestation determines which fork wins. This is the ONLY scenario where oracle trust is critical.
-
-### Integration with Existing Prediction Market
-
-Rather than creating a new contract, extend `prediction_market`:
-
-```rust
-// In prediction_market/src/model/mod.rs
-
-/// Resolution type for markets
-pub enum ResolutionType {
-    OracleAttestation = 0,    // Traditional oracle signature
-    PowDelayed = 1,           // PoW-backed with confirmation depth
-    Hybrid = 2,               // PoW + oracle tiebreaker
-}
-
-/// BlockHeight-specific params for CreateMarket
-pub struct BlockHeightMarketParams {
-    pub base_resolution_type: ResolutionType,
-    pub confirmation_depth: u8,        // For PowDelayed/Hybrid
-    pub target_time: u64,              // Unix timestamp to resolve at
-    pub tolerance_range: u8,           // For "close" payouts
-}
-
-/// Create a block height prediction market
-pub fn create_block_height_market(
-    params: BlockHeightMarketParams,
-) -> Result<Market, PredictionMarketError> {
-    // Validate confirmation depth
-    if params.confirmation_depth < 1 || params.confirmation_depth > 10 {
-        return Err(PredictionMarketError::InvalidConfirmationDepth)
-    }
-
-    // Validate target time is in future
-    let current_time = wasm::util::get_block_timestamp()?;
-    if params.target_time <= current_time {
-        return Err(PredictionMarketError::InvalidResolveTime)
-    }
-
-    // Derive market ID
-    let market_id = derive_market_id(...);
-
-    Ok(Market {
-        id: market_id,
-        resolution_type: ResolutionType::PowDelayed,
-        confirmation_depth: params.confirmation_depth,
-        target_time: params.target_time,
-        base_block_height: wasm::util::get_block_height()?,
-        ..Default::default()
-    })
-}
-```
-
-### Payout Structure
-
-```rust
-/// Calculate payouts for block height prediction
-fn calculate_height_payout(
-    position: &BlockHeightPosition,
-    resolved_height: u64,
-    total_pool: u64,
-    winning_pool: u64,
-) -> u64 {
-    let distance = abs_diff(position.predicted_height, resolved_height);
-
-    // Jackpot: exact prediction
-    if distance == 0 {
-        return total_pool * position.amount / winning_pool * 3 // 3x bonus
-    }
-
-    // Close: within tolerance
-    if distance <= position.height_range as u64 {
-        return total_pool * position.amount / winning_pool * 2 // 2x bonus
-    }
-
-    // Standard: in correct direction
-    let correct_direction = (resolved_height > position.predicted_height) ==
-                           (position.outcome == ABOVE);
-    if correct_direction {
-        return total_pool * position.amount / winning_pool
-    }
-
-    0 // Lost
-}
-```
-
-### Security Analysis
-
-#### What Can and Cannot Be Predicted
-
-Given DarkWow's consensus mechanism, here's what market participants should understand:
-
-| Aspect | Predictable? | Why |
-|--------|-------------|-----|
-| **Difficulty** | ✅ Yes | Calculated from 720-block sliding window |
-| **Target** | ✅ Yes | Derived directly from difficulty |
-| **Next block hash** | ❌ No | RandomX VM output is opaque |
-| **Canonical chain (normal)** | ✅ Yes | Higher accumulated rank wins |
-| **Canonical chain (rank tie)** | ❌ No | Fork race outcome is genuinely uncertain |
-| **Block timing** | ⚠️ Statistical | ~120s expected, exponential distribution |
-
-**Critical insight for prediction markets**: During normal operation (no fork race), the canonical block at any given time is **deterministic** given the blockchain state. The **randomness** comes from:
-1. **RandomX output** - unpredictable even to miners
-2. **Fork race resolution** - only uncertain during rank ties
-
-#### PoW-Based Resolution Security
-
-| Attack | Difficulty | Mitigation |
-|--------|------------|------------|
-| Oracle manipulation | N/A | No oracle needed for normal operation |
-| Miner manipulates block hash | p^K | Need K consecutive blocks |
-| Fork race during resolution | Rank-based | Wait for confirmation depth |
-| **Rank tie scenario** | **Unpredictable** | Oracle tiebreaker or K-more blocks |
-
-#### DarkWow Fork Resolution Details
-
-```
-Normal fork resolution (ranks unequal):
-1. Compare sum of targets_rank across fork
-2. Higher sum = winner (deterministic)
-3. No randomness involved
-
-Tie scenario (ranks equal):
-1. Compare sum of hashes_rank across fork
-2. Higher sum = winner
-3. If still tied → confirmation BLOCKED
-4. Requires more work to resolve
-
-Implication: Prediction markets should wait past resolve_time
-by K blocks to avoid fork race uncertainty.
-```
-
-#### Confirmation Depth Security
-
-```
-K=1: 33% manipulation chance (1 block miner advantage)
-K=6: ~0.14% (requires 6 consecutive blocks)
-K=10: ~0.005% (institutional-grade security)
-```
-
-**Note on fork races**: The above analysis assumes we're past the resolution time. If a fork race is active at resolution time, the market should wait until:
-1. One fork has strictly higher rank, OR
-2. K additional blocks confirm one fork over the other
-
-### Implementation Roadmap
-
-1. **Phase 1: Oracle-Based (Quick)**
-   - Extend prediction_market with BlockHeightMarketParams
-   - Use existing oracle attestation for resolution
-   - Limited to low-stakes (oracle trust required)
-
-2. **Phase 2: PoW-Delayed (Medium)**
-   - Add `cumulative_pow_hash` utility
-   - Implement confirmation depth validation
-   - Replace oracle with block hash resolution
-
-3. **Phase 3: ZK-Verified (Production)**
-   - Implement `BlockHashGet` opcode for ZK circuits
-   - Verify PoW computation inside ZK proof
-   - Remove oracle entirely
-
-### Comparison to DarkToshi Dice
-
-| Aspect | DarkToshi Dice | Block Height Market |
-|--------|---------------|-------------------|
-| **Randomness Source** | tx_hash (single block) | Cumulative PoW (K blocks) |
-| **Resolution Time** | Immediate (next block) | Delayed (confirmation depth) |
-| **Player Choice** | confirmation_depth (new!) | confirmation_depth |
-| **Outcome** | Discrete (0-99) | Continuous (any height) |
-| **Oracle Required** | No | Optional |
-
-Both contracts now share the **adjustable confirmation depth** pattern for enhancing randomness security through cumulative PoW entropy.
+## Design Note: Block Height Prediction Market
+
+A block height prediction market was designed as a case study for PoW-backed
+randomness resolution. The `prediction_market` contract referenced by the
+original design does not exist as a standalone contract in the codebase.
+Prediction market functionality is available via [DarkBet Exchange](darkbet_exchange.md),
+which supports AMM-based binary outcome markets with block hash entropy.
+
+Key design principles from the study remain applicable:
+- Block hash entropy from confirmation depth K provides `p^K` manipulation resistance
+- Combined PoW + commit-reveal is the recommended randomness pattern
+- DarkWow's rank-based fork resolution provides deterministic chain selection in normal operation
 
 ---
+## Randomness Primitives: Implementation Status
 
-## Implemented Opcodes for Randomness
+### WASM Runtime Imports (Available to Contracts)
 
-### BlockHashGet - Now Available!
+These are import functions provided by the WASM runtime — they are NOT zkVM opcodes:
 
-The `wasm::util::get_block_hash(block_height)` function is now implemented in the WASM runtime!
+| Function | Description | Status |
+|----------|-------------|--------|
+| `wasm::util::get_block_hash(height)` | Get block hash at height | Implemented |
+| `wasm::util::get_block_height()` | Get current verifying block height | Implemented |
+| `wasm::util::get_tx_hash()` | Get transaction hash | Implemented |
+| `wasm::util::get_block_timestamp()` | Get block timestamp | Implemented |
 
-| Opcode | Description | Status | Enables |
-|--------|-------------|--------|---------|
-| `BlockHashGet(u64 height)` | Get block hash at height | ✅ Implemented | Direct PoW randomness access |
-| `VRFVerify` | Verify ECVRF proof in circuit | ❌ Missing | VRF-based randomness in ZK |
-| `TimeGet` | Get current block time in circuit | ❌ Missing | Time-based resolution |
-| `TimestampCompare` | Compare timestamps in ZK | ❌ Missing | Conditional execution based on time |
+### zkVM Opcodes (In-Circuit)
+
+| Opcode | Description | Status |
+|--------|-------------|--------|
+| `VRFVerify` | Verify ECVRF proof in-circuit | Not implemented |
+| `TimeGet` | Get current block time in-circuit | Not implemented |
+| `TimestampCompare` | Compare timestamps in-circuit | Not implemented |
 
 ### Usage
 
 ```rust
-// Get PoW block hash for randomness
+// PoW block hash as randomness source (WASM runtime import)
 let block_hash = wasm::util::get_block_hash(block_height)?;
 
 // Cumulative entropy from K blocks
@@ -1010,8 +687,9 @@ Unlike dice (single roll value), Baccarat requires dealing 4 cards (2 to player,
 
 ```rust
 /// Deal cards using cumulative PoW block hash entropy
-/// Returns ((player_card1, player_card2), (banker_card1, banker_card2))
-fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId) -> (Hand, Hand) {
+/// Returns player hand, banker hand, and optional third cards for each
+/// (player_card1, player_card2), (banker_card1, banker_card2), optional third cards
+fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId) -> (Hand, Hand, Option<Card>, Option<Card>) {
     // Combine entropy from K consecutive block hashes
     let mut entropy = bet_id;
     for (i, hash) in block_hashes.iter().enumerate() {
@@ -1047,7 +725,9 @@ fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId) -> (Hand, Hand) {
     let banker_card2 = Card::new(seed4 as u8);
 
     (Hand { card1: player_card1, card2: player_card2, third_card: None },
-     Hand { card1: banker_card1, card2: banker_card2, third_card: None })
+     Hand { card1: banker_card1, card2: banker_card2, third_card: None },
+     None,  // player third card (None = not yet required)
+     None)  // banker third card (None = not yet required)
 }
 ```
 
@@ -1126,7 +806,8 @@ fn baccarat_draw_cards_process_instruction_v1(...) {
     }
 
     // Deal cards using cumulative entropy
-    let (mut player_hand, mut banker_hand) = deal_cards(&block_hashes, bet.id);
+    let (mut player_hand, mut banker_hand, third_card_player, third_card_banker) =
+        deal_cards(&block_hashes, bet.id);
 
     // Calculate outcome using fixed Baccarat rules
     let game_outcome = calculate_outcome(&mut player_hand, &mut banker_hand);
@@ -1150,20 +831,56 @@ fn baccarat_draw_cards_process_instruction_v1(...) {
 3. **Cumulative entropy**: K consecutive blocks required for manipulation
 4. **Commit-reveal**: Secret nonce committed before cards are known
 
+## game_room EntropyMode::TrustedSetup
+
+The [game_room](game_room.md) contract implements a commit-reveal entropy scheme
+via `EntropyMode::TrustedSetup` at `src/contract/game_room/src/entrypoint/entropy.rs`.
+This allows trusted operators or house-selected oracle addresses to contribute
+entropy for multi-player game rooms, using `ContributeEntropyV1` (0x04).
+
+The TrustedSetup mode works as follows:
+1. Game room is initialized with an entropy mode and a list of trusted entropy contributors
+2. Contributors call `ContributeEntropyV1` with a commitment to their entropy value
+3. After all contributors have committed, the room operator reveals the combined entropy
+4. The entropy is fed into the game's randomness derivation
+
+This provides a flexible entropy source for games that require coordinated randomness
+across multiple players, complementing the block-hash-based approach used by
+DarkToshi Dice, Baccarat, Roulette, and Slot.
+
+## Contracts Using Block Hash Entropy
+
+| Contract | Entropy Source | Mechanism |
+|----------|---------------|-----------|
+| **DarkToshi Dice** | `wasm::util::get_block_hash()` | `calculate_roll_with_depth()` — K-block cumulative hash |
+| **Baccarat** | `wasm::util::get_block_hash()` | `deal_cards()` — K-block cumulative hash for 4-card dealing |
+| **Roulette** | `wasm::util::get_block_hash()` | Own `draw_winning_number()` — manual entropy extraction |
+| **Slot** | `wasm::util::get_block_hash()` | Direct extraction from 32-byte block hash into 4 × u64 |
+| **Lottery** | Block hash via `dwow_sdk::crypto::entropy::draw_unique_range()` | LCG-based without-replacement sampling |
+| **game_room** | `EntropyMode::TrustedSetup` commit-reveal | `ContributeEntropyV1` — multi-party entropy contribution |
+
 ### See Also
 
 - [Baccarat Contract](baccarat.md) - Full contract documentation
 - [DarkToshi Dice Contract](darktoshi_dice.md) - Simpler randomness example
-- [Block Height Prediction Market](#case-study-block-height-prediction-market) - Time-based resolution
+- [game_room Contract](game_room.md) - TrustedSetup entropy
+- [Entropy Module](entropy.md) - Composable randomness API
+- [Block Height Prediction Market](#design-note-block-height-prediction-market) - Design concept
 
 ---
 
 ## See Also
 
 - [DarkToshi Dice Contract](darktoshi_dice.md)
+- [game_room Contract](game_room.md) - TrustedSetup entropy
+- [Baccarat Contract](baccarat.md)
+- [Roulette Contract](roulette.md)
+- [Slot Contract](slot.md)
+- [Lottery Contract](lottery.md)
+- [DarkBet Exchange](darkbet_exchange.md) - AMM-based prediction markets
+- [Entropy Module](entropy.md)
 - [ECVRF Implementation](../../src/sdk/src/crypto/ecvrf.rs)
 - [Consensus Mechanism](../../src/validator/consensus.rs) - Fork resolution and rank-based chain selection
-- [PoW Module](../../src/validator/pow.rs) - RandomX implementation and difficulty calculation
 - [Fork Ranking Utils](../../src/validator/utils.rs) - `block_rank()` and `best_fork_index()`
 - [VRF Research](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-vrf-04)
 - [RandomX Paper](https://eprint.iacr.org/2018/1033)

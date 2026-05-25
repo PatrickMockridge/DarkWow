@@ -478,10 +478,10 @@ Each chain has a dedicated relayer service:
 
 | Service | Binary | Status |
 |---------|--------|--------|
-| XMR Relayer | bin/xmr_relayer/ | Implemented (stubbed RPC) |
-| ZEC Relayer | bin/zcash_relayer/ | Implemented (stubbed RPC) |
-| AZT Relayer | bin/aztec_relayer/ | Implemented (stubbed RPC) |
-| LTC Relayer | bin/litecoin_relayer/ | Implemented (stubbed RPC) |
+| XMR Relayer | bin/xmr_relayer/ | Relayer binary with source tree |
+| ZEC Relayer | bin/zcash_relayer/ | Relayer binary with source tree |
+| AZT Relayer | bin/aztec_relayer/ | Relayer binary with source tree |
+| LTC Relayer | bin/litecoin_relayer/ | Relayer binary with source tree |
 
 All relayers follow the same pattern:
 1. Observe external chain for deposits
@@ -669,8 +669,8 @@ Relayers run the actual full nodes on external chains to execute withdrawals.
 
 - [Bridge Contract Dev Docs](../dev/contracts/bridge.md)
 - [Relayer Documentation](../relayer/relayer.md)
-- [Slashing & Economic Security](./slashing.md)
-- [Monero Integration](./monero.md)
+- [Slashing & Economic Security](../arch/slashing.md)
+- [Monero Integration](../arch/monero.md)
 - [Stablecoin](./stablecoin.md)
 - [DEX](./dex.md)
 - Object Capability Model: <https://en.wikipedia.org/wiki/Object-capability_model>

@@ -38,7 +38,7 @@ NativeToken handles only consensus-layer token operations:
 - **Fee payment**: Transaction fees paid to validators (FeeV1)
 - **Private transfers**: ZK-shielded transfers between users (TransferV1, SpendV1)
 
-All user-facing DeFi token operations (stablecoins, wrapped assets, ERC-20 style tokens) use [money_v3](./money_v3.md) instead.
+All user-facing DeFi token operations (stablecoins, wrapped assets, ERC-20 style tokens) use [money_v3](../dev/contracts/money_v3.md) instead.
 
 ## Why Separate from money_v3?
 

@@ -31,6 +31,20 @@ Instead of building a transparent system and trying to add privacy, we start com
 
 The MVP is a **DAO that coordinates bilateral atomic swaps** - not a full order book:
 
+## Contract Functions
+
+| Function | Opcode | Description |
+|----------|--------|-------------|
+| `InitializeV1` | `0x00` | Initialize DEX with config and governance key |
+| `CreateSwapV1` | `0x01` | Proposer locks funds, creates swap proposal |
+| `AcceptSwapV1` | `0x02` | Acceptor locks matching funds |
+| `ExecuteSwapV1` | `0x03` | Execute atomic swap (partial fill support) |
+| `CancelSwapV1` | `0x04` | Cancel swap, refund proposer |
+| `UpdateConfigV1` | `0x05` | Update DEX configuration parameters |
+| `SetTransparencyLevelV1` | `0x06` | Set transparency level per deployment |
+| `ExecuteSwapFeeV1` | `0x07` | Execute swap with fee deduction (BaseDiv) |
+| `ExecuteSwapSlippageV1` | `0x08` | Execute swap with slippage tolerance (BaseDiv) |
+
 ```
 Alice wants: 100 DRKW ↔ 1 ETH (Bob's offer)
 Bob wants: 1 ETH ↔ 100 DRKW (Alice's offer)
@@ -222,7 +236,7 @@ The DEX supports bridged tokens from the universal bridge:
 ## References
 
 - [DarkWow DEX Contract](../../src/contract/dex/)
-- [DarkWow Money Contract](./money.md)
+- [DarkWow Money Contract](../spec/contract/money/money.md)
 - [DarkWow Bridge Contract](./bridge.md)
 - [SPV Privacy Problem](https://en.bitcoin.it/wiki/Thin_Client_Security)
 - [Differential Privacy](https://en.wikipedia.org/wiki/differential_privacy)

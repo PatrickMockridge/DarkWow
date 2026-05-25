@@ -406,8 +406,8 @@ When a worker claims a task with `verification_mode: OnChain`:
 
 **Implementation**: All Phase 3 RPC methods implemented in `bin/tau/tau_pallas/src/jsonrpc.rs`:
 - `link_task_to_job` - Links tau task to labor market job with payment details
-- `submit_task_deliverable` - Submits deliverable to labor market (placeholder for on-chain tx)
-- `register_capability` - Registers capabilities for tender winner (placeholder for identity contract)
+- `submit_task_deliverable` - Submits deliverable to labor market; on-chain tx submission pending dwowd wallet integration
+- `register_capability` - Registers capabilities for tender winner; on-chain registration pending identity contract wallet integration
 
 **Note**: Full on-chain transaction submission for `submit_task_deliverable` requires dwowd wallet integration (app-layer responsibility).
 
@@ -419,7 +419,7 @@ When a worker claims a task with `verification_mode: OnChain`:
 ## See Also
 
 - [Identity Contract](./identity.md) - O-Cap implementation
-- [O-Cap & Composable Privacy](./ocap.md) - Authorization inversion theory
+- [O-Cap & Composable Privacy](../arch/ocap.md) - Authorization inversion theory
 - [Labor Market Contract](./labor_market.md) - Job creation and payment
 - [Tender Contract](./tender.md) - Sealed bid procurement
 - [Zero-Knowledge Authorization](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) - Mathematical foundation

@@ -186,6 +186,6 @@ Both can use prediction markets for risk pricing.
 ## Extension Points
 
 1. **Tiered staking**: Different risk tiers for different staker appetites
-2. **Leverage**:允许杠杆放大收益 (and losses)
+2. **Leverage**: Enables amplified returns (and losses)
 3. **Cross-table pooling**: Combine risk across multiple games
 4. **Prediction market integration**: Dynamic risk pricing

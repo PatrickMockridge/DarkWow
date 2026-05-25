@@ -173,13 +173,17 @@ No grey-market opcodes (`LessThanOrEqual`, `IsEqualBase`).
 
 ### Key Circuits
 
+All 9 circuits compiled to `.zk.bin`:
+
 | Circuit | Public Inputs | Proves |
 |---------|-------------|--------|
 | `create_job_v1.zk` | employer_pub, attestation_id | Employer knows secret |
 | `accept_job_v1.zk` | job_id, worker_pub | Worker knows secret |
+| `accept_job_with_capability_v1.zk` | job_id, worker_pub, capability_proof | Worker holds O-Cap credential |
 | `submit_deliverable_v1.zk` | job_id, claim_id, worker_pub, nullifier | Worker assigned, deadline not passed, valid claim |
 | `submit_git_deliverable_v1.zk` | job_id, claim_id, worker_pub, nullifier | Same + git claim verified |
 | `confirm_delivery_v1.zk` | job_id, employer_pub, nullifier | Employer authorizes release |
+| `milestone_payment_v1.zk` | job_id, milestone_id, employer_pub, nullifier | Milestone completed, employer authorizes payment |
 | `dispute_v1.zk` | job_id, disputer_pub, dao_bulla, nullifier | Disputer is party to job |
 | `refund_v1.zk` | job_id, employer_pub, nullifier | Deadline passed, employer authorizes |
 

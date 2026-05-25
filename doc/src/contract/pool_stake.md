@@ -24,7 +24,7 @@ This contract solves the coverage requirements problem for relayer withdrawals:
    Bridge contract          Stakers earn              Earn fee share
    uses coverage            proportional to            for providing
    to execute               their coverage             coverage backing
-   guaranteed              贡献
+   guaranteed              contribution
 ```
 
 ### Pool Stake Flow
@@ -47,6 +47,7 @@ This contract solves the coverage requirements problem for relayer withdrawals:
 | 0x05 | SlashCoverageV1 | Slash for failed guaranteed withdrawal |
 | 0x06 | ClaimFeesV1 | Claim accumulated relayer fees |
 | 0x07 | UpdatePoolConfigV1 | Update pool parameters |
+| 0x08 | RebalancePoolSharesV1 | Rebalance staker shares after slash/coverage event |
 
 ## Data Model
 

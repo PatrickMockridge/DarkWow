@@ -350,6 +350,6 @@ Bond mechanics:
 ## See Also
 
 - [Identity Contract](./identity.md) - O-Cap authorization primitive
-- [O-Cap Architecture](./ocap.md) - The O-Cap paradigm
-- [Prediction Market](./prediction_market.md) - Risk probability pricing
-- [Money Contract](./money.md) - Value transfer integration
+- [O-Cap Architecture](../arch/ocap.md) - The O-Cap paradigm
+- [DarkBet Exchange](darkbet_exchange.md) - Risk probability pricing (AMM mode)
+- [Money Contract](../spec/contract/money/money.md) - Value transfer integration

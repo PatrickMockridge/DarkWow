@@ -476,4 +476,4 @@ constrain_instance(witness_pub_y);
 
 A pre-commit hook (`hooks/pre-commit`) automatically rejects commits containing the vulnerable pattern.
 
-**See Also**: [Public Key Constraint Hook](pubkey-constraint-hook.md)
+**See Also**: [Public Key Constraint Hook](../arch/pubkey-constraint-hook.md)

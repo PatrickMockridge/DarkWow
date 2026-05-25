@@ -370,4 +370,4 @@ CreateMarketV1 {
 - [BettingStake Contract](./betting_stake.md) - Liquidity provision
 - [Oracle Contract](./oracle.md) - Event resolution
 - [DAO-Escrow Contract](./dao_escrow.md) - Governance
-- [Betfair Exchange Concept](./bet_exchange.md) - Full architecture vision
+- **Betfair-style exchange**: DarkBet supports an order-book mode with back/lay matching where users back outcomes (bet they happen) or lay outcomes (bet they don't), with the exchange matching counterparties. Combined with AMM pool mode for constant-product automated market making.

@@ -130,15 +130,27 @@ The oracle contract integrates with the [Attestation Contract](./attestation.md)
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Contract Functions
+
+| Function | Opcode | Description |
+|----------|--------|-------------|
+| `RegisterOracleV1` | 0x00 | Register a new oracle operator |
+| `PushValueV1` | 0x01 | Push a data value on-chain |
+| `AttestValueV1` | 0x02 | Create an attestation with predicate |
+| `PushValueCommitmentV1` | 0x03 | Push a committed value (reveal later) |
+| `AggregateV1` | 0x04 | Aggregate multiple oracle values |
+
 ## ZK Circuits
 
-| Circuit | Purpose | Public Inputs |
-|---------|---------|--------------|
-| `register_oracle_v1.zk` | Prove oracle registration | oracle_pub_x, oracle_pub_y |
-| `push_value_v1.zk` | Prove value push authorization | oracle_id, value |
-| `attest_value_v1.zk` | Prove attestation creation | oracle_id, attestation_id, predicate, threshold |
+All 5 circuits compiled to `.zk.bin`:
 
-All circuits use **proven opcodes only**.
+| Circuit | Purpose |
+|---------|---------|
+| `register_oracle_v1.zk` | Prove oracle registration |
+| `push_value_v1.zk` | Prove value push authorization |
+| `attest_value_v1.zk` | Prove attestation creation |
+| `push_value_commitment_v1.zk` | Prove commitment to value (reveal later) |
+| `aggregate_v1.zk` | Prove aggregated value from multiple oracles |
 
 ## Use Cases
 
@@ -204,10 +216,12 @@ if claim.verified {
 The Oracle contract provides a framework for oracle operators to push values and create
 attestations. However, **signature verification is not yet cryptographically enforced** in consuming contracts:
 
-- [Prediction Market](prediction_market.md): Markets accept oracle resolution but do not verify the oracle's signature
+- [DarkBet Exchange](darkbet_exchange.md): AMM-based binary outcome markets accept oracle resolution for event settlement
 - [Insurance Market](insurance_market.md): Claims accept oracle resolution but do not verify the oracle's signature
 
-**Current limitation**: The `oracle_signature` field is stored but not verified using the oracle's public key. A `SchnorrVerify` opcode would enable proper on-chain signature verification.
+**Current limitation**: The `oracle_signature` field is stored but not verified using the oracle's public key in-circuit. Signature verification is currently off-chain (public key stored, verified client-side before submission). A `SchnorrVerify` opcode would enable proper on-chain signature verification inside ZK circuits.
+
+**Status**: `SchnorrVerify` opcode is not yet implemented in the zkVM. Off-chain verification is sufficient for current operation since oracle operators are bootstrapped trusted entities. In-circuit verification becomes necessary when oracle operators are permissionless.
 
 **TODO**: Implement `SchnorrVerify` opcode in zkVM to enable:
 ```zk

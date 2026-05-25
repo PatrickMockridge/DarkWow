@@ -358,9 +358,8 @@ This fork is **incompatible with upstream DarkWow** because:
 
 ## Related Documentation
 
-- [Contract Deployment Pipeline](./dwowd_contract_pipeline.md) - How native contracts are deployed
+- [Contract Deployment Pipeline](../arch/dwowd_contract_pipeline.md) - How native contracts are deployed
 - [Testing Overview](../dev/testing/overview.md) - Four-level testing taxonomy
-- [Contract Graph](./contract_graph.md) - Contract dependencies
 - [Money V3 Contract](../dev/contracts/money_v3.md) - Detailed Money V3 specification
 - [NativeToken Contract](../dev/contracts/native_token.md) - NativeToken specification
 
