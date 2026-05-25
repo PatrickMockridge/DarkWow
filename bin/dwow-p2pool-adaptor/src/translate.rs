@@ -22,14 +22,15 @@
 /// 131     32    randomx_key ([u8; 32])
 /// 163     32    coin_merkle_root ([u8; 32])
 /// 195     32    nullifier_root ([u8; 32])
+/// 227     1     pow_source_disc (u8) — 0 = Native, 1 = Monero
 /// ─────────────────────────────────────────
-/// 227     TOTAL
+/// 228     TOTAL
 /// ```
 
-use dwow_linear::BlockHeader;
+use dwow_linear::{BlockHeader, PowSource};
 
-/// Fixed size of the serialized DarkWow block header (227 bytes).
-pub const HEADER_SERIALIZED_SIZE: usize = 227;
+/// Fixed size of the serialized DarkWow block header (228 bytes).
+pub const HEADER_SERIALIZED_SIZE: usize = 228;
 
 /// Offset of the nonce field in the serialized header.
 /// Must match `BlockHeader::NONCE_OFFSET` (src/linear/src/block.rs).
@@ -53,6 +54,11 @@ pub fn serialize_header(header: &BlockHeader) -> Vec<u8> {
     buf.extend_from_slice(&header.randomx_key);                      // 131..163
     buf.extend_from_slice(&header.coin_merkle_root);                 // 163..195
     buf.extend_from_slice(&header.nullifier_root);                   // 195..227
+    let disc: u8 = match header.pow_source {
+        PowSource::Native => 0,
+        PowSource::Monero(_) => 1,
+    };
+    buf.push(disc);                                                   // 227
 
     debug_assert_eq!(buf.len(), HEADER_SERIALIZED_SIZE);
 
@@ -79,6 +85,9 @@ pub fn deserialize_header(data: &[u8]) -> Option<BlockHeader> {
     let randomx_key: [u8; 32] = data[131..163].try_into().ok()?;
     let coin_merkle_root: [u8; 32] = data[163..195].try_into().ok()?;
     let nullifier_root: [u8; 32] = data[195..227].try_into().ok()?;
+    // Mining blob only carries a 1-byte discriminator; full MoneroPowData is
+    // reconstructed from the Monero block on submit, not from the blob alone.
+    let _disc = data.get(227).unwrap_or(&0);
 
     Some(BlockHeader {
         version,
@@ -97,6 +106,7 @@ pub fn deserialize_header(data: &[u8]) -> Option<BlockHeader> {
         anchor_monero_height: 0,
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
+        pow_source: PowSource::Native,
     })
 }
 
@@ -145,6 +155,7 @@ mod tests {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+        pow_source: PowSource::Native,
         }
     }
 

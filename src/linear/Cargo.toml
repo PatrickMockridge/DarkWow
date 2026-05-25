@@ -24,7 +24,11 @@ serde_json = "1"
 base64 = "0.22"
 ed25519-dalek = "2"
 ureq = "3"
+monero = { version = "0.21.0" }
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+primitive-types = { version = "0.14.0" }
 dwow-sdk = { path = "../sdk", features = ["async"] }
 dwow-serial = { path = "../serial", features = ["derive", "async"] }
 
 [dev-dependencies]
+smol = "2"

@@ -26,6 +26,22 @@
 use serde::{Deserialize, Serialize};
 
 use super::Transaction;
+use crate::monero::MoneroPowData;
+
+/// Source of Proof of Work — either native RandomX or Monero merge mining.
+#[derive(Debug, Clone)]
+pub enum PowSource {
+    /// Native RandomX PoW (not merge-mined)
+    Native,
+    /// Merge-mined through Monero p2pool — carries verifiable proof data
+    Monero(MoneroPowData),
+}
+
+impl Default for PowSource {
+    fn default() -> Self {
+        PowSource::Native
+    }
+}
 
 /// Block header - contains metadata about a block
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +86,11 @@ pub struct BlockHeader {
     ///   0x01 = FINALITY_CARIBNIA, 0x02 = FINALITY_MONERO, 0x04 = FINALITY_SIGNALED
     #[serde(default)]
     pub finality_flags: u8,
+    /// Proof of Work source — native RandomX or Monero merge-mined.
+    /// `MoneroPowData` contains cryptographic proof that the Monero
+    /// block was mined with our merge mining tag embedded.
+    #[serde(default, skip)]
+    pub pow_source: PowSource,
 }
 
 /// Uncle block - a block that was mined but not canonical
@@ -151,16 +172,17 @@ pub struct UncleProof {
 
 impl BlockHeader {
     /// Serialize the header to a compact binary blob for mining and hashing.
-    /// Format (227 bytes total):
+    /// Format (228 bytes total):
     ///   [previous(32)][version(1)][target(4)][reserved(2)][nonce(4)]
     ///   [height(8)][merkle_root(32)][timestamp(8)][uncle_merkle_root(32)]
     ///   [total_reward(8)][randomx_key(32)][coin_merkle_root(32)][nullifier_root(32)]
+    ///   [pow_source_disc(1)]  — 0 = Native, 1 = Monero (MoneroPowData NOT included)
     /// Nonce is at byte offset 39 (matches xmrig's hardcoded Monero rx/0 offset).
     /// anchor_tx_id, anchor_monero_height, anchor_monero_hash, and finality_flags
     /// are excluded — they are set after PoW is found and are not covered by the
     /// mining hash.
     pub fn to_mining_blob(&self) -> Vec<u8> {
-        let mut blob = Vec::with_capacity(227);
+        let mut blob = Vec::with_capacity(228);
         blob.extend_from_slice(self.previous.as_bytes());            // 0..32
         blob.push(self.version);                                     // 32
         blob.extend_from_slice(&self.target.to_le_bytes()); // 33..37
@@ -174,6 +196,11 @@ impl BlockHeader {
         blob.extend_from_slice(&self.randomx_key);                   // 131..163
         blob.extend_from_slice(&self.coin_merkle_root);              // 163..195
         blob.extend_from_slice(&self.nullifier_root);                // 195..227
+        let disc: u8 = match self.pow_source {
+            PowSource::Native => 0,
+            PowSource::Monero(_) => 1,
+        };
+        blob.push(disc);                                              // 227
         blob
     }
 
@@ -182,7 +209,7 @@ impl BlockHeader {
     pub const NONCE_OFFSET: usize = 39;
 
     /// The expected length of the mining blob.
-    pub const MINING_BLOB_LEN: usize = 227;
+    pub const MINING_BLOB_LEN: usize = 228;
 }
 
 /// Block - a single block in the linear chain
@@ -481,6 +508,8 @@ pub fn create_block_with_uncles(
             anchor_monero_height: 0, // No Monero anchor (set by miner after anchoring)
             anchor_monero_hash: [0u8; 32], // No Monero anchor
             finality_flags: 0, // Set by miner after anchoring
+            pow_source: PowSource::Native,
+
         },
         transactions,
     }
@@ -525,6 +554,8 @@ mod tests {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            pow_source: PowSource::Native,
+
         };
         let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
 
@@ -559,6 +590,8 @@ mod tests {
                 anchor_monero_height: 0,
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
+            pow_source: PowSource::Native,
+
             };
             uncles.push(UncleBlock { header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 });
         }
@@ -600,6 +633,8 @@ mod tests {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            pow_source: PowSource::Native,
+
         };
         // Pin mechanism: pin_offered=true, pin_accepted=true means uncle accepts the pin
         // pin_reward at depth 1 = 50% = 50M
@@ -632,6 +667,8 @@ mod tests {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            pow_source: PowSource::Native,
+
         };
         let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
 
@@ -757,11 +794,13 @@ mod tests {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            pow_source: PowSource::Native,
+
         };
 
         let blob1 = header.to_mining_blob();
-        assert_eq!(blob1.len(), 227);
-        assert_eq!(BlockHeader::MINING_BLOB_LEN, 227);
+        assert_eq!(blob1.len(), 228);
+        assert_eq!(BlockHeader::MINING_BLOB_LEN, 228);
 
         // Setting anchor_tx_id must not change the mining blob
         header.anchor_tx_id = [0xAB; 32];
@@ -789,6 +828,8 @@ mod tests {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            pow_source: PowSource::Native,
+
         };
         assert_eq!(header.anchor_tx_id, [0u8; 32]);
     }
@@ -813,6 +854,8 @@ mod tests {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            pow_source: PowSource::Native,
+
         };
 
         let json = serde_json::to_string(&header).unwrap();
@@ -845,6 +888,8 @@ mod tests {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            pow_source: PowSource::Native,
+
         };
 
         let full_json = serde_json::to_string(&header).unwrap();
@@ -893,6 +938,8 @@ mod tests {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            pow_source: PowSource::Native,
+
         };
 
         let blob1 = header.to_mining_blob();
@@ -925,6 +972,7 @@ mod tests {
             anchor_monero_height: 3_500_000,
             anchor_monero_hash: [0xCC; 32],
             finality_flags: 0x02, // FINALITY_MONERO
+            pow_source: PowSource::Native,
         };
 
         let json = serde_json::to_string(&header).unwrap();

@@ -53,6 +53,28 @@ pub enum RpcError {
     MinerMissingNonce = -32320,
     MinerInvalidNonce = -32321,
 
+    // Merge mining errors (p2pool protocol)
+    MinerMissingAddress = -32324,
+    MinerInvalidAddress = -32325,
+    MinerMissingAuxHash = -32326,
+    MinerInvalidAuxHash = -32327,
+    MinerMissingHeight = -32328,
+    MinerInvalidHeight = -32329,
+    MinerMissingPrevId = -32330,
+    MinerInvalidPrevId = -32331,
+    MinerMissingAuxBlob = -32332,
+    MinerInvalidAuxBlob = -32333,
+    MinerMissingBlob = -32334,
+    MinerInvalidBlob = -32335,
+    MinerMissingMerkleProof = -32336,
+    MinerInvalidMerkleProof = -32337,
+    MinerMissingPath = -32338,
+    MinerInvalidPath = -32339,
+    MinerMissingSeedHash = -32340,
+    MinerInvalidSeedHash = -32341,
+    MinerMerkleProofConstructionFailed = -32342,
+    MinerMoneroPowDataConstructionFailed = -32343,
+
 }
 
 fn to_tuple(e: RpcError) -> (i32, String) {
@@ -81,6 +103,32 @@ fn to_tuple(e: RpcError) -> (i32, String) {
         RpcError::MinerInvalidJobId => "Request job ID is invalid",
         RpcError::MinerMissingNonce => "Request is missing the nonce",
         RpcError::MinerInvalidNonce => "Request nonce is invalid",
+
+        // Merge mining errors
+        RpcError::MinerMissingAddress => "Request is missing the address",
+        RpcError::MinerInvalidAddress => "Request address is invalid",
+        RpcError::MinerMissingAuxHash => "Request is missing the aux_hash",
+        RpcError::MinerInvalidAuxHash => "Request aux_hash is invalid",
+        RpcError::MinerMissingHeight => "Request is missing the height",
+        RpcError::MinerInvalidHeight => "Request height is invalid",
+        RpcError::MinerMissingPrevId => "Request is missing the prev_id",
+        RpcError::MinerInvalidPrevId => "Request prev_id is invalid",
+        RpcError::MinerMissingAuxBlob => "Request is missing the aux_blob",
+        RpcError::MinerInvalidAuxBlob => "Request aux_blob is invalid",
+        RpcError::MinerMissingBlob => "Request is missing the blob",
+        RpcError::MinerInvalidBlob => "Request blob is invalid",
+        RpcError::MinerMissingMerkleProof => "Request is missing the merkle_proof",
+        RpcError::MinerInvalidMerkleProof => "Request merkle_proof is invalid",
+        RpcError::MinerMissingPath => "Request is missing the path",
+        RpcError::MinerInvalidPath => "Request path is invalid",
+        RpcError::MinerMissingSeedHash => "Request is missing the seed_hash",
+        RpcError::MinerInvalidSeedHash => "Request seed_hash is invalid",
+        RpcError::MinerMerkleProofConstructionFailed => {
+            "Merkle proof construction failed"
+        }
+        RpcError::MinerMoneroPowDataConstructionFailed => {
+            "Monero PoW data construction failed"
+        }
 
     };
 

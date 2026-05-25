@@ -42,6 +42,8 @@ use dwow::{
     system::{Publisher, StoppableTaskPtr},
 };
 
+use dwow_linear::PowSource;
+
 use crate::{
     error::{miner_status_response, server_error, RpcError},
     registry::model::LinearMinerRewardsRecipientConfig,
@@ -227,6 +229,9 @@ impl DwowNode {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+
+        pow_source: PowSource::Native,
+
         };
         let blob_data = mining_header.to_mining_blob();
         let blob = hex::encode(&blob_data);
@@ -450,6 +455,9 @@ impl DwowNode {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+
+        pow_source: PowSource::Native,
+
         };
 
         let coinbase_tx = dwow_linear::Transaction {
@@ -592,6 +600,9 @@ impl DwowNode {
                                     anchor_monero_height: 0,
                                     anchor_monero_hash: [0u8; 32],
                                     finality_flags: 0,
+                        
+                                pow_source: PowSource::Native,
+                        
                                 };
                                 let new_blob_data = new_mining_header.to_mining_blob();
                                 let new_blob = hex::encode(&new_blob_data);

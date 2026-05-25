@@ -33,7 +33,7 @@
 
 use dwow::Result;
 use dwow_linear::{
-    Block, BlockHeader, ContractCall, Miner, Output, Transaction, UncleBlock,
+    Block, BlockHeader, ContractCall, Miner, Output, PowSource, Transaction, UncleBlock,
     build_uncle_merkle, create_uncle,
 };
 use blake3::Hash as Blake3Hash;
@@ -95,6 +95,9 @@ pub fn build_test_header(
         anchor_monero_height: 0,
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
+
+    pow_source: PowSource::Native,
+
     }
 }
 
@@ -251,6 +254,9 @@ pub fn build_test_block_with_uncles(
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+    
+        pow_source: PowSource::Native,
+    
         },
         transactions: txs,
     }

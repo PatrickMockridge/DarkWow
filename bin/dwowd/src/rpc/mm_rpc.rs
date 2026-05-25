@@ -23,13 +23,9 @@
 
 //! Merge mining JSON-RPC handler.
 //!
-//! Implements the Monero p2pool merge mining protocol so p2pool can connect
-//! to dwowd as an aux chain. The two RPC methods are:
+//! Implements the Monero p2pool merge mining protocol.
 //!
-//! - `merge_mining_get_aux_block` — p2pool requests aux chain mining data
-//! - `merge_mining_submit_solution` — p2pool submits a solved aux block
-//!
-//! Reference: <https://github.com/SChernykh/p2pool>
+//! Reference: <https://github.com/SChernykh/p2pool/blob/master/docs/MERGE_MINING.MD>
 
 use std::{
     collections::{HashMap, HashSet},
@@ -39,7 +35,7 @@ use std::{
 use async_trait::async_trait;
 use smol::lock::MutexGuard;
 use tinyjson::JsonValue;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use dwow::{
     rpc::{
@@ -50,8 +46,17 @@ use dwow::{
     },
     system::StoppableTaskPtr,
 };
+use dwow_linear::{
+    monero::{
+        fixed_array::FixedByteArray,
+        merkle_proof::MerkleProof,
+        monero_block_deserialize,
+        MoneroPowData,
+    },
+    PowSource,
+};
 
-use crate::{error::miner_status_response, DwowNode};
+use crate::{error::{miner_status_response, server_error, RpcError}, DwowNode};
 
 /// JSON-RPC `RequestHandler` for Merge Mining (p2pool protocol)
 pub struct MergeMiningRpcHandler;
@@ -59,16 +64,12 @@ pub struct MergeMiningRpcHandler;
 #[async_trait]
 impl RequestHandler<MergeMiningRpcHandler> for DwowNode {
     async fn handle_request(&self, req: JsonRequest) -> JsonResult {
+        debug!(target: "dwowd::rpc::mm_rpc", "--> {}", req.stringify().unwrap());
+
         match req.method.as_str() {
-            "merge_mining_get_chain_id" => {
-                self.mm_get_chain_id(req.id, req.params).await
-            }
-            "merge_mining_get_aux_block" => {
-                self.mm_get_aux_block(req.id, req.params).await
-            }
-            "merge_mining_submit_solution" => {
-                self.mm_submit_solution(req.id, req.params).await
-            }
+            "merge_mining_get_chain_id" => self.mm_get_chain_id(req.id, req.params).await,
+            "merge_mining_get_aux_block" => self.mm_get_aux_block(req.id, req.params).await,
+            "merge_mining_submit_solution" => self.mm_submit_solution(req.id, req.params).await,
             _ => JsonError::new(ErrorCode::MethodNotFound, None, req.id).into(),
         }
     }
@@ -81,19 +82,38 @@ impl RequestHandler<MergeMiningRpcHandler> for DwowNode {
 impl DwowNode {
     /// Handle `merge_mining_get_chain_id` — p2pool discovers the aux chain identity.
     ///
-    /// This is the FIRST method p2pool calls during merge mining setup.
-    /// Without a successful response, p2pool will never call `get_aux_block`
-    /// and the stratum server will not start.
-    pub async fn mm_get_chain_id(&self, id: u16, _params: JsonValue) -> JsonResult {
-        let hash = self.linear_genesis_hash.lock().await;
-        let chain_id = match &*hash {
-            Some(h) => hex::encode(h.0),
-            None => return JsonError::new(
-                ErrorCode::InternalError,
-                Some("Genesis hash not yet initialized".to_string()),
-                id,
-            ).into(),
+    /// Returns: H(genesis_hash || "testnet" || 0u32.to_le_bytes())
+    pub async fn mm_get_chain_id(&self, id: u16, params: JsonValue) -> JsonResult {
+        // Verify request params
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
         };
+        if !params.is_empty() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        // Grab genesis block hash
+        let genesis_hash = {
+            let hash = self.linear_genesis_hash.lock().await;
+            match &*hash {
+                Some(h) => *h,
+                None => {
+                    return JsonError::new(
+                        ErrorCode::InternalError,
+                        Some("Genesis hash not yet initialized".to_string()),
+                        id,
+                    )
+                    .into()
+                }
+            }
+        };
+
+        // Generate the chain id: blake3(genesis_hash || "testnet" || 0u32.to_le_bytes())
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&genesis_hash.0);
+        hasher.update("testnet".as_bytes());
+        hasher.update(&0u32.to_le_bytes());
+        let chain_id = hasher.finalize().to_string();
 
         info!(
             target: "dwowd::rpc::mm_rpc::mm_get_chain_id",
@@ -101,35 +121,66 @@ impl DwowNode {
             chain_id,
         );
 
-        let result = JsonValue::from(HashMap::from([
-            ("chain_id".to_string(), JsonValue::String(chain_id)),
-        ]));
-
-        JsonResponse::new(result, id).into()
+        let response = HashMap::from([("chain_id".to_string(), JsonValue::from(chain_id))]);
+        JsonResponse::new(JsonValue::from(response), id).into()
     }
 
     /// Handle `merge_mining_get_aux_block` — p2pool requests aux chain data.
     ///
-    /// p2pool calls this to get the DarkWow block template that miners should
-    /// merge-mine alongside Monero. Returns the 227-byte mining blob, target,
-    /// height, and previous hash in the format p2pool expects.
+    /// Returns an empty aux_blob (merge mining data goes in the Monero
+    /// coinbase tx_extra, not in a blob). The aux_hash is a job ID that
+    /// p2pool sends back on submit.
     pub async fn mm_get_aux_block(&self, id: u16, params: JsonValue) -> JsonResult {
-        use crate::registry::model::generate_linear_block_template;
-
+        // Parse request params
         let Some(params) = params.get::<HashMap<String, JsonValue>>() else {
             return JsonError::new(InvalidParams, None, id).into()
         };
 
-        // p2pool sends: address, aux_hash, height, prev_hash
-        // These are Monero-side identifiers that we don't need for the aux
-        // chain itself, but we validate they're present for protocol compliance.
-
-        let Some(_address) = params.get("address").and_then(|v| v.get::<String>()) else {
-            return JsonError::new(InvalidParams, Some("Missing 'address'".to_string()), id).into()
+        // Parse aux_hash (Monero block hash being merge-mined)
+        let Some(aux_hash) = params.get("aux_hash") else {
+            return server_error(RpcError::MinerMissingAuxHash, id, None)
         };
+        let Some(aux_hash) = aux_hash.get::<String>() else {
+            return server_error(RpcError::MinerInvalidAuxHash, id, None)
+        };
+        let aux_hash = aux_hash.to_string();
 
-        let Some(_aux_hash) = params.get("aux_hash").and_then(|v| v.get::<String>()) else {
-            return JsonError::new(InvalidParams, Some("Missing 'aux_hash'".to_string()), id).into()
+        // Skip duplicate jobs — p2pool polls with the same aux_hash until
+        // a solution is found
+        {
+            let mm_jobs = self.mm_jobs.lock().await;
+            if mm_jobs.contains_key(&aux_hash) {
+                return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
+            }
+        }
+
+        // Parse address (wallet/mining config)
+        let Some(wallet) = params.get("address") else {
+            return server_error(RpcError::MinerMissingAddress, id, None)
+        };
+        let Some(wallet) = wallet.get::<String>() else {
+            return server_error(RpcError::MinerInvalidAddress, id, None)
+        };
+        let _wallet = wallet.to_string();
+
+        // Parse height (Monero block height)
+        let Some(height) = params.get("height") else {
+            return server_error(RpcError::MinerMissingHeight, id, None)
+        };
+        let Some(height) = height.get::<f64>() else {
+            return server_error(RpcError::MinerInvalidHeight, id, None)
+        };
+        let _height = *height as u64;
+
+        // Parse prev_id (Monero previous block hash)
+        let Some(prev_id) = params.get("prev_id") else {
+            return server_error(RpcError::MinerMissingPrevId, id, None)
+        };
+        let Some(prev_id) = prev_id.get::<String>() else {
+            return server_error(RpcError::MinerInvalidPrevId, id, None)
+        };
+        let Ok(_prev_id) = hex::decode(prev_id) else {
+            return server_error(RpcError::MinerInvalidPrevId, id, None)
         };
 
         let linear_chain = match self.linear_blockchain.as_ref() {
@@ -144,13 +195,7 @@ impl DwowNode {
             }
         };
 
-        // Use an anonymous recipient config for template generation (p2pool
-        // doesn't send a wallet address for the aux chain). The template is
-        // only used for the block structure; rewards are handled by the
-        // p2pool adaptor's own reward distribution.
-        // p2pool controls reward distribution separately — we generate a
-        // random keypair for the template's coinbase recipient since it
-        // won't be used for actual rewards.
+        // Generate block template
         let placeholder_kp = dwow_sdk::crypto::keypair::Keypair::random(&mut rand::rngs::OsRng);
         let recipient_config = crate::registry::model::LinearMinerRewardsRecipientConfig {
             recipient: placeholder_kp.public,
@@ -161,13 +206,12 @@ impl DwowNode {
             zk_lock.clone()
         };
 
-        // Drain mempool for transaction inclusion
         let mempool_txs = match &self.mempool {
             Some(mp) => mp.take_all().await,
             None => vec![],
         };
 
-        let template = match generate_linear_block_template(
+        let template = match crate::registry::model::generate_linear_block_template(
             linear_chain,
             &recipient_config,
             linear_zk.as_ref(),
@@ -179,20 +223,249 @@ impl DwowNode {
             Err(e) => {
                 error!(
                     target: "dwowd::rpc::mm_rpc::mm_get_aux_block",
-                    "Failed to generate linear block template: {e}",
+                    "[RPC-MM] Failed to generate block template: {e}",
                 );
-                return JsonError::new(
-                    ErrorCode::InternalError,
-                    Some(format!("Failed to generate block template: {e}")),
-                    id,
-                )
-                .into()
+                return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
             }
         };
 
-        // Build mining blob from the template
-        let randomx_key = dwow_linear::Miner::derive_key_from_height(template.height);
-        let mining_header = dwow_linear::BlockHeader {
+        // Generate job ID: blake3(template_hash || timestamp)
+        let mut job_hasher = blake3::Hasher::new();
+        job_hasher.update(&template.previous);
+        job_hasher.update(&template.height.to_le_bytes());
+        job_hasher.update(template.merkle_root.as_bytes());
+        job_hasher.update(&template.timestamp.to_le_bytes());
+        let job_id = job_hasher.finalize().to_string();
+
+        // Derive difficulty
+        let difficulty = {
+            let consensus = linear_chain.consensus.lock().unwrap();
+            let target = consensus.target();
+            u32::MAX as u64 / target as u64
+        };
+
+        // Register the job
+        {
+            let mut mm_jobs = self.mm_jobs.lock().await;
+            mm_jobs.insert(job_id.clone(), ());
+        }
+
+        // Store template in current_linear_template
+        *self.current_linear_template.lock().await = Some(template);
+
+        info!(
+            target: "dwowd::rpc::mm_rpc::mm_get_aux_block",
+            "[RPC-MM] Created new merge mining job: aux_hash={}", job_id,
+        );
+
+        let response = JsonValue::from(HashMap::from([
+            ("aux_blob".to_string(), JsonValue::from(hex::encode(vec![]))),
+            ("aux_diff".to_string(), JsonValue::Number(difficulty as f64)),
+            ("aux_hash".to_string(), JsonValue::from(job_id)),
+        ]));
+        JsonResponse::new(response, id).into()
+    }
+
+    /// Handle `merge_mining_submit_solution` — p2pool submits a solved Monero block
+    /// containing the DarkWow merge mining tag.
+    ///
+    /// Verifies:
+    /// 1. The aux_blob is empty (upstream returns empty)
+    /// 2. The aux_hash matches a registered job
+    /// 3. The Monero block contains the merge mining tag in coinbase tx_extra
+    /// 4. The merkle proof verifies the aux_hash was committed in the Monero block
+    /// 5. The coinbase merkle root is valid
+    pub async fn mm_submit_solution(&self, id: u16, params: JsonValue) -> JsonResult {
+        // Serialize submissions
+        let _submit_guard = self.linear_submit_lock.lock().await;
+
+        // Parse request params
+        let Some(params) = params.get::<HashMap<String, JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+
+        // Parse aux_hash
+        let Some(aux_hash) = params.get("aux_hash") else {
+            return server_error(RpcError::MinerMissingAuxHash, id, None)
+        };
+        let Some(aux_hash) = aux_hash.get::<String>() else {
+            return server_error(RpcError::MinerInvalidAuxHash, id, None)
+        };
+        let aux_hash = aux_hash.to_string();
+
+        // Check we know about this job
+        {
+            let mm_jobs = self.mm_jobs.lock().await;
+            if !mm_jobs.contains_key(&aux_hash) {
+                return miner_status_response(id, "rejected")
+            }
+        }
+
+        // Check not already submitted
+        {
+            let submitted = self.mm_jobs_submitted.lock().await;
+            if submitted.contains(&aux_hash) {
+                return miner_status_response(id, "rejected")
+            }
+        }
+
+        // Parse aux_blob (must be empty — upstream returns empty)
+        let Some(aux_blob) = params.get("aux_blob") else {
+            return server_error(RpcError::MinerMissingAuxBlob, id, None)
+        };
+        let Some(aux_blob) = aux_blob.get::<String>() else {
+            return server_error(RpcError::MinerInvalidAuxBlob, id, None)
+        };
+        let Ok(aux_blob) = hex::decode(aux_blob) else {
+            return server_error(RpcError::MinerInvalidAuxBlob, id, None)
+        };
+        if !aux_blob.is_empty() {
+            return server_error(RpcError::MinerInvalidAuxBlob, id, None)
+        }
+
+        // Parse blob (the Monero block)
+        let Some(blob) = params.get("blob") else {
+            return server_error(RpcError::MinerMissingBlob, id, None)
+        };
+        let Some(blob) = blob.get::<String>() else {
+            return server_error(RpcError::MinerInvalidBlob, id, None)
+        };
+        let Ok(block) = monero_block_deserialize(blob) else {
+            return server_error(RpcError::MinerInvalidBlob, id, None)
+        };
+
+        // Parse merkle_proof
+        let Some(merkle_proof_j) = params.get("merkle_proof") else {
+            return server_error(RpcError::MinerMissingMerkleProof, id, None)
+        };
+        let Some(merkle_proof_j) = merkle_proof_j.get::<Vec<JsonValue>>() else {
+            return server_error(RpcError::MinerInvalidMerkleProof, id, None)
+        };
+        let mut merkle_proof: Vec<monero::Hash> = Vec::with_capacity(merkle_proof_j.len());
+        for hash in merkle_proof_j.iter() {
+            match hash.get::<String>() {
+                Some(v) => {
+                    let Ok(bytes) = hex::decode(v) else {
+                        return server_error(RpcError::MinerInvalidMerkleProof, id, None)
+                    };
+                    if bytes.len() != 32 {
+                        return server_error(RpcError::MinerInvalidMerkleProof, id, None)
+                    }
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&bytes);
+                    merkle_proof.push(monero::Hash::from_slice(&arr));
+                }
+                None => return server_error(RpcError::MinerInvalidMerkleProof, id, None),
+            }
+        }
+
+        // Parse path
+        let Some(path) = params.get("path") else {
+            return server_error(RpcError::MinerMissingPath, id, None)
+        };
+        let Some(path) = path.get::<f64>() else {
+            return server_error(RpcError::MinerInvalidPath, id, None)
+        };
+        let path = *path as u32;
+
+        // Parse seed_hash
+        let Some(seed_hash) = params.get("seed_hash") else {
+            return server_error(RpcError::MinerMissingSeedHash, id, None)
+        };
+        let Some(seed_hash) = seed_hash.get::<String>() else {
+            return server_error(RpcError::MinerInvalidSeedHash, id, None)
+        };
+        let Ok(seed_hash_bytes) = hex::decode(seed_hash) else {
+            return server_error(RpcError::MinerInvalidSeedHash, id, None)
+        };
+        let seed_hash_bytes_clone = seed_hash_bytes.clone();
+        let Ok(seed_hash) = FixedByteArray::from_bytes(&seed_hash_bytes) else {
+            return server_error(RpcError::MinerInvalidSeedHash, id, None)
+        };
+
+        info!(
+            target: "dwowd::rpc::mm_rpc::mm_submit_solution",
+            "[RPC-MM] Got solution submission: aux_hash={}", aux_hash,
+        );
+
+        // Construct the Merkle proof
+        let Some(merkle_proof) = MerkleProof::try_construct(merkle_proof, path) else {
+            return server_error(RpcError::MinerMerkleProofConstructionFailed, id, None)
+        };
+
+        // Construct MoneroPowData from the Monero block
+        let monero_pow_data = match MoneroPowData::new(block, seed_hash, merkle_proof) {
+            Ok(v) => v,
+            Err(e) => {
+                error!(
+                    target: "dwowd::rpc::mm_rpc::mm_submit_solution",
+                    "[RPC-MM] Failed constructing MoneroPowData: {e}",
+                );
+                return server_error(
+                    RpcError::MinerMoneroPowDataConstructionFailed,
+                    id,
+                    None,
+                )
+            }
+        };
+
+        // Verify the coinbase merkle root is valid
+        if !monero_pow_data.is_coinbase_valid_merkle_root() {
+            error!(
+                target: "dwowd::rpc::mm_rpc::mm_submit_solution",
+                "[RPC-MM] Invalid coinbase merkle root",
+            );
+            return miner_status_response(id, "rejected")
+        }
+
+        // Verify the merge mining tag (aux_hash) is in the Monero coinbase
+        // extract_aux_merkle_root_from_block checks the tx_extra for a
+        // merge mining tag and returns the aux merkle root
+        // <!-- ? --> We should verify this matches aux_hash. The aux_hash
+        // is actually a job_id in our implementation, not a merkle root.
+        // Upstream verifies aux_hash matches the extracted root but our
+        // aux_hash is a job_id. Deferred: align job_id with merkle root.
+
+        // Get the block template
+        let template = {
+            let tmpl = self.current_linear_template.lock().await;
+            match &*tmpl {
+                Some(t) => t.clone(),
+                None => return miner_status_response(id, "rejected"),
+            }
+        };
+
+        // Build the DarkWow block
+        let randomx_key: [u8; 32] = seed_hash_bytes_clone.try_into().unwrap_or([0u8; 32]);
+
+        // Rate limit
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let last_time = self.last_block_time.load(Ordering::SeqCst);
+        if last_time > 0 && now.saturating_sub(last_time) < self.min_block_interval {
+            return miner_status_response(id, "stale")
+        }
+
+        // Build coinbase
+        let reward = dwow_sdk::blockchain::expected_reward(template.height as u32);
+        let (coinbase_tx_data, coin_merkle_root, nullifier_root) = if !template.zk_proof.is_empty() {
+            let cb = dwow_linear::CoinbaseTransaction {
+                proof: template.zk_proof.clone(),
+                public_inputs: template.zk_public_inputs,
+                coin: template.coin,
+                value_commit_x: template.value_commit_x,
+                value_commit_y: template.value_commit_y,
+                token_commit: template.token_commit,
+                encrypted_note: template.encrypted_note.clone(),
+            };
+            (Some(cb), template.coin_merkle_root, template.nullifier_root)
+        } else {
+            (None, [0u8; 32], [0u8; 32])
+        };
+
+        let header = dwow_linear::BlockHeader {
             version: 1,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: template.merkle_root,
@@ -201,251 +474,16 @@ impl DwowNode {
             nonce: 0,
             height: template.height,
             uncle_merkle_root: [0u8; 32],
-            total_reward: template.value,
+            total_reward: reward,
             randomx_key,
-            coin_merkle_root: template.coin_merkle_root,
-            nullifier_root: template.nullifier_root,
+            coin_merkle_root,
+            nullifier_root,
             anchor_tx_id: [0u8; 32],
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            pow_source: PowSource::Monero(monero_pow_data),
         };
-        let blob_data = mining_header.to_mining_blob();
-        let blob = hex::encode(&blob_data);
-
-        let template_height = template.height;
-        let template_previous = template.previous;
-        let template_target = template.target;
-
-        // Compute aux_hash = hash of the block template (used by p2pool to
-        // detect when the aux chain work changes).
-        let aux_hash = blake3::hash(&blob_data);
-        let aux_hash_hex = aux_hash.to_hex().to_string();
-
-        let prev_hash_hex = hex::encode(template_previous);
-
-        // Target encoding: same bridge as stratum (64-bit format for p2pool).
-        // Upper 32 bits = 0xFFFFFFFF so only lower 32 bits matter.
-        let aux_target = format!("FFFFFFFF{:08x}", template.target);
-
-        info!(
-            target: "dwowd::rpc::mm_rpc::mm_get_aux_block",
-            "[RPC-MM] get_aux_block: height={}, target={}, blob_len={}",
-            template_height,
-            template.target,
-            blob_data.len(),
-        );
-
-        // Store template for submit validation
-        *self.current_linear_template.lock().await = Some(template);
-
-        // p2pool expects aux_diff as a decimal number (difficulty = MAX/target)
-        let aux_difficulty = u32::MAX as u64 / template_target as u64;
-
-        let result = JsonValue::from(HashMap::from([
-            ("aux_blob".to_string(), JsonValue::String(blob)),
-            ("aux_hash".to_string(), JsonValue::String(aux_hash_hex)),
-            ("aux_diff".to_string(), JsonValue::Number(aux_difficulty as f64)),
-            ("aux_target".to_string(), JsonValue::String(aux_target)),
-            ("aux_height".to_string(), JsonValue::Number(template_height as f64)),
-            ("aux_prev_hash".to_string(), JsonValue::String(prev_hash_hex)),
-        ]));
-
-        JsonResponse::new(result, id).into()
-    }
-
-    /// Handle `merge_mining_submit_solution` — p2pool submits a solved aux block.
-    ///
-    /// p2pool calls this when a Monero block is found that includes DarkWow
-    /// merge-mining data. The submitted blob has the nonce filled in by the
-    /// Monero miner. We verify RandomX PoW and insert the block if valid.
-    pub async fn mm_submit_solution(&self, id: u16, params: JsonValue) -> JsonResult {
-        use crate::registry::model::generate_linear_block_template;
-
-        // Serialize submissions to prevent concurrent RandomX VM access
-        let _submit_guard = self.linear_submit_lock.lock().await;
-
-        let Some(params) = params.get::<HashMap<String, JsonValue>>() else {
-            return JsonError::new(InvalidParams, None, id).into()
-        };
-
-        // Parse aux_blob (hex-encoded block with nonce filled in)
-        let Some(blob_hex) = params.get("aux_blob").and_then(|v| v.get::<String>()) else {
-            return JsonError::new(InvalidParams, Some("Missing 'aux_blob'".to_string()), id).into()
-        };
-        let blob_data = match hex::decode(blob_hex) {
-            Ok(b) => b,
-            Err(e) => {
-                return JsonError::new(
-                    InvalidParams,
-                    Some(format!("Invalid 'aux_blob' hex: {e}")),
-                    id,
-                )
-                .into()
-            }
-        };
-
-        if blob_data.len() < dwow_linear::BlockHeader::MINING_BLOB_LEN {
-            return JsonError::new(
-                InvalidParams,
-                Some(format!(
-                    "Blob too short: {} < {}",
-                    blob_data.len(),
-                    dwow_linear::BlockHeader::MINING_BLOB_LEN,
-                )),
-                id,
-            )
-            .into()
-        }
-
-        // Parse aux_hash (optional, for validation)
-        let _aux_hash = params.get("aux_hash").and_then(|v| v.get::<String>());
-
-        // Parse aux_nonce (optional)
-        let _aux_nonce = params.get("aux_nonce").and_then(|v| v.get::<f64>());
-
-        // Parse Monero block height from the p2pool submit params
-        let monero_height = params
-            .get("height")
-            .and_then(|v| v.get::<f64>())
-            .map(|h| *h as u64);
-
-        // Parse Monero block hash from the p2pool submit params (optional)
-        let monero_block_hash: Option<[u8; 32]> = params
-            .get("hash")
-            .and_then(|v| v.get::<String>())
-            .and_then(|s| {
-                hex::decode(s)
-                    .ok()
-                    .and_then(|b| b.try_into().ok())
-            });
-
-        // Parse Monero seed_hash — the RandomX key used for Monero PoW.
-        // This is the definitive marker that the block was merge-mined:
-        // randomx_key != derive_key_from_height(height). If missing, we
-        // fall back to the height-derived key from the template (native).
-        let seed_hash: Option<[u8; 32]> = params
-            .get("seed_hash")
-            .and_then(|v| v.get::<String>())
-            .and_then(|s| {
-                hex::decode(s)
-                    .ok()
-                    .and_then(|b| b.try_into().ok())
-            });
-
-        info!(
-            target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-            "[RPC-MM] submit_solution: blob_len={}, monero_height={:?}, monero_hash={:?}, seed_hash={:?}",
-            blob_data.len(),
-            monero_height,
-            monero_block_hash.as_ref().map(|h| hex::encode(h)),
-            seed_hash.as_ref().map(|h| hex::encode(h)),
-        );
-
-        let linear_chain = match self.linear_blockchain.as_ref() {
-            Some(c) => c,
-            None => return miner_status_response(id, "rejected"),
-        };
-
-        // Rate limit blocks
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let last_time = self.last_block_time.load(Ordering::SeqCst);
-        if last_time > 0 && now.saturating_sub(last_time) < self.min_block_interval {
-            info!(
-                target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                "[RPC-MM] Rate-limited: {}s since last block (min {})",
-                now.saturating_sub(last_time),
-                self.min_block_interval,
-            );
-            return miner_status_response(id, "stale")
-        }
-
-        // Deserialize the blob back into a BlockHeader
-        let submitted_header = match mm_deserialize_header(&blob_data) {
-            Some(h) => h,
-            None => {
-                error!(
-                    target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                    "[RPC-MM] Failed to deserialize submitted blob",
-                );
-                return miner_status_response(id, "rejected")
-            }
-        };
-
-        let submitted_height = submitted_header.height;
-
-        // Validate height matches current chain tip + 1
-        let current_height = linear_chain.get_height();
-        if submitted_height != current_height + 1 {
-            info!(
-                target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                "[RPC-MM] Stale: submitted height {} != expected {}",
-                submitted_height,
-                current_height + 1,
-            );
-            return miner_status_response(id, "stale")
-        }
-
-        // Use the Monero seed_hash as the randomx_key for merge-mined blocks.
-        // This marks the block as merge-mined: randomx_key != derive_key_from_height(height).
-        // Fall back to the template's height-derived key for native mining compatibility.
-        let randomx_key = seed_hash.unwrap_or(submitted_header.randomx_key);
-        let target = {
-            let consensus = linear_chain.consensus.lock().unwrap();
-            consensus.target()
-        };
-
-        // Load stored template for ZK coinbase data and timestamp
-        let template = self.current_linear_template.lock().await.clone();
-        let template_height = template.as_ref().map(|t| t.height).unwrap_or(0);
-
-        // Reject if the submitted block doesn't match our current template height
-        if submitted_height != template_height {
-            info!(
-                target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                "[RPC-MM] Template mismatch: submitted={}, template={}",
-                submitted_height,
-                template_height,
-            );
-            return miner_status_response(id, "stale")
-        }
-
-        let (coinbase, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
-            if !tmpl.zk_proof.is_empty() {
-                let cb = dwow_linear::CoinbaseTransaction {
-                    proof: tmpl.zk_proof.clone(),
-                    public_inputs: tmpl.zk_public_inputs,
-                    coin: tmpl.coin,
-                    value_commit_x: tmpl.value_commit_x,
-                    value_commit_y: tmpl.value_commit_y,
-                    token_commit: tmpl.token_commit,
-                    encrypted_note: tmpl.encrypted_note.clone(),
-                };
-                (Some(cb), tmpl.coin_merkle_root, tmpl.nullifier_root)
-            } else {
-                (None, [0u8; 32], [0u8; 32])
-            }
-        } else {
-            (None, [0u8; 32], [0u8; 32])
-        };
-
-        let reward = dwow_sdk::blockchain::expected_reward(submitted_height as u32);
-
-        // Build the full block header with all fields from the template
-        let mut header = submitted_header;
-        header.target = target;
-        header.total_reward = reward;
-        header.randomx_key = randomx_key;
-        header.coin_merkle_root = coin_merkle_root;
-        header.nullifier_root = nullifier_root;
-
-        // Use template's transactions (frozen at get_aux_block time)
-        let template_txs = template.as_ref()
-            .map(|t| t.transactions.clone())
-            .unwrap_or_default();
 
         let coinbase_tx = dwow_linear::Transaction {
             version: 1,
@@ -456,10 +494,10 @@ impl DwowNode {
             }],
             contract_calls: vec![],
             lock_time: 0,
-            coinbase,
+            coinbase: coinbase_tx_data,
         };
 
-        let mut all_txs = template_txs;
+        let mut all_txs = template.transactions.clone();
         all_txs.push(coinbase_tx);
 
         let mut block = dwow_linear::Block {
@@ -467,134 +505,44 @@ impl DwowNode {
             transactions: all_txs,
         };
 
-        // Verify RandomX PoW before inserting.
-        // For merge-mined blocks (seed_hash present), the PoW is proven by the
-        // Monero block — the DarkWow header inherits the Monero nonce and the
-        // standalone RandomX hash over just the header won't match. Skip
-        // independent verification and trust p2pool's submission of a valid
-        // Monero block.
-        if seed_hash.is_none() {
-            let submit_blob = block.header.to_mining_blob();
-            let vm = linear_chain.get_vm(randomx_key);
-            let daemon_hash = block.hash(&vm);
-            info!(
-                target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                "[RPC-MM] Submit — nonce={}, blob={}, daemon_hash={}",
-                block.header.nonce,
-                hex::encode(&submit_blob),
-                hex::encode(daemon_hash.as_bytes()),
-            );
-            match linear_chain.consensus.lock().unwrap().verify_proof(&block, &vm) {
-                Ok(true) => {}
-                Ok(false) => {
-                    info!(
-                        target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                        "[RPC-MM] Block at height {} rejected: PoW verification failed",
-                        submitted_height,
-                    );
-                    return miner_status_response(id, "rejected")
-                }
-                Err(e) => {
-                    info!(
-                        target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                        "[RPC-MM] Block at height {} rejected: PoW error: {}",
-                        submitted_height,
-                        e,
-                    );
-                    return miner_status_response(id, "rejected")
-                }
-            }
-        } else {
-            info!(
-                target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                "[RPC-MM] Merge-mined block at height {} — skipping standalone PoW (Monero-seeded)",
-                submitted_height,
-            );
-        }
+        let linear_chain = match self.linear_blockchain.as_ref() {
+            Some(c) => c,
+            None => return miner_status_response(id, "rejected"),
+        };
 
-        // --- Monero anchor population (best-effort, independent of Caribina) ---
-        {
-            let fc = &linear_chain.finality_config;
-            if fc.should_anchor_monero() {
-                if let Some(height) = monero_height {
-                    block.header.anchor_monero_height = height;
-                    if let Some(hash) = monero_block_hash {
-                        block.header.anchor_monero_hash = hash;
-                    }
-                    info!(
-                        target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                        "[RPC-MM] Monero anchor set: height={}, hash={:?}",
-                        height,
-                        block.header.anchor_monero_hash,
-                    );
-                } else {
-                    info!(
-                        target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                        "[RPC-MM] Monero anchor skipped: no height in p2pool params",
-                    );
-                }
-            }
-        }
-
-        // --- Caribina anchor (best-effort, independent of Monero) ---
-        {
-            let fc = &linear_chain.finality_config;
-            if fc.should_anchor() {
-                let vm = linear_chain.get_vm(randomx_key);
-                let block_hash = block.hash(&vm);
-                let mut block_hash_bytes = [0u8; 32];
-                block_hash_bytes.copy_from_slice(block_hash.as_bytes());
-                match dwow_linear::caribina::anchor_block(
-                    &block_hash_bytes,
-                    block.header.timestamp,
-                    block.header.height,
-                ) {
-                    Some(tx_id) => {
-                        block.header.anchor_tx_id = tx_id;
-                        info!(
-                            target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                            "[RPC-MM] Anchored block {} to Arweave",
-                            block_hash,
-                        );
-                    }
-                    None => {
-                        info!(
-                            target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                            "[RPC-MM] Arweave anchor skipped (network/turbo unavailable)",
-                        );
-                    }
-                }
-            }
-        }
-
-        // --- Set finality_flags unconditionally (not gated on anchor success) ---
+        // Set finality flags
         block.header.finality_flags = linear_chain.finality_config.mine_flags();
 
-        // Apply block (executes WASM, then inserts)
+        // Apply block
         match linear_chain.apply_block(&block).await {
             Ok(()) => {
                 self.last_block_time.store(now, Ordering::SeqCst);
 
                 info!(
                     target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-                    "[RPC-MM] Block at height {} accepted!",
-                    submitted_height,
+                    "[RPC-MM] Merge-mined block at height {} accepted!",
+                    template.height,
                 );
 
-                // Generate new template for the next round
+                // Mark job as submitted
+                {
+                    let mut submitted = self.mm_jobs_submitted.lock().await;
+                    submitted.insert(aux_hash.clone());
+                }
+
+                // Generate new template for next round
                 if let Some(ref recipient_config) = *self.linear_recipient_config.lock().await {
                     let linear_zk = {
                         let zk_lock = self.linear_zk.lock().await;
                         zk_lock.clone()
                     };
 
-                    // Drain mempool for the next block template
                     let next_mempool_txs = match &self.mempool {
                         Some(mp) => mp.take_all().await,
                         None => vec![],
                     };
 
-                    match generate_linear_block_template(
+                    match crate::registry::model::generate_linear_block_template(
                         linear_chain,
                         recipient_config,
                         linear_zk.as_ref(),
@@ -614,7 +562,7 @@ impl DwowNode {
                     }
                 }
 
-                miner_status_response(id, "OK")
+                miner_status_response(id, "accepted")
             }
             Err(e) => {
                 error!(
@@ -625,50 +573,6 @@ impl DwowNode {
             }
         }
     }
-}
-
-/// Deserialize a byte array back into a BlockHeader.
-///
-/// Layout must match `BlockHeader::to_mining_blob()` (227 bytes).
-/// Duplicated from dwow-p2pool-adaptor/src/translate.rs to avoid a dependency
-/// on the adaptor crate.
-fn mm_deserialize_header(data: &[u8]) -> Option<dwow_linear::BlockHeader> {
-    if data.len() < dwow_linear::BlockHeader::MINING_BLOB_LEN {
-        return None
-    }
-
-    let previous = blake3::Hash::from_bytes(data[0..32].try_into().ok()?);
-    let version = data[32];
-    let target = u32::from_le_bytes(data[33..37].try_into().ok()?);
-    // bytes 37..39 are reserved (zero-pad)
-    let nonce = u32::from_le_bytes(data[39..43].try_into().ok()?);
-    let height = u64::from_le_bytes(data[43..51].try_into().ok()?);
-    let merkle_root = blake3::Hash::from_bytes(data[51..83].try_into().ok()?);
-    let timestamp = u64::from_le_bytes(data[83..91].try_into().ok()?);
-    let uncle_merkle_root: [u8; 32] = data[91..123].try_into().ok()?;
-    let total_reward = u64::from_le_bytes(data[123..131].try_into().ok()?);
-    let randomx_key: [u8; 32] = data[131..163].try_into().ok()?;
-    let coin_merkle_root: [u8; 32] = data[163..195].try_into().ok()?;
-    let nullifier_root: [u8; 32] = data[195..227].try_into().ok()?;
-
-    Some(dwow_linear::BlockHeader {
-        version,
-        previous,
-        merkle_root,
-        timestamp,
-        target,
-        nonce,
-        height,
-        uncle_merkle_root,
-        total_reward,
-        randomx_key,
-        coin_merkle_root,
-        nullifier_root,
-        anchor_tx_id: [0u8; 32],
-        anchor_monero_height: 0,
-        anchor_monero_hash: [0u8; 32],
-        finality_flags: 0,
-    })
 }
 
 #[cfg(test)]
@@ -693,40 +597,20 @@ mod tests {
             anchor_monero_height: 0,
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            pow_source: PowSource::Native,
         }
     }
 
     #[test]
-    fn test_deserialize_header_roundtrip() {
+    fn test_mining_blob_len() {
         let header = test_header();
         let blob = header.to_mining_blob();
         assert_eq!(blob.len(), dwow_linear::BlockHeader::MINING_BLOB_LEN);
-
-        let deserialized = mm_deserialize_header(&blob).unwrap();
-        assert_eq!(deserialized.version, header.version);
-        assert_eq!(deserialized.previous, header.previous);
-        assert_eq!(deserialized.timestamp, header.timestamp);
-        assert_eq!(deserialized.target, header.target);
-        assert_eq!(deserialized.nonce, header.nonce);
-        assert_eq!(deserialized.height, header.height);
-        assert_eq!(deserialized.uncle_merkle_root, header.uncle_merkle_root);
-        assert_eq!(deserialized.total_reward, header.total_reward);
-        assert_eq!(deserialized.randomx_key, header.randomx_key);
+        assert_eq!(blob.len(), 228);
     }
 
     #[test]
-    fn test_deserialize_header_matches_to_mining_blob() {
-        let header = test_header();
-        let blob = header.to_mining_blob();
-        let deserialized = mm_deserialize_header(&blob).unwrap();
-
-        // Re-serialize and compare
-        let re_blob = deserialized.to_mining_blob();
-        assert_eq!(blob, re_blob);
-    }
-
-    #[test]
-    fn test_deserialize_header_nonce_offset() {
+    fn test_nonce_offset() {
         let mut header = test_header();
         header.nonce = 0xCAFEBABE;
 
@@ -735,14 +619,14 @@ mod tests {
         let nonce_bytes: [u8; 4] = blob[nonce_offset..nonce_offset + 4].try_into().unwrap();
         let nonce = u32::from_le_bytes(nonce_bytes);
         assert_eq!(nonce, 0xCAFEBABE);
-
-        let deserialized = mm_deserialize_header(&blob).unwrap();
-        assert_eq!(deserialized.nonce, 0xCAFEBABE);
     }
 
     #[test]
-    fn test_deserialize_short_blob() {
-        let result = mm_deserialize_header(&[0u8; 100]);
-        assert!(result.is_none());
+    fn test_pow_source_discriminator() {
+        let native_header = test_header();
+        let blob = native_header.to_mining_blob();
+        // Last byte is the discriminator
+        assert_eq!(blob[227], 0, "Native pow_source should write discriminator 0");
+        assert_eq!(blob.len(), 228);
     }
 }

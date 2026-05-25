@@ -26,7 +26,7 @@
 use dwow_serial::{async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite};
 use std::io::Result;
 
-use super::{Block, BlockHeader, ContractCall, Input, Output, Transaction, UncleBlock, UncleProof};
+use super::{Block, BlockHeader, ContractCall, Input, Output, PowSource, Transaction, UncleBlock, UncleProof};
 
 #[async_trait]
 impl AsyncEncodable for Input {
@@ -132,6 +132,16 @@ impl AsyncEncodable for BlockHeader {
         len += self.anchor_monero_height.encode_async(s).await?;
         len += self.anchor_monero_hash.encode_async(s).await?;
         len += self.finality_flags.encode_async(s).await?;
+        match &self.pow_source {
+            PowSource::Native => {
+                len += 0u8.encode_async(s).await?;
+            }
+            PowSource::Monero(data) => {
+                len += 1u8.encode_async(s).await?;
+                use dwow_serial::AsyncEncodable;
+                len += data.encode_async(s).await?;
+            }
+        }
         Ok(len)
     }
 }
@@ -155,6 +165,16 @@ impl AsyncDecodable for BlockHeader {
         let anchor_monero_height = AsyncDecodable::decode_async(d).await?;
         let anchor_monero_hash = AsyncDecodable::decode_async(d).await?;
         let finality_flags = AsyncDecodable::decode_async(d).await?;
+        let disc: u8 = AsyncDecodable::decode_async(d).await?;
+        let pow_source = match disc {
+            0 => PowSource::Native,
+            1 => {
+                use dwow_serial::AsyncDecodable;
+                let data = crate::monero::MoneroPowData::decode_async(d).await?;
+                PowSource::Monero(data)
+            }
+            _ => PowSource::Native,
+        };
         Ok(Self {
             version,
             previous,
@@ -172,6 +192,7 @@ impl AsyncDecodable for BlockHeader {
             anchor_monero_height,
             anchor_monero_hash,
             finality_flags,
+            pow_source,
         })
     }
 }

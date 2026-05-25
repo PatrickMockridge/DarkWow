@@ -122,6 +122,10 @@ pub struct DwowNode {
     linear_submit_lock: Mutex<()>,
     /// Linear genesis hash for mm_rpc
     linear_genesis_hash: Mutex<Option<HeaderHash>>,
+    /// Active merge mining job IDs (aux_hash → ())
+    mm_jobs: Mutex<HashMap<String, ()>>,
+    /// Submitted merge mining job IDs (aux_hash)
+    mm_jobs_submitted: Mutex<HashSet<String>>,
 }
 
 impl DwowNode {
@@ -151,6 +155,8 @@ impl DwowNode {
             linear_recipient_config: Mutex::new(None),
             linear_submit_lock: Mutex::new(()),
             linear_genesis_hash: Mutex::new(None),
+            mm_jobs: Mutex::new(HashMap::new()),
+            mm_jobs_submitted: Mutex::new(HashSet::new()),
         }))
     }
 
@@ -233,7 +239,7 @@ impl Dwowd {
         // flags, this fails immediately with a clear error instead of crashing
         // during stratum submission.
         let linear_genesis_hash: HeaderHash = {
-            use dwow_linear::{Block, BlockHeader, Miner, Transaction, Output};
+            use dwow_linear::{Block, BlockHeader, Miner, Output, PowSource, Transaction};
             use std::time::SystemTime;
 
             let genesis_height = 1u64;
@@ -274,6 +280,7 @@ impl Dwowd {
                 anchor_monero_height: 0,
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
+            pow_source: PowSource::Native,
             };
 
             let genesis_block = Block { header, transactions: vec![genesis_tx] };

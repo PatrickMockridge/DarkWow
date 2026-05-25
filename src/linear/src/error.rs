@@ -62,4 +62,19 @@ pub enum LinearError {
 
     #[error("RandomX error: {0}")]
     RandomXError(String),
+
+    #[error("Merge mining error: {0}")]
+    MoneroMergeMineError(String),
+
+    #[error("Monero hashing error: {0}")]
+    MoneroHashingError(String),
+
+    #[error("Monero number of chains is zero")]
+    MoneroNumberOfChainZero,
+}
+
+impl From<std::io::Error> for LinearError {
+    fn from(e: std::io::Error) -> Self {
+        LinearError::SerializationError(e.to_string())
+    }
 }
