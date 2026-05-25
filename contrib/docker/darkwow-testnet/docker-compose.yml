@@ -201,6 +201,7 @@ services:
     environment:
       - OFFLINE=${MONERO_OFFLINE:-true}
       - FIXED_DIFFICULTY=${MONERO_FIXED_DIFFICULTY:-1000}
+      - MONERO_MINING_THREADS=${MONERO_MINING_THREADS:-1}
       - ZMQ_PORT=28083
       - RPC_PORT=28081
     expose:
@@ -214,7 +215,7 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-s", "-X", "POST", "http://127.0.0.1:28081/json_rpc",
              "-H", "Content-Type: application/json",
-             "-d", '{"jsonrpc":"2.0","id":"0","method":"start_mining","params":{"threads_count":1,"do_background_mining":true,"ignore_battery":false}}']
+             "-d", '{"jsonrpc":"2.0","id":"0","method":"get_info"}']
       interval: 5s
       timeout: 3s
       retries: 1

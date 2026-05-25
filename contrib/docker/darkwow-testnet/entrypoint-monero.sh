@@ -45,4 +45,26 @@ else
     fi
 fi
 
-exec monerod $ARGS
+# Start monerod in background, wait for RPC, then start mining
+monerod $ARGS &
+MONEROD_PID=$!
+
+echo "  Waiting for monerod RPC..."
+for i in $(seq 1 60); do
+    if curl -s --max-time 2 http://127.0.0.1:${RPC_PORT}/json_rpc \
+        -H 'Content-Type: application/json' \
+        -d '{"jsonrpc":"2.0","method":"get_info","id":1}' >/dev/null 2>&1; then
+        echo "  monerod RPC ready (attempt $i)"
+        break
+    fi
+    sleep 1
+done
+
+MONERO_MINING_THREADS="${MONERO_MINING_THREADS:-1}"
+echo "  Starting mining with ${MONERO_MINING_THREADS} thread(s)..."
+curl -s http://127.0.0.1:${RPC_PORT}/json_rpc \
+    -H 'Content-Type: application/json' \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"start_mining\",\"params\":{\"threads_count\":${MONERO_MINING_THREADS},\"do_background_mining\":true,\"ignore_battery\":false}}" >/dev/null 2>&1
+
+echo "  monerod mining started. Keeping in foreground."
+wait $MONEROD_PID

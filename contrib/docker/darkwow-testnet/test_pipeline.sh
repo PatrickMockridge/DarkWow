@@ -1630,10 +1630,10 @@ phase_blocks() {
     if [ "$MODE" = "merge" ]; then
         info "Verifying cryptographic receipts..."
         NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-        MM_SUBMIT_COUNT=$(echo "$NODE0_LOGS" | grep -c "Got solution submission" || echo "0")
-        MM_AUX_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "Aux merkle proof verified" || echo "0")
-        MM_COINBASE_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "Coinbase merkle proof verified" || echo "0")
-        MM_ACCEPTED=$(echo "$NODE0_LOGS" | grep -c "Merge-mined block.*accepted" || echo "0")
+        MM_SUBMIT_COUNT=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Got solution submission" || echo "0")
+        MM_AUX_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Aux merkle proof verified" || echo "0")
+        MM_COINBASE_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Coinbase merkle proof verified" || echo "0")
+        MM_ACCEPTED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Merge-mined block.*accepted" || echo "0")
 
         if [ "$MM_SUBMIT_COUNT" -gt 0 ]; then
             pass "mm_submit_solution received ($MM_SUBMIT_COUNT submissions)"
