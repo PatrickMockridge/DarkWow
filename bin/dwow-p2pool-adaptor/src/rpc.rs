@@ -209,6 +209,34 @@ pub async fn handle_get_version() -> serde_json::Value {
     })
 }
 
+/// Handle `get_block_header_by_height` — returns a Monero-compatible block header.
+///
+/// p2pool calls this during initialization to download historical block headers
+/// starting from seed height 0. Without a valid response, p2pool logs "fatal error:
+/// couldn't download block header for seed height 0" and never starts its stratum
+/// server.
+pub async fn handle_get_block_header_by_height(
+    state: &AdaptorStatePtr,
+    height: u64,
+) -> serde_json::Value {
+    match state.dwowd.get_block_header_by_height(height).await {
+        Ok(block_header) => {
+            serde_json::json!({
+                "block_header": block_header,
+                "status": "OK",
+                "untrusted": false,
+            })
+        }
+        Err(e) => {
+            warn!(target: "adaptor::rpc", "get_block_header_by_height({height}) failed: {e}");
+            serde_json::json!({
+                "status": "error",
+                "message": format!("Failed to get block header at height {height}: {e}")
+            })
+        }
+    }
+}
+
 /// Handle `get_miner_data` — returns Monero-compatible miner data.
 ///
 /// p2pool calls this after `get_version` to get chain metadata for mining.

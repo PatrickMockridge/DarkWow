@@ -26,6 +26,7 @@
 /// | `get_block_template` | Returns DarkWow header as Monero-format block template |
 /// | `submit_block` | Accepts solved block, submits to dwowd stratum |
 /// | `get_info` | Returns DarkWow chain state |
+/// | `get_block_header_by_height` | Returns Monero-compatible block header for p2pool init |
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
@@ -281,6 +282,15 @@ async fn handle_rpc(state: &Arc<AdaptorState>, req: &JsonRpcRequest) -> JsonRpcR
         "get_miner_data" => {
             let data = rpc::handle_get_miner_data(state).await;
             Some(data)
+        }
+        "get_block_header_by_height" => {
+            let height = req
+                .params
+                .get("height")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let header = rpc::handle_get_block_header_by_height(state, height).await;
+            Some(header)
         }
         _ => {
             warn!(target: "adaptor", "Unknown method: {}", req.method);

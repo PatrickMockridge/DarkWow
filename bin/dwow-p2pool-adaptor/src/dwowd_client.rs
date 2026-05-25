@@ -364,6 +364,72 @@ impl DwowdClient {
         Ok(parsed)
     }
 
+    /// Query a block header by height from dwowd.
+    ///
+    /// Returns a Monero-compatible `block_header` JSON object for p2pool's
+    /// sidechain initialization. p2pool calls this to download historical
+    /// block headers starting from seed height 0.
+    pub async fn get_block_header_by_height(
+        &self,
+        height: u64,
+    ) -> Result<serde_json::Value, String> {
+        let resp = self
+            .rpc_call(
+                "blockchain.get_block_linear",
+                serde_json::json!([height]),
+            )
+            .await?;
+
+        let block_json_str = resp
+            .get("result")
+            .and_then(|r| r.as_str())
+            .ok_or("No result in get_block_linear response")?;
+
+        let block: serde_json::Value = serde_json::from_str(block_json_str)
+            .map_err(|e| format!("Failed to parse block JSON: {e}"))?;
+
+        // Compute deterministic block hash from the block JSON
+        let hash = blake3::hash(block_json_str.as_bytes())
+            .to_hex()
+            .to_string();
+
+        let header = block.get("header").ok_or("No header in block")?;
+
+        let prev_hash = header
+            .get("previous")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0000000000000000000000000000000000000000000000000000000000000000")
+            .to_string();
+
+        let block_height = header.get("height").and_then(|v| v.as_u64()).unwrap_or(height);
+        let timestamp = header.get("timestamp").and_then(|v| v.as_u64()).unwrap_or(0);
+        let nonce = header.get("nonce").and_then(|v| v.as_u64()).unwrap_or(0);
+        let target = header.get("target").and_then(|v| v.as_u64()).unwrap_or(0);
+
+        // Derive difficulty from target (Monero-style: max_u64 / target)
+        let difficulty = if target > 0 {
+            u64::MAX / target
+        } else {
+            1u64
+        };
+
+        Ok(serde_json::json!({
+            "block_size": 0,
+            "depth": 0,
+            "difficulty": difficulty,
+            "hash": hash,
+            "height": block_height,
+            "major_version": 16,
+            "minor_version": 16,
+            "nonce": nonce,
+            "num_txes": 0,
+            "orphan_status": false,
+            "prev_hash": prev_hash,
+            "reward": 0,
+            "timestamp": timestamp,
+        }))
+    }
+
     /// Query the latest confirmed block info.
     ///
     /// Uses `blockchain.last_confirmed_block` first; falls back to the linear
