@@ -335,6 +335,17 @@ Keys cannot be shared between them — they are different cryptographic curves
 with no algebraic conversion. Both wallets earn rewards: Monero coinbase from
 the parent chain, DarkWow coinbase from the aux chain.
 
+### Merge Mining vs Native P2Pool
+
+| | Merge Mining (`--profile merge`) | Native P2Pool (`--profile native-p2pool`) |
+|---|---|---|
+| Monero node | Required (monerod) | Not required |
+| p2pool connects to | monerod + dwowd mm_rpc | adaptor (monerod-compat proxy) |
+| PoW chain | Monero RandomX | DarkWow RandomX |
+| Architecture | xmrig → p2pool → monerod + dwowd mm_rpc | xmrig → p2pool → adaptor → dwowd stratum |
+| Use case | Real Monero merge mining | DarkWow-native pooled mining, no Monero |
+| Entrypoint | `entrypoint-p2pool.sh` | `entrypoint-p2pool-darkwow.sh` |
+
 ### Merge Mining Environment Variables
 
 | Variable | Default | Description |
@@ -343,18 +354,17 @@ the parent chain, DarkWow coinbase from the aux chain.
 | `MM_RPC_PORT` | `31348` | dwowd merge mining RPC port |
 | `MONERO_OFFLINE` | `true` | Run monerod in offline mode (local devnet) |
 | `MONERO_NETWORK` | `testnet` | Monero network: `testnet` or `mainnet` |
-| `MONERO_FIXED_DIFFICULTY` | `20000` | Fixed difficulty when offline |
+| `MONERO_FIXED_DIFFICULTY` | `1000` | Fixed difficulty when offline |
 | `MONERO_ADD_PEERS` | (empty) | Comma-separated Monero bootstrap `host:port` |
 | `MONERO_WALLET_ADDRESS` | (empty) | Monero wallet for p2pool mining rewards |
 | `WALLET_ADDRESS` | (empty) | DarkWow wallet for aux chain mining rewards |
 | `XMERGE_THREADS` | `1` | xmrig-merge thread count |
 
-## Merge Mining Adaptor (p2pool Bridge)
+## Native P2Pool (Adaptor Bridge)
 
 The `dwow-p2pool-adaptor` bridges p2pool to dwowd's stratum protocol, enabling
-merge mining with Monero and the anchoring/finality gadget. DarkWow is a
-minority-mined RandomX L1 — in the beginning, it borrows security from Monero's
-hashpower through this pathway.
+DarkWow-native pooled mining via p2pool without a Monero node. This is the
+`native-p2pool` profile — distinct from real Monero merge mining.
 
 ```
 xmrig → p2pool → adaptor → dwowd stratum → lilith P2P
@@ -367,11 +377,8 @@ DarkWow's stratum protocol. This means unmodified p2pool — with its full PPLNS
 reward distribution, sidechain, and stratum server — interoperates with DarkWow
 without any DarkWow-specific code in p2pool itself.
 
-**Scope boundary:** The adaptor is merge mining / finality gadget infrastructure
-— it is not a general-purpose DarkWow mining pool. DarkWow-native pooled mining
-(DRKW reward distribution without Monero merge mining) is an ecosystem concern.
-This repo provides the node software and the adaptor; pool protocols and reward
-distribution schemes use the same stratum interface but are not bundled here.
+For real Monero merge mining (p2pool connects directly to monerod + dwowd mm_rpc),
+see the [Merge Mining](#merge-mining-optional) section above.
 
 ### Quick Start
 

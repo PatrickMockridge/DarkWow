@@ -200,7 +200,7 @@ services:
     hostname: monerod
     environment:
       - OFFLINE=${MONERO_OFFLINE:-true}
-      - FIXED_DIFFICULTY=${MONERO_FIXED_DIFFICULTY:-20000}
+      - FIXED_DIFFICULTY=${MONERO_FIXED_DIFFICULTY:-1000}
       - ZMQ_PORT=28083
       - RPC_PORT=28081
     expose:
@@ -227,10 +227,12 @@ services:
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile.p2pool
     container_name: dwow-p2pool
     hostname: p2pool
-    entrypoint: ["/app/entrypoint-p2pool-darkwow.sh"]
+    entrypoint: ["/app/entrypoint-p2pool.sh"]
     environment:
-      - MONERO_HOST=adaptor
+      - MONERO_HOST=monerod
       - MONERO_RPC_PORT=28081
+      - MONERO_ZMQ_PORT=28083
+      - DWOWD_MM_RPC=node0:31348
       - STRATUM_PORT=3333
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
     ports:
@@ -240,7 +242,7 @@ services:
     networks:
       - dwow-local
     depends_on:
-      - adaptor
+      - monerod
     restart: unless-stopped
 
   xmrig-merge:
@@ -278,7 +280,7 @@ services:
   # Start with:  docker compose --profile native-p2pool up -d
   # ============================================================================
   adaptor:
-    profiles: ["native-p2pool", "merge"]
+    profiles: ["native-p2pool"]
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -403,7 +405,7 @@ services:
     environment:
       - OFFLINE=${MONERO_OFFLINE:-false}
       - MONERO_NETWORK=${MONERO_NETWORK:-testnet}
-      - FIXED_DIFFICULTY=${MONERO_FIXED_DIFFICULTY:-20000}
+      - FIXED_DIFFICULTY=${MONERO_FIXED_DIFFICULTY:-1000}
       - ZMQ_PORT=28083
       - RPC_PORT=28081
       - MONERO_ADD_PEERS=${MONERO_ADD_PEERS:-125.229.105.12:28081,37.187.74.171:28089}

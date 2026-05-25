@@ -671,6 +671,7 @@ phase_start() {
     info "Phase 5: Starting containers..."
 
     if [ "$MODE" = "merge" ]; then
+        MONERO_FIXED_DIFFICULTY="${MONERO_FIXED_DIFFICULTY:-1000}" \
         MERGE_MINING=true WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
             FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
@@ -910,7 +911,7 @@ phase_verify() {
     info "Phase 6: Verifying containers..."
 
     if [ "$MODE" = "merge" ]; then
-        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-monerod dwow-adaptor dwow-p2pool dwow-xmrig-merge)
+        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-monerod dwow-p2pool dwow-xmrig-merge)
     elif [ "$MODE" = "native-p2pool" ]; then
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool)
     elif [ "$MODE" = "bridge" ]; then
@@ -1289,33 +1290,59 @@ phase_mining_activity() {
     info "Phase 8: Verifying mining activity..."
 
     if [ "$MODE" = "merge" ]; then
-        info "Checking adaptor activity..."
-        ADAPTOR_LOGS=$(docker logs dwow-adaptor 2>&1 || true)
-        if echo "$ADAPTOR_LOGS" | grep -qi "listening\|rpc\|connected"; then
-            pass "adaptor active"
+        info "Checking monerod RPC health..."
+        MONEROD_READY=false
+        for i in $(seq 1 30); do
+            if docker exec dwow-monerod curl -s --max-time 2 http://127.0.0.1:28081/json_rpc \
+                -H 'Content-Type: application/json' \
+                -d '{"jsonrpc":"2.0","method":"get_info","id":1}' 2>/dev/null | grep -q "height"; then
+                info "monerod RPC responding (attempt $i)"
+                MONEROD_READY=true
+                break
+            fi
+            sleep 3
+        done
+        if [ "$MONEROD_READY" = true ]; then
+            pass "monerod RPC healthy"
         else
-            warn "adaptor logs don't show expected activity"
-            docker logs dwow-adaptor 2>&1 | tail -20
-            fail "adaptor active"
+            fail "monerod RPC not responding"
         fi
 
-        info "Checking p2pool connectivity..."
+        info "Checking dwowd mm_rpc endpoint..."
+        MM_RPC_READY=false
+        for i in $(seq 1 30); do
+            if docker exec dwow-node0 curl -s --max-time 2 http://127.0.0.1:31348 \
+                -H 'Content-Type: application/json' \
+                -d '{"jsonrpc":"2.0","method":"merge_mining_get_chain_id","params":[],"id":1}' 2>/dev/null | grep -q "result"; then
+                info "mm_rpc responding (attempt $i)"
+                MM_RPC_READY=true
+                break
+            fi
+            sleep 3
+        done
+        if [ "$MM_RPC_READY" = true ]; then
+            pass "dwowd mm_rpc healthy"
+        else
+            fail "dwowd mm_rpc not responding"
+        fi
+
+        info "Checking p2pool merge mining activity..."
         P2POOL_READY=false
         for i in $(seq 1 30); do
             P2POOL_LOGS=$(docker logs dwow-p2pool 2>&1 || true)
-            if echo "$P2POOL_LOGS" | grep -qi "stratum\|p2pool v\|new template\|mining\|sidechain"; then
-                info "p2pool active (attempt $i)"
+            if echo "$P2POOL_LOGS" | grep -qi "merge.mining\|--merge-mine\|aux\|sidechain\|stratum"; then
+                info "p2pool merge mining active (attempt $i)"
                 P2POOL_READY=true
                 break
             fi
             sleep 3
         done
         if [ "$P2POOL_READY" = true ]; then
-            pass "p2pool connected"
+            pass "p2pool merge mining active"
         else
-            warn "p2pool logs don't show expected activity"
+            warn "p2pool logs don't show merge mining activity"
             docker logs dwow-p2pool 2>&1 | tail -20
-            fail "p2pool connected"
+            fail "p2pool merge mining active"
         fi
 
         info "Checking node0 for block production..."
@@ -1448,7 +1475,7 @@ phase_blocks() {
 
     if [ "$MODE" = "merge" ]; then
         info "Waiting for genesis + merge-mined blocks..."
-        WAIT_SECS=30
+        WAIT_SECS=15
     elif [ "$MODE" = "native-p2pool" ]; then
         info "Waiting for genesis + p2pool-mined blocks..."
         WAIT_SECS=30
@@ -1596,6 +1623,40 @@ phase_blocks() {
         else
             warn "anchor_monero_height is non-zero ($ANCHOR_MONERO_HEIGHT) but Monero anchoring is disabled"
             pass "anchor_monero_height present (monero anchoring disabled — not enforced)"
+        fi
+    fi
+
+    # Cryptographic receipt verification (merge mode only)
+    if [ "$MODE" = "merge" ]; then
+        info "Verifying cryptographic receipts..."
+        NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
+        MM_SUBMIT_COUNT=$(echo "$NODE0_LOGS" | grep -c "Got solution submission" || echo "0")
+        MM_AUX_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "Aux merkle proof verified" || echo "0")
+        MM_COINBASE_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "Coinbase merkle proof verified" || echo "0")
+        MM_ACCEPTED=$(echo "$NODE0_LOGS" | grep -c "Merge-mined block.*accepted" || echo "0")
+
+        if [ "$MM_SUBMIT_COUNT" -gt 0 ]; then
+            pass "mm_submit_solution received ($MM_SUBMIT_COUNT submissions)"
+        else
+            fail "no mm_submit_solution received"
+        fi
+
+        if [ "$MM_AUX_VERIFIED" -gt 0 ]; then
+            pass "aux merkle proof verified ($MM_AUX_VERIFIED)"
+        else
+            fail "aux merkle proof not verified"
+        fi
+
+        if [ "$MM_COINBASE_VERIFIED" -gt 0 ]; then
+            pass "coinbase merkle proof verified ($MM_COINBASE_VERIFIED)"
+        else
+            fail "coinbase merkle proof not verified"
+        fi
+
+        if [ "$MM_ACCEPTED" -gt 0 ]; then
+            pass "merge-mined block accepted ($MM_ACCEPTED)"
+        else
+            fail "no merge-mined block accepted"
         fi
     fi
 }
@@ -1992,7 +2053,7 @@ phase_join_merge_mining() {
     export MONERO_OFFLINE="${MONERO_OFFLINE:-false}"
     export MONERO_NETWORK="${MONERO_NETWORK:-testnet}"
     export MONERO_ADD_PEERS="${MONERO_ADD_PEERS:-125.229.105.12:28081,37.187.74.171:28089}"
-    export MONERO_FIXED_DIFFICULTY="${MONERO_FIXED_DIFFICULTY:-20000}"
+    export MONERO_FIXED_DIFFICULTY="${MONERO_FIXED_DIFFICULTY:-1000}"
     export MINING_THREADS="${MINING_THREADS:-1}"
     export WALLET_ADDRESS="${WALLET_ADDRESS:-}"
     export MONERO_WALLET_ADDRESS="${MONERO_WALLET_ADDRESS:-}"
