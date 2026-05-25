@@ -121,13 +121,24 @@ space — not the destination, but one path through it:
 ## Philosophy of technology
 
 * Ted Kaczynski, Anti-Tech Revolution
-* Nick Land, Fanged Noumena
+* Nick Land, [Fanged Noumena](https://en.wikipedia.org/wiki/Fanged_Noumena)
   (Read alongside Fisher's Capitalist Realism. Land represents the Dark
   Enlightenment trajectory that leads to DarkFi's governance-DAO plutocracy,
   premine extraction, and SAFT financialization. Fisher represents the
   left-accelerationist trajectory that leads to DarkWow's zero-premine,
   proof-of-work, deterministic model. The fork is not just technical —
   it is the CCRU split made into consensus code. Both must be read together.)
+* Nick Land, [Crypto-Current: Bitcoin and Philosophy](https://etscrivner.github.io/cryptocurrent/) (2018)
+  — Land's deepest and most constructive work. The thesis that Bitcoin does
+  not exist within time but *produces* time — chronogenesis. The blockchain
+  as a transcendental reality criterion: "it is now known what happened,
+  without argument." Cryptography as "an implementation of time — a
+  temporalization, or current." Irreversibility as time's engine. This book
+  provides the technical-philosophical analysis that both sides of the
+  DarkFi/DarkWow fork accept as foundation. Where the fork diverges is what
+  chronogenic time is *for*: Capital's self-escalation (DarkFi's trajectory)
+  or social reproduction and reclaimed cyberspacetime (DarkWow's trajectory).
+  Essential for understanding Exo-Punk's bridging of the Land/Fisher divide.
 * Ivan Illich, Tools for Conviviality
 * Heidegger, The Question Concerning Technology
 * Yuk Hui, The Question Concerning Technology in China

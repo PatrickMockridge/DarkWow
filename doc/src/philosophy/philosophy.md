@@ -289,27 +289,100 @@ within the protocol.
 **The Fisher/Land split as the DarkFi/DarkWow split**: The Cybernetic Culture
 Research Unit (CCRU) at Warwick University was a crucible of accelerationist
 thought in the 1990s. From it emerged two divergent trajectories that map
-with uncanny precision onto the DarkFi/DarkWow fork:
+with uncanny precision onto the DarkFi/DarkWow fork. Both trajectories share
+a common foundation: Land's 2018 work
+[Cryptocurrent](https://etscrivner.github.io/cryptocurrent/) provides the
+deepest analysis of what Bitcoin actually is — not merely a financial
+innovation but a **philosophical event** that operationalizes what Western
+philosophy only theorized. Land's core insight is **chronogenesis**: Bitcoin
+does not exist within time — it *produces* time. The double-spending problem
+is fundamentally temporal. Preventing the same coin from being spent twice
+requires establishing absolute, determinable succession. The blockchain
+provides what nothing before it could: "an irrevocably reliable record of
+order." "It is now known what happened, without argument." The blockchain
+is a **transcendental reality criterion** — it exemplifies Kant's synthetic
+a priori, not as a concept but as functioning infrastructure. Cryptography
+is "an implementation of time — a temporalization, or current. Things go
+one way rather than another." Irreversibility is time's engine. Proof-of-work
+creates computational one-way functions, trap-doors, forward-bias mechanisms
+— "operational asymmetries" that constitute the arrow of time. This is
+**crypto-current**: chronogenic process — "that – alone – which cannot
+assume time."
 
-- **Nick Land** moved toward the Dark Enlightenment / NRx — acceleration
-  without political critique. In Land's framework, technological acceleration
-  is an impersonal process that operates through capitalism, indifferent to
-  human suffering. Governance-DAO plutocracy, premine extraction, and SAFT
+This analysis is not in dispute. Both sides of the fork accept it. The
+question is what chronogenic time is *for*.
+
+- **Nick Land's interpretation** — developed into the Dark Enlightenment /
+  NRx — treats chronogenesis as serving **Capital**: "the sovereign
+  self-escalation of an innovative entity, defined only by the practical
+  relation of auto-promotion it establishes with – and through – itself."
+  Land's Capital is an emergent terrestrial process, a positive-feedback
+  dynamic, a "regenerative, or self-reinforcing, intensification of
+  socio-economic disequilibrium." Network effects are "raw or irreducible
+  singularity." Accumulation is circuit-closure: "The loop of Bitcoin
+  auto-production knows nothing of transcendence, at any stage." The
+  blockchain's irreversibility serves the irreversibility of Capital's
+  self-escalation. Governance-DAO plutocracy, premine extraction, and SAFT
   financialization are consistent with this trajectory: they accelerate
-  capital through crypto without questioning the structure of capital.
+  Capital through crypto without questioning what Capital is accelerating
+  toward. This is chronogenesis in a **Kantian frame of accumulation** —
+  the blockchain as the transcendental condition of Capital's self-knowledge,
+  with time itself structured as an extraction schedule.
 
-- **Mark Fisher** moved toward left-accelerationism — acceleration through
-  disintermediation and collective liberation. In Fisher's framework,
-  technology can accelerate beyond capitalist control, creating spaces
-  that capital cannot capture. Zero premine, no governance surface, and
-  deterministic consensus are expressions of this trajectory: they accelerate
-  the technology while foreclosing the extraction layer.
+- **Mark Fisher's interpretation** — developed into left-accelerationism —
+  treats chronogenesis as potentially **liberated from Capital's frame**.
+  If Bitcoin produces time, then time can be produced for purposes other
+  than accumulation. The blockchain's irreversibility could serve social
+  reproduction rather than Capital's self-escalation. Deterministic
+  consensus, zero premine, and O-Cap authorization are expressions of this
+  trajectory: they accelerate the technology while foreclosing the
+  extraction layer. Chronogenesis without Capital. Time produced for
+  nurture, learning, and growth rather than for unlock schedules and
+  governance voting periods. Fisher's "cyberspacetime" reclaimed. Land
+  provides the technical analysis — what Bitcoin is and how it produces
+  time. Fisher provides the ethical redirection — what that time could
+  be for, and who it could serve.
 
-DarkFi is the Land fork. DarkWow is the Fisher fork. Same technical base
-(zkVM, Halo2, WASM runtime, P2P stack). Opposite political conclusion.
+**DarkFi is the Land fork. DarkWow is the Fisher fork.** Same technical
+base (zkVM, Halo2, WASM runtime, P2P stack). Same chronogenic substrate.
+Opposite political conclusion about what the time being produced is for.
+
+This is not to say DarkFi's interpretation is *wrong*. Land's analysis of
+chronogenesis is genuine. Capital's self-escalating circuit through crypto
+is real — governance-DAO plutocracy, premine extraction, and SAFT
+financialization really do happen, and Land's framework explains them with
+precision. The problem is that this interpretation **doubles down on a
+politics and mindset that has become massively alienating** — the relentless
+Kantian frame of accumulation, the Nietzschean contempt for "the cattle,"
+the five-phase philosophical submission test that filters contributors
+through ideological compliance before they can build. This posture has
+produced a crypto culture that is broadly resented. It leaves behind the
+more thoughtful entrepreneurs and builders — people who came to crypto to
+create, not to perform ideological loyalty. People who see the technology
+and want to build with it, not become initiates in someone else's esoteric
+hierarchy.
+
+DarkWow accepts Land's analysis of what the blockchain does. Chronogenesis
+is real. Irreversibility is time's engine. The blockchain is a transcendental
+reality criterion — "it is now known what happened, without argument." These
+are genuine philosophical achievements. What DarkWow rejects is the
+conclusion that chronogenic time must serve Capital. The architecture
+demonstrates the alternative: same time-producing technology, different
+purpose. This is **Exo-Punk bridging the gap** — accepting the Landian
+analysis of Bitcoin's temporal structure while redirecting its output
+toward Fisher's vision of reclaimed cyberspacetime. The time the blockchain
+produces can be time for social reproduction, for learning, for building,
+for the degens who got rugged and want a second chance. Chronogenesis
+without the Kantian accumulation frame. The future, produced deterministically,
+one block at a time, for everyone.
+
 Both must be read — the [Warwick CCRU Collection](https://app.ardrive.io/#/drives/1c3b923e-eba9-402f-862a-e532c1df53fd?name=Warwick+CCRU)
-on ArDrive contains both Fisher and Land texts. DarkFi is too one-sided
-(Land only). Understanding the fork requires understanding both trajectories.
+on ArDrive contains both Fisher and Land texts, and Land's
+[Cryptocurrent](https://etscrivner.github.io/cryptocurrent/) is the
+essential bridge text. DarkFi is too one-sided (Land only). Understanding
+the fork requires understanding both trajectories — and understanding why
+Exo-Punk, by accepting Land's analysis while rejecting his conclusion,
+opens a door that neither trajectory could open alone.
 
 **Slow cancellation of the future**: Fisher's thesis is that neoliberalism has
 progressively eroded cultural and temporal horizons. The future is no longer
@@ -432,6 +505,41 @@ verified opcodes. These are not arguments against anything — they are simply
 what the code does. You don't need to be exceptional to use DarkWow. You
 don't need to pass a philosophical submission test or join an inner circle.
 You just need to run the node.
+
+**Bridging Land and Fisher**: Exo-punk accepts Land's technical analysis of
+what the blockchain does. Chronogenesis is real. Irreversibility is time's
+engine. The blockchain is a transcendental reality criterion — "it is now
+known what happened, without argument." Cryptography is an implementation
+of time. These are genuine philosophical achievements, and DarkWow's
+architecture is built on them: deterministic Uncle Merkle consensus,
+Caribina anchoring, the four-level test pipeline — all of these are
+chronogenic infrastructure. They produce time that is irreversible,
+verifiable, and reproducible.
+
+Where exo-punk diverges from Land is the question of what chronogenic time
+is *for*. Land's answer is Capital — the sovereign self-escalation of an
+innovative entity, the regenerative intensification of socio-economic
+disequilibrium. Time produced by the blockchain serves accumulation. This
+is not wrong as an analysis of what currently happens — governance-DAO
+plutocracy, premine extraction, and SAFT financialization really do harness
+chronogenesis for Capital. DarkFi's architecture is a clean expression of
+this trajectory. The problem is that this interpretation has become a
+self-fulfilling prophecy. By treating Capital as the only possible purpose
+of chronogenic time, it forecloses every other purpose. The thoughtful
+entrepreneurs and builders who came to crypto to create — not to become
+initiates in someone's ideological hierarchy — are told that accumulation
+is the only game and the only question is which inner circle gets to play.
+
+Exo-punk's answer is that chronogenic time can serve social reproduction
+instead. Same time-producing technology — deterministic consensus,
+irreversible blocks, ZK verification — but directed toward nurture,
+learning, growth, and the stable temporal conditions that cohesive
+society requires. Land provides the analysis of what the blockchain *is*.
+Fisher provides the question of what it could be *for*. Exo-punk provides
+the architecture that answers that question in code. You don't have to
+choose between Land's technical rigor and Fisher's ethical redirection.
+The architecture holds both. Chronogenesis without the Kantian
+accumulation frame. Time produced for everyone.
 
 This is the exo-punk wager: infrastructure that works for everyone is
 more transformative than ideology that flatters the few. The four
