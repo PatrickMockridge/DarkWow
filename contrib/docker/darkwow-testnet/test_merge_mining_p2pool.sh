@@ -665,27 +665,55 @@ echo ""
 info "Block $MINED_BLOCK_HEIGHT retrieved (pow_source is serde-skipped, not in JSON)"
 echo ""
 
-# Check dwowd log for merge mining submission.
+# Check dwowd log for cryptographic receipt verification.
 MM_SUBMIT_COUNT=$(grep -c "RPC-MM.*Got solution submission" "$TEST_DIR/dwowd.log" 2>/dev/null || echo "0")
+MM_AUX_VERIFIED=$(grep -c "Aux merkle proof verified" "$TEST_DIR/dwowd.log" 2>/dev/null || echo "0")
+MM_COINBASE_VERIFIED=$(grep -c "Coinbase merkle proof verified" "$TEST_DIR/dwowd.log" 2>/dev/null || echo "0")
 MM_ACCEPTED=$(grep -c "RPC-MM.*Merge-mined block.*accepted" "$TEST_DIR/dwowd.log" 2>/dev/null || echo "0")
-MM_MONERO_POW=$(grep -c "MoneroPowData\|is_coinbase_valid_merkle_root" "$TEST_DIR/dwowd.log" 2>/dev/null || echo "0")
 
-echo "  Solution submissions received: $MM_SUBMIT_COUNT"
-echo "  Blocks accepted: $MM_ACCEPTED"
+echo "  Cryptographic receipts:"
+echo "    Solution submissions received : $MM_SUBMIT_COUNT"
+echo "    Aux merkle proof verified     : $MM_AUX_VERIFIED"
+echo "    Coinbase merkle proof verified: $MM_COINBASE_VERIFIED"
+echo "    Blocks accepted               : $MM_ACCEPTED"
 echo ""
 
-if [ "$MM_ACCEPTED" -gt 0 ]; then
-    echo -e "${GREEN}[PASS]${NC} Merge-mined block accepted by dwowd"
+# Verify each cryptographic receipt.
+FAILURES=0
+
+if [ "$MM_AUX_VERIFIED" -gt 0 ]; then
+    echo -e "${GREEN}[PASS]${NC} Receipt #1: aux_hash verified in Monero coinbase (extract_aux_merkle_root + MerkleProof::calculate_root)"
 else
-    echo -e "${RED}[FAIL]${NC} No merge-mined block was accepted"
+    echo -e "${RED}[FAIL]${NC} Receipt #1: aux_hash NOT verified in Monero coinbase"
+    FAILURES=$((FAILURES + 1))
+fi
+
+if [ "$MM_COINBASE_VERIFIED" -gt 0 ]; then
+    echo -e "${GREEN}[PASS]${NC} Receipt #2: coinbase merkle proof valid (is_coinbase_valid_merkle_root)"
+else
+    echo -e "${RED}[FAIL]${NC} Receipt #2: coinbase merkle proof NOT validated"
+    FAILURES=$((FAILURES + 1))
+fi
+
+if [ "$MM_ACCEPTED" -gt 0 ]; then
+    echo -e "${GREEN}[PASS]${NC} Receipt #3: block inserted with PowSource::Monero(MoneroPowData)"
+else
+    echo -e "${RED}[FAIL]${NC} Receipt #3: block NOT accepted"
+    FAILURES=$((FAILURES + 1))
+fi
+
+if [ "$FAILURES" -gt 0 ]; then
+    echo ""
+    echo -e "${RED}[FAIL]${NC} $FAILURES cryptographic receipt(s) missing"
     echo "  dwowd log excerpt:"
-    grep -i "RPC-MM" "$TEST_DIR/dwowd.log" | tail -20
+    grep -i "RPC-MM" "$TEST_DIR/dwowd.log" | tail -30
     exit 1
 fi
 
 # Show relevant log lines.
+echo ""
 info "Merge mining log excerpt:"
-grep "RPC-MM\|merge.mining\|MoneroPowData\|coinbase.*merkle\|aux_hash\|solution" "$TEST_DIR/dwowd.log" | tail -20
+grep "RPC-MM\|merkle proof\|MoneroPowData\|coinbase" "$TEST_DIR/dwowd.log" | tail -20
 
 echo ""
 echo -e "${GREEN}══════════════════════════════════════════════════${NC}"

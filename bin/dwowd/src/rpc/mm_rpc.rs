@@ -49,6 +49,7 @@ use dwow::{
 use dwow_linear::{
     monero::{
         fixed_array::FixedByteArray,
+        extract_aux_merkle_root_from_block,
         merkle_proof::MerkleProof,
         monero_block_deserialize,
         MoneroPowData,
@@ -393,6 +394,50 @@ impl DwowNode {
             return server_error(RpcError::MinerMerkleProofConstructionFailed, id, None)
         };
 
+        // ── Cryptographic receipt #1: aux_hash committed in Monero coinbase ──
+        // Decode our aux_hash (blake3 hex string → 32 bytes → monero::Hash)
+        let aux_hash_bytes = match hex::decode(&aux_hash) {
+            Ok(b) if b.len() == 32 => b,
+            _ => return server_error(RpcError::MinerInvalidAuxHash, id, None),
+        };
+        let aux_hash_monero = monero::Hash::from_slice(&aux_hash_bytes);
+
+        // Extract the merge mining tag from the Monero coinbase tx_extra
+        let extracted_root = match extract_aux_merkle_root_from_block(&block) {
+            Ok(Some(root)) => root,
+            Ok(None) => {
+                error!(
+                    target: "dwowd::rpc::mm_rpc::mm_submit_solution",
+                    "[RPC-MM] No merge mining tag found in Monero coinbase tx_extra",
+                );
+                return miner_status_response(id, "rejected")
+            }
+            Err(e) => {
+                error!(
+                    target: "dwowd::rpc::mm_rpc::mm_submit_solution",
+                    "[RPC-MM] Failed to extract aux merkle root: {e}",
+                );
+                return miner_status_response(id, "rejected")
+            }
+        };
+
+        // Verify: our aux_hash is a leaf in the merkle tree whose root
+        // is the merge mining tag embedded in the Monero coinbase
+        let calculated_root = merkle_proof.calculate_root(&aux_hash_monero);
+        if calculated_root != extracted_root {
+            error!(
+                target: "dwowd::rpc::mm_rpc::mm_submit_solution",
+                "[RPC-MM] Aux merkle proof failed: calculated={calculated_root}, expected={extracted_root}",
+            );
+            return miner_status_response(id, "rejected")
+        }
+
+        info!(
+            target: "dwowd::rpc::mm_rpc::mm_submit_solution",
+            "[RPC-MM] Aux merkle proof verified: aux_hash committed in Monero coinbase",
+        );
+
+        // ── Cryptographic receipt #2: MoneroPowData with coinbase proof ──
         // Construct MoneroPowData from the Monero block
         let monero_pow_data = match MoneroPowData::new(block, seed_hash, merkle_proof) {
             Ok(v) => v,
@@ -418,13 +463,10 @@ impl DwowNode {
             return miner_status_response(id, "rejected")
         }
 
-        // Verify the merge mining tag (aux_hash) is in the Monero coinbase
-        // extract_aux_merkle_root_from_block checks the tx_extra for a
-        // merge mining tag and returns the aux merkle root
-        // <!-- ? --> We should verify this matches aux_hash. The aux_hash
-        // is actually a job_id in our implementation, not a merkle root.
-        // Upstream verifies aux_hash matches the extracted root but our
-        // aux_hash is a job_id. Deferred: align job_id with merkle root.
+        info!(
+            target: "dwowd::rpc::mm_rpc::mm_submit_solution",
+            "[RPC-MM] Coinbase merkle proof verified — MoneroPowData is valid",
+        );
 
         // Get the block template
         let template = {
