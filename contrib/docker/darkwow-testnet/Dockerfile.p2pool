@@ -24,7 +24,6 @@ RUN wget -q https://github.com/xmrig/xmrig/releases/download/v6.22.2/xmrig-6.22.
     rm -rf xmrig-6.22.2*
 
 COPY contrib/docker/darkwow-testnet/entrypoint-p2pool.sh /app/entrypoint-p2pool.sh
-COPY contrib/docker/darkwow-testnet/entrypoint-p2pool-darkwow.sh /app/entrypoint-p2pool-darkwow.sh
-RUN chmod +x /app/entrypoint-p2pool.sh /app/entrypoint-p2pool-darkwow.sh
+RUN chmod +x /app/entrypoint-p2pool.sh
 
 ENTRYPOINT ["/app/entrypoint-p2pool.sh"]

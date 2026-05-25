@@ -49,10 +49,9 @@ rewards paid to an auto-generated mining address.
 ```bash
 cd contrib/docker/darkwow-testnet
 
-# Full pipeline — 5 modes (clean → build → verify)
+# Full pipeline — 4 modes (clean → build → verify)
 ./test_pipeline.sh --mode native        # 3-node local devnet, native mining
 ./test_pipeline.sh --mode merge         # 3-node devnet + Monero merge mining
-./test_pipeline.sh --mode native-p2pool # 3-node devnet + adaptor pathway
 ./test_pipeline.sh --mode join-native   # Single node joining public testnet
 ./test_pipeline.sh --mode join-merge    # Single merge-mining node, public testnet
 
@@ -64,7 +63,6 @@ cd contrib/docker/darkwow-testnet
 # Or manually (requires --profile since all services use profiles):
 docker compose --profile native up -d    # Start the 3-node stack (native)
 docker compose --profile merge up -d     # Start with merge mining
-docker compose --profile native-p2pool up -d  # Start with adaptor pathway
 
 # Check status
 docker compose ps
@@ -163,19 +161,16 @@ compile. The test pipeline builds it automatically if missing.
 |------|----------|
 | `Dockerfile.base` | **Base image** — all apt packages + Rust toolchain. Built once, inherited by all other Dockerfiles |
 | `build-base.sh` | Build and optionally push the base image |
-| `Dockerfile` | Multi-stage build from base (git clone + cargo: zkas → WASM → dwowd + lilith + adaptor + xmrig) |
+| `Dockerfile` | Multi-stage build from base (git clone + cargo: zkas → WASM → dwowd + lilith + xmrig) |
 | `Dockerfile.monero` | Monero daemon image using pre-built binary (merge mining). Inherits from base |
-| `Dockerfile.p2pool` | p2pool image using pre-built binary (v4.14), with merge and native entrypoints. Inherits from base |
-| `Dockerfile.xmrig` | Standalone xmrig miner built from source (cmake, no hwloc). Inherits from base |
-| `docker-compose.yml` | Service orchestration with 4 profiles: native, merge, native-p2pool, join-merge |
+| `Dockerfile.p2pool` | p2pool + xmrig image using pre-built binaries. Inherits from base |
+| `docker-compose.yml` | Service orchestration with 3 profiles: native, merge, join-merge |
 | `entrypoint.sh` | Dynamic TOML config generation for lilith and dwowd roles; spawns xmrig for native mining |
-| `entrypoint-adaptor.sh` | Start dwow-p2pool-adaptor (protocol bridge for native-p2pool mode) |
-| `entrypoint-p2pool.sh` | Start p2pool in merge mining mode (Monero parent + DarkWow aux) |
-| `entrypoint-p2pool-darkwow.sh` | Start p2pool in native DarkWow mode (adaptor as monerod) |
+| `entrypoint-p2pool.sh` | Start p2pool + xmrig in merge mining mode (Monero parent + DarkWow aux) |
 | `entrypoint-monero.sh` | Start monerod for merge mining (offline or connected mode) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
 | `join-testnet.sh` | Launch a single node joining the public DarkWow testnet (native or merge) |
-| `test_pipeline.sh` | Single entry point: 5 modes (native, merge, native-p2pool, join-native, join-merge), 10-12 phases each. Auto-builds base image if missing |
+| `test_pipeline.sh` | Single entry point: 4 modes (native, merge, join-native, join-merge), 10-12 phases each. Auto-builds base image if missing |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
 

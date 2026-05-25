@@ -22,7 +22,7 @@ DarkWow's Monero integration spans three key areas: **merge mining** for securit
 
 | Component | Purpose | Location | Doc |
 |-----------|---------|----------|-----|
-| Merge Mining | Secure DarkWow via RandomX PoW | `bin/dwowd/src/rpc/mm_rpc.rs`, `bin/dwow-p2pool-adaptor/` | [Merge Mining](../testnet/merge-mining.md) |
+| Merge Mining | Secure DarkWow via RandomX PoW | `bin/dwowd/src/rpc/mm_rpc.rs` | [Merge Mining](../testnet/merge-mining.md) |
 | Bridge Contract | Cross-chain asset transfer | `src/contract/bridge/` | [Bridge Contract](../dev/contracts/bridge.md) |
 | Stablecoin | Collateralized debt positions | `src/contract/stablecoin/` | [Stablecoin](../contract/stablecoin.md) |
 
@@ -188,8 +188,6 @@ XMR/USD price is used for collateral valuation:
 | File | Purpose |
 |------|---------|
 | `bin/dwowd/src/rpc/mm_rpc.rs` | Merge mining JSON-RPC handler (p2pool protocol) |
-| `bin/dwow-p2pool-adaptor/src/translate.rs` | 227-byte header ↔ Monero block format translation |
-| `bin/dwow-p2pool-adaptor/src/rpc.rs` | monerod-compatible RPC for p2pool |
 | `src/linear/src/block.rs` | BlockHeader with Monero anchor fields |
 | `src/linear/src/finality.rs` | FinalityConfig (Monero anchoring config + flag bits) |
 | `src/linear/src/monero/mod.rs` | Monero module root (re-exports) |

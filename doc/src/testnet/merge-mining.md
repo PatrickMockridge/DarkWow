@@ -74,9 +74,6 @@ The test fails fast with the exact sync command if monerod isn't synced.
 - `merge_mining_get_aux_block` — returns aux blob, difficulty, hash
 - `merge_mining_submit_solution` — accepts solved aux block, verifies PoW, applies block
 
-**Production pathway** (adaptor): Used in the Docker `native-p2pool` profile.
-See [native-p2pool.md](native-p2pool.md) for the adaptor architecture and setup.
-
 ## Architecture
 
 DarkWow merge mining operates in three layers. Every computer on the network
@@ -86,14 +83,13 @@ replacements for the base P2P layer.
 | Layer | Component | Role | Mandatory? |
 |-------|-----------|------|------------|
 | 1 — P2P | lilith + dwowd | Node discovery, block propagation, tx gossip | **Yes** — everyone |
-| 2 — Pool | p2pool + adaptor | Aggregates miner hashrate, PPLNS payouts | No — solo miners skip |
+| 2 — Pool | p2pool | Aggregates miner hashrate, PPLNS payouts | No — solo miners skip |
 | 3 — Merge | p2pool + monerod | Bridges to Monero, embeds aux data | No — pure DarkWow pools skip |
 
-The [dwow-p2pool-adaptor](native-p2pool.md) translates dwowd's stratum to
-monerod-compatible JSON-RPC so p2pool can connect. It is the interface between
-Layer 2 and the dwowd node — p2pool speaks Monero protocol; the adaptor
-translates to DarkWow's native stratum. For merge mining (Layer 3), p2pool
-additionally connects to monerod via `mm_rpc`.
+p2pool connects directly to dwowd's mm_rpc HTTP JSON-RPC endpoint (no adaptor).
+p2pool speaks the merge mining protocol natively; dwowd implements the same
+protocol. For merge mining (Layer 3), p2pool additionally connects to monerod
+via RPC+ZMQ for block templates and real-time notifications.
 
 See [Mining Network Architecture](../arch/mining-tokenomics.md#mining-network-architecture)
 for the full topology, ASCII diagrams, and mm_rpc interface description.

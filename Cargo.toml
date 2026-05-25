@@ -18,7 +18,6 @@ members = [
     "bin/zkas",
     "bin/dwowd",
     "bin/bridge_test_helper",
-    "bin/dwow-p2pool-adaptor",
     "bin/explorer",
     "bin/drk",
     "bin/fud/fu",

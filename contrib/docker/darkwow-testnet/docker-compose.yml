@@ -13,7 +13,7 @@
 
 services:
   lilith:
-    profiles: ["native", "merge", "native-p2pool", "bridge"]
+    profiles: ["native", "merge", "bridge"]
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -41,7 +41,7 @@ services:
       retries: 3
 
   node0:
-    profiles: ["native", "merge", "native-p2pool", "bridge"]
+    profiles: ["native", "merge", "bridge"]
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -95,7 +95,7 @@ services:
       retries: 3
 
   node1:
-    profiles: ["native", "merge", "native-p2pool", "bridge"]
+    profiles: ["native", "merge", "bridge"]
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -247,85 +247,6 @@ services:
     restart: unless-stopped
 
   # ============================================================================
-  # Merge Mining Adaptor Services (--profile native-p2pool)
-  #
-  # The adaptor bridges p2pool to dwowd stratum, enabling merge mining with
-  # Monero and the anchoring/finality gadget. DarkWow as a minority-mined
-  # RandomX L1 borrows security from Monero's hashpower through this pathway.
-  #
-  # DarkWow-native pooled mining (DRKW reward distribution without Monero) is
-  # an ecosystem concern — not bundled or maintained here. The node software
-  # and this adaptor are the only mining infrastructure provided by this repo.
-  #
-  # Start with:  docker compose --profile native-p2pool up -d
-  # ============================================================================
-  adaptor:
-    profiles: ["native-p2pool"]
-    build:
-      context: ../../..
-      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
-    container_name: dwow-adaptor
-    hostname: adaptor
-    entrypoint: ["/app/entrypoint-adaptor.sh"]
-    environment:
-      - DWOWD_RPC=node0:31345
-      - DWOWD_STRATUM=node0:31347
-      - ADAPTOR_LISTEN=0.0.0.0:28081
-      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
-      - CONNECT_RETRIES=30
-    ports:
-      - "28081:28081"
-    networks:
-      - dwow-local
-    depends_on:
-      - node0
-    restart: unless-stopped
-
-  p2pool-darkwow:
-    profiles: ["native-p2pool"]
-    build:
-      context: ../../..
-      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.p2pool
-    container_name: dwow-p2pool-darkwow
-    hostname: p2pool-darkwow
-    entrypoint: ["/app/entrypoint-p2pool-darkwow.sh"]
-    environment:
-      - MONERO_HOST=adaptor
-      - MONERO_RPC_PORT=28081
-      - STRATUM_PORT=3333
-      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
-    ports:
-      - "3334:3333"
-    volumes:
-      - p2pool_darkwow_data:/root/.p2pool
-    networks:
-      - dwow-local
-    depends_on:
-      - adaptor
-    restart: unless-stopped
-
-  xmrig-p2pool:
-    profiles: ["native-p2pool"]
-    build:
-      context: ../../..
-      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.xmrig
-    container_name: dwow-xmrig-p2pool
-    entrypoint: ["/usr/local/bin/xmrig"]
-    command:
-      - "-o"
-      - "p2pool-darkwow:3333"
-      - "-a"
-      - "rx/0"
-      - "-t"
-      - "${XMERGE_THREADS:-1}"
-      - "--keepalive"
-    networks:
-      - dwow-local
-    depends_on:
-      - p2pool-darkwow
-    restart: unless-stopped
-
-  # ============================================================================
   # Public Testnet Join Services (--profile join-merge)
   #
   # Single-node merge mining stack for joining the public DarkWow testnet.
@@ -428,4 +349,3 @@ volumes:
   bridge_node_data:
   monerod_data:
   p2pool_data:
-  p2pool_darkwow_data:

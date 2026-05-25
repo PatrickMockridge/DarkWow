@@ -22,7 +22,6 @@
 - [DAO [DEPRECATED]](testnet/dao.md)
 - [Contracts](testnet/contract.md)
 - [Merge Mining](testnet/merge-mining.md)
-- [Merge Mining Adaptor](testnet/native-p2pool.md)
 - [Bridge, Wrapping & Stablecoins](arch/monero.md)
 - [Mining on Testnet](testnet/testnet-mining.md)
 - [DarkIRC](misc/darkirc/darkirc.md)

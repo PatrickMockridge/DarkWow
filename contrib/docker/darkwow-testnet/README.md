@@ -335,17 +335,6 @@ Keys cannot be shared between them — they are different cryptographic curves
 with no algebraic conversion. Both wallets earn rewards: Monero coinbase from
 the parent chain, DarkWow coinbase from the aux chain.
 
-### Merge Mining vs Native P2Pool
-
-| | Merge Mining (`--profile merge`) | Native P2Pool (`--profile native-p2pool`) |
-|---|---|---|
-| Monero node | Required (monerod) | Not required |
-| p2pool connects to | monerod + dwowd mm_rpc | adaptor (monerod-compat proxy) |
-| PoW chain | Monero RandomX | DarkWow RandomX |
-| Architecture | xmrig → p2pool → monerod + dwowd mm_rpc | xmrig → p2pool → adaptor → dwowd stratum |
-| Use case | Real Monero merge mining | DarkWow-native pooled mining, no Monero |
-| Entrypoint | `entrypoint-p2pool.sh` | `entrypoint-p2pool-darkwow.sh` |
-
 ### Merge Mining Environment Variables
 
 | Variable | Default | Description |
@@ -359,76 +348,6 @@ the parent chain, DarkWow coinbase from the aux chain.
 | `MONERO_WALLET_ADDRESS` | (empty) | Monero wallet for p2pool mining rewards |
 | `WALLET_ADDRESS` | (empty) | DarkWow wallet for aux chain mining rewards |
 
-## Native P2Pool (Adaptor Bridge)
-
-The `dwow-p2pool-adaptor` bridges p2pool to dwowd's stratum protocol, enabling
-DarkWow-native pooled mining via p2pool without a Monero node. This is the
-`native-p2pool` profile — distinct from real Monero merge mining.
-
-```
-xmrig → p2pool → adaptor → dwowd stratum → lilith P2P
-```
-
-The adaptor translates dwowd's native stratum interface into monerod-compatible
-JSON-RPC (`get_block_template`, `submit_block`, `get_info`). p2pool connects to
-the adaptor thinking it's monerod, and the adaptor translates every request into
-DarkWow's stratum protocol. This means unmodified p2pool — with its full PPLNS
-reward distribution, sidechain, and stratum server — interoperates with DarkWow
-without any DarkWow-specific code in p2pool itself.
-
-For real Monero merge mining (p2pool connects directly to monerod + dwowd mm_rpc),
-see the [Merge Mining](#merge-mining-optional) section above.
-
-### Quick Start
-
-```bash
-# Full pipeline (build + start + verify):
-./test_pipeline.sh --mode native-p2pool
-
-# Or directly with docker compose:
-docker compose --profile native-p2pool up -d
-```
-
-This starts three containers: `dwow-adaptor` (protocol bridge), `dwow-p2pool-darkwow`
-(p2pool), and `dwow-xmrig-p2pool` (xmrig miner).
-
-### Adaptor Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `DWOWD_RPC` | `node0:31345` | dwowd JSON-RPC for chain queries |
-| `DWOWD_STRATUM` | `node0:31347` | dwowd stratum for block templates |
-| `ADAPTOR_LISTEN` | `0.0.0.0:28081` | Where the adaptor listens for p2pool |
-| `MONERO_HOST` | `adaptor` | p2pool's monerod endpoint (the adaptor) |
-| `MONERO_RPC_PORT` | `28081` | Adaptor's listening port |
-| `STRATUM_PORT` | `3333` | p2pool stratum port for xmrig |
-| `WALLET_ADDRESS` | *(optional)* | DarkWow wallet for mining rewards |
-| `CONNECT_RETRIES` | `30` | Max retries for adaptor→dwowd connection |
-
-See [Merge Mining Adaptor](../../doc/src/testnet/native-p2pool.md) for
-bare-metal setup, adaptor RPC reference, block header translation, and
-known limitations.
-
-### 2026-05-15: Segfault Fix
-
-Two root causes were identified and fixed for the dwowd exit-139 crash in
-native-p2pool mode:
-
-1. **JIT in P2P RandomX VM** (`src/linear/src/blockchain.rs`):
-   `dwow_linear::LinearBlockchain::create_vm` used `RandomXFlags::get_recommended_flags()`
-   which includes JIT. When the P2P layer received a block broadcast and called
-   `block.hash(&vm)`, the JIT-compiled code executed illegal instructions on
-   Docker hosts with restricted CPU features. Fixed by masking out
-   `RandomXFlags::JIT`, matching the stratum path which already did this.
-
-2. **Adaptor blob layout** (`bin/dwow-p2pool-adaptor/src/translate.rs`):
-   The adaptor's `NONCE_OFFSET` was 77, but `BlockHeader::NONCE_OFFSET` is 40.
-   p2pool was modifying merkle_root bytes instead of the nonce. Fixed by aligning
-   the adaptor's serialization layout with `BlockHeader::to_mining_blob()`.
-
-Defense-in-depth: PoW validation was added to `stratum_submit_linear` so invalid
-nonces are rejected before chain insertion.
-
 ## Test Pipeline
 
 `test_pipeline.sh` is the single entry point for all builds and tests. Every mode
@@ -441,7 +360,6 @@ phases. Every check reports PASS or FAIL — there are no skipped or silent chec
 |------|------|---------|----------|--------|------|
 | `native` | 3-node local devnet | `native` | 3 (lilith, node0, node1) | 10 | 18 |
 | `merge` | 3-node local devnet + Monero merge mining | `merge` | 5 (native + monerod, p2pool) | 10 | 31 |
-| `native-p2pool` | 3-node local devnet + adaptor pathway | `native-p2pool` | 6 (native + adaptor, p2pool-darkwow, xmrig-p2pool) | 10 | TBD |
 | `join-native` | Single node joining public testnet | — (docker run, host net) | 1 | 12 | 34 |
 | `join-merge` | Single merge-mining node, public testnet | `join-merge` | 4 | 12 | 42 |
 
@@ -449,7 +367,6 @@ phases. Every check reports PASS or FAIL — there are no skipped or silent chec
 # Local 3-node devnet (10 phases each)
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode merge
-./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native-p2pool
 
 # Join public testnet as a single node (12 phases each)
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-native
@@ -483,7 +400,7 @@ The flags are independent — combine them for a fully deterministic rebuild:
 ./test_pipeline.sh --mode merge --no-cache --fresh
 ```
 
-### Devnet Phases (native, merge, native-p2pool)
+### Devnet Phases (native, merge)
 
 | # | Phase | What It Validates |
 |---|-------|-------------------|
@@ -492,9 +409,9 @@ The flags are independent — combine them for a fully deterministic rebuild:
 | 3 | Wallet | Generate keypair via `dww wallet keygen`, write secret to `/tmp/dwow_mining_secret` |
 | 4 | Build | `docker compose --profile <mode> build` for all services in the profile. With `--no-cache`: rebuilds all layers from scratch (ensures `git clone` fetches latest). |
 | 5 | Start | `docker compose --profile <mode> up -d`, verify no containers exit immediately |
-| 6 | Verify containers | Every expected container is running (3 for native, 5 for merge, 6 for native-p2pool) |
-| 7 | RPC health | TCP JSON-RPC ping to node0 (port 31345) and node1 (31346); plus adaptor RPC (28081) for native-p2pool or monerod RPC (28081) for merge |
-| 8 | Mining activity | Log inspection for stratum job acceptance (native), p2pool sidechain activity (merge), or adaptor connectivity (native-p2pool) |
+| 6 | Verify containers | Every expected container is running (3 for native, 5 for merge) |
+| 7 | RPC health | TCP JSON-RPC ping to node0 (port 31345) and node1 (31346); plus monerod RPC (28081) for merge |
+| 8 | Mining activity | Log inspection for stratum job acceptance (native), p2pool sidechain activity + xmrig hashing + merge mining submissions (merge) |
 | 9 | Block production | Fetch genesis block via `blockchain.get_block_linear`, wait up to 130s for block height >= 2, inspect PoW data |
 | 10 | Report | PASS/FAIL summary printed; exit 0 if all pass, exit 1 with debug instructions if any fail |
 
@@ -523,7 +440,6 @@ The flags are independent — combine them for a fully deterministic rebuild:
 | `merge` | 31 | 0 | Verified pass |
 | `join-native` | 34 | 0 | Verified pass |
 | `join-merge` | 42 | 0 | Verified pass |
-| `native-p2pool` | — | — | Fix applied: JIT disabled in P2P RandomX VM, adaptor blob layout corrected, PoW validation added to stratum submit. Pending pipeline verification. |
 
 ## Contract Tests
 
@@ -589,16 +505,15 @@ base image.
 | Image | Source | Build Method | Description | Profiles |
 |-------|--------|-------------|-------------|----------|
 | `darkwow-base:24.04` | `Dockerfile.base` | Pre-baked (apt + Rust, built once) | System dependencies + Rust toolchain for all profiles | All (build-time dependency) |
-| `darkwow-testnet-lilith` | `Dockerfile` | Source (git clone → cargo build → xmrig download) | Main image: dwowd + lilith + p2pool-adaptor + xmrig binary | native, merge, native-p2pool |
-| `darkwow-testnet-node0` | `Dockerfile` | Same as lilith, tagged per service by compose | Duplicate image for node0 (compose requires per-service tags) | native, merge, native-p2pool |
-| `darkwow-testnet-node1` | `Dockerfile` | Same as lilith, tagged per service by compose | Duplicate image for node1 | native, merge, native-p2pool |
+| `darkwow-testnet-lilith` | `Dockerfile` | Source (git clone → cargo build → xmrig download) | Main image: dwowd + lilith + xmrig binary | native, merge |
+| `darkwow-testnet-node0` | `Dockerfile` | Same as lilith, tagged per service by compose | Duplicate image for node0 (compose requires per-service tags) | native, merge |
+| `darkwow-testnet-node1` | `Dockerfile` | Same as lilith, tagged per service by compose | Duplicate image for node1 | native, merge |
 | `darkwow-testnet-dwowd-join` | `Dockerfile` | Same as lilith, tagged for join service | Main image for the `dwowd-join` service | join-merge |
 | `darkwow-testnet-monerod-join` | `Dockerfile.monero` | Pre-built binary from getmonero.org | Monero daemon (offline mode by default for local devnet; public testnet for join) | merge, join-merge |
-| `darkwow-testnet-p2pool-join` | `Dockerfile.p2pool` | Pre-built binary from p2pool GitHub releases (v4.14) | p2pool sidechain node with entrypoint scripts for merge and native modes | merge, native-p2pool, join-merge |
-| `darkwow-testnet-xmrig-join` | `Dockerfile.xmrig` | Built from source (cmake, no hwloc) | Standalone xmrig miner for pool mining | native-p2pool |
+| `darkwow-testnet-p2pool-join` | `Dockerfile.p2pool` | Pre-built binary from p2pool GitHub releases (v4.14) | p2pool sidechain node with xmrig bundled internally | merge, join-merge |
 
-The main `Dockerfile` builds three Rust binaries (`dwowd`, `lilith`,
-`dwow-p2pool-adaptor`), four WASM contracts (`deployooor`, `native_token`,
+The main `Dockerfile` builds two Rust binaries (`dwowd`, `lilith`),
+four WASM contracts (`deployooor`, `native_token`,
 `money_v3`, `baccarat`), and downloads a static xmrig v6.22.2 binary. Lilith,
 node0, and node1 images are identical (same Dockerfile); compose tags them
 separately for service isolation.
@@ -609,7 +524,6 @@ separately for service isolation.
 |---------|----------|------------|----------|
 | `native` | lilith, node0, node1 | Bridge (`dwow-local`) | 3-node local devnet with native RandomX mining (xmrig → dwowd stratum) |
 | `merge` | native + monerod, p2pool | Bridge (`dwow-local`) | 3-node local devnet with Monero merge mining via p2pool |
-| `native-p2pool` | native + adaptor, p2pool-darkwow, xmrig-p2pool | Bridge (`dwow-local`) | 3-node local devnet with adaptor bridging p2pool to dwowd stratum (no Monero) |
 | `join-merge` | dwowd-join, monerod-join, p2pool-join, xmrig-join | Host | Single-node merge mining stack joining the public DarkWow testnet |
 
 Services without a `profiles` key in `docker-compose.yml` are always active.
@@ -627,13 +541,10 @@ The `join-native` mode does not use compose — it runs a single container via
 | `build-base.sh` | Build and optionally push the base image |
 | `Dockerfile` | Multi-stage build from base (git clone + cargo build: dwowd + lilith + WASM + xmrig) |
 | `Dockerfile.monero` | Monero daemon image using pre-built binary from getmonero.org. Inherits from base |
-| `Dockerfile.p2pool` | p2pool image using pre-built binary (v4.14), with entrypoints for merge and native modes. Inherits from base |
-| `Dockerfile.xmrig` | Standalone xmrig miner built from source (cmake, no hwloc). Inherits from base |
-| `docker-compose.yml` | Service orchestration with 4 profiles (native, merge, native-p2pool, join-merge) |
+| `Dockerfile.p2pool` | p2pool + xmrig image using pre-built binaries. Inherits from base |
+| `docker-compose.yml` | Service orchestration with 3 profiles (native, merge, join-merge) |
 | `entrypoint.sh` | Dynamic TOML config generation for lilith and dwowd roles; spawns xmrig for native mining |
-| `entrypoint-adaptor.sh` | Start dwow-p2pool-adaptor (merge mining protocol bridge) |
-| `entrypoint-p2pool.sh` | Start p2pool in merge mining mode (Monero parent chain + DarkWow aux) |
-| `entrypoint-p2pool-darkwow.sh` | Start p2pool in native DarkWow mode (adaptor as monerod, DarkWow as sole chain) |
+| `entrypoint-p2pool.sh` | Start p2pool + xmrig in merge mining mode (Monero parent chain + DarkWow aux) |
 | `entrypoint-monero.sh` | Start monerod for merge mining (offline or connected mode) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
 | `join-testnet.sh` | Join the public DarkWow testnet as a mining node (native or merge) |
