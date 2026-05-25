@@ -46,6 +46,24 @@ if [ "$MONERO_NETWORK" = "testnet" ]; then
     NETWORK_FLAG="--mini"
 fi
 
+# Wait for dwowd mm_rpc to be ready before starting p2pool.
+# p2pool calls merge_mining_get_chain_id only at startup — if mm_rpc isn't
+# ready yet, p2pool gets "empty response" and never retries, silently disabling
+# merge mining. Poll the endpoint ourselves first.
+echo "Waiting for dwowd mm_rpc at ${DWOWD_MM_RPC}..."
+for i in $(seq 1 60); do
+    CHAIN_ID=$(curl -s --max-time 2 -X POST "http://${DWOWD_MM_RPC}" \
+        -H 'Content-Type: application/json' \
+        -d '{"jsonrpc":"2.0","method":"merge_mining_get_chain_id","params":[],"id":1}' 2>/dev/null \
+        | grep -o '"chain_id":"[^"]*"' | cut -d'"' -f4)
+    if [ -n "$CHAIN_ID" ]; then
+        echo "dwowd mm_rpc ready, chain_id=$CHAIN_ID (attempt $i)"
+        break
+    fi
+    [ "$i" -eq 60 ] && echo "WARNING: mm_rpc not ready after 60s, starting p2pool anyway"
+    sleep 1
+done
+
 # Start p2pool in background (not exec — we start xmrig too).
 # Redirect to a log file so we can grep for the StratumServer readiness message.
 P2POOL_LOG="/tmp/p2pool.log"
