@@ -46,7 +46,9 @@ if [ "$MONERO_NETWORK" = "testnet" ]; then
     NETWORK_FLAG="--mini"
 fi
 
-# Start p2pool in background (not exec — we start xmrig too)
+# Start p2pool in background (not exec — we start xmrig too).
+# Redirect to a log file so we can grep for the StratumServer readiness message.
+P2POOL_LOG="/tmp/p2pool.log"
 p2pool \
     --host "${MONERO_HOST}" \
     --rpc-port "${MONERO_RPC_PORT}" \
@@ -56,18 +58,29 @@ p2pool \
     --data-dir /root/.p2pool \
     --no-igd \
     $NETWORK_FLAG \
-    --merge-mine "${DWOWD_MM_RPC}" "${WALLET_ADDRESS}" &
+    --merge-mine "${DWOWD_MM_RPC}" "${WALLET_ADDRESS}" \
+    > "$P2POOL_LOG" 2>&1 &
 P2POOL_PID=$!
 
-# Wait for p2pool's stratum port to be ready before starting xmrig
-echo "Waiting for p2pool stratum on 127.0.0.1:${STRATUM_PORT}..."
-for i in $(seq 1 60); do
-    if timeout 1 bash -c "echo >/dev/tcp/127.0.0.1/${STRATUM_PORT}" 2>/dev/null; then
+# Wait for p2pool's stratum server to start.
+# Log-based detection — matches the bare-metal test pattern. RandomX dataset
+# initialization can take minutes in Docker without huge pages, so port scanning
+# fails prematurely. The "StratumServer" log line is emitted once stratum is up.
+echo "Waiting for p2pool stratum on 0.0.0.0:${STRATUM_PORT}..."
+for i in $(seq 1 300); do
+    if grep -qi "StratumServer\|stratum.*listening" "$P2POOL_LOG" 2>/dev/null; then
         echo "p2pool stratum ready (attempt $i)"
         break
     fi
+    # Also tail the log so docker logs shows p2pool output in real time
+    if [ "$i" -eq 1 ]; then
+        tail -f "$P2POOL_LOG" &
+        TAIL_PID=$!
+    fi
     sleep 1
 done
+# Stop the background tail
+[ -n "${TAIL_PID:-}" ] && kill "$TAIL_PID" 2>/dev/null || true
 
 # Start xmrig hasher connected to local p2pool stratum
 MINING_THREADS="${MINING_THREADS:-${XMERGE_THREADS:-1}}"
@@ -80,4 +93,6 @@ xmrig \
 XMRIG_PID=$!
 
 echo "p2pool mining node running (p2pool PID=$P2POOL_PID, xmrig PID=$XMRIG_PID)"
+# Tail the p2pool log to docker logs for visibility
+tail -f "$P2POOL_LOG" &
 wait $P2POOL_PID
