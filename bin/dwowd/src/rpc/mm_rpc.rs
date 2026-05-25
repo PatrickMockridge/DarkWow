@@ -320,12 +320,26 @@ impl DwowNode {
                     .and_then(|b| b.try_into().ok())
             });
 
+        // Parse Monero seed_hash — the RandomX key used for Monero PoW.
+        // This is the definitive marker that the block was merge-mined:
+        // randomx_key != derive_key_from_height(height). If missing, we
+        // fall back to the height-derived key from the template (native).
+        let seed_hash: Option<[u8; 32]> = params
+            .get("seed_hash")
+            .and_then(|v| v.get::<String>())
+            .and_then(|s| {
+                hex::decode(s)
+                    .ok()
+                    .and_then(|b| b.try_into().ok())
+            });
+
         info!(
             target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-            "[RPC-MM] submit_solution: blob_len={}, monero_height={:?}, monero_hash={:?}",
+            "[RPC-MM] submit_solution: blob_len={}, monero_height={:?}, monero_hash={:?}, seed_hash={:?}",
             blob_data.len(),
             monero_height,
             monero_block_hash.as_ref().map(|h| hex::encode(h)),
+            seed_hash.as_ref().map(|h| hex::encode(h)),
         );
 
         let linear_chain = match self.linear_blockchain.as_ref() {
@@ -375,7 +389,10 @@ impl DwowNode {
             return miner_status_response(id, "stale")
         }
 
-        let randomx_key = submitted_header.randomx_key;
+        // Use the Monero seed_hash as the randomx_key for merge-mined blocks.
+        // This marks the block as merge-mined: randomx_key != derive_key_from_height(height).
+        // Fall back to the template's height-derived key for native mining compatibility.
+        let randomx_key = seed_hash.unwrap_or(submitted_header.randomx_key);
         let target = {
             let consensus = linear_chain.consensus.lock().unwrap();
             consensus.target()
@@ -421,6 +438,7 @@ impl DwowNode {
         let mut header = submitted_header;
         header.target = target;
         header.total_reward = reward;
+        header.randomx_key = randomx_key;
         header.coin_merkle_root = coin_merkle_root;
         header.nullifier_root = nullifier_root;
 
@@ -449,8 +467,13 @@ impl DwowNode {
             transactions: all_txs,
         };
 
-        // Verify RandomX PoW before inserting
-        {
+        // Verify RandomX PoW before inserting.
+        // For merge-mined blocks (seed_hash present), the PoW is proven by the
+        // Monero block — the DarkWow header inherits the Monero nonce and the
+        // standalone RandomX hash over just the header won't match. Skip
+        // independent verification and trust p2pool's submission of a valid
+        // Monero block.
+        if seed_hash.is_none() {
             let submit_blob = block.header.to_mining_blob();
             let vm = linear_chain.get_vm(randomx_key);
             let daemon_hash = block.hash(&vm);
@@ -481,6 +504,12 @@ impl DwowNode {
                     return miner_status_response(id, "rejected")
                 }
             }
+        } else {
+            info!(
+                target: "dwowd::rpc::mm_rpc::mm_submit_solution",
+                "[RPC-MM] Merge-mined block at height {} — skipping standalone PoW (Monero-seeded)",
+                submitted_height,
+            );
         }
 
         // --- Monero anchor population (best-effort, independent of Caribina) ---
