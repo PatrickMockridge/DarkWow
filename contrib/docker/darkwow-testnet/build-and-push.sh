@@ -19,7 +19,7 @@ cd "$(dirname "$0")/../../.."
 IMAGE_NAME="${IMAGE_NAME:-darkwow-testnet}"
 REGISTRY="${REGISTRY:-}"
 TAG="${TAG:-latest}"
-VERSION_TAG="${VERSION_TAG:-0.5.0}"
+VERSION_TAG="${VERSION_TAG:-$(git describe --tags --always --dirty 2>/dev/null || echo "0.5.0")}"
 DOCKERFILE="contrib/docker/darkwow-testnet/Dockerfile"
 
 echo "=== DarkWow Testnet Docker Build ==="

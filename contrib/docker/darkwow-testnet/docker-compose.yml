@@ -14,6 +14,7 @@
 services:
   lilith:
     profiles: ["native", "merge", "bridge"]
+    image: ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-testnet:latest
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -42,6 +43,7 @@ services:
 
   node0:
     profiles: ["native", "merge", "bridge"]
+    image: ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-testnet:latest
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -96,6 +98,7 @@ services:
 
   node1:
     profiles: ["native", "merge", "bridge"]
+    image: ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-testnet:latest
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -158,6 +161,7 @@ services:
   # ============================================================================
   bridge-node:
     profiles: ["bridge"]
+    image: ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-bridge-node:latest
     build:
       context: ../../..
       dockerfile: contrib/docker/bridge-node/Dockerfile
@@ -193,6 +197,7 @@ services:
   # ============================================================================
   monerod:
     profiles: ["merge"]
+    image: ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-monerod:latest
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile.monero
@@ -223,6 +228,7 @@ services:
 
   p2pool:
     profiles: ["merge"]
+    image: ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-p2pool:latest
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile.p2pool
@@ -259,6 +265,7 @@ services:
   # ============================================================================
   dwowd-join:
     profiles: ["join-merge"]
+    image: ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-testnet:latest
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
@@ -298,6 +305,7 @@ services:
 
   monerod-join:
     profiles: ["join-merge"]
+    image: ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-monerod:latest
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile.monero
@@ -316,6 +324,7 @@ services:
 
   p2pool-join:
     profiles: ["join-merge"]
+    image: ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-p2pool:latest
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile.p2pool

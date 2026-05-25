@@ -30,3 +30,16 @@ RUN curl https://sh.rustup.rs -sSf | bash -s -- -y \
 ENV PATH="/root/.cargo/bin:${PATH}"
 ENV LIBCLANG_PATH="/usr/lib/x86_64-linux-gnu"
 ENV RUST_MIN_STACK=67108864
+
+# Official xmrig binary (statically linked) — avoids glibc fortify buffer overflow
+# in Ubuntu's packaged xmrig 6.21.1 during RandomX dataset init.
+# Downloaded here so every derived image inherits it; checksum-verified.
+RUN wget -q https://github.com/xmrig/xmrig/releases/download/v6.22.2/xmrig-6.22.2-linux-static-x64.tar.gz && \
+    echo "b2c88b19699e3d22c4db0d589f155bb89efbd646ecf9ad182ad126763723f4b7  xmrig-6.22.2-linux-static-x64.tar.gz" > /tmp/xmrig.sha256 && \
+    sha256sum -c /tmp/xmrig.sha256 && \
+    tar xf xmrig-6.22.2-linux-static-x64.tar.gz && \
+    cp xmrig-6.22.2/xmrig /usr/local/bin/xmrig && \
+    rm -rf xmrig-6.22.2* /tmp/xmrig.sha256
+
+# b3sum — used by entrypoint.sh to derive magic bytes from network name
+RUN cargo install b3sum

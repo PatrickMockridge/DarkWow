@@ -7,6 +7,33 @@ nodes on the P2P network.
 
 ## Quick Start
 
+### Docker Hub (pre-built image)
+
+```bash
+# Pull the image and start mining on the public DarkWow testnet
+docker pull darkrenaissance/darkwow-testnet:latest
+docker run -d --name dwow-node --network=host \
+  -e ROLE=dwowd \
+  -e WALLET_ADDRESS=<your-bs58-address> \
+  -e WALLET_SECRET_FILE=/run/secrets/mining_secret \
+  -e SEED_ADDR=lilith0.dark.fi:31340,lilith1.dark.fi:31340 \
+  -e MAGIC_BYTES=68,82,75,87 \
+  -e MINING_THREADS=<cpu-threads> \
+  -v /data/dwowd:/root/.local/share/dwow/dwowd \
+  -v /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro \
+  darkrenaissance/darkwow-testnet:latest
+
+# Check block height
+curl -s http://127.0.0.1:31345 -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"blockchain.info","params":[],"id":1}'
+```
+
+Replace `<your-bs58-address>` with a DarkWow wallet address (generate with `dww -n darkwow-testnet wallet keygen`).
+Replace `<cpu-threads>` with the number of CPU threads to use for mining.
+
+### Build from source (local devnet)
+
 ```bash
 # Build and start all 3 containers
 docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up -d
@@ -188,6 +215,11 @@ to persist the hostlist and blockchain data.
 | `WALLET_SECRET` | auto | Hex-encoded secret key (deprecated — use WALLET_SECRET_FILE) |
 | `MERGE_MINING` | `false` | Enable merge mining via Monero p2pool |
 | `MM_RPC_PORT` | `31348` | Merge mining JSON-RPC port (p2pool protocol) |
+| `FINALITY_MODE` | `always` | Finality mode: `always`, `never`, or `auto` |
+| `FINALITY_DISABLE_CARIBINA` | `false` | Disable Caribina finality proofs |
+| `FINALITY_ENABLE_MONERO` | `false` | Enable Monero finality anchors (auto-enabled when MERGE_MINING=true) |
+| `MONERO_MIN_CONFIRMATIONS` | `3` | Minimum Monero confirmations before accepting anchor |
+| `MONEROD_RPC_URL` | (empty) | Monero daemon JSON-RPC URL for finality verification |
 | `DATADIR` | `~/.local/share/dwow/dwowd/<network>` | Blockchain data directory |
 
 ## Base Image

@@ -8,20 +8,15 @@ FROM darkwow-base:24.04
 
 WORKDIR /app
 
-# Download pre-built p2pool binary
+# Download pre-built p2pool binary (checksum-verified)
 ARG P2POOL_VERSION=v4.14
 RUN curl -sL "https://github.com/SChernykh/p2pool/releases/download/${P2POOL_VERSION}/p2pool-${P2POOL_VERSION}-linux-x64.tar.gz" -o p2pool.tar.gz && \
+    echo "e64f6f774dc35352b8ae4397ccdb92ce0cc935cdfb100eac58d44e49f8796a01  p2pool.tar.gz" > /tmp/p2pool.sha256 && \
+    sha256sum -c /tmp/p2pool.sha256 && \
     tar -xzf p2pool.tar.gz --strip-components=1 && \
-    rm p2pool.tar.gz && \
+    rm p2pool.tar.gz /tmp/p2pool.sha256 && \
     chmod +x p2pool && \
     cp p2pool /usr/local/bin/
-
-# Use official xmrig binary (statically linked) to avoid glibc fortify buffer overflow
-# in Ubuntu's packaged xmrig 6.21.1 during RandomX dataset init
-RUN wget -q https://github.com/xmrig/xmrig/releases/download/v6.22.2/xmrig-6.22.2-linux-static-x64.tar.gz && \
-    tar xf xmrig-6.22.2-linux-static-x64.tar.gz && \
-    cp xmrig-6.22.2/xmrig /usr/local/bin/xmrig && \
-    rm -rf xmrig-6.22.2*
 
 COPY contrib/docker/darkwow-testnet/entrypoint-p2pool.sh /app/entrypoint-p2pool.sh
 RUN chmod +x /app/entrypoint-p2pool.sh

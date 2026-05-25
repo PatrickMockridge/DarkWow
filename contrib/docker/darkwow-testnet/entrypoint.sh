@@ -129,6 +129,13 @@ else
         done
         SEEDS_LINE="seeds = [${SEED_LIST}]"
         echo "  Seeds: ${SEED_LIST}"
+    else
+        echo "  ================================================================"
+        echo "  WARNING: No SEED_ADDR configured and IS_SEED is not true."
+        echo "  This node will start but will NEVER connect to the P2P network."
+        echo "  Set SEED_ADDR to a comma-separated list of seed host:port, e.g.:"
+        echo "    SEED_ADDR=lilith0.dark.fi:31340,lilith1.dark.fi:31340"
+        echo "  ================================================================"
     fi
 fi
 

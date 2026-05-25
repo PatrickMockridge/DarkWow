@@ -63,13 +63,6 @@ RUN cp target/release/dwowd /app/dwowd && \
 # ============================================================================
 FROM darkwow-base:24.04
 
-# Use official xmrig binary (statically linked) to avoid glibc fortify buffer overflow
-# in Ubuntu's packaged xmrig 6.21.1 during RandomX dataset init
-RUN wget -q https://github.com/xmrig/xmrig/releases/download/v6.22.2/xmrig-6.22.2-linux-static-x64.tar.gz && \
-    tar xf xmrig-6.22.2-linux-static-x64.tar.gz && \
-    cp xmrig-6.22.2/xmrig /usr/local/bin/xmrig && \
-    rm -rf xmrig-6.22.2*
-
 WORKDIR /app
 
 COPY --from=builder /app/dwowd ./

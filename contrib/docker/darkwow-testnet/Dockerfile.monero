@@ -8,10 +8,13 @@ FROM darkwow-base:24.04
 
 WORKDIR /app
 
-# Download latest Monero CLI release (includes monerod + monero-wallet-cli)
-RUN curl -sL https://downloads.getmonero.org/cli/linux64 -o monero.tar.bz2 && \
+# Download pinned Monero CLI release (checksum-verified; includes monerod + monero-wallet-cli)
+ARG MONERO_VERSION=v0.18.5.0
+RUN curl -sL "https://downloads.getmonero.org/cli/monero-linux-x64-${MONERO_VERSION}.tar.bz2" -o monero.tar.bz2 && \
+    echo "166ad93036f95f5abeba24c8670061be022c9238dba2e6a7587611a1d759e294  monero.tar.bz2" > /tmp/monero.sha256 && \
+    sha256sum -c /tmp/monero.sha256 && \
     tar -xjf monero.tar.bz2 --strip-components=1 && \
-    rm monero.tar.bz2 && \
+    rm monero.tar.bz2 /tmp/monero.sha256 && \
     chmod +x monerod monero-wallet-cli && \
     cp monerod monero-wallet-cli /usr/local/bin/
 

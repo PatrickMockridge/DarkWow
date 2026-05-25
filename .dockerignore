@@ -1,2 +1,12 @@
-.git
-target/
+# DarkWow Docker build context
+#
+# The Dockerfile clones source from origin at build time (git clone).
+# Local files are never COPY'd — the build context exists only to
+# provide the Dockerfile and entrypoint scripts.
+#
+# Exclude everything by default...
+*
+# ...then whitelist only what the build actually uses
+!contrib/docker/darkwow-testnet/entrypoint.sh
+!contrib/docker/darkwow-testnet/entrypoint-monero.sh
+!contrib/docker/darkwow-testnet/entrypoint-p2pool.sh
