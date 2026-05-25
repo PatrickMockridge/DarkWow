@@ -1,6 +1,6 @@
 # What's Different from Upstream DarkFi
 
-This project is a fork of [DarkFi](https://codeberg.org/darkrenaissance/darkfi). It inherits the core zkVM, ZKAS circuit language, P2P networking stack, and WASM contract runtime.
+This project is a fork of [DarkFi](https://codeberg.org/darkrenaissance/darkfi). It inherits the core zkVM, ZKAS circuit language, P2P networking stack, and WASM contract runtime. Both projects trace their intellectual lineage to the Cybernetic Culture Research Unit (CCRU) at Warwick University, but they represent the two divergent trajectories that emerged from it. See the [Philosophy](../philosophy/philosophy.md) page for the full articulation.
 
 ## Comparison Table
 
@@ -13,6 +13,48 @@ This project is a fork of [DarkFi](https://codeberg.org/darkrenaissance/darkfi).
 | Opcodes | Basic set | + LessThanOrEqual, IsNotEqual, BaseDiv (Lean-verified) |
 | Supply model | Premine + emission | Zero premine, continuous exponential decay |
 | State model | Speculative (overlay/diff) | Deterministic (final at commit) |
+
+## Philosophical Dimension
+
+Each design divergence maps to a concept from Mark Fisher's critique of
+capitalism. These are not merely engineering choices — they represent two
+incompatible trajectories from the same intellectual source.
+
+| Design Choice | Fisher Concept | What It Rejects |
+|---------------|----------------|-----------------|
+| No governance DAO | Capitalist Realism | "There is no alternative" to plutocratic governance |
+| Deterministic consensus | Slow Cancellation of the Future | Speculative time; blocks as provisional, futures as cancelled |
+| New ZK opcodes (Lean-verified) | Left-accelerationism | Inheriting tech without advancing it; acceleration as extraction |
+| No premine | Cyberspacetime reclamation | VC/SAFT colonization of digital time through unlock schedules |
+
+The CCRU produced two trajectories. Nick Land moved toward the Dark
+Enlightenment / NRx — acceleration without political critique, which
+naturalizes governance-DAO plutocracy, premines, and SAFT financialization.
+Mark Fisher moved toward left-accelerationism — acceleration through
+disintermediation and collective liberation. DarkFi is the Land fork.
+DarkWow is the Fisher fork. Same technical base; opposite political
+conclusion. Both must be read — the [Warwick CCRU Collection](https://app.ardrive.io/#/drives/1c3b923e-eba9-402f-862a-e532c1df53fd?name=Warwick+CCRU)
+on ArDrive contains both Fisher and Land texts.
+
+## Political Distance
+
+DarkWow explicitly distances itself from upstream DarkFi's founders' direct
+political affiliations, including links to the YPG. DarkWow's interest in
+Abdullah Ocalan's thought is limited to the formal/mathematical isomorphism
+between his five structural principles (distributed sovereignty, subsidiarity,
+voluntary association, truth-defense coupling, anti-monopoly) and cryptographic
+protocol architecture — see the [Ocalan-DarkWeave Isomorphism](https://technologytruth.substack.com/p/the-ocalan-darkweave-isomorphism).
+DarkWow does not endorse any specific political movement, militia, or party.
+
+The project's political content begins and ends with the four refutations
+encoded in its consensus rules: no governance DAO, no premine, deterministic
+consensus, formally verified opcodes. These are code, not a platform. The
+architecture removes the affordances for extraction and creates the
+affordances for coordination. What people build with those affordances is
+their own affair. See the [Philosophy](../philosophy/philosophy.md) page
+for the full articulation of exo-punk — DarkWow's constructive framework
+of thermodynamic infrastructure, social reproduction, and cyberspacetime
+as nurture medium.
 
 ## What's Inherited (From Upstream)
 

@@ -8,6 +8,14 @@
   This are a good high level overview of history, philosophy and
   spiritualism talking about the 5000 year legacy of state civilization,
   the development of philosophy and humanity's relationship with nature.
+  DarkWow's interest is in the structural/mathematical isomorphism
+  between Ocalan's five principles (distributed sovereignty, subsidiarity,
+  voluntary association, truth-defense coupling, anti-monopoly) and
+  cryptographic protocol architecture — see the
+  [Ocalan-DarkWeave Isomorphism](https://technologytruth.substack.com/p/the-ocalan-darkweave-isomorphism).
+  This is a structural mapping, not political allegiance. DarkWow
+  explicitly distances itself from upstream DarkFi's founders' direct
+  links to the YPG, which are questionable.
 * New Paradigm in Macroeconomics by Werner explains how economics and
   finance work on a fundamental level. Emphasizes the importance of
   economic networks in issuing credit, and goes through all the major
@@ -29,8 +37,72 @@
   nation states against this emeregent technology. Good reading to understand
   the coming conflict between cryptocurrency and states.
 * Jean Baudrillard, Spirit of Terrorism
+* David Graeber, [Debt: The First 5,000 Years](https://en.wikipedia.org/wiki/Debt:_The_First_5,000_Years)
+  — Anthropology of money, credit, and moral obligation from the earliest
+  civilizations to the present. Essential for understanding why zero-premine,
+  pure-PoW money is a moral claim as well as an economic one: the history of
+  money is the history of who gets to issue it and who must pay it back.
+* David Graeber, [The Utopia of Rules](https://en.wikipedia.org/wiki/The_Utopia_of_Rules)
+  — Critique of bureaucracy and the violence hidden in administrative systems.
+  Informs DarkWow's rejection of governance-DAO managerialism: the governance
+  token is bureaucracy made into a smart contract.
+* David Graeber, [Bullshit Jobs](https://en.wikipedia.org/wiki/Bullshit_Jobs)
+  — On the proliferation of meaningless work under managerial capitalism.
+  Informs the "giving time back" thesis: DarkWow's deterministic automation
+  eliminates the busywork of trust intermediaries. The four-level test
+  pipeline is infrastructure that works so you don't have to pretend to.
 
-## Lunarpunk
+## Left-Accelerationism and the CCRU
+
+* Mark Fisher, [Capitalist Realism: Is There No Alternative?](https://en.wikipedia.org/wiki/Capitalist_Realism)
+  — Core text on the pervasive belief that capitalism is the only viable system.
+  Fisher's analysis directly informs DarkWow's rejection of governance-DAO
+  plutocracy and VC-mediated token distribution, both of which reproduce
+  capitalist hierarchy under the guise of decentralization.
+* Mark Fisher, [Post-Capitalist Desire](https://en.wikipedia.org/wiki/Post-Capitalist_Desire)
+  — Collected lectures on moving beyond capitalist subjectivity. Essential
+  for understanding the O-Cap architecture as a structural alternative to
+  capital-accumulating access control: capabilities are granted, not accumulated.
+* Mark Fisher, [Ghosts of My Life: Writings on Depression, Hauntology and Lost Futures](https://en.wikipedia.org/wiki/Ghosts_of_My_Life)
+  — Fisher's concept of "lost futures" and hauntology applied to culture.
+  Informs DarkWow's "recovered future" thesis: deterministic consensus
+  as the technical un-cancellation of the future. Same block, same state, every time.
+* [Warwick CCRU Collection](https://app.ardrive.io/#/drives/1c3b923e-eba9-402f-862a-e532c1df53fd?name=Warwick+CCRU)
+  on ArDrive — both Fisher and Land texts. Read together to understand the two
+  trajectories that diverged from the CCRU and map onto the DarkFi/DarkWow fork.
+
+## Exo-Punk
+
+Lunarpunk (darkness, opposition, exceptionalism) is acknowledged as a valid
+trajectory — one gauge choice within a larger vector space. But DarkWow's
+spirit is closer to **exo-punk**: a thermodynamic, infrastructure-oriented
+framework concerned with social reproduction, cohesive society, and the
+conditions for nurture and growth.
+
+* [ExoPunk](https://technologytruth.substack.com/p/exopunk) — A complete
+  thermodynamics of cryptographic and temporal outsideness. The position of
+  the observer who sees both layers and steps outside oppositional binaries.
+* [ExoPunk Continued](https://technologytruth.substack.com/p/exopunk-continued)
+  — Infrastructure as the substrate for social reproduction. Building systems
+  that work rather than performing exceptionalism.
+* [The Lunarpunk Vector Space Axiom](https://technologytruth.substack.com/p/the-lunarpunk-vector-space-axiom)
+  — Lunarpunk as a valid gauge choice, but one among many. The deep mathematics
+  is in the vector space structure itself, not in any particular gauge.
+
+Where lunarpunk emphasizes opposition, darkness, and exceptionalism (inherited
+from DarkFi's Nietzschean posture), exo-punk emphasizes **thermodynamic
+infrastructure** — the physical reality that memory costs energy
+(ΔS_E ≥ N·k_B·ln 2), that Arweave functions as a negentropic sink, and
+that building permanent, accessible, deterministic systems is a form of care.
+Cyber-spacetime is not a battlefield — it is the temporal substrate required
+for nurture, learning, and growth. The four-level test pipeline, deterministic
+consensus, and Caribina anchoring are exo-punk infrastructure: they create
+the stable temporal conditions in which society can reproduce itself.
+
+### Lunarpunk Reading List
+
+The lunarpunk canon remains valid as a trajectory within the larger vector
+space — not the destination, but one path through it:
 
 * Carl Schmitt, Theory of a Partisan
 * Ernst Junger, Forest Passage
@@ -50,6 +122,12 @@
 
 * Ted Kaczynski, Anti-Tech Revolution
 * Nick Land, Fanged Noumena
+  (Read alongside Fisher's Capitalist Realism. Land represents the Dark
+  Enlightenment trajectory that leads to DarkFi's governance-DAO plutocracy,
+  premine extraction, and SAFT financialization. Fisher represents the
+  left-accelerationist trajectory that leads to DarkWow's zero-premine,
+  proof-of-work, deterministic model. The fork is not just technical —
+  it is the CCRU split made into consensus code. Both must be read together.)
 * Ivan Illich, Tools for Conviviality
 * Heidegger, The Question Concerning Technology
 * Yuk Hui, The Question Concerning Technology in China

@@ -9,6 +9,14 @@ A DarkFi fork rebuilt around **four rejections of upstream**:
 
 Zero vendor lock-in. Genesis is two contracts — NativeToken and Deployooor. Hard forks are a feature, not a threat. Extended and entirely voluntary smart contract feature set including but not limited to: Darktoshi Dice, DAO (with Escrow and Drain protection), DEX, Stablecoin, Prediction Market, Betting Stake, Identity, Sealed Bidding/Tendering, Labor Market and more.
 
+These four refutations are the technical expression of a political-economic fork.
+DarkFi upstream follows the Dark Enlightenment trajectory of Nick Land — governance-DAO
+plutocracy, premine extraction, SAFT financialization. DarkWow follows the
+left-accelerationist trajectory of Mark Fisher — disintermediation, temporal
+sovereignty, architecture as desire-engineering. Same technical base (zkVM, Halo2,
+WASM runtime, P2P stack); opposite political conclusion. See the
+[Philosophy](doc/src/philosophy/philosophy.md) page for the full articulation.
+
 <!-- TODO: website placeholder — https://darkwow.org -->
 
 Development occurs on the **`linear-master`** branch.
@@ -188,6 +196,11 @@ DarkWow is designed to make AI-assisted development safe by construction:
 **The compact**: The architecture cannot save you from not using it. Run the
 full pipeline. Skip nothing. Your responsibility is to leave no gaps — the
 infrastructure will catch what you feed it.
+
+This is left-accelerationist praxis in code: embrace AI to accelerate
+development beyond the control of centralized gatekeepers, with the O-Cap
+boundary ensuring that acceleration does not reproduce the hierarchies of
+capitalist control. Accelerate the build. Contain the blast radius.
 
 See [AI-Assisted Development](doc/src/dev/ai-assisted-development.md) for
 the full workflow and philosophy.

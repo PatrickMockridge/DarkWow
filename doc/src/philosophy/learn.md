@@ -63,7 +63,11 @@ as essential skills. To start there are two objects of study:
 1. ["Manifesto for a Democratic Civilization"](https://agorism.dev/book/philosophy/1.civilization.pdf)
    by Ocalan, is 3 separate books. You should complete at least 1 book
    for the initial stage, and then study the other two as you continue
-   further into later stages.
+   further into later stages. For understanding the political economy
+   of the DarkFi/DarkWow fork, also read Fisher's
+   [Capitalist Realism](https://en.wikipedia.org/wiki/Capitalist_Realism)
+   — a short, accessible text on why "there is no alternative" to
+   capitalism is a belief system, not a fact.
 2. ["Project Based Python Programming"](https://agorism.dev/book/python/Eric%20Matthes%20-%20Python%20Crash%20Course%20A%20Hands-On%2C%20Project-Based%20Introduction%20to%20Programming%20%282016%2C%20No%20Starch%20Press%29.pdf)
    this will teach you Python programming which will be an essential
    skill for any branch you decide to continue onto.
@@ -209,6 +213,19 @@ and participating in crypto communities.
 * [Prehistory of DAOs](https://gnosisguild.mirror.xyz/t4F5rItMw4-mlpLZf5JQhElbDfQ2JRVKAzEpanyxW1Q)
 * [Inventories, not Identities](https://blog.gnosis.pm/inventories-not-identities-7da9a4ec5a3e)
 * [The origin of the digital antiquities market (NFTs)](https://whiterabbit1111.medium.com/the-origin-digital-antiquities-market-nfts-1ea9b69c03f9)
+
+### Left-Accelerationism and the CCRU
+
+* [Warwick CCRU Collection](https://app.ardrive.io/#/drives/1c3b923e-eba9-402f-862a-e532c1df53fd?name=Warwick+CCRU)
+  on ArDrive — both Fisher and Land texts. Read side by side to understand
+  the intellectual split that maps onto the DarkFi/DarkWow fork.
+* [Capitalist Realism — Mark Fisher (video essay)](https://www.youtube.com/watch?v=ZxOTVVP4kwE)
+  — Accessible introduction to Fisher's core thesis.
+* [ExoPunk](https://technologytruth.substack.com/p/exopunk) — Thermodynamic
+  infrastructure and temporal outsideness. DarkWow's constructive framework.
+* [The Ocalan-DarkWeave Isomorphism](https://technologytruth.substack.com/p/the-ocalan-darkweave-isomorphism)
+  — Structural mapping between democratic confederalism and cryptographic
+  protocol architecture.
 
 ### Agorism and crypto-anarchy
 
