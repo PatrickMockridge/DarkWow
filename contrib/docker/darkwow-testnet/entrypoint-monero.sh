@@ -60,11 +60,14 @@ for i in $(seq 1 60); do
     sleep 1
 done
 
-MONERO_MINING_THREADS="${MONERO_MINING_THREADS:-1}"
-echo "  Starting mining with ${MONERO_MINING_THREADS} thread(s)..."
-curl -s http://127.0.0.1:${RPC_PORT}/json_rpc \
-    -H 'Content-Type: application/json' \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"start_mining\",\"params\":{\"threads_count\":${MONERO_MINING_THREADS},\"do_background_mining\":true,\"ignore_battery\":false}}" >/dev/null 2>&1
-
-echo "  monerod mining started. Keeping in foreground."
+if [ "$OFFLINE" = "true" ]; then
+    MONERO_MINING_THREADS="${MONERO_MINING_THREADS:-1}"
+    echo "  Starting mining with ${MONERO_MINING_THREADS} thread(s)..."
+    curl -s http://127.0.0.1:${RPC_PORT}/json_rpc \
+        -H 'Content-Type: application/json' \
+        -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"start_mining\",\"params\":{\"threads_count\":${MONERO_MINING_THREADS},\"do_background_mining\":true,\"ignore_battery\":false}}" >/dev/null 2>&1
+    echo "  monerod mining started. Keeping in foreground."
+else
+    echo "  Online mode — monerod will sync from network (no local mining)."
+fi
 wait $MONEROD_PID
