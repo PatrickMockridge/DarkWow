@@ -246,27 +246,6 @@ services:
       - monerod
     restart: unless-stopped
 
-  xmrig-merge:
-    profiles: ["merge"]
-    build:
-      context: ../../..
-      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.xmrig
-    container_name: dwow-xmrig-merge
-    entrypoint: ["/usr/local/bin/xmrig"]
-    command:
-      - "-o"
-      - "p2pool:3333"
-      - "-a"
-      - "rx/0"
-      - "-t"
-      - "${XMERGE_THREADS:-1}"
-      - "--keepalive"
-    networks:
-      - dwow-local
-    depends_on:
-      - p2pool
-    restart: unless-stopped
-
   # ============================================================================
   # Merge Mining Adaptor Services (--profile native-p2pool)
   #
@@ -436,26 +415,6 @@ services:
     depends_on:
       - monerod-join
       - dwowd-join
-    restart: unless-stopped
-
-  xmrig-join:
-    profiles: ["join-merge"]
-    build:
-      context: ../../..
-      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.xmrig
-    container_name: dwow-xmrig-merge
-    network_mode: host
-    entrypoint: ["/usr/local/bin/xmrig"]
-    command:
-      - "-o"
-      - "127.0.0.1:3333"
-      - "-a"
-      - "rx/0"
-      - "-t"
-      - "${MINING_THREADS:-4}"
-      - "--keepalive"
-    depends_on:
-      - p2pool-join
     restart: unless-stopped
 
 networks:

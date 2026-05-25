@@ -46,7 +46,8 @@ if [ "$MONERO_NETWORK" = "testnet" ]; then
     NETWORK_FLAG="--mini"
 fi
 
-exec p2pool \
+# Start p2pool in background (not exec — we start xmrig too)
+p2pool \
     --host "${MONERO_HOST}" \
     --rpc-port "${MONERO_RPC_PORT}" \
     --zmq-port "${MONERO_ZMQ_PORT}" \
@@ -55,4 +56,28 @@ exec p2pool \
     --data-dir /root/.p2pool \
     --no-igd \
     $NETWORK_FLAG \
-    --merge-mine "${DWOWD_MM_RPC}" "${WALLET_ADDRESS}"
+    --merge-mine "${DWOWD_MM_RPC}" "${WALLET_ADDRESS}" &
+P2POOL_PID=$!
+
+# Wait for p2pool's stratum port to be ready before starting xmrig
+echo "Waiting for p2pool stratum on 127.0.0.1:${STRATUM_PORT}..."
+for i in $(seq 1 60); do
+    if timeout 1 bash -c "echo >/dev/tcp/127.0.0.1/${STRATUM_PORT}" 2>/dev/null; then
+        echo "p2pool stratum ready (attempt $i)"
+        break
+    fi
+    sleep 1
+done
+
+# Start xmrig hasher connected to local p2pool stratum
+MINING_THREADS="${MINING_THREADS:-${XMERGE_THREADS:-1}}"
+echo "Starting xmrig (127.0.0.1:${STRATUM_PORT}, ${MINING_THREADS} threads)..."
+xmrig \
+    -o "127.0.0.1:${STRATUM_PORT}" \
+    -a rx/0 \
+    -t "${MINING_THREADS}" \
+    --keepalive &
+XMRIG_PID=$!
+
+echo "p2pool mining node running (p2pool PID=$P2POOL_PID, xmrig PID=$XMRIG_PID)"
+wait $P2POOL_PID

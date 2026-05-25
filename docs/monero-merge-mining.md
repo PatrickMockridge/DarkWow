@@ -243,33 +243,39 @@ and public testnet participation. Both use the same code paths as the bare-metal
                 │            │
                 │ mm_rpc     │
                 ▼            │
-           ┌─────────┐       │
-           │ p2pool  │       │
-           └───┬──┬──┘       │
-               │  │          │
-      stratum  │  │ RPC+ZMQ  │
-           ┌───┘  │          │
-           ▼      ▼          │
-      ┌────────┐ ┌──────────┐│
-      │ xmrig  │ │ monerod  ││  Standalone Monero miner
-      │ merge  │ │ (mining) ││  Produces blocks irrespective
-      └────────┘ └──────────┘│  of DarkWow
+    ┌──────────────────┐     │
+    │  p2pool mining   │     │
+    │  node            │     │  Self-contained mining node:
+    │  ┌────────────┐  │     │  runs p2pool stratum + xmrig hasher
+    │  │  p2pool    │  │     │
+    │  │  (stratum) │  │     │
+    │  ├────────────┤  │     │
+    │  │  xmrig     │──┼─────┘  xmrig hashes via local stratum
+    │  └────────────┘  │        (127.0.0.1:3333, no network hop)
+    └────────┬─────────┘
+             │
+             │ RPC+ZMQ
+             ▼
+        ┌──────────┐
+        │ monerod  │  Standalone Monero miner
+        │ (mining) │  Produces blocks irrespective
+        └──────────┘  of DarkWow
 ```
 
 **monerod** mines its own blocks in offline mode (fixed difficulty 1000, dedicated
 mining thread via `start_mining` RPC). It does not depend on DarkWow in any way.
 
-**p2pool** connects to monerod for block templates (RPC:28081) and real-time
-notifications (ZMQ:28083). It provides a stratum server for xmrig on port 3333.
-
-**xmrig-merge** hashes Monero block headers via p2pool stratum (1 thread). When a
-share meets DarkWow's difficulty, p2pool calls `merge_mining_submit_solution` on
-node0's mm_rpc endpoint (port 31348).
+**p2pool mining node** is a self-contained container that runs both p2pool (stratum
+server + merge mining bridge) and xmrig (Monero block hasher). p2pool connects to
+monerod for block templates (RPC:28081) and real-time notifications (ZMQ:28083).
+xmrig connects to p2pool's stratum on `127.0.0.1:3333` — no external network hop.
+When a share meets DarkWow's difficulty, p2pool calls `merge_mining_submit_solution`
+on node0's mm_rpc endpoint (port 31348).
 
 **node0 and node1** are DarkWow fullnodes that handshake via lilith (same P2P mesh
 as the native Docker setup). Node0 runs the mm_rpc HTTP JSON-RPC server. Merge-mined
 blocks are assembled on node0 and propagated to node1 via P2P. Neither node runs
-native xmrig in merge mode — all hashing is external via p2pool.
+native xmrig in merge mode — all hashing is handled by the p2pool mining node.
 
 No adaptor — p2pool connects directly to monerod and dwowd's mm_rpc endpoint.
 
@@ -291,9 +297,9 @@ phases that verify every layer:
 | Phase | What it checks |
 |-------|---------------|
 | 5 — Start | Passes `MONERO_FIXED_DIFFICULTY=1000`, `MERGE_MINING=true` |
-| 6 — Containers | 6 containers: lilith, node0, node1, monerod, p2pool, xmrig-merge |
+| 6 — Containers | 5 containers: lilith, node0, node1, monerod, p2pool |
 | 7 — RPC health | monerod `get_info`, node0/node1 JSON-RPC ping |
-| 8 — Mining activity | monerod RPC health, dwowd `merge_mining_get_chain_id`, p2pool merge mining activity, node0 block production |
+| 8 — Mining activity | monerod RPC, dwowd `merge_mining_get_chain_id`, p2pool merge mining activity, xmrig hashing in p2pool container, node0 block production |
 | 9 — Block production | Block height ≥ 2 after ~15s wait, Monero anchor + Caribina anchor in block 1 |
 | 9 — Crypto receipts | All 3 receipts verified via `[RPC-MM]` log patterns (see below) |
 
@@ -314,12 +320,12 @@ Every miner runs on 1 thread:
 | Container | Threads | Config |
 |-----------|---------|--------|
 | monerod | 1 | `MONERO_MINING_THREADS=1`, `start_mining` (offline only) |
-| xmrig-merge | 1 | `XMERGE_THREADS=1` |
 | p2pool | ~1-2 | Default |
+| xmrig (in p2pool) | 1 | `MINING_THREADS=1`, internal to p2pool container |
 | dwowd (node0/node1) | ~1-3 | Node + mm_rpc |
 | lilith | ~1 | Seed P2P only |
 
-**Total: ~8 threads** — safe for any machine.
+**Total: ~7 threads** — safe for any machine.
 
 ### monerod Entrypoint
 

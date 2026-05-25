@@ -414,7 +414,7 @@ phase_clean() {
         docker compose -f "$COMPOSE_FILE" --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true
         # Remove stale join containers and ALL dwow-* containers
-        for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool; do
+        for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool; do
             docker stop "$c" 2>/dev/null || true
             docker rm "$c" 2>/dev/null || true
         done
@@ -911,7 +911,7 @@ phase_verify() {
     info "Phase 6: Verifying containers..."
 
     if [ "$MODE" = "merge" ]; then
-        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-monerod dwow-p2pool dwow-xmrig-merge)
+        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-monerod dwow-p2pool)
     elif [ "$MODE" = "native-p2pool" ]; then
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-adaptor dwow-p2pool-darkwow dwow-xmrig-p2pool)
     elif [ "$MODE" = "bridge" ]; then
@@ -1343,6 +1343,16 @@ phase_mining_activity() {
             warn "p2pool logs don't show merge mining activity"
             docker logs dwow-p2pool 2>&1 | tail -20
             fail "p2pool merge mining active"
+        fi
+
+        info "Checking xmrig activity inside p2pool container..."
+        XMRIG_LOGS=$(docker logs dwow-p2pool 2>&1 || true)
+        if echo "$XMRIG_LOGS" | grep -qi "xmrig\|cpu\|miner\|accepted\|speed\|h/s\|thread"; then
+            pass "xmrig active in p2pool container"
+        else
+            warn "p2pool container logs don't show xmrig hashing activity"
+            docker logs dwow-p2pool 2>&1 | tail -20
+            fail "xmrig active in p2pool container"
         fi
 
         info "Checking node0 for block production..."
@@ -2067,7 +2077,7 @@ phase_join_merge_mining() {
     # containers from a different profile/compose invocation using the same names).
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
-    for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool dwow-xmrig-merge dwow-lilith; do
+    for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool dwow-lilith; do
         docker stop "$c" 2>/dev/null || true
         docker rm "$c" 2>/dev/null || true
     done
@@ -2103,10 +2113,10 @@ phase_join_merge_mining() {
         all_up=0
     fi
 
-    if docker ps --format '{{.Names}}' | grep -q "dwow-xmrig-merge"; then
-        pass "xmrig container running"
+    if docker logs dwow-p2pool 2>&1 | grep -qi "xmrig\|cpu\|miner\|accepted\|h/s"; then
+        pass "xmrig active in p2pool container"
     else
-        fail "xmrig container not running"
+        fail "xmrig not detected in p2pool container"
         all_up=0
     fi
 
