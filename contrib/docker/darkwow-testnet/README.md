@@ -306,7 +306,7 @@ MERGE_MINING=true
 ### Quick Start
 
 ```bash
-# Start with merge mining (adds monerod + p2pool + xmrig-merge containers)
+# Start with merge mining (adds monerod + p2pool containers; 5 total)
 MERGE_MINING=true docker compose --profile merge up -d
 
 # Check merge mining status
@@ -358,7 +358,6 @@ the parent chain, DarkWow coinbase from the aux chain.
 | `MONERO_ADD_PEERS` | (empty) | Comma-separated Monero bootstrap `host:port` |
 | `MONERO_WALLET_ADDRESS` | (empty) | Monero wallet for p2pool mining rewards |
 | `WALLET_ADDRESS` | (empty) | DarkWow wallet for aux chain mining rewards |
-| `XMERGE_THREADS` | `1` | xmrig-merge thread count |
 
 ## Native P2Pool (Adaptor Bridge)
 
@@ -441,7 +440,7 @@ phases. Every check reports PASS or FAIL — there are no skipped or silent chec
 | Mode | Type | Profile | Services | Phases | PASS |
 |------|------|---------|----------|--------|------|
 | `native` | 3-node local devnet | `native` | 3 (lilith, node0, node1) | 10 | 18 |
-| `merge` | 3-node local devnet + Monero merge mining | `merge` | 6 (native + monerod, p2pool, xmrig-merge) | 10 | 23 |
+| `merge` | 3-node local devnet + Monero merge mining | `merge` | 5 (native + monerod, p2pool) | 10 | 31 |
 | `native-p2pool` | 3-node local devnet + adaptor pathway | `native-p2pool` | 6 (native + adaptor, p2pool-darkwow, xmrig-p2pool) | 10 | TBD |
 | `join-native` | Single node joining public testnet | — (docker run, host net) | 1 | 12 | 34 |
 | `join-merge` | Single merge-mining node, public testnet | `join-merge` | 4 | 12 | 42 |
@@ -493,7 +492,7 @@ The flags are independent — combine them for a fully deterministic rebuild:
 | 3 | Wallet | Generate keypair via `dww wallet keygen`, write secret to `/tmp/dwow_mining_secret` |
 | 4 | Build | `docker compose --profile <mode> build` for all services in the profile. With `--no-cache`: rebuilds all layers from scratch (ensures `git clone` fetches latest). |
 | 5 | Start | `docker compose --profile <mode> up -d`, verify no containers exit immediately |
-| 6 | Verify containers | Every expected container is running (3 for native, 6 for merge/native-p2pool) |
+| 6 | Verify containers | Every expected container is running (3 for native, 5 for merge, 6 for native-p2pool) |
 | 7 | RPC health | TCP JSON-RPC ping to node0 (port 31345) and node1 (31346); plus adaptor RPC (28081) for native-p2pool or monerod RPC (28081) for merge |
 | 8 | Mining activity | Log inspection for stratum job acceptance (native), p2pool sidechain activity (merge), or adaptor connectivity (native-p2pool) |
 | 9 | Block production | Fetch genesis block via `blockchain.get_block_linear`, wait up to 130s for block height >= 2, inspect PoW data |
@@ -521,7 +520,7 @@ The flags are independent — combine them for a fully deterministic rebuild:
 | Mode | PASS | FAIL | Status |
 |------|------|------|--------|
 | `native` | 18 | 0 | Verified pass |
-| `merge` | 23 | 0 | Verified pass |
+| `merge` | 31 | 0 | Verified pass |
 | `join-native` | 34 | 0 | Verified pass |
 | `join-merge` | 42 | 0 | Verified pass |
 | `native-p2pool` | — | — | Fix applied: JIT disabled in P2P RandomX VM, adaptor blob layout corrected, PoW validation added to stratum submit. Pending pipeline verification. |
@@ -596,7 +595,7 @@ base image.
 | `darkwow-testnet-dwowd-join` | `Dockerfile` | Same as lilith, tagged for join service | Main image for the `dwowd-join` service | join-merge |
 | `darkwow-testnet-monerod-join` | `Dockerfile.monero` | Pre-built binary from getmonero.org | Monero daemon (offline mode by default for local devnet; public testnet for join) | merge, join-merge |
 | `darkwow-testnet-p2pool-join` | `Dockerfile.p2pool` | Pre-built binary from p2pool GitHub releases (v4.14) | p2pool sidechain node with entrypoint scripts for merge and native modes | merge, native-p2pool, join-merge |
-| `darkwow-testnet-xmrig-join` | `Dockerfile.xmrig` | Built from source (cmake, no hwloc) | Standalone xmrig miner for pool mining | merge, native-p2pool, join-merge |
+| `darkwow-testnet-xmrig-join` | `Dockerfile.xmrig` | Built from source (cmake, no hwloc) | Standalone xmrig miner for pool mining | native-p2pool |
 
 The main `Dockerfile` builds three Rust binaries (`dwowd`, `lilith`,
 `dwow-p2pool-adaptor`), four WASM contracts (`deployooor`, `native_token`,
@@ -609,14 +608,14 @@ separately for service isolation.
 | Profile | Services | Networking | Use Case |
 |---------|----------|------------|----------|
 | `native` | lilith, node0, node1 | Bridge (`dwow-local`) | 3-node local devnet with native RandomX mining (xmrig → dwowd stratum) |
-| `merge` | native + monerod, p2pool, xmrig-merge | Bridge (`dwow-local`) | 3-node local devnet with Monero merge mining via p2pool |
+| `merge` | native + monerod, p2pool | Bridge (`dwow-local`) | 3-node local devnet with Monero merge mining via p2pool |
 | `native-p2pool` | native + adaptor, p2pool-darkwow, xmrig-p2pool | Bridge (`dwow-local`) | 3-node local devnet with adaptor bridging p2pool to dwowd stratum (no Monero) |
 | `join-merge` | dwowd-join, monerod-join, p2pool-join, xmrig-join | Host | Single-node merge mining stack joining the public DarkWow testnet |
 
 Services without a `profiles` key in `docker-compose.yml` are always active.
 Services with profiles only start when the matching `--profile` flag is passed.
 `docker compose --profile native up` starts only the 3 base services;
-`docker compose --profile merge up` starts all 6 merge-mining services.
+`docker compose --profile merge up` starts all 5 merge-mining services.
 The `join-native` mode does not use compose — it runs a single container via
 `docker run --network=host`.
 

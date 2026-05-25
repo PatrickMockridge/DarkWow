@@ -375,3 +375,66 @@ The bare-metal test (`test_merge_mining_p2pool.sh`) and the Docker pipeline
 
 Both verify the same three cryptographic receipts and produce merge-mined blocks
 with `PowSource::Monero(MoneroPowData)`.
+
+## Verification Results
+
+The Docker containerized merge mining setup passes all 10 pipeline phases
+(31 PASS, 0 FAIL) via `test_pipeline.sh --mode merge --fresh`. A merge-mined
+block is produced at height 2 on node0 and accepted by all 3 cryptographic
+receipts within the DarkWow fullnode.
+
+### Pipeline Summary
+
+```
+=== Phase 10: Report ===
+PASS: 31
+FAIL: 0
+
+All checks passed.
+```
+
+### Cryptographic Receipt Verification
+
+The three cryptographic receipts are verified via `[RPC-MM]` log patterns
+from `bin/dwowd/src/rpc/mm_rpc.rs`:
+
+```
+[RPC-MM] Got solution submission: aux_hash=...
+[RPC-MM] Aux merkle proof verified: aux_hash committed in Monero coinbase
+[RPC-MM] Coinbase merkle proof verified -- MoneroPowData is valid
+[RPC-MM] Merge-mined block at height 2 accepted!
+```
+
+### Block Production
+
+| Metric | Value |
+|--------|-------|
+| Merge-mined block height | 2 |
+| Block production time | ~15 seconds |
+| Monero difficulty | 1000 (fixed, offline mode) |
+| Containers | 5 (lilith, node0, node1, monerod, p2pool) |
+| xmrig threads | 1 (inside p2pool container) |
+
+### Container Architecture (Verified)
+
+```
+monerod (offline, fixed-difficulty 1000, 1 mining thread)
+    │
+    ├── RPC:28081 + ZMQ:28083
+    │
+    ▼
+p2pool mining node (self-contained)
+    ├── p2pool stratum server (0.0.0.0:3333, --no-randomx)
+    ├── xmrig hasher (127.0.0.1:3333, 1 thread)
+    │
+    └── submit solutions ── node0 mm_rpc:31348
+                                  │
+                            lilith (P2P seed)
+                                  │
+                            node0 ◄──► node1
+```
+
+Every container represents a complete network mining node with zero
+outsourcing of functionality. The p2pool container runs both the stratum
+server and xmrig hasher internally, connected via localhost — no external
+xmrig container or network hop.
