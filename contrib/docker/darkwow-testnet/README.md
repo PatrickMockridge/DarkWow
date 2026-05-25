@@ -9,28 +9,85 @@ nodes on the P2P network.
 
 ### Docker Hub (pre-built image)
 
+The Docker image runs the node (dwowd). The wallet (`dww`) is a separate native
+binary you run on your host — it scans the blockchain, decrypts your coinbase
+notes, and shows your balance. Mining rewards are paid to a wallet address you
+control.
+
+**Step 1: Build the wallet binary (host)**
+
 ```bash
-# Pull the image and start mining on the public DarkWow testnet
+git clone https://codeberg.org/PatrickM123/darkwow.git
+cd darkwow
+cargo build -p dww --release
+DRK="./target/release/dww"
+NETWORK="darkwow-testnet"
+```
+
+**Step 2: Generate a keypair for mining rewards**
+
+```bash
+$DRK -n $NETWORK wallet keygen
+# Output:
+#   Address: fao1... (bs58)
+#   Secret:  abc123... (hex)
+```
+
+**Step 3: Write the secret to a secure file**
+
+```bash
+echo -n "<hex-secret>" > /tmp/dwow_mining_secret
+chmod 600 /tmp/dwow_mining_secret
+```
+
+**Step 4: Start the node**
+
+```bash
 docker pull darkrenaissance/darkwow-testnet:latest
 docker run -d --name dwow-node --network=host \
   -e ROLE=dwowd \
-  -e WALLET_ADDRESS=<your-bs58-address> \
+  -e WALLET_ADDRESS="<bs58-address>" \
   -e WALLET_SECRET_FILE=/run/secrets/mining_secret \
   -e SEED_ADDR=lilith0.dark.fi:31340,lilith1.dark.fi:31340 \
   -e MAGIC_BYTES=68,82,75,87 \
-  -e MINING_THREADS=<cpu-threads> \
   -v /data/dwowd:/root/.local/share/dwow/dwowd \
   -v /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro \
   darkrenaissance/darkwow-testnet:latest
 
-# Check block height
+# Clean up the secret file
+rm -f /tmp/dwow_mining_secret
+```
+
+`MINING_THREADS` defaults to `2`. xmrig will saturate every
+thread you give it — a machine running at full core count will become
+unresponsive. Increase gradually and monitor:
+
+| Setting | Threads | Use case |
+|---------|---------|----------|
+| Default | `2` | Background mining, ~0.5–1 kH/s on modern hardware |
+| Recommended | `4` | Dedicated mining without risking lockup |
+| Maximum | all physical cores | Dedicated miner, expect UI freezes |
+
+Pass `-e MINING_THREADS=4` to `docker run` to set a higher count.
+
+**Step 5: Wait for blocks, then collect rewards**
+
+```bash
+# Check block height — wait until it advances past the genesis block
 curl -s http://127.0.0.1:31345 -X POST \
   -H 'Content-Type: application/json' \
   -d '{"method":"blockchain.info","params":[],"id":1}'
+
+# Scan the blockchain for coins (decrypts your AEAD-encrypted coinbase notes)
+$DRK -n $NETWORK scan
+
+# Check your balance
+$DRK -n $NETWORK wallet balance
 ```
 
-Replace `<your-bs58-address>` with a DarkWow wallet address (generate with `dww -n darkwow-testnet wallet keygen`).
-Replace `<cpu-threads>` with the number of CPU threads to use for mining.
+Coinbase rewards follow an exponential-decay emission schedule starting at
+~13.84 DRKW, with a tail emission floor of ~0.80 DRKW. Total supply cap is
+21,000,000 DRKW.
 
 ### Build from source (local devnet)
 
