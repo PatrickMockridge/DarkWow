@@ -99,6 +99,10 @@ RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd -- te
 # Individual tests
 cargo test --release -p dwowd -- test_heavyweight_dao_escrow
 cargo test --release -p dwowd -- test_heavyweight_identity
+
+# Contract metadata: deploy with metadata + ZK proofs + state transitions
+RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd \
+    test_heavyweight_metadata
 ```
 
 ### Why Stack Overflow Occurs
@@ -111,7 +115,7 @@ through hundreds of consecutive runs with zero SIGSEGV.
 
 ### Test Coverage
 
-36 tests total: 28 contract-specific tests (21 with WASM deploy + 7
+37 tests total: 29 contract-specific tests (22 with WASM deploy + 7
 harness-only for non-WASM contracts) + 1 cross-contract integration test
 (recruitment_pipeline) + 7 block-execution infrastructure tests (canonical,
 uncle, mixed, multi-uncle, depth, empty-uncle, invalid-uncle-proof).

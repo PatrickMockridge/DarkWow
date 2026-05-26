@@ -51,8 +51,10 @@ use dwow_sdk::{
         keypair::Network,
         poseidon_hash,
         smt::{PoseidonFp, EMPTY_NODES_FP},
-        ContractId, MerkleTree, PublicKey, SecretKey, NATIVE_TOKEN_CONTRACT_ID,
+        ContractId, MerkleTree, PublicKey, SecretKey, DEPLOYOOOR_CONTRACT_ID,
+        NATIVE_TOKEN_CONTRACT_ID,
     },
+    deploy::{ContractMetadata, DeployParamsV1},
     pasta::group::ff::PrimeField,
     dark_tree::DarkLeaf,
     tx::{ContractCall, TransactionHash},
@@ -266,9 +268,6 @@ impl Drk {
     ) -> Result<()> {
         use dwow_sdk::pasta::{pallas, group::ff::PrimeField};
 
-        // Keep track of our wallet transactions.
-        let mut wallet_txs = vec![];
-
         let height_u32 = block.header.height as u32;
 
         // Checkpoint the merkle trees
@@ -328,6 +327,62 @@ impl Drk {
                         .await?
                     {
                         wallet_tx = true;
+                    }
+                    continue
+                }
+
+                // Check Deployooor contract
+                if cid == *DEPLOYOOOR_CONTRACT_ID {
+                    let function_code = call.data.first().copied().unwrap_or(0xFF);
+                    if function_code == 0x00 {
+                        scan_cache.log(format!("[scan_block_linear] Found Deployooor::DeployV1 in call {i}"));
+                        if let Ok(params) = DeployParamsV1::decode(&mut std::io::Cursor::new(&call.data[1..])) {
+                            let contract_id = ContractId::derive_public(params.public_key);
+                            let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();
+                            let deployer_pubkey_str = bs58::encode(params.public_key.to_bytes()).into_string();
+
+                            if let Some(metadata) = ContractMetadata::from_ix_bytes(&params.ix) {
+                                let record = crate::walletdb::ContractMetadataRecord {
+                                    contract_id: contract_id_str.clone(),
+                                    name: metadata.name,
+                                    symbol: metadata.symbol,
+                                    category: format!("{:?}", metadata.category),
+                                    description: metadata.description,
+                                    public: metadata.public,
+                                    deployer_pubkey: deployer_pubkey_str,
+                                    deploy_height: height_u32,
+                                    attestations_json: "[]".to_string(),
+                                    lock_status: "unlocked".to_string(),
+                                };
+                                if self.wallet.insert_contract_metadata(&record).is_ok() {
+                                    scan_cache.log(format!(
+                                        "[scan_block_linear] Recorded contract metadata for {} at height {}",
+                                        &contract_id_str[..8], height_u32
+                                    ));
+                                }
+                            } else {
+                                // Deployment without metadata — still record it
+                                let record = crate::walletdb::ContractMetadataRecord {
+                                    contract_id: contract_id_str.clone(),
+                                    name: format!("Contract-{}", &contract_id_str[..8]),
+                                    symbol: None,
+                                    category: "Other".to_string(),
+                                    description: None,
+                                    public: false,
+                                    deployer_pubkey: deployer_pubkey_str,
+                                    deploy_height: height_u32,
+                                    attestations_json: "[]".to_string(),
+                                    lock_status: "unlocked".to_string(),
+                                };
+                                if self.wallet.insert_contract_metadata(&record).is_ok() {
+                                    scan_cache.log(format!(
+                                        "[scan_block_linear] Recorded anonymous contract {} at height {}",
+                                        &contract_id_str[..8], height_u32
+                                    ));
+                                }
+                            }
+                            wallet_tx = true;
+                        }
                     }
                     continue
                 }
@@ -400,9 +455,22 @@ impl Drk {
                 }
             }
 
-            // Mark wallet tx for update
+            // Record transaction history for wallet-relevant transactions
             if wallet_tx {
-                wallet_txs.push(());
+                let tx_hash = tx.hash();
+                let tx_hash_str = tx_hash.to_hex().to_string();
+                let tx_blob = serde_json::to_vec(tx).unwrap_or_default();
+                if self.wallet.insert_transaction_history(
+                    &tx_hash_str,
+                    "confirmed",
+                    Some(height_u32),
+                    &tx_blob,
+                ).is_ok() {
+                    scan_cache.log(format!(
+                        "[scan_block_linear] Recorded tx history {} at height {}",
+                        &tx_hash_str[..8], height_u32
+                    ));
+                }
             }
         }
 
@@ -468,6 +536,29 @@ impl Drk {
             return Err(Error::DatabaseError(format!(
                 "[broadcast_tx] Inserting transaction history record failed: {e}"
             )))
+        }
+
+        // Record contract interactions for each contract call in the tx
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        for call in &tx.calls {
+            let contract_id_str = bs58::encode(call.data.contract_id.to_bytes()).into_string();
+            let function_code = call.data.data.first().copied().unwrap_or(0xFF);
+            let function_name = format!("fc_{:02x}", function_code);
+            if let Err(e) = self.wallet.insert_contract_interaction(
+                &contract_id_str,
+                &function_name,
+                &txid,
+                None,
+                now,
+            ) {
+                // Non-fatal: log but don't fail the broadcast
+                output.push(format!(
+                    "[broadcast_tx] Failed to record contract interaction: {e}"
+                ));
+            }
         }
 
         Ok(txid)

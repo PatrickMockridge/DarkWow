@@ -267,6 +267,9 @@ CONTRACT_NAME=stablecoin cargo test -p dwowd test_pipeline
 
 # Batch deploy all 21 contracts through Deployooor
 cargo test -p dwowd test_all_contracts_deploy
+
+# Contract metadata: deploy through Deployooor with metadata in ix
+cargo test -p dwowd test_metadata_deploy_lightweight
 ```
 
 ### Available Contracts

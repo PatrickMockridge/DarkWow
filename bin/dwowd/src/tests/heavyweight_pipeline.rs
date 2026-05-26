@@ -97,6 +97,16 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         Ok(contract_id)
     }
 
+    /// Deploy the contract WASM with an explicit initialization payload (`ix`).
+    /// Uses the direct deploy path (bypassing Deployooor). The `ix` is passed
+    /// to the contract's `__initialize` handler.
+    pub async fn deploy_with_ix(&mut self, wasm: &[u8], ix: &[u8]) -> Result<ContractId> {
+        let contract_id = self.derive_contract_id();
+        self.genesis.deploy_contract(wasm, contract_id, ix)?;
+        self.contract_id = Some(contract_id);
+        Ok(contract_id)
+    }
+
     /// Execute a contract call through `apply_block_with_uncles()` in a canonical block.
     ///
     /// Takes the ZK-generated call_data (which must include the function code byte)
@@ -599,6 +609,99 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
         println!("    create_escrow executed OK");
 
         println!("=== All Escrow endpoints OK ===");
+        Ok(())
+    })
+}
+
+// ============================================================================
+// escrow + contract metadata
+// ============================================================================
+
+#[test]
+fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::EscrowHarness;
+    use dwow_sdk::crypto::{PublicKey, SecretKey};
+    use dwow_sdk::deploy::{Category, ContractMetadata};
+    use dwow_sdk::pasta::pallas;
+
+    println!("=== Escrow Heavyweight: Contract Metadata + State Transitions ===");
+
+    smol::block_on(async {
+        let harness = EscrowHarness::spawn();
+        println!("Harness spawned with circuits: {:?}", harness.circuits());
+
+        let mut pipeline = HeavyweightPipeline::new(harness, "escrow").await?;
+        let wasm =
+            include_bytes!("../../../../src/contract/escrow/dwow_escrow_contract.wasm");
+
+        // --- Deploy with ContractMetadata as ix ---
+        let metadata = ContractMetadata {
+            name: "Heavyweight Escrow".to_string(),
+            symbol: Some("HESC".to_string()),
+            category: Category::Finance,
+            description: Some(
+                "Escrow deployed with metadata in heavyweight ZK proof test"
+                    .to_string(),
+            ),
+            public: true,
+            attestations: vec![],
+        };
+        let ix = metadata.to_ix_bytes();
+        assert!(!ix.is_empty(), "serialized metadata must be non-empty");
+
+        let contract_id = pipeline.deploy_with_ix(wasm, &ix).await?;
+        println!("Contract deployed with metadata at {:?}", contract_id.to_bytes());
+
+        // Verify metadata roundtrips through ix bytes
+        let decoded =
+            ContractMetadata::from_ix_bytes(&ix).expect("metadata must roundtrip");
+        assert_eq!(decoded.name, "Heavyweight Escrow");
+        assert_eq!(decoded.symbol.as_deref(), Some("HESC"));
+        assert_eq!(decoded.category, Category::Finance);
+        assert_eq!(
+            decoded.description.as_deref(),
+            Some("Escrow deployed with metadata in heavyweight ZK proof test")
+        );
+        assert!(decoded.public);
+        assert!(decoded.attestations.is_empty());
+
+        // --- Exercise contract functions with ZK proofs ---
+        let buyer_secret = pallas::Base::from(10u64);
+        let buyer_pub = PublicKey::from_secret(
+            SecretKey::from_bytes(buyer_secret.to_repr()).unwrap(),
+        );
+        let seller_secret = pallas::Base::from(20u64);
+        let seller_pub = PublicKey::from_secret(
+            SecretKey::from_bytes(seller_secret.to_repr()).unwrap(),
+        );
+        let token_id = pallas::Base::from(1u64);
+
+        // --- create_escrow (ZK proof generation) ---
+        println!("  Test: create_escrow");
+        let create = pipeline.harness.create_escrow(
+            buyer_secret, buyer_pub, seller_pub, 5000, token_id, 1000,
+        )?;
+        assert!(!create.call_data.is_empty());
+        println!("    call_data={}B", create.call_data.len());
+
+        // --- State transition: execute create_escrow on-chain ---
+        let height_before = pipeline.genesis.block_height();
+        println!("  Exec: create_escrow on-chain (height={})", height_before);
+        pipeline.exec(&create.call_data, vec![]).await?;
+
+        let height_after = pipeline.genesis.block_height();
+        assert!(
+            height_after > height_before,
+            "height must increase after on-chain exec (was {}, now {})",
+            height_before,
+            height_after,
+        );
+        println!(
+            "    create_escrow executed OK (height {} -> {})",
+            height_before, height_after
+        );
+
+        println!("=== Escrow Heavyweight Metadata Test: All assertions passed ===");
         Ok(())
     })
 }

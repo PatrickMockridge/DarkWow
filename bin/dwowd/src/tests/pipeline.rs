@@ -56,7 +56,7 @@ use std::env;
 
 use dwow::Result;
 use dwow_sdk::crypto::{ContractId, Keypair, SecretKey, DEPLOYOOOR_CONTRACT_ID};
-use dwow_sdk::deploy::DeployParamsV1;
+use dwow_sdk::deploy::{ContractMetadata, DeployParamsV1};
 use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
@@ -176,6 +176,43 @@ impl ContractTestingPipeline {
 
         // Submit via apply_block_with_uncles — this is the same production code
         // path that miners and the stratum protocol use.
+        self.genesis.blockchain.apply_block_with_uncles(&block, &[]).await?;
+
+        Ok(contract_id)
+    }
+
+    /// Deploy the contract WASM through the Deployooor contract with
+    /// ContractMetadata as the ix payload. This is the real production
+    /// deployment path — identical to `deploy()` but uses the provided
+    /// metadata for `ix` instead of contract-specific init params.
+    pub async fn deploy_with_metadata(&self, metadata: &ContractMetadata) -> Result<ContractId> {
+        let wasm = self.load_contract_wasm()?;
+
+        let deploy_keypair = Keypair::new(SecretKey::random(&mut OsRng));
+        let contract_id = ContractId::derive_public(deploy_keypair.public);
+
+        let ix = metadata.to_ix_bytes();
+        let deploy_params = DeployParamsV1 {
+            wasm_bincode: wasm,
+            public_key: deploy_keypair.public,
+            ix,
+        };
+        let mut call_data = vec![0x00u8]; // DeployFunction::DeployV1
+        deploy_params.encode(&mut call_data)?;
+
+        let deployooor_bytes = DEPLOYOOOR_CONTRACT_ID.to_bytes();
+        let contract_tx = build_contract_tx(deployooor_bytes, call_data);
+
+        let height = self.genesis.block_height();
+        let reward = dwow_sdk::blockchain::expected_reward((height + 1) as u32);
+        let coinbase = build_coinbase_tx(reward);
+
+        let block = build_test_block(
+            &self.genesis.blockchain,
+            height + 1,
+            vec![contract_tx, coinbase],
+        );
+
         self.genesis.blockchain.apply_block_with_uncles(&block, &[]).await?;
 
         Ok(contract_id)
@@ -393,4 +430,48 @@ fn test_all_contracts_deploy() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Deploy escrow through Deployooor with ContractMetadata as the ix payload.
+/// Verifies that metadata-carrying deployments succeed through the real
+/// production deploy path.
+#[test]
+fn test_metadata_deploy_lightweight() -> Result<()> {
+    use dwow_sdk::deploy::{Category, ContractMetadata};
+
+    println!("=== Lightweight Pipeline: Escrow + ContractMetadata ===");
+
+    smol::block_on(async {
+        let pipeline = ContractTestingPipeline::new("escrow").await?;
+
+        let metadata = ContractMetadata {
+            name: "Test Escrow".to_string(),
+            symbol: Some("TESC".to_string()),
+            category: Category::Finance,
+            description: Some("A test escrow contract with on-chain metadata".to_string()),
+            public: true,
+            attestations: vec![],
+        };
+
+        let ix_bytes = metadata.to_ix_bytes();
+        assert!(!ix_bytes.is_empty(), "serialized metadata must be non-empty");
+
+        let contract_id = pipeline.deploy_with_metadata(&metadata).await?;
+        let height = pipeline.genesis.block_height();
+
+        println!("Deployed escrow at {:?}", contract_id.to_bytes());
+        println!("Block height after deploy: {}", height);
+
+        assert!(height > 0, "block height must increase after deploy");
+        assert_ne!(contract_id.to_bytes(), [0u8; 32], "contract_id must not be zero");
+
+        let decoded = ContractMetadata::from_ix_bytes(&ix_bytes)
+            .expect("metadata must roundtrip");
+        assert_eq!(decoded.name, "Test Escrow");
+        assert_eq!(decoded.symbol.as_deref(), Some("TESC"));
+        assert_eq!(decoded.category, Category::Finance);
+        assert!(decoded.public);
+
+        Ok(())
+    })
 }

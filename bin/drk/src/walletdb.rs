@@ -841,6 +841,243 @@ pub struct AddressRecord {
     pub created_at_height: u32,
 }
 
+/// Structure representing on-chain contract metadata.
+#[derive(Debug, Clone)]
+pub struct ContractMetadataRecord {
+    pub contract_id: String,
+    pub name: String,
+    pub symbol: Option<String>,
+    pub category: String,
+    pub description: Option<String>,
+    pub public: bool,
+    pub deployer_pubkey: String,
+    pub deploy_height: u32,
+    pub attestations_json: String,
+    pub lock_status: String,
+}
+
+/// Structure representing a contract interaction record.
+#[derive(Debug, Clone)]
+pub struct ContractInteractionRecord {
+    pub contract_id: String,
+    pub function_name: String,
+    pub tx_hash: String,
+    pub block_height: Option<u32>,
+    pub timestamp: i64,
+}
+
+impl WalletDb {
+    /// Insert or update on-chain contract metadata discovered during scan.
+    pub fn insert_contract_metadata(&self, record: &ContractMetadataRecord) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO contract_metadata
+             (contract_id, name, symbol, category, description, public,
+              deployer_pubkey, deploy_height, attestations_json, lock_status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                record.contract_id,
+                record.name,
+                record.symbol,
+                record.category,
+                record.description,
+                if record.public { 1 } else { 0 },
+                record.deployer_pubkey,
+                record.deploy_height as i64,
+                record.attestations_json,
+                record.lock_status,
+            ],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// Get metadata for a single contract by its ContractId.
+    pub fn get_contract_metadata(&self, contract_id: &str) -> WalletDbResult<ContractMetadataRecord> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT contract_id, name, symbol, category, description, public,
+                    deployer_pubkey, deploy_height, attestations_json, lock_status
+             FROM contract_metadata WHERE contract_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![contract_id])?;
+        let row = rows.next()
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+            .ok_or(WalletDbError::RowNotFound)?;
+        Ok(ContractMetadataRecord {
+            contract_id: row.get(0)?,
+            name: row.get(1)?,
+            symbol: row.get(2)?,
+            category: row.get(3)?,
+            description: row.get(4)?,
+            public: row.get::<_, i64>(5)? != 0,
+            deployer_pubkey: row.get(6)?,
+            deploy_height: row.get::<_, i64>(7)? as u32,
+            attestations_json: row.get(8)?,
+            lock_status: row.get(9)?,
+        })
+    }
+
+    /// Get all contract metadata, optionally filtered by public visibility.
+    pub fn get_contract_metadata_list(&self, public_only: bool) -> WalletDbResult<Vec<ContractMetadataRecord>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let query = if public_only {
+            "SELECT contract_id, name, symbol, category, description, public,
+                    deployer_pubkey, deploy_height, attestations_json, lock_status
+             FROM contract_metadata WHERE public = 1 ORDER BY deploy_height DESC"
+        } else {
+            "SELECT contract_id, name, symbol, category, description, public,
+                    deployer_pubkey, deploy_height, attestations_json, lock_status
+             FROM contract_metadata ORDER BY deploy_height DESC"
+        };
+        let mut stmt = conn.prepare(query)?;
+        let mut rows = stmt.query([])?;
+        let mut records = vec![];
+        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
+            records.push(ContractMetadataRecord {
+                contract_id: row.get(0)?,
+                name: row.get(1)?,
+                symbol: row.get(2)?,
+                category: row.get(3)?,
+                description: row.get(4)?,
+                public: row.get::<_, i64>(5)? != 0,
+                deployer_pubkey: row.get(6)?,
+                deploy_height: row.get::<_, i64>(7)? as u32,
+                attestations_json: row.get(8)?,
+                lock_status: row.get(9)?,
+            });
+        }
+        Ok(records)
+    }
+
+    /// Get contract metadata filtered by category.
+    pub fn get_contract_metadata_by_category(&self, category: &str) -> WalletDbResult<Vec<ContractMetadataRecord>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT contract_id, name, symbol, category, description, public,
+                    deployer_pubkey, deploy_height, attestations_json, lock_status
+             FROM contract_metadata WHERE category = ?1 AND public = 1 ORDER BY deploy_height DESC",
+        )?;
+        let mut rows = stmt.query(params![category])?;
+        let mut records = vec![];
+        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
+            records.push(ContractMetadataRecord {
+                contract_id: row.get(0)?,
+                name: row.get(1)?,
+                symbol: row.get(2)?,
+                category: row.get(3)?,
+                description: row.get(4)?,
+                public: row.get::<_, i64>(5)? != 0,
+                deployer_pubkey: row.get(6)?,
+                deploy_height: row.get::<_, i64>(7)? as u32,
+                attestations_json: row.get(8)?,
+                lock_status: row.get(9)?,
+            });
+        }
+        Ok(records)
+    }
+
+    /// Insert a transaction history record.
+    pub fn insert_transaction_history(
+        &self,
+        tx_hash: &str,
+        status: &str,
+        block_height: Option<u32>,
+        tx_blob: &[u8],
+    ) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO transactions_history (transaction_hash, status, block_height, tx)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                tx_hash,
+                status,
+                block_height.map(|h| h as i64),
+                tx_blob,
+            ],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// Get transaction history records.
+    pub fn get_transactions_history(&self) -> WalletDbResult<Vec<(String, String, Option<u32>)>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT transaction_hash, status, block_height FROM transactions_history ORDER BY block_height DESC",
+        )?;
+        let mut rows = stmt.query([])?;
+        let mut result = vec![];
+        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
+            let tx_hash: String = row.get(0)?;
+            let status: String = row.get(1)?;
+            let block_height: Option<i64> = row.get(2)?;
+            result.push((tx_hash, status, block_height.map(|h| h as u32)));
+        }
+        Ok(result)
+    }
+
+    /// Insert a contract interaction record.
+    pub fn insert_contract_interaction(
+        &self,
+        contract_id: &str,
+        function_name: &str,
+        tx_hash: &str,
+        block_height: Option<u32>,
+        timestamp: i64,
+    ) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "INSERT INTO contract_interactions (contract_id, function_name, tx_hash, block_height, timestamp)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                contract_id,
+                function_name,
+                tx_hash,
+                block_height.map(|h| h as i64),
+                timestamp,
+            ],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// Get contract interactions for a given contract.
+    pub fn get_contract_interactions(&self, contract_id: &str) -> WalletDbResult<Vec<ContractInteractionRecord>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT contract_id, function_name, tx_hash, block_height, timestamp
+             FROM contract_interactions WHERE contract_id = ?1 ORDER BY timestamp DESC",
+        )?;
+        let mut rows = stmt.query(params![contract_id])?;
+        let mut result = vec![];
+        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
+            result.push(ContractInteractionRecord {
+                contract_id: row.get(0)?,
+                function_name: row.get(1)?,
+                tx_hash: row.get(2)?,
+                block_height: row.get::<_, Option<i64>>(3)?.map(|h| h as u32),
+                timestamp: row.get(4)?,
+            });
+        }
+        Ok(result)
+    }
+
+    /// Look up a contract_id by name (reverse lookup in contract_metadata).
+    pub fn get_contract_id_by_name(&self, name: &str) -> WalletDbResult<Option<String>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT contract_id FROM contract_metadata WHERE name = ?1 LIMIT 1",
+        )?;
+        let mut rows = stmt.query(params![name])?;
+        match rows.next() {
+            Ok(Some(row)) => Ok(Some(row.get(0)?)),
+            Ok(None) => Ok(None),
+            Err(_) => Err(WalletDbError::QueryExecutionFailed),
+        }
+    }
+}
+
 /// Token information stored in wallet database.
 #[derive(Debug, Clone)]
 pub struct TokenInfo {

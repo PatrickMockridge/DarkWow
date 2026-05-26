@@ -298,6 +298,7 @@ cargo run -p dwowd -- --network darkwow-testnet
 - [Monero Merge Mining](docs/monero-merge-mining.md) — Full p2pool protocol specification
 - [Network Types](docs/network-types.md) — darkwow-devnet vs darkwow-testnet vs mainnet
 - [Monero Anchoring Finality](doc/src/arch/mining-tokenomics.md#anchoring-finality-gadget)
+- [Contract Metadata](doc/src/arch/contract-metadata.md) — On-chain metadata, attestations, future verification pipeline
 - [O-Cap Authorization](doc/src/arch/ocap.md)
 - [Opcodes & Formal Verification](doc/src/arch/zk/opcodes.md)
 - [Security Analysis](doc/src/arch/security-analysis.md)

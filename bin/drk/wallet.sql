@@ -102,3 +102,32 @@ CREATE TABLE IF NOT EXISTS contract_registry (
     contract_name TEXT PRIMARY KEY NOT NULL,
     contract_id TEXT NOT NULL
 );
+
+-- Contract metadata table: on-chain metadata discovered during scan
+CREATE TABLE IF NOT EXISTS contract_metadata (
+    contract_id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    symbol TEXT,
+    category TEXT NOT NULL,
+    description TEXT,
+    public INTEGER NOT NULL DEFAULT 1,
+    deployer_pubkey TEXT NOT NULL,
+    deploy_height INTEGER NOT NULL,
+    attestations_json TEXT DEFAULT '[]',
+    lock_status TEXT DEFAULT 'unlocked'
+);
+
+CREATE INDEX IF NOT EXISTS idx_contract_metadata_category ON contract_metadata(category);
+CREATE INDEX IF NOT EXISTS idx_contract_metadata_public ON contract_metadata(public);
+
+-- Contract interactions table: records wallet-initiated contract calls
+CREATE TABLE IF NOT EXISTS contract_interactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contract_id TEXT NOT NULL,
+    function_name TEXT NOT NULL,
+    tx_hash TEXT NOT NULL,
+    block_height INTEGER,
+    timestamp INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_contract_interactions_cid ON contract_interactions(contract_id);

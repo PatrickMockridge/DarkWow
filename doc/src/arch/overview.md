@@ -21,6 +21,9 @@ DarkWow uses WASM smart contracts deployed via the **Deployooor** contract. This
 - **Upgradeable contracts**: Contracts can be upgraded without hard forking the network
 - **Minimal genesis**: Only Deployooor and NativeToken exist at genesis
 - **Composable applications**: Additional contracts are deployed as needed
+- **On-chain metadata**: Contracts carry self-declared metadata (name, symbol, category)
+  in the `ix` field of `DeployParamsV1`, with an extensible attestation slot for future
+  DAO/auditor verification. See [Contract Metadata](contract-metadata.md).
 
 ## Token Architecture
 

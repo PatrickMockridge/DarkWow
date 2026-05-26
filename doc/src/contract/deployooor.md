@@ -34,7 +34,7 @@ Deploys a WASM contract using `DeployParamsV1`:
 struct DeployParamsV1 {
     wasm_bincode: Vec<u8>,    // The WASM binary
     public_key: PublicKey,    // Deployer's public key
-    ix: u64,                  // Deployment index
+    ix: Vec<u8>,              // Deployment payload (init params or ContractMetadata)
 }
 ```
 
@@ -76,6 +76,7 @@ Contract deployment requires fee payment via NativeToken::FeeV1.
 
 ## See Also
 
+- [Contract Metadata](../arch/contract-metadata.md) — On-chain metadata carried in `ix`
 - [Deployooor Spec](../spec/contract/deploy/deploy.md) — Full specification
 - [Contract Development Guide](../dev/contracts.md)
 - [Testing Overview](../dev/testing/overview.md) — Deployooor-based Level 1 tests

@@ -37,3 +37,75 @@ pub struct DeployParamsV1 {
     pub ix: Vec<u8>,
 }
 // ANCHOR_END: deploy-deploy-params
+
+/// Contract category for on-chain discovery and filtering.
+#[derive(Clone, Debug, PartialEq, SerialEncodable, SerialDecodable)]
+pub enum Category {
+    Token,
+    Stablecoin,
+    DEX,
+    DAO,
+    Gaming,
+    Identity,
+    Infrastructure,
+    Finance,
+    Labor,
+    Insurance,
+    Oracle,
+    Bridge,
+    Other,
+}
+
+/// Pointer to an on-chain attestation. The wallet resolves these by querying
+/// the Attestation contract's state. Empty for MVP — populated when DAOs or
+/// auditors attest to a contract via `CreateAttestationV1`.
+#[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
+pub struct AttestationRef {
+    /// Poseidon hash of the attestation
+    pub attestation_id: [u8; 32],
+    /// Issuer pubkey — Identity::RegisterIssuer must exist for this key
+    pub issuer_pubkey: PublicKey,
+    /// Block height when the attestation was created
+    pub attested_at: u64,
+}
+
+/// Self-declared contract metadata carried in `DeployParamsV1::ix`.
+/// Displayed as `[UNVERIFIED]` in wallet UI until attestations from trusted
+/// issuers are appended. Only `name`, `symbol`, `category`, `description`,
+/// and `public` are populated for MVP. `attestations` is always empty.
+#[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
+pub struct ContractMetadata {
+    /// Human-readable contract name (e.g. "DarkWow Stablecoin")
+    pub name: String,
+    /// Optional token symbol (e.g. "DRWUSD")
+    pub symbol: Option<String>,
+    /// Contract category for discovery and filtering
+    pub category: Category,
+    /// Optional human-readable description
+    pub description: Option<String>,
+    /// false = unlisted, hidden from public contract views
+    pub public: bool,
+    /// Future: attestations from DAOs, auditors, identity-verified issuers.
+    /// Empty for MVP.
+    pub attestations: Vec<AttestationRef>,
+}
+
+impl ContractMetadata {
+    /// Serialize into bytes for `DeployParamsV1::ix`.
+    pub fn to_ix_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        dwow_serial::Encodable::encode(self, &mut buf)
+            .expect("ContractMetadata serialization is infallible");
+        buf
+    }
+
+    /// Deserialize from `DeployParamsV1::ix` bytes.
+    /// Returns None if the bytes are empty or cannot be decoded.
+    pub fn from_ix_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.is_empty() {
+            return None;
+        }
+        let mut cursor = std::io::Cursor::new(bytes);
+        dwow_serial::Decodable::decode(&mut cursor).ok()
+    }
+}
