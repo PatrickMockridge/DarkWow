@@ -62,6 +62,9 @@ pub mod entrypoint;
 /// Client API for interaction with this smart contract
 pub mod client;
 
+/// Capability descriptor for wallet state machine
+pub mod capability;
+
 // These are the different sled trees that will be created
 pub const ESCROW_CONTRACT_INFO_TREE: &str = "info";
 pub const ESCROW_CONTRACT_ESCROWS_TREE: &str = "escrows";

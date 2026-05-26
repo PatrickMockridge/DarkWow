@@ -39,6 +39,9 @@ pub use primitives::*;
 /// Native (non-wasm, non-ff) Sparse Merkle Tree
 pub mod monotree;
 
+/// Capability-based wallet architecture types
+pub mod capability;
+
 /// Contract deployment utilities
 pub mod deploy;
 

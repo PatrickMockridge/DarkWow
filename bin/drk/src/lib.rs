@@ -107,6 +107,9 @@ pub mod contract_registry;
 /// Contract metadata registry for universal contract interaction
 pub mod contract_metadata;
 
+/// Capability-based wallet state resolution
+pub mod capability;
+
 /// Money module (re-export from contract_imports for backwards compatibility)
 pub mod money {
     pub use crate::contract_imports::money::*;

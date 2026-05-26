@@ -220,6 +220,9 @@ enum Subcmd {
 
     /// Mine blocks and receive rewards (LOCALNET ONLY)
     Mine,
+
+    /// Show user position — capabilities held and available actions
+    Position,
 }
 
 #[derive(Clone, Debug, Deserialize, StructOpt)]
@@ -2254,6 +2257,68 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 exit(2);
             }
             drk.stop_rpc_client().await
+        }
+
+        Subcmd::Position => {
+            let drk = new_wallet(
+                network,
+                blockchain_config.cache_path,
+                blockchain_config.wallet_path,
+                blockchain_config.wallet_pass,
+                None,
+                &ex,
+                args.fun,
+            )
+            .await;
+
+            use dww::capability::CapabilityResolver;
+
+            let mut resolver = CapabilityResolver::new();
+
+            // Load escrow descriptor if escrow contract ID is registered
+            let escrow_cid = dww::contract_imports::ESCROW_CONTRACT_ID.get();
+            if let Some(cid) = escrow_cid {
+                let desc = dwow_escrow_contract::capability::descriptor(*cid);
+                resolver.register_descriptor(desc);
+            }
+
+            let position = resolver.resolve(&drk.wallet, &drk.cache);
+
+            // Display capabilities
+            if position.capabilities.is_empty() {
+                println!("No capabilities held.");
+            } else {
+                println!("=== Held Capabilities ===");
+                for cap in &position.capabilities {
+                    let consumed = if cap.consumable { " [consumable]" } else { "" };
+                    let expires = match cap.expires_at {
+                        Some(h) => format!(" [expires: block {}]", h),
+                        None => String::new(),
+                    };
+                    println!("  {} — {}{}{}", cap.id, cap.description, consumed, expires);
+                }
+            }
+
+            // Display available actions
+            if position.available_actions.is_empty() {
+                println!("No actions available.");
+            } else {
+                println!("\n=== Available Actions ===");
+                for action in &position.available_actions {
+                    println!("  {}::{} (0x{:02x}) — {}",
+                        resolver.descriptors().values()
+                            .find(|d| d.contract_id == action.contract_id)
+                            .map(|d| d.name.as_str())
+                            .unwrap_or("unknown"),
+                        action.name,
+                        action.function_id,
+                        action.description,
+                    );
+                }
+            }
+
+            println!("\nDescriptors loaded: {}", resolver.descriptors().len());
+            Ok(())
         }
     }
 }

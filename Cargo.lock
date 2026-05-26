@@ -2499,27 +2499,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dwow-p2pool-adaptor"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "dwow",
- "dwow-sdk",
- "dwow-serial",
- "dwow_linear",
- "hex",
- "serde",
- "serde_json",
- "smol",
- "structopt",
- "structopt-toml",
- "tinyjson",
- "tracing",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
 name = "dwow-safemath-zk"
 version = "0.1.0"
 

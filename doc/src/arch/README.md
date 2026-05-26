@@ -67,6 +67,12 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 - [safemath](./zk/safemath.md) - Safe arithmetic gadgets
 - [zk_verification](./zk/zk_verification.md) - Pure stateless ZK proof verification
 
+## Wallet
+
+- [wallet](./wallet.md) - Full-node wallet architecture, capability-based position resolution
+- [wallet_scanning](./wallet_scanning.md) - Block scanning and coin discovery
+- [wallet_contract_tracking](./wallet_contract_tracking.md) - Contract matching during scanning
+
 ## Reference
 
 - [Contract Invoke API](./contract_invoke_api.md) - Inter-contract calling convention
@@ -76,7 +82,6 @@ Navigation index for smart contracts, consensus, and protocol documentation.
   - [Level 3: Containerized Localnet](../dev/testing/level-3-localnet.md)
   - [Level 4: Containerized Devnet Node](../dev/testing/level-4-devnet.md)
 - [anonymous_assets](./anonymous_assets.md) - Privacy token model
-- [wallet](./legacy/wallet.md) - Wallet architecture and key management
 
 ## Legacy
 
@@ -91,7 +96,10 @@ Historical documents in [./legacy/](.legacy/):
 ```
 doc/src/arch/
 ├── README.md                    # This file - navigation index
-├── overview.md                  # Current architecture overview
+├── wallet.md                     # Wallet architecture, capability-based position resolution
+├── wallet_scanning.md             # Block scanning and coin discovery
+├── wallet_contract_tracking.md    # Contract matching during scanning
+├── overview.md                    # Current architecture overview
 ├── identity.md                  # ZK credential system
 ├── monero.md                    # Monero integration
 ├── ocap.md                      # Object-capability security
