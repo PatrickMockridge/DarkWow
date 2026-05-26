@@ -16,7 +16,7 @@ MoneyV3 is DarkWow's DeFi token contract designed for ERC-20 style functionality
 > - **Bugs in tokens cascade** - A bug in a token affects every operation
 > - **Bugs in smart contracts are isolated** - A bug in DEX only affects DEX operations
 >
-> See [MoneyV3 Architecture](../contract/money_v3_migration.md) for migration details.
+> See [MoneyV3 Architecture(../../contract/money_v3_migration.md) for migration details.
 
 ## Why MoneyV3?
 
@@ -366,7 +366,7 @@ MoneyV2 is deprecated due to EC heap bugs. Migration path:
 
 ### Stablecoin Integration
 
-The [stablecoin](../stablecoin/stablecoin.md) contract uses MoneyV3 as its token layer:
+The [stablecoin(./stablecoin.md) contract uses MoneyV3 as its token layer:
 
 ```
 Stablecoin → MoneyV3 Integration:
@@ -464,7 +464,7 @@ For security standards (Poseidon-only, NativeToken vs MoneyV3 separation), see [
 
 ## References
 
-- [Stablecoin Integration](../stablecoin/stablecoin.md)
+- [Stablecoin Integration(./stablecoin.md)
 - [DEX Integration](dex.md)
 - [Standards](standards.md)
-- [NativeToken](../native_token/native_token.md)
+- [NativeToken(./native_token.md)

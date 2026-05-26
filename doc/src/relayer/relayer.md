@@ -130,7 +130,7 @@ The bridge, relayer_endowment, identity, attestation, and pool_stake contracts u
 | **Fee Schedule Commitments** | `CommitFeeScheduleV1` — relayers publish fees on-chain via attestation; `RegisterFeeScheduleV1` — bridge-side registration | Users discover relayer fees before committing funds |
 | **Slash Attestations** | `AttestSlashV1` ZK circuit records slash events as privacy-preserving attestations | Verifiable reputation without revealing specific withdrawal details |
 
-See [Security Audit](../../contract/audit.md) for full findings and residual risks.
+See [Security Audit(../contract/audit.md) for full findings and residual risks.
 
 ## Hardware Requirements
 

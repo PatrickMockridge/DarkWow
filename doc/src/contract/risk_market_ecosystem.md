@@ -303,8 +303,8 @@ struct EndowmentPool {
 
 ## References
 
-- [Prediction Market Contract](../prediction_market/) - Outcome probability pricing
-- [Tender Contract](../tender/) - Project allocation
-- [Labor Market Contract](../labor_market/) - Talent allocation
-- [DaoEscrow Contract](../dao_escrow/) - Capital endowment
+- Prediction Market Contract — outcome probability pricing (planned)
+- [Tender Contract](./tender.md) - Project allocation
+- [Labor Market Contract](./labor_market.md) - Talent allocation
+- [DaoEscrow Contract](./dao_escrow.md) - Capital endowment
 - [Native Token Contract](../dev/contracts/native_token.md) - Consensus-first native token

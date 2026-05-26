@@ -1,4 +1,4 @@
-> **ARCHIVED**: This documents the original overlay-DAG architecture. The current consensus mechanism is [Uncle Merkle](../uncle_merkle.md).
+> **ARCHIVED**: This documents the original overlay-DAG architecture. The current consensus mechanism is [Uncle Merkle](../consensus/uncle_merkle.md).
 
 # Wallet Notes
 
@@ -118,9 +118,9 @@ user like "manage a database" or "use event graph" (see below).
 Addons are loaded dynamically and can be downloaded from a source such
 as the DHT network.
 
-![blender addons](../assets/blender-addons.png)
+![blender addons](../../assets/blender-addons.png)
 
-![firefox addons](../assets/firefox-addons.png)
+![firefox addons](../../assets/firefox-addons.png)
 
 Blender's addon browser looks much better than Firefox's.
 
@@ -181,11 +181,11 @@ is a world where the children are objects, and the objects have
 attributes that can be read and operated on. These can all be composed
 together through generic node interfaces.
 
-![gamedev scenegraph](../assets/gamedev-scenegraph.jpg)
+![gamedev scenegraph](../../assets/gamedev-scenegraph.jpg)
 
 *example of a scenegraph from a game engine*
 
-![blender scenegraph](../assets/blender-scenegraph.png)
+![blender scenegraph](../../assets/blender-scenegraph.png)
 
 *scenegraph in blender*
 

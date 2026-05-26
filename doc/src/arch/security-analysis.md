@@ -141,7 +141,7 @@ After each successful verify, the contract MUST mark `subscription_spent_nullifi
 
 #### Issue 5: State Update No-Ops (CRITICAL) — FIXED
 
-**Location**: [atomic_swap/src/entrypoint.rs](file://../../src/contract/atomic_swap/src/entrypoint.rs)
+**Location**: [atomic_swap/src/entrypoint/mod.rs](file://../../src/contract/atomic_swap/src/entrypoint/mod.rs)
 
 **Problem (Original)**: The `claim`, `refund`, and `cancel` functions had state transition logic that was entirely stubbed out. The state machine could be bypassed entirely.
 
@@ -168,7 +168,7 @@ wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier), &[])?;
 
 #### Issue 5b: ZK Proof Verification Not Integrated (CRITICAL) — ARCHITECTURAL LIMITATION
 
-**Location**: [atomic_swap/src/entrypoint.rs:131-201](file://../../src/contract/atomic_swap/src/entrypoint.rs#L131-L201)
+**Location**: [atomic_swap/src/entrypoint/mod.rs:131-201](file://../../src/contract/atomic_swap/src/entrypoint/mod.rs#L131-L201)
 
 **Problem**: `wasm::zk::verify_zk_proof()` is not implemented in the SDK. ZK verification is provided by the DarkWow validator runtime, not the WASM SDK.
 
@@ -271,7 +271,7 @@ Atomicity comes from hash binding, not timelocks: Alice reveals secret → Bob c
 
 **Problem**: `MODE_TREASURY_ENDOWMENT` accumulates endowment with no guardrails on drawdown — malicious DAO could drain the entire endowment.
 
-**Fix**: [DrainProtection contract](../../src/contract/drain_protection/README.md) with 8 configurable protections: graduated tiers, exit queue, circuit breaker, guardian pause, observation period, split proposals, no-loss reserve, dead man's switch. All features optional and configurable by deployer; DAO members control via governance. Outstanding: security audit, integration tests.
+**Fix**: [DrainProtection contract](../../../src/contract/drain_protection/README.md) with 8 configurable protections: graduated tiers, exit queue, circuit breaker, guardian pause, observation period, split proposals, no-loss reserve, dead man's switch. All features optional and configurable by deployer; DAO members control via governance. Outstanding: security audit, integration tests.
 
 ---
 
@@ -297,7 +297,7 @@ less_than_strict(expiry, max_expiry);
 
 #### Issue 16: Public Keys Hardcoded to Zero (CRITICAL) — ARCHITECTURAL LIMITATION
 
-**Location**: [dex/src/entrypoint.rs:137-140](file://../../src/contract/dex/src/entrypoint.rs#L137-L140)
+**Location**: [dex/src/entrypoint/mod.rs:137-140](file://../../src/contract/dex/src/entrypoint/mod.rs#L137-L140)
 
 **Problem**: `dex_create_swap` stores zeroed public keys for proposer and acceptor. The signature field exists in params but cannot be verified without the full DarkWow transaction verification framework. Impact: no accountability for swap participants. Requires refactor to full DarkWow contract framework.
 
@@ -305,7 +305,7 @@ less_than_strict(expiry, max_expiry);
 
 #### Issue 17: lock_proof Partially Verified (CRITICAL) — PARTIALLY FIXED
 
-**Location**: [dex/src/entrypoint.rs:114-116](file://../../src/contract/dex/src/contract/dex/src/entrypoint.rs#L114-L116)
+**Location**: [dex/src/entrypoint/mod.rs:114-116](file://../../src/contract/dex/src/entrypoint/mod.rs#L114-L116)
 
 **Problem**: The lock commitment Merkle proof was not being verified.
 

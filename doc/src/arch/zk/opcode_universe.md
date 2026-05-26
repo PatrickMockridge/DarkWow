@@ -547,6 +547,6 @@ The mathematical universe is bounded only by constraint density and proving time
 
 - [Opcodes and Formal Verification](opcodes.md) — Soundness verification status, Lean 4 proofs, and outstanding work
 - [Merkle Depth Limitation](merkle_depth.md) — Fixed-depth constraints and workarounds
-- [Bridge Contract Architecture](../contract/bridge/README.md) — How Merkle proofs are used in production
-- [dao/exec.zk](../../src/contract/dao/proof/exec.zk) — Cross-multiplication pattern example
+- [Bridge Contract Architecture](../../../src/contract/bridge/README.md) — How Merkle proofs are used in production
+- dao/exec.zk — Cross-multiplication pattern example (planned)
 - [halo2_gadgets::sinsemilla](https://docs.rs/halo2_gadgets) — Underlying Halo2 implementation

@@ -119,7 +119,7 @@ The proof IS the authority — nothing more. Commitment exists and is valid, nul
 
 **Identity Contract as O-Cap Baseline:**
 
-The [Identity Contract](../../src/contract/identity/) implements the canonical O-Cap pattern with full opcode support (0x09-0x0c):
+The [Identity Contract](../../../src/contract/identity/) implements the canonical O-Cap pattern with full opcode support (0x09-0x0c):
 
 | O-Cap Opcode | Function | Description |
 |--------------|----------|-------------|
@@ -577,7 +577,7 @@ When designing a new DarkWow contract:
 
 ## See Also
 
-- [Identity Contract](../../src/contract/identity/) - O-Cap implementation
+- [Identity Contract](../../../src/contract/identity/) - O-Cap implementation
 - [Attestation Contract](../contract/attestation.md) - Generalized attestation and claims
 - [Oracle Contract](../contract/oracle.md) - Push-model oracle with attestation
 - [DAO-Escrow Contract](../contract/dao_escrow.md) - DAO-governed endowment with voting

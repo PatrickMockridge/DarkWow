@@ -304,7 +304,7 @@ This pipeline is not hypothetical. It is implemented across four contracts, veri
 ## See Also
 
 - [Composability](composability.md) — how DarkForest/DarkTree child calls work at the technical level
-- [Identity Contract README](../../src/contract/identity/README.md) — full O-Cap specification
-- [Labor Market Contract README](../../src/contract/labor_market/README.md) — job lifecycle and ZK circuits
-- [DAO-Escrow Contract README](../../src/contract/dao_escrow/README.md) — governance modes and capabilities
-- [Attestation Contract README](../../src/contract/attestation/README.md) — claim verification patterns
+- [Identity Contract README](../../../src/contract/identity/README.md) — full O-Cap specification
+- [Labor Market Contract README](../../../src/contract/labor_market/README.md) — job lifecycle and ZK circuits
+- [DAO-Escrow Contract README](../../../src/contract/dao_escrow/README.md) — governance modes and capabilities
+- [Attestation Contract README](../../../src/contract/attestation/README.md) — claim verification patterns

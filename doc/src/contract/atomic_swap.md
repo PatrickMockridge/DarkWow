@@ -236,7 +236,7 @@ constrain_equal_base(nullifier_check, nullifier);
 ## See Also
 
 - [Bridge Contract](bridge.md) — **Replacement**: HTLC functions 0x06-0x08
-- [Atomic Swap Contract](../../src/contract/atomic_swap/README.md)
+- [Atomic Swap Contract](../../../src/contract/atomic_swap/README.md)
 - [Subscription Contract](subscription.md)
 - [DAO-Escrow Contract](dao_escrow.md)
 - [Opcodes Reference](../arch/zk/opcodes.md)

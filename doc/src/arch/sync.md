@@ -326,4 +326,4 @@ bin/dwowd/src/tests/
 - [ZK Verification](./zk/zk_verification.md) - Detailed ZK verifier design
 - [Genesis Harness](../dev/testing/level-1-lightweight.md) - Baseline chain setup for WASM contract tests
 - [Consensus](./consensus/consensus.md) - PoW consensus algorithm
-- [Transaction Lifetime](./tx_lifetime.md) - Transaction processing lifecycle
+- [Transaction Lifetime](./sc/tx-lifetime.md) - Transaction processing lifecycle

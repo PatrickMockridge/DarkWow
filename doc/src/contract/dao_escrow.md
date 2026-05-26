@@ -102,7 +102,7 @@ A flexible contract supporting three operating modes: **Escrow-Only**, **Treasur
 
 ## OCap Governance Model
 
-DAO-Escrow uses **capability-based governance** via cross-contract verification with the [Identity contract](../../src/contract/identity/README.md). Authority is proven ("I hold capability X") rather than asserted ("I am user Y").
+DAO-Escrow uses **capability-based governance** via cross-contract verification with the [Identity contract](../../../src/contract/identity/README.md). Authority is proven ("I hold capability X") rather than asserted ("I am user Y").
 
 ### Capability Types
 
@@ -591,8 +591,8 @@ Circuits: 2 compiled, 4 source complete (needs zkas compilation)
 
 ## See Also
 
-- [DAO-Escrow Contract README](../../src/contract/dao_escrow/README.md)
-- [Identity Contract README](../../src/contract/identity/README.md)
+- [DAO-Escrow Contract README](../../../src/contract/dao_escrow/README.md)
+- [Identity Contract README](../../../src/contract/identity/README.md)
 - [O-Cap Architecture](../arch/ocap.md)
 - [Identity Architecture](../arch/identity.md)
 - [Composability](composability.md) — cross-contract child call mechanism

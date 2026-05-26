@@ -230,6 +230,6 @@ All 5 circuits compiled to `.zk.bin`:
 
 ## See Also
 
-- [Game Room SDK](../../src/contract/game_room/README.md)
+- [Game Room SDK](../../../src/contract/game_room/README.md)
 - [Provable Randomness](./provable_randomness.md)
 - [DarkIRC Specification](../misc/darkirc/specification.md)

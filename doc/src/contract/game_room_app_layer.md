@@ -354,6 +354,6 @@ for the four-level taxonomy and command reference.
 ## See Also
 
 - [Game Room Contract Specification](./game_room.md)
-- [Game Room SDK Reference](../../src/contract/game_room/README.md)
+- [Game Room SDK Reference](../../../src/contract/game_room/README.md)
 - [DarkIRC Specification](../misc/darkirc/specification.md)
 - [Entropy Module](./provable_randomness.md)

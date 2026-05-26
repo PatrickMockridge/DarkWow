@@ -337,7 +337,7 @@ NATIVE_TOKEN_CONTRACT_INFO_TREE           - contract metadata
 ## See Also
 
 - [MoneyV3](./money_v3.md) - Privacy-first DeFi token contract for ERC-20 style tokens, stablecoins, and wrapped assets
-- [Money V2 Deprecation Notice](./money_v2.md) - Migration path from legacy MoneyV2
+- Money V2 Deprecation Notice — Migration path from legacy MoneyV2 (planned)
 
 ## Testing
 

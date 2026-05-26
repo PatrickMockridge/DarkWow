@@ -144,4 +144,4 @@ staker_share = relayer_fees × coverage_used / total_allocated_coverage
 
 - [Bridge Contract](./bridge.md) - Guaranteed withdrawal execution
 - [Betting Stake](./betting_stake.md) - Similar pooled capital pattern
-- [Relayer Endowment](../contract/relayer_endowment/) - External capital backing for relayers
+- [Relayer Endowment](./relayer_endowment.md) - External capital backing for relayers

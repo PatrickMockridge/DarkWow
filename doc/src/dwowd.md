@@ -39,7 +39,7 @@ The daemon uses **two** LinearBlockchain instances:
 | P2P layer | `dwow_linear::LinearBlockchain` | Block storage, serialization, P2P sync (pure library, no WASM) |
 | Daemon layer | `crate::LinearBlockchain` | Wraps the P2P store. Adds PoW consensus, WASM runtime, ZK verification, coin/nullifier tracking |
 
-The P2P layer is initialized first (`init_linear` at [lib.rs:212](bin/dwowd/src/lib.rs#L212)).
+The P2P layer is initialized first (`init_linear` at [lib.rs:212](../bin/dwowd/src/lib.rs#L212)).
 Its sled `LinearStore` is then shared with the daemon-layer wrapper. The daemon
 layer adds consensus (`PoWConsensus` with `Mutex`), RandomX VM management,
 contract execution via the WASM runtime, and state rehydration from stored

@@ -356,4 +356,4 @@ Labor Market uses cross-contract child calls to delegate authorization, verifica
 - [Recruitment Pipeline Case Study](recruitment_pipeline.md) — end-to-end walkthrough of all four contracts
 - [DAO-Escrow Contract](dao_escrow.md) — dispute resolution destination
 - [Attestation Contract](attestation.md) — deliverable verification destination
-- [Labor Market Contract README](../../src/contract/labor_market/README.md)
+- [Labor Market Contract README](../../../src/contract/labor_market/README.md)

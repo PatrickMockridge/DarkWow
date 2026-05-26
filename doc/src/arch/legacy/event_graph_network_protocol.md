@@ -1,4 +1,4 @@
-> **ARCHIVED**: This documents the original overlay-DAG architecture. The current consensus mechanism is [Uncle Merkle](../uncle_merkle.md).
+> **ARCHIVED**: This documents the original overlay-DAG architecture. The current consensus mechanism is [Uncle Merkle](../consensus/uncle_merkle.md).
 
 # Network Protocol
 

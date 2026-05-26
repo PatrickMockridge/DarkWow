@@ -221,7 +221,7 @@ error[E0282]: type annotations needed
 
 Intents have an `expiry` block height field. The `EXPIRE` transition doesn't update state - consumers must check expiry before consuming.
 
-See [`PrivateIntent::is_expired_at`](../src/sdk/src/crypto/intent.rs) for the implementation.
+See [`PrivateIntent::is_expired_at`](../../src/sdk/src/crypto/intent.rs) for the implementation.
 
 ### Nullifier Replay Protection
 

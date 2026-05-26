@@ -3,10 +3,10 @@
 > [!NOTE]
 > This document includes both permanent reference material and dated operational
 > logs from April 2026. For the current testing taxonomy, see:
-> - [Level 1: Lightweight Tests](../dev/testing/level-1-lightweight.md)
-> - [Level 2: Heavyweight Tests](../dev/testing/level-2-heavyweight.md)
-> - [Level 3: Containerized Localnet](../dev/testing/level-3-localnet.md)
-> - [Level 4: Containerized Devnet Node](../dev/testing/level-4-devnet.md)
+> - [Level 1: Lightweight Tests(./dev/testing/level-1-lightweight.md)
+> - [Level 2: Heavyweight Tests(./dev/testing/level-2-heavyweight.md)
+> - [Level 3: Containerized Localnet(./dev/testing/level-3-localnet.md)
+> - [Level 4: Containerized Devnet Node(./dev/testing/level-4-devnet.md)
 
 ## Overview
 
@@ -726,7 +726,7 @@ The identity contract needs to be refactored to use the **current SDK API patter
 
 This is a **significant refactoring effort** - the contract's architecture would need to be adapted to match the current SDK design.
 
-See: [Money V3 Migration](../contract/money_v3_migration.md)
+See: [Money V3 Migration(./contract/money_v3_migration.md)
 
 ---
 

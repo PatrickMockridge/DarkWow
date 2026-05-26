@@ -139,4 +139,4 @@ RAYON_NUM_THREADS=10 cargo test
 - [Identity Architecture](../../arch/identity.md)
 - [O-Cap Architecture](../../arch/ocap.md)
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)
-- [DAO-Escrow Contract](../contract/dao_escrow.md) — primary consumer of O-Cap verification
+- [DAO-Escrow Contract(../../contract/dao_escrow.md) — primary consumer of O-Cap verification

@@ -467,8 +467,8 @@ DarkToshi Dice, Baccarat, Roulette, and Slot.
 - [Lottery Contract](lottery.md)
 - [DarkBet Exchange](darkbet_exchange.md) - AMM-based prediction markets
 - [Entropy Module](entropy.md)
-- [ECVRF Implementation](../../src/sdk/src/crypto/ecvrf.rs)
-- [Consensus Mechanism](../../src/validator/consensus.rs) - Fork resolution and rank-based chain selection
-- [Fork Ranking Utils](../../src/validator/utils.rs) - `block_rank()` and `best_fork_index()`
+- [ECVRF Implementation](../../../src/sdk/src/crypto/ecvrf.rs)
+- Consensus Mechanism — fork resolution and rank-based chain selection
+- Fork Ranking Utils — `block_rank()` and `best_fork_index()`
 - [VRF Research](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-vrf-04)
 - [RandomX Paper](https://eprint.iacr.org/2018/1033)

@@ -46,7 +46,7 @@ Unlike individual CDP models (MakerDAO), this uses pooled debt:
 - **Better privacy** (no position IDs that could leak)
 - **Entire pool is liquidatable** (not individual positions)
 
-See [model/mod.rs](../../contract/stablecoin/src/model/mod.rs) for `StablecoinModel` enum (PooledDebt, Liquity, Fractional, IndividualCdp).
+See [model/mod.rs](../../../src/contract/stablecoin/src/model/mod.rs) for `StablecoinModel` enum (PooledDebt, Liquity, Fractional, IndividualCdp).
 
 ## MoneyV3 Integration
 

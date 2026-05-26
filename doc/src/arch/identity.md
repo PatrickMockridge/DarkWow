@@ -797,8 +797,8 @@ Level 3 (Future)
 
 ## References
 
-- [DarkWow Identity Contract](../../src/contract/identity/)
-- [DarkWow Identity README](../../src/contract/identity/README.md)
+- [DarkWow Identity Contract](../../../src/contract/identity/)
+- [DarkWow Identity README](../../../src/contract/identity/README.md)
 - [ZK Verified Competency DAGs](https://technologytruth.substack.com/p/zk-verified-competency-dags)
 - [Anonymous Credentials](https://en.wikipedia.org/wiki/Anonymous_credentials)
 - [Differential Privacy](https://en.wikipedia.org/wiki/differential_privacy)

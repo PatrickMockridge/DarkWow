@@ -211,7 +211,7 @@ let escrow = CreateEscrowBuilder::new()
 
 ## Architecture
 
-The escrow contract source is in `src/contract/escrow/`. See the contract [README](../../src/contract/escrow/README.md) for the full architecture.
+The escrow contract source is in `src/contract/escrow/`. See the contract [README](../../../src/contract/escrow/README.md) for the full architecture.
 
 ```
 src/contract/escrow/
@@ -316,7 +316,7 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 
 ## References
 
-- [DarkWow Escrow README](../../src/contract/escrow/README.md)
+- [DarkWow Escrow README](../../../src/contract/escrow/README.md)
 - [DarkWow DAO Escrow Contract](./dao_escrow.md)
 - [DarkWow Money Contract](../spec/contract/money/money.md)
 - [zkVM Primitive Layer](../arch/zk/zkvm_primitives.md)
