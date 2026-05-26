@@ -30,6 +30,60 @@
    [darkwow-testnet pipeline](../../../contrib/docker/darkwow-testnet/README.md)
    and [Level 3: Containerized Localnet](../testing/level-3-localnet.md).
 
+## Hardware Requirements
+
+DarkWow is a large Rust monorepo: multiple blockchain nodes, a zkVM, a WASM
+contract compiler, Docker container orchestration, and an external Monero daemon
+for merge mining tests. It is heavier than a typical web service — closer to
+building a compiler or database engine. A lightweight laptop or Chromebook will
+not work.
+
+These are baselines. DarkWow rewards more cores and more RAM — incremental
+compiles get faster, devnet containers start quicker, and you can keep the
+browser and IDE open without swapping. Scaling up to 16 cores and 64 GB RAM
+is well-utilized; beyond 64 GB the returns taper off for pure compilation.
+
+### Recommended
+
+A mid-to-high-end desktop or workstation. This is the tier where full devnet
+testing with Docker and Monero merge mining is practical. Most professional
+developer desktops from 2023 or later meet these specs.
+
+| Component | Spec | Notes |
+|-----------|------|-------|
+| CPU | 8+ cores (16+ threads) | Modern Ryzen 7 / Intel i7 or equivalent. Cargo parallelizes across cores; Docker containers and monerod consume additional threads. 8 cores leaves headroom for IDE, browser, and system services during a full build. |
+| RAM | 32 GB | Cargo peak memory per `rustc` instance is ~2 GB. With 10-way parallelism (`RAYON_NUM_THREADS=10`), builds consume ~20 GB. The remaining 12 GB covers the OS, Docker daemon, monerod, and browser. |
+| Disk | 100 GB free (NVMe) | A `--release` build with all contracts produces ~40 GB in `target/`. Docker images add ~15 GB. A synced Monero testnet data dir adds ~20 GB. NVMe is strongly preferred — incremental compile times are I/O bound. |
+| OS | Linux (x86_64) | Primary target. All tooling and tests are developed on Linux. |
+
+### Minimum
+
+A modern laptop or entry-level desktop. This tier can build the project and run
+lightweight tests, but full devnet or merge mining tests will be impractical
+without strict resource limits.
+
+| Component | Spec | Notes |
+|-----------|------|-------|
+| CPU | 4 cores (8 threads) | Reduce Cargo parallelism (`RAYON_NUM_THREADS=4`). Expect compile times of 30+ minutes for a full release build and 5-10 minutes for incremental changes. |
+| RAM | 16 GB | Tight but workable. Restrict parallel builds (`-j 4`), don't run a devnet and monerod simultaneously, and close the browser during heavy linking. Expect swap pressure. |
+| Disk | 50 GB free (SSD) | Viable with regular `cargo clean` and without Docker images or Monero testnet data. |
+| OS | Linux or macOS | macOS works for library and contract development (including WASM builds), but Docker-based devnet testing requires Linux. |
+
+### Thread Control
+
+Cargo uses all available cores by default. On a 16-core machine, that means 16
+`rustc` processes competing with the OS, IDE, and any running containers. The
+project uses `RAYON_NUM_THREADS` to cap parallelism:
+
+- **All cargo commands:** `RAYON_NUM_THREADS=10`
+- **Heavyweight test harnesses:** `RAYON_NUM_THREADS=20` (these manage their own internal pools)
+- **xmrig:** always `-t 1` (RandomX will saturate every core otherwise)
+- **monerod:** `--max-concurrency 4` in offline mode
+
+These limits are baked into the Docker pipeline scripts in
+`contrib/docker/darkwow-testnet/`. For local development, set them in your shell
+profile or use the project's `.cargo/config.toml`.
+
 Minimum Rust version: **1.87.0**. Builds on Linux (x86_64, aarch64) and macOS.
 
 To find outstanding tasks, grep for inline TODO/FIXME markers:
