@@ -92,6 +92,7 @@
   - [Consensus](arch/consensus/consensus.md)
   - [Stratum Protocol](arch/consensus/stratum.md)
   - [Uncle Merkle](arch/consensus/uncle_merkle.md)
+  - [Scaling & Sharding](arch/consensus/scaling.md)
   - [Linear Blockchain](arch/consensus/linear_blockchain.md)
   - [Linear zkVM](arch/consensus/linear_zkvm.md)
   - [Caribina Finality](arch/caribina.md)
@@ -102,7 +103,6 @@
   - [zkVM Primitive Layer](arch/zk/zkvm_primitives.md)
   - [Opcodes](arch/zk/opcodes.md)
   - [Opcode Status](arch/zk/opcodes-status.md)
-  - [Safemath](arch/zk/safemath.md)
   - [MerkleRoot Depth](arch/zk/merkle_depth.md)
 
 ## Smart Contracts
