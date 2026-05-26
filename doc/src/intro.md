@@ -1,6 +1,6 @@
 # DarkWow
 
-**WARNING: This branch contains experimental, unaudited smart contracts. Do NOT deploy or use these contracts with real funds. They are for research and educational purposes only.**
+**These smart contracts have been reviewed and tested via the DarkWow test pipeline according to best reasonable efforts. Use at your own risk.**
 
 **Development occurs on the `linear-master` branch** — the main development branch featuring Uncle Merkle consensus and a linear blockchain architecture. The old upstream overlay-DAG code is preserved on the `master-upstream` branch.
 
