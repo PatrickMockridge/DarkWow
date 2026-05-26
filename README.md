@@ -177,6 +177,7 @@ customized, and built on.
 | 2 | Heavyweight | Contract functions, ZK proofs, uncle-merkle block execution | `cargo test --release` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + miners) | `docker compose up` |
 | 4 | Containerized Devnet | LAN/internet shared devnet node | `docker run --network=host` |
+| Wallet | Capability resolution | L1: Bash CLI. L2: In-process Rust (20 tests). L3: Docker container. | `./test-wallet.sh`, `cargo test -p dww --lib` |
 
 Every contract ships with a **test harness** implementing the `ContractHarness`
 trait — compile-time ZK circuit loading, typed call builders, and automated
@@ -260,8 +261,9 @@ RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_
 ./contrib/docker/darkwow-testnet/join-testnet.sh --mode native
 
 # Wallet capability resolution tests
-cargo test -p dww --lib -- capability::tests                # Level 2: 20 in-process resolver tests
 RAYON_NUM_THREADS=10 bash bin/drk/test_capability_lightweight.sh  # Level 1: CLI integration
+cargo test -p dww --lib -- capability::tests                # Level 2: 20 in-process resolver tests
+./contrib/docker/darkwow-testnet/test-wallet.sh             # Level 3: Docker container integration test
 ```
 
 **Fork, build, customize.** Every contract in `src/contract/<name>/` is
@@ -345,8 +347,9 @@ cargo run -p dwowd -- --network darkwow-testnet
 | 1 — Lightweight | Deployooor-based deployment (21 contracts, no ZK) | `cargo test -p dwowd test_all_contracts_deploy` |
 | 2 — Heavyweight | Contract functions, ZK proofs, uncle-merkle stress (36 tests) | `RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight` |
 | 3 — Localnet | Multi-node Docker mining + contracts | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` |
-| Wallet L2 | Capability resolver logic (20 in-process tests) | `cargo test -p dww --lib -- capability::tests` |
 | Wallet L1 | CLI integration (bash, no ZK) | `RAYON_NUM_THREADS=10 bash bin/drk/test_capability_lightweight.sh` |
+| Wallet L2 | Capability resolver logic (20 in-process tests) | `cargo test -p dww --lib -- capability::tests` |
+| Wallet L3 | Docker container integration test (scan, position, assert) | `./contrib/docker/darkwow-testnet/test-wallet.sh` |
 
 > **USE AT YOUR OWN RISK.** No third-party audit. May 2026 internal hardening
 > addressed 17 failure modes across state machine, economic, identity/attestation,

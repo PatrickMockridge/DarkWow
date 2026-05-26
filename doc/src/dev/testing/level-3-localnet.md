@@ -58,7 +58,9 @@ cd contrib/docker/darkwow-testnet
 # Build options
 #   --no-cache    Rebuild all Docker layers from scratch (default: use cache)
 #   --fresh       Aggressive clean: prune images, build cache, buildx (default: off)
-./test_pipeline.sh --mode merge --no-cache --fresh  # Deterministic full rebuild
+#   --with-wallet Build and start wallet Docker container alongside devnet
+./test_pipeline.sh --mode merge --no-cache --fresh   # Deterministic full rebuild
+./test_pipeline.sh --mode native --with-wallet       # 3-node devnet + wallet container
 
 # Or manually (requires --profile since all services use profiles):
 docker compose --profile native up -d    # Start the 3-node stack (native)
@@ -109,6 +111,46 @@ $DRK -n $NETWORK scan
 # Check balance (should show DRKW from mining rewards)
 $DRK -n $NETWORK wallet balance
 ```
+
+## Wallet Container
+
+A standalone Docker container provides wallet interaction within the localnet.
+It builds only `dww` (no WASM contracts, no `dwowd`, no `lilith`) and runs in
+two modes: `test` (auto-init, scan, position, assert, exit) for CI, or
+`interactive` (`sleep infinity` for `docker exec` access) for dev work.
+
+```bash
+# Interactive mode — start alongside the running testnet
+docker compose --profile wallet up -d wallet
+docker exec dwow-wallet dww wallet address
+docker exec dwow-wallet dww scan
+docker exec dwow-wallet dww position
+
+# Tear down
+docker compose --profile wallet down -v
+```
+
+The pipeline's `--with-wallet` flag adds wallet container build, start, and
+verify steps to Phases 4, 5, and 6 of `test_pipeline.sh`:
+
+```bash
+./test_pipeline.sh --mode native --with-wallet
+```
+
+### Automated Wallet Test
+
+[`test-wallet.sh`](../../../contrib/docker/darkwow-testnet/test-wallet.sh) starts the
+wallet container in test mode and verifies the full scan-to-position cycle in
+five phases: pre-flight checks, container start, wait for completion (up to 120s),
+output verification (coin capabilities, descriptors, capabilities section, wallet
+address), and cleanup. The container auto-exits 0 on success or 1 on failure.
+
+```bash
+./test-wallet.sh
+```
+
+For full details see the
+[darkwow-testnet README](../../../contrib/docker/darkwow-testnet/README.md#wallet-docker-container).
 
 ## Contract Tests
 
@@ -173,6 +215,9 @@ compile. The test pipeline builds it automatically if missing.
 | `test_pipeline.sh` | Single entry point: 4 modes (native, merge, join-native, join-merge), 10-12 phases each. Auto-builds base image if missing |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
+| `Dockerfile.wallet` | Wallet container — builds only `dww` (no WASM, no dwowd, no lilith). Fast build (~5min) |
+| `entrypoint-wallet.sh` | Wallet entrypoint — generates `drk.toml`, imports/generates keypair, dispatches test/interactive mode |
+| `test-wallet.sh` | Level 3 wallet container integration test — starts container in test mode, verifies position output |
 
 See the [darkwow-testnet README] for the full modes comparison table, Docker
 image catalog, compose profile reference, and current pass/fail counts for all

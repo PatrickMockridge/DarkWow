@@ -288,15 +288,24 @@ Every fallible point in the resolver is exercised by at least one test:
 | 9 | Empty descriptors map | `test_no_descriptors_registered` |
 | 10 | Unknown descriptor name | `test_unknown_descriptor_skipped` |
 
-### Level 3 — Docker integration
+### Level 3 — Docker container
 
-[`contrib/docker/darkwow-testnet/test-contracts.sh`](../../../contrib/docker/darkwow-testnet/test-contracts.sh)
-Phase 8 runs `dww position` after contract deployment in a live multi-node
-Docker testnet and verifies:
+The [`darkwow-testnet`](../../../contrib/docker/darkwow-testnet/) Docker
+environment provides a dedicated wallet container
+([`Dockerfile.wallet`](../../../contrib/docker/darkwow-testnet/Dockerfile.wallet),
+[`entrypoint-wallet.sh`](../../../contrib/docker/darkwow-testnet/entrypoint-wallet.sh))
+that builds only `dww` (no WASM contracts, no `dwowd`, no `lilith`). It runs
+in a live multi-node Docker testnet and verifies the full scan-to-position cycle:
+
+- `test_pipeline.sh --with-wallet` adds wallet container build, start, and verify steps to the pipeline
+- [`test-wallet.sh`](../../../contrib/docker/darkwow-testnet/test-wallet.sh) runs the container in test mode: auto-init, scan, position, assert, exit
+- `docker compose --profile wallet up -d` starts interactive mode for `docker exec` access
+
+Test mode assertions verify:
 
 - Coin capabilities appear from mining rewards
 - Descriptors count is reported
-- Actions section reflects escrow instance state
+- Capabilities section and wallet address appear in output
 
 ## Related Documents
 

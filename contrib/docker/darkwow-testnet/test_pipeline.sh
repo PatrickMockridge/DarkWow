@@ -112,6 +112,7 @@ Options:
   --monerod-rpc-url URL     monerod JSON-RPC URL for anchor verification
   --no-cache                Pass --no-cache to docker compose build
   --fresh                   Aggressive clean: builder prune, image rm, volume prune
+  --with-wallet             Build and start wallet Docker container alongside devnet
 
 Examples:
   ./test_pipeline.sh                         # local devnet, native mining
@@ -119,6 +120,7 @@ Examples:
   ./test_pipeline.sh --mode bridge           # local devnet, full bridge lifecycle
   ./test_pipeline.sh --mode join-native      # join public testnet, solo mining
   ./test_pipeline.sh --mode join-merge       # join public testnet, merge mining
+  ./test_pipeline.sh --with-wallet           # local devnet + wallet container for docker exec
 
 After pipeline passes:
   ./test-contracts.sh --mode native          # contract deploy + transfer test
@@ -136,6 +138,7 @@ MONERO_MIN_CONFIRMATIONS="${MONERO_MIN_CONFIRMATIONS:-3}"
 MONEROD_RPC_URL="${MONEROD_RPC_URL:-}"
 NO_CACHE="${NO_CACHE:-false}"
 FRESH="${FRESH:-false}"
+WITH_WALLET="${WITH_WALLET:-false}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
@@ -150,6 +153,7 @@ while [ $# -gt 0 ]; do
         --monerod-rpc-url=*) MONEROD_RPC_URL="${1#*=}"; shift ;;
         --no-cache) NO_CACHE="true"; shift ;;
         --fresh) FRESH="true"; shift ;;
+        --with-wallet) WITH_WALLET="true"; shift ;;
         --help|-h) usage ;;
         *)
             echo "Unknown flag: $1"
@@ -441,6 +445,7 @@ phase_clean() {
     docker compose --profile native --remove-orphans down --rmi all -v 2>/dev/null || true
     docker compose --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
     docker compose --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
+    docker compose --profile wallet --remove-orphans down --rmi all -v 2>/dev/null || true
 
     # Remove any lingering dwow-* containers (defense in depth)
     STALE=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^dwow-" || true)
@@ -453,6 +458,9 @@ phase_clean() {
         # Remove darkwow testnet images explicitly (docker compose --rmi misses
         # images that were built with different profile combinations)
         for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet-" || true); do
+            docker rmi -f "$img" 2>/dev/null || true
+        done
+        for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-wallet" || true); do
             docker rmi -f "$img" 2>/dev/null || true
         done
 
@@ -635,6 +643,12 @@ phase_build() {
         check $? "docker build"
     fi
 
+    if [ "$WITH_WALLET" = "true" ] && ! is_join_mode; then
+        info "  Building wallet container..."
+        docker compose --profile wallet build $BUILD_ARGS 2>&1
+        check $? "docker build (wallet profile)"
+    fi
+
     pass "build complete"
 }
 
@@ -700,6 +714,18 @@ phase_start() {
             MONEROD_RPC_URL="$MONEROD_RPC_URL" \
             docker compose --profile native up -d
     fi
+
+    if [ "$WITH_WALLET" = "true" ] && ! is_join_mode; then
+        info "Starting wallet container..."
+        WALLET_MODE=interactive docker compose --profile wallet up -d wallet 2>&1
+        sleep 3
+        if docker ps --format '{{.Names}}' | grep -q "dwow-wallet"; then
+            info "wallet container running"
+        else
+            warn "wallet container may not have started"
+        fi
+    fi
+
     # Shred temp secret file now that containers have read it
     rm -rf "$SECRET_FILE"
 
@@ -887,6 +913,10 @@ phase_verify() {
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-bridge-node)
     else
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1)
+    fi
+
+    if [ "$WITH_WALLET" = "true" ]; then
+        EXPECTED+=(dwow-wallet)
     fi
 
     for c in "${EXPECTED[@]}"; do

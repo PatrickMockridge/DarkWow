@@ -538,6 +538,10 @@ phases. Every check reports PASS or FAIL — there are no skipped or silent chec
 # Join public testnet as a single node (12 phases each)
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-native
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-merge
+
+# With wallet container (native/merge modes only)
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native --with-wallet
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode merge --with-wallet
 ```
 
 **Sequential determinism**: Every phase runs to completion before the next begins.
@@ -550,6 +554,7 @@ This guarantees reproducible results across different machines.
 |------|---------|--------|
 | `--no-cache` | off | Pass `--no-cache` to every `docker compose build` — all layers rebuilt from scratch |
 | `--fresh` | off | Aggressive Phase 1 clean: `docker builder prune -a -f`, `docker rmi -f` for stale images, `docker buildx prune`, `docker volume prune -f` |
+| `--with-wallet` | off | Build, start, and verify wallet Docker container alongside devnet (native/merge modes only) |
 
 The flags are independent — combine them for a fully deterministic rebuild:
 
@@ -574,9 +579,9 @@ The flags are independent — combine them for a fully deterministic rebuild:
 | 1 | Clean | Container/volume teardown, kill stale cargo/rustc processes, remove wallet secret. With `--fresh`: also prunes all Docker build cache, images, and buildx builders. |
 | 2 | Prerequisites | `dww` binary exists, WASM contracts present (money_v3, DEX, dao_escrow), mode-specific files (Dockerfile.monero, Dockerfile.p2pool, entrypoint scripts) |
 | 3 | Wallet | Generate keypair via `dww wallet keygen`, write secret to `/tmp/dwow_mining_secret` |
-| 4 | Build | `docker compose --profile <mode> build` for all services in the profile. With `--no-cache`: rebuilds all layers from scratch (ensures `git clone` fetches latest). |
-| 5 | Start | `docker compose --profile <mode> up -d`, verify no containers exit immediately |
-| 6 | Verify containers | Every expected container is running (3 for native, 5 for merge) |
+| 4 | Build | `docker compose --profile <mode> build` for all services in the profile. With `--no-cache`: rebuilds all layers from scratch (ensures `git clone` fetches latest). With `--with-wallet`: also builds wallet container (`--profile wallet build`). |
+| 5 | Start | `docker compose --profile <mode> up -d`, verify no containers exit immediately. With `--with-wallet`: also starts wallet container (`WALLET_MODE=interactive`). |
+| 6 | Verify containers | Every expected container is running (3 for native, 5 for merge). With `--with-wallet`: also expects `dwow-wallet` (+1 container). |
 | 7 | RPC health | TCP JSON-RPC ping to node0 (port 31345) and node1 (31346); plus monerod RPC (28081) for merge |
 | 8 | Mining activity | Log inspection for stratum job acceptance (native), p2pool sidechain activity + xmrig hashing + merge mining submissions (merge) |
 | 9 | Block production | Fetch genesis block via `blockchain.get_block_linear`, wait up to 130s for block height >= 2, inspect PoW data |
