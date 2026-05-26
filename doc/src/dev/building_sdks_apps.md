@@ -451,26 +451,9 @@ dww-desktop-wallet/           # Workspace
 
 ## Testing
 
-Test domain types without infrastructure:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use drk_desktop_wallet_domain::*;
-
-    #[test]
-    fn test_api_request_serialization() {
-        let request = ApiRequest::CreateWallet(CreateWalletParams {
-            name: "test".into(),
-            network: "localnet".into(),
-            // ...
-        });
-        let json = serde_json::to_string(&request).unwrap();
-        let parsed: ApiRequest = serde_json::from_str(&json).unwrap();
-        assert_eq!(request, parsed);
-    }
-}
-```
+Test domain types as Level 1 unit tests (serialization roundtrips, no
+infrastructure). See [Testing Overview](testing/overview.md) for the full
+four-level testing taxonomy and command reference.
 
 ## References
 

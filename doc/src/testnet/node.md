@@ -185,42 +185,9 @@ your config file in a text editor (the default path is
 wallet_pass = "changeme"
 ```
 
-Once you've changed the default password for your testnet wallet, we
-can proceed with the wallet initialization. We simply have to
-initialize a wallet, and create a keypair. The wallet address shown in
-the outputs is explanatory and will be different from the one you get.
-
-```shell
-$ ./dww -c bin/dww/dww_config.toml -n localnet wallet initialize
-
-Initializing NativeToken Merkle tree
-Successfully initialized Merkle tree for the NativeToken contract
-Generating alias DRKW for Token: 241vANigf1Cy3ytjM1KHXiVECxgxdK4yApddL8KcLssb
-Initializing Deployooor Merkle trees
-Successfully initialized Merkle trees for the Deployooor contract
-```
-
-```shell
-$ ./dww -c bin/dww/dww_config.toml -n localnet wallet keygen
-
-Generating a new keypair
-New address:
-{YOUR_DARKFI_WALLET_ADDRESS}
-```
-
-```shell
-$ ./dww -c bin/dww/dww_config.toml -n localnet wallet default-address 1
-```
-
-The second command will print out your new DarkWow address where you
-can receive payments. Take note of it. Alternatively, you can always
-retrieve your default address using:
-
-```shell
-$ ./dww -c bin/dww/dww_config.toml -n localnet wallet address
-
-{YOUR_DARKFI_WALLET_ADDRESS}
-```
+Initialize a wallet and create a keypair. See
+[Wallet Architecture](../arch/wallet.md) for details. Use
+`-c bin/dww/dww_config.toml -n localnet` for localnet configuration.
 
 ### Darkfid
 

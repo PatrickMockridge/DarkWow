@@ -104,10 +104,9 @@ dww contract invoke dao_escrow enable_drain_protection --params params.json
 ## Full Workflow
 
 ### 1. Initialize wallet (first time only)
-```bash
-./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet initialize
-./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet keygen
-```
+
+See [Wallet Architecture](arch/wallet.md) for wallet initialization and keygen.
+Use `-c bin/dww/dww_config.toml -n localnet` for localnet dev.
 
 ### 2. Start localnet
 ```bash

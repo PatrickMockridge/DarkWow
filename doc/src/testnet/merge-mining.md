@@ -153,34 +153,16 @@ hashpower ratios, uncle phases, and reward distribution interactively.
 ## Docker Quick Start
 
 The easiest way to test merge mining is with the darkwow-testnet Docker
-setup, which bundles monerod + p2pool + xmrig behind a single flag:
-
-```bash
-# Start with merge mining (adds monerod, p2pool, and xmrig-merge containers)
-MERGE_MINING=true docker compose --profile merge \
-    -f contrib/docker/darkwow-testnet/docker-compose.yml up -d
-
-# Check logs
-docker logs dwow-p2pool
-docker logs dwow-monerod
-
-# Check blockchain status (dwowd uses raw TCP JSON-RPC)
-docker exec dwow-node0 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.last_confirmed_block\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3'
-
-# Tear down
-docker compose --profile merge \
-    -f contrib/docker/darkwow-testnet/docker-compose.yml down
-```
+setup, which bundles monerod + p2pool + xmrig behind a single flag.
 
 By default, `monerod` runs in offline mode — which **requires a synced data dir**
 from a previous online sync (see "Monero setup" below). On first run, set
 `MONERO_OFFLINE=false` to sync from the live Monero testnet, or sync monerod
 manually before starting the Docker stack.
 
-To connect to the live Monero testnet, set `MONERO_OFFLINE=false`.
-
 See the [darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md)
-for the full merge mining env var reference.
+for the full docker compose commands, merge mining env var reference, and
+pipeline modes.
 
 ## Bare-Metal Setup
 

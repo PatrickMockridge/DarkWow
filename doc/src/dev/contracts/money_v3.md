@@ -341,13 +341,9 @@ Note: a token registry tree and auth nullifiers tree are planned but not yet imp
 
 ## Testing
 
-```bash
-# Build money_v3 contract
-cargo build -p darkfi_money_v3_contract
-
-# Run test harness
-cargo run -p dwow-contract-test-harness --bin test_money_v3
-```
+Money V3 is tested via `cargo run -p dwow-contract-test-harness --bin test_money_v3`.
+See [Testing Overview](../testing/overview.md) for the four-level testing taxonomy
+and command reference.
 
 ## Migration from MoneyV2
 

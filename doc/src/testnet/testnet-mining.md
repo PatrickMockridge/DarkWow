@@ -23,18 +23,8 @@ same stratum interface but are not bundled here.
 
 ## Step 1: Generate a Wallet
 
-```bash
-# Initialize wallet
-dww wallet initialize
-
-# Generate keypair
-dww wallet keygen
-
-# Get your address
-dww wallet address
-```
-
-Save the address — you'll need it for mining rewards.
+See [Wallet Architecture](../arch/wallet.md) for initialization, keygen, and
+address retrieval. Save the address — you'll need it for mining rewards.
 
 ## Step 2: Create dwowd Config
 

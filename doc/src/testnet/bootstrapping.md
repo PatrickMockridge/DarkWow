@@ -22,18 +22,8 @@ The P2P bootstrap is simple:
 
 ## Network Parameters
 
-| Parameter | Value |
-|-----------|-------|
-| Network name | `darkwow-testnet` |
-| Magic bytes | `[68, 82, 75, 87]` ("DRKW") |
-| Block time | 120 seconds |
-| Initial difficulty | 255 (auto-adjusting) |
-| PoW algorithm | RandomX (rx/0) |
-| Consensus threshold | 3 |
-| P2P seed port | 31340 |
-| RPC port | 31345 |
-| Stratum port | 31347 |
-| Seed nodes | `lilith0.dark.fi:31340`, `lilith1.dark.fi:31340` |
+See [Network Types](../arch/network-types.md) for the full testnet configuration
+(magic bytes, ports, difficulty, and block time).
 
 ## Phase 1: Single-Machine Validation
 
@@ -248,16 +238,9 @@ restarts, so the node remembers peers it has connected to.
 
 Once the native mining testnet is stable, add Monero merge mining:
 
-```bash
-# Join with merge mining (single node, connects to Monero testnet)
-./contrib/docker/darkwow-testnet/join-testnet.sh --mode merge
-
-# Or test the join end-to-end first
-./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-merge
-
-# Or for local testing: full 3-node devnet with merge mining
-MERGE_MINING=true docker compose --profile merge up -d
-```
+See [Merge Mining](merge-mining.md) and the
+[darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md)
+for pipeline and docker compose commands.
 
 This starts monerod syncing the public Monero testnet, p2pool bridging to dwowd's
 mm_rpc, and xmrig mining through p2pool. See [Merge Mining](merge-mining.md) for

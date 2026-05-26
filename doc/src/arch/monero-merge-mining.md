@@ -158,44 +158,10 @@ mempool transactions — the coinbase is added at submission time.
 
 ## Testing
 
-### Prerequisites
-
-- Monero testnet daemon (`monerod`) with synced blockchain data
-- p2pool binary (v4.14+)
-- xmrig (v6.22.2+)
-- Rust toolchain
-
-### One-time Setup
-
-```bash
-# Sync Monero testnet (takes 8-12 hours, do once)
-monerod --testnet --data-dir ~/.cache/dwow_merge_testnet_monero \
-  --fast-block-sync=1 --hide-my-port \
-  --add-peer 125.229.105.12:28081
-```
-
-### Running the E2E Test
-
-```bash
-# Build (10 threads max)
-RAYON_NUM_THREADS=10 cargo build -p dwowd --release
-
-# Run
-RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 \
-  bash contrib/docker/darkwow-testnet/test_merge_mining_p2pool.sh
-```
-
-### Thread Budget
-
-| Service | Threads | Notes |
-|---------|---------|-------|
-| xmrig | 1 (`-t 1`) | Single-threaded mining at difficulty 1000 |
-| monerod | 4 (`--max-concurrency 4`) | Offline, fixed-difficulty |
-| p2pool | ~1-2 | Default |
-| dwowd | ~1-3 | Node + mm_rpc |
-| cargo build | 10 (`RAYON_NUM_THREADS=10`) | |
-
-**Total: ~12 threads max** — safe for any machine.
+Merge mining is tested with `test_merge_mining_p2pool.sh` (bare-metal E2E)
+and `test_pipeline.sh --mode merge` (containerized). See
+[Testing Overview](../dev/testing/overview.md) for the four-level taxonomy and
+command reference.
 
 ### Debugging
 
@@ -354,14 +320,9 @@ Every miner runs on 1 thread:
 
 ### Quick Start
 
-```bash
-# Full pipeline (build + start + 10 verification phases):
-cd contrib/docker/darkwow-testnet
-RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 bash test_pipeline.sh --mode merge
-
-# Or directly with docker compose:
-WALLET_ADDRESS=<darkwow-address> MERGE_MINING=true docker compose --profile merge up -d
-```
+Run the merge mining pipeline or start a merge-mined devnet directly. See the
+[darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md)
+for the full command reference and environment variables.
 
 ### Relationship to Bare-Metal Test
 

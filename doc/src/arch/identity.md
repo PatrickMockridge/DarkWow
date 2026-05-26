@@ -599,7 +599,7 @@ Why this matters:
 
 ### Level 0: zk_only (Maximum Privacy)
 
-Level 0 uses the safemath assertion pattern. The verifier learns **only** whether the proof is valid or invalid:
+Level 0 uses the `less_than_strict` assertion pattern. The verifier learns **only** whether the proof is valid or invalid:
 
 ```zk
 # From create_claim_v1.zk

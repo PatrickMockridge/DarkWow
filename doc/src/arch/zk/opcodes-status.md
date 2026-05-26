@@ -27,7 +27,7 @@ This document tracks the formal verification status of ZK circuit opcodes used i
 
 | Contract | Feature | Status |
 |----------|---------|--------|
-| stablecoin | Collateralization checks | ✅ LessThanOrEqual or Safemath |
+| stablecoin | Collateralization checks | ✅ LessThanOrEqual |
 | identity | Threshold predicates | ✅ LessThanOrEqual verified |
 | dex | Partial fills | ✅ LessThanOrEqual verified |
 | **bridge** | All deposit/withdraw operations | ✅ No workarounds needed! |
@@ -54,5 +54,4 @@ Plain contracts have been **deprecated** in favor of ZK contracts since:
 ## References
 
 - [Opcodes and Formal Verification](opcodes.md) — Full opcode analysis with Lean 4 proofs
-- [Safemath](safemath.md) — ZK arithmetic templates for assertion-only comparisons
 - [Field Arithmetic](field_arithmetic.md) — zkVM primitive analysis

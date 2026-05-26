@@ -46,10 +46,8 @@ NETWORK="darkwow-testnet"
 
 ### Step 2: Generate a keypair
 
-```bash
-$DRK -n $NETWORK wallet keygen
-# Output: Address (bs58) and Secret (hex)
-```
+See [Wallet Architecture](../../arch/wallet.md) for wallet initialization and keygen.
+Use `-n darkwow-testnet` for the public testnet.
 
 ### Step 3: Write the secret to a secure file
 

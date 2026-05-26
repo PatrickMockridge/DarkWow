@@ -236,35 +236,9 @@ Metadata displayed without [UNVERIFIED] when sufficient attestation weight exist
 
 ## Testing
 
-### Unit Tests (Level 1)
-
-```bash
-cargo test -p dww
-```
-
-9 tests in `bin/drk/tests/contract_metadata_tests.rs`:
-- Serialization roundtrip (empty and full payloads)
-- Edge cases (empty bytes, garbage bytes)
-- DB insert + query by ID
-- DB public-only filter
-- DB category filter
-- INSERT OR REPLACE (upsert)
-
-### Blockchain Tests
-
-```bash
-# Level 1: Deploy escrow through Deployooor with metadata (no ZK)
-cargo test -p dwowd test_metadata_deploy_lightweight
-
-# Level 2: Deploy with metadata + ZK proofs + state transitions
-RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd \
-    test_heavyweight_metadata
-```
-
-### Integration (Level 3, future)
-
-Deploy contracts with metadata on a containerized testnet, run `dww scan`, and verify
-metadata appears in wallet DB queries.
+Contract metadata is tested at Level 1 (unit + lightweight blockchain) and
+Level 2 (heavyweight ZK proofs). See [Testing Overview](../dev/testing/overview.md)
+for the four-level taxonomy and command reference.
 
 ## Security Properties
 

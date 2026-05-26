@@ -18,554 +18,71 @@ O-Cap is **not a feature** or an extension - it is the **central paradigm** for 
 
 ## The Ambient Authority Problem
 
-Traditional systems have **ambient authority** - your identity and permissions exist in the environment (OS, database, session) and ANY operation can potentially access them.
+Traditional systems have **ambient authority** — your identity and permissions exist
+in the environment and any operation can potentially access them. O-Caps make authority
+**explicit** and **bounded**: the proof IS the authority, nothing more. The verifier
+learns only what capability is being proven, not who holds it.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Ambient Authority Problem                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  Alice logs into system                                           │
-│  → Her identity and ALL permissions are ambient (in environment) │
-│                                                                   │
-│  Alice's code runs:                                              │
-│  → Can it access resources it shouldn't?                         │
-│  → Can it leak data to unauthorized parties?                     │
-│  → Can it be tricked into acting for another user?               │
-│                                                                   │
-│  PROBLEM: Every operation runs in an environment                 │
-│  filled with ambient authority that can be exploited.             │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+Authorization follows a four-component pattern:
 
-## O-Caps Eliminate Ambient Authority
+| Component | Purpose |
+|-----------|---------|
+| **Commitment** | `H(secret, params)` — private capability on-chain, bound to holder |
+| **Nullifier** | `H(secret)` — consumes capability exactly once (replay protection) |
+| **Proof** | ZK proof of secret knowledge + predicate satisfaction |
+| **Revocation** | Issuer invalidates before use (optional) |
 
-O-Caps make authority **EXPLICIT** and **BOUNDED**. The proof IS the authority - nothing more.
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    O-Cap Eliminates Ambient Authority               │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  Alice creates a proof:                                           │
-│  → Only the SPECIFIC capability is in the proof                  │
-│  → No other permissions are present in the environment           │
-│  → The verifier only sees the capability, not Alice's identity   │
-│                                                                   │
-│  Alice's code cannot:                                            │
-│  → Access resources beyond the specific capability                │
-│  → Leak data because it has no ambient identity to leak          │
-│  → Be tricked because there's nothing to impersonate              │
-│                                                                   │
-│  KEY INSIGHT: O-Caps make authority EXPLICIT and BOUNDED.       │
-│               The proof IS the authority - nothing more.           │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## The Intuitive Privacy Rule
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│            O-Cap Makes Privacy Reasoning Intuitive                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ACL PRIVACY REASONING (hard):                                    │
-│  "Does this operation reveal Alice's identity?"                   │
-│  "Can this log be linked to other logs?"                          │
-│  "What does the admin see?"                                       │
-│  "If data breaches, what is exposed?"                            │
-│  → Complex, contextual, hard to reason about                     │
-│                                                                   │
-│  O-Cap PRIVACY REASONING (simple):                               │
-│  "What capability is being proven?"                               │
-│  "That's all the verifier learns - nothing more."                 │
-│  → SIMPLE, LOCAL, INTUITIVE                                      │
-│                                                                   │
-│  ┌─────────────────────────────────────────────────────────┐      │
-│  │  In O-Cap, you reveal ONLY what you prove.             │      │
-│  │  If you prove "can_vote", verifier learns "can_vote"   │      │
-│  │  Nothing else. Nothing more. Always.                    │      │
-│  └─────────────────────────────────────────────────────────┘      │
-│                                                                   │
-│  WHY THIS IS INTUITIVE:                                          │
-│  - Privacy is PROVABLE, not just policy                          │
-│  - The ZK proof GUARANTEES what is/isn't revealed                │
-│  - No trust in system admins or database security                 │
-│  - Reasoning is LOCAL to the capability being proven               │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## The Pattern: How O-Caps Work
-
-Every privacy-preserving DarkWow contract needs to solve the same fundamental problem:
-
-**How do you authorize an action without revealing who you are or what you're doing?**
-
-The solution is a reusable pattern with four components:
-
-| Component | Purpose | Appears In |
-|-----------|---------|------------|
-| **Commitment** | Creates a private capability bound to a secret | All contracts |
-| **Nullifier** | Consumes the capability exactly once | All contracts |
-| **Proof** | Verifies authorization without revealing secret | All contracts |
-| **Revocation** | Allows issuer to invalidate before use | Identity, some others |
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              Private Authorization Lifecycle                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  1. COMMIT                                                        │
-│     User creates commitment = H(secret, params)                    │
-│     → Private capability exists on-chain                          │
-│     → No one knows the secret                                    │
-│     → Capability is bound to user                                 │
-│                                                                   │
-│  2. PROVE (optional intermediate step)                            │
-│     User generates ZK proof                                        │
-│     → Proves they know the secret                                 │
-│     → Proves commitment is valid                                 │
-│     → Proves predicate is satisfied                               │
-│     → Nothing revealed to observers                                │
-│                                                                   │
-│  3. CONSUME                                                       │
-│     User provides nullifier = H(secret)                            │
-│     → Capability consumed exactly once                             │
-│     → Cannot be used again (replay protection)                   │
-│     → Action executed atomically                                  │
-│                                                                   │
-│  4. REVOKE (optional)                                            │
-│     Issuer marks nullifier as revoked                             │
-│     → Commitment invalidated before use                            │
-│     → Issuer can cancel before consumed                          │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Why O-Caps
-
-### The Problem with Traditional Authorization
-
-Traditional blockchain authorization reveals too much:
-- **Public keys** link transactions to identities
-- **Signatures** prove ownership but don't hide the transaction
-- **Balances** are visible to everyone
-- **Transaction graphs** can be analyzed to deanonymize users
-- **Ambient authority** exists in the environment, exploitable by code
-
-### The O-Cap Solution
-
-O-Caps achieve **authorization without revelation**:
-
-1. **Capability bounds authority**: The proof IS the authority - nothing more
-2. **Commitment hides the secret**: `H(secret, params)` means only the holder knows the secret
-3. **Nullifier prevents reuse**: `H(secret)` can only be spent once
-4. **Proof enables authorization without disclosure**: ZK proof shows the secret is known without revealing it
-5. **Revocation provides control**: Issuer can invalidate before use
-
-**The key insight**: O-Caps answer the question "WHAT can you prove?" instead of "WHO are you?"
+The lifecycle: Commit → Prove → Consume → (Revoke). O-Caps answer "WHAT can you
+prove?" instead of "WHO are you?", eliminating identity-based privacy leakage.
 
 ---
 
-## Authorization Inversion: Design Rationale
+## Authorization Inversion
 
-*O-Cap authorization addresses a fundamental property of identity-based access control. What follows describes why this fork chose O-Cap over ACLs for privacy-preserving authorization.*
+ACLs have an inherent privacy gap: observing "ACCESS GRANTED" reveals the
+principal came from the authorized set. O-Cap inverts the question from
+"WHO has access?" to "Can you PROVE you have access?" — the verifier
+learns capability_id, predicate result (1/0), and nullifier existence,
+but nothing about the holder's identity or attribute values.
 
-### The ACL Privacy Gap
+The LessThanOrEqual (`0x55`) and IsNotEqual (`0x62`) opcodes are central to
+O-Cap predicates (threshold comparisons, exclusion checks). Both are DarkWow
+additions to the zkVM with Lean4 formal verification of circuit soundness.
 
-Access Control Lists (ACLs) have an inherent privacy property when the authorization decision itself reveals information:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│            ACL Privacy Gap                                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  OBSERVATION:                                                     │
-│  When a verifier observes "ACCESS GRANTED", they learn the      │
-│  principal came from the authorized set — reducing anonymity.   │
-│                                                                   │
-│  Let A = {principals authorized for action X}                    │
-│  When access is granted, verifier learns: ∃p ∈ A : p performed X│
-│  This reveals information about p from the set A                │
-│                                                                   │
-│  The O-Cap approach: don't condition on identity at all —       │
-│  instead, prove possession of a capability without revealing    │
-│  which identity holds it.                                        │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Note:** This is not a flaw in ACLs. ACLs are simpler to implement, easier to audit, and are the right choice for systems that don't require anonymous authorization. The privacy property is a consequence of the ACL abstraction — identity-based authorization naturally reveals identity-adjacent information. For privacy-preserving systems, O-Caps provide an alternative model that avoids this inherent tradeoff.
-
-### Authorization Inversion
-
-Authorization inversion resolves this by changing the fundamental question:
-
-```
-ACL:         "WHO has access to X?"
-O-Cap:       "Can you prove you have access to X?"
-
-ACL Response: alice@company → access granted (identity revealed)
-O-Cap Response: prove(predicate) → VALID (identity hidden)
-```
-
-Instead of checking "is this identity authorized?", O-Cap checks "does this proof satisfy the predicate?" The verifier learns:
-- **What** capability is being proven
-- **Whether** the predicate is satisfied (1/0)
-- **Nothing** about who holds the capability
-
-### Bounded Authority in ZK
-
-The O-Cap verification evaluates a zero-knowledge predicate:
-
-```
-∃ w : P_{r,s}(w) = 1
-```
-
-Where:
-- `w` = witness (hidden credential data)
-- `P_{r,s}` = predicate with public params r and secret params s
-- Result = 1 if requirements are met
-
-**Bounded Authority Guarantee:**
-```
-┌─────────────────────────────────────────────────────────────────┐
-│         What the Verifier Learns (and doesn't learn)                 │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  LEARNS:                                                          │
-│  ✓ capability_id (what's being proven)                          │
-│  ✓ predicate_result (1 = pass, 0 = fail)                        │
-│  ✓ nullifier (exists, not who)                                   │
-│  ✓ proof validity                                                │
-│                                                                   │
-│  DOES NOT LEARN:                                                  │
-│  ✗ holder identity                                               │
-│  ✗ actual attribute values                                       │
-│  ✗ threshold values                                              │
-│  ✗ full credential contents                                      │
-│  ✗ when credential expires                                       │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-This bounded disclosure is **guaranteed** by the ZK proof construction — not by trust in the system.
-
-### LTE Gate: Formal Verification of Threshold Predicates
-
-The LessThanOrEqual (LTE) operation is central to O-Cap predicates, enabling threshold comparisons like `role >= senior_engineer`. `LessThanOrEqual` is a **DarkWow addition to the zkVM** — it does not exist in upstream DarkWow. Both the implementation and the Lean4 formal verification were completed on this fork.
-
-`IsNotEqual` (0x62) complements LTE for O-Cap predicates — it enables **inequality-based capability checks** such as `role != banned_user` or `status != revoked`, where the authorization condition is that a credential attribute does NOT match a specific excluded value. Like LTE, `IsNotEqual` is Lean4-verified and is a DarkWow addition.
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                 LTE Gate: Formally Verified                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  IMPLEMENTATION: less_than_or_equal(threshold, attribute_value) │
-│  (DarkWow addition — not in upstream)                             │
-│                                                                   │
-│  VERIFICATION: Lean 4 formal methods (completed on this fork)     │
-│  - Proves circuit soundness for threshold comparisons             │
-│  - No floating-point approximations                             │
-│  - Mathematically correct boundary conditions                     │
-│                                                                   │
-│  WHY IT MATTERS:                                                  │
-│  O-Cap predicates rely on LTE for role thresholds,               │
-│  balance minimums, and credential requirements. If LTE          │
-│  were buggy, O-Cap authorization could be bypassed.             │
-│  Formal verification eliminates this entire class of risk.       │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-*This framework explains why O-Cap authorization is the chosen approach for DarkWow's privacy-preserving authorization model.*
-
-## O-Cap Full Opcode Reference (0x09-0x0c)
-
-The Identity contract implements O-Cap authorization via these opcodes:
+## O-Cap Opcodes
 
 | Opcode | Function | Description |
 |--------|----------|-------------|
-| `0x09` | `RegisterCapabilityV1` | Register a new capability type (e.g., `can_merge_pr`, `can_work_on_freelance_jobs`) |
-| `0x0a` | `IssueCapabilityV1` | Issue a capability to a holder based on their credential |
-| `0x0b` | `VerifyCapabilityV1` | Verify a capability proof (cross-contract authorization) |
-| `0x0c` | `RevokeCapabilityV1` | Revoke a capability (issuer action) |
+| `0x09` | `RegisterCapabilityV1` | Register a capability type |
+| `0x0a` | `IssueCapabilityV1` | Issue a capability to a holder |
+| `0x0b` | `VerifyCapabilityV1` | Verify a capability proof (cross-contract) |
+| `0x0c` | `RevokeCapabilityV1` | Revoke a capability |
 
-### Why O-Cap Changes Everything
+O-Caps compose through **capability chaining**: a base credential
+("software_engineer_v1", role >= 5) derives `can_propose` (DAO), which further
+derives `can_submit_bid` (Tender). Each contract adds requirements without
+amplifying authority; no cross-contract identity linking occurs.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    O-Cap as the Composition Primitive                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ACL REASONING (contract-specific):                              │
-│  "Alice has identity... Alice has credentials...                   │
-│   ...therefore Alice can vote"                                   │
-│  → Complex, cross-contract, identity-dependent                    │
-│                                                                   │
-│  O-Cap REASONING (capability-based):                            │
-│  "Prove can_vote capability... therefore ACCESS GRANTED"         │
-│  → Simple, local, identity-independent                            │
-│                                                                   │
-│  The key insight: Authorization (what you CAN do)               │
-│  doesn't require Identity (who you ARE)                          │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### How O-Caps Compose
-
-O-Caps compose through **capability chaining** - derived capabilities build on base capabilities:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    O-Cap Composition                                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  IDENTITY CONTRACT (Base O-Cap):                                 │
-│  ┌─────────────────────────────────────────────────────────┐      │
-│  │ Credential: "software_engineer_v1"                       │      │
-│  │ Proves: role_level >= 5                                  │      │
-│  │ Issuer: ACME_Corp                                         │      │
-│  └─────────────────────────────────────────────────────────┘      │
-│                           │                                        │
-│                           ▼                                        │
-│  DERIVED CAPABILITY (DAO):                                       │
-│  ┌─────────────────────────────────────────────────────────┐      │
-│  │ can_propose = credential.software_engineer_v1           │      │
-│  │             + predicate(role >= 5)                      │      │
-│  └─────────────────────────────────────────────────────────┘      │
-│                           │                                        │
-│                           ▼                                        │
-│  FURTHER DERIVED (Tender):                                       │
-│  ┌─────────────────────────────────────────────────────────┐      │
-│  │ can_submit_bid = can_propose + credential.other_requirements│  │
-│  └─────────────────────────────────────────────────────────┘      │
-│                                                                   │
-│  COMPOSITION IS SIMPLE:                                           │
-│  - Each contract adds requirements, not amplifying authority       │
-│  - Each proof only reveals what's being proven                   │
-│  - No cross-contract identity linking                             │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### O-Caps Reduce Attack Surface Dramatically
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    O-Cap Reduces Attack Surface                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ACL Attack Surface:                                              │
-│  1. Stolen credentials → full identity compromise               │
-│  2. SQL injection → ACL modification                             │
-│  3. Privilege escalation → admin access                          │
-│  4. Insider threat → ACL bypass                                  │
-│  5. Cross-site scripting → session hijacking                     │
-│  → ATTACK SURFACE: Every point where identity exists              │
-│                                                                   │
-│  O-Cap Attack Surface:                                            │
-│  1. Stolen credential_secret → specific cap only                 │
-│  2. No ACL to modify (capabilities are derived)                  │
-│  3. No privilege escalation (authority is explicit)             │
-│  4. No insider threat (identity never in system)                  │
-│  5. No session to hijack (proof is transient)                    │
-│  → ATTACK SURFACE: Only the specific capability being proven       │
-│                                                                   │
-│  WHY O-Caps REDUCE attack surface:                               │
-│  - Authority is BOUNDED to what's being proven                   │
-│  - Identity is NEVER in the system                               │
-│  - Proofs are TRANSIENT (don't persist as ambient authority)     │
-│  - Revocation is CASCADING (credential revoke → all caps fail)   │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+O-Caps reduce attack surface: stolen credential_secret compromises only one
+capability; there is no ACL to modify, no identity to steal, no session to
+hijack. Authority is bounded to what's being proven, and proofs are transient.
 
 ---
 
-## Industries Vital to Social Reproduction
+## Industries Enabled by O-Cap Privacy
 
-These industries are essential for societal survival and NOW ENABLED with O-Cap privacy:
+| Industry | Capability | Privacy Guarantees |
+|----------|-----------|-------------------|
+| **Healthcare** | `can_consult_provider` | Provider/diagnosis hidden |
+| **Domestic Labor** | `can_provide_childcare` | Worker/family identity hidden |
+| **Education** | `can_enroll_in_program` | Student/grades hidden |
+| **Freelance Work** | `can_work_on_freelance_jobs` | Identity/employer/salary hidden |
+| **Mutual Insurance** | `can_purchase_coverage` | Medical history hidden |
+| **Union Organization** | `can_participate_in_strike_vote` | Membership/vote hidden |
 
-| Industry | Why Vital | O-Cap Capability | Privacy Guarantees |
-|----------|-----------|-----------------|-------------------|
-| **Healthcare** | Medical decisions should be private | `can_consult_provider` | Provider identity hidden, diagnosis hidden |
-| **Domestic Labor** | Care work, cleaning, cooking | `can_provide_childcare` | Worker/family identity hidden |
-| **Education** | Tutoring, skill training | `can_enroll_in_program` | Student identity hidden, grades hidden |
-| **Freelance Work** | Programming, writing, design | `can_work_on_freelance_jobs` | Identity/employer/salary hidden |
-| **Mutual Insurance** | Community risk pooling | `can_purchase_coverage` | Medical history hidden |
-| **Union Organization** | Collective bargaining | `can_participate_in_strike_vote` | Membership/vote hidden |
-
-### Healthcare O-Cap Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Healthcare O-Cap Capabilities                                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Provider registers:                                              │
-│  - can_prescribe_controlled_substances                          │
-│    requires: credential.medical_license                        │
-│    requires: credential.board_certified                        │
-│    requires: predicate(years_exp >= 5)                         │
-│                                                                  │
-│  Patient verifies:                                              │
-│  - can_consult_this_provider(prove: can_prescribe...)           │
-│  - Verifier learns: Provider is licensed                        │
-│  - Verifier DOES NOT learn: Provider name, institution          │
-│                                                                  │
-│  Insurance claims via:                                          │
-│  - can_file_insurance_claim(prove: verified_patient)           │
-│  - Claim verified WITHOUT revealing diagnosis details             │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Domestic Labor O-Cap Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Domestic Labor O-Cap Capabilities                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Care worker registers:                                         │
-│  - can_provide_childcare_services                              │
-│    requires: credential.cpr_certified                          │
-│    requires: credential.background_check_passed                │
-│    requires: predicate(experience_years >= 2)                  │
-│                                                                  │
-│  Family verifies:                                               │
-│  - can_hire_caregiver(prove: can_provide_childcare...)         │
-│  - Verifier learns: Worker is qualified                        │
-│  - Verifier DOES NOT learn: Worker's real name, location       │
-│                                                                  │
-│  Payment via Money contract:                                    │
-│  - Amount hidden via ZK commitment                             │
-│  - No wage records visible                                      │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Education O-Cap Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Education O-Cap Capabilities                                    │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  University registers:                                          │
-│  - can_issue_degree(credential_hierarchy)                       │
-│    requires: credential.high_school_diploma                     │
-│    requires: credential.bachelors_degree                        │
-│    requires: credential.masters_degree (for PhD)               │
-│                                                                  │
-│  Student proves:                                                │
-│  - can_enroll_in_phd_program(prove: can_issue_degree)         │
-│  - Verifier learns: Student meets degree requirements          │
-│  - Verifier DOES NOT learn: Student name, grades, school       │
-│                                                                  │
-│  Employer verifies:                                             │
-│  - has_professional_certification(prove: can_issue_degree)     │
-│  - Verifier learns: Candidate is certified                      │
-│  - Verifier DOES NOT learn: Which school, grades, when         │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Freelance Work O-Cap Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Freelance O-Cap Capabilities                                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Worker registers:                                              │
-│  - can_work_on_freelance_jobs                                   │
-│    requires: credential.senior_engineer                          │
-│    requires: predicate(experience >= 5)                         │
-│    requires: credential.domain_expertise                         │
-│                                                                  │
-│  Client posts job requiring:                                    │
-│  - required_capability: can_work_on_freelance_jobs             │
-│                                                                  │
-│  Worker submits bid:                                            │
-│  - prove: can_work_on_freelance_jobs                           │
-│  - Verifier learns: Worker meets job requirements               │
-│  - Verifier DOES NOT learn: Worker's identity, employer,       │
-│    current salary, age, gender, ethnicity                       │
-│                                                                  │
-│  Milestone payments via Money contract:                         │
-│  - Amount hidden via ZK commitment                              │
-│  - No salary history visible                                   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Mutual Insurance O-Cap Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Insurance O-Cap Capabilities                                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Member registers:                                              │
-│  - can_purchase_standard_coverage                              │
-│    requires: credential.low_risk_profile                        │
-│    requires: predicate(age >= 25)                              │
-│    requires: credential.no_major_violations_3yrs               │
-│                                                                  │
-│  Insurer verifies:                                              │
-│  - prove: can_purchase_standard_coverage                       │
-│  - Verifier learns: Customer is low-risk                       │
-│  - Verifier DOES NOT learn: Age, exact mileage, medical        │
-│    history, lifestyle details                                  │
-│                                                                  │
-│  Claims via:                                                    │
-│  - can_file_claim(prove: verified_policy_holder)              │
-│  - Claim verified WITHOUT revealing accident details             │
-│                                                                  │
-│  Premiums calculated via base_div (0x58):                       │
-│  - Complex actuarial math now possible in ZK                    │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Union Organization O-Cap Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Union O-Cap Capabilities                                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Union registers:                                                │
-│  - can_participate_in_strike_vote                              │
-│    requires: credential.union_member                           │
-│    requires: credential.currently_employed                     │
-│                                                                  │
-│  Worker proves:                                                 │
-│  - can_vote_on_strike(prove: can_participate...)              │
-│  - Verifier learns: Vote is legitimate                         │
-│  - Verifier DOES NOT learn: Worker's identity, employer,       │
-│    position, salary, location                                  │
-│                                                                  │
-│  Employer surveillance PREVENTED:                               │
-│  - Employer cannot see who is union member                      │
-│  - Employer cannot see strike vote participation               │
-│  - Workers organize WITHOUT exposure                           │
-│                                                                  │
-│  Treasury via DAO-Escrow:                                       │
-│  - Strike fund hidden via ZK                                    │
-│  - No donation records visible                                 │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+Each industry follows the same pattern: issuer registers capability with
+credential requirements, holder proves capability via ZK proof, verifier
+learns only that the predicate is satisfied.
 
 ## Resolution: Plain Contracts Deprecated
 
@@ -582,76 +99,23 @@ The `contract_plain/` directory has been **deleted**. ZK contracts now have full
 
 ## State Primitives
 
-All DarkWow contracts must represent state. The common patterns are:
+All DarkWow contracts must represent state. The common patterns:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    State Primitive Patterns                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  1. BINARY ACCUMULATOR                                           │
-│     Represents: "element exists in set"                           │
-│     Used in: Merkle trees, Bloom filters, RSA accumulators       │
-│                                                                   │
-│     ┌─────────┐         ┌─────────────┐                          │
-│     │ Element │ ──────→ │   Merkle    │                          │
-│     └─────────┘         │     Root     │                          │
-│                         └─────────────┘                          │
-│     Proof: "element is in set" without revealing element         │
-│                                                                   │
-│  2. INTERVAL TREE                                                │
-│     Represents: "value exists in range"                           │
-│     Used in: Balance ranges, time windows, credential expiration │
-│                                                                   │
-│     ┌─────────┐         ┌─────────────┐                          │
-│     │  Value  │ ──────→ │ Interval    │                          │
-│     └─────────┘         │    Tree     │                          │
-│                         └─────────────┘                          │
-│     Proof: "value is within bounds" without revealing value      │
-│                                                                   │
-│  3. HASH CHAIN                                                   │
-│     Represents: "sequence of events in order"                    │
-│     Used in: Transaction history, credential issuance order       │
-│                                                                   │
-│     ┌─────┐ → ┌─────┐ → ┌─────┐ → ┌─────┐                       │
-│     │Event│   │Event│   │Event│   │Event│                       │
-│     └─────┘   └─────┘   └─────┘   └─────┘                       │
-│       │         │         │         │                            │
-│       ▼         ▼         ▼         ▼                            │
-│     H(0)      H(1)      H(2)      H(3)                           │
-│                                                                   │
-│     Proof: "event i happened before event j"                     │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+1. **Binary Accumulator**: "element exists in set" — Merkle trees, Bloom filters, RSA accumulators. Proves membership without revealing the element.
+2. **Interval Tree**: "value exists in range" — Balance ranges, time windows, credential expiration. Proves bounds without revealing the value.
+3. **Hash Chain**: "sequence of events in order" — Transaction history, credential issuance order. Proves event ordering.
 
 ## Authorization Primitives
 
-O-Cap authorization is the **central paradigm** that all DarkWow contracts use for authorization:
+O-Cap authorization is the **central paradigm** for all DarkWow contracts. Each contract uses three components:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              O-Cap Authorization Pattern                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  COMMITMENT          NULLIFIER           PROOF                   │
-│  H(secret, params)  H(secret, ...)      ZK(prover knows secret) │
-│       │                  │                    │                   │
-│       │                  │                    │                   │
-│       ▼                  ▼                    ▼                   │
-│  ┌─────────────────────────────────────────────────────┐         │
-│  │  O-CAP: Authorization is BOUNDED and EXPLICIT        │         │
-│  │  • The proof IS the authority - nothing more          │         │
-│  │  • Commitment exists and is valid                     │         │
-│  │  • Nullifier has not been spent                       │         │
-│  │  • Proof verifies predicate without revealing secret   │         │
-│  └─────────────────────────────────────────────────────┘         │
-│                                                                   │
-│  KEY INSIGHT: O-Cap makes authority EXPLICIT and BOUNDED.         │
-│               Every DarkWow contract uses this pattern.            │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+| Component | Purpose |
+|-----------|---------|
+| **Commitment** | `H(secret, params)` — private capability on-chain |
+| **Nullifier** | `H(secret)` — replay protection (consume exactly once) |
+| **Proof** | ZK proof of secret knowledge + predicate satisfaction |
+
+The proof IS the authority — nothing more. Commitment exists and is valid, nullifier hasn't been spent, and the proof verifies the predicate without revealing the secret.
 
 **Identity Contract as O-Cap Baseline:**
 
@@ -794,94 +258,23 @@ Cross-contract composition follows specific patterns:
 
 ### Pattern 1: Token-Gated Access
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                 Token-Gated Access                                     │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  PRECONDITION: User holds >= N tokens                            │
-│                                                                   │
-│  Implementation:                                                 │
-│  1. User creates commitment: H(balance_secret, token, amount)   │
-│  2. User generates ZK proof: "I know secret such that             │
-│     commitment = H(secret, token, amount) AND amount >= N"      │
-│  3. Contract verifies: commitment exists, proof valid            │
-│                                                                   │
-│  Privacy: Only reveals "amount >= N", not actual balance         │
-│                                                                   │
-│  Used in: DAO voting, premium features, liquidity pools           │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+User proves `balance >= N` without revealing actual balance. Commitment: `H(balance_secret, token, amount)`. ZK proof verifies commitment exists and amount >= threshold. Privacy: only the inequality is revealed. Used in DAO voting, premium features, liquidity pools.
 
 ### Pattern 2: Attestation-Based Claims
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│               Attestation-Based Claims                                 │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  PRECONDITION: Attestor has attested to a claim                   │
-│                                                                   │
-│  Implementation:                                                 │
-│  1. Attestor creates: attestation = H(data, attestor_key)       │
-│  2. Claimant creates: claim = ZK proof of attestation access   │
-│  3. Contract verifies: attestation exists, claim valid,          │
-│     predicate satisfied                                           │
-│                                                                   │
-│  Privacy: Only reveals "valid claim", not underlying data        │
-│                                                                   │
-│  Used in: Deliverable verification, competency claims,             │
-│           oracle data consumption, event attestation               │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+Attestor creates `attestation = H(data, attestor_key)`. Claimant proves access via ZK proof. Contract verifies attestation exists, claim valid, predicate satisfied. Privacy: only "valid claim" revealed. Used in deliverable verification, competency claims, oracle data.
 
 ### Pattern 3: Time-Locked Actions
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                  Time-Locked Actions                                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  PRECONDITION: Action can only happen after timestamp T           │
-│                                                                   │
-│  Implementation:                                                  │
-│  1. State includes: time_lock = H(T, action_description)         │
-│  2. Consensus ensures: block.timestamp >= T                      │
-│  3. Contract verifies: current time >= lock time                  │
-│                                                                   │
-│  Privacy: Locked action description hidden until unlock           │
-│                                                                   │
-│  Used in: Vesting schedules, delayed withdrawals, expiration      │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+State includes `time_lock = H(T, action_description)`. Consensus ensures `block.timestamp >= T`. Contract verifies current time >= lock time. Privacy: action description hidden until unlock. Used in vesting, delayed withdrawals, expiration.
 
 ### Pattern 4: Multi-Signature Authorization
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              Multi-Signature Authorization                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  PRECONDITION: N of M parties must sign                           │
-│                                                                   │
-│  Implementation:                                                 │
-│  1. Each party creates: partial_sig_i = sign(secret_i, msg)      │
-│  2. Aggregator combines: full_sig = combine(partial_sigs)         │
-│  3. Contract verifies: threshold met, all signers authorized     │
-│                                                                   │
-│  Privacy: Individual signers revealed only if needed              │
-│                                                                   │
-│  Used in: DAO proposals, bridge admin keys, upgrade gates         │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+N of M parties sign: each creates `partial_sig_i = sign(secret_i, msg)`, aggregator combines, contract verifies threshold met. Privacy: individual signers revealed only if needed. Used in DAO proposals, bridge admin keys, upgrade gates.
 
 ## O-Cap Authorization: Now Fully Implemented
 
-The Identity contract provides full O-Cap authorization via these opcodes:
+The Identity contract provides full O-Cap authorization via four opcodes:
 
 | Opcode | Function | Description |
 |--------|----------|-------------|
@@ -890,39 +283,7 @@ The Identity contract provides full O-Cap authorization via these opcodes:
 | `0x0b` | `VerifyCapabilityV1` | Verify a capability proof |
 | `0x0c` | `RevokeCapabilityV1` | Revoke a capability |
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│            O-Cap Authorization: Now Fully Implemented                 │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  IDENTITY CONTRACT (0x09-0x0c):                                 │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ RegisterCapabilityV1: Define "can_merge_pr"                    │ │
-│  │   - credential_requirement: role >= senior_engineer          │ │
-│  │   - issuer: ACME_Corp                                      │ │
-│  │                                                              │ │
-│  │ IssueCapabilityV1: Alice receives "can_merge_pr"            │ │
-│  │   - Proves: Alice has credential with role >= 5             │ │
-│  │   - Hides: Alice's actual role, employer, salary           │ │
-│  │                                                              │ │
-│  │ VerifyCapabilityV1: Verify Alice's capability proof         │ │
-│  │   - Returns: can_merge_pr = VALID                           │ │
-│  │   - Hides: Everything else                                 │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                           │                                       │
-│                           ▼                                       │
-│  OTHER CONTRACT (DAO, Labor Market, etc):                       │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ call identity.verify_capability(params)                     │ │
-│  │   - capability_id: can_merge_pr                            │ │
-│  │   - proof: Alice's ZK proof                                │ │
-│  │   - Returns: true/false                                     │ │
-│  │                                                              │ │
-│  │ Result: Alice can merge (without revealing identity)         │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+The flow: Register defines the capability + credential requirements. Issue grants it to a holder after ZK proof of credential. Verify checks a capability proof from any contract. Revoke invalidates before use. Other contracts call `identity.verify_capability(params)` to check authorization without learning the holder's identity.
 
 ---
 
@@ -1044,378 +405,32 @@ DAG claims compose with O-Cap capabilities:
 
 ## Case Studies
 
-### Case Study: Tender + Labor Market + Attestation
+### Tender + Labor Market
 
-The Tender and Labor Market contracts demonstrate DarkWow's integration of sealed-bid procurement with attestation-based competency verification and O-Cap capability authorization.
+Identity registers a capability (e.g., "qualified_contractor"), Tender accepts
+sealed bids gated by capability proof, and Labor Market executes the awarded job
+with attestation-based deliverable verification. The tender state machine flows
+Created → Bidding → Revealed → Awarded (or Cancelled). At every step, identity
+is hidden — only capabilities are proven.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              Tender + Labor Market + Attestation + O-Cap Composability                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  ┌──────────────────────┐         ┌──────────────────────┐                  │
-│  │    Identity (O-Cap)  │         │       Tender         │                  │
-│  │                      │         │                       │                  │
-│  │  ┌────────────────┐  │         │  ┌────────────────┐  │                  │
-│  │  │ RegisterCap()   │──┼─────────┼──│ SubmitBidV1()  │  │                  │
-│  │  │ + IssueCap()   │  │         │  │ + cap_id      │  │                  │
-│  │  └────────────────┘  │         │  └───────┬────────┘  │                  │
-│  │                       │         │          │            │                  │
-│  │  O-Cap Capability     │         │  Sealed Bid          │                  │
-│  │  Reference            │         │  + Capability ID       │                  │
-│  └───────────────────────┘         └───────────────────────┘                  │
-│                                    │                                           │
-│                                    │    Winner Selected                       │
-│                                    ▼                                           │
-│  ┌────────────────────────────────────────────────────────────────┐           │
-│  │                    Labor Market                                  │           │
-│  │                                                                 │           │
-│  │  ┌──────────────────────────────────────────────────────────┐  │           │
-│  │  │ CreateJobV1()                                             │  │           │
-│  │  │ - Creates job from tender winner                          │  │           │
-│  │  │ - Sets required_capability from tender specification       │  │           │
-│  │  │ - Sets payment_amount from winning bid                     │  │           │
-│  │  │ - Sets deadline from tender delivery_deadline             │  │           │
-│  │  └──────────────────────────────────────────────────────────┘  │           │
-│  │                                                                 │           │
-│  │  ┌──────────────────────────────────────────────────────────┐  │           │
-│  │  │ SubmitDeliverableV1()                                     │  │           │
-│  │  │ - Worker submits claim_id from attestation               │  │           │
-│  │  │ - Labor market verifies claim via Attestation contract    │  │           │
-│  │  │ - VerifyCapabilityV1 verifies worker's O-Cap capability  │  │           │
-│  │  └──────────────────────────────────────────────────────────┘  │           │
-│  └────────────────────────────────────────────────────────────────┘           │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Tender State Machine
-
-The tender contract implements a sealed-bid workflow:
-
-```
-Created ──[SubmitBid]──> Bidding ──[Close]──> Revealed ──[Select]──> Awarded
-                                               │
-                                               └──[Cancel]──> Cancelled
-```
-
-### O-Cap Integration: Privacy for Workers
-
-O-Cap capabilities provide privacy for workers by hiding identity during job applications:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│            O-Cap Tender + Labor Market Flow                                      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  IDENTITY CONTRACT (O-Cap 0x09-0x0c):                                        │
-│     │                                                                       │
-│     │  RegisterCapability("qualified_contractor"):                           │
-│     │    - requires: credential.professional_license                      │
-│     │    - requires: predicate(experience >= 5)                           │
-│     │    - issuer: Industry Authority                                      │
-│     │                                                                       │
-│     │  IssueCapability(worker, "qualified_contractor"):                      │
-│     │    - worker proves: role >= senior, license valid                   │
-│     │    - Hides: name, employer, salary, exact experience               │
-│     │                                                                       │
-│     ▼                                                                       │
-│  TENDER:                                                                    │
-│     │                                                                       │
-│     │  CreateJob(required_capability="qualified_contractor"):                │
-│     │    - Job listing visible (capability required)                        │
-│     │    - Prover identity HIDDEN                                          │
-│     │                                                                       │
-│     │  SubmitBid(prove: qualified_contractor):                              │
-│     │    - Verifier learns: qualified_contractor = VALID                  │
-│     │    - Verifier DOES NOT learn: Who, company, salary, experience      │
-│     │                                                                       │
-│     ▼                                                                       │
-│  LABOR MARKET:                                                              │
-│     │                                                                       │
-│     │  CreateJob(required_capability="qualified_contractor"):                │
-│     │    - Same pattern - capability required                               │
-│     │    - Worker identity HIDDEN                                          │
-│     │                                                                       │
-│     │  AcceptJob(verify: worker.has("qualified_contractor")):               │
-│     │    - Uses VerifyCapabilityV1 (0x0b)                                  │
-│     │    - Verifier learns: worker has capability                          │
-│     │    - Verifier DOES NOT learn: worker identity                       │
-│     │                                                                       │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Why O-Cap matters for labor**:
-- Employer cannot discriminate by age, gender, ethnicity (not revealed)
-- Worker's current employer cannot see they're job hunting (identity hidden)
-- Salary negotiation is neutralized (actual salary not revealed)
-- Workers compete on capability, not identity
+Workers compete on capability, not identity: employers cannot discriminate by
+age, gender, or ethnicity; current employers cannot see job-hunting activity;
+salaries remain private.
 
 ### Case Study: The Complete O-Cap Pipeline — DAO Governance to Insurance
 
-This case study demonstrates how O-Cap capabilities flow through the entire DarkWow ecosystem: from DAO-governed treasury funding, to supply chain workers proving qualifications via Identity, to executives securing contracts via Tender, to workers executing via Labor Market, to dispute resolution via DAO-Escrow, and finally to underwriters providing coverage via Insurance Market. Every step is capability-gated, identity-hidden, and composable.
+A full O-Cap lifecycle from DAO funding through insurance, every step capability-gated and identity-hidden:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│      COMPLETE O-CAP PIPELINE: DAO-ESCROW → IDENTITY → TENDER → LABOR MARKET → DISPUTE → INSURANCE      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  ╔═══════════════════════════════════════════════════════════════════════╗  │
-│  ║                    DAO-ESCROW GOVERNANCE                                ║  │
-│  ║              (DAO-Escrow Contract - O-Cap 0x07-0x0e)                   ║  │
-│  ╠═══════════════════════════════════════════════════════════════════════╣  │
-│  ║                                                                       ║  │
-│  ║  DAO MEMBERS (token holders, premium payers)                          ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  PayPremiumV1(value, token_id) → membership note               ║  │
-│  ║     │    - Fee split: 70% → Treasury, 30% → Endowment                 ║  │
-│  ║     │    - Membership note = ZK commitment (identity hidden)         ║  │
-│  ║     │                                                                  ║  │
-│  ║  IDENTITY CONTRACT ISSUES CAPABILITIES:                               ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  RegisterCapability("member_vote")                              ║  │
-│  ║     │  RegisterCapability("board_treasury")                            ║  │
-│  ║     │  IssueCapability(member, "member_vote")                         ║  │
-│  ║     │    - Proves: valid membership credential                        ║  │
-│  ║     │    - Hides: identity, contribution amount                       ║  │
-│  ║     │                                                                  ║  │
-│  ║  TREASURY FUNDS A PROJECT:                                             ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  ProposeClaimV1(ClaimType::Treasury, "Security Audit", 50000)  ║  │
-│  ║     │    capability_proof: ZK(VerifyCapability("member_vote"))        ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  VoteClaimV1(proposal_id, Approve)                              ║  │
-│  ║     │    capability_proof: ZK(VerifyCapability("member_vote"))        ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  ExecuteClaimV1(proposal_id) → 50000 DRK escrowed for project  ║  │
-│  ║     │                                                                  ║  │
-│  ║  RESULT: DAO treasury funds a 50000 DRK bounty for security audit.    ║  │
-│  ║          Members voted WITHOUT revealing identity or vote direction.  ║  │
-│  ║          Treasury funds now escrowed, awaiting tender completion.      ║  │
-│  ╚═══════════════════════════════════════════════════════════════════════╝  │
-│                                    │                                        │
-│                                    ▼                                        │
-│  ╔═══════════════════════════════════════════════════════════════════════╗  │
-│  ║                        SUPPLY CHAIN WORKERS                             ║  │
-│  ║                   (Identity Contract - O-Cap 0x09-0x0d)                 ║  │
-│  ╠═══════════════════════════════════════════════════════════════════════╣  │
-│  ║                                                                       ║  │
-│  ║  ISSUER (e.g., Professional Association)                             ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  RegisterCapability("verified_smart_contract_auditor")         ║  │
-│  ║     │    - requires: credential.auditor_license                      ║  │
-│  ║     │    - requires: predicate(experience >= 3)                      ║  │
-│  ║     │    - issuer: Industry Authority                                 ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  IssueCapability(alice, "verified_smart_contract_auditor")    ║  │
-│  ║     │    - alice proves: license valid, experience >= 3            ║  │
-│  ║     │    - Hides: name, employer, exact salary, projects           ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  CreateClaimDAG("senior_engineer")                            ║  │
-│  ║     │    - PATH A: BSC + 5yr exp + senior lead                      ║  │
-│  ║     │    - PATH B: Industry cert + 10yr exp                          ║  │
-│  ║     │    - Alice satisfies PATH B (hidden)                          ║  │
-│  ║     │                                                                  ║  │
-│  ║  RESULT: Alice has "verified_smart_contract_auditor" capability      ║  │
-│  ║          AND "senior_engineer" DAG competency                        ║  │
-│  ║          WITHOUT revealing: identity, employer, exact credentials  ║  │
-│  ╚═══════════════════════════════════════════════════════════════════════╝  │
-│                                    │                                        │
-│                                    ▼                                        │
-│  ╔═══════════════════════════════════════════════════════════════════════╗  │
-│  ║                         TENDER PROCESS                                  ║  │
-│  ║                   (Tender Contract - O-Cap 0x07-0x08)                   ║  │
-│  ╠═══════════════════════════════════════════════════════════════════════╣  │
-│  ║                                                                       ║  │
-│  ║  EXECUTIVE (Project Owner, funded by DAO treasury)                    ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  CreateTenderWithCapability(                                   ║  │
-│  ║     │    title: "DeFi Protocol Security Audit"                       ║  │
-│  ║     │    required_capability: "verified_smart_contract_auditor",    ║  │
-│  ║     │    required_dag_id: Some("senior_engineer"),                   ║  │
-│  ║     │    funding_source: dao_escrow_treasury,                         ║  │
-│  ║     │  )                                                              ║  │
-│  ║     │                                                                  ║  │
-│  ║  ALICE SUBMITS BID:                                                   ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  SubmitBidWithCapability(                                      ║  │
-│  ║     │    tender_id: X,                                                ║  │
-│  ║     │    capability_proof: ZK(VerifyCapability(                      ║  │
-│  ║     │      "verified_smart_contract_auditor")),                      ║  │
-│  ║     │    dag_proof: ZK(CreateClaimDAG("senior_engineer")),           ║  │
-│  ║     │    sealed_bid_amount: 50000                                    ║  │
-│  ║     │  )                                                              ║  │
-│  ║     │                                                                  ║  │
-│  ║  TENDER VERIFIES:                                                    ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  verify_capability("verified_smart_contract_auditor")         ║  │
-│  ║     │  verify_dag_claim("senior_engineer")                           ║  │
-│  ║     │                                                                  ║  │
-│  ║  RESULT: ✓ Alice's bid accepted                                       ║  │
-│  ║          ✗ Alice's identity NOT revealed (only capability proven)   ║  │
-│  ║          ✗ Alice's employer NOT revealed                              ║  │
-│  ║          ✗ Other bidders don't know who competed                     ║  │
-│  ║     │                                                                  ║  │
-│  ║  WINNER SELECTED:                                                     ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  RevealBid() → Alice wins with 50000                          ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  SelectWinner() → Job created in Labor Market                  ║  │
-│  ╚═══════════════════════════════════════════════════════════════════════╝  │
-│                                    │                                        │
-│                                    ▼                                        │
-│  ╔═══════════════════════════════════════════════════════════════════════╗  │
-│  ║                      LABOR MARKET EXECUTION                            ║  │
-│  ║                   (Labor Market - O-Cap 0x0d)                         ║  │
-│  ╠═══════════════════════════════════════════════════════════════════════╣  │
-│  ║                                                                       ║  │
-│  ║  JOB CREATED FROM TENDER WIN:                                         ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  CreateJob(                                                    ║  │
-│  ║     │    client: project_owner,                                      ║  │
-│  ║     │    worker: alice (via capability),                              ║  │
-│  ║     │    required_capability: "verified_smart_contract_auditor",     ║  │
-│  ║     │    payment: 50000,          // funded by DAO treasury          ║  │
-│  ║     │  )                                                              ║  │
-│  ║     │                                                                  ║  │
-│  ║  ALICE ACCEPTS JOB:                                                   ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  AcceptJobWithCapability(                                      ║  │
-│  ║     │    job_id: Y,                                                   ║  │
-│  ║     │    capability_proof: ZK(VerifyCapability(                      ║  │
-│  ║     │      "verified_smart_contract_auditor")),                      ║  │
-│  ║     │  )                                                              ║  │
-│  ║     │                                                                  ║  │
-│  ║  ALICE DELIVERS WORK:                                                 ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  SubmitDeliverable(claim_id: Z)                                ║  │
-│  ║     │    - Attestation verifies work completion                      ║  │
-│  ║     │    - Payment released via Money contract                       ║  │
-│  ╚═══════════════════════════════════════════════════════════════════════╝  │
-│                                    │                                        │
-│                                    ▼                                        │
-│  ╔═══════════════════════════════════════════════════════════════════════╗  │
-│  ║                 DAO-ESCROW DISPUTE RESOLUTION                          ║  │
-│  ║              (DAO-Escrow Contract - O-Cap 0x0c)                       ║  │
-│  ╠═══════════════════════════════════════════════════════════════════════╣  │
-│  ║                                                                       ║  │
-│  ║  DISPUTE (if deliverable fails attestation verification):             ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  Labor Market → DisputeV1 → job enters Disputed state         ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  Oracle(s) push values:                                         ║  │
-│  ║     │    oracle_1: PushValue("audit_complete", true)                  ║  │
-│  ║     │    oracle_2: PushValue("audit_complete", true)                  ║  │
-│  ║     │    oracle_3: PushValue("audit_complete", true)                  ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  Oracle(s) create attestations                                   ║  │
-│  ║     │                                                                  ║  │
-│  ║  ARBITRATOR RESOLVES:                                                 ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  ResolveDisputeV1(                                             ║  │
-│  ║     │    attestations: [oracle_1, oracle_2, oracle_3],               ║  │
-│  ║     │    capability_proof: ZK(VerifyCapability(                      ║  │
-│  ║     │      "dispute_arbitrator")),                                   ║  │
-│  ║     │    payout: 50000,                                               ║  │
-│  ║     │    recipient: alice,                                            ║  │
-│  ║     │  )                                                              ║  │
-│  ║     │                                                                  ║  │
-│  ║  CONTRACT VERIFIES (in single transaction):                           ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  a. Identity::VerifyCapabilityV1("dispute_arbitrator") → ✓    ║  │
-│  ║     │  b. Attestation::VerifyClaimV1 for each oracle → 3/5 ✓        ║  │
-│  ║     │  c. Consumes all 3 attestations (replay prevention)             ║  │
-│  ║     │  d. money_v3::transfer(escrow → alice, 50000)                  ║  │
-│  ║     │                                                                  ║  │
-│  ║  RESULT: Dispute resolved. Alice paid from escrow.                     ║  │
-│  ║          Multi-oracle attestation threshold met (3 of 5).             ║  │
-│  ║          No single oracle had unilateral payout authority.            ║  │
-│  ╚═══════════════════════════════════════════════════════════════════════╝  │
-│                                    │                                        │
-│                                    ▼                                        │
-│  ╔═══════════════════════════════════════════════════════════════════════╗  │
-│  ║                      INSURANCE MARKET                                  ║  │
-│  ║                (Insurance Market - O-Cap 0x09-0x0c)                  ║  │
-│  ╠═══════════════════════════════════════════════════════════════════════╣  │
-│  ║                                                                       ║  │
-│  ║  PROJECT OWNER PURCHASES COVERAGE:                                    ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  CreateMarket(                                                 ║  │
-│  ║     │    risk_type: SmartContractHack,                                ║  │
-│  ║     │    required_underwriter_capability: "auditor_bond",            ║  │
-│  ║     │    required_buyer_capability: Some("institutional_inv"),      ║  │
-│  ║     │  )                                                              ║  │
-│  ║     │                                                                  ║  │
-│  ║  UNDERWRITER PROVIDES COVERAGE:                                        ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  UnderwriteWithCapability(                                     ║  │
-│  ║     │    proof: ZK(VerifyCapability("auditor_bond")),               ║  │
-│  ║     │  )                                                              ║  │
-│  ║     │                                                                  ║  │
-│  ║  PROJECT OWNER PURCHASES COVERAGE:                                    ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  PurchaseCoverageWithCapability(                              ║  │
-│  ║     │    proof: ZK(VerifyCapability("institutional_inv")),          ║  │
-│  ║     │  )                                                              ║  │
-│  ║     │                                                                  ║  │
-│  ║  CLAIM FILED (if audit finds vulnerability):                          ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  FileClaim(evidence: audit_report)                             ║  │
-│  ║     │                                                                  ║  │
-│  ║     │  ResolveClaimWithCapability(                                  ║  │
-│  ║     │    proof: ZK(VerifyCapability("oracle_resolution"))           ║  │
-│  ║     │  )                                                              ║  │
-│  ║     │                                                                  ║  │
-│  ║  RESULT: Payout released, coverage maintained                        ║  │
-│  ╚═══════════════════════════════════════════════════════════════════════╝  │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────────┐  │
-│  │                    THE ELEGANT WEAVE                                      │  │
-│  ├─────────────────────────────────────────────────────────────────────────┤  │
-│  │                                                                         │  │
-│  │  FULL BUSINESS LIFECYCLE ON-CHAIN (no identity revealed anywhere):     │  │
-│  │                                                                         │  │
-│  │  1. DAO votes to fund project from treasury (member_vote capability)  │  │
-│  │  2. Project owner creates tender with capability requirements          │  │
-│  │  3. Alice proves "verified_smart_contract_auditor" via Identity       │  │
-│  │  4. Alice proves "senior_engineer" DAG via Identity                   │  │
-│  │  5. Alice submits bid to Tender WITHOUT revealing employer/salary     │  │
-│  │  6. Alice wins tender, job created in Labor Market                    │  │
-│  │  7. Alice accepts job via capability (same one from Identity)        │  │
-│  │  8. Alice delivers work, attestation verifies completion              │  │
-│  │  9. Payment released from DAO treasury escrow via Money                │  │
-│  │ 10. If disputed: multi-oracle attestation → arbitrator resolves       │  │
-│  │     via dao_escrow::ResolveDisputeV1 (dispute_arbitrator capability)  │  │
-│  │ 11. Alice later acts as underwriter via Insurance Market               │  │
-│  │     (proves "auditor_bond" capability)                                │  │
-│  │                                                                         │  │
-│  │  THE CAPABILITY FOLLOWS ALICE EVERYWHERE - IDENTITY NEVER REVEALED    │  │
-│  │  DAO-ESCROW BOOKENDS THE ENTIRE LIFECYCLE (FUNDING → DISPUTE)         │  │
-│  │                                                                         │  │
-│  └─────────────────────────────────────────────────────────────────────────┘  │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+| Stage | Contract | What Happens |
+|-------|----------|-------------|
+| **Governance** | DAO-Escrow | Members vote to fund 50,000 DRK security audit bounty via `member_vote` capability |
+| **Credential** | Identity | Alice registers "verified_smart_contract_auditor" capability (requires auditor license, experience >= 3) and "senior_engineer" DAG (multiple qualification paths) |
+| **Bidding** | Tender | Alice submits sealed bid with ZK capability proof — identity/employer never revealed |
+| **Execution** | Labor Market | Job created from tender win; Alice accepts and delivers via capability |
+| **Dispute** | DAO-Escrow | Multi-oracle attestation (3 of 5) + arbitrator resolves via `dispute_arbitrator` capability; payment released from escrow |
+| **Insurance** | Insurance Market | Project owner purchases coverage; underwriters prove `auditor_bond` capability; claims resolved via `oracle_resolution` |
 
-**Key Insights from the Complete Pipeline:**
-
-1. **DAO-Escrow Bookends the Lifecycle**: The DAO governs funding at the start (propose/vote/execute from treasury) AND provides dispute resolution at the end (multi-oracle attestation). Every business function on-chain flows through dao_escrow governance at some point.
-
-2. **Single Capability, Multiple Uses**: Alice's "verified_smart_contract_auditor" capability works across Identity, Tender, Labor Market, and Insurance — she never re-proves her identity, only reuses the same capability proof. The DAO's `member_vote` capability is used for both treasury proposals and endowment claims.
-
-3. **Identity Hidden at Every Step**: From DAO voting to job application to contract execution to dispute resolution, identity remains hidden. Only capabilities are revealed. Even the arbitrator resolving a dispute only proves `dispute_arbitrator` — not who they are.
-
-4. **DAGs Enable Flexible Qualification**: The "senior_engineer" DAG allows multiple qualification paths — Alice could have taken PATH A or PATH B, but the verifier only learns she qualified, not which path.
-
-5. **Composability is Simple**: Each contract only needs to call `verify_capability()` on the Identity contract — no complex cross-contract state sharing needed. dao_escrow's `ResolveDisputeV1` composes Identity (capability check), Attestation (claim verification), and Money (fund transfer) in a single transaction.
-
-6. **Full Business Lifecycle On-Chain**: 
-   - **DAO governance** allocates treasury funds via propose/vote/execute (0x07-0x09 in dao_escrow)
-   - **Supply chain workers** prove capabilities via Identity (0x09-0x0d)
-   - **Executives/Project owners** create tenders requiring capabilities (0x07-0x08 in Tender)
-   - **Workers flow to Labor Market** for execution (0x0d in Labor Market)
-   - **Attestation** verifies deliverables independently
-   - **Dispute resolution** via dao_escrow with multi-oracle attestation (0x0c in dao_escrow)
-   - **Insurance** provides risk coverage (0x09-0x0c in Insurance Market)
+Key insights: DAO-Escrow bookends the entire lifecycle (funding → dispute). Alice's single capability works across Identity, Tender, Labor Market, and Insurance — she never re-proves her identity. Each step only calls `verify_capability()` — no complex cross-contract state sharing.
 
 ### Case Study: Subscription + DAO-Escrow + Atomic Swap
 
@@ -1557,44 +572,6 @@ When designing a new DarkWow contract:
 
 ---
 
-## Current Development Limitations
-
-Several issues affect the ability to develop, test, and deploy smart contracts on DarkWow. These are documented here for awareness when designing or modifying contracts.
-
-### Issue 1: async-trait Lifetime Bug (Rust 1.90+)
-
-**Impact**: Cannot build `dwowd`, `dww`, or integration tests from source when using Rust 1.90+.
-
-**Root cause**: The `dwow-serial/async` feature enables async-serialization which triggers a lifetime bug in `async-trait` 0.1.x.
-
-**Feature chain**:
-```
-dwowd/validator
-  └── dwowd/tx
-        └── dwowd/async-serial
-              └── dwow-serial/async
-                    └── async-trait 0.1.x  (buggy on Rust 1.90+)
-```
-
-**Workaround**: Use Rust 1.89 with downgraded dependencies:
-```bash
-rustup install 1.89.0
-rustup override set 1.89.0
-cargo update typed-index-collections@3.4.0 --precise 3.3.0
-```
-
-**Status**: Pre-built DarkWowMain binaries (v0.5.0) work around this issue.
-
-### Issue 2: Missing `dww wallet` Commands in v0.5.0 Binaries
-
-**Impact**: Cannot create wallets, check balances, mine tokens, or list coins using the CLI.
-
-**Available commands in v0.5.0**:
-- `dww alias` - Token alias management
-- `dww contract` - Contract deployment
-- `dww token` - Token operations (mint, freeze, import)
-
-**Workaround**: Use pre-built DarkWowMain binaries which include wallet functionality, or wait for v0.6.0 tooling.
 
 ---
 

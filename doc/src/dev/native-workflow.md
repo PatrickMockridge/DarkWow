@@ -74,16 +74,8 @@ Wait until `height` > 0 and `peer_count` > 0.
 
 ### 4. Set Up Wallet
 
-```bash
-# Initialize wallet database
-./target/release/dww -n darkwow-testnet wallet initialize
-
-# Generate a keypair
-./target/release/dww -n darkwow-testnet wallet keygen
-
-# Get your wallet address
-./target/release/dww -n darkwow-testnet wallet address
-```
+Generate a keypair as described in [Wallet Architecture](../arch/wallet.md).
+Use `-n darkwow-testnet` for the public testnet.
 
 ### 5. Import Mining Secret
 

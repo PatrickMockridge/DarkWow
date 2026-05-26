@@ -499,8 +499,6 @@ return t;
 | `fft` | Polynomial operations | High | Not implemented |
 | `sort_verify` | Order book circuits | High | Not implemented |
 
-### Note on Comparison Opcodes: Safemath vs Native Opcode
-
 `LessThanOrEqual` and `IsNotEqual` are **verified sound** ✅, `BaseDiv` is **implemented** ✅. `IsEqualBase` has a known bug.
 
 **Formal Verification Results** (see [Opcodes and Formal Verification](opcodes.md)):
@@ -509,14 +507,6 @@ return t;
 - `IsEqualBase` (0x54): ❌ **Bug Confirmed** - delta_invert unconstrained when `a == b`
 - `NotBase` (0x56): ✅ **Verified Sound**
 - `BaseLtStrict` (0x57): ✅ **Verified Sound**
-
-**Safemath workaround**: For assertion-only use cases (no Boolean return value), the [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) library provides production-ready templates using sound `less_than_strict` + `base_add` + `range_check`.
-
-**Native opcode still needed**: When a circuit requires a Boolean return value (e.g., for public output or `CondSelect`), the native opcode is still required. Safemath cannot replace this.
-
-**Current status**: stablecoin and identity use safemath for assertion-only checks. `LessThanOrEqual` is verified sound for bounded inputs.
-
-**See**: [Safemath](../safemath.md) for the workaround, [zkVM Primitive Layer](zkvm_primitives.md) for native opcode status.
 
 ---
 

@@ -199,5 +199,4 @@ Staking tokens to the stablecoin for governance weight is configured at the **DA
 - [Stablecoin Contract](../../src/contract/stablecoin/)
 - [Bridge](./bridge.md)
 - [Opcodes](../arch/zk/opcodes.md)
-- [Safemath](../arch/zk/safemath.md)
 - [DrainProtection](./drain_protection.md)

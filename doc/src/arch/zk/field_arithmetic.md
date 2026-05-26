@@ -146,20 +146,7 @@ DarkWow's theoretical contract capability is enormous. In practice, the roadmap 
 - **Which gadgets have integration tests** — an opcode working in isolation is not the same as it working inside a real circuit
 - **Which gadgets have a clear upgrade path** — once a buggy arithmetic gadget is deployed, it cannot be fixed without a hard fork
 
-### The Opcode vs Safemath Tradeoff
-
-For comparison operations, there are two paths:
-
-| Approach | When to Use | Tradeoffs |
-|----------|-------------|-----------|
-| **Native Opcode** | When you need Boolean return value for composability | Single implementation, full composability, but needs formal verification |
-| **Safemath Template** | When you only need to assert a relation (no return value) | No circuit bloat, sound, production-ready, but only constrain-only |
-
-The `LessThanOrEqual` opcode is a **DarkWow addition** — it is an addition beyond what upstream currently provides in the zkVM. Prototyped on an experimental branch, integrated into this fork, and **formally verified sound** via Lean 4 exhaustive testing. For **assertion-only use cases** (like stablecoin collateralization checks), the [darkfi-safemath](https://codeberg.org/rusticml/darkfi-safemath) library provides production-ready templates using only sound opcodes (`less_than_strict`, `base_add`, `range_check`).
-
-**Key insight**: Not every `LessThanOrEqual` use case needs the opcode. If you're just asserting `a <= b` as a circuit constraint (not returning a Boolean), safemath templates work without the soundness concerns.
-
-**The ideal path forward**: Native opcodes as foundation (now properly verified), safemath for assertion-only patterns. See [Safemath](safemath.md) and [Opcodes Reference](opcodes.md) for the full analysis.
+The `LessThanOrEqual` opcode is a **DarkWow addition** — it is an addition beyond what upstream currently provides in the zkVM. Prototyped on an experimental branch, integrated into this fork, and **formally verified sound** via Lean 4 exhaustive testing.
 
 This is why the opcode primitives documentation is on the roadmap. It is not academic — it determines what contracts can actually exist on DarkWow.
 

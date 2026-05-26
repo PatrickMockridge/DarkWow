@@ -228,132 +228,17 @@ For maximum security, combine PoW with commit-reveal:
 
 ---
 
-### Adjustable Confirmation Depth: Accumulating PoW Entropy
+### Adjustable Confirmation Depth
 
-The security of PoW-based randomness improves with **depth** - the number of blocks confirmed after the bet. Each block adds independent PoW entropy to the randomness pool.
+Security improves with **depth** (K) — the number of blocks confirmed after the
+bet. The probability of an attacker with hash-power fraction `p` controlling K
+consecutive blocks is `p^K`. At K=6 with 33% hash power, manipulation probability
+is ~0.14%; at K=10 it's ~0.005%.
 
-#### The Concept
-
-```
-Betting Transaction (Block N)
-    │
-    ├── Player commits: commit = poseidon_hash(secret, bet_id)
-    │
-    └── House acknowledges, betting period begins
-
-Waiting Period (Player-Selected Depth: K blocks)
-    │
-    ├── Block N+1: PoW hash adds entropy
-    ├── Block N+2: Another independent PoW sample
-    ├── ...
-    └── Block N+K: Final entropy addition
-
-Resolution (Block N+K)
-    │
-    └── roll = poseidon_hash(
-           block_hash(N),
-           block_hash(N+1),
-           ...
-           block_hash(N+K),
-           commit,
-           secret
-       )
-```
-
-#### Security Scaling with Depth
-
-| Depth (K) | Probability of Manipulation | Security Level |
-|-----------|---------------------------|---------------|
-| 1 | ~33% (with 33% hash power) | Low |
-| 2 | ~11% (with 33% hash power) | Medium |
-| 3 | ~3.7% | Medium-High |
-| 6 | ~0.14% | High |
-| 10 | ~0.005% | Very High |
-
-**Formula**: For an attacker with `p` fraction of hash power, probability of getting K consecutive blocks is `p^K`.
-
-#### Time + PoW: Why Depth Matters
-
-Time and PoW combine to create strong randomness:
-
-1. **Time**: Block timestamps establish causal ordering
-2. **PoW**: Each block's hash is unpredictable until mined
-3. **Depth**: Accumulating multiple blocks makes manipulation exponentially harder
-
-```
-Single Block (K=1):
-- Attacker with 33% hash power: 33% chance to manipulate
-
-Six Blocks (K=6):
-- Attacker needs 6 consecutive blocks: (0.33)^6 ≈ 0.14%
-- Realistic attack cost: >$1M in electricity for typical hash rate
-
-Ten Blocks (K=10):
-- Attacker needs 10 consecutive blocks: (0.33)^10 ≈ 0.005%
-- Requires >$10M in sustained mining
-```
-
-#### Player Choice vs House Agreement
-
-The innovation here is **player-selected depth with house agreement**:
-
-```
-1. Player proposes depth K (higher = more secure)
-2. House agrees (or negotiates minimum depth)
-3. Both parties commit knowing:
-   - Randomness improves with depth
-   - Time-to-resolution increases with depth
-4. Roll computed from cumulative hash:
-   roll = H(block_hash_N || block_hash_N+1 || ... || block_hash_N+K || commit || secret)
-```
-
-#### Economic Model
-
-| Depth | Wait Time (approx) | Security | Use Case |
-|-------|------------------|----------|---------|
-| 1-2 | 2-4 min | Low | Micro-bets, real-time gaming |
-| 3-6 | 6-12 min | High | Standard bets |
-| 10+ | 20+ min | Very High | High-stakes, institutional |
-
-**Trade-off**: Higher depth = more security but longer wait. Players choose based on:
-- Stake size (high stakes = wait longer)
-- Risk tolerance (some players prefer speed)
-- Economic opportunity cost
-
-#### Implementation: Cumulative Hash Chain
-
-```rust
-/// Compute roll from cumulative block hashes
-fn compute_cumulative_roll(
-    start_height: u64,
-    depth: u8,
-    commit: pallas::Base,
-    secret: pallas::Base,
-) -> u8 {
-    let mut combined_hash = pallas::Base::zero();
-
-    // Accumulate PoW hashes from each block
-    for i in 0..depth {
-        let block_hash = get_block_hash(start_height + u64::from(i));
-        combined_hash = poseidon_hash([combined_hash, block_hash]);
-    }
-
-    // Final roll combines cumulative entropy with commit/secret
-    let roll_input = poseidon_hash([combined_hash, commit, secret]);
-    let bytes = roll_input.to_repr();
-    ((bytes[0] as u64) % (ROLL_RANGE as u64)) as u8
-}
-```
-
-#### Why This Beats Single-Block Randomness
-
-| Approach | Entropy Source | Manipulation Difficulty |
-|----------|--------------|------------------------|
-| Single tx_hash | 1 tx's content | Miner can influence ordering |
-| Single block hash | 1 PoW sample | Miner can withhold block |
-| **Cumulative (K blocks)** | K independent PoW samples | Must control K consecutive blocks |
-
-**Key insight**: Even if a miner controls one block, they cannot control the cumulative hash of K blocks without controlling all K - which becomes exponentially harder with each additional block.
+Players select depth (higher = more secure, longer wait). The roll combines K
+consecutive block hashes via poseidon: `roll = H(block_N || ... || block_{N+K} || commit || secret)`.
+Even if a miner controls one block, controlling K consecutive blocks becomes
+exponentially harder.
 
 ---
 
@@ -361,59 +246,7 @@ fn compute_cumulative_roll(
 
 ### ECVRF in DarkWow
 
-DarkWow implements ECVRF (Elliptic Curve Verifiable Random Function) based on [draft-irtf-cfrg-vrf-04](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-vrf-04):
-
-```rust
-// From src/sdk/src/crypto/ecvrf.rs
-
-pub struct VrfProof {
-    gamma: pallas::Point,
-    c: blake3::Hash,
-    s: pallas::Scalar,
-}
-
-impl VrfProof {
-    /// Execute the VRF function and create a proof given a SecretKey
-    /// and a seed input `alpha_string`.
-    pub fn prove(x: SecretKey, alpha_string: &[u8]) -> Self {
-        let Y = PublicKey::from_secret(x);
-
-        // Hash public key + alpha_string to curve
-        let mut message = vec![];
-        message.extend_from_slice(&Y.to_bytes());
-        message.extend_from_slice(alpha_string);
-        let H = pallas::Point::hash_to_curve(VRF_DOMAIN)(&message);
-
-        // gamma = H * x
-        let gamma = H * fp_mod_fv(x.inner());
-
-        // Generate deterministic nonce k
-        let k = hash_to_scalar(VRF_DOMAIN.as_bytes(), &[
-            &x.inner().to_repr(), &H.to_bytes()
-        ]);
-
-        // Fiat-Shamir challenge
-        let c = hash_challenge(&H, &gamma, &k);
-        let c_scalar = to_scalar(c);
-        let s = k + c_scalar * fp_mod_fv(x.inner());
-
-        Self { gamma, c, s }
-    }
-
-    /// Verify a VrfProof given a PublicKey and seed input `alpha_string`.
-    /// Returns true if the proof is valid.
-    pub fn verify(&self, Y: PublicKey, alpha_string: &[u8]) -> bool {
-        // Recompute H, c_scalar, U, V
-        // Verify: hash(H, gamma, U, V) == self.c
-    }
-
-    /// Returns the VRF output.
-    /// CRITICAL: Call verify() first to trust this output.
-    pub fn hash_output(&self) -> blake3::Hash {
-        // Domain-separated hash of gamma
-    }
-}
-```
+DarkWow implements ECVRF (Elliptic Curve Verifiable Random Function) based on [draft-irtf-cfrg-vrf-04](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-vrf-04). See `src/sdk/src/crypto/ecvrf.rs` for the full implementation (prove, verify, hash_output).
 
 ### VRF vs PoW for Randomness
 
@@ -449,66 +282,21 @@ Randomness_Input = poseidon_hash(
 
 ### Attack Vectors
 
-#### 1. Miner Manipulation
+| Attack | Severity | Mitigation |
+|--------|----------|------------|
+| **Miner manipulation** (withholds blocks to influence hash) | Medium | Use confirmed blocks + commit-reveal + multi-block depth. At 33% hash rate, 2 consecutive blocks = 11% probability — not viable for typical bet sizes. |
+| **Player pre-computation** | Low | Commit phase binds player before roll is known. |
+| **Oracle manipulation** (VRF-only solutions) | High | Use PoW hash as primary source; VRF adds verifiable contribution. |
+| **Transaction ordering** (affects tx_hash) | Low | Full tx_hash used, not position. Use block hash from next block for high-stakes. |
 
-**Attack**: Miner who also plays dice, mines a block, and withholds if they don't like the hash.
+### Randomness Quality
 
-**Severity**: Medium
-
-**Mitigation**:
-- Use block hash from 1-2 blocks ago (miner's block already finalized)
-- Combine with commit-reveal (secret unknown to miner)
-- Require multiple blocks for confirmation
-
-**Analysis**:
-```
-If miner controls 33% of hash rate:
-- Probability of getting 2 consecutive blocks: 0.33^2 = 11%
-- Not economically viable for typical bet sizes
-- Worthwhile for large bets (> 10x block reward)
-```
-
-#### 2. Player Pre-Computation
-
-**Attack**: Player computes roll before committing to get favorable outcome.
-
-**Severity**: Low (solved by commit-reveal)
-
-**Mitigation**:
-- Commit phase binds player to bet_id before knowing roll
-- Roll uses tx_hash determined at block inclusion
-- Player cannot influence tx_hash
-
-#### 3. Oracle Manipulation
-
-**Attack**: Oracle provides false randomness.
-
-**Severity**: High (for VRF-only solutions)
-
-**Mitigation**:
-- Use PoW hash as primary source (cannot be faked)
-- VRF only adds verifiable contribution
-- Require multiple oracles for large values
-
-#### 4. Transaction Ordering
-
-**Attack**: Transaction ordering in block affects tx_hash.
-
-**Severity**: Low (multi-source hashing mitigates)
-
-**Mitigation**:
-- Roll uses full tx_hash, not just position
-- Even if tx is first/last in block, hash differs
-- For high-stakes: use block hash from next block
-
-### Randomness Quality Assessment
-
-| Source | Entropy (bits) | Trust Model | Suitable for Gambling? |
-|--------|---------------|-------------|------------------------|
-| tx_hash | ~64 | Single tx | No (manipulable) |
-| PoW block hash | ~256 | Distributed miners | Yes (with commit-reveal) |
-| ECVRF | ~256 | Key holder | Conditional |
-| PoW + VRF + Commit | ~256+ | Hybrid | Recommended |
+| Source | Entropy (bits) | Suitable for Gambling? |
+|--------|---------------|------------------------|
+| tx_hash | ~64 | No (manipulable) |
+| PoW block hash | ~256 | Yes (with commit-reveal) |
+| ECVRF | ~256 | Conditional |
+| PoW + VRF + Commit | ~256+ | Recommended |
 
 ---
 ## Design Note: Block Height Prediction Market
@@ -595,241 +383,41 @@ Since `VRFVerify` is not implemented, current contracts use:
 
 ## Recommendations
 
-### For DarkToshi Dice
+- **Use PoW block hash, not tx_hash alone**, for high-stakes randomness
+- **Combine sources**: PoW + user contribution + optional VRF
+- **Use commit-reveal** to prevent pre-computation
+- **Prefer cumulative multi-block hash** over single block: K=1 for real-time, K=3–6 for standard, K=10+ for institutional
+- **Player-selected confirmation depth** gives participants control over the security/latency tradeoff
 
-1. **Use PoW block hash from 1 block ago** instead of tx_hash:
-   ```rust
-   // Instead of tx_hash:
-   let block_hash = wasm::util::get_block_hash(current_height - 1)?;
-   ```
-
-2. **Add explicit commit-reveal** for the secret nonce:
-   - Player commits `commit = poseidon_hash(secret, bet_id)` at bet time
-   - Reveal `secret` when claiming winnings
-   - Roll = `poseidon_hash(block_hash, commit, secret)`
-
-3. **Add player-selected confirmation depth** (the key enhancement!):
-   - Player proposes depth K (e.g., 6 blocks for high-stakes)
-   - House agrees to minimum depth based on stake size
-   - Roll uses cumulative hash of K consecutive blocks
-   - See [Adjustable Confirmation Depth](#adjustable-confirmation-depth-accumulating-pow-entropy)
-
-4. **Implement cumulative hash for multi-block randomness**:
-   ```rust
-   fn compute_roll_with_depth(
-       start_block: u64,
-       depth: u8,
-       commit: pallas::Base,
-       secret: pallas::Base,
-   ) -> u8 {
-       let mut combined = pallas::Base::zero();
-       for i in 0..depth {
-           let hash = get_block_hash(start_block + u64::from(i));
-           combined = poseidon_hash([combined, hash]);
-       }
-       let roll_input = poseidon_hash([combined, commit, secret]);
-       let bytes = roll_input.to_repr();
-       ((bytes[0] as u64) % 100) as u8
-   }
-   ```
-
-### For General Randomness
-
-1. **Never use tx_hash alone** for high-stakes randomness
-2. **Always combine sources**: PoW + user contribution + optional VRF
-3. **Consider commit-reveal** for predictability reduction
-4. **Prefer multi-block cumulative hash** over single block:
-   - K=1: Basic security (real-time use)
-   - K=3-6: Standard security (most applications)
-   - K=10+: High-stakes security (institutional level)
-
-### For Block Height Prediction Market
-
-1. Use oracle to observe and attest block height at target time
-2. Allow betting on block height ranges, not exact values
-3. Use cumulative PoW hash for tie-breaking
-4. Implement as case study to test randomness integration
-
-### The Time + PoW = Trustworthy Randomness Equation
-
-```
-Randomness_Security ≈ f(Time, PoW_Work, Depth)
-
-Where:
-- Time = Block timestamps establish causal ordering
-- PoW_Work = Iterative search makes hash unpredictable
-- Depth = Number of independent PoW samples accumulated
-
-This is why Bitcoin's "6 confirmations" became standard:
-- 6 blocks ≈ 12 minutes
-- Combined PoW work is exponentially harder to reverse
-- No single party can manipulate without revealing
+Randomness security ≈ f(Time, PoW_Work, Depth). This is why Bitcoin's "6 confirmations" became standard — combined PoW work is exponentially harder to reverse.
 
 ---
 
 ## Case Study: Baccarat
 
-Baccarat (Punto Banco) is a casino classic featured in James Bond films that demonstrates cumulative PoW entropy for **multi-card dealing** - a more complex randomness use case than single-value dice rolls.
+Baccarat (Punto Banco) demonstrates cumulative PoW entropy for **multi-card dealing** — a more complex randomness use case than single-value dice rolls. With no player decisions and completely deterministic drawing rules, Baccarat is a natural fit for blockchain gambling (no disputes possible).
 
-### Why Baccarat for Blockchain Gambling?
+### Card Dealing via Cumulative Entropy
 
-| Property | Description | Why It Matters |
-|----------|-------------|----------------|
-| **No player decisions** | Drawing rules are completely fixed | No disputes possible |
-| **Deterministic outcomes** | Rules determine everything | Casino-friendly |
-| **3 outcomes** | Player/Banker/Tie | More complex than dice |
-| **Multiple cards** | 2-4 cards per hand | Requires multiple random values |
-| **Commit-reveal friendly** | Cards revealed after commitment | Perfect for blockchain |
+Unlike dice (single roll value), Baccarat deals 4 cards using cumulative PoW entropy from K consecutive block hashes. A single 256-bit hash is expanded into multiple card values by treating different byte ranges as separate seeds — secure as long as the original hash is unpredictable.
 
-### Card Dealing via Block Hash Entropy
+The Baccarat contract (`src/contract/baccarat/`) implements four phases: CommitBetV1 (player commits with secret nonce), DrawCardsV1 (K-block cumulative entropy derivation), SettleBetV1 (fixed drawing rules applied), and HouseCloseV1 (timeout handling).
 
-Unlike dice (single roll value), Baccarat requires dealing 4 cards (2 to player, 2 to banker) with complex drawing rules. This is achieved using cumulative PoW entropy:
+### Confirmation Depth
 
-```rust
-/// Deal cards using cumulative PoW block hash entropy
-/// Returns player hand, banker hand, and optional third cards for each
-/// (player_card1, player_card2), (banker_card1, banker_card2), optional third cards
-fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId) -> (Hand, Hand, Option<Card>, Option<Card>) {
-    // Combine entropy from K consecutive block hashes
-    let mut entropy = bet_id;
-    for (i, hash) in block_hashes.iter().enumerate() {
-        // Convert 32-byte block hash to 4 x u64
-        let hash_bytes = hash.0;
-        let a = u64::from_le_bytes(hash_bytes[0..8]);
-        let b = u64::from_le_bytes(hash_bytes[8..16]);
-        let c = u64::from_le_bytes(hash_bytes[16..24]);
-        let d = u64::from_le_bytes(hash_bytes[24..32]);
-
-        // Poseidon hash of block entropy
-        let block_entropy = poseidon_hash([
-            pallas::Base::from(a),
-            pallas::Base::from(b),
-            pallas::Base::from(c),
-            pallas::Base::from(d),
-        ]);
-
-        // Cumulative entropy
-        entropy = poseidon_hash([entropy, block_entropy, pallas::Base::from(i)]);
-    }
-
-    // Derive 4 cards from final entropy
-    let bytes = entropy.to_repr();
-    let seed1 = u64::from_le_bytes(bytes[0..8]);
-    let seed2 = u64::from_le_bytes(bytes[8..16]);
-    let seed3 = u64::from_le_bytes(bytes[16..24]);
-    let seed4 = u64::from_le_bytes(bytes[24..32]);
-
-    let player_card1 = Card::new(seed1 as u8);
-    let player_card2 = Card::new(seed2 as u8);
-    let banker_card1 = Card::new(seed3 as u8);
-    let banker_card2 = Card::new(seed4 as u8);
-
-    (Hand { card1: player_card1, card2: player_card2, third_card: None },
-     Hand { card1: banker_card1, card2: banker_card2, third_card: None },
-     None,  // player third card (None = not yet required)
-     None)  // banker third card (None = not yet required)
-}
-```
-
-### Why Cumulative Entropy Matters for Card Games
-
-| Approach | Entropy Source | Problem for Card Games |
-|----------|--------------|------------------------|
-| Single block hash | 1 PoW sample | Only gives 1 random value |
-| Single tx hash | 1 tx's content | Predictable by miner |
-| **Cumulative (K blocks)** | K independent PoW samples | Can derive 4+ card values |
-
-**Key insight**: A single 256-bit hash can be expanded into multiple card values by treating different byte ranges as separate seeds. This is secure as long as the original hash is unpredictable.
-
-### Confirmation Depth: Player-Selected Security
-
-Like DarkToshi Dice, Baccarat uses **player-selected confirmation depth** for the time+Pow security model:
-
-```
-Player bets on "Player" outcome
- │
- ├── Proposes confirmation_depth = 6 blocks
- │
- └── House accepts (or sets minimum)
-
-Waiting Period:
- │
- ├── Block N+1: PoW entropy #1
- ├── Block N+2: PoW entropy #2
- ├── ...
- └── Block N+6: Final entropy
-
-Resolution:
- │
- └── Cards derived from cumulative hash of blocks N+1 to N+6
-```
-
-**Economic tradeoff**:
+Like DarkToshi Dice, Baccarat uses player-selected confirmation depth. Economic tradeoff:
 
 | Depth | Wait Time | Security | Typical Use |
 |-------|-----------|----------|-------------|
-| 1-2 | 2-4 min | Low | Micro-bets, real-time |
+| 1-2 | 2-4 min | Low | Micro-bets |
 | 3-6 | 6-12 min | High | Standard casino play |
 | 10+ | 20+ min | Very High | High-stakes |
 
-### Comparison: Dice vs Baccarat Randomness
-
-| Aspect | DarkToshi Dice | Baccarat |
-|--------|---------------|----------|
-| **Randomness source** | Single tx_hash or block hash | Cumulative K blocks |
-| **Output type** | 1 value (0-99) | 4 card values (0-51 each) |
-| **Entropy expansion** | Direct use | Poseidon hash + seed expansion |
-| **Drawing rules** | N/A | Complex (fixed rules) |
-| **Confirmation depth** | Yes | Yes |
-| **Time+Pow security** | Yes | Yes |
-
-### Baccarat Contract Implementation
-
-The Baccarat contract (`src/contract/baccarat/`) implements:
-
-1. **CommitBetV1**: Player commits to bet (Player/Banker/Tie) with secret nonce
-2. **DrawCardsV1**: Uses `wasm::util::get_block_hash(height)` for K-block cumulative entropy
-3. **SettleBetV1**: Applies drawing rules, pays winners
-4. **HouseCloseV1**: Timeout handling for abandoned bets
-
-```rust
-/// DrawCardsV1: Cards drawn using PoW entropy
-fn baccarat_draw_cards_process_instruction_v1(...) {
-    // Collect K block hashes for entropy
-    let confirmation_depth = bet.confirmation_depth as usize;
-    let mut block_hashes = vec![];
-
-    for i in 0..confirmation_depth {
-        let block_height = current_block.saturating_sub(i as u32);
-        let block_hash = wasm::util::get_block_hash(block_height)?;
-        block_hashes.push(block_hash);
-    }
-
-    // Deal cards using cumulative entropy
-    let (mut player_hand, mut banker_hand, third_card_player, third_card_banker) =
-        deal_cards(&block_hashes, bet.id);
-
-    // Calculate outcome using fixed Baccarat rules
-    let game_outcome = calculate_outcome(&mut player_hand, &mut banker_hand);
-    // ...
-}
-```
-
-### Why Baccarat Is a Better Blockchain Game than Blackjack
-
-| Aspect | Blackjack | Baccarat |
-|--------|-----------|---------|
-| **Player decisions** | Hit/stand/double/split | None (fixed rules) |
-| **Rule complexity** | Complex strategy variations | Simple fixed rules |
-| **Dispute potential** | Higher (decisions matter) | None (rules decide) |
-| **Blockchain fit** | Poor (subjective) | Perfect (deterministic) |
-
 ### Security Properties
 
-1. **Card unpredictability**: Cards derived from PoW entropy that neither player nor miner can predict
-2. **No card counting defense needed**: Blockchain transparency prevents hidden information
-3. **Cumulative entropy**: K consecutive blocks required for manipulation
-4. **Commit-reveal**: Secret nonce committed before cards are known
+- Cards derived from PoW entropy — neither player nor miner can predict
+- Cumulative entropy from K consecutive blocks makes manipulation exponentially harder (p^K)
+- Commit-reveal: secret nonce committed before cards are known
 
 ## game_room EntropyMode::TrustedSetup
 

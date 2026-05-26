@@ -347,31 +347,9 @@ impl PokerRoom {
 
 ## Testing
 
-```rust
-#[cfg(test)]
-mod tests {
-    use dwow_sdk::game_room::*;
-
-    #[test]
-    fn test_bet_lifecycle() {
-        // Create test room
-        let room_id = create_test_room();
-
-        // Player deposits
-        let deposit_tx = client.deposit(room_id, 1000).unwrap();
-        assert!(verify_tx(&deposit_tx));
-
-        // Player places bet
-        let bet_tx = client.place_bet(room_id, 100, BetType::Ante, nonce).unwrap();
-        assert!(verify_tx(&bet_tx));
-
-        // Verify balances
-        let account = client.get_account(room_id, player).unwrap();
-        assert_eq!(account.balance, 900);
-        assert_eq!(account.locked, 100);
-    }
-}
-```
+The game room is tested at Level 1 (unit tests for bet lifecycle) and Level 2
+(full ZK contract execution). See [Testing Overview](../dev/testing/overview.md)
+for the four-level taxonomy and command reference.
 
 ## See Also
 

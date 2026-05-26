@@ -64,7 +64,6 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 - [opcodes](./zk/opcodes.md) - Opcode implementations
 - [zkvm_primitives](./zk/zkvm_primitives.md) - Circuit primitive functions
 - [field_arithmetic](./zk/field_arithmetic.md) - Finite field math in circuits
-- [safemath](./zk/safemath.md) - Safe arithmetic gadgets
 - [zk_verification](./zk/zk_verification.md) - Pure stateless ZK proof verification
 
 ## Wallet
@@ -123,7 +122,6 @@ doc/src/arch/
 │   ├── opcodes.md
 │   ├── opcodes-status.md
 │   ├── opcode_universe.md
-│   ├── safemath.md
 │   └── merkle_depth.md
 ├── legacy/                      # Historical documents
 │   ├── wallet.md

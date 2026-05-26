@@ -341,13 +341,9 @@ NATIVE_TOKEN_CONTRACT_INFO_TREE           - contract metadata
 
 ## Testing
 
-```bash
-# Build native_token contract
-cargo build -p darkfi_native_token_contract
-
-# Run test harness
-cargo run -p dwow-contract-test-harness --bin test_native_token
-```
+Native Token is tested via `cargo run -p dwow-contract-test-harness --bin test_native_token`.
+See [Testing Overview](../testing/overview.md) for the four-level testing taxonomy
+and command reference.
 
 **Test Status:**
 - [x] MintV1 test passes
