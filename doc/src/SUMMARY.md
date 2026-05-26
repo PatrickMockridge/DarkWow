@@ -127,11 +127,13 @@
 
 ## Network & Services
   - [P2P Network](arch/net/p2p-network.md)
+  - [Network Types](arch/network-types.md)
   - [Services](arch/services.md)
   - [Slashing & Economic Security](arch/slashing.md)
 
 ## Economics
   - [Merge Mining](arch/merge-mining.md)
+  - [Monero Merge Mining](arch/monero-merge-mining.md)
   - [Mining Tokenomics](arch/mining-tokenomics.md)
 
 - [Contract Implementations]()
