@@ -36,13 +36,13 @@ use std::{
         atomic::{AtomicU32, Ordering},
         Arc, Weak,
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use async_trait::async_trait;
 use futures::stream::{FuturesUnordered, StreamExt};
 use smol::lock::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, trace};
 use url::Url;
 
 use super::{
@@ -251,7 +251,9 @@ impl Slot {
             |res| async {
                 match res {
                     Ok(()) | Err(Error::NetworkServiceStopped) => {}
-                    Err(e) => error!("net::outbound_session {e}"),
+                    Err(e) => {
+                        verbose!("net::outbound_session {e}");
+                    }
                 }
             },
             Error::NetworkServiceStopped,
@@ -264,11 +266,11 @@ impl Slot {
         self.process.stop().await;
     }
 
-    /// Address selection algorithm that works as follows: up to
-    /// gold_count, select from the goldlist. Up to white_count,
-    /// select from the whitelist. For all other slots, select from
-    /// the greylist. If none of these preferences are satisfied, do
-    /// peer discovery.
+    /// Address selection algorithm that builds an ordered vector of addresses:
+    /// gold peers first (up to known_peer_percent), then white peers (filling
+    /// remaining known slots), then grey peers (filling remaining slots).
+    /// All slots use this same ordered vector, and check_addrs coordinates
+    /// which slot gets which address via try_register.
     ///
     /// Selecting from the greylist for some % of the slots is necessary
     /// and healthy since we require the network retains some unreliable
@@ -276,36 +278,54 @@ impl Slot {
     /// connections may be vulnerable to sybil by attackers with good uptime.
     async fn fetch_addrs(&self) -> Option<(Url, u64)> {
         let hosts = self.p2p().hosts();
-        let slot = self.slot as usize;
         let container = &self.p2p().hosts().container;
 
         // Acquire Settings read lock
         let settings = self.p2p().settings().read_arc().await;
 
-        let white_count = (settings.white_connect_percent * settings.outbound_connections) / 100;
-        let gold_count = settings.gold_connect_count;
-
         let transports = settings.active_profiles.clone();
-        let preference_strict = settings.slot_preference_strict;
+        let outbound_connections = settings.outbound_connections;
+        let known_peer_percent = settings.known_peer_percent;
+        let disable_greys = settings.disable_greys;
 
         // Drop Settings read lock
         drop(settings);
 
-        let grey_only = hosts.container.is_empty(HostColor::White) &&
-            hosts.container.is_empty(HostColor::Gold) &&
-            !hosts.container.is_empty(HostColor::Grey);
+        let mut addrs = Vec::with_capacity(outbound_connections);
 
-        // If we only have grey entries, select from the greylist. Otherwise,
-        // use the preference defined in settings.
-        let addrs = if grey_only && !preference_strict {
-            container.fetch_with_schemes(HostColor::Grey, &transports, None)
-        } else if slot < gold_count {
-            container.fetch_with_schemes(HostColor::Gold, &transports, None)
-        } else if slot < white_count {
-            container.fetch_with_schemes(HostColor::White, &transports, None)
-        } else {
-            container.fetch_with_schemes(HostColor::Grey, &transports, None)
-        };
+        // Known peers (gold + white) up to known_peer_percent.
+        // NOTE: if we don't have enough gold or white peers, we select from the greylist.
+        // This prioritizes max slot utilization over strictly respecting user preference.
+        // However disable_greys cancels this out.
+        let bounded_percent = if disable_greys { 100 } else { known_peer_percent.min(80) };
+        let known_count = (bounded_percent * outbound_connections) / 100;
+
+        // Add gold up to known_count
+        for addr in container.fetch_n_random_with_schemes(HostColor::Gold, &transports, known_count)
+        {
+            addrs.push(addr);
+        }
+        trace!(target: "net::outbound_session::fetch_addrs", "[P2P] fetch_addrs: collected {} gold addrs", addrs.len());
+
+        // Add white to fill remaining known slots
+        let remaining_known = known_count - addrs.len();
+        for addr in
+            container.fetch_n_random_with_schemes(HostColor::White, &transports, remaining_known)
+        {
+            addrs.push(addr);
+        }
+        trace!(target: "net::outbound_session::fetch_addrs", "[P2P] fetch_addrs: collected {} white addrs (total: {})", remaining_known, addrs.len());
+
+        // Add grey to fill remaining slots
+        if !disable_greys {
+            let remaining = outbound_connections - addrs.len();
+            for addr in
+                container.fetch_n_random_with_schemes(HostColor::Grey, &transports, remaining)
+            {
+                addrs.push(addr);
+            }
+            trace!(target: "net::outbound_session::fetch_addrs", "[P2P] fetch_addrs: collected {} grey addrs (total: {})", remaining, addrs.len());
+        }
 
         hosts.check_addrs(addrs).await
     }
@@ -426,7 +446,7 @@ impl Slot {
 
                 self.channel_id.store(0, Ordering::Relaxed);
 
-                warn!(
+                verbose!(
                     target: "net::outbound_session::try_connect",
                     "[P2P] Suspending addr=[{}] slot #{slot}",
                     channel.display_address()
@@ -439,7 +459,7 @@ impl Slot {
                     .move_host(channel.address(), last_seen, HostColor::Grey)
                     .await
                 {
-                    warn!(target: "net::outbound_session", "Error while moving addr={} to greylist: {e}", channel.display_address());
+                    verbose!(target: "net::outbound_session", "Error while moving addr={} to greylist: {e}", channel.display_address());
                     continue
                 }
 
@@ -447,7 +467,7 @@ impl Slot {
                 if let Err(e) =
                     self.p2p().hosts().try_register(channel.address().clone(), HostState::Suspend)
                 {
-                    warn!(target: "net::outbound_session", "Error while suspending addr={}: {e}", channel.display_address());
+                    verbose!(target: "net::outbound_session", "Error while suspending addr={}: {e}", channel.display_address());
                 }
 
                 continue
@@ -492,7 +512,7 @@ impl Slot {
 
                 // Mark its state as Suspend, which sends it to the Refinery for processing.
                 if let Err(e) = self.p2p().hosts().try_register(addr.clone(), HostState::Suspend) {
-                    warn!(target: "net::outbound_session::try_connect", "Error while suspending addr={addr}: {e}");
+                    verbose!(target: "net::outbound_session::try_connect", "Error while suspending addr={addr}: {e}");
                 }
 
                 // Notify that channel processing failed
@@ -529,7 +549,7 @@ pub trait PeerDiscoveryBase {
 
     async fn run(self: Arc<Self>);
 
-    async fn wait(&self) -> bool;
+    async fn wait(&self);
 
     fn notify(&self);
 
@@ -577,7 +597,7 @@ impl PeerDiscoveryBase for PeerDiscovery {
     /// attempts, this will loop through all connected P2P peers and send
     /// out a `GetAddrs` message to request more peers. Other parts of the
     /// P2P stack will then handle the incoming addresses and place them in
-    /// the hosts list.  
+    /// the hosts list.
     ///
     /// On the third attempt, and if we still haven't made any connections,
     /// this function will then call `p2p.seed()` which triggers a
@@ -588,20 +608,18 @@ impl PeerDiscoveryBase for PeerDiscovery {
     /// seconds after broadcasting in order to let the P2P stack receive and
     /// work through the addresses it is expecting.
     async fn run(self: Arc<Self>) {
-        let mut current_attempt = 0;
+        let mut getaddr_failures = 0;
         loop {
             dnetev!(self, OutboundPeerDiscovery, {
-                attempt: current_attempt,
+                attempt: getaddr_failures,
                 state: "wait",
             });
 
-            // wait to be woken up by notify()
-            let sleep_was_instant = self.wait().await;
+            // Wait to be woken up by notify()
+            self.wait().await;
 
             // Read the current P2P settings
             let settings = self.p2p().settings().read_arc().await;
-            let outbound_peer_discovery_cooloff_time =
-                settings.outbound_peer_discovery_cooloff_time;
             let outbound_peer_discovery_attempt_time =
                 settings.outbound_peer_discovery_attempt_time;
             let outbound_connections = settings.outbound_connections;
@@ -610,41 +628,38 @@ impl PeerDiscoveryBase for PeerDiscovery {
             let seeds = settings.seeds.clone();
             drop(settings);
 
-            if sleep_was_instant {
-                // Try again
-                current_attempt += 1;
-            } else {
-                // reset back to start
-                current_attempt = 1;
-            }
+            let is_connected = self.p2p().is_connected();
 
-            if current_attempt >= 4 {
+            // After 2 GetAddrs failures, do seed sync
+            if getaddr_failures >= 2 {
                 verbose!(
                     target: "net::outbound_session::peer_discovery",
-                    "[P2P] [PEER DISCOVERY] Sleeping and trying again. Attempt {current_attempt}"
+                    "[P2P] [PEER DISCOVERY] GetAddrs failed {getaddr_failures} times,
+                    doing seed sync"
                 );
 
-                dnetev!(self, OutboundPeerDiscovery, {
-                    attempt: current_attempt,
-                    state: "sleep",
-                });
+                if !seeds.is_empty() {
+                    dnetev!(self, OutboundPeerDiscovery, {
+                        attempt: getaddr_failures,
+                        state: "seed",
+                    });
 
-                sleep(outbound_peer_discovery_cooloff_time).await;
-                current_attempt = 1;
-            }
+                    self.p2p().seed().await;
+                }
 
-            // First 2 times try sending GetAddr to the network.
-            // 3rd time do a seed sync (providing we have seeds
-            // configured).
-            if self.p2p().is_connected() && current_attempt <= 2 {
-                // Broadcast the GetAddrs message to all active peers.
+                // Reset failure counter. We do this even if seeds are not configured,
+                // to avoid getting stuck at failure count >= 2 with no way to retry.
+                getaddr_failures = 0;
+            } else if is_connected {
+                // Try GetAddrs from connected peers
                 // If we have no active peers, we will perform a SeedSyncSession instead.
                 verbose!(
                     target: "net::outbound_session::peer_discovery",
-                    "[P2P] [PEER DISCOVERY] Asking peers for new peers to connect to...");
+                    "[P2P] [PEER DISCOVERY] Asking peers for new peers to connect to..."
+                );
 
                 dnetev!(self, OutboundPeerDiscovery, {
-                    attempt: current_attempt,
+                    attempt: getaddr_failures,
                     state: "getaddr",
                 });
 
@@ -670,14 +685,15 @@ impl PeerDiscoveryBase for PeerDiscovery {
                             target: "net::outbound_session::peer_discovery",
                             "[P2P] [PEER DISCOVERY] Discovered {addrs_len} peers"
                         );
+                        // Reset on success
+                        getaddr_failures = 0;
                     }
                     Err(_) => {
                         verbose!(
                             target: "net::outbound_session::peer_discovery",
                             "[P2P] [PEER DISCOVERY] Waiting for addrs timed out."
                         );
-                        // Just do seed next time
-                        current_attempt = 3;
+                        getaddr_failures += 1;
                     }
                 }
 
@@ -687,12 +703,14 @@ impl PeerDiscoveryBase for PeerDiscovery {
                 // de-allocated when the Session completes.
                 store_sub.unsubscribe().await;
             } else if !seeds.is_empty() {
-                verbose!(
+                // Not connected, do seed sync
+                debug!(
                     target: "net::outbound_session::peer_discovery",
-                    "[P2P] [PEER DISCOVERY] Asking seeds for new peers to connect to...");
+                    "[P2P] [PEER DISCOVERY] Not connected, asking seeds for new peers to connect to..."
+                );
 
                 dnetev!(self, OutboundPeerDiscovery, {
-                    attempt: current_attempt,
+                    attempt: getaddr_failures,
                     state: "seed",
                 });
 
@@ -700,24 +718,21 @@ impl PeerDiscoveryBase for PeerDiscovery {
             }
 
             self.wakeup_self.reset();
+
             self.session().wakeup_slots().await;
 
             // Give some time for new connections to be established
+            verbose!(
+                target: "net::outbound_session::peer_discovery",
+                "[P2P] [PEER DISCOVERY] Sleeping for {outbound_peer_discovery_attempt_time}s"
+            );
             sleep(outbound_peer_discovery_attempt_time).await;
         }
     }
 
     /// Blocks execution until we receive a notification from notify().
-    /// `wakeup_self.wait()` resets the condition variable (`CondVar`) and waits
-    /// for a call from `notify()`. Returns `true` if the function completed
-    /// instantly (i.e. no wait occured). Returns false otherwise.
-    async fn wait(&self) -> bool {
-        let wakeup_start = Instant::now();
+    async fn wait(&self) {
         self.wakeup_self.wait().await;
-        let wakeup_end = Instant::now();
-
-        let epsilon = Duration::from_millis(200);
-        wakeup_end - wakeup_start <= epsilon
     }
 
     /// Wakeup peer discovery by sending a notification to `wakeup_self`.

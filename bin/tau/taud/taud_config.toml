@@ -68,11 +68,8 @@ hostlist = "~/.local/share/dwow/taud/hostlist.tsv"
 ## Inbound connection slots
 #inbound_connections = 8
 
-## White connection percent
-#gold_connect_count = 2
-
-## White connection percent
-#white_connect_percent = 70
+## Known peer percent (gold + white peers preferred over grey)
+#known_peer_percent = 70
 
 # Nodes to avoid interacting with for the duration of the program, in the
 # format ["host", ["scheme", "scheme"], [port, port]].

@@ -213,7 +213,7 @@ impl PrivateIntent {
 
 /// Commitment to a `PrivateIntent`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
-pub struct IntentCommitment(pallas::Base);
+pub struct IntentCommitment(pub pallas::Base);
 
 impl IntentCommitment {
     /// Get the inner pallas::Base value.
@@ -243,7 +243,7 @@ ty_from_fp!(IntentCommitment);
 
 /// Nullifier for a `PrivateIntent`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
-pub struct IntentNullifier(pallas::Base);
+pub struct IntentNullifier(pub pallas::Base);
 
 impl IntentNullifier {
     /// Get the inner pallas::Base value.
