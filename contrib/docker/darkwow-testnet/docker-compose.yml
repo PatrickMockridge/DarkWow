@@ -189,6 +189,50 @@ services:
     restart: unless-stopped
 
   # ============================================================================
+  # Wallet Service (--profile wallet)
+  #
+  # Isolated wallet container for capability position resolution, contract
+  # interactions, and hygienic dev work. Secret key never leaves the container.
+  #
+  # Two modes via WALLET_MODE env var:
+  #   interactive (default) — init wallet, sleep, docker exec for manual ops
+  #   test — auto scan, position, assert output, exit with status
+  #
+  # Start with:  docker compose --profile wallet up -d
+  # Requires:    lilith + node0 (native profile) already running and mining
+  # ============================================================================
+  wallet:
+    profiles: ["wallet"]
+    image: ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-wallet:latest
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.wallet
+    container_name: dwow-wallet
+    hostname: wallet
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      - WALLET_MODE=${WALLET_MODE:-interactive}
+      - NETWORK=darkwow-testnet
+      - RPC_URL=tcp://node0:31345
+      - WALLET_PASS=${WALLET_PASS:-walletpass}
+      - WALLET_SECRET=${WALLET_SECRET:-}
+      - WALLET_SECRET_FILE=/run/secrets/mining_secret
+    volumes:
+      - wallet_data:/root/.local/share/dwow/dww
+      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
+    networks:
+      - dwow-local
+    depends_on:
+      node0:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/dww", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ============================================================================
   # Merge Mining Services (--profile merge)
   #
   # Start with:  docker compose --profile merge up -d
