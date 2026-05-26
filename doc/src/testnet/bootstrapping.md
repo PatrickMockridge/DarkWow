@@ -236,15 +236,8 @@ restarts, so the node remembers peers it has connected to.
 
 ## Phase 4: Merge Mining (Optional)
 
-Once the native mining testnet is stable, add Monero merge mining:
-
-See [Merge Mining](merge-mining.md) and the
-[darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md)
-for pipeline and docker compose commands.
-
-This starts monerod syncing the public Monero testnet, p2pool bridging to dwowd's
-mm_rpc, and xmrig mining through p2pool. See [Merge Mining](merge-mining.md) for
-the full guide.
+Once native mining is stable, add Monero merge mining for additional security
+via Monero's hashrate. See [Merge Mining](merge-mining.md) for the full guide.
 
 ## Phase 5: Ongoing Operations
 

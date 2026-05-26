@@ -1,4 +1,6 @@
-> **ARCHIVED**: This documents the original overlay-DAG architecture. The current consensus mechanism is [Uncle Merkle](../consensus/uncle_merkle.md).
+> **Note**: This documents the P2P messaging protocol for the event graph
+> subsystem, which is still active in darkirc. See [Event Graph](event_graph.md)
+> for the overall architecture.
 
 # Network Protocol
 

@@ -235,9 +235,6 @@ dww contract deploy <wasm_path>
 
 ## Notes
 
-- **Solo mining vs Merge mining**: This guide uses solo PoW mining via stratum.
-  Merge mining (with Monero+p2pool) provides additional security through
-  Monero's hashrate.
 - **Testnet DRKW has no value**: Tokens earned on testnet are for testing only.
 - **docker compose vs test_pipeline.sh**: `docker compose up` gives a running
   stack; `test_pipeline.sh --mode <mode>` adds health checks, block production
