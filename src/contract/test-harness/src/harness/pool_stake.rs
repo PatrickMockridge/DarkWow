@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for PoolStake contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -75,19 +75,19 @@ impl PoolStakeHarness {
         let slash_coverage_zkbin = ZkBinary::decode(slash_coverage_bin, false).unwrap();
 
         let create_pool_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_pool_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_pool_zkbin).unwrap(),
             &create_pool_zkbin,
         );
         let join_pool_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&join_pool_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&join_pool_zkbin).unwrap(),
             &join_pool_zkbin,
         );
         let allocate_coverage_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&allocate_coverage_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&allocate_coverage_zkbin).unwrap(),
             &allocate_coverage_zkbin,
         );
         let slash_coverage_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&slash_coverage_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&slash_coverage_zkbin).unwrap(),
             &slash_coverage_zkbin,
         );
 
@@ -296,7 +296,7 @@ impl super::ContractHarness for PoolStakeHarness {
 pub struct CreatePoolResult {
     pub call_data: Vec<u8>,
     pub pool_id: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: CreatePoolV1PublicInputs,
 }
 
@@ -304,7 +304,7 @@ pub struct CreatePoolResult {
 pub struct JoinPoolResult {
     pub call_data: Vec<u8>,
     pub stake_id: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: JoinPoolV1PublicInputs,
 }
 
@@ -317,7 +317,7 @@ pub struct LeavePoolResult {
 pub struct AllocateCoverageResult {
     pub call_data: Vec<u8>,
     pub allocation_id: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: AllocateCoverageV1PublicInputs,
 }
 
@@ -325,6 +325,6 @@ pub struct AllocateCoverageResult {
 pub struct SlashCoverageResult {
     pub call_data: Vec<u8>,
     pub slash_id: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: SlashCoverageV1PublicInputs,
 }

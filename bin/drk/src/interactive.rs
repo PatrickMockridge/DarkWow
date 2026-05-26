@@ -38,7 +38,7 @@ use rand::rngs::OsRng;
 use smol::channel::{Receiver, Sender};
 use url::Url;
 
-use dwow::{
+use dwow_core::{
     cli_desc,
     system::{msleep, ExecutorPtr, StoppableTask, StoppableTaskPtr},
     util::{

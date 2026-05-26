@@ -23,7 +23,7 @@
 
 use std::ops::Deref;
 
-use dwow::{
+use dwow_core::{
     zk::{self, empty_witnesses, halo2::Value},
     zkas::{self, decoder},
 };

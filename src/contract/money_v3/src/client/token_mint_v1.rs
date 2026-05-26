@@ -26,7 +26,7 @@
 //! This module provides the ability to create new token types.
 //! Examples: stablecoins (USD, EUR), wrapped tokens (wBTC, wETH), etc.
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

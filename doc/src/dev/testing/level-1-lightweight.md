@@ -283,7 +283,7 @@ labor_market, money_v3, native_token, oracle, pool_stake,
 relayer_endowment, slot, stablecoin, subscription, tender
 ```
 
-7 contracts (atomic_swap, baccarat, betting_stake, darkbet_exchange,
+6 contracts (baccarat, betting_stake, darkbet_exchange,
 darktoshi_dice, lottery, roulette) have `darkfi_*.wasm` only — their
 `dwow_*.wasm` has not yet been built. These are tested via heavyweight
 harness proof generation only.

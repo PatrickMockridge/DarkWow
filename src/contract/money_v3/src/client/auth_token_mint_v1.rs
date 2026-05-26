@@ -25,7 +25,7 @@
 //!
 //! This module provides the ability to authorize minting for an existing token type.
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

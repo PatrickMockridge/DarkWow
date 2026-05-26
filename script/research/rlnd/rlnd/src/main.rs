@@ -28,7 +28,7 @@ use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::info;
 use url::Url;
 
-use dwow::{async_daemonize, cli_desc, rpc::settings::RpcSettingsOpt, Error, Result};
+use dwow_core::{async_daemonize, cli_desc, rpc::settings::RpcSettingsOpt, Error, Result};
 
 use rlnd::Rlnd;
 

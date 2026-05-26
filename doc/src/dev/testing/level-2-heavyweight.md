@@ -149,7 +149,6 @@ The test harness crate supports 28 contracts. Each has a harness module under
 | stablecoin | 5 | `src/contract/stablecoin/src/client/` |
 | bridge | 6 | `src/contract/bridge/src/client/` |
 | dex | 6 | `src/contract/dex/src/client/` |
-| atomic_swap | 3 | `src/contract/atomic_swap/src/client/` |
 
 Plus: attestation, auction, baccarat, betting_stake, bridge, darkbet_exchange,
 darktoshi_dice, dao_escrow, deployooor, drain_protection, game_room,

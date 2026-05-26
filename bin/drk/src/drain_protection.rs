@@ -33,7 +33,7 @@
 //! - 2/3 vote thresholds for large withdrawals
 //! - Emergency lock/unlock controls
 
-use dwow::{tx::{ContractCallLeaf, Transaction}, Error, Result};
+use dwow_core::{tx::{ContractCallLeaf, Transaction}, Error, Result};
 use dwow_sdk::{crypto::PublicKey, pasta::pallas, tx::ContractCall};
 use dwow_serial::Encodable;
 

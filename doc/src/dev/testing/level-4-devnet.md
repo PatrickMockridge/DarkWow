@@ -30,7 +30,7 @@ reproducibility.
 
 ## Public Testnet Quick Start
 
-The Docker image runs the **node** (dwowd). The **wallet** (`dww`) is a separate
+The Docker image runs the **node** (dwowd). The **wallet** (`dwow_wallet`) is a separate
 native binary you run on your host — it scans the blockchain, decrypts coinbase
 notes, and shows your balance.
 
@@ -39,8 +39,8 @@ notes, and shows your balance.
 ```bash
 git clone https://codeberg.org/PatrickM123/darkwow.git
 cd darkwow
-cargo build -p dww --release
-DRK="./target/release/dww"
+cargo build -p dwow_wallet --release
+DRK="./target/release/dwow_wallet"
 NETWORK="darkwow-testnet"
 ```
 

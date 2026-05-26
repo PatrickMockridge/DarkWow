@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use smol::lock::MutexGuard;
 use tracing::debug;
 
-use dwow::{
+use dwow_core::{
     rpc::{
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResult},
         server::RequestHandler,

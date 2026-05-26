@@ -32,7 +32,7 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 use tinyjson::JsonValue;
 use tracing::debug;
 
-use dwow::{
+use dwow_core::{
     util::{
         file::{load_json_file, save_json_file},
         time::Timestamp,

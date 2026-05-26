@@ -23,7 +23,7 @@
 use std::collections::HashSet;
 
 use async_trait::async_trait;
-use dwow::{
+use dwow_core::{
     event_graph::util::recreate_from_replayer_log,
     net::P2pPtr,
     rpc::{

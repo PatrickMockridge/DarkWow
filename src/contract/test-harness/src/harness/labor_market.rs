@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for LaborMarket contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -109,31 +109,31 @@ impl LaborMarketHarness {
         let refund_zkbin = ZkBinary::decode(refund_bin, false).unwrap();
 
         let create_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_job_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_job_zkbin).unwrap(),
             &create_job_zkbin,
         );
         let submit_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&submit_deliverable_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&submit_deliverable_zkbin).unwrap(),
             &submit_deliverable_zkbin,
         );
         let submit_git_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&submit_git_deliverable_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&submit_git_deliverable_zkbin).unwrap(),
             &submit_git_deliverable_zkbin,
         );
         let accept_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&accept_job_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&accept_job_zkbin).unwrap(),
             &accept_job_zkbin,
         );
         let confirm_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&confirm_delivery_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&confirm_delivery_zkbin).unwrap(),
             &confirm_delivery_zkbin,
         );
         let dispute_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&dispute_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&dispute_zkbin).unwrap(),
             &dispute_zkbin,
         );
         let refund_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&refund_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&refund_zkbin).unwrap(),
             &refund_zkbin,
         );
 
@@ -470,48 +470,48 @@ impl super::ContractHarness for LaborMarketHarness {
 pub struct CreateJobResult {
     pub call_data: Vec<u8>,
     pub job_id: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: CreateJobV1PublicInputs,
 }
 
 /// Result of accept_job
 pub struct AcceptJobResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: AcceptJobV1PublicInputs,
 }
 
 /// Result of submit_deliverable
 pub struct SubmitDeliverableResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: SubmitDeliverableV1PublicInputs,
 }
 
 /// Result of submit_git_deliverable
 pub struct SubmitGitDeliverableResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: SubmitGitDeliverableV1PublicInputs,
 }
 
 /// Result of confirm_delivery
 pub struct ConfirmDeliveryResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: ConfirmDeliveryV1PublicInputs,
 }
 
 /// Result of dispute
 pub struct DisputeResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: DisputeV1PublicInputs,
 }
 
 /// Result of refund
 pub struct RefundResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: RefundV1PublicInputs,
 }

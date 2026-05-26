@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use dwow::{
+use dwow_core::{
     blockchain::{header_store::PowData, BlockInfo},
     rpc::jsonrpc::{
         ErrorCode::{InternalError, InvalidParams},

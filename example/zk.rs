@@ -23,7 +23,7 @@
 
 // ../zkas simple.zk
 
-use dwow::{
+use dwow_core::{
     zk::{
         proof::{Proof, ProvingKey, VerifyingKey},
         vm::{Witness, ZkCircuit},
@@ -70,7 +70,7 @@ fn main() -> Result<()> {
     let public_inputs = vec![*value_coords.x(), *value_coords.y()];
 
     // Create the circuit
-    //dwow::zk::export_witness_json("example/simple.witness.json", &prover_witnesses, &public_inputs);
+    //dwow_core::zk::export_witness_json("example/simple.witness.json", &prover_witnesses, &public_inputs);
     let mut circuit = ZkCircuit::new(prover_witnesses, &zkbin.clone());
     circuit.enable_trace();
 

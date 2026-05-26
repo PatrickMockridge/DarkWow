@@ -23,7 +23,7 @@
 
 //! DAO-Escrow VerifyMemberCapability ZK proof generation
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

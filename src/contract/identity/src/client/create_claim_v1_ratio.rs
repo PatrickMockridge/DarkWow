@@ -23,7 +23,7 @@
 
 //! Identity create_claim_v1_ratio ZK proof generation (Ratio-based claims)
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use dwow::{
+use dwow_core::{
     net::{P2p, P2pPtr, Settings},
     system::ExecutorPtr,
     Result,
@@ -67,14 +67,14 @@ impl DwowP2pHandler {
     /// A new P2P instance is generated using provided settings and all
     /// corresponding protocols are registered.
     ///
-    /// `linear_blockchain` is the base `dwow_linear` type used by the sync
+    /// `linear_blockchain` is the base `dwow_chain` type used by the sync
     /// handler to serve block requests. `dwowd_blockchain` is the full
     /// dwowd wrapper with WASM validation, used by the broadcast handler
     /// to apply received blocks.
     pub async fn init(
         settings: &Settings,
         executor: &ExecutorPtr,
-        linear_blockchain: Option<Arc<dwow_linear::LinearBlockchain>>,
+        linear_blockchain: Option<Arc<dwow_chain::LinearBlockchain>>,
         dwowd_blockchain: Option<Arc<DwowdBlockchain>>,
         mempool: Option<MempoolPtr>,
     ) -> Result<DwowP2pHandlerPtr> {

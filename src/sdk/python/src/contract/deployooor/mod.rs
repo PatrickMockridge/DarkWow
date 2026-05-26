@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::error::Result;
+use dwow_core::error::Result;
 use dwow_deployooor_contract::{model as deployooor_model, DeployFunction};
 use dwow_sdk::deploy;
 use dwow_serial::deserialize;

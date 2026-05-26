@@ -28,7 +28,7 @@ use std::{
     path::Path,
 };
 
-use dwow::{
+use dwow_core::{
     zk::{empty_witnesses, Proof, VerifyingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,

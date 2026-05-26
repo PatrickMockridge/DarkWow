@@ -164,13 +164,13 @@ interaction.
 
 ```bash
 # List deployed contracts
-docker exec <container> /app/dww -n darkwow-testnet contract list
+docker exec <container> /app/dwow_wallet -n darkwow-testnet contract list
 
 # Check bridge config
-docker exec <container> /app/dww -n darkwow-testnet contract invoke <bridge_id> get_config
+docker exec <container> /app/dwow_wallet -n darkwow-testnet contract invoke <bridge_id> get_config
 
 # Deploy capital to a relayer
-docker exec <container> /app/dww -n darkwow-testnet contract invoke <endowment_id> deploy_capital \
+docker exec <container> /app/dwow_wallet -n darkwow-testnet contract invoke <endowment_id> deploy_capital \
     --params '{"relayer_pub":"...","amount":1000000,"backer_cut_bp":500}'
 ```
 

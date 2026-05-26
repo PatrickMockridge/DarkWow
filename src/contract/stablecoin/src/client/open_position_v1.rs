@@ -32,7 +32,7 @@
 //! The collateral receipt token is minted with spend_hook = stablecoin contract ID,
 //! enabling atomic operations like MintStableV1 (burn collateral, mint stablecoin).
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

@@ -24,7 +24,7 @@
 use std::{io, str::FromStr};
 
 use bytemuck::{Pod, Zeroable};
-use dwow::{
+use dwow_core::{
     blockchain::{BlockInfo, Header},
     tx::Transaction,
 };

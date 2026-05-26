@@ -9,10 +9,10 @@ license = "AGPL-3.0-only"
 edition = "2021"
 
 [dependencies]
-dwow = {path = "../../", features = ["rpc", "tx", "async-daemonize"]}
+dwow_core = {path = "../../", features = ["rpc", "tx", "async-daemonize"]}
 dwow-sdk = {path = "../../src/sdk"}
 dwow-serial = {path = "../../src/serial", features = ["derive"]}
-dwow_linear = {path = "../../src/linear"}
+dwow_chain = {path = "../../src/linear"}
 dwow_bridge_contract = {path = "../../src/contract/bridge", features = ["client"]}
 dwow_relayer_endowment_contract = {path = "../../src/contract/relayer_endowment", features = ["client"]}
 dwow-contract-test-harness = {path = "../../src/contract/test-harness"}

@@ -32,7 +32,7 @@ use structopt::StructOpt;
 use tracing::info;
 use url::Url;
 
-use dwow::{system::ExecutorPtr, Error, Result};
+use dwow_core::{system::ExecutorPtr, Error, Result};
 use dwow_sdk::crypto::{Keypair, PublicKey, SecretKey};
 use dwow_serial::{
     async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, Decodable, Encodable,

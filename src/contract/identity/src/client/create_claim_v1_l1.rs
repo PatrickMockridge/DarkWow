@@ -23,7 +23,7 @@
 
 //! Identity create_claim_v1_l1 ZK proof generation (Level 1 selective disclosure)
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

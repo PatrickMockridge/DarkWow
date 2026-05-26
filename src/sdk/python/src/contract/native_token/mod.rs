@@ -48,7 +48,7 @@ pub use pow_reward_v1::PoWRewardParamsV1;
 pub fn decode_native_token_function_params(
     function_index: u8,
     data: &[u8],
-) -> dwow::Result<Box<dyn FunctionParams>> {
+) -> dwow_core::Result<Box<dyn FunctionParams>> {
     let res: Box<dyn FunctionParams> = match NativeTokenFunction::try_from(function_index)? {
         NativeTokenFunction::FeeV1 => {
             let params: native_token_model::FeeParamsV1 = deserialize(&data[9..])?;
@@ -58,7 +58,7 @@ pub fn decode_native_token_function_params(
             let params: native_token_model::PoWRewardParamsV1 = deserialize(&data[1..])?;
             Box::new(params)
         }
-        _ => return Err(dwow::Error::ParseFailed("unsupported NativeToken function")),
+        _ => return Err(dwow_core::Error::ParseFailed("unsupported NativeToken function")),
     };
 
     Ok(res)

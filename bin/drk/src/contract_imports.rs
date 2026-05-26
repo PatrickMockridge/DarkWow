@@ -69,10 +69,6 @@ pub static AUCTION_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId
 pub static STABLECOIN_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
-// AtomicSwap Contract ID
-pub static ATOMIC_SWAP_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
-    std::sync::OnceLock::new();
-
 // Attestation Contract ID
 pub static ATTESTATION_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
@@ -176,10 +172,6 @@ pub fn register_contract_id(name: &str, cid: dwow_sdk::crypto::ContractId) -> Re
         "stablecoin" => {
             STABLECOIN_CONTRACT_ID.set(cid)
                 .map_err(|_| "stablecoin contract ID already registered".to_string())
-        }
-        "atomic_swap" => {
-            ATOMIC_SWAP_CONTRACT_ID.set(cid)
-                .map_err(|_| "atomic_swap contract ID already registered".to_string())
         }
         "attestation" => {
             ATTESTATION_CONTRACT_ID.set(cid)
@@ -700,29 +692,6 @@ impl Contract for DrainProtectionContract {
         DRAIN_PROTECTION_CONTRACT_ID.get().is_some()
     }
 }
-// ============================================================================
-// ATOMIC SWAP MODULE
-// ============================================================================
-
-pub mod atomic_swap {
-    pub use dwow_atomic_swap_contract::AtomicSwapFunction;
-    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_INFO_TREE;
-    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_SWAPS_TREE;
-    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_SECRETS_TREE;
-    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE;
-    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_ZKAS_CREATE_NS;
-    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_ZKAS_CLAIM_NS;
-    pub use dwow_atomic_swap_contract::ATOMIC_SWAP_CONTRACT_ZKAS_REFUND_NS;
-}
-
-pub struct AtomicSwapContract;
-impl Contract for AtomicSwapContract {
-    fn contract_id(&self) -> ContractId { *ATOMIC_SWAP_CONTRACT_ID.get().unwrap() }
-    fn name(&self) -> &'static str { "AtomicSwap" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![] }
-    fn is_initialized(&self) -> bool { ATOMIC_SWAP_CONTRACT_ID.get().is_some() }
-}
-
 // ============================================================================
 // ATTESTATION MODULE
 // ============================================================================

@@ -38,7 +38,6 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 
 ### Cross-Chain
 - [bridge](../contract/bridge.md) - Multi-chain asset transfers
-- [atomic_swap](../contract/atomic_swap.md) - Trustless cross-chain swaps
 - [monero](./monero.md) - Monero integration
 
 ### Other
@@ -142,6 +141,5 @@ doc/src/contract/                # Smart contract design docs
 ├── dex.md
 ├── stablecoin.md
 ├── bridge.md
-├── atomic_swap.md
 └── ... (33 contract files total)
 ```

@@ -24,7 +24,7 @@
 use std::{collections::HashSet, time::Instant};
 
 use async_trait::async_trait;
-use dwow::{
+use dwow_core::{
     rpc::{
         client::RpcClient,
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResponse, JsonResult},

@@ -17,7 +17,7 @@ tracing = "0.1.44"
 dwow_money_v3_contract = { path = "../money_v3", optional = true }
 
 # The following dependencies are used for the client API
-dwow = { path = "../../../", features = ["zk"], optional = true }
+dwow_core = { path = "../../../", features = ["zk"], optional = true }
 rand = { version = "0.8.5", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -29,7 +29,7 @@ default = []
 no-entrypoint = []
 async = ["dwow-sdk/async"]
 client = [
-    "dwow",
+    "dwow_core",
     "async",
     "dwow-sdk/async",
     "dwow-serial/async",

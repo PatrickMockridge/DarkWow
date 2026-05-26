@@ -10,7 +10,7 @@ edition = "2024"
 [workspace]
 
 [dependencies]
-dwow = {path = "../../../", features = ["validator"]}
+dwow_core = {path = "../../../", features = ["validator"]}
 dwow-sdk = {path = "../../../src/sdk"}
 dwow-serial = {path = "../../../src/serial"}
 sled-overlay = {version = "0.1.20"}

@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for Slot contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
@@ -60,11 +60,11 @@ impl SlotHarness {
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();
 
         let commit_bet_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
             &commit_bet_zkbin,
         );
         let settle_bet_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
             &settle_bet_zkbin,
         );
 

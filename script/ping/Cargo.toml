@@ -9,7 +9,7 @@ license = "AGPL-3.0-only"
 edition = "2021"
 
 [dependencies]
-dwow = {path = "../../", features = ["net"]}
+dwow_core = {path = "../../", features = ["net"]}
 dwow-serial = {path = "../../src/serial"}
 url = {version = "2.5.7", features = ["serde"]}
 smol = "2.0.2"

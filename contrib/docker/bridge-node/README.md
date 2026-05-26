@@ -198,7 +198,7 @@ docker exec <container> bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"json
 docker logs -f <container>
 
 # List deployed contracts (from inside container)
-docker exec <container> /app/dww -n darkwow-testnet contract list
+docker exec <container> /app/dwow_wallet -n darkwow-testnet contract list
 ```
 
 ## Volumes

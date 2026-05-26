@@ -27,7 +27,7 @@ use smol::lock::Mutex;
 use tracing::{error, info};
 use url::Url;
 
-use dwow::{
+use dwow_core::{
     rpc::{
         server::{listen_and_serve, RequestHandler},
         settings::RpcSettings,

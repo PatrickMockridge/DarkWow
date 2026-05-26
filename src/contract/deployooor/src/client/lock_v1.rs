@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::Result;
+use dwow_core::Result;
 use dwow_sdk::crypto::Keypair;
 use tracing::debug;
 

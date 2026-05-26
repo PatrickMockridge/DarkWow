@@ -32,7 +32,7 @@ use smol::lock::{Mutex, MutexGuard};
 use tinyjson::JsonValue;
 use tracing::error;
 
-use dwow::{
+use dwow_core::{
     dht::DhtNode,
     geode::hash_to_string,
     net::P2pPtr,

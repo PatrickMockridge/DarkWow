@@ -201,18 +201,6 @@ impl ContractMetadataRegistry {
 		};
 		self.contracts.insert("drain_protection", drain_protection);
 
-		// AtomicSwap Contract
-		let atomic_swap = ContractMetadata {
-			name: "atomic_swap",
-			functions: vec![
-				FunctionSignature { name: "initialize", code: 0x00, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_swap", code: 0x01, requires_proof: true, proof_circuit: Some("create_swap_v1") },
-				FunctionSignature { name: "claim", code: 0x02, requires_proof: true, proof_circuit: Some("claim_v1") },
-				FunctionSignature { name: "refund", code: 0x03, requires_proof: true, proof_circuit: Some("refund_v1") },
-			],
-		};
-		self.contracts.insert("atomic_swap", atomic_swap);
-
 		// Attestation Contract
 		let attestation = ContractMetadata {
 			name: "attestation",

@@ -32,7 +32,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use dwow::{
+use dwow_core::{
     rpc::{
         client::RpcClient,
         jsonrpc::JsonRequest,
@@ -263,12 +263,12 @@ async fn submit_contract_call(
     timeout: u64,
 ) -> Result<String> {
     let cid_bytes: [u8; 32] = contract_id.to_bytes();
-    let contract_call = dwow_linear::ContractCall {
+    let contract_call = dwow_chain::ContractCall {
         contract_id: cid_bytes,
         data: call_data,
     };
 
-    let tx = dwow_linear::Transaction {
+    let tx = dwow_chain::Transaction {
         version: 1,
         inputs: vec![],
         outputs: vec![],

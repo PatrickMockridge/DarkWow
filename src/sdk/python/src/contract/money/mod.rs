@@ -60,7 +60,7 @@ pub use mint_v1::MoneyV3MintParamsV1;
 pub fn decode_money_function_params(
     function_index: u8,
     data: &[u8],
-) -> dwow::Result<Box<dyn FunctionParams>> {
+) -> dwow_core::Result<Box<dyn FunctionParams>> {
     let res: Box<dyn FunctionParams> = match MoneyV3Function::try_from(function_index)? {
         MoneyV3Function::TokenMintV1 => {
             let params: money_model::TokenMintParamsV1 = deserialize(&data[1..])?;

@@ -24,7 +24,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use crypto_box::ChaChaBox;
-use dwow::{Error, Result};
+use dwow_core::{Error, Result};
 use dwow_serial::{deserialize_async_partial, SerialDecodable, SerialEncodable};
 
 /// IRC client state

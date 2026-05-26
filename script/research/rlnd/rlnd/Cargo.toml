@@ -11,7 +11,7 @@ edition = "2021"
 
 [dependencies]
 # Darkfi
-dwow = {path = "../../../../", features = ["async-daemonize", "async-sdk", "rpc", "sled-overlay"]}
+dwow_core = {path = "../../../../", features = ["async-daemonize", "async-sdk", "rpc", "sled-overlay"]}
 dwow-sdk = {path = "../../../../src/sdk"}
 dwow-serial = {path = "../../../../src/serial"}
 

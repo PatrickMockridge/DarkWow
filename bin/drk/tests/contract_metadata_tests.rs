@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dwow_sdk::deploy::{Category, ContractMetadata};
-use dww::walletdb::{ContractMetadataRecord, WalletDb};
+use dwow_wallet::walletdb::{ContractMetadataRecord, WalletDb};
 
 #[test]
 fn test_contract_metadata_roundtrip_empty() {

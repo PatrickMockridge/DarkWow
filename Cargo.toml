@@ -1,5 +1,5 @@
 [package]
-name = "dwow"
+name = "dwow_core"
 version = "0.5.0"
 homepage = "https://darkwow.org"
 description = "DarkWow: pure PoW, Uncle Merkle consensus, Lean4-verified ZK opcodes, no premine."
@@ -9,7 +9,7 @@ license = "AGPL-3.0-only"
 edition = "2021"
 
 [lib]
-name = "dwow"
+name = "dwow_core"
 doctest = false
 bench = false
 
@@ -57,7 +57,6 @@ members = [
     "src/contract/roulette",
     "src/contract/darkbet_exchange",
     "src/contract/slot",
-    "src/contract/atomic_swap",
     "src/contract/identity",
     "src/contract/deployooor",
     "src/contract/dex",

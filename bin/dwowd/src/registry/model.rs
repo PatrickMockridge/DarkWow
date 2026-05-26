@@ -23,12 +23,12 @@
 
 use std::{str::FromStr, sync::Arc};
 
-use dwow_linear::Output;
+use dwow_chain::Output;
 use dwow_sdk::crypto::PublicKey;
 use dwow_sdk::crypto::keypair::{Address, Network};
 use tracing::info;
 
-use dwow::{
+use dwow_core::{
     zk::{empty_witnesses, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Error, Result,
@@ -104,7 +104,7 @@ pub struct LinearBlockTemplate {
     /// Nullifier root (all spent nullifiers)
     pub nullifier_root: [u8; 32],
     /// Transactions included in this block template (drained from mempool at generation time)
-    pub transactions: Vec<dwow_linear::Transaction>,
+    pub transactions: Vec<dwow_chain::Transaction>,
     /// Merkle root of the transactions (included in mining blob)
     pub merkle_root: Blake3Hash,
 }
@@ -133,7 +133,7 @@ pub async fn build_linear_coinbase(
     value: u64,
     linear_zk: &LinearPowRewardZk,
 ) -> Result<(
-    dwow_linear::CoinbaseTransaction,
+    dwow_chain::CoinbaseTransaction,
     [[u8; 32]; 4],
 )> {
     use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
@@ -183,7 +183,7 @@ pub async fn build_linear_coinbase(
     output.note.encode(&mut note_bytes)
         .map_err(|e| Error::Custom(format!("Failed to encode encrypted note: {}", e)))?;
 
-    let coinbase = dwow_linear::CoinbaseTransaction {
+    let coinbase = dwow_chain::CoinbaseTransaction {
         proof: proof_bytes,
         public_inputs,
         coin: coin_bytes,
@@ -236,15 +236,15 @@ pub async fn generate_linear_block_template(
     linear_blockchain: &crate::blockchain::LinearBlockchain,
     recipient_config: &LinearMinerRewardsRecipientConfig,
     linear_zk: Option<&LinearPowRewardZk>,
-    transactions: Vec<dwow_linear::Transaction>,
+    transactions: Vec<dwow_chain::Transaction>,
 ) -> Result<LinearBlockTemplate> {
     // Cap transactions so the merkle root (included in the mining blob)
     // stays within the block gas budget. Each call is assumed to use its
     // full GAS_LIMIT budget (conservative — actual usage may be lower).
     // Remaining txs stay in the mempool for the next block.
-    let gas_limit = dwow::runtime::vm_runtime::GAS_LIMIT;
+    let gas_limit = dwow_core::runtime::vm_runtime::GAS_LIMIT;
     let block_gas_limit = crate::blockchain::BLOCK_GAS_LIMIT;
-    let transactions: Vec<dwow_linear::Transaction> = {
+    let transactions: Vec<dwow_chain::Transaction> = {
         let mut capped = Vec::new();
         let mut estimated_gas: u64 = 0;
         for tx in transactions {

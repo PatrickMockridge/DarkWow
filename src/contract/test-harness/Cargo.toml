@@ -9,14 +9,13 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-dwow = {path = "../../../", features = ["zk"]}
+dwow_core = {path = "../../../", features = ["zk"]}
 dwow-sdk = {path = "../../sdk"}
 dwow-serial = {path = "../../serial", features = ["crypto"]}
 dwow_native_token_contract = {path = "../native_token", features = ["client", "no-entrypoint"]}
 dwow_money_v3_contract = {path = "../money_v3", features = ["client", "no-entrypoint"]}
 dwow_deployooor_contract = {path = "../deployooor", features = ["client", "no-entrypoint"]}
 dwow_dex_contract = {path = "../dex", features = ["client", "no-entrypoint"]}
-dwow_atomic_swap_contract = {path = "../atomic_swap", features = ["client", "no-entrypoint"]}
 dwow_oracle_contract = {path = "../oracle", features = ["client", "no-entrypoint"]}
 dwow_stablecoin_contract = {path = "../stablecoin", features = ["client", "no-entrypoint"]}
 dwow_auction_contract = {path = "../auction", features = ["client", "no-entrypoint"]}

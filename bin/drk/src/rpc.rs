@@ -32,7 +32,7 @@ use smol::channel::Sender;
 use smol::net::TcpStream;
 use url::Url;
 
-use dwow::{
+use dwow_core::{
     blockchain::HeaderHash,
     rpc::{
         client::RpcClient,
@@ -77,7 +77,7 @@ use crate::{
     Drk, DrkPtr,
 };
 
-// The wallet uses dwow_linear::Block directly — no adapter types.
+// The wallet uses dwow_chain::Block directly — no adapter types.
 // Blocks are fetched from darkfid via blockchain.get_block_linear (JSON).
 
 /// Structure to hold a JSON-RPC client and its config,
@@ -259,12 +259,12 @@ impl Drk {
         }
     }
 
-    /// `scan_block_linear` processes a linear block directly from dwow_linear::Block.
+    /// `scan_block_linear` processes a linear block directly from dwow_chain::Block.
     /// Handles contract calls AND coinbase transactions (mining rewards).
     async fn scan_block_linear(
         &self,
         scan_cache: &mut ScanCache,
-        block: &dwow_linear::Block,
+        block: &dwow_chain::Block,
     ) -> Result<()> {
         use dwow_sdk::pasta::{pallas, group::ff::PrimeField};
 
@@ -507,7 +507,7 @@ impl Drk {
 
     // Queries darkfid for a linear blockchain block with given height.
     // Returns LinearBlockAdapter (wallet-compatible format for darkwow-devnet)
-    async fn get_block_by_height_linear(&self, height: u64) -> Result<dwow_linear::Block> {
+    async fn get_block_by_height_linear(&self, height: u64) -> Result<dwow_chain::Block> {
         let params = self
             .darkfid_daemon_request(
                 "blockchain.get_block_linear",
@@ -515,7 +515,7 @@ impl Drk {
             )
             .await?;
         let json_str = params.get::<String>().unwrap();
-        let block: dwow_linear::Block = serde_json::from_str(json_str)
+        let block: dwow_chain::Block = serde_json::from_str(json_str)
             .map_err(|e| Error::Custom(format!("Failed to parse linear block: {}", e)))?;
         Ok(block)
     }
@@ -848,7 +848,7 @@ impl Drk {
 
                     // Read submit response with timeout
                     let mut submit_response = String::new();
-                    match dwow::system::io_timeout(
+                    match dwow_core::system::io_timeout(
                         std::time::Duration::from_secs(5),
                         smol::io::AsyncBufReadExt::read_line(&mut buf_reader, &mut submit_response)
                     ).await
@@ -1416,7 +1416,7 @@ pub async fn subscribe_blocks(
                     let param = param.get::<String>().unwrap();
 
                     // Linear blocks are sent as JSON strings
-                    let block: dwow_linear::Block = serde_json::from_str(&param)
+                    let block: dwow_chain::Block = serde_json::from_str(&param)
                         .map_err(|e| Error::Custom(format!(
                             "[subscribe_blocks] Failed to parse linear block: {e}"
                         )))?;

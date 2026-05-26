@@ -25,7 +25,7 @@
 //!
 //! Shared functionality for building fee calls and finalizing transactions.
 
-use dwow::{
+use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
     zkas::ZkBinary,

@@ -28,7 +28,7 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dwow_linear::Transaction;
+use dwow_chain::Transaction;
 use smol::lock::Mutex;
 
 /// Maximum number of transactions allowed in the mempool
@@ -57,7 +57,7 @@ impl Mempool {
 
     /// Add a transaction to the mempool.
     /// Returns error if mempool is full or transaction is already in mempool.
-    pub async fn add(&self, tx: Transaction) -> dwow::Result<()> {
+    pub async fn add(&self, tx: Transaction) -> dwow_core::Result<()> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -72,13 +72,13 @@ impl Mempool {
         let tx_hash = tx.hash();
         for existing in txs.iter() {
             if existing.tx.hash() == tx_hash {
-                return Err(dwow::Error::Custom("Transaction already in mempool".to_string()));
+                return Err(dwow_core::Error::Custom("Transaction already in mempool".to_string()));
             }
         }
 
         // Reject if mempool is full
         if txs.len() >= MAX_MEMPOOL_SIZE {
-            return Err(dwow::Error::Custom("Mempool is full".to_string()));
+            return Err(dwow_core::Error::Custom("Mempool is full".to_string()));
         }
 
         txs.push(MempoolEntry { tx, added_at: now });

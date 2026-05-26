@@ -12,7 +12,7 @@ edition = "2021"
 arg = {git = "https://github.com/parazyd/arg"}
 bs58 = "0.5.1"
 ctrlc = "3.5.1"
-dwow = {path = "../../", features = ["async-serial", "util"]}
+dwow_core = {path = "../../", features = ["async-serial", "util"]}
 dwow-sdk = {path = "../../src/sdk", features = ["async"]}
 rand = "0.8.5"
 rayon = "1.11.0"

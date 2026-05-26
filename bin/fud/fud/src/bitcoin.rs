@@ -35,7 +35,7 @@ use tinyjson::JsonValue;
 use tracing::{error, info, warn};
 use url::Url;
 
-use dwow::{
+use dwow_core::{
     rpc::{client::RpcClient, jsonrpc::JsonRequest},
     system::{timeout::timeout, ExecutorPtr},
     Error, Result,

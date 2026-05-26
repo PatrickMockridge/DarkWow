@@ -25,7 +25,7 @@ use dwow_serial::{AsyncDecodable, AsyncEncodable};
 use smol::{io, LocalExecutor};
 use url::Url;
 
-use dwow::net::transport::{Dialer, Listener};
+use dwow_core::net::transport::{Dialer, Listener};
 
 #[test]
 fn tcp_transport() {

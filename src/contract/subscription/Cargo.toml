@@ -15,7 +15,7 @@ dwow-serial = { path = "../../serial" }
 getrandom = { version = "0.2.8", features = ["custom"] }
 halo2_proofs = { version = "0.3.2", optional = true }
 
-[dependencies.dwow]
+[dependencies.dwow_core]
 optional = true
 path = "../../../"
 
@@ -26,7 +26,7 @@ version = "0.8"
 [features]
 default = []
 no-entrypoint = []
-client = ["dep:dwow", "dep:rand", "dep:halo2_proofs"]
+client = ["dep:dwow_core", "dep:rand", "dep:halo2_proofs"]
 
 [lints]
 workspace = true

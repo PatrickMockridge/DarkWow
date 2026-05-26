@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for MoneyV3 contract (DeFi token contract).
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
@@ -86,13 +86,13 @@ impl MoneyV3Harness {
 
         // Build proving keys
         let token_mint_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&token_mint_zkbin).unwrap(), &token_mint_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&token_mint_zkbin).unwrap(), &token_mint_zkbin);
         let auth_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&auth_zkbin).unwrap(), &auth_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&auth_zkbin).unwrap(), &auth_zkbin);
         let mint_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&mint_zkbin).unwrap(), &mint_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&mint_zkbin).unwrap(), &mint_zkbin);
         let burn_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
 
         let token_mint_pk = ProvingKey::build(token_mint_zkbin.k, &token_mint_circuit);
         let auth_pk = ProvingKey::build(auth_zkbin.k, &auth_circuit);
@@ -112,12 +112,12 @@ impl MoneyV3Harness {
     }
 
     /// Get the combined verifying key for all circuits
-    pub fn verifying_key(&self) -> dwow::zk::VerifyingKey {
+    pub fn verifying_key(&self) -> dwow_core::zk::VerifyingKey {
         // Combine all circuit VKs
-        dwow::zk::VerifyingKey::build(
+        dwow_core::zk::VerifyingKey::build(
             self.token_mint_zkbin.k,
             &ZkCircuit::new(
-                dwow::zk::empty_witnesses(&self.token_mint_zkbin).unwrap(),
+                dwow_core::zk::empty_witnesses(&self.token_mint_zkbin).unwrap(),
                 &self.token_mint_zkbin,
             ),
         )
@@ -371,8 +371,8 @@ pub struct TokenCreationResult {
     pub auth_nullifier: pallas::Base,
     pub auth_mint_public: pallas::Base,
     pub token_registry_root: pallas::Base,
-    pub auth_proofs: Vec<dwow::zk::Proof>,
-    pub token_proofs: Vec<dwow::zk::Proof>,
+    pub auth_proofs: Vec<dwow_core::zk::Proof>,
+    pub token_proofs: Vec<dwow_core::zk::Proof>,
 }
 
 /// Result of minting
@@ -380,17 +380,17 @@ pub struct MintResult {
     pub call_data: Vec<u8>,
     pub coin: Coin,
     pub value_commit: pallas::Base,
-    pub proofs: Vec<dwow::zk::Proof>,
+    pub proofs: Vec<dwow_core::zk::Proof>,
 }
 
 /// Result of transfer
 pub struct TransferResult {
     pub call_data: Vec<u8>,
-    pub proofs: Vec<dwow::zk::Proof>,
+    pub proofs: Vec<dwow_core::zk::Proof>,
 }
 
 /// Result of OTC swap
 pub struct OtcSwapResult {
     pub call_data: Vec<u8>,
-    pub proofs: Vec<dwow::zk::Proof>,
+    pub proofs: Vec<dwow_core::zk::Proof>,
 }

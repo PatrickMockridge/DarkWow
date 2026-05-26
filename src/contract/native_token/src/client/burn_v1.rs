@@ -25,7 +25,7 @@
 //!
 //! This module provides the ability to build Burn calls to destroy coins.
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

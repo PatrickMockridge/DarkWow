@@ -282,9 +282,9 @@ let expected_reward = expected_reward(block_height) + paid_fee;
 
 The `expected_reward` function returns a predefined schedule that decreases over time (deflationary emission).
 
-## dww Wallet Integration
+## dwow_wallet Wallet Integration
 
-The `dww` command-line wallet supports Money V3 with full functionality:
+The `dwow_wallet` command-line wallet supports Money V3 with full functionality:
 
 | Feature | Status | Implementation |
 |---------|--------|----------------|
@@ -370,5 +370,5 @@ This fork is **incompatible with upstream DarkWow** because:
   - NativeToken contract added (native, for DRKW)
   - All ZK circuits converted to Poseidon-only
   - Token IDs now hidden commitments (100% fungibility)
-  - dww wallet updated with full Money V3 support
+  - dwow_wallet wallet updated with full Money V3 support
   - Transfer, token creation, token minting all functional

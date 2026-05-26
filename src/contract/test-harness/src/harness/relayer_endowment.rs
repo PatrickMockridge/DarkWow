@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for RelayerEndowment contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -72,15 +72,15 @@ impl RelayerEndowmentHarness {
         let claim_fees_zkbin = ZkBinary::decode(claim_bin, false).unwrap();
 
         let init_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&initialize_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&initialize_zkbin).unwrap(),
             &initialize_zkbin,
         );
         let deploy_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&deploy_capital_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&deploy_capital_zkbin).unwrap(),
             &deploy_capital_zkbin,
         );
         let claim_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&claim_fees_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&claim_fees_zkbin).unwrap(),
             &claim_fees_zkbin,
         );
 
@@ -234,7 +234,7 @@ pub struct InitializeResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: InitializeV1PublicInputs,
 }
@@ -244,7 +244,7 @@ pub struct DeployCapitalResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: DeployCapitalV1PublicInputs,
 }
@@ -254,7 +254,7 @@ pub struct ClaimFeesResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: ClaimFeesV1PublicInputs,
 }

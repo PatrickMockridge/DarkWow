@@ -26,7 +26,7 @@ use smol::{lock::Mutex, stream::StreamExt};
 use std::{collections::HashSet, sync::Arc};
 use tracing::{debug, error, info};
 
-use dwow::{
+use dwow_core::{
     async_daemonize, cli_desc, net,
     net::settings::SettingsOpt,
     rpc::{

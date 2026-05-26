@@ -23,7 +23,7 @@
 
 // ../zkas simple.zk
 
-use dwow::{
+use dwow_core::{
     zk::{
         proof::{Proof, ProvingKey, VerifyingKey},
         vm::{Witness, ZkCircuit},

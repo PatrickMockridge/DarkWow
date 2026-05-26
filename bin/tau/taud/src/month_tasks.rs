@@ -31,7 +31,7 @@ use chrono::{TimeZone, Utc};
 use tinyjson::JsonValue;
 use tracing::debug;
 
-use dwow::util::{
+use dwow_core::util::{
     file::{load_json_file, save_json_file},
     time::Timestamp,
 };
@@ -246,7 +246,7 @@ mod tests {
     use std::fs::{create_dir_all, remove_dir_all};
 
     use super::*;
-    use dwow::Result;
+    use dwow_core::Result;
 
     const TEST_DATA_PATH: &str = "/tmp/test_tau_data";
 

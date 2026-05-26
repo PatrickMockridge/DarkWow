@@ -24,7 +24,7 @@
 use structopt::StructOpt;
 use structopt_toml::{serde::Deserialize, StructOptToml};
 
-use dwow::{net::settings::SettingsOpt, rpc::settings::RpcSettingsOpt};
+use dwow_core::{net::settings::SettingsOpt, rpc::settings::RpcSettingsOpt};
 
 pub const CONFIG_FILE: &str = "taud_config.toml";
 pub const CONFIG_FILE_CONTENTS: &str = include_str!("../taud_config.toml");

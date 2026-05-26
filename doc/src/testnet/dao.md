@@ -7,7 +7,7 @@
 >
 > See [DAO Escrow Contract](../../contract/dao_escrow/README.md) for the recommended governance solution.
 
-On the testnet, we can also create anonymous DAOs. Using the `dww`
+On the testnet, we can also create anonymous DAOs. Using the `dwow_wallet`
 CLI tool, we have a `dao` subcommand that can perform the necessary
 operations.
 
@@ -39,13 +39,13 @@ different terminal (not supported in interactive mode right now) like
 this:
 
 ```shell
-$ ./dww help dao create
+$ ./dwow_wallet help dao create
 
-dww-dao-create 0.4.1
+dwow_wallet-dao-create 0.4.1
 Create DAO parameters
 
 USAGE:
-    dww dao create <proposer-limit> <quorum> <early-exec-quorum> <approval-ratio> <gov-token-id>
+    dwow_wallet dao create <proposer-limit> <quorum> <early-exec-quorum> <approval-ratio> <gov-token-id>
 
 FLAGS:
     -h, --help       Prints help information
@@ -393,13 +393,13 @@ Now the DAO members are ready to cast their votes.
 First, let's check the `dao vote` subcommand usage.
 
 ```shell
-$ ./dww help dao vote
+$ ./dwow_wallet help dao vote
 
-dww-dao-vote 0.5.0
+dwow_wallet-dao-vote 0.5.0
 Vote on a given proposal
 
 USAGE:
-    dww dao vote <bulla> <vote> [vote-weight]
+    dwow_wallet dao vote <bulla> <vote> [vote-weight]
 
 FLAGS:
     -h, --help       Prints help information

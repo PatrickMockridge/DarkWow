@@ -36,7 +36,7 @@ use structopt_toml::{
 };
 use url::Url;
 
-use dwow::{
+use dwow_core::{
     cli_desc,
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     util::{encoding::base64, parse::decode_base10, path::get_config_path},

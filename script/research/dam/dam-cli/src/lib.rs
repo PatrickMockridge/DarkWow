@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::{rpc::client::RpcClient, system::ExecutorPtr, Result};
+use dwow_core::{rpc::client::RpcClient, system::ExecutorPtr, Result};
 use url::Url;
 
 /// damd JSON-RPC related methods

@@ -56,7 +56,7 @@
 
 use std::{collections::HashSet, sync::atomic::Ordering::SeqCst};
 
-use dwow::Result;
+use dwow_core::Result;
 use tracing::{error, info};
 
 use super::{

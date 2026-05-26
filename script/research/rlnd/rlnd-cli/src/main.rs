@@ -24,7 +24,7 @@
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use dwow::{cli_desc, Result};
+use dwow_core::{cli_desc, Result};
 use prettytable::{format, row, Table};
 use smol::Executor;
 

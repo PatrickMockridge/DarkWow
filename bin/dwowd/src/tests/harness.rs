@@ -31,8 +31,8 @@
 //! (any nonce passes PoW) so blocks are instant — the WASM execution
 //! path is identical to production.
 
-use dwow::Result;
-use dwow_linear::{
+use dwow_core::Result;
+use dwow_chain::{
     Block, BlockHeader, ContractCall, Miner, Output, PowSource, Transaction, UncleBlock,
     build_uncle_merkle, create_uncle,
 };

@@ -24,7 +24,7 @@
 use tinyjson::JsonValue;
 use tracing::error;
 
-use dwow::{
+use dwow_core::{
     rpc::jsonrpc::{
         ErrorCode::{InternalError, InvalidParams},
         JsonError, JsonResponse, JsonResult,

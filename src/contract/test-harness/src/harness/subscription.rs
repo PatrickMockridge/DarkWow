@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for Subscription contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -78,15 +78,15 @@ impl SubscriptionHarness {
         let update_usage_zkbin = ZkBinary::decode(update_bin, false).unwrap();
 
         let subscribe_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&subscribe_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&subscribe_zkbin).unwrap(),
             &subscribe_zkbin,
         );
         let verify_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&verify_access_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&verify_access_zkbin).unwrap(),
             &verify_access_zkbin,
         );
         let update_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&update_usage_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&update_usage_zkbin).unwrap(),
             &update_usage_zkbin,
         );
 
@@ -335,20 +335,20 @@ impl super::ContractHarness for SubscriptionHarness {
 /// Result of subscribe
 pub struct SubscribeResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: SubscribePublicInputs,
 }
 
 /// Result of verify_access
 pub struct VerifyAccessResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: VerifyAccessPublicInputs,
 }
 
 /// Result of update_usage
 pub struct UpdateUsageResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: UpdateUsagePublicInputs,
 }

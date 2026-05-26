@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::{ClientFailed, Result};
+use dwow_core::{ClientFailed, Result};
 use dwow_sdk::{crypto::Keypair, deploy::DeployParamsV1};
 use tracing::{debug, error};
 

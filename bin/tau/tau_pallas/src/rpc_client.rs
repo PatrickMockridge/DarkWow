@@ -29,7 +29,7 @@
 
 use std::sync::Arc;
 
-use dwow::{
+use dwow_core::{
     rpc::client::RpcClient,
     rpc::jsonrpc::JsonRequest,
     tx::Transaction,

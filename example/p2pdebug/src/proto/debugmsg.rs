@@ -30,7 +30,7 @@ use async_trait::async_trait;
 use fxhash::FxHashSet;
 use log::debug;
 
-use dwow::{
+use dwow_core::{
     net,
     util::serial::{SerialDecodable, SerialEncodable},
     Result,

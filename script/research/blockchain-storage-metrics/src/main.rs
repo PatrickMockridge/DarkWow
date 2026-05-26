@@ -28,7 +28,7 @@ use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::info;
 use url::Url;
 
-use dwow::{
+use dwow_core::{
     async_daemonize,
     blockchain::BlockInfo,
     cli_desc,

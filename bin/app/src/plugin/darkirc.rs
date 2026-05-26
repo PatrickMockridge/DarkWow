@@ -28,7 +28,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use dwow::{
+use dwow_core::{
     event_graph::{
         self,
         proto::{EventPut, ProtocolEventGraph},

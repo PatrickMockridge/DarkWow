@@ -29,7 +29,7 @@ use dwow_sdk::crypto::ContractId;
 use tinyjson::JsonValue;
 use tracing::{error, info};
 
-use dwow::{
+use dwow_core::{
     rpc::jsonrpc::{
         ErrorCode::{InvalidParams, InternalError},
         JsonError, JsonResponse, JsonResult,

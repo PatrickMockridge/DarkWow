@@ -29,8 +29,8 @@
 
 use std::sync::Arc;
 
-use dwow::Result;
-use dwow_linear::{FinalityConfig, LinearStore};
+use dwow_core::Result;
+use dwow_chain::{FinalityConfig, LinearStore};
 use dwow_sdk::crypto::{
     ContractId, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
 };
@@ -55,11 +55,11 @@ impl GenesisHarness {
         let db = sled::Config::new()
             .temporary(true)
             .open()
-            .map_err(|e| dwow::Error::Custom(format!("Failed to create temp sled DB: {}", e)))?;
+            .map_err(|e| dwow_core::Error::Custom(format!("Failed to create temp sled DB: {}", e)))?;
         let db = Arc::new(db);
 
         let store = LinearStore::new(db.clone())
-            .map_err(|e| dwow::Error::Custom(format!("Failed to create LinearStore: {}", e)))?;
+            .map_err(|e| dwow_core::Error::Custom(format!("Failed to create LinearStore: {}", e)))?;
         let store = Arc::new(store);
 
         // Use max target so any nonce passes PoW — instant blocks for tests.

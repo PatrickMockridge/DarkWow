@@ -627,10 +627,10 @@ version = "0.5.0"
 dependencies = [
  "anyhow",
  "blake3",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
  "dwow_bridge_contract",
+ "dwow_core",
  "ethers-core",
  "hex",
  "serde",
@@ -909,12 +909,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bs58",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
  "dwow_bridge_contract",
- "dwow_linear",
+ "dwow_chain",
+ "dwow_core",
  "dwow_relayer_endowment_contract",
  "hex",
  "rand 0.8.6",
@@ -1890,9 +1890,9 @@ dependencies = [
  "blake3",
  "bs58",
  "crypto_box",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "easy-parallel",
  "futures",
  "futures-rustls",
@@ -2085,8 +2085,8 @@ name = "dchatd"
 version = "0.4.1"
 dependencies = [
  "async-trait",
- "dwow",
  "dwow-serial",
+ "dwow_core",
  "easy-parallel",
  "serde",
  "signal-hook",
@@ -2374,82 +2374,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
 
 [[package]]
-name = "dwow"
-version = "0.5.0"
-dependencies = [
- "arti-client",
- "async-trait",
- "blake3",
- "bs58",
- "clap 4.6.1",
- "criterion 0.8.2",
- "dwow-sdk",
- "dwow-serial",
- "easy-parallel",
- "ed25519-compact",
- "futures",
- "futures-rustls",
- "halo2_gadgets",
- "halo2_proofs",
- "hex",
- "httparse",
- "libc",
- "monero",
- "nu-ansi-term",
- "num-bigint",
- "oxy-upnp-igd",
- "parking_lot 0.12.5",
- "pin-project-lite",
- "plotters",
- "prettytable-rs",
- "primitive-types 0.14.0",
- "quinn-smol",
- "rand 0.8.6",
- "randomx",
- "rcgen",
- "semver",
- "serde",
- "sha2",
- "sled",
- "sled-overlay",
- "smol",
- "socket2",
- "structopt",
- "structopt-toml",
- "thiserror 2.0.18",
- "tiny-keccak",
- "tinyjson",
- "toml 0.9.12+spec-1.1.0",
- "tor-cell",
- "tor-error",
- "tor-hscrypto",
- "tor-hsservice",
- "tor-proto",
- "tor-rtcompat",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "url",
- "wasmer",
- "wasmer-compiler-cranelift",
- "wasmer-compiler-singlepass",
- "wasmer-middlewares",
- "x509-parser",
-]
-
-[[package]]
 name = "dwow-contract-test-harness"
 version = "0.5.0"
 dependencies = [
- "dwow",
  "dwow-sdk",
  "dwow-serial",
- "dwow_atomic_swap_contract",
  "dwow_attestation_contract",
  "dwow_auction_contract",
  "dwow_baccarat_contract",
  "dwow_betting_stake_contract",
  "dwow_bridge_contract",
+ "dwow_core",
  "dwow_dao_escrow_contract",
  "dwow_darkbet_exchange_contract",
  "dwow_darktoshi_dice_contract",
@@ -2532,9 +2467,9 @@ dependencies = [
 name = "dwow-sdk-py"
 version = "0.5.0"
 dependencies = [
- "dwow",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "dwow_deployooor_contract",
  "dwow_money_v3_contract",
  "dwow_native_token_contract",
@@ -2562,29 +2497,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "dwow_atomic_swap_contract"
-version = "0.1.0"
-dependencies = [
- "dwow",
- "dwow-sdk",
- "dwow-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "rand 0.8.6",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
 name = "dwow_attestation_contract"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -2600,10 +2521,10 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -2620,10 +2541,10 @@ dependencies = [
  "blake3",
  "bs58",
  "chacha20poly1305",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -2641,10 +2562,10 @@ dependencies = [
  "blake3",
  "bs58",
  "chacha20poly1305",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -2664,10 +2585,10 @@ dependencies = [
  "blake3",
  "bs58",
  "chacha20poly1305",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -2678,198 +2599,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dwow_dao_escrow_contract"
-version = "0.1.0"
-dependencies = [
- "dwow",
- "dwow-sdk",
- "dwow-serial",
- "dwow_money_v3_contract",
- "getrandom 0.2.17",
- "rand 0.8.6",
- "serde",
- "sled",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "dwow_darkbet_exchange_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "bs58",
- "chacha20poly1305",
- "dwow",
- "dwow-contract-test-harness",
- "dwow-sdk",
- "dwow-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "pasta_curves",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "dwow_darktoshi_dice_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "bs58",
- "chacha20poly1305",
- "dwow",
- "dwow-contract-test-harness",
- "dwow-sdk",
- "dwow-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "pasta_curves",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "dwow_deployooor_contract"
-version = "0.5.0"
-dependencies = [
- "dwow",
- "dwow-contract-test-harness",
- "dwow-sdk",
- "dwow-serial",
- "getrandom 0.2.17",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
- "wasmparser 0.243.0",
-]
-
-[[package]]
-name = "dwow_dex_contract"
-version = "0.5.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "dwow",
- "dwow-contract-test-harness",
- "dwow-sdk",
- "dwow-serial",
- "dwow_money_v3_contract",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "dwow_drain_protection_contract"
-version = "0.1.0"
-dependencies = [
- "dwow",
- "dwow-sdk",
- "dwow-serial",
- "getrandom 0.2.17",
- "rand 0.8.6",
- "serde",
- "sled",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "dwow_escrow_contract"
-version = "0.1.0"
-dependencies = [
- "dwow",
- "dwow-sdk",
- "dwow-serial",
- "getrandom 0.2.17",
- "rand 0.8.6",
- "serde",
- "sled",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "dwow_game_room_contract"
-version = "0.1.0"
-dependencies = [
- "chacha20poly1305",
- "dwow",
- "dwow-sdk",
- "dwow-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "rand 0.8.6",
- "serial_test",
- "tracing",
-]
-
-[[package]]
-name = "dwow_identity_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "dwow",
- "dwow-contract-test-harness",
- "dwow-sdk",
- "dwow-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "once_cell",
- "rand 0.8.6",
- "smol",
- "thiserror 1.0.69",
- "tracing",
-]
-
-[[package]]
-name = "dwow_insurance_market_contract"
-version = "0.1.0"
-dependencies = [
- "dwow",
- "dwow-sdk",
- "dwow-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "rand 0.8.6",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "dwow_labor_market_contract"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "chacha20poly1305",
- "dwow",
- "dwow-contract-test-harness",
- "dwow-sdk",
- "dwow-serial",
- "getrandom 0.2.17",
- "halo2_proofs",
- "lazy_static",
- "rand 0.8.6",
- "smol",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "dwow_linear"
+name = "dwow_chain"
 version = "0.1.0"
 dependencies = [
  "base64",
@@ -2895,16 +2625,271 @@ dependencies = [
 ]
 
 [[package]]
+name = "dwow_core"
+version = "0.5.0"
+dependencies = [
+ "arti-client",
+ "async-trait",
+ "blake3",
+ "bs58",
+ "clap 4.6.1",
+ "criterion 0.8.2",
+ "dwow-sdk",
+ "dwow-serial",
+ "easy-parallel",
+ "ed25519-compact",
+ "futures",
+ "futures-rustls",
+ "halo2_gadgets",
+ "halo2_proofs",
+ "hex",
+ "httparse",
+ "libc",
+ "monero",
+ "nu-ansi-term",
+ "num-bigint",
+ "oxy-upnp-igd",
+ "parking_lot 0.12.5",
+ "pin-project-lite",
+ "plotters",
+ "prettytable-rs",
+ "primitive-types 0.14.0",
+ "quinn-smol",
+ "rand 0.8.6",
+ "randomx",
+ "rcgen",
+ "semver",
+ "serde",
+ "sha2",
+ "sled",
+ "sled-overlay",
+ "smol",
+ "socket2",
+ "structopt",
+ "structopt-toml",
+ "thiserror 2.0.18",
+ "tiny-keccak",
+ "tinyjson",
+ "toml 0.9.12+spec-1.1.0",
+ "tor-cell",
+ "tor-error",
+ "tor-hscrypto",
+ "tor-hsservice",
+ "tor-proto",
+ "tor-rtcompat",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "url",
+ "wasmer",
+ "wasmer-compiler-cranelift",
+ "wasmer-compiler-singlepass",
+ "wasmer-middlewares",
+ "x509-parser",
+]
+
+[[package]]
+name = "dwow_dao_escrow_contract"
+version = "0.1.0"
+dependencies = [
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "dwow_money_v3_contract",
+ "getrandom 0.2.17",
+ "rand 0.8.6",
+ "serde",
+ "sled",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_darkbet_exchange_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "pasta_curves",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_darktoshi_dice_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "chacha20poly1305",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "pasta_curves",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_deployooor_contract"
+version = "0.5.0"
+dependencies = [
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "getrandom 0.2.17",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+ "wasmparser 0.243.0",
+]
+
+[[package]]
+name = "dwow_dex_contract"
+version = "0.5.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "dwow_money_v3_contract",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_drain_protection_contract"
+version = "0.1.0"
+dependencies = [
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "getrandom 0.2.17",
+ "rand 0.8.6",
+ "serde",
+ "sled",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_escrow_contract"
+version = "0.1.0"
+dependencies = [
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "getrandom 0.2.17",
+ "rand 0.8.6",
+ "serde",
+ "sled",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_game_room_contract"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "rand 0.8.6",
+ "serial_test",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_identity_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "once_cell",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_insurance_market_contract"
+version = "0.1.0"
+dependencies = [
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "rand 0.8.6",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "dwow_labor_market_contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "dwow-contract-test-harness",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "lazy_static",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "dwow_lottery_contract"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "bs58",
  "chacha20poly1305",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "dwow_money_v3_contract",
  "getrandom 0.2.17",
  "halo2_proofs",
@@ -2922,9 +2907,9 @@ name = "dwow_money_v3_contract"
 version = "0.1.0"
 dependencies = [
  "chacha20poly1305",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "pasta_curves",
@@ -2939,9 +2924,9 @@ name = "dwow_native_token_contract"
 version = "0.1.0"
 dependencies = [
  "chacha20poly1305",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "pasta_curves",
@@ -2957,10 +2942,10 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -2976,10 +2961,10 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -2996,10 +2981,10 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -3018,10 +3003,10 @@ dependencies = [
  "blake3",
  "bs58",
  "chacha20poly1305",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -3037,9 +3022,9 @@ name = "dwow_slot_contract"
 version = "0.1.0"
 dependencies = [
  "chacha20poly1305",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "pasta_curves",
@@ -3054,9 +3039,9 @@ version = "0.5.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "dwow_money_v3_contract",
  "getrandom 0.2.17",
  "halo2_proofs",
@@ -3071,9 +3056,9 @@ dependencies = [
 name = "dwow_subscription_contract"
 version = "0.1.0"
 dependencies = [
- "dwow",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "rand 0.8.6",
@@ -3085,10 +3070,10 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "getrandom 0.2.17",
  "halo2_proofs",
  "lazy_static",
@@ -3099,13 +3084,76 @@ dependencies = [
 ]
 
 [[package]]
+name = "dwow_wallet"
+version = "0.5.0"
+dependencies = [
+ "blake3",
+ "bs58",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_attestation_contract",
+ "dwow_auction_contract",
+ "dwow_baccarat_contract",
+ "dwow_betting_stake_contract",
+ "dwow_bridge_contract",
+ "dwow_chain",
+ "dwow_core",
+ "dwow_dao_escrow_contract",
+ "dwow_darkbet_exchange_contract",
+ "dwow_darktoshi_dice_contract",
+ "dwow_deployooor_contract",
+ "dwow_dex_contract",
+ "dwow_drain_protection_contract",
+ "dwow_escrow_contract",
+ "dwow_game_room_contract",
+ "dwow_identity_contract",
+ "dwow_insurance_market_contract",
+ "dwow_labor_market_contract",
+ "dwow_lottery_contract",
+ "dwow_money_v3_contract",
+ "dwow_native_token_contract",
+ "dwow_oracle_contract",
+ "dwow_pool_stake_contract",
+ "dwow_relayer_endowment_contract",
+ "dwow_roulette_contract",
+ "dwow_slot_contract",
+ "dwow_stablecoin_contract",
+ "dwow_subscription_contract",
+ "dwow_tender_contract",
+ "easy-parallel",
+ "futures",
+ "hex",
+ "lazy_static",
+ "libc",
+ "linenoise-rs",
+ "num-bigint",
+ "prettytable-rs",
+ "rand 0.8.6",
+ "randomx",
+ "rodio",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "signal-hook-async-std",
+ "sled",
+ "smol",
+ "structopt",
+ "structopt-toml",
+ "toml 0.9.12+spec-1.1.0",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "dwowd"
 version = "0.5.0"
 dependencies = [
  "async-trait",
  "blake3",
  "bs58",
- "dwow",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
@@ -3113,13 +3161,14 @@ dependencies = [
  "dwow_auction_contract",
  "dwow_baccarat_contract",
  "dwow_bridge_contract",
+ "dwow_chain",
+ "dwow_core",
  "dwow_dao_escrow_contract",
  "dwow_deployooor_contract",
  "dwow_dex_contract",
  "dwow_drain_protection_contract",
  "dwow_identity_contract",
  "dwow_insurance_market_contract",
- "dwow_linear",
  "dwow_lottery_contract",
  "dwow_money_v3_contract",
  "dwow_native_token_contract",
@@ -3160,71 +3209,6 @@ dependencies = [
  "libc",
  "winapi",
  "wio",
-]
-
-[[package]]
-name = "dww"
-version = "0.5.0"
-dependencies = [
- "blake3",
- "bs58",
- "dwow",
- "dwow-sdk",
- "dwow-serial",
- "dwow_atomic_swap_contract",
- "dwow_attestation_contract",
- "dwow_auction_contract",
- "dwow_baccarat_contract",
- "dwow_betting_stake_contract",
- "dwow_bridge_contract",
- "dwow_dao_escrow_contract",
- "dwow_darkbet_exchange_contract",
- "dwow_darktoshi_dice_contract",
- "dwow_deployooor_contract",
- "dwow_dex_contract",
- "dwow_drain_protection_contract",
- "dwow_escrow_contract",
- "dwow_game_room_contract",
- "dwow_identity_contract",
- "dwow_insurance_market_contract",
- "dwow_labor_market_contract",
- "dwow_linear",
- "dwow_lottery_contract",
- "dwow_money_v3_contract",
- "dwow_native_token_contract",
- "dwow_oracle_contract",
- "dwow_pool_stake_contract",
- "dwow_relayer_endowment_contract",
- "dwow_roulette_contract",
- "dwow_slot_contract",
- "dwow_stablecoin_contract",
- "dwow_subscription_contract",
- "dwow_tender_contract",
- "easy-parallel",
- "futures",
- "hex",
- "lazy_static",
- "libc",
- "linenoise-rs",
- "num-bigint",
- "prettytable-rs",
- "rand 0.8.6",
- "randomx",
- "rodio",
- "rusqlite",
- "serde",
- "serde_json",
- "signal-hook",
- "signal-hook-async-std",
- "sled",
- "smol",
- "structopt",
- "structopt-toml",
- "toml 0.9.12+spec-1.1.0",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "url",
 ]
 
 [[package]]
@@ -3582,9 +3566,9 @@ dependencies = [
  "async-channel 2.5.0",
  "async-trait",
  "bytemuck",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "dwow_deployooor_contract",
  "dwow_native_token_contract",
  "easy-parallel",
@@ -3878,7 +3862,7 @@ name = "fu"
 version = "0.5.0"
 dependencies = [
  "clap 4.6.1",
- "dwow",
+ "dwow_core",
  "fud",
  "smol",
  "termcolor",
@@ -3895,9 +3879,9 @@ dependencies = [
  "blake2",
  "blake3",
  "bs58",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "easy-parallel",
  "equix",
  "futures",
@@ -4061,8 +4045,8 @@ name = "genev"
 version = "0.5.0"
 dependencies = [
  "clap 4.6.1",
- "dwow",
  "dwow-serial",
+ "dwow_core",
  "genevd",
  "smol",
  "tinyjson",
@@ -4077,8 +4061,8 @@ version = "0.5.0"
 dependencies = [
  "async-trait",
  "blake3",
- "dwow",
  "dwow-serial",
+ "dwow_core",
  "easy-parallel",
  "serde",
  "signal-hook",
@@ -5057,7 +5041,7 @@ name = "lilith"
 version = "0.5.0"
 dependencies = [
  "async-trait",
- "dwow",
+ "dwow_core",
  "easy-parallel",
  "futures",
  "semver",
@@ -5127,10 +5111,10 @@ version = "0.5.0"
 dependencies = [
  "anyhow",
  "blake3",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
  "dwow_bridge_contract",
+ "dwow_core",
  "hex",
  "serde",
  "shellexpand",
@@ -8057,9 +8041,9 @@ dependencies = [
  "blake3",
  "bs58",
  "chrono",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "easy-parallel",
  "futures",
  "hex",
@@ -8090,9 +8074,9 @@ dependencies = [
  "bs58",
  "chrono",
  "crypto_box",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
  "easy-parallel",
  "futures",
  "libc",
@@ -9669,10 +9653,10 @@ dependencies = [
  "async-trait",
  "blake3",
  "bs58",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
  "dwow_bridge_contract",
+ "dwow_core",
  "hex",
  "monero",
  "serde",
@@ -10886,10 +10870,10 @@ dependencies = [
  "anyhow",
  "blake3",
  "bs58",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
  "dwow_bridge_contract",
+ "dwow_core",
  "hex",
  "monero",
  "serde",
@@ -10960,10 +10944,10 @@ dependencies = [
  "anyhow",
  "blake2s_simd",
  "blake3",
- "dwow",
  "dwow-sdk",
  "dwow-serial",
  "dwow_bridge_contract",
+ "dwow_core",
  "hex",
  "serde",
  "shellexpand",
@@ -11078,8 +11062,8 @@ version = "0.5.0"
 dependencies = [
  "arg",
  "blake3",
- "dwow",
  "dwow-sdk",
+ "dwow_core",
  "hex",
  "rand 0.8.6",
 ]

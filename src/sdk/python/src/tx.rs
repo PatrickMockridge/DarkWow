@@ -23,7 +23,7 @@
 
 use std::fmt::Write;
 
-use dwow::tx::{MAX_TX_CALLS, MIN_TX_CALLS};
+use dwow_core::tx::{MAX_TX_CALLS, MIN_TX_CALLS};
 use dwow_sdk::dark_tree::dark_forest_leaf_vec_integrity_check;
 use dwow_serial::deserialize;
 use pyo3::{
@@ -42,13 +42,13 @@ use super::{
 
 /// Class representing a transaction
 #[pyclass]
-pub struct Transaction(dwow::tx::Transaction);
+pub struct Transaction(dwow_core::tx::Transaction);
 
 #[pymethods]
 impl Transaction {
     #[staticmethod]
     pub fn decode(data: Vec<u8>) -> PyResult<Self> {
-        let tx: dwow::tx::Transaction = deserialize(&data)?;
+        let tx: dwow_core::tx::Transaction = deserialize(&data)?;
         dark_forest_leaf_vec_integrity_check(&tx.calls, Some(MIN_TX_CALLS), Some(MAX_TX_CALLS))
             .map_err(|e| {
                 PyValueError::new_err(format!(

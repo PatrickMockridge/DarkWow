@@ -24,7 +24,7 @@
 use std::path::PathBuf;
 use tinyjson::JsonValue;
 
-use dwow::{
+use dwow_core::{
     geode::hash_to_string,
     rpc::util::{json_map, json_str},
 };

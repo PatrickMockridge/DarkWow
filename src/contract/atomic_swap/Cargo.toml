@@ -15,7 +15,7 @@ dwow-serial = { path = "../../serial" }
 thiserror = "2.0.17"
 
 # Client API dependencies
-dwow = { path = "../../../", features = ["zk"], optional = true }
+dwow_core = { path = "../../../", features = ["zk"], optional = true }
 rand = { version = "0.8.5", optional = true }
 tracing = { version = "0.1.44", optional = true }
 halo2_proofs = { version = "0.3.2", optional = true }
@@ -24,7 +24,7 @@ halo2_proofs = { version = "0.3.2", optional = true }
 default = []
 no-entrypoint = []
 client = [
-    "dwow",
+    "dwow_core",
     "dwow-serial/async",
     "rand",
     "tracing",

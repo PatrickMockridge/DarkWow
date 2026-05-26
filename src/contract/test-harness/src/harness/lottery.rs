@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for Lottery contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -63,11 +63,11 @@ impl LotteryHarness {
         let reveal_ticket_zkbin = ZkBinary::decode(reveal_ticket_bin, false).unwrap();
 
         let commit_ticket_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&commit_ticket_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&commit_ticket_zkbin).unwrap(),
             &commit_ticket_zkbin,
         );
         let reveal_ticket_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&reveal_ticket_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&reveal_ticket_zkbin).unwrap(),
             &reveal_ticket_zkbin,
         );
 
@@ -211,7 +211,7 @@ pub struct CommitTicketResult {
     /// Encoded call data for BuyTicketV1 (0x01)
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: CommitTicketV1PublicInputs,
 }
@@ -221,7 +221,7 @@ pub struct RevealTicketResult {
     /// Encoded call data for RevealTicketV1 (0x03)
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: RevealTicketV1PublicInputs,
 }

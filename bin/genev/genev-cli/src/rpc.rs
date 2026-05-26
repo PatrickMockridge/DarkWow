@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::{
+use dwow_core::{
     rpc::{client::RpcClient, jsonrpc::JsonRequest},
     util::encoding::base64,
     Result,

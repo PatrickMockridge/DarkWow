@@ -94,13 +94,13 @@ of 120 seconds.
 ## Wallet Setup
 
 The wallet is initialized by `test_pipeline.sh` with the same mining keypair
-used by the nodes. No secret extraction from containers is needed — `dww scan`
+used by the nodes. No secret extraction from containers is needed — `dwow_wallet scan`
 decrypts coinbase AEAD-encrypted notes client-side using the wallet's local
 secret key.
 
 ```bash
 NETWORK="darkwow-testnet"
-DRK="./target/release/dww"
+DRK="./target/release/dwow_wallet"
 
 # Verify wallet has keys (test_pipeline.sh must complete first)
 $DRK -n $NETWORK wallet address
@@ -115,16 +115,16 @@ $DRK -n $NETWORK wallet balance
 ## Wallet Container
 
 A standalone Docker container provides wallet interaction within the localnet.
-It builds only `dww` (no WASM contracts, no `dwowd`, no `lilith`) and runs in
+It builds only `dwow_wallet` (no WASM contracts, no `dwowd`, no `lilith`) and runs in
 two modes: `test` (auto-init, scan, position, assert, exit) for CI, or
 `interactive` (`sleep infinity` for `docker exec` access) for dev work.
 
 ```bash
 # Interactive mode — start alongside the running testnet
 docker compose --profile wallet up -d wallet
-docker exec dwow-wallet dww wallet address
-docker exec dwow-wallet dww scan
-docker exec dwow-wallet dww position
+docker exec dwow-wallet dwow_wallet wallet address
+docker exec dwow-wallet dwow_wallet scan
+docker exec dwow-wallet dwow_wallet position
 
 # Tear down
 docker compose --profile wallet down -v
@@ -215,7 +215,7 @@ compile. The test pipeline builds it automatically if missing.
 | `test_pipeline.sh` | Single entry point: 4 modes (native, merge, join-native, join-merge), 10-12 phases each. Auto-builds base image if missing |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
-| `Dockerfile.wallet` | Wallet container — builds only `dww` (no WASM, no dwowd, no lilith). Fast build (~5min) |
+| `Dockerfile.wallet` | Wallet container — builds only `dwow_wallet` (no WASM, no dwowd, no lilith). Fast build (~5min) |
 | `entrypoint-wallet.sh` | Wallet entrypoint — generates `drk.toml`, imports/generates keypair, dispatches test/interactive mode |
 | `test-wallet.sh` | Level 3 wallet container integration test — starts container in test mode, verifies position output |
 

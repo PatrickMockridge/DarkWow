@@ -29,7 +29,7 @@ use std::{
 use smol::lock::{Mutex, RwLock};
 use tracing::{error, info};
 
-use dwow::{
+use dwow_core::{
     rpc::{
         server::{listen_and_serve, RequestHandler},
         settings::RpcSettings,

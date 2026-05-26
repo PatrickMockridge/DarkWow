@@ -315,9 +315,9 @@ Ethereum                          DarkWow
     │◄────────────────────────────────│
 ```
 
-DarkWow's `atomic_swap` contract handles the cross-chain payment. The subscription contract integrates at step 3 - verifying the atomic swap completed before activating the subscription.
+DarkWow's `bridge` contract (with relayer infrastructure) handles the cross-chain payment. The subscription contract integrates at step 3 - verifying the bridge deposit completed before activating the subscription.
 
-See [Atomic Swap Contract](atomic_swap.md) for full HTLC details.
+See [Bridge Contract](bridge.md) for full cross-chain transfer details.
 
 ## Integration with Existing Contracts
 
@@ -326,8 +326,8 @@ See [Atomic Swap Contract](atomic_swap.md) for full HTLC details.
 | `money` | Token transfers for deposits and refunds |
 | `dao` | Governance for subscription parameters |
 | `dao_escrow` | Treasury and endowment fund management |
-| `atomic_swap` | Cross-chain subscription payments |
-| `atomic_swap` | Cross-chain payment settlement |
+| `bridge` | Cross-chain subscription payments |
+| `bridge` | Cross-chain payment settlement |
 
 ## MVP Status
 
@@ -338,7 +338,7 @@ See [Atomic Swap Contract](atomic_swap.md) for full HTLC details.
 | DAO treasury integration | ✅ Complete | Via DAO-Escrow `MODE_TREASURY` |
 | Endowment fund | ✅ Complete | Via DAO-Escrow `MODE_TREASURY_ENDOWMENT` |
 | Escrow-only mode | ✅ Complete | Via DAO-Escrow `MODE_ESCROW` |
-| Cross-chain atomic swap | ✅ Complete | Integration with `atomic_swap` via hash link |
+| Cross-chain payment | ✅ Complete | Integration with `bridge` via deposit tracking |
 
 **All three DAO-Escrow modes supported:**
 - `MODE_ESCROW`: Pure insurance for subscription deposits

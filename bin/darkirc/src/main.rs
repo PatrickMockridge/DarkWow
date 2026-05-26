@@ -23,7 +23,7 @@
 
 use std::{collections::HashSet, io::Write, path::PathBuf, sync::Arc};
 
-use dwow::{
+use dwow_core::{
     async_daemonize, cli_desc,
     event_graph::{proto::ProtocolEventGraph, EventGraph, EventGraphPtr},
     net::{session::SESSION_DEFAULT, settings::SettingsOpt, P2p, P2pPtr},
@@ -344,7 +344,7 @@ async fn realmain(args: Args, ex: Arc<Executor<'static>>) -> Result<()> {
             return Err(e.into());
         }
     };
-    let p2p_settings: dwow::net::Settings =
+    let p2p_settings: dwow_core::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), args.net).try_into()?;
     let p2p = match P2p::new(p2p_settings, ex.clone()).await {
         Ok(p2p) => p2p,

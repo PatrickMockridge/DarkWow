@@ -23,7 +23,7 @@
 
 //! Identity create_claim_v1_dag ZK proof generation (DAG-based credential claims)
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

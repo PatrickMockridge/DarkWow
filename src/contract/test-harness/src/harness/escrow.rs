@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for Escrow contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -84,19 +84,19 @@ impl EscrowHarness {
         let refund_zkbin = ZkBinary::decode(refund_bin, false).unwrap();
 
         let create_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_escrow_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_escrow_zkbin).unwrap(),
             &create_escrow_zkbin,
         );
         let fund_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&fund_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&fund_zkbin).unwrap(),
             &fund_zkbin,
         );
         let claim_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&claim_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&claim_zkbin).unwrap(),
             &claim_zkbin,
         );
         let refund_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&refund_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&refund_zkbin).unwrap(),
             &refund_zkbin,
         );
 
@@ -340,7 +340,7 @@ pub struct CreateEscrowResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: CreateEscrowPublicInputs,
 }
@@ -350,7 +350,7 @@ pub struct FundEscrowResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: FundEscrowPublicInputs,
 }
@@ -360,7 +360,7 @@ pub struct ClaimEscrowResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: ClaimEscrowPublicInputs,
 }
@@ -370,7 +370,7 @@ pub struct RefundEscrowResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
     /// ZK proof
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     /// Public inputs from proof generation
     pub public_inputs: RefundEscrowPublicInputs,
 }

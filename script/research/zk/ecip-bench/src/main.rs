@@ -54,7 +54,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use dwow::zk::{
+use dwow_core::zk::{
     assign_free_advice,
     gadget::arithmetic::{ArithChip, ArithConfig, ArithInstruction},
     proof::{Proof, ProvingKey, VerifyingKey},
@@ -589,8 +589,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let public = vec![r_x, r_y];
 
     let start = Instant::now();
-    let pk = dwow::zk::ProvingKey::build(k, &MyCircuit::default());
-    let vk = dwow::zk::VerifyingKey::build(k, &MyCircuit::default());
+    let pk = dwow_core::zk::ProvingKey::build(k, &MyCircuit::default());
+    let vk = dwow_core::zk::VerifyingKey::build(k, &MyCircuit::default());
     println!("Setup: [{:?}]", start.elapsed());
 
     let start = Instant::now();

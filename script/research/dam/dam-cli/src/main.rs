@@ -24,7 +24,7 @@
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use dwow::{cli_desc, rpc::util::JsonValue, util::logger::setup_logging, Result};
+use dwow_core::{cli_desc, rpc::util::JsonValue, util::logger::setup_logging, Result};
 use smol::Executor;
 
 use dam_cli::DamCli;

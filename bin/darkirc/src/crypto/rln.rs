@@ -23,7 +23,7 @@
 
 use std::time::UNIX_EPOCH;
 
-use dwow::{
+use dwow_core::{
     event_graph::Event,
     zk::{
         halo2::{Field, Value},

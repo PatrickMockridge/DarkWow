@@ -14,7 +14,7 @@ edition = "2021"
 
 [dependencies]
 # Darkfi
-dwow = {path = "../../../", features = ["bs58", "validator"]}
+dwow_core = {path = "../../../", features = ["bs58", "validator"]}
 dwow-contract-test-harness = {path = "../../../src/contract/test-harness"}
 dwow-sdk = {path = "../../../src/sdk"}
 dwow-serial = {path = "../../../src/serial"}

@@ -26,7 +26,7 @@
 //! This module provides the ability to build Transfer calls for private token transfers.
 //! Transfer is an atomic burn + mint operation that preserves privacy.
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

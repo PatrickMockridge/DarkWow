@@ -11,7 +11,7 @@ edition = "2021"
 [dependencies]
 arg = {git = "https://github.com/parazyd/arg"}
 blake3 = "1.8"
-dwow = {path = "../../", features = ["zk", "zkas"]}
+dwow_core = {path = "../../", features = ["zk", "zkas"]}
 dwow-sdk = {path = "../../src/sdk"}
 hex = "0.4"
 rand = "0.8"

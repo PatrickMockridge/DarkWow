@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use tracing::{debug, error};
 
-use dwow::{
+use dwow_core::{
     net::{
         protocol::protocol_generic::{
             ProtocolGenericHandler, ProtocolGenericHandlerPtr,

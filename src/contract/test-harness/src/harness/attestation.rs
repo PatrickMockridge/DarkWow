@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for Attestation contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -90,23 +90,23 @@ impl AttestationHarness {
         let delegate_attestation_zkbin = ZkBinary::decode(delegate_bin, false).unwrap();
 
         let create_att_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_attestation_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_attestation_zkbin).unwrap(),
             &create_attestation_zkbin,
         );
         let create_claim_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_claim_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_claim_zkbin).unwrap(),
             &create_claim_zkbin,
         );
         let verify_claim_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&verify_claim_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&verify_claim_zkbin).unwrap(),
             &verify_claim_zkbin,
         );
         let consume_claim_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&consume_claim_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&consume_claim_zkbin).unwrap(),
             &consume_claim_zkbin,
         );
         let delegate_attestation_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&delegate_attestation_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&delegate_attestation_zkbin).unwrap(),
             &delegate_attestation_zkbin,
         );
 
@@ -410,31 +410,31 @@ impl super::ContractHarness for AttestationHarness {
 pub struct CreateAttestationResult {
     pub call_data: Vec<u8>,
     pub attestation_id: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: CreateAttestationV1PublicInputs,
 }
 
 pub struct CreateClaimResult {
     pub call_data: Vec<u8>,
     pub claim_id: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: CreateClaimV1PublicInputs,
 }
 
 pub struct VerifyClaimResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: VerifyClaimV1PublicInputs,
 }
 
 pub struct ConsumeClaimResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: ConsumeClaimV1PublicInputs,
 }
 
 pub struct DelegateAttestationResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: DelegateAttestationV1PublicInputs,
 }

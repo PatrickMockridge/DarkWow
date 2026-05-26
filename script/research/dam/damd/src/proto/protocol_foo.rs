@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use tinyjson::JsonValue;
 use tracing::{debug, error, info};
 
-use dwow::{
+use dwow_core::{
     impl_p2p_message,
     net::{
         metering::MeteringConfiguration,

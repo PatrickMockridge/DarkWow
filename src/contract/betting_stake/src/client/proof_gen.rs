@@ -25,7 +25,7 @@
 //!
 //! This module provides ZK proof generation for all BettingStake circuits.
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

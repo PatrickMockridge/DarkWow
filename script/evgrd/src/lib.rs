@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::{
+use dwow_core::{
     event_graph::{
         util::{generate_genesis, millis_until_next_rotation, next_rotation_timestamp},
         Event, GENESIS_CONTENTS, INITIAL_GENESIS, NULL_ID, N_EVENT_PARENTS,

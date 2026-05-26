@@ -28,7 +28,7 @@ use std::{
 };
 
 use crypto_box::PublicKey;
-use dwow::{Error::ParseFailed, Result};
+use dwow_core::{Error::ParseFailed, Result};
 use dwow_sdk::{crypto::pasta_prelude::PrimeField, pasta::pallas};
 use tracing::info;
 

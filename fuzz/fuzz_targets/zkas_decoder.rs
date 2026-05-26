@@ -24,7 +24,7 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 
-use dwow::zkas::ZkBinary;
+use dwow_core::zkas::ZkBinary;
 
 fuzz_target!(|data: &[u8]| {
         let _dec = ZkBinary::decode(data);

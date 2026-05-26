@@ -26,7 +26,7 @@
 //! This module provides utilities for building Labor Market contract calls,
 //! enabling tau_pallas to submit deliverables on-chain.
 
-use dwow::tx::Transaction;
+use dwow_core::tx::Transaction;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::dark_tree::{DarkForest, DarkLeaf, DarkTree};
 use dwow_sdk::pasta::pallas;

@@ -24,7 +24,7 @@
 extern crate dwow_serial;
 
 use honggfuzz::fuzz;
-use dwow::zkas::ZkBinary;
+use dwow_core::zkas::ZkBinary;
 
 fn main() {
     loop {

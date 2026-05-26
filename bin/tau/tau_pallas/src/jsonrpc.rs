@@ -121,7 +121,7 @@ impl RpcHandler {
 
         let due = match params["due"] {
             JsonValue::Null => None,
-            JsonValue::Number(numba) => Some(dwow::util::time::Timestamp::from_u64(numba as u64)),
+            JsonValue::Number(numba) => Some(dwow_core::util::time::Timestamp::from_u64(numba as u64)),
             _ => return Err(TauPallasError::InvalidData("Invalid parameter \"due\"".to_string())),
         };
 
@@ -164,7 +164,7 @@ impl RpcHandler {
             "owner",
             due,
             rank,
-            dwow::util::time::Timestamp::from_u64(created_at.unwrap()),
+            dwow_core::util::time::Timestamp::from_u64(created_at.unwrap()),
         )?;
 
         new_task.set_project(&projects);

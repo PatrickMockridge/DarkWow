@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::{util::path::expand_path, Error, Result};
+use dwow_core::{util::path::expand_path, Error, Result};
 use dwow_sdk::{
     bridgetree::Position,
     crypto::{pasta_prelude::PrimeField, MerkleNode, MerkleTree},

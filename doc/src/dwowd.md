@@ -36,7 +36,7 @@ The daemon uses **two** LinearBlockchain instances:
 
 | Layer | Type | Purpose |
 |-------|------|---------|
-| P2P layer | `dwow_linear::LinearBlockchain` | Block storage, serialization, P2P sync (pure library, no WASM) |
+| P2P layer | `dwow_chain::LinearBlockchain` | Block storage, serialization, P2P sync (pure library, no WASM) |
 | Daemon layer | `crate::LinearBlockchain` | Wraps the P2P store. Adds PoW consensus, WASM runtime, ZK verification, coin/nullifier tracking |
 
 The P2P layer is initialized first (`init_linear` at [lib.rs:212](../bin/dwowd/src/lib.rs#L212)).
@@ -143,7 +143,7 @@ main()
  ├── Open/create sled database
  ├── Build P2P settings from config
  └── Dwowd::init_linear(network, sled_db, db_path, net_settings, ex, finality_config)
-      ├── Create dwow_linear::LinearBlockchain (P2P layer) with FinalityConfig
+      ├── Create dwow_chain::LinearBlockchain (P2P layer) with FinalityConfig
       ├── Create daemon LinearBlockchain wrapper with PoWConfig
       ├── Deploy genesis contracts (Deployooor, NativeToken) from embedded WASM
       ├── Mine genesis block at height 1 (target=u32::MAX, instant pass)

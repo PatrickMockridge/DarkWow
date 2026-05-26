@@ -7,7 +7,6 @@ The `dev` branch contains additional contracts not yet in official DarkWow maste
 | Contract | Description | Status |
 |----------|-------------|--------|
 | **attestation** | Generalized attestation and claims system | ✅ Complete ZK + Test Harness |
-| **atomic_swap** | Cross-chain atomic swaps via HTLC | ✅ Complete ZK + Test Harness |
 | **baccarat** | Privacy-preserving Baccarat (Punto Banco) casino game | ✅ Complete ZK + Test Harness |
 | **bridge** | Cross-chain asset transfers with Ocaps | ✅ Complete ZK + Test Harness |
 | **dao_escrow** | DAO with three modes (Escrow/Treasury/Endowment) | ✅ Complete ZK + Test Harness |
@@ -285,7 +284,6 @@ cargo test --release --package darkfid test_darkbet_exchange_heavyweight
 Local READMEs exist for each contract in this folder:
 
 - [attestation/README.md](attestation/README.md) - Generalized attestation and claims
-- [atomic_swap/README.md](atomic_swap/README.md) - Cross-chain atomic swaps
 - [baccarat/README.md](baccarat/README.md) - Privacy-preserving Baccarat casino game
 - [bridge/README.md](bridge/README.md) - Cross-chain asset transfers
 - [dao_escrow/README.md](dao_escrow/README.md) - Three-mode DAO
@@ -313,7 +311,6 @@ Architecture docs:
 - [game_room.md](../../doc/src/arch/game_room.md)
 - [game_room_app_layer.md](../../doc/src/arch/game_room_app_layer.md)
 - [subscription.md](../../doc/src/arch/subscription.md)
-- [atomic_swap.md](../../doc/src/arch/atomic_swap.md)
 - [oracle.md](../../doc/src/arch/oracle.md)
 - [security-analysis.md](../../doc/src/arch/security-analysis.md)
 - [composability.md](../../doc/src/arch/composability.md)

@@ -25,7 +25,7 @@
 //!
 //! This module handles token transfers using the Money V3 contract.
 
-use dwow::{
+use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     util::parse::decode_base10,
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},

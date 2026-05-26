@@ -15,7 +15,7 @@ dwow-serial = { path = "../../serial", features = ["derive", "crypto"] }
 pasta_curves = "0.5.1"
 thiserror = "2.0.17"
 
-dwow = { path = "../../../", features = ["zk"], optional = true }
+dwow_core = { path = "../../../", features = ["zk"], optional = true }
 chacha20poly1305 = { version = "0.10.1", optional = true }
 halo2_proofs = { version = "0.3.2", optional = true }
 tracing = { version = "0.1.44", optional = true }
@@ -28,7 +28,7 @@ getrandom = { version = "0.2", features = ["custom"] }
 default = []
 no-entrypoint = []
 client = [
-    "dwow",
+    "dwow_core",
     "dwow-serial/async",
     "rand",
     "chacha20poly1305",

@@ -11,7 +11,7 @@ cargo-fuzz = true
 honggfuzz = "0.5.58"
 bitcoin = "0.32.8"
 
-[dependencies.dwow]
+[dependencies.dwow_core]
 path = "../.."
 features = ["zkas"]
 

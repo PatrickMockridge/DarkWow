@@ -383,9 +383,9 @@ This enables stablecoin to focus on CDP mechanics while delegating token managem
 
 See [dex.md](dex.md) for DEX integration using spend_hook for atomic swaps.
 
-## Wallet Integration (dww)
+## Wallet Integration (dwow_wallet)
 
-The `dww` command-line wallet supports MoneyV3 with the following functionality:
+The `dwow_wallet` command-line wallet supports MoneyV3 with the following functionality:
 
 | Feature | Status | Notes |
 |---------|--------|-------|
@@ -398,7 +398,7 @@ The `dww` command-line wallet supports MoneyV3 with the following functionality:
 
 ### Transfer Implementation
 
-The `dww transfer` command flow:
+The `dwow_wallet transfer` command flow:
 
 ```
 1. Select unspent coin with sufficient value
@@ -415,7 +415,7 @@ The `dww transfer` command flow:
 
 ### Token Creation Implementation
 
-The `dww create_token` command flow:
+The `dwow_wallet create_token` command flow:
 
 ```
 1. Generate mint authority (SecretKey) and token blind (BaseBlind)
@@ -429,7 +429,7 @@ The `dww create_token` command flow:
 
 ### Mint Tokens Implementation
 
-The `dww mint` command flow:
+The `dwow_wallet mint` command flow:
 
 ```
 1. Load mint authority and token registry Merkle proof

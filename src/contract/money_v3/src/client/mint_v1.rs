@@ -26,7 +26,7 @@
 //! This module provides the ability to build Mint calls to create new coins.
 //! Uses Poseidon hash only - no EC operations.
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

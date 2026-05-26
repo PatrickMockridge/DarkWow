@@ -39,7 +39,7 @@ use std::{
     process::ExitCode,
 };
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::{VarType, ZkBinary},
 };

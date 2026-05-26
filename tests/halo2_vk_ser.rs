@@ -37,7 +37,7 @@ use halo2_proofs::{
 };
 use rand::rngs::OsRng;
 
-use dwow::{
+use dwow_core::{
     zk::{
         proof::{ProvingKey, VerifyingKey},
         vm::ZkCircuit,

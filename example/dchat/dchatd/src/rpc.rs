@@ -22,12 +22,12 @@
  */
 
 use async_trait::async_trait;
-use dwow::{net::P2pPtr, system::StoppableTaskPtr};
+use dwow_core::{net::P2pPtr, system::StoppableTaskPtr};
 use smol::lock::MutexGuard;
 use std::collections::HashSet;
 use tracing::debug;
 
-use dwow::rpc::{
+use dwow_core::rpc::{
     jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResponse, JsonResult},
     p2p_method::HandlerP2p,
     server::RequestHandler,

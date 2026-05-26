@@ -23,7 +23,7 @@
 
 use tinyjson::JsonValue;
 
-use dwow::{
+use dwow_core::{
     rpc::jsonrpc::{JsonResponse, JsonResult},
     util::time::Timestamp,
 };

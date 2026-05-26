@@ -36,7 +36,7 @@ use smol::{
 };
 use tracing::{error, info, warn};
 
-use dwow::{
+use dwow_core::{
     dht::{tasks as dht_tasks, Dht, DhtHandler, DhtSettings},
     geode::{hash_to_string, Chunk, ChunkedStorage, FileSequence, Geode, MAX_CHUNK_SIZE},
     net::P2pPtr,

@@ -32,7 +32,7 @@ use std::{
 
 use arg::Args;
 
-use dwow::{
+use dwow_core::{
     zkas::{Analyzer, Compiler, Lexer, Parser, ZkBinary},
     ANSI_LOGO,
 };

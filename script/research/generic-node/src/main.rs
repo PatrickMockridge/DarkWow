@@ -28,7 +28,7 @@ use smol::{stream::StreamExt, Executor};
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::{error, info};
 
-use dwow::{
+use dwow_core::{
     async_daemonize, cli_desc, impl_p2p_message,
     net::{
         metering::{MeteringConfiguration, DEFAULT_METERING_CONFIGURATION},

@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for Bridge contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -64,11 +64,11 @@ impl BridgeHarness {
 
         let deposit_pk = ProvingKey::build(
             deposit_zkbin.k,
-            &ZkCircuit::new(dwow::zk::empty_witnesses(&deposit_zkbin).unwrap(), &deposit_zkbin),
+            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&deposit_zkbin).unwrap(), &deposit_zkbin),
         );
         let withdraw_pk = ProvingKey::build(
             withdraw_zkbin.k,
-            &ZkCircuit::new(dwow::zk::empty_witnesses(&withdraw_zkbin).unwrap(), &withdraw_zkbin),
+            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&withdraw_zkbin).unwrap(), &withdraw_zkbin),
         );
 
         Self { deposit_zkbin, deposit_pk, withdraw_zkbin, withdraw_pk }
@@ -208,13 +208,13 @@ impl super::ContractHarness for BridgeHarness {
 /// Result of deposit
 pub struct DepositResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: DepositPublicInputs,
 }
 
 /// Result of withdraw
 pub struct WithdrawResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: WithdrawPublicInputs,
 }

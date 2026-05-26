@@ -23,7 +23,7 @@
 
 use std::time::Instant;
 
-use dwow::{
+use dwow_core::{
     rpc::{
         client::RpcClient,
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResult},

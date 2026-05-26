@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use dwow::{blockchain::HeaderHash, Error, Result};
+use dwow_core::{blockchain::HeaderHash, Error, Result};
 use dwow_sdk::{
     crypto::{
         pasta_prelude::PrimeField,
@@ -197,7 +197,7 @@ impl StorageAdapter for MoneySmtStorage {
 
 #[cfg(test)]
 mod tests {
-    use dwow::{zk::halo2::Field, Result};
+    use dwow_core::{zk::halo2::Field, Result};
     use dwow_sdk::{
         crypto::smt::{gen_empty_nodes, util::FieldHasher, PoseidonFp, SparseMerkleTree},
         pasta::pallas,

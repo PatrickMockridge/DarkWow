@@ -28,7 +28,7 @@ use smol::lock::MutexGuard;
 use tinyjson::JsonValue;
 use tracing::debug;
 
-use dwow::{
+use dwow_core::{
     net::P2pPtr,
     rpc::{
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResponse, JsonResult},

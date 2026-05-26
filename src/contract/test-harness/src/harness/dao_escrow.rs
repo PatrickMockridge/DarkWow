@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for DaoEscrow contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
@@ -99,17 +99,17 @@ impl DaoEscrowHarness {
         let resolve_dispute_zkbin = ZkBinary::decode(resolve_dispute_bin, false).unwrap();
 
         let init_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&init_zkbin).unwrap(), &init_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&init_zkbin).unwrap(), &init_zkbin);
         let pay_premium_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&pay_premium_zkbin).unwrap(), &pay_premium_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&pay_premium_zkbin).unwrap(), &pay_premium_zkbin);
         let propose_claim_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&propose_claim_zkbin).unwrap(), &propose_claim_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&propose_claim_zkbin).unwrap(), &propose_claim_zkbin);
         let vote_claim_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&vote_claim_zkbin).unwrap(), &vote_claim_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&vote_claim_zkbin).unwrap(), &vote_claim_zkbin);
         let verify_member_capability_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&verify_member_capability_zkbin).unwrap(), &verify_member_capability_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&verify_member_capability_zkbin).unwrap(), &verify_member_capability_zkbin);
         let resolve_dispute_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&resolve_dispute_zkbin).unwrap(), &resolve_dispute_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&resolve_dispute_zkbin).unwrap(), &resolve_dispute_zkbin);
 
         let init_pk = ProvingKey::build(init_zkbin.k, &init_circuit);
         let pay_premium_pk = ProvingKey::build(pay_premium_zkbin.k, &pay_premium_circuit);
@@ -636,14 +636,14 @@ impl super::ContractHarness for DaoEscrowHarness {
 pub struct InitializeResult {
     pub call_data: Vec<u8>,
     pub public_inputs: InitV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of paying premium to join DAO-Escrow
 pub struct PayPremiumResult {
     pub call_data: Vec<u8>,
     pub public_inputs: PayPremiumV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 // ============================================================================
@@ -654,28 +654,28 @@ pub struct PayPremiumResult {
 pub struct ProposeClaimResult {
     pub call_data: Vec<u8>,
     pub public_inputs: ProposeClaimV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of voting on a claim
 pub struct VoteClaimHarnessResult {
     pub call_data: Vec<u8>,
     pub public_inputs: VoteClaimV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of verifying member capability
 pub struct VerifyMemberCapabilityResult {
     pub call_data: Vec<u8>,
     pub public_inputs: VerifyMemberCapabilityV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of resolving a dispute
 pub struct ResolveDisputeHarnessResult {
     pub call_data: Vec<u8>,
     pub public_inputs: ResolveDisputeV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 // ============================================================================

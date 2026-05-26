@@ -9,7 +9,7 @@ nodes on the P2P network.
 
 ### Docker Hub (pre-built image)
 
-The Docker image runs the node (dwowd). The wallet (`dww`) is a separate native
+The Docker image runs the node (dwowd). The wallet (`dwow_wallet`) is a separate native
 binary you run on your host — it scans the blockchain, decrypts your coinbase
 notes, and shows your balance. Mining rewards are paid to a wallet address you
 control.
@@ -19,8 +19,8 @@ control.
 ```bash
 git clone https://codeberg.org/PatrickM123/darkwow.git
 cd darkwow
-cargo build -p dww --release
-DRK="./target/release/dww"
+cargo build -p dwow_wallet --release
+DRK="./target/release/dwow_wallet"
 NETWORK="darkwow-testnet"
 ```
 
@@ -328,7 +328,7 @@ REGISTRY=docker.io/myuser/ IMAGE_NAME=darkwow-testnet \
 ## Wallet Docker Container
 
 The wallet container (`darkwow-wallet`) is a standardized, buildable, pushable
-Docker image — same pattern as the bridge-node. It builds only `dww` (no WASM
+Docker image — same pattern as the bridge-node. It builds only `dwow_wallet` (no WASM
 contracts, no dwowd, no lilith) and runs in one of two modes:
 
 | Mode | `WALLET_MODE` | Behavior | Use case |
@@ -359,14 +359,14 @@ docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml \
   --profile wallet up -d wallet
 
 # Execute wallet operations inside the container
-docker exec dwow-wallet dww wallet address
-docker exec dwow-wallet dww scan
-docker exec dwow-wallet dww position
-docker exec dwow-wallet dww wallet balance
+docker exec dwow-wallet dwow_wallet wallet address
+docker exec dwow-wallet dwow_wallet scan
+docker exec dwow-wallet dwow_wallet position
+docker exec dwow-wallet dwow_wallet wallet balance
 
 # The config is at /root/.config/dwow/drk.toml inside the container.
 # To use a different config path:
-docker exec dwow-wallet dww -c /root/.config/dwow/drk.toml position
+docker exec dwow-wallet dwow_wallet -c /root/.config/dwow/drk.toml position
 
 # Tear down
 docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml \
@@ -388,7 +388,7 @@ docker wait dwow-wallet
 docker logs dwow-wallet
 ```
 
-The test mode entrypoint runs `dww wallet init` → `dww scan` → `dww position`,
+The test mode entrypoint runs `dwow_wallet wallet init` → `dwow_wallet scan` → `dwow_wallet position`,
 asserts on output (coin capabilities, descriptors, actions), and exits 0 on
 success or 1 on failure.
 
@@ -414,7 +414,7 @@ no secret extraction needed.
 
 ```bash
 NETWORK="darkwow-testnet"
-DRK="./target/release/dww"
+DRK="./target/release/dwow_wallet"
 
 # Generate a keypair
 $DRK -n $NETWORK wallet keygen
@@ -577,8 +577,8 @@ The flags are independent — combine them for a fully deterministic rebuild:
 | # | Phase | What It Validates |
 |---|-------|-------------------|
 | 1 | Clean | Container/volume teardown, kill stale cargo/rustc processes, remove wallet secret. With `--fresh`: also prunes all Docker build cache, images, and buildx builders. |
-| 2 | Prerequisites | `dww` binary exists, WASM contracts present (money_v3, DEX, dao_escrow), mode-specific files (Dockerfile.monero, Dockerfile.p2pool, entrypoint scripts) |
-| 3 | Wallet | Generate keypair via `dww wallet keygen`, write secret to `/tmp/dwow_mining_secret` |
+| 2 | Prerequisites | `dwow_wallet` binary exists, WASM contracts present (money_v3, DEX, dao_escrow), mode-specific files (Dockerfile.monero, Dockerfile.p2pool, entrypoint scripts) |
+| 3 | Wallet | Generate keypair via `dwow_wallet wallet keygen`, write secret to `/tmp/dwow_mining_secret` |
 | 4 | Build | `docker compose --profile <mode> build` for all services in the profile. With `--no-cache`: rebuilds all layers from scratch (ensures `git clone` fetches latest). With `--with-wallet`: also builds wallet container (`--profile wallet build`). |
 | 5 | Start | `docker compose --profile <mode> up -d`, verify no containers exit immediately. With `--with-wallet`: also starts wallet container (`WALLET_MODE=interactive`). |
 | 6 | Verify containers | Every expected container is running (3 for native, 5 for merge). With `--with-wallet`: also expects `dwow-wallet` (+1 container). |
@@ -683,7 +683,7 @@ base image.
 | `darkwow-testnet` | `Dockerfile` | Source (git clone → cargo build) | dwowd + lilith + 4 WASM contracts | native, merge, join-merge |
 | `darkwow-monerod` | `Dockerfile.monero` | Pre-built binary from getmonero.org (v0.18.5.0, checksum-verified) | Monero daemon | merge, join-merge |
 | `darkwow-p2pool` | `Dockerfile.p2pool` | Pre-built binary from p2pool GitHub releases (v4.14, checksum-verified) | p2pool sidechain node | merge, join-merge |
-| `darkwow-wallet` | `Dockerfile.wallet` | Source (git clone → cargo build -p dww) | Wallet CLI (`dww`) for position resolution, scanning, transfers | wallet |
+| `darkwow-wallet` | `Dockerfile.wallet` | Source (git clone → cargo build -p dwow_wallet) | Wallet CLI (`dwow_wallet`) for position resolution, scanning, transfers | wallet |
 
 The main `Dockerfile` builds two Rust binaries (`dwowd`, `lilith`) and four
 WASM contracts (`deployooor`, `native_token`, `money_v3`, `baccarat`). xmrig
@@ -725,6 +725,6 @@ The `join-native` mode does not use compose — it runs a single container via
 | `test_pipeline.sh` | Single entry point — clean → build → verify across 4 modes, 10-12 phases each. Auto-builds base image if missing |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
-| `Dockerfile.wallet` | Wallet container — builds only `dww` (no WASM, no dwowd, no lilith). Fast build (~5min) |
+| `Dockerfile.wallet` | Wallet container — builds only `dwow_wallet` (no WASM, no dwowd, no lilith). Fast build (~5min) |
 | `entrypoint-wallet.sh` | Wallet entrypoint — generates `drk.toml`, imports/generates keypair, dispatches test/interactive mode |
 | `test-wallet.sh` | Level 3 wallet container integration test — starts container in test mode, verifies position output |

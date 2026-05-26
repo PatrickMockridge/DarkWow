@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::{
+use dwow_core::{
     event_graph::{self},
     net::transport::Dialer,
     util::path::expand_path,

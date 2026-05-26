@@ -1,6 +1,6 @@
 # Wallet Architecture
 
-The DarkWow wallet (`dww`) is a **full node** — it holds the complete blockchain
+The DarkWow wallet (`dwow_wallet`) is a **full node** — it holds the complete blockchain
 on local disk and derives all state from local data. There is no SPV, no light
 client, no network fetches for position resolution. Every query is pure local
 computation over sled trees and SQLite tables.
@@ -18,7 +18,7 @@ Both are at paths configured in `dww_config.toml` (`cache_path`, `wallet_path`).
 
 ## Block Scanning
 
-At startup (or via `dww scan`), the wallet fetches blocks from its local peer via
+At startup (or via `dwow_wallet scan`), the wallet fetches blocks from its local peer via
 JSON-RPC (`blockchain.get_block_linear`). For each transaction in each block,
 contract-specific handlers decrypt notes to discover coins belonging to the
 wallet:
@@ -166,13 +166,13 @@ Each action's `requires`, `consumes`, and `produces` fields use
 instance-specific `CapabilityId`s derived with the actual
 `escrow_id_bytes`, so held capabilities correctly match action requirements.
 
-## CLI: `dww position`
+## CLI: `dwow_wallet position`
 
 The `Position` subcommand loads descriptors, instantiates the resolver, and
 prints the user's current position:
 
 ```
-$ dww position
+$ dwow_wallet position
 
 === Held Capabilities ===
   6S2nMh1... — Coin worth 1000 [consumable]
@@ -238,7 +238,7 @@ four-level contract testing taxonomy:
 ### Level 1 — Bash CLI integration
 
 [`bin/drk/test_capability_lightweight.sh`](../../../bin/drk/test_capability_lightweight.sh)
-tests the `dww position` subcommand end-to-end:
+tests the `dwow_wallet position` subcommand end-to-end:
 
 - Subcommand registration and help text
 - Error handling: missing config, corrupt config, no running node
@@ -268,7 +268,7 @@ resolved capabilities and actions. No ZK proofs, no network, pure in-process.
 Runtime: <2 seconds.
 
 ```bash
-cargo test -p dww --lib -- capability::tests
+cargo test -p dwow_wallet --lib -- capability::tests
 ```
 
 ### Null-safety coverage
@@ -294,7 +294,7 @@ The [`darkwow-testnet`](../../../contrib/docker/darkwow-testnet/) Docker
 environment provides a dedicated wallet container
 ([`Dockerfile.wallet`](../../../contrib/docker/darkwow-testnet/Dockerfile.wallet),
 [`entrypoint-wallet.sh`](../../../contrib/docker/darkwow-testnet/entrypoint-wallet.sh))
-that builds only `dww` (no WASM contracts, no `dwowd`, no `lilith`). It runs
+that builds only `dwow_wallet` (no WASM contracts, no `dwowd`, no `lilith`). It runs
 in a live multi-node Docker testnet and verifies the full scan-to-position cycle:
 
 - `test_pipeline.sh --with-wallet` adds wallet container build, start, and verify steps to the pipeline

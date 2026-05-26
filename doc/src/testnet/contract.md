@@ -13,12 +13,12 @@ More information about the smart contracts architecture can be found
 
 ## Devnet Testing
 
-For testing contracts on the devnet, use the `dww` command-line tool
+For testing contracts on the devnet, use the `dwow_wallet` command-line tool
 with the `--network` flag. The dwow-devnet Docker stack provides a
 3-node local network with fast block times and full ZK proof generation.
 
 ```shell
-dww --network dwow-devnet contract deploy <secret_key_hex> --wasm path/to/contract.wasm
+dwow_wallet --network dwow-devnet contract deploy <secret_key_hex> --wasm path/to/contract.wasm
 ```
 
 See `contrib/docker/dwow-devnet/` for the Docker devnet setup and test scripts.
@@ -76,7 +76,7 @@ cp -f target/release/membership membership
 
 Now both the contract and its client are ready to use. Leave this
 terminal open, as we will come back to it later in the guide, and
-return back to your `dww` interactive shell.
+return back to your `dwow_wallet` interactive shell.
 
 ## Creating contracts
 
@@ -209,7 +209,7 @@ key:
 $ ./membership register {CONTRACT_ID} {IDENTITY_SECRET_KEY} > register.call
 ```
 
-Now we need to go back to our `dww` interactive shell, to generate the
+Now we need to go back to our `dwow_wallet` interactive shell, to generate the
 actual registration transaction, attach a fee to it and broadcast it to
 the network:
 

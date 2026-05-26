@@ -25,7 +25,7 @@ use dwow_sdk::crypto::smt::{MemoryStorageFp, PoseidonFp, SmtMemoryFp, EMPTY_NODE
 use halo2_proofs::{arithmetic::Field, circuit::Value, dev::MockProver, pasta::Fp};
 use rand::rngs::OsRng;
 
-use dwow::{
+use dwow_core::{
     zk::{
         proof::{ProvingKey, VerifyingKey},
         vm::ZkCircuit,

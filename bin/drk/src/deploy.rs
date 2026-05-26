@@ -25,7 +25,7 @@
 //!
 //! This module handles smart contract deployment using the Deployooor contract.
 
-use dwow::{
+use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     Error, Result,
 };

@@ -24,7 +24,7 @@
 use tinyjson::JsonValue;
 use tracing::{error, info};
 
-use dwow::{
+use dwow_core::{
     rpc::jsonrpc::{
         ErrorCode::{InternalError, InvalidParams},
         JsonError, JsonResponse, JsonResult,
@@ -73,7 +73,7 @@ impl DwowNode {
             }
         };
 
-        let tx: dwow_linear::Transaction = match serde_json::from_slice(&tx_bytes) {
+        let tx: dwow_chain::Transaction = match serde_json::from_slice(&tx_bytes) {
             Ok(v) => v,
             Err(e) => {
                 error!(target: "dwowd::rpc::tx_submit_linear", "Failed deserializing bytes into Transaction: {}", e);

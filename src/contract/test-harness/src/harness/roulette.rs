@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for Roulette contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -66,11 +66,11 @@ impl RouletteHarness {
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();
 
         let place_bet_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&place_bet_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&place_bet_zkbin).unwrap(),
             &place_bet_zkbin,
         );
         let settle_bet_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
             &settle_bet_zkbin,
         );
 
@@ -255,7 +255,7 @@ pub struct PlaceBetResult {
     pub call_data: Vec<u8>,
     pub bet_id: pallas::Base,
     pub nullifier: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of spin_wheel
@@ -266,7 +266,7 @@ pub struct SpinWheelResult {
 /// Result of settle_bets
 pub struct SettleBetsResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of house_close

@@ -49,7 +49,7 @@ use structopt_toml::StructOptToml;
 use tinyjson::JsonValue;
 use tracing::{debug, error, info};
 
-use dwow::{
+use dwow_core::{
     async_daemonize,
     event_graph::{
         proto::{EventPut, ProtocolEventGraph},
@@ -525,7 +525,7 @@ async fn realmain(settings: Args, executor: Arc<smol::Executor<'static>>) -> Res
     info!(target: "taud", "Instantiating event DAG");
     let sled_db = sled::open(datastore)?;
 
-    let p2p_settings: dwow::net::Settings =
+    let p2p_settings: dwow_core::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), settings.net.clone()).try_into()?;
     let comms_timeout = p2p_settings.outbound_connect_timeout_max();
 

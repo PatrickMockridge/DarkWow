@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for Oracle contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -55,7 +55,7 @@ impl OracleHarness {
             ZkBinary::decode(register_oracle_bin, false).unwrap();
 
         let register_oracle_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&register_oracle_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&register_oracle_zkbin).unwrap(),
             &register_oracle_zkbin,
         );
 
@@ -133,5 +133,5 @@ pub struct RegisterOracleResult {
     pub call_data: Vec<u8>,
     pub oracle_pub_x: pallas::Base,
     pub oracle_pub_y: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }

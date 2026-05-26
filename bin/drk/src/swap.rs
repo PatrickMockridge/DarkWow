@@ -26,7 +26,7 @@
 //! This module handles atomic token swaps using Money V3 TransferV1.
 //! Atomic swap is implemented using spend_hook encoding of swap secrets.
 
-use dwow::{Error, Result};
+use dwow_core::{Error, Result};
 use dwow_sdk::{
     crypto::util::FieldElemAsStr,
     pasta::pallas,
@@ -57,7 +57,7 @@ impl PartialSwapData {
     }
 
     /// Deserialize from JSON string
-    pub fn from_json(s: &str) -> dwow::Result<Self> {
+    pub fn from_json(s: &str) -> dwow_core::Result<Self> {
         use serde_json::{self, Value};
         let v: Value = serde_json::from_str(s).map_err(|e| Error::Custom(e.to_string()))?;
 
@@ -90,7 +90,7 @@ impl Drk {
         &self,
         _our_swap: PartialSwapData,
         _their_swap: PartialSwapData,
-    ) -> Result<dwow::tx::Transaction> {
+    ) -> Result<dwow_core::tx::Transaction> {
         Err(Error::Custom("Atomic swap not yet implemented - requires Money V3 TransferV1 with spend_hook encoding".to_string()))
     }
 
@@ -101,7 +101,7 @@ impl Drk {
         &self,
         _secret: pallas::Base,
         _our_coins: Vec<pallas::Base>,
-    ) -> Result<dwow::tx::Transaction> {
+    ) -> Result<dwow_core::tx::Transaction> {
         Err(Error::Custom("Claim atomic swap not yet implemented".to_string()))
     }
 }

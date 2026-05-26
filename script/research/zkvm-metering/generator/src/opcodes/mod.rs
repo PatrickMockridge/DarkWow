@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::zk::{Witness, halo2::Field};
+use dwow_core::zk::{Witness, halo2::Field};
 use dwow_sdk::{
     crypto::{
         MerkleNode, MerkleTree,

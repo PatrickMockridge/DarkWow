@@ -28,7 +28,7 @@
 //! Note: Deployooor has NO ZK circuits - it's a pure WASM contract that validates
 //! and deploys other WASM contracts. This harness only tests the client API.
 
-use dwow::{
+use dwow_core::{
     zk::ProvingKey,
     zkas::ZkBinary,
     Result,

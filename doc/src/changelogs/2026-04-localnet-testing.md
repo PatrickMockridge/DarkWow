@@ -200,11 +200,11 @@ Before declaring a betting contract "done", verify against lottery:
 
 ```bash
 # Generate authority
-dww -c bin/dww/dww_config.toml -n localnet contract generate-deploy
+dwow_wallet -c bin/drk/dww_config.toml -n localnet contract generate-deploy
 
 # Deploy (pipe to broadcast)
-dww -c bin/dww/dww_config.toml -n localnet contract deploy <auth> <wasm> | \
- dww -c bin/dww/dww_config.toml -n localnet broadcast
+dwow_wallet -c bin/drk/dww_config.toml -n localnet contract deploy <auth> <wasm> | \
+ dwow_wallet -c bin/drk/dww_config.toml -n localnet broadcast
 ```
 
 All three previously-failed contracts (roulette, betting_stake, drain_protection) are now deployed with proper WASM sizes (171KB-239KB).
@@ -227,7 +227,7 @@ These contracts use `ix: &[u8]` (no underscore) and call `.decode()` on the init
 | dex | `init_contract(cid, ix)` | `InitializeParams { timeout, fee, trusted_money_merkle_root, transparency_config }` |
 | stablecoin | `init_contract(cid, ix)` | `UpdateConfigParams { min_collateralization_ratio, liquidation_threshold }` |
 
-**Root Cause**: When `dww contract deploy <auth> <wasm>` is used without a deploy-ix file, it sends an empty `vec![]`. The `.decode()` call on empty data fails.
+**Root Cause**: When `dwow_wallet contract deploy <auth> <wasm>` is used without a deploy-ix file, it sends an empty `vec![]`. The `.decode()` call on empty data fails.
 
 **Fix**: Create a properly encoded binary deploy instruction file with valid params.
 
@@ -333,20 +333,20 @@ let data = serialize(&params);
 
 **Group 1** (with deploy instruction files):
 ```bash
-AUTH=$(dww -c bin/dww/dww_config.toml -n localnet contract generate-deploy)
+AUTH=$(dwow_wallet -c bin/drk/dww_config.toml -n localnet contract generate-deploy)
 
 # bridge
-dww -c bin/dww/dww_config.toml -n localnet contract deploy $AUTH \
+dwow_wallet -c bin/drk/dww_config.toml -n localnet contract deploy $AUTH \
   target/wasm32-unknown-unknown/release/dwow_bridge_contract.wasm bridge_deploy_ix.bin | \
- dww -c bin/dww/dww_config.toml -n localnet broadcast
+ dwow_wallet -c bin/drk/dww_config.toml -n localnet broadcast
 ```
 
 **Group 2** (underscore contracts, fixed with db_lookup guards):
 ```bash
 # darkbet_exchange
-dww -c bin/dww/dww_config.toml -n localnet contract deploy $AUTH \
+dwow_wallet -c bin/drk/dww_config.toml -n localnet contract deploy $AUTH \
   target/wasm32-unknown-unknown/release/darkfi_darkbet_exchange_contract.wasm | \
- dww -c bin/dww/dww_config.toml -n localnet broadcast
+ dwow_wallet -c bin/drk/dww_config.toml -n localnet broadcast
 ```
 
 ### Current Status (2026-04-07)
@@ -531,8 +531,8 @@ Share rejected: {"id":1,"result":{"status":"rejected"},"jsonrpc":"2.0"}
 
 **Resolution Steps**:
 ```bash
-# Kill all dww mining processes
-pkill -f "dww.*mine"
+# Kill all dwow_wallet mining processes
+pkill -f "dwow_wallet.*mine"
 
 # Kill dwowd
 pkill dwowd
@@ -547,7 +547,7 @@ sleep 2
 sleep 3
 
 # Check wallet (may need to reset)
-./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet balance
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet wallet balance
 ```
 
 ### Symptom: "Failed to calculate transaction's gas"
@@ -573,7 +573,7 @@ Not all `ParseFailed: Requires deploy instruction` errors are the same:
 
 - `bin/dwowd/src/rpc/miner.rs` - dwowd stratum server implementation
 - `bin/dwowd/src/lib.rs` - `DarkfiNode::is_localnet()` guard
-- `bin/dww/src/main.rs` - Subcommand definitions and handlers
-- `bin/dww/src/rpc.rs` - `miner_mine()` stratum client
-- `bin/dww/dww_config.toml` - Network configuration
+- `bin/drk/src/main.rs` - Subcommand definitions and handlers
+- `bin/drk/src/rpc.rs` - `miner_mine()` stratum client
+- `bin/drk/dww_config.toml` - Network configuration
 - `contrib/localnet/dwowd-single-node/dwowd.toml` - Localnet config

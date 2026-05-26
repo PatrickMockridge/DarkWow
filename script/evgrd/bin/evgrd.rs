@@ -23,7 +23,7 @@
 
 use std::{collections::HashSet, convert::TryInto, path::PathBuf, sync::Arc};
 
-use dwow::{
+use dwow_core::{
     async_daemonize, cli_desc,
     event_graph::{
         proto::{EventPut, ProtocolEventGraph},
@@ -280,7 +280,7 @@ async fn realmain(args: Args, ex: Arc<Executor<'static>>) -> Result<()> {
 
     info!(target: "evgrd", "Instantiating event DAG");
     let sled_db = sled::open(datastore)?;
-    let mut p2p_settings: dwow::net::Settings =
+    let mut p2p_settings: dwow_core::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), args.net).try_into()?;
     p2p_settings.seeds.push(url::Url::parse("tcp+tls://lilith1.dark.fi:5262").unwrap());
     let p2p = P2p::new(p2p_settings, ex.clone()).await?;

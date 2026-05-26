@@ -49,7 +49,6 @@
 //! ```
 
 pub mod attestation;
-pub mod atomic_swap;
 pub mod auction;
 pub mod baccarat;
 pub mod betting_stake;
@@ -79,7 +78,6 @@ pub mod tender;
 
 // Re-export for convenience
 pub use attestation::AttestationHarness;
-pub use atomic_swap::AtomicSwapHarness;
 pub use auction::AuctionHarness;
 pub use baccarat::BaccaratHarness;
 pub use betting_stake::{BettingStakeHarness, ClaimStakeInfo, UnstakeStakeInfo};
@@ -107,7 +105,7 @@ pub use stablecoin::StablecoinHarness;
 pub use subscription::SubscriptionHarness;
 pub use tender::TenderHarness;
 
-use dwow::{zk::ProvingKey, zkas::ZkBinary};
+use dwow_core::{zk::ProvingKey, zkas::ZkBinary};
 
 /// Trait for contract test harnesses providing ZK circuit access.
 ///

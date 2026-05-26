@@ -29,7 +29,7 @@
 //! generation module is not yet implemented. This harness exposes the circuit and
 //! proving key via the ContractHarness trait for direct use in tests.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
@@ -51,7 +51,7 @@ impl DrainProtectionHarness {
         let exit_zkbin = ZkBinary::decode(exit_bin, false).unwrap();
 
         let exit_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&exit_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&exit_zkbin).unwrap(),
             &exit_zkbin,
         );
 

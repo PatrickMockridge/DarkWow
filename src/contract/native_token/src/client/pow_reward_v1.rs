@@ -25,7 +25,7 @@
 //!
 //! This module provides the ability to build PoW reward calls for block rewards.
 
-use dwow::{
+use dwow_core::{
     zk::{Proof, ProvingKey},
     zkas::ZkBinary,
     Result,

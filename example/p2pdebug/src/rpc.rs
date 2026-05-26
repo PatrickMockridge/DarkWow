@@ -26,7 +26,7 @@ use log::debug;
 use serde_json::{json, Value};
 use url::Url;
 
-use dwow::{
+use dwow_core::{
     net,
     rpc::{
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResponse, JsonResult},

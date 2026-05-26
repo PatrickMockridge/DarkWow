@@ -25,7 +25,7 @@
 
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use dwow::zkas::{Lexer, Parser, Compiler, Analyzer};
+use dwow_core::zkas::{Lexer, Parser, Compiler, Analyzer};
 use std::str;
 
 fuzz_target!(|data: &[u8]| {

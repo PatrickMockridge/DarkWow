@@ -18,7 +18,7 @@ same stratum interface but are not bundled here.
 
 ## Prerequisites
 
-- Built binaries: `dwowd`, `dww` (`cargo build -p dwowd -p dww --release`)
+- Built binaries: `dwowd`, `dwow_wallet` (`cargo build -p dwowd -p dwow_wallet --release`)
 - xmrig installed (`xmrig` in PATH)
 
 ## Step 1: Generate a Wallet
@@ -80,7 +80,7 @@ finality (useful for local testing where Arweave HTTP calls add latency).
 Monero p2pool anchoring can be enabled with `monero_enabled = true` or
 `--finality-enable-monero` for merge mining setups.
 
-## Step 3: Create dww Wallet Config
+## Step 3: Create dwow_wallet Wallet Config
 
 Create `dww_config.toml`:
 
@@ -89,7 +89,7 @@ Create `dww_config.toml`:
 network = "darkwow-testnet"
 
 [network_config."darkwow-testnet"]
-wallet_path = "~/.local/share/dwow/dww/darkwow-testnet/wallet.db"
+wallet_path = "~/.local/share/dwow/dwow_wallet/darkwow-testnet/wallet.db"
 wallet_pass = "test123"
 endpoint = "tcp://127.0.0.1:31345"
 ```
@@ -145,8 +145,8 @@ current mining task is cancelled):
 After blocks are mined, sync your wallet to see DRKW tokens:
 
 ```bash
-dww -c dww_config.toml scan
-dww -c dww_config.toml wallet balance
+dwow_wallet -c dww_config.toml scan
+dwow_wallet -c dww_config.toml wallet balance
 ```
 
 ## Docker-Based Mining
@@ -208,29 +208,29 @@ If dwowd won't sync:
 | Component | Path |
 |-----------|------|
 | dwowd binary | `target/release/dwowd` |
-| dww binary | `target/release/dww` |
+| dwow_wallet binary | `target/release/dwow_wallet` |
 | dwowd config | `~/.config/dwow/dwowd_config.toml` or custom |
-| dww config | `~/.config/dwow/dww_config.toml` or custom |
+| dwow_wallet config | `~/.config/dwow/dww_config.toml` or custom |
 | dwowd data | `~/.local/share/dwow/dwowd/darkwow-testnet/` |
-| dww wallet | `~/.local/share/dwow/dww/darkwow-testnet/wallet.db` |
+| dwow_wallet wallet | `~/.local/share/dwow/dwow_wallet/darkwow-testnet/wallet.db` |
 
 ## Common Commands
 
 ```bash
 # Check wallet balance
-dww wallet balance
+dwow_wallet wallet balance
 
 # Scan for received coins
-dww scan
+dwow_wallet scan
 
 # Send a transfer
-dww transfer <amount> <recipient_address> | broadcast
+dwow_wallet transfer <amount> <recipient_address> | broadcast
 
 # List contracts
-dww contract list
+dwow_wallet contract list
 
 # Deploy a contract via Deployooor
-dww contract deploy <wasm_path>
+dwow_wallet contract deploy <wasm_path>
 ```
 
 ## Notes

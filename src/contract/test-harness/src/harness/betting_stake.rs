@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for BettingStake contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, Proof, ZkCircuit},
     zkas::ZkBinary,
     Result,
@@ -89,15 +89,15 @@ impl BettingStakeHarness {
         let update_risk_zkbin = ZkBinary::decode(update_risk_bin, false).unwrap();
 
         let init_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&init_zkbin).unwrap(), &init_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&init_zkbin).unwrap(), &init_zkbin);
         let stake_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&stake_zkbin).unwrap(), &stake_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&stake_zkbin).unwrap(), &stake_zkbin);
         let unstake_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&unstake_zkbin).unwrap(), &unstake_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&unstake_zkbin).unwrap(), &unstake_zkbin);
         let claim_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&claim_zkbin).unwrap(), &claim_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&claim_zkbin).unwrap(), &claim_zkbin);
         let update_risk_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&update_risk_zkbin).unwrap(), &update_risk_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&update_risk_zkbin).unwrap(), &update_risk_zkbin);
 
         let init_pk = ProvingKey::build(init_zkbin.k, &init_circuit);
         let stake_pk = ProvingKey::build(stake_zkbin.k, &stake_circuit);

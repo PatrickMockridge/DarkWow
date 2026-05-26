@@ -27,7 +27,7 @@ use smol::{fs::read_to_string, stream::StreamExt};
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::{debug, error, info};
 
-use dwow::{
+use dwow_core::{
     async_daemonize,
     cli_desc,
     net::settings::SettingsOpt,
@@ -130,7 +130,7 @@ pub struct BlockchainNetwork {
 
     #[structopt(skip)]
     /// Finality configuration (parsed from TOML, overridden by --finality-mode CLI flag)
-    finality: Option<dwow_linear::FinalityConfig>,
+    finality: Option<dwow_chain::FinalityConfig>,
 }
 
 async_daemonize!(realmain);
@@ -159,9 +159,9 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
 
         if let Some(ref mode_str) = args.finality_mode {
             fc.mode = match mode_str.as_str() {
-                "native" => dwow_linear::FinalityMode::Native,
-                "always" => dwow_linear::FinalityMode::Always,
-                "signaled" => dwow_linear::FinalityMode::Signaled,
+                "native" => dwow_chain::FinalityMode::Native,
+                "always" => dwow_chain::FinalityMode::Always,
+                "signaled" => dwow_chain::FinalityMode::Signaled,
                 other => {
                     error!(target: "dwowd", "Invalid finality mode: {other}. Must be one of: native, always, signaled");
                     return Err(Error::ParseFailed("Invalid finality mode"))
@@ -200,7 +200,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     let sled_db = sled::open(&db_path)?;
 
     // Setup P2P settings
-    let p2p_settings: dwow::net::Settings =
+    let p2p_settings: dwow_core::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
 
     // Initialize the daemon using LinearBlockchain
@@ -281,7 +281,7 @@ pub async fn parse_blockchain_config(
         return Err(Error::ParseFailed("TOML does not contain requested network configuration"))
     };
     // Parse optional [finality] subsection from the network config
-    let finality_config: Option<dwow_linear::FinalityConfig> =
+    let finality_config: Option<dwow_chain::FinalityConfig> =
         if let Some(finality_section) = network_config.get("finality") {
             match finality_section.clone().try_into() {
                 Ok(fc) => Some(fc),

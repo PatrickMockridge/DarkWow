@@ -4,7 +4,7 @@
 //! gateway. They are `#[ignore]`d by default — run explicitly with:
 //!
 //! ```bash
-//! cargo test -p dwow_linear -- --ignored
+//! cargo test -p dwow_chain -- --ignored
 //! ```
 //!
 //! ## Test categories

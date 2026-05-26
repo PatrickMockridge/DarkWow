@@ -24,7 +24,7 @@
 use structopt::StructOpt;
 use structopt_toml::{serde::Deserialize, StructOptToml};
 
-use dwow::{
+use dwow_core::{
     cli_desc, dht::DhtSettingsOpt, net::settings::SettingsOpt, rpc::settings::RpcSettingsOpt,
 };
 

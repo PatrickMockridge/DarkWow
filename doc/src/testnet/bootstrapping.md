@@ -115,7 +115,7 @@ Coinbase rewards flow directly to your wallet — no manual extraction needed.
 
 ```bash
 # Generate a keypair for mining rewards
-./target/release/dww -n darkwow-testnet wallet keygen
+./target/release/dwow_wallet -n darkwow-testnet wallet keygen
 # Output: address (bs58) and secret (hex)
 
 # Write the secret to a secure temp file
@@ -136,8 +136,8 @@ docker run -d --name dwow-node --network=host \
 rm -f /tmp/dwow_mining_secret
 
 # Wallet already has the key — just scan
-./target/release/dww -n darkwow-testnet scan
-./target/release/dww -n darkwow-testnet wallet balance
+./target/release/dwow_wallet -n darkwow-testnet scan
+./target/release/dwow_wallet -n darkwow-testnet wallet balance
 ```
 
 **Alternative — Auto-generated keypair:**
@@ -250,7 +250,7 @@ via Monero's hashrate. See [Merge Mining](merge-mining.md) for the full guide.
 ## See Also
 
 - [Running a Node](node.md) — Bare-metal node setup
-- [Mining on Testnet](testnet-mining.md) — Solo mining with dww
+- [Mining on Testnet](testnet-mining.md) — Solo mining with dwow_wallet
 - [Merge Mining](merge-mining.md) — Monero merge mining with the finality gadget
 - [Level 3: Containerized Localnet](../dev/testing/level-3-localnet.md) — Docker localnet architecture
 - [Level 4: Containerized Devnet Node](../dev/testing/level-4-devnet.md) — Single-container devnet deployment

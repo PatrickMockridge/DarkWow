@@ -26,7 +26,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use clap::Parser;
-use dwow::system::CondVar;
+use dwow_core::system::CondVar;
 use std::sync::{Arc, OnceLock};
 
 #[macro_use]

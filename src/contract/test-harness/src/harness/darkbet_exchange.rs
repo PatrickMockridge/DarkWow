@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for DarkbetExchange contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
@@ -84,19 +84,19 @@ impl DarkbetExchangeHarness {
         let add_liquidity_zkbin = ZkBinary::decode(add_liquidity_bin, false).unwrap();
 
         let create_market_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_market_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_market_zkbin).unwrap(),
             &create_market_zkbin,
         );
         let buy_position_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&buy_position_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&buy_position_zkbin).unwrap(),
             &buy_position_zkbin,
         );
         let claim_winnings_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&claim_winnings_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&claim_winnings_zkbin).unwrap(),
             &claim_winnings_zkbin,
         );
         let add_liquidity_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&add_liquidity_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&add_liquidity_zkbin).unwrap(),
             &add_liquidity_zkbin,
         );
 
@@ -310,26 +310,26 @@ impl super::ContractHarness for DarkbetExchangeHarness {
 pub struct CreateMarketResult {
     pub call_data: Vec<u8>,
     pub public_inputs: CreateMarketV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of buy_position
 pub struct BuyPositionResult {
     pub call_data: Vec<u8>,
     pub public_inputs: BuyPositionV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of claim_winnings
 pub struct ClaimWinningsResult {
     pub call_data: Vec<u8>,
     pub public_inputs: ClaimWinningsV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of add_liquidity
 pub struct AddLiquidityResult {
     pub call_data: Vec<u8>,
     pub public_inputs: AddLiquidityV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }

@@ -129,12 +129,12 @@ REGISTRY=docker.io/darkwow-node/ VERSION=0.1.0 ./contrib/docker/testnet-node/bui
 
 ## Wallet Setup
 
-Generate a wallet with `dww` before starting the node:
+Generate a wallet with `dwow_wallet` before starting the node:
 
 ```bash
 # Build from source first (`make`), then:
-./target/release/dww -n darkwow-testnet wallet keygen
-./target/release/dww -n darkwow-testnet wallet address
+./target/release/dwow_wallet -n darkwow-testnet wallet keygen
+./target/release/dwow_wallet -n darkwow-testnet wallet address
 
 # Write the secret to a file (never pass raw hex in CLI)
 echo "<hex_secret>" > /tmp/mining_secret
@@ -182,7 +182,7 @@ curl -s http://127.0.0.1:3333/stats
   a single container. For production multi-machine deployments, run separate
   containers for each service (see the [darkwow-testnet docs](../darkwow-testnet/README.md)).
 - **No ZK contract support.** This is a mining node only. Contract deployment
-  and interaction requires the full `dww` CLI tool.
+  and interaction requires the full `dwow_wallet` CLI tool.
 - **Security.** `WALLET_SECRET` from env vars is visible in `docker inspect`.
   Always use `WALLET_SECRET_FILE` for production.
 

@@ -34,7 +34,7 @@ use rand::{
 };
 use tracing::{error, info, warn};
 
-use dwow::{
+use dwow_core::{
     dht::{event::DhtEvent, DhtHandler, DhtNode},
     geode::{hash_to_string, ChunkedStorage},
     net::ChannelPtr,

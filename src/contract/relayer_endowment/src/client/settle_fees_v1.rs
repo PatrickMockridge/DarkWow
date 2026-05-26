@@ -27,7 +27,7 @@
 //! The relayer signs the allocation list with their keypair, and the contract
 //! verifies signature_public matches relayer_pub.
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

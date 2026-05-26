@@ -27,7 +27,7 @@
 //! Uses Poseidon hash only - no EC operations.
 //! Signature uses Schnorr-style where public_key = poseidon_hash(secret).
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

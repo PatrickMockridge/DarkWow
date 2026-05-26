@@ -11,7 +11,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.100"
-dwow = {path = "../../../", features = ["blockchain"]}
+dwow_core = {path = "../../../", features = ["blockchain"]}
 dwow-sdk = {path = "../../../src/sdk"}
 
 [patch.crates-io]

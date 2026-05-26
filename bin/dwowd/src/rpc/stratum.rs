@@ -31,7 +31,7 @@ use smol::lock::MutexGuard;
 use tinyjson::JsonValue;
 use tracing::{debug, error, info};
 
-use dwow::{
+use dwow_core::{
     rpc::{
         jsonrpc::{
             ErrorCode, ErrorCode::InvalidParams, JsonError, JsonRequest, JsonResponse, JsonResult,
@@ -42,7 +42,7 @@ use dwow::{
     system::{Publisher, StoppableTaskPtr},
 };
 
-use dwow_linear::PowSource;
+use dwow_chain::PowSource;
 
 use crate::{
     error::{miner_status_response, server_error, RpcError},
@@ -208,11 +208,11 @@ impl DwowNode {
         };
 
         let job_id = format!("linear-job-{}", template.height);
-        let randomx_key = dwow_linear::Miner::derive_key_from_height(template.height);
+        let randomx_key = dwow_chain::Miner::derive_key_from_height(template.height);
         let seed_hash = hex::encode(randomx_key);
 
         // Build mining blob from block header (nonce=0 placeholder)
-        let mining_header = dwow_linear::BlockHeader {
+        let mining_header = dwow_chain::BlockHeader {
             version: 1,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: blake3::hash(&[]),
@@ -297,7 +297,7 @@ impl DwowNode {
     /// verifies PoW via the RandomX VM, and inserts the block if valid.
     pub async fn stratum_submit(&self, id: u16, params: JsonValue) -> JsonResult {
         use crate::registry::model::generate_linear_block_template;
-        use dwow_linear::caribina::anchor_block;
+        use dwow_chain::caribina::anchor_block;
 
         info!(
             target: "dwowd::rpc::rpc_stratum::stratum_submit",
@@ -388,7 +388,7 @@ impl DwowNode {
             return miner_status_response(id, "stale")
         }
 
-        let randomx_key = dwow_linear::Miner::derive_key_from_height(submitted_height);
+        let randomx_key = dwow_chain::Miner::derive_key_from_height(submitted_height);
         let target = {
             let consensus = linear_chain.consensus.lock().unwrap();
             consensus.target()
@@ -414,7 +414,7 @@ impl DwowNode {
         let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
         let (coinbase, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
             if !tmpl.zk_proof.is_empty() {
-                let cb = dwow_linear::CoinbaseTransaction {
+                let cb = dwow_chain::CoinbaseTransaction {
                     proof: tmpl.zk_proof.clone(),
                     public_inputs: tmpl.zk_public_inputs,
                     coin: tmpl.coin,
@@ -438,7 +438,7 @@ impl DwowNode {
             .map(|t| (t.merkle_root, t.transactions.clone()))
             .unwrap_or_else(|| (blake3::hash(&[]), vec![]));
 
-        let header = dwow_linear::BlockHeader {
+        let header = dwow_chain::BlockHeader {
             version: 1,
             previous: previous_hash,
             merkle_root,
@@ -460,10 +460,10 @@ impl DwowNode {
 
         };
 
-        let coinbase_tx = dwow_linear::Transaction {
+        let coinbase_tx = dwow_chain::Transaction {
             version: 1,
             inputs: vec![],
-            outputs: vec![dwow_linear::Output {
+            outputs: vec![dwow_chain::Output {
                 value: reward,
                 script: vec![],
             }],
@@ -476,7 +476,7 @@ impl DwowNode {
         let mut all_txs = template_txs;
         all_txs.push(coinbase_tx);
 
-        let mut block = dwow_linear::Block {
+        let mut block = dwow_chain::Block {
             header,
             transactions: all_txs,
         };
@@ -580,10 +580,10 @@ impl DwowNode {
                                 let new_height = new_template.height;
                                 let new_job_id = format!("linear-job-{}", new_height);
                                 let new_randomx_key =
-                                    dwow_linear::Miner::derive_key_from_height(new_height);
+                                    dwow_chain::Miner::derive_key_from_height(new_height);
                                 let new_seed_hash = hex::encode(new_randomx_key);
 
-                                let new_mining_header = dwow_linear::BlockHeader {
+                                let new_mining_header = dwow_chain::BlockHeader {
                                     version: 1,
                                     previous: blake3::Hash::from_bytes(new_template.previous),
                                     merkle_root: new_template.merkle_root,
@@ -647,7 +647,7 @@ impl DwowNode {
                                 *self.current_linear_template.lock().await =
                                     Some(new_template);
 
-                                let notification = dwow::rpc::jsonrpc::JsonNotification::new(
+                                let notification = dwow_core::rpc::jsonrpc::JsonNotification::new(
                                     "job", job_params,
                                 );
                                 publisher.notify(notification).await;

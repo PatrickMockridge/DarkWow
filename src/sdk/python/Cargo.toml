@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 doc = false
 
 [dependencies]
-dwow = {path = "../../../", features = ["zk", "zkas", "tx"]}
+dwow_core = {path = "../../../", features = ["zk", "zkas", "tx"]}
 dwow_deployooor_contract = {path = "../../contract/deployooor", features=["no-entrypoint", "client"]}
 dwow_native_token_contract = {path = "../../contract/native_token", features=["no-entrypoint", "client"]}
 dwow_money_v3_contract = {path = "../../contract/money_v3", features=["no-entrypoint", "client"]}

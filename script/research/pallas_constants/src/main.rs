@@ -28,7 +28,7 @@ use std::{
 };
 
 use anyhow::Result;
-use dwow::{
+use dwow_core::{
     consensus::lead_coin::LeadCoin,
     validator::consensus::float_10::{fbig2base, Float10},
 };
@@ -92,7 +92,7 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use dwow::consensus::lead_coin::LeadCoin;
+    use dwow_core::consensus::lead_coin::LeadCoin;
     use dwow_sdk::pasta::pallas;
 
     #[test]

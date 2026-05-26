@@ -22,7 +22,7 @@ name = "send"
 path = "example/send.rs"
 
 [dependencies]
-dwow = {path = "../../", features = ["event-graph"]}
+dwow_core = {path = "../../", features = ["event-graph"]}
 dwow-serial = {path = "../../src/serial", features = ["async"]}
 
 # Event Graph DB
@@ -53,7 +53,7 @@ structopt-toml = {version = "0.5.1", optional = true}
 
 [features]
 build-daemon = [
-    "dwow/async-daemonize",
+    "dwow_core/async-daemonize",
     "async-trait",
     "futures",
     "semver",

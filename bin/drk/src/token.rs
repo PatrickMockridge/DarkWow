@@ -25,7 +25,7 @@
 //!
 //! This module handles token creation and management using Money V3.
 
-use dwow::{
+use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     util::parse::decode_base10,
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},

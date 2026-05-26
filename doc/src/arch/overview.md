@@ -101,7 +101,7 @@ introduces non-determinism (overlay/diff/inverse-diff semantics) and is
 
 | Layer | Storage | Determinism |
 |-------|---------|-------------|
-| Blockchain execution (`dwowd`, `dwow_linear`) | Plain `sled` | Strictly deterministic |
+| Blockchain execution (`dwowd`, `dwow_chain`) | Plain `sled` | Strictly deterministic |
 | P2P messaging (`darkirc`, `evgrd`) | `sled-overlay` | Non-deterministic (acceptable for messaging) |
 
 The quarantine is enforced via Rust's feature-gate system — `sled-overlay`

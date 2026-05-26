@@ -68,7 +68,7 @@ authorization is handled by signature verification at the consensus layer.
 
 ## Integration with Wallet
 
-The `dww` wallet integrates with Deployooor via:
+The `dwow_wallet` wallet integrates with Deployooor via:
 - `apply_tx_deploy_data()` — scanning for new deployments
 - `deploy_contract()` — creating new deployment transactions
 

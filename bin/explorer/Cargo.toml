@@ -4,7 +4,7 @@ version = "0.5.0"
 edition = "2021"
 
 [dependencies]
-dwow = {path = "../../", features = ["blockchain", "rpc"]}
+dwow_core = {path = "../../", features = ["blockchain", "rpc"]}
 dwow-serial = {path = "../../src/serial", features = ["derive"]}
 dwow-sdk = {path = "../../src/sdk"}
 

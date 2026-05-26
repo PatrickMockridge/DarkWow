@@ -19,7 +19,7 @@ glam = "0.30.9"
 #zmq = "0.10.0"
 #async_zmq = "0.4.0"
 zeromq = { version = "0.4.1", default-features = false, features = ["async-std-runtime", "all-transport"] }
-dwow = {path = "../../", features = ["async-daemonize", "event-graph", "net", "util", "system", "zk"]}
+dwow_core = {path = "../../", features = ["async-daemonize", "event-graph", "net", "util", "system", "zk"]}
 #dwow-sdk = {path = "../../src/sdk", features = ["async"]}
 dwow-serial = {path = "../../src/serial", features = ["async"]}
 fud = { path = "../fud/fud/" }

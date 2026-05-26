@@ -27,7 +27,7 @@ use std::{
 };
 use tinyjson::JsonValue;
 
-use dwow::{
+use dwow_core::{
     geode::{hash_to_string, ChunkedStorage, MAX_CHUNK_SIZE},
     rpc::util::json_map,
     Error, Result,

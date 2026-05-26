@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for Identity contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
@@ -110,35 +110,35 @@ impl IdentityHarness {
         let verify_capability_zkbin = ZkBinary::decode(verify_bin, false).unwrap();
 
         let claim_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_claim_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_claim_zkbin).unwrap(),
             &create_claim_zkbin,
         );
         let claim_dag_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_claim_dag_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_claim_dag_zkbin).unwrap(),
             &create_claim_dag_zkbin,
         );
         let claim_l1_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_claim_l1_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_claim_l1_zkbin).unwrap(),
             &create_claim_l1_zkbin,
         );
         let claim_l1_v2_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_claim_l1_v2_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_claim_l1_v2_zkbin).unwrap(),
             &create_claim_l1_v2_zkbin,
         );
         let claim_multi_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_claim_multi_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_claim_multi_zkbin).unwrap(),
             &create_claim_multi_zkbin,
         );
         let claim_ratio_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_claim_ratio_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_claim_ratio_zkbin).unwrap(),
             &create_claim_ratio_zkbin,
         );
         let issue_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&issue_credential_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&issue_credential_zkbin).unwrap(),
             &issue_credential_zkbin,
         );
         let verify_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&verify_capability_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&verify_capability_zkbin).unwrap(),
             &verify_capability_zkbin,
         );
 
@@ -683,56 +683,56 @@ pub struct InitializeResult {
 pub struct IssueCredentialResult {
     pub call_data: Vec<u8>,
     pub public_inputs: IssueCredentialPublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of create_claim
 pub struct CreateClaimResult {
     pub call_data: Vec<u8>,
     pub public_inputs: CreateClaimPublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of create_claim_l1
 pub struct CreateClaimL1Result {
     pub call_data: Vec<u8>,
     pub public_inputs: CreateClaimL1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of create_claim_l1_v2
 pub struct CreateClaimL1V2Result {
     pub call_data: Vec<u8>,
     pub public_inputs: CreateClaimL1V2PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of create_claim_multi
 pub struct CreateClaimMultiResult {
     pub call_data: Vec<u8>,
     pub public_inputs: CreateClaimMultiPublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of create_claim_ratio
 pub struct CreateClaimRatioResult {
     pub call_data: Vec<u8>,
     pub public_inputs: CreateClaimRatioPublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of create_claim_dag
 pub struct CreateClaimDagHarnessResult {
     pub call_data: Vec<u8>,
     pub public_inputs: CreateClaimDagPublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of verify_capability
 pub struct VerifyCapabilityResult {
     pub call_data: Vec<u8>,
     pub public_inputs: VerifyCapabilityPublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of register_capability

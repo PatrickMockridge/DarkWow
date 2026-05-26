@@ -23,7 +23,7 @@
 
 //! Identity create_claim_v1_multi ZK proof generation (Multi-credential)
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,

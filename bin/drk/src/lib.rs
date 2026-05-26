@@ -29,7 +29,7 @@ use hex;
 use smol::lock::RwLock;
 use url::Url;
 
-use dwow::{
+use dwow_core::{
     system::ExecutorPtr,
     tx::{ContractCallLeaf, Transaction},
     util::path::expand_path,
@@ -401,7 +401,7 @@ impl Drk {
             DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
             NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
         };
-        use dwow::zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
+        use dwow_core::zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
         use dwow_sdk::crypto::{BaseBlind, MerkleNode};
         use dwow_serial::Encodable;
         use rand::rngs::OsRng;
@@ -506,7 +506,7 @@ impl Drk {
         };
 
         // Append fee as root-level call (no parent, no children)
-        tx.calls.push(dwow::tx::DarkLeaf {
+        tx.calls.push(dwow_core::tx::DarkLeaf {
             data: fee_call,
             parent_index: None,
             children_indexes: vec![],

@@ -37,7 +37,7 @@ use smol::lock::MutexGuard;
 use tinyjson::JsonValue;
 use tracing::{debug, error, info};
 
-use dwow::{
+use dwow_core::{
     rpc::{
         jsonrpc::{
             ErrorCode, ErrorCode::InvalidParams, JsonError, JsonRequest, JsonResponse, JsonResult,
@@ -46,7 +46,7 @@ use dwow::{
     },
     system::StoppableTaskPtr,
 };
-use dwow_linear::{
+use dwow_chain::{
     monero::{
         fixed_array::FixedByteArray,
         extract_aux_merkle_root_from_block,
@@ -493,7 +493,7 @@ impl DwowNode {
         // Build coinbase
         let reward = dwow_sdk::blockchain::expected_reward(template.height as u32);
         let (coinbase_tx_data, coin_merkle_root, nullifier_root) = if !template.zk_proof.is_empty() {
-            let cb = dwow_linear::CoinbaseTransaction {
+            let cb = dwow_chain::CoinbaseTransaction {
                 proof: template.zk_proof.clone(),
                 public_inputs: template.zk_public_inputs,
                 coin: template.coin,
@@ -507,7 +507,7 @@ impl DwowNode {
             (None, [0u8; 32], [0u8; 32])
         };
 
-        let mut header = dwow_linear::BlockHeader {
+        let mut header = dwow_chain::BlockHeader {
             version: 1,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: template.merkle_root,
@@ -527,10 +527,10 @@ impl DwowNode {
             pow_source: PowSource::Monero(monero_pow_data),
         };
 
-        let coinbase_tx = dwow_linear::Transaction {
+        let coinbase_tx = dwow_chain::Transaction {
             version: 1,
             inputs: vec![],
-            outputs: vec![dwow_linear::Output {
+            outputs: vec![dwow_chain::Output {
                 value: reward,
                 script: vec![],
             }],
@@ -566,7 +566,7 @@ impl DwowNode {
         };
         header.merkle_root = merkle_root;
 
-        let mut block = dwow_linear::Block {
+        let mut block = dwow_chain::Block {
             header,
             transactions: all_txs,
         };
@@ -645,8 +645,8 @@ impl DwowNode {
 mod tests {
     use super::*;
 
-    fn test_header() -> dwow_linear::BlockHeader {
-        dwow_linear::BlockHeader {
+    fn test_header() -> dwow_chain::BlockHeader {
+        dwow_chain::BlockHeader {
             version: 1,
             previous: blake3::Hash::from_bytes([0xAA; 32]),
             merkle_root: blake3::Hash::from_bytes([0xBB; 32]),
@@ -671,7 +671,7 @@ mod tests {
     fn test_mining_blob_len() {
         let header = test_header();
         let blob = header.to_mining_blob();
-        assert_eq!(blob.len(), dwow_linear::BlockHeader::MINING_BLOB_LEN);
+        assert_eq!(blob.len(), dwow_chain::BlockHeader::MINING_BLOB_LEN);
         assert_eq!(blob.len(), 228);
     }
 
@@ -681,7 +681,7 @@ mod tests {
         header.nonce = 0xCAFEBABE;
 
         let blob = header.to_mining_blob();
-        let nonce_offset = dwow_linear::BlockHeader::NONCE_OFFSET;
+        let nonce_offset = dwow_chain::BlockHeader::NONCE_OFFSET;
         let nonce_bytes: [u8; 4] = blob[nonce_offset..nonce_offset + 4].try_into().unwrap();
         let nonce = u32::from_le_bytes(nonce_bytes);
         assert_eq!(nonce, 0xCAFEBABE);

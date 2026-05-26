@@ -32,7 +32,7 @@ use termcolor::{ColorChoice, StandardStream, WriteColor};
 use tracing::error;
 use url::Url;
 
-use dwow::{
+use dwow_core::{
     cli_desc,
     rpc::{
         client::RpcClient,

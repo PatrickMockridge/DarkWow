@@ -10,8 +10,8 @@ edition = "2021"
 
 [dependencies]
 # Darkfi
-dwow = {path = "../../", features = ["async-daemonize", "blockchain", "bs58", "net", "rpc", "tx", "wasm-runtime"]}
-dwow_linear = {path = "../../src/linear", features = ["async"]}
+dwow_core = {path = "../../", features = ["async-daemonize", "blockchain", "bs58", "net", "rpc", "tx", "wasm-runtime"]}
+dwow_chain = {path = "../../src/linear", features = ["async"]}
 dwow_money_v3_contract = {path = "../../src/contract/money_v3", features = ["client", "no-entrypoint"]}
 dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["client"]}
 dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = ["client"]}

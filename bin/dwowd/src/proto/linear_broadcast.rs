@@ -35,7 +35,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use dwow::{
+use dwow_core::{
     impl_p2p_message,
     net::{
         metering::MeteringConfiguration,
@@ -49,7 +49,7 @@ use dwow::{
     util::time::NanoTimestamp,
     Result,
 };
-use dwow_linear::caribina::verify_anchor;
+use dwow_chain::caribina::verify_anchor;
 use dwow_serial::{
     deserialize_async, serialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite,
     FutAsyncReadExt, FutAsyncWriteExt,
@@ -67,7 +67,7 @@ use crate::mempool::MempoolPtr;
 /// receivers insert blocks locally without rebroadcast.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockBroadcast {
-    pub block: dwow_linear::Block,
+    pub block: dwow_chain::Block,
 }
 
 /// Protocol metering configuration
@@ -165,7 +165,7 @@ impl LinearBroadcastHandler {
             handle_receive_block(self.handler.clone(), blockchain, mempool),
             |res| async move {
                 match res {
-                    Ok(()) | Err(dwow::Error::DetachedTaskStopped) => {}
+                    Ok(()) | Err(dwow_core::Error::DetachedTaskStopped) => {}
                     Err(e) => {
                         tracing::error!(
                             target: "dwowd::proto::linear_broadcast",
@@ -174,7 +174,7 @@ impl LinearBroadcastHandler {
                     }
                 }
             },
-            dwow::Error::DetachedTaskStopped,
+            dwow_core::Error::DetachedTaskStopped,
             executor.clone(),
         );
 
@@ -197,7 +197,7 @@ impl LinearBroadcastHandler {
 // ============================================================================
 
 /// Broadcast a block to all connected peers
-pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_linear::Block) {
+pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_chain::Block) {
     let msg = BlockBroadcast { block };
     tracing::debug!(
         target: "dwowd::proto::linear_broadcast",

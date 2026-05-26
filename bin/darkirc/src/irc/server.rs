@@ -29,7 +29,7 @@ use std::{
     sync::Arc,
 };
 
-use dwow::{
+use dwow_core::{
     event_graph::Event,
     system::{StoppableTask, StoppableTaskPtr, Subscription},
     util::path::expand_path,

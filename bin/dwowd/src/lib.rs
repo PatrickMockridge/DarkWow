@@ -32,7 +32,7 @@ use std::{
 use smol::lock::Mutex;
 use tracing::{debug, error, info};
 
-use dwow::{
+use dwow_core::{
     blockchain::HeaderHash,
     net::settings::Settings,
     rpc::{
@@ -43,7 +43,7 @@ use dwow::{
     system::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
-use dwow_linear::LinearBlockchain as LinearBlockchainCore;
+use dwow_chain::LinearBlockchain as LinearBlockchainCore;
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 
@@ -198,19 +198,19 @@ impl Dwowd {
         db_path: &std::path::Path,
         net_settings: &Settings,
         ex: &ExecutorPtr,
-        finality_config: Option<dwow_linear::FinalityConfig>,
+        finality_config: Option<dwow_chain::FinalityConfig>,
     ) -> Result<DwowdPtr> {
         info!(target: "dwowd::Dwowd::init_linear", "Initializing a DarkWow daemon for darkwow-devnet...");
 
         let finality_config = finality_config.unwrap_or_default();
         info!(target: "dwowd::Dwowd::init_linear", "Finality mode: {:?}, caribina_enabled: {}", finality_config.mode, finality_config.caribina_enabled);
 
-        // Initialize linear blockchain (dwow_linear for P2P)
+        // Initialize linear blockchain (dwow_chain for P2P)
         let linear_blockchain_p2p = Arc::new(LinearBlockchainCore::with_finality(
             Arc::new(sled_db.clone()), finality_config.clone(),
         ).map_err(|e| Error::Custom(e.to_string()))?);
 
-        // Initialize dwowd's blockchain wrapper (uses dwow_linear store)
+        // Initialize dwowd's blockchain wrapper (uses dwow_chain store)
         let store = linear_blockchain_p2p.store.clone();
 
         // Create PoW config from network settings
@@ -239,7 +239,7 @@ impl Dwowd {
         // flags, this fails immediately with a clear error instead of crashing
         // during stratum submission.
         let linear_genesis_hash: HeaderHash = {
-            use dwow_linear::{Block, BlockHeader, Miner, Output, PowSource, Transaction};
+            use dwow_chain::{Block, BlockHeader, Miner, Output, PowSource, Transaction};
             use std::time::SystemTime;
 
             let genesis_height = 1u64;

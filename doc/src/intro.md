@@ -33,7 +33,7 @@ DarkWow implements privacy-preserving smart contracts across multiple domains:
 
 | Category | Contracts |
 |----------|-----------|
-| **Finance** | stablecoin, bridge, dex, atomic_swap, pool_stake |
+| **Finance** | stablecoin, bridge, dex, pool_stake |
 | **Gaming** | lottery, baccarat, roulette, slot, darktoshi_dice, betting_stake |
 | **Governance** | dao_escrow, subscription, labor_market, tender |
 | **Identity** | attestation, oracle, identity |

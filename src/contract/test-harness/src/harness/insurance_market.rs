@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for InsuranceMarket contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
@@ -55,11 +55,11 @@ impl InsuranceMarketHarness {
         let purchase_coverage_zkbin = ZkBinary::decode(purchase_bin, false).unwrap();
 
         let underwrite_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&underwrite_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&underwrite_zkbin).unwrap(),
             &underwrite_zkbin,
         );
         let purchase_coverage_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&purchase_coverage_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&purchase_coverage_zkbin).unwrap(),
             &purchase_coverage_zkbin,
         );
 

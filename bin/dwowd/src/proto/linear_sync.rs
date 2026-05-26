@@ -33,7 +33,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
-use dwow::{
+use dwow_core::{
     impl_p2p_message,
     net::{
         metering::MeteringConfiguration,
@@ -47,7 +47,7 @@ use dwow::{
     util::time::NanoTimestamp,
     Error, Result,
 };
-use dwow_linear::{Block, LinearBlockchain};
+use dwow_chain::{Block, LinearBlockchain};
 use dwow_serial::{serialize_async, deserialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 
 /// Constant defining max blocks we send in a single response.

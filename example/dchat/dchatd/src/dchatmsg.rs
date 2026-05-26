@@ -25,7 +25,7 @@
 use smol::lock::Mutex;
 use std::sync::Arc;
 
-use dwow::{
+use dwow_core::{
     impl_p2p_message,
     net::{
         metering::{MeteringConfiguration, DEFAULT_METERING_CONFIGURATION},

@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for Stablecoin contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -117,35 +117,35 @@ impl StablecoinHarness {
         let repay_stable_zkbin = ZkBinary::decode(repay_stable_bin, false).unwrap();
 
         let open_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&open_position_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&open_position_zkbin).unwrap(),
             &open_position_zkbin,
         );
         let mint_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&mint_stable_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&mint_stable_zkbin).unwrap(),
             &mint_stable_zkbin,
         );
         let liquidate_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&liquidate_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&liquidate_zkbin).unwrap(),
             &liquidate_zkbin,
         );
         let governance_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&governance_report_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&governance_report_zkbin).unwrap(),
             &governance_report_zkbin,
         );
         let accrue_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&accrue_interest_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&accrue_interest_zkbin).unwrap(),
             &accrue_interest_zkbin,
         );
         let add_collateral_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&add_collateral_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&add_collateral_zkbin).unwrap(),
             &add_collateral_zkbin,
         );
         let remove_collateral_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&remove_collateral_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&remove_collateral_zkbin).unwrap(),
             &remove_collateral_zkbin,
         );
         let repay_stable_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&repay_stable_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&repay_stable_zkbin).unwrap(),
             &repay_stable_zkbin,
         );
 
@@ -517,33 +517,33 @@ pub struct OpenPositionResult {
     pub owner_public_key: pallas::Base,
     pub collateral_commitment: pallas::Base,
     pub debt_commitment: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of mint_stable
 pub struct MintStableResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: MintStablePublicInputs,
 }
 
 /// Result of liquidate
 pub struct LiquidateResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: LiquidatePublicInputs,
 }
 
 /// Result of governance_report
 pub struct GovernanceReportResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: GovernanceReportPublicInputs,
 }
 
 /// Result of accrue_interest
 pub struct AccrueInterestResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: AccrueInterestPublicInputs,
 }

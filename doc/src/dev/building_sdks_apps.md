@@ -9,7 +9,7 @@ DarkWow applications typically follow a layered architecture:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Application Layer                          │
-│  (CLI tools like dww, desktop wallets, web frontends)        │
+│  (CLI tools like dwow_wallet, desktop wallets, web frontends)        │
 ├─────────────────────────────────────────────────────────────┤
 │                       SDK Layer                              │
 │  (Client transaction builders, RPC clients, wallet APIs)     │

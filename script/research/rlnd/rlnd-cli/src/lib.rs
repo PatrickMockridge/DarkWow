@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use dwow::{rpc::client::RpcClient, Result};
+use dwow_core::{rpc::client::RpcClient, Result};
 use smol::Executor;
 use url::Url;
 

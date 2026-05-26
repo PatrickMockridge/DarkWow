@@ -26,7 +26,7 @@ use std::{
     sync::Arc,
 };
 
-use dwow::{
+use dwow_core::{
     net::{channel::ChannelPtr, P2pPtr},
     rpc::jsonrpc::JsonSubscriber,
     system::{ExecutorPtr, StoppableTask, StoppableTaskPtr},

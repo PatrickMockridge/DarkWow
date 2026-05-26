@@ -2,7 +2,7 @@
 
 ## Overview
 
-The dww wallet implements a general pattern for tracking smart contract state during blockchain scanning. This document describes the architecture used for contract interaction, which can serve as a template for understanding how the wallet matches and processes different contracts.
+The dwow_wallet wallet implements a general pattern for tracking smart contract state during blockchain scanning. This document describes the architecture used for contract interaction, which can serve as a template for understanding how the wallet matches and processes different contracts.
 
 ## Native Contract Architecture
 
@@ -409,8 +409,8 @@ if call.data.contract_id == *NEW_CONTRACT_ID.get().unwrap() {
 
 ## References
 
-- `bin/dww/src/rpc.rs` - ScanCache and scanning implementation
-- `bin/dww/src/contract_imports.rs` - Contract definitions and opcodes
-- `bin/dww/src/contract_registry.rs` - Contract registry system
-- `bin/dww/src/transfer.rs` - Transfer transaction building with spend hooks
+- `bin/drk/src/rpc.rs` - ScanCache and scanning implementation
+- `bin/drk/src/contract_imports.rs` - Contract definitions and opcodes
+- `bin/drk/src/contract_registry.rs` - Contract registry system
+- `bin/drk/src/transfer.rs` - Transfer transaction building with spend hooks
 - `src/zk/verifier.rs` - ZK proof verification

@@ -24,7 +24,7 @@
 use std::collections::HashMap;
 
 use clap::Parser;
-use dwow::{
+use dwow_core::{
     blockchain::{
         Blockchain, BlockchainOverlay, BlockchainOverlayPtr, block_store::append_tx_to_merkle_tree,
     },
@@ -177,7 +177,7 @@ async fn verify_transaction_wasm(
     tree: &mut MerkleTree,
     _verifying_keys: &mut HashMap<[u8; 32], HashMap<String, VerifyingKey>>,
     verify_fee: bool,
-) -> dwow::Result<GasData> {
+) -> dwow_core::Result<GasData> {
     let tx_hash = tx.hash();
 
     // Create a FeeData instance to hold the calculated fee data
@@ -331,7 +331,7 @@ async fn verify_transaction_zkps(
     tree: &mut MerkleTree,
     verifying_keys: &mut HashMap<[u8; 32], HashMap<String, VerifyingKey>>,
     verify_fee: bool,
-) -> dwow::Result<GasData> {
+) -> dwow_core::Result<GasData> {
     let tx_hash = tx.hash();
 
     // Create a FeeData instance to hold the calculated fee data
@@ -505,7 +505,7 @@ async fn verify_transaction_signatures(
     tree: &mut MerkleTree,
     _verifying_keys: &mut HashMap<[u8; 32], HashMap<String, VerifyingKey>>,
     verify_fee: bool,
-) -> dwow::Result<GasData> {
+) -> dwow_core::Result<GasData> {
     let tx_hash = tx.hash();
 
     // Create a FeeData instance to hold the calculated fee data

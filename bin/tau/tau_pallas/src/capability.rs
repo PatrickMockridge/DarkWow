@@ -33,7 +33,7 @@
 
 use std::sync::Arc;
 
-use dwow::tx::{ContractCallLeaf, TransactionBuilder};
+use dwow_core::tx::{ContractCallLeaf, TransactionBuilder};
 use dwow_sdk::{
     crypto::{ContractId, Keypair},
     tx::{ContractCall, TransactionHash},

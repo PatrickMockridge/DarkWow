@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::{
+use dwow_core::{
     net::{
         session::{SESSION_DIRECT, SESSION_INBOUND},
         settings::{MagicBytes, NetworkProfile, Settings as NetSettings},

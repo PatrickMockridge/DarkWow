@@ -25,7 +25,7 @@ use std::collections::HashMap;
 
 use tinyjson::JsonValue;
 
-use dwow::rpc::jsonrpc::{ErrorCode::ServerError, JsonError, JsonResponse, JsonResult};
+use dwow_core::rpc::jsonrpc::{ErrorCode::ServerError, JsonError, JsonResponse, JsonResult};
 
 /// Custom RPC errors available for dwowd.
 /// Please sort them sensefully.

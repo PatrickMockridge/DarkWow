@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for NativeToken contract (consensus token).
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -74,11 +74,11 @@ impl NativeTokenHarness {
 
         // Build proving keys
         let mint_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&mint_zkbin).unwrap(), &mint_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&mint_zkbin).unwrap(), &mint_zkbin);
         let burn_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
         let fee_circuit =
-            ZkCircuit::new(dwow::zk::empty_witnesses(&fee_zkbin).unwrap(), &fee_zkbin);
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&fee_zkbin).unwrap(), &fee_zkbin);
 
         let mint_pk = ProvingKey::build(mint_zkbin.k, &mint_circuit);
         let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit);
@@ -228,18 +228,18 @@ pub use dwow_native_token_contract::client::burn_v1::BurnCallInput;
 pub struct PoWRewardResult {
     pub call_data: Vec<u8>,
     pub output: Output,
-    pub proofs: Vec<dwow::zk::Proof>,
+    pub proofs: Vec<dwow_core::zk::Proof>,
 }
 
 /// Result of burn
 pub struct BurnResult {
     pub inputs: Vec<dwow_native_token_contract::model::Input>,
-    pub proofs: Vec<dwow::zk::Proof>,
+    pub proofs: Vec<dwow_core::zk::Proof>,
 }
 
 /// Result of fee
 pub struct FeeResult {
     pub call_data: Vec<u8>,
     pub params: FeeParamsV1,
-    pub proofs: Vec<dwow::zk::Proof>,
+    pub proofs: Vec<dwow_core::zk::Proof>,
 }

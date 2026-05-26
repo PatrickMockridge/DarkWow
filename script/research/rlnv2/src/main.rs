@@ -26,7 +26,7 @@ use std::{
     time::{Instant, UNIX_EPOCH},
 };
 
-use dwow::{
+use dwow_core::{
     zk::{empty_witnesses, halo2::Value, Proof, ProvingKey, VerifyingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
 };

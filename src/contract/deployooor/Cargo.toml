@@ -16,7 +16,7 @@ wasmparser = "0.243.0"
 
 # The following dependencies are used for the client API and
 # probably shouldn't be in WASM
-dwow = { path = "../../../", features = ["zk"], optional = true }
+dwow_core = { path = "../../../", features = ["zk"], optional = true }
 tracing = { version = "0.1.44", optional = true }
 rand = { version = "0.8.5", optional = true }
 
@@ -36,7 +36,7 @@ default = []
 no-entrypoint = []
 async = ["dwow-sdk/async"]
 client = [
-    "dwow",
+    "dwow_core",
     "async",
     "dwow-sdk/async",
     "dwow-serial/async",

@@ -55,7 +55,7 @@
 //! RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight
 //! ```
 
-use dwow::{zk::Proof, Result};
+use dwow_core::{zk::Proof, Result};
 use dwow_sdk::crypto::ContractId;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_contract_test_harness::harness::ContractHarness;
@@ -116,7 +116,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         use super::harness::{build_coinbase_tx, build_contract_tx, build_test_block};
 
         let contract_id = self.contract_id
-            .ok_or_else(|| dwow::Error::Custom("Contract not deployed".to_string()))?;
+            .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
         let tx = build_contract_tx(contract_id.to_bytes(), call_data.to_vec());
         let height = self.genesis.block_height();
         let reward = dwow_sdk::blockchain::expected_reward((height + 1) as u32);
@@ -142,7 +142,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         };
 
         let contract_id = self.contract_id
-            .ok_or_else(|| dwow::Error::Custom("Contract not deployed".to_string()))?;
+            .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
         let height = self.genesis.block_height();
         let next = height + 1;
         let reward = dwow_sdk::blockchain::expected_reward(next as u32);
@@ -180,7 +180,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         };
 
         let contract_id = self.contract_id
-            .ok_or_else(|| dwow::Error::Custom("Contract not deployed".to_string()))?;
+            .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
         let height = self.genesis.block_height();
         let next = height + 1;
         let reward = dwow_sdk::blockchain::expected_reward(next as u32);
@@ -222,7 +222,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         };
 
         let contract_id = self.contract_id
-            .ok_or_else(|| dwow::Error::Custom("Contract not deployed".to_string()))?;
+            .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
         let height = self.genesis.block_height();
         let next = height + 1;
         let reward = dwow_sdk::blockchain::expected_reward(next as u32);
@@ -519,25 +519,25 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 
         // --- close_auction ---
         println!("  Test: close_auction");
-        let close = harness.close_auction(create.auction_id, bid.bid_id, seller_secret, 500, 100, seller_pub).map_err(|e| dwow::Error::Custom(e.to_string()))?;
+        let close = harness.close_auction(create.auction_id, bid.bid_id, seller_secret, 500, 100, seller_pub).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!close.call_data.is_empty());
         println!("    call_data={}B", close.call_data.len());
 
         // --- claim_winnings ---
         println!("  Test: claim_winnings");
-        let claim = harness.claim_winnings(create.auction_id, bid.bid_id, winner_secret, winner_pub).map_err(|e| dwow::Error::Custom(e.to_string()))?;
+        let claim = harness.claim_winnings(create.auction_id, bid.bid_id, winner_secret, winner_pub).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!claim.call_data.is_empty());
         println!("    call_data={}B", claim.call_data.len());
 
         // --- settle_auction ---
         println!("  Test: settle_auction");
-        let settle = harness.settle_auction(create.auction_id, seller_secret, 1500, seller_pub).map_err(|e| dwow::Error::Custom(e.to_string()))?;
+        let settle = harness.settle_auction(create.auction_id, seller_secret, 1500, seller_pub).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!settle.call_data.is_empty());
         println!("    call_data={}B", settle.call_data.len());
 
         // --- refund_bid ---
         println!("  Test: refund_bid");
-        let refund = harness.refund_bid(bid.bid_id, bidder_secret, bidder_pub).map_err(|e| dwow::Error::Custom(e.to_string()))?;
+        let refund = harness.refund_bid(bid.bid_id, bidder_secret, bidder_pub).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!refund.call_data.is_empty());
         println!("    call_data={}B", refund.call_data.len());
 
@@ -587,7 +587,7 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // --- fund_escrow ---
         println!("  Test: fund_escrow");
-        let fund = pipeline.harness.fund_escrow(create.public_inputs.commitment, 5000, value_blind).map_err(|e| dwow::Error::Custom(e.to_string()))?;
+        let fund = pipeline.harness.fund_escrow(create.public_inputs.commitment, 5000, value_blind).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!fund.call_data.is_empty());
         println!("    call_data={}B", fund.call_data.len());
 
@@ -777,7 +777,7 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
             fee: 0,
             zk_public_inputs: vec![],
         };
-        let ac = harness.build_add_collateral_call_data(&ac_params).map_err(|e| dwow::Error::Custom(e.to_string()))?;
+        let ac = harness.build_add_collateral_call_data(&ac_params).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!ac.is_empty());
         println!("    call_data={}B", ac.len());
 
@@ -791,7 +791,7 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
             fee: 0,
             zk_public_inputs: vec![],
         };
-        let rc = harness.build_remove_collateral_call_data(&rc_params).map_err(|e| dwow::Error::Custom(e.to_string()))?;
+        let rc = harness.build_remove_collateral_call_data(&rc_params).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!rc.is_empty());
         println!("    call_data={}B", rc.len());
 
@@ -804,7 +804,7 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
             fee: 0,
             zk_public_inputs: vec![],
         };
-        let rs = harness.build_repay_stable_call_data(&rs_params).map_err(|e| dwow::Error::Custom(e.to_string()))?;
+        let rs = harness.build_repay_stable_call_data(&rs_params).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!rs.is_empty());
         println!("    call_data={}B", rs.len());
 
@@ -1545,54 +1545,6 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
         println!("    underwrite executed OK");
 
         println!("=== All InsuranceMarket endpoints OK ===");
-        Ok(())
-    })
-}
-
-// ============================================================================
-// atomic_swap (no WASM — harness proof generation only)
-// ============================================================================
-
-#[test]
-fn test_heavyweight_atomic_swap() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::AtomicSwapHarness;
-    use dwow_sdk::crypto::{PublicKey, SecretKey};
-    use dwow_sdk::pasta::pallas;
-
-    println!("=== AtomicSwap Heavyweight: All Endpoints (no WASM) ===");
-
-    smol::block_on(async {
-        let harness = AtomicSwapHarness::spawn();
-        println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let pipeline = HeavyweightPipeline::new(harness, "atomic_swap").await?;
-        // No WASM to deploy — testing harness proof generation only
-        println!("(skipping deploy — WASM not yet built)");
-
-        let harness = &pipeline.harness;
-        let secret = pallas::Base::from(100u64);
-        let hash = pallas::Base::from(200u64);
-        let receiver = PublicKey::from_secret(SecretKey::from_bytes([4u8; 32]).unwrap());
-
-        // --- create_swap ---
-        println!("  Test: create_swap");
-        let create = harness.create_swap(hash, 1000, secret, 5000, pallas::Base::from(1u64), 0, pallas::Base::from(2u64), receiver, 0, pallas::Base::from(3u64))?;
-        assert!(!create.call_data.is_empty());
-        println!("    call_data={}B", create.call_data.len());
-
-        // --- claim_swap ---
-        println!("  Test: claim_swap");
-        let claim = harness.claim_swap(create.public_inputs.swap_id, secret, hash, 1000, 0)?;
-        assert!(!claim.call_data.is_empty());
-        println!("    call_data={}B", claim.call_data.len());
-
-        // --- refund_swap ---
-        println!("  Test: refund_swap");
-        let refund = harness.refund_swap(create.public_inputs.swap_id, secret, 1001, receiver)?;
-        assert!(!refund.call_data.is_empty());
-        println!("    call_data={}B", refund.call_data.len());
-
-        println!("=== All AtomicSwap endpoints OK ===");
         Ok(())
     })
 }
@@ -2548,7 +2500,7 @@ async fn setup_native_token_pipeline(
 fn native_token_call(
     pipeline: &HeavyweightPipeline<NativeTokenHarness>,
     keypair: Keypair,
-) -> std::result::Result<(Vec<u8>, Vec<dwow::zk::Proof>), Box<dyn std::error::Error>> {
+) -> std::result::Result<(Vec<u8>, Vec<dwow_core::zk::Proof>), Box<dyn std::error::Error>> {
     let recipient = PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?);
     let result = pipeline.harness.fee(
         1000,

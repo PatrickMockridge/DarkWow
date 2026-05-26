@@ -23,7 +23,7 @@
 
 //! Linear blockchain for localnet
 //!
-//! This module provides a LinearBlockchain that combines dwow_linear's
+//! This module provides a LinearBlockchain that combines dwow_chain's
 //! LinearStore with dwow's Runtime and ZK verification for contract execution.
 
 use std::collections::HashSet;
@@ -34,10 +34,10 @@ use std::sync::{
 };
 
 use randomx::{RandomXFlags, RandomXVM};
-use dwow::runtime::vm_runtime::RuntimeBackend;
-use dwow::Error;
-use dwow::Result;
-use dwow_linear::{build_uncle_merkle, verify_uncle_proof, FinalityConfig, UncleBlock, Block, LinearStore, PoWConsensus, PowSource};
+use dwow_core::runtime::vm_runtime::RuntimeBackend;
+use dwow_core::Error;
+use dwow_core::Result;
+use dwow_chain::{build_uncle_merkle, verify_uncle_proof, FinalityConfig, UncleBlock, Block, LinearStore, PoWConsensus, PowSource};
 use sled_overlay::{SledTreeOverlay, SledTreeOverlayStateDiff};
 use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID};
 use dwow_sdk::deploy::DeployParamsV1;
@@ -258,7 +258,7 @@ impl Default for LinearPoWConfig {
 
 /// Linear blockchain with WASM runtime and ZK verification
 pub struct LinearBlockchain {
-    /// Storage backend (dwow_linear)
+    /// Storage backend (dwow_chain)
     pub store: Arc<LinearStore>,
     /// PoW consensus (protected by mutex for difficulty updates)
     pub consensus: Mutex<PoWConsensus>,
@@ -496,9 +496,9 @@ impl LinearBlockchain {
 
     /// Verify and apply a block to the chain
     ///
-    /// Note: dwow_linear::Transaction is a UTXO transaction without contract calls.
+    /// Note: dwow_chain::Transaction is a UTXO transaction without contract calls.
     /// For smart contract execution, the linear Transaction type would need to be
-    /// extended to support contract calls similar to dwow::Transaction.
+    /// extended to support contract calls similar to dwow_core::Transaction.
     pub async fn apply_block(&self, block: &Block) -> Result<()> {
         self.apply_block_with_uncles(block, &[]).await
     }
@@ -564,9 +564,9 @@ impl LinearBlockchain {
             }
 
             // Reject uncles that are too old (beyond MAX_UNCLE_DEPTH)
-            if uncle.header.height <= current_height.saturating_sub(dwow_linear::MAX_UNCLE_DEPTH as u64) {
+            if uncle.header.height <= current_height.saturating_sub(dwow_chain::MAX_UNCLE_DEPTH as u64) {
                 error!(target: "linear_blockchain", "Uncle {} height {} too old (current: {}, max depth: {})",
-                    uncle.hash(&vm), uncle.header.height, current_height, dwow_linear::MAX_UNCLE_DEPTH);
+                    uncle.hash(&vm), uncle.header.height, current_height, dwow_chain::MAX_UNCLE_DEPTH);
                 return Err(Error::Custom("UncleTooOld".to_string()))
             }
 
@@ -720,7 +720,7 @@ impl LinearBlockchain {
             backend.overlay.lock().unwrap().checkpoint();
 
             let tx_hash_bytes = dwow_sdk::tx::TransactionHash(*tx_hash.as_bytes());
-            let mut runtime = match dwow::runtime::vm_runtime::Runtime::new(
+            let mut runtime = match dwow_core::runtime::vm_runtime::Runtime::new(
                 &job.wasm_bytes,
                 backend.clone(),
                 job.contract_id,
@@ -860,7 +860,7 @@ impl LinearBlockchain {
                 height: current_height,
                 vm: vm.clone(),
             });
-            let mut runtime = match dwow::runtime::vm_runtime::Runtime::new(
+            let mut runtime = match dwow_core::runtime::vm_runtime::Runtime::new(
                 wasm,
                 backend.clone(),
                 *contract_id,
@@ -940,7 +940,7 @@ impl LinearBlockchain {
             height,
             vm,
         });
-        let mut runtime = dwow::runtime::vm_runtime::Runtime::new(
+        let mut runtime = dwow_core::runtime::vm_runtime::Runtime::new(
             wasm,
             backend.clone(),
             contract_id,

@@ -28,7 +28,7 @@
 
 use std::collections::HashMap;
 
-use dwow::{
+use dwow_core::{
     rpc::jsonrpc::{
         ErrorCode::InternalError,
         JsonError, JsonResponse, JsonResult,
@@ -37,7 +37,7 @@ use dwow::{
 use tinyjson::JsonValue;
 use tracing::{error, info};
 
-use dwow_linear::caribina::anchor_block;
+use dwow_chain::caribina::anchor_block;
 use crate::{proto::linear_broadcast::broadcast_block, DwowNode};
 
 impl DwowNode {
@@ -127,7 +127,7 @@ impl DwowNode {
         };
 
         let height = latest_block.header.height + 1;
-        let randomx_key = dwow_linear::Miner::derive_key_from_height(height);
+        let randomx_key = dwow_chain::Miner::derive_key_from_height(height);
         let vm = linear_blockchain.get_vm(randomx_key);
         let previous = latest_block.hash(&vm);
         let target = linear_blockchain.consensus.lock().unwrap().target();
@@ -177,7 +177,7 @@ impl DwowNode {
         };
 
         // Create coinbase transaction with ZK privacy data
-        let coinbase_tx = dwow_linear::Transaction {
+        let coinbase_tx = dwow_chain::Transaction {
             version: 1,
             inputs: vec![],
             outputs: vec![],
@@ -197,8 +197,8 @@ impl DwowNode {
         all_txs.push(coinbase_tx);
 
         // Create miner and mine a block
-        let consensus = dwow_linear::PoWConsensus::new(60, target, 1, u32::MAX);
-        let miner = dwow_linear::Miner::new(std::sync::Arc::new(consensus));
+        let consensus = dwow_chain::PoWConsensus::new(60, target, 1, u32::MAX);
+        let miner = dwow_chain::Miner::new(std::sync::Arc::new(consensus));
 
         let mut mined_block = match miner.mine(&vm, previous, height, all_txs, target) {
             Ok(block) => block,

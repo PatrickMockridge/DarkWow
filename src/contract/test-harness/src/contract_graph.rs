@@ -78,8 +78,6 @@ pub enum Contract {
     Roulette,
     /// Deployooor (native) - deploys WASM contracts
     Deployooor,
-    /// Atomic Swap - peer-to-peer token swap
-    AtomicSwap,
     /// Attestation - claims and attestations
     Attestation,
     /// Betting Stake - betting platform
@@ -169,7 +167,6 @@ impl Contract {
             Contract::DarkToshiDice => vec!["CommitBet_V1", "SettleBet_V1"],
             Contract::Roulette => vec!["PlaceBet_V1", "SettleBet_V1"],
             Contract::Deployooor => vec![],
-            Contract::AtomicSwap => vec!["CreateSwapV1", "ClaimSwapV1", "RefundSwapV1"],
             Contract::Attestation => vec![
                 "CreateAttestationV1",
                 "CreateClaimV1",
@@ -220,7 +217,6 @@ impl Contract {
             Contract::DarkToshiDice => "DarkToshiDice",
             Contract::Roulette => "Roulette",
             Contract::Deployooor => "Deployooor",
-            Contract::AtomicSwap => "AtomicSwap",
             Contract::Attestation => "Attestation",
             Contract::BettingStake => "BettingStake",
             Contract::BlockHeightPrediction => "BlockHeightPrediction",
@@ -259,7 +255,6 @@ impl Contract {
             | Contract::Baccarat
             | Contract::DarkToshiDice
             | Contract::Roulette
-            | Contract::AtomicSwap
             | Contract::Attestation
             | Contract::BettingStake
             | Contract::BlockHeightPrediction

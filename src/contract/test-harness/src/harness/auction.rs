@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for Auction contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
@@ -78,27 +78,27 @@ impl AuctionHarness {
         let refund_bid_zkbin = ZkBinary::decode(refund_bin, false).unwrap();
 
         let create_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&create_auction_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&create_auction_zkbin).unwrap(),
             &create_auction_zkbin,
         );
         let bid_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&place_bid_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&place_bid_zkbin).unwrap(),
             &place_bid_zkbin,
         );
         let close_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&close_auction_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&close_auction_zkbin).unwrap(),
             &close_auction_zkbin,
         );
         let claim_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&claim_winnings_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&claim_winnings_zkbin).unwrap(),
             &claim_winnings_zkbin,
         );
         let settle_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&settle_auction_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&settle_auction_zkbin).unwrap(),
             &settle_auction_zkbin,
         );
         let refund_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&refund_bid_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&refund_bid_zkbin).unwrap(),
             &refund_bid_zkbin,
         );
 
@@ -400,7 +400,7 @@ impl super::ContractHarness for AuctionHarness {
 pub struct CreateAuctionResult {
     pub call_data: Vec<u8>,
     pub auction_id: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: CreateAuctionV1PublicInputs,
 }
 
@@ -408,34 +408,34 @@ pub struct CreateAuctionResult {
 pub struct PlaceBidResult {
     pub call_data: Vec<u8>,
     pub bid_id: pallas::Base,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: PlaceBidV1PublicInputs,
 }
 
 /// Result of close_auction
 pub struct CloseAuctionResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: CloseAuctionV1PublicInputs,
 }
 
 /// Result of claim_winnings
 pub struct ClaimWinningsResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: ClaimWinningsV1PublicInputs,
 }
 
 /// Result of settle_auction
 pub struct SettleAuctionResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: SettleAuctionV1PublicInputs,
 }
 
 /// Result of refund_bid
 pub struct RefundBidResult {
     pub call_data: Vec<u8>,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
     pub public_inputs: RefundBidV1PublicInputs,
 }

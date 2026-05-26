@@ -54,7 +54,7 @@
 
 use std::env;
 
-use dwow::Result;
+use dwow_core::Result;
 use dwow_sdk::crypto::{ContractId, Keypair, SecretKey, DEPLOYOOOR_CONTRACT_ID};
 use dwow_sdk::deploy::{ContractMetadata, DeployParamsV1};
 use dwow_serial::Encodable;
@@ -350,7 +350,7 @@ impl ContractTestingPipeline {
             "tender" => Ok(include_bytes!(
                 "../../../../src/contract/tender/dwow_tender_contract.wasm"
             ).to_vec()),
-            _ => Err(dwow::Error::Custom(format!(
+            _ => Err(dwow_core::Error::Custom(format!(
                 "Unknown or missing-WASM contract: {}. Add WASM include_bytes! entry in pipeline.rs",
                 self.contract_name
             ))),
@@ -414,7 +414,7 @@ fn test_all_contracts_deploy() -> Result<()> {
                 }
             }
         }
-        Ok::<_, dwow::Error>(())
+        Ok::<_, dwow_core::Error>(())
     })?;
 
     println!(

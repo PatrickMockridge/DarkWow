@@ -19,18 +19,18 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 ./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
 
 # Terminal 2: Mine blocks to your wallet
-./target/release/dww -c bin/dww/dww_config.toml -n localnet mine
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet mine
 
 # Terminal 3: Check balance
-./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet balance
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet wallet balance
 ```
 
 ## How It Works
 
 1. **dwowd** runs a stratum mining server on port 48347 (configured in localnet toml)
-2. **dww mine** connects via TCP, logs in with your wallet address as recipient
+2. **dwow_wallet mine** connects via TCP, logs in with your wallet address as recipient
 3. dwowd sends mining jobs (RandomX blob + target)
-4. dww mines RandomX hashes in a background thread
+4. dwow_wallet mines RandomX hashes in a background thread
 5. Shares found are submitted back to stratum server
 6. Accepted shares = mined blocks = PoW rewards (20 DRKW per block)
 7. Wallet scanning discovers the coins
@@ -43,7 +43,7 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 - Config: `contrib/localnet/dwowd-single-node/dwowd.toml`
 - `pow_fixed_difficulty=1` makes mining fast for testing
 
-### dww (CLI wallet)
+### dwow_wallet (CLI wallet)
 
 **Global flags:**
 ```
@@ -55,38 +55,38 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 
 **Wallet subcommands:**
 ```
-dww wallet address            Get the default address
-dww wallet addresses          Print all addresses
-dww wallet balance            Query known balances
-dww wallet coins              Print all coins
-dww wallet default-address    Set default address
-dww wallet import-secrets     Import secret keys from stdin
-dww wallet initialize         Initialize wallet database
-dww wallet keygen             Generate new keypair
-dww wallet mining-config      Print wallet address mining configuration
-dww wallet secrets            Print all secret keys
-dww wallet tree               Print Merkle tree
+dwow_wallet wallet address            Get the default address
+dwow_wallet wallet addresses          Print all addresses
+dwow_wallet wallet balance            Query known balances
+dwow_wallet wallet coins              Print all coins
+dwow_wallet wallet default-address    Set default address
+dwow_wallet wallet import-secrets     Import secret keys from stdin
+dwow_wallet wallet initialize         Initialize wallet database
+dwow_wallet wallet keygen             Generate new keypair
+dwow_wallet wallet mining-config      Print wallet address mining configuration
+dwow_wallet wallet secrets            Print all secret keys
+dwow_wallet wallet tree               Print Merkle tree
 ```
 
 **Contract subcommands:**
 ```
-dww contract dao-escrow-init <dao-bulla> <token-id>    Initialize a DAO-Escrow endowment
-dww contract drain-protection-init <fund-id> <spend-auth> <dao-bulla>  Initialize DrainProtection
-dww contract enable-drain-protection <dao-bulla> <drain-bulla>          Enable drain protection
-dww contract deploy <auth> <wasm-path> [deploy-ix]    Deploy a smart contract
-dww contract export-data <tx-hash>                     Export wasm bincode + deploy ix
-dww contract generate-deploy                          Generate new deploy authority
-dww contract invoke <contract-id> <function>           Invoke a contract function
-dww contract list [contract-id]                        List deploy authorities
-dww contract lock <deploy-auth>                        Lock a smart contract
+dwow_wallet contract dao-escrow-init <dao-bulla> <token-id>    Initialize a DAO-Escrow endowment
+dwow_wallet contract drain-protection-init <fund-id> <spend-auth> <dao-bulla>  Initialize DrainProtection
+dwow_wallet contract enable-drain-protection <dao-bulla> <drain-bulla>          Enable drain protection
+dwow_wallet contract deploy <auth> <wasm-path> [deploy-ix]    Deploy a smart contract
+dwow_wallet contract export-data <tx-hash>                     Export wasm bincode + deploy ix
+dwow_wallet contract generate-deploy                          Generate new deploy authority
+dwow_wallet contract invoke <contract-id> <function>           Invoke a contract function
+dwow_wallet contract list [contract-id]                        List deploy authorities
+dwow_wallet contract lock <deploy-auth>                        Lock a smart contract
 ```
 
 **Universal Contract Invocation:**
 ```
-dww contract invoke <contract-name-or-id> <function> [--params <json-file>]
+dwow_wallet contract invoke <contract-name-or-id> <function> [--params <json-file>]
 
 # Example: Enable drain protection on DAO-Escrow
-dww contract invoke dao_escrow enable_drain_protection --params params.json
+dwow_wallet contract invoke dao_escrow enable_drain_protection --params params.json
 
 # Where params.json contains:
 # {"dao_escrow_bulla": "...", "drain_protection_bulla": "..."}
@@ -106,7 +106,7 @@ dww contract invoke dao_escrow enable_drain_protection --params params.json
 ### 1. Initialize wallet (first time only)
 
 See [Wallet Architecture](arch/wallet.md) for wallet initialization and keygen.
-Use `-c bin/dww/dww_config.toml -n localnet` for localnet dev.
+Use `-c bin/drk/dww_config.toml -n localnet` for localnet dev.
 
 ### 2. Start localnet
 ```bash
@@ -115,39 +115,39 @@ Use `-c bin/dww/dww_config.toml -n localnet` for localnet dev.
 
 ### 3. Mine blocks
 ```bash
-./target/release/dww -c bin/dww/dww_config.toml -n localnet mine
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet mine
 # Press Ctrl+C when sufficient DRKW accumulated
 ```
 
 ### 4. Check balance
 ```bash
-./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet balance
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet wallet balance
 ```
 
 ### 5. Scan blockchain
 ```bash
-./target/release/dww -c bin/dww/dww_config.toml -n localnet scan
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet scan
 # Or reset and rescan from block 0:
-./target/release/dww -c bin/dww/dww_config.toml -n localnet scan --reset 0
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet scan --reset 0
 ```
 
 ### 6. List known coins
 ```bash
-./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet coins
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet wallet coins
 ```
 
 ### 7. Deploy a contract
 ```bash
 # Generate deploy authority if needed
-./target/release/dww -c bin/dww/dww_config.toml -n localnet contract generate-deploy
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet contract generate-deploy
 
 # Deploy contract (pipe output to broadcast)
-./target/release/dww -c bin/dww/dww_config.toml -n localnet contract deploy <contract-id> <wasm-path> | ./target/release/dww -c bin/dww/dww_config.toml -n localnet broadcast
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet contract deploy <contract-id> <wasm-path> | ./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet broadcast
 ```
 
 ### 8. Verify deployment
 ```bash
-./target/release/dww -c bin/dww/dww_config.toml -n localnet contract list
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet contract list
 ```
 
 ## Network Ports
@@ -161,11 +161,11 @@ Use `-c bin/dww/dww_config.toml -n localnet` for localnet dev.
 
 ```bash
 # If "Resource temporarily unavailable" error on wallet db:
-# Kill any running dww processes
-pkill -f "dww.*mine"
+# Kill any running dwow_wallet processes
+pkill -f "dwow_wallet.*mine"
 
 # Then retry wallet commands
-./target/release/dww -c bin/dww/dww_config.toml -n localnet wallet balance
+./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet wallet balance
 ```
 
 ## CLI Quirks
@@ -174,48 +174,48 @@ pkill -f "dww.*mine"
 
 The `scan` command is not under `wallet` - it's a top-level subcommand:
 ```bash
-dww scan                    # Correct - scan blockchain
-dww wallet scan             # Wrong - this doesn't exist
+dwow_wallet scan                    # Correct - scan blockchain
+dwow_wallet wallet scan             # Wrong - this doesn't exist
 ```
 
-This differs from other wallet operations which are under `dww wallet <subcommand>`.
+This differs from other wallet operations which are under `dwow_wallet wallet <subcommand>`.
 
 ### Config file must be passed explicitly
 
 There is no default config file location. Every command requires `-c`:
 ```bash
-dww -c bin/dww/dww_config.toml -n localnet wallet balance  # Correct
-dww -n localnet wallet balance                              # Wrong - fails
+dwow_wallet -c bin/drk/dww_config.toml -n localnet wallet balance  # Correct
+dwow_wallet -n localnet wallet balance                              # Wrong - fails
 ```
 
 ### --reset uses space, not equals
 
 The `--reset` flag for scan uses space-separated syntax:
 ```bash
-dww scan --reset 0     # Correct - space
-dww scan --reset=0    # Wrong - equals sign doesn't work
+dwow_wallet scan --reset 0     # Correct - space
+dwow_wallet scan --reset=0    # Wrong - equals sign doesn't work
 ```
 
 ### broadcast reads base64 from stdin
 
 The `broadcast` command reads a base64-encoded transaction from stdin:
 ```bash
-dww contract deploy <auth> <wasm> | dww broadcast  # Pipe output to broadcast
+dwow_wallet contract deploy <auth> <wasm> | dwow_wallet broadcast  # Pipe output to broadcast
 ```
 
 ### balance shows unspent only
 
-`dww wallet balance` shows only unspent balances. Spent coins are not included in the balance calculation.
+`dwow_wallet wallet balance` shows only unspent balances. Spent coins are not included in the balance calculation.
 
 ### coin values are in raw units
 
-Coin values in `dww wallet coins` output are shown as raw values (e.g., `2000000000`) with a formatted version in parentheses (e.g., `(20)`). The DRKW token has 8 decimal places.
+Coin values in `dwow_wallet wallet coins` output are shown as raw values (e.g., `2000000000`) with a formatted version in parentheses (e.g., `(20)`). The DRKW token has 8 decimal places.
 
 ### contract list without args lists all authorities
 
 ```bash
-dww contract list              # Lists ALL deploy authorities
-dww contract list <contract>  # Shows history for specific contract
+dwow_wallet contract list              # Lists ALL deploy authorities
+dwow_wallet contract list <contract>  # Shows history for specific contract
 ```
 
 The history lookup requires the deployment transaction hash (tx-hash), not the contract ID.

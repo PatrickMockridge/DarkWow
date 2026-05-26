@@ -80,7 +80,7 @@ mod tests {
     // Example test structure:
     //
     // ```ignore
-    // use dwow::zk::{ZkCircuit, empty_witnesses};
+    // use dwow_core::zk::{ZkCircuit, empty_witnesses};
     // use dwow_sdk::crypto::MerkleNode;
     // use pasta_curves::Fp;
     // use halo2_proofs::{dev::MockProver, pasta::pallas};

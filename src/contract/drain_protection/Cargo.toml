@@ -17,7 +17,7 @@ tracing = "0.1.44"
 rand = "0.8"
 
 # The following dependencies are used for the client API
-dwow = { path = "../../../", features = ["zk"], optional = true }
+dwow_core = { path = "../../../", features = ["zk"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.8", features = ["custom"] }
@@ -27,7 +27,7 @@ dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 default = []
 no-entrypoint = []
 client = [
-    "dwow",
+    "dwow_core",
     "dwow-serial/async",
 ]
 

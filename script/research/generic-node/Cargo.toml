@@ -10,7 +10,7 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-dwow = {path = "../../../", features = ["async-daemonize", "net"]}
+dwow_core = {path = "../../../", features = ["async-daemonize", "net"]}
 dwow-serial = {path = "../../../src/serial", features = ["async"]}
 rand = "0.8.5"
 

@@ -27,7 +27,7 @@ use std::sync::Arc;
 use structopt_toml::StructOptToml;
 use tracing::{debug, error, info, warn};
 
-use dwow::{
+use dwow_core::{
     async_daemonize,
     net::{
         session::{SESSION_DIRECT, SESSION_INBOUND, SESSION_MANUAL},

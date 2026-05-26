@@ -16,13 +16,13 @@ their current features. The components covered are:
 
 * `dwowd` is the DarkWow fullnode. It validates blockchain
 transactions and stays connected to the p2p network.
-* `dww` is a CLI wallet. It provides an interface to smart contracts
+* `dwow_wallet` is a CLI wallet. It provides an interface to smart contracts
 such as Money and DAO, manages our keys and coins, and scans the
 blockchain to update our balances.
 * `xmrig` is the mining daemon used in DarkWow. Connects to `dwowd`
 over its `Stratum` RPC, and requests new block headers to mine.
 
-The config files for `dwowd` and `dww` are sectioned into three
+The config files for `dwowd` and `dwow_wallet` are sectioned into three
 parts, each marked `[network_config]`. The sections look like this:
 
 * `[network_config."darkwow-testnet"]`
@@ -47,8 +47,8 @@ rest of this tutorial assumes we are setting up a testnet node.
 For a simplified setup, use the provided shell scripts in `contrib/testnet/`:
 
 ```shell
-# 1.  dwowd and dww
-cargo build --release -p dwowd -p dww
+# 1.  dwowd and dwow_wallet
+cargo build --release -p dwowd -p dwow_wallet
 
 # 2. Setup testnet node (creates directories and config)
 cd contrib/testnet
@@ -105,10 +105,10 @@ on how to install Rust and necessary deps. Skip last step of the build
 process, as you don't need to compile all binaries of the project.
 
 Once you have the repository in place, and everything is installed, we
-can compile the `dwowd` node and the `dww` wallet CLI:
+can compile the `dwowd` node and the `dwow_wallet` wallet CLI:
 
 ```shell
-$ make dwowd dww
+$ make dwowd dwow_wallet
 
 ...
 make -C bin/dwowd \
@@ -124,25 +124,25 @@ RUSTFLAGS="" cargo build --target=x86_64-unknown-linux-gnu --release --package d
 cp -f ../../target/x86_64-unknown-linux-gnu/release/dwowd dwowd
 cp -f ../../target/x86_64-unknown-linux-gnu/release/dwowd ../../dwowd
 make[1]: Leaving directory '/home/anon/dwow/bin/dwowd'
-make -C bin/dww \
+make -C bin/drk \
         PREFIX="/home/anon/.cargo" \
         CARGO="cargo" \
         RUST_TARGET="x86_64-unknown-linux-gnu" \
         RUSTFLAGS=""
-make[1]: Entering directory '/home/anon/dwow/bin/dww'
-RUSTFLAGS="" cargo build --target=x86_64-unknown-linux-gnu --release --package dww
+make[1]: Entering directory '/home/anon/dwow/bin/drk'
+RUSTFLAGS="" cargo build --target=x86_64-unknown-linux-gnu --release --package dwow_wallet
 ...
-   Compiling dww v0.5.0 (/home/anon/dwow/bin/dww)
+   Compiling dwow_wallet v0.5.0 (/home/anon/dwow/bin/drk)
     Finished `release` profile [optimized] target(s) in 2m 16s
-cp -f ../../target/x86_64-unknown-linux-gnu/release/dww dww
-cp -f ../../target/x86_64-unknown-linux-gnu/release/dww ../../dww
-make[1]: Leaving directory '/home/anon/dwow/bin/dww'
+cp -f ../../target/x86_64-unknown-linux-gnu/release/dwow_wallet dwow_wallet
+cp -f ../../target/x86_64-unknown-linux-gnu/release/dwow_wallet ../../dwow_wallet
+make[1]: Leaving directory '/home/anon/dwow/bin/drk'
 ```
 
 This process will now compile the node and the wallet CLI tool.
-When finished, we can begin using the network. Run `dwowd` and `dww`
+When finished, we can begin using the network. Run `dwowd` and `dwow_wallet`
 once so their config files are spawned on your system. These config files
-will be used to `dwowd` and `dww`.
+will be used to `dwowd` and `dwow_wallet`.
 
 Please note that the exact paths may differ depending on your local setup.
 
@@ -153,7 +153,7 @@ Config file created in "~/.config/dwow/dwowd_config.toml". Please review it and 
 ```
 
 ```shell
-$ ./dww interactive
+$ ./dwow_wallet interactive
 
 Config file created in "~/.config/dwow/dww_config.toml". Please review it and try again.
 ```
@@ -171,11 +171,11 @@ follow the [Tor Guide](../misc/nodes/tor-guide.md#configure-network-settings).
 
 ### Wallet initialization
 
-Now it's time to initialize your wallet. For this we use `dww`, a separate
+Now it's time to initialize your wallet. For this we use `dwow_wallet`, a separate
 wallet CLI which is created to interface with the smart contract used
 for payments and swaps.
 
-First, you need to change the password in the `dww` config. Open
+First, you need to change the password in the `dwow_wallet` config. Open
 your config file in a text editor (the default path is
 `~/.config/dwow/dww_config.toml`). Look for the section marked
 `[network_config."testnet"]` and change this line:
@@ -187,7 +187,7 @@ wallet_pass = "changeme"
 
 Initialize a wallet and create a keypair. See
 [Wallet Architecture](../arch/wallet.md) for details. Use
-`-c bin/dww/dww_config.toml -n localnet` for localnet configuration.
+`-c bin/drk/dww_config.toml -n localnet` for localnet configuration.
 
 ### Darkfid
 
@@ -224,7 +224,7 @@ and you should see a `Blockchain synced!` message after some time.
 ### Miner
 
 It's not necessary for broadcasting transactions or proceeding with the
-rest of the tutorial (`dwowd` and `dww` handle this), but if you want
+rest of the tutorial (`dwowd` and `dwow_wallet` handle this), but if you want
 to help secure the network, you can participate in the mining process
 by running an `xmrig` mining daemon. In this example we will build
 `xmrig` from its respective source code repository. Make sure you are
@@ -279,7 +279,7 @@ retrieves blocks from `dwowd` to mine. Make sure you have
 address:
 
 ```shell
-./dww wallet address
+./dwow_wallet wallet address
 
 {YOUR_DARKFI_WALLET_ADDRESS}
 ```
@@ -330,17 +330,17 @@ pause mining.
 
 ### Wallet sync
 
-From this point forward in the guide we will use `dww` in `interactive`
+From this point forward in the guide we will use `dwow_wallet` in `interactive`
 mode for all our wallet operations. In another terminal, run the
 following command:
 
 ```shell
-$ ./dww interactive
+$ ./dwow_wallet interactive
 
 dww>
 ```
 
-In order to receive incoming coins, you'll need to use the `dww`
+In order to receive incoming coins, you'll need to use the `dwow_wallet`
 tool to subscribe on `dwowd` so you can receive notifications for
 incoming blocks. The blocks have to be scanned for transactions,
 and to find coins that are intended for you. In the interactive shell,

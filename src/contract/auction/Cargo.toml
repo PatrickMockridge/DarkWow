@@ -17,7 +17,7 @@ thiserror = "2.0.17"
 
 # The following dependencies are used for the client API and
 # probably shouldn't be in WASM
-dwow = { path = "../../../", features = ["zk"], optional = true }
+dwow_core = { path = "../../../", features = ["zk"], optional = true }
 chacha20poly1305 = { version = "0.10.1", optional = true }
 halo2_proofs = { version = "0.3.2", optional = true }
 tracing = { version = "0.1.44", optional = true }
@@ -41,7 +41,7 @@ dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 default = []
 no-entrypoint = []
 client = [
-    "dwow",
+    "dwow_core",
     "dwow-serial/async",
     "rand",
     "chacha20poly1305",

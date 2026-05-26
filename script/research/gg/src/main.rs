@@ -30,7 +30,7 @@ use std::{
 };
 
 use clap::{Parser, Subcommand};
-use dwow::{
+use dwow_core::{
     blockchain::{block_store::append_tx_to_merkle_tree, BlockInfo, Blockchain, BlockchainOverlay},
     cli_desc,
     tx::{ContractCallLeaf, TransactionBuilder},

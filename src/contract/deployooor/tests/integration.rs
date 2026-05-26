@@ -30,7 +30,7 @@
 //!   4. Negative: locking an already-locked contract fails
 //!   5. Negative: deploying to a locked contract fails
 
-use dwow::Result;
+use dwow_core::Result;
 use dwow_contract_test_harness::{
     contract_graph::Contract, init_logger, Holder, TestHarness,
 };

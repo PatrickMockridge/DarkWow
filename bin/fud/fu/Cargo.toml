@@ -9,7 +9,7 @@ homepage = "https://darkwow.org"
 repository = "https://codeberg.org/darkrenaissance/darkfi"
 
 [dependencies]
-dwow = {path = "../../../", features = ["util", "rpc"]}
+dwow_core = {path = "../../../", features = ["util", "rpc"]}
 fud = {path = "../fud/"}
 
 # Async

@@ -23,7 +23,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use dwow::{
+use dwow_core::{
     net::{P2p, P2pPtr, Settings},
     rpc::jsonrpc::JsonSubscriber,
     system::ExecutorPtr,

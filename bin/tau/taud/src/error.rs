@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::rpc::jsonrpc::{ErrorCode, JsonError, JsonResponse, JsonResult};
+use dwow_core::rpc::jsonrpc::{ErrorCode, JsonError, JsonResponse, JsonResult};
 use tinyjson::JsonValue;
 
 #[derive(Debug, thiserror::Error)]
@@ -33,7 +33,7 @@ pub enum TaudError {
     #[error("Invalid Data/Params: `{0}` ")]
     InvalidData(String),
     #[error("InternalError")]
-    Darkfi(#[from] dwow::error::Error),
+    Darkfi(#[from] dwow_core::error::Error),
     #[error("Json serialization error: `{0}`")]
     JsonError(String),
     #[error("Encryption error: `{0}`")]

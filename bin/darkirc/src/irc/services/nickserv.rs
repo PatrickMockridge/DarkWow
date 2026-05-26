@@ -26,7 +26,7 @@ use std::{
     sync::Arc,
 };
 
-use dwow::Result;
+use dwow_core::Result;
 use dwow_sdk::crypto::SecretKey;
 use dwow_serial::serialize_async;
 use smol::lock::RwLock;

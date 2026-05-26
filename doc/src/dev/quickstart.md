@@ -91,7 +91,7 @@ docker run --rm --network=host \
 
 The `darkwow-testnet` image serves as a single-container mining node for joining
 the **public DarkWow testnet**. The image runs the node (dwowd); the wallet
-(`dww`) runs natively on the host.
+(`dwow_wallet`) runs natively on the host.
 
 ```bash
 docker pull darkrenaissance/darkwow-testnet:latest
@@ -121,7 +121,7 @@ integration tests at both Level 1 and Level 2.
 
 | Domain | Contracts | Harnesses |
 |---|---|---|
-| **Finance** | native_token, money_v3, stablecoin, dex, bridge, atomic_swap, pool_stake | ✅ All |
+| **Finance** | native_token, money_v3, stablecoin, dex, bridge, pool_stake | ✅ All |
 | **Gaming** | baccarat, roulette, slot, darktoshi_dice, lottery, game_room, betting_stake | ✅ All |
 | **Governance** | dao_escrow, subscription, labor_market, tender | ✅ All |
 | **Identity** | identity, attestation, oracle | ✅ All |

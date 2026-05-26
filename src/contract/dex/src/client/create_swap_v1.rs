@@ -23,7 +23,7 @@
 
 //! CreateSwap ZK proof generation
 
-use dwow::{
+use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
@@ -195,7 +195,7 @@ pub fn create_create_swap_proof(
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
 
-    //dwow::zk::export_witness_json("proof/witness/create_swap_v1.json", &witnesses, &public_inputs.to_vec());
+    //dwow_core::zk::export_witness_json("proof/witness/create_swap_v1.json", &witnesses, &public_inputs.to_vec());
     let circuit = ZkCircuit::new(witnesses, zkbin);
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 

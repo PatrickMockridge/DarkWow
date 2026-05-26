@@ -25,7 +25,7 @@
 //!
 //! Provides isolated testing for DarkToshi Dice contract.
 
-use dwow::{
+use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
@@ -67,11 +67,11 @@ impl DarkToshiDiceHarness {
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();
 
         let commit_bet_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
             &commit_bet_zkbin,
         );
         let settle_bet_circuit = ZkCircuit::new(
-            dwow::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
+            dwow_core::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
             &settle_bet_zkbin,
         );
 
@@ -220,7 +220,7 @@ impl DarkToshiDiceHarness {
 pub struct CommitBetResult {
     pub call_data: Vec<u8>,
     pub public_inputs: CommitBetV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of reveal_roll
@@ -232,5 +232,5 @@ pub struct RevealRollResult {
 pub struct SettleBetResult {
     pub call_data: Vec<u8>,
     pub public_inputs: SettleBetV1PublicInputs,
-    pub proof: dwow::zk::Proof,
+    pub proof: dwow_core::zk::Proof,
 }

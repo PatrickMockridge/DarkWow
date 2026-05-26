@@ -46,7 +46,7 @@ VERBOSE=true ./contrib/docker/testnet-node/native-workflow.sh
 make
 ```
 
-This compiles dwowd, dww (wallet CLI), and all 28 contract WASMs.
+This compiles dwowd, dwow_wallet (wallet CLI), and all 28 contract WASMs.
 
 ### 2. Start dwowd
 
@@ -80,7 +80,7 @@ Use `-n darkwow-testnet` for the public testnet.
 ### 5. Import Mining Secret
 
 dwowd auto-generates a mining keypair on first start. The secret is stored at
-`~/.local/share/dwow/dwowd/darkwow-testnet/mining_secret`. Import it into dww
+`~/.local/share/dwow/dwowd/darkwow-testnet/mining_secret`. Import it into dwow_wallet
 so mining rewards are spendable:
 
 ```bash
@@ -88,7 +88,7 @@ so mining rewards are spendable:
 MINING_SECRET=$(cat ~/.local/share/dwow/dwowd/darkwow-testnet/mining_secret)
 
 # Import into wallet
-./target/release/dww -n darkwow-testnet wallet import-secret "$MINING_SECRET"
+./target/release/dwow_wallet -n darkwow-testnet wallet import-secret "$MINING_SECRET"
 ```
 
 Verify the mining address matches:
@@ -123,37 +123,37 @@ done
 ### 8. Scan for Coins
 
 ```bash
-./target/release/dww -n darkwow-testnet scan
+./target/release/dwow_wallet -n darkwow-testnet scan
 ```
 
 ### 9. Check Balance
 
 ```bash
-./target/release/dww -n darkwow-testnet wallet balance
+./target/release/dwow_wallet -n darkwow-testnet wallet balance
 ```
 
 ### 10. Deploy a Contract (Example: Money V3)
 
 ```bash
 # Generate deploy authority
-DEPLOY_AUTH=$(./target/release/dww -n darkwow-testnet contract generate-deploy)
+DEPLOY_AUTH=$(./target/release/dwow_wallet -n darkwow-testnet contract generate-deploy)
 
 # Deploy the contract
-./target/release/dww -n darkwow-testnet contract deploy "$DEPLOY_AUTH" \
+./target/release/dwow_wallet -n darkwow-testnet contract deploy "$DEPLOY_AUTH" \
     ./src/contract/money_v3/money_v3.wasm | \
-    ./target/release/dww -n darkwow-testnet broadcast
+    ./target/release/dwow_wallet -n darkwow-testnet broadcast
 
 # After getting the ContractId from the deploy output, register it:
-./target/release/dww -n darkwow-testnet contract register money_v3 <ContractId>
+./target/release/dwow_wallet -n darkwow-testnet contract register money_v3 <ContractId>
 ```
 
 ### 11. Send a Transfer
 
 ```bash
 # Self-transfer 100,000,000 DARK (0.1 DRKW)
-ADDR=$(./target/release/dww -n darkwow-testnet wallet address | tail -1)
-./target/release/dww -n darkwow-testnet transfer 100000000 DRKW "$ADDR" | \
-    ./target/release/dww -n darkwow-testnet broadcast
+ADDR=$(./target/release/dwow_wallet -n darkwow-testnet wallet address | tail -1)
+./target/release/dwow_wallet -n darkwow-testnet transfer 100000000 DRKW "$ADDR" | \
+    ./target/release/dwow_wallet -n darkwow-testnet broadcast
 ```
 
 Note: Every transaction requires a 42,000,000 DARK fee.
@@ -162,7 +162,7 @@ Note: Every transaction requires a 42,000,000 DARK fee.
 
 ```bash
 # Invoke a function on a registered contract
-./target/release/dww -n darkwow-testnet contract invoke <ContractId> <function>
+./target/release/dwow_wallet -n darkwow-testnet contract invoke <ContractId> <function>
 ```
 
 ## Contract Commands Reference
@@ -217,7 +217,7 @@ mining address stored in dwowd's database.
 **Contract deploy fails.** The fee is 42,000,000 DARK — ensure your balance covers it.
 Check that `money_v3.wasm` exists at `src/contract/money_v3/` (built by `make contracts`).
 
-**Wallet balance shows zero after mining.** Run `dww scan` first — the wallet must
+**Wallet balance shows zero after mining.** Run `dwow_wallet scan` first — the wallet must
 scan the blockchain to find coins belonging to its keys.
 
 **Port already in use.** Another `dwowd` process may be running. Check:

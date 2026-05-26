@@ -12,12 +12,12 @@ with. Once your friend has submitted a transaction to the network, it
 should be in the consensus' mempool, waiting for inclusion in the next
 block(s). Depending on your network configuration, confirmation of the
 blocks could take some time. You'll have to wait for this to happen. If
-your `dww` subscription is running, then after some time your new
+your `dwow_wallet` subscription is running, then after some time your new
 balance should be in your wallet.
 
 ![pablo-waiting0](img/pablo0.jpg)
 
-You can check your wallet balance using `dww`:
+You can check your wallet balance using `dwow_wallet`:
 
 ```shell
 dww> wallet balance

@@ -31,7 +31,7 @@
 //!
 //! DAO-Escrow is a WASM contract that requires client-side ZK proof generation.
 
-use dwow::{tx::{ContractCallLeaf, Transaction}, Error, Result};
+use dwow_core::{tx::{ContractCallLeaf, Transaction}, Error, Result};
 use dwow_sdk::{
     crypto::pasta_prelude::PrimeField,
     crypto::poseidon_hash,
@@ -84,13 +84,13 @@ impl Drk {
         });
 
         // Load DAO-Escrow Init ZK binary
-        let init_zkbin = dwow::zkas::ZkBinary::decode(DAO_ESCROW_ZKAS_INIT_V1_BIN, false)
+        let init_zkbin = dwow_core::zkas::ZkBinary::decode(DAO_ESCROW_ZKAS_INIT_V1_BIN, false)
             .map_err(|e| Error::Custom(format!("Failed to decode Init ZK binary: {:?}", e)))?;
 
         // Create Init circuit with empty witnesses (they'll be set during proof generation)
-        let init_wits = dwow::zk::vm_heap::empty_witnesses(&init_zkbin)?;
-        let init_circuit = dwow::zk::vm::ZkCircuit::new(init_wits, &init_zkbin);
-        let init_pk = dwow::zk::proof::ProvingKey::build(init_zkbin.k, &init_circuit);
+        let init_wits = dwow_core::zk::vm_heap::empty_witnesses(&init_zkbin)?;
+        let init_circuit = dwow_core::zk::vm::ZkCircuit::new(init_wits, &init_zkbin);
+        let init_pk = dwow_core::zk::proof::ProvingKey::build(init_zkbin.k, &init_circuit);
 
         // Build InitV1CallData for ZK proof
         // Note: nullifier_k is a CONSTANT in the circuit - it's baked into the .zk.bin
@@ -235,13 +235,13 @@ impl Drk {
 
         // Load PayPremium ZK binary
         let premium_zkbin =
-            dwow::zkas::ZkBinary::decode(DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN, false)
+            dwow_core::zkas::ZkBinary::decode(DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN, false)
                 .map_err(|e| Error::Custom(format!("Failed to decode PayPremium ZK binary: {:?}", e)))?;
 
         // Create PayPremium circuit with empty witnesses
-        let premium_wits = dwow::zk::vm_heap::empty_witnesses(&premium_zkbin)?;
-        let premium_circuit = dwow::zk::vm::ZkCircuit::new(premium_wits, &premium_zkbin);
-        let premium_pk = dwow::zk::proof::ProvingKey::build(premium_zkbin.k, &premium_circuit);
+        let premium_wits = dwow_core::zk::vm_heap::empty_witnesses(&premium_zkbin)?;
+        let premium_circuit = dwow_core::zk::vm::ZkCircuit::new(premium_wits, &premium_zkbin);
+        let premium_pk = dwow_core::zk::proof::ProvingKey::build(premium_zkbin.k, &premium_circuit);
 
         // Build PayPremiumV1CallData for ZK proof
         let call_data = dwow_dao_escrow_contract::client::pay_premium_v1::PayPremiumV1CallData::new(

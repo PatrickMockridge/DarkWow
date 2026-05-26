@@ -11,7 +11,7 @@ edition = "2024"
 
 [dependencies]
 dwow-sdk = {path = "../../../../src/sdk"}
-dwow = {path = "../../../../", features = ["zk"]}
+dwow_core = {path = "../../../../", features = ["zk"]}
 dwow-serial = {path = "../../../../src/serial"}
 
 [patch.crates-io]

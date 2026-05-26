@@ -25,7 +25,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use halo2_proofs::{circuit::Value, pasta::Fp};
 use rand::rngs::OsRng;
 
-use dwow::{
+use dwow_core::{
     zk::{
         proof::{ProvingKey, VerifyingKey},
         vm::ZkCircuit,

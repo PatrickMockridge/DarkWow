@@ -24,7 +24,7 @@
 // extern crate darkfi_serial;
 
 use honggfuzz::fuzz;
-use dwow::zkas::{Lexer, Parser, Compiler, Analyzer};
+use dwow_core::zkas::{Lexer, Parser, Compiler, Analyzer};
 use std::str;
 
 fn main() {

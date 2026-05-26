@@ -43,11 +43,11 @@ This starts a devnet with mining enabled. Blocks mine instantly
 
 ## Check That It Works
 
-From any machine with the `dww` CLI wallet:
+From any machine with the `dwow_wallet` CLI wallet:
 
 ```bash
-dww -n dwow-devnet scan
-dww -n dwow-devnet wallet balance
+dwow_wallet -n dwow-devnet scan
+dwow_wallet -n dwow-devnet wallet balance
 ```
 
 ## Architecture
@@ -130,7 +130,7 @@ no secret extraction needed.
 
 ```bash
 NETWORK="dwow-devnet"
-DRK="./target/release/dww"
+DRK="./target/release/dwow_wallet"
 
 # Generate a keypair
 $DRK -n $NETWORK wallet keygen
@@ -190,7 +190,7 @@ The test pipeline automates build → start → health-check for quick iteration
 
 Phases:
 1. Clean previous deployment
-2. Validate prerequisites (dww binary, Docker files)
+2. Validate prerequisites (dwow_wallet binary, Docker files)
 3. Generate wallet keypair (stored in local wallet DB)
 4. Build Docker images
 5. Start containers (bridge mode)
@@ -207,7 +207,7 @@ After the pipeline completes, run contract tests:
 
 Both scripts use the wallet initialized by `test_pipeline.sh`. They never
 extract secrets from containers — the wallet already has the mining key from
-step 3 of the pipeline. `dww scan` decrypts coinbase notes client-side via
+step 3 of the pipeline. `dwow_wallet scan` decrypts coinbase notes client-side via
 AEAD, following the privacy model.
 
 ## Opening to the Internet

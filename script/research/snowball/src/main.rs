@@ -26,7 +26,7 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use dwow::util::time::Timestamp;
+use dwow_core::util::time::Timestamp;
 use dwow_serial::Encodable;
 use num_bigint::BigUint;
 use rand::prelude::SliceRandom;

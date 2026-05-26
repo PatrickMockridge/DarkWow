@@ -20,7 +20,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-use dwow::net;
+use dwow_core::net;
 use dwow_serial::{AsyncDecodable, VarInt};
 use smol::io::AsyncReadExt;
 use std::sync::Arc;

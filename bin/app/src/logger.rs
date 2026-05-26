@@ -33,7 +33,7 @@ use tracing_subscriber::filter::{LevelFilter, Targets};
 
 #[cfg(any(not(target_os = "android"), feature = "enable-filelog"))]
 use {
-    dwow::util::logger::{EventFormatter, Level, TargetFilter},
+    dwow_core::util::logger::{EventFormatter, Level, TargetFilter},
     //tracing_subscriber::fmt::format::FmtSpan,
 };
 
@@ -91,7 +91,7 @@ pub fn setup_logging() -> Option<WorkerGuard> {
         let file_layer = tracing_subscriber::fmt::Layer::new()
             .event_format(EventFormatter::new(false, true))
             .fmt_fields(tracing_subscriber::fmt::format::debug_fn(
-                dwow::util::logger::file_field_formatter,
+                dwow_core::util::logger::file_field_formatter,
             ))
             .with_writer(non_blocking_file_rotate)
             .with_filter(
@@ -123,7 +123,7 @@ pub fn setup_logging() -> Option<WorkerGuard> {
             //.with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
             .event_format(EventFormatter::new(true, true))
             .fmt_fields(tracing_subscriber::fmt::format::debug_fn(
-                dwow::util::logger::terminal_field_formatter,
+                dwow_core::util::logger::terminal_field_formatter,
             ))
             .with_writer(std::io::stdout)
             .with_filter(

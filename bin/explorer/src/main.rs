@@ -33,7 +33,7 @@ use std::{
 
 use arg::Args;
 use async_trait::async_trait;
-use dwow::{
+use dwow_core::{
     blockchain::BlockInfo,
     rpc::{
         client::RpcClient,
@@ -462,7 +462,7 @@ fn main() -> Result<()> {
     let ex = Arc::new(Executor::new());
     let (signal, shutdown) = async_channel::unbounded::<()>();
 
-    dwow::util::logger::setup_logging(verbose, None)?;
+    dwow_core::util::logger::setup_logging(verbose, None)?;
 
     info!(target: "explorer", "RPC Endpoint: {}", evalue);
     info!(target: "explorer", "DB Path: {}", dvalue);
@@ -476,7 +476,7 @@ fn main() -> Result<()> {
             future::block_on(async {
                 realmain(rpc_endpoint, db_path, revert_to, ex.clone()).await?;
                 drop(signal);
-                Ok::<(), dwow::Error>(())
+                Ok::<(), dwow_core::Error>(())
             })
         });
 

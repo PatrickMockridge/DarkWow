@@ -29,7 +29,7 @@ use tinyjson::JsonValue;
 use tracing::{debug, warn};
 use url::Url;
 
-use dwow::{
+use dwow_core::{
     dht::{
         event::DhtEvent, impl_dht_node_defaults, Dht, DhtHandler, DhtLookupReply, DhtNode,
         HostCacheItem,

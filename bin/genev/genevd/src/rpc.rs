@@ -28,7 +28,7 @@ use smol::lock::{Mutex, MutexGuard};
 use tinyjson::JsonValue;
 use tracing::{debug, error};
 
-use dwow::{
+use dwow_core::{
     event_graph::{proto::EventPut, Event, EventGraphPtr},
     net,
     rpc::{

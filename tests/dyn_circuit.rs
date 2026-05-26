@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow::zk::assign_free_advice;
+use dwow_core::zk::assign_free_advice;
 use halo2_proofs::{
     arithmetic::Field,
     circuit::{
