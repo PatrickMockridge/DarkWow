@@ -60,6 +60,10 @@ impl LinearBlockchain {
     pub fn with_finality(db: Arc<sled::Db>, finality_config: FinalityConfig) -> Result<Self> {
         let store = LinearStore::new(db)?;
         let consensus = PoWConsensus::default();
+
+        // Restore persisted consensus state (target + timestamps) if available
+        consensus.load(store.consensus_tree()).ok();
+
         let height = store.get_height().unwrap_or(0);
 
         // Initialize RandomX VM with default key
@@ -209,6 +213,11 @@ impl LinearBlockchain {
 
         // Insert block
         self.insert_block(block)?;
+
+        // Update difficulty after block is accepted
+        self.consensus.record_block(block.header.timestamp);
+        self.consensus.adjust_target();
+        let _ = self.consensus.save(self.store.consensus_tree());
 
         info!(target: "linear_blockchain", "Block {} applied successfully", block_hash);
         Ok(())

@@ -193,7 +193,7 @@ impl DwowNode {
         };
 
         // Combine coinbase with mempool transactions
-        let mut all_txs = mempool_txs;
+        let mut all_txs = mempool_txs.clone();
         all_txs.push(coinbase_tx);
 
         // Create miner and mine a block
@@ -204,6 +204,12 @@ impl DwowNode {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "dwowd::rpc::miner", "Mining failed: {}", e);
+                // Re-insert transactions on mining failure
+                if let Some(ref mp) = self.mempool {
+                    for tx in mempool_txs {
+                        let _ = mp.add(tx).await;
+                    }
+                }
                 return JsonError::new(InternalError, Some(format!("Mining failed: {}", e)), id)
                     .into()
             }
@@ -236,6 +242,12 @@ impl DwowNode {
             }
             Err(e) => {
                 error!(target: "dwowd::rpc::miner", "Failed to apply block: {}", e);
+                // Re-insert transactions on apply failure
+                if let Some(ref mp) = self.mempool {
+                    for tx in mempool_txs {
+                        let _ = mp.add(tx).await;
+                    }
+                }
                 return JsonError::new(InternalError, Some(format!("Failed to apply block: {}", e)), id)
                     .into()
             }

@@ -23,14 +23,17 @@
 
 //! Linear-testnet consensus initialization task
 //!
-//! This module provides a simplified consensus init for darkwow-devnet mode,
-//! which bypasses the overlay/diff system used by the standard consensus.
+//! This module handles P2P block sync for the linear blockchain.
+//! On startup, it queries connected peers for their best height via
+//! GetTip/Tip, then pulls missing blocks via GetBlocks/Blocks and
+//! applies them through full validation.
 
 use std::sync::Arc;
 
 use smol::Executor;
-use tracing::info;
+use tracing::{error, info, warn};
 
+use crate::proto::linear_sync::{Blocks, GetBlocks, GetTip, Tip, LINEAR_SYNC_BATCH};
 use crate::{DwowNodePtr, Result};
 
 /// Auxiliary structure representing node consensus init task configuration.
@@ -46,19 +49,159 @@ pub struct ConsensusInitTaskConfig {
 
 /// Async task to initialize consensus for darkwow-devnet mode.
 ///
-/// Unlike the standard consensus_init_task, this function:
-/// - Skips overlay-based genesis verification
-/// - Marks the node as synced immediately
-/// - Does not run the full consensus protocol (linear uses simple PoW mining via RPC)
+/// On startup, this task:
+/// 1. Waits for at least one connected P2P peer
+/// 2. Queries peer heights via GetTip/Tip
+/// 3. If behind, pulls missing blocks via GetBlocks/Blocks
+/// 4. Applies blocks through full validation (PoW, merkle, WASM)
+/// 5. Parks until the node stops
 pub async fn consensus_linear_init_task(
-    _node: DwowNodePtr,
-    _config: ConsensusInitTaskConfig,
+    node: DwowNodePtr,
+    config: ConsensusInitTaskConfig,
     _ex: Arc<Executor<'static>>,
 ) -> Result<()> {
-    info!(target: "dwowd::task::consensus_linear_init_task", "Linear-testnet consensus initialized (synced=true)");
+    info!(target: "dwowd::task::consensus_linear_init_task", "Starting linear consensus init...");
 
-    // For darkwow-devnet, we don't need the full consensus task since
-    // mining is done via the miner.mine_linear RPC endpoint.
-    // We just wait forever (the stop() will terminate us)
+    // If skip_sync is set, park immediately (tests, single-node)
+    if config.skip_sync {
+        info!(target: "dwowd::task::consensus_linear_init_task", "Sync skipped, parking forever");
+        return std::future::pending().await
+    }
+
+    // Get the dwowd linear blockchain wrapper (full validation)
+    let blockchain = match &node.linear_blockchain {
+        Some(lb) => lb.clone(),
+        None => {
+            info!(target: "dwowd::task::consensus_linear_init_task",
+                "No linear blockchain configured, parking forever");
+            return std::future::pending().await
+        }
+    };
+
+    let p2p = node.p2p_handler.p2p.clone();
+
+    // Wait for at least one connected peer before attempting sync
+    info!(target: "dwowd::task::consensus_linear_init_task", "Waiting for peer connections...");
+    loop {
+        if !p2p.hosts().peers().is_empty() {
+            break
+        }
+        smol::Timer::after(std::time::Duration::from_secs(1)).await;
+    }
+
+    let local_height = blockchain.get_height();
+    info!(target: "dwowd::task::consensus_linear_init_task",
+        "Connected to peers, local height: {}", local_height);
+
+    // Query all peers for their best height
+    let mut max_peer_height: u64 = local_height;
+
+    for channel in &p2p.hosts().peers() {
+        let Ok(tip_sub) = channel.subscribe_msg::<Tip>().await else {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "Failed to subscribe to Tip messages on channel");
+            continue
+        };
+
+        if channel.send(&GetTip).await.is_err() {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "Failed to send GetTip to channel");
+            continue
+        }
+
+        match tip_sub.receive_with_timeout(5).await {
+            Ok(tip) => {
+                info!(target: "dwowd::task::consensus_linear_init_task",
+                    "Peer height: {} (hash: {})", tip.height, tip.hash);
+                if tip.height > max_peer_height {
+                    max_peer_height = tip.height;
+                }
+            }
+            Err(_) => {
+                warn!(target: "dwowd::task::consensus_linear_init_task",
+                    "GetTip timed out or failed for channel");
+                continue
+            }
+        }
+    }
+
+    // If we're behind, pull and apply missing blocks
+    if max_peer_height > local_height {
+        info!(target: "dwowd::task::consensus_linear_init_task",
+            "Behind: local height {} < peer height {}. Syncing...",
+            local_height, max_peer_height);
+
+        let mut next_height = local_height + 1;
+
+        while next_height <= max_peer_height {
+            let batch_size = (max_peer_height - next_height + 1).min(LINEAR_SYNC_BATCH as u64);
+
+            // Re-fetch channel list in case peers disconnected
+            let channels = p2p.hosts().peers();
+            if channels.is_empty() {
+                warn!(target: "dwowd::task::consensus_linear_init_task",
+                    "Lost all peers during sync at height {}", next_height);
+                break
+            }
+
+            let channel = &channels[0];
+
+            // Subscribe to Blocks responses before sending the request
+            let Ok(blocks_sub) = channel.subscribe_msg::<Blocks>().await else {
+                warn!(target: "dwowd::task::consensus_linear_init_task",
+                    "Failed to subscribe to Blocks messages, retrying...");
+                smol::Timer::after(std::time::Duration::from_secs(1)).await;
+                continue
+            };
+
+            let request = GetBlocks { start_height: next_height, count: batch_size };
+            if channel.send(&request).await.is_err() {
+                warn!(target: "dwowd::task::consensus_linear_init_task",
+                    "Failed to send GetBlocks, retrying...");
+                smol::Timer::after(std::time::Duration::from_secs(1)).await;
+                continue
+            }
+
+            match blocks_sub.receive_with_timeout(15).await {
+                Ok(blocks_msg) => {
+                    let received = blocks_msg.blocks.len();
+                    info!(target: "dwowd::task::consensus_linear_init_task",
+                        "Received {} blocks starting at height {}", received, next_height);
+
+                    if received == 0 {
+                        warn!(target: "dwowd::task::consensus_linear_init_task",
+                            "Peer returned zero blocks, sync complete");
+                        break
+                    }
+
+                    for block in &blocks_msg.blocks {
+                        match blockchain.apply_block_with_uncles(block, &[]).await {
+                            Ok(()) => {
+                                next_height = block.header.height + 1;
+                            }
+                            Err(e) => {
+                                error!(target: "dwowd::task::consensus_linear_init_task",
+                                    "Failed to apply synced block at height {}: {}",
+                                    block.header.height, e);
+                                // Continue with remaining blocks; the failed
+                                // block will be re-requested on next retry
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    warn!(target: "dwowd::task::consensus_linear_init_task",
+                        "GetBlocks timed out at height {}, retrying...", next_height);
+                    smol::Timer::after(std::time::Duration::from_secs(2)).await;
+                    continue
+                }
+            }
+        }
+    }
+
+    info!(target: "dwowd::task::consensus_linear_init_task",
+        "Sync complete at height {}", blockchain.get_height());
+
+    // Park forever — block production is triggered via RPC or stratum miner
     std::future::pending().await
 }

@@ -81,6 +81,18 @@ impl DwowNode {
             }
         };
 
+        // Reject coinbase transactions from the mempool — these are miner-only
+        if tx.coinbase.is_some() {
+            error!(target: "dwowd::rpc::tx_submit_linear", "Rejecting coinbase transaction from mempool");
+            return JsonError::new(InvalidParams, Some("Coinbase transactions cannot be submitted to mempool".to_string()), id).into()
+        }
+
+        // Reject transactions with no meaningful content
+        if tx.inputs.is_empty() && tx.outputs.is_empty() && tx.contract_calls.is_empty() {
+            error!(target: "dwowd::rpc::tx_submit_linear", "Rejecting empty transaction");
+            return JsonError::new(InvalidParams, Some("Transaction has no inputs, outputs, or contract calls".to_string()), id).into()
+        }
+
         let tx_hash = format!("{}", tx.hash());
 
         // Add to mempool

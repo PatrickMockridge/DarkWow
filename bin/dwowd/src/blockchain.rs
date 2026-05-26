@@ -292,6 +292,8 @@ impl LinearBlockchain {
             config.min_target,
             config.max_target,
         );
+        // Restore persisted consensus state (target + timestamps) if available
+        consensus.load(store.consensus_tree()).ok();
         let zk_verifier = ZkVerifier;
         let height = AtomicU64::new(store.get_height().unwrap_or(0));
 
@@ -403,6 +405,8 @@ impl LinearBlockchain {
             let mut consensus = self.consensus.lock().unwrap();
             consensus.record_block(block.header.timestamp);
             consensus.adjust_target();
+            // Persist consensus state so difficulty survives restarts
+            let _ = consensus.save(self.store.consensus_tree());
         }
 
         // Track coins from coinbase transactions
@@ -537,7 +541,8 @@ impl LinearBlockchain {
             return Err(Error::Custom("UncleMerkleRootMismatch".to_string()))
         }
 
-        // Verify each uncle's PoW and merkle proof
+        // Verify each uncle's PoW, merkle proof, recency, and uniqueness
+        let current_height = self.height.load(Ordering::SeqCst);
         let consensus = self.consensus.lock().unwrap();
         for (i, uncle) in uncles.iter().enumerate() {
             match consensus.verify_uncle_pow(uncle, &vm) {
@@ -557,6 +562,20 @@ impl LinearBlockchain {
                 error!(target: "linear_blockchain", "Uncle {} failed merkle proof verification", uncle.hash(&vm));
                 return Err(Error::Custom("UncleProofVerificationFailed".to_string()))
             }
+
+            // Reject uncles that are too old (beyond MAX_UNCLE_DEPTH)
+            if uncle.header.height <= current_height.saturating_sub(dwow_linear::MAX_UNCLE_DEPTH as u64) {
+                error!(target: "linear_blockchain", "Uncle {} height {} too old (current: {}, max depth: {})",
+                    uncle.hash(&vm), uncle.header.height, current_height, dwow_linear::MAX_UNCLE_DEPTH);
+                return Err(Error::Custom("UncleTooOld".to_string()))
+            }
+
+            // Reject duplicate uncles already stored in a prior canonical block
+            let uncle_key = blake3::hash(&serde_json::to_vec(&uncle.header).unwrap());
+            if self.store.has_uncle(uncle_key.as_bytes())? {
+                error!(target: "linear_blockchain", "Uncle {} already stored in chain", uncle.hash(&vm));
+                return Err(Error::Custom("DuplicateUncle".to_string()))
+            }
         }
         drop(consensus);
 
@@ -568,7 +587,6 @@ impl LinearBlockchain {
         // attests to having seen the uncle at this height. An uncle from
         // a different height or parent would have a different header hash
         // and would fail the merkle proof check above.
-        let current_height = self.height.load(Ordering::SeqCst);
         if current_height > 0 {
             let previous = self.store.get_block(current_height).map_err(|e| Error::Custom(e.to_string()))?;
             let previous_vm = self.get_vm(previous.header.randomx_key);
@@ -576,6 +594,20 @@ impl LinearBlockchain {
                 error!(target: "linear_blockchain", "Block {} has invalid previous hash", block_hash);
                 return Err(Error::Custom("InvalidPreviousHash".to_string()))
             }
+        }
+
+        // Verify height continuity: block must extend the chain forward.
+        // Reject backward moves (height <= current) and same-height overwrites.
+        if block.header.height <= current_height {
+            error!(
+                target: "linear_blockchain",
+                "Block {} height {} <= current height {}",
+                block_hash, block.header.height, current_height
+            );
+            return Err(Error::Custom(format!(
+                "HeightDiscontinuity: height {} <= current {}",
+                block.header.height, current_height
+            )))
         }
 
         // --- Collect all contract calls into a flat work list ---
@@ -810,9 +842,13 @@ impl LinearBlockchain {
         for (wasm, contract_id, ix) in &pending_deployments {
             info!(target: "linear_blockchain", "Deploying contract {:?} via Deployooor", contract_id);
 
-            // Store WASM directly in contracts tree (same as deploy_contract)
-            self.store.set_contract_data(&contract_id.to_bytes(), wasm)
-                .map_err(|e| Error::Custom(format!("DeployV1 WASM storage: {}", e)))?;
+            // Write WASM through the overlay so it participates in the single
+            // atomic batch commit below — no direct sled write that could
+            // outlive a failed block.
+            main_overlay.state.cache.insert(
+                sled_overlay::sled::IVec::from(contract_id.to_bytes().as_slice()),
+                sled_overlay::sled::IVec::from(wasm.as_slice()),
+            );
 
             // Run __initialize within the main overlay so its state changes
             // (tree creation, config) are part of the same atomic batch as
@@ -853,19 +889,21 @@ impl LinearBlockchain {
             info!(target: "linear_blockchain", "Contract {:?} deployed via Deployooor successfully", contract_id);
         }
 
-        // Atomically commit all contract state changes to the contracts tree.
-        if let Some(batch) = main_overlay.aggregate() {
-            self.store.contracts_tree()
-                .apply_batch(batch)
-                .map_err(|e| Error::Custom(e.to_string()))?;
-        }
-
-        // Insert block
+        // Insert block FIRST — the blocks tree is the source of truth.
+        // If overlay commit fails after this point, the block is recorded
+        // and contract state can be replayed on restart.
         self.insert_validated_block(block)?;
 
         // Store uncles
         for uncle in uncles {
             self.store.insert_uncle(uncle).map_err(|e| Error::Custom(e.to_string()))?;
+        }
+
+        // Atomically commit all contract state changes to the contracts tree.
+        if let Some(batch) = main_overlay.aggregate() {
+            self.store.contracts_tree()
+                .apply_batch(batch)
+                .map_err(|e| Error::Custom(e.to_string()))?;
         }
 
         info!(target: "linear_blockchain", "Block {} applied successfully with {} uncles", block_hash, uncles.len());

@@ -30,6 +30,8 @@ use dwow::{
 };
 use tracing::info;
 
+use crate::blockchain::LinearBlockchain as DwowdBlockchain;
+use crate::mempool::MempoolPtr;
 use crate::DwowNodePtr;
 
 /// Transaction broadcast protocol
@@ -64,10 +66,17 @@ impl DwowP2pHandler {
     ///
     /// A new P2P instance is generated using provided settings and all
     /// corresponding protocols are registered.
+    ///
+    /// `linear_blockchain` is the base `dwow_linear` type used by the sync
+    /// handler to serve block requests. `dwowd_blockchain` is the full
+    /// dwowd wrapper with WASM validation, used by the broadcast handler
+    /// to apply received blocks.
     pub async fn init(
         settings: &Settings,
         executor: &ExecutorPtr,
         linear_blockchain: Option<Arc<dwow_linear::LinearBlockchain>>,
+        dwowd_blockchain: Option<Arc<DwowdBlockchain>>,
+        mempool: Option<MempoolPtr>,
     ) -> Result<DwowP2pHandlerPtr> {
         info!(
             target: "dwowd::proto::mod::DwowP2pHandler::init",
@@ -87,8 +96,8 @@ impl DwowP2pHandler {
             None
         };
 
-        let linear_broadcast = if let Some(blockchain) = linear_blockchain {
-            Some(LinearBroadcastHandler::init(&p2p, blockchain).await)
+        let linear_broadcast = if let Some(ref blockchain) = dwowd_blockchain {
+            Some(LinearBroadcastHandler::init(&p2p, blockchain.clone(), mempool).await)
         } else {
             None
         };

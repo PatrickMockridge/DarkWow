@@ -305,7 +305,12 @@ pub fn verify_uncle_proof(
         return false;
     }
 
-    // Step 3: Verify merkle proof
+    // Step 3: Validate proof depth — must not exceed MAX_UNCLE_DEPTH
+    if uncle.merkle_path.len() > MAX_UNCLE_DEPTH as usize {
+        return false;
+    }
+
+    // Step 4: Verify merkle proof
     let mut current = blake3::hash(&header_bytes).as_bytes().to_vec();
 
     for (level, sibling) in uncle.merkle_path.iter().enumerate() {
@@ -428,8 +433,9 @@ pub fn compute_reward(base_reward: u64, uncles: &[UncleBlock]) -> (u64, Vec<u64>
     }
 
     let total_pin_rewards: u64 = uncle_rewards.iter().sum();
-    // Canonical reward is base minus what it pays in pins (no over-minting)
-    let canonical_reward = base_reward - total_pin_rewards;
+    // Canonical reward is base minus what it pays in pins.
+    // Use saturating_sub to prevent underflow if pin rewards exceed base.
+    let canonical_reward = base_reward.saturating_sub(total_pin_rewards);
     (canonical_reward, uncle_rewards)
 }
 

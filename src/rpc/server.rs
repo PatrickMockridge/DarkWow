@@ -21,7 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{collections::HashSet, io::ErrorKind, sync::Arc};
+use std::{
+    collections::HashSet,
+    io::ErrorKind,
+    sync::Arc,
+    time::Instant,
+};
 
 use async_trait::async_trait;
 use smol::{
@@ -335,6 +340,11 @@ pub async fn accept<'a, T: 'a>(
     // We'll hold our background tasks here
     let tasks = Arc::new(Mutex::new(HashSet::new()));
 
+    // Per-connection rate limiter: max 100 requests per second
+    const RPC_RATE_LIMIT: usize = 100;
+    let mut rate_limit_count: usize = 0;
+    let mut rate_limit_window = Instant::now();
+
     loop {
         let mut buf = Vec::with_capacity(INIT_BUF_SIZE);
 
@@ -382,6 +392,29 @@ pub async fn accept<'a, T: 'a>(
         };
 
         debug!(target: "rpc::server", "{addr} --> {}", val.stringify()?);
+
+        // Rate limit check: sliding window of 1 second
+        let now = Instant::now();
+        if now.duration_since(rate_limit_window) >= std::time::Duration::from_secs(1) {
+            rate_limit_window = now;
+            rate_limit_count = 0;
+        }
+        if rate_limit_count >= RPC_RATE_LIMIT {
+            rate_limit_count += 1;
+            warn!(target: "rpc::server::accept", "Rate limit exceeded for {addr}");
+            let err: JsonResult =
+                JsonError::new(ErrorCode::InternalError, Some("Rate limit exceeded".to_string()), req.id)
+                    .into();
+            let mut writer_lock = writer.lock().await;
+            if settings.use_http() {
+                let _ = http_write_to_stream(&mut writer_lock, &err);
+            } else {
+                let _ = write_to_stream(&mut writer_lock, &err);
+            }
+            drop(writer_lock);
+            continue
+        }
+        rate_limit_count += 1;
 
         // Create a new task to handle request in the background
         let task = StoppableTask::new();

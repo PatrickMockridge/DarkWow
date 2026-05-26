@@ -34,6 +34,7 @@ const BLOCKS_TREE: &str = "blocks";
 const TXS_TREE: &str = "transactions";
 const CONTRACTS_TREE: &str = "contracts";
 const UNCLES_TREE: &str = "uncles";
+const CONSENSUS_TREE: &str = "consensus";
 
 /// Linear store - simple sled-backed blockchain storage
 pub struct LinearStore {
@@ -42,6 +43,7 @@ pub struct LinearStore {
     transactions: Tree,
     contracts: Tree,
     uncles: Tree,
+    consensus: Tree,
 }
 
 impl LinearStore {
@@ -51,8 +53,9 @@ impl LinearStore {
         let transactions = db.open_tree(TXS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let contracts = db.open_tree(CONTRACTS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let uncles = db.open_tree(UNCLES_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
+        let consensus = db.open_tree(CONSENSUS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
 
-        Ok(Self { db, blocks, transactions, contracts, uncles })
+        Ok(Self { db, blocks, transactions, contracts, uncles, consensus })
     }
 
     /// Insert a block at the given height
@@ -119,6 +122,11 @@ impl LinearStore {
         &self.contracts
     }
 
+    /// Access the underlying consensus sled tree.
+    pub fn consensus_tree(&self) -> &sled::Tree {
+        &self.consensus
+    }
+
     /// Set contract data (WASM binary) for a contract ID
     pub fn set_contract_data(&self, contract_id: &[u8], data: &[u8]) -> Result<(), LinearError> {
         self.contracts.insert(contract_id, data).map_err(|e| LinearError::StorageError(e.to_string()))?;
@@ -146,6 +154,11 @@ impl LinearStore {
         let value = serde_json::to_vec(uncle).map_err(|e| LinearError::SerializationError(e.to_string()))?;
         self.uncles.insert(key, value.as_slice()).map_err(|e| LinearError::StorageError(e.to_string()))?;
         Ok(())
+    }
+
+    /// Check if an uncle block with the given hash has already been stored
+    pub fn has_uncle(&self, hash: &[u8]) -> Result<bool, LinearError> {
+        self.uncles.contains_key(hash).map_err(|e| LinearError::StorageError(e.to_string()))
     }
 
     /// Get an uncle block by hash

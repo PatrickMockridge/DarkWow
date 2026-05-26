@@ -34,22 +34,33 @@
 //! When blocks come too fast the target decreases (harder); when too slow it
 //! increases (easier).
 
-use blake3::Hash as Blake3Hash;
+use std::{cell::Cell, sync::Mutex};
 
-use super::{Block, UncleBlock, Result};
+use blake3::Hash as Blake3Hash;
+use tracing::debug;
+
+use super::{Block, LinearError, UncleBlock, Result};
 
 /// How many recent block timestamps to keep for target adjustment.
 const TIMESTAMP_WINDOW: usize = 20;
+
+/// Fixed-point scale factor for difficulty adjustment arithmetic.
+/// All ratio and adjustment calculations use integer math at this precision
+/// to guarantee deterministic results across CPU architectures.
+const SCALE: u64 = 1_000_000;
 
 /// Proof-of-Work consensus engine with dynamic target adjustment.
 ///
 /// `target` is the maximum valid hash value: `u32_le(hash[0..4]) <= target`.
 /// Higher target = easier mining. `difficulty()` returns the conventional
 /// difficulty measure (higher = harder), derived as `u32::MAX / target`.
-#[derive(Clone)]
+///
+/// Uses interior mutability (`Cell` + `Mutex`) so that `record_block` and
+/// `adjust_target` can take `&self` while `LinearBlockchain` methods use
+/// shared references.
 pub struct PoWConsensus {
     /// Current target — `hash_u32 <= target` is valid. Higher = easier.
-    target: u32,
+    target: Cell<u32>,
     /// Desired seconds between blocks (configuration constant).
     target_block_time: u64,
     /// Floor — target will never drop below this (hardest possible).
@@ -57,7 +68,19 @@ pub struct PoWConsensus {
     /// Ceiling — target will never rise above this (easiest possible).
     max_target: u32,
     /// Recent block timestamps (newest last). Used by `adjust_target`.
-    timestamps: Vec<u64>,
+    timestamps: Mutex<Vec<u64>>,
+}
+
+impl Clone for PoWConsensus {
+    fn clone(&self) -> Self {
+        Self {
+            target: Cell::new(self.target.get()),
+            target_block_time: self.target_block_time,
+            min_target: self.min_target,
+            max_target: self.max_target,
+            timestamps: Mutex::new(self.timestamps.lock().unwrap().clone()),
+        }
+    }
 }
 
 impl PoWConsensus {
@@ -69,25 +92,26 @@ impl PoWConsensus {
         max_target: u32,
     ) -> Self {
         Self {
-            target: initial_target,
+            target: Cell::new(initial_target),
             target_block_time,
             min_target,
             max_target,
-            timestamps: Vec::with_capacity(TIMESTAMP_WINDOW),
+            timestamps: Mutex::new(Vec::with_capacity(TIMESTAMP_WINDOW)),
         }
     }
 
     /// Current target — `hash_u32 <= target` is valid. Higher = easier.
     pub fn target(&self) -> u32 {
-        self.target
+        self.target.get()
     }
 
     /// Conventional difficulty (higher = harder), derived from target.
     pub fn difficulty(&self) -> u64 {
-        if self.target == 0 {
+        let t = self.target.get();
+        if t == 0 {
             return u64::MAX;
         }
-        u32::MAX as u64 / self.target as u64
+        u32::MAX as u64 / t as u64
     }
 
     /// Desired block interval in seconds.
@@ -96,11 +120,12 @@ impl PoWConsensus {
     }
 
     /// Record a block timestamp for target tracking.
-    pub fn record_block(&mut self, timestamp: u64) {
-        if self.timestamps.len() >= TIMESTAMP_WINDOW {
-            self.timestamps.remove(0);
+    pub fn record_block(&self, timestamp: u64) {
+        let mut timestamps = self.timestamps.lock().unwrap();
+        if timestamps.len() >= TIMESTAMP_WINDOW {
+            timestamps.remove(0);
         }
-        self.timestamps.push(timestamp);
+        timestamps.push(timestamp);
     }
 
     /// Recalculate target based on recent block intervals.
@@ -108,18 +133,22 @@ impl PoWConsensus {
     /// Uses a simple proportional controller: if blocks arrive faster than
     /// `target_block_time`, the target decreases (harder); if slower, it
     /// increases (easier). Single-step adjustments are capped at ±10%.
-    pub fn adjust_target(&mut self) -> u32 {
-        if self.timestamps.len() < 2 {
-            return self.target;
+    ///
+    /// All arithmetic uses integer fixed-point math (scale = `SCALE`)
+    /// to guarantee deterministic results across CPU architectures.
+    pub fn adjust_target(&self) -> u32 {
+        let timestamps = self.timestamps.lock().unwrap();
+        if timestamps.len() < 2 {
+            return self.target.get();
         }
 
         // Sum intervals between consecutive timestamps in the window
-        let n = self.timestamps.len().min(10);
-        let start = self.timestamps.len() - n;
+        let n = timestamps.len().min(10);
+        let start = timestamps.len() - n;
         let mut total_interval = 0u64;
-        for i in start + 1..self.timestamps.len() {
+        for i in start + 1..timestamps.len() {
             total_interval +=
-                self.timestamps[i].saturating_sub(self.timestamps[i - 1]);
+                timestamps[i].saturating_sub(timestamps[i - 1]);
         }
         let count = (n - 1) as u64;
 
@@ -129,26 +158,101 @@ impl PoWConsensus {
             self.target_block_time
         };
 
-        let ratio = if avg_interval == 0 {
-            0.9 // blocks are instant — make it harder
+        // Fixed-point ratio: SCALE means "exactly on target".
+        // > SCALE means blocks arrive too fast → need harder (lower target).
+        // < SCALE means blocks arrive too slow → need easier (higher target).
+        let ratio_scaled = if avg_interval == 0 {
+            // Blocks are instant — make it 10% harder
+            SCALE * 9 / 10
         } else {
-            let r = self.target_block_time as f64 / avg_interval as f64;
-            r.clamp(0.5, 2.0)
+            let r = (self.target_block_time * SCALE) / avg_interval;
+            r.clamp(SCALE / 2, SCALE * 2)
         };
 
-        // Clamp single-step change to ±10%
-        let adjustment = if ratio > 1.0 {
-            1.0 + (ratio - 1.0).min(0.1)
+        // Clamp single-step change to ±10%.
+        // SCALE + SCALE/10 = 1.1x (harder); SCALE - SCALE/10 = 0.9x (easier).
+        let tenth = SCALE / 10;
+        let adjustment = if ratio_scaled > SCALE {
+            let excess = (ratio_scaled - SCALE).min(tenth);
+            SCALE + excess
+        } else if ratio_scaled < SCALE {
+            let deficit = (SCALE - ratio_scaled).min(tenth);
+            SCALE - deficit
         } else {
-            1.0 - (1.0 - ratio).min(0.1)
+            SCALE
         };
 
-        // Divide: ratio > 1 (blocks fast) → target decreases (harder)
-        //        ratio < 1 (blocks slow) → target increases (easier)
-        let new_target = (self.target as f64 / adjustment) as u32;
-        self.target = new_target.clamp(self.min_target, self.max_target);
+        // ratio_scaled > SCALE (blocks fast) → adjustment > SCALE → target decreases (harder)
+        // ratio_scaled < SCALE (blocks slow) → adjustment < SCALE → target increases (easier)
+        let current = self.target.get() as u64;
+        let new_target = (current * SCALE / adjustment) as u32;
+        let clamped = new_target.clamp(self.min_target, self.max_target);
 
-        self.target
+        debug!(
+            target: "consensus",
+            "Target adjusted: {} → {} (avg_interval={}s, ratio_scaled={}, adjustment={})",
+            current, clamped, avg_interval, ratio_scaled, adjustment
+        );
+
+        self.target.set(clamped);
+        clamped
+    }
+
+    /// Persist consensus state to a sled tree so difficulty survives restarts.
+    pub fn save(&self, tree: &sled::Tree) -> Result<()> {
+        tree.insert(b"target", &self.target.get().to_le_bytes())
+            .map_err(|e| LinearError::StorageError(e.to_string()))?;
+        tree.insert(b"target_block_time", &self.target_block_time.to_le_bytes())
+            .map_err(|e| LinearError::StorageError(e.to_string()))?;
+        tree.insert(b"min_target", &self.min_target.to_le_bytes())
+            .map_err(|e| LinearError::StorageError(e.to_string()))?;
+        tree.insert(b"max_target", &self.max_target.to_le_bytes())
+            .map_err(|e| LinearError::StorageError(e.to_string()))?;
+
+        let ts = self.timestamps.lock().unwrap();
+        if !ts.is_empty() {
+            let mut data = Vec::with_capacity(ts.len() * 8);
+            for t in ts.iter() {
+                data.extend_from_slice(&t.to_le_bytes());
+            }
+            tree.insert(b"timestamps", data)
+                .map_err(|e| LinearError::StorageError(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    /// Load consensus state from a sled tree.
+    /// Values not found in storage keep their current defaults.
+    pub fn load(&self, tree: &sled::Tree) -> Result<()> {
+        if let Some(bytes) = tree
+            .get(b"target")
+            .map_err(|e| LinearError::StorageError(e.to_string()))?
+        {
+            if bytes.len() == 4 {
+                let mut arr = [0u8; 4];
+                arr.copy_from_slice(&bytes);
+                self.target.set(u32::from_le_bytes(arr));
+            }
+        }
+        if let Some(bytes) = tree
+            .get(b"timestamps")
+            .map_err(|e| LinearError::StorageError(e.to_string()))?
+        {
+            let mut timestamps = self.timestamps.lock().unwrap();
+            timestamps.clear();
+            for chunk in bytes.chunks_exact(8) {
+                let mut arr = [0u8; 8];
+                arr.copy_from_slice(chunk);
+                timestamps.push(u64::from_le_bytes(arr));
+            }
+        }
+        debug!(
+            target: "consensus",
+            "Loaded consensus state: target={}, {} timestamps",
+            self.target.get(),
+            self.timestamps.lock().unwrap().len()
+        );
+        Ok(())
     }
 
     /// Verify a block's RandomX hash meets the target.
@@ -163,7 +267,7 @@ impl PoWConsensus {
     /// 64-bit check — see `stratum.rs` target encoding comment.
     pub fn check_pow(&self, hash: &Blake3Hash) -> bool {
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
-        hash_u32 <= self.target
+        hash_u32 <= self.target.get()
     }
 
     /// Verify an uncle block meets the target.

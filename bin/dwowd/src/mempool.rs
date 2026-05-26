@@ -26,14 +26,27 @@
 //! Collects transactions with contract calls before they are mined into blocks.
 
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use dwow_linear::Transaction;
 use smol::lock::Mutex;
 
+/// Maximum number of transactions allowed in the mempool
+const MAX_MEMPOOL_SIZE: usize = 10_000;
+
+/// Maximum age of a transaction in the mempool before eviction (1 hour)
+const MAX_MEMPOOL_AGE_SECS: u64 = 3600;
+
+/// A transaction with its admission timestamp
+struct MempoolEntry {
+    tx: Transaction,
+    added_at: u64,
+}
+
 /// Simple mempool for collecting transactions before mining
 pub struct Mempool {
     /// Transactions pending inclusion in a block
-    txs: Mutex<Vec<Transaction>>,
+    txs: Mutex<Vec<MempoolEntry>>,
 }
 
 impl Mempool {
@@ -42,25 +55,40 @@ impl Mempool {
         Self { txs: Mutex::new(Vec::new()) }
     }
 
-    /// Add a transaction to the mempool
-    /// Returns error if transaction is already in mempool
+    /// Add a transaction to the mempool.
+    /// Returns error if mempool is full or transaction is already in mempool.
     pub async fn add(&self, tx: Transaction) -> dwow::Result<()> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
         let mut txs = self.txs.lock().await;
+
+        // Evict stale transactions
+        txs.retain(|e| now.saturating_sub(e.added_at) < MAX_MEMPOOL_AGE_SECS);
+
         // Check for duplicates
         let tx_hash = tx.hash();
         for existing in txs.iter() {
-            if existing.hash() == tx_hash {
+            if existing.tx.hash() == tx_hash {
                 return Err(dwow::Error::Custom("Transaction already in mempool".to_string()));
             }
         }
-        txs.push(tx);
+
+        // Reject if mempool is full
+        if txs.len() >= MAX_MEMPOOL_SIZE {
+            return Err(dwow::Error::Custom("Mempool is full".to_string()));
+        }
+
+        txs.push(MempoolEntry { tx, added_at: now });
         Ok(())
     }
 
     /// Get all transactions and clear the mempool
     pub async fn take_all(&self) -> Vec<Transaction> {
         let mut txs = self.txs.lock().await;
-        std::mem::take(&mut *txs)
+        std::mem::take(&mut *txs).into_iter().map(|e| e.tx).collect()
     }
 
     /// Get current number of transactions in mempool
@@ -76,7 +104,7 @@ impl Mempool {
     /// Remove a specific transaction by hash
     pub async fn remove(&self, tx_hash: &[u8; 32]) {
         let mut txs = self.txs.lock().await;
-        txs.retain(|tx| tx.hash().as_bytes() != tx_hash);
+        txs.retain(|e| e.tx.hash().as_bytes() != tx_hash);
     }
 }
 

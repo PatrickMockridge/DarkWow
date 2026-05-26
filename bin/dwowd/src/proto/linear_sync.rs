@@ -235,9 +235,12 @@ impl AsyncDecodable for Tip {
 // ============================================================================
 
 impl_p2p_message!(GetBlocks, "lineargetblocks", 16, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-impl_p2p_message!(Blocks, "linearblocks", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+/// Maximum size for a Blocks response: 4 MB (20 blocks @ ~100 KB each + overhead)
+const MAX_BLOCKS_BYTES: u64 = 4 * 1024 * 1024;
+
+impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 impl_p2p_message!(GetBlock, "lineargetblock", 8, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-impl_p2p_message!(BlockResponse, "linearblockresponse", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+impl_p2p_message!(BlockResponse, "linearblockresponse", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 impl_p2p_message!(GetTip, "lineargettip", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 impl_p2p_message!(Tip, "lineartip", 32, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 

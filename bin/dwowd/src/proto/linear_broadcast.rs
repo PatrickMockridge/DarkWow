@@ -50,11 +50,13 @@ use dwow::{
     Result,
 };
 use dwow_linear::caribina::verify_anchor;
-use dwow_linear::LinearBlockchain;
 use dwow_serial::{
     deserialize_async, serialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite,
     FutAsyncReadExt, FutAsyncWriteExt,
 };
+
+use crate::blockchain::LinearBlockchain;
+use crate::mempool::MempoolPtr;
 
 // ============================================================================
 // Message Type
@@ -105,7 +107,8 @@ impl AsyncEncodable for BlockBroadcast {
 impl AsyncDecodable for BlockBroadcast {
     async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
         let mut buf = Vec::new();
-        FutAsyncReadExt::read_to_end(d, &mut buf).await?;
+        let mut taken = d.take(MAX_BLOCK_SIZE as u64);
+        FutAsyncReadExt::read_to_end(&mut taken, &mut buf).await?;
         deserialize_async(&buf)
             .await
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
@@ -121,25 +124,32 @@ pub type LinearBroadcastHandlerPtr = Arc<LinearBroadcastHandler>;
 
 /// Bespoke linear blockchain block broadcast handler.
 ///
-/// This handler receives blocks from peers via P2P broadcast and inserts
-/// them into the local blockchain.
+/// This handler receives blocks from peers via P2P broadcast and applies
+/// them to the local blockchain with full validation (PoW, merkle roots,
+/// contract execution) through the dwowd LinearBlockchain wrapper.
 pub struct LinearBroadcastHandler {
     /// Handler for BlockBroadcast messages
     handler: ProtocolGenericHandlerPtr<BlockBroadcast, BlockBroadcast>,
-    /// Linear blockchain - Arc allows shared access with interior mutability
+    /// dwowd LinearBlockchain with full WASM validation (not the base lib type)
     blockchain: Arc<LinearBlockchain>,
+    /// Mempool for cleanup of confirmed transactions after block application
+    mempool: Option<MempoolPtr>,
 }
 
 impl LinearBroadcastHandler {
-    /// Initialize the broadcast handler
-    pub async fn init(p2p: &P2pPtr, blockchain: Arc<LinearBlockchain>) -> LinearBroadcastHandlerPtr {
+    /// Initialize the broadcast handler with the full-validation blockchain.
+    pub async fn init(
+        p2p: &P2pPtr,
+        blockchain: Arc<LinearBlockchain>,
+        mempool: Option<MempoolPtr>,
+    ) -> LinearBroadcastHandlerPtr {
         info!(
             target: "dwowd::proto::linear_broadcast::init",
             "Initializing linear broadcast handler"
         );
 
         let handler = ProtocolGenericHandler::new(p2p, "LinearBroadcast", SESSION_DEFAULT).await;
-        Arc::new(Self { handler, blockchain })
+        Arc::new(Self { handler, blockchain, mempool })
     }
 
     /// Start the handler - spawns receive loop
@@ -150,8 +160,9 @@ impl LinearBroadcastHandler {
         );
 
         let blockchain = self.blockchain.clone();
+        let mempool = self.mempool.clone();
         self.handler.task.clone().start(
-            handle_receive_block(self.handler.clone(), blockchain),
+            handle_receive_block(self.handler.clone(), blockchain, mempool),
             |res| async move {
                 match res {
                     Ok(()) | Err(dwow::Error::DetachedTaskStopped) => {}
@@ -200,10 +211,14 @@ pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_linear::Block) {
 // Receive Loop
 // ============================================================================
 
+/// Max block size in bytes for P2P reception (4 MB).
+const MAX_BLOCK_SIZE: usize = 4 * 1024 * 1024;
+
 /// Handle incoming block messages from peers
 async fn handle_receive_block(
     handler: ProtocolGenericHandlerPtr<BlockBroadcast, BlockBroadcast>,
     blockchain: Arc<LinearBlockchain>,
+    mempool: Option<MempoolPtr>,
 ) -> Result<()> {
     loop {
         let (channel, msg) = match handler.receiver.recv().await {
@@ -223,121 +238,29 @@ async fn handle_receive_block(
             msg.block.header.height
         );
 
-        // Verify PoW before inserting the block
-        let block_height = msg.block.header.height;
-        let randomx_key = msg.block.header.randomx_key;
-        let vm = blockchain.get_vm(randomx_key);
-        let block_hash = msg.block.hash(&vm);
-
-        let pow_valid = {
-            let consensus = &blockchain.consensus;
-            match consensus.verify_proof(&msg.block, &vm) {
-                Ok(true) => true,
-                Ok(false) => {
-                    tracing::warn!(
-                        target: "dwowd::proto::linear_broadcast",
-                        "Block at height {} failed PoW verification",
-                        block_height
-                    );
-                    false
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        target: "dwowd::proto::linear_broadcast",
-                        "Block at height {} PoW error: {e}",
-                        block_height
-                    );
-                    false
-                }
-            }
-        };
-
-        if !pow_valid {
-            handler.send_action(channel, ProtocolGenericAction::Skip).await;
-            continue;
-        }
-
-        // Verify Caribina anchor (if present and finality enforcement is enabled)
-        let anchor = &msg.block.header.anchor_tx_id;
-        if *anchor != [0u8; 32]
-            && blockchain.finality_config.should_verify_anchor(msg.block.header.finality_flags)
-        {
-            let mut hash_bytes = [0u8; 32];
-            hash_bytes.copy_from_slice(block_hash.as_bytes());
-            match verify_anchor(
-                anchor,
-                &hash_bytes,
-                msg.block.header.timestamp,
-                msg.block.header.height,
-            ) {
-                Ok(()) => {
-                    tracing::info!(
-                        target: "dwowd::proto::linear_broadcast",
-                        "Anchor verified for block {} at height {}",
-                        block_hash, block_height
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        target: "dwowd::proto::linear_broadcast",
-                        "Anchor verification failed for block {} at height {}: {}",
-                        block_hash, block_height, e
-                    );
-                    handler.send_action(channel, ProtocolGenericAction::Skip).await;
-                    continue;
-                }
-            }
-        }
-
-        // Verify Monero anchor (if present and finality enforcement is enabled)
-        if msg.block.header.anchor_monero_height != 0
-            && blockchain
-                .finality_config
-                .should_verify_monero_anchor(msg.block.header.finality_flags)
-        {
-            match dwow_linear::verify_monero_anchor(
-                msg.block.header.anchor_monero_height,
-                &msg.block.header.anchor_monero_hash,
-                msg.block.header.timestamp,
-                blockchain.finality_config.monerod_url.as_deref(),
-                blockchain.finality_config.monero_min_confirmations,
-            ) {
-                Ok(()) => {
-                    tracing::info!(
-                        target: "dwowd::proto::linear_broadcast",
-                        "Monero anchor verified for block {} at height {} (monero_height={})",
-                        block_hash,
-                        block_height,
-                        msg.block.header.anchor_monero_height,
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        target: "dwowd::proto::linear_broadcast",
-                        "Monero anchor verification failed for block {} at height {}: {}",
-                        block_hash,
-                        block_height,
-                        e,
-                    );
-                    handler.send_action(channel, ProtocolGenericAction::Skip).await;
-                    continue;
-                }
-            }
-        }
-
-        // Insert block into blockchain
-        match blockchain.insert_block(&msg.block) {
+        // Apply block with full validation (PoW, merkle roots, contract execution).
+        // Pass empty uncles — P2P blocks don't carry uncle data.
+        // The dwowd wrapper validates everything including WASM execution.
+        match blockchain.apply_block_with_uncles(&msg.block, &[]).await {
             Ok(()) => {
                 tracing::info!(
                     target: "dwowd::proto::linear_broadcast",
-                    "Block {} at height {} inserted from P2P",
-                    block_hash, block_height
+                    "Block at height {} applied from P2P",
+                    msg.block.header.height
                 );
+
+                // Clean confirmed transactions from the mempool
+                if let Some(ref mempool) = mempool {
+                    for tx in &msg.block.transactions {
+                        mempool.remove(tx.hash().as_bytes()).await;
+                    }
+                }
             }
             Err(e) => {
-                tracing::debug!(
+                tracing::warn!(
                     target: "dwowd::proto::linear_broadcast",
-                    "Failed to insert block: {e}"
+                    "Failed to apply block at height {} from P2P: {e}",
+                    msg.block.header.height
                 );
             }
         }

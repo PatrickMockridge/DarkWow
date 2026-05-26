@@ -81,8 +81,11 @@ impl<T: Clone> Publisher<T> {
     /// will begin accumulating messages from notify.
     /// Then when your main loop begins calling `sub.receive().await`, the messages will
     /// already be queued.
+    /// Maximum number of messages buffered per subscriber before dropping.
+    const SUBSCRIBER_BUFFER: usize = 1024;
+
     pub async fn subscribe(self: Arc<Self>) -> Subscription<T> {
-        let (sender, recvr) = smol::channel::unbounded();
+        let (sender, recvr) = smol::channel::bounded(Self::SUBSCRIBER_BUFFER);
 
         // Poor-man's do/while
         let mut subs = self.subs.lock().await;
@@ -112,11 +115,20 @@ impl<T: Clone> Publisher<T> {
                 continue
             }
 
-            if let Err(e) = sub.send(message_result.clone()).await {
-                warn!(
-                    target: "system::publisher",
-                    "[system::publisher] Error returned sending message in notify_with_exclude() call! {e}"
-                );
+            match sub.try_send(message_result.clone()) {
+                Ok(()) => {}
+                Err(smol::channel::TrySendError::Full(_)) => {
+                    warn!(
+                        target: "system::publisher",
+                        "Subscriber {id} channel full, dropping message"
+                    );
+                }
+                Err(smol::channel::TrySendError::Closed(_)) => {
+                    warn!(
+                        target: "system::publisher",
+                        "Subscriber {id} channel closed"
+                    );
+                }
             }
         }
     }

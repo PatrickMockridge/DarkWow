@@ -299,8 +299,20 @@ impl Dwowd {
             HeaderHash(genesis_hash.into())
         };
 
-        // Initialize P2P network (linear P2P handlers use dwow_linear types)
-        let p2p_handler = DwowP2pHandler::init(net_settings, ex, Some(linear_blockchain_p2p.clone())).await?;
+        // Create mempool early — needed by both the P2P handler (for cleanup)
+        // and the miner RPC (for transaction submission).
+        let mempool = Some(create_mempool());
+
+        // Initialize P2P network.
+        // - linear_blockchain_p2p (base lib) → used by sync handler to serve block requests
+        // - linear_blockchain (dwowd wrapper) → used by broadcast handler for full validation
+        let p2p_handler = DwowP2pHandler::init(
+            net_settings,
+            ex,
+            Some(linear_blockchain_p2p.clone()),
+            Some(linear_blockchain.clone()),
+            mempool.clone(),
+        ).await?;
 
         // Initialize the miners registry (placeholder for now)
         let registry = DwowMinersRegistry::init_linear(network, linear_blockchain.clone()).await?;
@@ -355,7 +367,7 @@ impl Dwowd {
         let min_block_interval = net_settings.pow.min_block_interval.unwrap_or(10);
         let node = DwowNode::new(
             Some(linear_blockchain),
-            Some(create_mempool()),
+            mempool,
             p2p_handler,
             registry,
             subscribers,
