@@ -144,6 +144,24 @@ for the Monero anchoring gadget. Both mechanisms are modeled in the
 - **Auction**: Privacy-preserving auctions
 - **Atomic Swap**: Cross-chain swaps
 
+### Wallet
+
+Every DarkWow wallet (`dww`) is a **full node** — it holds the complete
+blockchain on local disk and derives all state from local computation over
+sled trees and SQLite tables. There is no SPV, no light client, no network
+fetches for position resolution.
+
+The wallet interprets on-chain state through a **capability-based model**:
+coins, contract roles, ZK credentials, and DAO memberships are all capabilities.
+Actions (contract function calls) require capabilities, consume some via
+nullifiers, and produce new ones. A single-pass resolver scans each contract's
+sled tree and derives both held capabilities and available actions in one
+traversal.
+
+The `dww position` CLI command displays the user's current position —
+what they hold and what they can do — with no network round-trips. See
+[Wallet Architecture](doc/src/arch/wallet.md) for the full design.
+
 ---
 
 ## Developer Tooling
@@ -240,6 +258,10 @@ RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_
 
 # Native (no Docker): join public testnet, mine, deploy contracts, send transfers
 ./contrib/docker/darkwow-testnet/join-testnet.sh --mode native
+
+# Wallet capability resolution tests
+cargo test -p dww --lib -- capability::tests                # Level 2: 20 in-process resolver tests
+RAYON_NUM_THREADS=10 bash bin/drk/test_capability_lightweight.sh  # Level 1: CLI integration
 ```
 
 **Fork, build, customize.** Every contract in `src/contract/<name>/` is
@@ -323,6 +345,8 @@ cargo run -p dwowd -- --network darkwow-testnet
 | 1 — Lightweight | Deployooor-based deployment (21 contracts, no ZK) | `cargo test -p dwowd test_all_contracts_deploy` |
 | 2 — Heavyweight | Contract functions, ZK proofs, uncle-merkle stress (36 tests) | `RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight` |
 | 3 — Localnet | Multi-node Docker mining + contracts | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` |
+| Wallet L2 | Capability resolver logic (20 in-process tests) | `cargo test -p dww --lib -- capability::tests` |
+| Wallet L1 | CLI integration (bash, no ZK) | `RAYON_NUM_THREADS=10 bash bin/drk/test_capability_lightweight.sh` |
 
 > **USE AT YOUR OWN RISK.** No third-party audit. May 2026 internal hardening
 > addressed 17 failure modes across state machine, economic, identity/attestation,

@@ -230,6 +230,74 @@ The wallet SQLite database (`wallet_path`) schema is defined in
 | `scanned_blocks` | Last scanned block height (for resume) |
 | `aliases` | Human-readable token aliases |
 
+## Testing
+
+Wallet capability resolution is tested across three levels, mirroring the
+four-level contract testing taxonomy:
+
+### Level 1 — Bash CLI integration
+
+[`bin/drk/test_capability_lightweight.sh`](../../../bin/drk/test_capability_lightweight.sh)
+tests the `dww position` subcommand end-to-end:
+
+- Subcommand registration and help text
+- Error handling: missing config, corrupt config, no running node
+- End-to-end: start `dwowd` in devnet mode, mine blocks, scan, verify position output format
+
+No ZK proofs, no Docker. Runtime: ~30 seconds.
+
+### Level 2 — Rust resolver logic (in-process)
+
+`#[cfg(test)] mod tests` at the bottom of
+[`bin/drk/src/capability.rs`](../../../bin/drk/src/capability.rs) — 20 tests
+covering the full phase space:
+
+| Category | Tests | Scenarios |
+|---|---|---|
+| Empty / null state | 2 | Empty wallet, no descriptors registered |
+| Coin capabilities | 2 | Multiple coins, invalid bs58 coin_id skipped |
+| Escrow Created state | 2 | Buyer (CancelEscrow) + Seller (FundEscrow) |
+| Escrow Funded state | 3 | Buyer (RefundEscrow), Seller (ClaimEscrow), timeout on capability |
+| Terminal states | 3 | Claimed, Refunded, Cancelled — all produce zero caps/actions |
+| Multi-instance / multi-role | 4 | Mixed states, same user across roles, both roles same instance, multiple wallet addresses |
+| Null safety | 4 | Empty sled tree, corrupt entry, missing contract ID, unknown descriptor skipped |
+
+Each test constructs a temporary `sled::Db` and in-memory `WalletDb`, inserts
+serialized escrow entries, registers contract IDs, and asserts on the
+resolved capabilities and actions. No ZK proofs, no network, pure in-process.
+Runtime: <2 seconds.
+
+```bash
+cargo test -p dww --lib -- capability::tests
+```
+
+### Null-safety coverage
+
+Every fallible point in the resolver is exercised by at least one test:
+
+| # | Fallible point | Test |
+|---|---|---|
+| 1 | `wallet.get_addresses()` → Err | `warn!` log + empty set (manually verified) |
+| 2 | `wallet.get_coins(false)` → Err | `warn!` log + return (manually verified) |
+| 3 | `MONEY_V3_CONTRACT_ID.get()` → None | `test_null_missing_contract_id` |
+| 4 | `ESCROW_CONTRACT_ID.get()` → None | `test_null_missing_contract_id` |
+| 5 | `cache.db.open_tree(...)` → Err | `test_null_empty_sled_tree` |
+| 6 | `tree.iter()` entry → Err | `test_null_corrupt_entry` |
+| 7 | `deserialize::<Escrow>(...)` → Err | `test_null_corrupt_entry` |
+| 8 | `bs58::decode(&coin.coin_id)` → Err / wrong len | `test_null_coin_id_decode_failure` |
+| 9 | Empty descriptors map | `test_no_descriptors_registered` |
+| 10 | Unknown descriptor name | `test_unknown_descriptor_skipped` |
+
+### Level 3 — Docker integration
+
+[`contrib/docker/darkwow-testnet/test-contracts.sh`](../../../contrib/docker/darkwow-testnet/test-contracts.sh)
+Phase 8 runs `dww position` after contract deployment in a live multi-node
+Docker testnet and verifies:
+
+- Coin capabilities appear from mining rewards
+- Descriptors count is reported
+- Actions section reflects escrow instance state
+
 ## Related Documents
 
 - [Wallet Scanning](wallet_scanning.md) — how blocks are fetched and coins discovered

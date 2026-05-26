@@ -253,6 +253,38 @@ BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '"block_height":[0-9]*' | head -1 | 
 info "Final block height: $BLOCK_HEIGHT"
 
 # ==============================================================================
+# Phase 8: Capability position resolution
+# ==============================================================================
+echo ""
+info "=== Phase 8: Capability position resolution ==="
+
+# The position command resolves the wallet's current capabilities from
+# on-chain state — coins (spendable value) and contract roles (escrow, etc.).
+info "Running dww position..."
+POS_OUTPUT=$("$DWW" -n "$NETWORK" position 2>&1)
+echo "$POS_OUTPUT"
+
+# Verify position output structure
+echo "$POS_OUTPUT" | grep -q "Capabilities" && pass "position shows Held Capabilities" || fail "position shows Held Capabilities"
+echo "$POS_OUTPUT" | grep -q "Descriptors loaded" && pass "position reports descriptors count" || fail "position reports descriptors count"
+
+# Coin capabilities should appear from mining rewards
+if echo "$POS_OUTPUT" | grep -q "Coin worth"; then
+    pass "position shows Coin capabilities from mining"
+else
+    fail "position shows Coin capabilities from mining"
+fi
+
+# If no escrow instances exist, should say "No actions available"
+if echo "$POS_OUTPUT" | grep -q "No actions available"; then
+    pass "position correctly shows no actions (no escrow instances)"
+elif echo "$POS_OUTPUT" | grep -q "Available Actions"; then
+    pass "position shows available actions (escrow instances exist)"
+else
+    fail "position reports actions status"
+fi
+
+# ==============================================================================
 # Results
 # ==============================================================================
 echo ""
