@@ -87,7 +87,7 @@ works in linear blockchain mode (dwow-devnet, darkwow-testnet, or the legacy-nam
 * `Block` serialized into base64.
 
 ```rust,no_run,noplayground
-{{#include ../../../../../src/linear/src/block.rs:block-struct}}
+{{#include ../../../src/linear/src/block.rs:block-struct}}
 ```
 
 ### `blockchain.get_difficulty` {#blockchainget_difficulty}
