@@ -20,18 +20,9 @@ IMAGE_NAME="${IMAGE_NAME:-darkwow-testnet}"
 REGISTRY="${REGISTRY:-}"
 TAG="${TAG:-latest}"
 VERSION_TAG="${VERSION_TAG:-$(git describe --tags --always --dirty 2>/dev/null || echo "0.5.0")}"
+DOCKERFILE="contrib/docker/darkwow-testnet/Dockerfile"
 
-# Map image name to Dockerfile
-case "$IMAGE_NAME" in
-    darkwow-wallet)
-        DOCKERFILE="contrib/docker/darkwow-testnet/Dockerfile.wallet"
-        ;;
-    *)
-        DOCKERFILE="contrib/docker/darkwow-testnet/Dockerfile"
-        ;;
-esac
-
-echo "=== DarkWow Docker Build ==="
+echo "=== DarkWow Testnet Docker Build ==="
 echo "  Image:   ${REGISTRY}${IMAGE_NAME}:${TAG}"
 echo "  Version: ${REGISTRY}${IMAGE_NAME}:${VERSION_TAG}"
 echo "  File:    ${DOCKERFILE}"
