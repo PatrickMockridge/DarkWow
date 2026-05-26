@@ -24,7 +24,7 @@ PROOFS_BIN = $(PROOFS_SRC:=.bin)
 BINS = \
 	zkas \
 	dwowd \
-	dww \
+	dwow_wallet \
 	darkirc \
 	genev \
 	genevd \
@@ -84,7 +84,7 @@ dwowd: contracts
 		RUST_TARGET="$(RUST_TARGET)" \
 		RUSTFLAGS="$(RUSTFLAGS)"
 
-dww: contracts
+dwow_wallet: contracts
 	$(MAKE) -C bin/drk \
 		PREFIX="$(PREFIX)" \
 		CARGO="$(CARGO)" \

@@ -1,7 +1,7 @@
 #!/bin/bash
 # DarkWow — Wallet Capability Resolution Lightweight Tests (Level 1)
 #
-# Tests CLI integration of `dww position` — the capability-based position
+# Tests CLI integration of `dwow_wallet position` — the capability-based position
 # resolver exposed through the wallet binary.
 #
 # Level 1 scope (no ZK proofs, no Docker):
@@ -19,7 +19,7 @@ trap 'cleanup' EXIT
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TMPDIR="${TMPDIR:-/tmp}/dww_capability_test_$$"
-DWW="${REPO_ROOT}/target/debug/dww"
+DWW="${REPO_ROOT}/target/debug/dwow_wallet"
 DWOWD="${REPO_ROOT}/target/debug/dwowd"
 RPC_PORT=38345
 NETWORK="linear-testnet"
@@ -67,7 +67,7 @@ echo ""
 # ── Build ────────────────────────────────────────────────────────────
 echo "--- Build ---"
 cd "$REPO_ROOT"
-RAYON_NUM_THREADS=10 cargo build -p dww -p dwowd 2>&1 | tail -3
+RAYON_NUM_THREADS=10 cargo build -p dwow_wallet -p dwowd 2>&1 | tail -3
 echo ""
 
 # ── Test 1: Subcommand existence ─────────────────────────────────────

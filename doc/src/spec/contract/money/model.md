@@ -32,7 +32,14 @@ $$ \begin{aligned}
 \end{aligned} $$
 
 ```rust
-{{#include ../../../../../src/contract/money/src/model/mod.rs:coin-attributes}}
+pub struct CoinAttributes {
+    pub public_key: pallas::Point,
+    pub value: u64,
+    pub token_id: pallas::Base,
+    pub spend_hook: pallas::Base,
+    pub user_data: pallas::Base,
+    pub blind: pallas::Base,
+}
 ```
 
 $$ \t{Coin} : \t{Attrs}_\t{Coin} → 𝔽ₚ $$
@@ -52,7 +59,12 @@ $$ \begin{aligned}
 \end{aligned} $$
 
 ```rust
-{{#include ../../../../../src/contract/money/src/model/mod.rs:money-clear-input}}
+pub struct MoneyClearInput {
+    pub value: u64,
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+    pub signature_public_key: pallas::Point,
+}
 ```
 
 ### Input
@@ -69,7 +81,15 @@ $$ \begin{aligned}
 \end{aligned} $$
 
 ```rust
-{{#include ../../../../../src/contract/money/src/model/mod.rs:money-input}}
+pub struct MoneyInput {
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+    pub nullifier: pallas::Base,
+    pub merkle_root: pallas::Base,
+    pub spend_hook: pallas::Base,
+    pub user_data_commit: pallas::Base,
+    pub signature_public_key: pallas::Point,
+}
 ```
 
 ### Output
@@ -85,6 +105,11 @@ $$ \begin{aligned}
 \end{aligned} $$
 
 ```rust
-{{#include ../../../../../src/contract/money/src/model/mod.rs:money-output}}
+pub struct MoneyOutput {
+    pub value_commit: pallas::Point,
+    pub token_commit: pallas::Base,
+    pub coin_commit: pallas::Base,
+    pub encrypted_note: AeadEncryptedNote,
+}
 ```
 

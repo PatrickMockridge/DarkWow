@@ -16,11 +16,11 @@ echo "  DarkFi Wallet Initialization"
 echo "=========================================="
 echo ""
 
-# Check if dww CLI is available
-if ! command -v dww &> /dev/null; then
-    echo -e "${RED}ERROR: dww wallet CLI not found in PATH${NC}"
-    echo "Please build dww first:"
-    echo "  cargo build --release -p dww"
+# Check if dwow_wallet CLI is available
+if ! command -v dwow_wallet &> /dev/null; then
+    echo -e "${RED}ERROR: dwow_wallet wallet CLI not found in PATH${NC}"
+    echo "Please build dwow_wallet first:"
+    echo "  cargo build --release -p dwow_wallet"
     exit 1
 fi
 
@@ -37,7 +37,7 @@ if [ -f "$WALLET_PATH.db" ]; then
     echo -e "${YELLOW}Wallet already exists: $WALLET_PATH${NC}"
     echo ""
     echo "To open the wallet, run:"
-    echo "  dww --network testnet wallet --open $WALLET_NAME"
+    echo "  dwow_wallet --network testnet wallet --open $WALLET_NAME"
     exit 0
 fi
 
@@ -47,14 +47,14 @@ echo "You will be prompted to set a password."
 echo ""
 
 # Create wallet
-dww --network testnet wallet --create --name "$WALLET_NAME"
+dwow_wallet --network testnet wallet --create --name "$WALLET_NAME"
 
 echo ""
 echo -e "${GREEN}Wallet created successfully!${NC}"
 echo ""
 echo "Next steps:"
 echo "  1. Start the daemon: ./start.sh"
-echo "  2. Open wallet: dww --network testnet wallet --open $WALLET_NAME"
-echo "  3. Get address: dww address"
+echo "  2. Open wallet: dwow_wallet --network testnet wallet --open $WALLET_NAME"
+echo "  3. Get address: dwow_wallet address"
 echo ""
 echo "Remember to backup your seed phrase and password securely!"

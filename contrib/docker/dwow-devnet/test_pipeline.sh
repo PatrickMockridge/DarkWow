@@ -11,19 +11,19 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-DWW_BIN="${REPO_ROOT}/target/release/dww"
-DWW_DEBUG="${REPO_ROOT}/target/debug/dww"
+DWW_BIN="${REPO_ROOT}/target/release/dwow_wallet"
+DWW_DEBUG="${REPO_ROOT}/target/debug/dwow_wallet"
 
-# --- Locate dww binary ---
+# --- Locate dwow_wallet binary ---
 if [ -x "$DWW_BIN" ]; then
     DWW="$DWW_BIN"
 elif [ -x "$DWW_DEBUG" ]; then
     DWW="$DWW_DEBUG"
 else
-    echo "Building dww..."
-    (cd "$REPO_ROOT" && RAYON_NUM_THREADS=10 cargo build -p dww 2>&1)
+    echo "Building dwow_wallet..."
+    (cd "$REPO_ROOT" && RAYON_NUM_THREADS=10 cargo build -p dwow_wallet 2>&1)
     [ -x "$DWW_DEBUG" ] && DWW="$DWW_DEBUG" || DWW="$DWW_BIN"
-    [ -x "$DWW" ] || { echo "ERROR: dww binary not found after build"; exit 1; }
+    [ -x "$DWW" ] || { echo "ERROR: dwow_wallet binary not found after build"; exit 1; }
 fi
 
 NETWORK="dwow-devnet"
@@ -80,7 +80,7 @@ info "[2/8] Validating prerequisites..."
 [ -f "$SCRIPT_DIR/docker-compose.yml" ] || error "docker-compose.yml missing"
 [ -f "$SCRIPT_DIR/Dockerfile" ]         || error "Dockerfile missing"
 
-info "Using dww binary: $DWW"
+info "Using dwow_wallet binary: $DWW"
 "$DWW" --version 2>/dev/null || warn "dww --version failed (non-fatal)"
 pass "all required files present"
 

@@ -42,8 +42,8 @@ echo "[2/3] Building dwowd..."
 cargo build --release -p dwowd
 
 echo ""
-echo "[3/3] Building dww wallet..."
-cargo build --release -p dww
+echo "[3/3] Building dwow_wallet wallet..."
+cargo build --release -p dwow_wallet
 
 echo ""
 echo -e "${GREEN}Upgrade complete!${NC}"

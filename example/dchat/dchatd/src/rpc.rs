@@ -82,6 +82,16 @@ impl Dchat {
         JsonResponse::new(JsonValue::Array(msgs), id).into()
     }
 
+    // ANCHOR: pong
+    // RPCAPI:
+    // Simple ping/pong health check
+    // --> {"jsonrpc": "2.0", "method": "ping", "params": [], "id": 42}
+    // <-- {"jsonrpc": "2.0", "result": "pong", "id": 42}
+    async fn pong(&self, id: u16, _params: JsonValue) -> JsonResult {
+        JsonResponse::new(JsonValue::String("pong".to_string()), id).into()
+    }
+    // ANCHOR_END: pong
+
     // RPCAPI:
     // Activate or deactivate dnet in the P2P stack.
     // By sending `true`, dnet will be activated, and by sending `false` dnet will

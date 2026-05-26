@@ -33,8 +33,8 @@ trap 'echo "[FATAL] Pipeline killed by signal — last line ~$LINENO" >&2; exit 
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-DWW_BIN="${REPO_ROOT}/target/release/dww"
-DWW_DEBUG="${REPO_ROOT}/target/debug/dww"
+DWW_BIN="${REPO_ROOT}/target/release/dwow_wallet"
+DWW_DEBUG="${REPO_ROOT}/target/debug/dwow_wallet"
 
 # --- Help ---
 usage() {
@@ -54,7 +54,7 @@ Modes:
 Phases (native, merge):
   1.  Clean                Tear down previous containers, images, volumes
   2.  Validate prereqs     Check required files exist on disk
-  3.  Generate wallet      Create DarkWow keypair via dww
+  3.  Generate wallet      Create DarkWow keypair via dwow_wallet
   4.  Build                Build Docker images via compose
   5.  Start                Launch containers
   6.  Verify containers    Check all expected containers are running
@@ -77,7 +77,7 @@ Phases (bridge):
 Phases (join-native, join-merge):
   1.  Clean                Tear down previous join containers + fallback lilith
   2.  Validate prereqs     Check join-testnet.sh and required files exist
-  3.  Generate wallet      Create DarkWow keypair via dww
+  3.  Generate wallet      Create DarkWow keypair via dwow_wallet
   4.  Build                Build Docker image via compose
   5.  Static config        Extract generated dwowd_config.toml and validate keys
   6.  Container lifecycle  Start container, verify startup log messages
@@ -112,7 +112,7 @@ Options:
   --monerod-rpc-url URL     monerod JSON-RPC URL for anchor verification
   --no-cache                Pass --no-cache to docker compose build
   --fresh                   Aggressive clean: builder prune, image rm, volume prune
-  --with-wallet             Build and start wallet Docker container alongside devnet
+  --with-wallet N             Number of wallet containers (0-5, default: 0, recommended: 2)
 
 Examples:
   ./test_pipeline.sh                         # local devnet, native mining
@@ -120,7 +120,7 @@ Examples:
   ./test_pipeline.sh --mode bridge           # local devnet, full bridge lifecycle
   ./test_pipeline.sh --mode join-native      # join public testnet, solo mining
   ./test_pipeline.sh --mode join-merge       # join public testnet, merge mining
-  ./test_pipeline.sh --with-wallet           # local devnet + wallet container for docker exec
+  ./test_pipeline.sh --with-wallet 2         # local devnet + 2 wallet containers for docker exec
 
 After pipeline passes:
   ./test-contracts.sh --mode native          # contract deploy + transfer test
@@ -138,7 +138,7 @@ MONERO_MIN_CONFIRMATIONS="${MONERO_MIN_CONFIRMATIONS:-3}"
 MONEROD_RPC_URL="${MONEROD_RPC_URL:-}"
 NO_CACHE="${NO_CACHE:-false}"
 FRESH="${FRESH:-false}"
-WITH_WALLET="${WITH_WALLET:-false}"
+WITH_WALLET="${WITH_WALLET:-0}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
@@ -153,7 +153,7 @@ while [ $# -gt 0 ]; do
         --monerod-rpc-url=*) MONEROD_RPC_URL="${1#*=}"; shift ;;
         --no-cache) NO_CACHE="true"; shift ;;
         --fresh) FRESH="true"; shift ;;
-        --with-wallet) WITH_WALLET="true"; shift ;;
+        --with-wallet) WITH_WALLET="$2"; shift 2 ;;
         --help|-h) usage ;;
         *)
             echo "Unknown flag: $1"
@@ -171,6 +171,13 @@ if ! echo "$VALID_MODES" | grep -qw "$MODE"; then
     exit 1
 fi
 
+# Validate wallet count
+if ! [ "$WITH_WALLET" -ge 0 ] 2>/dev/null || ! [ "$WITH_WALLET" -le 5 ] 2>/dev/null; then
+    echo "Invalid wallet count: $WITH_WALLET"
+    echo "WITH_WALLET must be an integer between 0 and 5."
+    exit 1
+fi
+
 # In merge mining modes, enable Monero finality by default since merge
 # mining is the only source of Monero anchors in this pipeline.
 if [ "$MODE" = "merge" ] || [ "$MODE" = "join-merge" ]; then
@@ -178,16 +185,16 @@ if [ "$MODE" = "merge" ] || [ "$MODE" = "join-merge" ]; then
     MONEROD_RPC_URL="${MONEROD_RPC_URL:-http://monerod:28081/json_rpc}"
 fi
 
-# --- Locate dww binary ---
+# --- Locate dwow_wallet binary ---
 if [ -x "$DWW_BIN" ]; then
     DWW="$DWW_BIN"
 elif [ -x "$DWW_DEBUG" ]; then
     DWW="$DWW_DEBUG"
 else
-    echo "Building dww..."
-    (cd "$REPO_ROOT" && RAYON_NUM_THREADS=10 cargo build -p dww 2>&1)
+    echo "Building dwow_wallet..."
+    (cd "$REPO_ROOT" && RAYON_NUM_THREADS=10 cargo build -p dwow_wallet 2>&1)
     [ -x "$DWW_DEBUG" ] && DWW="$DWW_DEBUG" || DWW="$DWW_BIN"
-    [ -x "$DWW" ] || { echo "ERROR: dww binary not found after build"; exit 1; }
+    [ -x "$DWW" ] || { echo "ERROR: dwow_wallet binary not found after build"; exit 1; }
 fi
 
 NETWORK="darkwow-testnet"
@@ -396,7 +403,7 @@ phase_clean() {
         docker run --rm -v /tmp:/tmp ubuntu:24.04 rm -rf /tmp/dwow_mining_secret 2>/dev/null || \
         { warn "Could not remove /tmp/dwow_mining_secret (may be root-owned)"; }
 
-    # Remove dww wallet state so each run generates a fresh keypair.
+    # Remove dwow_wallet wallet state so each run generates a fresh keypair.
     clean_data_dir ~/.local/share/dwow/dww
 
     cd "$SCRIPT_DIR"
@@ -446,6 +453,12 @@ phase_clean() {
     docker compose --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
     docker compose --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
     docker compose --profile wallet --remove-orphans down --rmi all -v 2>/dev/null || true
+
+    # Remove any wallet containers started via docker run (multi-wallet)
+    for i in $(seq 1 5); do
+        docker rm -f "dwow-wallet-$i" 2>/dev/null || true
+        docker volume rm "wallet_data_$i" 2>/dev/null || true
+    done
 
     # Remove any lingering dwow-* containers (defense in depth)
     STALE=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^dwow-" || true)
@@ -538,8 +551,8 @@ phase_prereqs() {
         [ -f "$WASM_DEPLOOOOR" ] && pass "deployooor WASM found" || fail "deployooor WASM missing"
     fi
 
-    # Check dww
-    info "Using dww binary: $DWW"
+    # Check dwow_wallet
+    info "Using dwow_wallet binary: $DWW"
     "$DWW" --version 2>/dev/null || warn "dww --version failed (non-fatal)"
 
     # Check WASM files
@@ -575,7 +588,7 @@ phase_wallet() {
     WALLET_ADDRESS=$("$DWW" -n "$NETWORK" wallet address 2>&1)
 
     if [ -z "$WALLET_ADDRESS" ]; then
-        error "Failed to get wallet address (run: dww -n $NETWORK wallet address)"
+        error "Failed to get wallet address (run: dwow_wallet -n $NETWORK wallet address)"
     fi
 
     pass "DarkWow keypair generated"
@@ -643,7 +656,7 @@ phase_build() {
         check $? "docker build"
     fi
 
-    if [ "$WITH_WALLET" = "true" ] && ! is_join_mode; then
+    if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
         info "  Building wallet container..."
         docker compose --profile wallet build $BUILD_ARGS 2>&1
         check $? "docker build (wallet profile)"
@@ -715,15 +728,35 @@ phase_start() {
             docker compose --profile native up -d
     fi
 
-    if [ "$WITH_WALLET" = "true" ] && ! is_join_mode; then
-        info "Starting wallet container..."
-        WALLET_MODE=interactive docker compose --profile wallet up -d wallet 2>&1
+    if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
+        info "Starting $WITH_WALLET wallet container(s)..."
+        for i in $(seq 1 "$WITH_WALLET"); do
+            info "  Starting wallet-$i..."
+            VOLUME_ARGS="-v wallet_data_$i:/root/.local/share/dwow/dww"
+            if [ "$i" -eq 1 ] && [ -f /tmp/dwow_mining_secret ]; then
+                VOLUME_ARGS="$VOLUME_ARGS -v /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro"
+            fi
+            docker run -d \
+                --name "dwow-wallet-$i" \
+                --hostname "wallet-$i" \
+                --network dwow-local \
+                -e WALLET_MODE=interactive \
+                -e WALLET_INDEX="$i" \
+                -e NETWORK=darkwow-testnet \
+                -e RPC_URL="tcp://node0:31345" \
+                -e WALLET_PASS=walletpass \
+                $VOLUME_ARGS \
+                darkwow-wallet:latest 2>&1
+            check $? "docker run dwow-wallet-$i"
+        done
         sleep 3
-        if docker ps --format '{{.Names}}' | grep -q "dwow-wallet"; then
-            info "wallet container running"
-        else
-            warn "wallet container may not have started"
-        fi
+        for i in $(seq 1 "$WITH_WALLET"); do
+            if docker ps --format '{{.Names}}' | grep -q "dwow-wallet-$i"; then
+                info "  wallet-$i running"
+            else
+                warn "  wallet-$i may not have started"
+            fi
+        done
     fi
 
     # Shred temp secret file now that containers have read it
@@ -915,8 +948,10 @@ phase_verify() {
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1)
     fi
 
-    if [ "$WITH_WALLET" = "true" ]; then
-        EXPECTED+=(dwow-wallet)
+    if [ "$WITH_WALLET" -gt 0 ]; then
+        for i in $(seq 1 "$WITH_WALLET"); do
+            EXPECTED+=(dwow-wallet-$i)
+        done
     fi
 
     for c in "${EXPECTED[@]}"; do

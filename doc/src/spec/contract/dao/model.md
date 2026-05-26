@@ -43,7 +43,19 @@ where the approval ratio $\t{Approval}^\% = (q, d)$ defines the equivalence
 class $[\frac{q}{d}]$ of fractions defined by $q₁d₂ = q₂d₁ ⟺  [\frac{q₁}{d₁}] \~ [\frac{q₂}{d₂}]$.
 
 ```rust
-{{#include ../../../../../src/contract/dao/src/model.rs:dao}}
+pub struct DaoParams {
+    pub proposer_limit: u64,
+    pub quorum: u64,
+    pub early_exec_quorum: u64,
+    pub approval_ratio: (u64, u64),
+    pub token_id: pallas::Base,
+    pub notes_public_key: pallas::Point,
+    pub proposer_public_key: pallas::Point,
+    pub proposals_public_key: pallas::Point,
+    pub votes_public_key: pallas::Point,
+    pub executor_public_key: pallas::Point,
+    pub early_executor_public_key: pallas::Point,
+}
 ```
 
 $$ \t{Bulla}_\t{DAO} : \t{Params}_\t{DAO} × 𝔽ₚ → 𝔽ₚ $$
@@ -76,7 +88,10 @@ Define $\t{AuthCall} = (\t{FuncId}, 𝔹^*)$. Each *authorization call* represen
 a child call made by the DAO. The *auth data* field is used by the child invoked
 contract to enforce additional invariants.
 ```rust
-{{#include ../../../../../src/contract/dao/src/model.rs:dao-auth-call}}
+pub struct DaoAuthCall {
+    pub function_id: FunctionId,
+    pub auth_data: Vec<u8>,
+}
 ```
 
 Define $\t{Commit}_\t{Auth} : \t{AuthCall}^* → 𝔽ₚ$ by
@@ -95,7 +110,13 @@ $$ \begin{aligned}
 \end{aligned} $$
 
 ```rust
-{{#include ../../../../../src/contract/dao/src/model.rs:dao-proposal}}
+pub struct DaoProposalParams {
+    pub auth_calls: Vec<DaoAuthCall>,
+    pub start_blockwindow: u64,
+    pub duration: u64,
+    pub dao_bulla: pallas::Base,
+    pub blind: pallas::Base,
+}
 ```
 
 $$ \t{Bulla}_\t{Proposal} : \t{Params}_\t{Proposal} → 𝔽ₚ⁵ $$
@@ -123,11 +144,12 @@ guarantee which block they get into, we therefore must modulo the block height
 a certain number which we use in the proofs.
 
 ```rust
-{{#include ../../../../../src/contract/dao/src/lib.rs:dao-blockwindow}}
+/// Blockwindow: 4-hour block windows modulo'd for time-based proposal constraints.
+pub const BLOCKWINDOW: u64 = 360;
 ```
 
 which can be used like this
 ```rust
-{{#include ../../../../../src/contract/dao/src/entrypoint/propose.rs:dao-blockwindow-example-usage}}
+let current_blockwindow = current_height / BLOCKWINDOW;
 ```
 

@@ -101,23 +101,25 @@ $$
 Implementation of this algorithm is available in [fft4.sage](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/script/research/zk/fft/fft4.sage).
 Particularly the function called `calc_dft()`.
 
-**function** DFT($n = 2^d, f(X)$)<br>
-<span style="padding-left: 30px;">**if** $n = 1$ **then**</span><br>
-<span style="padding-left: 60px;">    **return** $f(X)$</span><br>
-<span style="padding-left: 30px;">**end**</span><br>
-<span style="padding-left: 30px;">Write $f(X)$ as the sum of two polynomials with equal degree</span><br>
-<span style="padding-left: 30px;">$f(X) = g(X) + X^{n/2} h(X)$</span><br>
-<span style="padding-left: 30px;">Let $\mathbf{g}, \mathbf{h}$ be the vector representations of $g(X), h(X)$</span><br>
-<span style="padding-left: 30px;"></span><br>
-<span style="padding-left: 30px;">$\mathbf{r} = \mathbf{g} + \mathbf{h}$</span><br>
-<span style="padding-left: 30px;">$\mathbf{s} = (\mathbf{g} - \mathbf{h})·(ω^0, …, ω^{n/2 - 1})$</span><br>
-<span style="padding-left: 30px;">Let $r(X), s(X)$ be the polynomials represented by the vectors $\mathbf{r}, \mathbf{s}$</span><br>
-<span style="padding-left: 30px;"></span><br>
-<span style="padding-left: 30px;">Compute $(r(ω^0), …, r(ω^{n/2})) = \textrm{DFT}_{ω^2}(n/2, r(X))$</span><br>
-<span style="padding-left: 30px;">Compute $(s(ω^0), …, s(ω^{n/2})) = \textrm{DFT}_{ω^2}(n/2, s(X))$</span><br>
-<span style="padding-left: 30px;"></span><br>
-<span style="padding-left: 30px;">**return** $(r(ω^0), s(ω^0), r(ω^2), s(ω^2), …, r(ω^{n/2}), s(ω^{n/2}))$</span><br>
+```text
+function DFT(n = 2^d, f(X))
+    if n = 1 then
+        return f(X)
+    end
+    Write f(X) as the sum of two polynomials with equal degree
+    f(X) = g(X) + X^{n/2} h(X)
+    Let g, h be the vector representations of g(X), h(X)
+
+    r = g + h
+    s = (g - h) (w^0, ..., w^{n/2 - 1})
+    Let r(X), s(X) be the polynomials represented by the vectors r, s
+
+    Compute (r(w^0), ..., r(w^{n/2})) = DFT_{w^2}(n/2, r(X))
+    Compute (s(w^0), ..., s(w^{n/2})) = DFT_{w^2}(n/2, s(X))
+
+    return (r(w^0), s(w^0), r(w^2), s(w^2), ..., r(w^{n/2}), s(w^{n/2}))
 end
+```
 
 Sage code:
 

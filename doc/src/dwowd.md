@@ -345,7 +345,7 @@ Dwowd::stop()
 | `bin/dwowd/src/main.rs` | CLI parsing, config, entrypoint |
 | `bin/dwowd/src/lib.rs` | DwowNode, Dwowd, init_linear, start, stop |
 | `bin/dwowd/src/blockchain.rs` | Daemon LinearBlockchain wrapper, TxBackend, atomic apply |
-| `bin/dwowd/src/mempool.rs` | Mempool (Vec<Transaction>) |
+| `bin/dwowd/src/mempool.rs` | Mempool (`Vec<Transaction>`) |
 | `bin/dwowd/src/rpc/stratum.rs` | Stratum protocol (login, submit) |
 | `bin/dwowd/src/rpc/miner.rs` | Dev mining RPC (mine_linear) |
 | `bin/dwowd/src/registry/model.rs` | Block template generation, ZK coinbase |

@@ -359,14 +359,14 @@ if [ "$MODE" = "full" ]; then
     WALLET_DIR="/root/.local/share/dwow/drk/${NETWORK}"
     mkdir -p "$WALLET_DIR"
 
-    /app/dww -n "$NETWORK" wallet initialize 2>/dev/null || true
-    /app/dww -n "$NETWORK" wallet keygen 2>/dev/null || true
-    WALLET_ADDR=$(/app/dww -n "$NETWORK" wallet address 2>/dev/null | tail -1 || echo "")
+    /app/dwow_wallet -n "$NETWORK" wallet initialize 2>/dev/null || true
+    /app/dwow_wallet -n "$NETWORK" wallet keygen 2>/dev/null || true
+    WALLET_ADDR=$(/app/dwow_wallet -n "$NETWORK" wallet address 2>/dev/null | tail -1 || echo "")
 
     # Import mining secret if available
     if [ -f "${DATADIR}/mining_secret" ]; then
         MINING_SECRET=$(cat "${DATADIR}/mining_secret")
-        /app/dww -n "$NETWORK" wallet import-secret "$MINING_SECRET" 2>/dev/null || true
+        /app/dwow_wallet -n "$NETWORK" wallet import-secret "$MINING_SECRET" 2>/dev/null || true
     fi
 
     echo "  Wallet address: ${WALLET_ADDR:-unknown}"
@@ -375,15 +375,15 @@ if [ "$MODE" = "full" ]; then
     echo "  Deploying contracts..."
 
     # Generate deploy authority
-    DEPLOY_AUTH=$(/app/dww -n "$NETWORK" contract generate-deploy 2>/dev/null | tail -1 || echo "")
+    DEPLOY_AUTH=$(/app/dwow_wallet -n "$NETWORK" contract generate-deploy 2>/dev/null | tail -1 || echo "")
 
     deploy_contract() {
         local name="$1"
         local wasm="$2"
         echo "  Deploying $name..."
         local result
-        result=$(/app/dww -n "$NETWORK" contract deploy "$DEPLOY_AUTH" "$wasm" 2>/dev/null | \
-            /app/dww -n "$NETWORK" broadcast 2>/dev/null || echo "")
+        result=$(/app/dwow_wallet -n "$NETWORK" contract deploy "$DEPLOY_AUTH" "$wasm" 2>/dev/null | \
+            /app/dwow_wallet -n "$NETWORK" broadcast 2>/dev/null || echo "")
         echo "$result"
     }
 
@@ -402,11 +402,11 @@ if [ "$MODE" = "full" ]; then
     # Initialize bridge (if deploy succeeded)
     BRIDGE_ID=$(echo "$BRIDGE_OUT" | grep -o '"ContractId":"[^"]*"' | cut -d'"' -f4 || echo "")
     if [ -n "$BRIDGE_ID" ]; then
-        /app/dww -n "$NETWORK" contract register bridge "$BRIDGE_ID" 2>/dev/null || true
+        /app/dwow_wallet -n "$NETWORK" contract register bridge "$BRIDGE_ID" 2>/dev/null || true
         echo "  Initializing bridge (fee=${BRIDGE_RELAYER_FEE_BP}bp, timeout=${BRIDGE_TIMEOUT_BLOCKS} blocks)..."
-        /app/dww -n "$NETWORK" contract invoke "$BRIDGE_ID" initialize \
+        /app/dwow_wallet -n "$NETWORK" contract invoke "$BRIDGE_ID" initialize \
             --params "{\"relayer_fee_bp\":${BRIDGE_RELAYER_FEE_BP},\"timeout_blocks\":${BRIDGE_TIMEOUT_BLOCKS}}" 2>/dev/null | \
-            /app/dww -n "$NETWORK" broadcast 2>/dev/null || echo "  WARNING: bridge init skipped"
+            /app/dwow_wallet -n "$NETWORK" broadcast 2>/dev/null || echo "  WARNING: bridge init skipped"
     fi
 
     # Deploy relayer_endowment
@@ -416,11 +416,11 @@ if [ "$MODE" = "full" ]; then
     # Initialize relayer_endowment (if deploy succeeded)
     ENDOWMENT_ID=$(echo "$ENDOWMENT_OUT" | grep -o '"ContractId":"[^"]*"' | cut -d'"' -f4 || echo "")
     if [ -n "$ENDOWMENT_ID" ]; then
-        /app/dww -n "$NETWORK" contract register relayer_endowment "$ENDOWMENT_ID" 2>/dev/null || true
+        /app/dwow_wallet -n "$NETWORK" contract register relayer_endowment "$ENDOWMENT_ID" 2>/dev/null || true
         echo "  Initializing relayer_endowment..."
-        /app/dww -n "$NETWORK" contract invoke "$ENDOWMENT_ID" initialize \
+        /app/dwow_wallet -n "$NETWORK" contract invoke "$ENDOWMENT_ID" initialize \
             --params "{\"default_backer_cut_bp\":500}" 2>/dev/null | \
-            /app/dww -n "$NETWORK" broadcast 2>/dev/null || echo "  WARNING: endowment init skipped"
+            /app/dwow_wallet -n "$NETWORK" broadcast 2>/dev/null || echo "  WARNING: endowment init skipped"
     fi
 
     # --- 5. Start universal_relayer ---

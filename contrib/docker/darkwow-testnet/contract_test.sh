@@ -6,14 +6,14 @@
 #   2. Contract deployment via deployooor
 #   3. Token transfer with fee payment
 #
-# Prerequisites: Docker, dww binary built (cargo build -p dww)
+# Prerequisites: Docker, dwow_wallet binary built (cargo build -p dwow_wallet)
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-DWW_BIN="${REPO_ROOT}/target/release/dww"
-DWW_DEBUG="${REPO_ROOT}/target/debug/dww"
+DWW_BIN="${REPO_ROOT}/target/release/dwow_wallet"
+DWW_DEBUG="${REPO_ROOT}/target/debug/dwow_wallet"
 
 # Use debug build if release doesn't exist
 if [ -x "$DWW_BIN" ]; then
@@ -21,14 +21,14 @@ if [ -x "$DWW_BIN" ]; then
 elif [ -x "$DWW_DEBUG" ]; then
     DWW="$DWW_DEBUG"
 else
-    echo "Building dww..."
-    (cd "$REPO_ROOT" && cargo build -p dww 2>&1)
+    echo "Building dwow_wallet..."
+    (cd "$REPO_ROOT" && cargo build -p dwow_wallet 2>&1)
     if [ -x "$DWW_DEBUG" ]; then
         DWW="$DWW_DEBUG"
     elif [ -x "$DWW_BIN" ]; then
         DWW="$DWW_BIN"
     else
-        echo "ERROR: dww binary not found after build"
+        echo "ERROR: dwow_wallet binary not found after build"
         exit 1
     fi
 fi
@@ -82,7 +82,7 @@ done
 # Check WASM exists
 [ -f "$WASM_MONEY_V3" ] || error "money_v3 WASM not found at $WASM_MONEY_V3"
 
-info "Using dww binary: $DWW"
+info "Using dwow_wallet binary: $DWW"
 "$DWW" --version 2>/dev/null || warn "dww --version failed (non-fatal)"
 
 # ==============================================================================

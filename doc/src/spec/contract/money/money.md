@@ -18,7 +18,13 @@ atomic swaps, token minting, and staking/unstaking of consensus tokens.
 
 The functions provided by this smart contract are:
 ```rust
-{{#include ../../../../../src/contract/money/src/lib.rs:money-function}}
+pub enum MoneyFunction {
+    TransferV1,   // Transfer tokens between parties
+    MintV1,       // Mint new tokens (requires auth)
+    BurnV1,       // Burn existing tokens
+    StakeV1,      // Stake tokens for consensus
+    UnstakeV1,    // Unstake consensus tokens
+}
 ```
 
 - [Model](model.md)

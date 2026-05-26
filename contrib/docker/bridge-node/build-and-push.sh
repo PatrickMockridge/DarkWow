@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build and optionally push the DarkWow Bridge Node image.
 #
-# Produces a single image with dwowd, universal_relayer, dww, and all
+# Produces a single image with dwowd, universal_relayer, dwow_wallet, and all
 # bridge-related contracts. Three runtime modes:
 #   MODE=full         — dwowd + contracts + universal_relayer
 #   MODE=relayer-only — universal_relayer only (external dwowd)

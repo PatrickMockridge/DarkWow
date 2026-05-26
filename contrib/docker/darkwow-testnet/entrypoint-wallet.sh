@@ -1,14 +1,18 @@
 #!/bin/bash
 # DarkWow Wallet Container Entrypoint
 #
-# Generates dww wallet config from environment variables at container start.
+# Generates dwow_wallet wallet config from environment variables at container start.
 # Supports two modes via WALLET_MODE env var:
 #   test        — auto-init, scan, run position, assert output, exit with status
 #   interactive — init wallet, then sleep infinity for docker exec access
 #
+# WALLET_INDEX (default 1) is used when running multiple wallet containers
+# to give each its own data directory.
+#
 # Usage:
-#   docker compose --profile native up -d wallet         # interactive (default)
-#   WALLET_MODE=test docker compose --profile native up -d wallet  # CI/test
+#   docker run -e WALLET_INDEX=1 darkwow-wallet       # wallet-1 (interactive)
+#   docker run -e WALLET_INDEX=2 darkwow-wallet       # wallet-2 (interactive)
+#   WALLET_MODE=test docker compose --profile wallet up -d  # CI/test
 
 set -e
 
@@ -16,19 +20,20 @@ echo "=== DarkWow Wallet Container ==="
 
 # --- Configuration from environment ---
 WALLET_MODE="${WALLET_MODE:-interactive}"
+WALLET_INDEX="${WALLET_INDEX:-1}"
 NETWORK="${NETWORK:-darkwow-testnet}"
 RPC_URL="${RPC_URL:-tcp://node0:31345}"
 WALLET_SECRET="${WALLET_SECRET:-}"
 WALLET_SECRET_FILE="${WALLET_SECRET_FILE:-}"
 WALLET_PASS="${WALLET_PASS:-walletpass}"
 CONFIGDIR="${CONFIGDIR:-/root/.config/dwow}"
-DATADIR="${DATADIR:-/root/.local/share/dwow/dww/${NETWORK}}"
-CACHEDIR="${CACHEDIR:-/root/.local/share/dwow/dww/${NETWORK}/cache}"
+DATADIR="${DATADIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX}}"
+CACHEDIR="${CACHEDIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX}/cache}"
 
-echo "  MODE=$WALLET_MODE  NETWORK=$NETWORK"
+echo "  MODE=$WALLET_MODE  NETWORK=$NETWORK  INDEX=$WALLET_INDEX"
 echo "  RPC=$RPC_URL  DATA=$DATADIR"
 
-# --- Generate dww config ---
+# --- Generate dwow_wallet config ---
 mkdir -p "$CONFIGDIR" "$DATADIR" "$CACHEDIR"
 
 CONFIGFILE="${CONFIGDIR}/drk.toml"
@@ -59,27 +64,27 @@ fi
 
 # --- Initialize wallet ---
 echo "  Initializing wallet..."
-/app/dww -c "$CONFIGFILE" wallet init 2>&1 || true
+/app/dwow_wallet -c "$CONFIGFILE" wallet init 2>&1 || true
 
 # --- Generate or import keypair ---
 if [ -n "$RESOLVED_SECRET" ]; then
     echo "  Importing wallet key..."
-    # dww wallet import — write the secret to a temp file and import
+    # dwow_wallet wallet import — write the secret to a temp file and import
     echo "$RESOLVED_SECRET" > /tmp/wallet_secret_hex
-    /app/dww -c "$CONFIGFILE" wallet import /tmp/wallet_secret_hex 2>&1 || {
+    /app/dwow_wallet -c "$CONFIGFILE" wallet import /tmp/wallet_secret_hex 2>&1 || {
         echo "  WARNING: wallet import failed (may already exist or be unsupported)"
     }
     rm -f /tmp/wallet_secret_hex
 else
     echo "  Generating new keypair..."
-    /app/dww -c "$CONFIGFILE" wallet keygen 2>&1 || {
+    /app/dwow_wallet -c "$CONFIGFILE" wallet keygen 2>&1 || {
         echo "  WARNING: wallet keygen failed (key may already exist)"
     }
 fi
 
 # --- Display wallet address ---
 echo "  Wallet address:"
-/app/dww -c "$CONFIGFILE" wallet address 2>&1 || echo "  (could not retrieve address)"
+/app/dwow_wallet -c "$CONFIGFILE" wallet address 2>&1 || echo "  (could not retrieve address)"
 
 # ============================================================================
 # MODE: test — scan, resolve position, verify output, exit
@@ -92,12 +97,12 @@ if [ "$WALLET_MODE" = "test" ]; then
 
     # Scan blockchain for coins
     echo "  Scanning blockchain..."
-    /app/dww -c "$CONFIGFILE" scan 2>&1
+    /app/dwow_wallet -c "$CONFIGFILE" scan 2>&1
     echo "  Scan complete."
 
     # Run position resolution
     echo "  Running position resolution..."
-    POS_OUTPUT=$(/app/dww -c "$CONFIGFILE" position 2>&1)
+    POS_OUTPUT=$(/app/dwow_wallet -c "$CONFIGFILE" position 2>&1)
     echo "$POS_OUTPUT"
 
     # Verify position output
@@ -143,11 +148,12 @@ fi
 # ============================================================================
 echo ""
 echo "=== Interactive Mode ==="
-echo "  Wallet ready. Use 'docker exec dwow-wallet dww -c $CONFIGFILE <command>'"
+CONTAINER="dwow-wallet-${WALLET_INDEX}"
+echo "  Wallet ready. Use 'docker exec ${CONTAINER} dwow_wallet -c $CONFIGFILE <command>'"
 echo "  Examples:"
-echo "    docker exec dwow-wallet dww -c $CONFIGFILE position"
-echo "    docker exec dwow-wallet dww -c $CONFIGFILE wallet balance"
-echo "    docker exec dwow-wallet dww -c $CONFIGFILE scan"
+echo "    docker exec ${CONTAINER} dwow_wallet -c $CONFIGFILE position"
+echo "    docker exec ${CONTAINER} dwow_wallet -c $CONFIGFILE wallet balance"
+echo "    docker exec ${CONTAINER} dwow_wallet -c $CONFIGFILE scan"
 echo ""
 
 # Sleep indefinitely so the container stays up for docker exec

@@ -213,6 +213,7 @@ impl BlockHeader {
 }
 
 /// Block - a single block in the linear chain
+// ANCHOR: block-struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     /// Block header
@@ -220,6 +221,7 @@ pub struct Block {
     /// Transactions in this block
     pub transactions: Vec<Transaction>,
 }
+// ANCHOR_END: block-struct
 
 impl Block {
     /// Calculate the hash of this block's header using RandomX VM.

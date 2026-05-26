@@ -7,7 +7,7 @@ let's implement some methods.
 We'll start with a simple `pong` method that replies to `ping`.
 
 ```rust
-{{#include ../../../../../example/dchat/src/rpc.rs:pong}}
+{{#include ../../../../../example/dchat/dchatd/src/rpc.rs:pong}}
 ```
 
 And add it to `handle_request()`:

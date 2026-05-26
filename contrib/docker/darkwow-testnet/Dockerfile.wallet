@@ -1,11 +1,12 @@
 # DarkWow Wallet Container
 #
-# Minimal image with just dww — the DarkWow wallet CLI.
-# Builds only dww (no dwowd, no WASM contracts, no lilith).
+# Minimal image with just dwow_wallet — the DarkWow wallet CLI.
+# Builds only dwow_wallet (no dwowd, no WASM contracts, no lilith).
 # Fast build (~5min vs ~20min for full testnet image).
 #
 # Build from repo root:
-#   docker build -t darkwow-wallet . -f contrib/docker/darkwow-testnet/Dockerfile.wallet
+#   docker build -t darkwow-wallet . -f contrib/docker/darkwow-testnet/Dockerfile.wallet \
+#     --build-arg CARGO_PACKAGE=dwow_wallet
 #
 # Or use the build script:
 #   IMAGE_NAME=darkwow-wallet contrib/docker/darkwow-testnet/build-and-push.sh
@@ -29,10 +30,11 @@ RUN for i in 1 2 3 4 5; do \
             https://codeberg.org/PatrickM123/darkwow.git /app && break || sleep 10; \
     done
 
-# Build dww only — no WASM contracts, no dwowd, no lilith
-RUN cargo build -p dww --release -j 2
+# Build dwow_wallet only — no WASM contracts, no dwowd, no lilith
+ARG CARGO_PACKAGE=dwow_wallet
+RUN cargo build -p ${CARGO_PACKAGE} --release -j 2
 
-RUN cp target/release/dww /app/dww
+RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet
 
 # ============================================================================
 # Stage 2: Runtime
@@ -41,7 +43,7 @@ FROM darkwow-base:24.04
 
 WORKDIR /app
 
-COPY --from=builder /app/dww ./
+COPY --from=builder /app/dwow_wallet ./
 
 COPY contrib/docker/darkwow-testnet/entrypoint-wallet.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh

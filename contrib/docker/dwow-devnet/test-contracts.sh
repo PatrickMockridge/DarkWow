@@ -10,7 +10,7 @@
 # Prerequisites:
 #   - test_pipeline.sh must have completed successfully (Docker stack
 #     running, wallet initialized with mining keys)
-#   - Docker, dww + dwowd binaries built
+#   - Docker, dwow_wallet + dwowd binaries built
 #
 # Usage:
 #   ./test-contracts.sh
@@ -19,18 +19,18 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-DWW_BIN="${REPO_ROOT}/target/release/dww"
-DWW_DEBUG="${REPO_ROOT}/target/debug/dww"
+DWW_BIN="${REPO_ROOT}/target/release/dwow_wallet"
+DWW_DEBUG="${REPO_ROOT}/target/debug/dwow_wallet"
 
 if [ -x "$DWW_BIN" ]; then
     DWW="$DWW_BIN"
 elif [ -x "$DWW_DEBUG" ]; then
     DWW="$DWW_DEBUG"
 else
-    echo "Building dww..."
-    (cd "$REPO_ROOT" && RAYON_NUM_THREADS=10 cargo build -p dww 2>&1)
+    echo "Building dwow_wallet..."
+    (cd "$REPO_ROOT" && RAYON_NUM_THREADS=10 cargo build -p dwow_wallet 2>&1)
     [ -x "$DWW_DEBUG" ] && DWW="$DWW_DEBUG" || DWW="$DWW_BIN"
-    [ -x "$DWW" ] || { echo "ERROR: dww binary not found after build"; exit 1; }
+    [ -x "$DWW" ] || { echo "ERROR: dwow_wallet binary not found after build"; exit 1; }
 fi
 
 NETWORK="dwow-devnet"

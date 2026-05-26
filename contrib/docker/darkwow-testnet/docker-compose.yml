@@ -198,8 +198,12 @@ services:
   #   interactive (default) — init wallet, sleep, docker exec for manual ops
   #   test — auto scan, position, assert output, exit with status
   #
-  # Start with:  docker compose --profile wallet up -d
-  # Requires:    lilith + node0 (native profile) already running and mining
+  # Build with:  docker compose --profile wallet build
+  # Run with:    docker run -d --name dwow-wallet-N --network dwow-local \
+  #                -e WALLET_INDEX=N darkwow-wallet:latest
+  # Note:        Use test_pipeline.sh --with-wallet N to manage wallets.
+  #              The compose service is for image building only; containers
+  #              are started via docker run for per-instance volumes/configs.
   # ============================================================================
   wallet:
     profiles: ["wallet"]
@@ -207,8 +211,6 @@ services:
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile.wallet
-    container_name: dwow-wallet
-    hostname: wallet
     entrypoint: ["/app/entrypoint.sh"]
     environment:
       - WALLET_MODE=${WALLET_MODE:-interactive}
@@ -216,18 +218,11 @@ services:
       - RPC_URL=tcp://node0:31345
       - WALLET_PASS=${WALLET_PASS:-walletpass}
       - WALLET_SECRET=${WALLET_SECRET:-}
-      - WALLET_SECRET_FILE=/run/secrets/mining_secret
-    volumes:
-      - wallet_data:/root/.local/share/dwow/dww
-      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
     networks:
       - dwow-local
-    depends_on:
-      node0:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "/app/dww", "--version"]
+      test: ["CMD", "/app/dwow_wallet", "--version"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -29,7 +29,11 @@ $$ \begin{aligned}
 \end{aligned} $$
 
 ```rust
-{{#include ../../../../../src/contract/money/src/model/mod.rs:money-params}}
+pub struct MoneyTransferParams {
+    pub clear_inputs: Vec<MoneyClearInput>,
+    pub inputs: Vec<MoneyInput>,
+    pub outputs: Vec<MoneyOutput>,
+}
 ```
 
 ### Contract Statement
@@ -171,7 +175,11 @@ number of inputs that were created with `Burn_V1` and a number of
 outputs created with `Mint_V1`.
 
 ```rust
-{{#include ../../../../../src/contract/money/src/model/mod.rs:money-params}}
+pub struct MoneyTransferParams {
+    pub clear_inputs: Vec<MoneyClearInput>,
+    pub inputs: Vec<MoneyInput>,
+    pub outputs: Vec<MoneyOutput>,
+}
 ```
 
 This gets encoded into the `Transaction` format and the transaction is

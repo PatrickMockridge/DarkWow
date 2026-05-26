@@ -34,7 +34,10 @@ $$ \begin{aligned}
 \end{aligned} $$
 
 ```rust
-{{#include ../../../../../src/contract/dao/src/model.rs:dao-mint-params}}
+pub struct DaoMintParams {
+    pub dao_bulla: pallas::Base,
+    pub public_key: pallas::Point,
+}
 ```
 
 ### Contract Statement
@@ -131,11 +134,20 @@ $$ \begin{aligned}
 \end{aligned} $$
 
 ```rust
-{{#include ../../../../../src/contract/dao/src/model.rs:dao-propose-params}}
-```
+pub struct DaoProposeParams {
+    pub dao_merkle_root: pallas::Base,
+    pub token_commit: pallas::Base,
+    pub proposal_bulla: pallas::Base,
+    pub encrypted_note: AeadEncryptedNote,
+    pub inputs: Vec<ProposeInput>,
+}
 
-```rust
-{{#include ../../../../../src/contract/dao/src/model.rs:dao-propose-params-input}}
+pub struct ProposeInput {
+    pub nullifier: pallas::Base,
+    pub value_commit: pallas::Point,
+    pub coin_merkle_root: pallas::Base,
+    pub signature_public_key: pallas::Point,
+}
 ```
 
 ### Contract Statement
@@ -273,11 +285,20 @@ for votes on a proposal. This is then used in the Exec phase when we work on the
 sum of DAO votes.
 
 ```rust
-{{#include ../../../../../src/contract/dao/src/model.rs:dao-vote-params}}
-```
+pub struct DaoVoteParams {
+    pub token_id: pallas::Base,
+    pub proposal_bulla: pallas::Base,
+    pub yes_vote_commit: pallas::Point,
+    pub encrypted_vote: ElGamalEncryptedNote,
+    pub inputs: Vec<VoteInput>,
+}
 
-```rust
-{{#include ../../../../../src/contract/dao/src/model.rs:dao-vote-params-input}}
+pub struct VoteInput {
+    pub vote_nullifier: pallas::Base,
+    pub value_commit: pallas::Point,
+    pub coin_merkle_root: pallas::Base,
+    pub signature_public_key: pallas::Point,
+}
 ```
 
 ### Contract Statement
@@ -393,11 +414,19 @@ $$ \begin{aligned}
 \end{aligned} $$
 
 ```rust
-{{#include ../../../../../src/contract/dao/src/model.rs:dao-exec-params}}
-```
+pub struct DaoExecParams {
+    pub proposal_bulla: pallas::Base,
+    pub auth_calls: Vec<DaoAuthCall>,
+    pub yes_vote_commit: pallas::Point,
+    pub all_vote_commit: pallas::Point,
+}
 
-```rust
-{{#include ../../../../../src/contract/dao/src/model.rs:dao-blind-aggregate-vote}}
+pub struct DaoBlindAggregateVote {
+    pub yes_votes: u64,
+    pub all_votes: u64,
+    pub yes_blind: pallas::Scalar,
+    pub all_blind: pallas::Scalar,
+}
 ```
 
 ### Contract Statement
@@ -520,7 +549,10 @@ $$ \begin{aligned}
 This provides verifiable note encryption for all output coins in the sibling `Money::transfer()` call as well as the DAO change coin.
 
 ```rust
-{{#include ../../../../../src/contract/dao/src/model.rs:dao-auth_xfer-params}}
+pub struct DaoAuthXferParams {
+    pub encrypted_output_coins: Vec<ElGamalEncryptedNote>,
+    pub encrypted_change_coin: ElGamalEncryptedNote,
+}
 ```
 
 ### Contract Statement
