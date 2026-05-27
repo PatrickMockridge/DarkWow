@@ -62,6 +62,9 @@ pub enum ExternalChainProof {
     Zcash(ZcashDepositProof),
     Aztec(AztecDepositProof),
     Litecoin(LitecoinDepositProof),
+    /// Ethereum deposits use the merkle_proof field on DepositParams
+    /// instead of a chain-specific proof structure.
+    Ethereum,
 }
 
 /// Bridge deposit parameters

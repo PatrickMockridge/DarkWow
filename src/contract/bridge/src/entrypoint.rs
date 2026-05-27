@@ -383,6 +383,10 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
             ExternalChainProof::Litecoin(proof) => {
                 verify_litecoin_deposit(cid, proof)?;
             }
+            ExternalChainProof::Ethereum => {
+                // Ethereum deposits use host-level ZK proof verification
+                // (merkle_proof field), unreachable here due to outer if-guard.
+            }
         }
     }
 

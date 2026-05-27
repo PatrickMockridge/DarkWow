@@ -235,6 +235,7 @@ impl PoolStakeHarness {
         &self,
         allocation_id: pallas::Base,
         slash_amount: u64,
+        owner_pub: PublicKey,
         user_pub: PublicKey,
     ) -> Result<SlashCoverageResult, Box<dyn std::error::Error>> {
         let nonce = 0u64;
@@ -249,6 +250,7 @@ impl PoolStakeHarness {
 
         let params = SlashCoverageParamsV1 {
             allocation_id,
+            owner_pub,
             slash_amount,
             user_pub,
             nonce,

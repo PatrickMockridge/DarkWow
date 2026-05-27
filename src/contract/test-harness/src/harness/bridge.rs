@@ -39,7 +39,7 @@ use dwow_bridge_contract::client::{
     deposit_v1::{DepositCallData, DepositPublicInputs, create_deposit_proof},
     withdraw_v1::{WithdrawCallData, WithdrawPublicInputs, create_withdraw_proof},
 };
-use dwow_bridge_contract::model::{DepositParams, ExternalChain, WithdrawParams};
+use dwow_bridge_contract::model::{DepositParams, ExternalChain, ExternalChainProof, WithdrawParams};
 
 /// Bridge Harness for isolated testing
 pub struct BridgeHarness {
@@ -117,10 +117,7 @@ impl BridgeHarness {
             external_state_root: public_inputs.merkle_root_input.to_repr(),
             fee,
             proof: proof.as_ref().to_vec(),
-            xmr_proof: None,
-            zec_proof: None,
-            azt_proof: None,
-            ltc_proof: None,
+            chain_proof: ExternalChainProof::Ethereum,
         };
 
         let mut call_data = vec![0x01];

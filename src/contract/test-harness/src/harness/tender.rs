@@ -251,10 +251,13 @@ impl TenderHarness {
             &call_data_input,
         )?;
         let (wx, wy) = winner_public.xy();
+        let (rx, ry) = requester_public.xy();
         let params = SelectWinnerParamsV1 {
             proof: proof.as_ref().to_vec(),
             tender_id,
             winner_bid_id,
+            requester_pub_x: rx,
+            requester_pub_y: ry,
             winner_pub_x: wx,
             winner_pub_y: wy,
             winning_amount,
