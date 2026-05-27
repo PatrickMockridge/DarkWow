@@ -183,6 +183,180 @@ This eliminates `public_value`, `public_token_id`, and the entire `TransferOutpu
 
 **The meta-lesson**: When you find yourself adding a field that violates a core design constraint to solve a verification problem, the verification itself is the right question — but the answer is almost always to use the cryptographic commitments you already have, not to add plaintext fallbacks.
 
+### Lesson 5: Pubkey as Database Key — Static Identity Queryable On-Chain
+
+**The vulnerability**: Several contracts use raw public keys as database keys for state lookups. This makes identity trivially enumerable on-chain: anyone who knows a pubkey can derive the DB key and enumerate all records for that identity.
+
+Concrete examples from the audit:
+
+| Contract | DB Key Pattern | What It Reveals |
+|---|---|---|
+| Bridge | `db_set(relayers_db, &serialize(&relayer_pub), ...)` | All relayers and their withdrawal history |
+| Identity | `db_set(issuers_db, &serialize(&issuer_id), ...)` | All issuers and their credential types |
+| Identity | `issuance_key = serialize(capability_id) + serialize(holder_pub)` | All capabilities issued to a known holder |
+| DrainProtection | `vote_key = serialize(&(proposal_id, voter_pubkey))` | Exactly how each voter voted on each proposal |
+
+In the o-cap model, authorization is "what you can prove" not "who you are." Storing a raw pubkey as a DB key inverts this: it makes identity the primary lookup dimension, enabling trivial surveillance of all activity linked to a known public key.
+
+**The fix**: Hash the pubkey through Poseidon before using it as a DB key. For a 32-byte pubkey, split into four u64 chunks to preserve full entropy:
+
+```rust
+fn compute_relayer_key(relayer_pub: &[u8; 32]) -> Vec<u8> {
+    let mut chunks = [0u64; 4];
+    for i in 0..4 {
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&relayer_pub[i * 8..(i + 1) * 8]);
+        chunks[i] = u64::from_le_bytes(bytes);
+    }
+    let hash = poseidon_hash([
+        pallas::Base::from(chunks[0]),
+        pallas::Base::from(chunks[1]),
+        pallas::Base::from(chunks[2]),
+        pallas::Base::from(chunks[3]),
+    ]);
+    hash.to_repr().to_vec()
+}
+```
+
+For composite keys (e.g. `(capability_id, holder_pub)`), hash all components together rather than concatenating raw bytes. The resulting key is a Poseidon hash — unlinkable to the original pubkey without knowing the pubkey itself, but still deterministic so the contract can reconstruct it.
+
+**The principle**: **DB keys should be derived via hash, never raw identity material.** The hash preserves look-up capability (anyone who knows the pubkey can recompute the key) but prevents enumeration (without knowing the pubkey first, the key reveals nothing). This is the same principle as address cycling applied to database layout.
+
+### Lesson 6: Signature Key Reuse — Static Identity Link Across Transactions
+
+**The vulnerability**: The `signature_public` field in `Input` structs was documented as a generic "signature public key." Client builders accepted a `Keypair` (the full wallet keypair) or a `signature_secret: SecretKey` without any enforcement that it be ephemeral. If a client reused the wallet-level secret, every transaction from that wallet would share the same `signature_public`, creating a static identity link across all of a user's activity.
+
+This affected two critical token contracts:
+
+| Contract | Field | Client File |
+|---|---|---|
+| NativeToken (BurnV1) | `Input.signature_public: PublicKey` | `burn_v1.rs` — accepted full `Keypair` |
+| NativeToken (FeeV1) | `Input.signature_public: PublicKey` | `fee_v1.rs` — accepted `signature_secret: SecretKey` |
+| MoneyV3 (TransferV1) | `signature_public: pallas::Base` | `transfer_v1.rs` — accepted `signature_secret: pallas::Base` |
+| MoneyV3 (BurnV1) | `signature_public: pallas::Base` | `burn_v1.rs` — accepted `signature_secret: pallas::Base` |
+
+The `signature_public` is exposed as a public input to the ZK proof and stored on-chain. If it's the wallet's persistent key, every Input from that wallet is trivially linkable.
+
+**The fix**: Three changes that enforce ephemeral derivation at the type and naming level:
+
+1. **Rename the field** to `ephemeral_signature_secret` — the name itself communicates the invariant.
+2. **Document the requirement** in the struct definition: "MUST be fresh per transaction, never the wallet secret."
+3. **Remove full Keypair from builders** — accept only the individual secrets needed, preventing accidental wallet-key reuse.
+
+```rust
+// BEFORE — wallet keypair accepted, nothing prevents reuse
+pub struct BurnCallInput {
+    pub keypair: Keypair,  // wallet-level identity
+    // ...
+}
+
+// AFTER — separate secrets, ephemeral enforcement by name
+pub struct BurnCallInput {
+    /// MUST be fresh per burn — never the wallet secret
+    pub ephemeral_signature_secret: SecretKey,
+    pub secret: SecretKey,  // coin ownership secret
+    // ...
+}
+```
+
+**The principle**: **Every signature must use an ephemeral key.** The o-cap model requires that each capability consumption (nullifier) be unlinkable to every other. A reused signature public key is a static identity that links all of a user's transactions. The type system and naming conventions should make the invariant impossible to miss.
+
+### Lesson 7: User Data Encoding Identity — Smuggling Public Keys in Opaque Fields
+
+**The vulnerability**: The `user_data` field on coins is designed as opaque private data committed into the coin hash — a place for application-specific metadata that stays behind the commitment. But the stablecoin contract encoded identity material into this field:
+
+```rust
+// BEFORE — identity smuggled into opaque field
+let sender_pub = poseidon_hash([owner_secret]);
+let user_data = poseidon_hash([
+    pallas::Base::from(mint_amount),
+    stablecoin_token_id,
+    sender_pub,  // ← identity derived from owner_secret
+]);
+```
+
+The `user_data` is committed into the coin hash and passed as a public input to `MoneyV3::MintV1`. While Poseidon-hashed, `poseidon_hash([owner_secret])` is a deterministic function of the owner's secret — it's effectively a public key fingerprint embedded in every mint operation. Anyone who knows (or guesses) the owner_secret can identify all coins minted by that owner.
+
+**The fix**: Use a constant (zero) in place of the identity-derived value:
+
+```rust
+// AFTER — no identity material
+let user_data = poseidon_hash([
+    pallas::Base::from(mint_amount),
+    stablecoin_token_id,
+    pallas::Base::zero(),  // no identity
+]);
+```
+
+Authorization is handled by the nullifier (which consumes the position capability), not by embedding identity in auxiliary data. The nullifier already proves "someone who knows the owner_secret authorized this" — encoding the same secret's hash in `user_data` adds no security and undermines privacy.
+
+**The principle**: **Opaque fields must not carry identity material.** If a field is committed into a coin hash or passed as a ZK public input, it is visible on-chain (either directly or through the commitment). Any identity-derived data in these fields creates a linkable fingerprint. Authorization belongs in nullifiers, not in auxiliary data fields.
+
+### Lesson 8: Token ID Carrying Identity Fragments
+
+**The vulnerability**: When creating a new token type in MoneyV3, the stablecoin contract derived `token_auth_parent` — one of the inputs to the token ID computation — from the authority's public key:
+
+```rust
+// BEFORE — token ID embeds authority identity fragment
+let auth_bytes: [u8; 8] = token_authority_pub[0..8].try_into().unwrap();
+let auth_u64 = u64::from_le_bytes(auth_bytes);
+let token_auth_parent = pallas::Base::from(auth_u64);
+let token_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
+```
+
+The resulting `token_id` embeds the first 8 bytes of the token authority's public key. Anyone who knows (or suspects) which authority created a token can check: extract the first 8 bytes, recompute the token ID, and see if it matches. Every coin holding this token carries a fingerprint of its creator.
+
+**The fix**: Use a random `token_auth_parent`:
+
+```rust
+// AFTER — random, unlinkable to authority
+let token_auth_parent = BaseBlind::random(&mut OsRng).inner();
+let token_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
+```
+
+The authority's ability to mint is proven through the AuthTokenMintV1 flow (nullifier + Merkle proof against the token registry), not through the token ID itself. The token ID needs to be unique, not identity-bearing.
+
+**The principle**: **Token IDs must be unlinkable to their authority.** A token's existence and ownership should reveal nothing about who created it. The authority relationship is a capability (proven via nullifier + ZK proof), not an identity (embedded in the token ID). Randomizing all derivation inputs preserves both uniqueness and privacy.
+
+### Lesson 9: Full Keypair in Client Builders — Wallet Secret Leakage
+
+**The vulnerability**: The `PoWRewardCallBuilder` carried the full wallet `Keypair` and serialized the wallet secret into the coin's encrypted note memo:
+
+```rust
+// BEFORE — wallet keypair in builder, secret in memo
+pub struct PoWRewardCallBuilder {
+    pub signature_keypair: Keypair,  // full wallet identity
+    // ...
+}
+
+// In build():
+let note = NativeNote {
+    // ...
+    memo: serialize(&self.signature_keypair.secret),  // wallet secret bytes
+};
+```
+
+Two problems: (1) the full wallet keypair in the builder struct invites reuse of the wallet identity for signing (see Lesson 6); (2) the wallet secret is serialized into the note memo — AEAD-encrypted and only decryptable by the recipient, but unnecessary exposure of the wallet's root secret. If the recipient's key is ever compromised, the sender's wallet secret is revealed.
+
+**The fix**: Separate the coin-ownership secret from the ephemeral signature secret, and remove the wallet secret from the memo:
+
+```rust
+// AFTER — no wallet keypair, no secret in memo
+pub struct PoWRewardCallBuilder {
+    pub secret: SecretKey,                       // coin ownership
+    pub ephemeral_signature_secret: SecretKey,   // MUST be fresh per reward claim
+    // ...
+}
+
+// In build():
+let note = NativeNote {
+    // ...
+    memo: vec![],  // no secret leakage
+};
+```
+
+**The principle**: **Client builders should never carry full wallet keypairs.** Accept only the individual secrets needed for the specific operation. Never serialize wallet secrets into note memos — the note already carries the coin blind and value, which are sufficient for the recipient to spend the coin. The wallet secret should never leave the wallet.
+
 
 
 ---
@@ -212,6 +386,11 @@ When reviewing code, these signals indicate a potential flakey pattern:
 | **Type-level safety without invariant enforcement** | `Option<u64>` is type-safe but doesn't enforce privacy | Rust's type system can't check protocol-level invariants |
 | **"Backed by a ZK proof" without on-chain verification** | `auth_proof` fields in `MintV1` only ZK-verified | ZK proofs constrain witnesses, not on-chain state (Lesson 1) |
 | **Opcode checks without contract ID checks** | `data[0] == 0x04` without validating `contract_id` | Same opcode used by multiple contracts (Lesson 2) |
+| **Raw pubkeys as database keys** | `db_set(relayers_db, &serialize(&relayer_pub), ...)` | Enables enumeration of all records for a known identity (Lesson 5) |
+| **Shared signature secrets across transactions** | `signature_secret` reused from wallet key | All Inputs from the same wallet share a static identity link (Lesson 6) |
+| **Identity material in opaque data fields** | `user_data = poseidon_hash([..., sender_pub])` | Smuggles public key fingerprints through fields meant for private app data (Lesson 7) |
+| **Identity fragments in token derivation** | `token_auth_parent = authority_pub[..8]` | Token ID carries a fingerprint of its creator, making all holders linkable (Lesson 8) |
+| **Full wallet keypair in client builders** | `signature_keypair: Keypair` on builder structs | Invites wallet secret reuse; may leak secret into serialized data (Lesson 9) |
 
 ### The Fix Pattern
 
@@ -233,8 +412,15 @@ When auditing for flakey patterns, ask of every field on every on-chain struct:
 3. **Is this field "optional" but actually required** for the contract's primary use case?
 4. **Was this field added to satisfy a single caller's requirement** rather than the general model?
 5. **Does a new ZK circuit reveal more public inputs** than the circuit it replaces or supplements?
+6. **Is a raw public key used as a database key?** If yes, replace with `poseidon_hash(pubkey_chunks)` — hash-preserved lookup without identity leakage.
+7. **Could a signature public key be reused across transactions?** If the field is named `signature_secret` or `signature_public` without "ephemeral," the naming itself may invite reuse. Rename to `ephemeral_signature_secret`.
+8. **Does `user_data` or any opaque field encode identity material?** Grep for `poseidon_hash([owner_secret])` or `sender_pub` in `user_data` derivations. Authorization belongs in nullifiers.
+9. **Does a token ID derivation use identity-linked inputs?** Check `token_auth_parent` and `token_id = poseidon_hash(...)` for pubkey fragments. Use random blinds instead.
+10. **Does a client builder carry a full `Keypair`?** If yes, replace with individual secrets. The wallet root keypair should never appear in contract client code.
 
 If the answer to any of (3)-(5) is yes, and the answer to (2) is "yes, but we need to know the blind," consider deterministic blind derivation before adding a plaintext field.
+
+If the answer to any of (6)-(10) is yes, the code has an o-cap privacy deviation. Apply the fix pattern from the corresponding lesson.
 
 
 

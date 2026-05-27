@@ -45,6 +45,7 @@
 //! and require full implementation and security audit.
 
 use dwow_sdk::{
+    crypto::{pasta_prelude::PrimeField, poseidon_hash},
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
@@ -359,8 +360,8 @@ fn vote_process_instruction_v1(
         return Err(DrainProtectionError::ConfigurationError("Voting period ended".to_string()).into())
     }
 
-    // Check not already voted
-    let vote_key = serialize(&(params.proposal_id, params.voter_pubkey));
+    // Check not already voted (key hashed so pubkey is not exposed as raw DB key)
+    let vote_key = poseidon_hash([params.proposal_id, params.voter_pubkey.x(), params.voter_pubkey.y()]).to_repr().to_vec();
     if wasm::db::db_contains_key(votes_db, &vote_key)? {
         return Err(DrainProtectionError::ConfigurationError("Already voted".to_string()).into())
     }

@@ -42,7 +42,7 @@ use rand::rngs::OsRng;
 use tracing::debug;
 
 use super::{TransferCallInput, TransferCallOutput};
-use crate::model::{Coin, CoinAttributes, Nullifier};
+use crate::model::{Coin, CoinAttributes, InputWitness, Nullifier};
 
 /// Public inputs revealed after mint proof creation
 pub struct TransferMintRevealed {
@@ -139,6 +139,7 @@ pub fn create_transfer_burn_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
     input: &TransferCallInput,
+    witness: &InputWitness,
     value_blind: ScalarBlind,
     token_blind: BaseBlind,
     user_data_blind: BaseBlind,
@@ -147,14 +148,14 @@ pub fn create_transfer_burn_proof(
     let public_key = PublicKey::from_secret(secret);
     let signature_public = public_key;
 
-    // Reconstruct coin from the input
+    // Reconstruct coin from the witness data
     let coin = CoinAttributes {
         public_key,
-        value: input.value,
-        token_id: input.token_id,
+        value: witness.value,
+        token_id: witness.token_id,
         spend_hook: input.spend_hook,
-        user_data: input.user_data,
-        blind: input.coin_blind,
+        user_data: witness.user_data,
+        blind: witness.coin_blind,
     }
     .to_coin();
 
@@ -163,9 +164,9 @@ pub fn create_transfer_burn_proof(
 
     // Calculate merkle root from coin and merkle path
     let merkle_root = {
-        let position: u64 = input.leaf_position.into();
+        let position: u64 = witness.leaf_position;
         let mut current = MerkleNode::from(coin.inner());
-        for (level, sibling) in input.merkle_path.iter().enumerate() {
+        for (level, sibling) in witness.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {
                 MerkleNode::combine(level.into(), &current, sibling)
@@ -176,32 +177,28 @@ pub fn create_transfer_burn_proof(
         current
     };
 
-    let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
-    let value_commit = pedersen_commitment_u64(input.value, value_blind);
-    let token_commit = poseidon_hash([input.token_id, token_blind.inner()]);
-
     let public_inputs = TransferBurnRevealed {
-        value_commit,
-        token_commit,
+        value_commit: input.value_commit,
+        token_commit: input.token_commit,
         nullifier,
         merkle_root,
         spend_hook: input.spend_hook,
-        user_data_enc,
+        user_data_enc: input.user_data_enc,
         signature_public,
     };
 
     let prover_witnesses = vec![
         Witness::Base(Value::known(secret.inner())),
-        Witness::Base(Value::known(pallas::Base::from(input.value))),
-        Witness::Base(Value::known(input.token_id)),
+        Witness::Base(Value::known(pallas::Base::from(witness.value))),
+        Witness::Base(Value::known(witness.token_id)),
         Witness::Base(Value::known(input.spend_hook)),
-        Witness::Base(Value::known(input.user_data)),
-        Witness::Base(Value::known(input.coin_blind)),
+        Witness::Base(Value::known(witness.user_data)),
+        Witness::Base(Value::known(witness.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(token_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
-        Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
-        Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
+        Witness::Uint32(Value::known(u64::from(witness.leaf_position).try_into().unwrap())),
+        Witness::MerklePath(Value::known(witness.merkle_path.clone().try_into().unwrap())),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

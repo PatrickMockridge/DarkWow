@@ -114,8 +114,10 @@ pub struct FeeCallInput {
     pub merkle_path: Vec<MerkleNode>,
     /// Caller's secret key
     pub secret: SecretKey,
-    /// Signature secret (ephemeral)
-    pub signature_secret: SecretKey,
+    /// Ephemeral signature secret — MUST be fresh per transaction.
+    /// Never reuse the wallet secret here; doing so links all
+    /// fee payments to the same on-chain signature_public.
+    pub ephemeral_signature_secret: SecretKey,
 }
 
 /// Output for fee call - the "change" coin after paying fee
@@ -148,7 +150,7 @@ pub fn create_fee_proof(
 ) -> Result<(Proof, FeeRevealed)> {
     // Derive public key from secret using EC (Schnorr-style)
     let public_key = PublicKey::from_secret(input.secret);
-    let signature_public = PublicKey::from_secret(input.signature_secret);
+    let signature_public = PublicKey::from_secret(input.ephemeral_signature_secret);
     let sig_coords = signature_public.inner().to_affine().coordinates().expect("Value commitment cannot be the identity element");
 
     // Create input coin attributes
@@ -216,7 +218,7 @@ pub fn create_fee_proof(
         Witness::Base(Value::known(input.secret.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
-        Witness::Base(Value::known(input.signature_secret.inner())),
+        Witness::Base(Value::known(input.ephemeral_signature_secret.inner())),
         Witness::Base(Value::known(*sig_coords.x())),
         Witness::Base(Value::known(*sig_coords.y())),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
@@ -272,7 +274,7 @@ impl FeeCallBuilder {
         }
 
         let mut proofs = vec![];
-        let signature_secrets = vec![self.input.signature_secret];
+        let signature_secrets = vec![self.input.ephemeral_signature_secret];
 
         // Generate random blinds
         let input_value_blind = ScalarBlind::random(&mut OsRng);
@@ -333,7 +335,7 @@ impl FeeCallBuilder {
         };
 
         let nullifier = Nullifier::new(self.input.secret, input_coin.inner());
-        let signature_public = PublicKey::from_secret(self.input.signature_secret);
+        let signature_public = PublicKey::from_secret(self.input.ephemeral_signature_secret);
         let input_user_data_enc = poseidon_hash([self.input.user_data, pallas::Base::zero()]);
         let input_value_commit = pedersen_commitment_u64(self.input.value, input_value_blind);
         let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind);

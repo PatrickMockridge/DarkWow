@@ -36,7 +36,7 @@ use dwow_core::{
 use blake3::Hash as Blake3Hash;
 use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN;
 use dwow_sdk::crypto::{
-    keypair::Keypair,
+    keypair::{Keypair, SecretKey},
     pasta_prelude::PrimeField,
 };
 use dwow_serial::Encodable;
@@ -142,7 +142,8 @@ pub async fn build_linear_coinbase(
     let block_signing_keypair = Keypair::random(&mut OsRng);
 
     let debris = PoWRewardCallBuilder {
-        signature_keypair: block_signing_keypair,
+        secret: block_signing_keypair.secret,
+        ephemeral_signature_secret: SecretKey::random(&mut OsRng),
         block_height: 0,
         fees: 0,
         recipient: Some(recipient),

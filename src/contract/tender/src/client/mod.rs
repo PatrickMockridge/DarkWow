@@ -275,6 +275,7 @@ pub struct SelectWinnerBuilder {
     winner_bid_id: Option<pallas::Base>,
     winner_pubkey: Option<PublicKey>,
     winning_amount: Option<u64>,
+    requester_pubkey: Option<PublicKey>,
 }
 
 impl SelectWinnerBuilder {
@@ -302,9 +303,16 @@ impl SelectWinnerBuilder {
         self
     }
 
+    pub fn requester_pubkey(mut self, pubkey: PublicKey) -> Self {
+        self.requester_pubkey = Some(pubkey);
+        self
+    }
+
     pub fn build(self) -> Result<SelectWinnerParamsV1, &'static str> {
         let winner_pubkey = self.winner_pubkey.ok_or("winner_pubkey not set")?;
         let (pub_x, pub_y) = winner_pubkey.xy();
+        let requester = self.requester_pubkey.ok_or("requester_pubkey not set")?;
+        let (req_x, req_y) = requester.xy();
         Ok(SelectWinnerParamsV1 {
             proof: vec![],
             tender_id: self.tender_id.ok_or("tender_id not set")?,
@@ -312,6 +320,8 @@ impl SelectWinnerBuilder {
             winner_pub_x: pub_x,
             winner_pub_y: pub_y,
             winning_amount: self.winning_amount.ok_or("winning_amount not set")?,
+            requester_pub_x: req_x,
+            requester_pub_y: req_y,
         })
     }
 }

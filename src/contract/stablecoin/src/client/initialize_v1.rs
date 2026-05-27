@@ -89,10 +89,9 @@ impl InitializeCallBuilder {
     pub fn build(&self) -> InitializeCallDebris {
         // Generate token mint debris if requested
         let token_mint_debris = if self.create_token {
-            // Use first 8 bytes of authority pub as u64 for token auth parent
-            let auth_bytes: [u8; 8] = self.token_authority_pub[0..8].try_into().unwrap();
-            let auth_u64 = u64::from_le_bytes(auth_bytes);
-            let token_auth_parent = pallas::Base::from(auth_u64);
+            // Use random auth parent to prevent token_id from carrying
+            // identity fragments of the authority public key.
+            let token_auth_parent = BaseBlind::random(&mut OsRng).inner();
             let token_user_data = pallas::Base::zero();
             let token_blind = BaseBlind::random(&mut OsRng).inner();
 

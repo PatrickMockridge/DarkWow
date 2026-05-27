@@ -249,17 +249,18 @@ impl AllocateCoverageV1Builder {
 /// Builder for releasing coverage
 pub struct ReleaseCoverageV1Builder {
     allocation_id: pallas::Base,
+    owner_pub: PublicKey,
 }
 
 impl ReleaseCoverageV1Builder {
     /// Create a new ReleaseCoverageV1 builder
-    pub fn new(allocation_id: pallas::Base) -> Self {
-        Self { allocation_id }
+    pub fn new(allocation_id: pallas::Base, owner_pub: PublicKey) -> Self {
+        Self { allocation_id, owner_pub }
     }
 
     /// Build the release coverage parameters
     pub fn build(&self) -> ReleaseCoverageParamsV1 {
-        ReleaseCoverageParamsV1 { allocation_id: self.allocation_id }
+        ReleaseCoverageParamsV1 { allocation_id: self.allocation_id, owner_pub: self.owner_pub }
     }
 }
 
@@ -268,18 +269,20 @@ pub struct SlashCoverageV1Builder {
     allocation_id: pallas::Base,
     slash_amount: u64,
     user_pub: PublicKey,
+    owner_pub: PublicKey,
 }
 
 impl SlashCoverageV1Builder {
     /// Create a new SlashCoverageV1 builder
-    pub fn new(allocation_id: pallas::Base, slash_amount: u64, user_pub: PublicKey) -> Self {
-        Self { allocation_id, slash_amount, user_pub }
+    pub fn new(allocation_id: pallas::Base, slash_amount: u64, user_pub: PublicKey, owner_pub: PublicKey) -> Self {
+        Self { allocation_id, slash_amount, user_pub, owner_pub }
     }
 
     /// Build the slash coverage parameters
     pub fn build(&self) -> SlashCoverageParamsV1 {
         SlashCoverageParamsV1 {
             allocation_id: self.allocation_id,
+            owner_pub: self.owner_pub,
             slash_amount: self.slash_amount,
             user_pub: self.user_pub,
             nonce: 0,
@@ -291,31 +294,33 @@ impl SlashCoverageV1Builder {
 /// Builder for claiming fees
 pub struct ClaimFeesV1Builder {
     stake_id: pallas::Base,
+    owner_pub: PublicKey,
 }
 
 impl ClaimFeesV1Builder {
     /// Create a new ClaimFeesV1 builder
-    pub fn new(stake_id: pallas::Base) -> Self {
-        Self { stake_id }
+    pub fn new(stake_id: pallas::Base, owner_pub: PublicKey) -> Self {
+        Self { stake_id, owner_pub }
     }
 
     /// Build the claim fees parameters
     pub fn build(&self) -> ClaimFeesParamsV1 {
-        ClaimFeesParamsV1 { stake_id: self.stake_id }
+        ClaimFeesParamsV1 { stake_id: self.stake_id, owner_pub: self.owner_pub }
     }
 }
 
 /// Builder for updating pool configuration
 pub struct UpdatePoolConfigV1Builder {
     pool_id: pallas::Base,
+    owner_pub: PublicKey,
     max_coverage_ratio: Option<u32>,
     operator_fee_bp: Option<u32>,
 }
 
 impl UpdatePoolConfigV1Builder {
     /// Create a new UpdatePoolConfigV1 builder
-    pub fn new(pool_id: pallas::Base) -> Self {
-        Self { pool_id, max_coverage_ratio: None, operator_fee_bp: None }
+    pub fn new(pool_id: pallas::Base, owner_pub: PublicKey) -> Self {
+        Self { pool_id, owner_pub, max_coverage_ratio: None, operator_fee_bp: None }
     }
 
     /// Set new maximum coverage ratio
@@ -334,6 +339,7 @@ impl UpdatePoolConfigV1Builder {
     pub fn build(&self) -> UpdatePoolConfigParamsV1 {
         UpdatePoolConfigParamsV1 {
             pool_id: self.pool_id,
+            owner_pub: self.owner_pub,
             max_coverage_ratio: self.max_coverage_ratio,
             operator_fee_bp: self.operator_fee_bp,
         }

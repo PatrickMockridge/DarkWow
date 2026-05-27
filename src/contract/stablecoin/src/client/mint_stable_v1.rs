@@ -264,12 +264,13 @@ impl CollateralBurnBuilder {
         // Compute nullifier: poseidon_hash(secret, coin)
         let nullifier = poseidon_hash([self.owner_secret, self.collateral_coin]);
 
-        // User data encodes mint params: (mint_amount, stablecoin_token_id, sender_pub)
-        // This gets passed to stablecoin's exec() during spend_hook callback
+        // User data encodes mint params: (mint_amount, stablecoin_token_id)
+        // This gets passed to stablecoin's exec() during spend_hook callback.
+        // Authorization is via nullifier, not embedded identity.
         let user_data = poseidon_hash([
             pallas::Base::from(self.mint_amount),
             self.stablecoin_token_id,
-            poseidon_hash([self.owner_secret]), // sender public key
+            pallas::Base::zero(),
         ]);
 
         CollateralBurnDebris {

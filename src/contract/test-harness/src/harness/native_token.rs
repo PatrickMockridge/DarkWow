@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{Keypair, MerkleNode, PublicKey, SecretKey},
+    crypto::{MerkleNode, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -97,7 +97,8 @@ impl NativeTokenHarness {
     /// Build a PoW reward call (mint native tokens to miner)
     pub fn mint_pow_reward(
         &self,
-        signature_keypair: Keypair,
+        secret: SecretKey,
+        ephemeral_signature_secret: SecretKey,
         block_height: u32,
         fees: u64,
         recipient: Option<PublicKey>,
@@ -106,7 +107,8 @@ impl NativeTokenHarness {
         let mint_pk = self.mint_pk.clone();
 
         let debris = PoWRewardCallBuilder {
-            signature_keypair,
+            secret,
+            ephemeral_signature_secret,
             block_height,
             fees,
             recipient,
@@ -154,7 +156,7 @@ impl NativeTokenHarness {
         leaf_position: u64,
         merkle_path: Vec<MerkleNode>,
         secret: SecretKey,
-        signature_secret: SecretKey,
+        ephemeral_signature_secret: SecretKey,
         recipient: PublicKey,
         output_spend_hook: pallas::Base,
         output_user_data: pallas::Base,
@@ -170,7 +172,7 @@ impl NativeTokenHarness {
                 leaf_position,
                 merkle_path,
                 secret,
-                signature_secret,
+                ephemeral_signature_secret,
             },
             output: FeeCallOutput {
                 recipient,

@@ -33,11 +33,10 @@ use dwow_core::{
 use dwow_sdk::{
     blockchain::expected_reward,
     crypto::{
-        note::AeadEncryptedNote, pasta_prelude::*, Blind, Keypair, PublicKey,
+        note::AeadEncryptedNote, pasta_prelude::*, Blind, PublicKey, SecretKey,
     },
     pasta::pallas,
 };
-use dwow_serial::serialize;
 use rand::rngs::OsRng;
 use tracing::debug;
 
@@ -78,8 +77,10 @@ impl PoWRewardRevealed {
 ///
 /// This is used to claim block rewards after successfully mining a block.
 pub struct PoWRewardCallBuilder {
-    /// Caller's keypair, corresponding to the one used in the signature
-    pub signature_keypair: Keypair,
+    /// Caller's secret key for coin ownership
+    pub secret: SecretKey,
+    /// Ephemeral signature secret — MUST be fresh per reward claim
+    pub ephemeral_signature_secret: SecretKey,
     /// Rewarded block height
     pub block_height: u32,
     /// Rewarded block transactions paid fees
@@ -114,7 +115,7 @@ impl PoWRewardCallBuilder {
             token_id,
             value_blind,
             token_blind: token_blind.inner(),
-            signature_public: self.signature_keypair.public,
+            signature_public: PublicKey::from_secret(self.ephemeral_signature_secret),
         };
 
         // Grab the spend hook and user data to use in the output
@@ -123,7 +124,7 @@ impl PoWRewardCallBuilder {
 
         // Building the anonymous output using CoinAttributes (TransferCallOutput)
         let output = CoinAttributes {
-            public_key: self.recipient.unwrap_or(self.signature_keypair.public),
+            public_key: self.recipient.unwrap_or(PublicKey::from_secret(self.secret)),
             value,
             token_id,
             spend_hook,
@@ -151,7 +152,7 @@ impl PoWRewardCallBuilder {
             coin_blind: coin_blind.inner(),
             value_blind: value_blind.inner(),
             token_blind: token_blind.inner(),
-            memo: serialize(&self.signature_keypair.secret),
+            memo: vec![],
         };
 
         let encrypted_note = AeadEncryptedNote::encrypt(&note, &output.public_key, &mut OsRng)?;

@@ -122,7 +122,7 @@ pub async fn build_fee_and_finalize_tx(
         leaf_position: dark_coin.leaf_position,
         merkle_path: dark_merkle_path,
         secret: dark_secret,
-        signature_secret: dark_secret,
+        ephemeral_signature_secret: SecretKey::random(&mut OsRng),
     };
 
     // Fee output - change goes back to our public key

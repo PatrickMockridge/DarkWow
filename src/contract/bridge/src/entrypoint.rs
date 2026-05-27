@@ -108,6 +108,25 @@ fn read_u64_from_db(db: wasm::db::DbHandle, key: &[u8]) -> Result<u64, ContractE
     }
 }
 
+/// Compute a hashed DB key from a relayer pubkey so the raw pubkey is not
+/// exposed as a database key. Uses 4 u64 chunks of the pubkey as Poseidon
+/// preimage inputs to preserve full entropy.
+fn compute_relayer_key(relayer_pub: &[u8; 32]) -> Vec<u8> {
+    let mut chunks = [0u64; 4];
+    for i in 0..4 {
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&relayer_pub[i * 8..(i + 1) * 8]);
+        chunks[i] = u64::from_le_bytes(bytes);
+    }
+    let hash = poseidon_hash([
+        pallas::Base::from(chunks[0]),
+        pallas::Base::from(chunks[1]),
+        pallas::Base::from(chunks[2]),
+        pallas::Base::from(chunks[3]),
+    ]);
+    hash.to_repr().to_vec()
+}
+
 // ============================================================================
 // CONTRACT DEFINITION
 // ============================================================================
@@ -1619,7 +1638,7 @@ fn process_register_relayer_instruction(
 
     // Check relayer is not already registered
     let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = serialize(&params.relayer_pub);
+    let relayer_key = compute_relayer_key(&params.relayer_pub);
     if wasm::db::db_contains_key(relayers_db, &relayer_key)? {
         msg!("[bridge::RegisterRelayerV1] ERROR: Relayer already registered");
         return Err(BridgeError::RelayerAlreadyRegistered.into())
@@ -1647,7 +1666,7 @@ fn apply_register_relayer_update(cid: ContractId, update: RegisterRelayerUpdateV
         fee_schedule_id: None,
     };
 
-    wasm::db::db_set(relayers_db, &serialize(&update.relayer_pub), &serialize(&info))?;
+    wasm::db::db_set(relayers_db, &compute_relayer_key(&update.relayer_pub), &serialize(&info))?;
 
     msg!("[bridge::apply_update] Relayer registered: {:?}", update.relayer_pub);
     Ok(())
@@ -1671,7 +1690,7 @@ fn process_accept_withdrawal_instruction(
 
     // Verify relayer is registered
     let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = serialize(&params.relayer_pub);
+    let relayer_key = compute_relayer_key(&params.relayer_pub);
     if !wasm::db::db_contains_key(relayers_db, &relayer_key)? {
         msg!("[bridge::AcceptWithdrawalV1] ERROR: Relayer not registered");
         return Err(BridgeError::RelayerNotRegistered.into())
@@ -1734,7 +1753,7 @@ fn apply_accept_withdrawal_update(cid: ContractId, update: AcceptWithdrawalUpdat
 
     // Increment relayer's total_withdrawals
     let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = serialize(&update.relayer_pub);
+    let relayer_key = compute_relayer_key(&update.relayer_pub);
     if let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? {
         let mut info: RelayerInfo = deserialize(&relayer_data)
             .map_err(|_| ContractError::IoError("decode error".to_string()))?;
@@ -1764,7 +1783,7 @@ fn process_verify_relayer_reputation_instruction(
 
     // Query bridge-local relayer info
     let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = serialize(&params.relayer_pub);
+    let relayer_key = compute_relayer_key(&params.relayer_pub);
 
     let reputation = match wasm::db::db_get(relayers_db, &relayer_key)? {
         Some(data) => {
@@ -1811,7 +1830,7 @@ fn process_register_fee_schedule_instruction(
 
     // Verify relayer is registered
     let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = serialize(&params.relayer_pub);
+    let relayer_key = compute_relayer_key(&params.relayer_pub);
     let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? else {
         msg!("[bridge::RegisterFeeScheduleV1] ERROR: Relayer not registered");
         return Err(BridgeError::RelayerNotRegistered.into())
@@ -1831,7 +1850,7 @@ fn process_register_fee_schedule_instruction(
 
 fn apply_register_fee_schedule_update(cid: ContractId, update: RegisterFeeScheduleUpdateV1) -> ContractResult {
     let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = serialize(&update.relayer_pub);
+    let relayer_key = compute_relayer_key(&update.relayer_pub);
 
     let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? else {
         return Err(BridgeError::RelayerNotRegistered.into())

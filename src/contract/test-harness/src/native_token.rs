@@ -24,7 +24,7 @@
 #![allow(dead_code)]
 
 use dwow_sdk::{
-    crypto::{keypair::Keypair, pasta_prelude::{Field, Group}},
+    crypto::{keypair::Keypair, pasta_prelude::{Field, Group}, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -86,12 +86,14 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     let circuit = dwow_core::zk::ZkCircuit::new(dwow_core::zk::empty_witnesses(&zkbin)?, &zkbin);
     let pk = dwow_core::zk::ProvingKey::build(zkbin.k, &circuit);
 
-    // Generate a keypair for the reward recipient
-    let keypair = Keypair::default();
+    // Generate secrets for the reward recipient
+    let secret = SecretKey::random(&mut OsRng);
+    let ephemeral_signature_secret = SecretKey::random(&mut OsRng);
 
     // Build PoW reward call
     let debris = PoWRewardCallBuilder {
-        signature_keypair: keypair,
+        secret,
+        ephemeral_signature_secret,
         block_height: 1,
         fees: 0,
         recipient: None,
@@ -126,8 +128,9 @@ fn test_burn_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     let circuit = dwow_core::zk::ZkCircuit::new(dwow_core::zk::empty_witnesses(&zkbin)?, &zkbin);
     let pk = dwow_core::zk::ProvingKey::build(zkbin.k, &circuit);
 
-    // Create a keypair for the sender
-    let keypair = Keypair::default();
+    // Create secrets for the sender
+    let secret = SecretKey::random(&mut OsRng);
+    let ephemeral_sig_secret = SecretKey::random(&mut OsRng);
 
     // Create a simple input to burn
     let input = BurnCallInput {
@@ -138,7 +141,8 @@ fn test_burn_call_builder() -> Result<(), Box<dyn std::error::Error>> {
         coin_blind: pallas::Base::random(&mut OsRng),
         leaf_position: 0,
         merkle_path: vec![], // Empty path for simplicity
-        keypair,
+        secret,
+        ephemeral_signature_secret: ephemeral_sig_secret,
     };
 
     // Build burn call

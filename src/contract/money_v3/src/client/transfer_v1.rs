@@ -106,8 +106,10 @@ pub struct TransferCallInput {
     pub merkle_path: Vec<MerkleNode>,
     /// Caller's secret key
     pub secret: pallas::Base,
-    /// Signature secret (Schnorr)
-    pub signature_secret: pallas::Base,
+    /// Ephemeral signature secret (Schnorr) — MUST be fresh per transaction.
+    /// Never reuse the wallet secret here; doing so links all
+    /// transfers to the same on-chain signature_public.
+    pub ephemeral_signature_secret: pallas::Base,
 }
 
 /// Output coin for transfer
@@ -297,7 +299,7 @@ fn create_transfer_burn_proof(
     let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
 
     // Signature public key
-    let signature_public = poseidon_hash([input.signature_secret]);
+    let signature_public = poseidon_hash([input.ephemeral_signature_secret]);
 
     let public_inputs = TransferBurnRevealed {
         nullifier,
@@ -320,7 +322,7 @@ fn create_transfer_burn_proof(
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
-        Witness::Base(Value::known(input.signature_secret)),
+        Witness::Base(Value::known(input.ephemeral_signature_secret)),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

@@ -29,7 +29,7 @@
 //! or additional details.
 
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{ContractId, pasta_prelude::PrimeField, poseidon_hash},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg, ContractCall,
@@ -1017,11 +1017,43 @@ fn derive_capability_secret(holder_pub: [u8; 32], capability_id: [u8; 32]) -> [u
     result
 }
 
-/// Compute issuance key from capability ID and holder pub
+/// Compute a hashed DB key from an issuer pubkey so the raw pubkey is not
+/// exposed as a database key. Uses full 32-byte entropy via Poseidon.
+fn compute_issuer_key(issuer_pub: &[u8; 32]) -> Vec<u8> {
+    let mut chunks = [0u64; 4];
+    for i in 0..4 {
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&issuer_pub[i * 8..(i + 1) * 8]);
+        chunks[i] = u64::from_le_bytes(bytes);
+    }
+    let hash = poseidon_hash([
+        Base::from(chunks[0]),
+        Base::from(chunks[1]),
+        Base::from(chunks[2]),
+        Base::from(chunks[3]),
+    ]);
+    hash.to_repr().to_vec()
+}
+
+/// Compute issuance key from capability ID and holder pub.
+/// Hashed so the raw holder pub is not exposed as a DB key.
 fn compute_issuance_key(capability_id: [u8; 32], holder_pub: [u8; 32]) -> Vec<u8> {
-    let mut key = serialize(&capability_id);
-    key.extend_from_slice(&serialize(&holder_pub));
-    key
+    let mut h_chunks = [0u64; 4];
+    for i in 0..4 {
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&holder_pub[i * 8..(i + 1) * 8]);
+        h_chunks[i] = u64::from_le_bytes(bytes);
+    }
+    let mut c_bytes = [0u8; 8];
+    c_bytes.copy_from_slice(&capability_id[..8]);
+    let cid = u64::from_le_bytes(c_bytes);
+    poseidon_hash([
+        Base::from(cid),
+        Base::from(h_chunks[0]),
+        Base::from(h_chunks[1]),
+        Base::from(h_chunks[2]),
+        Base::from(h_chunks[3]),
+    ]).to_repr().to_vec()
 }
 
 // ============================================================================
@@ -1040,7 +1072,7 @@ fn process_register_issuer_instruction(
 
     // Check if issuer already registered
     let issuers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_ISSUERS_TREE)?;
-    let issuer_key = serialize(&params.issuer_pub);
+    let issuer_key = compute_issuer_key(&params.issuer_pub);
     let existing = wasm::db::db_get(issuers_db, &issuer_key)?;
     if existing.is_some() {
         msg!("[identity::register_issuer] ERROR: Issuer already registered");
@@ -1068,7 +1100,7 @@ fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1)
         trusted: true,
     };
 
-    wasm::db::db_set(issuers_db, &serialize(&update.issuer_id), &serialize(&issuer))?;
+    wasm::db::db_set(issuers_db, &compute_issuer_key(&update.issuer_id), &serialize(&issuer))?;
 
     msg!("[identity::register_issuer::update] Issuer stored");
     Ok(())
@@ -1078,27 +1110,26 @@ fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1)
 // UPDATE REPUTATION (Phase 2d hardening)
 // ============================================================================
 
-/// Compute reputation ID from issuer and relayer pubkeys
+/// Compute reputation ID from issuer and relayer pubkeys.
+/// Uses full 32-byte pubkeys (4 u64 chunks each) to prevent entropy loss.
 fn compute_reputation_id(issuer_pub: &[u8; 32], relayer_pub: &[u8; 32]) -> [u8; 32] {
-    use dwow_sdk::crypto::poseidon_hash;
-    use dwow_sdk::pasta::group::ff::PrimeFieldBits;
-    let mut u64_bytes = [0u8; 8];
-    u64_bytes.copy_from_slice(&issuer_pub[..8]);
-    let issuer_val = u64::from_le_bytes(u64_bytes);
-    u64_bytes.copy_from_slice(&relayer_pub[..8]);
-    let relayer_val = u64::from_le_bytes(u64_bytes);
-    let hash = poseidon_hash([
-        dwow_sdk::pasta::pallas::Base::from(issuer_val),
-        dwow_sdk::pasta::pallas::Base::from(relayer_val),
-    ]);
-    let bits = hash.to_le_bits();
-    let mut result = [0u8; 32];
-    for (i, bit) in bits.iter().by_vals().take(256).enumerate() {
-        if bit {
-            result[i / 8] |= 1 << (i % 8);
-        }
+    let mut ikeys = [0u64; 4];
+    let mut rkeys = [0u64; 4];
+    for i in 0..4 {
+        let mut ib = [0u8; 8];
+        let mut rb = [0u8; 8];
+        ib.copy_from_slice(&issuer_pub[i * 8..(i + 1) * 8]);
+        rb.copy_from_slice(&relayer_pub[i * 8..(i + 1) * 8]);
+        ikeys[i] = u64::from_le_bytes(ib);
+        rkeys[i] = u64::from_le_bytes(rb);
     }
-    result
+    let hash = poseidon_hash([
+        Base::from(ikeys[0]), Base::from(ikeys[1]),
+        Base::from(ikeys[2]), Base::from(ikeys[3]),
+        Base::from(rkeys[0]), Base::from(rkeys[1]),
+        Base::from(rkeys[2]), Base::from(rkeys[3]),
+    ]);
+    hash.to_repr()
 }
 
 fn process_update_reputation_instruction(
@@ -1113,7 +1144,7 @@ fn process_update_reputation_instruction(
 
     // Verify issuer is registered
     let issuers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_ISSUERS_TREE)?;
-    let issuer_key = serialize(&params.issuer_pub);
+    let issuer_key = compute_issuer_key(&params.issuer_pub);
     wasm::db::db_get(issuers_db, &issuer_key)?
         .ok_or(IdentityError::IssuerNotTrusted)?;
 

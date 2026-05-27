@@ -33,7 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
-        pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Keypair,
+        pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind,
         MerkleNode, PublicKey, ScalarBlind, SecretKey,
     },
     error::ContractError,
@@ -179,8 +179,12 @@ pub struct BurnCallInput {
     pub leaf_position: u64,
     /// Merkle path (siblings)
     pub merkle_path: Vec<dwow_sdk::crypto::MerkleNode>,
-    /// Caller's keypair for signing
-    pub keypair: Keypair,
+    /// Caller's secret key for coin ownership
+    pub secret: SecretKey,
+    /// Ephemeral signature secret — MUST be fresh per transaction.
+    /// Never reuse the wallet secret here; doing so links all
+    /// transactions to the same on-chain signature_public.
+    pub ephemeral_signature_secret: SecretKey,
 }
 
 /// Debris produced by building a Burn call, containing the parameters
@@ -208,8 +212,8 @@ impl BurnCallBuilder {
         let mut inputs = vec![];
 
         for input in self.inputs.into_iter() {
-            let secret = input.keypair.secret;
-            let signature_secret = secret;
+            let secret = input.secret;
+            let signature_secret = input.ephemeral_signature_secret;
 
             // Generate burn proof
             let value_blind = ScalarBlind::random(&mut OsRng);
