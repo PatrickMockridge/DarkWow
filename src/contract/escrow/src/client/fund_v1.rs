@@ -94,7 +94,7 @@ impl FundEscrowCallData {
     pub fn compute_public_inputs(&self) -> FundEscrowPublicInputs {
         // Compute actual Pedersen commitment for value to match circuit behavior
         let value_commit = pedersen_commitment_u64(self.value, Blind(self.value_blind));
-        let value_coords = value_commit.to_affine().coordinates().unwrap();
+        let value_coords = value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
 
         FundEscrowPublicInputs {
             // For the circuit, we use the computed commitment coordinates

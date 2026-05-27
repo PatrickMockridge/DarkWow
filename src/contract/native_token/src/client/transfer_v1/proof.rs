@@ -53,7 +53,7 @@ pub struct TransferMintRevealed {
 
 impl TransferMintRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let valcom_coords = self.value_commit.to_affine().coordinates().unwrap();
+        let valcom_coords = self.value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
         vec![self.coin.inner(), *valcom_coords.x(), *valcom_coords.y(), self.token_commit]
     }
 }
@@ -71,7 +71,7 @@ pub struct TransferBurnRevealed {
 
 impl TransferBurnRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let valcom_coords = self.value_commit.to_affine().coordinates().unwrap();
+        let valcom_coords = self.value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
         vec![
             self.nullifier.inner(),
             *valcom_coords.x(),

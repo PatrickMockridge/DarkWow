@@ -91,7 +91,11 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 params.token_id,
             ]);
             let vc_affine = params.value_commit.to_affine();
-            let vc_coords = vc_affine.coordinates().unwrap();
+            let coords = vc_affine.coordinates();
+            if coords.is_none().into() {
+                vec![]
+            } else {
+            let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_COMMIT_NS.to_string(),
@@ -100,6 +104,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
             metadata
+            }
         }
         BaccaratFunction::SettleBetV1 => {
             let params: crate::model::SettleBetParamsV1 = deserialize(&self_.data[1..])?;

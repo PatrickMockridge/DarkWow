@@ -144,7 +144,11 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 pallas::Base::from(current_block),
             ]);
             let vc_affine = params.value_commit.to_affine();
-            let vc_coords = vc_affine.coordinates().unwrap();
+            let coords = vc_affine.coordinates();
+            if coords.is_none().into() {
+                vec![]
+            } else {
+            let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::DARKBET_EXCHANGE_ZKAS_ADD_LIQUIDITY_NS.to_string(),
@@ -153,6 +157,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
             metadata
+            }
         }
         DarkbetFunction::BuyPositionV1 => {
             let params: BuyPositionParamsV1 = deserialize(&self_.data[1..])?;
@@ -166,7 +171,11 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 pallas::Base::from(current_block),
             ]);
             let vc_affine = params.value_commit.to_affine();
-            let vc_coords = vc_affine.coordinates().unwrap();
+            let coords = vc_affine.coordinates();
+            if coords.is_none().into() {
+                vec![]
+            } else {
+            let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::DARKBET_EXCHANGE_ZKAS_BUY_POSITION_NS.to_string(),
@@ -175,6 +184,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
             metadata
+            }
         }
         DarkbetFunction::ClaimWinningsV1 => {
             let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;

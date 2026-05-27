@@ -74,9 +74,9 @@ impl FeeRevealed {
     /// Transform the struct into a `Vec<pallas::Base>` ready for
     /// proof verification.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let input_vc_coords = self.input_value_commit.to_affine().coordinates().unwrap();
-        let output_vc_coords = self.output_value_commit.to_affine().coordinates().unwrap();
-        let sigpub_coords = self.signature_public.inner().to_affine().coordinates().unwrap();
+        let input_vc_coords = self.input_value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
+        let output_vc_coords = self.output_value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
+        let sigpub_coords = self.signature_public.inner().to_affine().coordinates().expect("Value commitment cannot be the identity element");
 
         // NOTE: It's important to keep these in the same order
         // as the `constrain_instance` calls in the zkas code.
@@ -149,7 +149,7 @@ pub fn create_fee_proof(
     // Derive public key from secret using EC (Schnorr-style)
     let public_key = PublicKey::from_secret(input.secret);
     let signature_public = PublicKey::from_secret(input.signature_secret);
-    let sig_coords = signature_public.inner().to_affine().coordinates().unwrap();
+    let sig_coords = signature_public.inner().to_affine().coordinates().expect("Value commitment cannot be the identity element");
 
     // Create input coin attributes
     let input_coin_attrs = CoinAttributes {

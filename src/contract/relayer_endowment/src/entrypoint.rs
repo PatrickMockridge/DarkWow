@@ -144,7 +144,11 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
         nonce,
     ]);
     let vc_affine = params.value_commit.to_affine();
-    let vc_coords = vc_affine.coordinates().unwrap();
+    let coords = vc_affine.coordinates();
+    if coords.is_none().into() {
+        return Ok(vec![]);
+    } else {
+    let vc_coords = coords.unwrap();
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1.to_string(),
         vec![deployment_id, *vc_coords.x(), *vc_coords.y()],
@@ -152,6 +156,7 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
     Ok(metadata)
+    }
 }
 
 fn relayer_endowment_claim_fees_get_metadata_v1(

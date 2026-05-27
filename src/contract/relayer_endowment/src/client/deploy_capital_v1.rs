@@ -93,7 +93,7 @@ impl DeployCapitalV1CallData {
         ]);
 
         let value_commit = pedersen_commitment_u64(self.deploy_amount_u64, Blind(self.value_blind));
-        let value_coords = value_commit.to_affine().coordinates().unwrap();
+        let value_coords = value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
 
         DeployCapitalV1PublicInputs {
             derived_deployment_id,

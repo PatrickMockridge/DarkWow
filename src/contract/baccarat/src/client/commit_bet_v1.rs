@@ -98,7 +98,7 @@ impl CommitBetV1CallData {
         // Compute value commitment: vcv = bet_value * G1 + value_blind * G2
         let value_commit =
             pedersen_commitment_u64(self.bet_value, Blind(self.value_blind));
-        let coords = value_commit.to_affine().coordinates().unwrap();
+        let coords = value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
         CommitBetV1PublicInputs {
             bet_id,
             value_commit_x: *coords.x(),

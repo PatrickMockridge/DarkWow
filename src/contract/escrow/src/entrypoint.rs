@@ -204,7 +204,11 @@ fn escrow_fund_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
     // Get value commitment coordinates
-    let value_coords = params.value_commit.to_affine().coordinates().unwrap();
+    let value_coords = params.value_commit.to_affine().coordinates();
+    if value_coords.is_none().into() {
+        return Err(EscrowError::InvalidCommitment.into());
+    }
+    let value_coords = value_coords.unwrap();
 
     // FundEscrow circuit expects:
     // - value_commit_x, value_commit_y (Pedersen commitment coordinates)

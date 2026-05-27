@@ -66,7 +66,7 @@ pub struct PoWRewardRevealed {
 impl PoWRewardRevealed {
     /// Convert to vector of base field elements (public inputs for ZK circuit)
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let valcom_coords = self.value_commit.to_affine().coordinates().unwrap();
+        let valcom_coords = self.value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
 
         // NOTE: It's important to keep these in the same order
         // as the `constrain_instance` calls in the zkas code.

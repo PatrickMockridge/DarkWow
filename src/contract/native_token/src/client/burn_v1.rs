@@ -57,7 +57,7 @@ pub struct BurnRevealed {
 
 impl BurnRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let valcom_coords = self.value_commit.to_affine().coordinates().unwrap();
+        let valcom_coords = self.value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
         vec![
             self.nullifier.inner(),
             *valcom_coords.x(),

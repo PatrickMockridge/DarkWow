@@ -103,7 +103,11 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 params.nonce,
             ]);
             let vc_affine = params.value_commit.to_affine();
-            let vc_coords = vc_affine.coordinates().unwrap();
+            let coords = vc_affine.coordinates();
+            if coords.is_none().into() {
+                vec![]
+            } else {
+            let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_STAKE_NS.to_string(),
@@ -112,6 +116,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
             metadata
+            }
         }
         BettingStakeFunction::UpdateRiskV1 => {
             let params: crate::model::UpdateRiskParamsV1 = deserialize(&self_.data[1..])?;
@@ -137,7 +142,11 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 params.nonce,
             ]);
             let vc_affine = params.value_commit.to_affine();
-            let vc_coords = vc_affine.coordinates().unwrap();
+            let coords = vc_affine.coordinates();
+            if coords.is_none().into() {
+                vec![]
+            } else {
+            let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_UNSTAKE_NS.to_string(),
@@ -146,6 +155,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
             metadata
+            }
         }
         BettingStakeFunction::ClaimEarningsV1 => {
             let params: crate::model::ClaimEarningsParamsV1 = deserialize(&self_.data[1..])?;
@@ -159,7 +169,11 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 params.nonce,
             ]);
             let vc_affine = params.value_commit.to_affine();
-            let vc_coords = vc_affine.coordinates().unwrap();
+            let coords = vc_affine.coordinates();
+            if coords.is_none().into() {
+                vec![]
+            } else {
+            let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_CLAIM_NS.to_string(),
@@ -168,6 +182,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
             metadata
+            }
         }
     };
 

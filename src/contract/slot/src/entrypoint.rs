@@ -118,7 +118,11 @@ fn slot_commit_bet_get_metadata_v1(
         params.token_id,
     ]);
     let vc_affine = params.value_commit.to_affine();
-    let vc_coords = vc_affine.coordinates().unwrap();
+    let coords = vc_affine.coordinates();
+    if coords.is_none().into() {
+        Ok(vec![])
+    } else {
+    let vc_coords = coords.unwrap();
     let (vc_x, vc_y) = (*vc_coords.x(), *vc_coords.y());
     zk_public_inputs.push((
         SLOT_CONTRACT_ZKAS_COMMIT_NS.to_string(),
@@ -127,6 +131,7 @@ fn slot_commit_bet_get_metadata_v1(
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
     Ok(metadata)
+    }
 }
 
 fn slot_settle_bet_get_metadata_v1(
