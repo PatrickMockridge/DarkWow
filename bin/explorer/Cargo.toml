@@ -4,9 +4,12 @@ version = "0.5.0"
 edition = "2021"
 
 [dependencies]
-dwow_core = {path = "../../", features = ["blockchain", "rpc"]}
+dwow_core = {path = "../../", features = ["rpc"]}
+dwow_chain = {path = "../../src/linear", features = ["async"]}
 dwow-serial = {path = "../../src/serial", features = ["derive"]}
 dwow-sdk = {path = "../../src/sdk"}
+serde_json = "1.0"
+blake3 = "1.8.2"
 
 dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
 dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["no-entrypoint", "client"]}

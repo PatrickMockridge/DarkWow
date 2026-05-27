@@ -23,13 +23,12 @@
 
 use std::collections::HashMap;
 
+use dwow_chain::{Block, BlockHeader, PowSource, Transaction};
 use dwow_core::{
-    blockchain::{header_store::PowData, BlockInfo},
     rpc::jsonrpc::{
         ErrorCode::{InternalError, InvalidParams},
         JsonError, JsonResponse, JsonResult,
     },
-    tx::Transaction,
     util::{encoding::base64, parse::encode_base10},
 };
 use dwow_native_token_contract::NativeTokenFunction;
@@ -40,6 +39,13 @@ use tiny_keccak::{Hasher, Keccak};
 use tinyjson::JsonValue;
 
 use crate::{DifficultyIndex, Explorer};
+
+/// Compute a deterministic display hash for a block header.
+/// Uses blake3 of JSON-serialized header (no RandomX VM needed for display).
+fn header_display_hash(header: &BlockHeader) -> String {
+    let json = serde_json::to_vec(header).unwrap();
+    blake3::hash(&json).to_string()
+}
 
 struct ContractCallInfo {
     contract_id: String,
@@ -85,18 +91,18 @@ struct TransactionInfo {
 impl TransactionInfo {
     async fn new(tx: &Transaction) -> Self {
         let mut fee = 0;
-        let mut calls = Vec::with_capacity(tx.calls.len());
-        for call in &tx.calls {
-            let func = call.data.data[0];
+        let mut calls = Vec::with_capacity(tx.contract_calls.len());
+        for call in &tx.contract_calls {
+            let func = call.data[0];
 
-            if call.data.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV1 as u8 {
-                fee = deserialize_async(&call.data.data[1..9]).await.unwrap();
+            if call.contract_id == NATIVE_TOKEN_CONTRACT_ID.to_bytes() && func == NativeTokenFunction::FeeV1 as u8 {
+                fee = deserialize_async(&call.data[1..9]).await.unwrap();
             }
 
             calls.push(ContractCallInfo::new(
-                call.data.contract_id.to_string(),
+                hex::encode(call.contract_id),
                 format!("0x{:02x}", func),
-                call.data.data.len() as u64,
+                call.data.len() as u64,
             ));
         }
 
@@ -135,18 +141,18 @@ struct ExplTxInfo {
 impl ExplTxInfo {
     async fn new(tx: &Transaction, block_height: u64, current_height: u64) -> Self {
         let mut fee = 0;
-        let mut calls = Vec::with_capacity(tx.calls.len());
-        for call in &tx.calls {
-            let func = call.data.data[0];
+        let mut calls = Vec::with_capacity(tx.contract_calls.len());
+        for call in &tx.contract_calls {
+            let func = call.data[0];
 
-            if call.data.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV1 as u8 {
-                fee = deserialize_async(&call.data.data[1..9]).await.unwrap();
+            if call.contract_id == NATIVE_TOKEN_CONTRACT_ID.to_bytes() && func == NativeTokenFunction::FeeV1 as u8 {
+                fee = deserialize_async(&call.data[1..9]).await.unwrap();
             }
 
             calls.push(ContractCallInfo::new(
-                call.data.contract_id.to_string(),
+                hex::encode(call.contract_id),
                 format!("0x{:02x}", func),
-                call.data.data.len() as u64,
+                call.data.len() as u64,
             ));
         }
 
@@ -160,7 +166,7 @@ impl ExplTxInfo {
             confirmations,
             fee,
             size: raw_bytes.len() as u64,
-            n_calls: tx.calls.len() as u64,
+            n_calls: tx.contract_calls.len() as u64,
             calls,
             raw: base64::encode(&raw_bytes),
         }
@@ -183,7 +189,7 @@ impl ExplTxInfo {
     }
 }
 
-struct ExplBlockInfo {
+struct ExplBlock {
     height: u64,
     hash: String,
     version: u8,
@@ -201,12 +207,12 @@ struct ExplBlockInfo {
     coinbase: CoinbaseInfo,
 }
 
-impl ExplBlockInfo {
-    async fn new(block: &BlockInfo, diff: &DifficultyIndex) -> Self {
+impl ExplBlock {
+    async fn new(block: &Block, diff: &DifficultyIndex) -> Self {
         let mut monero_hash = None;
-        let powtype = match &block.header.pow_data {
-            PowData::DarkFi => "DarkFi".to_string(),
-            PowData::Monero(powdata) => {
+        let powtype = match &block.header.pow_source {
+            PowSource::Native => "DarkFi".to_string(),
+            PowSource::Monero(powdata) => {
                 // Calculate the Monero block header hash
                 let mut blockhashing_blob = powdata.to_block_hashing_blob();
                 // Monero prefixes a VarInt of the blob len before getting the
@@ -227,22 +233,22 @@ impl ExplBlockInfo {
             }
         };
 
-        let mut txs = Vec::with_capacity(block.txs.len());
-        for tx in &block.txs {
+        let mut txs = Vec::with_capacity(block.transactions.len());
+        for tx in &block.transactions {
             txs.push(TransactionInfo::new(tx).await);
         }
 
-        let coinbase = CoinbaseInfo::new(&block.txs[block.txs.len() - 1]).await;
+        let coinbase = CoinbaseInfo::new(&block.transactions[block.transactions.len() - 1]).await;
 
         Self {
             height: block.header.height as u64,
-            hash: block.header.hash().to_string(),
+            hash: header_display_hash(&block.header),
             version: block.header.version,
             previous_hash: block.header.previous.to_string(),
             nonce: block.header.nonce as u64,
-            timestamp: block.header.timestamp.inner(),
-            transactions_root: block.header.transactions_root.to_string(),
-            state_root: hex::encode(block.header.state_root),
+            timestamp: block.header.timestamp,
+            transactions_root: block.header.merkle_root.to_string(),
+            state_root: hex::encode(block.header.nullifier_root),
             size: serialize_async(block).await.len() as u64,
             difficulty: diff.difficulty,
             cumulative: diff.cumulative,
@@ -356,18 +362,18 @@ impl Explorer {
                 return JsonError::new(InternalError, None, id).into()
             };
 
-            let powtype = match header.pow_data {
-                PowData::DarkFi => "DarkFi".to_string(),
-                PowData::Monero(_) => "Monero".to_string(),
+            let powtype = match header.pow_source {
+                PowSource::Native => "DarkFi".to_string(),
+                PowSource::Monero(_) => "Monero".to_string(),
             };
 
             blocks.push(JsonValue::Object(HashMap::from([
                 ("height".to_string(), JsonValue::Number(header.height as f64)),
                 ("size".to_string(), JsonValue::Number(size as f64)),
                 ("n_txs".to_string(), JsonValue::Number(tx_count as f64)),
-                ("timestamp".to_string(), JsonValue::Number(header.timestamp.inner() as f64)),
+                ("timestamp".to_string(), JsonValue::Number(header.timestamp as f64)),
                 ("powtype".to_string(), JsonValue::String(powtype)),
-                ("hash".to_string(), JsonValue::String(header.hash().to_string())),
+                ("hash".to_string(), JsonValue::String(header_display_hash(&header))),
             ])));
         }
 
@@ -407,7 +413,7 @@ impl Explorer {
             return JsonError::new(InternalError, None, id).into()
         };
 
-        let info = ExplBlockInfo::new(&block, &diff).await;
+        let info = ExplBlock::new(&block, &diff).await;
         JsonResponse::new(info.to_json(), id).into()
     }
 
@@ -509,7 +515,7 @@ impl Explorer {
             return JsonError::new(InternalError, None, id).into()
         };
 
-        let time_diff = end_header.timestamp.inner() as f64 - start_header.timestamp.inner() as f64;
+        let time_diff = end_header.timestamp as f64 - start_header.timestamp as f64;
         let blocks_mined = (height - start_height) as f64;
 
         if time_diff <= 0.0 || blocks_mined <= 0.0 {

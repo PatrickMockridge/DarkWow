@@ -33,8 +33,8 @@ use std::{
 
 use arg::Args;
 use async_trait::async_trait;
+use dwow_chain::Block;
 use dwow_core::{
-    blockchain::BlockInfo,
     rpc::{
         client::RpcClient,
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResult},
@@ -42,10 +42,9 @@ use dwow_core::{
         settings::RpcSettings,
     },
     system::{msleep, CondVar, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr},
-    util::{encoding::base64, path::expand_path},
+    util::path::expand_path,
     verbose, Error, Result, ANSI_LOGO,
 };
-use dwow_serial::deserialize_async;
 use smol::{
     future,
     lock::{Mutex, MutexGuard},
@@ -183,11 +182,10 @@ impl Explorer {
 
             match block_notification {
                 JsonResult::Notification(notification) => {
-                    // Deserialize base64 block
-                    let block_bytes =
-                        base64::decode(notification.params[0].get::<String>().unwrap()).unwrap();
-                    let block: BlockInfo = deserialize_async(&block_bytes).await.unwrap();
-                    let incoming_height = block.header.height as u64;
+                    // Deserialize JSON block
+                    let block_json = &notification.params[0].get::<String>().unwrap();
+                    let block: Block = serde_json::from_str(block_json).unwrap();
+                    let incoming_height = block.header.height;
 
                     info!(target: "explorer::handle_block_sub", "Height {}", incoming_height);
 
@@ -288,8 +286,7 @@ impl Explorer {
             let rep = rpc_client.request(req).await?;
 
             let param = rep.get::<String>().unwrap();
-            let bytes = base64::decode(param).unwrap();
-            let block: BlockInfo = deserialize_async(&bytes).await?;
+            let block: Block = serde_json::from_str(param).unwrap();
 
             // Get difficulty
             let req = JsonRequest::new(
@@ -350,11 +347,10 @@ async fn realmain(
         break rpc_client
     };
 
-    let req = JsonRequest::new("blockchain.last_confirmed_block", JsonValue::Array(vec![]));
+    let req = JsonRequest::new("blockchain.get_height", JsonValue::Array(vec![]));
     let rep = rpc_client.request(req).await?;
     rpc_client.stop().await;
-    let params = rep.get::<Vec<JsonValue>>().unwrap();
-    let confirmed_height = *params[0].get::<f64>().unwrap() as u64;
+    let confirmed_height = *rep.get::<f64>().unwrap() as u64;
 
     // Now create the subscription task.
     let explorer_ = Arc::clone(&explorer);

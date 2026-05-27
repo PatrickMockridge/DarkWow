@@ -24,13 +24,10 @@
 use std::{io, str::FromStr};
 
 use bytemuck::{Pod, Zeroable};
-use dwow_core::{
-    blockchain::{BlockInfo, Header},
-    tx::Transaction,
-};
+use dwow_chain::{Block, BlockHeader, Transaction};
 use dwow_deployooor_contract::{model::LockParamsV1, DeployFunction};
 use dwow_sdk::{
-    crypto::{schnorr::Signature, ContractId, DEPLOYOOOR_CONTRACT_ID},
+    crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID},
     deploy::DeployParamsV1,
 };
 use dwow_serial::{
@@ -102,7 +99,7 @@ impl Explorer {
     }
 
     /// Append a new block
-    pub async fn append_block(&self, block: &BlockInfo, diff: &DifficultyIndex) -> io::Result<()> {
+    pub async fn append_block(&self, block: &Block, diff: &DifficultyIndex) -> io::Result<()> {
         let mut tx = self.tapes_db.append();
 
         let block_offset = tx.blob_tape_len(&self.database.blocks).unwrap_or(0);
@@ -115,7 +112,7 @@ impl Explorer {
 
         // Append all block transactions
         let mut current_tx_offset = tx_blob_offset;
-        for transaction in &block.txs {
+        for transaction in &block.transactions {
             let tx_data = serialize_async(transaction).await;
             tx.append_bytes(&self.database.transactions, &tx_data)?;
 
@@ -133,7 +130,7 @@ impl Explorer {
         let block_idx = BlockIndex {
             offset: block_offset,
             length: header_data.len() as u64,
-            tx_count: block.txs.len() as u64,
+            tx_count: block.transactions.len() as u64,
             tx_start_idx,
         };
         tx.append_entries(&self.database.block_index, std::slice::from_ref(&block_idx))?;
@@ -145,14 +142,14 @@ impl Explorer {
         tx.commit(Persistence::SyncData)?;
 
         // Prepare data for atomic sled transaction
-        let header_hash = serialize_async(&block.header.hash()).await;
+        let header_hash = blake3::hash(&serde_json::to_vec(&block.header).unwrap()).as_bytes().to_vec();
         // Store height as u64 (8 bytes) to match lookup format
         let height_bytes = (block.header.height as u64).to_le_bytes();
 
         // Collect tx hashes and their indices
-        let mut tx_entries: Vec<([u8; 32], [u8; 8])> = Vec::with_capacity(block.txs.len());
-        for (i, transaction) in block.txs.iter().enumerate() {
-            let tx_hash = *transaction.hash().inner();
+        let mut tx_entries: Vec<([u8; 32], [u8; 8])> = Vec::with_capacity(block.transactions.len());
+        for (i, transaction) in block.transactions.iter().enumerate() {
+            let tx_hash = *transaction.hash().as_bytes();
             let tx_idx_pos = tx_start_idx + i as u64;
             tx_entries.push((tx_hash, tx_idx_pos.to_le_bytes()));
         }
@@ -196,14 +193,14 @@ impl Explorer {
             "Appended block {} ({} bytes header, {} txs)",
             block.header.height,
             header_data.len(),
-            block.txs.len(),
+            block.transactions.len(),
         );
 
         // Update stats
         let block_size = header_data.len() as u64 + (current_tx_offset - tx_blob_offset);
         self.update_stats_for_block(
-            block.header.timestamp.inner(),
-            block.txs.len() as u64,
+            block.header.timestamp,
+            block.transactions.len() as u64,
             block_size,
         )
         .await?;
@@ -244,8 +241,10 @@ impl Explorer {
             // Read header to get its hash
             let mut header_data = vec![0u8; block_idx.length as usize];
             reader.read_bytes(&self.database.blocks, block_idx.offset, &mut header_data)?;
-            let header: Header = deserialize_async(&header_data).await?;
-            header_hashes_to_remove.push(serialize_async(&header.hash()).await);
+            let header: BlockHeader = deserialize_async(&header_data).await?;
+            header_hashes_to_remove.push(
+                blake3::hash(&serde_json::to_vec(&header).unwrap()).as_bytes().to_vec(),
+            );
 
             // Read each tx to get its hash and check for contract deployments
             for i in 0..block_idx.tx_count {
@@ -256,15 +255,15 @@ impl Explorer {
                 let mut tx_data = vec![0u8; tx_idx.length as usize];
                 reader.read_bytes(&self.database.transactions, tx_idx.offset, &mut tx_data)?;
                 let transaction: Transaction = deserialize_async(&tx_data).await?;
-                tx_hashes_to_remove.push(transaction.hash().0.to_vec());
+                tx_hashes_to_remove.push(transaction.hash().as_bytes().to_vec());
 
                 // Check for contract deployments to remove
-                for call in &transaction.calls {
-                    if call.data.contract_id == *DEPLOYOOOR_CONTRACT_ID &&
-                        call.data.data[0] == DeployFunction::DeployV1 as u8
+                for call in &transaction.contract_calls {
+                    if call.contract_id == DEPLOYOOOR_CONTRACT_ID.to_bytes() &&
+                        call.data[0] == DeployFunction::DeployV1 as u8
                     {
                         let params: DeployParamsV1 =
-                            deserialize_async(&call.data.data[1..]).await?;
+                            deserialize_async(&call.data[1..]).await?;
                         contracts_to_remove.push(ContractId::derive_public(params.public_key));
                     }
                 }
@@ -363,7 +362,7 @@ impl Explorer {
     }
 
     /// Get the block header for a height
-    pub async fn get_header(&self, height: u64) -> io::Result<Option<Header>> {
+    pub async fn get_header(&self, height: u64) -> io::Result<Option<BlockHeader>> {
         let reader = self.tapes_db.reader();
 
         let idx = match reader.read_entry(&self.database.block_index, height)? {
@@ -424,21 +423,20 @@ impl Explorer {
     }
 
     /// Get and construct the entire block for a given height.
-    pub async fn get_block(&self, height: u64) -> io::Result<Option<BlockInfo>> {
+    pub async fn get_block(&self, height: u64) -> io::Result<Option<Block>> {
         let header = match self.get_header(height).await? {
             Some(h) => h,
             None => return Ok(None),
         };
 
-        let txs = self.get_block_txs(height).await?.unwrap_or_default();
+        let transactions = self.get_block_txs(height).await?.unwrap_or_default();
 
-        // We don't care about displaying the block signature.
-        Ok(Some(BlockInfo { header, txs, signature: Signature::dummy(), zkbin_data: vec![] }))
+        Ok(Some(Block { header, transactions }))
     }
 
     /// Get basic block info without loading all transactions.
     /// Returns (header, tx_count, total_size) for efficient latest_blocks display.
-    pub async fn get_block_summary(&self, height: u64) -> io::Result<Option<(Header, u64, u64)>> {
+    pub async fn get_block_summary(&self, height: u64) -> io::Result<Option<(BlockHeader, u64, u64)>> {
         let reader = self.tapes_db.reader();
 
         let block_idx = match reader.read_entry(&self.database.block_index, height)? {
@@ -448,7 +446,7 @@ impl Explorer {
 
         let mut header_data = vec![0u8; block_idx.length as usize];
         reader.read_bytes(&self.database.blocks, block_idx.offset, &mut header_data)?;
-        let header: Header = deserialize_async(&header_data).await?;
+        let header: BlockHeader = deserialize_async(&header_data).await?;
 
         // Calculate total size: header + all transactions
         let total_tx_size = if block_idx.tx_count == 0 {
@@ -524,25 +522,25 @@ impl Explorer {
     /// Returns (new_contracts, locked_contract_ids)
     async fn scan_contract_calls(
         &self,
-        block: &BlockInfo,
+        block: &Block,
         block_height: u64,
     ) -> (Vec<ContractData>, Vec<ContractId>) {
         let mut new_contracts = Vec::new();
         let mut locked_contracts = Vec::new();
 
-        for transaction in &block.txs {
-            let tx_hash = *transaction.hash().inner();
+        for transaction in &block.transactions {
+            let tx_hash = *transaction.hash().as_bytes();
 
-            for call in &transaction.calls {
+            for call in &transaction.contract_calls {
                 // Check if this is a call to Deployoor
-                if call.data.contract_id != *DEPLOYOOOR_CONTRACT_ID {
+                if call.contract_id != DEPLOYOOOR_CONTRACT_ID.to_bytes() {
                     continue;
                 }
 
-                let func = call.data.data[0];
+                let func = call.data[0];
                 if func == DeployFunction::DeployV1 as u8 {
                     let params: DeployParamsV1 =
-                        deserialize_async(&call.data.data[1..]).await.unwrap();
+                        deserialize_async(&call.data[1..]).await.unwrap();
                     let contract_id = ContractId::derive_public(params.public_key);
 
                     info!(
@@ -560,7 +558,7 @@ impl Explorer {
                     });
                 } else if func == DeployFunction::LockV1 as u8 {
                     let params: LockParamsV1 =
-                        deserialize_async(&call.data.data[1..]).await.unwrap();
+                        deserialize_async(&call.data[1..]).await.unwrap();
                     let contract_id = ContractId::derive_public(params.public_key);
 
                     info!(
@@ -777,7 +775,7 @@ impl Explorer {
             // Read header to get timestamp
             let mut header_data = vec![0u8; block_idx.length as usize];
             reader.read_bytes(&self.database.blocks, block_idx.offset, &mut header_data)?;
-            let header: Header = deserialize_async(&header_data).await?;
+            let header: BlockHeader = deserialize_async(&header_data).await?;
 
             // Calculate block size
             let tx_size = if block_idx.tx_count == 0 {
@@ -797,7 +795,7 @@ impl Explorer {
 
             let block_size = block_idx.length + tx_size;
 
-            self.update_stats_for_block(header.timestamp.inner(), block_idx.tx_count, block_size)
+            self.update_stats_for_block(header.timestamp, block_idx.tx_count, block_size)
                 .await?;
         }
 
