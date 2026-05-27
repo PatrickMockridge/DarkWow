@@ -96,19 +96,19 @@ impl super::ContractHarness for DrainProtectionHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["DRAIN_PROTECTION_EXIT"]
+        vec!["ExitProof"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "DRAIN_PROTECTION_EXIT" => Some(&self.exit_zkbin),
+            "ExitProof" => Some(&self.exit_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "DRAIN_PROTECTION_EXIT" => Some(&self.exit_pk),
+            "ExitProof" => Some(&self.exit_pk),
             _ => None,
         }
     }

@@ -105,7 +105,7 @@ pub use stablecoin::StablecoinHarness;
 pub use subscription::SubscriptionHarness;
 pub use tender::TenderHarness;
 
-use dwow_core::{zk::ProvingKey, zkas::ZkBinary};
+use dwow_core::{zk::ProvingKey, zkas::ZkBinary, Result};
 
 /// Trait for contract test harnesses providing ZK circuit access.
 ///
@@ -123,4 +123,59 @@ pub trait ContractHarness {
 
     /// Get proving key for a circuit namespace
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey>;
+
+    /// Verify ZK coverage: every circuit in `circuits()` has a valid ZK binary
+    /// and proving key. Called as a pre-deploy gate by `HeavyweightPipeline`.
+    ///
+    /// Returns an error listing ALL missing circuits rather than failing on the
+    /// first one — this gives developers a complete picture of what's wrong.
+    fn verify_zk_coverage(&self) -> Result<()> {
+        let mut missing_zkbin = Vec::new();
+        let mut missing_pk = Vec::new();
+        let mut total = 0u32;
+        let mut covered = 0u32;
+
+        for ns in self.circuits() {
+            total += 1;
+            let has_zkbin = self.get_zkbin(ns).is_some();
+            let has_pk = self.get_pk(ns).is_some();
+
+            if !has_zkbin {
+                missing_zkbin.push(ns);
+            }
+            if !has_pk {
+                missing_pk.push(ns);
+            }
+            if has_zkbin && has_pk {
+                covered += 1;
+            }
+        }
+
+        if missing_zkbin.is_empty() && missing_pk.is_empty() {
+            return Ok(());
+        }
+
+        let mut msg = format!(
+            "ZK coverage check FAILED for {}: {}/{} circuits covered. ",
+            self.name(),
+            covered,
+            total
+        );
+
+        if !missing_zkbin.is_empty() {
+            msg.push_str(&format!(
+                "Missing ZkBinary for: [{}]. ",
+                missing_zkbin.join(", ")
+            ));
+        }
+        if !missing_pk.is_empty() {
+            msg.push_str(&format!(
+                "Missing ProvingKey for: [{}]. ",
+                missing_pk.join(", ")
+            ));
+        }
+        msg.push_str("Every circuit in circuits() must have a valid ZkBinary and ProvingKey.");
+
+        Err(dwow_core::Error::Custom(msg))
+    }
 }

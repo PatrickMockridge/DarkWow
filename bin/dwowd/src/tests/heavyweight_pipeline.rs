@@ -80,17 +80,26 @@ pub struct HeavyweightPipeline<H: ContractHarness> {
     pub contract_name: String,
     /// ContractId after deployment
     pub contract_id: Option<ContractId>,
+    /// When true, `exec()` requires non-empty proofs for ZK contracts.
+    /// Default: false (warn-only) until harness methods are updated to
+    /// return proofs alongside call_data.
+    pub strict_zk: bool,
 }
 
 impl<H: ContractHarness> HeavyweightPipeline<H> {
     /// Create a new HeavyweightPipeline with the given harness and contract name.
     pub async fn new(harness: H, contract_name: &str) -> Result<Self> {
         let genesis = GenesisHarness::new()?;
-        Ok(Self { genesis, harness, contract_name: contract_name.to_string(), contract_id: None })
+        Ok(Self { genesis, harness, contract_name: contract_name.to_string(), contract_id: None, strict_zk: false })
     }
 
     /// Deploy the contract WASM and store its ContractId.
+    ///
+    /// Runs a pre-deploy ZK coverage check: every circuit in `circuits()` must
+    /// have a valid ZkBinary and ProvingKey. This catches misconfigured harnesses
+    /// before any on-chain execution.
     pub async fn deploy(&mut self, wasm: &[u8]) -> Result<ContractId> {
+        self.harness.verify_zk_coverage()?;
         let contract_id = self.derive_contract_id();
         self.genesis.deploy_contract(wasm, contract_id, &[])?;
         self.contract_id = Some(contract_id);
@@ -100,7 +109,10 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
     /// Deploy the contract WASM with an explicit initialization payload (`ix`).
     /// Uses the direct deploy path (bypassing Deployooor). The `ix` is passed
     /// to the contract's `__initialize` handler.
+    ///
+    /// Runs the same pre-deploy ZK coverage check as `deploy()`.
     pub async fn deploy_with_ix(&mut self, wasm: &[u8], ix: &[u8]) -> Result<ContractId> {
+        self.harness.verify_zk_coverage()?;
         let contract_id = self.derive_contract_id();
         self.genesis.deploy_contract(wasm, contract_id, ix)?;
         self.contract_id = Some(contract_id);
@@ -110,13 +122,40 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
     /// Execute a contract call through `apply_block_with_uncles()` in a canonical block.
     ///
     /// Takes the ZK-generated call_data (which must include the function code byte)
-    /// and executes it through the full WASM runtime. Constructs a block with
+    /// and proofs, then executes through the full WASM runtime. Constructs a block with
     /// `target: u32::MAX` (instant PoW) — the identical code path as production.
-    pub async fn exec(&self, call_data: &[u8], _proofs: Vec<Proof>) -> Result<()> {
+    ///
+    /// Proofs are verified locally against the harness's ZK binary before submission.
+    /// If the contract has ZK circuits (circuits() is non-empty), proofs must be non-empty.
+    pub async fn exec(&self, call_data: &[u8], proofs: Vec<Proof>) -> Result<()> {
         use super::harness::{build_coinbase_tx, build_contract_tx, build_test_block};
 
         let contract_id = self.contract_id
             .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
+
+        // ZK proof gate: if the contract has ZK circuits, proofs should be provided.
+        // In strict_zk mode, empty proofs are a hard error. Otherwise, warn.
+        let circuits = self.harness.circuits();
+        if !circuits.is_empty() && proofs.is_empty() {
+            if self.strict_zk {
+                return Err(dwow_core::Error::Custom(format!(
+                    "exec() called on ZK contract '{}' ({} circuits: [{}]) with empty proofs \
+                     in strict_zk mode. Every ZK endpoint must provide its proof.",
+                    self.contract_name,
+                    circuits.len(),
+                    circuits.join(", ")
+                )));
+            }
+            eprintln!(
+                "WARNING: exec() called on ZK contract '{}' ({} circuits: [{}]) with empty proofs. \
+                 This means on-chain ZK verification is not being exercised. \
+                 Set pipeline.strict_zk = true to enforce.",
+                self.contract_name,
+                circuits.len(),
+                circuits.join(", ")
+            );
+        }
+
         let tx = build_contract_tx(contract_id.to_bytes(), call_data.to_vec());
         let height = self.genesis.block_height();
         let reward = dwow_sdk::blockchain::expected_reward((height + 1) as u32);
@@ -133,7 +172,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
     pub async fn exec_as_uncle(
         &self,
         call_data: &[u8],
-        _proofs: Vec<Proof>,
+        proofs: Vec<Proof>,
         depth: u8,
     ) -> Result<()> {
         use super::harness::{
