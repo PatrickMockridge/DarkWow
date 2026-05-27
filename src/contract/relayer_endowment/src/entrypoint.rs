@@ -52,6 +52,29 @@ dwow_sdk::define_contract!(
     metadata: get_metadata
 );
 
+/// Compute a Poseidon-hashed DB key from a relayer pubkey.
+///
+/// Raw pubkeys as DB keys make identity trivially enumerable on-chain.
+/// Hashing through Poseidon preserves look-up capability (anyone who
+/// knows the pubkey can recompute the key) but prevents casual
+/// enumeration — the key reveals nothing without knowing the pubkey first.
+fn compute_relayer_key(relayer_pub: &PublicKey) -> Vec<u8> {
+    let pubkey_bytes = relayer_pub.to_bytes();
+    let mut chunks = [0u64; 4];
+    for i in 0..4 {
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&pubkey_bytes[i * 8..(i + 1) * 8]);
+        chunks[i] = u64::from_le_bytes(bytes);
+    }
+    let hash = poseidon_hash([
+        pallas::Base::from(chunks[0]),
+        pallas::Base::from(chunks[1]),
+        pallas::Base::from(chunks[2]),
+        pallas::Base::from(chunks[3]),
+    ]);
+    hash.to_repr().to_vec()
+}
+
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -306,7 +329,7 @@ fn apply_initialize_update(cid: ContractId, update: InitializeUpdateV1) -> Contr
 
     wasm::db::db_set(
         registry_db,
-        &serialize(&update.relayer_pub),
+        &compute_relayer_key(&update.relayer_pub),
         &serialize(&account),
     )?;
     msg!("[relayer_endowment::initialize::update] Account stored");
@@ -350,7 +373,7 @@ fn process_deploy_capital_instruction(
     // Get endowment account
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
     let mut account: RelayerEndowmentAccount =
-        match wasm::db::db_get(registry_db, &serialize(&params.relayer_pub))? {
+        match wasm::db::db_get(registry_db, &compute_relayer_key(&params.relayer_pub))? {
             Some(data) => deserialize(&data)?,
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
         };
@@ -419,7 +442,7 @@ fn apply_deploy_capital_update(cid: ContractId, update: DeployCapitalUpdateV1) -
 
     // Update account
     let mut account: RelayerEndowmentAccount =
-        match wasm::db::db_get(registry_db, &serialize(&update.relayer_pub))? {
+        match wasm::db::db_get(registry_db, &compute_relayer_key(&update.relayer_pub))? {
             Some(data) => deserialize(&data)?,
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
         };
@@ -429,7 +452,7 @@ fn apply_deploy_capital_update(cid: ContractId, update: DeployCapitalUpdateV1) -
 
     wasm::db::db_set(
         registry_db,
-        &serialize(&update.relayer_pub),
+        &compute_relayer_key(&update.relayer_pub),
         &serialize(&account),
     )?;
 
@@ -611,7 +634,7 @@ fn process_settle_fees_instruction(
     // Get endowment account
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
     let account: RelayerEndowmentAccount =
-        match wasm::db::db_get(registry_db, &serialize(&params.relayer_pub))? {
+        match wasm::db::db_get(registry_db, &compute_relayer_key(&params.relayer_pub))? {
             Some(data) => deserialize(&data)?,
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
         };
@@ -664,7 +687,7 @@ fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> Cont
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
 
     let mut account: RelayerEndowmentAccount =
-        match wasm::db::db_get(registry_db, &serialize(&update.relayer_pub))? {
+        match wasm::db::db_get(registry_db, &compute_relayer_key(&update.relayer_pub))? {
             Some(data) => deserialize(&data)?,
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
         };
@@ -690,7 +713,7 @@ fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> Cont
 
     wasm::db::db_set(
         registry_db,
-        &serialize(&update.relayer_pub),
+        &compute_relayer_key(&update.relayer_pub),
         &serialize(&account),
     )?;
     msg!("[relayer_endowment::settle_fees::update] Fees distributed to {} deployments", update.deployments_updated);
@@ -724,7 +747,7 @@ fn apply_update_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> 
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
 
     let mut account: RelayerEndowmentAccount =
-        match wasm::db::db_get(registry_db, &serialize(&update.relayer_pub))? {
+        match wasm::db::db_get(registry_db, &compute_relayer_key(&update.relayer_pub))? {
             Some(data) => deserialize(&data)?,
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
         };
@@ -733,7 +756,7 @@ fn apply_update_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> 
 
     wasm::db::db_set(
         registry_db,
-        &serialize(&update.relayer_pub),
+        &compute_relayer_key(&update.relayer_pub),
         &serialize(&account),
     )?;
     msg!("[relayer_endowment::update_config::update] Config updated");
@@ -758,7 +781,7 @@ fn process_force_settle_instruction(
     // Get endowment account
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
     let account: RelayerEndowmentAccount =
-        match wasm::db::db_get(registry_db, &serialize(&params.relayer_pub))? {
+        match wasm::db::db_get(registry_db, &compute_relayer_key(&params.relayer_pub))? {
             Some(data) => deserialize(&data)?,
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
         };
@@ -818,7 +841,7 @@ fn apply_force_settle_update(cid: ContractId, update: ForceSettleUpdateV1) -> Co
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
 
     let mut account: RelayerEndowmentAccount =
-        match wasm::db::db_get(registry_db, &serialize(&update.relayer_pub))? {
+        match wasm::db::db_get(registry_db, &compute_relayer_key(&update.relayer_pub))? {
             Some(data) => deserialize(&data)?,
             None => return Err(RelayerEndowmentError::EndowmentNotFound.into()),
         };
@@ -844,7 +867,7 @@ fn apply_force_settle_update(cid: ContractId, update: ForceSettleUpdateV1) -> Co
 
     wasm::db::db_set(
         registry_db,
-        &serialize(&update.relayer_pub),
+        &compute_relayer_key(&update.relayer_pub),
         &serialize(&account),
     )?;
     msg!("[relayer_endowment::force_settle::update] Force settlement complete");

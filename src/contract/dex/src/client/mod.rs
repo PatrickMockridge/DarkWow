@@ -96,7 +96,7 @@ pub struct CreateSwapBuilder {
     offer_amount: Option<u64>,
     request_token: Option<pallas::Base>,
     request_amount: Option<u64>,
-    signature_secret: Option<SecretKey>,
+    ephemeral_signature_secret: Option<SecretKey>,
 }
 
 impl CreateSwapBuilder {
@@ -107,7 +107,7 @@ impl CreateSwapBuilder {
             offer_amount: None,
             request_token: None,
             request_amount: None,
-            signature_secret: None,
+            ephemeral_signature_secret: None,
         }
     }
 
@@ -142,8 +142,8 @@ impl CreateSwapBuilder {
     }
 
     /// Set the signature secret key
-    pub fn signature_secret(&mut self, secret: SecretKey) -> &mut Self {
-        self.signature_secret = Some(secret);
+    pub fn ephemeral_signature_secret(&mut self, secret: SecretKey) -> &mut Self {
+        self.ephemeral_signature_secret = Some(secret);
         self
     }
 
@@ -156,7 +156,7 @@ impl CreateSwapBuilder {
         let offer_amount = self.offer_amount.ok_or_else(|| DexClientError::MissingField("offer_amount".into()))?;
         let request_token = self.request_token.ok_or_else(|| DexClientError::MissingField("request_token".into()))?;
         let request_amount = self.request_amount.ok_or_else(|| DexClientError::MissingField("request_amount".into()))?;
-        let signature_secret = self.signature_secret.ok_or_else(|| DexClientError::MissingField("signature_secret".into()))?;
+        let ephemeral_signature_secret = self.ephemeral_signature_secret.ok_or_else(|| DexClientError::MissingField("ephemeral_signature_secret".into()))?;
 
         Ok(CreateSwapCallData::new(
             secret,
@@ -164,7 +164,7 @@ impl CreateSwapBuilder {
             offer_amount,
             request_token,
             request_amount,
-            signature_secret,
+            ephemeral_signature_secret,
         ))
     }
 }
@@ -202,7 +202,7 @@ pub struct AcceptSwapBuilder {
     secret: Option<pallas::Base>,
     offer_token: Option<pallas::Base>,
     offer_amount: Option<u64>,
-    signature_secret: Option<SecretKey>,
+    ephemeral_signature_secret: Option<SecretKey>,
 }
 
 impl AcceptSwapBuilder {
@@ -213,7 +213,7 @@ impl AcceptSwapBuilder {
             secret: None,
             offer_token: None,
             offer_amount: None,
-            signature_secret: None,
+            ephemeral_signature_secret: None,
         }
     }
 
@@ -248,8 +248,8 @@ impl AcceptSwapBuilder {
     }
 
     /// Set the signature secret key
-    pub fn signature_secret(&mut self, secret: SecretKey) -> &mut Self {
-        self.signature_secret = Some(secret);
+    pub fn ephemeral_signature_secret(&mut self, secret: SecretKey) -> &mut Self {
+        self.ephemeral_signature_secret = Some(secret);
         self
     }
 
@@ -260,7 +260,7 @@ impl AcceptSwapBuilder {
         let secret = self.secret.ok_or_else(|| DexClientError::MissingField("secret".into()))?;
         let offer_token = self.offer_token.ok_or_else(|| DexClientError::MissingField("offer_token".into()))?;
         let offer_amount = self.offer_amount.ok_or_else(|| DexClientError::MissingField("offer_amount".into()))?;
-        let signature_secret = self.signature_secret.ok_or_else(|| DexClientError::MissingField("signature_secret".into()))?;
+        let ephemeral_signature_secret = self.ephemeral_signature_secret.ok_or_else(|| DexClientError::MissingField("ephemeral_signature_secret".into()))?;
 
         Ok(AcceptSwapCallData::new(
             swap_id,
@@ -268,7 +268,7 @@ impl AcceptSwapBuilder {
             secret,
             offer_token,
             offer_amount,
-            signature_secret,
+            ephemeral_signature_secret,
         ))
     }
 }

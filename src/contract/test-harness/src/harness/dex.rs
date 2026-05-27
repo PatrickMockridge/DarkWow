@@ -143,7 +143,7 @@ impl DexHarness {
         offer_amount: u64,
         request_token: pallas::Base,
         request_amount: u64,
-        signature_secret: SecretKey,
+        ephemeral_signature_secret: SecretKey,
     ) -> Result<CreateSwapResult, Box<dyn std::error::Error>> {
         let input = CreateSwapCallData::new(
             secret,
@@ -151,7 +151,7 @@ impl DexHarness {
             offer_amount,
             request_token,
             request_amount,
-            signature_secret,
+            ephemeral_signature_secret,
         );
 
         let (proof, public_inputs) = create_create_swap_proof(
@@ -193,7 +193,7 @@ impl DexHarness {
         secret: pallas::Base,
         offer_token: pallas::Base,
         offer_amount: u64,
-        signature_secret: SecretKey,
+        ephemeral_signature_secret: SecretKey,
     ) -> Result<AcceptSwapResult, Box<dyn std::error::Error>> {
         let input = AcceptSwapCallData::new(
             swap_id,
@@ -201,7 +201,7 @@ impl DexHarness {
             secret,
             offer_token,
             offer_amount,
-            signature_secret,
+            ephemeral_signature_secret,
         );
 
         let (proof, public_inputs) = create_accept_swap_proof(

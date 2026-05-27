@@ -31,11 +31,12 @@ use dwow_sdk::{
     crypto::{
         poseidon_hash,
         schnorr::{SchnorrSecret, Signature},
-        Keypair, PublicKey, SecretKey,
+        PublicKey, SecretKey,
     },
     pasta::pallas,
 };
 use pasta_curves::group::Group;
+use rand::rngs::OsRng;
 use dwow_serial::serialize;
 
 use crate::model::{
@@ -167,7 +168,7 @@ pub struct UnstakeV1Builder {
 impl UnstakeV1Builder {
     /// Create a new UnstakeV1 builder
     pub fn new(stake_id: pallas::Base, staker_secret: SecretKey, spend_hook: pallas::Base, user_data: pallas::Base) -> Self {
-        Self { stake_id, staker_secret, spend_hook, user_data, table_id: pallas::Base::zero(), staker_pub: Keypair::default().public, original_amount: 0, nonce: pallas::Base::zero(), value_commit: pallas::Point::identity() }
+        Self { stake_id, staker_secret, spend_hook, user_data, table_id: pallas::Base::zero(), staker_pub: PublicKey::from_secret(SecretKey::random(&mut OsRng)), original_amount: 0, nonce: pallas::Base::zero(), value_commit: pallas::Point::identity() }
     }
 
     /// Build the unstake parameters
@@ -204,7 +205,7 @@ pub struct ClaimEarningsV1Builder {
 impl ClaimEarningsV1Builder {
     /// Create a new ClaimEarningsV1 builder
     pub fn new(stake_id: pallas::Base, staker_secret: SecretKey) -> Self {
-        Self { stake_id, staker_secret, table_id: pallas::Base::zero(), staker_pub: Keypair::default().public, current_amount: 0, nonce: pallas::Base::zero(), value_commit: pallas::Point::identity() }
+        Self { stake_id, staker_secret, table_id: pallas::Base::zero(), staker_pub: PublicKey::from_secret(SecretKey::random(&mut OsRng)), current_amount: 0, nonce: pallas::Base::zero(), value_commit: pallas::Point::identity() }
     }
 
     /// Build the claim earnings parameters

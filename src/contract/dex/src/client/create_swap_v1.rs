@@ -81,8 +81,8 @@ pub struct CreateSwapCallData {
     /// Blinding factor for amount
     pub amount_blind: pallas::Base,
     /// Secret key for signature
-    pub signature_secret: SecretKey,
-    /// Signature public key (derived from signature_secret)
+    pub ephemeral_signature_secret: SecretKey,
+    /// Signature public key (derived from ephemeral_signature_secret)
     pub signature_public: PublicKey,
 }
 
@@ -94,9 +94,9 @@ impl CreateSwapCallData {
         offer_amount: u64,
         request_token: pallas::Base,
         request_amount: u64,
-        signature_secret: SecretKey,
+        ephemeral_signature_secret: SecretKey,
     ) -> Self {
-        let signature_public = PublicKey::from_secret(signature_secret);
+        let signature_public = PublicKey::from_secret(ephemeral_signature_secret);
         let token_blind = pallas::Base::random(&mut OsRng);
         let amount_blind = pallas::Base::random(&mut OsRng);
 
@@ -108,7 +108,7 @@ impl CreateSwapCallData {
             request_amount: pallas::Base::from(request_amount),
             token_blind,
             amount_blind,
-            signature_secret,
+            ephemeral_signature_secret,
             signature_public,
         }
     }
@@ -166,8 +166,8 @@ impl CreateSwapCallData {
             Witness::Base(Value::known(self.token_blind)),
             // Base amount_blind
             Witness::Base(Value::known(self.amount_blind)),
-            // Base signature_secret
-            Witness::Base(Value::known(self.signature_secret.inner())),
+            // Base ephemeral_signature_secret
+            Witness::Base(Value::known(self.ephemeral_signature_secret.inner())),
             // Base signature_public_x
             Witness::Base(Value::known(self.signature_public.x())),
             // Base signature_public_y
