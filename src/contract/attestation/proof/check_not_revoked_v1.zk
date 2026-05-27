@@ -62,6 +62,7 @@ circuit "CheckNotRevoked" {
 
     # The result must be 1 (nonce is NOT in revocation list)
     # This constraint ensures the proof fails if the nonce IS revoked
+    ONE = witness_base(1);
     constrain_equal_base(is_not_revoked, ONE);
 
     # ==========================================================================

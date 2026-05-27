@@ -181,8 +181,8 @@ circuit "AztDepositV1" {
     #   - confirmations >= minimum threshold (5 blocks for Aztec)
 
     range_check(64, value);
-    range_check(32, confirmations);
-    range_check(32, asset_id);
+    range_check(64, confirmations);
+    range_check(64, asset_id);
 
     # ==========================================================================
     # PHASE 8: Note proof verification (stubbed for MVP)

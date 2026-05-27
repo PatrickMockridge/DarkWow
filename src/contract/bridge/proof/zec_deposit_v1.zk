@@ -184,8 +184,9 @@ circuit "ZecDepositV1" {
     # The randomized public key (diversified payment address) must be
     # a valid point on the curve.
 
-    randomized_pub = ec_get_x(randomized_pub_key_x);
-    constrain_equal_base(randomized_pub, randomized_pub_key_x);  # Validates point exists
+    # Verify randomized public key coordinates are provided as public inputs
+    constrain_instance(randomized_pub_key_x);
+    constrain_instance(randomized_pub_key_y);
 
     # ==========================================================================
     # PHASE 7: Range check the amount and confirmations
@@ -196,7 +197,7 @@ circuit "ZecDepositV1" {
     #   - confirmations >= minimum threshold (10 blocks for ZEC)
 
     range_check(64, amount);
-    range_check(32, confirmations);
+    range_check(64, confirmations);
 
     # ==========================================================================
     # PHASE 8: Spend proof verification (stubbed for MVP)

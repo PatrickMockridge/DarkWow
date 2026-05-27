@@ -17,7 +17,7 @@ PKGNAME = $(shell grep '^name = ' Cargo.toml | cut -d' ' -f3 | tr -d '"')
 WASM_BIN = $(PKGNAME:=.wasm)
 
 # zkas compiler - absolute path to ensure we find the right binary
-ZKAS = $(abspath ../../../target/release/zkas)
+ZKAS = $(abspath ../../../zkas)
 
 # ZKAS version tracking
 ZKAS_VERSION_FILE = .zkas_version

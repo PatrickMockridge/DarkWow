@@ -11,7 +11,7 @@ witness "WithdrawV1" {
     Base recipient_hash,
     Base amount,
     Base bridge_address,
-    Base merkle_root,
+    Base merkle_root_val,
     Base commitment,
     Base token_minimum,
 
@@ -40,7 +40,7 @@ circuit "WithdrawV1" {
 
     # Verify Merkle proof: deposit leaf is in the bridge's Merkle tree
     computed_root = sparse_merkle_root(leaf_index, merkle_path, deposit_leaf);
-    constrain_equal_base(computed_root, merkle_root);
+    constrain_equal_base(computed_root, merkle_root_val);
 
     # Verify recipient hash matches (privacy-preserving address)
     derived_recipient = poseidon_hash(recipient_hash);

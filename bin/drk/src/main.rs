@@ -2276,7 +2276,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             let mut resolver = CapabilityResolver::new();
 
             // Load escrow descriptor if escrow contract ID is registered
-            let escrow_cid = dww::contract_imports::ESCROW_CONTRACT_ID.get();
+            let escrow_cid = dwow_wallet::contract_imports::ESCROW_CONTRACT_ID.get();
             if let Some(cid) = escrow_cid {
                 let desc = dwow_escrow_contract::capability::descriptor(*cid);
                 resolver.register_descriptor(desc);

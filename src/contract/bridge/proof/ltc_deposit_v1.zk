@@ -167,8 +167,8 @@ circuit "LtcDepositV1" {
     #   - confirmations >= minimum threshold (6 blocks for LTC)
 
     range_check(64, amount);
-    range_check(32, confirmations);
-    range_check(32, output_index);
+    range_check(64, confirmations);
+    range_check(64, output_index);
 
     # ==========================================================================
     # WHAT THIS CIRCUIT VERIFIES

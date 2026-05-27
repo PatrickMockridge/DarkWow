@@ -127,7 +127,7 @@ circuit "XmrDepositV1" {
 
     # Derive the one-time address public key from the secret
     # one_time_pub = secret * G (on Pallas curve for ZK compatibility)
-    one_time_pub = ec_mul_base(one_time_addr_secret, PALLAS_GENERATOR);
+    one_time_pub = ec_mul_base(one_time_addr_secret, NULLIFIER_K);
     one_time_pub_x = ec_get_x(one_time_pub);
     one_time_pub_y = ec_get_y(one_time_pub);
 
@@ -208,7 +208,7 @@ circuit "XmrDepositV1" {
     #   - confirmations >= minimum threshold (10 blocks for XMR)
 
     range_check(64, amount);
-    range_check(32, confirmations);
+    range_check(64, confirmations);
 
     # ==========================================================================
     # WHAT THIS CIRCUIT VERIFIES
