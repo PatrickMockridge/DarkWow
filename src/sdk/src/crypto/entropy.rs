@@ -72,7 +72,10 @@ use pasta_curves::{group::ff::PrimeField, pallas};
 pub fn draw_single(block_hash: pallas::Base, nonce: pallas::Base, range: u8) -> u8 {
     let entropy = poseidon_hash([block_hash, nonce]);
     let entropy_bytes = entropy.to_repr();
-    let seed = u64::from_le_bytes(entropy_bytes[0..8].try_into().unwrap());
+    let seed = u64::from_le_bytes([
+        entropy_bytes[0], entropy_bytes[1], entropy_bytes[2], entropy_bytes[3],
+        entropy_bytes[4], entropy_bytes[5], entropy_bytes[6], entropy_bytes[7],
+    ]);
     (seed % (range as u64)) as u8
 }
 
@@ -97,7 +100,10 @@ pub fn draw_unique_range(
     range: u8,
 ) -> Vec<u8> {
     let entropy = poseidon_hash([block_hash, pallas::Base::from(seed_nonce)]);
-    let mut rng_seed = u64::from_le_bytes(entropy.to_repr()[0..8].try_into().unwrap());
+    let eb = entropy.to_repr();
+    let mut rng_seed = u64::from_le_bytes([
+        eb[0], eb[1], eb[2], eb[3], eb[4], eb[5], eb[6], eb[7],
+    ]);
     let mut numbers: Vec<u8> = Vec::with_capacity(count as usize);
 
     while numbers.len() < count as usize {
@@ -152,7 +158,9 @@ pub fn draw_with_depth(block_hashes: &[pallas::Base], nonce: pallas::Base, range
     let entropy = combine_block_hashes(block_hashes);
     let final_entropy = poseidon_hash([entropy, nonce]);
     let bytes = final_entropy.to_repr();
-    let seed = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+    let seed = u64::from_le_bytes([
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ]);
     (seed % (range as u64)) as u8
 }
 
@@ -162,10 +170,22 @@ pub fn draw_with_depth(block_hashes: &[pallas::Base], nonce: pallas::Base, range
 /// properly converts it for use with the entropy functions.
 #[allow(dead_code)]
 pub fn tx_hash_to_base(tx_hash: &[u8; 32]) -> pallas::Base {
-    let a = u64::from_le_bytes(tx_hash[0..8].try_into().unwrap());
-    let b = u64::from_le_bytes(tx_hash[8..16].try_into().unwrap());
-    let c = u64::from_le_bytes(tx_hash[16..24].try_into().unwrap());
-    let d = u64::from_le_bytes(tx_hash[24..32].try_into().unwrap());
+    let a = u64::from_le_bytes([
+        tx_hash[0], tx_hash[1], tx_hash[2], tx_hash[3],
+        tx_hash[4], tx_hash[5], tx_hash[6], tx_hash[7],
+    ]);
+    let b = u64::from_le_bytes([
+        tx_hash[8], tx_hash[9], tx_hash[10], tx_hash[11],
+        tx_hash[12], tx_hash[13], tx_hash[14], tx_hash[15],
+    ]);
+    let c = u64::from_le_bytes([
+        tx_hash[16], tx_hash[17], tx_hash[18], tx_hash[19],
+        tx_hash[20], tx_hash[21], tx_hash[22], tx_hash[23],
+    ]);
+    let d = u64::from_le_bytes([
+        tx_hash[24], tx_hash[25], tx_hash[26], tx_hash[27],
+        tx_hash[28], tx_hash[29], tx_hash[30], tx_hash[31],
+    ]);
 
     poseidon_hash([
         pallas::Base::from(a),

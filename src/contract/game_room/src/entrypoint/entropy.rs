@@ -24,7 +24,7 @@
 use dwow_sdk::{
     crypto::poseidon_hash,
     dark_tree::DarkLeaf,
-    error::{ContractError, ContractResult},
+    error::ContractResult,
     msg,
     wasm, ContractCall,
 };
@@ -38,11 +38,11 @@ use crate::{
     GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_ROOMS_TREE,
 };
 
-pub(crate) fn game_room_contribute_entropy_process_instruction_v1(
+pub(crate) fn process_contribute_entropy_instruction(
     cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
+) -> ContractResult {
     let self_ = &calls[call_idx].data;
     let params: ContributeEntropyParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
 
@@ -146,10 +146,10 @@ pub(crate) fn game_room_contribute_entropy_process_instruction_v1(
         combined_entropy: new_combined_entropy,
         contributions_count: room.total_entropy_contributions,
     };
-    Ok(dwow_serial::serialize(&update))
+    wasm::util::set_return_data(&dwow_serial::serialize(&update))
 }
 
-pub(crate) fn game_room_contribute_entropy_process_update_v1(
+pub(crate) fn apply_contribute_entropy_update(
     _cid: dwow_sdk::crypto::ContractId,
     update: ContributeEntropyUpdateV1,
 ) -> ContractResult {

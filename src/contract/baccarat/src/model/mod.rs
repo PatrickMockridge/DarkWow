@@ -332,10 +332,18 @@ pub fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId) -> (Hand, Han
     let bytes = entropy.to_repr();
 
     // Create seeds from entropy bytes
-    let seed1 = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
-    let seed2 = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
-    let seed3 = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
-    let seed4 = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
+    let seed1 = u64::from_le_bytes([
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ]);
+    let seed2 = u64::from_le_bytes([
+        bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+    ]);
+    let seed3 = u64::from_le_bytes([
+        bytes[16], bytes[17], bytes[18], bytes[19], bytes[20], bytes[21], bytes[22], bytes[23],
+    ]);
+    let seed4 = u64::from_le_bytes([
+        bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30], bytes[31],
+    ]);
 
     // Create seeds for third cards (derived from entropy of first 4 cards)
     let seed5 = seed1.wrapping_mul(31).wrapping_add(seed2);

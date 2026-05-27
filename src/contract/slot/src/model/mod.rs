@@ -542,17 +542,23 @@ pub fn derive_spin_positions(
     let mut positions = Vec::with_capacity(num_reels);
     for i in 0..num_reels {
         // Use different bytes for each reel
-        let seed_base = u64::from_le_bytes(
-            bytes[(i * 4) % 32..((i * 4) % 32 + 8)]
-                .try_into()
-                .unwrap_or_default(),
-        );
+        let start = (i * 4) % 32;
+        let seed_base = if start + 8 <= 32 {
+            u64::from_le_bytes([
+                bytes[start], bytes[start + 1], bytes[start + 2], bytes[start + 3],
+                bytes[start + 4], bytes[start + 5], bytes[start + 6], bytes[start + 7],
+            ])
+        } else {
+            0u64
+        };
 
         // Derive final position using hash with reel index
         let reel_entropy = poseidon_hash([entropy, pallas::Base::from(i as u64)]);
         let reel_bytes = reel_entropy.to_repr();
-        let position_seed =
-            u64::from_le_bytes(reel_bytes[0..8].try_into().unwrap_or_default());
+        let position_seed = u64::from_le_bytes([
+            reel_bytes[0], reel_bytes[1], reel_bytes[2], reel_bytes[3],
+            reel_bytes[4], reel_bytes[5], reel_bytes[6], reel_bytes[7],
+        ]);
 
         // Combine seeds and take modulo to get position
         let position = seed_base.wrapping_mul(31).wrapping_add(position_seed);

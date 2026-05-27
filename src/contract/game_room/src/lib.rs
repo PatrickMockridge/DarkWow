@@ -386,7 +386,7 @@ fn process_instruction(
             entrypoint::settle_pot::game_room_settle_pot_process_instruction_v1(cid, call_idx, calls)?
         }
         GameRoomFunction::ContributeEntropyV1 => {
-            entrypoint::entropy::game_room_contribute_entropy_process_instruction_v1(cid, call_idx, calls)?
+            return entrypoint::entropy::process_contribute_entropy_instruction(cid, call_idx, calls)
         }
         GameRoomFunction::ClaimV1 => entrypoint::claim::game_room_claim_process_instruction_v1(cid, call_idx, calls)?,
     };
@@ -445,7 +445,7 @@ fn process_update(cid: dwow_sdk::crypto::ContractId, update_data: &[u8]) -> Cont
         GameRoomFunction::ContributeEntropyV1 => {
             let update: model::ContributeEntropyUpdateV1 =
                 dwow_serial::deserialize(&update_data[1..])?;
-            Ok(entrypoint::entropy::game_room_contribute_entropy_process_update_v1(cid, update)?)
+            entrypoint::entropy::apply_contribute_entropy_update(cid, update)
         }
         GameRoomFunction::ClaimV1 => {
             let update: model::ClaimUpdateV1 = dwow_serial::deserialize(&update_data[1..])?;
