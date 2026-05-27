@@ -29,16 +29,17 @@
 //! actions in one traversal.
 
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 use dwow_sdk::capability::{
     Action, Capability, CapabilityDescriptor, CapabilityExpression, CapabilityId,
     CapabilityOutput, CapabilitySource,
 };
-use dwow_sdk::crypto::{pasta_prelude::PrimeField, ContractId};
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, ContractId, PublicKey, SecretKey};
 use tracing::warn;
 
 use crate::cache::Cache;
-use crate::walletdb::WalletDb;
+use crate::walletdb::{AddressRecord, WalletDb};
 
 /// Result of a capability resolution: what the user holds and what they can do.
 #[derive(Clone, Debug)]
@@ -76,14 +77,32 @@ impl CapabilityResolver {
     /// Derives coin capabilities from the wallet's unspent coins and
     /// per-contract capabilities + actions by scanning contract sled trees.
     pub fn resolve(&self, wallet: &WalletDb, cache: &Cache) -> PositionResult {
-        let user_pubkeys: HashSet<String> = match wallet.get_addresses() {
-            Ok(addrs) => addrs.into_iter().map(|a| a.public_key).collect(),
+        let addresses: Vec<AddressRecord> = match wallet.get_addresses() {
+            Ok(addrs) => addrs,
             Err(e) => {
                 warn!(target: "capability::resolve",
                       "Failed to fetch addresses: {}", e);
-                HashSet::new()
+                return PositionResult {
+                    capabilities: vec![],
+                    available_actions: vec![],
+                };
             }
         };
+
+        let user_pubkeys: HashSet<String> =
+            addresses.iter().map(|a| a.public_key.clone()).collect();
+
+        let user_secrets: Vec<SecretKey> = addresses
+            .iter()
+            .filter_map(|a| {
+                SecretKey::from_str(&a.secret)
+                    .map_err(|e| {
+                        warn!(target: "capability::resolve",
+                              "Failed to parse secret: {}", e);
+                    })
+                    .ok()
+            })
+            .collect();
 
         let mut capabilities = Vec::new();
         let mut actions = Vec::new();
@@ -99,6 +118,7 @@ impl CapabilityResolver {
                         *cid,
                         cache,
                         &user_pubkeys,
+                        &user_secrets,
                         &mut capabilities,
                         &mut actions,
                     );
@@ -165,6 +185,7 @@ impl CapabilityResolver {
         escrow_cid: ContractId,
         cache: &Cache,
         user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
         capabilities: &mut Vec<Capability>,
         actions: &mut Vec<Action>,
     ) {
@@ -193,16 +214,18 @@ impl CapabilityResolver {
                 Err(_) => continue,
             };
 
+            let escrow_id_bytes = escrow.id.to_repr();
             let buyer_pk = escrow.buyer_pubkey.to_string();
             let seller_pk = escrow.seller_pubkey.to_string();
-            let is_buyer = user_pubkeys.contains(&buyer_pk);
-            let is_seller = user_pubkeys.contains(&seller_pk);
+            let is_buyer = user_pubkeys.contains(&buyer_pk)
+                || self.matches_derived_key(user_secrets, &escrow_cid, &escrow_id_bytes, &buyer_pk);
+            let is_seller = user_pubkeys.contains(&seller_pk)
+                || self.matches_derived_key(user_secrets, &escrow_cid, &escrow_id_bytes, &seller_pk);
 
             if !is_buyer && !is_seller {
                 continue;
             }
 
-            let escrow_id_bytes = escrow.id.to_repr();
             let display_id = bs58::encode(&escrow_id_bytes).into_string();
 
             match escrow.state {
@@ -401,6 +424,24 @@ impl CapabilityResolver {
                 }
             }
         }
+    }
+
+    /// Check whether an on-chain pubkey string matches any wallet's derived instance key.
+    ///
+    /// For each wallet secret, derives the instance key for (contract_id, instance_id)
+    /// and checks if the resulting public key matches the on-chain key.
+    fn matches_derived_key(
+        &self,
+        user_secrets: &[SecretKey],
+        contract_id: &ContractId,
+        instance_id: &[u8],
+        on_chain_pubkey_str: &str,
+    ) -> bool {
+        user_secrets.iter().any(|secret| {
+            let derived_sk = secret.derive_instance(contract_id, instance_id);
+            let derived_pk = PublicKey::from_secret(derived_sk);
+            derived_pk.to_string() == on_chain_pubkey_str
+        })
     }
 
     // ── Expression evaluation ──────────────────────────────────────────

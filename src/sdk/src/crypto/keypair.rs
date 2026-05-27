@@ -35,7 +35,7 @@ use pasta_curves::{
 };
 use rand_core::{CryptoRng, RngCore};
 
-use super::{constants::NullifierK, util::fp_mod_fv};
+use super::{constants::NullifierK, util::fp_mod_fv, poseidon_hash, ContractId};
 use crate::error::ContractError;
 
 /// Keypair structure holding a `SecretKey` and its respective `PublicKey`
@@ -88,6 +88,24 @@ impl SecretKey {
             Some(k) => Ok(Self(k)),
             None => Err(ContractError::IoError("Could not convert bytes to SecretKey".to_string())),
         }
+    }
+
+    /// Derive a per-instance secret key.
+    ///
+    /// Produces a deterministic `SecretKey` unique to the tuple
+    /// (wallet_secret, contract_id, instance_id). The same wallet
+    /// using the same contract in different instances gets a different
+    /// derived key, breaking cross-instance identity linking.
+    pub fn derive_instance(&self, contract_id: &ContractId, instance_id: &[u8]) -> Self {
+        let mut id_bytes = [0u8; 32];
+        let len = instance_id.len().min(32);
+        id_bytes[..len].copy_from_slice(&instance_id[..len]);
+        let instance_elem = pallas::Base::from_repr(id_bytes)
+            .into_option()
+            .unwrap_or_default();
+
+        let hash = poseidon_hash([self.0, contract_id.inner(), instance_elem]);
+        Self(hash)
     }
 }
 
