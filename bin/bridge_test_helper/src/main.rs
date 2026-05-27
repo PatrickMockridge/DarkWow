@@ -125,6 +125,9 @@ enum Command {
         /// Recipient public key (hex-encoded, 32 bytes)
         #[structopt(long)]
         recipient_pub: String,
+        /// External chain: ethereum, monero, zcash, aztec, litecoin
+        #[structopt(long, default_value = "ethereum")]
+        chain: String,
     },
 
     /// Simulate a withdrawal with a real ZK proof (WithdrawV1, opcode 0x02)
@@ -189,6 +192,21 @@ fn hex_to_bytes32(hex: &str) -> Result<[u8; 32]> {
     let mut out = [0u8; 32];
     out.copy_from_slice(&bytes);
     Ok(out)
+}
+
+/// Parse a chain name to an ExternalChain variant.
+fn parse_chain(name: &str) -> Result<ExternalChain> {
+    match name.to_lowercase().as_str() {
+        "ethereum" => Ok(ExternalChain::Ethereum),
+        "monero" => Ok(ExternalChain::Monero),
+        "zcash" => Ok(ExternalChain::Zcash),
+        "aztec" => Ok(ExternalChain::Aztec),
+        "litecoin" => Ok(ExternalChain::Litecoin),
+        _ => Err(anyhow!(
+            "Unknown chain '{}'. Valid: ethereum, monero, zcash, aztec, litecoin",
+            name
+        )),
+    }
 }
 
 /// Parse a hex string to a pallas::Base field element.
@@ -427,6 +445,7 @@ async fn cmd_simulate_deposit(
     secret_hex: &str,
     amount: u64,
     recipient_pub_hex: &str,
+    chain: ExternalChain,
     block_time: u64,
     timeout: u64,
 ) -> Result<()> {
@@ -456,7 +475,7 @@ async fn cmd_simulate_deposit(
             merkle_root,
             0, // leaf_pos
             merkle_path,
-            ExternalChain::Ethereum,
+            chain,
             0, // fee
         )
         .map_err(|e| anyhow!("Failed to generate deposit proof: {e}"))?;
@@ -635,9 +654,10 @@ fn main() -> Result<()> {
                         cmd_register_relayer(&client, relayer_pub, opt.block_time, opt.timeout)
                             .await?;
                     }
-                    Command::SimulateDeposit { secret, amount, recipient_pub } => {
+                    Command::SimulateDeposit { secret, amount, recipient_pub, chain } => {
+                        let chain = parse_chain(chain)?;
                         cmd_simulate_deposit(
-                            &client, secret, *amount, recipient_pub, opt.block_time, opt.timeout,
+                            &client, secret, *amount, recipient_pub, chain, opt.block_time, opt.timeout,
                         )
                         .await?;
                     }

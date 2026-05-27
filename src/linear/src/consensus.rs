@@ -34,7 +34,7 @@
 //! When blocks come too fast the target decreases (harder); when too slow it
 //! increases (easier).
 
-use std::{cell::Cell, sync::Mutex};
+use std::sync::{atomic::{AtomicU32, Ordering}, Mutex};
 
 use blake3::Hash as Blake3Hash;
 use tracing::debug;
@@ -60,7 +60,7 @@ const SCALE: u64 = 1_000_000;
 /// shared references.
 pub struct PoWConsensus {
     /// Current target — `hash_u32 <= target` is valid. Higher = easier.
-    target: Cell<u32>,
+    target: AtomicU32,
     /// Desired seconds between blocks (configuration constant).
     target_block_time: u64,
     /// Floor — target will never drop below this (hardest possible).
@@ -74,7 +74,7 @@ pub struct PoWConsensus {
 impl Clone for PoWConsensus {
     fn clone(&self) -> Self {
         Self {
-            target: Cell::new(self.target.get()),
+            target: AtomicU32::new(self.target.load(Ordering::Relaxed)),
             target_block_time: self.target_block_time,
             min_target: self.min_target,
             max_target: self.max_target,
@@ -92,7 +92,7 @@ impl PoWConsensus {
         max_target: u32,
     ) -> Self {
         Self {
-            target: Cell::new(initial_target),
+            target: AtomicU32::new(initial_target),
             target_block_time,
             min_target,
             max_target,
@@ -102,12 +102,12 @@ impl PoWConsensus {
 
     /// Current target — `hash_u32 <= target` is valid. Higher = easier.
     pub fn target(&self) -> u32 {
-        self.target.get()
+        self.target.load(Ordering::Relaxed)
     }
 
     /// Conventional difficulty (higher = harder), derived from target.
     pub fn difficulty(&self) -> u64 {
-        let t = self.target.get();
+        let t = self.target.load(Ordering::Relaxed);
         if t == 0 {
             return u64::MAX;
         }
@@ -139,7 +139,7 @@ impl PoWConsensus {
     pub fn adjust_target(&self) -> u32 {
         let timestamps = self.timestamps.lock().unwrap();
         if timestamps.len() < 2 {
-            return self.target.get();
+            return self.target.load(Ordering::Relaxed);
         }
 
         // Sum intervals between consecutive timestamps in the window
@@ -184,7 +184,7 @@ impl PoWConsensus {
 
         // ratio_scaled > SCALE (blocks fast) → adjustment > SCALE → target decreases (harder)
         // ratio_scaled < SCALE (blocks slow) → adjustment < SCALE → target increases (easier)
-        let current = self.target.get() as u64;
+        let current = self.target.load(Ordering::Relaxed) as u64;
         let new_target = (current * SCALE / adjustment) as u32;
         let clamped = new_target.clamp(self.min_target, self.max_target);
 
@@ -194,13 +194,13 @@ impl PoWConsensus {
             current, clamped, avg_interval, ratio_scaled, adjustment
         );
 
-        self.target.set(clamped);
+        self.target.store(clamped, Ordering::Relaxed);
         clamped
     }
 
     /// Persist consensus state to a sled tree so difficulty survives restarts.
     pub fn save(&self, tree: &sled::Tree) -> Result<()> {
-        tree.insert(b"target", &self.target.get().to_le_bytes())
+        tree.insert(b"target", &self.target.load(Ordering::Relaxed).to_le_bytes())
             .map_err(|e| LinearError::StorageError(e.to_string()))?;
         tree.insert(b"target_block_time", &self.target_block_time.to_le_bytes())
             .map_err(|e| LinearError::StorageError(e.to_string()))?;
@@ -231,7 +231,7 @@ impl PoWConsensus {
             if bytes.len() == 4 {
                 let mut arr = [0u8; 4];
                 arr.copy_from_slice(&bytes);
-                self.target.set(u32::from_le_bytes(arr));
+                self.target.store(u32::from_le_bytes(arr), Ordering::Relaxed);
             }
         }
         if let Some(bytes) = tree
@@ -249,7 +249,7 @@ impl PoWConsensus {
         debug!(
             target: "consensus",
             "Loaded consensus state: target={}, {} timestamps",
-            self.target.get(),
+            self.target.load(Ordering::Relaxed),
             self.timestamps.lock().unwrap().len()
         );
         Ok(())
@@ -267,7 +267,7 @@ impl PoWConsensus {
     /// 64-bit check — see `stratum.rs` target encoding comment.
     pub fn check_pow(&self, hash: &Blake3Hash) -> bool {
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
-        hash_u32 <= self.target.get()
+        hash_u32 <= self.target.load(Ordering::Relaxed)
     }
 
     /// Verify an uncle block meets the target.

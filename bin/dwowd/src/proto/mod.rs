@@ -39,7 +39,7 @@ mod protocol_tx;
 pub use protocol_tx::{ProtocolTxHandler, ProtocolTxHandlerPtr};
 
 /// Linear blockchain sync protocol
-mod linear_sync;
+pub(crate) mod linear_sync;
 pub use linear_sync::{LinearSyncHandler, LinearSyncHandlerPtr};
 
 /// Linear blockchain block broadcast protocol

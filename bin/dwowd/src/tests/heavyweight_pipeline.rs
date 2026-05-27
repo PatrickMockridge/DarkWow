@@ -2731,3 +2731,180 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
         Ok(())
     })
 }
+
+// ============================================================================
+// relayer lifecycle — cross-contract bridge + relayer_endowment
+// ============================================================================
+
+/// Full lifecycle: bridge deposit → withdraw → double-spend prevention,
+/// plus relayer_endowment initialization and capital deployment.
+///
+/// Deploys both bridge and relayer_endowment contracts into the same
+/// GenesisHarness, then exercises them across multiple blocks with ZK proofs.
+#[test]
+fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::{BridgeHarness, RelayerEndowmentHarness};
+    use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
+    use dwow_sdk::crypto::ContractId;
+    use dwow_sdk::pasta::pallas;
+    use dwow_bridge_contract::model::ExternalChain;
+
+    use super::genesis::GenesisHarness;
+    use super::harness::{build_coinbase_tx, build_contract_tx, build_test_block};
+
+    println!("=== Relayer Lifecycle Heavyweight ===");
+
+    smol::block_on(async {
+        // --- Setup: shared genesis + both harnesses ---
+        let genesis = GenesisHarness::new()?;
+        let bridge_harness = BridgeHarness::spawn();
+        let relayer_harness = RelayerEndowmentHarness::spawn();
+
+        println!("Harnesses spawned:");
+        println!("  Bridge circuits: {:?}", bridge_harness.circuits());
+        println!("  RelayerEndowment circuits: {:?}", relayer_harness.circuits());
+
+        // --- Deploy bridge contract ---
+        let bridge_wasm =
+            include_bytes!("../../../../src/contract/bridge/dwow_bridge_contract.wasm");
+        let bridge_id = ContractId::from(pallas::Base::from(0xB0_B1_B2_B3u64));
+        genesis.deploy_contract(bridge_wasm, bridge_id, &[])?;
+        println!("Bridge deployed at {:?}", bridge_id.to_bytes());
+
+        // --- Deploy relayer_endowment contract ---
+        let relayer_wasm =
+            include_bytes!("../../../../src/contract/relayer_endowment/dwow_relayer_endowment_contract.wasm");
+        let relayer_id = ContractId::from(pallas::Base::from(0xE0_E1_E2_E3u64));
+        genesis.deploy_contract(relayer_wasm, relayer_id, &[])?;
+        println!("RelayerEndowment deployed at {:?}", relayer_id.to_bytes());
+
+        let start_height = genesis.block_height();
+        println!("Start height: {}", start_height);
+
+        // --- Block 1: Bridge deposit ---
+        println!("\n--- Block 1: Bridge deposit ---");
+        let secret = pallas::Base::from(100u64);
+        let recipient = PublicKey::from_secret(SecretKey::from_bytes([3u8; 32]).unwrap());
+        let deposit = bridge_harness.deposit(
+            secret,
+            10000,
+            recipient,
+            1,
+            pallas::Base::from(200u64),
+            pallas::Base::from(300u64),
+            0,
+            vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
+            ExternalChain::Monero,
+            0,
+        )?;
+        assert!(!deposit.call_data.is_empty(), "deposit call_data must not be empty");
+        println!("  Deposit call_data={}B", deposit.call_data.len());
+
+        let height1 = start_height + 1;
+        let reward = dwow_sdk::blockchain::expected_reward(height1 as u32);
+        let deposit_tx = build_contract_tx(bridge_id.to_bytes(), deposit.call_data);
+        let coinbase = build_coinbase_tx(reward);
+        let block1 = build_test_block(&genesis.blockchain, height1, vec![deposit_tx, coinbase]);
+        genesis.blockchain.apply_block_with_uncles(&block1, &[]).await?;
+        assert_eq!(genesis.block_height(), height1, "height must advance after deposit");
+        println!("  deposit executed OK (height {} -> {})", start_height, height1);
+
+        // --- Block 2: Bridge withdraw ---
+        println!("\n--- Block 2: Bridge withdraw ---");
+        let withdraw = bridge_harness.withdraw(
+            secret,
+            5000,
+            pallas::Base::from(400u64),
+            pallas::Base::from(500u64),
+            pallas::Base::from(600u64),
+            [pallas::Base::from(0u64); 4],
+            0,
+            10,
+        )?;
+        assert!(!withdraw.call_data.is_empty(), "withdraw call_data must not be empty");
+        println!("  Withdraw call_data={}B", withdraw.call_data.len());
+
+        let height2 = genesis.block_height() + 1;
+        let reward = dwow_sdk::blockchain::expected_reward(height2 as u32);
+        let withdraw_tx = build_contract_tx(bridge_id.to_bytes(), withdraw.call_data);
+        let coinbase = build_coinbase_tx(reward);
+        let block2 = build_test_block(&genesis.blockchain, height2, vec![withdraw_tx, coinbase]);
+        genesis.blockchain.apply_block_with_uncles(&block2, &[]).await?;
+        assert_eq!(genesis.block_height(), height2, "height must advance after withdraw");
+        println!("  withdraw executed OK (height {} -> {})", height1, height2);
+
+        // --- Block 3: Double-spend attempt (same secret = same nullifier) ---
+        println!("\n--- Block 3: Double-spend attempt ---");
+        let double_withdraw = bridge_harness.withdraw(
+            secret,
+            3000,
+            pallas::Base::from(999u64),
+            pallas::Base::from(888u64),
+            pallas::Base::from(777u64),
+            [pallas::Base::from(0u64); 4],
+            0,
+            10,
+        )?;
+
+        let height3 = genesis.block_height() + 1;
+        let reward = dwow_sdk::blockchain::expected_reward(height3 as u32);
+        let double_tx = build_contract_tx(bridge_id.to_bytes(), double_withdraw.call_data);
+        let coinbase = build_coinbase_tx(reward);
+        let block3 = build_test_block(&genesis.blockchain, height3, vec![double_tx, coinbase]);
+        let double_result = genesis.blockchain.apply_block_with_uncles(&block3, &[]).await;
+        assert!(double_result.is_err(), "double-spend must be rejected (nullifier already spent)");
+        println!("  double-spend correctly rejected");
+
+        // --- Block 4: RelayerEndowment initialize + deploy_capital ---
+        println!("\n--- Block 4: RelayerEndowment initialize + deploy_capital ---");
+        let relayer_secret = pallas::Base::from(10u64);
+        let relayer_pub = PublicKey::from_secret(
+            SecretKey::from_bytes(relayer_secret.to_repr()).unwrap(),
+        );
+        let backer_secret = pallas::Base::from(20u64);
+        let backer_pub = PublicKey::from_secret(
+            SecretKey::from_bytes(backer_secret.to_repr()).unwrap(),
+        );
+
+        let init = relayer_harness.initialize(relayer_pub, 500, 42)?;
+        assert!(!init.call_data.is_empty(), "initialize call_data must not be empty");
+        println!("  Initialize call_data={}B", init.call_data.len());
+
+        let deploy = relayer_harness.deploy_capital(
+            pallas::Base::from(1u64),
+            backer_pub,
+            10000,
+            pallas::Base::from(2u64),
+            0,
+            pallas::Scalar::from(3u64),
+            relayer_pub,
+            500,
+        )?;
+        assert!(!deploy.call_data.is_empty(), "deploy_capital call_data must not be empty");
+        println!("  DeployCapital call_data={}B", deploy.call_data.len());
+
+        let height4 = genesis.block_height() + 1;
+        let reward = dwow_sdk::blockchain::expected_reward(height4 as u32);
+        let init_tx = build_contract_tx(relayer_id.to_bytes(), init.call_data);
+        let deploy_tx = build_contract_tx(relayer_id.to_bytes(), deploy.call_data);
+        let coinbase = build_coinbase_tx(reward);
+        let block4 = build_test_block(
+            &genesis.blockchain,
+            height4,
+            vec![init_tx, deploy_tx, coinbase],
+        );
+        genesis.blockchain.apply_block_with_uncles(&block4, &[]).await?;
+        assert_eq!(genesis.block_height(), height4,
+            "height must advance after relayer_endowment calls");
+        println!("  initialize + deploy_capital executed OK (height {} -> {})", height3, height4);
+
+        // --- Verify final state ---
+        let final_height = genesis.block_height();
+        assert!(final_height >= 3, "must have at least 3 successful blocks (deposit + withdraw + relayer)");
+        println!(
+            "\n=== Relayer Lifecycle Heavyweight: All assertions passed (final height: {}) ===",
+            final_height
+        );
+        Ok(())
+    })
+}

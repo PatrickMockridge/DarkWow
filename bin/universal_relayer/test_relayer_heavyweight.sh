@@ -54,8 +54,8 @@ check $? "cargo is available"
 check $? "Bridge WASM binary present (dwow_bridge_contract.wasm)"
 
 # --- Deterministic environment ---
-export RAYON_NUM_THREADS=20
-info "RAYON_NUM_THREADS=20 (heavyweight thread count)"
+export RAYON_NUM_THREADS=10
+info "RAYON_NUM_THREADS=10 (heavyweight thread count)"
 
 export CARGO_BUILD_INCREMENTAL=false
 info "CARGO_BUILD_INCREMENTAL=false (deterministic build)"
@@ -89,9 +89,9 @@ check $? "Test output contains 'ok' result"
 grep -q "0 failed" "$TEST_OUTPUT"
 check $? "Zero test failures"
 
-# Verify ZK proofs ran (check for proof-related output)
-grep -qE "Exec\(V1\)|exec_with_children|deploy.*bridge" "$TEST_OUTPUT"
-check $? "Bridge contract execution detected in output"
+# Verify ZK proofs ran (check for lifecycle test output)
+grep -qE "deposit executed OK|withdraw executed OK|double-spend correctly rejected|initialize \+ deploy_capital executed OK" "$TEST_OUTPUT"
+check $? "Bridge lifecycle execution detected in output"
 
 info "Test duration: ${DURATION}s"
 rm -f "$TEST_OUTPUT"

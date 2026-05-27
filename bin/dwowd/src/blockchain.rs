@@ -572,7 +572,7 @@ impl LinearBlockchain {
 
             // Reject duplicate uncles already stored in a prior canonical block
             let uncle_key = blake3::hash(&serde_json::to_vec(&uncle.header).unwrap());
-            if self.store.has_uncle(uncle_key.as_bytes())? {
+            if self.store.has_uncle(uncle_key.as_bytes()).map_err(|e| Error::Custom(e.to_string()))? {
                 error!(target: "linear_blockchain", "Uncle {} already stored in chain", uncle.hash(&vm));
                 return Err(Error::Custom("DuplicateUncle".to_string()))
             }

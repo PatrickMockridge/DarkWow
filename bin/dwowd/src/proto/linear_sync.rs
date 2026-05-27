@@ -51,7 +51,7 @@ use dwow_chain::{Block, LinearBlockchain};
 use dwow_serial::{serialize_async, deserialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 
 /// Constant defining max blocks we send in a single response.
-const LINEAR_SYNC_BATCH: usize = 20;
+pub(crate) const LINEAR_SYNC_BATCH: usize = 20;
 
 /// Protocol metering configuration for linear sync
 const LINEAR_SYNC_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfiguration {
