@@ -275,7 +275,10 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 /// Metadata for BurnV1
 fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: BurnParamsV1 = deserialize(&self_.data[1..]).unwrap();
+    let params: BurnParamsV1 = match deserialize(&self_.data[1..]) {
+        Ok(p) => p,
+        Err(_) => return vec![],
+    };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let mut signature_pubkeys: Vec<pallas::Base> = vec![];

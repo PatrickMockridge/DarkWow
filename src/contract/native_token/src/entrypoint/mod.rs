@@ -202,8 +202,16 @@ fn fee_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![params.input.signature_public];
 
     // Grab the Pedersen commitments and the signature pubkey from the params
-    let input_value_coords = params.input.value_commit.to_affine().coordinates().unwrap();
-    let output_value_coords = params.output.value_commit.to_affine().coordinates().unwrap();
+    let input_value_coords = params.input.value_commit.to_affine().coordinates();
+    if input_value_coords.is_none().into() {
+        return vec![];
+    }
+    let input_value_coords = input_value_coords.unwrap();
+    let output_value_coords = params.output.value_commit.to_affine().coordinates();
+    if output_value_coords.is_none().into() {
+        return vec![];
+    }
+    let output_value_coords = output_value_coords.unwrap();
     let (sig_x, sig_y) = params.input.signature_public.xy();
 
     zk_public_inputs.push((
@@ -236,7 +244,11 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     let params: MintParamsV1 = match deserialize(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     // Public inputs for the ZK proofs we have to verify
-    let value_coords = params.value_commit.to_affine().coordinates().unwrap();
+    let value_coords = params.value_commit.to_affine().coordinates();
+    if value_coords.is_none().into() {
+        return vec![];
+    }
+    let value_coords = value_coords.unwrap();
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Public keys for the transaction signatures we have to verify
@@ -268,7 +280,11 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     let mut signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     for input in &params.inputs {
-        let value_coords = input.value_commit.to_affine().coordinates().unwrap();
+        let value_coords = input.value_commit.to_affine().coordinates();
+        if value_coords.is_none().into() {
+            return vec![];
+        }
+        let value_coords = value_coords.unwrap();
         let (sig_x, sig_y) = input.signature_public.xy();
         signature_pubkeys.push(input.signature_public);
 
@@ -306,7 +322,11 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         let (sig_x, sig_y) = input.signature_public.xy();
         signature_pubkeys.push(input.signature_public);
 
-        let value_coords = input.value_commit.to_affine().coordinates().unwrap();
+        let value_coords = input.value_commit.to_affine().coordinates();
+        if value_coords.is_none().into() {
+            return vec![];
+        }
+        let value_coords = value_coords.unwrap();
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
             vec![
@@ -324,7 +344,11 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     }
 
     for output in &params.outputs {
-        let value_coords = output.value_commit.to_affine().coordinates().unwrap();
+        let value_coords = output.value_commit.to_affine().coordinates();
+        if value_coords.is_none().into() {
+            return vec![];
+        }
+        let value_coords = value_coords.unwrap();
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
             vec![
@@ -350,8 +374,16 @@ fn spend_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![params.input.signature_public];
 
-    let input_value_coords = params.input.value_commit.to_affine().coordinates().unwrap();
-    let output_value_coords = params.output.value_commit.to_affine().coordinates().unwrap();
+    let input_value_coords = params.input.value_commit.to_affine().coordinates();
+    if input_value_coords.is_none().into() {
+        return vec![];
+    }
+    let input_value_coords = input_value_coords.unwrap();
+    let output_value_coords = params.output.value_commit.to_affine().coordinates();
+    if output_value_coords.is_none().into() {
+        return vec![];
+    }
+    let output_value_coords = output_value_coords.unwrap();
     let (sig_x, sig_y) = params.input.signature_public.xy();
 
     zk_public_inputs.push((
@@ -644,7 +676,11 @@ fn pow_reward_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![params.input.signature_public];
 
     // Grab the Pedersen commitment and token commit from the output
-    let value_coords = params.output.value_commit.to_affine().coordinates().unwrap();
+    let value_coords = params.output.value_commit.to_affine().coordinates();
+    if value_coords.is_none().into() {
+        return vec![];
+    }
+    let value_coords = value_coords.unwrap();
 
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),

@@ -191,7 +191,11 @@ fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk
         Err(_) => return vec![],
     };
 
-    let value_coords = params.value_commit.to_affine().coordinates().unwrap();
+    let value_coords = params.value_commit.to_affine().coordinates();
+    if value_coords.is_none().into() {
+        return vec![];
+    }
+    let value_coords = value_coords.unwrap();
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_PREMIUM_NS.to_string(),
@@ -468,6 +472,9 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
+    if child_idx >= calls.len() {
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!("[pay_premium_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
@@ -566,6 +573,9 @@ fn withdraw_v1(
 
     // Verify child call is money_v3::transfer_v1 (function code 0x04)
     let child_idx = self_.children_indexes[0];
+    if child_idx >= calls.len() {
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
@@ -700,6 +710,9 @@ fn endowment_withdraw_v1(
 
     // Verify child call is money_v3::transfer_v1 (function code 0x04)
     let child_idx = self_.children_indexes[0];
+    if child_idx >= calls.len() {
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
@@ -805,6 +818,9 @@ fn treasury_spend_v1(
 
     // Verify child call is money_v3::transfer_v1 (function code 0x04)
     let child_idx = self_.children_indexes[0];
+    if child_idx >= calls.len() {
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
@@ -1248,7 +1264,7 @@ fn vote_claim_v1(
         return Err(DaoEscrowError::VotingWindowExpired.into());
     }
 
-    // Check for double-vote via nullifier
+    // Check for double-vote via nullifier, then store it to prevent re-use
     let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
     let vote_nullifier = params.capability_proof.nullifier.inner();
     let existing_nullifier = wasm::db::db_get(nullifiers_db, &vote_nullifier.to_repr())?;
@@ -1256,6 +1272,7 @@ fn vote_claim_v1(
         msg!("[dao_escrow::vote_claim_v1] ERROR: Already voted");
         return Err(DaoEscrowError::AlreadyVoted.into());
     }
+    wasm::db::db_set(nullifiers_db, &vote_nullifier.to_repr(), &serialize(&true))?;
 
     // Count vote
     let (yes_votes, no_votes, _passed) = match params.vote {
@@ -1331,6 +1348,9 @@ fn execute_claim_v1(
         return Err(DaoEscrowError::InvalidChildrenIndexes.into());
     }
     let child_idx = self_.children_indexes[0];
+    if child_idx >= calls.len() {
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         return Err(DaoEscrowError::InvalidChildCall.into());
@@ -1454,6 +1474,9 @@ fn verify_member_capability_v1(
         return Err(DaoEscrowError::InvalidChildrenIndexes.into());
     }
     let child_idx = self_.children_indexes[0];
+    if child_idx >= calls.len() {
+        return Err(DaoEscrowError::InvalidChildrenIndexes.into())
+    }
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x0b {
         msg!("[verify_member_capability_v1] Error: Expected Identity::VerifyCapabilityV1 (0x0b), got 0x{:02x}",
