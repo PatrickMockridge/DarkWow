@@ -485,6 +485,17 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
         return Err(MoneyV3Error::TokenNotRegistered.into())
     }
 
+    // Verify token_registry_root matches the current on-chain registry root.
+    // Without this check, an old root could be replayed after the registry has changed.
+    let info_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_INFO_TREE)?;
+    let current_root_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT)?
+        .ok_or(MoneyV3Error::TokenNotRegistered)?;
+    let current_root: MerkleNode = deserialize(&current_root_bytes)?;
+    if params.auth_proof.token_registry_root != current_root {
+        msg!("[mint_v1] Error: Token registry root mismatch (stale or replayed proof)");
+        return Err(MoneyV3Error::TokenNotRegistered.into())
+    }
+
     // Verify auth_proof: nullifier must have been spent by a prior AuthTokenMintV1
     let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
     let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
@@ -562,6 +573,11 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
 
     let coins_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_COINS_TREE)?;
     let coin_roots_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_COIN_ROOTS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_NULLIFIERS_TREE)?;
+
+    // SMT for nullifier lookup
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
     // Verify all input nullifiers are unique and not already spent
     let mut new_nullifiers = Vec::new();
@@ -570,6 +586,12 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
         if !wasm::db::db_contains_key(coin_roots_db, &serialize(&input.merkle_root))? {
             msg!("[transfer_v1] Error: Merkle root not found for input {}", i);
             return Err(MoneyV3Error::TransferMerkleRootNotFound.into())
+        }
+
+        // Verify nullifier is NOT already spent
+        if smt.get_leaf(&input.nullifier.inner()) != pallas::Base::zero() {
+            msg!("[transfer_v1] Error: Nullifier already spent for input {}", i);
+            return Err(MoneyV3Error::DuplicateNullifier.into())
         }
 
         new_nullifiers.push(input.nullifier);

@@ -262,6 +262,23 @@ If your contract composes with other contracts and handles user funds:
 - [ ] Child call validation happens in the `instruction` phase, before state mutation
 - [ ] All database trees are initialized in `init_contract`
 
+### Intentional Transparency vs. Privacy Leaks
+
+Not every plaintext field on a params struct is a flakey pattern. Some amounts MUST be known on-chain for correct contract operation. The distinction:
+
+**Intentional transparency** (keep the plaintext field):
+- Bridge withdrawal amounts — cross-chain visibility is inherent; both chains know the amount
+- Stablecoin pool totals — global collateral/debt tracking requires known amounts for ratio checks
+- DEX order-book prices — market-visible by design; hidden prices would prevent matching
+- Fee amounts — network fees are public by protocol design
+
+**Privacy leak** (remove the plaintext field, use commitments):
+- Individual transfer amounts on Output structs — use `value_commit` comparison (see Lesson 4)
+- Spend amounts on Input structs — use client-side witnesses (see Lesson 3 / RC3)
+- Token IDs when already committed — use token_commit comparison
+
+**Heuristic**: If the value updates a global state aggregate that other users depend on (pool totals, market prices, cross-chain proofs), the amount is legitimately public. If the value is only needed by the two counterparties to a transfer, it should stay behind a commitment.
+
 ### ZK Circuit Development
 
 - [ ] Is EC required? If this is an internal DarkWow circuit, use Poseidon-only

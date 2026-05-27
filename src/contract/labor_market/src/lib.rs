@@ -86,6 +86,7 @@ pub const LABOR_CONTRACT_INFO_TREE: &str = "info";
 
 // These are keys inside the info tree
 pub const LABOR_CONTRACT_DB_VERSION: &[u8] = b"db_version";
+pub const LABOR_CONTRACT_ATTESTATION_CONTRACT_ID: &[u8] = b"attestation_cid";
 
 // zkas circuit namespaces
 pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1: &str = "CreateJob";

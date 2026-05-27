@@ -354,14 +354,8 @@ impl FeeCallBuilder {
             nullifier,
             merkle_root,
             user_data_enc: input_user_data_enc,
-            signature_public,
-            value: self.input.value,
-            token_id: self.input.token_id,
             spend_hook: self.input.spend_hook,
-            user_data: self.input.user_data,
-            coin_blind: self.input.coin_blind,
-            leaf_position: self.input.leaf_position,
-            merkle_path: self.input.merkle_path,
+            signature_public,
         };
 
         // Create placeholder note for fee (fee doesn't need note encryption)

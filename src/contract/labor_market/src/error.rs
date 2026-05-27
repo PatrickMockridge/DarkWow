@@ -126,6 +126,9 @@ pub enum LaborMarketError {
 
     #[error("Invalid child call")]
     InvalidChildCall,
+
+    #[error("Invalid child contract ID")]
+    InvalidChildContractId,
 }
 
 impl From<LaborMarketError> for ContractError {
@@ -163,6 +166,7 @@ impl From<LaborMarketError> for ContractError {
             LaborMarketError::CapabilityRevoked => Self::Custom(30),
             LaborMarketError::InvalidChildrenIndexes => Self::Custom(31),
             LaborMarketError::InvalidChildCall => Self::Custom(32),
+            LaborMarketError::InvalidChildContractId => Self::Custom(33),
         }
     }
 }

@@ -62,8 +62,8 @@ use crate::{
         InitiateDisputeParamsV1, Job, JobState, Milestone, RefundParamsV1,
         SubmitDeliverableParamsV1, SubmitGitDeliverableParamsV1, SubmitMilestoneDeliverableParamsV1,
     },
-    LaborMarketFunction, LABOR_CONTRACT_INFO_TREE, LABOR_CONTRACT_JOBS_TREE,
-    LABOR_CONTRACT_NULLIFIERS_TREE, LABOR_CONTRACT_SPENT_FLAGS_TREE,
+    LaborMarketFunction, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID, LABOR_CONTRACT_INFO_TREE,
+    LABOR_CONTRACT_JOBS_TREE, LABOR_CONTRACT_NULLIFIERS_TREE, LABOR_CONTRACT_SPENT_FLAGS_TREE,
 };
 
 dwow_sdk::define_contract!(
@@ -90,6 +90,10 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, LABOR_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, b"db_version", &env!("CARGO_PKG_VERSION").as_bytes())?;
+
+    // Deserialize init params: attestation_contract_id
+    let attestation_cid: ContractId = deserialize(_ix)?;
+    wasm::db::db_set(info_db, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID, &serialize(&attestation_cid))?;
 
     // Initialize jobs tree
     wasm::db::db_init(cid, LABOR_CONTRACT_JOBS_TREE)?;
@@ -463,7 +467,7 @@ fn accept_job_v1(_cid: ContractId, params: AcceptJobParamsV1) -> ContractResult 
 }
 
 /// SubmitDeliverableV1 instruction
-fn submit_deliverable_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: SubmitDeliverableParamsV1) -> ContractResult {
+fn submit_deliverable_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: SubmitDeliverableParamsV1) -> ContractResult {
     msg!("[labor_market::submit_deliverable_v1] Submitting deliverable for job: {:?}", params.job_id);
 
     // Validate child call to Attestation::VerifyClaimV1 (0x04) for on-chain attestation verification
@@ -481,6 +485,17 @@ fn submit_deliverable_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         return Err(LaborMarketError::InvalidChildCall.into())
     }
 
+    // Validate child call is routed to the attestation contract, not another 0x04 handler
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let attestation_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID)?
+        .ok_or(LaborMarketError::InvalidChildContractId)?;
+    let attestation_cid: ContractId = deserialize(&attestation_bytes)?;
+    if child_call.contract_id != attestation_cid {
+        msg!("[submit_deliverable_v1] Error: Expected attestation contract {:?}, got {:?}",
+             attestation_cid.inner(), child_call.contract_id.inner());
+        return Err(LaborMarketError::InvalidChildContractId.into())
+    }
+
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1)
 
@@ -489,7 +504,7 @@ fn submit_deliverable_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 }
 
 /// SubmitGitDeliverableV1 instruction
-fn submit_git_deliverable_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: SubmitGitDeliverableParamsV1) -> ContractResult {
+fn submit_git_deliverable_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: SubmitGitDeliverableParamsV1) -> ContractResult {
     msg!("[labor_market::submit_git_deliverable_v1] Submitting git deliverable for job: {:?}", params.job_id);
 
     // Validate child call to Attestation::VerifyClaimV1 (0x04) for on-chain attestation verification
@@ -505,6 +520,17 @@ fn submit_git_deliverable_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
         msg!("[submit_git_deliverable_v1] Error: Expected Attestation::VerifyClaimV1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
+    // Validate child call is routed to the attestation contract, not another 0x04 handler
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let attestation_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID)?
+        .ok_or(LaborMarketError::InvalidChildContractId)?;
+    let attestation_cid: ContractId = deserialize(&attestation_bytes)?;
+    if child_call.contract_id != attestation_cid {
+        msg!("[submit_git_deliverable_v1] Error: Expected attestation contract {:?}, got {:?}",
+             attestation_cid.inner(), child_call.contract_id.inner());
+        return Err(LaborMarketError::InvalidChildContractId.into())
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)

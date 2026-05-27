@@ -308,20 +308,14 @@ mod tests {
             nullifier: Nullifier::new(pallas::Base::from(3), pallas::Base::from(4)),
             merkle_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             user_data_enc: pallas::Base::zero(),
-            signature_public: pallas::Base::zero(),
-            value: 100,
-            token_id: pallas::Base::from(5),
             spend_hook: pallas::Base::zero(),
-            user_data: pallas::Base::zero(),
-            coin_blind: pallas::Base::zero(),
-            leaf_position: 0,
-            merkle_path: vec![],
+            signature_public: pallas::Base::zero(),
         };
         let params = BurnParamsV1 { inputs: vec![input] };
         let encoded = serialize(&params);
         let decoded: BurnParamsV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.inputs.len(), 1);
-        assert_eq!(decoded.inputs[0].value, 100);
+        assert_eq!(decoded.inputs[0].value_commit, pallas::Base::from(1));
     }
 
     #[test]
@@ -332,14 +326,8 @@ mod tests {
             nullifier: Nullifier::new(pallas::Base::from(3), pallas::Base::from(4)),
             merkle_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             user_data_enc: pallas::Base::zero(),
-            signature_public: pallas::Base::zero(),
-            value: 100,
-            token_id: pallas::Base::from(5),
             spend_hook: pallas::Base::zero(),
-            user_data: pallas::Base::zero(),
-            coin_blind: pallas::Base::zero(),
-            leaf_position: 0,
-            merkle_path: vec![],
+            signature_public: pallas::Base::zero(),
         };
 
         let output = Output {

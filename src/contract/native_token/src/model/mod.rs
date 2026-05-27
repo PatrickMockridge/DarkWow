@@ -115,7 +115,13 @@ impl CoinAttributes {
 // INPUT/OUTPUT (TRANSACTION BUILDING BLOCKS - following money_v2 pattern)
 // ============================================================================
 
-/// Input to a transaction - proves right to spend a coin (money_v2 style)
+/// Input to a transaction — proves right to spend a coin.
+///
+/// This struct contains ONLY on-chain fields that are serialized into the
+/// transaction.  Private witness data for client-side ZK proof generation
+/// lives in [`InputWitness`].
+///
+/// Native token uses Pedersen commitments for value (homomorphic).
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Input {
     /// Pedersen commitment of the value (homomorphic)
@@ -128,14 +134,19 @@ pub struct Input {
     pub merkle_root: MerkleNode,
     /// Encrypted user data field
     pub user_data_enc: pallas::Base,
+    /// Spend hook (ZK circuit public input — constrains coin commitment)
+    pub spend_hook: pallas::Base,
     /// Signature public key
     pub signature_public: PublicKey,
-    /// Value of the coin being spent (for burn proof)
+}
+
+/// Client-side witness data for ZK proof generation (never serialized on-chain).
+#[derive(Debug, Clone)]
+pub struct InputWitness {
+    /// Value of the coin being spent
     pub value: u64,
     /// Token ID
     pub token_id: pallas::Base,
-    /// Spend hook
-    pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
     /// Coin blind

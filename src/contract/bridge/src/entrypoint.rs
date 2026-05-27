@@ -65,7 +65,7 @@ use crate::{
         CancelWithdrawParams, CancelWithdrawUpdateV1, ClaimHtlcParams, ClaimHtlcUpdateV1,
         CreateHtlcParams, CreateHtlcUpdateV1, Deposit, DepositParams,
         ExecuteGuaranteedWithdrawParams, ExecuteGuaranteedWithdrawUpdateV1,
-        ExternalChain, HtlcSwapInfo, HtlcSwapState, PendingWithdrawal,
+        ExternalChain, ExternalChainProof, HtlcSwapInfo, HtlcSwapState, PendingWithdrawal,
         ReassignWithdrawalParamsV1, ReassignWithdrawalUpdateV1,
         RefundHtlcParams, RefundHtlcUpdateV1, RegisterFeeScheduleParams,
         RegisterFeeScheduleUpdateV1, RegisterRelayerParams, RegisterRelayerUpdateV1,
@@ -227,19 +227,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
 /// Metadata for DepositV1 ZK proof verification.
 ///
-/// The deposit_v1.zk circuit has zero constrain_instance calls — all public
-/// inputs are verified via constrain_equal_base internally. The host still
-/// needs the namespace to load the correct verification key, so we return
-/// namespace with an empty public input vector.
+/// Public input: commitment — binds the ZK proof to the deposit commitment
+/// so the verifier checks it matches the tx data.
 fn deposit_get_metadata(data: &[u8]) -> Vec<u8> {
     use dwow_sdk::pasta::pallas;
 
-    let _params: DepositParams = match deserialize(data) { Ok(p) => p, Err(_) => return vec![] };
+    let params: DepositParams = match deserialize(data) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1.to_string(),
-        vec![],
+        vec![params.commitment.inner()],
     ));
 
     let mut metadata = vec![];
@@ -350,40 +348,22 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
         return Err(BridgeError::DoubleDeposit.into())
     }
 
-    // Verify based on chain type
-    match params.chain {
-        ExternalChain::Ethereum => {
-            // Existing Ethereum deposit verification
-            // For v1, we trust the ZK proof verification happened at host level
-            msg!("[bridge::process_instruction] Ethereum deposit - ZK proof verified at host level");
-        }
-        ExternalChain::Monero => {
-            // Verify Monero deposit via DLEq proof
-            let xmr_proof = params.xmr_proof.ok_or_else(|| {
-                BridgeError::InvalidDeposit("Monero deposit missing xmr_proof".into())
-            })?;
-            verify_xmr_deposit(cid, &xmr_proof)?;
-        }
-        ExternalChain::Zcash => {
-            // Verify Zcash Sapling deposit via spend proof
-            let zec_proof = params.zec_proof.ok_or_else(|| {
-                BridgeError::InvalidDeposit("Zcash deposit missing zec_proof".into())
-            })?;
-            verify_zcash_deposit(cid, &zec_proof)?;
-        }
-        ExternalChain::Aztec => {
-            // Verify Aztec rollup deposit via note proof
-            let azt_proof = params.azt_proof.ok_or_else(|| {
-                BridgeError::InvalidDeposit("Aztec deposit missing azt_proof".into())
-            })?;
-            verify_aztec_deposit(cid, &azt_proof)?;
-        }
-        ExternalChain::Litecoin => {
-            // Verify Litecoin deposit via merkle proof (and MWEB if confidential)
-            let ltc_proof = params.ltc_proof.ok_or_else(|| {
-                BridgeError::InvalidDeposit("Litecoin deposit missing ltc_proof".into())
-            })?;
-            verify_litecoin_deposit(cid, &ltc_proof)?;
+    // Ethereum uses host-level ZK proof verification (no chain-specific proof needed).
+    // All other chains carry a chain-specific proof via the ExternalChainProof enum.
+    if params.chain != ExternalChain::Ethereum {
+        match &params.chain_proof {
+            ExternalChainProof::Monero(proof) => {
+                verify_xmr_deposit(cid, proof)?;
+            }
+            ExternalChainProof::Zcash(proof) => {
+                verify_zcash_deposit(cid, proof)?;
+            }
+            ExternalChainProof::Aztec(proof) => {
+                verify_aztec_deposit(cid, proof)?;
+            }
+            ExternalChainProof::Litecoin(proof) => {
+                verify_litecoin_deposit(cid, proof)?;
+            }
         }
     }
 

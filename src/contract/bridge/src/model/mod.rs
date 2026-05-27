@@ -39,6 +39,7 @@ pub const BRIDGE_NAMESPACE: u64 = 0x0002;
 
 /// External chain identifier
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(PartialEq)]
 pub enum ExternalChain {
     Ethereum,
     Monero,
@@ -47,6 +48,20 @@ pub enum ExternalChain {
     Litecoin,
     // Future chains can be added here
     // Bitcoin,
+}
+
+/// Chain-specific deposit proof data.
+///
+/// Each variant carries the proof data needed to verify a deposit on that
+/// chain.  Replaces the four `Option<T>` fields that previously existed on
+/// `DepositParams` — the enum guarantees exactly one proof is present and
+/// makes the chain type self-evident from the variant.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub enum ExternalChainProof {
+    Monero(XmrDepositProof),
+    Zcash(ZcashDepositProof),
+    Aztec(AztecDepositProof),
+    Litecoin(LitecoinDepositProof),
 }
 
 /// Bridge deposit parameters
@@ -88,21 +103,10 @@ pub struct DepositParams {
     /// 3. Commitment is correctly computed
     pub proof: Vec<u8>,
 
-    /// XMR-specific deposit proof data (used when chain is Monero)
-    /// This contains DLEq proof, tx data, and confirmation proof
-    pub xmr_proof: Option<XmrDepositProof>,
-
-    /// ZEC-specific deposit proof data (used when chain is Zcash)
-    /// This contains nullifier, commitment, merkle path, and spend proofs
-    pub zec_proof: Option<ZcashDepositProof>,
-
-    /// AZT-specific deposit proof data (used when chain is Aztec)
-    /// This contains nullifier, commitment, rollup data, and proofs
-    pub azt_proof: Option<AztecDepositProof>,
-
-    /// LTC-specific deposit proof data (used when chain is Litecoin)
-    /// This contains tx data, merkle proof, and optional MWEB data
-    pub ltc_proof: Option<LitecoinDepositProof>,
+    /// Chain-specific deposit proof (Monero, Zcash, Aztec, or Litecoin).
+    /// The enum variant identifies the external chain, so `ExternalChain` on
+    /// `DepositParams` only needs to be `Ethereum` when there is no variant.
+    pub chain_proof: ExternalChainProof,
 }
 
 /// Bridge withdrawal parameters

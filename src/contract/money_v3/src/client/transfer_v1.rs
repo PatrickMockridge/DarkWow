@@ -39,7 +39,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{AeadEncryptedNote, Coin, CoinAttributes, Input, Nullifier, Output, TransferParamsV1};
+use crate::model::{AeadEncryptedNote, Coin, CoinAttributes, Input, InputWitness, Nullifier, Output, TransferParamsV1};
 
 /// Public inputs revealed after burn proof (part of transfer)
 pub struct TransferBurnRevealed {
@@ -204,14 +204,8 @@ impl TransferCallBuilder {
                 nullifier: revealed.nullifier,
                 merkle_root: revealed.merkle_root,
                 user_data_enc: revealed.user_data_enc,
-                signature_public: revealed.signature_public,
-                value: input.value,
-                token_id: input.token_id,
                 spend_hook: input.spend_hook,
-                user_data: input.user_data,
-                coin_blind: input.coin_blind,
-                leaf_position: input.leaf_position,
-                merkle_path: input.merkle_path,
+                signature_public: revealed.signature_public,
             });
         }
 

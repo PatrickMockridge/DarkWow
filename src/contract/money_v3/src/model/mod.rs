@@ -161,6 +161,12 @@ impl CoinAttributes {
 // ============================================================================
 
 /// Input to a transaction - proves right to spend a coin
+/// An input (spent coin) in a MoneyV3 transaction.
+///
+/// This struct contains ONLY on-chain fields that are serialized into the
+/// transaction.  Private witness data needed for client-side ZK proof
+/// generation lives in [`InputWitness`].
+///
 /// Money V3: value_commit is pallas::Base (Poseidon hash), not pallas::Point (Pedersen)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Input {
@@ -174,14 +180,23 @@ pub struct Input {
     pub merkle_root: MerkleNode,
     /// Encrypted user data field
     pub user_data_enc: pallas::Base,
+    /// Spend hook (ZK circuit public input — constrains coin commitment)
+    pub spend_hook: pallas::Base,
     /// Signature public key (Poseidon hash of secret, as field element)
     pub signature_public: pallas::Base,
+}
+
+/// Client-side witness data for ZK proof generation.
+///
+/// These fields are NEVER serialized on-chain.  They are passed from the
+/// client to the ZK prover alongside the [`Input`] struct.  The entrypoint
+/// functions never access them.
+#[derive(Debug, Clone)]
+pub struct InputWitness {
     /// Value of the coin being spent
     pub value: u64,
     /// Token ID
     pub token_id: pallas::Base,
-    /// Spend hook
-    pub spend_hook: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
     /// Coin blind

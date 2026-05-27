@@ -267,14 +267,8 @@ impl BurnCallBuilder {
                 nullifier,
                 merkle_root,
                 user_data_enc,
-                signature_public: PublicKey::from_secret(signature_secret),
-                value: input.value,
-                token_id: input.token_id,
                 spend_hook: input.spend_hook,
-                user_data: input.user_data,
-                coin_blind: input.coin_blind,
-                leaf_position: input.leaf_position,
-                merkle_path: input.merkle_path,
+                signature_public: PublicKey::from_secret(signature_secret),
             });
         }
 

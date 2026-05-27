@@ -147,14 +147,8 @@ impl BurnCallBuilder {
                 nullifier: revealed.nullifier,
                 merkle_root: revealed.merkle_root,
                 user_data_enc: revealed.user_data_enc,
-                signature_public: revealed.signature_public,
-                value: input.value,
-                token_id: input.token_id,
                 spend_hook: input.spend_hook,
-                user_data: input.user_data,
-                coin_blind: input.coin_blind,
-                leaf_position: input.leaf_position,
-                merkle_path: input.merkle_path,
+                signature_public: revealed.signature_public,
             });
         }
 

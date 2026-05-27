@@ -32,3 +32,6 @@ pub mod merkle;
 
 /// Utility functions
 pub mod util;
+
+/// Cross-contract validation helpers
+pub mod validation;
