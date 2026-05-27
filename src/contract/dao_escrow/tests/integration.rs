@@ -115,35 +115,33 @@ fn test_fee_config_encoding() {
 
 #[test]
 fn test_dao_escrow_derive_bulla() {
+    let dao_bulla = pallas::Base::from(42u64);
     let owner_pubkey = make_pubkey(1);
     let pool_token_id = pallas::Base::one();
-    let fee_config = Some(FeeConfig { treasury_share: 7000, endowment_share: 3000 });
     let bulla_blind = make_blind(42);
 
     let bulla = DaoEscrow::derive_bulla(
-        DaoEscrowMode::TreasuryEndowment,
+        dao_bulla,
         &owner_pubkey,
         pool_token_id,
-        &fee_config,
         bulla_blind,
     );
 
     // Should be deterministic
     let bulla2 = DaoEscrow::derive_bulla(
-        DaoEscrowMode::TreasuryEndowment,
+        dao_bulla,
         &owner_pubkey,
         pool_token_id,
-        &fee_config,
         bulla_blind,
     );
     assert_eq!(bulla, bulla2);
 
-    // Different input should produce different bulla
+    // Different dao_bulla should produce different bulla
+    let different_dao = pallas::Base::from(99u64);
     let bulla_different = DaoEscrow::derive_bulla(
-        DaoEscrowMode::Escrow,
+        different_dao,
         &owner_pubkey,
         pool_token_id,
-        &fee_config,
         bulla_blind,
     );
     assert_ne!(bulla, bulla_different);

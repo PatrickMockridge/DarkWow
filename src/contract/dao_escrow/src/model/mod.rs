@@ -198,29 +198,16 @@ pub struct DaoEscrow {
 }
 
 impl DaoEscrow {
-    /// Derive the DAO-Escrow bulla from parameters
-    #[allow(dead_code)]
+    /// Derive the DAO-Escrow bulla from parameters.
+    /// Formula must match init_v1.zk circuit: poseidon_hash(dao_bulla, ox, oy, pool_token_id, blind)
     pub fn derive_bulla(
-        mode: DaoEscrowMode,
+        dao_bulla: DaoEscrowBulla,
         owner_pubkey: &PublicKey,
         pool_token_id: pallas::Base,
-        fee_config: &Option<FeeConfig>,
         bulla_blind: BaseBlind,
     ) -> DaoEscrowBulla {
         let (ox, oy) = owner_pubkey.xy();
-        let mode_base = pallas::Base::from(mode as u64);
-        let blind_base = bulla_blind.inner();
-
-        match fee_config {
-            Some(config) => {
-                let treasury = pallas::Base::from(config.treasury_share as u64);
-                let endowment = pallas::Base::from(config.endowment_share as u64);
-                poseidon_hash([ox, oy, pool_token_id, mode_base, blind_base, treasury, endowment])
-            }
-            None => {
-                poseidon_hash([ox, oy, pool_token_id, mode_base, blind_base])
-            }
-        }
+        poseidon_hash([dao_bulla, ox, oy, pool_token_id, bulla_blind.inner()])
     }
 }
 
