@@ -59,7 +59,7 @@ use crate::{
         ConfirmDeliveryParamsV1, ConfirmMilestoneParamsV1, CreateJobParamsV1,
         CreateJobWithCapabilityParamsV1, CreateJobWithMilestonesAndCapabilityParamsV1,
         CreateJobWithMilestonesParamsV1, DisputeParamsV1,
-        InitiateDisputeParamsV1, Job, JobState, Milestone, RefundParamsV1,
+        InitiateDisputeParamsV1, Job, JobState, RefundParamsV1,
         SubmitDeliverableParamsV1, SubmitGitDeliverableParamsV1, SubmitMilestoneDeliverableParamsV1,
     },
     LaborMarketFunction, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID, LABOR_CONTRACT_INFO_TREE,

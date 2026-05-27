@@ -39,7 +39,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{AeadEncryptedNote, Coin, CoinAttributes, Input, InputWitness, Nullifier, Output, TransferParamsV1};
+use crate::model::{AeadEncryptedNote, Coin, CoinAttributes, Input, Nullifier, Output, TransferParamsV1};
 
 /// Public inputs revealed after burn proof (part of transfer)
 pub struct TransferBurnRevealed {
