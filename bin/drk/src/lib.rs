@@ -971,11 +971,13 @@ impl Drk {
     /// * `contract_id_or_name` - Contract ID (Base58 encoded) or name (e.g., "dao_escrow")
     /// * `function` - Function name to call (e.g., "enable_drain_protection")
     /// * `params` - JSON string with function parameters
+    /// * `proofs` - ZK proofs for functions that require them; use `vec![]` for non-ZK functions
     pub async fn invoke_contract(
         &self,
         contract_id_or_name: &str,
         function: &str,
         params: Option<&str>,
+        proofs: Vec<Vec<u8>>,
     ) -> Result<Transaction> {
         use dwow_serial::Encodable;
         use crate::contract_imports::dao_escrow::EnableDrainProtectionParamsV1;
@@ -1119,13 +1121,31 @@ impl Drk {
                     .map_err(|e| Error::Custom(format!("Failed to encode params: {}", e)))?;
             }
 
-            // Functions requiring ZK proofs are not yet supported in universal invoke
+            // Pre-flight ZK proof validation: ensure ZK-requiring functions
+            // have proofs attached before building the transaction. This catches
+            // the common mistake of calling a ZK function without generating a
+            // proof — which would fail consensus silently.
             _ if func_sig.requires_proof => {
-                return Err(Error::Custom(format!(
-                    "Function {} on contract {} requires ZK proof which is not yet \
-                     supported in universal invoke. Use contract-specific commands instead.",
-                    function, metadata.name
-                )));
+                if proofs.is_empty() {
+                    return Err(Error::Custom(format!(
+                        "ZK proof required: {} function '{}' requires a ZK proof \
+                         (circuit: {:?}) but no proofs were provided. \
+                         Generate a proof using the contract's client module \
+                         before calling this function.",
+                        metadata.name,
+                        function,
+                        func_sig.proof_circuit,
+                    )));
+                }
+                for (i, proof) in proofs.iter().enumerate() {
+                    if proof.is_empty() {
+                        return Err(Error::Custom(format!(
+                            "ZK proof {i} for {}::{} is empty. \
+                             Each proof must contain valid Halo2 proof bytes.",
+                            metadata.name, function,
+                        )));
+                    }
+                }
             }
 
             // Unknown function
@@ -1143,10 +1163,10 @@ impl Drk {
             data: call_data,
         };
 
-        // Create contract call leaf (proofs would be added here for ZK functions)
+        // Create contract call leaf with ZK proofs
         let leaf = ContractCallLeaf {
             call: contract_call,
-            proofs: vec![],
+            proofs: proofs.into_iter().map(Proof::from).collect(),
         };
 
         // Build transaction with fee

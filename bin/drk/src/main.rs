@@ -1971,7 +1971,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 )
                 .await;
 
-                let tx = match drk.invoke_contract(&contract_id, &function, params_json.as_deref()).await {
+                let tx = match drk.invoke_contract(&contract_id, &function, params_json.as_deref(), vec![]).await {
                     Ok(tx) => tx,
                     Err(e) => {
                         eprintln!("Error creating contract invocation tx: {e}");

@@ -22,6 +22,14 @@ end-to-end. Level 2 verifies contract functions, state transitions, and
 uncle-merkle block execution using the direct deploy path for test setup
 convenience.
 
+Level 2 also enforces **pre-deploy ZK coverage verification** via
+`ContractHarness::verify_zk_coverage()` — if a harness loads a `.zk.bin` but
+forgets to list it in `circuits()`, or lists a circuit without loading its
+binary, the deploy step fails with a descriptive error. A CI audit test
+(`src/contract/test-harness/tests/zk_audit.rs`) decodes all 99 harness-loaded
+`.zk.bin` files in under a second on every push, catching mismatches before
+they reach production.
+
 ## What's Covered
 
 | Test Type | Location | What It Verifies |

@@ -56,6 +56,14 @@ function execution, state transitions, multi-holder workflows, cross-contract
 calls, uncle-merkle block stress (canonical/uncle/mixed/multi-uncle/depth),
 gas limit tracking.
 
+**ZK coverage enforcement:** The `HeavyweightPipeline` performs a
+pre-deploy ZK coverage check via `verify_zk_coverage()` on every harness.
+The `strict_zk` mode (opt-in) rejects empty proofs for ZK contracts instead
+of just warning. A CI audit test at `src/contract/test-harness/tests/zk_audit.rs`
+decodes all 99 harness-loaded `.zk.bin` files in under a second (no proving
+key building) and cross-checks harness `circuits()` lists against zkbin
+files on disk.
+
 **What it does NOT cover:** Deployment correctness — this is tested by
 Level 1 through the Deployooor contract. Level 2 uses the direct
 `deploy_contract()` path solely for test setup convenience.
@@ -131,7 +139,8 @@ philosophy and workflow.
 | Component | Path |
 |-----------|------|
 | Contract unit/integration tests | `src/contract/<name>/tests/` |
-| Test harness crate (28 contracts) | `src/contract/test-harness/` |
+| Test harness crate (27 contracts) | `src/contract/test-harness/` |
+| ZK coverage CI audit test | `src/contract/test-harness/tests/zk_audit.rs` |
 | Relayer unit tests (Level 1) | `bin/universal_relayer/src/` |
 | Relayer lightweight test runner | `bin/universal_relayer/test_relayer_lightweight.sh` |
 | Daemon integration tests | `bin/dwowd/src/tests/` |

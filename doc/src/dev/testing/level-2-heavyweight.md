@@ -28,7 +28,8 @@ tested separately by Level 1 (Lightweight) through the Deployooor contract.
 |-----------|----------|-----------------|
 | HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` | Contract functions, ZK proofs, state transitions, uncle-merkle execution |
 | ContractHarness trait | `src/contract/test-harness/src/harness.rs` | Per-contract ZK circuit access |
-| Contract harness modules (28) | `src/contract/test-harness/src/harness/` | Proof generation for each contract |
+| Contract harness modules (27) | `src/contract/test-harness/src/harness/` | Proof generation for each contract |
+| CI ZK audit test | `src/contract/test-harness/tests/zk_audit.rs` | Decodes all 99 harness-loaded `.zk.bin` files, cross-checks harness `circuits()` |
 
 ## ContractHarness Trait
 
@@ -41,6 +42,10 @@ pub trait ContractHarness {
     fn circuits(&self) -> Vec<&'static str>;       // circuit namespaces
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary>;  // ZK binary
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey>;   // proving key
+
+    /// Verify every circuit in circuits() has a valid ZkBinary and ProvingKey.
+    /// Called as a pre-deploy gate by HeavyweightPipeline.
+    fn verify_zk_coverage(&self) -> Result<()> { /* default impl */ }
 }
 ```
 
@@ -49,6 +54,60 @@ via `include_bytes!`, builds `ProvingKey` objects at construction time, and
 implements the trait.
 
 **Location:** `src/contract/test-harness/src/harness/`
+
+### ZK Coverage Verification
+
+`verify_zk_coverage()` checks that every circuit namespace listed in
+`circuits()` has both a valid `ZkBinary` and `ProvingKey`. It reports
+ALL missing circuits at once (not just the first failure), giving
+developers a complete picture of what needs to be fixed.
+
+The `HeavyweightPipeline` calls this automatically in `deploy()` and
+`deploy_with_ix()` — if a harness loads a `.zk.bin` but forgets to list
+it in `circuits()`, or lists a circuit without loading its binary, the
+deploy step fails with a descriptive error.
+
+### strict_zk Mode
+
+`HeavyweightPipeline` has an opt-in `strict_zk: bool` field (default:
+`false`). When enabled, `exec()` rejects empty proofs for ZK contracts
+with a hard error. In default mode, empty proofs produce a warning to
+stderr but do not fail the test.
+
+```rust
+let mut pipeline = HeavyweightPipeline::new(harness, "dex").await?;
+pipeline.strict_zk = true;  // fail on missing proofs
+```
+
+### CI ZK Audit Test
+
+A fast CI-friendly audit lives at `src/contract/test-harness/tests/zk_audit.rs`.
+It decodes all 99 harness-loaded `.zk.bin` files in under a second (no proving
+key building) and cross-checks each harness's `circuits()` list against its
+loaded zkbins.
+
+**Two tests:**
+
+| Test | Speed | What It Verifies |
+|------|-------|-----------------|
+| `test_all_zk_binaries_decode` | <1s | Every harness-loaded `.zk.bin` decodes successfully (catches corruption, unsupported formats) |
+| `test_harness_circuits_match_zkbins` | Slow (nightly) | Each harness's `circuits()` list exactly matches the zkbins loaded in `spawn()` |
+
+The fast test runs on every CI push. The slow cross-check is `#[ignore]`d and
+runs nightly since it builds proving keys for all 27 harnesses.
+
+**Deployooor exclusion:** Only `deployooor` is allowed to have empty
+`circuits()` — it's a pure-WASM contract with no ZK circuits. All other
+contracts must return at least one circuit namespace. The audit enforces
+this via an `allow_empty` flag in the check macro.
+
+```bash
+# Fast CI audit (<1 second)
+cargo test -p dwow_contract_test_harness --test zk_audit test_all_zk_binaries_decode
+
+# Full cross-check (nightly, builds all proving keys)
+cargo test -p dwow_contract_test_harness --test zk_audit test_harness_circuits_match_zkbins -- --ignored
+```
 
 ## HeavyweightPipeline
 
@@ -133,27 +192,39 @@ uncle, mixed, multi-uncle, depth, empty-uncle, invalid-uncle-proof).
 
 ## Contract Harness List
 
-The test harness crate supports 28 contracts. Each has a harness module under
-`src/contract/test-harness/src/harness/`:
+The test harness crate supports 27 contracts. Each has a harness module under
+`src/contract/test-harness/src/harness/`. Circuit counts are verified by the
+CI audit test (`zk_audit.rs`) which decodes all 99 harness-loaded `.zk.bin` files.
 
 | Contract | Circuits | Client Module |
 |----------|----------|---------------|
-| identity | 8 | `src/contract/identity/src/client/` |
-| labor_market | 9 | `src/contract/labor_market/src/client/` |
-| oracle | 5 | `src/contract/oracle/src/client/` |
+| attestation | 5 | `src/contract/attestation/src/client/` |
 | auction | 6 | `src/contract/auction/src/client/` |
-| tender | 5 | `src/contract/tender/src/client/` |
-| attestation | 8 | `src/contract/attestation/src/client/` |
-| subscription | 3 | `src/contract/subscription/src/client/` |
+| baccarat | 2 | `src/contract/baccarat/src/client/` |
+| betting_stake | 5 | `src/contract/betting_stake/src/client/` |
+| bridge | 2 | `src/contract/bridge/src/client/` |
+| dao_escrow | 6 | `src/contract/dao_escrow/src/client/` |
+| darkbet_exchange | 4 | `src/contract/darkbet_exchange/src/client/` |
+| darktoshi_dice | 2 | `src/contract/darktoshi_dice/src/client/` |
+| deployooor | 0 | (pure WASM, no ZK) |
+| dex | 4 | `src/contract/dex/src/client/` |
+| drain_protection | 1 | `src/contract/drain_protection/src/client/` |
 | escrow | 4 | `src/contract/escrow/src/client/` |
-| stablecoin | 5 | `src/contract/stablecoin/src/client/` |
-| bridge | 6 | `src/contract/bridge/src/client/` |
-| dex | 6 | `src/contract/dex/src/client/` |
-
-Plus: attestation, auction, baccarat, betting_stake, bridge, darkbet_exchange,
-darktoshi_dice, dao_escrow, deployooor, drain_protection, game_room,
-insurance_market, lottery, money_v3, native_token, pool_stake,
-relayer_endowment, roulette, slot, stablecoin, subscription, tender.
+| game_room | 5 | `src/contract/game_room/src/client/` |
+| identity | 8 | `src/contract/identity/src/client/` |
+| insurance_market | 2 | `src/contract/insurance_market/src/client/` |
+| labor_market | 7 | `src/contract/labor_market/src/client/` |
+| lottery | 2 | `src/contract/lottery/src/client/` |
+| money_v3 | 4 | `src/contract/money_v3/src/client/` |
+| native_token | 3 | `src/contract/native_token/src/client/` |
+| oracle | 1 | `src/contract/oracle/src/client/` |
+| pool_stake | 4 | `src/contract/pool_stake/src/client/` |
+| relayer_endowment | 3 | `src/contract/relayer_endowment/src/client/` |
+| roulette | 2 | `src/contract/roulette/src/client/` |
+| slot | 2 | `src/contract/slot/src/client/` |
+| stablecoin | 8 | `src/contract/stablecoin/src/client/` |
+| subscription | 3 | `src/contract/subscription/src/client/` |
+| tender | 4 | `src/contract/tender/src/client/` |
 
 Each client module provides:
 - `*PublicInputs` struct with `to_vec()` for circuit public inputs
@@ -225,7 +296,9 @@ dwow_<contract>_contract = { path = "../<contract>", features = ["client", "no-e
 |-----------|------|
 | HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |
 | ContractHarness trait | `src/contract/test-harness/src/harness.rs` |
-| Contract harness modules (28) | `src/contract/test-harness/src/harness/` |
+| Contract harness modules (27) | `src/contract/test-harness/src/harness/` |
 | VK injection | `src/contract/test-harness/src/vks.rs` |
+| CI ZK audit test | `src/contract/test-harness/tests/zk_audit.rs` |
+| Wallet pre-flight ZK check | `bin/drk/src/lib.rs` |
 | Contract client modules | `src/contract/<name>/src/client/` |
 | Contract proof sources | `src/contract/<name>/proof/*.zk` |

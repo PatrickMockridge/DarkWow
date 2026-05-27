@@ -176,6 +176,12 @@ impl AsRef<[u8]> for Proof {
     }
 }
 
+impl From<Vec<u8>> for Proof {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+}
+
 impl core::fmt::Debug for Proof {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Proof({:?})", self.0)
