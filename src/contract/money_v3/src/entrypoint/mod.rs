@@ -79,7 +79,6 @@ use crate::{
     MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1, MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1,
     MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1,
     MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1,
-    MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_NS_V1,
     EMPTY_COINS_TREE_ROOT, EMPTY_TOKEN_REGISTRY_TREE_ROOT,
 };
 
@@ -103,14 +102,12 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let auth_token_mint_v1_bincode = include_bytes!("../../proof/auth_token_mint_v1.zk.bin");
     let mint_v1_bincode = include_bytes!("../../proof/mint_v1.zk.bin");
     let burn_v1_bincode = include_bytes!("../../proof/burn_v1.zk.bin");
-    let transfer_output_v1_bincode = include_bytes!("../../proof/transfer_output_v1.zk.bin");
     let blind_output_v1_bincode = include_bytes!("../../proof/blind_output_v1.zk.bin");
 
     wasm::db::zkas_db_set(&token_mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&auth_token_mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&transfer_output_v1_bincode[..])?;
     wasm::db::zkas_db_set(&blind_output_v1_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
@@ -376,28 +373,12 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         ));
     }
 
-    // Output proofs
+    // Output proofs — all outputs use BlindOutput_V1 (fully private)
     for output in &params.outputs {
-        if output.public_value.is_some() || output.public_token_id.is_some() {
-            // TransferOutput_V1: reveals value/token_id for cross-contract composition
-            let public_value_base = pallas::Base::from(output.public_value.unwrap_or(0));
-            let public_token_id = output.public_token_id.unwrap_or(pallas::Base::zero());
-            zk_public_inputs.push((
-                MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_NS_V1.to_string(),
-                vec![
-                    output.coin.inner(),
-                    output.value_commit,
-                    public_value_base,
-                    public_token_id,
-                ],
-            ));
-        } else {
-            // BlindOutput_V1: fully private output, proves coin is correctly formed
-            zk_public_inputs.push((
-                MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
-                vec![output.coin.inner(), output.value_commit],
-            ));
-        }
+        zk_public_inputs.push((
+            MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
+            vec![output.coin.inner(), output.value_commit],
+        ));
     }
 
     let mut metadata = vec![];
@@ -787,26 +768,12 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         ));
     }
 
-    // Output proofs (matching transfer_get_metadata pattern)
+    // Output proofs — all outputs use BlindOutput_V1 (fully private)
     for output in &params.outputs {
-        if output.public_value.is_some() || output.public_token_id.is_some() {
-            let public_value_base = pallas::Base::from(output.public_value.unwrap_or(0));
-            let public_token_id = output.public_token_id.unwrap_or(pallas::Base::zero());
-            zk_public_inputs.push((
-                MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_NS_V1.to_string(),
-                vec![
-                    output.coin.inner(),
-                    output.value_commit,
-                    public_value_base,
-                    public_token_id,
-                ],
-            ));
-        } else {
-            zk_public_inputs.push((
-                MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
-                vec![output.coin.inner(), output.value_commit],
-            ));
-        }
+        zk_public_inputs.push((
+            MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
+            vec![output.coin.inner(), output.value_commit],
+        ));
     }
 
     let mut metadata = vec![];
@@ -913,4 +880,4 @@ fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
 // CROSS-CONTRACT COMPOSITION HELPERS (re-exported from validation module)
 // ============================================================================
 
-pub use crate::validation::{validate_child_contract_id, validate_child_transfer_value};
+pub use crate::validation::{validate_child_contract_id, validate_child_value_commit};

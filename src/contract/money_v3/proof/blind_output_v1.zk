@@ -1,7 +1,6 @@
 # BlindOutput circuit - proves output coin is correctly formed without revealing values
 # PRIVACY FIRST: All operations use Poseidon hash, no EC operations
-# This circuit is used for fully private TransferV1/OtcSwapV1 outputs
-# that do NOT set public_value/public_token_id.
+# This circuit is used for ALL TransferV1/OtcSwapV1 outputs — fully private.
 k = 11;
 field = "pallas";
 

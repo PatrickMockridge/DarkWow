@@ -38,7 +38,7 @@
 //! - **Pooled Debt**: All collateral backs all debt, no individual positions
 
 use dwow_sdk::{
-    crypto::{ContractId, IntentNullifier},
+    crypto::{ContractId, IntentNullifier, poseidon_hash},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -47,7 +47,7 @@ use dwow_sdk::{
 };
 use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
-use dwow_money_v3_contract::validation::validate_child_transfer_value;
+use dwow_money_v3_contract::validation::validate_child_value_commit;
 
 use crate::{
     error::StablecoinError,
@@ -400,8 +400,14 @@ fn process_open_position_instruction(
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
-    // Validate child transfer amount
-    if let Err(e) = validate_child_transfer_value(&child_call.data, params.collateral_amount, None) {
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.collateral_amount),
+        params.deposit_commitment.inner(),
+    ]);
+    if let Err(e) = validate_child_value_commit(
+        &child_call.data, params.collateral_amount, value_blind,
+    ) {
         msg!("[OpenPositionV1] Error: Child transfer value mismatch: {:?}", e);
         return Err(StablecoinError::InvalidChildCall.into())
     }
@@ -534,8 +540,14 @@ fn process_add_collateral_instruction(
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
-    // Validate child transfer amount
-    if let Err(e) = validate_child_transfer_value(&child_call.data, params.collateral_amount, None) {
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.collateral_amount),
+        params.deposit_commitment.inner(),
+    ]);
+    if let Err(e) = validate_child_value_commit(
+        &child_call.data, params.collateral_amount, value_blind,
+    ) {
         msg!("[AddCollateralV1] Error: Child transfer value mismatch: {:?}", e);
         return Err(StablecoinError::InvalidChildCall.into())
     }
@@ -775,8 +787,14 @@ fn process_repay_stable_instruction(
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
-    // Validate child transfer amount
-    if let Err(e) = validate_child_transfer_value(&child_call.data, params.repay_amount, None) {
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.repay_amount),
+        params.repay_commitment.inner(),
+    ]);
+    if let Err(e) = validate_child_value_commit(
+        &child_call.data, params.repay_amount, value_blind,
+    ) {
         msg!("[RepayStableV1] Error: Child transfer value mismatch: {:?}", e);
         return Err(StablecoinError::InvalidChildCall.into())
     }

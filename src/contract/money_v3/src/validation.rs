@@ -31,17 +31,18 @@ use dwow_serial::deserialize;
 
 use crate::{error::MoneyV3Error, model::TransferParamsV1};
 
-/// Validate a money_v3::transfer_v1 child call's public value against the expected amount.
+/// Validate a money_v3::transfer_v1 child call's value_commit against the expected amount.
 ///
-/// Enables parent contracts to verify that a child money_v3 transfer actually moves
-/// the expected token amount. The child call must include `public_value` (and
-/// optionally `public_token_id`) in its outputs, backed by a TransferOutput_V1 ZK proof.
+/// Privacy-preserving: uses Poseidon commitment comparison instead of plaintext values.
+/// The parent contract derives `value_blind` deterministically from its own unique state
+/// (e.g., `poseidon_hash([value, nullifier])`) and recomputes the expected `value_commit`.
+/// The child transfer must use the same blind when generating its BlindOutput_V1 ZK proof.
 ///
 /// Call from parent contracts after verifying `child_call.data[0] == 0x04`.
-pub fn validate_child_transfer_value(
+pub fn validate_child_value_commit(
     child_call_data: &[u8],
     expected_value: u64,
-    expected_token_id: Option<pallas::Base>,
+    value_blind: pallas::Base,
 ) -> Result<(), crate::ContractError> {
     if child_call_data.is_empty() {
         return Err(crate::ContractError::InvalidFunction)
@@ -50,22 +51,18 @@ pub fn validate_child_transfer_value(
     let params: TransferParamsV1 = deserialize(&child_call_data[1..])
         .map_err(|_| crate::ContractError::InvalidFunction)?;
 
+    let expected_commit = dwow_sdk::crypto::poseidon_hash([
+        pallas::Base::from(expected_value),
+        value_blind,
+    ]);
+
     for output in &params.outputs {
-        let pub_value = output.public_value.ok_or(MoneyV3Error::ValueMismatch)?;
-
-        if pub_value != expected_value {
-            return Err(MoneyV3Error::ValueMismatch.into())
-        }
-
-        if let Some(ref expected_tid) = expected_token_id {
-            let pub_token_id = output.public_token_id.unwrap_or(pallas::Base::zero());
-            if pub_token_id != *expected_tid {
-                return Err(MoneyV3Error::TokenMismatch.into())
-            }
+        if output.value_commit == expected_commit {
+            return Ok(());
         }
     }
 
-    Ok(())
+    Err(MoneyV3Error::ValueMismatch.into())
 }
 
 /// Validate that a child call targets the expected contract.

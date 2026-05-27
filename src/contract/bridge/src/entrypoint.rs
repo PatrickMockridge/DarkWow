@@ -49,12 +49,12 @@
 //! **Key**: Bridge nodes cannot steal because they never see `secret`.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId},
+    crypto::{pasta_prelude::PrimeField, ContractId, poseidon_hash},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
     wasm,
-    pasta::group::GroupEncoding,
+    pasta::{group::GroupEncoding, pallas},
 };
 use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
@@ -742,13 +742,13 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
     let self_ = &calls[call_idx].data;
     let params: WithdrawParams = deserialize(&self_.data[1..])?;
 
-    // Validate child transfer amount matches withdrawal amount
-    // Uses money_v3's public_value field (backed by TransferOutput_V1 ZK proof)
-    // to verify the child call actually transfers the expected token amount
-    if let Err(e) = dwow_money_v3_contract::validation::validate_child_transfer_value(
-        &child_call.data,
-        params.amount,
-        None, // token_id check optional — bridge may support multiple tokens in future
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.amount),
+        params.nullifier.inner(),
+    ]);
+    if let Err(e) = dwow_money_v3_contract::validation::validate_child_value_commit(
+        &child_call.data, params.amount, value_blind,
     ) {
         msg!("[bridge::WithdrawV1] Error: Child transfer value mismatch: {:?}", e);
         return Err(BridgeError::InvalidChildCall.into())
@@ -878,11 +878,13 @@ fn process_cancel_withdraw_instruction(
         }
     }
 
-    // Validate child transfer amount matches the pending withdrawal amount
-    if let Err(e) = dwow_money_v3_contract::validation::validate_child_transfer_value(
-        &child_call.data,
-        pending.amount,
-        None,
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(pending.amount),
+        params.nullifier.inner(),
+    ]);
+    if let Err(e) = dwow_money_v3_contract::validation::validate_child_value_commit(
+        &child_call.data, pending.amount, value_blind,
     ) {
         msg!("[bridge::CancelWithdrawV1] Error: Child transfer value mismatch: {:?}", e);
         return Err(BridgeError::InvalidChildCall.into())
@@ -968,11 +970,13 @@ fn process_execute_guaranteed_withdraw_instruction(
         }
     }
 
-    // Validate child transfer amount matches the pending withdrawal amount
-    if let Err(e) = dwow_money_v3_contract::validation::validate_child_transfer_value(
-        &child_call.data,
-        pending.amount,
-        None,
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(pending.amount),
+        params.nullifier.inner(),
+    ]);
+    if let Err(e) = dwow_money_v3_contract::validation::validate_child_value_commit(
+        &child_call.data, pending.amount, value_blind,
     ) {
         msg!("[bridge::ExecuteGuaranteedWithdrawV1] Error: Child transfer value mismatch: {:?}", e);
         return Err(BridgeError::InvalidChildCall.into())

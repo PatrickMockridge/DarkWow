@@ -359,8 +359,6 @@ mod tests {
                     dwow_sdk::pasta::pallas::Point::generator(),
                 ).unwrap(),
             },
-            public_value: Some(50),
-            public_token_id: Some(pallas::Base::from(5)),
         };
 
         let params = TransferParamsV1 { inputs: vec![input], outputs: vec![output] };

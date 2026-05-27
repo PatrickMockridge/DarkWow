@@ -83,9 +83,6 @@ pub enum MoneyV3Error {
     #[error("Missing outputs in transfer")]
     TransferMissingOutputs,
 
-    #[error("Token mismatch")]
-    TokenMismatch,
-
     #[error("Duplicate nullifier (double-spend)")]
     DuplicateNullifier,
 
