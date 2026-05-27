@@ -1,0 +1,36 @@
+# BlindOutput circuit - proves output coin is correctly formed without revealing values
+# PRIVACY FIRST: All operations use Poseidon hash, no EC operations
+# This circuit is used for fully private TransferV1/OtcSwapV1 outputs
+# that do NOT set public_value/public_token_id.
+k = 11;
+field = "pallas";
+
+constant "BlindOutput_V1" {
+}
+
+witness "BlindOutput_V1" {
+    Base coin_public,
+    Base coin_value,
+    Base coin_token_id,
+    Base coin_spend_hook,
+    Base coin_user_data,
+    Base coin_blind,
+    Base value_blind,
+}
+
+circuit "BlindOutput_V1" {
+    coin = poseidon_hash(
+        coin_public,
+        coin_value,
+        coin_token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+    constrain_instance(coin);
+
+    value_commit = poseidon_hash(coin_value, value_blind);
+    constrain_instance(value_commit);
+
+    range_check(64, coin_value);
+}

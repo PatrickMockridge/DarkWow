@@ -13,7 +13,7 @@ blake3 = "1.8.2"
 dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 dwow-serial = { path = "../../serial", features = ["derive", "crypto"] }
 thiserror = "2.0.17"
-dwow_money_v3_contract = { path = "../money_v3", optional = true, features = ["no-entrypoint"] }
+dwow_money_v3_contract = { path = "../money_v3", features = ["no-entrypoint"] }
 
 # The following dependencies are used for the client API and
 # probably shouldn't be in WASM

@@ -378,3 +378,8 @@ fn test_dex_swap_with_fee() {
 3. **Consensus first** - All design decisions prioritize PoW security
 4. **Privacy by default** - ACL DAOs leak identity; avoid for consensus
 5. **Poseidon everywhere** - Unless EC required for external chain integration
+
+## See Also
+
+- [Contract Inherent Safety](safety.md) — The principles behind NativeToken/MoneyV3 separation, hardening lessons from security review, and practical checklist for contract developers
+- [Composability](../../contract/composability.md) — Cross-contract child call patterns

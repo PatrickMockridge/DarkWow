@@ -68,12 +68,19 @@ use crate::{
     MONEY_V3_CONTRACT_COIN_ROOTS_TREE, MONEY_V3_CONTRACT_COINS_TREE,
     MONEY_V3_CONTRACT_DB_VERSION,
     MONEY_V3_CONTRACT_INFO_TREE, MONEY_V3_CONTRACT_LATEST_COIN_ROOT,
-    MONEY_V3_CONTRACT_LATEST_NULLIFIER_ROOT, MONEY_V3_CONTRACT_NULLIFIERS_TREE,
-    MONEY_V3_CONTRACT_NULLIFIER_ROOTS_TREE, MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1,
+    MONEY_V3_CONTRACT_LATEST_NULLIFIER_ROOT,
+    MONEY_V3_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT,
+    MONEY_V3_CONTRACT_NULLIFIERS_TREE,
+    MONEY_V3_CONTRACT_NULLIFIER_ROOTS_TREE,
+    MONEY_V3_CONTRACT_TOKEN_REGISTRY_MERKLE_TREE,
+    MONEY_V3_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE,
+    MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE,
+    MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1,
     MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1, MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1,
     MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1,
+    MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1,
     MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_NS_V1,
-    EMPTY_COINS_TREE_ROOT,
+    EMPTY_COINS_TREE_ROOT, EMPTY_TOKEN_REGISTRY_TREE_ROOT,
 };
 
 // Generate WASM entrypoints
@@ -97,12 +104,14 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let mint_v1_bincode = include_bytes!("../../proof/mint_v1.zk.bin");
     let burn_v1_bincode = include_bytes!("../../proof/burn_v1.zk.bin");
     let transfer_output_v1_bincode = include_bytes!("../../proof/transfer_output_v1.zk.bin");
+    let blind_output_v1_bincode = include_bytes!("../../proof/blind_output_v1.zk.bin");
 
     wasm::db::zkas_db_set(&token_mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&auth_token_mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v1_bincode[..])?;
     wasm::db::zkas_db_set(&transfer_output_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&blind_output_v1_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
@@ -143,6 +152,21 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_init(cid, MONEY_V3_CONTRACT_NULLIFIERS_TREE)?;
     }
 
+    // Set up token registry database
+    if wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE).is_err() {
+        wasm::db::db_init(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE)?;
+    }
+
+    // Set up token registry roots database
+    if wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE).is_err() {
+        let db_token_registry_roots = wasm::db::db_init(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE)?;
+        wasm::db::db_set(
+            db_token_registry_roots,
+            &serialize(&EMPTY_TOKEN_REGISTRY_TREE_ROOT),
+            &roots_value_data,
+        )?;
+    }
+
     // Set up info database
     let info_db = match wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_INFO_TREE) {
         Ok(v) => v,
@@ -157,6 +181,18 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
             coin_tree.encode(&mut coin_tree_data)?;
             wasm::db::db_set(info_db, MONEY_V3_CONTRACT_COIN_MERKLE_TREE, &coin_tree_data)?;
 
+            // Create Merkle tree for token registry
+            let mut token_registry_tree = MerkleTree::new(1);
+            token_registry_tree.append(MerkleNode::from(pallas::Base::ZERO));
+            let mut token_registry_tree_data = vec![];
+            token_registry_tree_data.write_u32(0)?;
+            token_registry_tree.encode(&mut token_registry_tree_data)?;
+            wasm::db::db_set(
+                info_db,
+                MONEY_V3_CONTRACT_TOKEN_REGISTRY_MERKLE_TREE,
+                &token_registry_tree_data,
+            )?;
+
             // Initialize latest roots
             wasm::db::db_set(
                 info_db,
@@ -167,6 +203,11 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
                 info_db,
                 MONEY_V3_CONTRACT_LATEST_NULLIFIER_ROOT,
                 &serialize(&pallas::Base::zero().to_repr()),
+            )?;
+            wasm::db::db_set(
+                info_db,
+                MONEY_V3_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT,
+                &serialize(&EMPTY_TOKEN_REGISTRY_TREE_ROOT),
             )?;
 
             info_db
@@ -335,10 +376,10 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         ));
     }
 
-    // TransferOutput_V1 proofs for outputs with public values
-    // Enables cross-contract composition: parent contracts verify child transfer amounts
+    // Output proofs
     for output in &params.outputs {
         if output.public_value.is_some() || output.public_token_id.is_some() {
+            // TransferOutput_V1: reveals value/token_id for cross-contract composition
             let public_value_base = pallas::Base::from(output.public_value.unwrap_or(0));
             let public_token_id = output.public_token_id.unwrap_or(pallas::Base::zero());
             zk_public_inputs.push((
@@ -349,6 +390,12 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
                     public_value_base,
                     public_token_id,
                 ],
+            ));
+        } else {
+            // BlindOutput_V1: fully private output, proves coin is correctly formed
+            zk_public_inputs.push((
+                MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
+                vec![output.coin.inner(), output.value_commit],
             ));
         }
     }
@@ -396,9 +443,6 @@ fn token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
         return Err(MoneyV3Error::DuplicateCoin.into())
     }
 
-    // Note: In a full implementation, we would also track the token_id
-    // in a token registry to prevent duplicate token creation
-
     let update = TokenMintUpdateV1 { token_id: params.token_id, coin: params.coin };
     msg!("[money_v3::token_mint_v1] Token type created successfully");
     wasm::util::set_return_data(&serialize(&(MoneyV3Function::TokenMintV1 as u8, update)))
@@ -414,6 +458,13 @@ fn auth_token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     msg!("[money_v3::auth_token_mint_v1] Authorizing token minting");
 
     let nullifiers_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_NULLIFIERS_TREE)?;
+    let token_registry_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE)?;
+
+    // Verify token_id exists in token registry (token must be created first)
+    if !wasm::db::db_contains_key(token_registry_db, &serialize(&params.token_id))? {
+        msg!("[auth_token_mint_v1] Error: Token not registered");
+        return Err(MoneyV3Error::TokenNotRegistered.into())
+    }
 
     // Verify nullifier is NOT already spent
     let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
@@ -438,6 +489,8 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     msg!("[money_v3::mint_v1] Minting tokens");
 
     let coins_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_COINS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_NULLIFIERS_TREE)?;
+    let token_registry_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE)?;
 
     // Verify coin doesn't already exist
     if wasm::db::db_contains_key(coins_db, &serialize(&params.coin))? {
@@ -445,8 +498,19 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
         return Err(MoneyV3Error::DuplicateCoin.into())
     }
 
-    // Note: In a full implementation, we would verify the auth_proof
-    // by checking that the nullifier was properly marked in a previous tx
+    // Verify token_id exists in token registry (must be created via TokenMintV1)
+    if !wasm::db::db_contains_key(token_registry_db, &serialize(&params.token_id))? {
+        msg!("[mint_v1] Error: Token not registered");
+        return Err(MoneyV3Error::TokenNotRegistered.into())
+    }
+
+    // Verify auth_proof: nullifier must have been spent by a prior AuthTokenMintV1
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
+    if smt.get_leaf(&params.auth_proof.nullifier.inner()) == pallas::Base::zero() {
+        msg!("[mint_v1] Error: Auth proof invalid (no prior AuthTokenMintV1)");
+        return Err(MoneyV3Error::AuthProofInvalid.into())
+    }
 
     let update = MintUpdateV1 { coin: params.coin };
     msg!("[money_v3::mint_v1] Mint valid");
@@ -585,11 +649,12 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
 
     let coins_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_COINS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_INFO_TREE)?;
+    let token_registry_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE)?;
 
     // Add coin
     wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
 
-    // Update Merkle tree
+    // Update coin Merkle tree
     wasm::merkle::merkle_add(
         info_db,
         wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_COIN_ROOTS_TREE)?,
@@ -598,8 +663,17 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
         &[MerkleNode::from(update.coin.inner())],
     )?;
 
-    // Note: In a full implementation, we would also store the token_id
-    // in a token registry to enable AuthTokenMint verification
+    // Store token_id in token registry
+    wasm::db::db_set(token_registry_db, &serialize(&update.token_id), &[])?;
+
+    // Update token registry Merkle tree
+    wasm::merkle::merkle_add(
+        info_db,
+        wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE)?,
+        MONEY_V3_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT,
+        MONEY_V3_CONTRACT_TOKEN_REGISTRY_MERKLE_TREE,
+        &[MerkleNode::from(update.token_id)],
+    )?;
 
     Ok(())
 }
@@ -713,7 +787,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         ));
     }
 
-    // TransferOutput_V1 proofs for swap outputs with public values
+    // Output proofs (matching transfer_get_metadata pattern)
     for output in &params.outputs {
         if output.public_value.is_some() || output.public_token_id.is_some() {
             let public_value_base = pallas::Base::from(output.public_value.unwrap_or(0));
@@ -726,6 +800,11 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
                     public_value_base,
                     public_token_id,
                 ],
+            ));
+        } else {
+            zk_public_inputs.push((
+                MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
+                vec![output.coin.inner(), output.value_commit],
             ));
         }
     }
@@ -831,46 +910,7 @@ fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
 }
 
 // ============================================================================
-// CROSS-CONTRACT COMPOSITION HELPER
+// CROSS-CONTRACT COMPOSITION HELPERS (re-exported from validation module)
 // ============================================================================
 
-/// Validate a money_v3::transfer_v1 child call's public value against the expected amount.
-///
-/// Enables parent contracts to verify that a child money_v3 transfer actually moves
-/// the expected token amount. The child call must include `public_value` (and
-/// optionally `public_token_id`) in its outputs, backed by a TransferOutput_V1 ZK proof.
-///
-/// Call from parent contracts after verifying `child_call.data[0] == 0x04`.
-pub fn validate_child_transfer_value(
-    child_call_data: &[u8],
-    expected_value: u64,
-    expected_token_id: Option<pallas::Base>,
-) -> Result<(), crate::ContractError> {
-    use crate::model::TransferParamsV1;
-
-    if child_call_data.is_empty() {
-        return Err(crate::ContractError::InvalidFunction)
-    }
-
-    let params: TransferParamsV1 = deserialize(&child_call_data[1..])
-        .map_err(|_| crate::ContractError::InvalidFunction)?;
-
-    for output in &params.outputs {
-        let pub_value = output.public_value.ok_or_else(|| {
-            crate::error::MoneyV3Error::ValueMismatch
-        })?;
-
-        if pub_value != expected_value {
-            return Err(crate::error::MoneyV3Error::ValueMismatch.into())
-        }
-
-        if let Some(ref expected_tid) = expected_token_id {
-            let pub_token_id = output.public_token_id.unwrap_or(pallas::Base::zero());
-            if pub_token_id != *expected_tid {
-                return Err(crate::error::MoneyV3Error::TokenMismatch.into())
-            }
-        }
-    }
-
-    Ok(())
-}
+pub use crate::validation::{validate_child_contract_id, validate_child_transfer_value};

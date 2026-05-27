@@ -47,6 +47,8 @@ use dwow_sdk::{
 };
 use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
+use dwow_money_v3_contract::validation::validate_child_transfer_value;
+
 use crate::{
     error::StablecoinError,
     model::{
@@ -398,6 +400,12 @@ fn process_open_position_instruction(
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
+    // Validate child transfer amount
+    if let Err(e) = validate_child_transfer_value(&child_call.data, params.collateral_amount, None) {
+        msg!("[OpenPositionV1] Error: Child transfer value mismatch: {:?}", e);
+        return Err(StablecoinError::InvalidChildCall.into())
+    }
+
     // Verify commitment doesn't already exist
     let positions_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITIONS_TREE)?;
     if wasm::db::db_contains_key(positions_db, &params.deposit_commitment.to_bytes())? {
@@ -523,6 +531,12 @@ fn process_add_collateral_instruction(
     if child_call.data[0] != 0x04 {
         msg!("[AddCollateralV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
+        return Err(StablecoinError::InvalidChildCall.into())
+    }
+
+    // Validate child transfer amount
+    if let Err(e) = validate_child_transfer_value(&child_call.data, params.collateral_amount, None) {
+        msg!("[AddCollateralV1] Error: Child transfer value mismatch: {:?}", e);
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
@@ -758,6 +772,12 @@ fn process_repay_stable_instruction(
     if child_call.data[0] != 0x04 {
         msg!("[RepayStableV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
+        return Err(StablecoinError::InvalidChildCall.into())
+    }
+
+    // Validate child transfer amount
+    if let Err(e) = validate_child_transfer_value(&child_call.data, params.repay_amount, None) {
+        msg!("[RepayStableV1] Error: Child transfer value mismatch: {:?}", e);
         return Err(StablecoinError::InvalidChildCall.into())
     }
 

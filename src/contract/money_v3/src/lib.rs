@@ -113,6 +113,9 @@ pub mod error;
 /// Call parameters definitions
 pub mod model;
 
+/// Cross-contract validation helpers (always compiled)
+pub mod validation;
+
 #[cfg(not(feature = "no-entrypoint"))]
 /// WASM entrypoint functions
 pub mod entrypoint;
@@ -138,6 +141,10 @@ pub const MONEY_V3_CONTRACT_INFO_TREE: &str = "info";
 pub const MONEY_V3_CONTRACT_COIN_ROOTS_TREE: &str = "coin_roots";
 /// Stores nullifier roots for historical verification
 pub const MONEY_V3_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
+/// Stores registered token IDs (prevents unauthorized minting)
+pub const MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE: &str = "token_registry";
+/// Stores token registry roots for historical verification
+pub const MONEY_V3_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE: &str = "token_registry_roots";
 
 // ============================================================================
 // DATABASE KEYS
@@ -155,6 +162,10 @@ pub const MONEY_V3_CONTRACT_LATEST_COIN_ROOT: &[u8] = b"last_coin_root";
 pub const MONEY_V3_CONTRACT_LATEST_NULLIFIER_ROOT: &[u8] = b"last_nullifier_root";
 /// Coin Merkle tree data key
 pub const MONEY_V3_CONTRACT_COIN_MERKLE_TREE: &[u8] = b"coin_merkle_tree";
+/// Latest token registry root
+pub const MONEY_V3_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT: &[u8] = b"last_token_registry_root";
+/// Token registry Merkle tree data key
+pub const MONEY_V3_CONTRACT_TOKEN_REGISTRY_MERKLE_TREE: &[u8] = b"token_registry_merkle_tree";
 
 // ============================================================================
 // EMPTY TREE ROOTS
@@ -166,6 +177,10 @@ pub const EMPTY_COINS_TREE_ROOT: [u8; 32] = [
     0xb8, 0xc1, 0x07, 0x5a, 0x80, 0xa8, 0x09, 0x65, 0xc2, 0x39, 0x8f, 0x71, 0x1f, 0xe7, 0x3e, 0x05,
     0xb4, 0xed, 0xae, 0xde, 0xf1, 0x62, 0xf2, 0x61, 0xd4, 0xee, 0xd7, 0xcd, 0x72, 0x74, 0x8d, 0x17,
 ];
+
+/// Precalculated root hash for an empty token registry tree.
+/// Same as EMPTY_COINS_TREE_ROOT since both are empty Poseidon SMTs over pallas::Base.
+pub const EMPTY_TOKEN_REGISTRY_TREE_ROOT: [u8; 32] = EMPTY_COINS_TREE_ROOT;
 
 // ============================================================================
 // ZK CIRCUIT NAMESPACES
@@ -181,6 +196,8 @@ pub const MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
 pub const MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
 /// zkas transfer output circuit namespace (output coin formation + cross-contract composition)
 pub const MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_NS_V1: &str = "TransferOutput_V1";
+/// zkas blind output circuit namespace (private output coin formation, no revealed values)
+pub const MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1: &str = "BlindOutput_V1";
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
@@ -201,6 +218,9 @@ pub const MONEY_V3_CONTRACT_ZKAS_BURN_V1_BIN: &[u8] =
 /// TransferOutput_V1 zkas circuit binary (output coin formation for cross-contract composition)
 pub const MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_V1_BIN: &[u8] =
     include_bytes!("../proof/transfer_output_v1.zk.bin");
+/// BlindOutput_V1 zkas circuit binary (private output coin formation, no revealed values)
+pub const MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN: &[u8] =
+    include_bytes!("../proof/blind_output_v1.zk.bin");
 
 // ============================================================================
 // CONSTANTS

@@ -104,6 +104,18 @@ pub enum MoneyV3Error {
 
     #[error("Token ID commitment mismatch")]
     TokenCommitmentMismatch,
+
+    #[error("Token not registered in token registry")]
+    TokenNotRegistered,
+
+    #[error("Auth proof invalid (no prior AuthTokenMintV1)")]
+    AuthProofInvalid,
+
+    #[error("Token registry root not found")]
+    TokenRegistryRootNotFound,
+
+    #[error("Invalid child contract ID")]
+    InvalidChildContractId,
 }
 
 impl From<MoneyV3Error> for ContractError {

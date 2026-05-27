@@ -745,7 +745,7 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
     // Validate child transfer amount matches withdrawal amount
     // Uses money_v3's public_value field (backed by TransferOutput_V1 ZK proof)
     // to verify the child call actually transfers the expected token amount
-    if let Err(e) = dwow_money_v3_contract::entrypoint::validate_child_transfer_value(
+    if let Err(e) = dwow_money_v3_contract::validation::validate_child_transfer_value(
         &child_call.data,
         params.amount,
         None, // token_id check optional — bridge may support multiple tokens in future
@@ -879,7 +879,7 @@ fn process_cancel_withdraw_instruction(
     }
 
     // Validate child transfer amount matches the pending withdrawal amount
-    if let Err(e) = dwow_money_v3_contract::entrypoint::validate_child_transfer_value(
+    if let Err(e) = dwow_money_v3_contract::validation::validate_child_transfer_value(
         &child_call.data,
         pending.amount,
         None,
@@ -969,7 +969,7 @@ fn process_execute_guaranteed_withdraw_instruction(
     }
 
     // Validate child transfer amount matches the pending withdrawal amount
-    if let Err(e) = dwow_money_v3_contract::entrypoint::validate_child_transfer_value(
+    if let Err(e) = dwow_money_v3_contract::validation::validate_child_transfer_value(
         &child_call.data,
         pending.amount,
         None,

@@ -221,3 +221,9 @@ circuit some_proof_v1(prover: Witness) {
 3. **ZK-First**: Private data stays private, only proofs verified on-chain
 4. **Deterministic**: Address derivation and commitments use cryptographic hashing
 5. **Atomic Transactions**: If any function call fails, entire transaction is rejected
+
+## Further Reading
+
+- [Contract Inherent Safety](contracts/safety.md) — Design principles for safe contracts, NativeToken/MoneyV3 separation of concerns, and hardening lessons from security review
+- [Contract Standards](contracts/standards.md) — ZK circuit primitives, token layer architecture, security requirements
+- [Contract Composability](../contract/composability.md) — Cross-contract child call patterns and amount validation
