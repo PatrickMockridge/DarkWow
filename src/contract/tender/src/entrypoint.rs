@@ -709,6 +709,12 @@ fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> Result<Vec
         }
     };
 
+    // Verify caller is the tender requester
+    if tender.requester_pub_x != params.requester_pub_x || tender.requester_pub_y != params.requester_pub_y {
+        msg!("[tender::select_winner_v1] ERROR: Caller is not the tender requester");
+        return Err(ContractError::InvalidFunction.into())
+    }
+
     // Verify tender is in Revealed state
     if tender.state != TenderState::Revealed {
         msg!("[tender::select_winner_v1] ERROR: Tender not in revealed state");

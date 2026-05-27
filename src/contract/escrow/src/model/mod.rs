@@ -237,6 +237,8 @@ pub struct RefundEscrowUpdateV1 {
 pub struct CancelEscrowParamsV1 {
     /// Escrow ID
     pub escrow_id: EscrowId,
+    /// Buyer's public key (must match creator for authorization)
+    pub buyer_pubkey: PublicKey,
     /// Buyer's secret (must match creator)
     pub buyer_secret: pallas::Base,
 }

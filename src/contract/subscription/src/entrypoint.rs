@@ -526,6 +526,13 @@ fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> Result<Vec<u
         }
     };
 
+    // Verify subscription hasn't expired (lock_until_block check)
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    if current_block >= subscription.lock_until_block {
+        msg!("[subscription::update_usage_v1] ERROR: Subscription expired at block {}", subscription.lock_until_block);
+        return Err(ContractError::Custom(6).into())
+    }
+
     // Compute the nullifier to verify ownership
     let expected_nullifier = subscription.compute_nullifier(params.subscriber_secret);
     if expected_nullifier != params.spent_nullifier {
@@ -537,6 +544,12 @@ fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> Result<Vec<u
     let blocks_since_last = params.current_block.saturating_sub(subscription.last_access_block);
     let is_new_period = blocks_since_last >= subscription.rate_period;
 
+    // Reject if no uses remaining (must renew to continue)
+    if !is_new_period && subscription.uses_remaining == 0 {
+        msg!("[subscription::update_usage_v1] ERROR: No uses remaining");
+        return Err(ContractError::Custom(5).into())
+    }
+
     // Calculate new usage values
     let (period_uses, uses_remaining, last_access_block) = if is_new_period {
         // Reset period counters
@@ -544,7 +557,7 @@ fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> Result<Vec<u
     } else {
         // Increment within period
         (
-            subscription.period_uses + 1,
+            subscription.period_uses.saturating_add(1),
             subscription.uses_remaining.saturating_sub(1),
             params.current_block,
         )

@@ -87,6 +87,9 @@ pub fn dice_commit_bet_process_instruction_v1(
     if params.bet_value == 0 {
         return Err(DiceError::BetValueTooSmall.into())
     }
+    if params.bet_value > crate::MAX_BET_VALUE {
+        return Err(DiceError::BetValueTooLarge.into())
+    }
 
     // Look up house edge
     let info_db = wasm::db::db_lookup(cid, DICE_CONTRACT_INFO_TREE)?;

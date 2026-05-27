@@ -58,6 +58,7 @@ pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
 pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1;
 pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1;
 pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1;
+pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_NS_V1;
 
 // Database tree names
 pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_COINS_TREE;

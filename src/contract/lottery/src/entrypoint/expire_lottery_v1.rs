@@ -75,15 +75,21 @@ pub fn lottery_expire_lottery_process_instruction_v1(
     let lottery: crate::model::Lottery =
         deserialize(&wasm::db::db_get(lotteries_db, &serialize(&params.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
 
-    // Verify lottery is in winners drawn state
-    if lottery.state != LotteryState::WinnersDrawn {
-        return Err(LotteryError::LotteryAlreadyExpired.into())
-    }
-
-    // Verify claim period has expired
+    // Allow expiry from Initialized (draw deadline passed) or WinnersDrawn (claim deadline passed)
     let current_block = wasm::util::get_verifying_block_height()? as u64;
-    if current_block <= lottery.claim_deadline {
-        return Err(LotteryError::ClaimPeriodExpired.into())
+    match lottery.state {
+        LotteryState::Initialized => {
+            if current_block <= lottery.draw_block_deadline {
+                return Err(LotteryError::ClaimPeriodExpired.into())
+            }
+            // Draw deadline passed — lottery was never drawn, house refunds all
+        }
+        LotteryState::WinnersDrawn => {
+            if current_block <= lottery.claim_deadline {
+                return Err(LotteryError::ClaimPeriodExpired.into())
+            }
+        }
+        _ => return Err(LotteryError::LotteryAlreadyExpired.into()),
     }
 
     // Calculate unclaimed amount and house's claim

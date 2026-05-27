@@ -87,7 +87,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
     }
 
     // Check remaining coverage
-    let remaining_coverage = market.total_coverage - market.coverage_sold;
+    let remaining_coverage = market.total_coverage.saturating_sub(market.coverage_sold);
     if params.coverage_amount > remaining_coverage {
         return Err(InsuranceMarketError::InsufficientCoverage.into())
     }

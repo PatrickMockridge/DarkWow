@@ -1257,11 +1257,20 @@ fn vote_claim_v1(
         return Err(DaoEscrowError::ClaimNotPending.into());
     }
 
-    // Verify voting window has not expired
+    // Verify voting window has not expired; if it has, auto-expire the proposal
     let current_block = wasm::util::get_verifying_block_height()? as u64;
     if current_block > proposal.voting_ends_at {
-        msg!("[dao_escrow::vote_claim_v1] ERROR: Voting window expired");
-        return Err(DaoEscrowError::VotingWindowExpired.into());
+        msg!("[dao_escrow::vote_claim_v1] Voting window expired, auto-expiring proposal");
+        let update = model::VoteClaimUpdateV1 {
+            dao_escrow_bulla: params.dao_escrow_bulla,
+            claim_id: params.claim_id,
+            yes_votes: proposal.yes_votes,
+            no_votes: proposal.no_votes,
+            passed: false,
+            expired: true,
+        };
+        let _ = wasm::util::set_return_data(&serialize(&update));
+        return Ok(())
     }
 
     // Check for double-vote via nullifier, then store it to prevent re-use
@@ -1290,7 +1299,7 @@ fn vote_claim_v1(
     let total_votes = yes_votes + no_votes;
     let quorum_met = total_votes >= gov_config.quorum;
     let approval_met = if total_votes > 0 {
-        (yes_votes * gov_config.approval_ratio_base) >= (total_votes * gov_config.approval_ratio_quot)
+        (yes_votes as u128 * gov_config.approval_ratio_base as u128) >= (total_votes as u128 * gov_config.approval_ratio_quot as u128)
     } else {
         false
     };
@@ -1302,6 +1311,7 @@ fn vote_claim_v1(
         yes_votes,
         no_votes,
         passed,
+        expired: false,
     };
 
     msg!("[dao_escrow::vote_claim_v1] Vote recorded: {:?}", params.claim_id);
@@ -1318,7 +1328,9 @@ fn vote_claim_apply_v1(cid: ContractId, update: model::VoteClaimUpdateV1) -> Con
         proposal.yes_votes = update.yes_votes;
         proposal.no_votes = update.no_votes;
 
-        if update.passed {
+        if update.expired {
+            proposal.state = model::ProposalState::Expired;
+        } else if update.passed {
             proposal.state = model::ProposalState::Approved;
         }
 

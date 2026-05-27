@@ -72,6 +72,7 @@ use crate::{
     MONEY_V3_CONTRACT_NULLIFIER_ROOTS_TREE, MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1,
     MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1, MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1,
     MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1,
+    MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_NS_V1,
     EMPTY_COINS_TREE_ROOT,
 };
 
@@ -95,11 +96,13 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let auth_token_mint_v1_bincode = include_bytes!("../../proof/auth_token_mint_v1.zk.bin");
     let mint_v1_bincode = include_bytes!("../../proof/mint_v1.zk.bin");
     let burn_v1_bincode = include_bytes!("../../proof/burn_v1.zk.bin");
+    let transfer_output_v1_bincode = include_bytes!("../../proof/transfer_output_v1.zk.bin");
 
     wasm::db::zkas_db_set(&token_mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&auth_token_mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&transfer_output_v1_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
@@ -332,10 +335,23 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         ));
     }
 
-    // Mint proofs for transfer outputs are deferred.
-    // Mint_V1 expects 6 values (token_root, auth_nullifier, auth_mint_public,
-    // coin, value_commit, coin_token_id) for authorized minting, but transfer
-    // outputs lack auth fields. A blind_output circuit is needed for v1.1.
+    // TransferOutput_V1 proofs for outputs with public values
+    // Enables cross-contract composition: parent contracts verify child transfer amounts
+    for output in &params.outputs {
+        if output.public_value.is_some() || output.public_token_id.is_some() {
+            let public_value_base = pallas::Base::from(output.public_value.unwrap_or(0));
+            let public_token_id = output.public_token_id.unwrap_or(pallas::Base::zero());
+            zk_public_inputs.push((
+                MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_NS_V1.to_string(),
+                vec![
+                    output.coin.inner(),
+                    output.value_commit,
+                    public_value_base,
+                    public_token_id,
+                ],
+            ));
+        }
+    }
 
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata).unwrap();
@@ -697,7 +713,22 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         ));
     }
 
-    // Mint proofs for swap outputs are deferred (same limitation as TransferV1).
+    // TransferOutput_V1 proofs for swap outputs with public values
+    for output in &params.outputs {
+        if output.public_value.is_some() || output.public_token_id.is_some() {
+            let public_value_base = pallas::Base::from(output.public_value.unwrap_or(0));
+            let public_token_id = output.public_token_id.unwrap_or(pallas::Base::zero());
+            zk_public_inputs.push((
+                MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_NS_V1.to_string(),
+                vec![
+                    output.coin.inner(),
+                    output.value_commit,
+                    public_value_base,
+                    public_token_id,
+                ],
+            ));
+        }
+    }
 
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata).unwrap();
@@ -795,6 +826,51 @@ fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
         MONEY_V3_CONTRACT_COIN_MERKLE_TREE,
         &new_coins,
     )?;
+
+    Ok(())
+}
+
+// ============================================================================
+// CROSS-CONTRACT COMPOSITION HELPER
+// ============================================================================
+
+/// Validate a money_v3::transfer_v1 child call's public value against the expected amount.
+///
+/// Enables parent contracts to verify that a child money_v3 transfer actually moves
+/// the expected token amount. The child call must include `public_value` (and
+/// optionally `public_token_id`) in its outputs, backed by a TransferOutput_V1 ZK proof.
+///
+/// Call from parent contracts after verifying `child_call.data[0] == 0x04`.
+pub fn validate_child_transfer_value(
+    child_call_data: &[u8],
+    expected_value: u64,
+    expected_token_id: Option<pallas::Base>,
+) -> Result<(), crate::ContractError> {
+    use crate::model::TransferParamsV1;
+
+    if child_call_data.is_empty() {
+        return Err(crate::ContractError::InvalidFunction)
+    }
+
+    let params: TransferParamsV1 = deserialize(&child_call_data[1..])
+        .map_err(|_| crate::ContractError::InvalidFunction)?;
+
+    for output in &params.outputs {
+        let pub_value = output.public_value.ok_or_else(|| {
+            crate::error::MoneyV3Error::ValueMismatch
+        })?;
+
+        if pub_value != expected_value {
+            return Err(crate::error::MoneyV3Error::ValueMismatch.into())
+        }
+
+        if let Some(ref expected_tid) = expected_token_id {
+            let pub_token_id = output.public_token_id.unwrap_or(pallas::Base::zero());
+            if pub_token_id != *expected_tid {
+                return Err(crate::error::MoneyV3Error::TokenMismatch.into())
+            }
+        }
+    }
 
     Ok(())
 }

@@ -767,8 +767,9 @@ fn process_force_settle_instruction(
         return Err(RelayerEndowmentError::EndpointInactive.into());
     }
 
-    // Verify settlement timeout has elapsed
-    let blocks_since_settlement = params.current_block.saturating_sub(account.last_settlement_height);
+    // Verify settlement timeout has elapsed (use on-chain block height, not caller-provided)
+    let current_block = wasm::util::get_verifying_block_height()?;
+    let blocks_since_settlement = (current_block as u64).saturating_sub(account.last_settlement_height);
     if blocks_since_settlement < RELAYER_ENDOWMENT_FORCE_SETTLEMENT_TIMEOUT {
         msg!("[relayer_endowment::force_settle] Settlement not due: {} blocks since last settlement (need {})",
             blocks_since_settlement, RELAYER_ENDOWMENT_FORCE_SETTLEMENT_TIMEOUT);

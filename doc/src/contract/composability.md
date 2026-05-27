@@ -55,6 +55,36 @@ This check happens **before apply** — if the child call has the wrong function
 
 **Notable detail**: Contracts validate `child_call.data[0]` (the function code byte of the child), not `child_call.contract_id`. This means the calling contract specifies *what function* must be called, but the *which contract* is determined by the transaction builder and enforced by the WASM runtime routing the call.
 
+### Money V3 Child Call Amount Validation
+
+When a money_v3::TransferV1 call is a child of another contract, the parent needs to verify the transfer amount. MoneyV3's `Output` struct supports optional `public_value` and `public_token_id` fields for this purpose, backed by a TransferOutput_V1 ZK proof that constrains these public values equal the encrypted coin attributes.
+
+```rust
+// Full validation pattern for money_v3 child transfers:
+let this_call = &calls[call_idx];
+
+// 1. Validate child call exists and targets TransferV1
+if this_call.children_indexes.len() != 1 {
+    return Err(ContractError::InvalidChildrenIndexes.into())
+}
+let child_idx = this_call.children_indexes[0];
+let child_call = &calls[child_idx].data;
+if child_call.data[0] != 0x04 {
+    return Err(ContractError::InvalidChildCall.into())
+}
+
+// 2. Validate the transfer amount matches expected value
+dwow_money_v3_contract::entrypoint::validate_child_transfer_value(
+    &child_call.data,
+    params.amount,       // expected amount from parent's params
+    None,                // optional token_id check
+)?;
+```
+
+The `validate_child_transfer_value` helper deserializes the child call's `TransferParamsV1`, verifies each output's `public_value` matches the expected amount, and checks `public_token_id` if provided. This closes the cross-contract composition gap: parent contracts can now verify that child money_v3 transfers actually move the expected value, not just that a TransferV1 call exists.
+
+For contracts that don't want to depend on `dwow_money_v3_contract` directly, the same validation can be performed inline by deserializing `TransferParamsV1` and checking `output.public_value` manually.
+
 ## Current Cross-Contract Call Map
 
 ### Labor Market → Other Contracts

@@ -43,6 +43,9 @@ pub enum DiceError {
     #[error("Bet value too small")]
     BetValueTooSmall,
 
+    #[error("Bet value too large")]
+    BetValueTooLarge,
+
     #[error("Roll already revealed")]
     RollAlreadyRevealed,
 
@@ -104,6 +107,7 @@ impl From<DiceError> for ContractError {
             DiceError::InvalidFunction => Self::Custom(4),
             DiceError::InvalidTarget => Self::Custom(5),
             DiceError::BetValueTooSmall => Self::Custom(6),
+            DiceError::BetValueTooLarge => Self::Custom(24),
             DiceError::RollAlreadyRevealed => Self::Custom(7),
             DiceError::BetNotRevealed => Self::Custom(8),
             DiceError::InvalidRoll => Self::Custom(9),

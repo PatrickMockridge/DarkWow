@@ -234,6 +234,8 @@ pub struct AllocateCoverageUpdateV1 {
 pub struct ReleaseCoverageParamsV1 {
     /// Allocation ID to release
     pub allocation_id: pallas::Base,
+    /// Pool owner's public key (authorization)
+    pub owner_pub: PublicKey,
 }
 
 /// Update returned after releasing coverage
@@ -250,6 +252,8 @@ pub struct ReleaseCoverageUpdateV1 {
 pub struct SlashCoverageParamsV1 {
     /// Allocation ID to slash
     pub allocation_id: pallas::Base,
+    /// Pool owner's public key (authorization)
+    pub owner_pub: PublicKey,
     /// Slash amount (amount to give to user as compensation)
     pub slash_amount: u64,
     /// Public key of user to receive compensation
@@ -275,6 +279,8 @@ pub struct SlashCoverageUpdateV1 {
 pub struct ClaimFeesParamsV1 {
     /// Stake ID to claim fees for
     pub stake_id: pallas::Base,
+    /// Pool owner's public key (authorization)
+    pub owner_pub: PublicKey,
 }
 
 /// Update returned after claiming fees
@@ -290,6 +296,8 @@ pub struct ClaimFeesUpdateV1 {
 pub struct UpdatePoolConfigParamsV1 {
     /// Pool to update
     pub pool_id: pallas::Base,
+    /// Pool owner's public key (authorization)
+    pub owner_pub: PublicKey,
     /// New maximum coverage ratio
     pub max_coverage_ratio: Option<u32>,
     /// New operator fee
@@ -313,6 +321,8 @@ pub struct UpdatePoolConfigUpdateV1 {
 pub struct RebalancePoolSharesParamsV1 {
     /// Pool ID to rebalance
     pub pool_id: pallas::Base,
+    /// Pool owner's public key (authorization)
+    pub owner_pub: PublicKey,
     /// Member stake IDs to rebalance (caller provides these since DB lacks iteration)
     pub member_ids: Vec<pallas::Base>,
 }

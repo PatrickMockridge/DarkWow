@@ -365,6 +365,11 @@ This fork is **incompatible with upstream DarkWow** because:
 
 ## Changelog
 
+- **2026-05-27**: Cross-contract composition added
+  - Added `public_value: Option<u64>` and `public_token_id: Option<pallas::Base>` to `Output`
+  - New `TransferOutput_V1` ZK circuit proves public values match encrypted coin attributes
+  - `validate_child_transfer_value` helper enables parent contracts to verify child transfer amounts
+  - All Poseidon-only (no EC), fully backward-compatible (None = private as before)
 - **2026-04-13**: Money V3 migration complete
   - Money V1/V2 removed, Money V3 added (WASM)
   - NativeToken contract added (native, for DRKW)

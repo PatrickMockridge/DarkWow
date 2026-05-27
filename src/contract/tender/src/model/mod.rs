@@ -343,6 +343,10 @@ pub struct SelectWinnerParamsV1 {
     pub tender_id: TenderId,
     /// Winner's bid ID
     pub winner_bid_id: BidId,
+    /// Requester's public key x coordinate (must match tender creator)
+    pub requester_pub_x: pallas::Base,
+    /// Requester's public key y coordinate (must match tender creator)
+    pub requester_pub_y: pallas::Base,
     /// Winner's public key x coordinate
     pub winner_pub_x: pallas::Base,
     /// Winner's public key y coordinate

@@ -131,3 +131,5 @@ pub const DEFAULT_ROLL_TIMEOUT: u32 = 10;
 pub const MAX_TARGET: u8 = 99;
 /// Number of possible outcomes (0-99)
 pub const ROLL_RANGE: u8 = 100;
+/// Maximum bet value (1 billion tokens)
+pub const MAX_BET_VALUE: u64 = 1_000_000_000;

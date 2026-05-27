@@ -580,6 +580,12 @@ fn escrow_cancel_process_instruction_v1(
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
     let escrow: Escrow = deserialize(&escrow_data)?;
 
+    // Verify caller is the buyer (defense-in-depth; ZK proof is primary auth)
+    if params.buyer_pubkey != escrow.buyer_pubkey {
+        msg!("[CancelV1] Error: Caller pubkey does not match escrow buyer");
+        return Err(ContractError::InvalidFunction)
+    }
+
     // CRITICAL: Verify the escrow is in Created state (can only cancel before funding)
     if escrow.state != EscrowState::Created {
         msg!("[CancelV1] Error: Can only cancel escrows in Created state");

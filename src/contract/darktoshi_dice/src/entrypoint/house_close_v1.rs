@@ -29,6 +29,7 @@
 //! collecting the house's share of the bet.
 
 use dwow_sdk::{
+    crypto::schnorr::SchnorrPublic,
     error::ContractError,
     msg,
     wasm,
@@ -115,6 +116,24 @@ pub fn dice_house_close_process_instruction_v1(
             return Err(DiceError::RollTimeoutNotReached.into())
         }
         return Err(DiceError::InvalidStateTransition.into())
+    }
+
+    // Verify the house is the one closing (authorization check)
+    let info_db = wasm::db::db_lookup(cid, DICE_CONTRACT_INFO_TREE)?;
+    let house_pubkey_bytes =
+        wasm::db::db_get(info_db, crate::DICE_CONTRACT_HOUSE_PUBKEY)?;
+    if let Some(bytes) = house_pubkey_bytes {
+        let stored_house_pubkey: dwow_sdk::crypto::PublicKey = deserialize(&bytes)?;
+        if params.house_pub != stored_house_pubkey {
+            msg!("[dice::house_close] Error: House pubkey does not match stored value");
+            return Err(DiceError::UnauthorizedCaller.into())
+        }
+        let sig_msg_block = wasm::util::get_verifying_block_height()? as u64;
+        let signature_msg = serialize(&(params.bet_id, sig_msg_block));
+        if !params.house_pub.verify(&signature_msg, &params.signature) {
+            msg!("[dice::house_close] Error: Invalid house signature");
+            return Err(DiceError::InvalidSignature.into())
+        }
     }
 
     // Create the update

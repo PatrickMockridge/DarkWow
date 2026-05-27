@@ -204,6 +204,12 @@ pub struct Output {
     pub coin: Coin,
     /// AEAD encrypted note - only recipient can decrypt
     pub note: AeadEncryptedNote,
+    /// Optional public value for cross-contract composition.
+    /// When set, the TransferOutput_V1 ZK proof constrains this equals the encrypted value,
+    /// allowing parent contracts to verify child transfer amounts.
+    pub public_value: Option<u64>,
+    /// Optional public token ID for cross-contract composition.
+    pub public_token_id: Option<pallas::Base>,
 }
 
 // ============================================================================

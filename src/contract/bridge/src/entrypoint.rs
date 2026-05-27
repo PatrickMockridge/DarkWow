@@ -742,6 +742,18 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
     let self_ = &calls[call_idx].data;
     let params: WithdrawParams = deserialize(&self_.data[1..])?;
 
+    // Validate child transfer amount matches withdrawal amount
+    // Uses money_v3's public_value field (backed by TransferOutput_V1 ZK proof)
+    // to verify the child call actually transfers the expected token amount
+    if let Err(e) = dwow_money_v3_contract::entrypoint::validate_child_transfer_value(
+        &child_call.data,
+        params.amount,
+        None, // token_id check optional — bridge may support multiple tokens in future
+    ) {
+        msg!("[bridge::WithdrawV1] Error: Child transfer value mismatch: {:?}", e);
+        return Err(BridgeError::InvalidChildCall.into())
+    }
+
     msg!("[bridge::process_instruction] Processing withdrawal: nullifier={:?}", &params.nullifier);
 
     // Verify nullifier hasn't been spent (double-spend check)
@@ -841,9 +853,10 @@ fn process_cancel_withdraw_instruction(
     let pending: PendingWithdrawal = deserialize(&pending_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
-    // Verify timeout has expired
-    if params.current_block < pending.timeout_height {
-        msg!("[bridge::CancelWithdrawV1] ERROR: Timeout not expired (current={}, timeout={})", params.current_block, pending.timeout_height);
+    // Verify timeout has expired (use on-chain block height, not caller-provided)
+    let current_block = wasm::util::get_verifying_block_height()?;
+    if u64::from(current_block) < pending.timeout_height {
+        msg!("[bridge::CancelWithdrawV1] ERROR: Timeout not expired (current={}, timeout={})", current_block, pending.timeout_height);
         return Err(BridgeError::InvalidWithdrawal("Timeout not expired".into()).into())
     }
 
@@ -863,6 +876,16 @@ fn process_cancel_withdraw_instruction(
             msg!("[bridge::CancelWithdrawV1] ERROR: Withdrawal already executed");
             return Err(BridgeError::WithdrawalAlreadyProcessed.into())
         }
+    }
+
+    // Validate child transfer amount matches the pending withdrawal amount
+    if let Err(e) = dwow_money_v3_contract::entrypoint::validate_child_transfer_value(
+        &child_call.data,
+        pending.amount,
+        None,
+    ) {
+        msg!("[bridge::CancelWithdrawV1] Error: Child transfer value mismatch: {:?}", e);
+        return Err(BridgeError::InvalidChildCall.into())
     }
 
     msg!("[bridge::CancelWithdrawV1] Withdrawal cancellation approved");
@@ -945,6 +968,16 @@ fn process_execute_guaranteed_withdraw_instruction(
         }
     }
 
+    // Validate child transfer amount matches the pending withdrawal amount
+    if let Err(e) = dwow_money_v3_contract::entrypoint::validate_child_transfer_value(
+        &child_call.data,
+        pending.amount,
+        None,
+    ) {
+        msg!("[bridge::ExecuteGuaranteedWithdrawV1] Error: Child transfer value mismatch: {:?}", e);
+        return Err(BridgeError::InvalidChildCall.into())
+    }
+
     msg!("[bridge::ExecuteGuaranteedWithdrawV1] Guaranteed withdrawal execution approved");
 
     let update = ExecuteGuaranteedWithdrawUpdateV1 { nullifier: params.nullifier };
@@ -995,11 +1028,12 @@ fn process_reassign_withdrawal_instruction(
     }
 
     // Verify the reassignable_after window has elapsed
+    let current_block = wasm::util::get_verifying_block_height()?;
     match pending.reassignable_after {
         Some(reassignable_at) => {
-            if params.current_block < reassignable_at {
+            if u64::from(current_block) < reassignable_at {
                 msg!("[bridge::ReassignWithdrawalV1] ERROR: Not yet reassignable (current={}, reassignable_at={})",
-                    params.current_block, reassignable_at);
+                    current_block, reassignable_at);
                 return Err(BridgeError::InvalidFunction.into())
             }
         }
@@ -1471,9 +1505,10 @@ fn process_refund_htlc_instruction(
     let htlc: HtlcSwapInfo = deserialize(&htlc_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
-    // Verify timelock has expired
-    if params.current_block < htlc.timelock {
-        msg!("[bridge::process_instruction] ERROR: Timelock not expired, timelock={}, current={}", htlc.timelock, params.current_block);
+    // Verify timelock has expired (use on-chain block height, not caller-provided)
+    let current_block = wasm::util::get_verifying_block_height()?;
+    if u64::from(current_block) < htlc.timelock {
+        msg!("[bridge::process_instruction] ERROR: Timelock not expired, timelock={}, current={}", htlc.timelock, current_block);
         return Err(BridgeError::InvalidFunction.into())
     }
 

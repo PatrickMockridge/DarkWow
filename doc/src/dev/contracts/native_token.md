@@ -21,6 +21,74 @@ NativeToken is DarkWow's native token contract for consensus (block rewards, fee
 > [!IMPORTANT]
 > **For custom token logic**: NativeToken provides the consensus layer. For custom token contracts with different business logic, deployment is permissionless - deploy your own token contract. DarkWow's architecture encourages innovation at the smart contract layer while keeping the base token layer stable and minimal.
 
+## Architecture Decision: Why Two Token Contracts
+
+DarkWow deliberately splits token functionality across two contracts. This is a **key differentiator from upstream** (which bakes consensus, governance, and DeFi logic into a single monolithic token), and reflects a specific security philosophy:
+
+### NativeToken: Security by Minimum Functionality
+
+NativeToken is **deliberately dumb**. It does exactly three things: pay block rewards, collect fees, and transfer value. Nothing else.
+
+| What it does | What it doesn't do |
+|---|---|
+| PoW block rewards (PoWRewardV1) | No token freezing |
+| Network fee payment (FeeV1) | No governance coupling |
+| Private transfers (Mint/Burn/Transfer) | No multi-token support |
+| | No auth mint |
+| | No token registry |
+| | No DeFi business logic |
+
+The principle: **every feature you don't add is a vulnerability you don't create**. NativeToken is the most frequently called contract in the system — a bug here cascades to every transaction. By keeping it minimal, we minimize the blast radius.
+
+### MoneyV3: Minimum Viable Business Logic for DeFi
+
+MoneyV3 carries exactly the business logic that DeFi contracts need to compose: multi-token support, authorization, and cross-contract value verification.
+
+| What it adds | Why |
+|---|---|
+| TokenMintV1 / AuthTokenMintV1 | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
+| Multi-token support (token_id) | DEX, lending, yield — all need multiple token types |
+| public_value on Output | Parent contracts can verify child transfer amounts |
+| TransferOutput_V1 ZK circuit | Proves public values match encrypted coin attributes |
+
+MoneyV3 is still minimal by DeFi standards — no AMM logic, no lending pools, no governance. Those belong in their own contracts. MoneyV3 provides only the token-layer primitives that DeFi composition requires.
+
+### Why Not One Contract?
+
+Upstream projects typically merge these concerns into one token contract. DarkWow separates them because:
+
+1. **Failure isolation**: A bug in DeFi token logic (MoneyV3) cannot break consensus (NativeToken). Mining rewards and fees keep flowing regardless.
+2. **Attack surface**: Consensus tokens need maximum security; DeFi tokens need flexibility. One contract can't optimize for both.
+3. **Upgrade independence**: The consensus token can remain frozen while DeFi tokens evolve.
+4. **Process safety**: Developers working on DeFi features don't touch consensus-critical code.
+
+```
+┌──────────────────────────────────────┐
+│           NativeToken                 │
+│  "Dumb money" — consensus only       │
+│  PoW rewards, fees, transfers        │
+│  MINIMAL by design                    │
+│  No freezing, no auth, no registry   │
+└──────────────────────────────────────┘
+              ▲
+              │ block rewards, fees
+              │
+┌─────────────┴────────────────────────┐
+│           MoneyV3                     │
+│  "Smart money" — DeFi composition     │
+│  Multi-token, auth mint, public vals │
+│  MINIMAL VIABLE for DeFi              │
+│  No AMM, no lending, no governance   │
+└──────────────────────────────────────┘
+              ▲
+              │ token operations
+              │
+┌─────────────┴────────────────────────┐
+│     DeFi Contracts (DEX, Bridge...)   │
+│  Business logic lives here           │
+└──────────────────────────────────────┘
+```
+
 ## Why NativeToken?
 
 The original MoneyV2 had significant issues:

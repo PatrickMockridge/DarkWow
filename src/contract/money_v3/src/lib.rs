@@ -179,6 +179,8 @@ pub const MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1: &str = "AuthTokenMint_V1
 pub const MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
 /// zkas burn circuit namespace (for spending)
 pub const MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
+/// zkas transfer output circuit namespace (output coin formation + cross-contract composition)
+pub const MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_NS_V1: &str = "TransferOutput_V1";
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
@@ -196,6 +198,9 @@ pub const MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN: &[u8] =
 /// Burn_V1 zkas circuit binary
 pub const MONEY_V3_CONTRACT_ZKAS_BURN_V1_BIN: &[u8] =
     include_bytes!("../proof/burn_v1.zk.bin");
+/// TransferOutput_V1 zkas circuit binary (output coin formation for cross-contract composition)
+pub const MONEY_V3_CONTRACT_ZKAS_TRANSFER_OUTPUT_V1_BIN: &[u8] =
+    include_bytes!("../proof/transfer_output_v1.zk.bin");
 
 // ============================================================================
 // CONSTANTS

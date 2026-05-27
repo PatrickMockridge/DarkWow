@@ -18,6 +18,11 @@ MoneyV3 is DarkWow's DeFi token contract designed for ERC-20 style functionality
 >
 > See [MoneyV3 Architecture(../../contract/money_v3_migration.md) for migration details.
 
+> [!IMPORTANT]
+> **Architecture Decision: Two Token Contracts**
+>
+> DarkWow splits token functionality across NativeToken (consensus) and MoneyV3 (DeFi). NativeToken is deliberately minimal — no freezing, no auth, no multi-token — to minimize attack surface on consensus-critical code. MoneyV3 carries the minimum viable business logic for DeFi composition. See [NativeToken: Why Two Token Contracts](native_token.md#architecture-decision-why-two-token-contracts) for the full rationale.
+
 ## Why MoneyV3?
 
 MoneyV3 was created to address fundamental limitations in both MoneyV2 and NativeToken:
@@ -457,6 +462,73 @@ During blockchain scanning:
 ```
 
 This allows the wallet to track all owned coins with their Merkle proofs.
+
+## Cross-Contract Composition
+
+MoneyV3's Poseidon-only design encrypts all values inside `AeadEncryptedNote`, which provides strong privacy for standalone transfers but prevents parent contracts from verifying child transfer amounts. To enable cross-contract composition while preserving privacy, MoneyV3 supports **optional public value fields** on transfer outputs.
+
+### public_value and public_token_id
+
+Each `Output` in TransferV1/OtcSwapV1 can include:
+
+```rust
+pub struct Output {
+    pub value_commit: pallas::Base,
+    pub token_commit: pallas::Base,
+    pub coin: Coin,
+    pub note: AeadEncryptedNote,
+    pub public_value: Option<u64>,           // Optional: revealed transfer amount
+    pub public_token_id: Option<pallas::Base>, // Optional: revealed token type
+}
+```
+
+- **`None`**: Fully private transfer (backward-compatible, identical to previous behavior)
+- **`Some(v)`**: Value is made public. A TransferOutput_V1 ZK proof constrains this equals the encrypted value, enabling parent contracts to verify the amount
+
+### TransferOutput_V1 Circuit
+
+A new Poseidon-only ZK circuit (`proof/transfer_output_v1.zk`) proves:
+
+```
+coin = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)
+value_commit = poseidon_hash(value, value_blind)
+public_value == value              // constrained to witness
+public_token_id == token_id        // constrained to witness
+```
+
+The circuit has 4 public inputs: `[coin, value_commit, public_value, public_token_id]`. It uses no EC operations, staying consistent with MoneyV3's "No EC = No Heap Bugs" design.
+
+### Parent Contract Validation Pattern
+
+Calling contracts validate child transfer amounts by deserializing the child call's `TransferParamsV1` and checking `public_value`:
+
+```rust
+// After validating child_call.data[0] == 0x04:
+let params: TransferParamsV1 = deserialize(&child_call.data[1..])?;
+for output in &params.outputs {
+    match output.public_value {
+        Some(v) if v == expected_amount => { /* valid */ }
+        Some(v) => return Err(ValueMismatch.into()),
+        None => return Err(MissingPublicValue.into()),
+    }
+}
+```
+
+Or use the convenience helper:
+
+```rust
+dwow_money_v3_contract::entrypoint::validate_child_transfer_value(
+    &child_call.data,
+    expected_amount,
+    None, // optional token_id
+)?;
+```
+
+### When to Use Public Values
+
+- **Child calls**: Always include `public_value` when the transfer is a child of another contract. The parent needs visibility into the amount.
+- **Top-level transfers**: Leave as `None` for full privacy. Only the sender and recipient need to know the amount.
+- **Mixed transactions**: Some outputs can be public and others private within the same TransferV1 call.
 
 ## Standards Reference
 

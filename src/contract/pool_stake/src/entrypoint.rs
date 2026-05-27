@@ -468,7 +468,7 @@ fn process_leave_pool_instruction(
 
     // Get stake
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
-    let stake: PoolMemberStake =
+    let mut stake: PoolMemberStake =
         match wasm::db::db_get(stakes_db, &serialize(&params.stake_id))? {
             Some(data) => deserialize(&data)?,
             None => return Err(PoolStakeError::StakeNotFound.into()),
@@ -476,6 +476,24 @@ fn process_leave_pool_instruction(
 
     if !stake.is_active {
         return Err(PoolStakeError::StakeLocked.into());
+    }
+
+    // Enforce cooldown period before leaving
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    if let Some(requested_at) = stake.leave_requested_at {
+        // Cooldown started — verify it's elapsed
+        if current_block < requested_at + crate::POOL_STAKE_LEAVE_COOLDOWN_BLOCKS {
+            let remaining = (requested_at + crate::POOL_STAKE_LEAVE_COOLDOWN_BLOCKS).saturating_sub(current_block);
+            msg!("[pool_stake::leave_pool] Cooldown active: {} blocks remaining", remaining);
+            return Err(PoolStakeError::StakeLocked.into())
+        }
+        // Cooldown elapsed — proceed with leave
+    } else {
+        // First call — start cooldown
+        stake.leave_requested_at = Some(current_block);
+        wasm::db::db_set(stakes_db, &serialize(&params.stake_id), &serialize(&stake))?;
+        msg!("[pool_stake::leave_pool] Cooldown started: {} blocks", crate::POOL_STAKE_LEAVE_COOLDOWN_BLOCKS);
+        return Err(PoolStakeError::StakeLocked.into())
     }
 
     // Calculate final payout (current_amount - proportional losses)
@@ -645,6 +663,10 @@ fn process_release_coverage_instruction(
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
+    if params.owner_pub != pool.owner_pub {
+        return Err(PoolStakeError::Unauthorized.into())
+    }
+
     let update = ReleaseCoverageUpdateV1 {
         allocation_id: params.allocation_id,
         released_amount: allocation.amount,
@@ -727,6 +749,14 @@ fn process_slash_coverage_instruction(
             Some(data) => deserialize(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
+
+    if params.owner_pub != pool.owner_pub {
+        return Err(PoolStakeError::Unauthorized.into())
+    }
+
+    if pool.allocated_coverage < params.slash_amount {
+        return Err(PoolStakeError::InsufficientCoverage.into())
+    }
 
     let update = SlashCoverageUpdateV1 {
         allocation_id: params.allocation_id,
@@ -816,6 +846,17 @@ fn process_claim_fees_instruction(
             None => return Err(PoolStakeError::StakeNotFound.into()),
         };
 
+    // Verify owner authorization
+    let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
+    let pool: PoolStakeRegistry =
+        match wasm::db::db_get(registry_db, &serialize(&stake.pool_id))? {
+            Some(data) => deserialize(&data)?,
+            None => return Err(PoolStakeError::PoolNotFound.into()),
+        };
+    if params.owner_pub != pool.owner_pub {
+        return Err(PoolStakeError::Unauthorized.into())
+    }
+
     if stake.accumulated_fees == 0 {
         return Err(PoolStakeError::NoEarnings.into());
     }
@@ -866,6 +907,10 @@ fn process_update_pool_config_instruction(
             Some(data) => deserialize(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
+
+    if params.owner_pub != pool.owner_pub {
+        return Err(PoolStakeError::Unauthorized.into())
+    }
 
     let max_coverage_ratio = params.max_coverage_ratio.unwrap_or(pool.max_coverage_ratio);
     let operator_fee_bp = params.operator_fee_bp.unwrap_or(pool.operator_fee_bp);
@@ -963,6 +1008,10 @@ fn process_rebalance_pool_shares_instruction(
             Some(data) => deserialize(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
+
+    if params.owner_pub != pool.owner_pub {
+        return Err(PoolStakeError::Unauthorized.into())
+    }
 
     if !pool.is_active {
         return Err(PoolStakeError::PoolNotFound.into());

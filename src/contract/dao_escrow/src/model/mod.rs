@@ -503,6 +503,8 @@ pub struct VoteClaimUpdateV1 {
     pub no_votes: u64,
     /// Whether proposal passed (met quorum and approval ratio)
     pub passed: bool,
+    /// Whether proposal expired (voting window elapsed)
+    pub expired: bool,
 }
 
 // ============================================================================

@@ -37,7 +37,7 @@ mod tests {
         MoneyV3Function, MONEY_V3_MAX_COIN_VALUE,
     };
     use dwow_sdk::{
-        crypto::{pasta_prelude::PrimeField, poseidon_hash, MerkleNode},
+        crypto::{pasta_prelude::PrimeField, pasta_prelude::Group, poseidon_hash, MerkleNode},
         pasta::pallas,
     };
     use dwow_serial::{deserialize, serialize};
@@ -155,8 +155,15 @@ mod tests {
     #[test]
     fn test_coin_inner() {
         let base = pallas::Base::from(42);
-        let coin = Coin(base);
-        assert_eq!(coin.inner(), base);
+        let coin = Coin::from_attributes(
+            base,
+            100,
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+            pallas::Base::zero(),
+        );
+        assert_ne!(coin.inner(), pallas::Base::zero());
     }
 
     #[test]
@@ -241,6 +248,7 @@ mod tests {
             ),
             value_commit: pallas::Base::from(3),
             token_id: pallas::Base::from(4),
+            token_auth_parent: pallas::Base::from(0),
             token_commit: pallas::Base::from(5),
         };
         let encoded = serialize(&params);
@@ -257,7 +265,7 @@ mod tests {
             nullifier: Nullifier::new(pallas::Base::from(1), pallas::Base::from(2)),
             mint_public: pallas::Base::from(3),
             token_id: pallas::Base::from(4),
-            token_registry_root: MerkleNode::from_bytes(&[0u8; 32]),
+            token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
         };
         let encoded = serialize(&params);
         let decoded: AuthTokenMintParamsV1 = deserialize(&encoded).unwrap();
@@ -271,6 +279,7 @@ mod tests {
         let auth_proof = AuthProof {
             nullifier: Nullifier::new(pallas::Base::from(1), pallas::Base::from(2)),
             mint_public: pallas::Base::from(3),
+            token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
         };
         let params = MintParamsV1 {
             auth_proof,
@@ -283,6 +292,7 @@ mod tests {
                 pallas::Base::zero(),
             ),
             value_commit: pallas::Base::from(6),
+            token_id: pallas::Base::from(5),
         };
         let encoded = serialize(&params);
         let decoded: MintParamsV1 = deserialize(&encoded).unwrap();
@@ -296,7 +306,7 @@ mod tests {
             value_commit: pallas::Base::from(1),
             token_commit: pallas::Base::from(2),
             nullifier: Nullifier::new(pallas::Base::from(3), pallas::Base::from(4)),
-            merkle_root: MerkleNode::from_bytes(&[0u8; 32]),
+            merkle_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             user_data_enc: pallas::Base::zero(),
             signature_public: pallas::Base::zero(),
             value: 100,
@@ -320,7 +330,7 @@ mod tests {
             value_commit: pallas::Base::from(1),
             token_commit: pallas::Base::from(2),
             nullifier: Nullifier::new(pallas::Base::from(3), pallas::Base::from(4)),
-            merkle_root: MerkleNode::from_bytes(&[0u8; 32]),
+            merkle_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             user_data_enc: pallas::Base::zero(),
             signature_public: pallas::Base::zero(),
             value: 100,
@@ -345,9 +355,12 @@ mod tests {
             ),
             note: dwow_sdk::crypto::note::AeadEncryptedNote {
                 ciphertext: vec![0u8; 32],
-                nonce: [0u8; 12],
-                tag: [0u8; 16],
+                ephem_public: dwow_sdk::crypto::PublicKey::try_from(
+                    dwow_sdk::pasta::pallas::Point::generator(),
+                ).unwrap(),
             },
+            public_value: Some(50),
+            public_token_id: Some(pallas::Base::from(5)),
         };
 
         let params = TransferParamsV1 { inputs: vec![input], outputs: vec![output] };

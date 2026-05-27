@@ -66,23 +66,22 @@ pub fn dice_reveal_roll_process_instruction_v1(
         return Err(DiceError::CommitmentMismatch.into())
     }
 
-    // Get block hash for randomness
-    let tx_hash = wasm::util::get_tx_hash()?;
+    // Get block hash for randomness (use verifying block hash, not tx_hash)
+    // tx_hash is player-influenced and breaks the randomness guarantee
+    let verifying_height = wasm::util::get_verifying_block_height()?;
+    let block_hash = wasm::util::get_block_hash(verifying_height)?.0;
 
-    // Convert tx_hash bytes to pallas::Base for the depth-based roll calculation
-    // For confirmation_depth > 1, multiple block hashes would be combined
-    let tx_hash_a = u64::from_le_bytes(tx_hash.0[0..8].try_into().unwrap());
-    let tx_hash_b = u64::from_le_bytes(tx_hash.0[8..16].try_into().unwrap());
-    let tx_hash_c = u64::from_le_bytes(tx_hash.0[16..24].try_into().unwrap());
-    let tx_hash_d = u64::from_le_bytes(tx_hash.0[24..32].try_into().unwrap());
+    // Convert block hash bytes to pallas::Base for the depth-based roll calculation
+    let block_hash_a = u64::from_le_bytes(block_hash[0..8].try_into().unwrap());
+    let block_hash_b = u64::from_le_bytes(block_hash[8..16].try_into().unwrap());
+    let block_hash_c = u64::from_le_bytes(block_hash[16..24].try_into().unwrap());
+    let block_hash_d = u64::from_le_bytes(block_hash[24..32].try_into().unwrap());
 
-    // Use confirmation_depth to determine how many block hashes to combine
-    // For now, we use the tx_hash split into field elements (backward compatible)
     let block_hashes = vec![
-        pallas::Base::from(tx_hash_a),
-        pallas::Base::from(tx_hash_b),
-        pallas::Base::from(tx_hash_c),
-        pallas::Base::from(tx_hash_d),
+        pallas::Base::from(block_hash_a),
+        pallas::Base::from(block_hash_b),
+        pallas::Base::from(block_hash_c),
+        pallas::Base::from(block_hash_d),
     ];
 
     // Calculate roll using depth-based approach

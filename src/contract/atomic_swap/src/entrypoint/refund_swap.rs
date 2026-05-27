@@ -100,8 +100,9 @@ pub(crate) fn atomic_swap_refund_process_instruction_v1(
         return Err(ContractError::InvalidFunction)
     }
 
-    // Verify timelock has passed
-    if params.current_block < swap.timelock {
+    // Verify timelock has passed (use on-chain block height, not caller-provided)
+    let current_block = wasm::util::get_verifying_block_height()?;
+    if current_block < swap.timelock {
         msg!("[AtomicSwap::Refund] Error: Timelock not expired");
         return Err(ContractError::InvalidFunction)
     }

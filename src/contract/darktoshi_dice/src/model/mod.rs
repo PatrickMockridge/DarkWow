@@ -187,7 +187,12 @@ pub struct SettleBetUpdateV1 {
 /// Parameters for `Dice::HouseCloseV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct HouseCloseParamsV1 {
+    /// Bet ID to close
     pub bet_id: BetId,
+    /// House public key for authorization
+    pub house_pub: dwow_sdk::crypto::PublicKey,
+    /// Signature from house (signs bet_id + current_block)
+    pub signature: dwow_sdk::crypto::schnorr::Signature,
 }
 
 /// State update for `HouseCloseV1`
